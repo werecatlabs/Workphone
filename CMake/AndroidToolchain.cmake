@@ -1,0 +1,33 @@
+set(ANDROID_ABI "arm64-v8a" CACHE STRING "Android ABI")
+set(ANDROID_PLATFORM "android-24" CACHE STRING "Android API level")
+set(ANDROID_STL "c++_static" CACHE STRING "Android STL")
+
+if(NOT DEFINED ANDROID_NDK AND DEFINED ENV{ANDROID_NDK_HOME})
+    set(ANDROID_NDK "$ENV{ANDROID_NDK_HOME}" CACHE PATH "Android NDK path")
+elseif(NOT DEFINED ANDROID_NDK AND DEFINED ENV{ANDROID_NDK_ROOT})
+    set(ANDROID_NDK "$ENV{ANDROID_NDK_ROOT}" CACHE PATH "Android NDK path")
+elseif(NOT DEFINED ANDROID_NDK AND DEFINED ENV{ANDROID_HOME})
+    file(GLOB _wp_android_ndks LIST_DIRECTORIES TRUE "$ENV{ANDROID_HOME}/ndk/*")
+elseif(NOT DEFINED ANDROID_NDK AND DEFINED ENV{ANDROID_SDK_ROOT})
+    file(GLOB _wp_android_ndks LIST_DIRECTORIES TRUE "$ENV{ANDROID_SDK_ROOT}/ndk/*")
+elseif(NOT DEFINED ANDROID_NDK AND DEFINED ENV{LOCALAPPDATA})
+    file(GLOB _wp_android_ndks LIST_DIRECTORIES TRUE "$ENV{LOCALAPPDATA}/Android/Sdk/ndk/*")
+endif()
+
+if(NOT DEFINED ANDROID_NDK AND _wp_android_ndks)
+    list(SORT _wp_android_ndks)
+    list(REVERSE _wp_android_ndks)
+    list(GET _wp_android_ndks 0 _wp_android_ndk)
+    set(ANDROID_NDK "${_wp_android_ndk}" CACHE PATH "Android NDK path")
+endif()
+
+if(NOT ANDROID_NDK)
+    message(FATAL_ERROR "Android NDK not found. Install the NDK in Android Studio or pass -DANDROID_NDK=<path>.")
+endif()
+
+set(_wp_android_toolchain "${ANDROID_NDK}/build/cmake/android.toolchain.cmake")
+if(NOT EXISTS "${_wp_android_toolchain}")
+    message(FATAL_ERROR "Android toolchain file not found: ${_wp_android_toolchain}")
+endif()
+
+include("${_wp_android_toolchain}")

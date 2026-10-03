@@ -1,0 +1,13 @@
+if (WP_USE_ODIN)
+	add_compile_definitions(WP_USE_ODIN=1)
+else()
+	add_compile_definitions(WP_USE_ODIN=0)
+endif()
+
+add_compile_definitions(UNITY_STANDALONE_WIN=1)
+add_compile_definitions(UNITY_STANDALONE_OSX=1)
+add_compile_definitions(UNITY_STANDALONE_LINUX=1)
+add_compile_definitions(STEAMWORKS_WIN=1)
+add_compile_definitions(STEAMWORKS_LIN_OSX=1)
+add_compile_definitions(UNITY_EDITOR=1)
+add_compile_definitions(DISABLESTEAMWORKS=0)
