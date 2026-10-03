@@ -1,9 +1,10 @@
 #ifndef __XMLSkeletonSerializer_H__
 #define __XMLSkeletonSerializer_H__
 
-#include <pugixml.hpp>
 #include <Workphone/Mesh/MeshSkeleton.hpp>
 #include <Workphone/Animation/KeyFrameTransform3.hpp>
+
+class TiXmlElement;
 
 namespace workphone
 {
@@ -35,21 +36,21 @@ namespace workphone
         void exportSkeleton( const ISkeleton *pSkeleton, const String &filename );
 
     private:
-        void writeSkeleton( const ISkeleton *pSkel, pugi::xml_node &root );
-        void writeBone( pugi::xml_node &bonesElement, const IBone *pBone );
-        void writeBoneParent( pugi::xml_node &boneHierarchyNode, String boneName, String parentName );
-        void writeAnimation( pugi::xml_node &animsNode, const IAnimation *anim );
-        void writeAnimationTrack( pugi::xml_node &tracksNode, const IActorAnimationTrack *track );
-        void writeKeyFrame( pugi::xml_node &keysNode, const KeyFrameTransform3 *key );
-        void writeSkeletonAnimationLink( pugi::xml_node &linksNode,
+        void writeSkeleton( const ISkeleton *pSkel, TiXmlElement *root );
+        void writeBone( TiXmlElement *bonesElement, const IBone *pBone );
+        void writeBoneParent( TiXmlElement *boneHierarchyNode, String boneName, String parentName );
+        void writeAnimation( TiXmlElement *animsNode, const IAnimation *anim );
+        void writeAnimationTrack( TiXmlElement *tracksNode, const IActorAnimationTrack *track );
+        void writeKeyFrame( TiXmlElement *keysNode, const KeyFrameTransform3 *key );
+        void writeSkeletonAnimationLink( TiXmlElement *linksNode,
                                          const LinkedSkeletonAnimationSource &link );
 
-        void readBones( MeshSkeleton *skel, pugi::xml_node &mBonesNode );
-        void readBones2( MeshSkeleton *skel, pugi::xml_node &mBonesNode );
-        void createHierarchy( MeshSkeleton *skel, pugi::xml_node &mHierNode );
-        void readKeyFrames( IActorAnimationTrack *track, const pugi::xml_node &mKeyfNode );
-        void readAnimations( MeshSkeleton *skel, pugi::xml_node &mAnimNode );
-        void readSkeletonAnimationLinks( MeshSkeleton *skel, pugi::xml_node &linksNode );
+        void readBones( MeshSkeleton *skel, const TiXmlElement *mBonesNode );
+        void readBones2( MeshSkeleton *skel, const TiXmlElement *mBonesNode );
+        void createHierarchy( MeshSkeleton *skel, const TiXmlElement *mHierNode );
+        void readKeyFrames( IActorAnimationTrack *track, const TiXmlElement *mKeyfNode );
+        void readAnimations( MeshSkeleton *skel, const TiXmlElement *mAnimNode );
+        void readSkeletonAnimationLinks( MeshSkeleton *skel, const TiXmlElement *linksNode );
     };
 
 }  // namespace workphone

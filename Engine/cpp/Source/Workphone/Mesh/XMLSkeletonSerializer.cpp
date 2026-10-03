@@ -10,12 +10,27 @@
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <map>
+#include <cstdlib>
+#include <tinyxml.h>
 
 namespace workphone
 {
     // Helper functions to replace StringConverter functionality
     namespace
     {
+        TiXmlElement *appendElement( TiXmlNode *parent, const char *name )
+        {
+            auto element = new TiXmlElement( name );
+            parent->LinkEndChild( element );
+            return element;
+        }
+
+        const char *getAttribute( const TiXmlElement *element, const char *name )
+        {
+            const char *value = element ? element->Attribute( name ) : nullptr;
+            return value ? value : "";
+        }
+
         real_Num parseReal( const String &str )
         {
             return static_cast<real_Num>( std::stof( str.c_str() ) );
@@ -36,15 +51,14 @@ namespace workphone
             return std::to_string( value ).c_str();
         }
 
-        real_Num getRealAttribute( const pugi::xml_node &node, const char *name,
+        real_Num getRealAttribute( const TiXmlElement *node, const char *name,
                                    real_Num defaultValue = real_Num( 0 ) )
         {
-            auto attr = node.attribute( name );
-            return attr ? static_cast<real_Num>( attr.as_double() ) : defaultValue;
+            const char *attr = node ? node->Attribute( name ) : nullptr;
+            return attr ? static_cast<real_Num>( std::strtod( attr, nullptr ) ) : defaultValue;
         }
 
-        Vector3<real_Num> readVector3( const pugi::xml_node &node,
-                                       const Vector3<real_Num> &defaultValue )
+        Vector3<real_Num> readVector3( const TiXmlElement *node, const Vector3<real_Num> &defaultValue )
         {
             if( !node )
             {
@@ -56,33 +70,33 @@ namespace workphone
                                       getRealAttribute( node, "z", defaultValue.z ) );
         }
 
-        Quaternion<real_Num> readRotation( const pugi::xml_node &node )
+        Quaternion<real_Num> readRotation( const TiXmlElement *node )
         {
             if( !node )
             {
                 return Quaternion<real_Num>::identity();
             }
 
-            if( node.attribute( "qw" ) || node.attribute( "qx" ) || node.attribute( "qy" ) ||
-                node.attribute( "qz" ) )
+            if( node->Attribute( "qw" ) || node->Attribute( "qx" ) || node->Attribute( "qy" ) ||
+                node->Attribute( "qz" ) )
             {
                 return Quaternion<real_Num>(
                     getRealAttribute( node, "qw", real_Num( 1 ) ), getRealAttribute( node, "qx" ),
                     getRealAttribute( node, "qy" ), getRealAttribute( node, "qz" ) );
             }
 
-            if( node.attribute( "w" ) || node.attribute( "x" ) || node.attribute( "y" ) ||
-                node.attribute( "z" ) )
+            if( node->Attribute( "w" ) || node->Attribute( "x" ) || node->Attribute( "y" ) ||
+                node->Attribute( "z" ) )
             {
                 return Quaternion<real_Num>(
                     getRealAttribute( node, "w", real_Num( 1 ) ), getRealAttribute( node, "x" ),
                     getRealAttribute( node, "y" ), getRealAttribute( node, "z" ) );
             }
 
-            if( node.attribute( "angle" ) )
+            if( node->Attribute( "angle" ) )
             {
-                const auto axis =
-                    readVector3( node.child( "axis" ), Vector3<real_Num>( 0.0f, 0.0f, 1.0f ) );
+                const auto axis = readVector3( node->FirstChildElement( "axis" ),
+                                               Vector3<real_Num>( 0.0f, 0.0f, 1.0f ) );
                 Quaternion<real_Num> q;
                 q.fromAngleAxis( getRealAttribute( node, "angle" ), axis );
                 return q;
@@ -98,17 +112,32 @@ namespace workphone
 
     void XMLSkeletonSerializer::importSkeleton( const String &filename, ISkeleton *pSkeleton )
     {
+        if( !pSkeleton || StringUtil::isNullOrEmpty( filename ) )
+        {
+            return;
+        }
+
         WP_LOG( "XMLSkeletonSerializer: reading XML data from " + filename + "..." );
 
-        pugi::xml_document mXMLDoc;
-        mXMLDoc.load_file( filename.c_str() );
+        TiXmlDocument mXMLDoc;
+        if( !mXMLDoc.LoadFile( filename.c_str() ) )
+        {
+            WP_LOG_ERROR( "XMLSkeletonSerializer failed reading the XML file: " +
+                          String( mXMLDoc.ErrorDesc() ) );
+            return;
+        }
 
-        pugi::xml_node elem;
+        TiXmlElement *elem = nullptr;
 
-        pugi::xml_node rootElem = mXMLDoc.document_element();
+        TiXmlElement *rootElem = mXMLDoc.RootElement();
+        if( !rootElem )
+        {
+            WP_LOG_ERROR( "XMLSkeletonSerializer XML file has no root element." );
+            return;
+        }
 
         // Optional blend mode
-        const char *blendModeStr = rootElem.attribute( "blendmode" ).as_string( NULL );
+        const char *blendModeStr = rootElem->Attribute( "blendmode" );
         if( blendModeStr )
         {
             if( String( blendModeStr ) == "cumulative" )
@@ -121,12 +150,12 @@ namespace workphone
         MeshSkeleton *meshSkeleton = static_cast<MeshSkeleton *>( pSkeleton );
 
         // Bones
-        elem = rootElem.child( "bones" );
+        elem = rootElem->FirstChildElement( "bones" );
         if( elem )
         {
             readBones( meshSkeleton, elem );
 
-            auto hierarchyElem = rootElem.child( "bonehierarchy" );
+            auto hierarchyElem = rootElem->FirstChildElement( "bonehierarchy" );
             if( hierarchyElem )
             {
                 createHierarchy( meshSkeleton, hierarchyElem );
@@ -134,13 +163,13 @@ namespace workphone
 
             readBones2( meshSkeleton, elem );
 
-            auto animationsElem = rootElem.child( "animations" );
+            auto animationsElem = rootElem->FirstChildElement( "animations" );
             if( animationsElem )
             {
                 readAnimations( meshSkeleton, animationsElem );
             }
 
-            auto linksElem = rootElem.child( "animationlinks" );
+            auto linksElem = rootElem->FirstChildElement( "animationlinks" );
             if( linksElem )
             {
                 readSkeletonAnimationLinks( meshSkeleton, linksElem );
@@ -151,16 +180,17 @@ namespace workphone
     }
 
     // sets names
-    void XMLSkeletonSerializer::readBones( MeshSkeleton *skel, pugi::xml_node &mBonesNode )
+    void XMLSkeletonSerializer::readBones( MeshSkeleton *skel, const TiXmlElement *mBonesNode )
     {
         WP_LOG( "XMLSkeletonSerializer: Reading Bones name..." );
 
         int max_id = -1;
 
-        for( pugi::xml_node &bonElem : mBonesNode.children() )
+        for( const TiXmlElement *bonElem = mBonesNode ? mBonesNode->FirstChildElement() : nullptr;
+             bonElem; bonElem = bonElem->NextSiblingElement() )
         {
-            String name = bonElem.attribute( "name" ).value();
-            int id = parseInt( bonElem.attribute( "id" ).value() );
+            String name = getAttribute( bonElem, "name" );
+            int id = parseInt( getAttribute( bonElem, "id" ) );
             skel->createBone( name, static_cast<u32>( id ) );
 
             max_id = std::max( id, max_id );
@@ -170,17 +200,18 @@ namespace workphone
     }
 
     // set positions and orientations.
-    void XMLSkeletonSerializer::readBones2( MeshSkeleton *skel, pugi::xml_node &mBonesNode )
+    void XMLSkeletonSerializer::readBones2( MeshSkeleton *skel, const TiXmlElement *mBonesNode )
     {
         WP_LOG( "XMLSkeletonSerializer: Reading Bones data..." );
 
-        for( pugi::xml_node &bonElem : mBonesNode.children() )
+        for( const TiXmlElement *bonElem = mBonesNode ? mBonesNode->FirstChildElement() : nullptr;
+             bonElem; bonElem = bonElem->NextSiblingElement() )
         {
-            String name = bonElem.attribute( "name" ).value();
+            String name = getAttribute( bonElem, "name" );
 
-            pugi::xml_node posElem = bonElem.child( "position" );
-            pugi::xml_node rotElem = bonElem.child( "rotation" );
-            pugi::xml_node scaleElem = bonElem.child( "scale" );
+            const TiXmlElement *posElem = bonElem->FirstChildElement( "position" );
+            const TiXmlElement *rotElem = bonElem->FirstChildElement( "rotation" );
+            const TiXmlElement *scaleElem = bonElem->FirstChildElement( "scale" );
 
             Vector3<real_Num> scale;
 
@@ -191,7 +222,7 @@ namespace workphone
             if( scaleElem )
             {
                 // Uniform scale or per axis?
-                const char *factorAttrib = scaleElem.attribute( "factor" ).as_string( NULL );
+                const char *factorAttrib = scaleElem->Attribute( "factor" );
                 if( factorAttrib )
                 {
                     // Uniform scale
@@ -202,17 +233,17 @@ namespace workphone
                 {
                     // axis scale
                     scale = Vector3<real_Num>( 1.0f, 1.0f, 1.0f );  // UNIT_SCALE equivalent
-                    const char *factorString = scaleElem.attribute( "x" ).as_string( NULL );
+                    const char *factorString = scaleElem->Attribute( "x" );
                     if( factorString )
                     {
                         scale.X() = parseReal( factorString );
                     }
-                    factorString = scaleElem.attribute( "y" ).value();
+                    factorString = scaleElem->Attribute( "y" );
                     if( factorString )
                     {
                         scale.Y() = parseReal( factorString );
                     }
-                    factorString = scaleElem.attribute( "z" ).value();
+                    factorString = scaleElem->Attribute( "z" );
                     if( factorString )
                     {
                         scale.Z() = parseReal( factorString );
@@ -237,14 +268,15 @@ namespace workphone
         }  // bones
     }
 
-    void XMLSkeletonSerializer::createHierarchy( MeshSkeleton *skel, pugi::xml_node &mHierNode )
+    void XMLSkeletonSerializer::createHierarchy( MeshSkeleton *skel, const TiXmlElement *mHierNode )
     {
         WP_LOG( "XMLSkeletonSerializer: Reading Hierarchy data..." );
 
-        for( pugi::xml_node &hierElem : mHierNode.children() )
+        for( const TiXmlElement *hierElem = mHierNode ? mHierNode->FirstChildElement() : nullptr;
+             hierElem; hierElem = hierElem->NextSiblingElement() )
         {
-            String boneName = hierElem.attribute( "bone" ).value();
-            String parentName = hierElem.attribute( "parent" ).value();
+            String boneName = getAttribute( hierElem, "bone" );
+            String parentName = getAttribute( hierElem, "parent" );
 
             auto bone = skel->getBone( boneName );
             auto parent = skel->getBone( parentName );
@@ -260,14 +292,16 @@ namespace workphone
         }
     }
 
-    void XMLSkeletonSerializer::readAnimations( MeshSkeleton *skel, pugi::xml_node &mAnimNode )
+    void XMLSkeletonSerializer::readAnimations( MeshSkeleton *skel, const TiXmlElement *mAnimNode )
     {
         WP_LOG( "XMLSkeletonSerializer: Reading Animations data..." );
 
-        for( pugi::xml_node &animElem : mAnimNode.children( "animation" ) )
+        for( const TiXmlElement *animElem = mAnimNode ? mAnimNode->FirstChildElement( "animation" )
+                                                      : nullptr;
+             animElem; animElem = animElem->NextSiblingElement( "animation" ) )
         {
-            String name = animElem.attribute( "name" ).value();
-            real_Num length = parseReal( animElem.attribute( "length" ).value() );
+            String name = getAttribute( animElem, "name" );
+            real_Num length = parseReal( getAttribute( animElem, "length" ) );
 
             auto anim = skel->createAnimation( name, static_cast<f32>( length ) );
             if( !anim )
@@ -279,20 +313,22 @@ namespace workphone
             // Note: setInterpolationMode may need to be added to IAnimation interface
             // anim->setInterpolationMode( InterpolationMode::LINEAR );
 
-            pugi::xml_node baseInfoNode = animElem.child( "baseinfo" );
+            const TiXmlElement *baseInfoNode = animElem->FirstChildElement( "baseinfo" );
             if( baseInfoNode )
             {
-                String baseName = baseInfoNode.attribute( "baseanimationname" ).value();
-                real_Num baseTime = parseReal( baseInfoNode.attribute( "basekeyframetime" ).value() );
+                String baseName = getAttribute( baseInfoNode, "baseanimationname" );
+                real_Num baseTime = parseReal( getAttribute( baseInfoNode, "basekeyframetime" ) );
                 // Note: setUseBaseKeyFrame may need to be added to IAnimation interface
                 // anim->setUseBaseKeyFrame( true, static_cast<f32>( baseTime ), baseName );
             }
 
-            pugi::xml_node tracksNode = animElem.child( "tracks" );
+            const TiXmlElement *tracksNode = animElem->FirstChildElement( "tracks" );
 
-            for( pugi::xml_node &trackElem : tracksNode.children( "track" ) )
+            for( const TiXmlElement *trackElem = tracksNode ? tracksNode->FirstChildElement( "track" )
+                                                            : nullptr;
+                 trackElem; trackElem = trackElem->NextSiblingElement( "track" ) )
             {
-                String boneName = trackElem.attribute( "bone" ).value();
+                String boneName = getAttribute( trackElem, "bone" );
                 auto bone = skel->getBone( boneName );
 
                 if( bone )
@@ -308,7 +344,7 @@ namespace workphone
 
                     track->setPropertyName( boneName );
                     track->setTrackType( IActorAnimationTrack::TrackType::Transform );
-                    readKeyFrames( track.get(), trackElem.child( "keyframes" ) );
+                    readKeyFrames( track.get(), trackElem->FirstChildElement( "keyframes" ) );
                     WP_LOG( "XMLSkeletonSerializer: Processing track for bone: " + boneName );
                 }
             }
@@ -316,16 +352,18 @@ namespace workphone
     }
 
     void XMLSkeletonSerializer::readKeyFrames( IActorAnimationTrack *track,
-                                               const pugi::xml_node &mKeyfNode )
+                                               const TiXmlElement *mKeyfNode )
     {
         WP_LOG( "XMLSkeletonSerializer: Reading keyframes..." );
 
-        if( !track )
+        if( !track || !mKeyfNode )
         {
             return;
         }
 
-        for( pugi::xml_node &keyfElem : mKeyfNode.children( "keyframe" ) )
+        for( const TiXmlElement *keyfElem = mKeyfNode ? mKeyfNode->FirstChildElement( "keyframe" )
+                                                      : nullptr;
+             keyfElem; keyfElem = keyfElem->NextSiblingElement( "keyframe" ) )
         {
             const auto time = static_cast<f32>( getRealAttribute( keyfElem, "time", real_Num( 0 ) ) );
             auto keyFrame =
@@ -336,14 +374,14 @@ namespace workphone
             }
 
             // Optional translate
-            pugi::xml_node transElem = keyfElem.child( "translate" );
+            const TiXmlElement *transElem = keyfElem->FirstChildElement( "translate" );
             keyFrame->setPosition( readVector3( transElem, Vector3<real_Num>::zero() ) );
 
             // Optional rotate
-            pugi::xml_node rotElem = keyfElem.child( "rotation" );
+            const TiXmlElement *rotElem = keyfElem->FirstChildElement( "rotation" );
             if( !rotElem )
             {
-                rotElem = keyfElem.child( "rotate" );
+                rotElem = keyfElem->FirstChildElement( "rotate" );
             }
 
             if( rotElem )
@@ -356,7 +394,7 @@ namespace workphone
             }
 
             // Optional scale
-            pugi::xml_node scaleElem = keyfElem.child( "scale" );
+            const TiXmlElement *scaleElem = keyfElem->FirstChildElement( "scale" );
             keyFrame->setScale( readVector3( scaleElem, Vector3<real_Num>::unit() ) );
         }
     }
@@ -374,11 +412,11 @@ namespace workphone
             Path::createDirectories( folder );
         }
 
-        pugi::xml_document doc;
-        auto rootNode = doc.append_child( "skeleton" );
+        TiXmlDocument doc;
+        auto rootNode = appendElement( &doc, "skeleton" );
         writeSkeleton( pSkeleton, rootNode );
 
-        if( !doc.save_file( filename.c_str(), "    " ) )
+        if( !doc.SaveFile( filename.c_str() ) )
         {
             WP_LOG_ERROR( "XMLSkeletonSerializer failed writing the XML file: " + filename );
             return;
@@ -387,7 +425,7 @@ namespace workphone
         WP_LOG( "XMLSkeletonSerializer export successful: " + filename );
     }
 
-    void XMLSkeletonSerializer::writeSkeleton( const ISkeleton *pSkel, pugi::xml_node &rootNode )
+    void XMLSkeletonSerializer::writeSkeleton( const ISkeleton *pSkel, TiXmlElement *rootNode )
     {
         auto meshSkeleton = dynamic_cast<const MeshSkeleton *>( pSkel );
         if( !meshSkeleton )
@@ -395,11 +433,12 @@ namespace workphone
             return;
         }
 
-        rootNode.append_attribute( "blendmode" ) =
-            pSkel->getBlendMode() == SkeletonAnimationBlendMode::ANIMBLEND_CUMULATIVE ? "cumulative"
-                                                                                      : "average";
+        rootNode->SetAttribute( "blendmode",
+                                pSkel->getBlendMode() == SkeletonAnimationBlendMode::ANIMBLEND_CUMULATIVE
+                                    ? "cumulative"
+                                    : "average" );
 
-        auto bonesNode = rootNode.append_child( "bones" );
+        auto bonesNode = appendElement( rootNode, "bones" );
         for( const auto &bone : meshSkeleton->getBones() )
         {
             if( bone )
@@ -408,7 +447,7 @@ namespace workphone
             }
         }
 
-        auto hierarchyNode = rootNode.append_child( "bonehierarchy" );
+        auto hierarchyNode = appendElement( rootNode, "bonehierarchy" );
         for( const auto &bone : meshSkeleton->getBones() )
         {
             if( bone )
@@ -421,7 +460,7 @@ namespace workphone
             }
         }
 
-        auto animationsNode = rootNode.append_child( "animations" );
+        auto animationsNode = appendElement( rootNode, "animations" );
         for( const auto &animation : meshSkeleton->getAnimations() )
         {
             if( animation )
@@ -431,51 +470,52 @@ namespace workphone
         }
     }
 
-    void XMLSkeletonSerializer::writeBone( pugi::xml_node &bonesElement, const IBone *pBone )
+    void XMLSkeletonSerializer::writeBone( TiXmlElement *bonesElement, const IBone *pBone )
     {
         if( !pBone )
         {
             return;
         }
 
-        auto boneNode = bonesElement.append_child( "bone" );
-        boneNode.append_attribute( "id" ) = static_cast<unsigned int>( pBone->getBoneHandle() );
-        boneNode.append_attribute( "name" ) = pBone->getName().c_str();
+        auto boneNode = appendElement( bonesElement, "bone" );
+        boneNode->SetAttribute(
+            "id", std::to_string( static_cast<unsigned int>( pBone->getBoneHandle() ) ).c_str() );
+        boneNode->SetAttribute( "name", pBone->getName().c_str() );
 
         auto position = pBone->getPosition();
-        auto positionNode = boneNode.append_child( "position" );
-        positionNode.append_attribute( "x" ) = position.x;
-        positionNode.append_attribute( "y" ) = position.y;
-        positionNode.append_attribute( "z" ) = position.z;
+        auto positionNode = appendElement( boneNode, "position" );
+        positionNode->SetDoubleAttribute( "x", position.x );
+        positionNode->SetDoubleAttribute( "y", position.y );
+        positionNode->SetDoubleAttribute( "z", position.z );
 
         auto orientation = pBone->getOrientation();
-        auto rotationNode = boneNode.append_child( "rotation" );
-        rotationNode.append_attribute( "qw" ) = orientation.w;
-        rotationNode.append_attribute( "qx" ) = orientation.x;
-        rotationNode.append_attribute( "qy" ) = orientation.y;
-        rotationNode.append_attribute( "qz" ) = orientation.z;
+        auto rotationNode = appendElement( boneNode, "rotation" );
+        rotationNode->SetDoubleAttribute( "qw", orientation.w );
+        rotationNode->SetDoubleAttribute( "qx", orientation.x );
+        rotationNode->SetDoubleAttribute( "qy", orientation.y );
+        rotationNode->SetDoubleAttribute( "qz", orientation.z );
     }
 
-    void XMLSkeletonSerializer::writeBoneParent( pugi::xml_node &boneHierarchyNode, String boneName,
+    void XMLSkeletonSerializer::writeBoneParent( TiXmlElement *boneHierarchyNode, String boneName,
                                                  String parentName )
     {
-        pugi::xml_node boneParentNode = boneHierarchyNode.append_child( "boneparent" );
-        boneParentNode.append_attribute( "bone" ) = boneName.c_str();
-        boneParentNode.append_attribute( "parent" ) = parentName.c_str();
+        TiXmlElement *boneParentNode = appendElement( boneHierarchyNode, "boneparent" );
+        boneParentNode->SetAttribute( "bone", boneName.c_str() );
+        boneParentNode->SetAttribute( "parent", parentName.c_str() );
     }
 
-    void XMLSkeletonSerializer::writeAnimation( pugi::xml_node &animsNode, const IAnimation *anim )
+    void XMLSkeletonSerializer::writeAnimation( TiXmlElement *animsNode, const IAnimation *anim )
     {
         if( !anim )
         {
             return;
         }
 
-        auto animationNode = animsNode.append_child( "animation" );
-        animationNode.append_attribute( "name" ) = anim->getName().c_str();
-        animationNode.append_attribute( "length" ) = anim->getLength();
+        auto animationNode = appendElement( animsNode, "animation" );
+        animationNode->SetAttribute( "name", anim->getName().c_str() );
+        animationNode->SetDoubleAttribute( "length", anim->getLength() );
 
-        auto tracksNode = animationNode.append_child( "tracks" );
+        auto tracksNode = appendElement( animationNode, "tracks" );
         const auto &nodeTracks = anim->_getNodeTrackList();
         for( const auto &trackPair : nodeTracks )
         {
@@ -486,7 +526,7 @@ namespace workphone
         }
     }
 
-    void XMLSkeletonSerializer::writeAnimationTrack( pugi::xml_node &tracksNode,
+    void XMLSkeletonSerializer::writeAnimationTrack( TiXmlElement *tracksNode,
                                                      const IActorAnimationTrack *track )
     {
         if( !track )
@@ -494,12 +534,13 @@ namespace workphone
             return;
         }
 
-        auto trackNode = tracksNode.append_child( "track" );
-        trackNode.append_attribute( "bone" ) = track->getPropertyName().c_str();
-        trackNode.append_attribute( "handle" ) =
-            static_cast<unsigned int>( track->getAnimationHandle() );
+        auto trackNode = appendElement( tracksNode, "track" );
+        trackNode->SetAttribute( "bone", track->getPropertyName().c_str() );
+        trackNode->SetAttribute(
+            "handle",
+            std::to_string( static_cast<unsigned int>( track->getAnimationHandle() ) ).c_str() );
 
-        auto keyFramesNode = trackNode.append_child( "keyframes" );
+        auto keyFramesNode = appendElement( trackNode, "keyframes" );
         for( u16 i = 0; i < track->getNumKeyFrames(); ++i )
         {
             auto keyFrame =
@@ -511,51 +552,53 @@ namespace workphone
         }
     }
 
-    void XMLSkeletonSerializer::writeKeyFrame( pugi::xml_node &keysNode, const KeyFrameTransform3 *key )
+    void XMLSkeletonSerializer::writeKeyFrame( TiXmlElement *keysNode, const KeyFrameTransform3 *key )
     {
         if( !key )
         {
             return;
         }
 
-        auto keyNode = keysNode.append_child( "keyframe" );
-        keyNode.append_attribute( "time" ) = key->getTime();
+        auto keyNode = appendElement( keysNode, "keyframe" );
+        keyNode->SetDoubleAttribute( "time", key->getTime() );
 
         auto position = key->getPosition();
-        auto translateNode = keyNode.append_child( "translate" );
-        translateNode.append_attribute( "x" ) = position.x;
-        translateNode.append_attribute( "y" ) = position.y;
-        translateNode.append_attribute( "z" ) = position.z;
+        auto translateNode = appendElement( keyNode, "translate" );
+        translateNode->SetDoubleAttribute( "x", position.x );
+        translateNode->SetDoubleAttribute( "y", position.y );
+        translateNode->SetDoubleAttribute( "z", position.z );
 
         auto orientation = key->getOrientation();
-        auto rotationNode = keyNode.append_child( "rotation" );
-        rotationNode.append_attribute( "qw" ) = orientation.w;
-        rotationNode.append_attribute( "qx" ) = orientation.x;
-        rotationNode.append_attribute( "qy" ) = orientation.y;
-        rotationNode.append_attribute( "qz" ) = orientation.z;
+        auto rotationNode = appendElement( keyNode, "rotation" );
+        rotationNode->SetDoubleAttribute( "qw", orientation.w );
+        rotationNode->SetDoubleAttribute( "qx", orientation.x );
+        rotationNode->SetDoubleAttribute( "qy", orientation.y );
+        rotationNode->SetDoubleAttribute( "qz", orientation.z );
 
         auto scale = key->getScale();
-        auto scaleNode = keyNode.append_child( "scale" );
-        scaleNode.append_attribute( "x" ) = scale.x;
-        scaleNode.append_attribute( "y" ) = scale.y;
-        scaleNode.append_attribute( "z" ) = scale.z;
+        auto scaleNode = appendElement( keyNode, "scale" );
+        scaleNode->SetDoubleAttribute( "x", scale.x );
+        scaleNode->SetDoubleAttribute( "y", scale.y );
+        scaleNode->SetDoubleAttribute( "z", scale.z );
     }
 
-    void XMLSkeletonSerializer::writeSkeletonAnimationLink( pugi::xml_node &linksNode,
+    void XMLSkeletonSerializer::writeSkeletonAnimationLink( TiXmlElement *linksNode,
                                                             const LinkedSkeletonAnimationSource &link )
     {
         // Note: Write functionality can be implemented later if needed
     }
 
     void XMLSkeletonSerializer::readSkeletonAnimationLinks( MeshSkeleton *skel,
-                                                            pugi::xml_node &linksNode )
+                                                            const TiXmlElement *linksNode )
     {
         WP_LOG( "XMLSkeletonSerializer: Reading Animation links..." );
 
-        for( pugi::xml_node &linkElem : linksNode.children( "animationlink" ) )
+        for( const TiXmlElement *linkElem = linksNode ? linksNode->FirstChildElement( "animationlink" )
+                                                      : nullptr;
+             linkElem; linkElem = linkElem->NextSiblingElement( "animationlink" ) )
         {
-            String skelName = linkElem.attribute( "skeletonName" ).value();
-            const char *strScale = linkElem.attribute( "scale" ).as_string( NULL );
+            String skelName = getAttribute( linkElem, "skeletonName" );
+            const char *strScale = linkElem->Attribute( "scale" );
             real_Num scale;
             // Scale optional
             if( strScale == 0 )
