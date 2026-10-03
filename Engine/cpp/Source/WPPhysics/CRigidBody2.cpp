@@ -3,7 +3,6 @@
 #include "WPPhysics/CPhysicsManager2D.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Thread/SpinRWMutex.hpp>
-#include "WPEvent/CEventUpdate.hpp"
 
 namespace workphone::physics
 {
