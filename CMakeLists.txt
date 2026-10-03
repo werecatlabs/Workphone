@@ -506,7 +506,7 @@ elseif (UNIX)
     option(WP_BUILD_FMOD "Build fmod" OFF)
 endif()
 
-option(WP_BUILD_FILEWATCHER "build file watcher" ON)
+option(WP_BUILD_FILEWATCHER "build file watcher" OFF)
 
 if (WIN32)
     option(WP_BUILD_EDITOR "Build editor" ON)
