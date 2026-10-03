@@ -18,6 +18,12 @@ namespace workphone
     class WPCore_API IAiManager : public ISharedObject
     {
     public:
+        enum class Provider
+        {
+            Ollama,
+            OpenAI
+        };
+
         /**
          * @brief Virtual destructor.
          */
@@ -42,6 +48,9 @@ namespace workphone
          */
         virtual String query( const String &prompt ) const = 0;
 
+        /** Queries a specific provider without changing the manager's default. */
+        virtual String query( const String &prompt, Provider provider ) const;
+
         /**
          * @brief Processes a structured AI response and applies supported engine actions.
          *
@@ -52,6 +61,9 @@ namespace workphone
          * @return True when at least one valid action was successfully applied to the system.
          */
         virtual bool processResponse( const String &response ) const = 0;
+
+        /** Applies a response once and returns feedback about the actual action results. */
+        virtual String processResponseWithFeedback( const String &response ) const;
 
         WP_CLASS_REGISTER_DECL;
     };

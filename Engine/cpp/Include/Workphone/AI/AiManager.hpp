@@ -10,7 +10,7 @@ namespace workphone
     /**
      * @class AiManager
      * @brief Manages interactions with the AI subsystem, including pathfinding and query processing via
-     * Ollama API.
+     * Ollama and OpenAI Responses APIs.
      */
     class WPCore_API AiManager : public IAiManager
     {
@@ -44,6 +44,8 @@ namespace workphone
          */
         String query( const String &prompt ) const override;
 
+        String query( const String &prompt, Provider provider ) const override;
+
         /**
          * @brief Processes the response received from the AI.
          * @param response The response string to process.
@@ -51,9 +53,15 @@ namespace workphone
          */
         bool processResponse( const String &response ) const override;
 
+        String processResponseWithFeedback( const String &response ) const override;
+
         WP_CLASS_REGISTER_DECL;
 
     protected:
+        /** HTTPS transport; overridable for offline provider regression tests. */
+        virtual bool requestOpenAI( const String &requestBody, String &responseBody, u32 &statusCode,
+                                    String &error ) const;
+
         /**
          * @brief Queries the Ollama API for a response using the first query method.
          * @param prompt The prompt to send to Ollama.

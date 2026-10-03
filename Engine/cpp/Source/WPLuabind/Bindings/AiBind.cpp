@@ -55,7 +55,8 @@ namespace workphone
         module( L )[class_<IAiManager, ISharedObject, SmartPtr<IAiManager>>( "IAiManager" )
                         .def( "getPathfinder2", &IAiManager::getPathfinder2 )
                         .def( "setPathfinder2", &IAiManager::setPathfinder2 )
-                        .def( "query", &IAiManager::query )
+                        .def( "query", static_cast<String ( IAiManager::* )( const String & ) const>(
+                                           &IAiManager::query ) )
                         .def( "processResponse", &IAiManager::processResponse )];
 
         module( L )[class_<IAiScene, ISharedObject, SmartPtr<IAiScene>>( "IAiScene" )

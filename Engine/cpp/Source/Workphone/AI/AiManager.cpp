@@ -9,15 +9,19 @@
 #include <Workphone/Interface/Scene/ITransform.hpp>
 #include <Workphone/Interface/Sound/ISoundManager.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
+#include <cstdlib>
 
 #if WP_USE_BOOST
 #    include <boost/json.hpp>
+#    include <boost/json/basic_parser_impl.hpp>
 #    include <algorithm>
 #    include <cmath>
 #    include <filesystem>
 #    include <fstream>
 #    include <limits>
 #    include <sstream>
+#    include <unordered_set>
+#    include <vector>
 #    if defined _WIN32
 #        include <Windows.h>
 #        include <winhttp.h>
@@ -29,6 +33,10 @@
 #        include <boost/beast/core.hpp>
 #        include <boost/beast/http.hpp>
 #        include <chrono>
+#        if WP_USE_OPENSSL
+#            include <boost/asio/ssl.hpp>
+#            include <boost/beast/ssl.hpp>
+#        endif
 #    endif
 #endif
 
@@ -46,6 +54,7 @@ namespace workphone
         constexpr auto ollamaTimeoutMilliseconds = 120000;
         constexpr size_t maximumControlResponseSize = 256 * 1024;
         constexpr size_t maximumActionsPerResponse = 64;
+        constexpr size_t maximumProviderResponseSize = 1024 * 1024;
 #    if !defined _WIN32
         namespace asio = boost::asio;
         namespace beast = boost::beast;
@@ -82,6 +91,119 @@ namespace workphone
             return String( text.data(), text.size() );
         }
 
+        struct UniqueKeyHandler
+        {
+            static constexpr size_t max_object_size = maximumControlResponseSize;
+            static constexpr size_t max_array_size = maximumControlResponseSize;
+            static constexpr size_t max_key_size = maximumControlResponseSize;
+            static constexpr size_t max_string_size = maximumProviderResponseSize;
+            std::vector<std::unordered_set<std::string>> keys;
+            std::string keyParts;
+
+            bool on_object_begin( boost::system::error_code & )
+            {
+                keys.emplace_back();
+                return true;
+            }
+            bool on_object_end( size_t, boost::system::error_code & )
+            {
+                keys.pop_back();
+                return true;
+            }
+            bool on_key_part( json::string_view part, size_t, boost::system::error_code & )
+            {
+                keyParts.append( part.data(), part.size() );
+                return true;
+            }
+            bool on_key( json::string_view part, size_t, boost::system::error_code &error )
+            {
+                keyParts.append( part.data(), part.size() );
+                const auto unique = keys.back().insert( keyParts ).second;
+                keyParts.clear();
+                if( !unique )
+                    error = json::error::syntax;
+                return unique;
+            }
+            bool on_document_begin( boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_document_end( boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_array_begin( boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_array_end( size_t, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_string_part( json::string_view, size_t, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_string( json::string_view, size_t, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_number_part( json::string_view, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_int64( int64_t, json::string_view, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_uint64( uint64_t, json::string_view, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_double( double, json::string_view, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_bool( bool, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_null( boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_comment_part( json::string_view, boost::system::error_code & )
+            {
+                return true;
+            }
+            bool on_comment( json::string_view, boost::system::error_code & )
+            {
+                return true;
+            }
+        };
+
+        bool parseUniqueJSON( json::string_view text, json::value &value )
+        {
+            boost::system::error_code error;
+            json::parse_options options;
+            options.max_depth = 32;
+            json::basic_parser<UniqueKeyHandler> validator( options );
+            const auto consumed = validator.write_some( false, text.data(), text.size(), error );
+            if( error || !validator.done() || consumed != text.size() )
+                return false;
+            value = json::parse( text, error );
+            return !error;
+        }
+
+        String trimResponseWhitespace( const String &text )
+        {
+            // JSON whitespace is ASCII. Preserve UTF-8 without passing signed bytes to isspace.
+            const auto begin = text.find_first_not_of( " \t\r\n" );
+            if( begin == String::npos )
+                return {};
+            return text.substr( begin, text.find_last_not_of( " \t\r\n" ) - begin + 1 );
+        }
+
         bool parseControlResponse( const String &response, json::object &result )
         {
             if( response.empty() || response.size() > maximumControlResponseSize )
@@ -89,17 +211,53 @@ namespace workphone
                 return false;
             }
 
-            auto begin = response.find( '{' );
-            auto end = response.rfind( '}' );
-            if( begin == String::npos || end == String::npos || end < begin )
-            {
+            auto begin = response.find_first_not_of( " \t\r\n" );
+            auto end = response.find_last_not_of( " \t\r\n" );
+            if( begin == String::npos )
                 return false;
-            }
 
+            // Accept a complete JSON object or one explicitly fenced JSON block.
+            // Never search arbitrary prose for braces and execute what happens to be inside.
+            const auto fence = response.find( "```", begin );
+            if( response[begin] != '{' && fence != String::npos )
+            {
+                const auto lineEnd = response.find( '\n', fence + 3 );
+                if( lineEnd == String::npos )
+                    return false;
+                auto language = response.substr( fence + 3, lineEnd - fence - 3 );
+                language = trimResponseWhitespace( language );
+                if( !language.empty() && language != "json" )
+                    return false;
+                auto close = String::npos;
+                for( auto lineBegin = lineEnd + 1; lineBegin < response.size(); )
+                {
+                    const auto nextLine = response.find( '\n', lineBegin );
+                    const auto length =
+                        nextLine == String::npos ? response.size() - lineBegin : nextLine - lineBegin;
+                    if( trimResponseWhitespace( response.substr( lineBegin, length ) ) == "```" )
+                    {
+                        close = response.find( "```", lineBegin );
+                        break;
+                    }
+                    if( nextLine == String::npos )
+                        break;
+                    lineBegin = nextLine + 1;
+                }
+                if( close == String::npos || response.find( "```", close + 3 ) != String::npos )
+                    return false;
+                const auto prefix = response.substr( 0, fence );
+                const auto suffix = response.substr( close + 3 );
+                if( prefix.find_first_of( "{}[]" ) != String::npos ||
+                    suffix.find_first_of( "{}[]" ) != String::npos )
+                    return false;
+                begin = lineEnd + 1;
+                end = close - 1;
+            }
+            if( end < begin )
+                return false;
             const auto jsonText = json::string_view( response.data() + begin, end - begin + 1 );
-            boost::system::error_code error;
-            auto value = json::parse( jsonText, error );
-            if( error || !value.is_object() )
+            json::value value;
+            if( !parseUniqueJSON( jsonText, value ) || !value.is_object() )
             {
                 return false;
             }
@@ -108,43 +266,20 @@ namespace workphone
             return true;
         }
 
-        String getControlMessage( const String &response )
-        {
-            json::object root;
-            if( !parseControlResponse( response, root ) )
-            {
-                return response;
-            }
-
-            const auto message = root.if_contains( "message" );
-            if( !message || !message->is_string() )
-            {
-                return response;
-            }
-
-            const auto &text = message->as_string();
-            return String( text.data(), text.size() );
-        }
-
         bool getActionName( const json::object &action, json::string_view &name )
         {
-            auto value = action.if_contains( "name" );
-            if( !value )
+            name = {};
+            for( const auto key : { "name", "action", "type" } )
             {
-                value = action.if_contains( "action" );
+                if( const auto value = action.if_contains( key ) )
+                {
+                    if( !value->is_string() || value->as_string().empty() ||
+                        ( !name.empty() && name != value->as_string() ) )
+                        return false;
+                    name = value->as_string();
+                }
             }
-            if( !value )
-            {
-                value = action.if_contains( "type" );
-            }
-
-            if( !value || !value->is_string() )
-            {
-                return false;
-            }
-
-            name = value->as_string();
-            return true;
+            return !name.empty();
         }
 
         bool getActionBool( const json::object &action, bool &value )
@@ -2089,6 +2224,208 @@ launchFlightSimulator()
             return false;
         }
 
+        struct ControlResponseResult
+        {
+            String message;
+            String error;
+            Array<String> failures;
+            size_t applied = 0;
+
+            String feedback() const
+            {
+                if( !error.empty() )
+                    return error + " No engine actions were applied.";
+                if( !failures.empty() )
+                {
+                    String text = "Applied " + StringUtil::toString( applied ) + " of " +
+                                  StringUtil::toString( applied + failures.size() ) + " engine actions.";
+                    for( const auto &failure : failures )
+                        text += "\n" + failure;
+                    return text;
+                }
+                if( message.find_first_not_of( " \t\r\n" ) != String::npos )
+                    return message;
+                return applied ? "Applied " + StringUtil::toString( applied ) +
+                                     ( applied == 1 ? " engine action." : " engine actions." )
+                               : String( "No engine actions requested." );
+            }
+        };
+
+        String validateAction( core::IApplicationManager *applicationManager, const json::object &action,
+                               json::string_view name )
+        {
+            bool supported = false;
+            for( const auto allowed : { "play",
+                                        "stop",
+                                        "pause",
+                                        "resume",
+                                        "set_playing",
+                                        "set_paused",
+                                        "set_running",
+                                        "set_renderer_enabled",
+                                        "set_editor_mode",
+                                        "set_editor_camera",
+                                        "set_pause_menu_active",
+                                        "request_quit",
+                                        "set_master_volume",
+                                        "set_fixed_timestep",
+                                        "create_folder",
+                                        "create_project",
+                                        "set_scene_label",
+                                        "set_scene_state",
+                                        "save_scene",
+                                        "clear_scene",
+                                        "create_actor",
+                                        "destroy_actor",
+                                        "rename_actor",
+                                        "set_actor_enabled",
+                                        "set_actor_visible",
+                                        "set_actor_static",
+                                        "set_actor_smooth_motion",
+                                        "set_actor_collision_mask",
+                                        "set_actor_position",
+                                        "translate_actor",
+                                        "set_actor_rotation",
+                                        "rotate_actor",
+                                        "set_actor_scale",
+                                        "set_actor_transform" } )
+            {
+                if( name == allowed )
+                    supported = true;
+            }
+            if( !supported )
+                return "Unsupported engine action.";
+            for( const auto key : { "confirm", "cascade" } )
+            {
+                if( const auto field = action.if_contains( key ); field && !field->is_bool() )
+                    return String( key ) + " must be a JSON boolean.";
+            }
+            bool value = false;
+            for( const auto booleanAction :
+                 { "set_playing", "set_paused", "set_running", "set_renderer_enabled", "set_editor_mode",
+                   "set_editor_camera", "set_pause_menu_active", "set_actor_enabled",
+                   "set_actor_visible", "set_actor_static", "set_actor_smooth_motion" } )
+            {
+                if( name == booleanAction && !getActionBool( action, value ) )
+                    return "value must be a JSON boolean.";
+            }
+            if( ( name == "request_quit" || name == "clear_scene" || name == "destroy_actor" ||
+                  ( name == "set_running" && !value ) ) &&
+                !isConfirmed( action ) )
+                return "Requires confirm=true.";
+
+            const auto actorAction = name.find( "actor" ) != json::string_view::npos;
+            const auto sceneAction = name == "set_scene_label" || name == "set_scene_state" ||
+                                     name == "save_scene" || name == "clear_scene";
+            if( actorAction || sceneAction )
+            {
+                auto gameManager = applicationManager->getGameManager();
+                auto scene = gameManager ? gameManager->getCurrentScene() : nullptr;
+                if( !scene )
+                    return "No current scene is available.";
+                if( actorAction )
+                {
+                    String actor;
+                    if( !getString( action, "actor", actor ) )
+                        return "actor must be a non-empty name of at most 256 characters.";
+                    const auto exists = scene->findActorByName( actor ) != nullptr;
+                    if( name == "create_actor" && exists )
+                        return "An actor named '" + actor + "' already exists.";
+                    if( name != "create_actor" && !exists )
+                        return "Actor '" + actor + "' was not found.";
+                }
+            }
+            return {};
+        }
+
+        ControlResponseResult processControlResponse( const String &response )
+        {
+            ControlResponseResult result;
+            json::object root;
+            if( !parseControlResponse( response, root ) )
+            {
+                result.error =
+                    "Invalid or ambiguous AI JSON response (including duplicate keys or excessive "
+                    "nesting).";
+                return result;
+            }
+            if( const auto message = root.if_contains( "message" ) )
+            {
+                if( !message->is_string() )
+                {
+                    result.error = "The response message must be text.";
+                    return result;
+                }
+                result.message.assign( message->as_string().data(), message->as_string().size() );
+            }
+            json::array actions;
+            if( const auto entries = root.if_contains( "actions" ) )
+            {
+                if( !entries->is_array() || entries->as_array().size() > maximumActionsPerResponse )
+                {
+                    result.error = "The response actions must be an array with at most 64 entries.";
+                    return result;
+                }
+                actions = entries->as_array();
+            }
+            else if( root.if_contains( "name" ) || root.if_contains( "action" ) ||
+                     root.if_contains( "type" ) )
+            {
+                actions.emplace_back( root );
+            }
+            else if( !root.if_contains( "message" ) )
+            {
+                result.error = "The response has no message or actions.";
+                return result;
+            }
+            if( actions.empty() )
+                return result;
+            auto application = core::IApplicationManager::instancePtr();
+            if( !application )
+            {
+                result.error = "The application manager is unavailable.";
+                return result;
+            }
+            size_t index = 0;
+            for( const auto &entry : actions )
+            {
+                ++index;
+                json::string_view name;
+                String failure;
+                if( !entry.is_object() )
+                    failure = "Action must be a JSON object.";
+                else if( !getActionName( entry.as_object(), name ) )
+                    failure = "Action name is missing, empty, or its name/action/type aliases disagree.";
+                else
+                {
+                    try
+                    {
+                        failure = validateAction( application, entry.as_object(), name );
+                        if( failure.empty() )
+                        {
+                            if( applyControlAction( application, entry.as_object() ) )
+                            {
+                                ++result.applied;
+                                continue;
+                            }
+                            failure =
+                                "Invalid arguments, unavailable engine service, or action could not be "
+                                "completed.";
+                        }
+                    }
+                    catch( const std::exception &exception )
+                    {
+                        WP_LOG_EXCEPTION( exception );
+                        failure = "Engine action threw an exception; changes may be partial.";
+                    }
+                }
+                const auto labelLength = std::min<size_t>( name.size(), 64 );
+                const auto label = name.empty() ? String() : " (" + String( name.data(), labelLength ) + ")";
+                result.failures.emplace_back( "Action " + StringUtil::toString( index ) + label + ": " + failure );
+            }
+            return result;
+        }
+
         String makeControlPrompt( const String &prompt )
         {
             String controlPrompt =
@@ -2157,6 +2494,144 @@ launchFlightSimulator()
             }
 
             return responseText;
+        }
+
+        String openAIHttpError( u32 statusCode )
+        {
+            if( statusCode == 401 || statusCode == 403 )
+            {
+                return "OpenAI authentication or access failed. Check OPENAI_API_KEY and model access.";
+            }
+            if( statusCode == 429 )
+            {
+                return "OpenAI rate limit or quota reached. Check your API usage and billing.";
+            }
+            return "OpenAI request failed (HTTP " + StringUtil::toString( statusCode ) +
+                   "). Check OPENAI_MODEL and your API account.";
+        }
+
+        bool parseOpenAIResponse( const String &body, String &text, String &error )
+        {
+            json::value value;
+            if( body.size() > maximumProviderResponseSize ||
+                !parseUniqueJSON( json::string_view( body.data(), body.size() ), value ) ||
+                !value.is_object() )
+            {
+                error = "OpenAI returned an invalid response.";
+                return false;
+            }
+            const auto &root = value.as_object();
+            if( const auto failure = root.if_contains( "error" ); failure && !failure->is_null() )
+            {
+                error = "OpenAI returned an error. No engine actions were applied.";
+                return false;
+            }
+            const auto status = root.if_contains( "status" );
+            if( !status || !status->is_string() || status->as_string() != "completed" )
+            {
+                error = "OpenAI did not complete the response. No engine actions were applied.";
+                return false;
+            }
+            const auto output = root.if_contains( "output" );
+            if( !output || !output->is_array() )
+            {
+                error = "OpenAI returned no assistant output.";
+                return false;
+            }
+            for( const auto &item : output->as_array() )
+            {
+                if( !item.is_object() )
+                {
+                    continue;
+                }
+                const auto &message = item.as_object();
+                const auto type = message.if_contains( "type" );
+                const auto role = message.if_contains( "role" );
+                const auto content = message.if_contains( "content" );
+                if( !type || !type->is_string() || type->as_string() != "message" || !role ||
+                    !role->is_string() || role->as_string() != "assistant" )
+                {
+                    continue;
+                }
+                if( !content || !content->is_array() )
+                {
+                    error = "OpenAI returned invalid assistant content. No engine actions were applied.";
+                    return false;
+                }
+                if( const auto messageStatus = message.if_contains( "status" );
+                    messageStatus &&
+                    ( !messageStatus->is_string() || messageStatus->as_string() != "completed" ) )
+                {
+                    error =
+                        "OpenAI did not complete the assistant message. No engine actions were applied.";
+                    return false;
+                }
+                for( const auto &part : content->as_array() )
+                {
+                    if( !part.is_object() )
+                    {
+                        error =
+                            "OpenAI returned invalid assistant content. No engine actions were applied.";
+                        return false;
+                    }
+                    const auto &entry = part.as_object();
+                    const auto entryType = entry.if_contains( "type" );
+                    if( !entryType || !entryType->is_string() )
+                    {
+                        error =
+                            "OpenAI returned invalid assistant content. No engine actions were applied.";
+                        return false;
+                    }
+                    if( entryType->as_string() == "refusal" )
+                    {
+                        error = "OpenAI declined this request. No engine actions were applied.";
+                        if( const auto reason = entry.if_contains( "refusal" );
+                            reason && reason->is_string() && !reason->as_string().empty() )
+                        {
+                            const auto &explanation = reason->as_string();
+                            error += "\n" + String( explanation.data(),
+                                                    std::min<size_t>( explanation.size(), 2048 ) );
+                        }
+                        return false;
+                    }
+                    const auto outputText = entry.if_contains( "text" );
+                    if( entryType->as_string() == "output_text" && outputText &&
+                        outputText->is_string() )
+                    {
+                        const auto &fragment = outputText->as_string();
+                        if( fragment.size() > maximumControlResponseSize - text.size() )
+                        {
+                            error =
+                                "OpenAI instructions exceed the response limit. No engine actions were "
+                                "applied.";
+                            return false;
+                        }
+                        text.append( fragment.data(), fragment.size() );
+                    }
+                    else
+                    {
+                        error =
+                            "OpenAI returned unsupported assistant content. No engine actions were "
+                            "applied.";
+                        return false;
+                    }
+                }
+            }
+            json::object control;
+            if( !parseControlResponse( text, control ) )
+            {
+                error = "OpenAI returned invalid engine instructions. No engine actions were applied.";
+                return false;
+            }
+            const auto message = control.if_contains( "message" );
+            const auto actions = control.if_contains( "actions" );
+            if( !message || !message->is_string() || !actions || !actions->is_array() ||
+                actions->as_array().size() > maximumActionsPerResponse )
+            {
+                error = "OpenAI returned invalid engine instructions. No engine actions were applied.";
+                return false;
+            }
+            return true;
         }
 
 #    if defined _WIN32
@@ -2344,55 +2819,241 @@ launchFlightSimulator()
 
     String AiManager::query( const String &prompt ) const
     {
+        const auto provider = std::getenv( "WP_AI_PROVIDER" );
+        return query( prompt,
+                      provider && String( provider ) == "openai" ? Provider::OpenAI : Provider::Ollama );
+    }
+
+    String AiManager::query( const String &prompt, Provider provider ) const
+    {
 #if WP_USE_BOOST
-        const auto response = query_ollama( makeControlPrompt( prompt ) );
-        processResponse( response );
-        return getControlMessage( response );
+        if( prompt.empty() )
+        {
+            return {};
+        }
+        String response;
+        if( provider == Provider::OpenAI )
+        {
+            try
+            {
+                const auto configuredModel = std::getenv( "OPENAI_MODEL" );
+                json::object request;
+                request["model"] = configuredModel && *configuredModel ? configuredModel : "gpt-6.1-sol";
+                request["instructions"] = toJsonString( makeControlPrompt( "" ) );
+                request["input"] = toJsonString( prompt );
+                request["store"] = false;
+                request["stream"] = false;
+                request["reasoning"] = json::object( { { "effort", "medium" } } );
+                request["text"] =
+                    json::object( { { "format", json::object( { { "type", "json_object" } } ) } } );
+
+                String body;
+                String error;
+                u32 statusCode = 0;
+                if( !requestOpenAI( json::serialize( request ), body, statusCode, error ) )
+                {
+                    return error.empty()
+                               ? String( "Could not connect to OpenAI. Check your network connection." )
+                               : error;
+                }
+                if( statusCode < 200 || statusCode >= 300 )
+                {
+                    return openAIHttpError( statusCode );
+                }
+                if( body.size() > maximumProviderResponseSize ||
+                    !parseOpenAIResponse( body, response, error ) )
+                {
+                    return error.empty() ? String( "OpenAI response exceeded the size limit." ) : error;
+                }
+            }
+            catch( const std::exception & )
+            {
+                return "OpenAI request failed. Check your network connection and API configuration.";
+            }
+        }
+        else if( provider == Provider::Ollama )
+        {
+            response = query_ollama( makeControlPrompt( prompt ) );
+            if( response.empty() )
+            {
+                return "Could not query Ollama. Check that the local server and mistral model are "
+                       "available.";
+            }
+        }
+        else
+        {
+            return "Unsupported AI provider.";
+        }
+        return processResponseWithFeedback( response );
 #else
-        return query_ollama( prompt );
+        return "AI queries require a build with Boost enabled.";
+#endif
+    }
+
+    bool AiManager::requestOpenAI( const String &requestBody, String &responseBody, u32 &statusCode,
+                                   String &error ) const
+    {
+#if WP_USE_BOOST
+        const auto key = std::getenv( "OPENAI_API_KEY" );
+        if( !key || !*key )
+        {
+            error = "Set OPENAI_API_KEY before starting the Editor to use ChatGPT Sol.";
+            return false;
+        }
+        const String apiKey( key );
+        if( apiKey.find_first_of( "\r\n" ) != String::npos )
+        {
+            error = "OPENAI_API_KEY contains invalid characters.";
+            return false;
+        }
+#    if defined _WIN32
+        WinHttpHandle session( WinHttpOpen( L"Workphone", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                                            WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0 ) );
+        if( !session )
+        {
+            return false;
+        }
+        WinHttpSetTimeouts( session, ollamaTimeoutMilliseconds, ollamaTimeoutMilliseconds,
+                            ollamaTimeoutMilliseconds, ollamaTimeoutMilliseconds );
+        WinHttpHandle connection(
+            WinHttpConnect( session, L"api.openai.com", INTERNET_DEFAULT_HTTPS_PORT, 0 ) );
+        if( !connection )
+        {
+            return false;
+        }
+        WinHttpHandle request( WinHttpOpenRequest( connection, L"POST", L"/v1/responses", nullptr,
+                                                   WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                                   WINHTTP_FLAG_SECURE ) );
+        DWORD redirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+        if( !request || !WinHttpSetOption( request, WINHTTP_OPTION_REDIRECT_POLICY, &redirectPolicy,
+                                           sizeof( redirectPolicy ) ) )
+        {
+            return false;
+        }
+        const auto headers = StringUtil::toUTF8to16(
+            "Content-Type: application/json\r\nAuthorization: Bearer " + apiKey + "\r\n" );
+        if( !WinHttpSendRequest( request, headers.c_str(), static_cast<DWORD>( headers.size() ),
+                                 const_cast<char *>( requestBody.data() ),
+                                 static_cast<DWORD>( requestBody.size() ),
+                                 static_cast<DWORD>( requestBody.size() ), 0 ) ||
+            !WinHttpReceiveResponse( request, nullptr ) )
+        {
+            return false;
+        }
+        DWORD httpStatus = 0;
+        DWORD statusSize = sizeof( httpStatus );
+        if( !WinHttpQueryHeaders( request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                                  WINHTTP_HEADER_NAME_BY_INDEX, &httpStatus, &statusSize,
+                                  WINHTTP_NO_HEADER_INDEX ) )
+        {
+            return false;
+        }
+        statusCode = httpStatus;
+        if( statusCode < 200 || statusCode >= 300 )
+        {
+            return true;
+        }
+        for( ;; )
+        {
+            DWORD available = 0;
+            if( !WinHttpQueryDataAvailable( request, &available ) )
+            {
+                return false;
+            }
+            if( available == 0 )
+            {
+                return true;
+            }
+            if( available > maximumProviderResponseSize - responseBody.size() )
+            {
+                error = "OpenAI response exceeded the size limit.";
+                return false;
+            }
+            const auto offset = responseBody.size();
+            responseBody.resize( offset + available );
+            DWORD bytesRead = 0;
+            if( !WinHttpReadData( request, responseBody.data() + offset, available, &bytesRead ) )
+            {
+                return false;
+            }
+            responseBody.resize( offset + bytesRead );
+        }
+#    elif WP_USE_OPENSSL
+        asio::io_context context;
+        asio::ssl::context tls( asio::ssl::context::tls_client );
+        tls.set_default_verify_paths();
+        beast::ssl_stream<beast::tcp_stream> stream( context, tls );
+        stream.set_verify_mode( asio::ssl::verify_peer );
+        stream.set_verify_callback( asio::ssl::host_name_verification( "api.openai.com" ) );
+        if( !SSL_set_tlsext_host_name( stream.native_handle(), "api.openai.com" ) )
+        {
+            return false;
+        }
+        tcp::resolver resolver( context );
+        beast::get_lowest_layer( stream ).expires_after( ollamaTimeout );
+        beast::get_lowest_layer( stream ).connect( resolver.resolve( "api.openai.com", "443" ) );
+        stream.handshake( asio::ssl::stream_base::client );
+        http::request<http::string_body> request( http::verb::post, "/v1/responses", 11 );
+        request.set( http::field::host, "api.openai.com" );
+        request.set( http::field::user_agent, "Workphone" );
+        request.set( http::field::content_type, "application/json" );
+        request.set( http::field::authorization, toStdString( "Bearer " + apiKey ) );
+        request.body() = toStdString( requestBody );
+        request.prepare_payload();
+        beast::get_lowest_layer( stream ).expires_after( ollamaTimeout );
+        http::write( stream, request );
+        beast::flat_buffer buffer;
+        http::response_parser<http::string_body> parser;
+        parser.body_limit( maximumProviderResponseSize );
+        beast::get_lowest_layer( stream ).expires_after( ollamaTimeout );
+        http::read( stream, buffer, parser );
+        auto response = parser.release();
+        statusCode = response.result_int();
+        responseBody = response.body();
+        boost::system::error_code shutdownError;
+        stream.shutdown( shutdownError );
+        return true;
+#    else
+        error = "OpenAI HTTPS requires a build with WP_USE_OPENSSL=ON on this platform.";
+        return false;
+#    endif
+#else
+        error = "AI queries require a build with Boost enabled.";
+        return false;
 #endif
     }
 
     bool AiManager::processResponse( const String &response ) const
     {
 #if WP_USE_BOOST
-        json::object root;
-        if( !parseControlResponse( response, root ) )
+        try
         {
+            return processControlResponse( response ).applied > 0;
+        }
+        catch( const std::exception &exception )
+        {
+            WP_LOG_EXCEPTION( exception );
             return false;
         }
-
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        if( !applicationManager )
-        {
-            return false;
-        }
-
-        bool appliedAction = false;
-        if( const auto actions = root.if_contains( "actions" ); actions && actions->is_array() )
-        {
-            if( actions->as_array().size() > maximumActionsPerResponse )
-            {
-                return false;
-            }
-
-            for( const auto &action : actions->as_array() )
-            {
-                if( action.is_object() )
-                {
-                    appliedAction =
-                        applyControlAction( applicationManager, action.as_object() ) || appliedAction;
-                }
-            }
-        }
-        else
-        {
-            appliedAction = applyControlAction( applicationManager, root );
-        }
-
-        return appliedAction;
 #else
         return false;
+#endif
+    }
+
+    String AiManager::processResponseWithFeedback( const String &response ) const
+    {
+#if WP_USE_BOOST
+        try
+        {
+            return processControlResponse( response ).feedback();
+        }
+        catch( const std::exception &exception )
+        {
+            WP_LOG_EXCEPTION( exception );
+            return "AI response processing failed. Engine changes may be partial.";
+        }
+#else
+        return "AI response processing requires a build with Boost enabled.";
 #endif
     }
 
