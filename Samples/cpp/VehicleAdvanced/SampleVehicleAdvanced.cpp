@@ -554,13 +554,13 @@ namespace workphone
         }
         auto lamp = m_assets.materials[size_t( procedural::VehicleMaterialSlot::RainLight )];
         lamp->setEmissive( ColourF( brake > 0 ? 1.f : .15f, .003f, .001f, 1 ) );
-        car->setThrottle( throttle );
-        car->setBrake( brake );
-        car->setSteering( steering );
+        //car->setThrottle( throttle );
+        //car->setBrake( brake );
+        //car->setSteering( steering );
 
-        vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), throttle );
-        vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), brake );
-        vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::STEERING ), steering );
+        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), throttle );
+        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), brake );
+        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::STEERING ), steering );
     }
 
     void SampleVehicleAdvanced::updateWheelVisuals()
