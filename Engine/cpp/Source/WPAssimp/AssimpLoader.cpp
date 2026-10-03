@@ -17,6 +17,7 @@
 #include <Workphone/Mesh/XMLSkeletonSerializer.hpp>
 
 #include <set>
+#include <tinyxml.h>
 
 namespace workphone
 {
@@ -24,6 +25,13 @@ namespace workphone
 
     namespace
     {
+        TiXmlElement *appendElement( TiXmlNode *parent, const char *name )
+        {
+            auto element = new TiXmlElement( name );
+            parent->LinkEndChild( element );
+            return element;
+        }
+
         SmartPtr<scene::Mesh> ensureMeshComponent( SmartPtr<scene::IGameActor> actor,
                                                    const String &meshFilePath,
                                                    SmartPtr<IMeshResource> meshResource )
@@ -2701,9 +2709,9 @@ namespace workphone
             Path::createDirectories( folder );
         }
 
-        pugi::xml_document doc;
-        auto rootNode = doc.append_child( "sceneAnimations" );
-        rootNode.append_attribute( "source" ) = meshPath.c_str();
+        TiXmlDocument doc;
+        auto rootNode = appendElement( &doc, "sceneAnimations" );
+        rootNode->SetAttribute( "source", meshPath.c_str() );
 
         for( const auto &animation : animations )
         {
@@ -2712,11 +2720,11 @@ namespace workphone
                 continue;
             }
 
-            auto animationNode = rootNode.append_child( "animation" );
-            animationNode.append_attribute( "name" ) = animation->getName().c_str();
-            animationNode.append_attribute( "length" ) = animation->getLength();
+            auto animationNode = appendElement( rootNode, "animation" );
+            animationNode->SetAttribute( "name", animation->getName().c_str() );
+            animationNode->SetDoubleAttribute( "length", animation->getLength() );
 
-            auto tracksNode = animationNode.append_child( "tracks" );
+            auto tracksNode = appendElement( animationNode, "tracks" );
             const auto &nodeTracks = animation->_getNodeTrackList();
             for( const auto &trackPair : nodeTracks )
             {
@@ -2726,13 +2734,14 @@ namespace workphone
                     continue;
                 }
 
-                auto trackNode = tracksNode.append_child( "track" );
+                auto trackNode = appendElement( tracksNode, "track" );
                 auto actor = track->getActor();
                 auto actorName = actor ? actor->getName() : track->getPropertyName();
-                trackNode.append_attribute( "actor" ) = actorName.c_str();
-                trackNode.append_attribute( "handle" ) = static_cast<unsigned int>( trackPair.first );
+                trackNode->SetAttribute( "actor", actorName.c_str() );
+                trackNode->SetAttribute(
+                    "handle", std::to_string( static_cast<unsigned int>( trackPair.first ) ).c_str() );
 
-                auto keyFramesNode = trackNode.append_child( "keyframes" );
+                auto keyFramesNode = appendElement( trackNode, "keyframes" );
                 for( u16 keyIdx = 0; keyIdx < track->getNumKeyFrames(); ++keyIdx )
                 {
                     auto keyFrame = workphone::dynamic_pointer_cast<KeyFrameTransform3>(
@@ -2742,32 +2751,32 @@ namespace workphone
                         continue;
                     }
 
-                    auto keyNode = keyFramesNode.append_child( "keyframe" );
-                    keyNode.append_attribute( "time" ) = keyFrame->getTime();
+                    auto keyNode = appendElement( keyFramesNode, "keyframe" );
+                    keyNode->SetDoubleAttribute( "time", keyFrame->getTime() );
 
                     auto position = keyFrame->getPosition();
-                    auto translateNode = keyNode.append_child( "translate" );
-                    translateNode.append_attribute( "x" ) = position.x;
-                    translateNode.append_attribute( "y" ) = position.y;
-                    translateNode.append_attribute( "z" ) = position.z;
+                    auto translateNode = appendElement( keyNode, "translate" );
+                    translateNode->SetDoubleAttribute( "x", position.x );
+                    translateNode->SetDoubleAttribute( "y", position.y );
+                    translateNode->SetDoubleAttribute( "z", position.z );
 
                     auto orientation = keyFrame->getOrientation();
-                    auto rotationNode = keyNode.append_child( "rotation" );
-                    rotationNode.append_attribute( "qw" ) = orientation.w;
-                    rotationNode.append_attribute( "qx" ) = orientation.x;
-                    rotationNode.append_attribute( "qy" ) = orientation.y;
-                    rotationNode.append_attribute( "qz" ) = orientation.z;
+                    auto rotationNode = appendElement( keyNode, "rotation" );
+                    rotationNode->SetDoubleAttribute( "qw", orientation.w );
+                    rotationNode->SetDoubleAttribute( "qx", orientation.x );
+                    rotationNode->SetDoubleAttribute( "qy", orientation.y );
+                    rotationNode->SetDoubleAttribute( "qz", orientation.z );
 
                     auto scale = keyFrame->getScale();
-                    auto scaleNode = keyNode.append_child( "scale" );
-                    scaleNode.append_attribute( "x" ) = scale.x;
-                    scaleNode.append_attribute( "y" ) = scale.y;
-                    scaleNode.append_attribute( "z" ) = scale.z;
+                    auto scaleNode = appendElement( keyNode, "scale" );
+                    scaleNode->SetDoubleAttribute( "x", scale.x );
+                    scaleNode->SetDoubleAttribute( "y", scale.y );
+                    scaleNode->SetDoubleAttribute( "z", scale.z );
                 }
             }
         }
 
-        if( !doc.save_file( animationPath.c_str(), "    " ) )
+        if( !doc.SaveFile( animationPath.c_str() ) )
         {
             WP_LOG_ERROR( "AssimpLoader failed writing scene animation XML file: " + animationPath );
             return;
