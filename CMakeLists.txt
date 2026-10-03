@@ -1,0 +1,635 @@
+cmake_minimum_required(VERSION 3.5)
+#set(CMAKE_USER_MAKE_RULES_OVERRIDE "CMakeRules.cmake")
+
+include(CMake/Mobile.cmake)
+
+if(APPLE AND NOT APPLE_IOS)
+    #set(CMAKE_OSX_DEPLOYMENT_TARGET "10.11" CACHE STRING "Minimum OS X deployment version")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Minimum OS X deployment version")
+endif()
+
+#set(TBB_ROOT_DIR "${CMAKE_SOURCE_DIR}/Dependencies/tbb" CACHE PATH "Path to Intel TBB directory")
+#set(TBB_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/Dependencies/tbb/include" CACHE PATH "Path to Intel TBB include directory")
+
+project(workphone C CXX)
+find_package (Threads REQUIRED)
+include(CMake/Mobile.cmake)
+
+set(WP_ROOT "${CMAKE_SOURCE_DIR}")
+set(WP_ENGINE "${CMAKE_SOURCE_DIR}")
+
+set(WP_Proprietary "${CMAKE_SOURCE_DIR}/../lioncat_proprietary")
+get_filename_component(WP_Proprietary "${WP_Proprietary}" ABSOLUTE)
+
+message(STATUS "  Path: ${WP_Proprietary}")
+
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/CMake")
+
+include(PrecompiledHeader)
+include(Util)
+
+if (WIN32)
+	# This must be called before checking CMAKE_CSharp_COMPILER
+	enable_language(CSharp OPTIONAL)
+endif()
+
+if(UNIX)
+    #include(FindXCB)
+endif()
+
+# determine if we are compiling for a 32bit or 64bit system
+include(CheckTypeSize)
+CHECK_TYPE_SIZE("void*" WP_PTR_SIZE BUILTIN_TYPES_ONLY)
+if (WP_PTR_SIZE EQUAL 8)
+  set(WP_PLATFORM_X64 TRUE)
+  set(WP_ARCH "x64")
+else ()
+  set(WP_PLATFORM_X64 FALSE)
+  set(WP_ARCH "x86")
+endif ()
+
+# determine system endianess
+if (MSVC OR ANDROID OR EMSCRIPTEN OR APPLE_IOS)
+  # This doesn't work on VS 2010
+  # MSVC only builds for intel anyway
+  # all IOS devices are little endian
+  set(WP_TEST_BIG_ENDIAN FALSE)
+else()
+  include(TestBigEndian)
+  test_big_endian(WP_TEST_BIG_ENDIAN)
+endif()
+
+if (WP_TEST_BIG_ENDIAN)
+  set(WP_CONFIG_BIG_ENDIAN 1)
+else ()
+  set(WP_CONFIG_LITTLE_ENDIAN 1)
+endif ()
+
+if(WIN32)
+    set(WP_TOOLSET "v${MSVC_TOOLSET_VERSION}")
+elseif(APPLE)
+    set(WP_TOOLSET "")
+else()
+    set(WP_TOOLSET "")
+endif()
+
+string( TOLOWER "${CMAKE_BUILD_TYPE}" WP_BUILD_TYPE )
+
+set(WP_UNITY3D_VERSION "2021.3.7f1")
+
+option(BUILD_SHARED_LIBS "Build libraries as shared" OFF)
+
+if (WIN32)
+    option(WP_STATIC_LINK_CRT "Build with the crt statically linked" OFF)
+    option(WP_STATIC_LIB "Build the engine as static libraries" OFF)
+else ()
+    option(WP_STATIC_LINK_CRT "Build with the crt statically linked" ON)
+    option(WP_STATIC_LIB "Build the engine as static libraries" ON)
+endif()
+
+if (WIN32)
+	if (CMAKE_GENERATOR MATCHES "Visual Studio")
+		option(WP_USE_PRECOMPILED_HEADERS "Build with precompiled headers" ON)
+    else ()
+        option(WP_USE_PRECOMPILED_HEADERS "Build with precompiled headers" OFF)
+    endif()
+else()
+    option(WP_USE_PRECOMPILED_HEADERS "Build with precompiled headers" OFF)
+endif()
+
+# Disable building of tests
+option(WP_USE_C11 "Build with c11" OFF)
+option(WP_USE_C17 "Build with c17" OFF)
+option(WP_USE_CPP03 "Build with c++03" OFF)
+option(WP_USE_CPP11 "Build with c++11" OFF)
+option(WP_USE_CPP17 "Build with c++17" ON)
+option(WP_USE_CPP20 "Build with c++20" OFF)
+option(WP_USE_CPP23 "Build with c++23" OFF)
+option(WP_USE_CPP26 "Build with c++26" OFF)
+option(WP_USE_WP_STRING "Use the Workphone string implementation" ON)
+option(WP_USE_FORCE_INLINE "Build with force inline" ON)
+option(WP_AUTO_LINK "Build with force inline" OFF)
+option(WP_BUILD_DEPENDENCIES "Build dependencies" OFF)
+option(WP_BUILD_ENGINE "Build engine" ON)
+option(WP_BUILD_SAMPLES "Build samples" ON)
+option(WP_BUILD_PLUGINS "Build plugins" OFF)
+option(WP_BUILD_TESTS "Build tests" ON)
+option(WP_BUILD_TOOLS "Build tools" ON)
+option(WP_REPLACE_MACROS "Builds with macros replaced with code" OFF)
+option(WP_EXCEPTIONS "Builds with exceptions" ON)
+option(WP_DOUBLE_PRECISION "Build DOUBLE_PRECISION" OFF)
+option(WP_ENABLE_TRACE "Build with stack tracing" OFF)
+option(WP_TRACK_REFERENCES "track references" OFF)
+option(WP_TRACK_STRONG_REFERENCES "track strong references" OFF)
+option(WP_TRACK_WEAK_REFERENCES "track weak references" OFF)
+option(WP_USE_MEMORY_POOL "Use memory pool" ON)
+option(WP_USE_HASH32 "Use 32 bit hash (64 bit default)" OFF)
+option(WP_USE_STANDARD_STRING_ALLOCATOR "Use the standard string allocator" ON)
+option(WP_GARBAGE_COLLECTION "garbade collection" ON)
+
+option(WP_USE_OPCODE_LIB "Use the opcode collision library" ON)
+option(WP_USE_PTHREADS "Build with pthreads" OFF)
+option(WP_USE_NGPLANT "ngplant" ON)
+
+if (WIN32)
+	option(WP_BUILD_C "Include C tools in the build" ON)
+else ()
+    option(WP_BUILD_C "Include C tools in the build" OFF)
+endif()
+
+if (WIN32)
+	option(WP_BUILD_CPP "Include C++ tools in the build" ON)
+else ()
+    option(WP_BUILD_CPP "Include C++ tools in the build" OFF)
+endif()
+
+if (WIN32)
+	option(WP_BUILD_CSHARP "Include C# tools in the build" ON)
+else ()
+    option(WP_BUILD_CSHARP "Include C# tools in the build" OFF)
+endif()
+
+if (WIN32 OR APPLE)
+    option(WP_USE_LOCK_FREE_ATOMIC  "Build with lock free atomics" ON)
+else ()
+    option(WP_USE_LOCK_FREE_ATOMIC  "Build with lock free atomics" OFF)
+endif()
+
+if (WIN32)
+    option(WP_USE_HOUDINI "Build with houdini" OFF)
+else()
+    option(WP_USE_HOUDINI "Build with houdini" OFF)
+endif()
+
+if (APPLE)
+    option(WP_BUILD_APPLE_IOS "Build Apple iOS" OFF)
+endif()
+
+option(WP_USE_C_MATH "use c math" ON)
+option(WP_USE_NEON_MATH "use neon math" OFF)
+option(WP_USE_SIMD "use simd" OFF)
+option(WP_RESTRICT_ALIASING "restrict aliasing" ON)
+
+option(WP_ENABLE_MEMORY_TRACKER "Enable memory tracking" OFF)
+option(WP_ENABLE_PROFILER "Enable profiler" OFF)
+option(WP_USE_FIREBLADE_CONTAINERS "Use fireblade replacement containers" OFF)
+option(WP_USE_TBB "Enable tbb" OFF)
+option(WP_USE_ONETBB "Enable one tbb" OFF)
+option(WP_TBB_BUILD_STATIC "Build a static tbb build" ON)
+option(WP_ENABLE_BOOST "Enable boost" ON)
+option(WP_ENABLE_LUA "Enable lua" ON)
+option(WP_ENABLE_PYPY "Enable pypy" OFF)
+option(WP_ENABLE_PYTHON "Enable python" OFF)
+option(WP_ENABLE_ZZIP "Enable zzip" ON)
+option(WP_USE_OPENSSL "Enable open ssl" OFF)
+option(WP_USE_STD_ATOMIC "Use std atomic" OFF)
+option(WP_USE_FREETYPE "Enable freetype" ON)
+option(WP_ENABLE_RAKNET "Use raknet" OFF)
+
+option(WP_BUILD_FINAL "Build final" OFF)
+option(WP_BUILD_EDITOR_PLUGIN "Editor library" OFF)
+option(WP_BUILD_PHYSICS_DEBUG "Build with physics debug code" OFF)
+option(WP_BUILD_MEMORY_DEBUG "Build version 3" OFF)
+option(WP_ENABLE_ACTIVETRANSFORMS "ENABLE_ACTIVETRANSFORMS" ON)
+option(WP_USE_TRANSFORM_THREAD "USE_TRANSFORM_THREAD" ON)
+option(WP_PHYSICS_THREADED "Physics Threaded" ON)
+option(WP_USE_SQL_CODEC "Use sql codec" ON)
+option(WP_ENABLE_MULTITHREADED_INPUT "Enable multithreaded input" OFF)
+
+option(WP_USE_FBXSDK "Use fbx sdk" OFF)
+
+if (WIN32)
+    option(WP_USE_ASSET_IMPORT "Use asset import" ON)
+elseif(APPLE)
+    option(WP_USE_ASSET_IMPORT "Use asset import" ON)
+else()
+    option(WP_USE_ASSET_IMPORT "Use asset import" OFF)
+endif()
+
+option(WP_ENABLE_DEBUG_TRACE "Enable debug check" OFF)
+option(WP_ENABLE_HEAP_DEBUG "Enable memory debug" OFF)
+option(WP_ENABLE_PTR_EXCEPTIONS "Enable pointer exceptions" ON)
+option(WP_ENABLE_THREADING "Build with threading" ON)
+option(WP_PROFILING "Build with profiling enabled" OFF)
+
+if (WIN32)
+    option(WP_EDITOR_TESTS "Build editor with unit tests" ON)
+else()
+    option(WP_EDITOR_TESTS "Build editor with unit tests" OFF)
+endif()
+
+if (WP_EDITOR_TESTS)
+    enable_testing()
+endif()
+
+option(WP_USE_CUSTOM_NEW_DELETE "custom new delete" ON)
+option(WP_OBJECT_ALIGNED_ALLOC "use aligned allocation" ON)
+
+option(WP_CODEC_FREEIMAGE "use free image codec" ON)
+option(WP_CODEC_STBI "use stbi codec" OFF)
+
+option(WP_SUPPRESS_WARNINGS "Suppress compiler warnings" OFF)
+
+# The language-standard options are mutually exclusive within each language.
+# Keeping this validation here prevents CMake from silently choosing one option
+# based on the order of the if/elseif branches.
+set(WP_ENABLED_C_STANDARDS "")
+foreach(WP_C_STANDARD_OPTION IN ITEMS WP_USE_C11 WP_USE_C17)
+    if(${WP_C_STANDARD_OPTION})
+        list(APPEND WP_ENABLED_C_STANDARDS ${WP_C_STANDARD_OPTION})
+    endif()
+endforeach()
+list(LENGTH WP_ENABLED_C_STANDARDS WP_ENABLED_C_STANDARD_COUNT)
+if(WP_ENABLED_C_STANDARD_COUNT GREATER 1)
+    message(FATAL_ERROR
+        "Only one C language standard may be enabled. Enabled options: "
+        "${WP_ENABLED_C_STANDARDS}")
+endif()
+
+if(WP_USE_C17)
+    set(CMAKE_C_STANDARD 17)
+elseif(WP_USE_C11)
+    set(CMAKE_C_STANDARD 11)
+endif()
+
+if(WP_ENABLED_C_STANDARD_COUNT EQUAL 1)
+    set(CMAKE_C_STANDARD_REQUIRED ON)
+    set(CMAKE_C_EXTENSIONS OFF)
+endif()
+
+set(WP_ENABLED_CXX_STANDARDS "")
+
+foreach(WP_CXX_STANDARD_OPTION IN ITEMS
+        WP_USE_CPP03
+        WP_USE_CPP11
+        WP_USE_CPP17
+        WP_USE_CPP20
+        WP_USE_CPP23
+        WP_USE_CPP26)
+    if(${WP_CXX_STANDARD_OPTION})
+        list(APPEND WP_ENABLED_CXX_STANDARDS ${WP_CXX_STANDARD_OPTION})
+    endif()
+endforeach()
+
+list(LENGTH WP_ENABLED_CXX_STANDARDS WP_ENABLED_CXX_STANDARD_COUNT)
+
+if(WP_ENABLED_CXX_STANDARD_COUNT GREATER 1)
+    message(FATAL_ERROR
+        "Only one C++ language standard may be enabled. Enabled options: "
+        "${WP_ENABLED_CXX_STANDARDS}")
+endif()
+
+if(WP_USE_CPP26)
+    set(CMAKE_CXX_STANDARD 26)
+elseif(WP_USE_CPP23)
+    set(CMAKE_CXX_STANDARD 23)
+elseif(WP_USE_CPP20)
+    set(CMAKE_CXX_STANDARD 20)
+elseif(WP_USE_CPP17)
+    set(CMAKE_CXX_STANDARD 17)
+elseif(WP_USE_CPP11)
+    set(CMAKE_CXX_STANDARD 11)
+elseif(WP_USE_CPP03)
+    # CMake uses 98 for the C++98/C++03 language mode.
+    set(CMAKE_CXX_STANDARD 98)
+endif()
+
+if(WP_ENABLED_CXX_STANDARD_COUNT EQUAL 1)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    set(CMAKE_CXX_EXTENSIONS OFF)
+endif()
+
+if (WP_PLATFORM_X64)
+    if (WIN32)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_USE_COLLIBRI "Build collibri" ON)
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        if (WP_GRAPHICS_SYSTEM_OGRENEXT)
+            option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+            option(WP_BUILD_RENDERER_DX11 "Build dx11" ON)
+            option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+            option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+            option(WP_BUILD_RENDERER_GLES2 "Build open gles2" OFF)
+            option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+            option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+        elseif (WP_GRAPHICS_SYSTEM_OGRE)
+            option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+            option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+            option(WP_BUILD_RENDERER_OPENGL "Build open gl" ON)
+            option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+            option(WP_BUILD_RENDERER_GLES2 "Build open gles2" OFF)
+            option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+            option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+		else ()
+            option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+            option(WP_BUILD_RENDERER_DX11 "Build dx11" ON)
+            option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+            option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+            option(WP_BUILD_RENDERER_GLES2 "Build open gles2" OFF)
+            option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+            option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+        endif()
+    elseif (APPLE)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_USE_COLLIBRI "Build collibri" ON)
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        if (WP_GRAPHICS_SYSTEM_OGRENEXT)
+            option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+            option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+            option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+            option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+            option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+            option(WP_BUILD_RENDERER_METAL "Build metal" ON)
+        elseif (WP_GRAPHICS_SYSTEM_OGRE)
+            option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+            option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+            option(WP_BUILD_RENDERER_OPENGL "Build open gl" ON)
+            option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+            option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+            option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+        else ()
+            option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+            option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+            option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+            option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+            option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+            option(WP_BUILD_RENDERER_METAL "Build metal" ON)
+        endif()
+    elseif (ANDROID)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_USE_COLLIBRI "Build collibri" ON)
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+        option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+        option(WP_BUILD_RENDERER_GLES2 "Build open gles2" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" ON)
+        option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+    elseif (UNIX)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_USE_COLLIBRI "Build collibri" ON)
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" ON)
+        option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+        option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+    else ()
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+        option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+        option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+    endif ()
+else () 
+    if (WIN32)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" ON)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" ON)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+        option(WP_BUILD_RENDERER_METAL "Build metal" ON)
+    elseif (APPLE)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+        option(WP_BUILD_RENDERER_METAL "Build metal" ON)
+    elseif (ANDROID)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+        option(WP_BUILD_RENDERER_GL3PLUS "Build open gl 3 plus" OFF)
+        option(WP_BUILD_RENDERER_GLES2 "Build open gles2" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" ON)
+        option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+    elseif (UNIX)
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" ON)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" OFF)
+
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+        option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+    else ()
+        option(WP_GRAPHICS_SYSTEM_CLAW "Build claw" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRE "Build ogre" OFF)
+        option(WP_GRAPHICS_SYSTEM_OGRENEXT "Build ogre next" ON)
+        option(WP_GRAPHICS_SYSTEM_SOFTWARE "Build software renderer" OFF)
+        option(WP_BUILD_RENDERER_NULL "Build null" OFF)
+
+        option(WP_GRAPHICS_SYSTEM_USE_STATIC_LIBS "Use static libraries" OFF)
+
+        option(WP_BUILD_RENDERER_DX9 "Build dx9" OFF)
+        option(WP_BUILD_RENDERER_DX11 "Build dx11" OFF)
+        option(WP_BUILD_RENDERER_OPENGL "Build open gl" OFF)
+        option(WP_BUILD_RENDERER_VULKAN "Build vulkan" OFF)
+        option(WP_BUILD_RENDERER_METAL "Build metal" OFF)
+    endif ()
+endif()
+
+if (WIN32)
+    option(WP_BUILD_OGRENEXT_DEPRECATED "Build ogre next deprecated" OFF)
+elseif (APPLE)
+    option(WP_BUILD_OGRENEXT_DEPRECATED "Build ogre next deprecated" OFF)
+elseif (UNIX)
+    option(WP_BUILD_OGRENEXT_DEPRECATED "Build ogre next deprecated" OFF)
+endif()
+
+option(WP_BUILD_SDL2 "Build sdl2" OFF)
+option(WP_BUILD_CEGUI "Build ce gui" OFF)
+option(WP_BUILD_IMGUI "Build imgui" ON)
+
+if (WIN32)
+    option(WP_BUILD_WXWIDGETS "Build wxwidgets" OFF)
+elseif (APPLE)
+    option(WP_BUILD_WXWIDGETS "Build wxwidgets" OFF)
+elseif (UNIX)
+    option(WP_BUILD_WXWIDGETS "Build wxwidgets" OFF)
+endif()
+
+option(WP_BUILD_OISINPUT "Build ois" ON)
+option(WP_BUILD_DIRECTSHOW "Build direct show" OFF)
+option(WP_BUILD_AUDIO "Build audio" ON)
+
+if (WIN32)
+	option(WP_BUILD_FMOD "Build fmod" OFF)
+elseif (APPLE)
+    option(WP_BUILD_FMOD "Build fmod" OFF)
+elseif (UNIX)
+    option(WP_BUILD_FMOD "Build fmod" OFF)
+endif()
+
+option(WP_BUILD_FILEWATCHER "build file watcher" ON)
+
+if (WIN32)
+    option(WP_BUILD_EDITOR "Build editor" ON)
+elseif (APPLE)
+    option(WP_BUILD_EDITOR "Build editor" ON)
+elseif (UNIX)
+    option(WP_BUILD_EDITOR "Build editor" ON)
+else ()
+    option(WP_BUILD_EDITOR "Build editor" OFF)
+endif ()
+
+option(WP_BUILD_PLUGINS "Build plugins" ON)
+option(WP_BUILD_PLUGIN_AUDIO "Build audio plugin" OFF)
+option(WP_BUILD_PLUGIN_UNITY "Build engine plugin" ON)
+option(WP_BUILD_PLUGIN_UNREAL "Build engine plugin" ON)
+
+option(WP_BUILD_BULLETPHYSICS "Build bullet physics" OFF)
+option(WP_BUILD_ODE "Build ODE physics" OFF)
+option(WP_BUILD_PHYSICS3 "Build physics" ON)
+option(WP_BUILD_PHYSX "Build physx" OFF)
+option(WP_BUILD_PHYSX_4 "Build physx 4" OFF)
+
+option(WP_BUILD_SQLITE "Build sqlite" ON)
+option(WP_BUILD_RESOURCE_SYSTEM "Build the production resource compiler and runtime system" ON)
+
+if(WIN32)
+    option(WP_BUILD_WILDMAGIC5 "Build wild magic 5" OFF)
+elseif (APPLE)
+    option(WP_BUILD_WILDMAGIC5 "Build wild magic 5" OFF)
+elseif(UNIX)
+    option(WP_BUILD_WILDMAGIC5 "Build wild magic 5" OFF)
+else()
+    option(WP_BUILD_WILDMAGIC5 "Build wild magic 5" OFF)
+endif()
+
+option(WP_BUILD_Proprietary "build proprietary" ON)
+
+# Apply public configuration macros consistently to every target, including
+# targets added by the proprietary project. Several of these macros select
+# types that are part of the engine ABI (notably WP_USE_WP_STRING).
+include(cpp_defines)
+
+if(WIN32)
+    if (WP_STATIC_LINK_CRT)
+        set(WP_STATIC_LINK_CRT_TYPE "MT")
+    else()
+        set(WP_STATIC_LINK_CRT_TYPE "MD")
+    endif()
+else()
+    set(WP_STATIC_LINK_CRT_TYPE "")
+endif()
+
+if (WP_USE_HOUDINI)
+    list( APPEND CMAKE_PREFIX_PATH "C:/Program Files/Side Effects Software/Houdini 19.0.498/toolkit/cmake" )
+	find_package( Houdini REQUIRED )
+endif()
+
+if (WIN32)
+	set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})
+	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})
+	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WP_ROOT}/bin/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})
+elseif (ANDROID)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${WP_ROOT}/libs/android/${ANDROID_ABI}/${CMAKE_BUILD_TYPE})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${WP_ROOT}/libs/android/${ANDROID_ABI}/${CMAKE_BUILD_TYPE})
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WP_ROOT}/bin/android/${ANDROID_ABI}/${CMAKE_BUILD_TYPE})
+elseif (APPLE_IOS)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${WP_ROOT}/libs/iOS/${WP_TARGET_ARCH}/${CMAKE_BUILD_TYPE})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${WP_ROOT}/libs/iOS/${WP_TARGET_ARCH}/${CMAKE_BUILD_TYPE})
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WP_ROOT}/bin/iOS/${WP_TARGET_ARCH}/${CMAKE_BUILD_TYPE})
+elseif (APPLE)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${WP_ROOT}/libs/macOS/${CMAKE_BUILD_TYPE})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${WP_ROOT}/libs/macOS/${CMAKE_BUILD_TYPE})
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WP_ROOT}/bin/macOS/${CMAKE_BUILD_TYPE})
+elseif (UNIX)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${WP_ROOT}/libs/linux/${CMAKE_BUILD_TYPE})
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${WP_ROOT}/libs/linux/${CMAKE_BUILD_TYPE})
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${WP_ROOT}/bin/linux/${CMAKE_BUILD_TYPE})
+endif ()
+
+# Use relative paths
+# This is mostly to reduce path size for command-line limits on windows
+if(WIN32)
+  # This seems to break Xcode projects so definitely don't enable on Apple builds
+  #set(CMAKE_USE_RELATIVE_PATHS true)
+  #set(CMAKE_SUPPRESS_REGENERATION true)
+endif()
+
+if (WP_BUILD_DEPENDENCIES)
+    add_subdirectory(Dependencies)
+endif()
+
+if (WP_BUILD_ENGINE)
+    source_group(./Engine Engine)
+    add_subdirectory(Engine)
+endif()
+
+if (WP_BUILD_SAMPLES)
+	add_subdirectory(Samples)
+endif()
+ 
+if (WP_BUILD_TESTS)
+    add_subdirectory(Tests)
+endif()
+
+if (WP_BUILD_TOOLS)
+    add_subdirectory(Scripts)
+    add_subdirectory(Tools)
+endif()
+
+if (WP_BUILD_Proprietary)
+	add_subdirectory("${WP_Proprietary}" "${CMAKE_BINARY_DIR}/Proprietary")
+
+	if (WP_BUILD_PLUGINS)
+		#add_subdirectory("${WP_Proprietary}" "/Plugins")
+	endif()
+	 
+	if (WP_BUILD_TESTS)
+		#add_subdirectory("${WP_Proprietary}" "/Tests")
+	endif()
+endif()
+
+
+
+
