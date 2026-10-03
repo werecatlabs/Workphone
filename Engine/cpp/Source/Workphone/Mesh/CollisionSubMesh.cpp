@@ -276,6 +276,7 @@ namespace workphone
     auto CollisionSubMesh::rayCast( const Vector3<real_Num> &origin, const Vector3<real_Num> &dir,
                                     Array<float> &hits ) -> bool
     {
+#if WP_USE_OPCODE_LIB
         IceMaths::Ray worldRay;
         worldRay.mOrig.x = origin.x;
         worldRay.mOrig.y = origin.y;
@@ -311,6 +312,7 @@ namespace workphone
                 return true;
             }
         }
+#endif
 
         return false;
     }

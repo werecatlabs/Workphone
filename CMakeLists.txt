@@ -127,7 +127,7 @@ option(WP_USE_HASH32 "Use 32 bit hash (64 bit default)" OFF)
 option(WP_USE_STANDARD_STRING_ALLOCATOR "Use the standard string allocator" ON)
 option(WP_GARBAGE_COLLECTION "garbade collection" ON)
 
-option(WP_USE_OPCODE_LIB "Use the opcode collision library" ON)
+option(WP_USE_OPCODE_LIB "Use the opcode collision library" OFF)
 option(WP_USE_PTHREADS "Build with pthreads" OFF)
 option(WP_USE_NGPLANT "ngplant" ON)
 
