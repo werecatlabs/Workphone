@@ -1,0 +1,10 @@
+class 'Object' 
+
+function Object:__init()
+end
+
+function Object:__finalize()
+end
+
+function Object:update()
+end

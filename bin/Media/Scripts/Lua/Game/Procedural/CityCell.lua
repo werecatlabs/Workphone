@@ -1,0 +1,1 @@
+class 'CityCell' (BaseComponent)

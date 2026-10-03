@@ -1,0 +1,56 @@
+{
+	"schemes":	[{
+			"passes":	[{
+					"tint":	{
+						"x":	0,
+						"y":	0,
+						"z":	0,
+						"w":	0
+					},
+					"ambient":	{
+						"x":	0,
+						"y":	0,
+						"z":	0,
+						"w":	0
+					},
+					"diffuse":	{
+						"x":	1,
+						"y":	1,
+						"z":	1,
+						"w":	1
+					},
+					"specular":	{
+						"x":	0,
+						"y":	0,
+						"z":	0,
+						"w":	0
+					},
+					"emmissive":	{
+						"x":	0,
+						"y":	0,
+						"z":	0,
+						"w":	1
+					},
+					"metalness":	0.5,
+					"roughness":	0.5,
+					"uvSet":	0,
+					"textures":	[{
+							"texturePath":	"SaintPetersBasilica.dds",
+							"tiling":	{
+								"x":	0,
+								"y":	0,
+								"z":	0,
+								"w":	0
+							},
+							"offset":	{
+								"x":	0,
+								"y":	0,
+								"z":	0,
+								"w":	0
+							}
+						}],
+					"properties":	[]
+				}]
+		}],
+	"materialType":	7
+}

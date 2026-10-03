@@ -1,0 +1,1 @@
+class 'Drone_Controller' (BaseComponent)

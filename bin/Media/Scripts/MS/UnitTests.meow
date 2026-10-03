@@ -1,0 +1,10 @@
+class 'UnitTests' 
+
+function UnitTests:__init()
+end
+
+function UnitTests:__finalize()
+end
+
+function UnitTests:update()
+end

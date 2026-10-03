@@ -1,0 +1,10 @@
+class 'Application' (RuntimeApplication)
+
+function Application:__init()
+end
+
+function Application:__finalize()
+end
+
+function Application:update(dt)
+end

@@ -1,0 +1,1 @@
+class 'RiverGenerator' (ProceduralObject)

@@ -1,0 +1,1 @@
+class 'SidewalkGroup' (ProceduralObject)

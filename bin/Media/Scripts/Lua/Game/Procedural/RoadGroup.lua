@@ -1,0 +1,1 @@
+class 'RoadGroup' (ProceduralObject)
