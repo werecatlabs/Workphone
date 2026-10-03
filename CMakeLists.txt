@@ -129,7 +129,7 @@ option(WP_GARBAGE_COLLECTION "garbade collection" ON)
 
 option(WP_USE_OPCODE_LIB "Use the opcode collision library" OFF)
 option(WP_USE_PTHREADS "Build with pthreads" OFF)
-option(WP_USE_NGPLANT "ngplant" ON)
+option(WP_USE_NGPLANT "ngplant" OFF)
 
 if (WIN32)
 	option(WP_BUILD_C "Include C tools in the build" ON)

@@ -203,12 +203,8 @@ if (NOT WP_STATIC_LIB)
         if (WP_USE_NGPLANT)
             target_link_libraries(Workphone ngcore.lib)
         endif()
-        
-        target_link_libraries(Workphone opcode.lib)
-        target_link_libraries(Workphone pugixml.lib)
-        target_link_libraries(Workphone simplefilewatcher.lib) 
+         
         target_link_libraries(Workphone tinyxml.lib)   
-        target_link_libraries(Workphone yaml-cpp.lib)
         target_link_libraries(Workphone zlib.lib)
         target_link_libraries(Workphone zzip.lib)
     elseif (APPLE)
