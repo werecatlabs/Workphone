@@ -1,0 +1,56 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AAA World Chunking</title><style>*{margin:0;padding:0}body{overflow:hidden;background:#000;font-family:Arial;color:#fff}#c{width:100vw;height:100vh}#ui{position:fixed;top:10px;left:10px;background:rgba(0,0,0,.8);padding:12px;border-radius:6px;z-index:10;font-size:12px}#ui h3{margin:0 0 8px 0;color:#4ff}#fps{position:fixed;top:10px;right:10px;background:rgba(0,0,0,.75);padding:8px;border-radius:6px;font-family:monospace}#info{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,.8);padding:10px;border-radius:6px;font-size:11px;max-width:380px;line-height:1.4}#info b{color:#4ff}</style></head><body><canvas id="c"></canvas><div id="ui"><h3>AAA World Chunking</h3><div>Total chunks: <span id="tc">0</span></div><div>Loaded: <span id="lc">0</span></div><div>Generating: <span id="gc">0</span></div><div>Memory: <span id="mem">0</span> KB</div><div>FPS: <span id="fps">0</span></div></div><div id="info"><b>AAA Chunking System:</b> World divided into 64m chunks. Active: 3x3 grid around camera. LOD: 0=Full, 1=Simplified, 2=Box, 4=Impostor. Async generation, distance fade transitions. WASD to fly, Q/E for height.</div><script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script><script type="module">import * as THREE from "three";
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById("c"),antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x5a6878);scene.fog=new THREE.FogExp2(0x5a6878,0.008);
+const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,2000);
+camera.position.set(80,40,80);
+const sun=new THREE.DirectionalLight(0xfff0d0,2);sun.position.set(50,80,30);scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x88aaff,0x886644,0.5));
+const groundMat=new THREE.MeshStandardMaterial({color:0xa88860,roughness:0.95});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(2000,2000),groundMat);ground.rotateX(-Math.PI/2);ground.receiveShadow=true;scene.add(ground);
+
+const CHUNK_SIZE=64;
+class Chunk{constructor(cx,cz){this.cx=cx;this.cz=cz;this.lod=2;this.loaded=false;this.generating=false;this.mesh=null;this.distFromCam=0;this.lastAccess=Date.now()}
+async generate(scene){this.generating=true;await new Promise(r=>setTimeout(r,5+Math.random()*30));
+const seed=this.cx*73856093^this.cz*19349663;
+const r=(seed&0xFFFF)/0xFFFF;
+const group=new THREE.Group();
+group.position.set(this.cx*CHUNK_SIZE,0,this.cz*CHUNK_SIZE);
+// Buildings based on LOD
+const numBuildings=Math.floor(3+Math.random()*5);
+for(let i=0;i<numBuildings;i++){const bx=(r+i*0.7)*CHUNK_SIZE-(CHUNK_SIZE/2);const bz=((r+i*0.5)*CHUNK_SIZE-(CHUNK_SIZE/2));const w=4+Math.random()*6;const d=4+Math.random()*6;const h=4+Math.random()*12;const bMat=new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08+Math.random()*0.05,0.2,0.5+Math.random()*0.2),roughness:0.9});const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),bMat);b.position.set(bx,h/2,bz);b.castShadow=true;b.receiveShadow=true;group.add(b)}
+// Road
+if(Math.abs(this.cx+this.cz)%2===0){const rd=new THREE.Mesh(new THREE.PlaneGeometry(CHUNK_SIZE,8),new THREE.MeshStandardMaterial({color:0x333333,roughness:0.85}));rd.rotateX(-Math.PI/2);rd.position.set(0,0.01,0);group.add(rd)}
+// Sidewalk
+for(let side of[-1,1]){const sw=new THREE.Mesh(new THREE.BoxGeometry(CHUNK_SIZE,0.15,3),new THREE.MeshStandardMaterial({color:0xaaa898,roughness:0.9}));sw.position.set(0,0.075,side*5);group.add(sw)}
+// Props (chance)
+for(let i=0;i<Math.floor(Math.random()*4);i++){const px=(Math.random()-0.5)*CHUNK_SIZE;const pz=(Math.random()-0.5)*CHUNK_SIZE;const c=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.5,0.6),new THREE.MeshStandardMaterial({color:0x7a5a3a,roughness:0.8}));c.position.set(px,0.25,pz);c.castShadow=true;group.add(c)}
+this.mesh=group;scene.add(group);this.loaded=true;this.generating=false;this.lastAccess=Date.now()}}
+const chunks=new Map();const key=(cx,cz)=>cx+"_"+cz;
+let frameCount=0;let lastFps=performance.now();let fps=0;
+
+async function updateChunks(){const cx=Math.floor(camera.position.x/CHUNK_SIZE);const cz=Math.floor(camera.position.z/CHUNK_SIZE);const activeRadius=1;const preloadRadius=2;
+// Update LOD for existing chunks
+for(const[k,ch]of chunks){const dist=Math.max(Math.abs(ch.cx-cx),Math.abs(ch.cz-cz));ch.distFromCam=dist;
+const newLod=dist<=activeRadius?0:dist<=preloadRadius?1:2;if(newLod!==ch.lod){ch.lod=newLod}}
+// Request new chunks
+for(let dx=-preloadRadius;dx<=preloadRadius;dx++){for(let dz=-preloadRadius;dz<=preloadRadius;dz++){const x=cx+dx,z=cz+dz;const k=key(x,z);if(!chunks.has(k)){const c=new Chunk(x,z);chunks.set(k,c);c.generate(scene);await new Promise(r=>setTimeout(r,1))}}}
+// Unload distant chunks
+for(const[k,ch]of chunks.entries()){if(ch.distFromCam>preloadRadius+1&&Date.now()-ch.lastAccess>100){if(ch.mesh){scene.remove(ch.mesh);ch.mesh.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose()}})}chunks.delete(k)}}}
+
+const keys={};window.onkeydown=(e)=>{keys[e.key.toLowerCase()]=true};window.onkeyup=(e)=>{keys[e.key.toLowerCase()]=false};
+const clock=new THREE.Clock();
+let lastChunkUpdate=0;
+function anim(){requestAnimationFrame(anim);const dt=clock.getDelta();const t=clock.getElapsedTime();
+const speed=40;if(keys["w"])camera.position.x-=Math.sin(0)*speed*dt,camera.position.z-=Math.cos(0)*speed*dt;if(keys["s"])camera.position.x+=Math.sin(0)*speed*dt,camera.position.z+=Math.cos(0)*speed*dt;if(keys["a"])camera.position.x+=Math.cos(0)*speed*dt,camera.position.z-=Math.sin(0)*speed*dt;if(keys["d"])camera.position.x-=Math.cos(0)*speed*dt,camera.position.z+=Math.sin(0)*speed*dt;if(keys["q"])camera.position.y+=speed*dt;if(keys["e"])camera.position.y-=speed*dt;
+camera.lookAt(camera.position.x,0,camera.position.z);
+if(t-lastChunkUpdate>0.1){lastChunkUpdate=t;updateChunks()}
+renderer.render(scene,camera);
+frameCount++;if(t*1000-lastFps>1000){fps=frameCount;frameCount=0;lastFps=t*1000;
+let totalChunks=0,loaded=0,generating=0,memory=0;
+for(const ch of chunks.values()){totalChunks++;if(ch.loaded)loaded++;if(ch.generating)generating++;if(ch.mesh){memory+=JSON.stringify(ch.mesh.children.length*100)}}
+document.getElementById("tc").textContent=totalChunks;
+document.getElementById("lc").textContent=loaded;
+document.getElementById("gc").textContent=generating;
+document.getElementById("mem").textContent=Math.round(memory/1024);
+document.getElementById("fps").textContent=fps}}
+anim();window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}

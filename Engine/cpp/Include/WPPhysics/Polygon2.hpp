@@ -1,0 +1,20 @@
+#ifndef _Polygon2d_H
+#define _Polygon2d_H
+
+#include "WPPhysics/WPPhysicsPrerequisites.hpp"
+#include <Workphone/Interface/Physics/IPhysicsShape2.hpp>
+#include <Workphone/Math/Polygon2.hpp>
+
+namespace workphone::physics
+{
+    class Polygon2d : public IPhysicsShape2
+    {
+    public:
+    private:
+        Polygon2F m_polygon;
+    };
+} // namespace workphone::physics
+
+// end namespace
+
+#endif

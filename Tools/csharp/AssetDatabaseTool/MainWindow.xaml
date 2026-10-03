@@ -1,0 +1,575 @@
+﻿<Window x:Class="fb.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:d3="clr-namespace:InteractiveDataDisplay.WPF;assembly=InteractiveDataDisplay.WPF"
+        xmlns:local="clr-namespace:fb"
+        mc:Ignorable="d"
+        Title="Asset Database" Height="450" Width="800">
+
+    <Window.Resources>
+        <local:VisibilityToCheckedConverter x:Key="VisibilityToCheckedConverter"/>
+    </Window.Resources>
+
+    <Grid VerticalAlignment="Stretch">
+        <DockPanel>
+            <Menu DockPanel.Dock="Top">
+                <MenuItem Header="_File">
+                    <MenuItem Header="_Open" Click="Open_Click" />
+                    <Separator />
+                    <MenuItem Header="_Exit" Click="Exit_Click" />
+                </MenuItem>
+                <MenuItem Header="Resources">
+		                <MenuItem Header="Add">
+			                <MenuItem Header="Render">
+												<MenuItem Header="Material" Click="AddTexture_Click" />
+												<MenuItem Header="Mesh" Click="AddMesh_Click" />
+			                </MenuItem>
+			                <MenuItem Header="Physics">
+												<MenuItem Header="Rigidbody" Click="AddMaterial_Click" />
+												<MenuItem Header="Constraint" Click="AddTexture_Click" />
+			                </MenuItem>
+		                </MenuItem>
+		                <MenuItem Header="Add Resource Group" Click="AddComponentGroup_Click" />
+                    <Separator />
+                    <MenuItem Header="Add Group Resource" Click="AddGroupToComponent_Click" />
+                    <MenuItem Header="Remove Group Resource" Click="RemoveGroupToComponent_Click" />
+                </MenuItem>
+                <MenuItem Header="Objects">
+										<MenuItem Header="Add">
+											<MenuItem Header="Render">
+												<MenuItem Header="Light" Click="AddMaterial_Click" />
+											</MenuItem>
+											<MenuItem Header="Terrain">
+												<MenuItem Header="Island Terrain" Click="AddMaterial_Click" />
+											</MenuItem>
+											<MenuItem Header="Vehicle">
+												<MenuItem Header="Car" Click="AddMaterial_Click" />
+												<MenuItem Header="Drone" Click="AddTexture_Click" />
+												<MenuItem Header="Helicopter" Click="AddTexture_Click" />
+												<MenuItem Header="Plane" Click="AddTexture_Click" />
+												<MenuItem Header="Truck" Click="AddTexture_Click" />
+											</MenuItem>
+										</MenuItem>
+		                <MenuItem Header="Add Node" Click="AddChildNode_Click" />
+                    <MenuItem Header="Delete Node" Click="DeleteNode_Click" />
+                    <Separator />
+                    <MenuItem Header="Add Component" Click="AddComponent_Click" />
+                    <MenuItem Header="Remove Component" Click="RemoveComponent_Click" />
+                    <Separator />
+                    <MenuItem Header="Set Component Type" Click="SetComponentType_Click" />
+                    <Separator />
+                    <MenuItem Header="Add Group" Click="AddGroup_Click" />
+                    <MenuItem Header="Remove Group" Click="RemoveGroup_Click" />
+                    <Separator />
+                    <MenuItem Header="Cache Model Data" Click="CacheModelData_Click" />
+                    <Separator />
+                    <MenuItem Header="Clone Model" Click="CloneModel_Click" />
+                    <Separator />
+                    <MenuItem Header="Import Model" Click="ImportModel_Click" />
+                    <MenuItem Header="Export Model" Click="ExportModel_Click" />
+                    <Separator />
+                    <MenuItem Header="Copy Model From Other" Click="CopyModelFromOther_Click" />
+                    <MenuItem Header="Clone Model From Other" Click="CloneModelFromOther_Click" />
+                    <Separator />
+                    <MenuItem Header="Setup Config" Click="FWSetupConfig_Click" />
+                    <MenuItem Header="Copy All Model Data" Click="CopyWingData_Click" />
+                    <MenuItem Header="Copy Model Data" Click="CopyAllFixedWingData_Click" />
+                    <MenuItem Header="Mirror Model Data" Click="MirrorWingData_Click" />
+                </MenuItem>
+                <!--MenuItem Header="Transmitters">
+                    <MenuItem Header="Add Transmitter" Click="AddTransmitter_Click" />
+                </MenuItem-->
+                <MenuItem Header="Help">
+                    <MenuItem Header="Support" Click="HelpSupport_Click" />
+                    <MenuItem Header="Bug Reports" Click="HelpSupport_Click" />
+                    <MenuItem Header="Documentation" Click="HelpSupport_Click" />
+                </MenuItem>
+            </Menu>
+            <TextBox AcceptsReturn="True" />
+            <TabControl Name="MainTab" VerticalAlignment="Stretch">
+                <TabItem x:Name="___TabItem___Models_" Header="Objects">
+                    <Grid Background="#FFE5E5E5" VerticalAlignment="Stretch">
+                        <Grid.Resources >
+                            <Style TargetType="Border" >
+                                <Setter Property="Padding" Value="5,5,5,5" />
+                            </Style>
+                        </Grid.Resources>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="5*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Column="0">
+                            <DataGrid Name="modelsData" AutoGenerateColumns="False" SelectionChanged="ModelsData_SelectionChanged" Grid.Column="0" VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Model Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Model Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="1">
+                            <DataGrid Name="modelAttribs" AutoGenerateColumns="False" Grid.Column="1" CellEditEnding="modelAttribs_CellEditEnding">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Clone"  Click="ModelAttribsClone_Click" />
+                                        <MenuItem Header="Delete" Click="ModelAttribsDelete_Click" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" />
+                                    <DataGridTextColumn Header="Ref Component Id" Binding="{Binding RefComponentId}" />
+                                    <DataGridTextColumn Header="Model Id" Binding="{Binding ModelId}" />
+                                    <DataGridTextColumn Header="Configured Model Id" Binding="{Binding ConfiguredModelId}" />
+                                    <DataGridTextColumn Header="Applied" Binding="{Binding Applied}" />                                    
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Object Components">
+                    <Grid Background="#FFE5E5E0">
+                        <Grid.Resources >
+                            <Style TargetType="Border" >
+                                <Setter Property="Padding" Value="5,5,5,5" />
+                            </Style>
+                        </Grid.Resources>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="5*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="10*"/>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Column="0">
+                            <DataGrid Name="modelObjectModels" AutoGenerateColumns="False" SelectionChanged="ModelObjectsModels_SelectionChanged" CellEditEnding="ModelObjectsModels_CellEditEnding"  VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Model Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Model Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="1">
+                            <DataGrid Name="modelObjects" AutoGenerateColumns="False" Grid.Column="1" SelectionChanged="ModelObjects_SelectionChanged" CellEditEnding="ModelObjects_CellEditEnding">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Clone"  Click="EditCloneObject_Click" />
+                                        <MenuItem Header="Delete" Click="EditDeleteObject_Click" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="ModelId" Binding="{Binding ModelId}" />
+                                    <DataGridTextColumn Header="Class" Binding="{Binding Class}">
+                                        <!--
+                                        <DataGridTextColumn.ElementStyle>
+                                           
+                                            <Style TargetType="{x:Type TextBlock}">
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="wing_data">
+                                                        <Setter Property="Background" Value="LightGreen"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="wheel_data">
+                                                        <Setter Property="Background" Value="LightGray"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="control_surface_data">
+                                                        <Setter Property="Background" Value="LightBlue"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="rigidbody">
+                                                        <Setter Property="Background" Value="LightCyan"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="constraint">
+                                                        <Setter Property="Background" Value="LightSkyBlue"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="prop_wash_data">
+                                                        <Setter Property="Background" Value="LightGoldenrodYellow"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="model_data">
+                                                        <Setter Property="Background" Value="LightSalmon"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                            
+                                        </DataGridTextColumn.ElementStyle>
+                                            -->
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Ident" Binding="{Binding Ident}" />
+                                    <DataGridTextColumn Header="GroupType" Binding="{Binding GroupType}" />
+                                    <DataGridTextColumn Header="OriginalId" Binding="{Binding OriginalId}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="2">
+                            <DataGrid Name="objectAttribs" AutoGenerateColumns="False" Grid.Column="2" CellEditEnding="ModelObjectsAttribs_CellEditEnding">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Clone"  Click="EditCloneObjectAttrib_Click" />
+                                        <MenuItem Header="Delete" Click="EditDeleteObjectAttrib_Click" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="ObjectId" Binding="{Binding ObjectId}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="1" Grid.Row="1">
+                            <Button Content="Copy Wing Data" HorizontalAlignment="Center" Margin="0,0,0,0"  VerticalAlignment="Center" Width="120" Click="CopyWingData_Click"/>
+                        </Border>
+                        <Border Grid.Column="2" Grid.Row="1">
+                            <Button Content="Copy All Fixed Wing Data" HorizontalAlignment="Center" Margin="-200,0,0,0" VerticalAlignment="Center" Width="200" Click="CopyAllFixedWingData_Click" />
+                        </Border>
+                        <Border Grid.Column="2" Grid.Row="1">
+                            <Button Content="Mirror Wing Data" HorizontalAlignment="Center" Margin="200,0,0,0" VerticalAlignment="Center" Width="200" Click="MirrorWingData_Click" />
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Resources">
+                    <Grid Background="#FFE5E5E0">
+                        <Grid.Resources >
+                            <Style TargetType="Border" >
+                                <Setter Property="Padding" Value="5,5,5,5" />
+                            </Style>
+                        </Grid.Resources>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="5*" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="2*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Column="0">
+                            <DataGrid Name="refComponents" AutoGenerateColumns="False" SelectionChanged="RefComponents_SelectionChanged" CellEditEnding="ModelObjectsModels_CellEditEnding"  VerticalAlignment="Stretch">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Clone"  Click="RefComponentsClone_Click" />
+                                        <MenuItem Header="Delete" Click="RefComponentsDelete_Click" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Title}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="1">
+                            <DataGrid Name="refAttribs" AutoGenerateColumns="False" Grid.Column="1" SelectionChanged="RefAttribs_SelectionChanged" CellEditEnding="RefAttribs_CellEditEnding">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Clone"  Click="RefAttribsClone_Click" />
+                                        <MenuItem Header="Delete" Click="RefAttribsDelete_Click" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Title" Binding="{Binding Name}" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" />
+                                    <DataGridTextColumn Header="RefComponentId" Binding="{Binding RefComponentId}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="2">
+                            <DataGrid Name="componentGroups" AutoGenerateColumns="False" Grid.Column="2" CellEditEnding="ModelObjectsAttribs_CellEditEnding">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="3">
+                            <DataGrid Name="allComponentGroups" AutoGenerateColumns="False" Grid.Column="2" CellEditEnding="ModelObjectsAttribs_CellEditEnding">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                    <DataGridTextColumn Header="GroupType" Binding="{Binding GroupType}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Object Setup">
+                    <Grid Background="#FFE5E5E0">
+                        <Grid.Resources >
+                            <Style TargetType="Border" >
+                                <Setter Property="Padding" Value="5,5,5,5" />
+                            </Style>
+                        </Grid.Resources>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="5*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Column="0">
+                            <DataGrid Name="modelComponentsModels" AutoGenerateColumns="False" SelectionChanged="ModelComponentsModels_SelectionChanged" CellEditEnding="ModelObjectsModels_CellEditEnding"  VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Model Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Model Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="1">
+                            <DataGrid Name="modelConfigComponents" AutoGenerateColumns="False" Grid.Column="1" SelectionChanged="ModelConfigComponents_SelectionChanged" CellEditEnding="ModelConfigComponents_CellEditEnding">
+
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="2">
+                            <DataGrid Name="modelConfigAttribs" AutoGenerateColumns="False" Grid.Column="2" CellEditEnding="ModelConfigAttribs_CellEditEnding">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" />
+                                    <DataGridTextColumn Header="ModelId" Binding="{Binding ModelId}" />
+                                    <DataGridTextColumn Header="ConfiguredModelId" Binding="{Binding ConfiguredModelId}" />
+                                    <DataGridTextColumn Header="Applied" Binding="{Binding Applied}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <TabItem x:Name="___TabItem___ConfiguredModels_" Header="Object Tree">
+                    <Grid Background="#FFE5E5E5" VerticalAlignment="Stretch">
+                        <Grid.Resources >
+                            <Style TargetType="Border" >
+                                <Setter Property="Padding" Value="5,5,5,5" />
+                            </Style>
+                        </Grid.Resources>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="4*" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="1*" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="20*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Column="0" Grid.Row="0">
+                            <TextBox Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" Margin="0,0,0,0" TextWrapping="WrapWithOverflow" Text="All Models (configured_actors)" VerticalAlignment="Stretch" />
+                        </Border>
+                        <Border Grid.Column="0" Grid.Row="1">
+                            <DataGrid Name="ConfiguredModelsData" AutoGenerateColumns="False" SelectionChanged="ConfiguredModelsModelsData_SelectionChanged" VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Model Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Model Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="1" Grid.Row="0">
+                            <TextBox Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" Margin="0,0,0,0" TextWrapping="WrapWithOverflow" Text="Selected Model (configured_actors)" VerticalAlignment="Stretch" />
+                        </Border>
+                        <Border Grid.Column="1" Grid.Row="1">
+                            <DataGrid Name="ConfiguredModelsModelAttribs" AutoGenerateColumns="False" SelectionChanged="ConfiguredModelsAttribs_SelectionChanged"  CellEditEnding="ConfiguredModelsAttribs_CellEditEnding">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="id" Binding="{Binding id}" />
+                                    <DataGridTextColumn Header="parent_id" Binding="{Binding parent_id}" />
+                                    <DataGridTextColumn Header="name" Binding="{Binding name}" />
+                                    <DataGridTextColumn Header="ref_component_id" Binding="{Binding ref_component_id}" />
+                                    <DataGridTextColumn Header="lft" Binding="{Binding lft}" />
+                                    <DataGridTextColumn Header="rgt" Binding="{Binding rgt}" />
+                                    <DataGridTextColumn Header="data" Binding="{Binding data}" />
+                                    <DataGridTextColumn Header="type" Binding="{Binding type}" />
+                                    <DataGridTextColumn Header="index" Binding="{Binding index}" />
+
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+
+                        <Border Grid.Column="2" Grid.Row="0">
+                            <TextBox Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" Margin="0,0,0,0" TextWrapping="WrapWithOverflow" Text="Group Components (ref_components)" VerticalAlignment="Stretch" />
+                        </Border>
+                        <Border Grid.Column="2" Grid.Row="1">
+                            <DataGrid Name="ConfiguredModelsComponents" AutoGenerateColumns="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+
+                        <Border Grid.Column="3" Grid.Row="0">
+                            <TextBox Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" Margin="0,0,0,0" TextWrapping="WrapWithOverflow" Text="Groups (component_groups)" VerticalAlignment="Stretch" />
+                        </Border>
+                        <Border Grid.Column="3" Grid.Row="1">
+                            <DataGrid Name="ConfiguredModelsGroups" AutoGenerateColumns="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+
+                        <Border Grid.Column="4" Grid.Row="0">
+                            <TextBox Background="Transparent" BorderThickness="0" HorizontalAlignment="Stretch" Margin="0,0,0,0" TextWrapping="WrapWithOverflow" Text="All Groups (component_groups)" VerticalAlignment="Stretch" />
+                        </Border>
+                        <Border Grid.Column="4" Grid.Row="1">
+                            <DataGrid Name="ConfiguredModelsAllGroups" AutoGenerateColumns="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" />
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+
+                        <Border Grid.Column="0" Grid.Row="1">
+                        </Border>
+                        <Border Grid.Column="1" Grid.Row="1">
+                        </Border>
+                        <Border Grid.Column="2" Grid.Row="1">
+                        </Border>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Sql">
+                    <Grid Background="#FFE5E5E5" VerticalAlignment="Stretch">
+                        <Grid.Resources >
+                            <Style TargetType="Border" >
+                                <Setter Property="Padding" Value="5,5,5,5" />
+                            </Style>
+                        </Grid.Resources>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="8*"/>
+                            <RowDefinition Height="3*"/>
+                            <RowDefinition Height="1*"/>
+                            <RowDefinition Height="1*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Column="0" Grid.Row="0">
+                            <RichTextBox Name="SqlText" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"/>
+                        </Border>
+                        <Border Grid.Column="0" Grid.Row="1">
+                            <DataGrid Name="SqlResults" AutoGenerateColumns="False" VerticalAlignment="Stretch">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" />
+                                    <DataGridTextColumn Header="Value" Binding="{Binding Value}" />
+                                </DataGrid.Columns>
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Details}" Margin="10" />
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+                            </DataGrid>
+                        </Border>
+                        <Border Grid.Column="0" Grid.Row="2">
+                            <TextBox Name="SqlTextResults" VerticalAlignment="Stretch" HorizontalAlignment="Stretch"/>
+                        </Border>
+                        <Border Grid.Column="0" Grid.Row="3">
+                            <Button Content="Execute Sql" HorizontalAlignment="Center" Margin="0,0,0,0"  VerticalAlignment="Center" Width="120" Click="ExecuteSql_Click"/>
+                        </Border>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+
+        </DockPanel>
+    </Grid>
+</Window>

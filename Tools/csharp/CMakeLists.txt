@@ -1,0 +1,5 @@
+if(WIN32 AND "${CMAKE_GENERATOR}" MATCHES "Visual Studio" AND WP_CSHARP)
+    add_subdirectory(./FolderStructure)
+    add_subdirectory(./AssetDatabaseTool)
+	add_subdirectory(./LuaDebuggerVsix)
+endif()

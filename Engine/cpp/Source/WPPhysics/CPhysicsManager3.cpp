@@ -1,0 +1,2108 @@
+#include <WPPhysics/WPPhysicsPCH.hpp>
+#include <WPPhysics/CBoxShape3.hpp>
+#include <WPPhysics/CPhysicsManager3.hpp>
+#include <WPPhysics/CPhysicsMaterial3.hpp>
+#include <WPPhysics/CPhysicsShape3.hpp>
+#include <WPPhysics/CMeshShape3.hpp>
+#include <WPPhysics/CPlaneShape3.hpp>
+#include <WPPhysics/CRigidDynamic3.hpp>
+#include <WPPhysics/CRigidStatic3.hpp>
+#include <WPPhysics/CPhysicsScene3.hpp>
+#include <WPPhysics/CSphereShape3.hpp>
+#include <WPPhysics/CTerrainShape3.hpp>
+#include <Workphone/Workphone.hpp>
+#include <Workphone/Physics/CapsuleController.hpp>
+#include <Workphone/Physics/ConstraintD6.hpp>
+#include <Workphone/Physics/ConstraintDrive.hpp>
+#include <Workphone/Physics/ConstraintFixed3.hpp>
+#include <Workphone/Physics/RaycastHit.hpp>
+#include <Workphone/Interface/Physics/IPhysicsVehicleWheel3.hpp>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <stdexcept>
+
+extern "C"
+{
+#include <WorkphonePhysics/workphone_physics_constraint.h>
+}
+
+namespace workphone::physics
+{
+    namespace
+    {
+        template <class TBase>
+        class CPhysicsConstraint3Base : public TBase
+        {
+        public:
+            explicit CPhysicsConstraint3Base( wp_constraint_type type ) :
+                m_constraint( wp_constraint_create( type ) )
+            {
+                if( !m_constraint )
+                {
+                    throw std::runtime_error( "Failed to create a WPPhysics constraint." );
+                }
+            }
+
+            ~CPhysicsConstraint3Base() override
+            {
+                wp_constraint_destroy( m_constraint );
+                m_constraint = nullptr;
+            }
+
+            void load( SmartPtr<ISharedObject> ) override
+            {
+                this->setLoadingState( LoadingState::Loaded );
+            }
+
+            void unload( SmartPtr<ISharedObject> ) override
+            {
+                m_bodyA = nullptr;
+                m_bodyB = nullptr;
+                wp_constraint_set_body_a( m_constraint, nullptr );
+                wp_constraint_set_body_b( m_constraint, nullptr );
+                this->setLoadingState( LoadingState::Unloaded );
+            }
+
+            SmartPtr<IPhysicsBody3> getBodyA() const override
+            {
+                return m_bodyA;
+            }
+
+            void setBodyA( SmartPtr<IPhysicsBody3> body ) override
+            {
+                m_bodyA = body;
+                wp_constraint_set_body_a( m_constraint, getNativeBody( body ) );
+            }
+
+            SmartPtr<IPhysicsBody3> getBodyB() const override
+            {
+                return m_bodyB;
+            }
+
+            void setBodyB( SmartPtr<IPhysicsBody3> body ) override
+            {
+                m_bodyB = body;
+                wp_constraint_set_body_b( m_constraint, getNativeBody( body ) );
+            }
+
+            void setLocalPose( JointActorIndexEnum         actor,
+                               const Transform3<real_Num> &localPose ) override
+            {
+                const auto index = static_cast<wp_s32>( actor );
+                if( index < 0 || index >= 2 )
+                {
+                    WP_LOG_WARNING( "CPhysicsConstraint3Base::setLocalPose: invalid actor index." );
+                    return;
+                }
+
+                wp_constraint_set_local_position( m_constraint, index,
+                                                  detail::toWp( localPose.getPosition() ) );
+                wp_constraint_set_local_orientation( m_constraint, index,
+                                                     detail::toWp( localPose.getOrientation() ) );
+            }
+
+            Transform3<real_Num> getLocalPose( JointActorIndexEnum actor ) const override
+            {
+                const auto index = static_cast<wp_s32>( actor );
+                if( index < 0 || index >= 2 )
+                {
+                    return Transform3<real_Num>::identity();
+                }
+
+                return Transform3<real_Num>(
+                    detail::fromWp( wp_constraint_get_local_position( m_constraint, index ) ),
+                    detail::fromWp( wp_constraint_get_local_orientation( m_constraint, index ) ) );
+            }
+
+            void setConstraintFlag( ConstraintFlagEnum flag, bool value ) override
+            {
+                wp_constraint_set_flag( m_constraint, static_cast<wp_u32>( flag ), value ? 1 : 0 );
+            }
+
+            ConstraintFlagEnum getConstraintFlags() const override
+            {
+                return static_cast<ConstraintFlagEnum>( wp_constraint_get_flags( m_constraint ) );
+            }
+
+            void setBreakForce( real_Num force, real_Num torque ) override
+            {
+                wp_constraint_set_break_force( m_constraint, static_cast<wp_f32>( force ),
+                                               static_cast<wp_f32>( torque ) );
+            }
+
+            void getBreakForce( real_Num &force, real_Num &torque ) const override
+            {
+                force = static_cast<real_Num>( wp_constraint_get_break_force( m_constraint ) );
+                torque = static_cast<real_Num>( wp_constraint_get_break_torque( m_constraint ) );
+            }
+
+            void setProjectionLinearTolerance( real_Num tolerance ) override
+            {
+                wp_constraint_set_projection_linear_tolerance( m_constraint,
+                                                               static_cast<wp_f32>( tolerance ) );
+            }
+
+            real_Num getProjectionLinearTolerance() const override
+            {
+                return static_cast<real_Num>(
+                    wp_constraint_get_projection_linear_tolerance( m_constraint ) );
+            }
+
+            void setProjectionAngularTolerance( real_Num tolerance ) override
+            {
+                wp_constraint_set_projection_angular_tolerance( m_constraint,
+                                                                static_cast<wp_f32>( tolerance ) );
+            }
+
+            real_Num getProjectionAngularTolerance() const override
+            {
+                return static_cast<real_Num>(
+                    wp_constraint_get_projection_angular_tolerance( m_constraint ) );
+            }
+
+        protected:
+            wp_constraint *getConstraint() const
+            {
+                return m_constraint;
+            }
+
+        private:
+            static wp_rigidbody *getNativeBody( const SmartPtr<IPhysicsBody3> &body )
+            {
+                if( !body )
+                {
+                    return nullptr;
+                }
+
+                if( !dynamic_cast<CRigidDynamic3 *>( body.get() ) &&
+                    !dynamic_cast<CRigidStatic3 *>( body.get() ) )
+                {
+                    return nullptr;
+                }
+
+                void *nativeBody = nullptr;
+                body->_getObject( &nativeBody );
+                return static_cast<wp_rigidbody *>( nativeBody );
+            }
+
+            wp_constraint          *m_constraint = nullptr;
+            SmartPtr<IPhysicsBody3> m_bodyA;
+            SmartPtr<IPhysicsBody3> m_bodyB;
+        };
+
+        class CPhysicsConstraintD6 final : public CPhysicsConstraint3Base<ConstraintD6>
+        {
+        public:
+            CPhysicsConstraintD6() : CPhysicsConstraint3Base<ConstraintD6>( WORKPHONE_CONSTRAINT_D6 )
+            {
+            }
+
+            void unload( SmartPtr<ISharedObject> data ) override
+            {
+                for( auto &drive : m_drives )
+                {
+                    drive = nullptr;
+                }
+                m_linearLimit = nullptr;
+                CPhysicsConstraint3Base<ConstraintD6>::unload( data );
+            }
+
+            void setDrivePosition( const Transform3<real_Num> &pose ) override
+            {
+                wp_constraint_set_drive_position( getConstraint(), detail::toWp( pose.getPosition() ) );
+                wp_constraint_set_drive_orientation( getConstraint(),
+                                                     detail::toWp( pose.getOrientation() ) );
+            }
+
+            Transform3<real_Num> getDrivePosition() const override
+            {
+                return Transform3<real_Num>(
+                    detail::fromWp( wp_constraint_get_drive_position( getConstraint() ) ),
+                    detail::fromWp( wp_constraint_get_drive_orientation( getConstraint() ) ) );
+            }
+
+            void setDrive( D6DriveEnum index, SmartPtr<IConstraintDrive> drive ) override
+            {
+                const auto i = static_cast<size_t>( index );
+                if( i >= m_drives.size() )
+                {
+                    WP_LOG_WARNING( "CPhysicsConstraintD6::setDrive: invalid drive index." );
+                    return;
+                }
+
+                m_drives[i] = drive;
+                auto description = wp_constraint_drive_desc{};
+                if( drive )
+                {
+                    description.stiffness = static_cast<wp_f32>( drive->getStiffness() );
+                    description.damping = static_cast<wp_f32>( drive->getDamping() );
+                    description.force_limit = static_cast<wp_f32>( drive->getForceLimit() );
+                    description.is_acceleration = drive->isAcceleration() ? 1 : 0;
+                }
+                wp_constraint_set_drive( getConstraint(), static_cast<wp_d6_drive>( index ),
+                                         description );
+            }
+
+            SmartPtr<IConstraintDrive> getDrive( D6DriveEnum index ) const override
+            {
+                const auto i = static_cast<size_t>( index );
+                return i < m_drives.size() ? m_drives[i] : nullptr;
+            }
+
+            void setLinearLimit( SmartPtr<IConstraintLinearLimit> limit ) override
+            {
+                m_linearLimit = limit;
+                auto description = wp_constraint_linear_limit{};
+                if( limit )
+                {
+                    description.value = static_cast<wp_f32>( limit->getValue() );
+                    description.restitution = static_cast<wp_f32>( limit->getRestitution() );
+                    description.bounce_threshold = static_cast<wp_f32>( limit->getBounceThreshold() );
+                    description.stiffness = static_cast<wp_f32>( limit->getStiffness() );
+                    description.damping = static_cast<wp_f32>( limit->getDamping() );
+                    description.contact_distance = static_cast<wp_f32>( limit->getContactDistance() );
+                }
+                wp_constraint_set_linear_limit( getConstraint(), description );
+            }
+
+            SmartPtr<IConstraintLinearLimit> getLinearLimit() const override
+            {
+                return m_linearLimit;
+            }
+
+            void setMotion( D6AxisEnum axis, D6MotionEnum type ) override
+            {
+                if( static_cast<u32>( axis ) >= static_cast<u32>( D6AxisEnum::eCOUNT ) )
+                {
+                    WP_LOG_WARNING( "CPhysicsConstraintD6::setMotion: invalid axis." );
+                    return;
+                }
+
+                wp_constraint_set_motion( getConstraint(), static_cast<wp_d6_axis>( axis ),
+                                          static_cast<wp_d6_motion>( type ) );
+            }
+
+            D6MotionEnum getMotion( D6AxisEnum axis ) const override
+            {
+                if( static_cast<u32>( axis ) >= static_cast<u32>( D6AxisEnum::eCOUNT ) )
+                {
+                    return D6MotionEnum::eLOCKED;
+                }
+
+                return static_cast<D6MotionEnum>(
+                    wp_constraint_get_motion( getConstraint(), static_cast<wp_d6_axis>( axis ) ) );
+            }
+
+        private:
+            std::array<SmartPtr<IConstraintDrive>, static_cast<size_t>( D6DriveEnum::eCOUNT )>
+                                             m_drives{};
+            SmartPtr<IConstraintLinearLimit> m_linearLimit;
+        };
+
+        class CPhysicsConstraintFixed final : public CPhysicsConstraint3Base<ConstraintFixed3>
+        {
+        public:
+            CPhysicsConstraintFixed() :
+                CPhysicsConstraint3Base<ConstraintFixed3>( WORKPHONE_CONSTRAINT_FIXED )
+            {
+            }
+        };
+
+        class CPhysicsConstraintLinearLimit final : public IConstraintLinearLimit
+        {
+        public:
+            real_Num getValue() const override
+            {
+                return m_value;
+            }
+
+            void setValue( real_Num value ) override
+            {
+                m_value = std::max( value, static_cast<real_Num>( 0.0 ) );
+            }
+
+            real_Num getRestitution() const override
+            {
+                return m_restitution;
+            }
+
+            void setRestitution( real_Num restitution ) override
+            {
+                m_restitution = std::max( static_cast<real_Num>( 0.0 ),
+                                          std::min( restitution, static_cast<real_Num>( 1.0 ) ) );
+            }
+
+            real_Num getBounceThreshold() const override
+            {
+                return m_bounceThreshold;
+            }
+
+            void setBounceThreshold( real_Num bounceThreshold ) override
+            {
+                m_bounceThreshold = std::max( bounceThreshold, static_cast<real_Num>( 0.0 ) );
+            }
+
+            real_Num getStiffness() const override
+            {
+                return m_stiffness;
+            }
+
+            void setStiffness( real_Num stiffness ) override
+            {
+                m_stiffness = std::max( stiffness, static_cast<real_Num>( 0.0 ) );
+            }
+
+            real_Num getDamping() const override
+            {
+                return m_damping;
+            }
+
+            void setDamping( real_Num damping ) override
+            {
+                m_damping = std::max( damping, static_cast<real_Num>( 0.0 ) );
+            }
+
+            real_Num getContactDistance() const override
+            {
+                return m_contactDistance;
+            }
+
+            void setContactDistance( real_Num contactDistance ) override
+            {
+                m_contactDistance = std::max( contactDistance, static_cast<real_Num>( 0.0 ) );
+            }
+
+        private:
+            real_Num m_value = static_cast<real_Num>( 0.0 );
+            real_Num m_restitution = static_cast<real_Num>( 0.0 );
+            real_Num m_bounceThreshold = static_cast<real_Num>( 0.0 );
+            real_Num m_stiffness = static_cast<real_Num>( 0.0 );
+            real_Num m_damping = static_cast<real_Num>( 0.0 );
+            real_Num m_contactDistance = static_cast<real_Num>( 0.0 );
+        };
+
+        class CPhysicsVehicleWheel final : public IPhysicsVehicleWheel3
+        {
+        public:
+            real_Num getRadius() const override
+            {
+                return m_radius;
+            }
+
+            void setRadius( real_Num radius ) override
+            {
+                if( std::isfinite( static_cast<double>( radius ) ) )
+                {
+                    m_radius = std::max( radius, static_cast<real_Num>( 0.001 ) );
+                }
+            }
+
+            real_Num getWidth() const override
+            {
+                return m_width;
+            }
+
+            void setWidth( real_Num width ) override
+            {
+                if( std::isfinite( static_cast<double>( width ) ) )
+                {
+                    m_width = std::max( width, static_cast<real_Num>( 0.001 ) );
+                }
+            }
+
+            real_Num getMaxSuspensionTravelCm() const override
+            {
+                return m_maxSuspensionTravelCm;
+            }
+
+            void setMaxSuspensionTravelCm( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_maxSuspensionTravelCm = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getMaxSuspensionForce() const override
+            {
+                return m_maxSuspensionForce;
+            }
+
+            void setMaxSuspensionForce( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_maxSuspensionForce = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getSuspensionStiffness() const override
+            {
+                return m_suspensionStiffness;
+            }
+
+            void setSuspensionStiffness( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_suspensionStiffness = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getSuspensionDamping() const override
+            {
+                return m_suspensionDamping;
+            }
+
+            void setSuspensionDamping( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_suspensionDamping = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getFrictionSlip() const override
+            {
+                return m_frictionSlip;
+            }
+
+            void setFrictionSlip( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_frictionSlip = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getSteering() const override
+            {
+                return m_steering;
+            }
+
+            void setSteering( real_Num value ) override
+            {
+                m_steering =
+                    std::isfinite( static_cast<double>( value ) ) ? value : static_cast<real_Num>( 0.0 );
+            }
+
+            real_Num getEngineForce() const override
+            {
+                return m_engineForce;
+            }
+
+            void setEngineForce( real_Num value ) override
+            {
+                m_engineForce =
+                    std::isfinite( static_cast<double>( value ) ) ? value : static_cast<real_Num>( 0.0 );
+            }
+
+            real_Num getBrake() const override
+            {
+                return m_brake;
+            }
+
+            void setBrake( real_Num value ) override
+            {
+                m_brake = std::isfinite( static_cast<double>( value ) )
+                            ? std::max( value, static_cast<real_Num>( 0.0 ) )
+                            : static_cast<real_Num>( 0.0 );
+            }
+
+            bool isInContact() const override
+            {
+                return m_inContact;
+            }
+
+            void setInContact( bool inContact ) const
+            {
+                m_inContact = inContact;
+            }
+
+        private:
+            real_Num     m_radius = static_cast<real_Num>( 0.35 );
+            real_Num     m_width = static_cast<real_Num>( 0.25 );
+            real_Num     m_maxSuspensionTravelCm = static_cast<real_Num>( 20.0 );
+            real_Num     m_maxSuspensionForce = static_cast<real_Num>( 6000.0 );
+            real_Num     m_suspensionStiffness = static_cast<real_Num>( 35.0 );
+            real_Num     m_suspensionDamping = static_cast<real_Num>( 4.5 );
+            real_Num     m_frictionSlip = static_cast<real_Num>( 1.0 );
+            real_Num     m_steering = static_cast<real_Num>( 0.0 );
+            real_Num     m_engineForce = static_cast<real_Num>( 0.0 );
+            real_Num     m_brake = static_cast<real_Num>( 0.0 );
+            mutable bool m_inContact = false;
+        };
+
+        AABB3F toFloatBounds( const AABB3<real_Num> &bounds )
+        {
+            auto result = AABB3F();
+            if( bounds.isNull() )
+            {
+                result.setNull();
+                return result;
+            }
+            if( bounds.isInfinite() )
+            {
+                result.setInfinite();
+                return result;
+            }
+
+            const auto minimum = bounds.getMinimum();
+            const auto maximum = bounds.getMaximum();
+            return AABB3F( Vector3F( static_cast<f32>( minimum.X() ), static_cast<f32>( minimum.Y() ),
+                                     static_cast<f32>( minimum.Z() ) ),
+                           Vector3F( static_cast<f32>( maximum.X() ), static_cast<f32>( maximum.Y() ),
+                                     static_cast<f32>( maximum.Z() ) ) );
+        }
+
+        class CPhysicsVehicle3 final : public IPhysicsVehicle3
+        {
+        public:
+            explicit CPhysicsVehicle3( SmartPtr<IRigidBody3> chassis ) :
+                m_chassis( std::move( chassis ) )
+            {
+                setLoadingState( LoadingState::Loaded );
+            }
+
+            ~CPhysicsVehicle3() override
+            {
+                unload( nullptr );
+            }
+
+            void unload( SmartPtr<ISharedObject> ) override
+            {
+                m_wheels.clear();
+                m_vehicleInput = nullptr;
+                m_chassis = nullptr;
+                setLoadingState( LoadingState::Unloaded );
+            }
+
+            IPhysicsVehicleWheel3 *addWheel() override
+            {
+                if( !m_chassis || m_finalized )
+                {
+                    WP_LOG_WARNING(
+                        "CPhysicsVehicle3::addWheel: wheels cannot be added after finalization." );
+                    return nullptr;
+                }
+
+                auto wheel = workphone::make_ptr<CPhysicsVehicleWheel>();
+                wheel->setLoadingState( LoadingState::Loaded );
+                auto result = wheel.get();
+                m_wheels.push_back( wheel );
+                return result;
+            }
+
+            IPhysicsVehicleWheel3 *getWheel( u32 wheelIndex ) const override
+            {
+                return wheelIndex < m_wheels.size() ? m_wheels[wheelIndex].get() : nullptr;
+            }
+
+            u32 getNumWheels() const override
+            {
+                return static_cast<u32>( m_wheels.size() );
+            }
+
+            void finalize() override
+            {
+                if( !m_chassis )
+                {
+                    return;
+                }
+                if( m_wheels.empty() )
+                {
+                    WP_LOG_WARNING( "CPhysicsVehicle3::finalize: vehicle has no wheels." );
+                }
+                m_finalized = true;
+                m_chassis->wakeUp();
+            }
+
+            void applyEngineForce( f32 engineForce, u32 wheelIndex ) override
+            {
+                auto wheel = getNativeWheel( wheelIndex );
+                if( !wheel || !m_chassis || !m_enabled )
+                {
+                    return;
+                }
+
+                wheel->setEngineForce( static_cast<real_Num>( engineForce ) );
+                const auto transform = m_chassis->getTransform();
+                const auto steering =
+                    Quaternion<real_Num>::angleAxis( wheel->getSteering(), Vector3<real_Num>::unitY() );
+                auto direction = transform.getOrientation() * ( steering * Vector3<real_Num>::unitZ() );
+                if( direction.lengthSquared() > Math<real_Num>::epsilon() )
+                {
+                    direction.normalise();
+                    m_chassis->addForce( direction * static_cast<real_Num>( engineForce ) );
+                }
+            }
+
+            void setBrake( f32 brakeForce, u32 wheelIndex ) override
+            {
+                auto wheel = getNativeWheel( wheelIndex );
+                if( !wheel || !m_chassis )
+                {
+                    return;
+                }
+
+                wheel->setBrake( static_cast<real_Num>( brakeForce ) );
+                if( brakeForce <= 0.0f )
+                {
+                    return;
+                }
+
+                const auto mass = std::max( m_chassis->getMass(), static_cast<real_Num>( 0.001 ) );
+                const auto factor = std::max( static_cast<real_Num>( 0.0 ),
+                                              static_cast<real_Num>( 1.0 ) -
+                                                  static_cast<real_Num>( brakeForce ) /
+                                                      ( mass * static_cast<real_Num>( 60.0 ) ) );
+                m_chassis->setLinearVelocity( m_chassis->getLinearVelocity() * factor );
+                m_chassis->setAngularVelocity( m_chassis->getAngularVelocity() * factor );
+            }
+
+            void setSteeringValue( f32 steeringValue, u32 wheelIndex ) override
+            {
+                if( auto wheel = getNativeWheel( wheelIndex ) )
+                {
+                    wheel->setSteering( static_cast<real_Num>( steeringValue ) );
+                }
+            }
+
+            void setPosition( const Vector3<real_Num> &position ) override
+            {
+                if( m_chassis )
+                {
+                    auto transform = m_chassis->getTransform();
+                    transform.setPosition( position );
+                    m_chassis->setTransform( transform );
+                }
+            }
+
+            Vector3<real_Num> getPosition() const override
+            {
+                return m_chassis ? m_chassis->getTransform().getPosition() : Vector3<real_Num>::zero();
+            }
+
+            void setOrientation( const Quaternion<real_Num> &orientation ) override
+            {
+                if( m_chassis )
+                {
+                    auto transform = m_chassis->getTransform();
+                    transform.setOrientation( orientation );
+                    m_chassis->setTransform( transform );
+                }
+            }
+
+            Quaternion<real_Num> getOrientation() const override
+            {
+                return m_chassis ? m_chassis->getTransform().getOrientation()
+                                 : Quaternion<real_Num>::identity();
+            }
+
+            void setVelocity( const Vector3<real_Num> &velocity ) override
+            {
+                if( m_chassis )
+                {
+                    m_chassis->setLinearVelocity( velocity );
+                }
+            }
+
+            Vector3<real_Num> getVelocity() const override
+            {
+                return m_chassis ? m_chassis->getLinearVelocity() : Vector3<real_Num>::zero();
+            }
+
+            void setMaterialId( u32 materialId ) override
+            {
+                m_materialId = materialId;
+            }
+
+            u32 getMaterialId() const override
+            {
+                return m_materialId;
+            }
+
+            AABB3F getLocalAABB() const override
+            {
+                return m_chassis ? toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
+            }
+
+            AABB3F getWorldAABB() const override
+            {
+                return m_chassis ? toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
+            }
+
+            void setEnabled( bool enabled ) override
+            {
+                m_enabled = enabled;
+                if( m_chassis )
+                {
+                    m_chassis->setEnabled( enabled );
+                }
+            }
+
+            bool isEnabled() const override
+            {
+                return m_enabled && m_chassis && m_chassis->isEnabled();
+            }
+
+            SmartPtr<IPhysicsVehicleInput3> &getVehicleInput() override
+            {
+                return m_vehicleInput;
+            }
+
+            const SmartPtr<IPhysicsVehicleInput3> &getVehicleInput() const override
+            {
+                return m_vehicleInput;
+            }
+
+            Array<Transform3F> getWheelTransformations() const override
+            {
+                Array<Transform3F> transforms;
+                if( !m_chassis || m_wheels.empty() )
+                {
+                    return transforms;
+                }
+
+                auto              localBounds = m_chassis->getLocalAABB();
+                Vector3<real_Num> minimum( -1.0, -0.5, -2.0 );
+                Vector3<real_Num> maximum( 1.0, 0.5, 2.0 );
+                if( !localBounds.isNull() && !localBounds.isInfinite() )
+                {
+                    minimum = localBounds.getMinimum();
+                    maximum = localBounds.getMaximum();
+                }
+
+                const auto chassisTransform = m_chassis->getTransform();
+                const auto center = ( minimum + maximum ) * static_cast<real_Num>( 0.5 );
+                const auto half = ( maximum - minimum ) * static_cast<real_Num>( 0.5 );
+                const auto wheelCount = m_wheels.size();
+                transforms.reserve( wheelCount );
+
+                for( size_t i = 0; i < wheelCount; ++i )
+                {
+                    const auto wheel = m_wheels[i];
+                    const auto side =
+                        ( i % 2 ) == 0 ? static_cast<real_Num>( -1.0 ) : static_cast<real_Num>( 1.0 );
+                    const auto row = i / 2;
+                    const auto rowCount = std::max<size_t>( 1, ( wheelCount + 1 ) / 2 );
+                    const auto rowFraction = rowCount == 1 ? static_cast<real_Num>( 0.5 )
+                                                           : static_cast<real_Num>( row ) /
+                                                                 static_cast<real_Num>( rowCount - 1 );
+                    const auto localPosition = Vector3<real_Num>(
+                        center.X() + side * half.X(),
+                        minimum.Y() - wheel->getRadius() * static_cast<real_Num>( 0.25 ),
+                        maximum.Z() - rowFraction * ( maximum.Z() - minimum.Z() ) );
+                    const auto worldPosition = chassisTransform.transformPoint( localPosition );
+                    const auto steering = Quaternion<real_Num>::angleAxis( wheel->getSteering(),
+                                                                           Vector3<real_Num>::unitY() );
+                    const auto worldOrientation = chassisTransform.getOrientation() * steering;
+
+                    auto inContact = false;
+                    if( auto scene = m_chassis->getScene() )
+                    {
+                        Vector3<real_Num>       hitPosition;
+                        Vector3<real_Num>       hitNormal;
+                        SmartPtr<ISharedObject> object;
+                        const auto down = chassisTransform.getOrientation() *
+                                          Vector3<real_Num>( 0.0,
+                                                             -( wheel->getRadius() +
+                                                                wheel->getMaxSuspensionTravelCm() /
+                                                                    static_cast<real_Num>( 100.0 ) ),
+                                                             0.0 );
+                        inContact = scene->intersects( worldPosition, worldPosition + down, hitPosition,
+                                                       hitNormal, object ) &&
+                                    object.get() != m_chassis.get();
+                    }
+                    wheel->setInContact( inContact );
+
+                    transforms.emplace_back( Vector3F( static_cast<f32>( worldPosition.X() ),
+                                                       static_cast<f32>( worldPosition.Y() ),
+                                                       static_cast<f32>( worldPosition.Z() ) ),
+                                             QuaternionF( static_cast<f32>( worldOrientation.W() ),
+                                                          static_cast<f32>( worldOrientation.X() ),
+                                                          static_cast<f32>( worldOrientation.Y() ),
+                                                          static_cast<f32>( worldOrientation.Z() ) ) );
+                }
+                return transforms;
+            }
+
+            SmartPtr<IRigidBody3> getChassis() const
+            {
+                return m_chassis;
+            }
+
+        private:
+            CPhysicsVehicleWheel *getNativeWheel( u32 wheelIndex ) const
+            {
+                return wheelIndex < m_wheels.size() ? m_wheels[wheelIndex].get() : nullptr;
+            }
+
+            SmartPtr<IRigidBody3>                 m_chassis;
+            Array<SmartPtr<CPhysicsVehicleWheel>> m_wheels;
+            SmartPtr<IPhysicsVehicleInput3>       m_vehicleInput;
+            u32                                   m_materialId = 0;
+            bool                                  m_enabled = true;
+            bool                                  m_finalized = false;
+        };
+
+        SmartPtr<IPhysicsScene3> selectQueryScene( const SmartPtr<IPhysicsScene3>        &raycastScene,
+                                                   const SmartPtr<IPhysicsScene3>        &physicsScene,
+                                                   const Array<SmartPtr<IPhysicsScene3>> &scenes )
+        {
+            if( raycastScene )
+            {
+                return raycastScene;
+            }
+            if( physicsScene )
+            {
+                return physicsScene;
+            }
+            return scenes.empty() ? nullptr : scenes.front();
+        }
+
+        void applyRigidBodyProperties( SmartPtr<IRigidBody3>       body,
+                                       const SmartPtr<Properties> &properties )
+        {
+            if( !body || !properties )
+            {
+                return;
+            }
+
+            auto transform = body->getTransform();
+            if( properties->getPropertyValue( "transform", transform ) )
+            {
+                body->setTransform( transform );
+            }
+
+            auto position = body->getTransform().getPosition();
+            if( properties->getPropertyValue( "position", position ) )
+            {
+                transform = body->getTransform();
+                transform.setPosition( position );
+                body->setTransform( transform );
+            }
+
+            auto orientation = body->getTransform().getOrientation();
+            if( properties->getPropertyValue( "orientation", orientation ) )
+            {
+                transform = body->getTransform();
+                transform.setOrientation( orientation );
+                body->setTransform( transform );
+            }
+
+            auto mass = static_cast<f32>( body->getMass() );
+            if( properties->getPropertyValue( "mass", mass ) && mass > 0.0f )
+            {
+                body->setMass( static_cast<real_Num>( mass ) );
+            }
+
+            auto collisionType = body->getCollisionType();
+            if( properties->getPropertyValue( "collisionType", collisionType ) )
+            {
+                body->setCollisionType( collisionType );
+            }
+
+            auto collisionMask = body->getCollisionMask();
+            if( properties->getPropertyValue( "collisionMask", collisionMask ) )
+            {
+                body->setCollisionMask( collisionMask );
+            }
+
+            auto enabled = body->isEnabled();
+            if( properties->getPropertyValue( "enabled", enabled ) )
+            {
+                body->setEnabled( enabled );
+            }
+        }
+
+        void applyShapeProperties( SmartPtr<IPhysicsShape3> shape, const SmartPtr<ISharedObject> &data )
+        {
+            auto properties = workphone::dynamic_pointer_cast<Properties>( data );
+            if( !shape || !properties )
+            {
+                return;
+            }
+
+            auto localPose = shape->getLocalPose();
+            if( properties->getPropertyValue( "localPose", localPose ) )
+            {
+                shape->setLocalPose( localPose );
+            }
+
+            auto enabled = shape->isEnabled();
+            if( properties->getPropertyValue( "enabled", enabled ) )
+            {
+                shape->setEnabled( enabled );
+            }
+
+            auto trigger = shape->isTrigger();
+            if( properties->getPropertyValue( "trigger", trigger ) )
+            {
+                shape->setTrigger( trigger );
+            }
+
+            auto collisionType = shape->getCollisionType();
+            if( properties->getPropertyValue( "collisionType", collisionType ) )
+            {
+                shape->setCollisionType( collisionType );
+            }
+
+            auto collisionMask = shape->getCollisionMask();
+            if( properties->getPropertyValue( "collisionMask", collisionMask ) )
+            {
+                shape->setCollisionMask( collisionMask );
+            }
+
+            if( auto sphere = workphone::dynamic_pointer_cast<ISphereShape3>( shape ) )
+            {
+                auto radius = static_cast<f32>( sphere->getRadius() );
+                if( properties->getPropertyValue( "radius", radius ) && radius > 0.0f )
+                {
+                    sphere->setRadius( static_cast<real_Num>( radius ) );
+                }
+            }
+            else if( auto box = workphone::dynamic_pointer_cast<IBoxShape3>( shape ) )
+            {
+                auto extents = box->getExtents();
+                if( properties->getPropertyValue( "extents", extents ) && extents.X() > 0 &&
+                    extents.Y() > 0 && extents.Z() > 0 )
+                {
+                    box->setExtents( extents );
+                }
+            }
+            else if( auto plane = workphone::dynamic_pointer_cast<IPlaneShape3>( shape ) )
+            {
+                auto normal = plane->getNormal();
+                if( properties->getPropertyValue( "normal", normal ) &&
+                    normal.lengthSquared() > Math<real_Num>::epsilon() )
+                {
+                    plane->setNormal( normal );
+                }
+
+                auto distance = static_cast<f32>( plane->getDistance() );
+                if( properties->getPropertyValue( "distance", distance ) )
+                {
+                    plane->setDistance( static_cast<real_Num>( distance ) );
+                }
+            }
+            else if( auto mesh = workphone::dynamic_pointer_cast<IMeshShape>( shape ) )
+            {
+                auto convex = mesh->isConvex();
+                if( properties->getPropertyValue( "convex", convex ) )
+                {
+                    mesh->setConvex( convex );
+                }
+            }
+        }
+    } // namespace
+
+    CPhysicsManager3::CPhysicsManager3() : m_system( wp_physics_system_create() )
+    {
+        if( !m_system )
+        {
+            throw std::runtime_error( "Failed to create the WPPhysics system." );
+        }
+
+        wp_physics_system_set_user_data( m_system, this );
+    }
+
+    CPhysicsManager3::~CPhysicsManager3()
+    {
+        unload( nullptr );
+        wp_physics_system_set_user_data( m_system, nullptr );
+        wp_physics_system_destroy( m_system );
+        m_system = nullptr;
+    }
+
+    void CPhysicsManager3::load( SmartPtr<ISharedObject> )
+    {
+        ScopedLock lock( this );
+        if( getLoadingState() == LoadingState::Loaded )
+        {
+            return;
+        }
+
+        setLoadingState( LoadingState::Loading );
+        setLoadingState( LoadingState::Loaded );
+    }
+
+    void CPhysicsManager3::unload( SmartPtr<ISharedObject> data )
+    {
+        Array<SmartPtr<IPhysicsConstraint3>>   constraints;
+        Array<SmartPtr<IPhysicsVehicle3>>      vehicles;
+        Array<SmartPtr<ICharacterController3>> characters;
+        Array<SmartPtr<IRaycastHit>>           raycastHits;
+        Array<SmartPtr<IRigidBody3>>           bodies;
+        Array<SmartPtr<IPhysicsShape3>>        shapes;
+        Array<SmartPtr<IPhysicsMaterial3>>     materials;
+        Array<SmartPtr<IPhysicsScene3>>        scenes;
+
+        {
+            ScopedLock lock( this );
+            if( getLoadingState() == LoadingState::Unloading )
+            {
+                return;
+            }
+            if( getLoadingState() == LoadingState::Unloaded && m_constraints.empty() &&
+                m_vehicles.empty() && m_characters.empty() && m_raycastHits.empty() &&
+                m_bodies.empty() && m_shapes.empty() && m_materials.empty() && m_scenes.empty() )
+            {
+                return;
+            }
+
+            setLoadingState( LoadingState::Unloading );
+
+            constraints.swap( m_constraints );
+            vehicles.swap( m_vehicles );
+            characters.swap( m_characters );
+            raycastHits.swap( m_raycastHits );
+            bodies.swap( m_bodies );
+            shapes.swap( m_shapes );
+            materials.swap( m_materials );
+            scenes.swap( m_scenes );
+
+            m_physicsScene = nullptr;
+            m_objectsScene = nullptr;
+            m_raycastScene = nullptr;
+            m_controlsScene = nullptr;
+        }
+
+        for( auto &constraint : constraints )
+        {
+            if( constraint )
+            {
+                constraint->unload( data );
+            }
+        }
+
+        for( auto &vehicle : vehicles )
+        {
+            if( vehicle )
+            {
+                vehicle->unload( data );
+            }
+        }
+
+        for( auto &character : characters )
+        {
+            if( character )
+            {
+                character->unload( data );
+            }
+        }
+
+        for( auto &scene : scenes )
+        {
+            if( !scene )
+            {
+                continue;
+            }
+
+            const auto actors = scene->getActors();
+            for( const auto &actor : actors )
+            {
+                if( actor && scene->hasActor( actor ) )
+                {
+                    scene->removeActor( actor );
+                }
+            }
+            scene->clear();
+            scene->setLoadingState( LoadingState::Unloaded );
+        }
+
+        for( auto &body : bodies )
+        {
+            if( body )
+            {
+                body->setScene( nullptr );
+                body->setLoadingState( LoadingState::Unloaded );
+            }
+        }
+
+        for( auto &shape : shapes )
+        {
+            if( shape )
+            {
+                shape->setActor( nullptr );
+                shape->setLoadingState( LoadingState::Unloaded );
+            }
+        }
+
+        for( auto &material : materials )
+        {
+            if( material )
+            {
+                material->setLoadingState( LoadingState::Unloaded );
+            }
+        }
+
+        for( auto &hit : raycastHits )
+        {
+            if( hit )
+            {
+                hit->setLoadingState( LoadingState::Unloaded );
+            }
+        }
+
+        setLoadingState( LoadingState::Unloaded );
+    }
+
+    bool CPhysicsManager3::getEnableDebugDraw() const
+    {
+        ScopedLock lock( this );
+        return m_system && wp_physics_system_get_debug_draw( m_system ) != 0;
+    }
+
+    void CPhysicsManager3::setEnableDebugDraw( bool enableDebugDraw )
+    {
+        ScopedLock lock( this );
+        if( m_system )
+        {
+            wp_physics_system_set_debug_draw( m_system, enableDebugDraw ? 1 : 0 );
+        }
+
+        PhysicsManager::setEnableDebugDraw( enableDebugDraw );
+    }
+
+    void CPhysicsManager3::debugDraw()
+    {
+        if( !getEnableDebugDraw() )
+        {
+            return;
+        }
+
+        if( auto debug = getDebugRenderer() )
+        {
+            Array<SmartPtr<IRigidBody3>> bodies;
+            {
+                ScopedLock lock( this );
+                bodies = m_bodies;
+            }
+
+            for( const auto &body : bodies )
+            {
+                if( body && body->isEnabled() )
+                {
+                    drawDebugBody( *debug, *body );
+                }
+            }
+        }
+
+        PhysicsManager::debugDraw();
+    }
+
+    void CPhysicsManager3::postUpdate()
+    {
+        if( getEnableDebugDraw() )
+        {
+            debugDraw();
+        }
+    }
+
+    SmartPtr<IPhysicsMaterial3> CPhysicsManager3::addMaterial()
+    {
+        try
+        {
+            auto material = workphone::make_ptr<CPhysicsMaterial3>();
+            if( !material->getMaterial() )
+            {
+                WP_LOG_ERROR( "CPhysicsManager3::addMaterial: native allocation failed." );
+                return nullptr;
+            }
+
+            material->setLoadingState( LoadingState::Loaded );
+            ScopedLock lock( this );
+            m_materials.push_back( material );
+            return material;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    void CPhysicsManager3::removeMaterial( SmartPtr<IPhysicsMaterial3> material )
+    {
+        if( !material )
+        {
+            return;
+        }
+
+        ScopedLock lock( this );
+        const auto it = std::find( m_materials.begin(), m_materials.end(), material );
+        if( it != m_materials.end() )
+        {
+            ( *it )->setLoadingState( LoadingState::Unloaded );
+            m_materials.erase( it );
+        }
+    }
+
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::addScene()
+    {
+        try
+        {
+            auto scene = workphone::make_ptr<CPhysicsScene3>();
+            if( !scene->getScene() )
+            {
+                WP_LOG_ERROR( "CPhysicsManager3::addScene: native allocation failed." );
+                return nullptr;
+            }
+
+            scene->setLoadingState( LoadingState::Loaded );
+            ScopedLock lock( this );
+            m_scenes.push_back( scene );
+            if( !m_physicsScene )
+            {
+                m_physicsScene = scene;
+            }
+            return scene;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    void CPhysicsManager3::removeScene( SmartPtr<IPhysicsScene3> scene )
+    {
+        if( !scene )
+        {
+            return;
+        }
+
+        {
+            ScopedLock lock( this );
+            const auto it = std::find( m_scenes.begin(), m_scenes.end(), scene );
+            if( it == m_scenes.end() )
+            {
+                return;
+            }
+
+            m_scenes.erase( it );
+            if( m_physicsScene == scene )
+            {
+                m_physicsScene = m_scenes.empty() ? nullptr : m_scenes.front();
+            }
+            if( m_objectsScene == scene )
+            {
+                m_objectsScene = nullptr;
+            }
+            if( m_raycastScene == scene )
+            {
+                m_raycastScene = nullptr;
+            }
+            if( m_controlsScene == scene )
+            {
+                m_controlsScene = nullptr;
+            }
+        }
+
+        const auto actors = scene->getActors();
+        for( const auto &actor : actors )
+        {
+            if( actor && scene->hasActor( actor ) )
+            {
+                scene->removeActor( actor );
+            }
+        }
+        scene->clear();
+        scene->setLoadingState( LoadingState::Unloaded );
+    }
+
+    SmartPtr<IPhysicsShape3> CPhysicsManager3::addCollisionShapeByType( hash64                  type,
+                                                                        SmartPtr<ISharedObject> data )
+    {
+        if( type == 0 )
+        {
+            WP_LOG_ERROR( "CPhysicsManager3::addCollisionShapeByType: type hash is zero." );
+            return nullptr;
+        }
+
+        try
+        {
+            auto       typeManager = TypeManager::instance();
+            const auto sphereType = typeManager ? typeManager->getHash( ISphereShape3::typeInfo() ) : 0;
+            const auto boxType = typeManager ? typeManager->getHash( IBoxShape3::typeInfo() ) : 0;
+            const auto planeType = typeManager ? typeManager->getHash( IPlaneShape3::typeInfo() ) : 0;
+            const auto meshType = typeManager ? typeManager->getHash( IMeshShape::typeInfo() ) : 0;
+            const auto terrainType = typeManager ? typeManager->getHash( ITerrainShape::typeInfo() ) : 0;
+
+            SmartPtr<IPhysicsShape3> shape;
+            if( type == sphereType || type == ISphereShape3::typeInfo() )
+            {
+                shape = workphone::make_ptr<CSphereShape3>();
+            }
+            else if( type == boxType || type == IBoxShape3::typeInfo() )
+            {
+                shape = workphone::make_ptr<CBoxShape3>();
+            }
+            else if( type == planeType || type == IPlaneShape3::typeInfo() )
+            {
+                shape = workphone::make_ptr<CPlaneShape3>();
+            }
+            else if( type == meshType || type == IMeshShape::typeInfo() )
+            {
+                shape = workphone::make_ptr<CMeshShape3>();
+            }
+            else if( type == terrainType || type == ITerrainShape::typeInfo() )
+            {
+                shape = workphone::make_ptr<CTerrainShape3>();
+            }
+            else
+            {
+                WP_LOG_WARNING(
+                    "CPhysicsManager3::addCollisionShapeByType: unsupported shape type hash " +
+                    StringUtil::toString( type ) + "." );
+                return nullptr;
+            }
+
+            if( !shape || !shape->hasShapeData() )
+            {
+                WP_LOG_ERROR(
+                    "CPhysicsManager3::addCollisionShapeByType: failed to allocate native shape data." );
+                return nullptr;
+            }
+
+            shape->load( data );
+            applyShapeProperties( shape, data );
+            shape->setLoadingState( LoadingState::Loaded );
+
+            {
+                ScopedLock lock( this );
+                m_shapes.push_back( shape );
+            }
+
+            return shape;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+        }
+        catch( ... )
+        {
+            WP_LOG_ERROR(
+                "CPhysicsManager3::addCollisionShapeByType: unknown exception while creating shape." );
+        }
+
+        return nullptr;
+    }
+
+    bool CPhysicsManager3::removeCollisionShape( SmartPtr<IPhysicsShape3> collisionShape )
+    {
+        if( !collisionShape )
+        {
+            return false;
+        }
+
+        Array<SmartPtr<IRigidBody3>> bodies;
+        {
+            ScopedLock lock( this );
+            const auto shapeIt = std::find( m_shapes.begin(), m_shapes.end(), collisionShape );
+            if( shapeIt == m_shapes.end() )
+            {
+                return false;
+            }
+
+            bodies = m_bodies;
+            m_shapes.erase( shapeIt );
+        }
+
+        for( auto &body : bodies )
+        {
+            if( !body )
+            {
+                continue;
+            }
+
+            const auto bodyShapes = body->getShapes();
+            if( std::find( bodyShapes.begin(), bodyShapes.end(), collisionShape ) != bodyShapes.end() )
+            {
+                body->removeShape( collisionShape );
+            }
+        }
+
+        collisionShape->setActor( nullptr );
+        collisionShape->setLoadingState( LoadingState::Unloaded );
+        return true;
+    }
+
+    bool CPhysicsManager3::removePhysicsBody( SmartPtr<IRigidBody3> body )
+    {
+        if( !body )
+        {
+            return false;
+        }
+
+        Array<SmartPtr<IPhysicsConstraint3>> constraintsToRemove;
+        Array<SmartPtr<IPhysicsVehicle3>>    vehiclesToRemove;
+        {
+            ScopedLock lock( this );
+            const auto bodyIt = std::find( m_bodies.begin(), m_bodies.end(), body );
+            if( bodyIt == m_bodies.end() )
+            {
+                return false;
+            }
+
+            m_bodies.erase( bodyIt );
+            for( const auto &constraint : m_constraints )
+            {
+                if( constraint && ( constraint->getBodyA().get() == body.get() ||
+                                    constraint->getBodyB().get() == body.get() ) )
+                {
+                    constraintsToRemove.push_back( constraint );
+                }
+            }
+
+            for( const auto &constraint : constraintsToRemove )
+            {
+                m_constraints.erase(
+                    std::remove( m_constraints.begin(), m_constraints.end(), constraint ),
+                    m_constraints.end() );
+            }
+
+            for( const auto &vehicle : m_vehicles )
+            {
+                const auto backendVehicle = dynamic_cast<CPhysicsVehicle3 *>( vehicle.get() );
+                if( backendVehicle && backendVehicle->getChassis().get() == body.get() )
+                {
+                    vehiclesToRemove.push_back( vehicle );
+                }
+            }
+            for( const auto &vehicle : vehiclesToRemove )
+            {
+                m_vehicles.erase( std::remove( m_vehicles.begin(), m_vehicles.end(), vehicle ),
+                                  m_vehicles.end() );
+            }
+        }
+
+        for( auto &constraint : constraintsToRemove )
+        {
+            constraint->unload( nullptr );
+        }
+
+        for( auto &vehicle : vehiclesToRemove )
+        {
+            vehicle->unload( nullptr );
+        }
+
+        if( auto scene = body->getScene() )
+        {
+            if( scene->hasActor( body ) )
+            {
+                scene->removeActor( body );
+            }
+            else
+            {
+                body->setScene( nullptr );
+            }
+        }
+
+        body->setLoadingState( LoadingState::Unloaded );
+        return true;
+    }
+
+    SmartPtr<ICharacterController3> CPhysicsManager3::addCharacter()
+    {
+        try
+        {
+            auto character = workphone::make_ptr<CapsuleController>();
+            character->load( nullptr );
+            if( character->getLoadingState() != LoadingState::Loaded )
+            {
+                character->setLoadingState( LoadingState::Loaded );
+            }
+
+            ScopedLock lock( this );
+            m_characters.push_back( character );
+            return character;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    SmartPtr<IRigidStatic3> CPhysicsManager3::addRigidStatic( const Transform3<real_Num> &transform )
+    {
+        try
+        {
+            auto body = workphone::make_ptr<CRigidStatic3>();
+            body->setTransform( transform );
+            body->setLoadingState( LoadingState::Loaded );
+
+            ScopedLock lock( this );
+            m_bodies.push_back( body );
+            return body;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    SmartPtr<IRigidDynamic3> CPhysicsManager3::addRigidDynamic( const Transform3<real_Num> &transform )
+    {
+        try
+        {
+            auto body = workphone::make_ptr<CRigidDynamic3>( WORKPHONE_RIGIDBODY_DYNAMIC );
+            if( !body->getBody() )
+            {
+                WP_LOG_ERROR( "CPhysicsManager3::addRigidDynamic: native allocation failed." );
+                return nullptr;
+            }
+
+            body->setTransform( transform );
+            body->setLoadingState( LoadingState::Loaded );
+            ScopedLock lock( this );
+            m_bodies.push_back( body );
+            return body;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    SmartPtr<IRigidStatic3> CPhysicsManager3::addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape )
+    {
+        return addRigidStatic( collisionShape, nullptr );
+    }
+
+    SmartPtr<IRigidStatic3> CPhysicsManager3::addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape,
+                                                              SmartPtr<Properties>     properties )
+    {
+        ScopedLock lock( this );
+        if( collisionShape && !dynamic_cast<CPhysicsShape3 *>( collisionShape.get() ) )
+        {
+            WP_LOG_ERROR(
+                "CPhysicsManager3::addRigidStatic: shape belongs to another physics backend." );
+            return nullptr;
+        }
+
+        auto body = addRigidStatic( Transform3<real_Num>::identity() );
+        if( !body )
+        {
+            return nullptr;
+        }
+
+        if( collisionShape )
+        {
+            body->addShape( collisionShape );
+        }
+
+        applyRigidBodyProperties( body, properties );
+        return body;
+    }
+    SmartPtr<IPhysicsVehicle3> CPhysicsManager3::addVehicle( SmartPtr<IRigidBody3> chassis )
+    {
+        return addVehicle( chassis, nullptr );
+    }
+
+    bool CPhysicsManager3::removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle )
+    {
+        if( !vehicle )
+        {
+            return false;
+        }
+
+        {
+            ScopedLock lock( this );
+            const auto it = std::find( m_vehicles.begin(), m_vehicles.end(), vehicle );
+            if( it == m_vehicles.end() )
+            {
+                return false;
+            }
+            m_vehicles.erase( it );
+        }
+        vehicle->unload( nullptr );
+        return true;
+    }
+
+    SmartPtr<IPhysicsVehicle3> CPhysicsManager3::addVehicle( SmartPtr<IRigidBody3>       chassis,
+                                                             const SmartPtr<Properties> &properties )
+    {
+        if( !chassis )
+        {
+            WP_LOG_ERROR( "CPhysicsManager3::addVehicle: chassis is null." );
+            return nullptr;
+        }
+        if( !dynamic_cast<CRigidDynamic3 *>( chassis.get() ) )
+        {
+            WP_LOG_ERROR(
+                "CPhysicsManager3::addVehicle: chassis must be a WPPhysics dynamic rigid body." );
+            return nullptr;
+        }
+
+        try
+        {
+            ScopedLock lock( this );
+            if( std::none_of( m_bodies.begin(), m_bodies.end(),
+                              [&chassis]( const SmartPtr<IRigidBody3> &body )
+                              { return body.get() == chassis.get(); } ) )
+            {
+                WP_LOG_ERROR( "CPhysicsManager3::addVehicle: chassis is not managed by this manager." );
+                return nullptr;
+            }
+            if( std::any_of( m_vehicles.begin(), m_vehicles.end(),
+                             [&chassis]( const SmartPtr<IPhysicsVehicle3> &vehicle )
+                             {
+                                 const auto backend = dynamic_cast<CPhysicsVehicle3 *>( vehicle.get() );
+                                 return backend && backend->getChassis().get() == chassis.get();
+                             } ) )
+            {
+                WP_LOG_ERROR( "CPhysicsManager3::addVehicle: chassis already belongs to a vehicle." );
+                return nullptr;
+            }
+
+            auto vehicle = workphone::make_ptr<CPhysicsVehicle3>( chassis );
+            u32  wheelCount = 0;
+            f32  wheelRadius = 0.35f;
+            f32  wheelWidth = 0.25f;
+            f32  suspensionTravelCm = 20.0f;
+            f32  suspensionForce = 6000.0f;
+            f32  suspensionStiffness = 35.0f;
+            f32  suspensionDamping = 4.5f;
+            f32  frictionSlip = 1.0f;
+            u32  materialId = 0;
+            bool enabled = true;
+            bool finalize = false;
+
+            if( properties )
+            {
+                properties->getPropertyValue( "wheelCount", wheelCount );
+                properties->getPropertyValue( "wheelRadius", wheelRadius );
+                properties->getPropertyValue( "wheelWidth", wheelWidth );
+                properties->getPropertyValue( "suspensionTravelCm", suspensionTravelCm );
+                properties->getPropertyValue( "suspensionForce", suspensionForce );
+                properties->getPropertyValue( "suspensionStiffness", suspensionStiffness );
+                properties->getPropertyValue( "suspensionDamping", suspensionDamping );
+                properties->getPropertyValue( "frictionSlip", frictionSlip );
+                properties->getPropertyValue( "materialId", materialId );
+                properties->getPropertyValue( "enabled", enabled );
+                properties->getPropertyValue( "finalize", finalize );
+            }
+
+            wheelCount = std::min<u32>( wheelCount, 32u );
+            for( u32 i = 0; i < wheelCount; ++i )
+            {
+                auto wheel = vehicle->addWheel();
+                if( !wheel )
+                {
+                    break;
+                }
+                wheel->setRadius( static_cast<real_Num>( wheelRadius ) );
+                wheel->setWidth( static_cast<real_Num>( wheelWidth ) );
+                wheel->setMaxSuspensionTravelCm( static_cast<real_Num>( suspensionTravelCm ) );
+                wheel->setMaxSuspensionForce( static_cast<real_Num>( suspensionForce ) );
+                wheel->setSuspensionStiffness( static_cast<real_Num>( suspensionStiffness ) );
+                wheel->setSuspensionDamping( static_cast<real_Num>( suspensionDamping ) );
+                wheel->setFrictionSlip( static_cast<real_Num>( frictionSlip ) );
+            }
+            vehicle->setMaterialId( materialId );
+            vehicle->setEnabled( enabled );
+            if( finalize )
+            {
+                vehicle->finalize();
+            }
+
+            m_vehicles.push_back( vehicle );
+            return vehicle;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    bool CPhysicsManager3::rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
+                                    Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal,
+                                    u32 collisionType, u32 collisionMask )
+    {
+        hitPos = Vector3<real_Num>::zero();
+        hitNormal = Vector3<real_Num>::zero();
+        if( direction.lengthSquared() <= Math<real_Num>::epsilon() )
+        {
+            return false;
+        }
+
+        SmartPtr<IPhysicsScene3> scene;
+        {
+            ScopedLock lock( this );
+            scene = selectQueryScene( m_raycastScene, m_physicsScene, m_scenes );
+        }
+
+        if( !scene )
+        {
+            return false;
+        }
+
+        try
+        {
+            return scene->rayTest( start, direction, hitPos, hitNormal, collisionType, collisionMask );
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            hitPos = Vector3<real_Num>::zero();
+            hitNormal = Vector3<real_Num>::zero();
+            return false;
+        }
+    }
+
+    bool CPhysicsManager3::intersects( const Vector3<real_Num> &start, const Vector3<real_Num> &end,
+                                       Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal,
+                                       SmartPtr<ISharedObject> &object, u32 collisionType,
+                                       u32 collisionMask )
+    {
+        hitPos = Vector3<real_Num>::zero();
+        hitNormal = Vector3<real_Num>::zero();
+        object = nullptr;
+        if( ( end - start ).lengthSquared() <= Math<real_Num>::epsilon() )
+        {
+            return false;
+        }
+
+        SmartPtr<IPhysicsScene3> scene;
+        {
+            ScopedLock lock( this );
+            scene = selectQueryScene( m_raycastScene, m_physicsScene, m_scenes );
+        }
+
+        if( !scene )
+        {
+            return false;
+        }
+
+        try
+        {
+            return scene->intersects( start, end, hitPos, hitNormal, object, collisionType,
+                                      collisionMask );
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            hitPos = Vector3<real_Num>::zero();
+            hitNormal = Vector3<real_Num>::zero();
+            object = nullptr;
+            return false;
+        }
+    }
+
+    SmartPtr<IConstraintD6> CPhysicsManager3::addConstraintD6( SmartPtr<IPhysicsBody3>     actor0,
+                                                               const Transform3<real_Num> &localFrame0,
+                                                               SmartPtr<IPhysicsBody3>     actor1,
+                                                               const Transform3<real_Num> &localFrame1 )
+    {
+        if( !actor0 && !actor1 )
+        {
+            WP_LOG_ERROR( "CPhysicsManager3::addConstraintD6: at least one actor is required." );
+            return nullptr;
+        }
+        if( actor0 && actor0 == actor1 )
+        {
+            WP_LOG_ERROR( "CPhysicsManager3::addConstraintD6: an actor cannot constrain itself." );
+            return nullptr;
+        }
+
+        try
+        {
+            ScopedLock lock( this );
+            const auto isManagedActor = [this]( const SmartPtr<IPhysicsBody3> &actor )
+            {
+                if( !actor )
+                {
+                    return true;
+                }
+                return std::any_of( m_bodies.begin(), m_bodies.end(),
+                                    [&actor]( const SmartPtr<IRigidBody3> &body )
+                                    { return body.get() == actor.get(); } );
+            };
+            if( !isManagedActor( actor0 ) || !isManagedActor( actor1 ) )
+            {
+                WP_LOG_ERROR( "CPhysicsManager3::addConstraintD6: actors must belong to this manager." );
+                return nullptr;
+            }
+
+            auto constraint = workphone::make_ptr<CPhysicsConstraintD6>();
+            constraint->setBodyA( actor0 );
+            constraint->setBodyB( actor1 );
+            constraint->setLocalPose( JointActorIndexEnum::eACTOR0, localFrame0 );
+            constraint->setLocalPose( JointActorIndexEnum::eACTOR1, localFrame1 );
+            constraint->load( nullptr );
+
+            m_constraints.push_back( constraint );
+            return constraint;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    SmartPtr<IConstraintFixed3> CPhysicsManager3::addFixedConstraint(
+        SmartPtr<IPhysicsBody3> actor0, const Transform3<real_Num> &localFrame0,
+        SmartPtr<IPhysicsBody3> actor1, const Transform3<real_Num> &localFrame1 )
+    {
+        if( !actor0 && !actor1 )
+        {
+            WP_LOG_ERROR( "CPhysicsManager3::addFixedConstraint: at least one actor is required." );
+            return nullptr;
+        }
+        if( actor0 && actor0 == actor1 )
+        {
+            WP_LOG_ERROR( "CPhysicsManager3::addFixedConstraint: an actor cannot constrain itself." );
+            return nullptr;
+        }
+
+        try
+        {
+            ScopedLock lock( this );
+            const auto isManagedActor = [this]( const SmartPtr<IPhysicsBody3> &actor )
+            {
+                if( !actor )
+                {
+                    return true;
+                }
+                return std::any_of( m_bodies.begin(), m_bodies.end(),
+                                    [&actor]( const SmartPtr<IRigidBody3> &body )
+                                    { return body.get() == actor.get(); } );
+            };
+            if( !isManagedActor( actor0 ) || !isManagedActor( actor1 ) )
+            {
+                WP_LOG_ERROR(
+                    "CPhysicsManager3::addFixedConstraint: actors must belong to this manager." );
+                return nullptr;
+            }
+
+            auto constraint = workphone::make_ptr<CPhysicsConstraintFixed>();
+            constraint->setBodyA( actor0 );
+            constraint->setBodyB( actor1 );
+            constraint->setLocalPose( JointActorIndexEnum::eACTOR0, localFrame0 );
+            constraint->setLocalPose( JointActorIndexEnum::eACTOR1, localFrame1 );
+            constraint->load( nullptr );
+
+            m_constraints.push_back( constraint );
+            return constraint;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    void CPhysicsManager3::removeConstraint( SmartPtr<IPhysicsConstraint3> constraint )
+    {
+        if( !constraint )
+        {
+            return;
+        }
+
+        {
+            ScopedLock lock( this );
+            const auto it = std::find( m_constraints.begin(), m_constraints.end(), constraint );
+            if( it == m_constraints.end() )
+            {
+                return;
+            }
+            m_constraints.erase( it );
+        }
+        constraint->unload( nullptr );
+    }
+
+    SmartPtr<IConstraintDrive> CPhysicsManager3::addConstraintDrive()
+    {
+        try
+        {
+            auto drive = workphone::make_ptr<ConstraintDrive>();
+            drive->setLoadingState( LoadingState::Loaded );
+            return drive;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    SmartPtr<IConstraintLinearLimit> CPhysicsManager3::addConstraintLinearLimit( real_Num extent,
+                                                                                 real_Num contactDist )
+    {
+        if( !std::isfinite( static_cast<double>( extent ) ) || extent < 0 )
+        {
+            WP_LOG_ERROR(
+                "CPhysicsManager3::addConstraintLinearLimit: extent must be finite and non-negative." );
+            return nullptr;
+        }
+        if( !std::isfinite( static_cast<double>( contactDist ) ) )
+        {
+            WP_LOG_ERROR(
+                "CPhysicsManager3::addConstraintLinearLimit: contact distance must be finite." );
+            return nullptr;
+        }
+
+        auto limit = workphone::make_ptr<CPhysicsConstraintLinearLimit>();
+        limit->setValue( extent );
+        limit->setContactDistance( contactDist < 0 ? static_cast<real_Num>( 0.0 ) : contactDist );
+        limit->setLoadingState( LoadingState::Loaded );
+        return limit;
+    }
+
+    SmartPtr<IRaycastHit> CPhysicsManager3::addRaycastHitData()
+    {
+        try
+        {
+            auto hit = workphone::make_ptr<RaycastHit>();
+            hit->setTriangleIndex( -1 );
+            hit->setLoadingState( LoadingState::Loaded );
+
+            ScopedLock lock( this );
+            m_raycastHits.push_back( hit );
+            return hit;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+            return nullptr;
+        }
+    }
+
+    void CPhysicsManager3::removeRaycastHitData( SmartPtr<IRaycastHit> raycastHitData )
+    {
+        if( !raycastHitData )
+        {
+            return;
+        }
+
+        ScopedLock lock( this );
+        const auto it = std::find( m_raycastHits.begin(), m_raycastHits.end(), raycastHitData );
+        if( it != m_raycastHits.end() )
+        {
+            ( *it )->setLoadingState( LoadingState::Unloaded );
+            m_raycastHits.erase( it );
+        }
+    }
+    TaskId CPhysicsManager3::getStateTask() const
+    {
+        return TaskId::Physics;
+    }
+    TaskId CPhysicsManager3::getPhysicsTask() const
+    {
+        return TaskId::Physics;
+    }
+    void CPhysicsManager3::loadObject( SmartPtr<ISharedObject> object, bool )
+    {
+        if( !object || object->getLoadingState() == LoadingState::Loaded )
+        {
+            return;
+        }
+
+        try
+        {
+            ScopedLock lock( this );
+            object->load( nullptr );
+            if( object->getLoadingState() != LoadingState::Loaded &&
+                object->getLoadingState() != LoadingState::LoadingQueued )
+            {
+                object->setLoadingState( LoadingState::Loaded );
+            }
+        }
+        catch( const std::exception &e )
+        {
+            object->setLoadingState( LoadingState::Unloaded );
+            WP_LOG_EXCEPTION( e );
+        }
+    }
+
+    void CPhysicsManager3::unloadObject( SmartPtr<ISharedObject> object, bool )
+    {
+        if( !object || object->getLoadingState() == LoadingState::Unloaded )
+        {
+            return;
+        }
+
+        try
+        {
+            ScopedLock lock( this );
+
+            // The lightweight WP rigid-body wrappers own their native resources for
+            // their entire C++ lifetime. Their inherited unload implementation expects
+            // a global application state manager, which this standalone backend does not
+            // require, so a loading-state transition is the appropriate teardown here.
+            if( dynamic_cast<CRigidDynamic3 *>( object.get() ) ||
+                dynamic_cast<CRigidStatic3 *>( object.get() ) )
+            {
+                object->setLoadingState( LoadingState::Unloaded );
+                return;
+            }
+
+            object->unload( nullptr );
+            if( object->getLoadingState() != LoadingState::Unloaded )
+            {
+                object->setLoadingState( LoadingState::Unloaded );
+            }
+        }
+        catch( const std::exception &e )
+        {
+            object->setLoadingState( LoadingState::Unloaded );
+            WP_LOG_EXCEPTION( e );
+        }
+    }
+
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getPhysicsScene() const
+    {
+        ScopedLock lock( this );
+        return m_physicsScene;
+    }
+
+    void CPhysicsManager3::setPhysicsScene( SmartPtr<IPhysicsScene3> physicsScene )
+    {
+        ScopedLock lock( this );
+        m_physicsScene = physicsScene;
+    }
+
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getObjectsScene() const
+    {
+        ScopedLock lock( this );
+        return m_objectsScene;
+    }
+
+    void CPhysicsManager3::setObjectsScene( SmartPtr<IPhysicsScene3> objectsScene )
+    {
+        ScopedLock lock( this );
+        m_objectsScene = objectsScene;
+    }
+
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getRaycastScene() const
+    {
+        ScopedLock lock( this );
+        return m_raycastScene;
+    }
+
+    void CPhysicsManager3::setRaycastScene( SmartPtr<IPhysicsScene3> raycastScene )
+    {
+        ScopedLock lock( this );
+        m_raycastScene = raycastScene;
+    }
+
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getControlsScene() const
+    {
+        ScopedLock lock( this );
+        return m_controlsScene;
+    }
+
+    void CPhysicsManager3::setControlsScene( SmartPtr<IPhysicsScene3> controlsScene )
+    {
+        ScopedLock lock( this );
+        m_controlsScene = controlsScene;
+    }
+} // namespace workphone::physics

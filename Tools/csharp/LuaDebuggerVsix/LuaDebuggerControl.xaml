@@ -1,0 +1,77 @@
+<UserControl x:Class="LuaDebuggerVsix.LuaDebuggerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBlock Text="Host:" VerticalAlignment="Center"/>
+            <TextBox x:Name="HostTextBox"
+                     Width="120"
+                     Margin="4"
+                     Text="127.0.0.1"/>
+
+            <TextBlock Text="Port:" VerticalAlignment="Center"/>
+            <TextBox x:Name="PortTextBox"
+                     Width="80"
+                     Margin="4"
+                     Text="9230"/>
+
+            <Button x:Name="ConnectButton"
+                    Content="Connect"
+                    Margin="4"
+                    Click="ConnectButton_Click"/>
+
+            <Button x:Name="DisconnectButton"
+                    Content="Disconnect"
+                    Margin="4"
+                    Click="DisconnectButton_Click"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+            <Button Content="Continue"
+                    Width="80"
+                    Margin="4"
+                    Click="ContinueButton_Click"/>
+
+            <Button Content="Step"
+                    Width="80"
+                    Margin="4"
+                    Click="StepButton_Click"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+            <TextBlock Text="Breakpoint:" VerticalAlignment="Center"/>
+
+            <TextBox x:Name="BreakpointFileTextBox"
+                     Width="240"
+                     Margin="4"
+                     Text="scripts/player.lua"/>
+
+            <TextBox x:Name="BreakpointLineTextBox"
+                     Width="60"
+                     Margin="4"
+                     Text="1"/>
+
+            <Button Content="Set"
+                    Width="60"
+                    Margin="4"
+                    Click="SetBreakpointButton_Click"/>
+        </StackPanel>
+
+        <TextBox x:Name="LogTextBox"
+                 Grid.Row="3"
+                 Margin="0,8,0,0"
+                 FontFamily="Consolas"
+                 FontSize="12"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"/>
+    </Grid>
+</UserControl>

@@ -1,0 +1,14 @@
+﻿<Window x:Class="fb.AddComponentGroupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:fb"
+        mc:Ignorable="d"
+        Title="AddComponentGroupWindow" Height="200" Width="350">
+    <Grid>
+        <TextBox Name="GroupName" HorizontalAlignment="Left" Height="23" Margin="110,46,0,0" TextWrapping="Wrap" Text="New Group" VerticalAlignment="Top" Width="120" RenderTransformOrigin="-0.795,-0.995"/>
+        <Button Content="Add" HorizontalAlignment="Left" Margin="134,113,0,0" VerticalAlignment="Top" Width="75" RenderTransformOrigin="-1.188,0.414" Click="Button_Click"/>
+
+    </Grid>
+</Window>

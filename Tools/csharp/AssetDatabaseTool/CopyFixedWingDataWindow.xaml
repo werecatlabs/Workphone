@@ -1,0 +1,98 @@
+﻿<Window x:Class="fb.CopyFixedWingDataWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:fb"
+        mc:Ignorable="d"
+        Title="CopyFixedWingDataWindow" Height="450" Width="800">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="1*" />
+            <ColumnDefinition Width="1*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="1*"/>
+            <RowDefinition Height="1*"/>
+        </Grid.RowDefinitions>
+        <Border Grid.Column="0">
+            <TextBox Name="SourceText" HorizontalAlignment="Center" Height="120" Margin="0,0,0,0" TextWrapping="Wrap" Text="None" VerticalAlignment="Top" Width="200"/>
+        </Border>
+        <Border Grid.Column="0">
+            <Button Content="Select Source" HorizontalAlignment="Left" Margin="54,144,0,0" VerticalAlignment="Top" Width="200" RenderTransformOrigin="-0.165,0.817" Click="Button_Click"/>
+        </Border>
+        <Border Grid.Column="1" RenderTransformOrigin="0.5,0.814">
+            <TextBox Name="DestinationText" HorizontalAlignment="Center" Height="120" Margin="0,0,0,0" TextWrapping="Wrap" Text="None" VerticalAlignment="Top" Width="200"/>
+        </Border>
+        <Border Grid.Column="1">
+            <Button Content="Select Destination" HorizontalAlignment="Left" Margin="51,145,0,0" VerticalAlignment="Top" Width="200" RenderTransformOrigin="-0.165,0.817" Click="Button_Click_1"/>
+        </Border>
+        <Border Grid.Column="1" Grid.Row="1">
+            <Button Content="Apply" HorizontalAlignment="Left" Margin="50,80,0,0" VerticalAlignment="Top" Width="200" RenderTransformOrigin="-0.165,0.817" Click="Button_Click_2"/>
+        </Border>
+        <Border Grid.Column="0" Grid.Row="10">
+            <StackPanel Orientation="Vertical">
+                <Border Grid.Column="0" Grid.Row="1">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="WingShapeData_Checkbox" IsChecked="True"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Wing Shape Data"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="2">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="WingAerodynamicProperties_Checkbox" IsChecked="True"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Wing Aerodynamic Properties"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="3">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="ControlSurfaceProperties_Checkbox" IsChecked="True"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Control Surface Properties"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="4">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="WheelData_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Wheel Data (copies wheel data)"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="5">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="WheelPositionData_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Wheel m_position Data (copies wheel position data)"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="6">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="Attribs_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Attribs (Copies all the model's attribs include components)"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="7">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="Propwash_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Propwash"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="8">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="Engine_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Engine"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="9">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="Model_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Model"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="0" Grid.Row="10">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Name="DeleteModelObjects_Checkbox" IsChecked="False"></CheckBox>
+                        <TextBlock Margin="5,0,0,0" Text="Delete Model Objects(deletes any object not found in the source)"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

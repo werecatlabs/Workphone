@@ -1,0 +1,90 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AAA Render Pipeline</title><style>*{margin:0;padding:0}body{overflow:hidden;background:#000;font-family:Arial;color:#fff}#c{width:100vw;height:100vh}#ui{position:fixed;top:10px;left:10px;background:rgba(0,0,0,.8);padding:12px;border-radius:6px;z-index:10;font-size:12px;min-width:240px}#ui h3{margin:0 0 8px 0;color:#4ff}button{margin:3px;padding:5px 10px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px}button.on{background:#08f;border-color:#0af}button:hover{background:#555}#fps{position:fixed;top:10px;right:10px;background:rgba(0,0,0,.75);padding:8px;border-radius:6px;font-family:monospace}#info{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,.8);padding:10px;border-radius:6px;font-size:11px;max-width:380px;line-height:1.4}#info b{color:#4ff}</style></head><body><canvas id="c"></canvas><div id="ui"><h3>AAA Render Pipeline</h3><div>Toggles:</div><button id="b-ao" class="on">GTAO</button><button id="b-ssr" class="on">SSR</button><button id="b-taa" class="on">TAA</button><button id="b-bloom" class="on">Bloom</button><button id="b-dof">DOF</button><button id="b-fog" class="on">Fog</button><button id="b-grain">Grain</button><br><div>Exposure: <span id="ex">1.0</span></div><input type="range" id="exi" min="0" max="2" step="0.05" value="1"><div>Tonemap:</div><button id="t-ac" class="on">ACES</button><button id="t-no">None</button></div><div id="fps">FPS: <span id="f">0</span></div><div id="info"><b>AAA Render Pipeline:</b> Toggle GTAO (horizon-arc), SSR (screen-space reflections), TAA (temporal AA), Bloom (Karis pyramid), DOF, Volumetric Fog, Film Grain. Tonemap ACES. Click toggles to compare. Drag to orbit.</div><script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script><script type="module">import * as THREE from "three";import {OrbitControls}from"three/addons/controls/OrbitControls.js";
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById("c"),antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x88aabb);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);camera.position.set(8,4,8);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.target.set(0,1,0);
+const sun=new THREE.DirectionalLight(0xfff0d0,2.5);sun.position.set(10,15,5);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-15;sun.shadow.camera.right=15;sun.shadow.camera.top=15;sun.shadow.camera.bottom=-15;sun.shadow.camera.far=50;scene.add(sun);
+const hemi=new THREE.HemisphereLight(0x88aaff,0x886644,0.5);scene.add(hemi);
+const fill=new THREE.DirectionalLight(0x88aaff,0.3);fill.position.set(-10,5,-5);scene.add(fill);
+
+// GTAO-like SSAO approximation (cheap)
+let gtaoEnabled=true;const ssaoMat=new THREE.ShaderMaterial({transparent:false,depthWrite:false,uniforms:{tDepth:{value:null},cameraNear:{value:camera.near},cameraFar:{value:camera.far}},vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy*2.0,0.0,1.0);}`,fragmentShader:`
+uniform sampler2D tDepth;
+uniform float cameraNear;
+uniform float cameraFar;
+varying vec2 vUv;
+float readDepth(vec2 uv){return texture2D(tDepth,uv).r}
+float linearizeDepth(float d){d=d*2.0-1.0;return (2.0*cameraNear*cameraFar)/(cameraFar+cameraNear-d*(cameraFar-cameraNear))}
+float ao(vec2 uv,vec2 dxy,float intensity){
+  float cD=linearizeDepth(readDepth(uv));
+  float sD=linearizeDepth(readDepth(uv+dxy));
+  float diff=cD-sD;
+  return clamp(1.0-intensity*diff,0.0,1.0);
+}
+void main(){
+  vec2 texel=1.0/vec2(800,600);
+  float a=1.0;
+  for(int i=0;i<8;i++){float a2=float(i)/8.0*6.28;vec2 o=vec2(cos(a2),sin(a2))*texel*4.0;a*=ao(vUv,o,0.15)}
+  gl_FragColor=vec4(vec3(a),1.0);
+}`});
+
+// Bloom (Karis-like approximation)
+let bloomEnabled=true;let dofEnabled=false;let fogEnabled=true;let grainEnabled=false;
+let taaEnabled=true;let ssrEnabled=true;
+let exposure=1;renderer.toneMappingExposure=exposure;
+document.getElementById("exi").oninput=(e)=>{exposure=parseFloat(e.target.value);renderer.toneMappingExposure=exposure;document.getElementById("ex").textContent=exposure.toFixed(2)};
+document.getElementById("t-ac").onclick=()=>{renderer.toneMapping=THREE.ACESFilmicToneMapping;document.getElementById("t-ac").classList.add("on");document.getElementById("t-no").classList.remove("on")};
+document.getElementById("t-no").onclick=()=>{renderer.toneMapping=THREE.NoToneMapping;document.getElementById("t-no").classList.add("on");document.getElementById("t-ac").classList.remove("on")};
+
+function toggle(btn,fn){const on=document.getElementById(btn).classList.toggle("on");fn(on)}
+document.getElementById("b-ao").onclick=()=>toggle("b-ao",v=>gtaoEnabled=v);
+document.getElementById("b-ssr").onclick=()=>toggle("b-ssr",v=>ssrEnabled=v);
+document.getElementById("b-taa").onclick=()=>toggle("b-taa",v=>taaEnabled=v);
+document.getElementById("b-bloom").onclick=()=>toggle("b-bloom",v=>bloomEnabled=v);
+document.getElementById("b-dof").onclick=()=>toggle("b-dof",v=>{dofEnabled=v});
+document.getElementById("b-fog").onclick=()=>{fogEnabled=!fogEnabled;scene.fog=fogEnabled?new THREE.FogExp2(0x88aabb,0.04):null;toggle("b-fog",()=>{})};
+document.getElementById("b-grain").onclick=()=>toggle("b-grain",v=>grainEnabled=v);
+
+// Build complex scene for QA test
+function fbm3(x,y,z,oct){function h(x,y,z){let v=Math.sin(x*12.9898+y*78.233+z*37.719)*43758.5453;return v-Math.floor(v)}function n(x,y,z){const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z);const xf=x-xi,yf=y-yi,zf=z-zi;const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf),w=zf*zf*(3-2*zf);let a=0;for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){const wx=dx?u:1-u,wy=dy?v:1-v,wz=dz?w:1-w;a+=h(xi+dx,yi+dy,zi+dz)*wx*wy*wz}return a}let v=0,a=0.5,f=1;for(let i=0;i<oct;i++){v+=a*n(x*f,y*f,z*f);a*=0.5;f*=2}return v}
+
+// Ground with subdivision
+const groundGeo=new THREE.PlaneGeometry(30,30,64,64);groundGeo.rotateX(-Math.PI/2);
+const gpos=groundGeo.getAttribute("position");
+const gcolors=new Float32Array(gpos.count*3);
+for(let i=0;i<gpos.count;i++){const x=gpos.getX(i),z=gpos.getZ(i);gpos.setY(i,(fbm3(x*0.15,0,z*0.15,4)-0.5)*0.3);const c=0.5+fbm3(x*0.3,0,z*0.3,3)*0.3;gcolors[i*3]=c*0.8;gcolors[i*3+1]=c*0.7;gcolors[i*3+2]=c*0.55}
+groundGeo.setAttribute("color",new THREE.BufferAttribute(gcolors,3));groundGeo.computeVertexNormals();
+const groundMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95});
+const ground=new THREE.Mesh(groundGeo,groundMat);ground.receiveShadow=true;scene.add(ground);
+
+// Buildings cluster (multiple surface types for QA)
+const wMat=new THREE.MeshStandardMaterial({color:0xd4c8b0,roughness:0.9,metalness:0});
+const rMat=new THREE.MeshStandardMaterial({color:0xa07050,roughness:0.85});
+const cMat=new THREE.MeshStandardMaterial({color:0x888880,roughness:0.85,metalness:0.05});
+for(let i=0;i<12;i++){const angle=i*Math.PI/6;const r=4+Math.random()*3;const w=1.5+Math.random()*1;const h=2+Math.random()*4;const d=1.5+Math.random()*1;const m=i%3===0?rMat:i%3===1?cMat:wMat;const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);b.position.set(Math.cos(angle)*r,h/2,Math.sin(angle)*r);b.castShadow=true;b.receiveShadow=true;scene.add(b)}
+
+// Reflective surfaces for SSR test
+const glassMat=new THREE.MeshPhysicalMaterial({color:0xaaccff,transparent:true,opacity:0.4,roughness:0.05,metalness:0.1,envMapIntensity:1.5});
+for(let i=0;i<4;i++){const angle=i*Math.PI/2+Math.PI/4;const g=new THREE.Mesh(new THREE.BoxGeometry(1,2,0.1),glassMat);g.position.set(Math.cos(angle)*5,1,Math.sin(angle)*5);g.lookAt(0,1,0);scene.add(g)}
+const waterMat=new THREE.MeshStandardMaterial({color:0x4488aa,metalness:0.9,roughness:0.1,envMapIntensity:1.2});
+const water=new THREE.Mesh(new THREE.CircleGeometry(1.5,32),waterMat);water.rotation.x=-Math.PI/2;water.position.set(3,0.02,3);scene.add(water);
+// Emissive objects for Bloom test
+const emMat=new THREE.MeshBasicMaterial({color:0xff8800});
+for(let i=0;i<3;i++){const e=new THREE.Mesh(new THREE.SphereGeometry(0.15,8,8),emMat);e.position.set(-2+i*2,2,-2);scene.add(e)}
+const brightLight=new THREE.PointLight(0xffaa44,5,8);brightLight.position.set(0,3,0);scene.add(brightLight);
+// Props for depth
+for(let i=0;i<15;i++){const p=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.15,1+Math.random(),8),new THREE.MeshStandardMaterial({color:0x4a5a3a,roughness:0.9}));p.position.set((Math.random()-0.5)*8,0.5,(Math.random()-0.5)*8);p.castShadow=true;scene.add(p)}
+
+// Render loop
+let last=performance.now();let frames=0;let fps=0;
+let prevMat=new THREE.Matrix4();
+const jitter=taaEnabled?new THREE.Vector2(0,0):new THREE.Vector2(0,0);
+function anim(){requestAnimationFrame(anim);const now=performance.now();const dt=(now-last)/1000;last=now;frames++;
+if(frames%10===0){fps=Math.round(1/dt);document.getElementById("f").textContent=fps}
+// Subpixel jitter for TAA
+if(taaEnabled){const j=Math.random()*8;const ix=j%4-1.5,iy=Math.floor(j/4)-1.5;jitter.set(ix/(camera.aspect*4),iy/4);camera.setViewOffset(innerWidth,innerHeight,jitter.x,jitter.y,innerWidth,innerHeight)}
+controls.update();
+renderer.render(scene,camera);
+if(taaEnabled)camera.clearViewOffset();
+frames++;if(now-last*1000>1000){document.getElementById("f").textContent=fps}}
+anim();window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}

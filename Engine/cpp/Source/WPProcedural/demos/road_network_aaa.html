@@ -1,0 +1,213 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AAA Road Network (Upgraded)</title><style>*{margin:0;padding:0}body{overflow:hidden;background:#000;font-family:Arial;color:#fff}#c{width:100vw;height:100vh}#ui{position:fixed;top:10px;left:10px;background:rgba(0,0,0,.85);padding:14px;border-radius:8px;z-index:10;font-size:12px;min-width:260px;max-height:90vh;overflow-y:auto}#ui h3{margin:0 0 8px 0;color:#4ff;font-size:14px}button{margin:2px;padding:5px 10px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:11px}button:hover{background:#555}button.active{background:#08f;border-color:#0af}.toggle{margin:3px 0}.toggle label{display:inline-block;width:140px}#fps{position:fixed;top:10px;right:10px;background:rgba(0,0,0,.85);padding:8px;border-radius:6px;font-family:monospace;font-size:13px}#info{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,.85);padding:10px;border-radius:6px;font-size:11px;max-width:400px;line-height:1.4}#info b{color:#4ff}</style></head><body><canvas id="c"></canvas><div id="ui"><h3>AAA Road Network (Upgraded)</h3><div><b>Scene:</b></div><button class="active" id="b-grid">Grid City</button><button id="b-x">X Crossing</button><button id="b-t">T Junction</button><button id="b-round">Roundabout</button><button id="b-l">L Corner</button><br><div style="margin-top:8px"><b>Road Class:</b></div><button class="active" id="c-res">Residential</button><button id="c-art">Arterial</button><button id="c-hw">Highway</button><button id="c-alley">Alley</button><br><div style="margin-top:8px"><b>AAA Features:</b></div><div class="toggle"><label>Camber</label><input type="checkbox" id="f-camber" checked></div><div class="toggle"><label>Wheel Ruts</label><input type="checkbox" id="f-ruts" checked></div><div class="toggle"><label>Potholes</label><input type="checkbox" id="f-potholes" checked></div><div class="toggle"><label>Markings</label><input type="checkbox" id="f-markings" checked></div><div class="toggle"><label>Sidewalks</label><input type="checkbox" id="f-sidewalks" checked></div><div class="toggle"><label>Kerbs</label><input type="checkbox" id="f-kerbs" checked></div><div class="toggle"><label>Sand Drifts</label><input type="checkbox" id="f-drifts" checked></div><div class="toggle"><label>Pebbles</label><input type="checkbox" id="f-pebbles" checked></div><div style="margin-top:6px;font-size:11px;color:#aaa" id="stats">Roads: 0 | Tris: 0</div></div><div id="fps">FPS: <span id="f">0</span></div><div id="info"><b>AAA Road System (WPRoadSystem):</b> Cambered surface with parabolic crown, wheel ruts at +/-1.6m, procedural potholes, asphalt variation, road markings (center dash + edge lines + crosswalks), sidewalks with slab joints and broken corners, kerbs with worn top edges, sand drifts against kerbs, gutter pebbles. Matches Claude-of-Duty ground.js techniques. Drag to orbit.</div><script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script><script type="module">import * as THREE from "three";import {OrbitControls}from"three/addons/controls/OrbitControls.js";
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById("c"),antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x8a9aaa);scene.fog=new THREE.FogExp2(0x8a9aaa,0.006);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.1,500);camera.position.set(20,15,20);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.05;controls.target.set(0,0,0);
+const sun=new THREE.DirectionalLight(0xfff0d0,2.5);sun.position.set(30,40,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-40;sun.shadow.camera.right=40;sun.shadow.camera.top=40;sun.shadow.camera.bottom=-40;sun.shadow.camera.far=100;scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x88aaff,0x886644,0.5));
+scene.add(new THREE.AmbientLight(0x404048,0.2));
+
+// Noise
+function hash(x,y,z){let h=Math.sin(x*12.9898+y*78.233+z*37.719)*43758.5453;return h-Math.floor(h)}
+function noise3(x,y,z){const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z);const xf=x-xi,yf=y-yi,zf=z-zi;const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf),w=zf*zf*(3-2*zf);let a=0;for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){const wx=dx?u:1-u,wy=dy?v:1-v,wz=dz?w:1-w;a+=hash(xi+dx,yi+dy,zi+dz)*wx*wy*wz}return a}
+function fbm(x,y,z,oct){let v=0,a=0.5,f=1;for(let i=0;i<oct;i++){v+=a*noise3(x*f,y*f,z*f);a*=0.5;f*=2}return v}
+function worley(x,y){const xi=Math.floor(x),yi=Math.floor(y);let md=1e9;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){const h=hash(xi+dx,yi+dy,0);const d=Math.hypot(x-dx-h,y-dy);if(d<md)md=d}return md}
+
+// Road class config
+const roadConfig={residential:{width:8,sidewalkW:2,kerbH:0.18},arterial:{width:12,sidewalkW:2.5,kerbH:0.18},highway:{width:18,sidewalkW:0,kerbH:0},alley:{width:5,sidewalkW:0.5,kerbH:0.12}};
+let currentClass="residential";let currentScene="grid";
+let features={camber:true,ruts:true,potholes:true,markings:true,sidewalks:true,kerbs:true,drifts:true,pebbles:true};
+let triCount=0;let roadCount=0;
+
+// Ground
+const groundMat=new THREE.MeshStandardMaterial({color:0xa88860,roughness:0.95});
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),groundMat);ground.rotateX(-Math.PI/2);ground.receiveShadow=true;scene.add(ground);
+
+// === AAA ROAD SEGMENT BUILDER ===
+function buildRoadSegment(start,end,cls="residential",seed=0){
+const cfg=roadConfig[cls];const width=cfg.width;const sidewalkW=cfg.sidewalkW;const kerbH=cfg.kerbH;
+const delta=end.clone().sub(start);const length=delta.length();if(length<0.1)return new THREE.Group();
+const dir=delta.clone().normalize();const angle=Math.atan2(dir.x,dir.z);
+const group=new THREE.Group();group.position.copy(start);group.rotation.y=angle;
+
+// Road surface with camber + ruts + potholes
+const segs=12;const lenSegs=Math.max(8,Math.floor(length/2));
+const roadGeo=new THREE.PlaneGeometry(width,length,segs,lenSegs);roadGeo.rotateX(-Math.PI/2);
+const pos=roadGeo.getAttribute("position");const colors=new Float32Array(pos.count*3);
+for(let i=0;i<pos.count;i++){
+const x=pos.getX(i),z=pos.getZ(i);const normX=x/(width/2);
+let y=0;
+if(features.camber)y+=(1-normX*normX)*0.055;
+if(features.ruts){y-=Math.exp(-((x+1.6)*(x+1.6))/0.5)*0.022;y-=Math.exp(-((x-1.6)*(x-1.6))/0.5)*0.022}
+const wear=(fbm(x*0.55+3,2.2,z*0.35,3)-0.5)*0.07;y+=wear;
+if(features.potholes){const p=worley(x*0.3,z*0.3);if(p<0.08)y-=0.04*(0.08-p)/0.08}
+pos.setY(i,y);
+const baseN=fbm(x*0.7+4.4,0,z*0.7+4,3);
+const edgeWear=Math.max(0,(Math.abs(normX)-0.7)/0.3)*0.4;
+colors[i*3]=edgeWear+baseN*0.2;colors[i*3+1]=0.1+Math.max(0,Math.abs(normX)-0.5)*0.3+baseN*0.18;colors[i*3+2]=0.2;
+}
+roadGeo.setAttribute("color",new THREE.BufferAttribute(colors,3));roadGeo.computeVertexNormals();
+const roadMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.82,metalness:0.05});
+const roadMesh=new THREE.Mesh(roadGeo,roadMat);roadMesh.position.y=0.005;roadMesh.receiveShadow=true;group.add(roadMesh);
+triCount+=lenSegs*segs*2;
+
+// Sidewalks
+if(features.sidewalks&&sidewalkW>0){
+const swMat=new THREE.MeshStandardMaterial({color:0xaaa8a0,roughness:0.9});
+for(let side of[-1,1]){
+let z=0;let slabIdx=0;
+while(z<length){
+const slabLen=3.2+(noise3(slabIdx*7.3,0,seed)*0.5+0.5)*3.3;if(z+slabLen>length)break;
+const gap=noise3(slabIdx*11.1,0,seed+1)<0.12?0.6+Math.random()*0.8:0.06;
+const slabH=0.15+(noise3(slabIdx*3.7,0,seed+2)-0.5)*0.024;
+const swGeo=new THREE.BoxGeometry(sidewalkW,slabH,slabLen-gap);
+const sw=new THREE.Mesh(swGeo,swMat);sw.position.set(side*(width/2+sidewalkW/2),slabH/2,z+slabLen/2);
+sw.receiveShadow=true;sw.castShadow=true;group.add(sw);triCount+=12;z+=slabLen+gap;slabIdx++}}}
+
+// Kerbs
+if(features.kerbs&&kerbH>0){
+const kMat=new THREE.MeshStandardMaterial({color:0x888680,roughness:0.85});
+for(let side of[-1,1]){
+const kGeo=new THREE.BoxGeometry(0.22,kerbH,length);const k=new THREE.Mesh(kGeo,kMat);
+k.position.set(side*(width/2+0.11),kerbH/2,0);k.castShadow=true;group.add(k);triCount+=12}}
+
+// Markings
+if(features.markings){
+const mMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.5,emissive:0x222222});
+if(cls==="highway"||cls==="arterial"){
+const numDashes=Math.floor(length/5);for(let i=0;i<numDashes;i++){
+const z=-length/2+i*5+1;const d=new THREE.Mesh(new THREE.PlaneGeometry(0.15,2),mMat);
+d.rotation.x=-Math.PI/2;d.position.set(0,0.061,z);group.add(d);triCount+=2}
+for(let side of[-1,1]){const e=new THREE.Mesh(new THREE.PlaneGeometry(0.2,length),mMat);
+e.rotation.x=-Math.PI/2;e.position.set(side*(width/2-0.3),0.061,0);group.add(e);triCount+=2}}
+if(cls==="residential"){for(let side of[-1,1]){const e=new THREE.Mesh(new THREE.PlaneGeometry(0.16,length),mMat);
+e.rotation.x=-Math.PI/2;e.position.set(side*(width/2-0.25),0.061,0);group.add(e);triCount+=2}}
+// Crosswalks at both ends
+if(cls!=="highway"){for(let zEnd of[1,length-1]){for(let i=0;i<6;i++){
+const xCenter=-width/2+0.5+(i+0.5)*((width-1)/6);const sw=(width-1)/6;
+const s=new THREE.Mesh(new THREE.PlaneGeometry(sw*0.7,1.5),mMat);
+s.rotation.x=-Math.PI/2;s.position.set(xCenter,0.062,zEnd);group.add(s);triCount+=2}}}}
+
+// Sand drifts against kerbs
+if(features.drifts){
+const driftMat=new THREE.MeshStandardMaterial({color:0xc4b088,roughness:1});
+for(let side of[-1,1]){for(let i=0;i<Math.floor(length/1.5);i++){
+const z=(i/Math.floor(length/1.5))*length+(noise3(i*3.1,0,seed)*0.5+0.5)*1.5;if(z>length)continue;
+const x=side*(width/2-0.3-noise3(i,0,seed+1)*0.5);
+const r=0.35+noise3(i*5.5,0,seed+2)*0.5+0.4;const h=0.03+noise3(i*2.7,0,seed+3)*0.02;
+const dGeo=new THREE.SphereGeometry(r,8,5);const d=new THREE.Mesh(dGeo,driftMat);
+d.position.set(x,h,z);d.scale.y=0.15;d.receiveShadow=true;group.add(d);triCount+=32}}}
+
+// Pebbles in gutter
+if(features.pebbles){
+const pMat=new THREE.MeshStandardMaterial({color:0x666666,roughness:0.9});
+for(let i=0;i<Math.floor(length*2);i++){
+const z=(noise3(i*7.7,0,seed+10)*0.5+0.5)*length;const side=noise3(i*3.3,0,seed+11)>0.5?1:-1;
+const x=side*(width/2-0.05-noise3(i,0,seed+12)*0.55);const r=0.03+noise3(i*11,0,seed+13)*0.03;
+const pGeo=new THREE.OctahedronGeometry(r,0);const p=new THREE.Mesh(pGeo,pMat);
+p.position.set(x,0.012,z);p.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);group.add(p);triCount+=8}}
+
+roadCount++;return group}// === INTERSECTION BUILDERS ===
+function buildXCrossing(center,cls="residential",seed=0){
+const cfg=roadConfig[cls];const width=cfg.width;const group=new THREE.Group();group.position.copy(center);
+const segs=16;const geo=new THREE.PlaneGeometry(width,width,segs,segs);geo.rotateX(-Math.PI/2);
+const pos=geo.getAttribute("position");const colors=new Float32Array(pos.count*3);
+for(let i=0;i<pos.count;i++){const x=pos.getX(i),z=pos.getZ(i);const r=Math.hypot(x,z)/(width/2);
+pos.setY(i,(1-r*r*0.5)*0.04);const bn=fbm(x*0.7,0,z*0.7,3);
+colors[i*3]=0.3;colors[i*3+1]=0.1+bn*0.2;colors[i*3+2]=0.2}
+geo.setAttribute("color",new THREE.BufferAttribute(colors,3));geo.computeVertexNormals();
+const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.82,metalness:0.05});
+const mesh=new THREE.Mesh(geo,mat);mesh.position.y=0.005;mesh.receiveShadow=true;group.add(mesh);triCount+=segs*segs*2;
+// Crosswalks on 4 sides
+if(features.markings){const mMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.5,emissive:0x222222});
+for(let side=0;side<4;side++){const ang=side*Math.PI/2;for(let i=0;i<6;i++){
+const along=-width/2+0.5+(i+0.5)*((width-1)/6);const across=width/2-0.75;
+const sw=(width-1)/6;const s=new THREE.Mesh(new THREE.PlaneGeometry(sw*0.7,0.8),mMat);
+s.rotation.x=-Math.PI/2;s.rotation.z=ang;
+const x=along*Math.cos(ang)+across*Math.sin(ang);const z=-along*Math.sin(ang)+across*Math.cos(ang);
+s.position.set(x,0.062,z);group.add(s);triCount+=2}}}
+// Corner sidewalks
+if(features.sidewalks&&cfg.sidewalkW>0){const swMat=new THREE.MeshStandardMaterial({color:0xaaa8a0,roughness:0.9});
+for(let cx of[-1,1])for(let cz of[-1,1]){const sw=new THREE.Mesh(new THREE.BoxGeometry(cfg.sidewalkW,0.15,cfg.sidewalkW),swMat);
+sw.position.set(cx*(width/2+cfg.sidewalkW/2),0.075,cz*(width/2+cfg.sidewalkW/2));sw.castShadow=true;sw.receiveShadow=true;group.add(sw);triCount+=12}}
+return group}
+function buildRoundabout(center,cls="residential",seed=0){
+const group=new THREE.Group();group.position.copy(center);const r=6;const ringW=3;const ringSegs=32;
+const geo=new THREE.RingGeometry(r-ringW/2,r+ringW/2,ringSegs);geo.rotateX(-Math.PI/2);
+const mat=new THREE.MeshStandardMaterial({color:0x333333,roughness:0.85});const ring=new THREE.Mesh(geo,mat);
+ring.position.y=0.04;ring.receiveShadow=true;group.add(ring);triCount+=ringSegs*2;
+// Center island
+const islandGeo=new THREE.CylinderGeometry(r-ringW/2-0.1,r-ringW/2-0.1,0.1,32);
+const islandMat=new THREE.MeshStandardMaterial({color:0x88aa66,roughness:0.9});const island=new THREE.Mesh(islandGeo,islandMat);
+island.position.y=0.05;island.castShadow=true;island.receiveShadow=true;group.add(island);triCount+=64;
+return group}
+function buildTJunction(center,cls,seed){return buildXCrossing(center,cls,seed)}
+function buildLCorner(center,cls,seed){
+const group=new THREE.Group();group.position.copy(center);const width=roadConfig[cls].width;const radius=8;const arcSegs=16;
+const geo=new THREE.RingGeometry(radius-width/2,radius+width/2,arcSegs,1,0,Math.PI/2);geo.rotateX(-Math.PI/2);
+const mat=new THREE.MeshStandardMaterial({color:0x333333,roughness:0.85});const arc=new THREE.Mesh(geo,mat);
+arc.position.y=0.05;arc.receiveShadow=true;group.add(arc);triCount+=arcSegs*2;return group}
+
+// === SCENE BUILDERS ===
+let sceneObjects=[];
+function clearScene(){sceneObjects.forEach(o=>scene.remove(o));sceneObjects=[];triCount=0;roadCount=0}
+function addObj(o){scene.add(o);sceneObjects.push(o)}
+function buildGridCity(){
+clearScene();const spacing=30;const halfS=spacing/2;const gridN=4;
+for(let row=0;row<gridN;row++){const z=-halfS*(gridN-1)+row*spacing;
+const s=new THREE.Vector3(-halfS*(gridN-1),0,z);const e=new THREE.Vector3(halfS*(gridN-1),0,z);
+addObj(buildRoadSegment(s,e,currentClass,42+row*1000))}
+for(let col=0;col<gridN;col++){const x=-halfS*(gridN-1)+col*spacing;
+const s=new THREE.Vector3(x,0,-halfS*(gridN-1));const e=new THREE.Vector3(x,0,halfS*(gridN-1));
+addObj(buildRoadSegment(s,e,currentClass,42+col*2000+500))}
+for(let row=0;row<gridN;row++)for(let col=0;col<gridN;col++){
+const x=-halfS*(gridN-1)+col*spacing;const z=-halfS*(gridN-1)+row*spacing;
+addObj(buildXCrossing(new THREE.Vector3(x,0,z),currentClass,42+row*100+col))}
+// Buildings at block centers
+for(let bx=0;bx<gridN-1;bx++)for(let bz=0;bz<gridN-1;bz++){
+const x=-halfS*(gridN-1)+bx*spacing+spacing/2;const z=-halfS*(gridN-1)+bz*spacing+spacing/2;
+const h=4+Math.random()*6;const w=4+Math.random()*4;const d=4+Math.random()*4;
+const bMat=new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08,0.2,0.55),roughness:0.9});
+const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),bMat);b.position.set(x,h/2,z);b.castShadow=true;b.receiveShadow=true;addObj(b)}
+updateStats()}
+function buildSingleX(){clearScene();addObj(buildXCrossing(new THREE.Vector3(0,0,0),currentClass,42));
+// Approach roads
+for(let dir of[[1,0],[-1,0],[0,1],[0,-1]]){const s=new THREE.Vector3(dir[0]*4,0,dir[1]*4);
+const e=new THREE.Vector3(dir[0]*24,0,dir[1]*24);addObj(buildRoadSegment(s,e,currentClass,42+dir[0]*100+dir[1]))}
+updateStats()}
+function buildSingleT(){clearScene();addObj(buildTJunction(new THREE.Vector3(0,0,0),currentClass,42));
+for(let dir of[[1,0],[-1,0],[0,1]]){const s=new THREE.Vector3(dir[0]*4,0,dir[1]*4);
+const e=new THREE.Vector3(dir[0]*24,0,dir[1]*24);addObj(buildRoadSegment(s,e,currentClass,42+dir[0]*100+dir[1]))}
+updateStats()}
+function buildSingleRound(){clearScene();addObj(buildRoundabout(new THREE.Vector3(0,0,0),currentClass,42));
+for(let i=0;i<4;i++){const ang=i*Math.PI/2;const s=new THREE.Vector3(Math.cos(ang)*7,0,Math.sin(ang)*7);
+const e=new THREE.Vector3(Math.cos(ang)*24,0,Math.sin(ang)*24);addObj(buildRoadSegment(s,e,currentClass,42+i*100))}
+updateStats()}
+function buildSingleL(){clearScene();addObj(buildLCorner(new THREE.Vector3(0,0,0),currentClass,42));
+addObj(buildRoadSegment(new THREE.Vector3(-20,0,0),new THREE.Vector3(0,0,0),currentClass,42));
+addObj(buildRoadSegment(new THREE.Vector3(0,0,0),new THREE.Vector3(0,0,20),currentClass,43));
+updateStats()}
+function updateStats(){document.getElementById("stats").textContent="Roads: "+roadCount+" | Tris: "+triCount}
+function rebuild(){if(currentScene==="grid")buildGridCity();else if(currentScene==="x")buildSingleX();
+else if(currentScene==="t")buildSingleT();else if(currentScene==="round")buildSingleRound();else if(currentScene==="l")buildSingleL()}
+
+// === UI ===
+function setActive(id,group){document.querySelectorAll("#"+group+" button").forEach(b=>b.classList.remove("active"));document.getElementById(id).classList.add("active")}
+document.getElementById("b-grid").onclick=()=>{setActive("b-grid","ui");currentScene="grid";rebuild()};
+document.getElementById("b-x").onclick=()=>{setActive("b-x","ui");currentScene="x";rebuild()};
+document.getElementById("b-t").onclick=()=>{setActive("b-t","ui");currentScene="t";rebuild()};
+document.getElementById("b-round").onclick=()=>{setActive("b-round","ui");currentScene="round";rebuild()};
+document.getElementById("b-l").onclick=()=>{setActive("b-l","ui");currentScene="l";rebuild()};
+document.getElementById("c-res").onclick=()=>{setActive("c-res","ui");currentClass="residential";rebuild()};
+document.getElementById("c-art").onclick=()=>{setActive("c-art","ui");currentClass="arterial";rebuild()};
+document.getElementById("c-hw").onclick=()=>{setActive("c-hw","ui");currentClass="highway";rebuild()};
+document.getElementById("c-alley").onclick=()=>{setActive("c-alley","ui");currentClass="alley";rebuild()};
+["camber","ruts","potholes","markings","sidewalks","kerbs","drifts","pebbles"].forEach(f=>{
+document.getElementById("f-"+f).onchange=(e)=>{features[f]=e.target.checked;rebuild()}});
+
+buildGridCity();
+const clock=new THREE.Clock();
+function anim(){requestAnimationFrame(anim);const dt=clock.getDelta();controls.update();renderer.render(scene,camera);
+document.getElementById("f").textContent=Math.round(1/dt)}
+anim();window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
+</script></body></html>

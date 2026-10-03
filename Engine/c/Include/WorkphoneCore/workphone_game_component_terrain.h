@@ -1,0 +1,4 @@
+#ifndef workphone_game_component_terrain_h__
+#define workphone_game_component_terrain_h__
+
+#endif  // workphone_game_component_terrain_h__

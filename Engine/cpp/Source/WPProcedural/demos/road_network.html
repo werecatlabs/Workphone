@@ -1,0 +1,79 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AAA Road Network</title><style>*{margin:0;padding:0}body{overflow:hidden;background:#000;font-family:Arial;color:#fff}#c{width:100vw;height:100vh}#ui{position:fixed;top:10px;left:10px;background:rgba(0,0,0,.8);padding:12px;border-radius:6px;z-index:10;font-size:12px;min-width:240px}#ui h3{margin:0 0 8px 0;color:#4ff}button{margin:3px;padding:6px 12px;background:#333;color:#fff;border:1px solid #555;border-radius:3px;cursor:pointer;font-size:12px}button:hover{background:#555}#fps{position:fixed;top:10px;right:10px;background:rgba(0,0,0,.75);padding:8px;border-radius:6px;font-family:monospace}#info{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,.8);padding:10px;border-radius:6px;font-size:11px;max-width:380px;line-height:1.4}#info b{color:#4ff}</style></head><body><canvas id="c"></canvas><div id="ui"><h3>AAA Road Network</h3><button id="b1">City Block</button><button id="b2">Intersection</button><button id="b3">T-Junction</button><button id="b4">Roundabout</button><button id="b5">Full Network</button><br><div>Road width: <span id="rw">6</span>m</div><input type="range" id="rwi" min="4" max="10" step="0.5" value="6"></div><div id="fps">FPS: <span id="f">0</span></div><div id="info"><b>AAA Road System:</b> Procedural road network with cambered surface, intersection generation, road markings (center dash, edge lines, crosswalks), kerbs, sidewalks. Each road mesh is subdivided for proper grazing light. Drag to orbit.</div><script type="importmap">{"imports":3="https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script><script type="module">import * as THREE from "three";import {OrbitControls}from"three/addons/controls/OrbitControls.js";
+const renderer=new THREE.WebGLRenderer({canvas:document.getElementById("c"),antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1;renderer.outputColorSpace=THREE.SRGBColorSpace;
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x6a7a85);scene.fog=new THREE.FogExp2(0x6a7a85,0.008);
+const camera=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,500);camera.position.set(15,15,15);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=0.05;controls.target.set(0,0,0);
+const sun=new THREE.DirectionalLight(0xfff0d0,2);sun.position.set(30,40,20);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-40;sun.shadow.camera.right=40;sun.shadow.camera.top=40;sun.shadow.camera.bottom=-40;sun.shadow.camera.far=100;scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x88aaff,0x7a5e3e,0.5));
+
+let roadWidth=6;
+function fbm3(x,y,z,oct){function h(x,y,z){let v=Math.sin(x*12.9898+y*78.233+z*37.719)*43758.5453;return v-Math.floor(v)}function n(x,y,z){const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z);const xf=x-xi,yf=y-yi,zf=z-zi;const u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf),w=zf*zf*(3-2*zf);let a=0;for(let dz=0;dz<2;dz++)for(let dy=0;dy<2;dy++)for(let dx=0;dx<2;dx++){const wx=dx?u:1-u,wy=dy?v:1-v,wz=dz?w:1-w;a+=h(xi+dx,yi+dy,zi+dz)*wx*wy*wz}return a}let v=0,a=0.5,f=1;for(let i=0;i<oct;i++){v+=a*n(x*f,y*f,z*f);a*=0.5;f*=2}return v}
+
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0xa88860,roughness:0.95}));ground.rotateX(-Math.PI/2);ground.receiveShadow=true;scene.add(ground);
+
+// Build road with camber (crown toward center) - like COD
+function buildRoadSegment(x,z,len,ry,width=6){const geo=new THREE.PlaneGeometry(width,len,Math.round(width*2),Math.round(len/2));geo.rotateX(-Math.PI/2);const pos=geo.getAttribute("position");const colors=new Float32Array(pos.count*3);for(let i=0;i<pos.count;i++){const px=pos.getX(i),pz=pos.getZ(i);const normX=px/(width/2);const camber=(1-normX*normX)*0.08;const wear=(fbm3(px*0.55+3,2.2,pz*0.35,3)-0.5)*0.07;const rut=-Math.exp(-((Math.abs(px)-1.6)*(Math.abs(px)-1.6))/0.5)*0.022;pos.setY(i,camber+wear+rut);const av=0.15+fbm3(px*0.7+4.4,pz*0.7,4,3)*0.1+wear*2;colors[i*3]=av*0.95;colors[i*3+1]=av*0.95;colors[i*3+2]=av*0.9}geo.setAttribute("color",new THREE.BufferAttribute(colors,3));geo.computeVertexNormals();const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.8,metalness:0.05});const mesh=new THREE.Mesh(geo,mat);mesh.position.set(x,0.005,z);mesh.rotation.y=ry;mesh.receiveShadow=true;scene.add(mesh);return mesh}
+
+function buildRoadMarkings(roadLen,roadWidth){const mat=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0x222222,roughness:0.5});
+// Center dashed line
+const numDashes=Math.floor(roadLen/2.5);
+for(let i=0;i<numDashes;i++){const z=-roadLen/2+i*2.5+1;const dash=new THREE.Mesh(new THREE.PlaneGeometry(0.15,1.2),mat);dash.rotation.x=-Math.PI/2;dash.position.set(0,0.01,z);scene.add(dash)}
+// Edge lines
+const edgeL=new THREE.Mesh(new THREE.PlaneGeometry(0.2,roadLen),mat);edgeL.rotation.x=-Math.PI/2;edgeL.position.set(-roadWidth/2+0.2,0.01,0);scene.add(edgeL);
+const edgeR=new THREE.Mesh(new THREE.PlaneGeometry(0.2,roadLen),mat);edgeR.rotation.x=-Math.PI/2;edgeR.position.set(roadWidth/2-0.2,0.01,0);scene.add(edgeR)}
+
+function buildSidewalk(x,z,ry,width=2.5){const mat=new THREE.MeshStandardMaterial({color:0xaaa8a0,roughness:0.9});const geo=new THREE.BoxGeometry(width,0.15,40);const mesh=new THREE.Mesh(geo,mat);mesh.position.set(x,0.075,z);mesh.rotation.y=ry;mesh.receiveShadow=true;mesh.castShadow=true;scene.add(mesh);const kerbGeo=new THREE.BoxGeometry(0.22,0.18,40);const kerbMat=new THREE.MeshStandardMaterial({color:0x888680,roughness:0.85});for(let side of[-1,1]){const k=new THREE.Mesh(kerbGeo,kerbMat);k.position.set(x+side*(width/2+0.11)*Math.cos(ry),0.09,z+side*(width/2+0.11)*Math.sin(ry));k.rotation.y=ry;scene.add(k)}return mesh}
+
+function buildIntersection(x,z){// Cross roads
+buildRoadSegment(x,z,40,0,roadWidth);
+buildRoadSegment(x,z,40,Math.PI/2,roadWidth);
+// Sidewalks on 4 sides
+for(let i=0;i<4;i++){const ang=i*Math.PI/2;buildSidewalk(x+Math.cos(ang)*4,z+Math.sin(ang)*4,ang+Math.PI/2,2.5)}
+// Crosswalk stripes
+const stripeMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.5});for(let i=0;i<6;i++){const stripe=new THREE.Mesh(new THREE.PlaneGeometry(0.6,1.5),stripeMat);stripe.rotation.x=-Math.PI/2;stripe.position.set(x-3+i,0.012,z-roadWidth/2+0.5);scene.add(stripe);const stripe2=new THREE.Mesh(new THREE.PlaneGeometry(0.6,1.5),stripeMat);stripe2.rotation.x=-Math.PI/2;stripe2.position.set(x-3+i,0.012,z+roadWidth/2-0.5);scene.add(stripe2);const stripe3=new THREE.Mesh(new THREE.PlaneGeometry(1.5,0.6),stripeMat);stripe3.rotation.x=-Math.PI/2;stripe3.position.set(x-roadWidth/2+0.5,0.012,z-3+i);stripe3.rotation.z=Math.PI/2;scene.add(stripe3);const stripe4=new THREE.Mesh(new THREE.PlaneGeometry(1.5,0.6),stripeMat);stripe4.rotation.x=-Math.PI/2;stripe4.position.set(x+roadWidth/2-0.5,0.012,z-3+i);stripe4.rotation.z=Math.PI/2;scene.add(stripe4)}}
+
+function buildTJunction(x,z,openingSide){buildRoadSegment(x,z,40,0,roadWidth);if(openingSide!=="left")buildRoadSegment(x,z,15,Math.PI/2,roadWidth);if(openingSide!=="right"){const m=buildRoadSegment(x+15,z,25,Math.PI/2,roadWidth);m.position.x+=0}
+// Sidewalks
+buildSidewalk(x,z-4,0,2.5);buildSidewalk(x,z+4,0,2.5);
+if(openingSide!=="left")buildSidewalk(x-4,z,Math.PI/2,2.5);
+if(openingSide!=="right")buildSidewalk(x+4,z,Math.PI/2,2.5)}
+
+function buildRoundabout(x,z){// Circle
+const segments=32;for(let i=0;i<segments;i++){const a=(i/segments)*Math.PI*2;const a2=((i+1)/segments)*Math.PI*2;const x1=Math.cos(a)*8,x2=Math.cos(a2)*8;const z1=Math.sin(a)*8,z2=Math.sin(a2)*8;const cx=(x1+x2)/2,cz=(z1+z2)/2;const len=Math.hypot(x2-x1,z2-z1);const ry=Math.atan2(x2-x1,z2-z1);buildRoadSegment(x+cx,z+cz,len,ry,3)}// Outer ring + inner island
+const ring=new THREE.Mesh(new THREE.RingGeometry(7.5,9,32),new THREE.MeshStandardMaterial({color:0x333333,roughness:0.85}));ring.rotation.x=-Math.PI/2;ring.position.set(x,0.01,z);scene.add(ring);
+const island=new THREE.Mesh(new THREE.CylinderGeometry(7,7,0.1,32),new THREE.MeshStandardMaterial({color:0x998866,roughness:0.9}));island.position.set(x,0.05,z);island.receiveShadow=true;scene.add(island);
+// Roads feeding in (4 directions)
+for(let i=0;i<4;i++){const ang=i*Math.PI/2;buildRoadSegment(x+Math.cos(ang)*15,z+Math.sin(ang)*15,12,ang+Math.PI/2,roadWidth)}}
+
+function buildCityBlock(){buildIntersection(-15,-15);buildIntersection(15,-15);buildIntersection(-15,15);buildIntersection(15,15);
+// Connect with roads
+buildRoadSegment(0,-15,30,0,roadWidth);buildRoadSegment(0,15,30,0,roadWidth);buildRoadSegment(-15,0,30,Math.PI/2,roadWidth);buildRoadSegment(15,0,30,Math.PI/2,roadWidth);
+// Sidewalks along roads
+for(let z of[-15,15])for(let side of[-1,1])buildSidewalk(side*(roadWidth/2+2.5),z,0,30);
+for(let x of[-15,15])for(let side of[-1,1])buildSidewalk(x,side*(roadWidth/2+2.5),Math.PI/2,30);
+// Center block - plaza
+const plaza=new THREE.Mesh(new THREE.BoxGeometry(15,0.05,15),new THREE.MeshStandardMaterial({color:0xb0a890,roughness:0.85}));plaza.position.y=0.025;plaza.receiveShadow=true;scene.add(plaza);
+// Buildings around plaza
+for(let i=0;i<8;i++){const angle=i*Math.PI/4;const r=12;const b=new THREE.Mesh(new THREE.BoxGeometry(2,3+Math.random()*3,2),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08,0.2,0.6),roughness:0.9}));b.position.set(Math.cos(angle)*r,2,Math.sin(angle)*r);b.castShadow=true;b.receiveShadow=true;scene.add(b)}
+// Add markings to roads
+buildRoadMarkings(30,roadWidth);buildRoadMarkings(30,roadWidth);buildRoadMarkings(30,roadWidth);buildRoadMarkings(30,roadWidth)}
+
+function buildFullNetwork(){for(let i=-30;i<=30;i+=20){buildRoadSegment(0,i,60,0,roadWidth);buildRoadSegment(i,0,60,Math.PI/2,roadWidth);buildRoadMarkings(60,roadWidth);buildRoadMarkings(60,roadWidth);
+// Sidewalks
+for(let side of[-1,1])buildSidewalk(side*(roadWidth/2+2.5),i,0,60);
+for(let side of[-1,1])buildSidewalk(i,side*(roadWidth/2+2.5),Math.PI/2,60)}
+for(let cx=-30;cx<=30;cx+=20)for(let cz=-30;cz<=30;cz+=20){buildIntersection(cx,cz)}
+// Add buildings
+for(let i=0;i<60;i++){const gx=(Math.floor(Math.random()*6)-2)*20+Math.random()*15;const gz=(Math.floor(Math.random()*6)-2)*20+Math.random()*15;if(Math.abs(gx%20)<7&&Math.abs(gz%20)<7)continue;const w=3+Math.random()*3;const d=3+Math.random()*3;const h=3+Math.random()*5;const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.06+Math.random()*0.05,0.2,0.5+Math.random()*0.2),roughness:0.9}));b.position.set(gx,h/2,gz);b.castShadow=true;b.receiveShadow=true;scene.add(b)}}
+
+document.getElementById("b1").onclick=()=>{clearScene();buildCityBlock()};
+document.getElementById("b2").onclick=()=>{clearScene();buildIntersection(0,0)};
+document.getElementById("b3").onclick=()=>{clearScene();buildTJunction(0,0,"right")};
+document.getElementById("b4").onclick=()=>{clearScene();buildRoundabout(0,0)};
+document.getElementById("b5").onclick=()=>{clearScene();buildFullNetwork()};
+document.getElementById("rwi").oninput=()=>{roadWidth=parseFloat(document.getElementById("rwi").value);document.getElementById("rw").textContent=roadWidth};
+function clearScene(){for(let i=scene.children.length-1;i>=0;i--){const obj=scene.children[i];if(obj.geometry)obj.geometry.dispose();if(obj.material){if(Array.isArray(obj.material))obj.material.forEach(m=>m.dispose());else obj.material.dispose()}scene.remove(obj)}const gn=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0xa88860,roughness:0.95}));gn.rotateX(-Math.PI/2);gn.receiveShadow=true;scene.add(gn);scene.add(sun);scene.add(new THREE.HemisphereLight(0x88aaff,0x7a5e3e,0.5))}
+buildCityBlock();
+const clock=new THREE.Clock();
+function anim(){requestAnimationFrame(anim);const dt=clock.getDelta();controls.update();renderer.render(scene,camera);document.getElementById("f").textContent=Math.round(1/dt)}
+anim();window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}

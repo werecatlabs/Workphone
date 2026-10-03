@@ -1,0 +1,1 @@
+#include <WPAssimp/WPAssimpPCH.hpp>

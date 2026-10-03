@@ -1,0 +1,151 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>AAA Sky Atmosphere</title><style>*{margin:0;padding:0}body{overflow:hidden;background:#000}#c{width:100vw;height:100vh}#ui{position:fixed;top:10px;left:10px;color:#fff;font-family:monospace;font-size:13px;background:rgba(0,0,0,.7);padding:12px;border-radius:6px;z-index:10}#ui h3{margin:0 0 8px 0;color:#4ff}#ui input{width:100%;margin:4px 0}#fps{position:fixed;top:10px;right:10px;color:#fff;font-family:monospace;background:rgba(0,0,0,.7);padding:8px;border-radius:6px}</style></head><body><canvas id="c"></canvas><div id="ui"><h3>AAA Sky Atmosphere (Hillaire/Bruneton)</h3>Time: <span id="time">14:00</span><br><input type="range" id="t" min="0" max="2400" value="840"><br>Turbidity: <span id="turb">2.0</span><br><input type="range" id="tu" min="1" max="10" step="0.1" value="2"><br>Sun Intensity: <span id="si">1.5</span><br><input type="range" id="sn" min="0" max="3" step="0.05" value="1.5"><br>Rayleigh: <span id="re">1.0</span><br><input type="range" id="ry" min="0" max="4" step="0.1" value="1"><br>Mie: <span id="mi">1.0</span><br><input type="range" id="me" min="0" max="4" step="0.1" value="1"><br><br>Keys: P=pause, R=reset, F=fullscreen</div><div id="fps">FPS: <span id="f">0</span></div><script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script><script type="module">import * as THREE from "three";
+const c=document.getElementById("c"),ui=document.getElementById("ui");
+const renderer=new THREE.WebGLRenderer({canvas:c,antialias:true});
+renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=0.6;
+const scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,2000);camera.position.set(0,2,0);
+// Hillaire/Bruneton atmosphere shader - based on Sean O'Neil / GPU Gems reference
+const skyVert=`
+varying vec3 vWorldDir;
+void main(){vec4 wp=modelMatrix*vec4(position,1.0);vWorldDir=normalize(wp.xyz);gl_Position=projectionMatrix*viewMatrix*wp;}`;
+const skyFrag=`
+precision highp float;
+varying vec3 vWorldDir;
+uniform vec3 uSunDir;
+uniform float uTimeOfDay;
+uniform float uTurbidity;
+uniform float uSunIntensity;
+uniform float uRayleigh;
+uniform float uMie;
+uniform vec3 uBetaR;
+uniform vec3 uBetaM;
+const float pi=3.14159265359;
+const float n=1.0003;
+const float N=2.545E25f;
+const float rayleighZenithLength=8.459E3f;
+const float mieZenithLength=1.320E4f;
+const vec3 lambda=vec3(680E-9,550E-9,440E-9);
+const vec3 totalRayleigh=vec3(5.804542996261735E-6,1.3562911419845635E-5,3.0265902468827356E-5);
+const float vSunset=-20.0;
+const float sunAngularDiameter=0.0093;
+const float K=0.076;
+
+float rayleighPhase(float c){return 0.0596831f*(1.0f+c)*(1.0f+c);}
+float hgPhase(float c,float g){float gg=g*g;return (1.0f-gg)/pow(1.0f+gg-2.0f*g*c,1.5f)*0.0795774715f;}
+float sunIntensityAttenuation(float zenithAngle){
+  float sinTheta=sin(zenithAngle);
+  return exp(-(0.0087f+0.0409f*sinTheta)*exp(-((zenithAngle-vSunset)/9.0)*11.0f));
+}
+vec3 sunColor(float zenithAngle){
+  float t=smoothstep(0.0,1.0,1.0-clamp(zenithAngle/pi,0.0,1.0));
+  vec3 c1=vec3(0.95,0.55,0.25);vec3 c2=vec3(1.0,0.85,0.6);vec3 c3=vec3(0.8,0.9,1.0);
+  if(zenithAngle<pi*0.35)return mix(c1,c2,t*2.0);
+  return mix(c2,c3,(t-0.7)*3.0);
+}
+
+void main(){
+  vec3 vdir=normalize(vWorldDir);
+  vec3 sdir=normalize(uSunDir);
+  float cosTheta=clamp(dot(vdir,sdir),-1.0,1.0);
+  float zenithAngle=acos(clamp(vdir.y,0.0,1.0));
+  vec3 Fex=exp(-(uBetaR*rayleighZenithLength+uBetaM*mieZenithLength)*(1.0-0.7*exp(-zenithAngle/3.0)));
+  float sunsun=acos(clamp(sdir.y,-1.0,1.0));
+  vec3 sunCol=sunColor(sunsun)*sunIntensityAttenuation(sunsun)*uSunIntensity;
+  float rPhase=rayleighPhase(cosTheta);
+  vec3 betaR=uBetaR*uRayleigh;
+  vec3 betaM=uBetaM*uMie;
+  float mPhase=hgPhase(cosTheta,0.8)*K*uSunIntensity;
+  vec3 Lin= pow(sunCol*rPhase*betaR*0.0596831f,vec3(1.5))*uTurbidity;
+  Lin+= pow(sunCol*mPhase*betaM*0.07957747f,vec3(1.5));
+  vec3 tex=1.0-exp(-Fex*1.5);
+  vec3 retColor=Lin*Fex;
+  retColor+=sunCol*Fex*0.05*pow(max(0.0,cosTheta),300.0);
+  // Sunset/golden hour boost
+  float sunHeight=sdir.y;
+  float sunsetFactor=smoothstep(0.1,-0.2,sunHeight);
+  retColor+=vec3(1.0,0.4,0.1)*sunsetFactor*Fex.r*0.6;
+  retColor+=vec3(0.9,0.3,0.4)*sunsetFactor*pow(max(0.0,cosTheta),20.0)*0.3;
+  retColor=pow(retColor,vec3(0.45));
+  gl_FragColor=vec4(retColor,1.0);
+}`;
+const skyMat=new THREE.ShaderMaterial({vertexShader:skyVert,fragmentShader:skyFrag,side:THREE.BackSide,uniforms:{uSunDir:{value:new THREE.Vector3(0,1,0)},uTimeOfDay:{value:14},uTurbidity:{value:2},uSunIntensity:{value:1.5},uRayleigh:{value:1},uMie:{value:1},uBetaR:{value:new THREE.Vector3(3.8e-6,1.35e-5,3.31e-5)},uBetaM:{value:new THREE.Vector3(21e-6,21e-6,21e-6)}}});
+const skyDome=new THREE.Mesh(new THREE.SphereGeometry(500,32,16),skyMat);
+scene.add(skyDome);
+// Sun disc with aureole
+const sunDiscMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{},vertexShader:`varying vec3 vNormal;void main(){vNormal=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,fragmentShader:`varying vec3 vNormal;void main(){vec3 dir=normalize(vNormal);float r=length(dir.xy);float disc=smoothstep(0.022,0.020,r);float aureole=pow(max(0.0,1.0-r/0.2),2.0)*0.6;vec3 col=vec3(1.0,0.95,0.8);gl_FragColor=vec4(col*(disc+aureole),disc+aureole);}`});
+const sunDisc=new THREE.Mesh(new THREE.PlaneGeometry(60,60),sunDiscMat);
+scene.add(sunDisc);
+// Stars
+const starsGeo=new THREE.BufferGeometry();const sp=[];for(let i=0;i<3000;i++){const theta=Math.random()*Math.PI*2;const phi=Math.acos(Math.random()*0.7);const r=300;sp.push(Math.sin(phi)*Math.cos(theta)*r,Math.cos(phi)*r,Math.sin(phi)*Math.sin(theta)*r)}starsGeo.setAttribute("position",new THREE.Float32BufferAttribute(sp,3));
+const starsMat=new THREE.PointsMaterial({size:0.5,color:0xffffff,transparent:true,opacity:0,sizeAttenuation:false});
+const stars=new THREE.Points(starsGeo,starsMat);scene.add(stars);
+// Clouds (procedural FBM in shader)
+const cloudMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{uTime:{value:0},uSunDir:{value:new THREE.Vector3()},uCoverage:{value:0.4}},vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,fragmentShader:`
+uniform vec3 uSunDir;
+uniform float uTime;
+uniform float uCoverage;
+varying vec2 vUv;
+float hash(vec2 p){p=fract(p*vec2(123.34,345.45));p+=n=p*d;return fract(d.x*d.y*(d.x+d.y));}
+float noise(vec2 p){vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.0-2.0*f);float a=hash(i);float b=hash(i+vec2(1,0));float c=hash(i+vec2(0,1));float d=hash(i+vec2(1,1));return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);}
+float fbm(vec2 p){float v=0.0;float a=0.5;for(int i=0;i<6;i++){v+=a*noise(p);p*=2.0;a*=0.5;}return v;}
+void main(){
+  vec2 uv=vUv*8.0+vec2(uTime*0.01,0);
+  float n=fbm(uv);
+  float cloud=smoothstep(1.0-uCoverage,1.0,n)*smoothstep(0.0,0.3,n);
+  vec3 sunCol=normalize(uSunDir);
+  vec3 viewDir=vec3(0,0,1);
+  float sunDot=max(0.0,dot(viewDir,-sunCol));
+  float lighting=smoothstep(0.0,0.3,sunDot)*0.7+0.3;
+  float dist=length(vUv-0.5);
+  float fade=smoothstep(0.5,0.45,dist);
+  vec3 cloudCol=vec3(1.0,0.95,0.9)*lighting;
+  cloudCol+=vec3(1.0,0.6,0.3)*pow(sunDot,8.0)*0.5;
+  cloudCol=mix(vec3(0.4,0.45,0.55),cloudCol,lighting);
+  gl_FragColor=vec4(cloudCol,cloud*fade*0.85);
+}`});
+const cloudLayer1=new THREE.Mesh(new THREE.SphereGeometry(400,32,32),cloudMat.clone());cloudLayer1.material.uniforms={uTime:{value:0},uSunDir:{value:new THREE.Vector3()},uCoverage:{value:0.45}};
+scene.add(cloudLayer1);
+const cloudLayer2=new THREE.Mesh(new THREE.SphereGeometry(380,32,32),cloudMat.clone());cloudLayer2.material.uniforms={uTime:{value:0},uSunDir:{value:new THREE.Vector3()},uCoverage:{value:0.3}};scene.add(cloudLayer2);
+// Sun directional light
+const sunLight=new THREE.DirectionalLight(0xffffff,1.5);sunLight.position.set(50,80,30);sunLight.castShadow=true;sunLight.shadow.mapSize.set(2048,2048);sunLight.shadow.camera.left=-100;sunLight.shadow.camera.right=100;sunLight.shadow.camera.top=100;sunLight.shadow.camera.bottom=-100;scene.add(sunLight);
+const hemi=new THREE.HemisphereLight(0x88aaff,0x886644,0.4);scene.add(hemi);
+// Ground plane
+const groundGeo=new THREE.PlaneGeometry(400,400,128,128);groundGeo.rotateX(-Math.PI/2);
+const gpos=groundGeo.getAttribute("position");for(let i=0;i<gpos.count;i++){const x=gpos.getX(i),z=gpos.getZ(i);const h=Math.sin(x*0.05)*Math.cos(z*0.05)*0.5;gpos.setY(i,h)}groundGeo.computeVertexNormals();
+const groundMat=new THREE.MeshStandardMaterial({color:0xa88860,roughness:0.95});const ground=new THREE.Mesh(groundGeo,groundMat);ground.position.y=-2;ground.receiveShadow=true;scene.add(ground);
+// Buildings for scene context
+for(let i=0;i<8;i++){const bw=8+Math.random()*6;const bd=8+Math.random()*6;const bf=3+Math.floor(Math.random()*4);const bg=new THREE.BoxGeometry(bw,bf*3,bd);const bm=new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(0.08+Math.random()*0.05,0.2,0.5+Math.random()*0.2),roughness:0.9});const bm2=new THREE.Mesh(bg,bm);bm2.position.set((Math.random()-0.5)*150,bf*1.5,(Math.random()-0.5)*150);bm2.castShadow=true;bm2.receiveShadow=true;scene.add(bm2)}
+
+let timeOfDay=14;let paused=false;let turbidity=2;let sunIntensity=1.5;let rayleigh=1;let mie=1;
+const tInput=document.getElementById("t");const tuInput=document.getElementById("tu");const snInput=document.getElementById("sn");const ryInput=document.getElementById("ry");const meInput=document.getElementById("me");
+tInput.oninput=()=>{timeOfDay=parseFloat(tInput.value)/100};tuInput.oninput=()=>{turbidity=parseFloat(tuInput.value);document.getElementById("turb").textContent=turbidity.toFixed(1)};snInput.oninput=()=>{sunIntensity=parseFloat(snInput.value);document.getElementById("si").textContent=sunIntensity.toFixed(2)};ryInput.oninput=()=>{rayleigh=parseFloat(ryInput.value);document.getElementById("re").textContent=rayleigh.toFixed(1)};meInput.oninput=()=>{mie=parseFloat(meInput.value);document.getElementById("mi").textContent=mie.toFixed(1)};
+let mouseDown=false;let mouseX=0,mouseY=0;let camYaw=0,camPitch=0.2;
+c.onmousedown=()=>{mouseDown=true};c.onmouseup=()=>{mouseDown=false};c.onmouseleave=()=>{mouseDown=false};c.onmousemove=(e)=>{if(!mouseDown)return;camYaw-=e.movementX*0.005;camPitch-=e.movementY*0.005;camPitch=Math.max(-1.5,Math.min(1.5,camPitch))};
+c.onwheel=(e)=>{camera.position.multiplyScalar(e.deltaY>0?1.05:0.95)};
+window.onkeydown=(e)=>{if(e.key==="p")paused=!paused;if(e.key==="r"){timeOfDay=14;tInput.value=840}};
+const clock=new THREE.Clock();let last=0;
+function animate(){requestAnimationFrame(animate);const t=clock.getElapsedTime();const dt=t-last;last=t;
+  if(!paused)timeOfDay+=dt*0.3;if(timeOfDay>24)timeOfDay=0;tInput.value=Math.round(timeOfDay*100);
+  const sunAngle=((timeOfDay-6)/12)*Math.PI;const sunH=Math.sin(sunAngle);const sunD=Math.cos(sunAngle);
+  const sunPos=new THREE.Vector3(sunD*100,Math.max(-20,sunH*100),30);
+  skyMat.uniforms.uSunDir.value.copy(sunPos).normalize();
+  skyMat.uniforms.uTimeOfDay.value=timeOfDay;skyMat.uniforms.uTurbidity.value=turbidity;skyMat.uniforms.uSunIntensity.value=sunIntensity;skyMat.uniforms.uRayleigh.value=rayleigh;skyMat.uniforms.uMie.value=mie;
+  sunDisc.lookAt(sunPos);sunDisc.position.copy(sunPos).normalize().multiplyScalar(150);
+  const starsOpacity=Math.max(0,1-Math.max(0,sunH*3));starsMat.opacity=starsOpacity;
+  cloudLayer1.material.uniforms.uTime.value=t;cloudLayer2.material.uniforms.uTime.value=t*1.3;
+  cloudLayer1.material.uniforms.uSunDir.value.copy(sunPos).normalize();
+  cloudLayer2.material.uniforms.uSunDir.value.copy(sunPos).normalize();
+  // Sky color shifts with time
+  if(sunH>0){
+    let tCol=new THREE.Color(0xfff5e6);let amb=0.6;
+    if(timeOfDay<8){const tt=(timeOfDay-6)/2;tCol=new THREE.Color().lerpColors(new THREE.Color(0xff6b35),new THREE.Color(0xffd93d),tt);amb=0.2+tt*0.4}
+    else if(timeOfDay>17&&timeOfDay<20){const tt=(timeOfDay-17)/3;tCol=new THREE.Color().lerpColors(new THREE.Color(0xfff5e6),new THREE.Color(0xff6b35),tt);amb=0.6-tt*0.3}
+    sunLight.color.copy(tCol);sunLight.intensity=sunIntensity*Math.max(0.1,sunH);hemi.intensity=amb;
+  }else{sunLight.color.set(0x1a1a2e);sunLight.intensity=0.05;hemi.intensity=0.05}
+  sunLight.position.copy(sunPos);sunLight.target.position.set(0,0,0);
+  // Camera
+  camera.position.x=Math.sin(camYaw)*10;camera.position.y=Math.sin(camPitch)*10+2;camera.position.z=Math.cos(camYaw)*10;camera.lookAt(0,2,0);
+  renderer.render(scene,camera);
+  document.getElementById("f").textContent=Math.round(1/dt);
+  document.getElementById("time").textContent=String(Math.floor(timeOfDay)).padStart(2,"0")+":"+String(Math.floor((timeOfDay-Math.floor(timeOfDay))*60)).padStart(2,"0")}
+animate();window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)};
