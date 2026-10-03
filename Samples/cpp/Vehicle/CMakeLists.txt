@@ -378,22 +378,8 @@ if (WIN32)
     set_property(TARGET SampleVehicle PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/Bin/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$(Configuration)")
 endif()
 
-add_dependencies(SampleVehicle WPOISInput)
-add_dependencies(SampleVehicle WPVehiclePhysics)
 if (WP_STATIC_LIB)
     target_link_libraries(SampleVehicle WPVehiclePhysics)
-endif()
-
-if (WP_GRAPHICS_SYSTEM_OGRENEXT) 
-    add_dependencies(SampleVehicle WPGraphicsOgreNext)
-elseif (WP_GRAPHICS_SYSTEM_OGRE)
-    add_dependencies(SampleVehicle WPGraphicsOgre)
-endif()
-
-if (WP_BUILD_ODE)
-    add_dependencies(SampleVehicle WPODE3)
-elseif (WP_BUILD_PHYSX)
-    add_dependencies(SampleVehicle WPPhysx)
 endif()
 
 set_target_properties (SampleVehicle PROPERTIES FOLDER Samples)

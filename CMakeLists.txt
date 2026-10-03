@@ -117,6 +117,7 @@ option(WP_BUILD_SAMPLES "Build samples" ON)
 option(WP_BUILD_PLUGINS "Build plugins" OFF)
 option(WP_BUILD_TESTS "Build tests" ON)
 option(WP_BUILD_TOOLS "Build tools" ON)
+option(WP_BUILD_NAVIGATION "Build navigation mesh system" OFF)
 option(WP_REPLACE_MACROS "Builds with macros replaced with code" OFF)
 option(WP_EXCEPTIONS "Builds with exceptions" ON)
 option(WP_DOUBLE_PRECISION "Build DOUBLE_PRECISION" OFF)
@@ -614,20 +615,7 @@ if (WP_BUILD_TESTS)
 endif()
 
 if (WP_BUILD_TOOLS)
-    add_subdirectory(Scripts)
     add_subdirectory(Tools)
-endif()
-
-if (WP_BUILD_Proprietary)
-	add_subdirectory("${WP_Proprietary}" "${CMAKE_BINARY_DIR}/Proprietary")
-
-	if (WP_BUILD_PLUGINS)
-		#add_subdirectory("${WP_Proprietary}" "/Plugins")
-	endif()
-	 
-	if (WP_BUILD_TESTS)
-		#add_subdirectory("${WP_Proprietary}" "/Tests")
-	endif()
 endif()
 
 
