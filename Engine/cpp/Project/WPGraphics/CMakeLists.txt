@@ -4,12 +4,14 @@ else()
     project(WPGraphics C CXX)
 endif()
 
+if (WP_BUILD_DEPENDENCIES)
 # Build the bundled codec so fixes to its plugin lifetime are used even when
 # the remaining third-party dependencies are supplied as prebuilt libraries.
 if (NOT TARGET FreeImage)
     add_subdirectory("${WP_ROOT}/Dependencies/FreeImage"
                      "${CMAKE_BINARY_DIR}/Dependencies/FreeImage")
     set_target_properties(FreeImage PROPERTIES FOLDER Dependencies/FreeImage)
+endif()
 endif()
 
 add_compile_definitions (WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR)
