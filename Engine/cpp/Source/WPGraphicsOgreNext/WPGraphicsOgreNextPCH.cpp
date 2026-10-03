@@ -1,1 +1,0 @@
-#include <WPGraphicsOgreNext/WPGraphicsOgreNextPCH.hpp>
