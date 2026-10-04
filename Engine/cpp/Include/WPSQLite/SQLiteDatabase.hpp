@@ -7,6 +7,7 @@
 
 namespace workphone
 {
+
     /**
      * @class SQLiteDatabase
      * @brief Implementation of IDatabase interface for SQLite database operations

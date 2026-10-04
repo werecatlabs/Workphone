@@ -1,4 +1,5 @@
 #include <WPNetwork/WPNetworkSystemAddress.hpp>
+#include <Workphone/Workphone.hpp>
 
 namespace workphone
 {

@@ -1,5 +1,5 @@
-#ifndef _FBPhysics2Defs_H
-#define _FBPhysics2Defs_H
+#ifndef WPPHYSICSPREREQUISITES_HPP
+#define WPPHYSICSPREREQUISITES_HPP
 
 #include <Workphone/WorkphoneTypes.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>  // hack
@@ -74,13 +74,13 @@ namespace workphone
         };
 
         // forward declarations
-        class CRigidBody2;
+        class WPPhysicsRigidBody2;
 
         class BU_Joint;
         class ContactJoint;
 
         // forward declarations
-        class Particle2;
+        class WPPhysicsParticle2;
 
         class CollisionRecord;
 
@@ -88,8 +88,8 @@ namespace workphone
 
         class CollisionManager;
 
-        class CBoxShape2;
-        class CPhysicsVehicleWheel;
+        class WPPhysicsBoxShape2;
+        class WPPhysicsVehicleWheel;
     }  // namespace physics
 }  // namespace workphone
 

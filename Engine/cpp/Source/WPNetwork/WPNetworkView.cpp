@@ -1,6 +1,7 @@
 #include <WPNetwork/WPNetworkView.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Net/IPacket.hpp>
+#include <Workphone/Workphone.hpp>
 
 namespace workphone
 {

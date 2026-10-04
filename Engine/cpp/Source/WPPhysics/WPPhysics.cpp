@@ -1,21 +1,21 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysics.hpp"
 #include "WPPhysicsAutoLink.hpp"
-#include "WPPhysics/CPhysicsManager2D.hpp"
-#include "WPPhysics/CPhysicsManager2.hpp"
-#include "WPPhysics/CPhysicsScene2.hpp"
-#include "WPPhysics/CPhysicsRigidBody2.hpp"
-#include "WPPhysics/CPhysicsShape2.hpp"
-#include "WPPhysics/CPhysicsBoxShape2.hpp"
-#include "WPPhysics/CPhysicsSphereShape2.hpp"
-#include "WPPhysics/CPhysicsManager3.hpp"
-#include "WPPhysics/CPhysicsScene3.hpp"
-#include "WPPhysics/CPhysicsMaterial3.hpp"
-#include "WPPhysics/CBoxShape3.hpp"
-#include "WPPhysics/CMeshShape3.hpp"
-#include "WPPhysics/CPlaneShape3.hpp"
-#include "WPPhysics/CSphereShape3.hpp"
-#include "WPPhysics/CTerrainShape3.hpp"
+#include "WPPhysics/WPPhysicsManager2D.hpp"
+#include "WPPhysics/WPPhysicsManager2.hpp"
+#include "WPPhysics/WPPhysicsScene2.hpp"
+#include "WPPhysics/WPPhysicsNativeRigidBody2.hpp"
+#include "WPPhysics/WPPhysicsShape2.hpp"
+#include "WPPhysics/WPPhysicsNativeBoxShape2.hpp"
+#include "WPPhysics/WPPhysicsNativeSphereShape2.hpp"
+#include "WPPhysics/WPPhysicsManager3.hpp"
+#include "WPPhysics/WPPhysicsScene3.hpp"
+#include "WPPhysics/WPPhysicsMaterial3.hpp"
+#include "WPPhysics/WPPhysicsBoxShape3.hpp"
+#include "WPPhysics/WPPhysicsMeshShape3.hpp"
+#include "WPPhysics/WPPhysicsPlaneShape3.hpp"
+#include "WPPhysics/WPPhysicsSphereShape3.hpp"
+#include "WPPhysics/WPPhysicsTerrainShape3.hpp"
 #include <Workphone/Workphone.hpp>
 
 namespace workphone
@@ -30,38 +30,38 @@ namespace workphone
 
         void WPPhysics::load( SmartPtr<ISharedObject> data )
         {
-            FactoryUtil::addFactory<CPhysicsManager2>();
-            FactoryUtil::addFactory<CPhysicsScene2>();
-            FactoryUtil::addFactory<CPhysicsRigidBody2>();
-            FactoryUtil::addFactory<CPhysicsBoxShape2>();
-            FactoryUtil::addFactory<CPhysicsSphereShape2>();
+            FactoryUtil::addFactory<WPPhysicsManager2>();
+            FactoryUtil::addFactory<WPPhysicsScene2>();
+            FactoryUtil::addFactory<WPPhysicsNativeRigidBody2>();
+            FactoryUtil::addFactory<WPPhysicsNativeBoxShape2>();
+            FactoryUtil::addFactory<WPPhysicsNativeSphereShape2>();
 
-            FactoryUtil::addFactory<CPhysicsManager3>();
-            FactoryUtil::addFactory<CPhysicsScene3>();
-            FactoryUtil::addFactory<CPhysicsMaterial3>();
-            FactoryUtil::addFactory<CBoxShape3>();
-            FactoryUtil::addFactory<CSphereShape3>();
-            FactoryUtil::addFactory<CPlaneShape3>();
-            FactoryUtil::addFactory<CMeshShape3>();
-            FactoryUtil::addFactory<CTerrainShape3>();
+            FactoryUtil::addFactory<WPPhysicsManager3>();
+            FactoryUtil::addFactory<WPPhysicsScene3>();
+            FactoryUtil::addFactory<WPPhysicsMaterial3>();
+            FactoryUtil::addFactory<WPPhysicsBoxShape3>();
+            FactoryUtil::addFactory<WPPhysicsSphereShape3>();
+            FactoryUtil::addFactory<WPPhysicsPlaneShape3>();
+            FactoryUtil::addFactory<WPPhysicsMeshShape3>();
+            FactoryUtil::addFactory<WPPhysicsTerrainShape3>();
         }
 
         void WPPhysics::unload( SmartPtr<ISharedObject> data )
         {
-            FactoryUtil::removeFactory<CTerrainShape3>();
-            FactoryUtil::removeFactory<CMeshShape3>();
-            FactoryUtil::removeFactory<CPlaneShape3>();
-            FactoryUtil::removeFactory<CSphereShape3>();
-            FactoryUtil::removeFactory<CBoxShape3>();
-            FactoryUtil::removeFactory<CPhysicsMaterial3>();
-            FactoryUtil::removeFactory<CPhysicsScene3>();
-            FactoryUtil::removeFactory<CPhysicsManager3>();
+            FactoryUtil::removeFactory<WPPhysicsTerrainShape3>();
+            FactoryUtil::removeFactory<WPPhysicsMeshShape3>();
+            FactoryUtil::removeFactory<WPPhysicsPlaneShape3>();
+            FactoryUtil::removeFactory<WPPhysicsSphereShape3>();
+            FactoryUtil::removeFactory<WPPhysicsBoxShape3>();
+            FactoryUtil::removeFactory<WPPhysicsMaterial3>();
+            FactoryUtil::removeFactory<WPPhysicsScene3>();
+            FactoryUtil::removeFactory<WPPhysicsManager3>();
 
-            FactoryUtil::removeFactory<CPhysicsSphereShape2>();
-            FactoryUtil::removeFactory<CPhysicsBoxShape2>();
-            FactoryUtil::removeFactory<CPhysicsRigidBody2>();
-            FactoryUtil::removeFactory<CPhysicsScene2>();
-            FactoryUtil::removeFactory<CPhysicsManager2>();
+            FactoryUtil::removeFactory<WPPhysicsNativeSphereShape2>();
+            FactoryUtil::removeFactory<WPPhysicsNativeBoxShape2>();
+            FactoryUtil::removeFactory<WPPhysicsNativeRigidBody2>();
+            FactoryUtil::removeFactory<WPPhysicsScene2>();
+            FactoryUtil::removeFactory<WPPhysicsManager2>();
         }
 
         SmartPtr<WPPhysics> WPPhysics::instance()

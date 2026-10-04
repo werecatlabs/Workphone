@@ -3,7 +3,7 @@
 #include <WPNetwork/WPNetworkSystemAddress.hpp>
 #include <Workphone/Interface/Net/INetworkListener.hpp>
 #include <Workphone/Scene/Components/NetworkListener.hpp>
-
+#include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cstdio>
 
