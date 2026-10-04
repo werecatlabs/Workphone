@@ -1,7 +1,7 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysics.hpp"
 #include "WPPhysicsAutoLink.hpp"
-#include "WPPhysics/WPPhysicsManager2D.hpp"
+
 #include "WPPhysics/WPPhysicsManager2.hpp"
 #include "WPPhysics/WPPhysicsScene2.hpp"
 #include "WPPhysics/WPPhysicsNativeRigidBody2.hpp"

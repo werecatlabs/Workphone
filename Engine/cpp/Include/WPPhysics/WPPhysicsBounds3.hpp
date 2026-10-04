@@ -2,6 +2,7 @@
 #define WPPHYSICSBOUNDS3_HPP
 
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
 #include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Math/Transform3.hpp>
 
@@ -68,7 +69,7 @@ namespace workphone::physics::detail
                 continue;
             }
 
-            const auto backendShape = dynamic_cast<IPhysicsShape3 *>( shape.get() );
+            const auto backendShape = dynamic_cast<WPPhysicsShape3Backend *>( shape.get() );
             if( !backendShape )
             {
                 continue;

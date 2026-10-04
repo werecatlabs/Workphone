@@ -4,7 +4,7 @@
 
 namespace workphone::physics
 {
-    WPPhysicsPlaneShape3::WPPhysicsPlaneShape3() : WPPhysicsShape3T( WORKPHONE_COLLISION_SHAPE_PLANE )
+    WPPhysicsPlaneShape3::WPPhysicsPlaneShape3() : WPPhysicsShape3T<PlaneShape>( WORKPHONE_COLLISION_SHAPE_PLANE )
     {
     }
 

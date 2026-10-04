@@ -1,6 +1,6 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysicsRigidBody2.hpp"
-#include "WPPhysics/WPPhysicsManager2D.hpp"
+
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Thread/SpinRWMutex.hpp>
 
