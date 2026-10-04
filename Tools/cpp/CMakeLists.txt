@@ -14,8 +14,11 @@ if (WP_USE_HOUDINI)
 	add_subdirectory(./Houdini)
 endif()
 	
-add_subdirectory(./MeshConverter)
-add_subdirectory(./MeshViewer)
+# These legacy tools require the optional wxWidgets integration.
+if (WP_BUILD_WXWIDGETS)
+    add_subdirectory(./MeshConverter)
+    add_subdirectory(./MeshViewer)
+endif()
 add_subdirectory(./OSMToJson)
 add_subdirectory(./ZipObfuscator)
 #add_subdirectory(./BuildDependencies)

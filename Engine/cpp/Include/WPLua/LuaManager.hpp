@@ -5,6 +5,9 @@
 #include <Workphone/Interface/Script/IScriptManager.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/Core/FixedString.hpp>
+#include <Workphone/Memory/AtomicRawPtr.hpp>
+#include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentMap.hpp>

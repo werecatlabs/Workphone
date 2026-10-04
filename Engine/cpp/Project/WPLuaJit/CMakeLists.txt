@@ -64,9 +64,9 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPLuaJit Workphone.lib)
-        target_link_libraries(WPLuaJit WPLuaBind.lib)
-        target_link_libraries(WPLuaJit WPProcedural.lib)
+        target_link_libraries(WPLuaJit Workphone)
+        target_link_libraries(WPLuaJit WPLuaBind)
+        target_link_libraries(WPLuaJit WPProcedural)
 
         if (WP_USE_ONETBB)
             target_link_libraries(WPLuaJit debug tbb12_debug.lib optimized tbb12.lib)
@@ -127,7 +127,6 @@ if (NOT WP_STATIC_LIB)
         endif()
 
         if (WP_BUILD_OISINPUT)
-            target_link_libraries(WPLuaJit libWPOISInput.a)
             #target_link_libraries(WPLuaJit debug libOIS_d.a optimized libOIS.a)
         endif()
 
@@ -194,9 +193,7 @@ if (NOT WP_STATIC_LIB)
 
         target_link_libraries(WPLuaJit minizip.a)
         target_link_libraries(WPLuaJit nativefiledialog.a)
-        target_link_libraries(WPLuaJit rttr.a)
         target_link_libraries(WPLuaJit tinyxml.a)
-        target_link_libraries(WPLuaJit yaml-cpp.a)
         target_link_libraries(WPLuaJit zlib.a)
         target_link_libraries(WPLuaJit zzip.a)
 
@@ -233,7 +230,7 @@ if (NOT WP_STATIC_LIB)
         set_target_properties(WPLuaJit PROPERTIES LINK_FLAGS "-Wl,-F/Library/Frameworks")
     elseif (UNIX)
         target_link_libraries(WPLuaJit -Wl,--start-group Workphone.a WPVehiclePhysics.a libWPProcedural.a WPImGui.a
-            FBMath.a FBMesh.a WPOISInput.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysx.a libWPSQLite.a
+            FBMath.a FBMesh.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysx.a libWPSQLite.a
             libWPVehiclePhysics.a FBGraphics.a WPLua.a WPAssimp.a FBRenderUI.a libFBCPlusPlus.a
             libboost_thread-gcc5-mt-s-x64-1_70.a
             libboost_date_time-gcc5-mt-s-x64-1_70.a

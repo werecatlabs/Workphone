@@ -177,7 +177,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPAssimp Workphone.lib)
+        target_link_libraries(WPAssimp Workphone)
         target_link_libraries(WPAssimp tinyxml.lib)
         target_link_libraries(WPAssimp tinyusdz_static.lib)
 

@@ -57,7 +57,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPProcedural Workphone.lib)
+        target_link_libraries(WPProcedural Workphone)
 
         if (WP_USE_ONETBB)
             target_link_libraries(WPProcedural debug tbb12_debug.lib optimized tbb12.lib)
@@ -175,9 +175,7 @@ if (NOT WP_STATIC_LIB)
 
         target_link_libraries(WPProcedural minizip.a)
         target_link_libraries(WPProcedural nativefiledialog.a)
-        target_link_libraries(WPProcedural rttr.a)
         target_link_libraries(WPProcedural tinyxml.a)
-        target_link_libraries(WPProcedural yaml-cpp.a)
         target_link_libraries(WPProcedural zlib.a)
         target_link_libraries(WPProcedural zzip.a)
 

@@ -49,7 +49,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPAudio Workphone.lib)
+        target_link_libraries(WPAudio Workphone)
 
         if (WP_USE_ONETBB)
             target_link_libraries(WPAudio debug tbb12_debug.lib optimized tbb12.lib)
@@ -112,7 +112,6 @@ if (NOT WP_STATIC_LIB)
         endif()
 
         if (WP_BUILD_OISINPUT)
-            target_link_libraries(WPAudio libWPOISInput.a)
             #target_link_libraries(WPAudio debug libOIS_d.a optimized libOIS.a)
         endif()
 
@@ -179,9 +178,7 @@ if (NOT WP_STATIC_LIB)
 
         target_link_libraries(WPAudio minizip.a)
         target_link_libraries(WPAudio nativefiledialog.a)
-        target_link_libraries(WPAudio rttr.a)
         target_link_libraries(WPAudio tinyxml.a)
-        target_link_libraries(WPAudio yaml-cpp.a)
         target_link_libraries(WPAudio zlib.a)
         target_link_libraries(WPAudio zzip.a)
 
@@ -218,7 +215,7 @@ if (NOT WP_STATIC_LIB)
         set_target_properties(WPAudio PROPERTIES LINK_FLAGS "-Wl,-F/Library/Frameworks")
     elseif (UNIX)
         target_link_libraries(WPAudio -Wl,--start-group Workphone.a WPVehiclePhysics.a libWPProcedural.a WPImGui.a
-            FBMath.a FBMesh.a WPOISInput.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysx.a libWPSQLite.a
+            FBMath.a FBMesh.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysx.a libWPSQLite.a
             libWPVehiclePhysics.a FBGraphics.a WPAudio.a WPAssimp.a FBRenderUI.a libFBCPlusPlus.a
             libboost_thread-gcc5-mt-s-x64-1_70.a
             libboost_date_time-gcc5-mt-s-x64-1_70.a

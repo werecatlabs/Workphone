@@ -101,7 +101,7 @@ $<$<CONFIG:RelWithDebInfo>:/LTCG>
 endif (WIN32)
 
 if (WIN32)
-    target_link_libraries(ZipObfuscator Workphone.lib)
+    target_link_libraries(ZipObfuscator Workphone)
 elseif (APPLE)
     target_link_libraries(ZipObfuscator WPCore.a)
 elseif (UNIX)

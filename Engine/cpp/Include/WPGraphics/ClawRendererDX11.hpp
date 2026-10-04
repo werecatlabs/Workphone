@@ -4,6 +4,7 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/Graphics/IRenderer3.hpp>
 #include <Workphone/Math/Matrix4.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <WPGraphics/ClawCubemap.hpp>
 
 struct wp_renderer;

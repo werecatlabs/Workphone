@@ -26,10 +26,8 @@ if (ANDROID)
 		target_include_directories(nativefiledialog PUBLIC ${WP_ROOT}/Dependencies/nativefiledialog/include)
 	endif()
 	
-	wp_add_android_dependency(rttr rttr)
 	wp_add_android_dependency(sds_library sds_library)
 	wp_add_android_dependency(tinyxml tinyxml)
-	wp_add_android_dependency(yaml-cpp yaml-cpp)
 	wp_add_android_dependency(zzip zzip)
 endif()
 

@@ -1,7 +1,6 @@
 #include "Game.h"
 #include "Types.h"
 #include <Workphone/Workphone.hpp>
-#include <WPOISInput/WPOISInput.hpp>
 #include <WPSQLite/WPSQLite.hpp>
 
 #if WP_BUILD_PHYSX

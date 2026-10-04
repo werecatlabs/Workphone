@@ -90,7 +90,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPGraphics Workphone.lib)
+        target_link_libraries(WPGraphics Workphone)
         target_link_libraries(WPGraphics WorkphoneCore.lib)
         target_link_libraries(WPGraphics WorkphonePlatformWin32)
         target_link_libraries(WPGraphics d3d11.lib)
@@ -115,7 +115,7 @@ if (WP_BUILD_IMGUI)
     # the Dear ImGui core (imgui) and the WPImGui wrapper plugin, mirroring
     # WPGraphicsOgreNext.
     if (WIN32 AND NOT WP_STATIC_LIB)
-        target_link_libraries(WPGraphics WPImGui.lib)
+        target_link_libraries(WPGraphics WPImGui)
         target_link_libraries(WPGraphics imgui.lib)
     endif()
 

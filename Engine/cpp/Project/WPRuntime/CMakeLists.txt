@@ -191,7 +191,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
 if (WIN32)
-    target_link_libraries(WPRuntime Workphone.lib)
+    target_link_libraries(WPRuntime Workphone)
 
     target_link_libraries(WPRuntime bcrypt.lib)
     target_link_libraries(WPRuntime libboost_thread.lib)
@@ -245,10 +245,8 @@ elseif (ANDROID)
         luabind
         minizip
         nativefiledialog
-        rttr
         sds_library
         tinyxml
-        yaml-cpp
         zlib
         zzip
         -Wl,--end-group
@@ -271,7 +269,6 @@ elseif (APPLE)
     target_link_libraries(WPRuntime FBRenderUI.a)
 
     if (WP_BUILD_OISINPUT)
-        target_link_libraries(WPRuntime libWPOISInput.a)
         target_link_libraries(WPRuntime debug libOIS_d.a optimized libOIS.a)
     endif()
 
@@ -292,9 +289,7 @@ elseif (APPLE)
     target_link_libraries(WPRuntime libboost_json.a)
     target_link_libraries(WPRuntime minizip.a)
     target_link_libraries(WPRuntime nativefiledialog.a)
-    target_link_libraries(WPRuntime rttr.a)
     target_link_libraries(WPRuntime tinyxml.a)
-    target_link_libraries(WPRuntime yaml-cpp.a)
     target_link_libraries(WPRuntime zlib.a)
     target_link_libraries(WPRuntime zzip.a)
 
@@ -383,19 +378,18 @@ else ()
 endif ()
 else()
 if (WIN32)
-    target_link_libraries(WPRuntime Workphone.lib)
+    target_link_libraries(WPRuntime Workphone)
     target_link_libraries(WPRuntime FBMesh.lib)
-    target_link_libraries(WPRuntime WPProcedural.lib)
-    target_link_libraries(WPRuntime WPSQLite.lib)
-    target_link_libraries(WPRuntime WPVehiclePhysics.lib)
-    target_link_libraries(WPRuntime WPOISInput.lib)
+    target_link_libraries(WPRuntime WPProcedural)
+    target_link_libraries(WPRuntime WPSQLite)
+    target_link_libraries(WPRuntime WPVehiclePhysics)
     target_link_libraries(WPRuntime FBGraphics.lib)
-    target_link_libraries(WPRuntime WPAssimp.lib)
+    target_link_libraries(WPRuntime WPAssimp)
     target_link_libraries(WPRuntime FBRenderUI.lib)
 
     if (WP_ENABLE_LUA)
-        target_link_libraries(WPRuntime WPLua.lib)
-        target_link_libraries(WPRuntime WPLuaBind.lib)
+        target_link_libraries(WPRuntime WPLua)
+        target_link_libraries(WPRuntime WPLuaBind)
     endif()
         
     if (WP_ENABLE_PYTHON)
@@ -542,9 +536,7 @@ if (WIN32)
     target_link_libraries(WPRuntime libboost_filesystem.lib)
     target_link_libraries(WPRuntime libboost_json.lib)
     target_link_libraries(WPRuntime nativefiledialog.lib)
-    target_link_libraries(WPRuntime rttr.lib)
     target_link_libraries(WPRuntime tinyxml.lib)    
-    target_link_libraries(WPRuntime yaml-cpp.lib)
     target_link_libraries(WPRuntime minizip.lib)
     target_link_libraries(WPRuntime zlib.lib)
     target_link_libraries(WPRuntime zzip.lib)
@@ -598,10 +590,8 @@ elseif (ANDROID)
         luabind
         minizip
         nativefiledialog
-        rttr
         sds_library
         tinyxml
-        yaml-cpp
         zlib
         zzip
         -Wl,--end-group
@@ -624,7 +614,6 @@ elseif (APPLE)
     target_link_libraries(WPRuntime FBRenderUI.a)
 
     if (WP_BUILD_OISINPUT)
-        target_link_libraries(WPRuntime libWPOISInput.a)
         target_link_libraries(WPRuntime debug libOIS_d.a optimized libOIS.a)
     endif()
 
@@ -645,9 +634,7 @@ elseif (APPLE)
     target_link_libraries(WPRuntime libboost_json.a)
     target_link_libraries(WPRuntime minizip.a)
     target_link_libraries(WPRuntime nativefiledialog.a)
-    target_link_libraries(WPRuntime rttr.a)
     target_link_libraries(WPRuntime tinyxml.a)
-    target_link_libraries(WPRuntime yaml-cpp.a)
     target_link_libraries(WPRuntime zlib.a)
     target_link_libraries(WPRuntime zzip.a)
 
@@ -765,10 +752,8 @@ if (ANDROID)
         luabind
         minizip
         nativefiledialog
-        rttr
         sds_library
         tinyxml
-        yaml-cpp
         zlib
         zzip
         android_native_app_glue
@@ -817,10 +802,8 @@ if (WP_STATIC_LIB)
             luabind
             minizip
             nativefiledialog
-            rttr
             sds_library
             tinyxml
-            yaml-cpp
             zlib
             zzip
         )

@@ -3,6 +3,7 @@
 
 #include <WPSQLite/WPSQLitePrerequisites.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
+#include <Workphone/Memory/SharedPtr.hpp>
 
 namespace workphone
 {

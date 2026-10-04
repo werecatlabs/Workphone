@@ -67,11 +67,9 @@ endif()
 include_directories( ${WP_ROOT}/Dependencies/openusd )
 include_directories( ${WP_ROOT}/Dependencies/openusd/include )
 include_directories( ${WP_ROOT}/Dependencies/openusd/include/pxr )
-include_directories( ${WP_ROOT}/Dependencies/pugixml/src )
 include_directories( ${WP_ROOT}/Dependencies/tinyxml )
 include_directories( ${WP_ROOT}/Dependencies/cJSON )
 include_directories( ${WP_ROOT}/Dependencies/utf8/source )
-include_directories( ${WP_ROOT}/Dependencies/yaml-cpp/include )
 include_directories( ${WP_ROOT}/Dependencies/minizip/include )
 include_directories( ${WP_ROOT}/Dependencies/zlib/include )
 include_directories( ${WP_ROOT}/Dependencies/zzip/include )
@@ -228,11 +226,8 @@ if (NOT WP_STATIC_LIB)
         target_link_libraries(Workphone minizip.a)
         target_link_libraries(Workphone nativefiledialog.a)
         target_link_libraries(Workphone opcode.a)
-        target_link_libraries(Workphone pugixml.a)
-        target_link_libraries(Workphone rttr.a)
         target_link_libraries(Workphone simplefilewatcher.a)
         target_link_libraries(Workphone tinyxml.a)
-        target_link_libraries(Workphone yaml-cpp.a)
         target_link_libraries(Workphone zlib.a)
         target_link_libraries(Workphone zzip.a)
 
@@ -240,7 +235,7 @@ if (NOT WP_STATIC_LIB)
         set_target_properties(Workphone PROPERTIES LINK_FLAGS "-Wl,-F/Library/Frameworks")
     elseif (UNIX)
         target_link_libraries(Workphone -Wl,--start-group Workphone.a WPVehiclePhysics.a libWPProcedural.a WPImGui.a
-            FBMath.a FBMesh.a WPOISInput.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysx.a libWPSQLite.a
+            FBMath.a FBMesh.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysx.a libWPSQLite.a
             libWPVehiclePhysics.a FBGraphics.a WPGraphicsOgreNext.a WPAssimp.a FBRenderUI.a libFBCPlusPlus.a
             libboost_thread-gcc5-mt-s-x64-1_70.a
             libboost_date_time-gcc5-mt-s-x64-1_70.a

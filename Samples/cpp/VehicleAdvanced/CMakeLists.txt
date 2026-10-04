@@ -126,7 +126,7 @@ file(GLOB_RECURSE SOURCE_FILES "./*.c" "./*.cpp")
 add_executable(SampleVehicleAdvanced ${HEADER_FILES} ${SOURCE_FILES})
 
 if (WIN32)
-    target_link_libraries(SampleVehicleAdvanced Workphone.lib)
+    target_link_libraries(SampleVehicleAdvanced Workphone)
 elseif (APPLE)
     # fireblade libraries
     target_link_libraries(SampleVehicleAdvanced libWPCore.a)
@@ -182,9 +182,7 @@ elseif (APPLE)
 
     target_link_libraries(SampleVehicleAdvanced minizip.a)
     target_link_libraries(SampleVehicleAdvanced nativefiledialog.a)
-    target_link_libraries(SampleVehicleAdvanced rttr.a)
     target_link_libraries(SampleVehicleAdvanced tinyxml.a)
-    target_link_libraries(SampleVehicleAdvanced yaml-cpp.a)
     target_link_libraries(SampleVehicleAdvanced zlib.a)
     target_link_libraries(SampleVehicleAdvanced zzip.a)
 
