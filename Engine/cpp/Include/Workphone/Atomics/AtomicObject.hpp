@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/WorkphoneTypes.hpp>
+#include <Workphone/Atomics/Atomic.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 #include <Workphone/Thread/ScopedLock.hpp>
 
@@ -352,10 +353,6 @@ namespace workphone
         ScopedLock lock( this, false );
         return m_value;
     }
-
-    /// A type definition for an atomic object
-    template <class T>
-    using Atomic = AtomicObject<T>;
 
 }  // namespace workphone
 

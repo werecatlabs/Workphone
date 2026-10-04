@@ -2,6 +2,7 @@
 #define __Atomics_H_
 
 #include <Workphone/WorkphoneTypes.hpp>
+#include <Workphone/Atomics/Atomic.hpp>
 #include <Workphone/Atomics/AtomicNumber.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 
@@ -22,8 +23,6 @@ namespace workphone
     typedef std::atomic_int64_t atomic_s64;
     typedef std::atomic_uint64_t atomic_u64;
 
-    template <class T>
-    using Atomic = std::atomic<T>;
 #else
     /// A type definition for an atomic unsigned integer
     using atomic_u8 = AtomicNumber<u8>;

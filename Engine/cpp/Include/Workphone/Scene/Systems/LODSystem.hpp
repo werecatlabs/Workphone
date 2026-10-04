@@ -3,7 +3,7 @@
 
 #include <Workphone/Scene/Systems/ComponentSystem.hpp>
 #include <Workphone/Math/Vector3.hpp>
-#include <atomic>
+#include <Workphone/Atomics/Atomic.hpp>
 #include <memory>
 #include <unordered_map>
 
@@ -98,7 +98,7 @@ namespace workphone
                 Array<f32> thresholds;
                 Array<s32> results;
 
-                atomic_u32 remainingJobs{ 0 };
+                Atomic<u32> remainingJobs{ 0 };
             };
 
             SharedPtr<LODBatch> buildBatch() const;

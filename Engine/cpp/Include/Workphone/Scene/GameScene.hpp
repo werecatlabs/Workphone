@@ -447,7 +447,7 @@ namespace workphone
              * @brief The current spatial partitioner implementation.
              */
             std::unique_ptr<class SpatialPartitioner> m_partitioner;
-            AtomicValue<SpatialPartitioningConfig> m_partitioningConfig;
+            AtomicObject<SpatialPartitioningConfig> m_partitioningConfig;
 
             /**
              * @var m_label

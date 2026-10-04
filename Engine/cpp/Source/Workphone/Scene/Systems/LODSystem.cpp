@@ -81,7 +81,7 @@ namespace workphone::scene
 
         if( m_pendingBatch )
         {
-            if( m_pendingBatch->remainingJobs.load( std::memory_order_acquire ) != 0 )
+            if( m_pendingBatch->remainingJobs.load( memory_semantics::acquire ) != 0 )
             {
                 return;
             }
@@ -97,7 +97,7 @@ namespace workphone::scene
         }
 
         dispatchBatch( batch );
-        if( batch->remainingJobs.load( std::memory_order_acquire ) == 0 )
+        if( batch->remainingJobs.load( memory_semantics::acquire ) == 0 )
         {
             applyBatch( batch );
         }
@@ -416,20 +416,20 @@ namespace workphone::scene
 
         const auto grainSize = static_cast<size_t>( std::max( m_grainSize, 1u ) );
         const auto jobCount = static_cast<u32>( ( itemCount + grainSize - 1 ) / grainSize );
-        batch->remainingJobs.store( jobCount, std::memory_order_release );
+        batch->remainingJobs.store( jobCount, memory_semantics::release );
 
         for( size_t begin = 0; begin < itemCount; begin += grainSize )
         {
             const auto end = std::min( begin + grainSize, itemCount );
             auto job = jobQueue->startJob( [batch, begin, end]() {
                 calculateRange( batch, begin, end );
-                batch->remainingJobs.fetch_sub( 1, std::memory_order_release );
+                batch->remainingJobs.fetch_sub( 1, memory_semantics::release );
             } );
 
             if( !job )
             {
                 calculateRange( batch, begin, end );
-                batch->remainingJobs.fetch_sub( 1, std::memory_order_release );
+                batch->remainingJobs.fetch_sub( 1, memory_semantics::release );
             }
         }
     }

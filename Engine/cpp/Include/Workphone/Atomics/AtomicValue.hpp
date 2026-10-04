@@ -2,7 +2,7 @@
 #define AtomicValue_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
-#include <atomic>
+#include <Workphone/Atomics/Atomic.hpp>
 
 namespace workphone
 {
@@ -70,40 +70,40 @@ namespace workphone
         @param order The memory order.
         @return The object's value.
         */
-        T fetch_and( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
+        T fetch_and( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept;
 
         /** Atomically adds arg to the value and returns the previous value.
         @param arg The value to add.
         @param order The memory order.
         @return The value immediately preceding the effects of this function.
         */
-        T fetch_add( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
+        T fetch_add( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept;
 
         /** Atomically subtracts arg from the value and returns the previous value.
         @param arg The value to subtract.
         @param order The memory order.
         @return The value immediately preceding the effects of this function.
         */
-        T fetch_sub( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
+        T fetch_sub( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept;
 
         /** Atomically performs bitwise XOR and returns the previous value.
         @param arg The value to XOR with.
         @param order The memory order.
         @return The value immediately preceding the effects of this function.
         */
-        T fetch_xor( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
+        T fetch_xor( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept;
 
         /** Store's a value.
         @param v The value.
         @param m The memory order.
         */
-        void store( T v, std::memory_order m = std::memory_order_seq_cst );
+        void store( T v, memory_semantics m = memory_semantics::full_fence );
 
         /** Load's a value.
         @param m The memory order.
         @return The return value.
         */
-        T load( std::memory_order m = std::memory_order_seq_cst ) const;
+        T load( memory_semantics m = memory_semantics::full_fence ) const;
 
         /** Atomically compares the value with expected and exchanges it with desired if equal.
         @param expected Reference to the value expected to be found in the atomic object.
@@ -114,12 +114,12 @@ namespace workphone
         @return True if the comparison succeeded and the exchange was performed, false otherwise.
         */
         bool compare_exchange_weak( T &expected, T desired,
-                                    std::memory_order success = std::memory_order_seq_cst,
-                                    std::memory_order failure = std::memory_order_seq_cst ) noexcept;
+                                    memory_semantics success = memory_semantics::full_fence,
+                                    memory_semantics failure = memory_semantics::full_fence ) noexcept;
 
     private:
         /// The atomic value
-        std::atomic<T> m_value;
+        Atomic<T> m_value;
     };
 
     template <class T>
@@ -230,44 +230,44 @@ namespace workphone
     }
 
     template <class T>
-    T AtomicValue<T>::fetch_and( T arg, std::memory_order order ) noexcept
+    T AtomicValue<T>::fetch_and( T arg, memory_semantics order ) noexcept
     {
         return m_value.fetch_and( arg, order );
     }
 
     template <class T>
-    T AtomicValue<T>::fetch_add( T arg, std::memory_order order ) noexcept
+    T AtomicValue<T>::fetch_add( T arg, memory_semantics order ) noexcept
     {
         return m_value.fetch_add( arg, order );
     }
 
     template <class T>
-    T AtomicValue<T>::fetch_sub( T arg, std::memory_order order ) noexcept
+    T AtomicValue<T>::fetch_sub( T arg, memory_semantics order ) noexcept
     {
         return m_value.fetch_sub( arg, order );
     }
 
     template <class T>
-    T AtomicValue<T>::fetch_xor( T arg, std::memory_order order ) noexcept
+    T AtomicValue<T>::fetch_xor( T arg, memory_semantics order ) noexcept
     {
         return m_value.fetch_xor( arg, order );
     }
 
     template <class T>
-    void AtomicValue<T>::store( T v, std::memory_order m )
+    void AtomicValue<T>::store( T v, memory_semantics m )
     {
         m_value.store( v, m );
     }
 
     template <class T>
-    T AtomicValue<T>::load( std::memory_order m ) const
+    T AtomicValue<T>::load( memory_semantics m ) const
     {
         return m_value.load( m );
     }
 
     template <class T>
-    bool AtomicValue<T>::compare_exchange_weak( T &expected, T desired, std::memory_order success,
-                                                std::memory_order failure ) noexcept
+    bool AtomicValue<T>::compare_exchange_weak( T &expected, T desired, memory_semantics success,
+                                                memory_semantics failure ) noexcept
     {
         return m_value.compare_exchange_weak( expected, desired, success, failure );
     }

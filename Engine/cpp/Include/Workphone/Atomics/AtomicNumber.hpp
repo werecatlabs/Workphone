@@ -2,8 +2,7 @@
 #define __AtomicNumber_h__
 
 #include <Workphone/WorkphoneTypes.hpp>
-#include <atomic>
-#include <type_traits>
+#include <Workphone/Atomics/Atomic.hpp>
 
 namespace workphone
 {
@@ -74,18 +73,18 @@ namespace workphone
         @param order The memory order.
         @return The object's value.
         */
-        T fetch_or( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
+        T fetch_or( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept;
 
         /** Fetches the value.
         @param arg The value.
         @param order The memory order.
         @return The object's value.
         */
-        T fetch_and( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
+        T fetch_and( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept;
 
-        T fetch_sub( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept
+        T fetch_sub( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept
         {
-            static_assert( std::is_integral<T>::value, "fetch_sub requires an integral type" );
+            static_assert( detail::AtomicArithmetic<T>::integral, "fetch_sub requires an integral type" );
             return m_value.fetch_sub( arg, order );
         }
 
@@ -93,13 +92,13 @@ namespace workphone
         @param v The value.
         @param m The memory order.
         */
-        void store( T v, std::memory_order m = std::memory_order_seq_cst ) noexcept;
+        void store( T v, memory_semantics m = memory_semantics::full_fence ) noexcept;
 
         /** Load's a value.
         @param m The memory order.
         @return The return value.
         */
-        T load( std::memory_order m = std::memory_order_seq_cst ) const noexcept;
+        T load( memory_semantics m = memory_semantics::full_fence ) const noexcept;
 
         /** Atomically compares the value with expected and, if equal, replaces it with desired.
         @param expected Reference to the expected value; updated with the actual value on failure.
@@ -108,11 +107,11 @@ namespace workphone
         @return True if the exchange was performed, false otherwise.
         */
         bool compareExchange( T &expected, T desired,
-                              std::memory_order order = std::memory_order_seq_cst ) noexcept;
+                              memory_semantics order = memory_semantics::full_fence ) noexcept;
 
     private:
         /// The value
-        std::atomic<T> m_value;
+        Atomic<T> m_value;
     };
 
     template <class T>
@@ -164,7 +163,7 @@ namespace workphone
     template <class T>
     AtomicNumber<T> AtomicNumber<T>::operator+( const T &other ) const
     {
-        return AtomicNumber<T>( m_value.load() + other );
+        return AtomicNumber<T>( m_value.load( memory_semantics::full_fence ) + other );
     }
 
     template <class T>
@@ -177,7 +176,7 @@ namespace workphone
     template <class T>
     AtomicNumber<T> AtomicNumber<T>::operator-( const T &other ) const
     {
-        return AtomicNumber<T>( m_value.load() - other );
+        return AtomicNumber<T>( m_value.load( memory_semantics::full_fence ) - other );
     }
 
     template <class T>
@@ -228,33 +227,33 @@ namespace workphone
     }
 
     template <class T>
-    T AtomicNumber<T>::fetch_or( T arg, std::memory_order order ) noexcept
+    T AtomicNumber<T>::fetch_or( T arg, memory_semantics order ) noexcept
     {
-        static_assert( std::is_integral<T>::value, "fetch_or requires an integral type" );
+        static_assert( detail::AtomicArithmetic<T>::integral, "fetch_or requires an integral type" );
         return m_value.fetch_or( arg, order );
     }
 
     template <class T>
-    T AtomicNumber<T>::fetch_and( T arg, std::memory_order order ) noexcept
+    T AtomicNumber<T>::fetch_and( T arg, memory_semantics order ) noexcept
     {
-        static_assert( std::is_integral<T>::value, "fetch_and requires an integral type" );
+        static_assert( detail::AtomicArithmetic<T>::integral, "fetch_and requires an integral type" );
         return m_value.fetch_and( arg, order );
     }
 
     template <class T>
-    void AtomicNumber<T>::store( T v, std::memory_order m ) noexcept
+    void AtomicNumber<T>::store( T v, memory_semantics m ) noexcept
     {
         m_value.store( v, m );
     }
 
     template <class T>
-    T AtomicNumber<T>::load( std::memory_order m ) const noexcept
+    T AtomicNumber<T>::load( memory_semantics m ) const noexcept
     {
         return m_value.load( m );
     }
 
     template <class T>
-    bool AtomicNumber<T>::compareExchange( T &expected, T desired, std::memory_order order ) noexcept
+    bool AtomicNumber<T>::compareExchange( T &expected, T desired, memory_semantics order ) noexcept
     {
         return m_value.compare_exchange_strong( expected, desired, order );
     }

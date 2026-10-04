@@ -8,7 +8,8 @@ namespace workphone
 {
 
     /**
-     * A read-write mutex implemented using spin locks.
+     * A non-recursive read-write mutex implemented using spin locks.
+     * Do not acquire another lock on this mutex while already holding it.
      */
     class WPCore_API SpinRWMutex
     {
@@ -26,6 +27,9 @@ namespace workphone
              * lock.
              */
             ScopedLock( SpinRWMutex &m, bool write = true );
+
+            ScopedLock( const ScopedLock & ) = delete;
+            ScopedLock &operator=( const ScopedLock & ) = delete;
 
             /**
              * Releases the lock.
@@ -82,7 +86,7 @@ namespace workphone
         ///< The number of writers currently holding an exclusive lock.
         std::atomic<s32> writers;
 
-        ///< True if there are pending write lock requests.
+        ///< Admission gate serializing reader registration and writer acquisition.
         std::atomic<bool> writeRequest;
     };
 
