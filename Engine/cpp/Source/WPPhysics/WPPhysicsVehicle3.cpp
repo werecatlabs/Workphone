@@ -1,24 +1,200 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysicsVehicle3.hpp"
-#include <WPPhysics/WPPhysicsBounds3.hpp>
+#include <Workphone/Interface/Physics/IPhysicsVehicleWheel3.hpp>
+#include <algorithm>
+#include <cmath>
 
 namespace workphone
 {
     namespace physics
     {
 
-        WPPhysicsVehicle3::WPPhysicsVehicle3( SmartPtr<IRigidBody3> chassis ) :
+        class CPhysicsVehicleWheel final : public IPhysicsVehicleWheel3
+        {
+        public:
+            real_Num getRadius() const override
+            {
+                return m_radius;
+            }
+
+            void setRadius( real_Num radius ) override
+            {
+                if( std::isfinite( static_cast<double>( radius ) ) )
+                {
+                    m_radius = std::max( radius, static_cast<real_Num>( 0.001 ) );
+                }
+            }
+
+            real_Num getWidth() const override
+            {
+                return m_width;
+            }
+
+            void setWidth( real_Num width ) override
+            {
+                if( std::isfinite( static_cast<double>( width ) ) )
+                {
+                    m_width = std::max( width, static_cast<real_Num>( 0.001 ) );
+                }
+            }
+
+            real_Num getMaxSuspensionTravelCm() const override
+            {
+                return m_maxSuspensionTravelCm;
+            }
+
+            void setMaxSuspensionTravelCm( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_maxSuspensionTravelCm = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getMaxSuspensionForce() const override
+            {
+                return m_maxSuspensionForce;
+            }
+
+            void setMaxSuspensionForce( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_maxSuspensionForce = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getSuspensionStiffness() const override
+            {
+                return m_suspensionStiffness;
+            }
+
+            void setSuspensionStiffness( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_suspensionStiffness = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getSuspensionDamping() const override
+            {
+                return m_suspensionDamping;
+            }
+
+            void setSuspensionDamping( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_suspensionDamping = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getFrictionSlip() const override
+            {
+                return m_frictionSlip;
+            }
+
+            void setFrictionSlip( real_Num value ) override
+            {
+                if( std::isfinite( static_cast<double>( value ) ) )
+                {
+                    m_frictionSlip = std::max( value, static_cast<real_Num>( 0.0 ) );
+                }
+            }
+
+            real_Num getSteering() const override
+            {
+                return m_steering;
+            }
+
+            void setSteering( real_Num value ) override
+            {
+                m_steering =
+                    std::isfinite( static_cast<double>( value ) ) ? value : static_cast<real_Num>( 0.0 );
+            }
+
+            real_Num getEngineForce() const override
+            {
+                return m_engineForce;
+            }
+
+            void setEngineForce( real_Num value ) override
+            {
+                m_engineForce =
+                    std::isfinite( static_cast<double>( value ) ) ? value : static_cast<real_Num>( 0.0 );
+            }
+
+            real_Num getBrake() const override
+            {
+                return m_brake;
+            }
+
+            void setBrake( real_Num value ) override
+            {
+                m_brake = std::isfinite( static_cast<double>( value ) )
+                            ? std::max( value, static_cast<real_Num>( 0.0 ) )
+                            : static_cast<real_Num>( 0.0 );
+            }
+
+            bool isInContact() const override
+            {
+                return m_inContact;
+            }
+
+            void setInContact( bool inContact ) const
+            {
+                m_inContact = inContact;
+            }
+
+        private:
+            real_Num     m_radius = static_cast<real_Num>( 0.35 );
+            real_Num     m_width = static_cast<real_Num>( 0.25 );
+            real_Num     m_maxSuspensionTravelCm = static_cast<real_Num>( 20.0 );
+            real_Num     m_maxSuspensionForce = static_cast<real_Num>( 6000.0 );
+            real_Num     m_suspensionStiffness = static_cast<real_Num>( 35.0 );
+            real_Num     m_suspensionDamping = static_cast<real_Num>( 4.5 );
+            real_Num     m_frictionSlip = static_cast<real_Num>( 1.0 );
+            real_Num     m_steering = static_cast<real_Num>( 0.0 );
+            real_Num     m_engineForce = static_cast<real_Num>( 0.0 );
+            real_Num     m_brake = static_cast<real_Num>( 0.0 );
+            mutable bool m_inContact = false;
+        };
+
+        AABB3F toFloatBounds( const AABB3<real_Num> &bounds )
+        {
+            auto result = AABB3F();
+            if( bounds.isNull() )
+            {
+                result.setNull();
+                return result;
+            }
+            if( bounds.isInfinite() )
+            {
+                result.setInfinite();
+                return result;
+            }
+
+            const auto minimum = bounds.getMinimum();
+            const auto maximum = bounds.getMaximum();
+            return AABB3F( Vector3F( static_cast<f32>( minimum.X() ), static_cast<f32>( minimum.Y() ),
+                                     static_cast<f32>( minimum.Z() ) ),
+                           Vector3F( static_cast<f32>( maximum.X() ), static_cast<f32>( maximum.Y() ),
+                                     static_cast<f32>( maximum.Z() ) ) );
+        }
+
+        CPhysicsVehicle3::CPhysicsVehicle3( SmartPtr<IRigidBody3> chassis ) :
             m_chassis( std::move( chassis ) )
         {
             setLoadingState( LoadingState::Loaded );
         }
 
-        WPPhysicsVehicle3::~WPPhysicsVehicle3()
+        CPhysicsVehicle3::~CPhysicsVehicle3()
         {
             unload( nullptr );
         }
 
-        void WPPhysicsVehicle3::unload( SmartPtr<ISharedObject> )
+        void CPhysicsVehicle3::unload( SmartPtr<ISharedObject> )
         {
             m_wheels.clear();
             m_vehicleInput = nullptr;
@@ -26,33 +202,33 @@ namespace workphone
             setLoadingState( LoadingState::Unloaded );
         }
 
-        workphone::physics::IPhysicsVehicleWheel3 *WPPhysicsVehicle3::addWheel()
+        workphone::physics::IPhysicsVehicleWheel3 *CPhysicsVehicle3::addWheel()
         {
             if( !m_chassis || m_finalized )
             {
                 WP_LOG_WARNING(
-                    "WPPhysicsVehicle3::addWheel: wheels cannot be added after finalization." );
+                    "CPhysicsVehicle3::addWheel: wheels cannot be added after finalization." );
                 return nullptr;
             }
 
-            auto wheel = workphone::make_ptr<WPPhysicsVehicleWheel>();
+            auto wheel = workphone::make_ptr<CPhysicsVehicleWheel>();
             wheel->setLoadingState( LoadingState::Loaded );
             auto result = wheel.get();
             m_wheels.push_back( wheel );
             return result;
         }
 
-        workphone::physics::IPhysicsVehicleWheel3 *WPPhysicsVehicle3::getWheel( u32 wheelIndex ) const
+        workphone::physics::IPhysicsVehicleWheel3 *CPhysicsVehicle3::getWheel( u32 wheelIndex ) const
         {
             return wheelIndex < m_wheels.size() ? m_wheels[wheelIndex].get() : nullptr;
         }
 
-        u32 WPPhysicsVehicle3::getNumWheels() const
+        u32 CPhysicsVehicle3::getNumWheels() const
         {
             return static_cast<u32>( m_wheels.size() );
         }
 
-        void WPPhysicsVehicle3::finalize()
+        void CPhysicsVehicle3::finalize()
         {
             if( !m_chassis )
             {
@@ -60,13 +236,13 @@ namespace workphone
             }
             if( m_wheels.empty() )
             {
-                WP_LOG_WARNING( "WPPhysicsVehicle3::finalize: vehicle has no wheels." );
+                WP_LOG_WARNING( "CPhysicsVehicle3::finalize: vehicle has no wheels." );
             }
             m_finalized = true;
             m_chassis->wakeUp();
         }
 
-        void WPPhysicsVehicle3::applyEngineForce( f32 engineForce, u32 wheelIndex )
+        void CPhysicsVehicle3::applyEngineForce( f32 engineForce, u32 wheelIndex )
         {
             auto wheel = getNativeWheel( wheelIndex );
             if( !wheel || !m_chassis || !m_enabled )
@@ -86,7 +262,7 @@ namespace workphone
             }
         }
 
-        void WPPhysicsVehicle3::setBrake( f32 brakeForce, u32 wheelIndex )
+        void CPhysicsVehicle3::setBrake( f32 brakeForce, u32 wheelIndex )
         {
             auto wheel = getNativeWheel( wheelIndex );
             if( !wheel || !m_chassis )
@@ -109,7 +285,7 @@ namespace workphone
             m_chassis->setAngularVelocity( m_chassis->getAngularVelocity() * factor );
         }
 
-        void WPPhysicsVehicle3::setSteeringValue( f32 steeringValue, u32 wheelIndex )
+        void CPhysicsVehicle3::setSteeringValue( f32 steeringValue, u32 wheelIndex )
         {
             if( auto wheel = getNativeWheel( wheelIndex ) )
             {
@@ -117,7 +293,7 @@ namespace workphone
             }
         }
 
-        void WPPhysicsVehicle3::setPosition( const Vector3<real_Num> &position )
+        void CPhysicsVehicle3::setPosition( const Vector3<real_Num> &position )
         {
             if( m_chassis )
             {
@@ -127,12 +303,12 @@ namespace workphone
             }
         }
 
-        workphone::Vector3<workphone::real_Num> WPPhysicsVehicle3::getPosition() const
+        workphone::Vector3<workphone::real_Num> CPhysicsVehicle3::getPosition() const
         {
             return m_chassis ? m_chassis->getTransform().getPosition() : Vector3<real_Num>::zero();
         }
 
-        void WPPhysicsVehicle3::setOrientation( const Quaternion<real_Num> &orientation )
+        void CPhysicsVehicle3::setOrientation( const Quaternion<real_Num> &orientation )
         {
             if( m_chassis )
             {
@@ -142,13 +318,13 @@ namespace workphone
             }
         }
 
-        workphone::Quaternion<workphone::real_Num> WPPhysicsVehicle3::getOrientation() const
+        workphone::Quaternion<workphone::real_Num> CPhysicsVehicle3::getOrientation() const
         {
             return m_chassis ? m_chassis->getTransform().getOrientation()
                              : Quaternion<real_Num>::identity();
         }
 
-        void WPPhysicsVehicle3::setVelocity( const Vector3<real_Num> &velocity )
+        void CPhysicsVehicle3::setVelocity( const Vector3<real_Num> &velocity )
         {
             if( m_chassis )
             {
@@ -156,32 +332,32 @@ namespace workphone
             }
         }
 
-        workphone::Vector3<workphone::real_Num> WPPhysicsVehicle3::getVelocity() const
+        workphone::Vector3<workphone::real_Num> CPhysicsVehicle3::getVelocity() const
         {
             return m_chassis ? m_chassis->getLinearVelocity() : Vector3<real_Num>::zero();
         }
 
-        void WPPhysicsVehicle3::setMaterialId( u32 materialId )
+        void CPhysicsVehicle3::setMaterialId( u32 materialId )
         {
             m_materialId = materialId;
         }
 
-        u32 WPPhysicsVehicle3::getMaterialId() const
+        u32 CPhysicsVehicle3::getMaterialId() const
         {
             return m_materialId;
         }
 
-        workphone::AABB3F WPPhysicsVehicle3::getLocalAABB() const
+        workphone::AABB3F CPhysicsVehicle3::getLocalAABB() const
         {
-            return m_chassis ? detail::toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
+            return m_chassis ? toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
         }
 
-        workphone::AABB3F WPPhysicsVehicle3::getWorldAABB() const
+        workphone::AABB3F CPhysicsVehicle3::getWorldAABB() const
         {
-            return m_chassis ? detail::toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
+            return m_chassis ? toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
         }
 
-        void WPPhysicsVehicle3::setEnabled( bool enabled )
+        void CPhysicsVehicle3::setEnabled( bool enabled )
         {
             m_enabled = enabled;
             if( m_chassis )
@@ -190,24 +366,24 @@ namespace workphone
             }
         }
 
-        bool WPPhysicsVehicle3::isEnabled() const
+        bool CPhysicsVehicle3::isEnabled() const
         {
             return m_enabled && m_chassis && m_chassis->isEnabled();
         }
 
         const workphone::SmartPtr<workphone::physics::IPhysicsVehicleInput3> &
-        WPPhysicsVehicle3::getVehicleInput() const
+        CPhysicsVehicle3::getVehicleInput() const
         {
             return m_vehicleInput;
         }
 
         workphone::SmartPtr<workphone::physics::IPhysicsVehicleInput3> &
-        WPPhysicsVehicle3::getVehicleInput()
+        CPhysicsVehicle3::getVehicleInput()
         {
             return m_vehicleInput;
         }
 
-        workphone::Array<workphone::Transform3F> WPPhysicsVehicle3::getWheelTransformations() const
+        workphone::Array<workphone::Transform3F> CPhysicsVehicle3::getWheelTransformations() const
         {
             Array<Transform3F> transforms;
             if( !m_chassis || m_wheels.empty() )
@@ -278,12 +454,12 @@ namespace workphone
             return transforms;
         }
 
-        SmartPtr<IRigidBody3> WPPhysicsVehicle3::getChassis() const
+        SmartPtr<IRigidBody3> CPhysicsVehicle3::getChassis() const
         {
             return m_chassis;
         }
 
-        WPPhysicsVehicleWheel *WPPhysicsVehicle3::getNativeWheel(
+        CPhysicsVehicleWheel *CPhysicsVehicle3::getNativeWheel(
             u32 wheelIndex ) const
         {
             return wheelIndex < m_wheels.size() ? m_wheels[wheelIndex].get() : nullptr;

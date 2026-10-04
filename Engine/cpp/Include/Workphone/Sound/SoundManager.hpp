@@ -3,6 +3,8 @@
 
 #include <Workphone/Interface/Sound/ISoundManager.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>

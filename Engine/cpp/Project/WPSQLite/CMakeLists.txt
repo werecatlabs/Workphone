@@ -61,7 +61,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPSQLite Workphone.lib)
+        target_link_libraries(WPSQLite Workphone)
 
         if (WP_USE_ONETBB)
             target_link_libraries(WPSQLite debug tbb12_debug.lib optimized tbb12.lib)

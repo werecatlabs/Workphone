@@ -494,7 +494,8 @@ elseif (UNIX)
     option(WP_BUILD_WXWIDGETS "Build wxwidgets" OFF)
 endif()
 
-option(WP_BUILD_OISINPUT "Build ois" ON)
+# The legacy OIS input module has been removed; ignore stale cache values.
+set(WP_BUILD_OISINPUT OFF CACHE BOOL "Legacy OIS input module (removed)" FORCE)
 option(WP_BUILD_DIRECTSHOW "Build direct show" OFF)
 option(WP_BUILD_AUDIO "Build audio" ON)
 

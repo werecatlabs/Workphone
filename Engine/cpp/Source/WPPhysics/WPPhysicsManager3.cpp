@@ -1,16 +1,16 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
-#include <WPPhysics/WPPhysicsBoxShape3.hpp>
-#include <WPPhysics/WPPhysicsManager3.hpp>
-#include <WPPhysics/WPPhysicsMaterial3.hpp>
-#include <WPPhysics/WPPhysicsShape3.hpp>
-#include <WPPhysics/WPPhysicsMeshShape3.hpp>
-#include <WPPhysics/WPPhysicsPlaneShape3.hpp>
-#include <WPPhysics/WPPhysicsRigidDynamic3.hpp>
-#include <WPPhysics/WPPhysicsRigidStatic3.hpp>
-#include <WPPhysics/WPPhysicsScene3.hpp>
-#include <WPPhysics/WPPhysicsSphereShape3.hpp>
-#include <WPPhysics/WPPhysicsTerrainShape3.hpp>
+#include <WPPhysics/CBoxShape3.hpp>
+#include <WPPhysics/CPhysicsManager3.hpp>
 #include <WPPhysics/WPPhysicsVehicle3.hpp>
+#include <WPPhysics/CPhysicsMaterial3.hpp>
+#include <WPPhysics/CPhysicsShape3.hpp>
+#include <WPPhysics/CMeshShape3.hpp>
+#include <WPPhysics/CPlaneShape3.hpp>
+#include <WPPhysics/CRigidDynamic3.hpp>
+#include <WPPhysics/CRigidStatic3.hpp>
+#include <WPPhysics/CPhysicsScene3.hpp>
+#include <WPPhysics/CSphereShape3.hpp>
+#include <WPPhysics/CTerrainShape3.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Physics/CapsuleController.hpp>
 #include <Workphone/Physics/ConstraintD6.hpp>
@@ -33,10 +33,10 @@ namespace workphone::physics
     namespace
     {
         template <class TBase>
-        class WPPhysicsConstraint3Base : public TBase
+        class CPhysicsConstraint3Base : public TBase
         {
         public:
-            explicit WPPhysicsConstraint3Base( wp_constraint_type type ) :
+            explicit CPhysicsConstraint3Base( wp_constraint_type type ) :
                 m_constraint( wp_constraint_create( type ) )
             {
                 if( !m_constraint )
@@ -45,7 +45,7 @@ namespace workphone::physics
                 }
             }
 
-            ~WPPhysicsConstraint3Base() override
+            ~CPhysicsConstraint3Base() override
             {
                 wp_constraint_destroy( m_constraint );
                 m_constraint = nullptr;
@@ -93,7 +93,7 @@ namespace workphone::physics
                 const auto index = static_cast<wp_s32>( actor );
                 if( index < 0 || index >= 2 )
                 {
-                    WP_LOG_WARNING( "WPPhysicsConstraint3Base::setLocalPose: invalid actor index." );
+                    WP_LOG_WARNING( "CPhysicsConstraint3Base::setLocalPose: invalid actor index." );
                     return;
                 }
 
@@ -176,8 +176,8 @@ namespace workphone::physics
                     return nullptr;
                 }
 
-                if( !dynamic_cast<WPPhysicsRigidDynamic3 *>( body.get() ) &&
-                    !dynamic_cast<WPPhysicsRigidStatic3 *>( body.get() ) )
+                if( !dynamic_cast<CRigidDynamic3 *>( body.get() ) &&
+                    !dynamic_cast<CRigidStatic3 *>( body.get() ) )
                 {
                     return nullptr;
                 }
@@ -192,10 +192,10 @@ namespace workphone::physics
             SmartPtr<IPhysicsBody3> m_bodyB;
         };
 
-        class WPPhysicsNativeConstraintD6 final : public WPPhysicsConstraint3Base<ConstraintD6>
+        class CPhysicsConstraintD6 final : public CPhysicsConstraint3Base<ConstraintD6>
         {
         public:
-            WPPhysicsNativeConstraintD6() : WPPhysicsConstraint3Base<ConstraintD6>( WORKPHONE_CONSTRAINT_D6 )
+            CPhysicsConstraintD6() : CPhysicsConstraint3Base<ConstraintD6>( WORKPHONE_CONSTRAINT_D6 )
             {
             }
 
@@ -206,7 +206,7 @@ namespace workphone::physics
                     drive = nullptr;
                 }
                 m_linearLimit = nullptr;
-                WPPhysicsConstraint3Base<ConstraintD6>::unload( data );
+                CPhysicsConstraint3Base<ConstraintD6>::unload( data );
             }
 
             void setDrivePosition( const Transform3<real_Num> &pose ) override
@@ -228,7 +228,7 @@ namespace workphone::physics
                 const auto i = static_cast<size_t>( index );
                 if( i >= m_drives.size() )
                 {
-                    WP_LOG_WARNING( "WPPhysicsNativeConstraintD6::setDrive: invalid drive index." );
+                    WP_LOG_WARNING( "CPhysicsConstraintD6::setDrive: invalid drive index." );
                     return;
                 }
 
@@ -276,7 +276,7 @@ namespace workphone::physics
             {
                 if( static_cast<u32>( axis ) >= static_cast<u32>( D6AxisEnum::eCOUNT ) )
                 {
-                    WP_LOG_WARNING( "WPPhysicsNativeConstraintD6::setMotion: invalid axis." );
+                    WP_LOG_WARNING( "CPhysicsConstraintD6::setMotion: invalid axis." );
                     return;
                 }
 
@@ -301,16 +301,16 @@ namespace workphone::physics
             SmartPtr<IConstraintLinearLimit> m_linearLimit;
         };
 
-        class WPPhysicsConstraintFixed final : public WPPhysicsConstraint3Base<ConstraintFixed3>
+        class CPhysicsConstraintFixed final : public CPhysicsConstraint3Base<ConstraintFixed3>
         {
         public:
-            WPPhysicsConstraintFixed() :
-                WPPhysicsConstraint3Base<ConstraintFixed3>( WORKPHONE_CONSTRAINT_FIXED )
+            CPhysicsConstraintFixed() :
+                CPhysicsConstraint3Base<ConstraintFixed3>( WORKPHONE_CONSTRAINT_FIXED )
             {
             }
         };
 
-        class WPPhysicsNativeConstraintLinearLimit final : public IConstraintLinearLimit
+        class CPhysicsConstraintLinearLimit final : public IConstraintLinearLimit
         {
         public:
             real_Num getValue() const override
@@ -382,6 +382,9 @@ namespace workphone::physics
             real_Num m_damping = static_cast<real_Num>( 0.0 );
             real_Num m_contactDistance = static_cast<real_Num>( 0.0 );
         };
+
+
+
 
         SmartPtr<IPhysicsScene3> selectQueryScene( const SmartPtr<IPhysicsScene3>        &raycastScene,
                                                    const SmartPtr<IPhysicsScene3>        &physicsScene,
@@ -534,7 +537,7 @@ namespace workphone::physics
         }
     } // namespace
 
-    WPPhysicsManager3::WPPhysicsManager3() : m_system( wp_physics_system_create() )
+    CPhysicsManager3::CPhysicsManager3() : m_system( wp_physics_system_create() )
     {
         if( !m_system )
         {
@@ -544,7 +547,7 @@ namespace workphone::physics
         wp_physics_system_set_user_data( m_system, this );
     }
 
-    WPPhysicsManager3::~WPPhysicsManager3()
+    CPhysicsManager3::~CPhysicsManager3()
     {
         unload( nullptr );
         wp_physics_system_set_user_data( m_system, nullptr );
@@ -552,7 +555,7 @@ namespace workphone::physics
         m_system = nullptr;
     }
 
-    void WPPhysicsManager3::load( SmartPtr<ISharedObject> )
+    void CPhysicsManager3::load( SmartPtr<ISharedObject> )
     {
         ScopedLock lock( this );
         if( getLoadingState() == LoadingState::Loaded )
@@ -564,7 +567,7 @@ namespace workphone::physics
         setLoadingState( LoadingState::Loaded );
     }
 
-    void WPPhysicsManager3::unload( SmartPtr<ISharedObject> data )
+    void CPhysicsManager3::unload( SmartPtr<ISharedObject> data )
     {
         Array<SmartPtr<IPhysicsConstraint3>>   constraints;
         Array<SmartPtr<IPhysicsVehicle3>>      vehicles;
@@ -685,13 +688,13 @@ namespace workphone::physics
         setLoadingState( LoadingState::Unloaded );
     }
 
-    bool WPPhysicsManager3::getEnableDebugDraw() const
+    bool CPhysicsManager3::getEnableDebugDraw() const
     {
         ScopedLock lock( this );
         return m_system && wp_physics_system_get_debug_draw( m_system ) != 0;
     }
 
-    void WPPhysicsManager3::setEnableDebugDraw( bool enableDebugDraw )
+    void CPhysicsManager3::setEnableDebugDraw( bool enableDebugDraw )
     {
         ScopedLock lock( this );
         if( m_system )
@@ -702,7 +705,7 @@ namespace workphone::physics
         PhysicsManager::setEnableDebugDraw( enableDebugDraw );
     }
 
-    void WPPhysicsManager3::debugDraw()
+    void CPhysicsManager3::debugDraw()
     {
         if( !getEnableDebugDraw() )
         {
@@ -729,7 +732,7 @@ namespace workphone::physics
         PhysicsManager::debugDraw();
     }
 
-    void WPPhysicsManager3::postUpdate()
+    void CPhysicsManager3::postUpdate()
     {
         if( getEnableDebugDraw() )
         {
@@ -737,14 +740,14 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IPhysicsMaterial3> WPPhysicsManager3::addMaterial()
+    SmartPtr<IPhysicsMaterial3> CPhysicsManager3::addMaterial()
     {
         try
         {
-            auto material = workphone::make_ptr<WPPhysicsMaterial3>();
+            auto material = workphone::make_ptr<CPhysicsMaterial3>();
             if( !material->getMaterial() )
             {
-                WP_LOG_ERROR( "WPPhysicsManager3::addMaterial: native allocation failed." );
+                WP_LOG_ERROR( "CPhysicsManager3::addMaterial: native allocation failed." );
                 return nullptr;
             }
 
@@ -760,7 +763,7 @@ namespace workphone::physics
         }
     }
 
-    void WPPhysicsManager3::removeMaterial( SmartPtr<IPhysicsMaterial3> material )
+    void CPhysicsManager3::removeMaterial( SmartPtr<IPhysicsMaterial3> material )
     {
         if( !material )
         {
@@ -776,14 +779,14 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IPhysicsScene3> WPPhysicsManager3::addScene()
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::addScene()
     {
         try
         {
-            auto scene = workphone::make_ptr<WPPhysicsScene3>();
+            auto scene = workphone::make_ptr<CPhysicsScene3>();
             if( !scene->getScene() )
             {
-                WP_LOG_ERROR( "WPPhysicsManager3::addScene: native allocation failed." );
+                WP_LOG_ERROR( "CPhysicsManager3::addScene: native allocation failed." );
                 return nullptr;
             }
 
@@ -803,7 +806,7 @@ namespace workphone::physics
         }
     }
 
-    void WPPhysicsManager3::removeScene( SmartPtr<IPhysicsScene3> scene )
+    void CPhysicsManager3::removeScene( SmartPtr<IPhysicsScene3> scene )
     {
         if( !scene )
         {
@@ -849,12 +852,12 @@ namespace workphone::physics
         scene->setLoadingState( LoadingState::Unloaded );
     }
 
-    SmartPtr<IPhysicsShape3> WPPhysicsManager3::addCollisionShapeByType( hash64                  type,
+    SmartPtr<IPhysicsShape3> CPhysicsManager3::addCollisionShapeByType( hash64                  type,
                                                                         SmartPtr<ISharedObject> data )
     {
         if( type == 0 )
         {
-            WP_LOG_ERROR( "WPPhysicsManager3::addCollisionShapeByType: type hash is zero." );
+            WP_LOG_ERROR( "CPhysicsManager3::addCollisionShapeByType: type hash is zero." );
             return nullptr;
         }
 
@@ -870,28 +873,28 @@ namespace workphone::physics
             SmartPtr<IPhysicsShape3> shape;
             if( type == sphereType || type == ISphereShape3::typeInfo() )
             {
-                shape = workphone::make_ptr<WPPhysicsSphereShape3>();
+                shape = workphone::make_ptr<CSphereShape3>();
             }
             else if( type == boxType || type == IBoxShape3::typeInfo() )
             {
-                shape = workphone::make_ptr<WPPhysicsBoxShape3>();
+                shape = workphone::make_ptr<CBoxShape3>();
             }
             else if( type == planeType || type == IPlaneShape3::typeInfo() )
             {
-                shape = workphone::make_ptr<WPPhysicsPlaneShape3>();
+                shape = workphone::make_ptr<CPlaneShape3>();
             }
             else if( type == meshType || type == IMeshShape::typeInfo() )
             {
-                shape = workphone::make_ptr<WPPhysicsMeshShape3>();
+                shape = workphone::make_ptr<CMeshShape3>();
             }
             else if( type == terrainType || type == ITerrainShape::typeInfo() )
             {
-                shape = workphone::make_ptr<WPPhysicsTerrainShape3>();
+                shape = workphone::make_ptr<CTerrainShape3>();
             }
             else
             {
                 WP_LOG_WARNING(
-                    "WPPhysicsManager3::addCollisionShapeByType: unsupported shape type hash " +
+                    "CPhysicsManager3::addCollisionShapeByType: unsupported shape type hash " +
                     StringUtil::toString( type ) + "." );
                 return nullptr;
             }
@@ -899,7 +902,7 @@ namespace workphone::physics
             if( !shape || !shape->hasShapeData() )
             {
                 WP_LOG_ERROR(
-                    "WPPhysicsManager3::addCollisionShapeByType: failed to allocate native shape data." );
+                    "CPhysicsManager3::addCollisionShapeByType: failed to allocate native shape data." );
                 return nullptr;
             }
 
@@ -921,13 +924,13 @@ namespace workphone::physics
         catch( ... )
         {
             WP_LOG_ERROR(
-                "WPPhysicsManager3::addCollisionShapeByType: unknown exception while creating shape." );
+                "CPhysicsManager3::addCollisionShapeByType: unknown exception while creating shape." );
         }
 
         return nullptr;
     }
 
-    bool WPPhysicsManager3::removeCollisionShape( SmartPtr<IPhysicsShape3> collisionShape )
+    bool CPhysicsManager3::removeCollisionShape( SmartPtr<IPhysicsShape3> collisionShape )
     {
         if( !collisionShape )
         {
@@ -966,7 +969,7 @@ namespace workphone::physics
         return true;
     }
 
-    bool WPPhysicsManager3::removePhysicsBody( SmartPtr<IRigidBody3> body )
+    bool CPhysicsManager3::removePhysicsBody( SmartPtr<IRigidBody3> body )
     {
         if( !body )
         {
@@ -1002,7 +1005,7 @@ namespace workphone::physics
 
             for( const auto &vehicle : m_vehicles )
             {
-                const auto backendVehicle = dynamic_cast<WPPhysicsVehicle3 *>( vehicle.get() );
+                const auto backendVehicle = dynamic_cast<CPhysicsVehicle3 *>( vehicle.get() );
                 if( backendVehicle && backendVehicle->getChassis().get() == body.get() )
                 {
                     vehiclesToRemove.push_back( vehicle );
@@ -1041,7 +1044,7 @@ namespace workphone::physics
         return true;
     }
 
-    SmartPtr<ICharacterController3> WPPhysicsManager3::addCharacter()
+    SmartPtr<ICharacterController3> CPhysicsManager3::addCharacter()
     {
         try
         {
@@ -1063,11 +1066,11 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IRigidStatic3> WPPhysicsManager3::addRigidStatic( const Transform3<real_Num> &transform )
+    SmartPtr<IRigidStatic3> CPhysicsManager3::addRigidStatic( const Transform3<real_Num> &transform )
     {
         try
         {
-            auto body = workphone::make_ptr<WPPhysicsRigidStatic3>();
+            auto body = workphone::make_ptr<CRigidStatic3>();
             body->setTransform( transform );
             body->setLoadingState( LoadingState::Loaded );
 
@@ -1082,14 +1085,14 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IRigidDynamic3> WPPhysicsManager3::addRigidDynamic( const Transform3<real_Num> &transform )
+    SmartPtr<IRigidDynamic3> CPhysicsManager3::addRigidDynamic( const Transform3<real_Num> &transform )
     {
         try
         {
-            auto body = workphone::make_ptr<WPPhysicsRigidDynamic3>( WORKPHONE_RIGIDBODY_DYNAMIC );
+            auto body = workphone::make_ptr<CRigidDynamic3>( WORKPHONE_RIGIDBODY_DYNAMIC );
             if( !body->getBody() )
             {
-                WP_LOG_ERROR( "WPPhysicsManager3::addRigidDynamic: native allocation failed." );
+                WP_LOG_ERROR( "CPhysicsManager3::addRigidDynamic: native allocation failed." );
                 return nullptr;
             }
 
@@ -1106,19 +1109,19 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IRigidStatic3> WPPhysicsManager3::addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape )
+    SmartPtr<IRigidStatic3> CPhysicsManager3::addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape )
     {
         return addRigidStatic( collisionShape, nullptr );
     }
 
-    SmartPtr<IRigidStatic3> WPPhysicsManager3::addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape,
+    SmartPtr<IRigidStatic3> CPhysicsManager3::addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape,
                                                               SmartPtr<Properties>     properties )
     {
         ScopedLock lock( this );
-        if( collisionShape && !dynamic_cast<WPPhysicsShape3 *>( collisionShape.get() ) )
+        if( collisionShape && !dynamic_cast<CPhysicsShape3 *>( collisionShape.get() ) )
         {
             WP_LOG_ERROR(
-                "WPPhysicsManager3::addRigidStatic: shape belongs to another physics backend." );
+                "CPhysicsManager3::addRigidStatic: shape belongs to another physics backend." );
             return nullptr;
         }
 
@@ -1136,12 +1139,12 @@ namespace workphone::physics
         applyRigidBodyProperties( body, properties );
         return body;
     }
-    SmartPtr<IPhysicsVehicle3> WPPhysicsManager3::addVehicle( SmartPtr<IRigidBody3> chassis )
+    SmartPtr<IPhysicsVehicle3> CPhysicsManager3::addVehicle( SmartPtr<IRigidBody3> chassis )
     {
         return addVehicle( chassis, nullptr );
     }
 
-    bool WPPhysicsManager3::removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle )
+    bool CPhysicsManager3::removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle )
     {
         if( !vehicle )
         {
@@ -1161,18 +1164,18 @@ namespace workphone::physics
         return true;
     }
 
-    SmartPtr<IPhysicsVehicle3> WPPhysicsManager3::addVehicle( SmartPtr<IRigidBody3>       chassis,
+    SmartPtr<IPhysicsVehicle3> CPhysicsManager3::addVehicle( SmartPtr<IRigidBody3>       chassis,
                                                              const SmartPtr<Properties> &properties )
     {
         if( !chassis )
         {
-            WP_LOG_ERROR( "WPPhysicsManager3::addVehicle: chassis is null." );
+            WP_LOG_ERROR( "CPhysicsManager3::addVehicle: chassis is null." );
             return nullptr;
         }
-        if( !dynamic_cast<WPPhysicsRigidDynamic3 *>( chassis.get() ) )
+        if( !dynamic_cast<CRigidDynamic3 *>( chassis.get() ) )
         {
             WP_LOG_ERROR(
-                "WPPhysicsManager3::addVehicle: chassis must be a WPPhysics dynamic rigid body." );
+                "CPhysicsManager3::addVehicle: chassis must be a WPPhysics dynamic rigid body." );
             return nullptr;
         }
 
@@ -1183,21 +1186,21 @@ namespace workphone::physics
                               [&chassis]( const SmartPtr<IRigidBody3> &body )
                               { return body.get() == chassis.get(); } ) )
             {
-                WP_LOG_ERROR( "WPPhysicsManager3::addVehicle: chassis is not managed by this manager." );
+                WP_LOG_ERROR( "CPhysicsManager3::addVehicle: chassis is not managed by this manager." );
                 return nullptr;
             }
             if( std::any_of( m_vehicles.begin(), m_vehicles.end(),
                              [&chassis]( const SmartPtr<IPhysicsVehicle3> &vehicle )
                              {
-                                 const auto backend = dynamic_cast<WPPhysicsVehicle3 *>( vehicle.get() );
+                                 const auto backend = dynamic_cast<CPhysicsVehicle3 *>( vehicle.get() );
                                  return backend && backend->getChassis().get() == chassis.get();
                              } ) )
             {
-                WP_LOG_ERROR( "WPPhysicsManager3::addVehicle: chassis already belongs to a vehicle." );
+                WP_LOG_ERROR( "CPhysicsManager3::addVehicle: chassis already belongs to a vehicle." );
                 return nullptr;
             }
 
-            auto vehicle = workphone::make_ptr<WPPhysicsVehicle3>( chassis );
+            auto vehicle = workphone::make_ptr<CPhysicsVehicle3>( chassis );
             u32  wheelCount = 0;
             f32  wheelRadius = 0.35f;
             f32  wheelWidth = 0.25f;
@@ -1258,7 +1261,7 @@ namespace workphone::physics
         }
     }
 
-    bool WPPhysicsManager3::rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
+    bool CPhysicsManager3::rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
                                     Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal,
                                     u32 collisionType, u32 collisionMask )
     {
@@ -1293,7 +1296,7 @@ namespace workphone::physics
         }
     }
 
-    bool WPPhysicsManager3::intersects( const Vector3<real_Num> &start, const Vector3<real_Num> &end,
+    bool CPhysicsManager3::intersects( const Vector3<real_Num> &start, const Vector3<real_Num> &end,
                                        Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal,
                                        SmartPtr<ISharedObject> &object, u32 collisionType,
                                        u32 collisionMask )
@@ -1332,19 +1335,19 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IConstraintD6> WPPhysicsManager3::addConstraintD6( SmartPtr<IPhysicsBody3>     actor0,
+    SmartPtr<IConstraintD6> CPhysicsManager3::addConstraintD6( SmartPtr<IPhysicsBody3>     actor0,
                                                                const Transform3<real_Num> &localFrame0,
                                                                SmartPtr<IPhysicsBody3>     actor1,
                                                                const Transform3<real_Num> &localFrame1 )
     {
         if( !actor0 && !actor1 )
         {
-            WP_LOG_ERROR( "WPPhysicsManager3::addConstraintD6: at least one actor is required." );
+            WP_LOG_ERROR( "CPhysicsManager3::addConstraintD6: at least one actor is required." );
             return nullptr;
         }
         if( actor0 && actor0 == actor1 )
         {
-            WP_LOG_ERROR( "WPPhysicsManager3::addConstraintD6: an actor cannot constrain itself." );
+            WP_LOG_ERROR( "CPhysicsManager3::addConstraintD6: an actor cannot constrain itself." );
             return nullptr;
         }
 
@@ -1363,11 +1366,11 @@ namespace workphone::physics
             };
             if( !isManagedActor( actor0 ) || !isManagedActor( actor1 ) )
             {
-                WP_LOG_ERROR( "WPPhysicsManager3::addConstraintD6: actors must belong to this manager." );
+                WP_LOG_ERROR( "CPhysicsManager3::addConstraintD6: actors must belong to this manager." );
                 return nullptr;
             }
 
-            auto constraint = workphone::make_ptr<WPPhysicsNativeConstraintD6>();
+            auto constraint = workphone::make_ptr<CPhysicsConstraintD6>();
             constraint->setBodyA( actor0 );
             constraint->setBodyB( actor1 );
             constraint->setLocalPose( JointActorIndexEnum::eACTOR0, localFrame0 );
@@ -1384,18 +1387,18 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IConstraintFixed3> WPPhysicsManager3::addFixedConstraint(
+    SmartPtr<IConstraintFixed3> CPhysicsManager3::addFixedConstraint(
         SmartPtr<IPhysicsBody3> actor0, const Transform3<real_Num> &localFrame0,
         SmartPtr<IPhysicsBody3> actor1, const Transform3<real_Num> &localFrame1 )
     {
         if( !actor0 && !actor1 )
         {
-            WP_LOG_ERROR( "WPPhysicsManager3::addFixedConstraint: at least one actor is required." );
+            WP_LOG_ERROR( "CPhysicsManager3::addFixedConstraint: at least one actor is required." );
             return nullptr;
         }
         if( actor0 && actor0 == actor1 )
         {
-            WP_LOG_ERROR( "WPPhysicsManager3::addFixedConstraint: an actor cannot constrain itself." );
+            WP_LOG_ERROR( "CPhysicsManager3::addFixedConstraint: an actor cannot constrain itself." );
             return nullptr;
         }
 
@@ -1415,11 +1418,11 @@ namespace workphone::physics
             if( !isManagedActor( actor0 ) || !isManagedActor( actor1 ) )
             {
                 WP_LOG_ERROR(
-                    "WPPhysicsManager3::addFixedConstraint: actors must belong to this manager." );
+                    "CPhysicsManager3::addFixedConstraint: actors must belong to this manager." );
                 return nullptr;
             }
 
-            auto constraint = workphone::make_ptr<WPPhysicsConstraintFixed>();
+            auto constraint = workphone::make_ptr<CPhysicsConstraintFixed>();
             constraint->setBodyA( actor0 );
             constraint->setBodyB( actor1 );
             constraint->setLocalPose( JointActorIndexEnum::eACTOR0, localFrame0 );
@@ -1436,7 +1439,7 @@ namespace workphone::physics
         }
     }
 
-    void WPPhysicsManager3::removeConstraint( SmartPtr<IPhysicsConstraint3> constraint )
+    void CPhysicsManager3::removeConstraint( SmartPtr<IPhysicsConstraint3> constraint )
     {
         if( !constraint )
         {
@@ -1455,7 +1458,7 @@ namespace workphone::physics
         constraint->unload( nullptr );
     }
 
-    SmartPtr<IConstraintDrive> WPPhysicsManager3::addConstraintDrive()
+    SmartPtr<IConstraintDrive> CPhysicsManager3::addConstraintDrive()
     {
         try
         {
@@ -1470,30 +1473,30 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IConstraintLinearLimit> WPPhysicsManager3::addConstraintLinearLimit( real_Num extent,
+    SmartPtr<IConstraintLinearLimit> CPhysicsManager3::addConstraintLinearLimit( real_Num extent,
                                                                                  real_Num contactDist )
     {
         if( !std::isfinite( static_cast<double>( extent ) ) || extent < 0 )
         {
             WP_LOG_ERROR(
-                "WPPhysicsManager3::addConstraintLinearLimit: extent must be finite and non-negative." );
+                "CPhysicsManager3::addConstraintLinearLimit: extent must be finite and non-negative." );
             return nullptr;
         }
         if( !std::isfinite( static_cast<double>( contactDist ) ) )
         {
             WP_LOG_ERROR(
-                "WPPhysicsManager3::addConstraintLinearLimit: contact distance must be finite." );
+                "CPhysicsManager3::addConstraintLinearLimit: contact distance must be finite." );
             return nullptr;
         }
 
-        auto limit = workphone::make_ptr<WPPhysicsNativeConstraintLinearLimit>();
+        auto limit = workphone::make_ptr<CPhysicsConstraintLinearLimit>();
         limit->setValue( extent );
         limit->setContactDistance( contactDist < 0 ? static_cast<real_Num>( 0.0 ) : contactDist );
         limit->setLoadingState( LoadingState::Loaded );
         return limit;
     }
 
-    SmartPtr<IRaycastHit> WPPhysicsManager3::addRaycastHitData()
+    SmartPtr<IRaycastHit> CPhysicsManager3::addRaycastHitData()
     {
         try
         {
@@ -1512,7 +1515,7 @@ namespace workphone::physics
         }
     }
 
-    void WPPhysicsManager3::removeRaycastHitData( SmartPtr<IRaycastHit> raycastHitData )
+    void CPhysicsManager3::removeRaycastHitData( SmartPtr<IRaycastHit> raycastHitData )
     {
         if( !raycastHitData )
         {
@@ -1527,15 +1530,15 @@ namespace workphone::physics
             m_raycastHits.erase( it );
         }
     }
-    TaskId WPPhysicsManager3::getStateTask() const
+    TaskId CPhysicsManager3::getStateTask() const
     {
         return TaskId::Physics;
     }
-    TaskId WPPhysicsManager3::getPhysicsTask() const
+    TaskId CPhysicsManager3::getPhysicsTask() const
     {
         return TaskId::Physics;
     }
-    void WPPhysicsManager3::loadObject( SmartPtr<ISharedObject> object, bool )
+    void CPhysicsManager3::loadObject( SmartPtr<ISharedObject> object, bool )
     {
         if( !object || object->getLoadingState() == LoadingState::Loaded )
         {
@@ -1559,7 +1562,7 @@ namespace workphone::physics
         }
     }
 
-    void WPPhysicsManager3::unloadObject( SmartPtr<ISharedObject> object, bool )
+    void CPhysicsManager3::unloadObject( SmartPtr<ISharedObject> object, bool )
     {
         if( !object || object->getLoadingState() == LoadingState::Unloaded )
         {
@@ -1574,8 +1577,8 @@ namespace workphone::physics
             // their entire C++ lifetime. Their inherited unload implementation expects
             // a global application state manager, which this standalone backend does not
             // require, so a loading-state transition is the appropriate teardown here.
-            if( dynamic_cast<WPPhysicsRigidDynamic3 *>( object.get() ) ||
-                dynamic_cast<WPPhysicsRigidStatic3 *>( object.get() ) )
+            if( dynamic_cast<CRigidDynamic3 *>( object.get() ) ||
+                dynamic_cast<CRigidStatic3 *>( object.get() ) )
             {
                 object->setLoadingState( LoadingState::Unloaded );
                 return;
@@ -1594,49 +1597,49 @@ namespace workphone::physics
         }
     }
 
-    SmartPtr<IPhysicsScene3> WPPhysicsManager3::getPhysicsScene() const
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getPhysicsScene() const
     {
         ScopedLock lock( this );
         return m_physicsScene;
     }
 
-    void WPPhysicsManager3::setPhysicsScene( SmartPtr<IPhysicsScene3> physicsScene )
+    void CPhysicsManager3::setPhysicsScene( SmartPtr<IPhysicsScene3> physicsScene )
     {
         ScopedLock lock( this );
         m_physicsScene = physicsScene;
     }
 
-    SmartPtr<IPhysicsScene3> WPPhysicsManager3::getObjectsScene() const
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getObjectsScene() const
     {
         ScopedLock lock( this );
         return m_objectsScene;
     }
 
-    void WPPhysicsManager3::setObjectsScene( SmartPtr<IPhysicsScene3> objectsScene )
+    void CPhysicsManager3::setObjectsScene( SmartPtr<IPhysicsScene3> objectsScene )
     {
         ScopedLock lock( this );
         m_objectsScene = objectsScene;
     }
 
-    SmartPtr<IPhysicsScene3> WPPhysicsManager3::getRaycastScene() const
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getRaycastScene() const
     {
         ScopedLock lock( this );
         return m_raycastScene;
     }
 
-    void WPPhysicsManager3::setRaycastScene( SmartPtr<IPhysicsScene3> raycastScene )
+    void CPhysicsManager3::setRaycastScene( SmartPtr<IPhysicsScene3> raycastScene )
     {
         ScopedLock lock( this );
         m_raycastScene = raycastScene;
     }
 
-    SmartPtr<IPhysicsScene3> WPPhysicsManager3::getControlsScene() const
+    SmartPtr<IPhysicsScene3> CPhysicsManager3::getControlsScene() const
     {
         ScopedLock lock( this );
         return m_controlsScene;
     }
 
-    void WPPhysicsManager3::setControlsScene( SmartPtr<IPhysicsScene3> controlsScene )
+    void CPhysicsManager3::setControlsScene( SmartPtr<IPhysicsScene3> controlsScene )
     {
         ScopedLock lock( this );
         m_controlsScene = controlsScene;

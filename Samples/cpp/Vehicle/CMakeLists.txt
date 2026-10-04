@@ -126,7 +126,7 @@ file(GLOB_RECURSE SOURCE_FILES "./*.c" "./*.cpp")
 add_executable(SampleVehicle ${HEADER_FILES} ${SOURCE_FILES})
 
 if (WIN32)
-    target_link_libraries(SampleVehicle Workphone.lib)
+    target_link_libraries(SampleVehicle Workphone)
 elseif (APPLE)
     # fireblade libraries
     target_link_libraries(SampleVehicle libWPCore.a)
@@ -134,7 +134,6 @@ elseif (APPLE)
     target_link_libraries(SampleVehicle libWPMesh.a)
     target_link_libraries(SampleVehicle libWPPhysx.a)
     target_link_libraries(SampleVehicle libWPSQLite.a)
-    target_link_libraries(SampleVehicle libWPOISInput.a)
 
     if (WP_CODEC_FREEIMAGE)
         target_link_libraries(SampleVehicle FreeImage.a)
@@ -183,9 +182,7 @@ elseif (APPLE)
 
     target_link_libraries(SampleVehicle minizip.a)
     target_link_libraries(SampleVehicle nativefiledialog.a)
-    target_link_libraries(SampleVehicle rttr.a)
     target_link_libraries(SampleVehicle tinyxml.a)
-    target_link_libraries(SampleVehicle yaml-cpp.a)
     target_link_libraries(SampleVehicle zlib.a)
     target_link_libraries(SampleVehicle zzip.a)
 

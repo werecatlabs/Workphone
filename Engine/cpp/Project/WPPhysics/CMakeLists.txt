@@ -125,7 +125,6 @@ if (NOT WP_STATIC_LIB)
 
         target_link_libraries(WPPhysics minizip.a)
         target_link_libraries(WPPhysics nativefiledialog.a)
-        target_link_libraries(WPPhysics rttr.a)
         target_link_libraries(WPPhysics tinyxml.a)
         target_link_libraries(WPPhysics zlib.a)
         target_link_libraries(WPPhysics zzip.a)
@@ -153,7 +152,7 @@ if (NOT WP_STATIC_LIB)
         set_target_properties(WPPhysics PROPERTIES LINK_FLAGS "-Wl,-F/Library/Frameworks")
     elseif (UNIX)
         target_link_libraries(WPPhysics -Wl,--start-group Workphone.a WPVehiclePhysics.a libWPProcedural.a WPImGui.a
-            FBMath.a FBMesh.a WPOISInput.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysics.a libWPSQLite.a
+            FBMath.a FBMesh.a WPVehiclePhysics.a FBData.a FBState.a libWPPhysics.a libWPSQLite.a
             libWPVehiclePhysics.a FBGraphics.a WPPhysics.a WPAssimp.a FBRenderUI.a libFBCPlusPlus.a
             libboost_thread-gcc5-mt-s-x64-1_70.a
             libboost_date_time-gcc5-mt-s-x64-1_70.a

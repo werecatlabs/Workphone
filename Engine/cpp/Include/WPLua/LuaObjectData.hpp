@@ -1,5 +1,7 @@
 #ifndef LuaObjectData_h__
 #define LuaObjectData_h__
+#include <Workphone/Core/FixedString.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 
 #include <WPLua/WPLuaPrerequisites.hpp>
 #include <Workphone/Interface/Script/IScriptData.hpp>

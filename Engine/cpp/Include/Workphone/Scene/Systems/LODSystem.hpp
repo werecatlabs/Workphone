@@ -4,6 +4,7 @@
 #include <Workphone/Scene/Systems/ComponentSystem.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Atomics/Atomic.hpp>
+#include <Workphone/Memory/SharedPtr.hpp>
 #include <memory>
 #include <unordered_map>
 

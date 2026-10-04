@@ -41,7 +41,7 @@ endif()
 
 if (NOT WP_STATIC_LIB)
     if (WIN32)
-        target_link_libraries(WPNetwork Workphone.lib)
+        target_link_libraries(WPNetwork Workphone)
         target_link_libraries(WPNetwork WorkphoneCore.lib)
         target_link_libraries(WPNetwork WorkphoneNetwork.lib)
     endif()

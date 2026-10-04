@@ -99,7 +99,7 @@ endif (WIN32)
 
 # fireblade libraries
 if (WIN32)
-    target_link_libraries(OSMToJson Workphone.lib)
+    target_link_libraries(OSMToJson Workphone)
 elseif (APPLE)
     target_link_libraries(OSMToJson libWPCore.a)
 

@@ -4,6 +4,7 @@
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Math/Ray3.hpp>

@@ -2,6 +2,7 @@
 #define WPNetworkPrerequisites_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/System/RttiClassDefinition.hpp>
 
 #ifdef WP_PLATFORM_WIN32
 #    ifndef _WP_STATIC_LIB_
