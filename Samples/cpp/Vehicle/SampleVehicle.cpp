@@ -62,7 +62,7 @@ namespace workphone
             actor->addComponent<scene::Material>()->setMaterial( material );
         }
 
-        SmartPtr<IMeshResource> createWheelMesh()
+        SmartPtr<IMeshResource> createBasicWheelMesh()
         {
             // A cylinder centered on the X axle keeps a constant rolling radius while spinning.
             constexpr u32 segments = 32;
@@ -70,6 +70,7 @@ namespace workphone
             Array<Vector3<real_Num>> positions, normals;
             Array<Vector2<real_Num>> uvs;
             Array<u32> indices;
+
             for( u32 i = 0; i <= segments; ++i )
             {
                 const auto angle = 2.0f * Math<real_Num>::pi() * i / segments;
@@ -90,6 +91,7 @@ namespace workphone
                         indices.push_back( index );
                 }
             }
+
             for( u32 side = 0; side < 2; ++side )
             {
                 const auto start = static_cast<u32>( positions.size() );
@@ -111,6 +113,7 @@ namespace workphone
                             indices.push_back( index );
                 }
             }
+
             auto app = core::IApplicationManager::instance();
             auto manager = dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
             if( !manager )
@@ -118,12 +121,16 @@ namespace workphone
                 manager = make_ptr<MeshManager>();
                 app->setMeshManager( manager );
             }
+
             auto generated = MeshUtil::createMesh( positions, normals, uvs, indices );
             generated->updateAABB( true );
+
             auto resource = dynamic_pointer_cast<IMeshResource>(
                 manager->createOrRetrieve( "__procedural/sample_vehicle_wheel.meshbin" ).first );
+
             if( !resource )
                 throw std::runtime_error( "Could not create the SampleVehicle wheel mesh." );
+
             resource->setName( resource->getFilePath() );
             resource->setMesh( generated );
             resource->setLoadingState( LoadingState::Loaded );
@@ -455,6 +462,7 @@ namespace workphone
     {
         if( !m_vehicleActor )
             return;
+
         auto car = m_vehicleActor->getComponent<scene::CarController>();
         auto vehicle = car ? car->getVehicleController() : nullptr;
         auto physicsScene = core::IApplicationManager::instance()->getPhysicsManager()->getPhysicsScene();
@@ -800,7 +808,7 @@ namespace workphone
 
         m_vehicleActor->addChild( chassisMesh );
         addBoxMesh( chassisMesh, chassisMaterial );
-        auto wheelResource = createWheelMesh();
+        auto wheelResource = createBasicWheelMesh();
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheelActor = sceneManager->createActor();

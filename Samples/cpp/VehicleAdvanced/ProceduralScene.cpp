@@ -5,6 +5,11 @@
 #include <Workphone/Mesh/MeshImposterGenerator.hpp>
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
+#include <Workphone/Scene/Components/Cubemap.hpp>
+#include <Workphone/Graphics/GraphicsCubemap.hpp>
+#if WP_GRAPHICS_SYSTEM_CLAW
+#    include <WPGraphics/ClawCubemapTexture.hpp>
+#endif
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -270,6 +275,7 @@ namespace workphone::advanced
                 if( d.doubleSided )
                     m->setCullMode( 1 );
                 materials[i] = m;
+                assets.vehicleMaterials.push_back( m );
             }
             const auto &t = appearance.textures;
             maps( assets, materials[size_t( VehicleMaterialSlot::BodyPaint )], t.bodyLivery,
@@ -542,7 +548,7 @@ namespace workphone::advanced
             }
             mesh( assets, "Distant hills", hills, material( assets, { .22f, .35f, .25f, 1 }, 1 ) );
         }
-        void buildSky( SceneAssets &assets )
+        void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle )
         {
             auto app = core::IApplicationManager::instance();
             auto sky =
@@ -558,6 +564,8 @@ namespace workphone::advanced
             auto graphicsScene = app->getGraphicsSystem()->getGraphicsScene();
 
             Array<SmartPtr<render::ITexture>> faces;
+            Array<SmartPtr<render::ITexture>> reflectionFaces;
+            const auto probePosition = vehicle->getPosition() + Vector3F( 0, 2, 0 );
             const Vector3F corners[8] = { { -1, -1, -1 }, { 1, -1, -1 }, { 1, 1, -1 }, { -1, 1, -1 },
                                           { -1, -1, 1 },  { 1, -1, 1 },  { 1, 1, 1 },  { -1, 1, 1 } };
             const int faceCorners[6][4] = { { 0, 1, 2, 3 }, { 5, 4, 7, 6 }, { 4, 0, 3, 7 },
@@ -565,14 +573,16 @@ namespace workphone::advanced
             for( int face = 0; face < 6; ++face )
             {
                 TextureBuffer texture( 256, 256 );
+                TextureBuffer reflectionFace( 256, 256 );
                 for( u32 y = 0; y < texture.height; ++y )
                     for( u32 x = 0; x < texture.width; ++x )
                     {
                         float u = ( x + .5f ) / texture.width, v = ( y + .5f ) / texture.height;
-                        auto left = corners[faceCorners[face][0]] * ( 1 - v ) +
-                                    corners[faceCorners[face][3]] * v;
-                        auto right = corners[faceCorners[face][1]] * ( 1 - v ) +
-                                     corners[faceCorners[face][2]] * v;
+                        // Image rows run top to bottom; the sky's bottom corners use UV.y=1.
+                        auto left = corners[faceCorners[face][0]] * v +
+                                    corners[faceCorners[face][3]] * ( 1 - v );
+                        auto right = corners[faceCorners[face][1]] * v +
+                                     corners[faceCorners[face][2]] * ( 1 - v );
                         auto dir = left * ( 1 - u ) + right * u;
                         dir.normalise();
                         auto c = sky->computeSkyColour( dir, result.sunDir, state.turbidity,
@@ -583,22 +593,86 @@ namespace workphone::advanced
                         c.r = .06f + .35f * haze + c.r * .15f + glow * .6f;
                         c.g = .22f + .35f * haze + c.g * .15f + glow * .55f;
                         c.b = .58f + .24f * haze + c.b * .15f + glow * .4f;
+                        auto reflectionColour = c;
+                        if( dir.y < 0 )
+                        {
+                            // Bake the start straight and surrounding grass into the lower
+                            // hemisphere. This is a custom environment, not a realtime capture.
+                            const auto hit = probePosition + dir * ( -probePosition.y / dir.y );
+                            const bool road = std::abs( hit.x ) < 6 && hit.z > -90 && hit.z < 95;
+                            const bool edge = std::abs( std::abs( hit.x ) - 5.7f ) < 0.12f && road;
+                            reflectionColour.r = edge ? .7f : road ? .045f : .07f;
+                            reflectionColour.g = edge ? .7f : road ? .05f : .13f;
+                            reflectionColour.b = edge ? .7f : road ? .06f : .045f;
+                            const float horizon = std::clamp( -dir.y * 20.f, 0.f, 1.f );
+                            reflectionColour.r = c.r * ( 1 - horizon ) + reflectionColour.r * horizon;
+                            reflectionColour.g = c.g * ( 1 - horizon ) + reflectionColour.g * horizon;
+                            reflectionColour.b = c.b * ( 1 - horizon ) + reflectionColour.b * horizon;
+                        }
                         auto pixel = texture.pixel( x, y );
+                        auto reflectedPixel = reflectionFace.pixel( x, y );
                         for( size_t channel = 0; channel < 3; ++channel )
                         {
                             float value = channel == 0 ? c.r : channel == 1 ? c.g : c.b;
                             pixel[channel] = u8( std::clamp(
                                 std::pow( std::max( value, 0.f ), 1.f / 2.2f ) * 255.f, 0.f, 255.f ) );
+                            const float reflectedValue = channel == 0   ? reflectionColour.r
+                                                         : channel == 1 ? reflectionColour.g
+                                                                        : reflectionColour.b;
+                            reflectedPixel[channel] = u8( std::clamp(
+                                std::pow( std::max( reflectedValue, 0.f ), 1.f / 2.2f ) * 255.f, 0.f,
+                                255.f ) );
                         }
                         pixel[3] = 255;
+                        reflectedPixel[3] = 255;
                     }
                 auto skyTexture = upload( assets, texture );
                 faces.push_back( skyTexture );
+                reflectionFaces.push_back( upload( assets, reflectionFace ) );
             }
             auto skyObject = graphicsScene->addGraphicsObjectByType<render::ISky>();
             skyObject->setTextures( faces );
             skyObject->setDistance( 500 );
             skyObject->setVisible( true );
+
+#if WP_GRAPHICS_SYSTEM_CLAW
+            auto reflection = make_ptr<render::ClawCubemapTexture>();
+            reflection->setName( "VehicleAdvanced Outdoor Reflection" );
+            reflection->setFaces( reflectionFaces );
+            reflection->load( nullptr );
+            assets.reflectionTexture = reflection;
+            assets.textures.push_back( reflection );
+            // Eight RGBA32F levels at 128px per face, generated by ClawCubemap.
+            assets.textureBytes += 6u * 21845u * 16u;
+            auto probeResource = make_ptr<render::GraphicsCubemap>();
+            probeResource->setTexture( reflection );
+            probeResource->setTextureName( reflection->getName() );
+            probeResource->setSceneManager( graphicsScene );
+            auto actor = app->getGameManager()->createActor();
+            actor->setName( "Vehicle Reflection Cubemap" );
+            actor->setPosition( probePosition );
+            auto component = actor->addComponent<scene::Cubemap>();
+            component->setProbeName( "Vehicle Outdoor Environment" );
+            component->setSourceType( scene::Cubemap::SourceType::Custom );
+            component->setCubemapPath( reflection->getName() );
+            component->setResolution( 128 );
+            component->setProjectionMode( scene::Cubemap::ProjectionMode::Infinite );
+            component->setAutoEnableByDistance( false );
+            component->setRenderCubemap( probeResource );
+            component->setEnabled( true );
+            const auto reflectionSlot = static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION );
+            for( auto &vehicleMaterial : assets.vehicleMaterials )
+                vehicleMaterial->setTexture( reflection, reflectionSlot );
+            // The actor's material also lets Cubemap manage the representative body material.
+            actor->addComponent<scene::Material>()->setMaterial( assets.vehicleMaterials.front() );
+            auto scene = app->getGameManager()->getCurrentScene();
+            scene->addActor( actor );
+            scene->registerAllUpdates( actor );
+            assets.reflectionActor = actor;
+            WP_LOG(
+                "VehicleAdvanced: custom cubemap actor created; reflection applied to all vehicle "
+                "materials." );
+#endif
 
             graphicsScene->setAmbientLight( ColourF( .28f, .32f, .38f, 1 ) );
             graphicsScene->setFog( render::IGraphicsScene::FOG_LINEAR, result.fogColour, .0007f, 180,
@@ -693,7 +767,7 @@ namespace workphone::advanced
         const auto started = std::chrono::steady_clock::now();
         buildCar( assets, actor, seed, quality );
         buildTrack( assets, seed, quality );
-        buildSky( assets );
+        buildSky( assets, actor );
         TextureBuffer shade( 64, 64 );
         for( u32 y = 0; y < 64; ++y )
             for( u32 x = 0; x < 64; ++x )
@@ -722,6 +796,27 @@ namespace workphone::advanced
                 " triangles=" + StringUtil::toString( assets.triangles ) +
                 " texture bytes=" + StringUtil::toString( assets.textureBytes ) +
                 " circuit metres=" + StringUtil::toString( assets.circuit.length ) );
+    }
+
+    bool validateReflection( const SceneAssets &assets )
+    {
+#if WP_GRAPHICS_SYSTEM_CLAW
+        auto component =
+            assets.reflectionActor ? assets.reflectionActor->getComponent<scene::Cubemap>() : nullptr;
+        auto probe = component ? component->getRenderCubemap() : nullptr;
+        if( !component || !component->isEnabled() || !probe ||
+            probe->getTexture() != assets.reflectionTexture || assets.vehicleMaterials.empty() )
+            return false;
+        const auto slot = static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION );
+        for( const auto &material : assets.vehicleMaterials )
+            if( material->getTexture( slot ) != assets.reflectionTexture )
+                return false;
+        void *native = nullptr;
+        assets.reflectionTexture->getTextureFinal( &native );
+        return native != nullptr;
+#else
+        return true;
+#endif
     }
     void validateCircuit()
     {

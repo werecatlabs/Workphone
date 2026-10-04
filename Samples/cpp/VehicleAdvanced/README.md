@@ -45,6 +45,20 @@ sets texture budgets and scenery density: low uses the middle vehicle LOD and
 materials and textures. Startup logs report generation time, triangles and
 uploaded texture bytes.
 
+The scene includes a **Vehicle Reflection Cubemap** actor with a `Cubemap` component
+in Custom mode. Its generated outdoor environment combines the procedural sky
+with the start straight and grass in the lower hemisphere. `ClawCubemapTexture`
+converts those six images into a linear cube texture with GGX-filtered roughness
+levels. The paint, carbon, wheel rims and other vehicle materials bind this texture
+in `PBSM_REFLECTION`; scenery continues to use the sky environment. This probe is
+a generated static environment, not a realtime capture of track objects.
+
+The sky images use top-to-bottom UV orientation. Material cubemap radiance is
+independent of diffuse ambient brightness, and normal variance filtering reduces
+sparkling specular highlights on the carbon weave. Capture runs also validate the
+cubemap actor, native texture and every vehicle material binding before reporting
+success.
+
 ## Checks and captures
 
 ```powershell

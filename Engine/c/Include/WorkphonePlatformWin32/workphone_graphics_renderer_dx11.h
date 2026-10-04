@@ -51,7 +51,7 @@ typedef struct wp_material_dx11
     wp_vec4f texture_sources;   /* editor metallic, roughness, AO, opacity channel selectors */
     wp_vec4f projection;        /* mode: mesh/world box/object box/world XZ/XY/YZ/screen; scale, unused x2 */
     wp_vec4f ambient_color;     /* rgb ambient radiance; w enables RGB instead of legacy scalar */
-    wp_vec4f environment;       /* x enabled, y maximum filtered cubemap LOD */
+    wp_vec4f environment;       /* x enabled, y maximum LOD, z authored probe radiance (otherwise ambient-scaled) */
 } wp_material_dx11;
 
 /* =========================================================================

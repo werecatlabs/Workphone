@@ -1,6 +1,9 @@
 #include <WPGraphics/UI/ClawUIWorkphoneContext.hpp>
 #include <WPGraphics/UI/ClawUIWorkphoneRenderer.hpp>
 #include <WPGraphics/UI/ClawUIManager.hpp>
+#include <WPGraphics/UI/ClawUIElement.hpp>
+#include <WPGraphics/ClawHammerSystem.hpp>
+#include <Workphone/Interface/UI/IUIToggle.hpp>
 #include <WPGraphics/ClawShader.hpp>
 #include <WPGraphics/ClawGraphicsPipeline.hpp>
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
@@ -183,6 +186,108 @@ namespace
         core::IApplicationManager::setInstance( nullptr );
         return ok;
     }
+    bool testToggleSwitch()
+    {
+        using namespace workphone;
+        using ToggleType = ui::IUIToggle::ToggleType;
+        using ToggleState = ui::IUIToggle::ToggleState;
+        auto application = make_ptr<core::ApplicationManager>();
+        core::IApplicationManager::setInstance( application );
+        application->setFactoryManager( make_ptr<FactoryManager>() );
+        application->setSceneRenderWindow( make_ptr<InputSceneWindow>() );
+        application->setGraphicsSystem( make_ptr<render::ClawHammerSystem>() );
+        bool ok = true;
+        {
+            ui::ClawUIWorkphoneContext context;
+            auto *ctx = context.getContext();
+            ui::ClawUIManager manager;
+            auto element = manager.addElementByType<ui::IUIToggle>();
+            auto &toggle = *element.get();
+            auto *widget = dynamic_cast<ui::IWorkphoneWidget *>( element.get() );
+            toggle.setPosition( { 0.05f, 0.1f } );
+            toggle.setSize( { 0.9f, 0.5f } );
+            toggle.setLabel( "Switch label" );
+            toggle.setToggleType( ToggleType::ToggleButton );
+            struct Drawing
+            {
+                int thumbX = -1;
+                int circles = 0;
+                int tracks = 0;
+                int labels = 0;
+            };
+            const auto frame = [&]( int x = 240, int y = 60, bool down = false,
+                                    bool readOnly = false ) {
+                wp_clear( ctx );
+                wp_input_begin( ctx );
+                wp_input_motion( ctx, x, y );
+                wp_input_button( ctx, WORKPHONE_BUTTON_LEFT, x, y, down ? wp_true : wp_false );
+                wp_input_end( ctx );
+                if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "Toggle switch test" ),
+                              { 0, 0, 256, 64 },
+                              WORKPHONE_WINDOW_NO_SCROLLBAR |
+                                  ( readOnly ? WORKPHONE_WINDOW_ROM : 0 ) ) )
+                {
+                    wp_layout_space_begin( ctx, WORKPHONE_STATIC, 48.0f, 1 );
+                    widget->draw( ctx );
+                    wp_layout_space_end( ctx );
+                }
+                wp_end( ctx );
+                Drawing drawing;
+                const wp_command *command;
+                wp_foreach( command, ctx )
+                {
+                    if( command->type == WORKPHONE_COMMAND_CIRCLE_FILLED )
+                    {
+                        ++drawing.circles;
+                        drawing.thumbX = reinterpret_cast<const wp_command_circle_filled *>( command )->x;
+                    }
+                    else if( command->type == WORKPHONE_COMMAND_RECT_FILLED )
+                    {
+                        const auto *rect = reinterpret_cast<const wp_command_rect_filled *>( command );
+                        if( rect->rounding > 0 && rect->w == rect->h * 2 )
+                            ++drawing.tracks;
+                    }
+                    else if( command->type == WORKPHONE_COMMAND_TEXT )
+                        ++drawing.labels;
+                }
+                return drawing;
+            };
+            const auto off = frame();
+            toggle.setToggleState( ToggleState::On );
+            const auto on = frame();
+            ok &= check( off.tracks == 1 && off.circles == 1 && on.tracks == 1 &&
+                             on.circles == 1 && on.thumbX > off.thumbX,
+                         "ToggleSwitch must draw a rounded track and move its thumb when on" );
+            frame( 25, 30, true );
+            frame( 25, 30, false );
+            ok &= check( !toggle.isToggled() && toggle.getToggleState() == ToggleState::Off,
+                         "clicking the switch must turn it off and synchronize its state" );
+            frame( 100, 30, true );
+            frame( 100, 30, false );
+            ok &= check( toggle.isToggled() && toggle.getToggleState() == ToggleState::On,
+                         "clicking the label must turn the switch on" );
+            frame( 250, 60, true );
+            frame( 250, 60, false );
+            frame( 25, 30, true, true );
+            frame( 25, 30, false, true );
+            ok &= check( toggle.isToggled(), "outside and read-only clicks must preserve switch state" );
+            toggle.setShowLabel( false );
+            const auto unlabelled = frame();
+            ok &= check( unlabelled.circles == 1 && unlabelled.labels == 0,
+                         "hiding the label must preserve the switch without drawing text" );
+            toggle.setToggleType( ToggleType::CheckBox );
+            const auto checkbox = frame();
+            toggle.setToggleType( ToggleType::RadioButton );
+            const auto radio = frame();
+            ok &= check( checkbox.circles == 0 && checkbox.tracks == 0 && radio.circles == 2,
+                         "checkbox and radio types must retain their distinct rendering" );
+        }
+        application->setSceneRenderWindow( nullptr );
+        application->setGraphicsSystem( nullptr );
+        application->setFactoryManager( nullptr );
+        core::IApplicationManager::setInstance( nullptr );
+        return ok;
+    }
 }  // namespace
 
 int main()
@@ -194,6 +299,7 @@ int main()
     bool ok = true;
 
     ok &= testUiInput();
+    ok &= testToggleSwitch();
 
     {
         using namespace workphone;

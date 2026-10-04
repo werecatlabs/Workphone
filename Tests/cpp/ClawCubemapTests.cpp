@@ -126,7 +126,7 @@ int main()
         const wp_vertex_pntc vertices[] = { { { -1, -1, 0 }, { 0, 0, -1 }, { 0, 1 }, 0xFFFFFFFF },
                                             { { 1, -1, 0 }, { 0, 0, -1 }, { 1, 1 }, 0xFFFFFFFF },
                                             { { 0, 1, 0 }, { 0, 0, -1 }, { 0.5f, 0 }, 0xFFFFFFFF } };
-        const unsigned short indices[] = { 0, 1, 2 };
+        const unsigned short indices[] = { 0, 2, 1 };
         auto geometry =
             wp_renderer_dx11_create_indexed_geometry_pntc( renderer, vertices, 3, indices, 3, 0 );
         require( geometry != nullptr, "PBR geometry" );
@@ -153,6 +153,21 @@ int main()
         require( p[0] > 20 && p[1] < 2 && p[2] < 2,
                  "metal reflects environment and preserves ambient tint" );
         context->Unmap( staging, 0 );
+        // Authored material probes carry radiance independently of the diffuse ambient.
+        material.ambient_color = { 0, 0, 0, 1 };
+        material.environment.z = 1;
+        wp_renderer_dx11_set_material( renderer, &material );
+        wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
+        context->CopyResource( staging, texture );
+        require( SUCCEEDED( context->Map( staging, 0, D3D11_MAP_READ, 0, &mapped ) ),
+                 "authored probe readback" );
+        const auto authored =
+            static_cast<const unsigned char *>( mapped.pData ) + 16 * mapped.RowPitch + 16 * 4;
+        require( authored[1] > 20 && authored[2] > 20,
+                 "authored probe stays visible with black diffuse ambient" );
+        context->Unmap( staging, 0 );
+        material.ambient_color = { 1, 0, 0, 1 };
+        material.environment.z = 0;
         wp_renderer_dx11_set_environment( renderer, nullptr, 0 );
         wp_renderer_dx11_set_material( renderer, &material );
         wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
@@ -172,7 +187,6 @@ int main()
                  "dielectric readback" );
         const auto diffuse =
             static_cast<const unsigned char *>( mapped.pData ) + 16 * mapped.RowPitch + 16 * 4;
-        std::printf( "Diffuse pixel: %u %u %u %u\n", diffuse[0], diffuse[1], diffuse[2], diffuse[3] );
         require( diffuse[0] > 100 && diffuse[1] < 2 && diffuse[2] < 2,
                  "metallic slider restores tinted diffuse response at zero" );
         context->Unmap( staging, 0 );

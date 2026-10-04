@@ -3,6 +3,7 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsObject.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
+#include <Workphone/Interface/Graphics/ITexture.hpp>
 #include <Workphone/Interface/System/IStateMessage.hpp>
 
 namespace workphone::render
@@ -22,6 +23,16 @@ namespace workphone::render
     String GraphicsCubemap::getTextureName() const
     {
         return m_textureName;
+    }
+
+    SmartPtr<ITexture> GraphicsCubemap::getTexture() const
+    {
+        return m_texture;
+    }
+
+    void GraphicsCubemap::setTexture( SmartPtr<ITexture> texture )
+    {
+        m_texture = texture;
     }
 
     void GraphicsCubemap::setTextureName( const String &textureName )

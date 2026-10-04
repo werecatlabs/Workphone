@@ -376,7 +376,10 @@ namespace workphone
                         " scene meshes=" + StringUtil::toString( m_assets.meshes.size() ) +
                         " textures=" + StringUtil::toString( m_assets.textures.size() ) );
                 m_captureAttempted = true;
-                m_capturePassed = advanced::captureFrame( m_capturePath ) && treeLODValid;
+                const bool reflectionValid = advanced::validateReflection( m_assets );
+                if( !reflectionValid )
+                    WP_LOG_ERROR("VehicleAdvanced: cubemap actor, texture or vehicle material binding is invalid.");
+                m_capturePassed = advanced::captureFrame( m_capturePath ) && treeLODValid && reflectionValid;
                 if( !treeLODValid )
                     WP_LOG_ERROR( "Tree LOD: expected exactly one visible level per patch." );
                 WP_LOG( m_capturePassed ? "VehicleAdvanced capture saved."

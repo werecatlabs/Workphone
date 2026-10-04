@@ -58,6 +58,10 @@ namespace workphone
              */
             void setTextureName( const String &textureName ) override;
 
+            /** Assign the filtered texture of a custom or baked probe. */
+            SmartPtr<ITexture> getTexture() const override;
+            void setTexture( SmartPtr<ITexture> texture );
+
             /**
              * @brief Get the scene manager that owns or manages this cubemap.
              *
@@ -192,6 +196,7 @@ namespace workphone
 
         protected:
             String m_textureName;
+            SmartPtr<ITexture> m_texture;
             SmartPtr<IGraphicsScene> m_sceneManager;
             u32 m_visibilityMask = 0;
             u32 m_exclusionMask = 0;

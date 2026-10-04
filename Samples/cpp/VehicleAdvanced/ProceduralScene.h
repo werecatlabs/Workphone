@@ -23,6 +23,9 @@ namespace workphone::advanced
         Circuit circuit;
         std::array<SmartPtr<scene::IGameActor>, 4> wheels;
         SmartPtr<scene::IGameActor> body, shadow;
+        SmartPtr<scene::IGameActor> reflectionActor;
+        SmartPtr<render::ITexture> reflectionTexture;
+        std::vector<SmartPtr<render::IMaterial>> vehicleMaterials;
         std::vector<SmartPtr<render::ITexture>> textures;
         std::vector<SmartPtr<render::IMaterial>> materials;
         std::vector<SmartPtr<IMeshResource>> meshes;
@@ -32,6 +35,7 @@ namespace workphone::advanced
     };
     Circuit generateCircuit( u32 seed );
     void validateCircuit();
+    bool validateReflection( const SceneAssets &assets );
     void buildScene( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle, u32 seed,
                      procedural::VehicleAppearanceQuality quality );
     void configurePhysics( const SceneAssets &assets, SmartPtr<scene::IGameActor> actor );

@@ -9,6 +9,7 @@
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
 #include <workphone_graphics_renderer_dx11.h>
+#include <d3d11.h>
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -865,6 +866,23 @@ namespace workphone::render
             nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
             nativeMaterial.emissive_color = { emissive.r, emissive.g, emissive.b, emissive.a };
             applySceneLighting( nativeMaterial );
+            // A material's reflection probe overrides the sky environment for this draw.
+            if( material )
+                if( auto reflection = material->getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
+                {
+                    void *view = nullptr;
+                    reflection->getTextureFinal( &view );
+                    if( view )
+                    {
+                        D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
+                        static_cast<ID3D11ShaderResourceView *>( view )->GetDesc( &desc );
+                        if( desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE )
+                        {
+                            wp_renderer_dx11_set_environment( dx11, view, static_cast<float>( desc.TextureCube.MipLevels - 1 ) );
+                            nativeMaterial.environment.z = 1.0f;
+                        }
+                    }
+                }
             nativeMaterial.surface = { material ? material->getMetalness() : 0.0f,
                                        material ? material->getRoughness() : 0.5f, 1.0f, 1.0f };
             nativeMaterial.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };

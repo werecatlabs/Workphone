@@ -119,6 +119,78 @@ namespace workphone::ui
                 setToggled( true );
             }
         }
+        else if( m_toggleType == ToggleType::ToggleButton )
+        {
+            // The scene component exposes ToggleButton as "ToggleSwitch".
+            // Consume one widget so the track and label share a single hit target.
+            wp_rect bounds;
+            const auto state = wp_widget( &bounds, ctx );
+            if( state != WORKPHONE_WIDGET_INVALID )
+            {
+                const auto &style = ctx->style.checkbox;
+                const auto *input =
+                    state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
+                            ( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM )
+                        ? nullptr
+                        : &ctx->input;
+                auto hitBounds = bounds;
+                hitBounds.x -= style.touch_padding.x;
+                hitBounds.y -= style.touch_padding.y;
+                hitBounds.w += 2.0f * style.touch_padding.x;
+                hitBounds.h += 2.0f * style.touch_padding.y;
+                if( wp_button_behavior( &ctx->last_widget_state, hitBounds, input,
+                                        WORKPHONE_BUTTON_DEFAULT ) )
+                {
+                    setToggled( !m_isToggled );
+                }
+
+                auto *canvas = wp_window_get_canvas( ctx );
+                const auto height = MathF::max(
+                    1.0f, MathF::min( ctx->style.font->height,
+                                     MathF::min( bounds.h, bounds.w * 0.5f ) ) );
+                const wp_rect track = { bounds.x, bounds.y + ( bounds.h - height ) * 0.5f,
+                                        height * 2.0f, height };
+                const auto hovered = ctx->last_widget_state &
+                                     ( WORKPHONE_WIDGET_STATE_HOVER | WORKPHONE_WIDGET_STATE_ACTIVED );
+                const auto &background = m_isToggled
+                                             ? ( hovered ? style.cursor_hover : style.cursor_normal )
+                                             : ( hovered ? style.hover : style.normal );
+                if( style.draw_begin )
+                {
+                    style.draw_begin( canvas, style.userdata );
+                }
+                if( background.type == WORKPHONE_STYLE_ITEM_COLOR )
+                {
+                    wp_fill_rect( canvas, track, height * 0.5f,
+                                  wp_rgb_factor( background.data.color, style.color_factor ) );
+                }
+                else
+                {
+                    wp_draw_image( canvas, track, &background.data.image,
+                                   wp_rgb_factor( wp_white, style.color_factor ) );
+                }
+                const auto inset = MathF::min( 2.0f, height * 0.25f );
+                const wp_rect thumb = { track.x + inset + ( m_isToggled ? height : 0.0f ),
+                                        track.y + inset, height - 2.0f * inset,
+                                        height - 2.0f * inset };
+                const auto textColour = hovered ? style.text_hover : style.text_normal;
+                wp_fill_circle( canvas, thumb, wp_rgb_factor( textColour, style.color_factor ) );
+                if( !label.empty() )
+                {
+                    const auto labelX = track.x + track.w + style.spacing;
+                    const wp_rect textBounds = { labelX, track.y,
+                                                 MathF::max( 0.0f, bounds.x + bounds.w - labelX ),
+                                                 height };
+                    wp_draw_text( canvas, textBounds, label.c_str(), static_cast<int>( label.size() ),
+                                  ctx->style.font, style.text_background,
+                                  wp_rgb_factor( textColour, style.color_factor ) );
+                }
+                if( style.draw_end )
+                {
+                    style.draw_end( canvas, style.userdata );
+                }
+            }
+        }
         else
         {
             wp_bool active = m_isToggled ? wp_true : wp_false;
