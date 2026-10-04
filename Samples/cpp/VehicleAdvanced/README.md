@@ -53,6 +53,12 @@ levels. The paint, carbon, wheel rims and other vehicle materials bind this text
 in `PBSM_REFLECTION`; scenery continues to use the sky environment. This probe is
 a generated static environment, not a realtime capture of track objects.
 
+In the Editor, select the cubemap actor or its `Cubemap` component and scroll
+the Properties pane to **Cubemap Texture Preview**. The six labelled thumbnails
+show the source faces before roughness filtering. The preview refreshes when the
+probe's texture changes; missing textures and unsupported face previews have an
+explicit status message.
+
 The sky images use top-to-bottom UV orientation. Material cubemap radiance is
 independent of diffuse ambient brightness, and normal variance filtering reduces
 sparkling specular highlights on the carbon weave. Capture runs also validate the

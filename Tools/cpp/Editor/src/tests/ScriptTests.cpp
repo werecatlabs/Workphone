@@ -4,6 +4,7 @@
 #include <EditorApplication.hpp>
 #include <ui/ScriptWindow.hpp>
 #include <ui/ActorWindow.hpp>
+#include <ui/PropertiesWindow.hpp>
 #include <ui/ObjectWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <editor/EditorManager.hpp>
@@ -11,6 +12,9 @@
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Input/Joystick.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
+#include <Workphone/Scene/Components/Cubemap.hpp>
+#include <Workphone/Graphics/GraphicsCubemap.hpp>
+#include <Workphone/Graphics/Texture.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -23,6 +27,16 @@ using namespace workphone::editor;
 
 namespace
 {
+    class InspectorCubemapTexture : public render::Texture
+    {
+    public:
+        Array<SmartPtr<render::ITexture>> getCubemapFaces() const override
+        {
+            return faces;
+        }
+        Array<SmartPtr<render::ITexture>> faces;
+    };
+
     class EditorApplicationGuard
     {
     public:
@@ -513,4 +527,88 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     fileSystem->deleteFile( materialPath );
 }
 
+BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto application = core::IApplicationManager::instance();
+    auto window = make_ptr<PropertiesWindow>();
+    window->load( nullptr );
+    auto actor = application->getGameManager()->createActor();
+    auto component = actor->addComponent<scene::Cubemap>();
+    auto probe = make_ptr<render::GraphicsCubemap>();
+    component->setRenderCubemap( probe );
+
+    SmartPtr<ui::IUIWindow> preview;
+    for( auto child : window->getParentWindow()->getChildren() )
+    {
+        auto childWindow = workphone::dynamic_pointer_cast<ui::IUIWindow>( child );
+        if( childWindow && childWindow->getLabel() == "Cubemap Texture Preview" )
+            preview = childWindow;
+    }
+    BOOST_REQUIRE( preview );
+    window->updateSelection( component );
+    BOOST_CHECK( preview->isVisible() );
+    auto status = workphone::dynamic_pointer_cast<ui::IUIText>( preview->getChildren()[0] );
+    BOOST_REQUIRE( status );
+    BOOST_CHECK( status->isVisible() );
+    BOOST_CHECK( status->getText().find( "No cubemap texture" ) != String::npos );
+
+    auto texture = make_ptr<InspectorCubemapTexture>();
+    texture->setName( "Inspector Test Cubemap" );
+    Array<SmartPtr<render::ITexture>> faces;
+    for( size_t i = 0; i < 6; ++i )
+        faces.push_back( make_ptr<render::Texture>() );
+    texture->faces = faces;
+    probe->setTexture( texture );
+    auto selection = application->getSelectionManager();
+    selection->clearSelection();
+    selection->addSelectedObject( component );
+    // The texture can become available after selection (e.g. when baking completes).
+    window->update();
+    BOOST_CHECK( status->getText().find( "Inspector Test Cubemap" ) != String::npos );
+    const char *labels[] = { "Front (-Z)", "Back (+Z)", "Left (-X)",
+                             "Right (+X)", "Up (+Y)", "Down (-Y)" };
+    Array<SmartPtr<ui::IUIImage>> images;
+    for( size_t i = 0; i < 6; ++i )
+    {
+        auto panel = preview->getChildren()[i + 1];
+        BOOST_CHECK( panel->isVisible() );
+        auto label = workphone::dynamic_pointer_cast<ui::IUIText>( panel->getChildren()[0] );
+        auto image = workphone::dynamic_pointer_cast<ui::IUIImage>( panel->getChildren()[1] );
+        BOOST_REQUIRE( label );
+        BOOST_REQUIRE( image );
+        BOOST_CHECK( label->isVisible() );
+        BOOST_CHECK( image->isVisible() );
+        BOOST_CHECK_EQUAL( label->getText(), labels[i] );
+        BOOST_CHECK( image->getTexture() == faces[i] );
+        images.push_back( image );
+    }
+    window->updateSelection( actor );
+    BOOST_CHECK( preview->isVisible() );
+
+    probe->setTexture( make_ptr<render::Texture>() );
+    window->update();
+    BOOST_CHECK( status->getText().find( "unavailable" ) != String::npos );
+    for( auto image : images )
+        BOOST_CHECK( !image->getTexture() );
+    probe->setTexture( nullptr );
+    window->update();
+    BOOST_CHECK( status->getText().find( "No cubemap texture" ) != String::npos );
+
+    probe->setTexture( texture );
+    window->update();
+    selection->clearSelection();
+    window->update();
+    BOOST_CHECK( !preview->isVisible() );
+    for( auto image : images )
+        BOOST_CHECK( !image->getTexture() );
+    window->updateSelection( make_ptr<Properties>() );
+    BOOST_CHECK( !preview->isVisible() );
+    window->updateSelection( component );
+    window->unload( nullptr );
+    for( auto image : images )
+        BOOST_CHECK( !image->getTexture() );
+    application->getGameManager()->destroyActor( actor );
+}
 #endif

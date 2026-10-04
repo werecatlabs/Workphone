@@ -19,4 +19,9 @@ namespace workphone::render
 
     ITexture::~ITexture() = default;
 
+    Array<SmartPtr<ITexture>> ITexture::getCubemapFaces() const
+    {
+        return {};
+    }
+
 }  // namespace workphone::render

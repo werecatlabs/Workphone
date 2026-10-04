@@ -15,6 +15,7 @@ namespace workphone::render
         ClawCubemapTexture();
         void setFaces( const Array<SmartPtr<ITexture>> &faces );
         Array<SmartPtr<ITexture>> getFaces() const;
+        Array<SmartPtr<ITexture>> getCubemapFaces() const override;
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
         void getTextureFinal( void **texture ) const override;

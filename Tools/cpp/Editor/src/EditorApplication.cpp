@@ -14,6 +14,8 @@
 #include <jobs/LeavePlaymodeJob.hpp>
 #include <jobs/FileSelectedJob.hpp>
 #include <ui/ObjectWindow.hpp>
+#include <ui/PropertiesWindow.hpp>
+#include <ui/ActorWindow.hpp>
 #include <ui/ProjectWindow.hpp>
 #include <ui/ProjectTreeData.hpp>
 #include <ui/SceneWindow.hpp>
@@ -932,6 +934,17 @@ namespace workphone::editor
                     // run explicitly on the application task, including in edit mode.
                     if( auto editorUI = editorManager->getUI() )
                     {
+                        if( auto actorWindow = editorUI->getActorWindow() )
+                        {
+                            auto propertiesWindow = actorWindow->getPropertiesWindow();
+                            if( propertiesWindow && propertiesWindow->isLoaded() )
+                                propertiesWindow->update();
+                        }
+                        if( auto propertiesWindow = editorUI->getPropertiesWindow() )
+                        {
+                            if( propertiesWindow->isLoaded() )
+                                propertiesWindow->update();
+                        }
                         auto inputWindow = editorUI->getInputManagerWindow();
                         if( inputWindow && inputWindow->isLoaded() && inputWindow->isWindowVisible() )
                         {

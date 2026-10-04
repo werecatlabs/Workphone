@@ -6,6 +6,8 @@
 #include <ui/ResourceDatabaseDialog.hpp>
 #include <ui/ActorWindow.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/Components/Cubemap.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsCubemap.hpp>
 
 namespace workphone::editor
 {
@@ -58,6 +60,35 @@ namespace workphone::editor
             m_propertyGrid->setDropTarget( dropTarget );
             m_dropTarget = dropTarget;
 
+            m_cubemapPreview = ui->addElementByType<ui::IUIWindow>();
+            m_cubemapPreview->setLabel( "Cubemap Texture Preview" );
+            m_cubemapPreview->setSize( Vector2F( 0.0f, 300.0f ) );
+            parentWindow->addChild( m_cubemapPreview );
+            m_cubemapPreviewStatus = ui->addElementByType<ui::IUIText>();
+            m_cubemapPreview->addChild( m_cubemapPreviewStatus );
+
+            const char *faceNames[] = { "Front (-Z)", "Back (+Z)", "Left (-X)",
+                                        "Right (+X)", "Up (+Y)", "Down (-Y)" };
+            for( size_t i = 0; i < 6; ++i )
+            {
+                auto panel = ui->addElementByType<ui::IUIWindow>();
+                panel->setLabel( String( "CubemapFace##" ) + StringUtil::toString( i ) );
+                // Keep faces in one column so the preview fits the narrow default inspector dock.
+                panel->setSize( Vector2F( 136.0f, 155.0f ) );
+                panel->setHasBorder( false );
+                m_cubemapPreview->addChild( panel );
+                m_cubemapFacePanels.push_back( panel );
+
+                auto label = ui->addElementByType<ui::IUIText>();
+                label->setText( faceNames[i] );
+                panel->addChild( label );
+                auto image = ui->addElementByType<ui::IUIImage>();
+                image->setSize( Vector2F( 120.0f, 120.0f ) );
+                panel->addChild( image );
+                m_cubemapFaceImages.push_back( image );
+            }
+            m_cubemapPreview->setVisible( false, false );
+
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -96,6 +127,14 @@ namespace workphone::editor
             m_selected = nullptr;
             m_selection.clear();
 
+            // The parent window recursively removes the preview controls from the UI manager.
+            for( auto image : m_cubemapFaceImages )
+                image->setTexture( nullptr );
+            m_cubemapFaceImages.clear();
+            m_cubemapFacePanels.clear();
+            m_cubemapPreviewStatus = nullptr;
+            m_cubemapPreview = nullptr;
+
             if( auto parentWindow = getParentWindow() )
             {
                 ui->removeElement( parentWindow );
@@ -114,11 +153,60 @@ namespace workphone::editor
 
     void PropertiesWindow::update()
     {
+        auto object = getSelected();
+        if( !object )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto selectionManager = app ? app->getSelectionManagerPtr() : nullptr;
+            auto selection = selectionManager ? selectionManager->getSelection() :
+                                               Array<SmartPtr<ISharedObject>>();
+            if( !selection.empty() )
+                object = selection.front();
+        }
+        updateCubemapPreview( object );
+
         if( isDirty() )
         {
             updateSelection();
             setDirty( false );
         }
+    }
+
+    void PropertiesWindow::updateCubemapPreview( SmartPtr<ISharedObject> object )
+    {
+        if( !m_cubemapPreview )
+            return;
+
+        auto cubemap = workphone::dynamic_pointer_cast<scene::Cubemap>( object );
+        if( !cubemap )
+        {
+            if( auto actor = workphone::dynamic_pointer_cast<scene::IGameActor>( object ) )
+                cubemap = actor->getComponent<scene::Cubemap>();
+        }
+
+        auto probe = cubemap ? cubemap->getRenderCubemap() : nullptr;
+        auto texture = probe ? probe->getTexture() : nullptr;
+        auto faces = texture ? texture->getCubemapFaces() : Array<SmartPtr<render::ITexture>>();
+        auto hasFaces = faces.size() == 6;
+        for( size_t i = 0; i < m_cubemapFaceImages.size(); ++i )
+        {
+            auto face = hasFaces ? faces[i] : nullptr;
+            if( m_cubemapFaceImages[i]->getTexture() != face )
+                m_cubemapFaceImages[i]->setTexture( face );
+            m_cubemapFacePanels[i]->setVisible( cubemap && face != nullptr );
+        }
+
+        m_cubemapPreview->setVisible( cubemap != nullptr, false );
+        m_cubemapPreview->setSize( Vector2F( 0.0f, hasFaces ? 300.0f : 100.0f ) );
+        auto status = String( "Cubemap Texture\nPreview\n" );
+        if( !texture )
+            status += "No cubemap texture.\nAssign or generate one.";
+        else if( !hasFaces )
+            status += "Preview unavailable\nfor this texture\nor graphics backend.";
+        else
+            status += texture->getName() + "\nSource faces\n(before roughness filtering)";
+        if( m_cubemapPreviewStatus->getText() != status )
+            m_cubemapPreviewStatus->setText( status );
     }
 
     void PropertiesWindow::updateSelection()
@@ -128,6 +216,15 @@ namespace workphone::editor
             auto applicationManager = core::IApplicationManager::instance();
             auto selectionManager = applicationManager->getSelectionManager();
             auto jobQueue = applicationManager->getJobQueue();
+
+            auto previewObject = getSelected();
+            if( !previewObject )
+            {
+                auto selection = selectionManager->getSelection();
+                if( !selection.empty() )
+                    previewObject = selection.front();
+            }
+            updateCubemapPreview( previewObject );
 
             if( auto selected = getSelected() )
             {
@@ -158,6 +255,7 @@ namespace workphone::editor
 
     void PropertiesWindow::updateSelection( SmartPtr<ISharedObject> object )
     {
+        updateCubemapPreview( object );
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 

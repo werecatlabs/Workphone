@@ -204,6 +204,13 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void updateCubemapPreview( SmartPtr<ISharedObject> object );
+
+            SmartPtr<ui::IUIWindow> m_cubemapPreview;
+            SmartPtr<ui::IUIText> m_cubemapPreviewStatus;
+            Array<SmartPtr<ui::IUIWindow>> m_cubemapFacePanels;
+            Array<SmartPtr<ui::IUIImage>> m_cubemapFaceImages;
+
             /**
              * @brief Handles property change events.
              * @param name The name of the property.

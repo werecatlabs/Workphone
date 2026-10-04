@@ -29,6 +29,10 @@ namespace workphone::render
     {
         return m_faces;
     }
+    Array<SmartPtr<ITexture>> ClawCubemapTexture::getCubemapFaces() const
+    {
+        return getFaces();
+    }
     Vector2I ClawCubemapTexture::getSize() const
     {
         return Vector2I( 128, 128 );

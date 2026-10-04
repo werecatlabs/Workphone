@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Math/Vector2.hpp>
+#include <Workphone/Core/Array.hpp>
 
 namespace workphone
 {
@@ -39,6 +40,11 @@ namespace workphone
 
             /** Virtual destructor. */
             ~ITexture() override;
+
+            /** Optional 2D source images for inspecting a cubemap, before roughness filtering.
+             * Order: front (-Z), back (+Z), left (-X), right (+X), up (+Y), down (-Y).
+             * Empty when this texture/backend does not expose face previews. */
+            virtual Array<SmartPtr<ITexture>> getCubemapFaces() const;
 
             /**
              * @brief Gets the render target.
