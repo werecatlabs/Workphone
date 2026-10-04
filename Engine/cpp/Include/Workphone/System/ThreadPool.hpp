@@ -2,6 +2,8 @@
 #define ThreadPoolStandard_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Thread/Thread.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IThreadPool.hpp>
 #include <Workphone/Interface/System/IWorkerThread.hpp>
 #include <Workphone/System/FSMListener.hpp>

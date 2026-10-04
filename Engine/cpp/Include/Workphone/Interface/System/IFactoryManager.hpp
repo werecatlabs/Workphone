@@ -2,6 +2,7 @@
 #define IFactoryManager_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Interface/System/IFactory.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/StringTypes.hpp>

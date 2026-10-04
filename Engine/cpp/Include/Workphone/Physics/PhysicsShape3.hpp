@@ -2,6 +2,7 @@
 #define CPhysicsShape_h__
 
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Physics/IPhysicsBody3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsMaterial3.hpp>
 #include <Workphone/Physics/PhysicsShape.hpp>

@@ -2,6 +2,7 @@
 #define Editor_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Scene/IGameEditor.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>

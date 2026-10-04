@@ -2,6 +2,7 @@
 #define TerrainSystem_h__
 
 #include <Workphone/Scene/Components/Component.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 
 namespace workphone

@@ -3,6 +3,7 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Graphics/IMaterialManager.hpp>
 #include <Workphone/Core/Array.hpp>
 

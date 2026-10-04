@@ -2,6 +2,7 @@
 #define RenderTargetListener_h__
 
 #include <Workphone/Interface/System/IStateListener.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 
 namespace workphone
 {

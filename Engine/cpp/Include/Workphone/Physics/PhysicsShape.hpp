@@ -2,6 +2,7 @@
 #define PhysicsShape_h__
 
 #include <Workphone/Interface/Physics/IPhysicsShape.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/State/States/ShapeStateData.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>

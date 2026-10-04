@@ -2,6 +2,7 @@
 #define WP_POOL_H
 
 #include <Workphone/Core/Allocator.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Core/PoolData.hpp>

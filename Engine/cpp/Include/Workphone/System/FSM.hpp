@@ -2,6 +2,7 @@
 #define __FSM_h__
 
 #include <Workphone/Interface/System/IFSM.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 
 namespace workphone
 {

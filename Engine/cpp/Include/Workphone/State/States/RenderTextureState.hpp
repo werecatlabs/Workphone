@@ -2,6 +2,7 @@
 #define RenderTextureState_h__
 
 #include <Workphone/State/States/StateData.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 

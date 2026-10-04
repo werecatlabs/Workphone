@@ -2,6 +2,7 @@
 #define _InterpolateAnimator_H
 
 #include <Workphone/Animation/Animator.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Math/Vector2.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/System/ApplicationManager.hpp>

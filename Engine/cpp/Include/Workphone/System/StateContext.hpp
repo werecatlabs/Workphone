@@ -2,6 +2,7 @@
 #define StateObjectStandard_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/System/StateQueue.hpp>

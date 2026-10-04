@@ -2,6 +2,7 @@
 #define Factory_h__
 
 #include <Workphone/Interface/System/IFactory.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Memory/AtomicRawPtr.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>

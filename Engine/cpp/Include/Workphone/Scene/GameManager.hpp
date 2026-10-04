@@ -2,6 +2,8 @@
 #define __WP_CSceneManager_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Thread/Thread.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>

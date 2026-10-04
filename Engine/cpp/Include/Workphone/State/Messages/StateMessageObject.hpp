@@ -2,6 +2,7 @@
 #define StateMessageObject_h__
 
 #include <Workphone/State/Messages/StateMessage.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 
 namespace workphone
 {

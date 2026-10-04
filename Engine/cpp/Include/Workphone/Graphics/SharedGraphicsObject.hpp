@@ -2,6 +2,7 @@
 #define CSharedGraphicsObject_h__
 
 #include <Workphone/System/RttiClassDefinition.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/System/IStateManager.hpp>

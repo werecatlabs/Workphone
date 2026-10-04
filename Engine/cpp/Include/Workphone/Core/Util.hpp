@@ -3,13 +3,12 @@
 
 #include <Workphone/WorkphoneEnums.hpp>
 #include <Workphone/Core/Array.hpp>
+#include <Workphone/Core/Deque.hpp>
 #include <Workphone/Core/Set.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Math/Quaternion.hpp>
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/Interface/UI/IUIMenuItem.hpp>
-#include <deque>
-#include <algorithm>
 
 namespace workphone
 {

@@ -2,6 +2,7 @@
 #define CResourceGraphics_h__
 
 #include <Workphone/Interface/System/IResource.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/System/Resource.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Handle.hpp>

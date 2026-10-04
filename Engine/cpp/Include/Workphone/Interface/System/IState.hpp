@@ -3,6 +3,8 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 
 namespace workphone
 {

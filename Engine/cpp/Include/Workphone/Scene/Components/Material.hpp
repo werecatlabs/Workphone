@@ -2,6 +2,7 @@
 #define MaterialComponent_h__
 
 #include <Workphone/Scene/Components/Component.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 

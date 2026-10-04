@@ -2,6 +2,7 @@
 #define __WP_GraphicsSystem_h__
 
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 

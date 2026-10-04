@@ -2,6 +2,7 @@
 #define __WP_Application_H_
 
 #include <Workphone/Interface/IApplication.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IFSM.hpp>
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>

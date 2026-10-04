@@ -2,6 +2,7 @@
 #define __WP_SoundManager_h__
 
 #include <Workphone/Interface/Sound/ISoundManager.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>

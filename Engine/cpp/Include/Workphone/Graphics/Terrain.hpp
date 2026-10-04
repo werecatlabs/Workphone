@@ -2,6 +2,7 @@
 #define __CTerrain_h__
 
 #include <Workphone/Interface/Graphics/IGraphicsTerrain.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Graphics/ITerrainBlendMap.hpp>
 #include <Workphone/Interface/Graphics/ITerrainRayResult.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>

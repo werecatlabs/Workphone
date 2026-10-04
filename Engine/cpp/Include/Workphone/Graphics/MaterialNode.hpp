@@ -2,6 +2,7 @@
 #define CMaterialNode_h__
 
 #include <Workphone/Interface/Graphics/IMaterialNode.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Memory/AtomicSmartPtr.hpp>

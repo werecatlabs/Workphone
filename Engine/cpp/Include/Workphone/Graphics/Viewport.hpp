@@ -2,6 +2,7 @@
 #define __CViewport_h__
 
 #include <Workphone/Interface/Graphics/IViewport.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 
 namespace workphone

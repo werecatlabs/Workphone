@@ -2,6 +2,7 @@
 #define InstancePool_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>

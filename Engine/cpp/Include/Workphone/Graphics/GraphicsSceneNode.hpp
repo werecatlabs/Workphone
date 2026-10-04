@@ -2,6 +2,7 @@
 #define __CSceneNode_h__
 
 #include <Workphone/Interface/Graphics/IGraphicsSceneNode.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
 #include <Workphone/State/States/BoundingBoxStateData.hpp>

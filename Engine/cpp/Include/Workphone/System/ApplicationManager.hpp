@@ -2,6 +2,7 @@
 #define __ApplicationManager_h__
 
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/IApplication.hpp>
 #include <Workphone/Interface/System/IEvent.hpp>
 #include <Workphone/Core/FixedArray.hpp>

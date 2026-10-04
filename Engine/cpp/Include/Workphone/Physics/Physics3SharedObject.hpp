@@ -2,6 +2,8 @@
 #define WP_Physics3SharedObject_h__
 
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Thread/Thread.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager.hpp>
 #include <Workphone/Interface/System/IStateManager.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>

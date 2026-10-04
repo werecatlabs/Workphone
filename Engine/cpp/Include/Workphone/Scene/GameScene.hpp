@@ -14,6 +14,7 @@
 #define __WP_Scene_h__
 
 #include <Workphone/Interface/Scene/IGameScene.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>

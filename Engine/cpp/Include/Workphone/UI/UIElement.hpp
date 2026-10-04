@@ -2,6 +2,7 @@
 #define UIElement_h__
 
 #include <Workphone/Interface/UI/IUIElement.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>

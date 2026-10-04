@@ -2,6 +2,7 @@
 #define InputDeviceManager_h__
 
 #include <Workphone/Interface/Input/IInputDeviceManager.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Input/IInputPlatformBackend.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsWindowListener.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>

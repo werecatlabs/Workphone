@@ -2,6 +2,7 @@
 #define __IPhysicsManager3__H
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Math/Transform3.hpp>

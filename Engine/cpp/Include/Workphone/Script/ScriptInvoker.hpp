@@ -2,6 +2,7 @@
 #define ScriptInvokerStandard_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Script/IScriptInvoker.hpp>
 #include <Workphone/Core/HashMap.hpp>
 

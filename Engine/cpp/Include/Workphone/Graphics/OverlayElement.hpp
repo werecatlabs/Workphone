@@ -2,6 +2,7 @@
 #define _OverlayElement_H
 
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Graphics/IOverlay.hpp>
 #include <Workphone/Interface/Graphics/IOverlayElement.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>

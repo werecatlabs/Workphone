@@ -2,6 +2,7 @@
 #define JobQueueTBB_h__
 
 #include <Workphone/Interface/System/IJobQueue.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>

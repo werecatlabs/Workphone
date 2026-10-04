@@ -2,6 +2,9 @@
 #define __CGraphicsObject_h__
 
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/Thread/Thread.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/Exception.hpp>

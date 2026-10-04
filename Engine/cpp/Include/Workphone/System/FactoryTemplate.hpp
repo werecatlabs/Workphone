@@ -2,6 +2,7 @@
 #define FactoryTemplate_h__
 
 #include <Workphone/System/Factory.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/InstancePool.hpp>

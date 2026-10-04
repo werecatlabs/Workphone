@@ -2,6 +2,7 @@
 #define _CCameraController_H
 
 #include <Workphone/Scene/Components/Component.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Math/AABB3.hpp>
 

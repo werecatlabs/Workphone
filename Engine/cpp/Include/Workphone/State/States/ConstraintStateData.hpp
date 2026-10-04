@@ -2,6 +2,7 @@
 #define ConstraintStateData_h__
 
 #include <Workphone/State/States/StateData.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Physics/PhysicsTypes.hpp>
 #include <Workphone/Math/Transform3.hpp>
 

@@ -2,6 +2,7 @@
 #define SkyboxComponent_h__
 
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 

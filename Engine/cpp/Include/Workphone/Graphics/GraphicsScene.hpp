@@ -2,6 +2,7 @@
 #define CGraphicsScene_h__
 
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Core/ConcurrentHashMap.hpp>

@@ -2,6 +2,7 @@
 #define __WP_Component_h__
 
 #include <Workphone/Interface/Scene/IComponent.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/System/Resource.hpp>
 #include <Workphone/System/FSMListener.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>

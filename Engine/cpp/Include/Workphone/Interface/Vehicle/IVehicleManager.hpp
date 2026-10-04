@@ -2,6 +2,7 @@
 #define IVehicleManager_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 

@@ -2,6 +2,7 @@
 #define _CTexture_H
 
 #include <Workphone/Interface/Graphics/ITexture.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Graphics/ResourceGraphics.hpp>
 

@@ -2,6 +2,7 @@
 #define CMaterial_h__
 
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Graphics/ResourceGraphics.hpp>
 #include <Workphone/Graphics/MaterialShaderParameters.hpp>

@@ -2,6 +2,7 @@
 #define __WP_GameActor_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/System/Resource.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>

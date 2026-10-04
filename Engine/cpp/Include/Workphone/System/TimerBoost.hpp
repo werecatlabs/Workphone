@@ -2,6 +2,7 @@
 #define TimerBoost_h__
 
 #include <Workphone/System/Timer.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>
 #include <Workphone/Core/Deque.hpp>
 #include <Workphone/Core/Array.hpp>

@@ -2,6 +2,7 @@
 #define TextureManager_h__
 
 #include <Workphone/Interface/Graphics/ITextureManager.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 
 namespace workphone

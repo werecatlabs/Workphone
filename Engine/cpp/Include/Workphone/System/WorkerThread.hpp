@@ -2,6 +2,7 @@
 #define _WorkerThread_H_
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Interface/System/IWorkerThread.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>

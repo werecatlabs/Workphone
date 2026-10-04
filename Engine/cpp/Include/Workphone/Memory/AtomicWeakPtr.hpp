@@ -168,45 +168,12 @@ namespace workphone
          */
         void forceReset();
 
-#ifdef WP_PLATFORM_WIN32
-        /// SEH-based safe pointer dereference helper.
-        /// Returns true if the pointer could be read without an access violation.
-        /// Used by AtomicWeakPtr to safely interact with weak pointers whose
-        /// pointee may have been destroyed.
-        inline bool isPointerReadable( const void *ptr )
-        {
-            __try
-            {
-                volatile char c = *(const volatile char *)ptr;
-                (void)c;
-                return true;
-            }
-            __except( GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER
-                                                                       : EXCEPTION_CONTINUE_SEARCH )
-            {
-                return false;
-            }
-        }
-#endif
-
     private:
         // Pooled objects can remain readable after destruction. Readability alone
         // is insufficient: never update their counters or dispatch through their vtable.
         static bool isObjectAlive( T *ptr )
         {
-#ifdef WP_PLATFORM_WIN32
-            __try
-            {
-                return ptr && ptr->isAlive() && ptr->getReferences() > 0;
-            }
-            __except( GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER
-                                                                       : EXCEPTION_CONTINUE_SEARCH )
-            {
-                return false;
-            }
-#else
             return ptr && ptr->isAlive() && ptr->getReferences() > 0;
-#endif
         }
 
     protected:

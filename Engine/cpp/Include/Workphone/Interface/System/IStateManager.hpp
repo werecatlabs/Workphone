@@ -2,6 +2,7 @@
 #define WP_IStateManager_H_
 
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/Thread/Thread.hpp>

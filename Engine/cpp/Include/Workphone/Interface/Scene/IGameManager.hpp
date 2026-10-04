@@ -2,6 +2,7 @@
 #define ___ISceneManager_h__
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Thread/Thread.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/IGameScene.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
