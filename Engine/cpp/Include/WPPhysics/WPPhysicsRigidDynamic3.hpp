@@ -104,6 +104,11 @@ namespace workphone::physics
         /** @brief Clears applied torque. */
         void clearTorque( ForceModeEnum mode = ForceModeEnum::Force ) override;
         /** @brief Gets the local AABB of the body. */
+        AABB3<real_Num> getAABB() const override;
+        void setAABB( const AABB3<real_Num> &bounds ) override;
+        void setRadius( real_Num radius ) override;
+        real_Num getRadius() const override;
+
         AABB3<real_Num> getLocalAABB() const override;
         /** @brief Gets the world AABB of the body. */
         AABB3<real_Num> getWorldAABB() const override;

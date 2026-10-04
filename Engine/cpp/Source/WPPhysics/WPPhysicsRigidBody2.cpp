@@ -1,5 +1,6 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysicsRigidBody2.hpp"
+#include <WPPhysics/WPPhysicsManager2.hpp>
 
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Thread/SpinRWMutex.hpp>
@@ -74,8 +75,10 @@ namespace workphone::physics
 
     WPPhysicsRigidBody2::~WPPhysicsRigidBody2()
     {
-        auto creator = static_cast<WPPhysicsManager2 *>( m_creator );
-        creator->destroyPhysicsBody( this );
+        if( auto creator = dynamic_cast<WPPhysicsManager2 *>( m_creator ) )
+        {
+            creator->removeRigidBody( this );
+        }
     }
 
     void WPPhysicsRigidBody2::updateFlags()

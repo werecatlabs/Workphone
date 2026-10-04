@@ -1,5 +1,7 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsBounds3.hpp>
+#include <Workphone/Interface/Physics/ISphereShape3.hpp>
+#include <limits>
 #include <WPPhysics/WPPhysicsRigidStatic3.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
@@ -296,6 +298,40 @@ namespace workphone::physics
                                   inertia.Z() != 0 ? 1 / inertia.Z() : 0 );
     }
 
+    AABB3<real_Num> WPPhysicsRigidStatic3::getAABB() const
+    {
+        return getLocalAABB();
+    }
+
+    void WPPhysicsRigidStatic3::setAABB( const AABB3<real_Num> &bounds )
+    {
+        for( const auto &shape : m_shapes )
+        {
+            if( auto backend = dynamic_cast<WPPhysicsShape3Backend *>( shape.get() ) )
+            {
+                backend->setAABB( bounds );
+            }
+        }
+    }
+
+    void WPPhysicsRigidStatic3::setRadius( real_Num radius )
+    {
+        for( const auto &shape : m_shapes )
+        {
+            if( auto sphere = dynamic_cast<ISphereShape3 *>( shape.get() ) )
+            {
+                sphere->setRadius( radius );
+            }
+        }
+    }
+
+    real_Num WPPhysicsRigidStatic3::getRadius() const
+    {
+        const auto bounds = getLocalAABB();
+        if( bounds.isNull() ) return static_cast<real_Num>( 0 );
+        if( bounds.isInfinite() ) return std::numeric_limits<real_Num>::infinity();
+        return bounds.getExtent().length() * static_cast<real_Num>( 0.5 );
+    }
     AABB3<real_Num> WPPhysicsRigidStatic3::getLocalAABB() const
     {
         return detail::mergeShapeBounds( m_shapes );

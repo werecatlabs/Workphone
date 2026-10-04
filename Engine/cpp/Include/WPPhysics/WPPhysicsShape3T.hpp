@@ -17,6 +17,7 @@ namespace workphone::physics
     public:
         virtual ~WPPhysicsShape3Backend() = default;
         virtual AABB3<real_Num> getAABB() const = 0;
+        virtual void setAABB( const AABB3<real_Num> &bounds ) = 0;
     };
 
     /** Shares native collision-shape behavior across the concrete shape bases. */
