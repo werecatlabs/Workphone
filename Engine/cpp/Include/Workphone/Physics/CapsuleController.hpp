@@ -160,6 +160,10 @@ namespace workphone
 
             WP_CLASS_REGISTER_DECL;
 
+            AABB3<real_Num> getAABB() const override;
+
+            void setAABB( const AABB3<real_Num> &aabb ) override;
+
         protected:
             /** The physics scene this controller belongs to */
             SmartPtr<IPhysicsScene3> m_scene;

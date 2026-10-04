@@ -416,5 +416,15 @@ namespace workphone
             m_verticalVelocity = velocity;
         }
 
+workphone::AABB3<workphone::real_Num> CapsuleController::getAABB() const
+        {
+            throw std::logic_error( "The method or operation is not implemented." );
+        }
+
+void CapsuleController::setAABB( const AABB3<real_Num> &aabb )
+        {
+            throw std::logic_error( "The method or operation is not implemented." );
+        }
+
     }  // namespace physics
 }  // namespace workphone

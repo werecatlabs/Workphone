@@ -1,7 +1,7 @@
 #ifndef WPPHYSICSBOUNDS3_HPP
 #define WPPHYSICSBOUNDS3_HPP
 
-#include <Workphone/Interface/Physics/IPhysicsBody3.hpp>
+#include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
 #include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Math/Transform3.hpp>
 
