@@ -4,6 +4,7 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/Graphics/IRenderer3.hpp>
 #include <Workphone/Math/Matrix4.hpp>
+#include <WPGraphics/ClawCubemap.hpp>
 
 struct wp_renderer;
 struct wp_mat4f;
@@ -203,6 +204,9 @@ namespace workphone
             static u32 packColour( const ColourF &colour );
 
             wp_renderer *m_renderer = nullptr;
+            ClawCubemap m_environment;
+            mutable ClawCubemap m_previewEnvironment;
+            bool m_hasSkyEnvironment = false;
 
             AtomicSmartPtr<IGraphicsCamera> m_camera;
             AtomicSmartPtr<IRenderTarget> m_renderTarget;

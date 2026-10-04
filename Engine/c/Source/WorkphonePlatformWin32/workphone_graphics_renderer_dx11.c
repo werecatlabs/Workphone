@@ -106,7 +106,7 @@ static const wp_c8 s_vs_pntc_src[] =
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
     " float4 specular_color; float4 light_color; float4 light_direction;\n"
     " float4 camera_position; float4 surface; float4 uv_transform;\n"
-    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; };\n"
+    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; };\n"
     "struct VS_IN { float3 pos : POSITION; float3 normal : NORMAL;\n"
     " float2 uv : TEXCOORD0; uint color : COLOR; };\n"
     "struct VS_OUT { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
@@ -123,6 +123,7 @@ static const wp_c8 s_vs_pntc_src[] =
     "  float(i.color & 255u)) / 255.0; return o; }\n";
 
 static const wp_c8 s_ps_pntc_src[] =
+    "TextureCube environment_tex : register(t7); SamplerState environment_sampler : register(s1);\n"
     "Texture2D tex : register(t0); SamplerState tex_sampler : register(s0);\n"
     "Texture2D normal_tex : register(t1); Texture2D metallic_tex : register(t2);\n"
     "Texture2D roughness_tex : register(t3); Texture2D emission_tex : register(t4);\n"
@@ -130,7 +131,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
     " float4 specular_color; float4 light_color; float4 light_direction;\n"
     " float4 camera_position; float4 surface; float4 uv_transform;\n"
-    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; };\n"
+    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; };\n"
     "struct PS_IN { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
     " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
     " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; };\n"
@@ -189,22 +190,22 @@ static const wp_c8 s_ps_pntc_src[] =
     "     float3 mapped = normal_tex.Sample(tex_sampler, i.uv).xyz * 2.0 - 1.0;\n"
     "     mapped.xy *= controls.x; n = normalize(t * inv * mapped.x + b * inv * mapped.y + n * mapped.z); }\n"
     " float3 v = normalize(camera_position.xyz - i.world_pos);\n"
-    " float3 l = normalize(-light_direction.xyz); float3 h = normalize(v + l);\n"
+    " float3 l = -light_direction.xyz * rsqrt(max(dot(light_direction.xyz, light_direction.xyz), 1e-8));\n"
+    " float3 h = (v + l) * rsqrt(max(dot(v + l, v + l), 1e-8));\n"
     " float ndl = saturate(dot(n, l)); float ndv = max(saturate(dot(n, v)), 0.001);\n"
     " float ndh = saturate(dot(n, h)); float vdh = saturate(dot(v, h));\n"
     " float a = roughness * roughness; float a2 = a * a;\n"
     " float denom = ndh * ndh * (a2 - 1.0) + 1.0;\n"
-    " float d = a2 / max(3.14159265 * denom * denom, 0.0001);\n"
-    " float k = (roughness + 1.0); k = k * k * 0.125;\n"
-    " float gv = ndv / (ndv * (1.0 - k) + k);\n"
-    " float gl = ndl / (ndl * (1.0 - k) + k);\n"
+    " float d = a2 / max(3.14159265 * denom * denom, 1e-12);\n"
+    " float gv = ndl * sqrt(ndv * ndv * (1.0 - a2) + a2);\n"
+    " float gl = ndv * sqrt(ndl * ndl * (1.0 - a2) + a2);\n"
     " float3 dielectric = saturate(specular_color.rgb);\n"
     " float3 f0 = lerp(dielectric, albedo, metalness);\n"
     " float3 f = fresnelSchlick(vdh, f0);\n"
-    " float3 specular = d * gv * gl * f / max(4.0 * ndv * ndl, 0.001);\n"
+    " float3 specular = d * f * 0.5 / max(gv + gl, 1e-6);\n"
     " float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo / 3.14159265;\n"
     " float3 radiance = light_color.rgb * light_color.a;\n"
-    " float hemi = 0.55 + 0.45 * saturate(n.y);\n"
+    " float hemi = 0.35 + 0.65 * saturate(n.y * 0.5 + 0.5);\n"
     " float3 color = (diffuse + specular) * radiance * ndl;\n"
     " float ao = 1.0;\n"
     " if (extra_map_flags.x > 0.5 && texture_sources.z < 1.5) {\n"
@@ -212,7 +213,18 @@ static const wp_c8 s_ps_pntc_src[] =
     "     ao = texture_sources.z < 0.5 ? occlusion.r : occlusion.b; }\n"
     " if (texture_sources.z > 1.5 && texture_sources.z < 2.5) ao = i.color.a;\n"
     " ao = lerp(1.0, ao, saturate(controls.y));\n"
-    " color += albedo * camera_position.w * hemi * ao + emission;\n"
+    " float3 ambient = ambient_color.w > 0.5 ? max(ambient_color.rgb, 0.0) : camera_position.www;\n"
+    " float3 ambientF = f0 + (max(1.0 - roughness, f0) - f0) * pow(1.0 - ndv, 5.0);\n"
+    " color += (1.0 - ambientF) * (1.0 - metalness) * albedo * ambient * hemi * ao;\n"
+    " if (environment.x > 0.5) {\n"
+    "     float3 reflected = reflect(-v, n);\n"
+    "     float3 env = environment_tex.SampleLevel(environment_sampler, reflected, roughness * environment.y).rgb;\n"
+    "     float4 brdf = roughness * float4(-1.0, -0.0275, -0.572, 0.022) + float4(1.0, 0.0425, 1.04, -0.04);\n"
+    "     float a004 = min(brdf.x * brdf.x, exp2(-9.28 * ndv)) * brdf.x + brdf.y;\n"
+    "     float2 ab = float2(-1.04, 1.04) * a004 + brdf.zw;\n"
+    "     float specAO = saturate(pow(ndv + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao);\n"
+    "     color += env * max(f0 * ab.x + ab.y, 0.0) * ambient * specAO; }\n"
+    " color += emission;\n"
     " color = max(color, 0.0); color = color / (color + 1.0);\n"
     " color = pow(color, 1.0 / 2.2);\n"
     " return float4(controls.w > 0.5 ? color * alpha : color, alpha); }\n";
@@ -261,6 +273,9 @@ struct wp_renderer_dx11
     ID3D11PixelShader *ps_pntc;
     ID3D11InputLayout *layout_pntc;
     ID3D11SamplerState *pntc_sampler_state;
+    ID3D11SamplerState *environment_sampler_state;
+    ID3D11ShaderResourceView *environment_view; /* borrowed */
+    wp_f32 environment_max_lod;
     ID3D11SamplerState *material_sampler;
     ID3D11SamplerState *material_sampler_cache[1600];
     ID3D11ShaderResourceView *material_texture_views[6];
@@ -868,6 +883,10 @@ static wp_s32 wp_renderer_dx11_create_ptc_resources( wp_renderer_dx11 *r )
     desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
     desc.MaxLOD = FLT_MAX;
     hr = ID3D11Device_CreateSamplerState( r->device, &desc, &r->pntc_sampler_state );
+    if( FAILED( hr ) ) return 0;
+    desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    hr = ID3D11Device_CreateSamplerState( r->device, &desc, &r->environment_sampler_state );
     return SUCCEEDED( hr ) ? 1 : 0;
 }
 
@@ -1463,6 +1482,8 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
         ID3D11PixelShader_Release( r->ps_pntc );
     if( r->pntc_sampler_state )
         ID3D11SamplerState_Release( r->pntc_sampler_state );
+    if( r->environment_sampler_state )
+        ID3D11SamplerState_Release( r->environment_sampler_state );
 
     if( r->ds_view )
         ID3D11DepthStencilView_Release( r->ds_view );
@@ -1797,6 +1818,18 @@ void wp_renderer_dx11_set_material( wp_renderer_dx11 *r,
     if( !r || !material || memcmp( &r->material, material, sizeof( *material ) ) == 0 )
         return;
     r->material = *material;
+    r->material.environment.x = r->environment_view ? 1.0f : 0.0f;
+    r->material.environment.y = r->environment_max_lod;
+    r->material_dirty = 1;
+}
+
+void wp_renderer_dx11_set_environment( wp_renderer_dx11 *r, void *view, wp_f32 max_lod )
+{
+    if( !r ) return;
+    r->environment_view = (ID3D11ShaderResourceView *)view;
+    r->environment_max_lod = max_lod;
+    r->material.environment.x = view ? 1.0f : 0.0f;
+    r->material.environment.y = max_lod;
     r->material_dirty = 1;
 }
 
@@ -2458,6 +2491,8 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
     ID3D11DeviceContext_PSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
     ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &texture_view );
     ID3D11DeviceContext_PSSetShaderResources( r->context, 1, 6, r->material_texture_views );
+    ID3D11DeviceContext_PSSetShaderResources( r->context, 7, 1, &r->environment_view );
+    ID3D11DeviceContext_PSSetSamplers( r->context, 1, 1, &r->environment_sampler_state );
     {
         ID3D11SamplerState *sampler = r->material_sampler ? r->material_sampler : r->pntc_sampler_state;
         ID3D11DeviceContext_PSSetSamplers( r->context, 0, 1, &sampler );

@@ -50,6 +50,8 @@ typedef struct wp_material_dx11
     wp_vec4f extra_map_flags;   /* AO, opacity textures present, unused, unused */
     wp_vec4f texture_sources;   /* editor metallic, roughness, AO, opacity channel selectors */
     wp_vec4f projection;        /* mode: mesh/world box/object box/world XZ/XY/YZ/screen; scale, unused x2 */
+    wp_vec4f ambient_color;     /* rgb ambient radiance; w enables RGB instead of legacy scalar */
+    wp_vec4f environment;       /* x enabled, y maximum filtered cubemap LOD */
 } wp_material_dx11;
 
 /* =========================================================================
@@ -159,6 +161,8 @@ void wp_renderer_dx11_set_material( wp_renderer_dx11 *renderer,
 /** Borrowed texture views in normal, metallic, roughness, emission, AO, opacity order.
  * Passing NULL clears all six slots. Albedo continues to use set_texture_native. */
 void wp_renderer_dx11_set_material_textures( wp_renderer_dx11 *renderer, void *const *views );
+/** Borrowed linear HDR TextureCube, filtered from smooth to rough across its mip chain. */
+void wp_renderer_dx11_set_environment( wp_renderer_dx11 *renderer, void *view, wp_f32 max_lod );
 /** Editor sampler modes: wrap 0..4, filter 0..3, anisotropy 1..16. */
 void wp_renderer_dx11_set_material_sampler( wp_renderer_dx11 *renderer, wp_u32 wrap_u,
                                             wp_u32 wrap_v, wp_u32 filter, wp_u32 anisotropy );

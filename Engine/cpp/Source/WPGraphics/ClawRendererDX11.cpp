@@ -428,6 +428,8 @@ namespace workphone::render
 
     void ClawRendererDX11::destroyRenderer()
     {
+        m_environment.reset();
+        m_previewEnvironment.reset();
         for( auto &[mesh, cache] : g_meshVertexCaches )
         {
             (void)mesh;
@@ -449,8 +451,11 @@ namespace workphone::render
         }
 
         m_primitiveCount = 0;
+        m_hasSkyEnvironment = false;
         m_inFrame = true;
         wp_renderer_begin_frame( m_renderer );
+        if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
+            wp_renderer_dx11_set_environment( dx11, nullptr, 0.0f );
     }
 
     void ClawRendererDX11::endRender()
@@ -708,6 +713,7 @@ namespace workphone::render
                                              const ColourF &colour, f32 intensity )
     {
         m_ambientLight = ambient;
+        m_hasSkyEnvironment = false;
         m_lightDirection = direction;
         m_lightColour = colour;
         m_lightIntensity = std::max( intensity, 0.0f );
@@ -730,6 +736,16 @@ namespace workphone::render
                                      0.0f };
         material.camera_position = { cameraPosition.X(), cameraPosition.Y(), cameraPosition.Z(),
                                      ambient };
+        material.ambient_color = { m_ambientLight.r, m_ambientLight.g, m_ambientLight.b, 1.0f };
+        auto dx11 = wp_renderer_get_dx11( m_renderer );
+        if( dx11 && !m_hasSkyEnvironment && !m_previewEnvironment.getView() )
+            m_previewEnvironment.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
+                static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), {} );
+        if( dx11 )
+        {
+            const auto &environment = m_hasSkyEnvironment ? m_environment : m_previewEnvironment;
+            wp_renderer_dx11_set_environment( dx11, environment.getView(), environment.getMaxLod() );
+        }
     }
 
     void ClawRendererDX11::renderMesh( ClawMesh *mesh, const Matrix4F &transform )
@@ -1007,6 +1023,20 @@ namespace workphone::render
         if( textures.empty() )
         {
             return;
+        }
+
+        if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
+        {
+            std::array<ID3D11ShaderResourceView *, 6> views{};
+            for( size_t face = 0; face < std::min( textures.size(), views.size() ); ++face )
+                if( textures[face] )
+                {
+                    void *view = nullptr;
+                    textures[face]->getTextureFinal( &view );
+                    views[face] = static_cast<ID3D11ShaderResourceView *>( view );
+                }
+            m_hasSkyEnvironment = m_environment.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
+                static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), views );
         }
 
         const auto farClip = std::max( camera->getFarClipDistance(), 10.0f );

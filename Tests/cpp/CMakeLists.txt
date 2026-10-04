@@ -2,6 +2,21 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
+    add_executable(ClawCubemapTests ClawCubemapTests.cpp)
+    target_compile_definitions(ClawCubemapTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(ClawCubemapTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+        ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+        ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+        ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
+    target_link_libraries(ClawCubemapTests PRIVATE WPGraphics WorkphonePlatformWin32 WorkphoneCore d3d11)
+    target_link_directories(ClawCubemapTests PRIVATE
+        ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    set_target_properties(ClawCubemapTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.cubemap_pbr COMMAND ClawCubemapTests)
+endif()
+
 if (WP_BUILD_TESTS)
 	if (WP_BUILD_WXWIDGETS)
 		add_subdirectory(./Client)
