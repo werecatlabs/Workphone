@@ -91,6 +91,12 @@ namespace workphone
              */
             virtual Transform3<real_Num> getTransform() const = 0;
 
+            virtual AABB3<real_Num> getAABB() const = 0;
+            virtual void setAABB( const AABB3<real_Num> &aabb ) = 0;
+
+            virtual void setRadius( real_Num radius ) = 0;
+            virtual real_Num getRadius() const = 0;
+
             /**
              * @brief Sets an actor flag for the body.
              * @param flag The flag to set.

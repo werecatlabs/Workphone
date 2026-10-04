@@ -198,6 +198,22 @@ namespace workphone
              */
             void setStateListener( SmartPtr<IStateListener> stateListener );
 
+            /**
+             * @copydoc IPhysicsShape::handleStateChanged
+             */
+            bool handleStateChanged( const SmartPtr<IStateMessage> &message )
+            {
+                return false;
+            }
+
+            /**
+             * @copydoc IPhysicsShape::handleStateChanged
+             */
+            bool handleStateChanged( SmartPtr<IState> &state )
+            {
+                return false;
+            }
+
             WP_CLASS_REGISTER_TEMPLATE_DECL( PhysicsShape, T );
 
         protected:

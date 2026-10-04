@@ -1,11 +1,12 @@
 #ifndef WPPHYSICSMESHSHAPE3_HPP
 #define WPPHYSICSMESHSHAPE3_HPP
 
-#include <WPPhysics/WPPhysicsShape3Adapter.hpp>
-#include <Workphone/Interface/Physics/IMeshShape.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
+#include <Workphone/Physics/MeshShape.hpp>
 
 namespace workphone::physics
 {
+
     /**
      * @class WPPhysicsMeshShape3
      * @brief Implementation of a mesh-based physics collider.
@@ -14,7 +15,7 @@ namespace workphone::physics
      * convex and concave configurations and handling the transition from mesh resources
      * to physics engine data.
      */
-    class WPPhysicsMeshShape3 : public WPPhysicsShape3Adapter<IMeshShape>
+    class WPPhysicsMeshShape3 : public WPPhysicsShape3T<MeshShape>
     {
     public:
         WPPhysicsMeshShape3();

@@ -4,7 +4,7 @@
 
 namespace workphone::physics
 {
-    WPPhysicsMeshShape3::WPPhysicsMeshShape3() : WPPhysicsShape3Adapter( WORKPHONE_COLLISION_SHAPE_MESH )
+    WPPhysicsMeshShape3::WPPhysicsMeshShape3() : WPPhysicsShape3T( WORKPHONE_COLLISION_SHAPE_MESH )
     {
     }
 

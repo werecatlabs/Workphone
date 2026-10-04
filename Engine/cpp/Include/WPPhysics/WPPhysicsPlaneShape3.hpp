@@ -1,12 +1,12 @@
 #ifndef WPPHYSICSPLANESHAPE3_HPP
 #define WPPHYSICSPLANESHAPE3_HPP
 
-#include <WPPhysics/WPPhysicsShape3Adapter.hpp>
-#include <Workphone/Interface/Physics/IPlaneShape3.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
+#include <Workphone/Physics/PlaneShape.hpp>
 
 namespace workphone::physics
 {
-    class WPPhysicsPlaneShape3 : public WPPhysicsShape3Adapter<IPlaneShape3>
+    class WPPhysicsPlaneShape3 : public WPPhysicsShape3T<PlaneShape>
     {
     public:
         WPPhysicsPlaneShape3();

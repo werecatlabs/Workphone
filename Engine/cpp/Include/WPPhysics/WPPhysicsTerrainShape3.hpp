@@ -1,12 +1,13 @@
 #ifndef WPPHYSICSTERRAINSHAPE3_HPP
 #define WPPHYSICSTERRAINSHAPE3_HPP
 
-#include <WPPhysics/WPPhysicsShape3Adapter.hpp>
-#include <Workphone/Interface/Physics/ITerrainShape.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
+#include <Workphone/Physics/TerrainShape.hpp>
 
 namespace workphone::physics
 {
-    class WPPhysicsTerrainShape3 : public WPPhysicsShape3Adapter<ITerrainShape>
+
+    class WPPhysicsTerrainShape3 : public WPPhysicsShape3T<TerrainShape>
     {
     public:
         WPPhysicsTerrainShape3();
@@ -22,6 +23,7 @@ namespace workphone::physics
         Array<wp_f32> m_vertices;
         Array<wp_u32> m_indices;
     };
+
 }  // namespace workphone::physics
 
 #endif

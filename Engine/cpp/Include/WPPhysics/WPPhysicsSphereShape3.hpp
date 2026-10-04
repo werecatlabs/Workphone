@@ -2,11 +2,12 @@
 #define WPPHYSICSSPHERESHAPE3_HPP
 
 #include <WPPhysics/WPPhysicsShape3.hpp>
-#include <Workphone/Interface/Physics/ISphereShape3.hpp>
+#include <Workphone/Physics/SphereShape.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
 
 namespace workphone::physics
 {
-    class WPPhysicsSphereShape3 : public WPPhysicsShape3, public ISphereShape3
+    class WPPhysicsSphereShape3 : public WPPhysicsShape3T<SphereShape>
     {
     public:
         WPPhysicsSphereShape3();

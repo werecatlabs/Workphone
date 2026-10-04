@@ -35,6 +35,24 @@ namespace workphone
 
             Transform3<real_Num> getLocalPose() const;
 
+            virtual AABB3<real_Num> getAABB() const
+            {
+                return {};
+            }
+
+            virtual void setAABB( const AABB3<real_Num> &aabb )
+            {
+            }
+
+            virtual void setRadius( real_Num radius )
+            {
+            }
+
+            virtual real_Num getRadius() const
+            {
+                return 0;
+            }
+
             void setSimulationFilterData( const FilterData &data );
 
             FilterData getSimulationFilterData() const;
