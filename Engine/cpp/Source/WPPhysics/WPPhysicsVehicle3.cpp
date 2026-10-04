@@ -1,23 +1,24 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysicsVehicle3.hpp"
+#include <WPPhysics/WPPhysicsBounds3.hpp>
 
 namespace workphone
 {
     namespace physics
     {
 
-        CPhysicsVehicle3::CPhysicsVehicle3( SmartPtr<IRigidBody3> chassis ) :
+        WPPhysicsVehicle3::WPPhysicsVehicle3( SmartPtr<IRigidBody3> chassis ) :
             m_chassis( std::move( chassis ) )
         {
             setLoadingState( LoadingState::Loaded );
         }
 
-        CPhysicsVehicle3::~CPhysicsVehicle3()
+        WPPhysicsVehicle3::~WPPhysicsVehicle3()
         {
             unload( nullptr );
         }
 
-        void CPhysicsVehicle3::unload( SmartPtr<ISharedObject> )
+        void WPPhysicsVehicle3::unload( SmartPtr<ISharedObject> )
         {
             m_wheels.clear();
             m_vehicleInput = nullptr;
@@ -25,33 +26,33 @@ namespace workphone
             setLoadingState( LoadingState::Unloaded );
         }
 
-        workphone::physics::IPhysicsVehicleWheel3 *CPhysicsVehicle3::addWheel()
+        workphone::physics::IPhysicsVehicleWheel3 *WPPhysicsVehicle3::addWheel()
         {
             if( !m_chassis || m_finalized )
             {
                 WP_LOG_WARNING(
-                    "CPhysicsVehicle3::addWheel: wheels cannot be added after finalization." );
+                    "WPPhysicsVehicle3::addWheel: wheels cannot be added after finalization." );
                 return nullptr;
             }
 
-            auto wheel = workphone::make_ptr<CPhysicsVehicleWheel>();
+            auto wheel = workphone::make_ptr<WPPhysicsVehicleWheel>();
             wheel->setLoadingState( LoadingState::Loaded );
             auto result = wheel.get();
             m_wheels.push_back( wheel );
             return result;
         }
 
-        workphone::physics::IPhysicsVehicleWheel3 *CPhysicsVehicle3::getWheel( u32 wheelIndex ) const
+        workphone::physics::IPhysicsVehicleWheel3 *WPPhysicsVehicle3::getWheel( u32 wheelIndex ) const
         {
             return wheelIndex < m_wheels.size() ? m_wheels[wheelIndex].get() : nullptr;
         }
 
-        u32 CPhysicsVehicle3::getNumWheels() const
+        u32 WPPhysicsVehicle3::getNumWheels() const
         {
             return static_cast<u32>( m_wheels.size() );
         }
 
-        void CPhysicsVehicle3::finalize()
+        void WPPhysicsVehicle3::finalize()
         {
             if( !m_chassis )
             {
@@ -59,13 +60,13 @@ namespace workphone
             }
             if( m_wheels.empty() )
             {
-                WP_LOG_WARNING( "CPhysicsVehicle3::finalize: vehicle has no wheels." );
+                WP_LOG_WARNING( "WPPhysicsVehicle3::finalize: vehicle has no wheels." );
             }
             m_finalized = true;
             m_chassis->wakeUp();
         }
 
-        void CPhysicsVehicle3::applyEngineForce( f32 engineForce, u32 wheelIndex )
+        void WPPhysicsVehicle3::applyEngineForce( f32 engineForce, u32 wheelIndex )
         {
             auto wheel = getNativeWheel( wheelIndex );
             if( !wheel || !m_chassis || !m_enabled )
@@ -85,7 +86,7 @@ namespace workphone
             }
         }
 
-        void CPhysicsVehicle3::setBrake( f32 brakeForce, u32 wheelIndex )
+        void WPPhysicsVehicle3::setBrake( f32 brakeForce, u32 wheelIndex )
         {
             auto wheel = getNativeWheel( wheelIndex );
             if( !wheel || !m_chassis )
@@ -108,7 +109,7 @@ namespace workphone
             m_chassis->setAngularVelocity( m_chassis->getAngularVelocity() * factor );
         }
 
-        void CPhysicsVehicle3::setSteeringValue( f32 steeringValue, u32 wheelIndex )
+        void WPPhysicsVehicle3::setSteeringValue( f32 steeringValue, u32 wheelIndex )
         {
             if( auto wheel = getNativeWheel( wheelIndex ) )
             {
@@ -116,7 +117,7 @@ namespace workphone
             }
         }
 
-        void CPhysicsVehicle3::setPosition( const Vector3<real_Num> &position )
+        void WPPhysicsVehicle3::setPosition( const Vector3<real_Num> &position )
         {
             if( m_chassis )
             {
@@ -126,12 +127,12 @@ namespace workphone
             }
         }
 
-        workphone::Vector3<workphone::real_Num> CPhysicsVehicle3::getPosition() const
+        workphone::Vector3<workphone::real_Num> WPPhysicsVehicle3::getPosition() const
         {
             return m_chassis ? m_chassis->getTransform().getPosition() : Vector3<real_Num>::zero();
         }
 
-        void CPhysicsVehicle3::setOrientation( const Quaternion<real_Num> &orientation )
+        void WPPhysicsVehicle3::setOrientation( const Quaternion<real_Num> &orientation )
         {
             if( m_chassis )
             {
@@ -141,13 +142,13 @@ namespace workphone
             }
         }
 
-        workphone::Quaternion<workphone::real_Num> CPhysicsVehicle3::getOrientation() const
+        workphone::Quaternion<workphone::real_Num> WPPhysicsVehicle3::getOrientation() const
         {
             return m_chassis ? m_chassis->getTransform().getOrientation()
                              : Quaternion<real_Num>::identity();
         }
 
-        void CPhysicsVehicle3::setVelocity( const Vector3<real_Num> &velocity )
+        void WPPhysicsVehicle3::setVelocity( const Vector3<real_Num> &velocity )
         {
             if( m_chassis )
             {
@@ -155,32 +156,32 @@ namespace workphone
             }
         }
 
-        workphone::Vector3<workphone::real_Num> CPhysicsVehicle3::getVelocity() const
+        workphone::Vector3<workphone::real_Num> WPPhysicsVehicle3::getVelocity() const
         {
             return m_chassis ? m_chassis->getLinearVelocity() : Vector3<real_Num>::zero();
         }
 
-        void CPhysicsVehicle3::setMaterialId( u32 materialId )
+        void WPPhysicsVehicle3::setMaterialId( u32 materialId )
         {
             m_materialId = materialId;
         }
 
-        u32 CPhysicsVehicle3::getMaterialId() const
+        u32 WPPhysicsVehicle3::getMaterialId() const
         {
             return m_materialId;
         }
 
-        workphone::AABB3F CPhysicsVehicle3::getLocalAABB() const
+        workphone::AABB3F WPPhysicsVehicle3::getLocalAABB() const
         {
-            return m_chassis ? toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
+            return m_chassis ? detail::toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
         }
 
-        workphone::AABB3F CPhysicsVehicle3::getWorldAABB() const
+        workphone::AABB3F WPPhysicsVehicle3::getWorldAABB() const
         {
-            return m_chassis ? toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
+            return m_chassis ? detail::toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
         }
 
-        void CPhysicsVehicle3::setEnabled( bool enabled )
+        void WPPhysicsVehicle3::setEnabled( bool enabled )
         {
             m_enabled = enabled;
             if( m_chassis )
@@ -189,24 +190,24 @@ namespace workphone
             }
         }
 
-        bool CPhysicsVehicle3::isEnabled() const
+        bool WPPhysicsVehicle3::isEnabled() const
         {
             return m_enabled && m_chassis && m_chassis->isEnabled();
         }
 
         const workphone::SmartPtr<workphone::physics::IPhysicsVehicleInput3> &
-        CPhysicsVehicle3::getVehicleInput() const
+        WPPhysicsVehicle3::getVehicleInput() const
         {
             return m_vehicleInput;
         }
 
         workphone::SmartPtr<workphone::physics::IPhysicsVehicleInput3> &
-        CPhysicsVehicle3::getVehicleInput()
+        WPPhysicsVehicle3::getVehicleInput()
         {
             return m_vehicleInput;
         }
 
-        workphone::Array<workphone::Transform3F> CPhysicsVehicle3::getWheelTransformations() const
+        workphone::Array<workphone::Transform3F> WPPhysicsVehicle3::getWheelTransformations() const
         {
             Array<Transform3F> transforms;
             if( !m_chassis || m_wheels.empty() )
@@ -277,12 +278,12 @@ namespace workphone
             return transforms;
         }
 
-        SmartPtr<IRigidBody3> CPhysicsVehicle3::getChassis() const
+        SmartPtr<IRigidBody3> WPPhysicsVehicle3::getChassis() const
         {
             return m_chassis;
         }
 
-        CPhysicsVehicleWheel *CPhysicsVehicle3::getNativeWheel(
+        WPPhysicsVehicleWheel *WPPhysicsVehicle3::getNativeWheel(
             u32 wheelIndex ) const
         {
             return wheelIndex < m_wheels.size() ? m_wheels[wheelIndex].get() : nullptr;

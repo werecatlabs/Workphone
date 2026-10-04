@@ -1,19 +1,20 @@
-#ifndef WPPhysicsVehicle3_h__
-#define WPPhysicsVehicle3_h__
+#ifndef WPPHYSICSVEHICLE3_HPP
+#define WPPHYSICSVEHICLE3_HPP
 
-#include <WPPhysics/CPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsVehicleWheel.hpp>
 #include <Workphone/Physics/PhysicsManager.hpp>
 
 namespace workphone
 {
     namespace physics
     {
-        class CPhysicsVehicle3 final : public IPhysicsVehicle3
+        class WPPhysicsVehicle3 final : public IPhysicsVehicle3
         {
         public:
-            explicit CPhysicsVehicle3( SmartPtr<IRigidBody3> chassis );
+            explicit WPPhysicsVehicle3( SmartPtr<IRigidBody3> chassis );
 
-            ~CPhysicsVehicle3() override;
+            ~WPPhysicsVehicle3() override;
 
             void unload( SmartPtr<ISharedObject> ) override;
 
@@ -64,17 +65,17 @@ namespace workphone
             SmartPtr<IRigidBody3> getChassis() const;
 
         private:
-            CPhysicsVehicleWheel *getNativeWheel( u32 wheelIndex ) const;
+            WPPhysicsVehicleWheel *getNativeWheel( u32 wheelIndex ) const;
 
             SmartPtr<IRigidBody3> m_chassis;
-            Array<SmartPtr<CPhysicsVehicleWheel>> m_wheels;
+            Array<SmartPtr<WPPhysicsVehicleWheel>> m_wheels;
             SmartPtr<IPhysicsVehicleInput3> m_vehicleInput;
             u32 m_materialId = 0;
             bool m_enabled = true;
             bool m_finalized = false;
         };
 
-    }
+    }  // namespace physics
 }  // namespace workphone
 
-#endif // WPPhysicsVehicle3_h__
+#endif  // WPPHYSICSVEHICLE3_HPP

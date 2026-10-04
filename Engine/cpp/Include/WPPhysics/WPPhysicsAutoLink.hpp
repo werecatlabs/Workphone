@@ -1,5 +1,5 @@
-#ifndef _FBPhysicsAutoLink_H
-#define _FBPhysicsAutoLink_H
+#ifndef WPPHYSICSAUTOLINK_HPP
+#define WPPHYSICSAUTOLINK_HPP
 
 #if WP_USE_AUTO_LINK
 #    ifdef _DEBUG

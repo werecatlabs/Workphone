@@ -514,17 +514,17 @@ namespace workphone
 
         // module( L )[class_<IRigidBody2, IPhysicsBody2, boost::shared_ptr<IObject>>( "IRigidBody2" )];
 
-        // module( L )[class_<CRigidBody2, IRigidBody2, boost::shared_ptr<IObject>>( "CRigidBody2" )];
+        // module( L )[class_<WPPhysicsRigidBody2, IRigidBody2, boost::shared_ptr<IObject>>( "WPPhysicsRigidBody2" )];
 
         // module( L )[class_<IPhysicsParticle2, IPhysicsBody2, boost::shared_ptr<IObject>>(
         //     "IPhysicsParticle2" )];
 
-        // module( L )[class_<Particle2, IPhysicsParticle2, boost::shared_ptr<IObject>>( "Particle2" )];
+        // module( L )[class_<WPPhysicsParticle2, IPhysicsParticle2, boost::shared_ptr<IObject>>( "WPPhysicsParticle2" )];
 
         // module(
         //     L )[class_<IPhysicsShape2, IScriptObject, boost::shared_ptr<IObject>>( "PhysicsShape2" )];
 
-        // module( L )[class_<ISphereShape2, IPhysicsShape2, boost::shared_ptr<IObject>>( "SphereShape2"
+        // module( L )[class_<ISphereShape2, IPhysicsShape2, boost::shared_ptr<IObject>>( "WPPhysicsSphereShape2"
         // )
         //                 .def( "getRadius", &ISphereShape2::getRadius )
         //                 .def( "setRadius", &ISphereShape2::setRadius )];

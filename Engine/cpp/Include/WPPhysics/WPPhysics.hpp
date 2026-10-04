@@ -1,5 +1,5 @@
-#ifndef _WPPhysics_H
-#define _WPPhysics_H
+#ifndef WPPHYSICS_HPP
+#define WPPHYSICS_HPP
 
 #include <WPPhysics/WPPhysicsPrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
@@ -55,10 +55,10 @@ namespace workphone
 
         protected:
             static SmartPtr<WPPhysics>
-                m_sPlugin; ///< The global singleton instance of the physics engine.
+                m_sPlugin;  ///< The global singleton instance of the physics engine.
         };
 
-    } // namespace physics
-} // namespace workphone
+    }  // namespace physics
+}  // namespace workphone
 
 #endif

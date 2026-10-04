@@ -1,5 +1,5 @@
-#ifndef __WPPhysicsPCH_h__
-#define __WPPhysicsPCH_h__
+#ifndef WPPHYSICSPCH_HPP
+#define WPPHYSICSPCH_HPP
 
 #if WP_USE_PRECOMPILED_HEADERS
 #    include <Workphone/Workphone.hpp>
@@ -17,4 +17,4 @@
 #    endif
 #endif
 
-#endif // FBPhysics2PCH_h__
+#endif  // WPPHYSICSPCH_HPP

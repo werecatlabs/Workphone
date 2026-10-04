@@ -6,6 +6,8 @@
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Memory/AtomicRawPtr.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>
+#include <Workphone/Core/FixedString.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 
 namespace workphone
 {

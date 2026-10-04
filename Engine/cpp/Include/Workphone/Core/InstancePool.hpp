@@ -8,6 +8,7 @@
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Memory/AtomicSharedPtr.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <Workphone/Memory/RawPtr.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>
