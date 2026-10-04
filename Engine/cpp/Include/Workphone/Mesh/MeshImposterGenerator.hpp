@@ -8,22 +8,26 @@
 
 namespace workphone
 {
+
     struct MeshImposterTriangle
     {
         std::array<Vector3F, 3> positions;
         ColourF colour;
     };
+
     struct MeshImposterView
     {
         Vector3F right, up, towardCamera;
         Vector2F minimum, maximum;
     };
+
     struct MeshImposterAtlas
     {
         u32 width = 0, height = 0, tileWidth = 0;
         Array<u8> rgba;
         std::array<MeshImposterView, 3> views;
     };
+
     /// CPU orthographic rasterization of mesh triangles into two side views and a top view.
     /// Output is straight-alpha sRGB RGBA, suitable for depth-writing cutout materials.
     WPCore_API MeshImposterAtlas generateMeshImposters( const Array<MeshImposterTriangle> &triangles,

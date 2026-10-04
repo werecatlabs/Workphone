@@ -83,6 +83,12 @@ namespace workphone
         */
         T fetch_and( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept;
 
+        T fetch_sub( T arg, std::memory_order order = std::memory_order_seq_cst ) noexcept
+        {
+            static_assert( std::is_integral<T>::value, "fetch_sub requires an integral type" );
+            return m_value.fetch_sub( arg, order );
+        }
+
         /** Store's a value.
         @param v The value.
         @param m The memory order.

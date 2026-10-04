@@ -3,7 +3,6 @@
 
 #include <Workphone/Scene/Systems/ComponentSystem.hpp>
 #include <Workphone/Math/Vector3.hpp>
-
 #include <atomic>
 #include <memory>
 #include <unordered_map>
@@ -99,14 +98,14 @@ namespace workphone
                 Array<f32> thresholds;
                 Array<s32> results;
 
-                std::atomic<u32> remainingJobs{ 0 };
+                atomic_u32 remainingJobs{ 0 };
             };
 
-            std::shared_ptr<LODBatch> buildBatch() const;
-            void dispatchBatch( const std::shared_ptr<LODBatch> &batch );
-            void applyBatch( const std::shared_ptr<LODBatch> &batch );
+            SharedPtr<LODBatch> buildBatch() const;
+            void dispatchBatch( const SharedPtr<LODBatch> &batch );
+            void applyBatch( const SharedPtr<LODBatch> &batch );
 
-            static void calculateRange( const std::shared_ptr<LODBatch> &batch, size_t begin,
+            static void calculateRange( const SharedPtr<LODBatch> &batch, size_t begin,
                                         size_t end );
             static s32 selectLOD( f32 screenRelativeHeight, const f32 *thresholds, size_t thresholdCount,
                                   s32 previousLOD, s32 forcedLOD, f32 hysteresis,
@@ -118,7 +117,7 @@ namespace workphone
             Array<u64> m_appliedRevisions;
             std::unordered_map<LODGroup *, u32> m_groupSlots;
 
-            std::shared_ptr<LODBatch> m_pendingBatch;
+            SharedPtr<LODBatch> m_pendingBatch;
 
             u64 m_nextGeneration = 1;
             f32 m_globalLODBias = 1.0f;

@@ -8,13 +8,13 @@
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Interface/System/IJob.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
 namespace workphone::scene
 {
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, LODSystem, ComponentSystem );
 
     LODSystem::LODSystem() = default;
@@ -258,9 +258,9 @@ namespace workphone::scene
         m_appliedRevisions.resize( size, 0 );
     }
 
-    std::shared_ptr<LODSystem::LODBatch> LODSystem::buildBatch() const
+    SharedPtr<LODSystem::LODBatch> LODSystem::buildBatch() const
     {
-        auto batch = std::make_shared<LODBatch>();
+        auto batch = workphone::make_shared<LODBatch>();
         auto cameraLODBias = 1.0f;
         if( m_hasViewOverride )
         {
@@ -398,7 +398,7 @@ namespace workphone::scene
         return batch;
     }
 
-    void LODSystem::dispatchBatch( const std::shared_ptr<LODBatch> &batch )
+    void LODSystem::dispatchBatch( const SharedPtr<LODBatch> &batch )
     {
         const auto itemCount = batch->slots.size();
         if( itemCount == 0 )
@@ -434,7 +434,7 @@ namespace workphone::scene
         }
     }
 
-    void LODSystem::applyBatch( const std::shared_ptr<LODBatch> &batch )
+    void LODSystem::applyBatch( const SharedPtr<LODBatch> &batch )
     {
         for( size_t index = 0; index < batch->slots.size(); ++index )
         {
@@ -470,7 +470,7 @@ namespace workphone::scene
         }
     }
 
-    void LODSystem::calculateRange( const std::shared_ptr<LODBatch> &batch, size_t begin, size_t end )
+    void LODSystem::calculateRange( const SharedPtr<LODBatch> &batch, size_t begin, size_t end )
     {
         for( auto index = begin; index < end; ++index )
         {
