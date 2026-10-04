@@ -19,6 +19,7 @@
 #include <Workphone/Atomics/AtomicFloat.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
+#include <Workphone/Core/ConcurrentFixedArrayGrowable.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Core/Array.hpp>
@@ -679,7 +680,7 @@ namespace workphone
             AtomicObject<String> m_label;
 
             /// Thread-safe container of children.
-            ConcurrentArray<SmartPtr<IUIElement>> m_children;
+            ConcurrentFixedArrayGrowable<SmartPtr<IUIElement>, 1024> m_children;
 
             /// Static counter used to generate default names.
             static u32 m_nextGeneratedNameExt;
@@ -1001,7 +1002,7 @@ namespace workphone
         template <class T>
         Array<SmartPtr<IUIElement>> ImGuiElement<T>::getChildren() const
         {
-            return m_children.snapshot();
+            return Array<SmartPtr<IUIElement>>( m_children.begin(), m_children.end() );
         }
 
         template <class T>

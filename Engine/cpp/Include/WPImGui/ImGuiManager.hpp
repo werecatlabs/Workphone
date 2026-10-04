@@ -423,15 +423,17 @@ namespace workphone
 
             atomic_bool m_dragging = false; /**< True when a drag operation is active. */
 
-            ConcurrentHashMap<u32, AtomicSharedPtr<Array<SmartPtr<IUIElement>>>> m_elements;
             /**< Elements grouped by type. */
+            ConcurrentHashMap<u32, AtomicSharedPtr<Array<SmartPtr<IUIElement>>>> m_elements;
 
-            ConcurrentQueue<SmartPtr<ISharedObject>> m_loadQueue;
             /**< Queue of objects to load on the main thread. */
-            ConcurrentQueue<SmartPtr<ISharedObject>> m_unloadQueue;
-            /**< Queue of objects to unload on the main thread. */
+            ConcurrentQueue<SmartPtr<ISharedObject>> m_loadQueue;
 
-            mutable RecursiveSpinMutex m_mutex; /**< Protects internal state for thread-safety. */
+            /**< Queue of objects to unload on the main thread. */
+            ConcurrentQueue<SmartPtr<ISharedObject>> m_unloadQueue;
+
+            /**< Protects internal state for thread-safety. */
+            mutable RecursiveSpinMutex m_mutex;
         };
 
         inline IFactoryManager *ImGuiManager::getFactoryManagerPtr() const

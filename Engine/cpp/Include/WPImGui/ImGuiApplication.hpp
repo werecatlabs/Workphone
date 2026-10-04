@@ -5,7 +5,9 @@
 #include <Workphone/Interface/UI/IUIApplication.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsWindowListener.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Core/ColourF.hpp>
+#include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <imgui_internal.h>
 
