@@ -4,10 +4,7 @@
 #include <Workphone/Interface/Memory/IObject.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/Array.hpp>
-#include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Memory/SmartPtr.hpp>
-#include <Workphone/Memory/SharedObjectData.hpp>
-#include <Workphone/Thread/Thread.hpp>
 
 #if WP_TRACK_REFERENCES
 #    include <Workphone/Memory/SharedObjectTracker.hpp>
@@ -794,27 +791,6 @@ namespace workphone
         return ( m_objectFlags & OBJECT_FLAG_GARBAGE_COLLECTED ) != 0;
     }
 
-    WPForceInline ISharedObjectListener *ISharedObject::getSharedObjectListener() const
-    {
-        return m_sharedObjectData->m_sharedObjectListener;
-    }
-
-    WPForceInline u32 ISharedObject::getEventTaskFlags() const
-    {
-        return m_sharedObjectData->m_eventTaskFlags;
-    }
-
-    WPForceInline ISharedObject *ISharedObject::getScriptDataPtr() const
-    {
-        return m_sharedObjectData->m_scriptData.get();
-    }
-
-    WPForceInline SmartPtr<ISharedObject> ISharedObject::getScriptData() const
-    {
-        auto p = m_sharedObjectData->m_scriptData.load();
-        return p.lock();
-    }
-
     WPForceInline bool ISharedObject::isLoading() const
     {
         return m_loadingState == LoadingState::Loading;
@@ -828,24 +804,6 @@ namespace workphone
     WPForceInline LoadingState ISharedObject::getLoadingState() const
     {
         return m_loadingState;
-    }
-
-    WPForceInline u32 ISharedObject::getNumListeners() const
-    {
-        auto &listeners = m_sharedObjectData->m_sharedEventListeners;
-        return static_cast<u32>( listeners.size() );
-    }
-
-    WPForceInline ISharedObject::ScopedLoadstateWait::ScopedLoadstateWait( ISharedObject *object ) :
-        m_object( object )
-    {
-        if( m_object )
-        {
-            while( m_object->isLoadLocked() )
-            {
-                Thread::yield();
-            }
-        }
     }
 
     WPForceInline ISharedObject::ScopedLoadLock::ScopedLoadLock( ISharedObject *object ) :

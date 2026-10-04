@@ -5,8 +5,6 @@
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/System/RttiClass.hpp>
 #include <Workphone/Memory/AtomicRawPtr.hpp>
-#include <Workphone/Memory/BaseObjectData.hpp>
-#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/Handle.hpp>
 
 namespace workphone
@@ -246,17 +244,11 @@ namespace workphone
 
         /// Object flags (bitfield for alive, garbage collected, pool element, etc.).
         atomic_u8 m_objectFlags = OBJECT_FLAG_ALIVE | OBJECT_FLAG_GARBAGE_COLLECTED;
+
+    private:
+        static bool isDerivedType( u32 type, u32 baseType );
+        static bool isExactlyType( u32 type, u32 otherType );
     };
-
-    WPForceInline Handle *IObject::getHandle()
-    {
-        return &m_objectData->m_handle;
-    }
-
-    WPForceInline const Handle *IObject::getHandle() const
-    {
-        return &m_objectData->m_handle;
-    }
 
     WPForceInline bool IObject::getObjectFlag( u8 flag ) const
     {
@@ -265,72 +257,27 @@ namespace workphone
 
 #if WP_CPP_STANDARD >= WP_CPP_2020
     template <class B>
-    requires { B::typeInfo(); } bool IObject::isDerived() const
-    {
-        auto typeInfo = getTypeInfo();
-        if( typeInfo != 0 )
-        {
-            auto typeManager = TypeManager::instance();
-            WP_ASSERT( typeManager );
-
-            auto otherTypeInfo = B::typeInfo();
-            return typeManager->isDerived( typeInfo, otherTypeInfo );
-        }
-
-        return false;
-    }
+        requires requires { B::typeInfo(); }
 #else
     template <class B>
+#endif
     bool IObject::isDerived() const
     {
         auto typeInfo = getTypeInfo();
-        if( typeInfo != 0 )
-        {
-            auto typeManager = TypeManager::instance();
-            WP_ASSERT( typeManager );
-
-            auto otherTypeInfo = B::typeInfo();
-            return typeManager->isDerived( typeInfo, otherTypeInfo );
-        }
-
-        return false;
+        return typeInfo != 0 && isDerivedType( typeInfo, B::typeInfo() );
     }
-#endif
 
 #if WP_CPP_STANDARD >= WP_CPP_2020
     template <class B>
         requires requires { B::typeInfo(); }
-    bool IObject::isExactly() const
-    {
-        auto typeInfo = getTypeInfo();
-        if( typeInfo != 0 )
-        {
-            auto typeManager = TypeManager::instance();
-            WP_ASSERT( typeManager );
-
-            auto otherTypeInfo = B::typeInfo();
-            return typeManager->isExactly( typeInfo, otherTypeInfo );
-        }
-
-        return false;
-    }
 #else
     template <class B>
+#endif
     bool IObject::isExactly() const
     {
         auto typeInfo = getTypeInfo();
-        if( typeInfo != 0 )
-        {
-            auto typeManager = TypeManager::instance();
-            WP_ASSERT( typeManager );
-
-            auto otherTypeInfo = B::typeInfo();
-            return typeManager->isExactly( typeInfo, otherTypeInfo );
-        }
-
-        return false;
+        return typeInfo != 0 && isExactlyType( typeInfo, B::typeInfo() );
     }
-#endif
 
 }  // namespace workphone
 

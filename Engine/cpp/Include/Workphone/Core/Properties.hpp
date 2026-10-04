@@ -16,16 +16,18 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Core/Property.hpp>
 #include <Workphone/Core/Array.hpp>
-#include <Workphone/Core/StringUtil.hpp>
-#include <Workphone/Math/Transform3.hpp>
-#include <Workphone/Interface/IApplicationManager.hpp>
-#include <Workphone/Interface/Database/IResourceDatabase.hpp>
-#include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
-#include <Workphone/Memory/TypeManager.hpp>
 
 namespace workphone
 {
+    template <class T>
+    class AABB3;
+
+    using AABB3F = AABB3<f32>;
+    using AABB3D = AABB3<f64>;
+    using Transform3F = Transform3<f32>;
+    using Transform3D = Transform3<f64>;
+
     /**
      * @class Properties
      * @brief Manages a collection of named properties with support for hierarchical grouping.
@@ -143,7 +145,7 @@ namespace workphone
          * @note This does not check for an existing property of the same name; it will be overwritten.
          */
         void addProperty( const String &name, const String &value,
-                          const String &type = StringUtil::EmptyString, bool readOnly = false );
+                          const String &type = emptyStr, bool readOnly = false );
 
         /**
          * @brief Sets a property value as a string with type information.
@@ -997,6 +999,13 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     private:
+        // Keep resource lookup and serialization dependencies out of the template definitions.
+        static String getResourceUUID( const ISharedObject *object );
+        bool getPropertyResources( const String &name, Array<SmartPtr<ISharedObject>> &value ) const;
+        void setPropertyAsTypeImpl( const String &name, ISharedObject *value, u32 type );
+        bool getPropertyAsTypeImpl( const String &name, u32 type,
+                                    SmartPtr<ISharedObject> &value, bool &assignValue ) const;
+
         /**
          * @brief The array containing all properties in this group.
          */
@@ -1016,9 +1025,7 @@ namespace workphone
 
         for( const auto &item : value )
         {
-            auto handle = item->getHandle();
-            auto uuid = handle->getUUIDAsString();
-            uuids.push_back( uuid );
+            uuids.push_back( getResourceUUID( item.get() ) );
         }
 
         setProperty( name, uuids, readOnly );
@@ -1027,28 +1034,14 @@ namespace workphone
     template <class T>
     bool Properties::getPropertyValue( const String &name, Array<SmartPtr<T>> &value ) const
     {
-        if( hasProperty( name ) )
+        Array<SmartPtr<ISharedObject>> resources;
+        if( getPropertyResources( name, resources ) )
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            auto resourceDatabase = applicationManager->getResourceDatabase();
-
-            const auto &property = getPropertyObject( name );
-
-            auto propertyValue = property.getValue();
-
-            Array<String> uuids;
-            StringUtil::parseArray( propertyValue, uuids );
-
-            for( const auto &uuid : uuids )
+            for( const auto &resource : resources )
             {
-                auto handle = StringUtil::parseUUID( uuid );
-
-                if( auto resource = resourceDatabase->getObject( handle ) )
+                if( resource->isDerived<T>() )
                 {
-                    if( resource->isDerived<T>() )
-                    {
-                        value.push_back( workphone::static_pointer_cast<T>( resource ) );
-                    }
+                    value.push_back( workphone::static_pointer_cast<T>( resource ) );
                 }
             }
 
@@ -1061,65 +1054,20 @@ namespace workphone
     template <class T>
     void Properties::setPropertyAsType( const String &name, SmartPtr<T> value, bool readOnly )
     {
-        auto typeManager = TypeManager::instance();
-
-        if( value )
-        {
-            auto typeInfo = value->getTypeInfo();
-            auto typeName = typeManager->getName( typeInfo );
-
-            auto handle = value->getHandle();
-            auto uuid = handle->getUUIDAsString();
-            setProperty( name, uuid, resourceStr, false );
-
-            auto &property = getPropertyObject( name );
-            property.setAttribute( resourceTypeStr, typeName );
-        }
-        else
-        {
-            setProperty( name, "", resourceStr, false );
-
-            auto typeInfo = T::typeInfo();
-            auto typeName = typeManager->getName( typeInfo );
-
-            auto &property = getPropertyObject( name );
-            property.setAttribute( resourceTypeStr, typeName );
-        }
+        setPropertyAsTypeImpl( name, value.get(), value ? value->getTypeInfo() : T::typeInfo() );
     }
 
     template <class T>
     bool Properties::getPropertyAsType( const String &name, SmartPtr<T> &value ) const
     {
-        if( hasProperty( name ) )
+        SmartPtr<ISharedObject> resource;
+        bool assignValue = false;
+        const auto found = getPropertyAsTypeImpl( name, T::typeInfo(), resource, assignValue );
+        if( assignValue )
         {
-            const auto &property = getPropertyObject( name );
-            const auto sUUID = property.getValue();
-
-            if( !StringUtil::isNullOrEmpty( sUUID ) )
-            {
-                auto uuid = StringUtil::parseUUID( sUUID );
-
-                auto applicationManager = core::IApplicationManager::instance();
-                auto resourceDatabase = applicationManager->getResourceDatabase();
-
-                if( auto resource = resourceDatabase->getObject( uuid ) )
-                {
-                    if( resource->isDerived<T>() )
-                    {
-                        value = workphone::dynamic_pointer_cast<T>( resource );
-                    }
-                    else if( resource->isDerived<scene::IGameActor>() )
-                    {
-                        auto actor = workphone::dynamic_pointer_cast<scene::IGameActor>( resource );
-                        value = actor->getComponent<T>();
-                    }
-                }
-
-                return true;
-            }
+            value = workphone::dynamic_pointer_cast<T>( resource );
         }
-
-        return false;
+        return found;
     }
 }  // namespace workphone
 

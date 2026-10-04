@@ -5,10 +5,6 @@
 #include <Workphone/Thread/SpinRWMutex.hpp>
 #include <atomic>
 
-#ifdef WP_PLATFORM_WIN32
-#    include <windows.h>
-#endif
-
 namespace workphone
 {
 

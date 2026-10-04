@@ -1,5 +1,9 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Core/StringUtil.hpp>
+#include <Workphone/Math/Transform3.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Core/VectorUtil.hpp>
 #include <Workphone/Core/Exception.hpp>
 #include <Workphone/Core/LogManager.hpp>
@@ -27,6 +31,99 @@ namespace workphone
 {
 
     WP_CLASS_REGISTER_DERIVED( workphone, Properties, ISharedObject );
+
+    String Properties::getResourceUUID( const ISharedObject *object )
+    {
+        return object->getHandle()->getUUIDAsString();
+    }
+
+    bool Properties::getPropertyResources( const String &name,
+                                          Array<SmartPtr<ISharedObject>> &value ) const
+    {
+        if( !hasProperty( name ) )
+        {
+            return false;
+        }
+
+        auto applicationManager = core::IApplicationManager::instance();
+        auto resourceDatabase = applicationManager->getResourceDatabase();
+        const auto &property = getPropertyObject( name );
+
+        Array<String> uuids;
+        StringUtil::parseArray( property.getValue(), uuids );
+        for( const auto &uuid : uuids )
+        {
+            if( auto resource = resourceDatabase->getObject( StringUtil::parseUUID( uuid ) ) )
+            {
+                value.push_back( resource );
+            }
+        }
+        return true;
+    }
+
+    void Properties::setPropertyAsTypeImpl( const String &name, ISharedObject *value, u32 type )
+    {
+        auto typeManager = TypeManager::instance();
+        if( value )
+        {
+            auto typeName = typeManager->getName( type );
+            setProperty( name, getResourceUUID( value ), resourceStr, false );
+            getPropertyObject( name ).setAttribute( resourceTypeStr, typeName );
+        }
+        else
+        {
+            setProperty( name, "", resourceStr, false );
+            auto typeName = typeManager->getName( type );
+            getPropertyObject( name ).setAttribute( resourceTypeStr, typeName );
+        }
+    }
+
+    bool Properties::getPropertyAsTypeImpl( const String &name, u32 type,
+                                          SmartPtr<ISharedObject> &value, bool &assignValue ) const
+    {
+        assignValue = false;
+        if( !hasProperty( name ) )
+        {
+            return false;
+        }
+
+        const auto sUUID = getPropertyObject( name ).getValue();
+        if( StringUtil::isNullOrEmpty( sUUID ) )
+        {
+            return false;
+        }
+
+        const auto uuid = StringUtil::parseUUID( sUUID );
+        auto applicationManager = core::IApplicationManager::instance();
+        auto resourceDatabase = applicationManager->getResourceDatabase();
+        if( auto resource = resourceDatabase->getObject( uuid ) )
+        {
+            auto typeManager = TypeManager::instance();
+            WP_ASSERT( typeManager );
+            const auto resourceType = resource->getTypeInfo();
+            if( resourceType != 0 && typeManager->isDerived( resourceType, type ) )
+            {
+                value = resource;
+                assignValue = true;
+            }
+            else if( resource->isDerived<scene::IGameActor>() )
+            {
+                auto actor = workphone::dynamic_pointer_cast<scene::IGameActor>( resource );
+                value = nullptr;
+                for( const auto &component : actor->getComponents() )
+                {
+                    const auto componentType = component->getTypeInfo();
+                    if( componentType != 0 && typeManager->isDerived( componentType, type ) )
+                    {
+                        value = component;
+                        break;
+                    }
+                }
+                assignValue = true;
+            }
+        }
+        return true;
+    }
 
     static u32 NumPropertyGroups = 0;
 

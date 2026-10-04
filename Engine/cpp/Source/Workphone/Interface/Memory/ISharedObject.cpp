@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Interface/System/IEditorManager.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Core/Handle.hpp>
@@ -12,12 +13,14 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Memory/BaseObjectData.hpp>
+#include <Workphone/Memory/SharedObjectData.hpp>
 #include <Workphone/Memory/Memory.hpp>
 #include <Workphone/Memory/SharedObjectTracker.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/ApplicationUtil.hpp>
+#include <Workphone/Thread/Thread.hpp>
 
 #if WP_TRACK_REFERENCES
 #    include <Workphone/Memory/SharedObjectTracker.hpp>
@@ -65,6 +68,45 @@ namespace workphone
     }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, ISharedObject, IObject );
+
+    ISharedObjectListener *ISharedObject::getSharedObjectListener() const
+    {
+        return m_sharedObjectData->m_sharedObjectListener;
+    }
+
+    u32 ISharedObject::getEventTaskFlags() const
+    {
+        return m_sharedObjectData->m_eventTaskFlags;
+    }
+
+    ISharedObject *ISharedObject::getScriptDataPtr() const
+    {
+        return m_sharedObjectData->m_scriptData.get();
+    }
+
+    SmartPtr<ISharedObject> ISharedObject::getScriptData() const
+    {
+        auto p = m_sharedObjectData->m_scriptData.load();
+        return p.lock();
+    }
+
+    u32 ISharedObject::getNumListeners() const
+    {
+        auto &listeners = m_sharedObjectData->m_sharedEventListeners;
+        return static_cast<u32>( listeners.size() );
+    }
+
+    ISharedObject::ScopedLoadstateWait::ScopedLoadstateWait( ISharedObject *object ) :
+        m_object( object )
+    {
+        if( m_object )
+        {
+            while( m_object->isLoadLocked() )
+            {
+                Thread::yield();
+            }
+        }
+    }
 
     const Array<String> ISharedObject::loadingStateNames = { "None",     "Allocated", "Unallocated",
                                                              "QueuedGC", "Unloading", "Unloaded",

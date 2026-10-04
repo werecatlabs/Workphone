@@ -3,6 +3,7 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/Memory/Memory.hpp>
+#include <Workphone/Memory/BaseObjectData.hpp>
 #include <Workphone/Memory/SharedObjectTracker.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
@@ -22,6 +23,30 @@ namespace workphone
 {
 
     WP_CLASS_REGISTER( workphone, IObject );
+
+    Handle *IObject::getHandle()
+    {
+        return &m_objectData->m_handle;
+    }
+
+    const Handle *IObject::getHandle() const
+    {
+        return &m_objectData->m_handle;
+    }
+
+    bool IObject::isDerivedType( u32 type, u32 baseType )
+    {
+        auto typeManager = TypeManager::instance();
+        WP_ASSERT( typeManager );
+        return typeManager->isDerived( type, baseType );
+    }
+
+    bool IObject::isExactlyType( u32 type, u32 otherType )
+    {
+        auto typeManager = TypeManager::instance();
+        WP_ASSERT( typeManager );
+        return typeManager->isExactly( type, otherType );
+    }
 
     IObject::IObject()
     {
