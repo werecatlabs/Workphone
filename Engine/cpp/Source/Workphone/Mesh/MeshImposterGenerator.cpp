@@ -108,6 +108,7 @@ namespace workphone
                 }
             }
         }
+
         return result;
     }
 
