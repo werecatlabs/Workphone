@@ -88,10 +88,12 @@ namespace
 
 BOOST_AUTO_TEST_SUITE( concurrent_fixed_array_growable_tests )
 
-BOOST_AUTO_TEST_CASE( fixed_capacity_modifiers_and_copy_reads )
+BOOST_AUTO_TEST_CASE( fixed_capacity_modifiers_and_array_access )
 {
     workphone::ConcurrentFixedArrayGrowable<int, 12> values{ 3, 1, 2 };
-    static_assert( std::is_same<decltype( values.at( 0 ) ), int>::value, "reads return values" );
+    static_assert( std::is_same<decltype( values.at( 0 ) ), int &>::value, "mutable references" );
+    static_assert( std::is_same<decltype( std::as_const( values ).at( 0 ) ), const int &>::value,
+                   "const references" );
     static_assert( std::is_same<decltype( values.emplace_back( 4 ) ), void>::value,
                    "unlocked emplace must not leak a reference" );
     values.sort();
@@ -185,6 +187,69 @@ BOOST_AUTO_TEST_CASE( locked_views_expose_references_and_the_underlying_api )
         first.push_back( 7 );
     }
     BOOST_TEST( other.front() == 7 );
+}
+
+BOOST_AUTO_TEST_CASE( standard_array_interface_supports_find_and_erase_remove )
+{
+    using Array = workphone::ConcurrentFixedArrayGrowable<int, 9>;
+    Array values{ 1, 2, 3, 2 };
+    const auto &constant = values;
+    static_assert( std::is_same<decltype( values.begin() ), Array::iterator>::value, "iterator" );
+    static_assert( std::is_same<decltype( constant.begin() ), Array::const_iterator>::value,
+                   "const iterator" );
+    static_assert( std::is_same<decltype( values.rbegin() ), Array::reverse_iterator>::value,
+                   "reverse iterator" );
+    static_assert( std::is_same<decltype( constant.rbegin() ), Array::const_reverse_iterator>::value,
+                   "const reverse iterator" );
+    static_assert( std::is_same<decltype( values.data() ), Array::pointer>::value, "data" );
+    static_assert( std::is_same<decltype( constant.data() ), Array::const_pointer>::value,
+                   "const data" );
+    static_assert( std::is_same<decltype( values.front() ), Array::reference>::value, "front" );
+    static_assert( std::is_same<decltype( constant.back() ), Array::const_reference>::value,
+                   "const back" );
+    // No concurrent writer is active: direct iterators follow std::array's rules.
+    auto found = std::find( values.begin(), values.end(), 2 );
+    BOOST_CHECK( found == values.begin() + 1 );
+    BOOST_CHECK( std::find( std::cbegin( constant ), std::cend( constant ), 3 ) == values.cbegin() + 2 );
+    BOOST_CHECK( std::find( std::rbegin( values ), std::rend( values ), 3 ) == values.rbegin() + 1 );
+    BOOST_CHECK( std::find( values.crbegin(), values.crend(), 3 ) == values.crbegin() + 1 );
+    BOOST_CHECK( std::find( values.begin(), values.end(), 99 ) == values.end() );
+    BOOST_TEST( std::distance( std::begin( constant ), std::end( constant ) ) == 4 );
+    *found = 7;
+    values.erase( std::remove( values.begin(), values.end(), 2 ), values.end() );
+    BOOST_TEST( values.size() == 3u );
+    auto next = values.erase( std::find( values.begin(), values.end(), 7 ) );
+    BOOST_TEST( *next == 3 );
+    values.emplace( next, 4 );
+    values.insert( values.cbegin(), { 5, 6 } );
+    values.insert( values.cend(), 2u, 8 );
+    int range[]{ 7 };
+    values.insert( values.cbegin(), std::begin( range ), std::end( range ) );
+    values.insert( values.begin(), 0 );
+    BOOST_TEST( values.size() == 9u );
+    values.front() = 9;
+    values.back() = 9;
+    values.data()[1] = 9;
+    values.fill( 9 );
+    BOOST_CHECK( std::all_of( values.begin(), values.end(), []( int v ) { return v == 9; } ) );
+    Array smaller{ 9, 9 };
+    BOOST_CHECK( smaller < values );
+    BOOST_CHECK( values > smaller );
+    BOOST_CHECK( smaller <= values );
+    BOOST_CHECK( values >= smaller );
+    {
+        auto view = values.writeLocked();
+        view.fill( 3 );
+        auto it = std::find( view.begin(), view.end(), 3 );
+        BOOST_CHECK( it != view.end() );
+        view.erase( it );
+    }
+    Array empty;
+    BOOST_CHECK( std::find( empty.begin(), empty.end(), 1 ) == empty.end() );
+    empty.fill( 1 );
+    BOOST_TEST( empty.empty() );
+    workphone::ConcurrentFixedArrayGrowable<int, 0> zero;
+    BOOST_CHECK( std::find( zero.rbegin(), zero.rend(), 1 ) == zero.rend() );
 }
 
 BOOST_AUTO_TEST_CASE( copy_move_swap_and_zero_capacity )
@@ -431,6 +496,9 @@ BOOST_AUTO_TEST_CASE( successful_operations_and_views_do_not_allocate )
         a.insert( 1u, { 5, 6 } );
         a.erase( 0u );
         a.sort();
+        a.fill( 3 );
+        (void)std::find( a.cbegin(), a.cend(), 3 );
+        (void)std::find( a.rbegin(), a.rend(), 3 );
         auto snapshot = a.snapshot();
         workphone::ConcurrentFixedArrayGrowable<int, 16> b( a );
         b = a;

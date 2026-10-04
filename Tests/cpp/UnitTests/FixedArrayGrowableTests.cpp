@@ -109,6 +109,43 @@ namespace
 
 BOOST_AUTO_TEST_SUITE( fixed_array_growable_tests )
 
+BOOST_AUTO_TEST_CASE( standard_array_iterators_work_with_standard_algorithms )
+{
+    using Array = workphone::FixedArrayGrowable<int, 8>;
+    Array values{ 1, 2, 3, 2 };
+    const auto &constant = values;
+    static_assert( std::is_same<decltype( values.begin() ), Array::iterator>::value, "iterator" );
+    static_assert( std::is_same<decltype( constant.begin() ), Array::const_iterator>::value,
+                   "const iterator" );
+    static_assert( std::is_same<decltype( values.data() ), Array::pointer>::value, "data" );
+    static_assert( std::is_same<decltype( constant.at( 0 ) ), Array::const_reference>::value,
+                   "const reference" );
+    auto found = std::find( std::begin( values ), std::end( values ), 2 );
+    BOOST_CHECK( found == values.begin() + 1 );
+    BOOST_CHECK( std::find( std::cbegin( constant ), std::cend( constant ), 3 ) == values.cbegin() + 2 );
+    BOOST_CHECK( std::find( values.crbegin(), values.crend(), 3 ) == values.crbegin() + 1 );
+    BOOST_CHECK( std::find( values.begin(), values.end(), 99 ) == values.end() );
+    BOOST_TEST( std::distance( values.cbegin(), values.cend() ) == 4 );
+    *found = 7;
+    values.erase( std::remove( values.begin(), values.end(), 2 ), values.end() );
+    BOOST_TEST( values.size() == 3u );
+    values.fill( 9 );
+    BOOST_TEST( values.size() == 3u );
+    BOOST_CHECK( std::all_of( values.begin(), values.end(), []( int v ) { return v == 9; } ) );
+    Array smaller{ 9, 9 };
+    BOOST_CHECK( smaller < values );
+    BOOST_CHECK( values > smaller );
+    BOOST_CHECK( smaller <= values );
+    BOOST_CHECK( values >= smaller );
+    Array zero;
+    BOOST_CHECK( std::find( zero.begin(), zero.end(), 1 ) == zero.end() );
+    zero.fill( 1 );
+    BOOST_TEST( zero.empty() );
+    Array copy;
+    copy.assign( values.cbegin(), values.cend() );
+    BOOST_CHECK( copy == values );
+}
+
 BOOST_AUTO_TEST_CASE( storage_capacity_access_and_iterators )
 {
     using Array = workphone::FixedArrayGrowable<int, 6>;
@@ -377,6 +414,9 @@ BOOST_AUTO_TEST_CASE( successful_container_operations_do_not_allocate )
         values.insert( values.begin(), values.begin(), values.end() );
         values.erase( values.begin() + 1, values.begin() + 3 );
         values.sort();
+        values.fill( 3 );
+        (void)std::find( values.cbegin(), values.cend(), 3 );
+        (void)std::find( values.rbegin(), values.rend(), 3 );
         auto copied = values.snapshot();
         auto moved = std::move( copied );
         copied.assign( values.begin(), values.end() );

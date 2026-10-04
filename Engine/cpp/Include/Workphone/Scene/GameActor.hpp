@@ -12,6 +12,7 @@
 #include <Workphone/Math/Quaternion.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
+#include <Workphone/Core/ConcurrentFixedArrayGrowable.hpp>
 #include <Workphone/System/FSMListener.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 
@@ -705,7 +706,7 @@ namespace workphone
             mutable RecursiveSpinMutex m_childrenMutex;
 
             //! Arbitrary string tags attached to the actor for lookup and filtering.
-            ConcurrentArray<FixedString<128>> m_tags;
+            ConcurrentFixedArrayGrowable<FixedString<128>, WP_MAX_TAGS> m_tags;
 
             //! Name of the layer this actor belongs to. Used for rendering and visibility groups.
             AtomicObject<FixedString<128>> m_layer;

@@ -341,8 +341,6 @@ namespace workphone::scene
 
             setLoadingState( LoadingState::Loading );
 
-            m_actors.reserve( 1024 );
-
             m_updateObjects.resize( static_cast<s32>( Thread::UpdateState::Count ) );
 
             for( u32 x = 0; x < static_cast<s32>( Thread::UpdateState::Count ); ++x )
@@ -354,7 +352,7 @@ namespace workphone::scene
             {
                 for( u32 y = 0; y < static_cast<s32>( Thread::UpdateState::Count ); ++y )
                 {
-                    m_updateObjects[x][y].reserve( 1024 );
+                    m_updateObjects[x][y].reserve( WP_MAX_ACTORS );
                 }
             }
 
@@ -885,7 +883,8 @@ namespace workphone::scene
 
     Array<SmartPtr<IGameActor>> GameScene::getActors() const
     {
-        return m_actors.snapshot();
+        auto actors = m_actors.readLocked();
+        return { actors.begin(), actors.end() };
     }
 
     void GameScene::setActors( const Array<SmartPtr<IGameActor>> &actors )
@@ -905,7 +904,7 @@ namespace workphone::scene
         auto job = factoryManager->make_ptr<SceneClearJob>();
         job->setScene( this );
 
-        auto actors = m_actors.snapshot();
+        auto actors = getActors();
         job->setActors( actors );
 
         if( clearNow )

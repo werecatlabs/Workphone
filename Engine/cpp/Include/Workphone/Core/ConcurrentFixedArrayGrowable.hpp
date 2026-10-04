@@ -8,10 +8,13 @@ namespace workphone
 {
     /**
      * Inline, fixed-capacity array synchronized by SpinRWMutex.
-     * Individual reads return copies; emplace_back returns no reference. Use
-     * readLocked()/writeLocked() for references, iterators, data(), or compound
-     * operations. A view also exposes the complete FixedArrayGrowable API via ->.
+     * Provides std::array-style element access and forward/reverse iterators.
+     * Direct references, pointers, and iterators do not retain a lock: externally
+     * synchronize their use when concurrent mutation is possible. Prefer
+     * readLocked()/writeLocked() for concurrent traversal and compound operations.
+     * A view also exposes the complete FixedArrayGrowable API via ->.
      * References and iterators from a view must not outlive its lock.
+     * snapshot() and try_at/try_front/try_back copy values while holding the lock.
      *
      * The mutex is not recursive: while holding a view, use that view rather than
      * calling locking operations on its owner. Predicates, comparisons, and T's
@@ -31,6 +34,14 @@ namespace workphone
         using value_type = T;
         using size_type = typename storage_type::size_type;
         using difference_type = typename storage_type::difference_type;
+        using reference = typename storage_type::reference;
+        using const_reference = typename storage_type::const_reference;
+        using pointer = typename storage_type::pointer;
+        using const_pointer = typename storage_type::const_pointer;
+        using iterator = typename storage_type::iterator;
+        using const_iterator = typename storage_type::const_iterator;
+        using reverse_iterator = typename storage_type::reverse_iterator;
+        using const_reverse_iterator = typename storage_type::const_reverse_iterator;
         using mutex_type = SpinRWMutex;
 
         template <bool IsConst>
@@ -63,11 +74,18 @@ namespace workphone
             }
 
         public:
+            using value_type = T;
+            using size_type = typename storage_type::size_type;
+            using difference_type = typename storage_type::difference_type;
             using iterator = typename std::conditional<IsConst,
                 typename storage_type::const_iterator, typename storage_type::iterator>::type;
             using const_iterator = typename storage_type::const_iterator;
+            using reverse_iterator = std::reverse_iterator<iterator>;
+            using const_reverse_iterator = typename storage_type::const_reverse_iterator;
             using reference = typename std::conditional<IsConst, const T &, T &>::type;
+            using const_reference = const T &;
             using pointer = typename std::conditional<IsConst, const T *, T *>::type;
+            using const_pointer = const T *;
 
             LockedView( const LockedView & ) = delete;
             LockedView &operator=( const LockedView & ) = delete;
@@ -133,6 +151,8 @@ namespace workphone
             template <class Compare = std::less<T>>
             void sort( Compare comp = Compare() ) { get().sort( comp ); }
             template <bool C = IsConst, typename std::enable_if<!C, int>::type = 0>
+            void fill( const T &value ) { get().fill( value ); }
+            template <bool C = IsConst, typename std::enable_if<!C, int>::type = 0>
             void clear() noexcept { get().clear(); }
             template <bool C = IsConst, typename std::enable_if<!C, int>::type = 0>
             void pop_back() { get().pop_back(); }
@@ -189,13 +209,41 @@ namespace workphone
         { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.full(); }
         void reserve( size_type count ) const { m_values.reserve( count ); }
         void shrink_to_fit() noexcept {}
-        T at( size_type index ) const
+        reference at( size_type index )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.at( index ); }
+        const_reference at( size_type index ) const
         { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.at( index ); }
-        T operator[]( size_type index ) const { return at( index ); }
-        T front() const
+        reference operator[]( size_type index ) { return at( index ); }
+        const_reference operator[]( size_type index ) const { return at( index ); }
+        reference front()
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.front(); }
+        const_reference front() const
         { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.front(); }
-        T back() const
+        reference back()
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.back(); }
+        const_reference back() const
         { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.back(); }
+        pointer data()
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.data(); }
+        const_pointer data() const
+        { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.data(); }
+
+        iterator begin()
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.begin(); }
+        const_iterator begin() const
+        { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.begin(); }
+        iterator end()
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.end(); }
+        const_iterator end() const
+        { SpinRWMutex::ScopedLock lock( m_mutex, false ); return m_values.end(); }
+        const_iterator cbegin() const { return begin(); }
+        const_iterator cend() const { return end(); }
+        reverse_iterator rbegin() { return reverse_iterator( end() ); }
+        reverse_iterator rend() { return reverse_iterator( begin() ); }
+        const_reverse_iterator rbegin() const { return const_reverse_iterator( end() ); }
+        const_reverse_iterator rend() const { return const_reverse_iterator( begin() ); }
+        const_reverse_iterator crbegin() const { return rbegin(); }
+        const_reverse_iterator crend() const { return rend(); }
         bool try_at( size_type index, T &value ) const
         {
             SpinRWMutex::ScopedLock lock( m_mutex, false );
@@ -253,9 +301,26 @@ namespace workphone
         { SpinRWMutex::ScopedLock lock( m_mutex ); m_values.assign( first, last ); }
         void assign( std::initializer_list<T> values )
         { SpinRWMutex::ScopedLock lock( m_mutex ); m_values.assign( values ); }
+        void fill( const T &value )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); m_values.fill( value ); }
         template <class... Args>
         void emplace( size_type index, Args &&...args )
         { SpinRWMutex::ScopedLock lock( m_mutex ); m_values.emplace( index, std::forward<Args>( args )... ); }
+        template <class... Args>
+        iterator emplace( const_iterator where, Args &&...args )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.emplace( where, std::forward<Args>( args )... ); }
+        iterator insert( const_iterator where, const T &value )
+        { return emplace( where, value ); }
+        iterator insert( const_iterator where, T &&value )
+        { return emplace( where, std::move( value ) ); }
+        iterator insert( const_iterator where, size_type count, const T &value )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.insert( where, count, value ); }
+        template <class InputIt,
+                  typename std::enable_if<!std::is_integral<InputIt>::value, int>::type = 0>
+        iterator insert( const_iterator where, InputIt first, InputIt last )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.insert( where, first, last ); }
+        iterator insert( const_iterator where, std::initializer_list<T> values )
+        { return insert( where, values.begin(), values.end() ); }
         void insert( size_type index, const T &value ) { emplace( index, value ); }
         void insert( size_type index, T &&value ) { emplace( index, std::move( value ) ); }
         void insert( size_type index, size_type count, const T &value )
@@ -274,6 +339,10 @@ namespace workphone
         { insert( index, values.begin(), values.end() ); }
         void erase( size_type index )
         { SpinRWMutex::ScopedLock lock( m_mutex ); m_values.erase( index ); }
+        iterator erase( const_iterator where )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.erase( where ); }
+        iterator erase( const_iterator first, const_iterator last )
+        { SpinRWMutex::ScopedLock lock( m_mutex ); return m_values.erase( first, last ); }
         void erase( size_type first, size_type last )
         {
             SpinRWMutex::ScopedLock lock( m_mutex );
@@ -306,6 +375,23 @@ namespace workphone
         friend bool operator!=( const ConcurrentFixedArrayGrowable &lhs,
                                 const ConcurrentFixedArrayGrowable &rhs )
         { return !(lhs == rhs); }
+        friend bool operator<( const ConcurrentFixedArrayGrowable &lhs,
+                               const ConcurrentFixedArrayGrowable &rhs )
+        {
+            if( &lhs == &rhs )
+            {
+                SpinRWMutex::ScopedLock lock( lhs.m_mutex, false );
+                return lhs.m_values < rhs.m_values;
+            }
+            return lhs.withBothLocked( rhs, false, false,
+                                       [&] { return lhs.m_values < rhs.m_values; } );
+        }
+        friend bool operator>( const ConcurrentFixedArrayGrowable &lhs,
+                               const ConcurrentFixedArrayGrowable &rhs ) { return rhs < lhs; }
+        friend bool operator<=( const ConcurrentFixedArrayGrowable &lhs,
+                                const ConcurrentFixedArrayGrowable &rhs ) { return !(rhs < lhs); }
+        friend bool operator>=( const ConcurrentFixedArrayGrowable &lhs,
+                                const ConcurrentFixedArrayGrowable &rhs ) { return !(lhs < rhs); }
 
     private:
         mutable SpinRWMutex m_mutex;

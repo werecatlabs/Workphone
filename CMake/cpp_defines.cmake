@@ -17,6 +17,7 @@ add_compile_definitions( WP_MAX_CLASSNAME=128 )
 add_compile_definitions( WP_MAX_FUNCNAME=128 )
 add_compile_definitions( WP_MAX_CHILDREN=12 )
 add_compile_definitions( WP_MAX_TAGS=12 )
+add_compile_definitions( WP_MAX_ACTORS=2048 )
 
 if(WIN32)
     add_compile_definitions (_WIN32_WINNT=0x0601)

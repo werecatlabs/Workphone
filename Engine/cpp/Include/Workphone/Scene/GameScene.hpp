@@ -18,6 +18,7 @@
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
+#include <Workphone/Core/ConcurrentFixedArrayGrowable.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Core/ConcurrentHashMap.hpp>
 #include <Workphone/Core/FixedArray.hpp>
@@ -479,7 +480,7 @@ namespace workphone
              *
              * This allows for thread-safe access and modification of the actor list.
              */
-            ConcurrentArray<SmartPtr<IGameActor>> m_actors;
+            ConcurrentFixedArrayGrowable<SmartPtr<IGameActor>, WP_MAX_ACTORS> m_actors;
 
             /**
              * @var m_updateObjects

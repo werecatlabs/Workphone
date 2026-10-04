@@ -182,6 +182,8 @@ namespace workphone
             replaceFrom( replacement );
         }
         void assign( std::initializer_list<T> values ) { assign( values.begin(), values.end() ); }
+        // Like std::array::fill, assign the value to each existing element.
+        void fill( const T &value ) { std::fill( begin(), end(), value ); }
 
         size_type size() const noexcept { return m_size; }
         static constexpr size_type capacity() noexcept { return N; }
@@ -403,6 +405,14 @@ namespace workphone
         { return lhs.size() == rhs.size() && std::equal( lhs.begin(), lhs.end(), rhs.begin() ); }
         friend bool operator!=( const FixedArrayGrowable &lhs, const FixedArrayGrowable &rhs )
         { return !(lhs == rhs); }
+        friend bool operator<( const FixedArrayGrowable &lhs, const FixedArrayGrowable &rhs )
+        { return std::lexicographical_compare( lhs.begin(), lhs.end(), rhs.begin(), rhs.end() ); }
+        friend bool operator>( const FixedArrayGrowable &lhs, const FixedArrayGrowable &rhs )
+        { return rhs < lhs; }
+        friend bool operator<=( const FixedArrayGrowable &lhs, const FixedArrayGrowable &rhs )
+        { return !(rhs < lhs); }
+        friend bool operator>=( const FixedArrayGrowable &lhs, const FixedArrayGrowable &rhs )
+        { return !(lhs < rhs); }
 
     private:
         alignas( T ) unsigned char m_storage[sizeof( T ) * (N == 0 ? 1 : N)];
