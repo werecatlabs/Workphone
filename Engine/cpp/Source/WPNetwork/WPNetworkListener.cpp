@@ -1,5 +1,5 @@
 #include <WPNetwork/WPNetworkListener.hpp>
-#include <Workphone/Interface/Net/IPacket.hpp>
+#include <Workphone/Workphone.hpp>
 
 namespace workphone
 {

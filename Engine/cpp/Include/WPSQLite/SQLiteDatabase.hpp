@@ -3,9 +3,11 @@
 
 #include <WPSQLite/WPSQLitePrerequisites.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
+#include <Workphone/Memory/SharedPtr.hpp>
 
 namespace workphone
 {
+
     /**
      * @class SQLiteDatabase
      * @brief Implementation of IDatabase interface for SQLite database operations

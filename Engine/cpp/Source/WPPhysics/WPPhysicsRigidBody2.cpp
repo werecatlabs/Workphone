@@ -74,7 +74,7 @@ namespace workphone::physics
 
     WPPhysicsRigidBody2::~WPPhysicsRigidBody2()
     {
-        auto creator = static_cast<WPPhysicsManager2D *>( m_creator );
+        auto creator = static_cast<WPPhysicsManager2 *>( m_creator );
         creator->destroyPhysicsBody( this );
     }
 

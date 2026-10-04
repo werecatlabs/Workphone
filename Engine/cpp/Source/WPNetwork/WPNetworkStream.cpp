@@ -1,5 +1,5 @@
 #include <WPNetwork/WPNetworkStream.hpp>
-
+#include <Workphone/Workphone.hpp>
 #include <cstring>
 #include <stdexcept>
 
