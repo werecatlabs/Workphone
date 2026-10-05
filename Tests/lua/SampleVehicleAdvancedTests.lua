@@ -81,13 +81,14 @@ local function fixture()
     end
     local owner = actor()
     local manager = {}
+    function manager:play() app.playTransitions = (app.playTransitions or 0) + 1 end
     function manager:createActor() return actor() end
     function manager:destroyActor(root, cascade) assert(cascade); table.insert(destroyed, root) end
     function manager:getCurrentScene() return {registerAllUpdates=function() end} end
     function app:getGameManager() return manager end
     function app:getTimer() return {
         getTime=function() return app.now end,
-        getTimeSinceSceneLoad=function() return app.sceneTime end,
+        getTimeSinceLevelLoad=function() return app.sceneTime end,
         getDeltaTime=function() return 1/60 end
     } end
     function app:getInputDeviceManager() return {isKeyPressed=function(_, key) return keys[key] or false end} end
@@ -109,6 +110,7 @@ assert(not sample.started, "Edit mode must not auto-generate")
 app.playing = true
 sample:update()
 assert(sample.started and app.playing and race.seed == 7 and race.quality == 2)
+assert(app.playTransitions == 1, "Actors generated during play must enter play state")
 assert(sample.vehicleActor.position.y == 0.42 and sample.cameraActor.position.z == 8)
 assert(drawn[0x56454803] and drawn[0x56454804], "Driving instructions must be displayed")
 
@@ -168,6 +170,25 @@ sample:generate()
 app.playing, app.sceneTime = true, 1000
 sample:updateControls()
 assert(not app.quit, "A long edit session must not time out a newly started track test")
+sample:shutdown()
+
+sample, app, race, body = fixture()
+sample:generate()
+sample:setSmokeTest(true)
+app.sceneTime = 10
+local reports = {}
+function sample:reportSmoke(message) table.insert(reports, message) end
+function body:getRigidDynamic() return self end
+local temporaryPosition = Vector3F(0, 0.404, 0)
+function body:getTransform() return {getPosition=function() return temporaryPosition end} end
+sample.smokeTime = 2.99
+sample:updateSmokeTest()
+assert(sample.smokePhase == 1 and reports[1]:find("PASS"), "Settled car must advance the smoke test")
+temporaryPosition.x = 100
+assert(sample.smokeStartPosition.x == 0, "Smoke phases must keep an owned position copy")
+sample:finishSmokeTest(true, "fixture")
+sample:updateSmokeTest()
+assert(#reports == 2 and app.quit, "Completed smoke tests must report and quit only once")
 sample:shutdown()
 
 sample, app, race, body, keys, destroyed = fixture()

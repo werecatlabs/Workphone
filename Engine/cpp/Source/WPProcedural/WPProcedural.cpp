@@ -126,3 +126,36 @@ namespace workphone
         }
     }  // end namespace procedural
 }  // namespace workphone
+
+#ifndef _WP_STATIC_LIB_
+extern "C"
+{
+    WP_INTERFACE_EXPORT void WP_INTERFACE_API workphone_get_version( int *major, int *minor, int *patch )
+    {
+        *major = WP_VERSION_MAJOR;
+        *minor = WP_VERSION_MINOR;
+        *patch = WP_VERSION_PATCH;
+    }
+
+    WP_INTERFACE_EXPORT void WP_INTERFACE_API
+    loadPlugin( workphone::core::IApplicationManager *applicationManager )
+    {
+        using namespace workphone;
+        core::IApplicationManager::setInstance( applicationManager );
+        auto plugin = workphone::make_ptr<procedural::WPProcedural>();
+        plugin->load( nullptr );
+        procedural::WPProcedural::setInstance( plugin );
+    }
+
+    WP_INTERFACE_EXPORT void WP_INTERFACE_API
+    unloadPlugin( workphone::core::IApplicationManager *applicationManager )
+    {
+        using namespace workphone;
+        if( auto plugin = procedural::WPProcedural::instance() )
+        {
+            plugin->unload( nullptr );
+            procedural::WPProcedural::setInstance( nullptr );
+        }
+    }
+}
+#endif

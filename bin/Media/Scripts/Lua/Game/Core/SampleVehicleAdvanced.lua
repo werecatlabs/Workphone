@@ -46,6 +46,8 @@ end
 
 function SampleVehicleAdvanced:resetSmokeProgress()
     self.smokePassed, self.smokePhase, self.smokeTime = false, 0, 0
+    self.smokeFinished = false
+    self.smokeReportStarted = false
     self.trackSmokeStartedAt = nil
     self.smokeStartPosition, self.smokeStartHeading = nil, nil
     self.smokeDriveSpeed = 0
@@ -127,8 +129,8 @@ function SampleVehicleAdvanced:generate()
         self:resetRaceProgress()
         self:resetSmokeProgress()
         self.started = true
-        self:drawText(DEBUG_TEXT_ID + 3, 0.02, "W/Up: throttle  S/Down: brake  A/D or Left/Right: steer  R: reset  Esc: quit")
-        self:drawText(DEBUG_TEXT_ID + 4, 0.06, "Mouse wheel: camera zoom")
+        self:drawText(DEBUG_TEXT_ID + 3, 0.02, "W/S: throttle/brake  A/D: steer  R: reset")
+        self:drawText(DEBUG_TEXT_ID + 4, 0.06, "Arrows: drive  Mouse wheel: zoom  Esc: quit")
     end)
     self.application:setPlaying(wasPlaying)
     if not ok then
@@ -136,6 +138,9 @@ function SampleVehicleAdvanced:generate()
         self.startFailed = true
         error("SampleVehicleAdvanced: " .. tostring(failure))
     end
+    -- Generation occurs after the Editor's initial play transition. Queue the
+    -- newly created actors for play as well, including the collision plane.
+    if wasPlaying then self.gameManager:play() end
     return true
 end
 
@@ -244,7 +249,7 @@ function SampleVehicleAdvanced:updateDebugText()
     local rpm = properties and properties:getPropertyAsFloat("RPM", 0) or 0
     local gearLabel = gear == 0 and "N" or gear == 1 and "R" or tostring(gear - 1)
     local lines = {
-        string.format("GRAND PRIX | %.1f km/h | Gear %s | %d rpm | Lap %d",
+        string.format("GP | %.1f km/h | G%s | %d rpm | Lap %d",
             length(self.rigidbody:getLinearVelocity()) * 3.6, gearLabel, math.floor(rpm), self.lap),
         string.format("Lap time %.1f s | Last %.1f s | Best %.1f s", now - self.lapStart,
             self.lastLapTime, self.bestLapTime),
@@ -269,19 +274,31 @@ function SampleVehicleAdvanced:setTrackSmokeTest(enabled)
     if enabled then self.smokeTest = false end
 end
 function SampleVehicleAdvanced:smokeTestPassed() return self.smokePassed end
+function SampleVehicleAdvanced:reportSmoke(message)
+    print(message)
+    local file = io.open("VehicleAdvancedLuaSmoke.log", self.smokeReportStarted and "a" or "w")
+    self.smokeReportStarted = true
+    if file then file:write(message, "\n"); file:close() end
+end
 function SampleVehicleAdvanced:finishSmokeTest(passed, description)
+    self.smokeFinished = true
     self.smokePassed = passed
-    print("VehicleAdvanced " .. description .. (passed and ": PASS" or ": FAIL"))
+    self.raceScene:setControls(0, 0, 0)
+    self:reportSmoke("VehicleAdvanced " .. description .. (passed and ": PASS" or ": FAIL"))
     self.application:setQuit(true)
 end
 
 function SampleVehicleAdvanced:updateSmokeTest()
-    if self.timer:getTimeSinceSceneLoad() <= 3 then return end
+    if self.smokeFinished then return end
+    if self.timer:getTimeSinceLevelLoad() <= 3 then return end
     local body = self.rigidbody:getRigidDynamic()
     if not body then return end
     self.smokeTime = self.smokeTime + clamp(self.timer:getDeltaTime(), 0, 1 / 30)
     local transform = body:getTransform()
-    local position, speed = transform:getPosition(), length(body:getLinearVelocity())
+    local transformPosition = transform:getPosition()
+    -- Keep an owned vector across phases; the transform accessor returns a reference.
+    local position = Vector3F(transformPosition.x, transformPosition.y, transformPosition.z)
+    local speed = length(body:getLinearVelocity())
     local settling = self.smokePhase == 0 or self.smokePhase == 4
     local duration = settling and 3 or self.smokePhase == 2 and 2 or 4
     if not settling or self.smokeTime > duration - 1 then
@@ -310,7 +327,9 @@ function SampleVehicleAdvanced:updateSmokeTest()
         self:reset() -- Applied on the next physics step.
     end
     passed = passed and stable
-    print(string.format("Vehicle smoke phase %d: %s", self.smokePhase, passed and "PASS" or "FAIL"))
+    self:reportSmoke(string.format("Vehicle smoke phase %d: %s | y=%.4f speed=%.4f height range=%.4f vertical speed=%.4f",
+        self.smokePhase, passed and "PASS" or "FAIL", position.y, speed,
+        self.smokeMaxHeight - self.smokeMinHeight, self.smokePeakVerticalSpeed))
     if not passed or self.smokePhase == 4 then
         self:finishSmokeTest(passed, "settle/drive/turn/brake/reset")
         return

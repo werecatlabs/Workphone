@@ -5,7 +5,8 @@ version of this sample. Rebuild Workphone, WPGraphics and WPLua before using it.
 The editor plugin configuration must include WPProcedural and WPVehiclePhysics.
 
 Create an empty actor in the Editor, add a **Script** component, and set its
-`className` to `SampleVehicleAdvanced`. Press **Generate** in the script properties
+`className` to `SampleVehicleAdvanced` and enable **updateInPlayMode**.
+Press **Generate** in the script properties
 or enter play mode. The script creates its own vehicle and follow camera. Quality
 values are 0 (Preview), 1 (Standard), 2 (High) and 3 (Cinematic); the default seed is 7.
 
@@ -15,6 +16,8 @@ gear, RPM, lap times, circuit length and off-track state. A lap requires all thr
 quarter-circuit checkpoints in order while on the road. Smoke Test exercises
 settling, acceleration, steering, braking and reset; Track Smoke Test drives a lap.
 These options exit the hosting application when the test finishes.
+Smoke results are written to `VehicleAdvancedLuaSmoke.log` in the application's
+working directory, including each phase's height and speed measurements.
 
 ## Reusable component
 

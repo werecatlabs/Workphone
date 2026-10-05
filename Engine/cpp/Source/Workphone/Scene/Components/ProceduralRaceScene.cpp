@@ -201,11 +201,13 @@ namespace workphone::scene
         }
         if( Thread::getCurrentTask() != TaskId::Physics || !app->isPlaying() || app->isPaused() )
             return;
-        if( !m_physicsConfigured && app->getTimer()->getTimeSinceSceneLoad() > 3 )
+        auto car = getCarController();
+        // Play rebuilds the wheel setup. Apply tuning after that transition.
+        if( !m_physicsConfigured && car && car->getState() == IComponent::State::Play &&
+            app->getTimer()->getTimeSinceSceneLoad() > 3 )
             configurePhysics();
         if( m_resetRequested.exchange( false ) )
             performReset();
-        auto car = getCarController();
         if( !car )
             return;
         const auto throttle = m_throttle.load(), brake = m_brake.load(), steering = m_steering.load();
