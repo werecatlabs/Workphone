@@ -15,98 +15,28 @@ namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, ActorLoadJob, Job );
 
-    ActorLoadJob::ActorLoadJob() = default;
+    ActorLoadJob::ActorLoadJob() { setPrimary( true ); }
 
     ActorLoadJob::~ActorLoadJob() = default;
 
     void ActorLoadJob::execute()
     {
-        try
-        {
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto gameManager = applicationManager->getGameManagerPtr();
-            WP_ASSERT( gameManager );
-
-            auto gameScene = gameManager->getCurrentScenePtr();
-            WP_ASSERT( gameScene );
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
-
-            auto prefabManager = applicationManager->getPrefabManager();
-            WP_ASSERT( prefabManager );
-
-            auto jobQueue = applicationManager->getJobQueue();
-            WP_ASSERT( jobQueue );
-
-            auto actorJobs = Array<SmartPtr<ActorLoadJob>>();
-            actorJobs.reserve( 12 );
-
-            if( auto actorData = getProperties() )
-            {
-                auto createChildJobs = getCreateChildJobs();
-                if( createChildJobs )
-                {
-                    auto actor = gameManager->createActor();
-                    WP_ASSERT( actor );
-
-                    if( auto parent = getParent() )
-                    {
-                        parent->addChild( actor );
-                    }
-
-                    gameManager->loadObject( actor, actorData, false );
-                    setActor( actor );
-
-                    auto childrenData =
-                        actorData->getChildrenByName( scene::GameActorUtil::childrenStr );
-                    auto childrenDataAlt =
-                        actorData->getChildrenByName( scene::GameActorUtil::childStr );
-                    childrenData.insert( childrenData.end(), childrenDataAlt.begin(),
-                                         childrenDataAlt.end() );
-
-                    for( auto &childData : childrenData )
-                    {
-                        auto actorJob = factoryManager->make_ptr<ActorLoadJob>();
-                        actorJob->setProperties( childData );
-                        actorJob->setParent( actor );
-                        actorJob->setCreateChildJobs( true );
-                        jobQueue->addJob( actorJob );
-                        actorJobs.push_back( actorJob );
-                    }
-                }
-                else
-                {
-                    auto actor = gameManager->createActor();
-                    WP_ASSERT( actor );
-
-                    if( auto parent = getParent() )
-                    {
-                        parent->addChild( actor );
-                    }
-
-                    scene::GameActorUtil::loadFromData( actor, actorData, true );
-                    setActor( actor );
-                }
-            }
-
-            auto parent = getParent();
-            if( !parent )
-            {
-                if( auto actor = getActor() )
-                {
-                    gameScene->addActor( actor );
-                }
-            }
-
-            setChildJobs( actorJobs );
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto manager = app->getGameManager();
+        auto parent = getParent();
+        auto scene = parent ? parent->getScene() : manager->getCurrentScene();
+        if( !scene || !getProperties() ) 
+            return;
+        
+        ScopedLock lock( scene.get() );
+        
+        // One owner loads the entire hierarchy; no nested worker jobs or timed waits.
+        auto actors = scene::GameActorUtil::loadSceneActors({getProperties()});
+        auto actor = actors.front();
+        if( parent ) parent->addChild(actor);
+        else scene->addActor(actor);
+        setActor(actor);
+        setChildJobs({});
     }
 
     SmartPtr<scene::IGameActor> ActorLoadJob::getActor() const

@@ -2,9 +2,50 @@
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/WorkphoneHeaders.hpp>
+#include <unordered_map>
+#include <stdexcept>
 
 namespace workphone::scene
 {
+    namespace {
+        struct LoadBatch {
+            std::unordered_map<String, SmartPtr<ISharedObject>> objects;
+            Array<Pair<SmartPtr<IComponent>, SmartPtr<Properties>>> components;
+        };
+        thread_local LoadBatch *activeBatch = nullptr;
+    }
+
+    Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors(
+        const Array<SmartPtr<Properties>> &data )
+    {
+        if( activeBatch ) throw std::logic_error("Reentrant scene loading");
+        LoadBatch batch;
+        struct Scope {
+            Properties::ObjectResolver previous;
+            ~Scope() { Properties::exchangeObjectResolver(std::move(previous)); activeBatch = nullptr; }
+        } scope{Properties::exchangeObjectResolver([&batch](const String &uuid) -> SmartPtr<ISharedObject> {
+            auto it = batch.objects.find(uuid);
+            return it == batch.objects.end() ? nullptr : it->second;
+        })};
+        activeBatch = &batch;
+        auto manager = core::IApplicationManager::instancePtr()->getGameManager();
+        Array<SmartPtr<IGameActor>> roots;
+        try {
+            for( const auto &properties : data ) {
+                auto actor = manager->createActor();
+                if( !actor ) throw std::runtime_error("Actor capacity exhausted");
+                roots.push_back(actor);
+                loadFromData(actor, properties, true);
+            }
+            for( const auto &entry : batch.components )
+                manager->loadObject(entry.first, entry.second, false);
+            return roots;
+        } catch(...) {
+            for( auto &actor : roots ) manager->destroyActor(actor);
+            throw;
+        }
+    }
+
     const String GameActorUtil::childStr = String( "child" );
     const String GameActorUtil::nameStr = String( "name" );
     const String GameActorUtil::staticStr = String( "static" );
@@ -536,6 +577,8 @@ namespace workphone::scene
                 }
 
                 handle->setUUID( uuid );
+                if( activeBatch && !activeBatch->objects.emplace(uuid, actor).second )
+                    throw std::runtime_error("Duplicate actor UUID: " + uuid);
             }
 
             if( auto transform = pActor->getTransform() )
@@ -608,6 +651,15 @@ namespace workphone::scene
                 if( pComponent )
                 {
                     components.emplace_back( pComponent, componentData );
+                    if( activeBatch ) {
+                        String uuid;
+                        getDirectStringProperty(componentData.get(), uuidStr, uuid);
+                        if( !uuid.empty() ) {
+                            pComponent->getHandle()->setUUID(uuid);
+                            if( !activeBatch->objects.emplace(uuid, pComponent).second )
+                                throw std::runtime_error("Duplicate component UUID: " + uuid);
+                        }
+                    }
                 }
             }
 
@@ -629,6 +681,7 @@ namespace workphone::scene
                 }
                 catch( std::exception &e )
                 {
+                    if( activeBatch ) throw;
                     WP_LOG_EXCEPTION( e );
                 }
             }
@@ -640,11 +693,13 @@ namespace workphone::scene
                     if( auto &component = c.first )
                     {
                         component->setActor( pActor );
-                        gameManager->loadObject( component, c.second, false );
+                        if( activeBatch ) activeBatch->components.emplace_back(component, c.second);
+                        else gameManager->loadObject( component, c.second, false );
                     }
                 }
                 catch( std::exception &e )
                 {
+                    if( activeBatch ) throw;
                     WP_LOG_EXCEPTION( e );
                 }
             }
@@ -653,7 +708,9 @@ namespace workphone::scene
             {
                 auto childrenData = Array<SmartPtr<Properties>>();
 
-                const auto childrenDataAlt = properties->getChildrenByName( childStr );
+                auto childrenDataAlt = properties->getChildrenByName( childStr );
+                const auto containers = properties->getChildrenByName( childrenStr );
+                childrenDataAlt.insert(childrenDataAlt.end(), containers.begin(), containers.end());
                 childrenData.reserve( childrenDataAlt.size() );
 
                 for( const auto &childData : childrenDataAlt )
@@ -664,10 +721,11 @@ namespace workphone::scene
                 for( auto &childData : childrenData )
                 {
                     auto childActor = gameManager->createActor();
+                    if( !childActor && activeBatch ) throw std::runtime_error("Actor capacity exhausted");
                     if( childActor )
                     {
-                        GameActorUtil::loadFromData( childActor, childData, cascade );
                         pActor->addChild( childActor );
+                        GameActorUtil::loadFromData( childActor, childData, cascade );
                     }
                 }
             }
@@ -676,6 +734,7 @@ namespace workphone::scene
         }
         catch( std::exception &e )
         {
+            if( activeBatch ) throw;
             WP_LOG_EXCEPTION( e );
         }
     }

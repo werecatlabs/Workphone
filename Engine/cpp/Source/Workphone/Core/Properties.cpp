@@ -32,6 +32,14 @@ namespace workphone
 
     WP_CLASS_REGISTER_DERIVED( workphone, Properties, ISharedObject );
 
+    namespace { thread_local Properties::ObjectResolver loadObjectResolver; }
+    Properties::ObjectResolver Properties::exchangeObjectResolver( ObjectResolver resolver )
+    {
+        auto previous = std::move( loadObjectResolver );
+        loadObjectResolver = std::move( resolver );
+        return previous;
+    }
+
     String Properties::getResourceUUID( const ISharedObject *object )
     {
         return object->getHandle()->getUUIDAsString();
@@ -96,7 +104,9 @@ namespace workphone
         const auto uuid = StringUtil::parseUUID( sUUID );
         auto applicationManager = core::IApplicationManager::instance();
         auto resourceDatabase = applicationManager->getResourceDatabase();
-        if( auto resource = resourceDatabase->getObject( uuid ) )
+        auto resource = loadObjectResolver ? loadObjectResolver( sUUID ) : nullptr;
+        if( !resource ) resource = resourceDatabase->getObject( uuid );
+        if( resource )
         {
             auto typeManager = TypeManager::instance();
             WP_ASSERT( typeManager );

@@ -379,6 +379,8 @@ namespace workphone::scene
 
     void GameScene::loadScene( const String &path, bool async )
     {
+        ScopedLock lock( this );
+        beginSceneLoad();
         if( isLoaded() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -398,6 +400,7 @@ namespace workphone::scene
 
                 if( async )
                 {
+                    job->setPrimary( true );
                     jobQueue->addJob( job );
                 }
                 else
@@ -413,6 +416,8 @@ namespace workphone::scene
 
     void GameScene::loadSceneDataStr( const String &data, bool async )
     {
+        ScopedLock lock( this );
+        beginSceneLoad();
         if( isLoaded() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -431,6 +436,7 @@ namespace workphone::scene
 
                 if( async )
                 {
+                    job->setPrimary( true );
                     jobQueue->addJob( job );
                 }
                 else
@@ -533,6 +539,8 @@ namespace workphone::scene
     {
         try
         {
+            ScopedLock sceneLock( this );
+            beginSceneLoad();
             ScopedLoadstateWait loadstateWait( this );
 
             setLoadingState( LoadingState::Unloading );
@@ -656,14 +664,6 @@ namespace workphone::scene
 
     void GameScene::update()
     {
-        if( m_partitioner )
-        {
-            // Note: In a real scenario, we would fetch the active camera's position.
-            Vector3F referencePos( 0, 0, 0 );
-            float deltaTime = 0.016f;  // Mock delta time
-            m_partitioner->update( referencePos, deltaTime, m_partitioningConfig.load() );
-        }
-
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -676,6 +676,14 @@ namespace workphone::scene
                 TryLockGuard lock( this );
                 if( lock.locked() )
                 {
+        if( m_partitioner )
+        {
+            // Note: In a real scenario, we would fetch the active camera's position.
+            Vector3F referencePos( 0, 0, 0 );
+            float deltaTime = 0.016f;  // Mock delta time
+            m_partitioner->update( referencePos, deltaTime, m_partitioningConfig.load() );
+        }
+
                     WP_DEBUG_TRACE;
                     WP_ASSERT( isValid() );
 
@@ -743,6 +751,7 @@ namespace workphone::scene
 
     void GameScene::addActor( SmartPtr<IGameActor> actor )
     {
+        ScopedLock sceneLock( this );
         try
         {
             WP_ASSERT( isValid() );
@@ -802,6 +811,7 @@ namespace workphone::scene
 
     void GameScene::removeActor( SmartPtr<IGameActor> actor )
     {
+        ScopedLock sceneLock( this );
         try
         {
             WP_ASSERT( isValid() );
@@ -841,6 +851,7 @@ namespace workphone::scene
 
     void GameScene::removeAllActors()
     {
+        ScopedLock sceneLock( this );
         m_actors.clear();
     }
 
@@ -894,6 +905,8 @@ namespace workphone::scene
 
     void GameScene::clear( bool clearNow /*= true*/ )
     {
+        ScopedLock lock( this );
+        beginSceneLoad();
         m_playQueue.clear();
         m_editQueue.clear();
 
@@ -1537,6 +1550,7 @@ namespace workphone::scene
 
     void GameScene::setSpatialPartitioningMethod( SpatialPartitioningMethod method )
     {
+        ScopedLock sceneLock( this );
         ScopedLock lock( this );
         m_partitioningMethod = method;
 

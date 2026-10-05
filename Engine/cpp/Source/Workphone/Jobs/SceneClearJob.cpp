@@ -61,7 +61,7 @@ namespace workphone
 
                     auto newActors =
                         Array<SmartPtr<scene::IGameActor>>( { actors.begin(), actors.end() } );
-                    scene->setActors( newActors );
+
                 }
                 else
                 {
@@ -75,7 +75,7 @@ namespace workphone
                     }
 
                     m_actors.clear();
-                    scene->setActors( {} );
+
                 }
 
                 const auto label = String( "Untitled" );

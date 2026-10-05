@@ -227,6 +227,7 @@ namespace workphone
          * the accessors to read/write to ensure correct atomic semantics.
          */
         atomic_bool m_createActorJobs = false;
+        u64 m_loadGeneration = 0;
     };
 }  // namespace workphone
 

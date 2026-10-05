@@ -34,6 +34,9 @@ namespace workphone
         class WPCore_API GameActorUtil
         {
         public:
+            // Creates all shells before loading any component properties. Caller owns scene lock.
+            static Array<SmartPtr<IGameActor>> loadSceneActors(
+                const Array<SmartPtr<Properties>> &data );
             /**
              * @name Common property key strings
              * @{

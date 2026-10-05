@@ -812,7 +812,7 @@ namespace workphone::scene
             if( scene )
             {
                 scene->clear();
-                scene->loadSceneDataStr( data );
+                scene->loadSceneDataStr( data, async );
             }
 
             applicationManager->triggerEvent( EventType::Loading, IEvent::sceneChanged,
@@ -1217,6 +1217,7 @@ namespace workphone::scene
 
     u32 GameManager::addComponent( SmartPtr<IComponent> component )
     {
+        ScopedLock lock( this );
         auto handle = component->getHandle();
         if( handle )
         {
@@ -1248,6 +1249,8 @@ namespace workphone::scene
         auto componentIt = std::find( components.begin(), components.end(), nullptr );
         auto pos = std::distance( components.begin(), componentIt );
 
+        if( componentIt == components.end() )
+            throw std::runtime_error("Component capacity exhausted");
         components[pos] = component;
 
         if( handle )
@@ -1260,6 +1263,7 @@ namespace workphone::scene
 
     u32 GameManager::removeComponent( SmartPtr<IComponent> component )
     {
+        ScopedLock lock( this );
         if( !component )
         {
             return 0;
@@ -1297,11 +1301,13 @@ namespace workphone::scene
 
     void GameManager::addSystem( u32 id, SmartPtr<IComponentSystem> system )
     {
+        ScopedLock lock( this );
         m_systems[id] = system;
     }
 
     void GameManager::removeSystem( u32 id )
     {
+        ScopedLock lock( this );
         m_systems.erase( id );
     }
 

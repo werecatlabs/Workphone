@@ -213,9 +213,7 @@ namespace workphone
             }
 
             // Create a fresh set and insert it into the per-camera map. The
-            // ConcurrentHashmapBase::operator[] already handles insertion under
-            // an exclusive lock so concurrent calls for the same camera are
-            // safe.
+            // Keep insertion and retrieval under one lock so all callers use the same set.
             auto factoryManager = core::IApplicationManager::instancePtr();
             if( factoryManager )
             {
@@ -230,8 +228,8 @@ namespace workphone
                 set = workphone::make_ptr<CameraVisibilitySet>( cameraId );
             }
 
-            m_visibilitySets[cameraId] = set;
-            return set;
+            auto view = m_visibilitySets.writeLocked();
+            return view.emplace( cameraId, set ).first->second;
         }
 
         void SceneNodeCullJob::clearVisibilitySets()

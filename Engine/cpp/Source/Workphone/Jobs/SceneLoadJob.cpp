@@ -23,7 +23,7 @@ namespace workphone
 
     WP_CLASS_REGISTER_DERIVED( workphone, SceneLoadJob, Job );
 
-    SceneLoadJob::SceneLoadJob() = default;
+    SceneLoadJob::SceneLoadJob() { setPrimary( true ); }
 
     SceneLoadJob::~SceneLoadJob() = default;
 
@@ -32,6 +32,12 @@ namespace workphone
         try
         {
             auto scene = getScene();
+            if( !scene ) return;
+            
+            ScopedLock sceneLock( scene.get() );
+
+            auto concreteScene = workphone::dynamic_pointer_cast<scene::GameScene>(scene);
+            if( concreteScene && concreteScene->getLoadGeneration() != m_loadGeneration ) return;
             scene->setSceneLoadingState( scene::IGameScene::SceneLoadingState::None );
 
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -82,26 +88,29 @@ namespace workphone
                 format = DataFormat::USD;
             }
 
-            auto stream = fileSystem->open( scenePath, true, isBinaryScene, false, false, false );
-            if( !stream )
+            auto inlineData = getDataStr();
+            auto stream = inlineData.empty()
+                ? fileSystem->open( scenePath, true, isBinaryScene, false, false, false )
+                : SmartPtr<IStream>();
+            if( !stream && inlineData.empty() )
             {
                 stream = fileSystem->open( scenePath, true, isBinaryScene, false, true, true );
             }
 
-            if( !stream )
+            if( !stream && inlineData.empty() )
             {
                 WP_LOG_ERROR( "Failed to open scene file: " + scenePath );
                 return;
             }
 
-            if( stream )
+            if( stream || !inlineData.empty() )
             {
                 auto name = Path::getFileNameWithoutExtension( path );
                 scene->setLabel( name );
 
                 auto dataString = getDataStr();
                 auto sceneData = factoryManager->make_ptr<Properties>();
-                if( isBinaryScene )
+                if( isBinaryScene && inlineData.empty() )
                 {
                     const auto streamSize = stream->size();
                     auto binaryData = Array<u8>( streamSize );
@@ -136,83 +145,37 @@ namespace workphone
 
                 auto lightingDirector = getLightingDirector();
 
-                auto actorJobs = Array<SmartPtr<ActorLoadJob>>();
-                actorJobs.reserve( 32 );
-
-                auto createActorJobs = getCreateActorJobs();
                 auto cameraManager = applicationManager->getCameraManager();
                 auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
                 auto editorCameraData = sceneData->getChild( "editorCamera" );
-                if( createActorJobs )
-                {
-                    auto threadPool = applicationManager->getThreadPoolPtr();
-                    auto hasWorkerThreads = threadPool && threadPool->getNumThreads() > 0;
-
-                    sceneData->getPropertyAsType( ApplicationUtil::lightingStr, lightingDirector );
-
-                    auto actorsData = sceneData->getChildrenByName( ApplicationUtil::actorsStr );
-                    for( auto actorData : actorsData )
-                    {
-                        if( scene::GameActorUtil::isEditorCameraData( editorCamera, actorData ) )
-                        {
-                            if( !editorCameraData )
-                                editorCameraData = actorData;
-                            continue;
-                        }
-                        auto actorJob = factoryManager->make_ptr<ActorLoadJob>();
-                        actorJob->setProperties( actorData );
-                        actorJob->setCreateChildJobs( false );
-                        if( hasWorkerThreads )
-                        {
-                            jobQueue->addJob( actorJob );
-                        }
-                        else
-                        {
-                            actorJob->setState( IJob::State::Executing );
-                            actorJob->execute();
-                            actorJob->setState( IJob::State::Finish );
-                        }
-                        actorJobs.push_back( actorJob );
-                    }
+                auto actorsData = sceneData->getChildrenByName( ApplicationUtil::actorsStr );
+                Array<SmartPtr<Properties>> orderedData;
+                for( const auto &actorData : actorsData ) {
+                    if( scene::GameActorUtil::isEditorCameraData(editorCamera, actorData) ) {
+                        if( !editorCameraData ) editorCameraData = actorData;
+                    } else orderedData.push_back(actorData);
                 }
-                else
-                {
-                    sceneData->getPropertyAsType( ApplicationUtil::lightingStr, lightingDirector );
-
-                    auto actorsData = sceneData->getChildrenByName( ApplicationUtil::actorsStr );
-                    for( auto actorData : actorsData )
-                    {
-                        if( scene::GameActorUtil::isEditorCameraData( editorCamera, actorData ) )
-                        {
-                            if( !editorCameraData )
-                                editorCameraData = actorData;
-                            continue;
-                        }
-                        auto actor = prefabManager->loadActor( actorData, nullptr );
-                        scene->addActor( actor );
-                    }
-                }
+                auto actors = scene::GameActorUtil::loadSceneActors(orderedData);
+                for( const auto &actor : actors ) scene->addActor(actor);
+                sceneData->getPropertyAsType(ApplicationUtil::lightingStr, lightingDirector);
+                scene->setLightingDirector(lightingDirector);
 
                 if( editorCamera && editorCameraData )
                 {
                     scene::GameActorUtil::restoreEditorCameraData( editorCamera, editorCameraData );
                 }
 
-                for( auto job : actorJobs )
-                {
-                    job->wait();
-                }
             }
 
             auto nowTime = timer->now();
             timer->setSceneLoadTime( nowTime );
 
+            scene->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
             Array<Parameter> args;
             applicationManager->triggerEvent( EventType::Loading, scene::IGameManager::sceneLoadedHash,
                                               args, scene, scene, nullptr, false,
                                               Thread::Application_Flag );
 
-            scene->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
         }
         catch( std::exception &e )
         {
@@ -228,6 +191,8 @@ namespace workphone
     void SceneLoadJob::setScene( SmartPtr<scene::IGameScene> scene )
     {
         m_scene = scene;
+        auto concreteScene = workphone::dynamic_pointer_cast<scene::GameScene>(scene);
+        m_loadGeneration = concreteScene ? concreteScene->getLoadGeneration() : 0;
     }
 
     String SceneLoadJob::getFilePath() const

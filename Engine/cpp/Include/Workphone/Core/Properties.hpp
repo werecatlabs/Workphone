@@ -12,6 +12,7 @@
 
 #ifndef _FBProperties_H
 #define _FBProperties_H
+#include <functional>
 
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Core/Property.hpp>
@@ -52,6 +53,9 @@ namespace workphone
     class WPCore_API Properties : public ISharedObject
     {
     public:
+        // A scoped loader may resolve objects in its pinned graph before scene publication.
+        using ObjectResolver = std::function<SmartPtr<ISharedObject>(const String &)>;
+        static ObjectResolver exchangeObjectResolver( ObjectResolver resolver );
         /** @brief Empty string constant used for default values. */
         static const String emptyStr;
         /** @brief Resource string constant used for resource type properties. */
