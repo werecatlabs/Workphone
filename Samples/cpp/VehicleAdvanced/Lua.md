@@ -19,8 +19,8 @@ These options exit the hosting application when the test finishes.
 Smoke results are written to `VehicleAdvancedLuaSmoke.log` in the application's
 working directory, including each phase's height and speed measurements.
 
-**Performance Test** waits five seconds after generation, then measures application
-update intervals for fifteen seconds and writes `VehicleAdvancedLuaPerformance.log`
+**Performance Test** waits ten seconds after generation, then measures application
+update intervals for thirty seconds and writes `VehicleAdvancedLuaPerformance.log`
 in the application's working directory before exiting. It includes mean and p95
 intervals and task profiler averages; application update rate is not rendered FPS.
 Keep the seed, quality, viewport and machine load fixed when comparing runs.
@@ -29,6 +29,19 @@ The generated environment cubemap is static. Its six faces are filtered once on
 first use and the GPU texture is reused for subsequent material draws. Replacing
 its faces explicitly invalidates that cache; it does not capture the scene every
 frame. Unchanged probe settings are also reused between updates.
+
+The renderer also caches each sky's filtered cubemap separately. The Editor's
+default sky and the generated circuit sky can both be visible; a shared cache
+previously switched between their faces and repeated GGX filtering every frame.
+Each sky now retains its filtered texture until its source faces change, and
+unloaded skies release their cached GPU resources.
+
+An Editor comparison on 2026-10-05 used seed 7, High quality, the stationary
+vehicle follow camera and the same window size. Average scene drawing decreased
+from 179.883 ms to 2.193 ms, and the render task decreased from 199.907 ms to
+33.281 ms. These are profiler elapsed times, including presentation waits in the
+render task, rather than an FPS measurement. The profiler now separates scene
+drawing, graphics preparation, Editor UI, UI submission and presentation.
 
 ## Reusable component
 

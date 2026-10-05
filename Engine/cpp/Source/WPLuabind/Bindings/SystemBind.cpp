@@ -11,6 +11,15 @@
 
 namespace workphone
 {
+    luabind::object _IProfiler_getProfiles( IProfiler *profiler, lua_State *L )
+    {
+        auto result = luabind::newtable( L );
+        size_t index = 1;
+        for( const auto &profile : profiler->getProfiles() )
+            result[index++] = profile;
+        return result;
+    }
+
     Parameter Application_triggerEvent( core::IApplicationManager *applicationManager,
                                         lua_Integer eventType, lua_Integer eventValue,
                                         const Array<Parameter> &arguments,
@@ -941,7 +950,7 @@ namespace workphone
                         .def( "addProfile", &IProfiler::addProfile )
                         .def( "removeProfile", &IProfiler::removeProfile )
                         .def( "getProfile", &IProfiler::getProfile )
-                        .def( "getProfiles", &IProfiler::getProfiles )
+                        .def( "getProfiles", &_IProfiler_getProfiles )
                         .def( "logResults", &IProfiler::logResults )];
 
         module( L )[class_<IProject, ISharedObject, SmartPtr<IProject>>( "IProject" )

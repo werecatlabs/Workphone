@@ -32,6 +32,38 @@ namespace workphone
     {
         namespace
         {
+            // Keep phase timings separate from the render task so CPU scene
+            // preparation, editor UI work and presentation waits can be compared.
+            class RenderPhaseProfile
+            {
+            public:
+                RenderPhaseProfile( WeakPtr<IProfile> &cached, const char *label )
+                {
+                    m_profile = cached.lock();
+                    if( !m_profile )
+                        if( auto app = core::IApplicationManager::instancePtr() )
+                            if( auto profiler = app->getProfiler() )
+                            {
+                                m_profile = profiler->addProfile();
+                                m_profile->setLabel( label );
+                                cached = m_profile;
+                            }
+                    if( m_profile )
+                        m_profile->start();
+                }
+                ~RenderPhaseProfile() { end(); }
+                void end()
+                {
+                    if( m_profile )
+                    {
+                        m_profile->end();
+                        m_profile = nullptr;
+                    }
+                }
+            private:
+                SmartPtr<IProfile> m_profile;
+            };
+
             const char *renderApiName( IGraphicsSystem::RenderApi api )
             {
                 using Api = IGraphicsSystem::RenderApi;
@@ -351,6 +383,8 @@ namespace workphone
             try
             {
                 ScopedLock lock( this );
+                static thread_local WeakPtr<IProfile> preparationProfile;
+                RenderPhaseProfile preparation( preparationProfile, "Graphics preparation" );
                 GraphicsSystem::update();
 
                 SmartPtr<ISharedObject> object;
@@ -394,6 +428,7 @@ namespace workphone
                     deltaTime = static_cast<wp_f32>( timer->getDeltaTime() );
                 }
 
+                preparation.end();
                 wp_graphics_system_render_frame( m_sys, deltaTime );
 
                 for( auto &scene : m_scenes )
@@ -438,6 +473,8 @@ namespace workphone
             if( auto renderer = getRenderer() )
             {
                 const auto renderScenePass = [this, &renderer]() {
+                    static thread_local WeakPtr<IProfile> sceneProfile;
+                    RenderPhaseProfile timing( sceneProfile, "Scene draw" );
                     const auto pipelineFrameStarted = beginGraphicsPipelineFrame( renderer );
 
                     render();
@@ -535,14 +572,20 @@ namespace workphone
                         {
                             if( auto application = ui->getApplication() )
                             {
+                                static thread_local WeakPtr<IProfile> uiBuildProfile;
+                                RenderPhaseProfile timing( uiBuildProfile, "Editor UI build" );
                                 application->update();
                             }
                         }
                     }
 
+                    static thread_local WeakPtr<IProfile> uiSubmitProfile;
+                    RenderPhaseProfile timing( uiSubmitProfile, "UI submission" );
                     m_imguiManager->render();
                 }
 
+                static thread_local WeakPtr<IProfile> presentationProfile;
+                RenderPhaseProfile timing( presentationProfile, "Presentation" );
                 renderer->endRender();
             }
         }

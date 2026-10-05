@@ -347,12 +347,12 @@ end
 -- including mesh/texture upload time. Keep the scene and quality fixed for comparisons.
 function SampleVehicleAdvanced:updatePerformanceTest()
     local now = self.timer:now()
-    if now - self.performanceStart < 5 then return end
+    if now - self.performanceStart < 10 then return end
     if self.performanceLast then
         table.insert(self.performanceFrames, (now - self.performanceLast) * 1000)
     end
     self.performanceLast = now
-    if now - self.performanceStart < 20 or #self.performanceFrames == 0 then return end
+    if now - self.performanceStart < 40 or #self.performanceFrames == 0 then return end
     local frames, sum = self.performanceFrames, 0
     for _, interval in ipairs(frames) do sum = sum + interval end
     table.sort(frames)
@@ -363,15 +363,15 @@ function SampleVehicleAdvanced:updatePerformanceTest()
     local file = io.open("VehicleAdvancedLuaPerformance.log", "w")
     if file then
         file:write(result, "\n")
-        local profiler = self.application:getProfiler()
-        if profiler then
-            local profiles = profiler:getProfiles()
-            for i = 0, profiles:size() - 1 do
-                local profile = profiles:at(i)
-                file:write(string.format("%s task elapsed: %.3f ms\n", profile:getLabel(),
+        local ok, failure = pcall(function()
+            local profiler = self.application:getProfiler()
+            if not profiler then return end
+            for _, profile in ipairs(profiler:getProfiles()) do
+                file:write(string.format("%s elapsed: %.3f ms\n", profile:getLabel(),
                     profile:getAverageTimeTaken() * 1000))
             end
-        end
+        end)
+        if not ok then file:write("Profiler unavailable: ", tostring(failure), "\n") end
         file:close()
     end
     self.performanceTest = false

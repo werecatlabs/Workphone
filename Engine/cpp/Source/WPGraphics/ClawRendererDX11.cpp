@@ -45,6 +45,20 @@ namespace workphone::render
 
         std::unordered_map<const wp_graphics_mesh *, MeshVertexCache> g_meshVertexCaches;
 
+        struct SkyEnvironmentEntry
+        {
+            WeakPtr<ISky> sky;
+            ClawCubemap cubemap;
+        };
+        struct SkyEnvironmentCache
+        {
+            std::unordered_map<const ISky *, SkyEnvironmentEntry> skies;
+            const ClawCubemap *active = nullptr;
+        };
+        // A scene may draw several skies. One shared filtered cube would be
+        // invalidated by every switch between them, repeating GGX filtering.
+        std::unordered_map<const ClawRendererDX11 *, SkyEnvironmentCache> g_skyEnvironmentCaches;
+
         MeshVertex readMeshVertex( const wp_graphics_mesh *mesh, u32 index )
         {
             MeshVertex result;
@@ -430,6 +444,7 @@ namespace workphone::render
 
     void ClawRendererDX11::destroyRenderer()
     {
+        g_skyEnvironmentCaches.erase( this );
         m_environment.reset();
         m_previewEnvironment.reset();
         for( auto &[mesh, cache] : g_meshVertexCaches )
@@ -454,6 +469,16 @@ namespace workphone::render
 
         m_primitiveCount = 0;
         m_hasSkyEnvironment = false;
+        if( auto found = g_skyEnvironmentCaches.find( this ); found != g_skyEnvironmentCaches.end() )
+        {
+            auto &cache = found->second;
+            cache.active = nullptr;
+            for( auto it = cache.skies.begin(); it != cache.skies.end(); )
+                if( !it->second.sky.lock() )
+                    it = cache.skies.erase( it );
+                else
+                    ++it;
+        }
         m_inFrame = true;
         wp_renderer_begin_frame( m_renderer );
         if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
@@ -745,8 +770,12 @@ namespace workphone::render
                 static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), {} );
         if( dx11 )
         {
-            const auto &environment = m_hasSkyEnvironment ? m_environment : m_previewEnvironment;
-            wp_renderer_dx11_set_environment( dx11, environment.getView(), environment.getMaxLod() );
+            const ClawCubemap *environment = &m_previewEnvironment;
+            if( m_hasSkyEnvironment )
+                if( auto found = g_skyEnvironmentCaches.find( this ); found != g_skyEnvironmentCaches.end() )
+                    if( found->second.active )
+                        environment = found->second.active;
+            wp_renderer_dx11_set_environment( dx11, environment->getView(), environment->getMaxLod() );
         }
     }
 
@@ -1054,8 +1083,16 @@ namespace workphone::render
                     textures[face]->getTextureFinal( &view );
                     views[face] = static_cast<ID3D11ShaderResourceView *>( view );
                 }
-            m_hasSkyEnvironment = m_environment.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
+            auto &cache = g_skyEnvironmentCaches[this];
+            auto &entry = cache.skies[sky.get()];
+            if( entry.sky.lock() != sky )
+            {
+                entry.cubemap.reset();
+                entry.sky = sky;
+            }
+            m_hasSkyEnvironment = entry.cubemap.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
                 static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), views );
+            cache.active = m_hasSkyEnvironment ? &entry.cubemap : nullptr;
         }
 
         const auto farClip = std::max( camera->getFarClipDistance(), 10.0f );

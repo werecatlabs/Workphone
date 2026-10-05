@@ -344,7 +344,9 @@ namespace workphone
         factoryManager->setPoolSizeByType<JobFunction>( jobPoolSize );
 
         factoryManager->setPoolSizeByType<CameraManagerReset>( 4 );
-        factoryManager->setPoolSizeByType<EventJob>( 32 );
+        // Procedural scenes enqueue a burst of actor/component events during
+        // generation. Reserve a full batch to avoid repeated pool growth then.
+        factoryManager->setPoolSizeByType<EventJob>( 512 );
         factoryManager->setPoolSizeByType<LoadPluginJob>( 4 );
         factoryManager->setPoolSizeByType<RunCommandJob>( 4 );
         factoryManager->setPoolSizeByType<UnloadPluginJob>( 1 );

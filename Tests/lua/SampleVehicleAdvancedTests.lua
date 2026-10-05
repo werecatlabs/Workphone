@@ -100,6 +100,7 @@ local function fixture()
     function app:setPlaying(value) self.playing = value end
     function app:isPaused() return self.paused end
     function app:setQuit(value) self.quit = value end
+    function app:getProfiler() return nil end
     IApplicationManager = {instance=function() return app end}
     local sample = SampleVehicleAdvanced({getActor=function() return owner end})
     return sample, app, race, body, keys, destroyed, drawn, owner
@@ -190,6 +191,31 @@ assert(sample.smokeStartPosition.x == 0, "Smoke phases must keep an owned positi
 sample:finishSmokeTest(true, "fixture")
 sample:updateSmokeTest()
 assert(#reports == 2 and app.quit, "Completed smoke tests must report and quit only once")
+sample:shutdown()
+
+sample, app = fixture()
+sample:generate()
+sample.performanceTest = true
+local benchmarkOutput = ""
+local originalOpen = io.open
+io.open = function(path, mode)
+    assert(path == "VehicleAdvancedLuaPerformance.log" and mode == "w")
+    return {
+        write=function(_, ...) benchmarkOutput = benchmarkOutput .. table.concat({...}) end,
+        close=function() end
+    }
+end
+app.now = 9
+sample:updatePerformanceTest()
+assert(#sample.performanceFrames == 0 and not app.quit, "Benchmark must exclude warmup")
+for i = 0, 3000 do
+    app.now = 10 + i / 100
+    sample:updatePerformanceTest()
+end
+io.open = originalOpen
+assert(app.quit and not sample.performanceTest, "Benchmark must finish and exit")
+assert(benchmarkOutput:find("mean=10.000 ms p95=10.000 ms updates=100.0/s", 1, true),
+    "Benchmark must use elapsed wall time for application update intervals")
 sample:shutdown()
 
 sample, app, race, body, keys, destroyed = fixture()
