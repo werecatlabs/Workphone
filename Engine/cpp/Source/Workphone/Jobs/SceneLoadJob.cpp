@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Jobs/SceneLoadJob.hpp>
+#include <Workphone/System/JobFunction.hpp>
 #include <Workphone/Jobs/ActorLoadJob.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/Core/DataUtil.hpp>
@@ -17,6 +18,9 @@
 #include <Workphone/Scene/Directors/LightingDirector.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
+#include <stdexcept>
+#include <Workphone/Core/XmlUtil.hpp>
+#include <tinyxml.h>
 
 namespace workphone
 {
@@ -27,159 +31,208 @@ namespace workphone
 
     SceneLoadJob::~SceneLoadJob() = default;
 
-    void SceneLoadJob::execute()
+    void SceneLoadJob::queuePrepare()
     {
-        try
-        {
-            auto scene = getScene();
-            if( !scene ) return;
-            
-            ScopedLock sceneLock( scene.get() );
-
-            auto concreteScene = workphone::dynamic_pointer_cast<scene::GameScene>(scene);
-            if( concreteScene && concreteScene->getLoadGeneration() != m_loadGeneration ) return;
-            scene->setSceneLoadingState( scene::IGameScene::SceneLoadingState::None );
-
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
-
-            auto path = getFilePath();
-            auto sceneFilePath = StringUtil::cleanupPath( path );
-
-            auto projectPath = applicationManager->getProjectPath();
-            auto scenePath = projectPath.empty() ? sceneFilePath
-                                                 : Path::lexically_normal( projectPath, sceneFilePath );
-
-            scene->setFilePath( scenePath );
-
-            auto jobQueue = applicationManager->getJobQueuePtr();
-            WP_ASSERT( jobQueue );
-
-            auto timer = applicationManager->getTimerPtr();
-            WP_ASSERT( timer );
-
-            auto taskManager = applicationManager->getTaskManagerPtr();
-            WP_ASSERT( taskManager );
-
-            auto fileSystem = applicationManager->getFileSystemPtr();
-            WP_ASSERT( fileSystem );
-
-            auto prefabManager = applicationManager->getPrefabManager();
-
-            auto sceneFileExt = Path::getFileExtension( scenePath );
-            if( StringUtil::isNullOrEmpty( sceneFileExt ) )
+        auto app = core::IApplicationManager::instancePtr();
+        auto prepareJob = app->getFactoryManagerPtr()->make_ptr<JobFunction>();
+        SmartPtr<SceneLoadJob> commit( this );
+        std::function<void()> preparation = [commit]() mutable {
+            if( commit->isInterrupted() )
             {
-                scenePath += ApplicationUtil::builtinXmlSceneExt;
-                sceneFileExt = ApplicationUtil::builtinXmlSceneExt;
-            }
-
-            const auto isBinaryScene = sceneFileExt == ApplicationUtil::builtinBinarySceneExt;
-
-            auto format = DataFormat::JSON;
-            if( sceneFileExt == ApplicationUtil::builtinXmlSceneExt )
-            {
-                format = DataFormat::XML;
-            }
-            else if( sceneFileExt == ApplicationUtil::builtinUsdSceneExt )
-            {
-                format = DataFormat::USD;
-            }
-
-            auto inlineData = getDataStr();
-            auto stream = inlineData.empty()
-                ? fileSystem->open( scenePath, true, isBinaryScene, false, false, false )
-                : SmartPtr<IStream>();
-            if( !stream && inlineData.empty() )
-            {
-                stream = fileSystem->open( scenePath, true, isBinaryScene, false, true, true );
-            }
-
-            if( !stream && inlineData.empty() )
-            {
-                WP_LOG_ERROR( "Failed to open scene file: " + scenePath );
+                commit->setState( IJob::State::Finish );
                 return;
             }
+            commit->prepare();
+            core::IApplicationManager::instancePtr()->getJobQueue()->addJob( commit );
+        };
+        prepareJob->setFunction( preparation );
+        app->getJobQueue()->addJob( prepareJob );
+    }
 
-            if( stream || !inlineData.empty() )
+    void SceneLoadJob::prepare()
+    {
+        if( m_prepared )
+            return;
+        m_prepared = true;
+        try
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto factory = app->getFactoryManagerPtr();
+            auto path = getFilePath();
+            auto inlineData = getDataStr();
+            auto projectPath = app->getProjectPath();
+            m_preparedPath = projectPath.empty() ? StringUtil::cleanupPath( path )
+                                                 : Path::lexically_normal(
+                                                       projectPath, StringUtil::cleanupPath( path ) );
+            if( path.empty() && !inlineData.empty() )
+                m_preparedPath = String();
+            m_preparedLabel = Path::getFileNameWithoutExtension( path );
+            auto extension = Path::getFileExtension( m_preparedPath );
+            if( inlineData.empty() && extension.empty() )
             {
-                auto name = Path::getFileNameWithoutExtension( path );
-                scene->setLabel( name );
-
-                auto dataString = getDataStr();
-                auto sceneData = factoryManager->make_ptr<Properties>();
-                if( isBinaryScene && inlineData.empty() )
+                m_preparedPath += ApplicationUtil::builtinXmlSceneExt;
+                extension = ApplicationUtil::builtinXmlSceneExt;
+            }
+            const bool binary = extension == ApplicationUtil::builtinBinarySceneExt;
+            auto format = extension == ApplicationUtil::builtinXmlSceneExt   ? DataFormat::XML
+                          : extension == ApplicationUtil::builtinUsdSceneExt ? DataFormat::USD
+                                                                             : DataFormat::JSON;
+            if( !inlineData.empty() )
+            {
+                auto first = inlineData.find_first_not_of( " \t\r\n" );
+                format = first != String::npos && inlineData[first] == '<' ? DataFormat::XML
+                                                                           : DataFormat::JSON;
+            }
+            SmartPtr<IStream> stream;
+            if( inlineData.empty() )
+            {
+                auto files = app->getFileSystemPtr();
+                stream = files->open( m_preparedPath, true, binary, false, false, false );
+                if( !stream )
+                    stream = files->open( m_preparedPath, true, binary, false, true, true );
+                if( !stream )
+                    throw std::runtime_error( "Failed to open scene: " + m_preparedPath );
+            }
+            auto data = factory->make_ptr<Properties>();
+            if( binary && inlineData.empty() )
+            {
+                const auto size = stream->size();
+                Array<u8> bytes( size );
+                size_Num total = 0;
+                while( total < size )
                 {
-                    const auto streamSize = stream->size();
-                    auto binaryData = Array<u8>( streamSize );
-                    size_Num totalRead = 0;
-                    while( totalRead < streamSize )
-                    {
-                        const auto bytesRead =
-                            stream->read( binaryData.data() + totalRead, streamSize - totalRead );
-                        if( bytesRead == 0 )
-                        {
-                            break;
-                        }
-                        totalRead += bytesRead;
-                    }
-
-                    String parseError;
-                    if( totalRead != streamSize ||
-                        !PropertiesBinarySerializer::deserialize( binaryData, *sceneData, &parseError ) )
-                    {
-                        WP_LOG_ERROR( "Failed to parse binary scene '" + scenePath + "': " +
-                                      ( totalRead == streamSize
-                                            ? parseError
-                                            : String( "Unexpected end of file." ) ) );
-                        return;
-                    }
+                    auto count = stream->read( bytes.data() + total, size - total );
+                    if( count == 0 )
+                        break;
+                    total += count;
+                }
+                String error;
+                if( total != size || !PropertiesBinarySerializer::deserialize( bytes, *data, &error ) )
+                    throw std::runtime_error( "Invalid binary scene: " + error );
+            }
+            else
+            {
+                auto text = inlineData.empty() ? stream->getAsString() : inlineData;
+                if( format == DataFormat::JSON )
+                {
+                    if( !DataUtil::isValidData( text, format ) )
+                        throw std::runtime_error( "Invalid JSON scene" );
+                }
+                else if( format == DataFormat::XML )
+                {
+                    TiXmlDocument document;
+                    document.Parse( text.c_str() );
+                    auto root = document.RootElement();
+                    if( document.Error() || !root || String( root->Value() ) != XmlUtil::ROOT_ELEMENT ||
+                        !root->FirstChildElement( XmlUtil::PROPERTIES_ELEMENT.c_str() ) )
+                        throw std::runtime_error( "Invalid XML scene" );
                 }
                 else
-                {
-                    auto dataStr = dataString.empty() ? stream->getAsString() : dataString;
-                    DataUtil::parse( dataStr, sceneData.get(), format );
-                }
-
-                auto lightingDirector = getLightingDirector();
-
-                auto cameraManager = applicationManager->getCameraManager();
-                auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
-                auto editorCameraData = sceneData->getChild( "editorCamera" );
-                auto actorsData = sceneData->getChildrenByName( ApplicationUtil::actorsStr );
-                Array<SmartPtr<Properties>> orderedData;
-                for( const auto &actorData : actorsData ) {
-                    if( scene::GameActorUtil::isEditorCameraData(editorCamera, actorData) ) {
-                        if( !editorCameraData ) editorCameraData = actorData;
-                    } else orderedData.push_back(actorData);
-                }
-                auto actors = scene::GameActorUtil::loadSceneActors(orderedData);
-                for( const auto &actor : actors ) scene->addActor(actor);
-                sceneData->getPropertyAsType(ApplicationUtil::lightingStr, lightingDirector);
-                scene->setLightingDirector(lightingDirector);
-
-                if( editorCamera && editorCameraData )
-                {
-                    scene::GameActorUtil::restoreEditorCameraData( editorCamera, editorCameraData );
-                }
-
+                    throw std::runtime_error( "Unsupported scene format" );
+                DataUtil::parse( text, data.get(), format );
             }
-
-            auto nowTime = timer->now();
-            timer->setSceneLoadTime( nowTime );
-
-            scene->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
-            Array<Parameter> args;
-            applicationManager->triggerEvent( EventType::Loading, scene::IGameManager::sceneLoadedHash,
-                                              args, scene, scene, nullptr, false,
-                                              Thread::Application_Flag );
-
+            m_preparedData = data;
         }
-        catch( std::exception &e )
+        catch( const std::exception &e )
         {
-            WP_LOG_EXCEPTION( e );
+            m_prepareError = e.what();
+        }
+        catch( ... )
+        {
+            m_prepareError = "Unknown error preparing scene";
+        }
+    }
+
+    void SceneLoadJob::execute()
+    {
+        auto target = getScene();
+        if( !target )
+            return;
+        // Preparation is safe off-thread; direct synchronous execution also uses it.
+        prepare();
+        struct TaskScope
+        {
+            TaskId previous = Thread::getCurrentTask();
+            TaskScope()
+            {
+                Thread::setCurrentTask( TaskId::Primary );
+            }
+            ~TaskScope()
+            {
+                Thread::setCurrentTask( previous );
+            }
+        } taskScope;
+        ScopedLock sceneLock( target.get() );
+        auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( target );
+        auto current = [&] { return !concrete || concrete->getLoadGeneration() == m_loadGeneration; };
+        if( !current() || !target->isLoaded() )
+            return;
+        auto app = core::IApplicationManager::instancePtr();
+        auto manager = app->getGameManager();
+        Array<SmartPtr<scene::IGameActor>> actors;
+        auto rollback = [&] {
+            for( const auto &actor : actors ) {
+                if( actor && actor->getLoadingState() != LoadingState::Unloaded )
+                    manager->destroyActor(actor);
+            }
+            if( current() ) target->setSceneLoadingState(scene::IGameScene::SceneLoadingState::Failed);
+        };
+        try
+        {
+            if( !m_prepareError.empty() )
+                throw std::runtime_error( m_prepareError );
+            target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loading );
+            auto cameraManager = app->getCameraManager();
+            auto editorCamera = cameraManager ? cameraManager->getEditorCamera() : nullptr;
+            auto editorData = m_preparedData->getChild( "editorCamera" );
+            Array<SmartPtr<Properties>> ordered;
+            for( const auto &data : m_preparedData->getChildrenByName( ApplicationUtil::actorsStr ) )
+            {
+                if( scene::GameActorUtil::isEditorCameraData( editorCamera, data ) )
+                {
+                    if( !editorData )
+                        editorData = data;
+                }
+                else
+                    ordered.push_back( data );
+            }
+            actors = scene::GameActorUtil::loadSceneActors( ordered, target );
+            for( const auto &actor : actors )
+            {
+                if( !current() )
+                    throw std::runtime_error( "Scene load superseded during commit" );
+                target->addActor( actor );
+            }
+            if( !current() )
+                throw std::runtime_error( "Scene load superseded during commit" );
+            auto lighting = getLightingDirector();
+            m_preparedData->getPropertyAsType( ApplicationUtil::lightingStr, lighting );
+            target->setLightingDirector( lighting );
+            if( editorCamera && editorData &&
+                ( editorCamera->getScene() == target || manager->getCurrentScene() == target ) )
+                scene::GameActorUtil::restoreEditorCameraData( editorCamera, editorData );
+            if( !m_preparedPath.empty() )
+                target->setFilePath( m_preparedPath );
+            if( !m_preparedLabel.empty() )
+                target->setLabel( m_preparedLabel );
+            auto timer = app->getTimerPtr();
+            timer->setSceneLoadTime( timer->now() );
+            target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
+            if( !current() )
+                return;
+            app->triggerEvent( EventType::Loading, scene::IGameManager::sceneLoadedHash,
+                               Array<Parameter>(), target, target, nullptr, false,
+                               Thread::Application_Flag );
+        }
+        catch( const std::exception &e )
+        {
+            rollback();
+            WP_LOG_EXCEPTION(e);
+        }
+        catch(...)
+        {
+            rollback();
+            WP_LOG_ERROR("Unknown error committing scene");
         }
     }
 

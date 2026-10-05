@@ -942,6 +942,8 @@ namespace workphone::scene
                 newId++;
             }
 
+            if( static_cast<size_t>( newId ) >= m_actors.size() )
+                throw std::length_error( "Actor capacity exhausted" );
             auto actor = factoryManager->make_ptr<GameActor>( newId );
 
             if( auto handle = actor->getHandle() )
@@ -1220,53 +1222,64 @@ namespace workphone::scene
 
     u32 GameManager::addComponent( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
+        if( !component )
+            throw std::invalid_argument( "Cannot register a null component" );
         auto handle = component->getHandle();
-        if( handle )
+        if( handle && handle->getUUIDAsString().empty() )
+            handle->setUUID( StringUtil::getUUID() );
+        const auto type = component->getTypeInfo();
+        SmartPtr<IComponentSystem> system;
+        m_systems.tryGet( type, system );
+        u32 systemId = std::numeric_limits<u32>::max();
+        if( system )
         {
-            auto uuid = handle->getUUIDAsString();
-            if( StringUtil::isNullOrEmpty( uuid ) )
-            {
-                uuid = StringUtil::getUUID();
-                handle->setUUID( uuid );
-            }
-        }
-
-        u32 systemId = 0;
-
-        auto typeInfo = component->getTypeInfo();
-
-        auto it = m_systems.find( typeInfo );
-        if( it != m_systems.end() )
-        {
-            auto &system = it->second;
             systemId = system->addComponent( component );
+            if( systemId == std::numeric_limits<u32>::max() )
+                throw std::length_error( "Component system capacity exhausted" );
         }
-
-        auto &components = m_components[typeInfo];
-        if( components.size() < size )
+        try
         {
-            components.resize( size );
+            auto registry = m_components.writeLocked();
+            auto &components = registry.emplace( type ).first->second;
+            if( components.size() < size )
+                components.resize( size );
+            size_t position;
+            if( system )
+            {
+                // System and manager must publish the same ID; removal uses the handle's ID.
+                position = systemId;
+                if( position >= components.size() )
+                    components.resize( position + 1 );
+                if( components[position] && components[position] != component )
+                    throw std::logic_error(
+                        "Component system ID collides with an existing registration" );
+            }
+            else
+            {
+                auto existing = std::find( components.begin(), components.end(), component );
+                if( existing != components.end() )
+                    return static_cast<u32>( existing - components.begin() );
+                auto free = std::find( components.begin(), components.end(), nullptr );
+                if( free == components.end() )
+                    throw std::length_error( "Component capacity exhausted" );
+                position = static_cast<size_t>( free - components.begin() );
+            }
+            components[position] = component;
+            if( handle )
+                handle->setInstanceId( static_cast<u32>( position ) );
+            return static_cast<u32>( position );
         }
-
-        auto componentIt = std::find( components.begin(), components.end(), nullptr );
-        auto pos = std::distance( components.begin(), componentIt );
-
-        if( componentIt == components.end() )
-            throw std::runtime_error( "Component capacity exhausted" );
-        components[pos] = component;
-
-        if( handle )
+        catch( ... )
         {
-            handle->setInstanceId( static_cast<u32>( pos ) );
+            // Release the registry view before entering system code.
+            if( system )
+                system->removeComponent( systemId );
+            throw;
         }
-
-        return static_cast<u32>( pos );
     }
 
     u32 GameManager::removeComponent( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
         if( !component )
         {
             return 0;
@@ -1282,18 +1295,18 @@ namespace workphone::scene
 
         auto typeInfo = component->getTypeInfo();
 
-        auto it = m_systems.find( typeInfo );
-        if( it != m_systems.end() )
+        SmartPtr<IComponentSystem> system;
+        if( m_systems.tryGet( typeInfo, system ) && system )
         {
-            auto &system = it->second;
             system->removeComponent( component );
         }
 
-        auto itComponent = m_components.find( typeInfo );
-        if( itComponent != m_components.end() )
+        auto registry = m_components.writeLocked();
+        auto itComponent = registry.find( typeInfo );
+        if( itComponent != registry.end() )
         {
             auto &components = itComponent->second;
-            if( pos < components.size() )
+            if( pos < components.size() && components[pos] == component )
             {
                 components[pos] = nullptr;
             }
@@ -1304,13 +1317,15 @@ namespace workphone::scene
 
     void GameManager::addSystem( u32 id, SmartPtr<IComponentSystem> system )
     {
-        ScopedLock lock( this );
-        m_systems[id] = system;
+        auto systems = m_systems.writeLocked();
+        if( systems.contains( id ) )
+            systems.at( id ) = system;
+        else
+            systems.emplace( id, system );
     }
 
     void GameManager::removeSystem( u32 id )
     {
-        ScopedLock lock( this );
         m_systems.erase( id );
     }
 
@@ -1880,7 +1895,8 @@ namespace workphone::scene
     Array<SmartPtr<IComponent>> GameManager::getComponents() const
     {
         Array<SmartPtr<IComponent>> components;
-        for( auto it : m_components )
+        auto registry = m_components.readLocked();
+        for( const auto &it : registry )
         {
             auto &c = it.second;
             components.insert( components.begin(), c.begin(), c.end() );
@@ -1891,8 +1907,9 @@ namespace workphone::scene
 
     Array<SmartPtr<IComponent>> GameManager::getComponents( u32 type ) const
     {
-        auto it = m_components.find( type );
-        if( it != m_components.end() )
+        auto registry = m_components.readLocked();
+        auto it = registry.find( type );
+        if( it != registry.end() )
         {
             return it->second;
         }

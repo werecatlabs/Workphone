@@ -572,9 +572,9 @@ namespace workphone
                     m_values.emplace_back( std::move_if_noexcept( stableValue ) );
                     return;
                 }
-                m_values.emplace_back( std::move_if_noexcept( m_values.back() ) );
                 try
                 {
+                    m_values.emplace_back( std::move_if_noexcept( m_values.back() ) );
                     for( auto i = oldSize - 1; i > index; --i )
                         m_values[i] = std::move_if_noexcept( m_values[i - 1] );
                     m_values[index] = std::move( stableValue );

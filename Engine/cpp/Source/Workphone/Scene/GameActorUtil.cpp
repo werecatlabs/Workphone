@@ -1,8 +1,10 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
+#include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/WorkphoneHeaders.hpp>
 #include <unordered_map>
+#include <unordered_set>
 #include <stdexcept>
 
 namespace workphone::scene
@@ -13,37 +15,6 @@ namespace workphone::scene
             Array<Pair<SmartPtr<IComponent>, SmartPtr<Properties>>> components;
         };
         thread_local LoadBatch *activeBatch = nullptr;
-    }
-
-    Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors(
-        const Array<SmartPtr<Properties>> &data )
-    {
-        if( activeBatch ) throw std::logic_error("Reentrant scene loading");
-        LoadBatch batch;
-        struct Scope {
-            Properties::ObjectResolver previous;
-            ~Scope() { Properties::exchangeObjectResolver(std::move(previous)); activeBatch = nullptr; }
-        } scope{Properties::exchangeObjectResolver([&batch](const String &uuid) -> SmartPtr<ISharedObject> {
-            auto it = batch.objects.find(uuid);
-            return it == batch.objects.end() ? nullptr : it->second;
-        })};
-        activeBatch = &batch;
-        auto manager = core::IApplicationManager::instancePtr()->getGameManager();
-        Array<SmartPtr<IGameActor>> roots;
-        try {
-            for( const auto &properties : data ) {
-                auto actor = manager->createActor();
-                if( !actor ) throw std::runtime_error("Actor capacity exhausted");
-                roots.push_back(actor);
-                loadFromData(actor, properties, true);
-            }
-            for( const auto &entry : batch.components )
-                manager->loadObject(entry.first, entry.second, false);
-            return roots;
-        } catch(...) {
-            for( auto &actor : roots ) manager->destroyActor(actor);
-            throw;
-        }
     }
 
     const String GameActorUtil::childStr = String( "child" );
@@ -415,13 +386,132 @@ namespace workphone::scene
                 return;
             }
 
-            const auto childActors = childData->getChildrenByName( GameActorUtil::childStr );
-            for( const auto &childActor : childActors )
+            for( const auto &childActor : childData->getChildren() )
             {
-                addActorData( childrenData, childActor );
+                if( childActor->getName() == GameActorUtil::childStr ||
+                    childActor->getName() == GameActorUtil::childrenStr )
+                    addActorData( childrenData, childActor );
             }
         }
     }  // namespace
+
+    Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors( const Array<SmartPtr<Properties>> &data,
+                                                                SmartPtr<IGameScene> target )
+    {
+        if( activeBatch )
+            throw std::logic_error( "Reentrant scene loading" );
+        auto concrete = workphone::dynamic_pointer_cast<GameScene>( target );
+        const auto generation = concrete ? concrete->getLoadGeneration() : 0;
+        auto checkCurrent = [&] {
+            if( target &&
+                ( !target->isLoaded() || ( concrete && concrete->getLoadGeneration() != generation ) ) )
+                throw std::runtime_error( "Scene load cancelled during graph construction" );
+        };
+        LoadBatch batch;
+        // Include the pinned destination's existing graph, never the global current scene.
+        std::function<void( SmartPtr<IGameActor> )> indexActor = [&]( SmartPtr<IGameActor> actor ) {
+            if( !actor )
+                return;
+            batch.objects.emplace( actor->getHandle()->getUUIDAsString(), actor );
+            for( const auto &component : actor->getComponents() )
+                batch.objects.emplace( component->getHandle()->getUUIDAsString(), component );
+            for( const auto &child : actor->getChildren() )
+                indexActor( child );
+        };
+        if( target )
+            for( const auto &actor : target->getActors() )
+                indexActor( actor );
+        std::unordered_set<String> identities;
+        for( const auto &entry : batch.objects )
+            identities.insert( entry.first );
+        auto validateIdentity = [&]( const SmartPtr<Properties> &properties ) {
+            String uuid;
+            if( getDirectStringProperty( properties.get(), uuidStr, uuid ) && !uuid.empty() )
+            {
+                auto identity = StringUtil::toString( StringUtil::parseUUID( uuid ) );
+                if( !identities.insert( identity ).second )
+                    throw std::runtime_error( "Duplicate scene UUID: " + uuid );
+            }
+        };
+        size_t actorCount = 0;
+        std::function<void( const SmartPtr<Properties> & )> validateActor =
+            [&]( const SmartPtr<Properties> &properties ) {
+                if( !properties )
+                    throw std::invalid_argument( "Missing actor properties" );
+                ++actorCount;
+                validateIdentity( properties );
+                Array<SmartPtr<Properties>> components;
+                Array<SmartPtr<Properties>> children;
+                for( const auto &child : properties->getChildren() )
+                {
+                    const auto name = child->getName();
+                    if( name == componentStr || name == componentsStr )
+                        addComponentData( components, child );
+                    else if( name == childStr || name == childrenStr )
+                        addActorData( children, child );
+                }
+                for( const auto &component : components )
+                    validateIdentity( component );
+                for( const auto &child : children )
+                    validateActor( child );
+            };
+        for( const auto &properties : data )
+            validateActor( properties );
+        auto manager = core::IApplicationManager::instancePtr()->getGameManager();
+        const auto capacity = manager->getActors().size();
+        const auto used = static_cast<size_t>( manager->getNumActors() );
+        if( used > capacity || actorCount > capacity - used )
+            throw std::length_error( "Actor capacity exhausted before scene commit" );
+        if( target )
+        {
+            const auto roots = target->getActors().size();
+            if( roots > WP_MAX_ACTORS || data.size() > WP_MAX_ACTORS - roots )
+                throw std::length_error( "Scene root capacity exhausted before scene commit" );
+        }
+        struct Scope
+        {
+            Properties::ObjectResolver previous;
+            ~Scope()
+            {
+                Properties::exchangeObjectResolver( std::move( previous ) );
+                activeBatch = nullptr;
+            }
+        } scope{ Properties::exchangeObjectResolver(
+            [&batch]( const String &uuid ) -> SmartPtr<ISharedObject> {
+                auto it = batch.objects.find( uuid );
+                return it == batch.objects.end() ? nullptr : it->second;
+            } ) };
+        activeBatch = &batch;
+        Array<SmartPtr<IGameActor>> roots;
+        try
+        {
+            for( const auto &properties : data )
+            {
+                checkCurrent();
+                auto actor = manager->createActor();
+                if( !actor )
+                    throw std::runtime_error( "Actor capacity exhausted" );
+                roots.push_back( actor );
+                actor->setScene( target );
+                loadFromData( actor, properties, true );
+            }
+            for( const auto &entry : batch.components )
+            {
+                checkCurrent();
+                manager->loadObject( entry.first, entry.second, false );
+                if( entry.first->getLoadingState() == LoadingState::Error )
+                    throw std::runtime_error( "Component initialization failed" );
+            }
+            checkCurrent();
+            return roots;
+        }
+        catch( ... )
+        {
+            for( auto &actor : roots )
+                manager->destroyActor( actor );
+            throw;
+        }
+    }
 
     bool GameActorUtil::isEditorCameraData( SmartPtr<IGameActor> editorCamera,
                                           SmartPtr<Properties> actorData )
@@ -577,7 +667,8 @@ namespace workphone::scene
                 }
 
                 handle->setUUID( uuid );
-                if( activeBatch && !activeBatch->objects.emplace(uuid, actor).second )
+                if( activeBatch &&
+                    !activeBatch->objects.emplace( handle->getUUIDAsString(), actor ).second )
                     throw std::runtime_error("Duplicate actor UUID: " + uuid);
             }
 
@@ -648,6 +739,8 @@ namespace workphone::scene
                     pComponent = factoryManager->createObjectFromType<IComponent>( componentType );
                 }
 
+                if( !pComponent && activeBatch )
+                    throw std::runtime_error( "Unknown component type: " + componentType );
                 if( pComponent )
                 {
                     components.emplace_back( pComponent, componentData );
@@ -656,7 +749,9 @@ namespace workphone::scene
                         getDirectStringProperty(componentData.get(), uuidStr, uuid);
                         if( !uuid.empty() ) {
                             pComponent->getHandle()->setUUID(uuid);
-                            if( !activeBatch->objects.emplace(uuid, pComponent).second )
+                            if( !activeBatch->objects
+                                     .emplace( pComponent->getHandle()->getUUIDAsString(), pComponent )
+                                     .second )
                                 throw std::runtime_error("Duplicate component UUID: " + uuid);
                         }
                     }
@@ -677,6 +772,13 @@ namespace workphone::scene
                     if( c.first )
                     {
                         pActor->addComponentInstance( c.first );
+                        if( activeBatch )
+                        {
+                            auto attached = pActor->getComponents();
+                            if( std::find( attached.begin(), attached.end(), c.first ) ==
+                                attached.end() )
+                                throw std::runtime_error( "Failed to attach component" );
+                        }
                     }
                 }
                 catch( std::exception &e )
@@ -708,14 +810,10 @@ namespace workphone::scene
             {
                 auto childrenData = Array<SmartPtr<Properties>>();
 
-                auto childrenDataAlt = properties->getChildrenByName( childStr );
-                const auto containers = properties->getChildrenByName( childrenStr );
-                childrenDataAlt.insert(childrenDataAlt.end(), containers.begin(), containers.end());
-                childrenData.reserve( childrenDataAlt.size() );
-
-                for( const auto &childData : childrenDataAlt )
+                for( const auto &childData : properties->getChildren() )
                 {
-                    addActorData( childrenData, childData );
+                    if( childData->getName() == childStr || childData->getName() == childrenStr )
+                        addActorData( childrenData, childData );
                 }
 
                 for( auto &childData : childrenData )

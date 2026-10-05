@@ -87,6 +87,7 @@ namespace workphone
          * Stored as a SmartPtr to manage lifetime across threads and job execution.
          */
         SmartPtr<scene::IGameScene> m_scene;
+        u64 m_sceneGeneration = 0;
 
         /**
          * @brief The list of actors to be removed from the scene.

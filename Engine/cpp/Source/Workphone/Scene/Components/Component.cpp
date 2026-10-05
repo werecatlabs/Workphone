@@ -111,7 +111,9 @@ namespace workphone::scene
         }
         catch( std::exception &e )
         {
+            setLoadingState( LoadingState::Error );
             WP_LOG_EXCEPTION( e );
+            throw;
         }
     }
 

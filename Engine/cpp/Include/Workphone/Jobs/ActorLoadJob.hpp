@@ -21,8 +21,8 @@ namespace workphone
      * - Use \c setCreateChildJobs(false) to prevent the job from creating/queuing child jobs.
      *
      * Threading:
-     * - The job runs on a worker thread. Ensure that any scene operations performed from \c execute()
-     *   are safe to run from that thread or are forwarded to the main thread as required by the engine.
+     * - This job commits on the primary queue. Configure its pinned target before submission.
+     * - Hierarchies are loaded synchronously; the child-job flag is retained for API compatibility.
      */
     class WPCore_API ActorLoadJob : public Job
     {
@@ -34,6 +34,8 @@ namespace workphone
          * (actor, parent, properties, etc.) before scheduling it with the task system.
          */
         ActorLoadJob();
+        SmartPtr<scene::IGameScene> getScene() const;
+        void setScene( SmartPtr<scene::IGameScene> scene );
 
         /**
          * @brief Destroy the ActorLoadJob.
@@ -140,6 +142,8 @@ namespace workphone
          * If non-null, the job should attach the created/initialized actor to this parent.
          */
         AtomicSmartPtr<scene::IGameActor> m_parent;
+        AtomicSmartPtr<scene::IGameScene> m_scene;
+        u64 m_sceneGeneration = 0;
 
         /**
          * @brief Actor instance that will be loaded/initialized by this job.

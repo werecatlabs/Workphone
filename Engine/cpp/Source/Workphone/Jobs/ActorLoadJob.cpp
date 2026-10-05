@@ -10,12 +10,19 @@
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
+#include <Workphone/Scene/GameScene.hpp>
 
 namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, ActorLoadJob, Job );
 
-    ActorLoadJob::ActorLoadJob() { setPrimary( true ); }
+    ActorLoadJob::ActorLoadJob()
+    {
+        setPrimary( true );
+        if( auto app = core::IApplicationManager::instancePtr() )
+            if( auto manager = app->getGameManager() )
+                setScene( manager->getCurrentScene() );
+    }
 
     ActorLoadJob::~ActorLoadJob() = default;
 
@@ -24,19 +31,49 @@ namespace workphone
         auto app = core::IApplicationManager::instancePtr();
         auto manager = app->getGameManager();
         auto parent = getParent();
-        auto scene = parent ? parent->getScene() : manager->getCurrentScene();
+        auto scene = getScene();
         if( !scene || !getProperties() ) 
             return;
         
         ScopedLock lock( scene.get() );
-        
+        auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
+        if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
+            return;
+
         // One owner loads the entire hierarchy; no nested worker jobs or timed waits.
-        auto actors = scene::GameActorUtil::loadSceneActors({getProperties()});
+        auto actors = scene::GameActorUtil::loadSceneActors( { getProperties() }, scene );
         auto actor = actors.front();
-        if( parent ) parent->addChild(actor);
-        else scene->addActor(actor);
+        if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
+        {
+            manager->destroyActor( actor );
+            return;
+        }
+        try {
+            if( parent ) parent->addChild(actor);
+            else scene->addActor(actor);
+        } catch(...) {
+            manager->destroyActor(actor);
+            throw;
+        }
+        if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
+        {
+            manager->destroyActor( actor );
+            return;
+        }
         setActor(actor);
         setChildJobs({});
+    }
+
+    SmartPtr<scene::IGameScene> ActorLoadJob::getScene() const
+    {
+        return m_scene;
+    }
+
+    void ActorLoadJob::setScene( SmartPtr<scene::IGameScene> scene )
+    {
+        m_scene = scene;
+        auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
+        m_sceneGeneration = concrete ? concrete->getLoadGeneration() : 0;
     }
 
     SmartPtr<scene::IGameActor> ActorLoadJob::getActor() const
@@ -57,6 +94,8 @@ namespace workphone
     void ActorLoadJob::setParent( SmartPtr<scene::IGameActor> parent )
     {
         m_parent = parent;
+        if( parent && parent->getScene() )
+            setScene( parent->getScene() );
     }
 
     Array<SmartPtr<ActorLoadJob>> ActorLoadJob::getChildJobs() const

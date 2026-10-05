@@ -61,7 +61,13 @@ namespace workphone
         StringUtil::parseArray( property.getValue(), uuids );
         for( const auto &uuid : uuids )
         {
-            if( auto resource = resourceDatabase->getObject( StringUtil::parseUUID( uuid ) ) )
+            auto resource =
+                loadObjectResolver
+                    ? loadObjectResolver( StringUtil::toString( StringUtil::parseUUID( uuid ) ) )
+                    : nullptr;
+            if( !resource )
+                resource = resourceDatabase->getObject( StringUtil::parseUUID( uuid ) );
+            if( resource )
             {
                 value.push_back( resource );
             }
@@ -104,7 +110,8 @@ namespace workphone
         const auto uuid = StringUtil::parseUUID( sUUID );
         auto applicationManager = core::IApplicationManager::instance();
         auto resourceDatabase = applicationManager->getResourceDatabase();
-        auto resource = loadObjectResolver ? loadObjectResolver( sUUID ) : nullptr;
+        auto resource =
+            loadObjectResolver ? loadObjectResolver( StringUtil::toString( uuid ) ) : nullptr;
         if( !resource ) resource = resourceDatabase->getObject( uuid );
         if( resource )
         {

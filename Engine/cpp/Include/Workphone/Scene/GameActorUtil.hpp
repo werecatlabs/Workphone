@@ -36,7 +36,7 @@ namespace workphone
         public:
             // Creates all shells before loading any component properties. Caller owns scene lock.
             static Array<SmartPtr<IGameActor>> loadSceneActors(
-                const Array<SmartPtr<Properties>> &data );
+                const Array<SmartPtr<Properties>> &data, SmartPtr<IGameScene> target = nullptr );
             /**
              * @name Common property key strings
              * @{

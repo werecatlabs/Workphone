@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameScene.hpp>
+#include <Workphone/Scene/GameScene.hpp>
 
 namespace workphone
 {
@@ -17,13 +18,11 @@ namespace workphone
     {
         if( auto scene = getScene() )
         {
+            ScopedLock lock( scene.get() );
             auto state = scene->getState();
             switch( state )
             {
             case scene::IGameScene::State::None:
-            {
-            }
-            break;
             case scene::IGameScene::State::Edit:
             case scene::IGameScene::State::Play:
             {
@@ -53,15 +52,6 @@ namespace workphone
                         }
                     }
 
-                    actors.erase( std::remove_if( actors.begin(), actors.end(),
-                                                  []( const SmartPtr<scene::IGameActor> &actor ) {
-                                                      return actor->getPerpetual() == false;
-                                                  } ),
-                                  actors.end() );
-
-                    auto newActors =
-                        Array<SmartPtr<scene::IGameActor>>( { actors.begin(), actors.end() } );
-
                 }
                 else
                 {
@@ -79,7 +69,9 @@ namespace workphone
                 }
 
                 const auto label = String( "Untitled" );
-                scene->setLabel( label );
+                auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
+                if( !concrete || concrete->getLoadGeneration() == m_sceneGeneration )
+                    scene->setLabel( label );
             }
             break;
             case scene::IGameScene::State::Reset:
@@ -102,6 +94,8 @@ namespace workphone
     void SceneClearJob::setScene( SmartPtr<scene::IGameScene> scene )
     {
         m_scene = scene;
+        auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
+        m_sceneGeneration = concrete ? concrete->getLoadGeneration() : 0;
     }
 
     Array<SmartPtr<scene::IGameActor>> SceneClearJob::getActors() const

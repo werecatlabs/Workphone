@@ -48,15 +48,24 @@ namespace workphone::thread_diagnostics
         return *totals;
     }
 
+    inline auto sharedLocksByThread()
+        -> std::unordered_map<std::thread::id, std::unordered_map<const void *, s32>> &
+    {
+        // TLS is destroyed before global guards. Keep their ownership records alive too.
+        static auto *locks = new std::unordered_map<std::thread::id, std::unordered_map<const void *, s32>>;
+        return *locks;
+    }
+
     inline auto currentThreadSharedLocks() -> std::unordered_map<const void *, s32> &
     {
-        static thread_local std::unordered_map<const void *, s32> locks;
-        return locks;
+        return sharedLocksByThread()[std::this_thread::get_id()];
     }
 
     inline auto currentThreadSharedCount( const void *lock ) -> s32
     {
-        auto &locks = currentThreadSharedLocks();
+        auto thread = sharedLocksByThread().find(std::this_thread::get_id());
+        if( thread == sharedLocksByThread().end() ) return 0;
+        auto &locks = thread->second;
         auto it = locks.find( lock );
         return it != locks.end() ? it->second : 0;
     }
@@ -176,6 +185,7 @@ namespace workphone::thread_diagnostics
         {
             sharedTotals().erase( totalIt );
         }
+        if( threadLocks.empty() ) sharedLocksByThread().erase(std::this_thread::get_id());
     }
 }  // namespace workphone::thread_diagnostics
 

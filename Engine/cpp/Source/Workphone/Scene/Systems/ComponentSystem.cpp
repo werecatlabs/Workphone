@@ -96,6 +96,8 @@ namespace workphone::scene
         ScopedLock lock( this );
 
         WP_ASSERT( isValid() );
+        if( id >= getSize() )
+            return;
 
         setLoadingState( id, LoadingState::Unallocated );
         setObject( id, nullptr );
@@ -105,10 +107,18 @@ namespace workphone::scene
     {
         ScopedLock lock( this );
 
+        if( !component )
+            return;
         auto handle = component->getHandle();
+        if( !handle )
+            return;
         auto id = handle->getInstanceId();
+        if( id >= getSize() || getObject( id ) != component.get() )
+            return;
 
         WP_ASSERT( isValid() );
+        if( id >= getSize() )
+            return;
 
         setLoadingState( id, LoadingState::Unallocated );
         setObject( id, nullptr );

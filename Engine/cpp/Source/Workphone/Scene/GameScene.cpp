@@ -400,8 +400,8 @@ namespace workphone::scene
 
                 if( async )
                 {
-                    job->setPrimary( true );
-                    jobQueue->addJob( job );
+                    setSceneLoadingState( SceneLoadingState::Loading );
+                    job->queuePrepare();
                 }
                 else
                 {
@@ -436,8 +436,8 @@ namespace workphone::scene
 
                 if( async )
                 {
-                    job->setPrimary( true );
-                    jobQueue->addJob( job );
+                    setSceneLoadingState( SceneLoadingState::Loading );
+                    job->queuePrepare();
                 }
                 else
                 {
@@ -539,11 +539,14 @@ namespace workphone::scene
     {
         try
         {
-            ScopedLock sceneLock( this );
-            beginSceneLoad();
+            {
+                ScopedLock sceneLock( this );
+                beginSceneLoad();
+                setLoadingState( LoadingState::Unloading );
+            }
+            // In-flight updates may need the scene mutex before releasing their load lock.
             ScopedLoadstateWait loadstateWait( this );
-
-            setLoadingState( LoadingState::Unloading );
+            ScopedLock sceneLock( this );
 
             SmartPtr<IGameActor> actor;
             while( m_playQueue.try_pop( actor ) )
@@ -579,6 +582,7 @@ namespace workphone::scene
 
     void GameScene::preUpdate()
     {
+        ScopedLock sceneLock( this );
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -671,18 +675,16 @@ namespace workphone::scene
         {
             if( isLoaded() )
             {
-                ScopedLoadLock loadLock( this );
-
                 TryLockGuard lock( this );
-                if( lock.locked() )
+                if( lock.locked() && isLoaded() )
                 {
-        if( m_partitioner )
-        {
-            // Note: In a real scenario, we would fetch the active camera's position.
-            Vector3F referencePos( 0, 0, 0 );
-            float deltaTime = 0.016f;  // Mock delta time
-            m_partitioner->update( referencePos, deltaTime, m_partitioningConfig.load() );
-        }
+                    ScopedLoadLock loadLock( this );
+                    if( m_partitioner )
+                    {
+                        Vector3F referencePos( 0, 0, 0 );
+                        float deltaTime = 0.016f;
+                        m_partitioner->update( referencePos, deltaTime, m_partitioningConfig.load() );
+                    }
 
                     WP_DEBUG_TRACE;
                     WP_ASSERT( isValid() );
@@ -713,6 +715,7 @@ namespace workphone::scene
 
     void GameScene::postUpdate()
     {
+        ScopedLock sceneLock( this );
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -758,9 +761,6 @@ namespace workphone::scene
 
             if( actor )
             {
-                if( m_partitioner )
-                    m_partitioner->addActor( actor );
-
                 auto it = std::find( m_actors.begin(), m_actors.end(), actor );
                 if( it == m_actors.end() )
                 {
@@ -777,7 +777,10 @@ namespace workphone::scene
 
                     actor->setScene( this );
 
+                    if( m_actors.size() >= m_actors.capacity() )
+                        throw std::length_error( "Scene actor capacity exhausted" );
                     m_actors.push_back( actor );
+                    if( m_partitioner ) m_partitioner->addActor(actor);
 
                     // Scene ownership includes update ownership.  In particular, loaded
                     // rigidbodies rely on their actor update to copy the simulated transform
@@ -806,6 +809,7 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+            throw;
         }
     }
 
@@ -900,6 +904,7 @@ namespace workphone::scene
 
     void GameScene::setActors( const Array<SmartPtr<IGameActor>> &actors )
     {
+        ScopedLock sceneLock( this );
         m_actors = { actors.begin(), actors.end() };
     }
 
@@ -907,6 +912,7 @@ namespace workphone::scene
     {
         ScopedLock lock( this );
         beginSceneLoad();
+        setSceneLoadingState( SceneLoadingState::Cancelled );
         m_playQueue.clear();
         m_editQueue.clear();
 
@@ -963,6 +969,7 @@ namespace workphone::scene
 
     void GameScene::registerAllUpdates( SmartPtr<IGameActor> actor )
     {
+        ScopedLock sceneLock( this );
         try
         {
             WP_ASSERT( isValid() );
@@ -985,6 +992,7 @@ namespace workphone::scene
 
     void GameScene::registerUpdates( TaskId taskId, SmartPtr<IGameActor> actor )
     {
+        ScopedLock sceneLock( this );
         registerUpdate( taskId, Thread::UpdateState::PreUpdate, actor );
         registerUpdate( taskId, Thread::UpdateState::Update, actor );
         registerUpdate( taskId, Thread::UpdateState::PostUpdate, actor );
@@ -993,6 +1001,7 @@ namespace workphone::scene
     void GameScene::registerUpdate( TaskId taskId, Thread::UpdateState updateType,
                                     SmartPtr<IGameActor> object )
     {
+        ScopedLock sceneLock( this );
         WP_ASSERT( isValid() );
         WP_ASSERT( getLoadingState() == LoadingState::Loaded );
 
@@ -1009,6 +1018,7 @@ namespace workphone::scene
 
     void GameScene::sortObjects()
     {
+        ScopedLock sceneLock( this );
         WP_ASSERT( isValid() );
 
         for( u32 x = 0; x < static_cast<u32>( Thread::UpdateState::Count ); ++x )
@@ -1192,6 +1202,7 @@ namespace workphone::scene
     void GameScene::unregisterUpdate( TaskId taskId, Thread::UpdateState updateType,
                                       SmartPtr<IGameActor> object )
     {
+        ScopedLock sceneLock( this );
         WP_ASSERT( isValid() );
 
         auto &updateObjects = getRegisteredObjects( updateType, taskId );
@@ -1203,6 +1214,7 @@ namespace workphone::scene
 
     void GameScene::unregisterAll( SmartPtr<IGameActor> object )
     {
+        ScopedLock sceneLock( this );
         WP_ASSERT( isValid() );
 
         for( u32 x = 0; x < static_cast<int>( Thread::UpdateState::Count ); ++x )
@@ -1450,9 +1462,9 @@ namespace workphone::scene
     {
         ScopedLock lock( this );
 
-        m_sceneLoadingState = state;
+        const auto generation = getLoadGeneration();
 
-        switch( m_sceneLoadingState )
+        switch( state )
         {
         case SceneLoadingState::Loaded:
         {
@@ -1473,6 +1485,9 @@ namespace workphone::scene
         }
         break;
         }
+        // Publish completion after lighting and level callbacks have returned.
+        if( state != SceneLoadingState::Loaded || generation == getLoadGeneration() )
+            m_sceneLoadingState = state;
     }
 
     GameScene::SceneLoadingState GameScene::getSceneLoadingState() const
@@ -1548,7 +1563,6 @@ namespace workphone::scene
 
     void GameScene::setSpatialPartitioningMethod( SpatialPartitioningMethod method )
     {
-        ScopedLock sceneLock( this );
         ScopedLock lock( this );
         m_partitioningMethod = method;
 
