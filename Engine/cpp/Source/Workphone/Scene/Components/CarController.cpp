@@ -218,7 +218,10 @@ namespace workphone::scene
             }
 
             const auto twoPi = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
-            const auto spinAxis = Vector3<real_Num>::unitX();
+            // Positive wheel speed follows -Z. Up cross forward gives the rolling
+            // axis (-X), so the bottom of the tyre moves opposite vehicle travel.
+            const auto spinAxis =
+                Vector3<real_Num>::unitY().crossProduct( Vector3<real_Num>::forward() );
 
             if( m_wheelSpinAngles.size() < m_wheels.size() )
             {
