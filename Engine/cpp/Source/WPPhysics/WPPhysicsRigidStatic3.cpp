@@ -1,5 +1,6 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
-#include <WPPhysics/WPPhysicsBounds3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
 #include <Workphone/Interface/Physics/ISphereShape3.hpp>
 #include <limits>
 #include <WPPhysics/WPPhysicsRigidStatic3.hpp>
@@ -334,12 +335,12 @@ namespace workphone::physics
     }
     AABB3<real_Num> WPPhysicsRigidStatic3::getLocalAABB() const
     {
-        return detail::mergeShapeBounds( m_shapes );
+        return WPPhysicsUtil::mergeShapeBounds( m_shapes );
     }
 
     AABB3<real_Num> WPPhysicsRigidStatic3::getWorldAABB() const
     {
-        return detail::transformBounds( getLocalAABB(), getTransform() );
+        return WPPhysicsUtil::transformBounds( getLocalAABB(), getTransform() );
     }
 
     wp_rigidbody *WPPhysicsRigidStatic3::getBody() const

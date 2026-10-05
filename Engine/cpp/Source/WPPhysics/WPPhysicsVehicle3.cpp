@@ -1,5 +1,6 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include "WPPhysics/WPPhysicsVehicle3.hpp"
+#include <WPPhysics/WPPhysicsUtil.hpp>
 #include <Workphone/Interface/Physics/IPhysicsVehicleWheel3.hpp>
 #include <algorithm>
 #include <cmath>
@@ -8,28 +9,6 @@ namespace workphone
 {
     namespace physics
     {
-
-        AABB3F toFloatBounds( const AABB3<real_Num> &bounds )
-        {
-            auto result = AABB3F();
-            if( bounds.isNull() )
-            {
-                result.setNull();
-                return result;
-            }
-            if( bounds.isInfinite() )
-            {
-                result.setInfinite();
-                return result;
-            }
-
-            const auto minimum = bounds.getMinimum();
-            const auto maximum = bounds.getMaximum();
-            return AABB3F( Vector3F( static_cast<f32>( minimum.X() ), static_cast<f32>( minimum.Y() ),
-                                     static_cast<f32>( minimum.Z() ) ),
-                           Vector3F( static_cast<f32>( maximum.X() ), static_cast<f32>( maximum.Y() ),
-                                     static_cast<f32>( maximum.Z() ) ) );
-        }
 
         WPPhysicsVehicle3::WPPhysicsVehicle3( SmartPtr<IRigidBody3> chassis ) :
             m_chassis( std::move( chassis ) )
@@ -197,12 +176,12 @@ namespace workphone
 
         workphone::AABB3F WPPhysicsVehicle3::getLocalAABB() const
         {
-            return m_chassis ? toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
+            return m_chassis ? WPPhysicsUtil::toFloatBounds( m_chassis->getLocalAABB() ) : AABB3F();
         }
 
         workphone::AABB3F WPPhysicsVehicle3::getWorldAABB() const
         {
-            return m_chassis ? toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
+            return m_chassis ? WPPhysicsUtil::toFloatBounds( m_chassis->getWorldAABB() ) : AABB3F();
         }
 
         void WPPhysicsVehicle3::setEnabled( bool enabled )

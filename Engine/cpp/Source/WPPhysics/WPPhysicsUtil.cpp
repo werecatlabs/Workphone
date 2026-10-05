@@ -1,19 +1,23 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsUtil.hpp>
+#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsVehicleWheel.hpp>
+#include <Workphone/Physics/PhysicsManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::physics
 {
 
-workphone::Vector3<workphone::real_Num> WPPhysicsUtil::absoluteVector(
-        const Vector3<real_Num> &value )
+    Vector3<real_Num> WPPhysicsUtil::absoluteVector( const Vector3<real_Num> &value )
     {
         return Vector3<real_Num>( Math<real_Num>::Abs( value.X() ), Math<real_Num>::Abs( value.Y() ),
                                   Math<real_Num>::Abs( value.Z() ) );
     }
 
-    workphone::AABB3<workphone::real_Num> WPPhysicsUtil::transformBounds(
-        const AABB3<real_Num> &bounds, const Transform3<real_Num> &transform )
+    AABB3<real_Num> WPPhysicsUtil::transformBounds( const AABB3<real_Num> &bounds,
+                                                    const Transform3<real_Num> &transform )
     {
         if( bounds.isInfinite() )
         {
@@ -38,4 +42,70 @@ workphone::Vector3<workphone::real_Num> WPPhysicsUtil::absoluteVector(
         return result;
     }
 
-}
+    AABB3<real_Num> WPPhysicsUtil::mergeShapeBounds( const Array<SmartPtr<IPhysicsShape3>> &shapes )
+    {
+        auto result = AABB3<real_Num>();
+        result.setNull();
+        auto hasFiniteBounds = false;
+
+        for( const auto &shape : shapes )
+        {
+            if( !shape || !shape->isEnabled() )
+            {
+                continue;
+            }
+
+            const auto backendShape = dynamic_cast<WPPhysicsShape3Backend *>( shape.get() );
+            if( !backendShape )
+            {
+                continue;
+            }
+
+            const auto bounds = backendShape->getAABB();
+            if( bounds.isInfinite() )
+            {
+                result.setInfinite();
+                return result;
+            }
+            if( bounds.isNull() )
+            {
+                continue;
+            }
+
+            if( !hasFiniteBounds )
+            {
+                result = bounds;
+                hasFiniteBounds = true;
+            }
+            else
+            {
+                result.merge( bounds );
+            }
+        }
+
+        return result;
+    }
+
+    AABB3F WPPhysicsUtil::toFloatBounds( const AABB3<real_Num> &bounds )
+    {
+        auto result = AABB3F();
+        if( bounds.isNull() )
+        {
+            result.setNull();
+            return result;
+        }
+        if( bounds.isInfinite() )
+        {
+            result.setInfinite();
+            return result;
+        }
+
+        const auto minimum = bounds.getMinimum();
+        const auto maximum = bounds.getMaximum();
+        return AABB3F( Vector3F( static_cast<f32>( minimum.X() ), static_cast<f32>( minimum.Y() ),
+                                 static_cast<f32>( minimum.Z() ) ),
+                       Vector3F( static_cast<f32>( maximum.X() ), static_cast<f32>( maximum.Y() ),
+                                 static_cast<f32>( maximum.Z() ) ) );
+    }
+
+}  // namespace workphone::physics

@@ -1,9 +1,10 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
-#include <WPPhysics/WPPhysicsBounds3.hpp>
-#include <Workphone/Interface/Physics/ISphereShape3.hpp>
-#include <limits>
 #include <WPPhysics/WPPhysicsRigidDynamic3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
+#include <WPPhysics/WPPhysicsShape3T.hpp>
+#include <Workphone/Interface/Physics/ISphereShape3.hpp>
 #include <Workphone/Workphone.hpp>
+#include <limits>
 #include <algorithm>
 #include <stdexcept>
 
@@ -20,14 +21,15 @@ namespace workphone::physics
         template <class T>
         void updateFlags( T &flags, T mask, bool value )
         {
-            auto       bits = static_cast<u32>( flags );
+            auto bits = static_cast<u32>( flags );
             const auto maskBits = static_cast<u32>( mask );
             bits = value ? bits | maskBits : bits & ~maskBits;
             flags = static_cast<T>( bits );
         }
-    } // namespace
+    }  // namespace
 
-    WPPhysicsRigidDynamic3::WPPhysicsRigidDynamic3( wp_rigidbody_type type ) : m_body( wp_rigidbody_create( type ) )
+    WPPhysicsRigidDynamic3::WPPhysicsRigidDynamic3( wp_rigidbody_type type ) :
+        m_body( wp_rigidbody_create( type ) )
     {
         if( !m_body )
         {
@@ -131,9 +133,9 @@ namespace workphone::physics
     void WPPhysicsRigidDynamic3::setEnabled( bool enabled )
     {
         m_enabled = enabled;
-        wp_rigidbody_set_flag( m_body, WORKPHONE_RIGIDBODY_FLAG_ENABLED,
-                               m_enabled &&
-                                   !hasFlag( m_actorFlags, ActorFlagEnum::eDISABLE_SIMULATION ) );
+        wp_rigidbody_set_flag(
+            m_body, WORKPHONE_RIGIDBODY_FLAG_ENABLED,
+            m_enabled && !hasFlag( m_actorFlags, ActorFlagEnum::eDISABLE_SIMULATION ) );
         if( m_enabled && !hasFlag( m_actorFlags, ActorFlagEnum::eDISABLE_SIMULATION ) )
         {
             wakeUp();
@@ -362,17 +364,19 @@ namespace workphone::physics
     real_Num WPPhysicsRigidDynamic3::getRadius() const
     {
         const auto bounds = getLocalAABB();
-        if( bounds.isNull() ) return static_cast<real_Num>( 0 );
-        if( bounds.isInfinite() ) return std::numeric_limits<real_Num>::infinity();
+        if( bounds.isNull() )
+            return static_cast<real_Num>( 0 );
+        if( bounds.isInfinite() )
+            return std::numeric_limits<real_Num>::infinity();
         return bounds.getExtent().length() * static_cast<real_Num>( 0.5 );
     }
     AABB3<real_Num> WPPhysicsRigidDynamic3::getLocalAABB() const
     {
-        return detail::mergeShapeBounds( m_shapes );
+        return WPPhysicsUtil::mergeShapeBounds( m_shapes );
     }
     AABB3<real_Num> WPPhysicsRigidDynamic3::getWorldAABB() const
     {
-        return detail::transformBounds( getLocalAABB(), getTransform() );
+        return WPPhysicsUtil::transformBounds( getLocalAABB(), getTransform() );
     }
     void WPPhysicsRigidDynamic3::setCMassLocalPose( const Transform3<real_Num> &pose )
     {
@@ -495,7 +499,8 @@ namespace workphone::physics
         m_minPositionIters = std::max( minPositionIters, 1u );
         m_minVelocityIters = std::max( minVelocityIters, 1u );
     }
-    void WPPhysicsRigidDynamic3::getSolverIterationCounts( u32 &minPositionIters, u32 &minVelocityIters ) const
+    void WPPhysicsRigidDynamic3::getSolverIterationCounts( u32 &minPositionIters,
+                                                           u32 &minVelocityIters ) const
     {
         minPositionIters = m_minPositionIters;
         minVelocityIters = m_minVelocityIters;
@@ -512,4 +517,4 @@ namespace workphone::physics
     {
         return m_body;
     }
-} // namespace workphone::physics
+}  // namespace workphone::physics
