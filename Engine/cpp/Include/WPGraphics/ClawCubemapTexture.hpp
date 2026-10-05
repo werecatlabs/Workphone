@@ -8,7 +8,8 @@ namespace workphone::render
 {
     /** A material-bindable, filtered cube texture built from six ordinary textures.
      * Input order and orientation match ISky: front, back, left, right, up, down.
-     * Upload and filtering happen lazily on the rendering thread. */
+     * This is a static snapshot: upload and filtering happen once on the rendering
+     * thread. Call setFaces again to rebuild after changing the source textures. */
     class WPGraphics_API ClawCubemapTexture : public Texture
     {
     public:

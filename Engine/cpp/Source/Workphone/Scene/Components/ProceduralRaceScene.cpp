@@ -221,7 +221,9 @@ namespace workphone::scene
             vehicle->setChannel( 2, steering );
         }
         auto lamp = m_assets.vehicleMaterials[size_t( procedural::VehicleMaterialSlot::RainLight )];
-        lamp->setEmissive( ColourF( brake > 0 ? 1.f : .15f, .003f, .001f, 1 ) );
+        const ColourF emissive( brake > 0 ? 1.f : .15f, .003f, .001f, 1 );
+        if( lamp->getEmissive() != emissive )
+            lamp->setEmissive( emissive );
         if( m_physicsConfigured )
         {
             updateSurfaceGrip();
@@ -255,9 +257,7 @@ namespace workphone::scene
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheel = vehicle->getWheelController( i );
-            auto props = wheel->getProperties();
-            props->setProperty( "Contact Acceleration", acceleration );
-            wheel->setProperties( props );
+            wheel->setContactAcceleration( acceleration );
         }
     }
 
@@ -274,9 +274,7 @@ namespace workphone::scene
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheel = vehicle->getWheelController( i );
-            auto props = wheel->getProperties();
-            props->setProperty( "Grip", grip );
-            wheel->setProperties( props );
+            wheel->setGrip( grip );
         }
     }
 
@@ -284,23 +282,17 @@ namespace workphone::scene
     {
         auto car = getCarController();
         auto vehicle = car ? car->getVehicleController() : nullptr;
-        auto physics = core::IApplicationManager::instance()->getPhysicsManager();
-        auto scene = physics ? physics->getPhysicsScene() : nullptr;
-        if( !vehicle || !scene )
+        if( !vehicle )
             return;
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheel = vehicle->getWheelController( i );
             if( !wheel || !m_assets.wheels[i] )
                 continue;
-            auto extension = wheel->getSuspensionTravel();
-            auto hit = make_ptr<physics::RaycastHit>();
-            hit->setCheckDynamic( false );
-            hit->setCheckStatic( true );
-            auto mount = wheel->getWorldTransform().getPosition();
-            auto up = vehicle->getWorldTransform().up();
-            if( scene->castRay( Ray3<real_Num>( mount, -up ), hit ) )
-                extension = std::clamp( hit->getDistance() - wheel->getRadius(), 0.f, wheel->getSuspensionTravel() );
+            // Reuse the contact solver's raycast result instead of casting four
+            // more rays and allocating four hit objects every physics step.
+            const auto extension = wheel->getSuspensionTravel() *
+                                   ( 1 - std::clamp( wheel->getCompression(), 0.f, 1.f ) );
             auto position = wheel->getLocalTransform().getPosition();
             position.y -= extension;
             m_assets.wheels[i]->setLocalPosition( position );

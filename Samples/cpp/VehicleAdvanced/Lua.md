@@ -19,6 +19,17 @@ These options exit the hosting application when the test finishes.
 Smoke results are written to `VehicleAdvancedLuaSmoke.log` in the application's
 working directory, including each phase's height and speed measurements.
 
+**Performance Test** waits five seconds after generation, then measures application
+update intervals for fifteen seconds and writes `VehicleAdvancedLuaPerformance.log`
+in the application's working directory before exiting. It includes mean and p95
+intervals and task profiler averages; application update rate is not rendered FPS.
+Keep the seed, quality, viewport and machine load fixed when comparing runs.
+
+The generated environment cubemap is static. Its six faces are filtered once on
+first use and the GPU texture is reused for subsequent material draws. Replacing
+its faces explicitly invalidates that cache; it does not capture the scene every
+frame. Unchanged probe settings are also reused between updates.
+
 ## Reusable component
 
 `scene::ProceduralRaceScene` owns the seeded vehicle mesh hierarchy, textures,

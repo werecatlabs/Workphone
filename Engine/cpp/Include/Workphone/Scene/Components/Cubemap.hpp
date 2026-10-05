@@ -285,6 +285,7 @@ namespace workphone
             bool m_useTimeSlicing = true;
             bool m_highQualityFiltering = false;
             bool m_dirty = true;
+            bool m_renderStateDirty = true;
             bool m_captureRequested = false;
             bool m_hasCaptured = false;
 

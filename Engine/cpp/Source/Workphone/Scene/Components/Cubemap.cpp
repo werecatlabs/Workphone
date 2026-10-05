@@ -354,6 +354,7 @@ namespace workphone::scene
     void Cubemap::setRenderCubemap( SmartPtr<render::IGraphicsCubemap> renderCubemap )
     {
         m_renderCubemap = renderCubemap;
+        m_renderStateDirty = true;
         applyRenderState();
     }
 
@@ -709,6 +710,7 @@ namespace workphone::scene
         if( m_autoEnableByDistance != autoEnableByDistance )
         {
             m_autoEnableByDistance = autoEnableByDistance;
+            m_renderStateDirty = true;
             applyRenderState();
         }
     }
@@ -731,8 +733,13 @@ namespace workphone::scene
 
     void Cubemap::setEnableDistanceThreshold( f32 distanceThreshold )
     {
-        m_distanceThreshold =
+        const auto sanitized =
             sanitizeFloat( distanceThreshold, m_distanceThreshold, 0.0f, 100000000.0f );
+        if( m_distanceThreshold != sanitized )
+        {
+            m_distanceThreshold = sanitized;
+            m_renderStateDirty = true;
+        }
         applyRenderState();
     }
 
@@ -870,6 +877,7 @@ namespace workphone::scene
     void Cubemap::markDirty()
     {
         m_dirty = true;
+        m_renderStateDirty = true;
 
         if( m_sourceType == SourceType::Realtime && m_refreshMode != RefreshMode::ViaScripting )
         {
@@ -913,6 +921,7 @@ namespace workphone::scene
 
     void Cubemap::resetRuntimeState()
     {
+        m_renderStateDirty = true;
         m_runtimeActive = false;
         m_captureRequested = false;
         m_dirty = true;
@@ -980,7 +989,20 @@ namespace workphone::scene
     {
         const auto active = shouldBeActive();
         const auto renderActive = active && m_sourceType == SourceType::Realtime;
+        const auto activeChanged = m_runtimeActive != active;
         m_runtimeActive = active;
+        if( m_renderCubemap && m_renderCubemap->getSceneManager() &&
+            !m_renderStateDirty && !activeChanged )
+        {
+            // Moving probes still follow their actor, and late-loaded/replaced
+            // materials still receive the reflection. Capture settings are unchanged.
+            const auto position = getCapturePosition( *this );
+            if( m_renderCubemap->getPosition() != position )
+                m_renderCubemap->setPosition( position );
+            if( active )
+                syncMaterialCubemap();
+            return;
+        }
         if( !active )
         {
             clearMaterialCubemap();
@@ -1051,6 +1073,7 @@ namespace workphone::scene
             {
                 clearMaterialCubemap();
             }
+            m_renderStateDirty = false;
         }
     }
 

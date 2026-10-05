@@ -187,13 +187,34 @@ namespace workphone::render
             return false;
         std::array<std::vector<float>, 48> pixels;
         std::array<D3D11_SUBRESOURCE_DATA, 48> data{};
+        // GGX samples depend on roughness, not face or texel. Compute the
+        // expensive trigonometry once per mip instead of millions of times.
+        std::array<std::array<V, 64>, 8> halfVectors{};
+        for( unsigned mip = 1; mip < 8; ++mip )
+        {
+            const float roughness = mip / 7.0f, a = roughness * roughness;
+            for( unsigned s = 0; s < 64; ++s )
+            {
+                unsigned bits = s;
+                float radical = 0, fraction = 0.5f;
+                while( bits )
+                {
+                    radical += ( bits & 1 ) * fraction;
+                    fraction *= 0.5f;
+                    bits >>= 1;
+                }
+                const float phi = 6.2831853f * s / 64,
+                            c = std::sqrt( ( 1 - radical ) / ( 1 + ( a * a - 1 ) * radical ) );
+                const float sine = std::sqrt( std::max( 1 - c * c, 0.0f ) );
+                halfVectors[mip][s] = { sine * std::cos( phi ), sine * std::sin( phi ), c };
+            }
+        }
         for( unsigned f = 0; f < 6; ++f )
             for( unsigned mip = 0; mip < 8; ++mip )
             {
                 const unsigned size = 128u >> mip, index = f * 8 + mip;
                 auto &output = pixels[index];
                 output.resize( size * size * 4 );
-                const float roughness = mip / 7.0f, a = roughness * roughness;
                 for( unsigned y = 0; y < size; ++y )
                     for( unsigned x = 0; x < size; ++x )
                     {
@@ -212,20 +233,8 @@ namespace workphone::render
                             // six faces for every level allows the blur to cross cube edges.
                             for( unsigned s = 0; s < 64; ++s )
                             {
-                                unsigned bits = s;
-                                float radical = 0, fraction = 0.5f;
-                                while( bits )
-                                {
-                                    radical += ( bits & 1 ) * fraction;
-                                    fraction *= 0.5f;
-                                    bits >>= 1;
-                                }
-                                const float phi = 6.2831853f * s / 64,
-                                            c = std::sqrt( ( 1 - radical ) /
-                                                           ( 1 + ( a * a - 1 ) * radical ) );
-                                const float sine = std::sqrt( std::max( 1 - c * c, 0.0f ) );
-                                const V h = t * ( sine * std::cos( phi ) ) +
-                                            b * ( sine * std::sin( phi ) ) + n * c;
+                                const auto &sampleVector = halfVectors[mip][s];
+                                const V h = t * sampleVector.x + b * sampleVector.y + n * sampleVector.z;
                                 const V l = h * ( 2 * dot( n, h ) ) + n * ( -1 );
                                 const float w = std::max( dot( n, l ), 0.0f );
                                 sum = sum + sample( faces, l ) * w;

@@ -11,5 +11,12 @@ namespace workphone
 
         IWheelComponent::~IWheelComponent() = default;
 
+        void IWheelComponent::setGrip( physics_Num grip )
+        {
+            auto properties = getProperties();
+            properties->setProperty( "Grip", grip );
+            setProperties( properties );
+        }
+
     }  // namespace vehicle
 }  // namespace workphone

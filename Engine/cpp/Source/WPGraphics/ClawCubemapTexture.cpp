@@ -24,6 +24,8 @@ namespace workphone::render
             if( !face || face.get() == this )
                 throw std::invalid_argument( "Cubemap faces must be valid 2D textures." );
         m_faces = faces;
+        m_cube.reset();
+        m_renderer = nullptr;
     }
     Array<SmartPtr<ITexture>> ClawCubemapTexture::getFaces() const
     {
@@ -73,6 +75,18 @@ namespace workphone::render
         auto dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
         if( !dx11 || m_faces.size() != 6 )
             return;
+        if( m_renderer != dx11 )
+        {
+            m_cube.reset();
+            m_renderer = dx11;
+        }
+        // The filtered cubemap owns its GPU resource. Static material binding
+        // needs no source-face lookups or repeat filtering after the first upload.
+        if( m_cube.getView() )
+        {
+            *texture = m_cube.getView();
+            return;
+        }
         std::array<ID3D11ShaderResourceView *, 6> views{};
         for( size_t i = 0; i < 6; ++i )
         {
@@ -81,11 +95,6 @@ namespace workphone::render
             if( !view )
                 return;
             views[i] = static_cast<ID3D11ShaderResourceView *>( view );
-        }
-        if( m_renderer != dx11 )
-        {
-            m_cube.reset();
-            m_renderer = dx11;
         }
         if( m_cube.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
                            static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ),

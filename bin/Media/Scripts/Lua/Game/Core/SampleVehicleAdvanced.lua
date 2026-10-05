@@ -23,6 +23,7 @@ function SampleVehicleAdvanced:__init(component)
     self.seed, self.quality = 7, 2 -- Preview=0, Standard=1, High=2, Cinematic=3.
     self.started, self.startFailed, self.resetWasDown = false, false, false
     self.smokeTest, self.trackSmokeTest = false, false
+    self.performanceTest = false
     self:resetRaceProgress()
     self:resetSmokeProgress()
 end
@@ -60,6 +61,7 @@ function SampleVehicleAdvanced:getProperties(parameters)
     properties:setPropertyAsInt("Appearance Quality", self.quality)
     properties:setPropertyAsBool("Smoke Test", self.smokeTest)
     properties:setPropertyAsBool("Track Smoke Test", self.trackSmokeTest)
+    properties:setPropertyAsBool("Performance Test", self.performanceTest)
     properties:setButtonPressed("Generate", false)
     properties:setButtonPressed("Reset", false)
 end
@@ -70,6 +72,7 @@ function SampleVehicleAdvanced:setProperties(parameters)
         properties:getPropertyAsInt("Appearance Quality", self.quality))
     self:setSmokeTest(properties:getPropertyAsBool("Smoke Test", self.smokeTest))
     self:setTrackSmokeTest(properties:getPropertyAsBool("Track Smoke Test", self.trackSmokeTest))
+    self.performanceTest = properties:getPropertyAsBool("Performance Test", self.performanceTest)
     if properties:isButtonPressed("Generate") then self:generate() end
     if properties:isButtonPressed("Reset") then self:reset() end
 end
@@ -129,6 +132,8 @@ function SampleVehicleAdvanced:generate()
         self:resetRaceProgress()
         self:resetSmokeProgress()
         self.started = true
+        self.performanceStart, self.performanceLast = self.timer:now(), nil
+        self.performanceFrames = {}
         self:drawText(DEBUG_TEXT_ID + 3, 0.02, "W/S: throttle/brake  A/D: steer  R: reset")
         self:drawText(DEBUG_TEXT_ID + 4, 0.06, "Arrows: drive  Mouse wheel: zoom  Esc: quit")
     end)
@@ -338,6 +343,41 @@ function SampleVehicleAdvanced:updateSmokeTest()
     self.smokeMinHeight, self.smokeMaxHeight, self.smokePeakVerticalSpeed = math.huge, -math.huge, 0
 end
 
+-- Measure application-frame intervals after generation has warmed up, without
+-- including mesh/texture upload time. Keep the scene and quality fixed for comparisons.
+function SampleVehicleAdvanced:updatePerformanceTest()
+    local now = self.timer:now()
+    if now - self.performanceStart < 5 then return end
+    if self.performanceLast then
+        table.insert(self.performanceFrames, (now - self.performanceLast) * 1000)
+    end
+    self.performanceLast = now
+    if now - self.performanceStart < 20 or #self.performanceFrames == 0 then return end
+    local frames, sum = self.performanceFrames, 0
+    for _, interval in ipairs(frames) do sum = sum + interval end
+    table.sort(frames)
+    local mean = sum / #frames
+    local result = string.format("seed=%d quality=%d frames=%d mean=%.3f ms p95=%.3f ms updates=%.1f/s",
+        self.seed, self.quality, #frames, mean, frames[math.ceil(#frames * 0.95)], 1000 / mean)
+    print(result)
+    local file = io.open("VehicleAdvancedLuaPerformance.log", "w")
+    if file then
+        file:write(result, "\n")
+        local profiler = self.application:getProfiler()
+        if profiler then
+            local profiles = profiler:getProfiles()
+            for i = 0, profiles:size() - 1 do
+                local profile = profiles:at(i)
+                file:write(string.format("%s task elapsed: %.3f ms\n", profile:getLabel(),
+                    profile:getAverageTimeTaken() * 1000))
+            end
+        end
+        file:close()
+    end
+    self.performanceTest = false
+    self.application:setQuit(true)
+end
+
 function SampleVehicleAdvanced:update()
     if not self.started then
         local application = IApplicationManager.instance()
@@ -349,6 +389,7 @@ function SampleVehicleAdvanced:update()
         return
     end
     self:updateControls()
+    if self.performanceTest then self:updatePerformanceTest() end
     self:updateDebugText()
     if self.smokeTest then self:updateSmokeTest() end
     self.raceScene:setView(self.cameraActor:getPosition(), self.camera:getFOV() * math.pi / 180,

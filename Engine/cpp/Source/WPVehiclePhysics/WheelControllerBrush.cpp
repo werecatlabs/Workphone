@@ -964,6 +964,11 @@ namespace workphone
         m_grip = clampNonNegativeFinite( grip );
     }
 
+    void WheelControllerBrush::setContactAcceleration( physics_Num acceleration )
+    {
+        m_contactAcceleration = clampNonNegativeFinite( acceleration );
+    }
+
     physics_Num WheelControllerBrush::getStaticFrictionCoefficient() const
     {
         return m_staticFrictionCoefficient;

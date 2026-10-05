@@ -300,9 +300,10 @@ namespace workphone::render
         }
 
         void applyPrimaryMaterialUvState( const SmartPtr<IMaterial> &material,
+                                          const SafeReadPtr<MaterialPassStateData> &state,
                                           wp_material_dx11 &nativeMaterial )
         {
-            if( auto state = getPrimaryMaterialPassState( material ) )
+            if( state )
             {
                 nativeMaterial.surface.z = state->uvTilingX;
                 nativeMaterial.surface.w = state->uvTilingY;
@@ -892,7 +893,7 @@ namespace workphone::render
                 textureViews[3] ? 1.0f : 0.0f };
             nativeMaterial.extra_map_flags = { textureViews[4] ? 1.0f : 0.0f,
                 textureViews[5] ? 1.0f : 0.0f, 0.0f, 0.0f };
-            applyPrimaryMaterialUvState( material, nativeMaterial );
+            applyPrimaryMaterialUvState( material, state, nativeMaterial );
             if( dx11 )
                 wp_renderer_dx11_set_material( dx11, &nativeMaterial );
             auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() ) : WORKPHONE_BLEND_MODE_NONE;

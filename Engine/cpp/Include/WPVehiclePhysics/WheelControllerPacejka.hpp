@@ -405,7 +405,7 @@ namespace workphone
         /** @brief Gets tire grip multiplier (scales all tire forces) */
         physics_Num getGrip() const;
         /** @brief Sets tire grip multiplier (scales all tire forces) */
-        void setGrip( physics_Num grip );
+        void setGrip( physics_Num grip ) override;
 
         /** @brief Gets maximum brake torque in Newton-meters */
         physics_Num getBrakeFrictionTorque() const;

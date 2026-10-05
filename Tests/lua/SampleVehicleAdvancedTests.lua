@@ -87,6 +87,7 @@ local function fixture()
     function manager:getCurrentScene() return {registerAllUpdates=function() end} end
     function app:getGameManager() return manager end
     function app:getTimer() return {
+        now=function() return app.now end,
         getTime=function() return app.now end,
         getTimeSinceLevelLoad=function() return app.sceneTime end,
         getDeltaTime=function() return 1/60 end

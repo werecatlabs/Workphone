@@ -63,7 +63,8 @@ namespace workphone
         void        setInertia( physics_Num inertia );
 
         physics_Num getGrip() const;
-        void        setGrip( physics_Num grip );
+        void        setGrip( physics_Num grip ) override;
+        void        setContactAcceleration( physics_Num acceleration ) override;
 
         physics_Num getStaticFrictionCoefficient() const;
         void        setStaticFrictionCoefficient( physics_Num coefficient );
@@ -89,7 +90,7 @@ namespace workphone
         physics_Num getRollingResistanceTorque() const;
         void        setRollingResistanceTorque( physics_Num torque );
 
-        physics_Num getCompression() const;
+        physics_Num getCompression() const override;
         physics_Num getNormalForce() const;
         physics_Num getSlipRatio() const;
         physics_Num getSlipAngle() const;
