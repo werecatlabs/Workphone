@@ -1,7 +1,7 @@
 #ifndef WPPHYSICSSCENE3_HPP
 #define WPPHYSICSSCENE3_HPP
 
-#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
 #include <Workphone/Physics/PhysicsScene3.hpp>
 #include <unordered_map>
 

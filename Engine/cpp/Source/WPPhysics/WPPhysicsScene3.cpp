@@ -173,12 +173,12 @@ namespace workphone::physics
 
     void WPPhysicsScene3::setSize( const Vector3<real_Num> &size )
     {
-        wp_physics_scene_set_size( m_scene, detail::toWp( size ) );
+        wp_physics_scene_set_size( m_scene, WPPhysicsUtil::toWp( size ) );
     }
 
     Vector3<real_Num> WPPhysicsScene3::getSize() const
     {
-        return detail::fromWp( wp_physics_scene_get_size( m_scene ) );
+        return WPPhysicsUtil::fromWp( wp_physics_scene_get_size( m_scene ) );
     }
 
     bool WPPhysicsScene3::rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
@@ -186,10 +186,10 @@ namespace workphone::physics
                                   u32 collisionType, u32 collisionMask )
     {
         wp_vec3f p, n;
-        auto hit = wp_physics_scene_ray_test( m_scene, detail::toWp( start ), detail::toWp( direction ),
+        auto hit = wp_physics_scene_ray_test( m_scene, WPPhysicsUtil::toWp( start ), WPPhysicsUtil::toWp( direction ),
                                               &p, &n, collisionType, collisionMask ) != 0;
-        hitPos = hit ? detail::fromWp( p ) : Vector3<real_Num>::zero();
-        hitNormal = hit ? detail::fromWp( n ) : Vector3<real_Num>::zero();
+        hitPos = hit ? WPPhysicsUtil::fromWp( p ) : Vector3<real_Num>::zero();
+        hitNormal = hit ? WPPhysicsUtil::fromWp( n ) : Vector3<real_Num>::zero();
         return hit;
     }
 
@@ -202,10 +202,10 @@ namespace workphone::physics
         wp_vec3f      p, n;
         wp_rigidbody *hitBody = nullptr;
         auto          hit =
-            wp_physics_scene_intersects_ex( m_scene, detail::toWp( start ), detail::toWp( end ), &p, &n,
+            wp_physics_scene_intersects_ex( m_scene, WPPhysicsUtil::toWp( start ), WPPhysicsUtil::toWp( end ), &p, &n,
                                             &hitBody, nullptr, collisionType, collisionMask ) != 0;
-        hitPos = hit ? detail::fromWp( p ) : Vector3<real_Num>::zero();
-        hitNormal = hit ? detail::fromWp( n ) : Vector3<real_Num>::zero();
+        hitPos = hit ? WPPhysicsUtil::fromWp( p ) : Vector3<real_Num>::zero();
+        hitNormal = hit ? WPPhysicsUtil::fromWp( n ) : Vector3<real_Num>::zero();
 
         if( hitBody )
         {
@@ -278,15 +278,15 @@ namespace workphone::physics
         wp_collision_shape *nativeShape = nullptr;
         const auto          collisionMask = hit->getCollisionMask();
         const auto          didHit = wp_physics_scene_intersects_actor_types_ex(
-                                         m_scene, detail::toWp( ray.getOrigin() ), detail::toWp( end ), &point,
+                                         m_scene, WPPhysicsUtil::toWp( ray.getOrigin() ), WPPhysicsUtil::toWp( end ), &point,
                                          &normal, &nativeBody, &nativeShape, 0, collisionMask, actorTypes ) != 0;
         if( !didHit )
         {
             return false;
         }
 
-        hit->setPoint( detail::fromWp( point ) );
-        hit->setNormal( detail::fromWp( normal ) );
+        hit->setPoint( WPPhysicsUtil::fromWp( point ) );
+        hit->setNormal( WPPhysicsUtil::fromWp( normal ) );
         hit->setDistance( ( hit->getPoint() - ray.getOrigin() ).length() );
 
         for( const auto &actor : m_actors )
@@ -346,12 +346,12 @@ namespace workphone::physics
 
     void WPPhysicsScene3::setGravity( const Vector3<real_Num> &vec )
     {
-        wp_physics_scene_set_gravity( m_scene, detail::toWp( vec ) );
+        wp_physics_scene_set_gravity( m_scene, WPPhysicsUtil::toWp( vec ) );
     }
 
     Vector3<real_Num> WPPhysicsScene3::getGravity() const
     {
-        return detail::fromWp( wp_physics_scene_get_gravity( m_scene ) );
+        return WPPhysicsUtil::fromWp( wp_physics_scene_get_gravity( m_scene ) );
     }
 
     void WPPhysicsScene3::simulate( real_Num elapsedTime, void *, u32, bool )

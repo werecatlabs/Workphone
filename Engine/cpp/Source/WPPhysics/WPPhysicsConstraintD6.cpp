@@ -1,6 +1,6 @@
 #include "WPPhysics/WPPhysicsPCH.hpp"
 #include <WPPhysics/WPPhysicsConstraintD6.hpp>
-#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
 #include <WPPhysics/WPPhysicsConstraintDrive.hpp>
 #include <WPPhysics/WPPhysicsConstraintLinearLimit.hpp>
 #include <Workphone/Workphone.hpp>
@@ -131,8 +131,8 @@ namespace workphone
             {
                 return;
             }
-            wp_constraint_set_drive_position( m_constraint, detail::toWp( pose.getPosition() ) );
-            wp_constraint_set_drive_orientation( m_constraint, detail::toWp( pose.getOrientation() ) );
+            wp_constraint_set_drive_position( m_constraint, WPPhysicsUtil::toWp( pose.getPosition() ) );
+            wp_constraint_set_drive_orientation( m_constraint, WPPhysicsUtil::toWp( pose.getOrientation() ) );
         }
 
         Transform3<real_Num> WPPhysicsConstraintD6::getDrivePosition() const
@@ -141,8 +141,8 @@ namespace workphone
             {
                 return Transform3<real_Num>();
             }
-            return Transform3<real_Num>( detail::fromWp( wp_constraint_get_drive_position( m_constraint ) ),
-                                         detail::fromWp( wp_constraint_get_drive_orientation( m_constraint ) ) );
+            return Transform3<real_Num>( WPPhysicsUtil::fromWp( wp_constraint_get_drive_position( m_constraint ) ),
+                                         WPPhysicsUtil::fromWp( wp_constraint_get_drive_orientation( m_constraint ) ) );
         }
 
         void WPPhysicsConstraintD6::setDrive( D6DriveEnum index, SmartPtr<IConstraintDrive> drive )
@@ -258,8 +258,8 @@ namespace workphone
                 return;
             }
             const auto idx = toActorIndex( actor );
-            wp_constraint_set_local_position( m_constraint, idx, detail::toWp( localPose.getPosition() ) );
-            wp_constraint_set_local_orientation( m_constraint, idx, detail::toWp( localPose.getOrientation() ) );
+            wp_constraint_set_local_position( m_constraint, idx, WPPhysicsUtil::toWp( localPose.getPosition() ) );
+            wp_constraint_set_local_orientation( m_constraint, idx, WPPhysicsUtil::toWp( localPose.getOrientation() ) );
         }
 
         Transform3<real_Num> WPPhysicsConstraintD6::getLocalPose( JointActorIndexEnum actor ) const
@@ -269,8 +269,8 @@ namespace workphone
                 return Transform3<real_Num>();
             }
             const auto idx = toActorIndex( actor );
-            return Transform3<real_Num>( detail::fromWp( wp_constraint_get_local_position( m_constraint, idx ) ),
-                                         detail::fromWp( wp_constraint_get_local_orientation( m_constraint, idx ) ) );
+            return Transform3<real_Num>( WPPhysicsUtil::fromWp( wp_constraint_get_local_position( m_constraint, idx ) ),
+                                         WPPhysicsUtil::fromWp( wp_constraint_get_local_orientation( m_constraint, idx ) ) );
         }
 
         void WPPhysicsConstraintD6::setConstraintFlag( ConstraintFlagEnum flag, bool value )

@@ -15,13 +15,13 @@ namespace workphone::physics
 
     void WPPhysicsPlaneShape3::setDistance( real_Num distance )
     {
-        wp_collision_shape_set_plane( getShape(), detail::toWp( getNormal() ),
+        wp_collision_shape_set_plane( getShape(), WPPhysicsUtil::toWp( getNormal() ),
                                       static_cast<wp_f32>( distance ) );
     }
 
     Vector3<real_Num> WPPhysicsPlaneShape3::getNormal() const
     {
-        return detail::fromWp( wp_collision_shape_get_plane_normal( getShape() ) );
+        return WPPhysicsUtil::fromWp( wp_collision_shape_get_plane_normal( getShape() ) );
     }
 
     void WPPhysicsPlaneShape3::setNormal( const Vector3<real_Num> &normal )
@@ -33,7 +33,7 @@ namespace workphone::physics
             return;
         }
         normalized.normalise();
-        wp_collision_shape_set_plane( getShape(), detail::toWp( normalized ),
+        wp_collision_shape_set_plane( getShape(), WPPhysicsUtil::toWp( normalized ),
                                       static_cast<wp_f32>( getDistance() ) );
     }
 

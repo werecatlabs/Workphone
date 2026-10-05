@@ -98,9 +98,9 @@ namespace workphone::physics
                 }
 
                 wp_constraint_set_local_position( m_constraint, index,
-                                                  detail::toWp( localPose.getPosition() ) );
+                                                  WPPhysicsUtil::toWp( localPose.getPosition() ) );
                 wp_constraint_set_local_orientation( m_constraint, index,
-                                                     detail::toWp( localPose.getOrientation() ) );
+                                                     WPPhysicsUtil::toWp( localPose.getOrientation() ) );
             }
 
             Transform3<real_Num> getLocalPose( JointActorIndexEnum actor ) const override
@@ -112,8 +112,8 @@ namespace workphone::physics
                 }
 
                 return Transform3<real_Num>(
-                    detail::fromWp( wp_constraint_get_local_position( m_constraint, index ) ),
-                    detail::fromWp( wp_constraint_get_local_orientation( m_constraint, index ) ) );
+                    WPPhysicsUtil::fromWp( wp_constraint_get_local_position( m_constraint, index ) ),
+                    WPPhysicsUtil::fromWp( wp_constraint_get_local_orientation( m_constraint, index ) ) );
             }
 
             void setConstraintFlag( ConstraintFlagEnum flag, bool value ) override
@@ -211,16 +211,16 @@ namespace workphone::physics
 
             void setDrivePosition( const Transform3<real_Num> &pose ) override
             {
-                wp_constraint_set_drive_position( getConstraint(), detail::toWp( pose.getPosition() ) );
+                wp_constraint_set_drive_position( getConstraint(), WPPhysicsUtil::toWp( pose.getPosition() ) );
                 wp_constraint_set_drive_orientation( getConstraint(),
-                                                     detail::toWp( pose.getOrientation() ) );
+                                                     WPPhysicsUtil::toWp( pose.getOrientation() ) );
             }
 
             Transform3<real_Num> getDrivePosition() const override
             {
                 return Transform3<real_Num>(
-                    detail::fromWp( wp_constraint_get_drive_position( getConstraint() ) ),
-                    detail::fromWp( wp_constraint_get_drive_orientation( getConstraint() ) ) );
+                    WPPhysicsUtil::fromWp( wp_constraint_get_drive_position( getConstraint() ) ),
+                    WPPhysicsUtil::fromWp( wp_constraint_get_drive_orientation( getConstraint() ) ) );
             }
 
             void setDrive( D6DriveEnum index, SmartPtr<IConstraintDrive> drive ) override

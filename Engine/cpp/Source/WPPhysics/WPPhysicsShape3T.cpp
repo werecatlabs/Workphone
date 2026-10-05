@@ -59,8 +59,8 @@ namespace workphone::physics
     template <class T>
     void WPPhysicsShape3T<T>::setLocalPose( const Transform3<real_Num> &pose )
     {
-        wp_collision_shape_set_local_position( m_shape, detail::toWp( pose.getPosition() ) );
-        wp_collision_shape_set_local_orientation( m_shape, detail::toWp( pose.getOrientation() ) );
+        wp_collision_shape_set_local_position( m_shape, WPPhysicsUtil::toWp( pose.getPosition() ) );
+        wp_collision_shape_set_local_orientation( m_shape, WPPhysicsUtil::toWp( pose.getOrientation() ) );
         if( wp_collision_shape_get_type( m_shape ) == WORKPHONE_COLLISION_SHAPE_BOX )
         {
             // The native API takes dimensions, so bake actor scale into the geometry.
@@ -74,8 +74,8 @@ namespace workphone::physics
     Transform3<real_Num> WPPhysicsShape3T<T>::getLocalPose() const
     {
         auto pose = Transform3<real_Num>(
-            detail::fromWp( wp_collision_shape_get_local_position( m_shape ) ),
-            detail::fromWp( wp_collision_shape_get_local_orientation( m_shape ) ) );
+            WPPhysicsUtil::fromWp( wp_collision_shape_get_local_position( m_shape ) ),
+            WPPhysicsUtil::fromWp( wp_collision_shape_get_local_orientation( m_shape ) ) );
         if( wp_collision_shape_get_type( m_shape ) == WORKPHONE_COLLISION_SHAPE_BOX )
             pose.setScale( m_boxScale );
         return pose;
@@ -133,7 +133,7 @@ namespace workphone::physics
     {
         if( wp_collision_shape_get_type( m_shape ) == WORKPHONE_COLLISION_SHAPE_BOX )
             return m_boxExtents;
-        return detail::fromWp( wp_collision_shape_get_box_half_extents( m_shape ) ) *
+        return WPPhysicsUtil::fromWp( wp_collision_shape_get_box_half_extents( m_shape ) ) *
                static_cast<real_Num>( 2.0 );
     }
 
@@ -147,7 +147,7 @@ namespace workphone::physics
             safeExtents = WPPhysicsUtil::absoluteVector( m_boxExtents * m_boxScale );
         }
         wp_collision_shape_set_box_half_extents(
-            m_shape, detail::toWp( safeExtents * static_cast<real_Num>( 0.5 ) ) );
+            m_shape, WPPhysicsUtil::toWp( safeExtents * static_cast<real_Num>( 0.5 ) ) );
     }
 
     template <class T>

@@ -64,8 +64,8 @@ namespace workphone::physics
     }
     void WPPhysicsRigidDynamic3::setTransform( const Transform3<real_Num> &transform )
     {
-        wp_rigidbody_set_position( m_body, detail::toWp( transform.getPosition() ) );
-        wp_rigidbody_set_orientation( m_body, detail::toWp( transform.getOrientation() ) );
+        wp_rigidbody_set_position( m_body, WPPhysicsUtil::toWp( transform.getPosition() ) );
+        wp_rigidbody_set_orientation( m_body, WPPhysicsUtil::toWp( transform.getOrientation() ) );
         if( wp_rigidbody_get_type( m_body ) != WORKPHONE_RIGIDBODY_STATIC )
         {
             wp_rigidbody_wake_up( m_body );
@@ -73,8 +73,8 @@ namespace workphone::physics
     }
     Transform3<real_Num> WPPhysicsRigidDynamic3::getTransform() const
     {
-        return Transform3<real_Num>( detail::fromWp( wp_rigidbody_get_position( m_body ) ),
-                                     detail::fromWp( wp_rigidbody_get_orientation( m_body ) ) );
+        return Transform3<real_Num>( WPPhysicsUtil::fromWp( wp_rigidbody_get_position( m_body ) ),
+                                     WPPhysicsUtil::fromWp( wp_rigidbody_get_orientation( m_body ) ) );
     }
     void WPPhysicsRigidDynamic3::setActorFlag( ActorFlagEnum flag, bool value )
     {
@@ -296,23 +296,23 @@ namespace workphone::physics
     }
     void WPPhysicsRigidDynamic3::setLinearVelocity( const Vector3<real_Num> &linVel, bool )
     {
-        wp_rigidbody_set_linear_velocity( m_body, detail::toWp( linVel ) );
+        wp_rigidbody_set_linear_velocity( m_body, WPPhysicsUtil::toWp( linVel ) );
     }
     Vector3<real_Num> WPPhysicsRigidDynamic3::getLinearVelocity() const
     {
-        return detail::fromWp( wp_rigidbody_get_linear_velocity( m_body ) );
+        return WPPhysicsUtil::fromWp( wp_rigidbody_get_linear_velocity( m_body ) );
     }
     void WPPhysicsRigidDynamic3::setAngularVelocity( const Vector3<real_Num> &angVel, bool )
     {
-        wp_rigidbody_set_angular_velocity( m_body, detail::toWp( angVel ) );
+        wp_rigidbody_set_angular_velocity( m_body, WPPhysicsUtil::toWp( angVel ) );
     }
     Vector3<real_Num> WPPhysicsRigidDynamic3::getAngularVelocity() const
     {
-        return detail::fromWp( wp_rigidbody_get_angular_velocity( m_body ) );
+        return WPPhysicsUtil::fromWp( wp_rigidbody_get_angular_velocity( m_body ) );
     }
     void WPPhysicsRigidDynamic3::addForce( const Vector3<real_Num> &force )
     {
-        wp_rigidbody_add_force( m_body, detail::toWp( force ), WORKPHONE_FORCE_MODE_FORCE );
+        wp_rigidbody_add_force( m_body, WPPhysicsUtil::toWp( force ), WORKPHONE_FORCE_MODE_FORCE );
 
         if( auto applicationManager = core::IApplicationManager::instancePtr() )
         {
@@ -328,7 +328,7 @@ namespace workphone::physics
     }
     void WPPhysicsRigidDynamic3::addTorque( const Vector3<real_Num> &torque )
     {
-        wp_rigidbody_add_torque( m_body, detail::toWp( torque ), WORKPHONE_FORCE_MODE_FORCE );
+        wp_rigidbody_add_torque( m_body, WPPhysicsUtil::toWp( torque ), WORKPHONE_FORCE_MODE_FORCE );
     }
     void WPPhysicsRigidDynamic3::clearTorque( ForceModeEnum )
     {
@@ -381,21 +381,21 @@ namespace workphone::physics
     void WPPhysicsRigidDynamic3::setCMassLocalPose( const Transform3<real_Num> &pose )
     {
         m_cmassLocalPose = pose;
-        wp_rigidbody_set_cmass_local_position( m_body, detail::toWp( pose.getPosition() ) );
+        wp_rigidbody_set_cmass_local_position( m_body, WPPhysicsUtil::toWp( pose.getPosition() ) );
     }
     Transform3<real_Num> WPPhysicsRigidDynamic3::getCMassLocalPose() const
     {
         auto pose = m_cmassLocalPose;
-        pose.setPosition( detail::fromWp( wp_rigidbody_get_cmass_local_position( m_body ) ) );
+        pose.setPosition( WPPhysicsUtil::fromWp( wp_rigidbody_get_cmass_local_position( m_body ) ) );
         return pose;
     }
     void WPPhysicsRigidDynamic3::setMassSpaceInertiaTensor( const Vector3<real_Num> &m )
     {
-        wp_rigidbody_set_inertia_tensor( m_body, detail::toWp( m ) );
+        wp_rigidbody_set_inertia_tensor( m_body, WPPhysicsUtil::toWp( m ) );
     }
     Vector3<real_Num> WPPhysicsRigidDynamic3::getMassSpaceInertiaTensor() const
     {
-        return detail::fromWp( wp_rigidbody_get_inertia_tensor( m_body ) );
+        return WPPhysicsUtil::fromWp( wp_rigidbody_get_inertia_tensor( m_body ) );
     }
     Vector3<real_Num> WPPhysicsRigidDynamic3::getMassSpaceInvInertiaTensor() const
     {

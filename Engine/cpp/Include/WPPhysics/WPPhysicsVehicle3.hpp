@@ -1,7 +1,7 @@
 #ifndef WPPHYSICSVEHICLE3_HPP
 #define WPPHYSICSVEHICLE3_HPP
 
-#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
 #include <WPPhysics/WPPhysicsVehicleWheel.hpp>
 #include <Workphone/Physics/PhysicsManager.hpp>
 

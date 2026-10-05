@@ -61,14 +61,14 @@ namespace workphone::physics
 
     void WPPhysicsRigidStatic3::setTransform( const Transform3<real_Num> &transform )
     {
-        wp_rigidbody_set_position( m_body, detail::toWp( transform.getPosition() ) );
-        wp_rigidbody_set_orientation( m_body, detail::toWp( transform.getOrientation() ) );
+        wp_rigidbody_set_position( m_body, WPPhysicsUtil::toWp( transform.getPosition() ) );
+        wp_rigidbody_set_orientation( m_body, WPPhysicsUtil::toWp( transform.getOrientation() ) );
     }
 
     Transform3<real_Num> WPPhysicsRigidStatic3::getTransform() const
     {
-        return Transform3<real_Num>( detail::fromWp( wp_rigidbody_get_position( m_body ) ),
-                                     detail::fromWp( wp_rigidbody_get_orientation( m_body ) ) );
+        return Transform3<real_Num>( WPPhysicsUtil::fromWp( wp_rigidbody_get_position( m_body ) ),
+                                     WPPhysicsUtil::fromWp( wp_rigidbody_get_orientation( m_body ) ) );
     }
 
     void WPPhysicsRigidStatic3::setActorFlag( ActorFlagEnum flag, bool value )
@@ -283,12 +283,12 @@ namespace workphone::physics
 
     void WPPhysicsRigidStatic3::setMassSpaceInertiaTensor( const Vector3<real_Num> &inertia )
     {
-        wp_rigidbody_set_inertia_tensor( m_body, detail::toWp( inertia ) );
+        wp_rigidbody_set_inertia_tensor( m_body, WPPhysicsUtil::toWp( inertia ) );
     }
 
     Vector3<real_Num> WPPhysicsRigidStatic3::getMassSpaceInertiaTensor() const
     {
-        return detail::fromWp( wp_rigidbody_get_inertia_tensor( m_body ) );
+        return WPPhysicsUtil::fromWp( wp_rigidbody_get_inertia_tensor( m_body ) );
     }
 
     Vector3<real_Num> WPPhysicsRigidStatic3::getMassSpaceInvInertiaTensor() const

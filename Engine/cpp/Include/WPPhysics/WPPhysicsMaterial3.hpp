@@ -1,7 +1,7 @@
 #ifndef WPPHYSICSMATERIAL3_HPP
 #define WPPHYSICSMATERIAL3_HPP
 
-#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
 #include <Workphone/Interface/Physics/IPhysicsMaterial3.hpp>
 
 namespace workphone::physics

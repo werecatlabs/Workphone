@@ -1,6 +1,5 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsUtil.hpp>
-#include <WPPhysics/WPPhysicsConversions3.hpp>
 #include <WPPhysics/WPPhysicsVehicleWheel.hpp>
 #include <Workphone/Physics/PhysicsManager.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
@@ -108,4 +107,44 @@ namespace workphone::physics
                                  static_cast<f32>( maximum.Z() ) ) );
     }
 
+    wp_vec3f WPPhysicsUtil::toWp( const Vector3<real_Num> &v )
+    {
+        wp_vec3f r = { static_cast<wp_f32>( v.X() ), static_cast<wp_f32>( v.Y() ),
+                       static_cast<wp_f32>( v.Z() ) };
+        return r;
+    }
+
+    Vector3<real_Num> WPPhysicsUtil::fromWp( wp_vec3f v )
+    {
+        return Vector3<real_Num>( static_cast<real_Num>( v.x ), static_cast<real_Num>( v.y ),
+                                  static_cast<real_Num>( v.z ) );
+    }
+
+    wp_quatf WPPhysicsUtil::toWp( const Quaternion<real_Num> &q )
+    {
+        wp_quatf r = { static_cast<wp_f32>( q.w ), static_cast<wp_f32>( q.x ),
+                       static_cast<wp_f32>( q.y ), static_cast<wp_f32>( q.z ) };
+        return r;
+    }
+
+    Quaternion<real_Num> WPPhysicsUtil::fromWp( wp_quatf q )
+    {
+        return Quaternion<real_Num>( static_cast<real_Num>( q.w ), static_cast<real_Num>( q.x ),
+                                     static_cast<real_Num>( q.y ), static_cast<real_Num>( q.z ) );
+    }
+
+    wp_force_mode WPPhysicsUtil::toWp( ForceModeEnum mode )
+    {
+        switch( mode )
+        {
+        case ForceModeEnum::Impulse:
+            return WORKPHONE_FORCE_MODE_IMPULSE;
+        case ForceModeEnum::VelocityChange:
+            return WORKPHONE_FORCE_MODE_VELOCITY_CHANGE;
+        case ForceModeEnum::Acceleration:
+            return WORKPHONE_FORCE_MODE_ACCELERATION;
+        default:
+            return WORKPHONE_FORCE_MODE_FORCE;
+        }
+    }
 }  // namespace workphone::physics

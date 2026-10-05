@@ -1,7 +1,7 @@
 #ifndef WPPHYSICSRIGIDSTATIC3_HPP
 #define WPPHYSICSRIGIDSTATIC3_HPP
 
-#include <WPPhysics/WPPhysicsConversions3.hpp>
+#include <WPPhysics/WPPhysicsUtil.hpp>
 #include <Workphone/Physics/RigidStatic3.hpp>
 
 namespace workphone::physics
