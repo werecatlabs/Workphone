@@ -1,6 +1,7 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawTextureManager.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/ClawCubemapTexture.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 
@@ -12,6 +13,17 @@ namespace workphone
 
         ClawTextureManager::ClawTextureManager() = default;
         ClawTextureManager::~ClawTextureManager() = default;
+
+        SmartPtr<ITexture> ClawTextureManager::createCubeMap(
+            const Array<SmartPtr<ITexture>> &textures )
+        {
+            auto texture = workphone::make_ptr<ClawCubemapTexture>();
+            texture->setName( "GeneratedCubemap/" + StringUtil::getUUID() );
+            texture->setFaces( textures );
+            texture->load( nullptr );
+            m_textures.push_back( texture );
+            return texture;
+        }
 
         void ClawTextureManager::load( SmartPtr<ISharedObject> data )
         {

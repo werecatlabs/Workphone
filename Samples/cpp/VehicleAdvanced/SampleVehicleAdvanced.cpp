@@ -172,7 +172,7 @@ namespace workphone
 
             auto car = m_vehicleActor->getComponent<scene::CarController>();
             auto vehicleController = car->getVehicleController();
-            advanced::configurePhysics( m_assets, m_vehicleActor );
+            m_raceScene->configurePhysics();
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -216,6 +216,7 @@ namespace workphone
             for( auto &wheelActor : m_wheelActors )
                 wheelActor = nullptr;
             m_cameraController = nullptr;
+            m_raceScene = nullptr;
             m_assets = {};
 
             if( core::IApplicationManager::instance() )
@@ -239,7 +240,7 @@ namespace workphone
             if( !m_physicsConfigured &&
                 core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad() > 3 )
             {
-                advanced::configurePhysics( m_assets, m_vehicleActor );
+                m_raceScene->configurePhysics();
                 m_physicsConfigured = true;
             }
             if( m_resetRequested.exchange( false ) )
@@ -248,32 +249,7 @@ namespace workphone
             }
 
             updateControls();
-            if( m_physicsConfigured )
-            {
-                auto body = m_vehicleActor->getComponent<scene::Rigidbody>();
-                auto velocity = body->getLinearVelocity();
-                velocity.y = 0;
-                float speed = velocity.length();
-                const auto &aero = m_assets.vehicle.physics.aero;
-                auto force = -velocity * float( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                                aero.dragCoefficient * speed );
-                force.y = -float( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                  aero.downforceCoefficient * speed * speed );
-                body->addForce( force );
-                // Include external downward acceleration in the contact solver's implicit
-                // response, so stabilization does not change the aerodynamic ride height.
-                auto car = m_vehicleActor->getComponent<scene::CarController>();
-                auto vehicle = car->getVehicleController();
-                const auto acceleration =
-                    9.81f - force.y / float( m_assets.vehicle.physics.massProperties.massKg );
-                for( u32 i = 0; i < 4; ++i )
-                {
-                    auto wheel = vehicle->getWheelController( i );
-                    auto props = wheel->getProperties();
-                    props->setProperty( "Contact Acceleration", acceleration );
-                    wheel->setProperties( props );
-                }
-            }
+
         }
 
         // The application camera is a render object, so only touch its scene node from the render
@@ -288,23 +264,6 @@ namespace workphone
         }
 
         Application::update();
-        if( Thread::getCurrentTask() == TaskId::Physics )
-        {
-            updateWheelVisuals();
-            if( m_assets.shadow && m_vehicleActor )
-            {
-                auto position = m_vehicleActor->getPosition();
-                position.y = 0;
-                auto forward = m_vehicleActor->getOrientation() * Vector3F( 0, 0, -1 );
-                auto yaw = std::atan2( -forward.x, -forward.z );
-                m_assets.shadow->setPosition( position );
-                m_assets.shadow->setOrientation(
-                    QuaternionF::eulerDegrees( 0, yaw * 180.f / 3.14159265f, 0 ) );
-                m_assets.shadow->setVisible( m_vehicleActor->getPosition().y < .8f );
-                m_assets.shadow->updateTransform();
-            }
-        }
-
         if( m_smokeTest && Thread::getCurrentTask() == TaskId::Physics )
         {
             updateSmokeTest();
@@ -406,6 +365,7 @@ namespace workphone
 
     void SampleVehicleAdvanced::performReset()
     {
+        if( m_raceScene ) m_raceScene->setControls( 0, 0, 0 );
         m_lapStart = 0;
         m_nextCheckpoint = 1;
         m_lastTrackIndex = 0;
@@ -537,64 +497,12 @@ namespace workphone
                 applicationManager->setQuit( true );
             }
         }
-        if( m_physicsConfigured )
-        {
-            auto p = m_vehicleActor->getPosition();
-            auto offset = p - m_assets.circuit.samples[m_assets.circuit.nearest( p )].position;
-            offset.y = 0;
-            const auto grip = offset.length() < 6.85f ? 1.f : offset.length() < 11.f ? .55f : .35f;
-            if( grip != m_surfaceGrip )
-            {
-                m_surfaceGrip = grip;
-                for( u32 i = 0; i < 4; ++i )
-                {
-                    auto wheel = vehicle->getWheelController( i );
-                    auto props = wheel->getProperties();
-                    props->setProperty( "Grip", grip );
-                    wheel->setProperties( props );
-                }
-            }
-        }
-        auto lamp = m_assets.materials[size_t( procedural::VehicleMaterialSlot::RainLight )];
-        lamp->setEmissive( ColourF( brake > 0 ? 1.f : .15f, .003f, .001f, 1 ) );
-        //car->setThrottle( throttle );
-        //car->setBrake( brake );
-        //car->setSteering( steering );
-
-        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), throttle );
-        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), brake );
-        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::STEERING ), steering );
+        m_raceScene->setControls( throttle, brake, steering );
     }
 
     void SampleVehicleAdvanced::updateWheelVisuals()
     {
-        if( !m_vehicleActor )
-            return;
-        auto car = m_vehicleActor->getComponent<scene::CarController>();
-        auto vehicle = car ? car->getVehicleController() : nullptr;
-        auto physicsScene =
-            core::IApplicationManager::instance()->getPhysicsManager()->getPhysicsScene();
-        if( !vehicle || !physicsScene )
-            return;
-        for( u32 i = 0; i < m_wheelActors.size(); ++i )
-        {
-            auto wheel = vehicle->getWheelController( i );
-            if( !wheel || !m_wheelActors[i] )
-                continue;
-            auto extension = wheel->getSuspensionTravel();
-            auto hit = make_ptr<physics::RaycastHit>();
-            hit->setCheckDynamic( false );
-            hit->setCheckStatic( true );
-            const auto mount = wheel->getWorldTransform().getPosition();
-            const auto up = vehicle->getWorldTransform().up();
-            if( physicsScene->castRay( Ray3<real_Num>( mount, -up ), hit ) )
-                extension = Math<real_Num>::clamp( hit->getDistance() - wheel->getRadius(), 0.0f,
-                                                   wheel->getSuspensionTravel() );
-            // Apply suspension to the axle actor; offsetting the spinning mesh makes it orbit.
-            auto position = wheel->getLocalTransform().getPosition();
-            position.Y() -= extension;
-            m_wheelActors[i]->setLocalPosition( position );
-        }
+        m_raceScene->updateWheelVisuals();
     }
 
     void SampleVehicleAdvanced::updateSmokeTest()
@@ -861,27 +769,16 @@ namespace workphone
             vehicleManager->load( nullptr );
         }
 
-        // A single flat contact surface matches the continuous, level circuit and runoff.
-        // The road's millimetre offsets only prevent coplanar rendering artefacts.
-        m_boxGround = sceneManager->createActor();
-        m_boxGround->setName( "Circuit collision plane" );
-        m_boxGround->setStatic( true );
-        m_boxGround->setPosition( Vector3F( 0, -0.5f, 0 ) );
-        m_boxGround->addComponent<scene::CollisionBox>()->setExtents( Vector3F( 1100, 1, 1100 ) );
-        m_boxGround->addComponent<scene::Rigidbody>();
-        scene->addActor( m_boxGround );
         m_vehicleActor = sceneManager->createActor();
         m_vehicleActor->setName( "Procedural Grand Prix" );
         m_vehicleActor->setPosition( getVehicleSpawnPosition() );
-        m_vehicleActor->setSmoothMotion( false );
-        m_vehicleActor->addComponent<scene::CollisionBox>();
-        auto chassis = m_vehicleActor->addComponent<scene::Rigidbody>();
-        chassis->setAngularDamping( 3.0f );
-        chassis->setLinearDamping( 0.05f );
-        auto car = m_vehicleActor->addComponent<scene::CarController>();
-        if( !car->getVehicleController() )
-            throw std::runtime_error( "SampleVehicleAdvanced requires WPVehiclePhysics." );
-        advanced::buildScene( m_assets, m_vehicleActor, m_seed, m_quality );
+        m_raceScene = m_vehicleActor->addComponent<scene::ProceduralRaceScene>();
+        m_raceScene->setSeed( m_seed );
+        m_raceScene->setQuality( static_cast<s32>( m_quality ) );
+        if( !m_raceScene->regenerate() )
+            throw std::runtime_error( m_raceScene->getGenerationError() );
+        m_assets = m_raceScene->getAssets();
+        m_boxGround = m_assets.ground;
         m_chassisMeshActor = m_assets.body;
         m_wheelActors = m_assets.wheels;
         scene->addActor( m_vehicleActor );

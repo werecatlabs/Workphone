@@ -749,7 +749,8 @@ namespace workphone
         module( L )[class_<ISkyboxCube, SmartPtr<ISkyboxCube>>( "ISkyboxCube" )];
         module( L )[class_<ISkyboxPlane, SmartPtr<ISkyboxPlane>>( "ISkyboxPlane" )];
 
-        module( L )[class_<IDebug, SmartPtr<IDebug>>( "IDebug" )];
+        module( L )[class_<IDebug, SmartPtr<IDebug>>( "IDebug" )
+                        .def( "drawText", &IDebug::drawText )];
         module( L )[class_<IDebugCircle, SmartPtr<IDebugCircle>>( "IDebugCircle" )];
         module( L )[class_<IDebugLine, SmartPtr<IDebugLine>>( "IDebugLine" )];
         module( L )[class_<IDebugText, SmartPtr<IDebugText>>( "IDebugText" )];

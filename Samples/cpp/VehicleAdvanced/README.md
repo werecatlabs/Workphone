@@ -3,6 +3,9 @@
 An independent procedural Grand Prix driving sample for WPGraphics, WPPhysics,
 WPVehiclePhysics and WPProcedural. The original `SampleVehicle` remains available.
 
+The [Lua Script component port](Lua.md) runs this scene inside the Editor.
+Both versions share the reusable `scene::ProceduralRaceScene` game component.
+
 The sample generates a detailed open-wheel car, livery and PBR maps, a seeded closed
 circuit, continuous road and kerbs, runoff, barriers, garages, a start gantry,
 batched trees and distant hills. Four wheel actors steer, rotate and move with

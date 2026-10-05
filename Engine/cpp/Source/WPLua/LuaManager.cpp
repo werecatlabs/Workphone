@@ -944,6 +944,8 @@ namespace workphone
         bindInput( luaState );
         bindVideo( luaState );
         bindSound( luaState );
+        // Component callbacks derive from the vehicle interfaces.
+        bindVehicle( luaState );
         bindComponent( luaState );
         bindComponentUI( luaState );
         bindGraphicsSystem( luaState );

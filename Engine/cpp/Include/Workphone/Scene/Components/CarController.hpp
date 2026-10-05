@@ -345,6 +345,9 @@ namespace workphone
              */
             SmartPtr<vehicle::IVehicle> getVehicleController() const;
 
+            /** Rebind visual wheel components after replacing a generated wheel hierarchy. */
+            void refreshWheels() { setupWheels(); }
+
             /**
              * @brief Attach a physics vehicle implementation to this controller.
              *

@@ -86,6 +86,7 @@ namespace workphone
         std::string m_capturePath, m_captureView;
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;
         advanced::SceneAssets m_assets;
+        SmartPtr<scene::ProceduralRaceScene> m_raceScene;
         u64 m_profileFrames = 0;
         f64 m_profileStart = 0;
         float m_surfaceGrip = 1.f;

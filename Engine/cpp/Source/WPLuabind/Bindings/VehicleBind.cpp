@@ -318,11 +318,10 @@ namespace workphone
         module( L )[class_<IGroundEffect, IVehicleComponent, SmartPtr<IGroundEffect>>( "IGroundEffect" )
                         .scope[def( "typeInfo", IGroundEffect::typeInfo )]];
 
+        // These marker interfaces do not export their own typeInfo from Workphone.dll.
         module(
-            L )[class_<IFourWheelVehicle, IVehicle, SmartPtr<IFourWheelVehicle>>( "IFourWheelVehicle" )
-                    .scope[def( "typeInfo", IFourWheelVehicle::typeInfo )]];
-        module( L )[class_<ITruckVehicle, IVehicle, SmartPtr<ITruckVehicle>>( "ITruckVehicle" )
-                        .scope[def( "typeInfo", ITruckVehicle::typeInfo )]];
+            L )[class_<IFourWheelVehicle, IVehicle, SmartPtr<IFourWheelVehicle>>( "IFourWheelVehicle" )];
+        module( L )[class_<ITruckVehicle, IVehicle, SmartPtr<ITruckVehicle>>( "ITruckVehicle" )];
         module( L )[class_<IDrone, IVehicle, SmartPtr<IDrone>>( "IDrone" )
                         .def( "getGroundEffectMultiplier", &IDrone::getGroundEffectMultiplier )
                         .def( "setGroundEffectMultiplier", &IDrone::setGroundEffectMultiplier )
@@ -396,8 +395,7 @@ namespace workphone
                         .def( "setRollwiseDamping", &IAircraft::setRollwiseDamping )
                         .scope[def( "typeInfo", IAircraft::typeInfo )]];
 
-        module( L )[class_<IAircraftPlane, IAircraft, SmartPtr<IAircraftPlane>>( "IAircraftPlane" )
-                        .scope[def( "typeInfo", IAircraftPlane::typeInfo )]];
+        module( L )[class_<IAircraftPlane, IAircraft, SmartPtr<IAircraftPlane>>( "IAircraftPlane" )];
         module( L )[class_<IHelicopter, IAircraft, SmartPtr<IHelicopter>>( "IHelicopter" )
                         .scope[def( "typeInfo", IHelicopter::typeInfo )]];
 

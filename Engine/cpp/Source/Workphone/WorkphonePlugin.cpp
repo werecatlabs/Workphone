@@ -159,6 +159,7 @@ namespace workphone
         FactoryUtil::addFactory<scene::Skybox::MaterialSharedListener>();
         FactoryUtil::addFactory<scene::SkyboxPanorama>();
         FactoryUtil::addFactory<scene::ProceduralVehicle>();
+        FactoryUtil::addFactory<scene::ProceduralRaceScene>();
         FactoryUtil::addFactory<scene::ProceduralRoad>();
         FactoryUtil::addFactory<scene::ProceduralSky>();
         FactoryUtil::addFactory<scene::ProceduralSurfaceTexture>();
@@ -698,6 +699,7 @@ namespace workphone
         FactoryUtil::removeFactory<scene::Skybox::MaterialSharedListener>();
         FactoryUtil::removeFactory<scene::SkyboxPanorama>();
         FactoryUtil::removeFactory<scene::ProceduralVehicle>();
+        FactoryUtil::removeFactory<scene::ProceduralRaceScene>();
         FactoryUtil::removeFactory<scene::ProceduralRoad>();
         FactoryUtil::removeFactory<scene::ProceduralSky>();
         FactoryUtil::removeFactory<scene::ProceduralSurfaceTexture>();

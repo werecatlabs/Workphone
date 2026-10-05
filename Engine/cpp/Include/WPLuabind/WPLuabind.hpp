@@ -24,5 +24,6 @@
 #include "WPLuabind/Bindings/PhysicsBind.hpp"
 #include "WPLuabind/Bindings/MeshBind.hpp"
 #include "WPLuabind/Bindings/ProceduralBind.hpp"
+#include "WPLuabind/Bindings/VehicleBind.hpp"
 
 #endif // WPLuabind_h__

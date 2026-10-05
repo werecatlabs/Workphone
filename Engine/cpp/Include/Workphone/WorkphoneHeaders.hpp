@@ -452,6 +452,7 @@
 
 #include <Workphone/Scene/Components/ProceduralMeshComponent.hpp>
 #include <Workphone/Scene/Components/ProceduralVehicle.hpp>
+#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRoad.hpp>
 #include <Workphone/Scene/Components/ProceduralSky.hpp>
 #include <Workphone/Scene/Components/ProceduralSurfaceTexture.hpp>

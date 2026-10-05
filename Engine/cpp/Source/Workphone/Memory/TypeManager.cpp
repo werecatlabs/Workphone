@@ -972,6 +972,7 @@ namespace workphone
         scene::SkyboxPanorama::setupTypeInfo();
         scene::ProceduralMeshComponent::setupTypeInfo();
         scene::ProceduralVehicle::setupTypeInfo();
+        scene::ProceduralRaceScene::setupTypeInfo();
         scene::ProceduralRoad::setupTypeInfo();
         scene::ProceduralSky::setupTypeInfo();
         scene::ProceduralSurfaceTexture::setupTypeInfo();

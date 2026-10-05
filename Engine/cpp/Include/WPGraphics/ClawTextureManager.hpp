@@ -53,6 +53,8 @@ namespace workphone
                                              s32 usage = 0 ) override;
             /** @brief Creates a texture specifically for rendering targets. */
             SmartPtr<ITexture> createRenderTexture() override;
+            /** Build a filtered cubemap from six generated 2D faces. */
+            SmartPtr<ITexture> createCubeMap( const Array<SmartPtr<ITexture>> &textures ) override;
             /** @brief Destroys a previously created render texture. */
             void destroyRenderTexture( SmartPtr<ITexture> texture ) override;
 

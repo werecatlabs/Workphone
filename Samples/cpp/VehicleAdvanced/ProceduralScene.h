@@ -1,42 +1,15 @@
 #pragma once
-#include <Workphone/Workphone.hpp>
-#include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
-#include <vector>
-#include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 
+// Compatibility names for the sample's command-line validation and capture harness.
 namespace workphone::advanced
 {
-    struct CircuitSample
-    {
-        Vector3F position, right;
-        float distance = 0;
-    };
-    struct Circuit
-    {
-        std::vector<CircuitSample> samples;
-        float length = 0;
-        size_t nearest( const Vector3F &position ) const;
-    };
-    struct SceneAssets
-    {
-        procedural::GeneratedVehicle vehicle;
-        Circuit circuit;
-        std::array<SmartPtr<scene::IGameActor>, 4> wheels;
-        SmartPtr<scene::IGameActor> body, shadow;
-        SmartPtr<scene::IGameActor> reflectionActor;
-        SmartPtr<render::ITexture> reflectionTexture;
-        std::vector<SmartPtr<render::IMaterial>> vehicleMaterials;
-        std::vector<SmartPtr<render::ITexture>> textures;
-        std::vector<SmartPtr<render::IMaterial>> materials;
-        std::vector<SmartPtr<IMeshResource>> meshes;
-        Array<SmartPtr<scene::LODGroup>> treeLODs;
-        u64 triangles = 0;
-        u64 textureBytes = 0;
-    };
-    Circuit generateCircuit( u32 seed );
-    void validateCircuit();
-    bool validateReflection( const SceneAssets &assets );
-    void buildScene( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle, u32 seed,
-                     procedural::VehicleAppearanceQuality quality );
-    void configurePhysics( const SceneAssets &assets, SmartPtr<scene::IGameActor> actor );
-}  // namespace workphone::advanced
+    using scene::race::CircuitSample;
+    using scene::race::Circuit;
+    using scene::race::SceneAssets;
+    using scene::race::generateCircuit;
+    using scene::race::validateCircuit;
+    using scene::race::validateReflection;
+    using scene::race::buildScene;
+    using scene::race::configurePhysics;
+}

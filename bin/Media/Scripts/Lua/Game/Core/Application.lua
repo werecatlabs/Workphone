@@ -1,5 +1,11 @@
 class 'Application' (BaseComponent)
 
+ApplicationTypes =
+{
+	CarSample = 1,
+	Racing = 2,
+}
+
 function Application:__init(component)
 	BaseComponent.__init(self, component);
 	self.player = nil;
@@ -72,3 +78,5 @@ function Application:generateNew()
 	uiManager:generate();
 end
 
+function Application:generateRacingSample()
+end

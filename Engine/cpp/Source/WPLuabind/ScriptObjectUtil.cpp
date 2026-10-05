@@ -14,6 +14,11 @@ namespace workphone
         using namespace procedural;
 
         WP_ASSERT( scriptObj->isExactly<ISharedObject>() == false );
+        if( scriptObj->isDerived<scene::ProceduralRaceScene>() )
+        {
+            luabind::detail::convert_to_lua( L, SmartPtr<scene::ProceduralRaceScene>( scriptObj ) );
+            return true;
+        }
 
         if( scriptObj->isDerived<core::IApplicationManager>() )
         {
