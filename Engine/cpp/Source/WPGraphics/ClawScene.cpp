@@ -19,7 +19,6 @@
 #include <WPGraphics/Jobs/SceneNodeCullJob.hpp>
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Workphone.hpp>
-#include <unordered_map>
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_scenenode.h"
 
@@ -172,6 +171,7 @@ namespace workphone
         void ClawScene::clear()
         {
             unbindNativeRenderObjects();
+            m_lights.clear();
 
             // Release C++ wrappers while their scene-owned C nodes are still valid.
             GraphicsScene::clear();
@@ -218,6 +218,7 @@ namespace workphone
                 light->setCreator( this );
                 graphicsSystem->loadObject( light, true );
                 m_graphicsObjects.push_back( light );
+                m_lights.push_back( light );
                 return light;
             }
             if( id == IGraphicsMesh::typeInfo() )
@@ -317,6 +318,9 @@ namespace workphone
                 graphicsObject->setCreator( this );
                 graphicsSystem->loadObject( graphicsObject, true );
 
+                if( auto light = dynamic_pointer_cast<IGraphicsLight>( graphicsObject ) )
+                    m_lights.push_back( light );
+
                 if( graphicsObject->isDerived<IParticleSystem>() )
                 {
                     m_particleSystems.push_back( graphicsObject );
@@ -338,6 +342,14 @@ namespace workphone
 
             graphicsSystem->loadObject( object, true );
             return object;
+        }
+
+        bool ClawScene::removeGraphicsObject( SmartPtr<ISharedObject> object )
+        {
+            if( !GraphicsScene::removeGraphicsObject( object ) ) return false;
+            if( auto light = dynamic_pointer_cast<IGraphicsLight>( object ) )
+                m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
+            return true;
         }
 
         SmartPtr<IGraphicsSceneNode> ClawScene::addSceneNode( const String &name )
@@ -595,7 +607,7 @@ namespace workphone
                 // scene's object list. Submit them explicitly before the native mesh scene pass.
                 if( dx11Renderer )
                 {
-                    const auto objects = m_graphicsObjects.snapshot();
+                    const auto objects = m_lights.snapshot();
                     // The forward shader supports one directional light. Configure it once
                     // for both terrain and meshes, rather than using the renderer's preview sun.
                     Vector3F lightDirection( 0.0f, -1.0f, 0.0f );
@@ -631,33 +643,19 @@ namespace workphone
                     }
                     // Use the material-aware C++ draw path for native mesh objects while
                     // retaining the native scene's visibility filtering and queue ordering.
-                    struct MeshSubmission
-                    {
-                        ClawRendererDX11 *renderer;
-                        std::unordered_map<wp_graphics_object *, ClawMesh *> meshes;
-                    } submission{ dx11Renderer, {} };
-                    for( const auto &object : objects )
-                    {
-                        if( auto mesh = dynamic_pointer_cast<ClawMesh>( object ) )
-                        {
-                            if( auto nativeObject = mesh->getNativeRenderObject() )
-                                submission.meshes.emplace( nativeObject, mesh.get() );
-                        }
-                    }
                     wp_graphics_scene_render_with_submit(
                         m_scene, nativeRenderer,
                         []( wp_graphics_object *object, wp_renderer *, void *data ) -> wp_s32 {
-                            auto &submission = *static_cast<MeshSubmission *>( data );
-                            const auto found = submission.meshes.find( object );
-                            if( found == submission.meshes.end() )
-                                return 0;
+                            auto renderer = static_cast<ClawRendererDX11 *>( data );
+                            auto mesh = static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
+                            if( !mesh ) return 0;
                             wp_mat4f world;
                             wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
                                                            &world );
-                            submission.renderer->renderMesh( found->second, Matrix4F( world.m[0] ) );
+                            renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
                             return 1;
                         },
-                        &submission );
+                        dx11Renderer );
                 }
                 else
                 {

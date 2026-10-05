@@ -135,6 +135,36 @@ int main()
         wp_renderer_dx11_begin_frame( renderer );
         wp_renderer_dx11_set_render_texture( renderer, target );
         wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
+        wp_render_statistics_dx11 cachedBefore{}, cachedAfter{};
+        wp_renderer_dx11_get_statistics( renderer, &cachedBefore );
+        for( int repeat = 0; repeat < 3; ++repeat )
+        {
+            wp_renderer_dx11_set_environment( renderer, cube.getView(), cube.getMaxLod() );
+            wp_renderer_dx11_set_material( renderer, &material );
+            wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
+        }
+        wp_renderer_dx11_get_statistics( renderer, &cachedAfter );
+        require( cachedAfter.draws == cachedBefore.draws + 3 &&
+                 cachedAfter.material_uploads == cachedBefore.material_uploads &&
+                 cachedAfter.state_bindings == cachedBefore.state_bindings,
+                 "unchanged environment and resolved material reuse constant buffer" );
+        // External context changes invalidate bindings without forcing a material upload.
+        context->PSSetShader( nullptr, nullptr, 0 );
+        wp_renderer_dx11_invalidate_state( renderer );
+        wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
+        wp_renderer_dx11_get_statistics( renderer, &cachedAfter );
+        require( cachedAfter.state_bindings > cachedBefore.state_bindings &&
+                 cachedAfter.material_uploads == cachedBefore.material_uploads,
+                 "external context invalidation restores shader bindings" );
+        material.emissive_color.x = 0.1f;
+        wp_renderer_dx11_set_material( renderer, &material );
+        wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
+        wp_renderer_dx11_get_statistics( renderer, &cachedAfter );
+        require( cachedAfter.material_uploads == cachedBefore.material_uploads + 1,
+                 "editing existing material invalidates upload cache" );
+        material.emissive_color.x = 0;
+        wp_renderer_dx11_set_material( renderer, &material );
+        wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 3, 0 );
         auto texture =
             static_cast<ID3D11Texture2D *>( wp_renderer_dx11_get_render_texture_resource( target ) );
         D3D11_TEXTURE2D_DESC desc;

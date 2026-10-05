@@ -218,6 +218,7 @@ namespace workphone
 
             if( m_renderObject )
             {
+                wp_graphics_object_set_submit_data( m_renderObject, this );
                 wp_graphics_object_set_mesh( m_renderObject, m_mesh );
                 wp_graphics_object_set_local_aabb( m_renderObject,
                                                    wp_graphics_mesh_get_local_aabb( m_mesh ) );
@@ -271,6 +272,7 @@ namespace workphone
 
             if( m_renderObject )
             {
+                wp_graphics_object_set_submit_data( m_renderObject, nullptr );
                 wp_graphics_object_set_mesh( m_renderObject, nullptr );
                 wp_graphics_object_set_material( m_renderObject, nullptr );
             }
@@ -279,6 +281,7 @@ namespace workphone
 
             if( m_renderObject )
             {
+                wp_graphics_object_set_submit_data( m_renderObject, this );
                 wp_graphics_object_set_mesh( m_renderObject, m_mesh );
                 wp_graphics_object_set_visible( m_renderObject, isVisible() ? 1 : 0 );
                 wp_graphics_object_set_visibility_flags( m_renderObject, getVisibilityFlags() );

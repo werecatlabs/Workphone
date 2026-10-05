@@ -24,7 +24,9 @@
 #include <Workphone/Workphone.hpp>
 #include <WPImGui/WPImGui.hpp>
 #include "workphone_graphics_system.h"
+#include "workphone_graphics_renderer_dx11.h"
 #include <chrono>
+#include <cstdio>
 
 namespace workphone
 {
@@ -122,6 +124,11 @@ namespace workphone
             {
                 props->setProperty( "native_system_active", m_sys != nullptr );
                 props->setProperty( "vsync", getVSync() );
+                std::lock_guard<std::mutex> lock( m_statisticsMutex );
+                const auto split = m_renderStatistics.find( '\n' );
+                props->setProperty( "render_statistics", m_renderStatistics.substr( 0, split ) );
+                if( split != String::npos )
+                    props->setProperty( "render_counters", m_renderStatistics.substr( split + 1 ) );
             }
             return props;
         }
@@ -131,10 +138,44 @@ namespace workphone
             GraphicsSystem::setProperties( properties );
             if( properties )
             {
+                bool requested = false;
+                if( properties->getPropertyValue( "reset_render_statistics", requested ) && requested )
+                {
+                    m_statisticsResetRequested = true;
+                    std::lock_guard<std::mutex> lock( m_statisticsMutex );
+                    m_renderStatistics.clear();
+                }
+                requested = false;
+                if( properties->getPropertyValue( "request_render_statistics", requested ) && requested )
+                    m_statisticsSnapshotRequested = true;
                 bool enabled;
                 if( properties->getPropertyValue( "vsync", enabled ) )
                     m_vsync.store( enabled, std::memory_order_relaxed );
             }
+        }
+
+        void ClawHammerSystem::publishRenderStatistics()
+        {
+            if( !m_statisticsSnapshotRequested.exchange( false ) ) return;
+            String result = "Render statistics unavailable";
+            if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
+                if( auto dx11 = wp_renderer_get_dx11( renderer->getNativeRenderer() ) )
+                {
+                    wp_render_statistics_dx11 stats{};
+                    wp_renderer_dx11_get_statistics( dx11, &stats );
+                    char summary[1024];
+                    std::snprintf( summary, sizeof( summary ),
+                        "Render frames=%llu interval mean=%.3f ms p95=%.3f ms render-pass CPU=%.3f ms Present=%.3f ms GPU=%.3f ms GPU samples=%llu\nDraws=%llu triangles=%llu material uploads=%llu transform uploads=%llu geometry creations=%llu state bindings=%llu presentation=%s",
+                        (unsigned long long)stats.frames, stats.interval_ms, stats.interval_p95_ms,
+                        stats.cpu_frame_ms, stats.present_ms, stats.gpu_frame_ms,
+                        (unsigned long long)stats.gpu_samples, (unsigned long long)stats.draws,
+                        (unsigned long long)stats.triangles, (unsigned long long)stats.material_uploads,
+                        (unsigned long long)stats.transform_uploads, (unsigned long long)stats.geometry_creations,
+                        (unsigned long long)stats.state_bindings, stats.flip_model ? "flip" : "legacy" );
+                    result = summary;
+                }
+            std::lock_guard<std::mutex> lock( m_statisticsMutex );
+            m_renderStatistics = std::move( result );
         }
 
         bool ClawHammerSystem::getVSync() const
@@ -385,6 +426,10 @@ namespace workphone
                 ScopedLock lock( this );
                 static thread_local WeakPtr<IProfile> preparationProfile;
                 RenderPhaseProfile preparation( preparationProfile, "Graphics preparation" );
+                if( m_statisticsResetRequested.exchange( false ) )
+                    if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
+                        if( auto dx11 = wp_renderer_get_dx11( renderer->getNativeRenderer() ) )
+                            wp_renderer_dx11_reset_statistics( dx11 );
                 GraphicsSystem::update();
 
                 SmartPtr<ISharedObject> object;
@@ -430,6 +475,7 @@ namespace workphone
 
                 preparation.end();
                 wp_graphics_system_render_frame( m_sys, deltaTime );
+                publishRenderStatistics();
 
                 for( auto &scene : m_scenes )
                 {

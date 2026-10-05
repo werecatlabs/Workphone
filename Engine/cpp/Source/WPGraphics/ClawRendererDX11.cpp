@@ -999,8 +999,8 @@ namespace workphone::render
         }
 
         wp_renderer_set_texture_native( m_renderer, nullptr );
-        wp_renderer_dx11_set_material_textures( dx11, nullptr );
-        wp_renderer_dx11_set_material_sampler( dx11, 0u, 0u, 1u, 1u );
+        // Retain resolved texture/sampler bindings for the next mesh. Target
+        // and external UI boundaries invalidate the native binding cache.
         wp_renderer_set_blend_mode( m_renderer, oldBlend );
         wp_renderer_set_cull_mode( m_renderer, oldCull );
         wp_renderer_set_depth_write_enabled( m_renderer, oldDepthWrite );
@@ -1035,6 +1035,7 @@ namespace workphone::render
             texture->getTextureFinal( &nativeTexture );
         wp_renderer_set_texture_native( m_renderer, nativeTexture );
 
+        wp_renderer_dx11_set_material_textures( dx11, nullptr );
         wp_material_dx11 material{};
         material.base_color = { 1.0f, 1.0f, 1.0f, 1.0f };
         material.specular_color = { 0.04f, 0.04f, 0.04f, 1.0f };

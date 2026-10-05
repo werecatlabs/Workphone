@@ -47,6 +47,7 @@ namespace workphone
             void clear() override;
 
             SmartPtr<ISharedObject> addGraphicsObjectByTypeId( hash_type id ) override;
+            bool removeGraphicsObject( SmartPtr<ISharedObject> object ) override;
             SmartPtr<IGraphicsSceneNode> addSceneNode( const String &name ) override;
             SmartPtr<IGraphicsSceneNode> addSceneNode() override;
 
@@ -129,6 +130,8 @@ namespace workphone
 
             /** @brief Native C graphics scene owned by this object. */
             wp_graphics_scene *m_scene;
+
+            ConcurrentArray<SmartPtr<IGraphicsLight>> m_lights;
 
             time_interval m_nextCullTime = 0.0;
 

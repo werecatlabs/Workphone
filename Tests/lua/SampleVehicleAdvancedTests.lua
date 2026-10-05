@@ -93,7 +93,17 @@ local function fixture()
         getDeltaTime=function() return 1/60 end
     } end
     function app:getInputDeviceManager() return {isKeyPressed=function(_, key) return keys[key] or false end} end
-    function app:getGraphicsSystem() return {getDebug=function() return {
+    function app:getGraphicsSystem() return {setProperties=function(_, props)
+            if props.reset_render_statistics then app.statisticsReset = true end
+            if props.request_render_statistics then app.statisticsRequested = true end
+        end,
+        getProperties=function() return {setPropertyAsBool=function(props, key, value) props[key] = value end,
+            getProperty=function(_, key, default)
+                if key == "render_statistics" and app.statisticsReady then return "Render statistics fixture" end
+                if key == "render_counters" and app.statisticsReady then return "Render counters fixture" end
+                return default
+            end} end,
+        getDebug=function() return {
         drawText=function(_, id, _, text) drawn[id] = text end
     } end} end
     function app:isPlaying() return self.playing end
@@ -212,10 +222,17 @@ for i = 0, 3000 do
     app.now = 10 + i / 100
     sample:updatePerformanceTest()
 end
+assert(app.statisticsReset and app.statisticsRequested and not app.quit,
+    "Benchmark must request an asynchronous snapshot and await the render thread")
+app.statisticsReady = true
+app.now = 40.01
+sample:updatePerformanceTest()
 io.open = originalOpen
 assert(app.quit and not sample.performanceTest, "Benchmark must finish and exit")
 assert(benchmarkOutput:find("mean=10.000 ms p95=10.000 ms updates=100.0/s", 1, true),
     "Benchmark must use elapsed wall time for application update intervals")
+assert(benchmarkOutput:find("Render statistics fixture\nRender counters fixture", 1, true),
+    "Benchmark must preserve timing and counter fields without sampling the snapshot wait")
 sample:shutdown()
 
 sample, app, race, body, keys, destroyed = fixture()

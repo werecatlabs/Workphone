@@ -7,6 +7,8 @@
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <atomic>
 
+#include <mutex>
+
 namespace workphone
 {
     namespace ui
@@ -202,6 +204,11 @@ namespace workphone
             ///< Configured renderer type (selected before configure())
             RenderApi m_configuredRendererType = RenderApi::None;
             std::atomic<bool> m_vsync{ false };
+            void publishRenderStatistics();
+            mutable std::mutex m_statisticsMutex;
+            String m_renderStatistics;
+            std::atomic<bool> m_statisticsResetRequested{ false };
+            std::atomic<bool> m_statisticsSnapshotRequested{ false };
         };
     }  // namespace render
 }  // namespace workphone

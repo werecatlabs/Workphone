@@ -26,6 +26,7 @@ typedef struct wp_graphics_object
     wp_scenenode *owner;
     wp_graphics_scene *creator;
     void *native;
+    void *submit_data;
     wp_s32 is_dirty;
     wp_graphics_object_render_func render_func;
     wp_graphics_mesh *mesh;
@@ -456,6 +457,16 @@ void wp_graphics_object_make_dirty( wp_graphics_object *obj )
 /* =========================================================================
  * Native object access
  * ====================================================================== */
+
+void wp_graphics_object_set_submit_data( wp_graphics_object *obj, void *data )
+{
+    if( obj ) obj->submit_data = data;
+}
+
+void *wp_graphics_object_get_submit_data( const wp_graphics_object *obj )
+{
+    return obj ? obj->submit_data : NULL;
+}
 
 void wp_graphics_object_get_native( const wp_graphics_object *obj, void **pp_object )
 {

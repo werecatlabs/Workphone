@@ -424,6 +424,11 @@ void wp_graphics_object_make_dirty( wp_graphics_object *obj );
  */
 void wp_graphics_object_get_native( const wp_graphics_object *obj, void **pp_object );
 
+/** Borrowed per-object submission context. The wrapper must clear this before
+ * releasing its owner; native rendering and scene ownership do not use it. */
+void wp_graphics_object_set_submit_data( wp_graphics_object *obj, void *data );
+void *wp_graphics_object_get_submit_data( const wp_graphics_object *obj );
+
 #ifdef __cplusplus
 }
 #endif

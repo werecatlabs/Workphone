@@ -1,9 +1,11 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
+#include <WPGraphics/ClawMesh.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
+#include <WorkphoneGraphics/workphone_graphics_object.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <chrono>
@@ -131,6 +133,24 @@ int main()
     types.load();
     workphone::TypeManager::setInstance( &types );
     bool ok = true;
+    {
+        workphone::render::ClawMesh mesh;
+        auto *first = wp_graphics_object_create();
+        auto *second = wp_graphics_object_create();
+        ok &= check( first && second, "submission context test objects must be created" );
+        mesh.bindNativeRenderObject( first );
+        ok &= check( wp_graphics_object_get_submit_data( first ) == &mesh,
+                     "binding must publish the wrapper before mesh resource loading" );
+        mesh.bindNativeRenderObject( second );
+        ok &= check( wp_graphics_object_get_submit_data( first ) == nullptr &&
+                         wp_graphics_object_get_submit_data( second ) == &mesh,
+                     "rebinding must clear the old borrowed context" );
+        mesh.bindNativeRenderObject( nullptr );
+        ok &= check( wp_graphics_object_get_submit_data( second ) == nullptr,
+                     "unbinding must clear the borrowed wrapper context" );
+        wp_graphics_object_destroy( first );
+        wp_graphics_object_destroy( second );
+    }
     auto window = workphone::make_ptr<TestWindow>();
     window->handle = CreateWindowExW( 0, L"STATIC", L"DX11 target regression", WS_OVERLAPPEDWINDOW,
                                     0, 0, 1280, 720, nullptr, nullptr, GetModuleHandleW( nullptr ), nullptr );

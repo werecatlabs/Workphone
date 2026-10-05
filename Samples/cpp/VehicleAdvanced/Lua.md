@@ -25,6 +25,44 @@ in the application's working directory before exiting. It includes mean and p95
 intervals and task profiler averages; application update rate is not rendered FPS.
 Keep the seed, quality, viewport and machine load fixed when comparing runs.
 
+The report also includes completed-Present intervals, render-pass CPU time,
+Present wait, delayed GPU timestamp/disjoint samples and draw/upload counters.
+These measurements cover offscreen, window and UI passes together. Render-pass
+CPU time includes Present; subtract the separately reported Present time to
+estimate the remaining render-pass elapsed time. It does not measure application
+work outside those passes. The interval mean covers the measurement period; p95
+uses the last 8192 intervals (enough for the standard thirty-second test).
+The existing task profiles still use rolling averages and cannot be added into
+a frame breakdown. GPU queries are polled without flushing or waiting. The
+application requests a snapshot from the render thread and waits for publication
+without taking the graphics update lock. Timings and counters use separate
+property fields to respect the engine's 255-character value limit.
+
+The renderer retains unchanged material constants and DX11 shader, texture,
+sampler and geometry bindings between compatible draws. Native mesh objects
+carry a borrowed wrapper submission context, cleared on unbind, so scene passes
+no longer rebuild a mesh lookup map. Lights have a separate scene membership list.
+UI/external-context and render-target transitions invalidate the binding cache.
+
+Legacy presentation remains the default. For diagnostics, set
+`WORKPHONE_DX11_FLIP_SWAP_CHAIN=1` before launching to request two-buffer flip
+discard with a one-frame queue limit. Unsupported or failed requests fall back
+to legacy; `WORKPHONE_DX11_LEGACY_SWAP_CHAIN=1` overrides the request. VSync is
+preserved, and tearing is used only when supported and VSync is disabled.
+The initial Editor flip comparison reduced cadence from about 60 to 40 FPS, so
+it is opt-in pending a frame-pacing investigation. A 64-metre circuit-section
+prototype also exceeded the Editor EventJob pool during generation; it was
+removed, leaving circuit geometry and collision unchanged.
+
+The final legacy Editor comparison (seed 7, High, stationary follow camera) ran
+at 16.678 ms mean / 17.616 ms p95 between completed Presents, with 1.745 ms GPU
+time and no geometry creations after warmup. It remains near 60 rendered FPS;
+the small timing difference from the instrumented baseline is not a demonstrated
+whole-frame speedup. Repeated-draw tests verify fewer material uploads and state
+bindings, and the native full-lap test and inspected car/track captures pass.
+The native acceleration smoke still fails its suspension-height variation limit
+(about 0.185 m versus 0.15 m); that physics check remains unresolved.
+
 The generated environment cubemap is static. Its six faces are filtered once on
 first use and the GPU texture is reused for subsequent material draws. Replacing
 its faces explicitly invalidates that cache; it does not capture the scene every

@@ -15,10 +15,12 @@
 #    include <d3d11.h>
 #    include <d3dcompiler.h>
 #    include <dxgi.h>
+#    include <dxgi1_5.h>
 #    include <limits.h>
 #    include <stdlib.h>
 #    include <string.h>
 #    include <float.h>
+#    include <stdio.h>
 
 #    define WORKPHONE_IMPLEMENTATION
 #    include "workphone_prerequisites.h"
@@ -244,8 +246,31 @@ typedef struct wp_transform_constants_dx11
  * Internal structure
  * ====================================================================== */
 
+#define WP_DX11_GPU_QUERY_COUNT 8
+#define WP_DX11_FRAME_SAMPLES 8192
+typedef struct wp_gpu_frame_query
+{
+    ID3D11Query *disjoint, *start, *end;
+    wp_s32 pending;
+    unsigned epoch;
+} wp_gpu_frame_query;
+
 struct wp_renderer_dx11
 {
+    wp_render_statistics_dx11 statistics;
+    double frame_intervals[WP_DX11_FRAME_SAMPLES];
+    double interval_total, cpu_total, present_total, gpu_total;
+    LARGE_INTEGER frame_start, last_present, clock_frequency;
+    wp_s32 measuring, frame_measuring;
+    volatile LONG reset_statistics;
+    unsigned statistics_epoch;
+    wp_gpu_frame_query gpu_queries[WP_DX11_GPU_QUERY_COUNT];
+    wp_s32 active_gpu_query;
+    wp_s32 gpu_queries_initialized;
+    wp_s32 pntc_bindings_valid;
+    ID3D11Buffer *bound_vertex_buffer, *bound_index_buffer;
+    ID3D11ShaderResourceView *bound_textures[8];
+    ID3D11SamplerState *bound_sampler;
     /* D3D11 core objects */
     ID3D11Device *device;
     ID3D11DeviceContext *context;
@@ -304,6 +329,8 @@ struct wp_renderer_dx11
     wp_s32 width;
     wp_s32 height;
     HWND hwnd;
+    UINT swap_chain_flags;
+    wp_s32 flip_model;
 
     /* Clear values */
     wp_f32 clear_r;
@@ -1025,8 +1052,12 @@ static void wp_renderer_dx11_update_rasterizer_state( wp_renderer_dx11 *r )
         if( FAILED( hr ) )
             return;
     }
-    r->rs_state = r->rs_cache[index];
-    ID3D11DeviceContext_RSSetState( r->context, r->rs_state );
+    if( r->rs_state != r->rs_cache[index] )
+    {
+        r->rs_state = r->rs_cache[index];
+        ID3D11DeviceContext_RSSetState( r->context, r->rs_state );
+        ++r->statistics.state_bindings;
+    }
 
     r->rs_dirty = 0;
 }
@@ -1098,8 +1129,12 @@ static void wp_renderer_dx11_update_blend_state( wp_renderer_dx11 *r )
         if( FAILED( hr ) )
             return;
     }
-    r->bs_state = r->bs_cache[index];
-    ID3D11DeviceContext_OMSetBlendState( r->context, r->bs_state, factor, 0xFFFFFFFF );
+    if( r->bs_state != r->bs_cache[index] )
+    {
+        r->bs_state = r->bs_cache[index];
+        ID3D11DeviceContext_OMSetBlendState( r->context, r->bs_state, factor, 0xFFFFFFFF );
+        ++r->statistics.state_bindings;
+    }
 
     r->bs_dirty = 0;
 }
@@ -1129,8 +1164,12 @@ static void wp_renderer_dx11_update_depth_stencil_state( wp_renderer_dx11 *r )
         if( FAILED( hr ) )
             return;
     }
-    r->dss_state = r->dss_cache[index];
-    ID3D11DeviceContext_OMSetDepthStencilState( r->context, r->dss_state, 0 );
+    if( r->dss_state != r->dss_cache[index] )
+    {
+        r->dss_state = r->dss_cache[index];
+        ID3D11DeviceContext_OMSetDepthStencilState( r->context, r->dss_state, 0 );
+        ++r->statistics.state_bindings;
+    }
 
     r->dss_dirty = 0;
 }
@@ -1217,6 +1256,7 @@ static wp_s32 wp_renderer_dx11_upload_mvp( wp_renderer_dx11 *r )
         return 0;
     }
 
+    ++r->statistics.transform_uploads;
     ID3D11DeviceContext_VSSetConstantBuffers( r->context, 0, 1, &r->cb_transform );
     return 1;
 }
@@ -1233,6 +1273,10 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
     D3D_FEATURE_LEVEL feature_level;
     HRESULT hr;
     wp_s32 attempt;
+    IDXGIFactory5 *factory = NULL;
+    BOOL tearing_supported = FALSE;
+    wchar_t legacy_override[2];
+    wp_s32 prefer_flip;
 
     if( !hwnd || width <= 0 || height <= 0 )
         return NULL;
@@ -1242,6 +1286,8 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
         return NULL;
 
     memset( r, 0, sizeof( wp_renderer_dx11 ) );
+    r->active_gpu_query = -1;
+    QueryPerformanceFrequency( &r->clock_frequency );
     r->hwnd = (HWND)hwnd;
     r->width = width;
     r->height = height;
@@ -1261,13 +1307,30 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
     sc_desc.Windowed = TRUE;
     sc_desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
+    /* Flip presentation is opt-in until frame pacing has been validated for
+     * the hosting application. Failed/unsupported requests retain legacy. */
+    if( SUCCEEDED( CreateDXGIFactory1( &IID_IDXGIFactory5, (void **)&factory ) ) )
+    {
+        IDXGIFactory5_CheckFeatureSupport( factory, DXGI_FEATURE_PRESENT_ALLOW_TEARING,
+                                           &tearing_supported, sizeof( tearing_supported ) );
+        IDXGIFactory5_Release( factory );
+    }
+    prefer_flip = tearing_supported && GetEnvironmentVariableW(
+        L"WORKPHONE_DX11_FLIP_SWAP_CHAIN", legacy_override, 2 ) && !GetEnvironmentVariableW(
+        L"WORKPHONE_DX11_LEGACY_SWAP_CHAIN", legacy_override, 2 );
+
     /* ---- device + swap-chain creation --------------------------------- */
     /* Retry with WARP when hardware is unavailable. Release partial objects
      * from a failed creation attempt before trying another driver. */
-    for( attempt = 0; attempt < 2; ++attempt )
+    for( attempt = 0; attempt < 4; ++attempt )
     {
+        r->flip_model = prefer_flip && attempt % 2 == 0;
+        sc_desc.BufferCount = r->flip_model ? 2 : 1;
+        sc_desc.SwapEffect = r->flip_model ? DXGI_SWAP_EFFECT_FLIP_DISCARD : DXGI_SWAP_EFFECT_DISCARD;
+        sc_desc.Flags = r->flip_model ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
+        if( !prefer_flip && attempt % 2 != 0 ) continue;
         hr = D3D11CreateDeviceAndSwapChain( NULL,
-                                            attempt % 2 == 0 ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP,
+                                            attempt < 2 ? D3D_DRIVER_TYPE_HARDWARE : D3D_DRIVER_TYPE_WARP,
                                             NULL, 0, NULL, 0,
                                             D3D11_SDK_VERSION, &sc_desc, &r->swap_chain, &r->device,
                                             &feature_level, &r->context );
@@ -1288,6 +1351,17 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
     {
         free( r );
         return NULL;
+    }
+
+    r->swap_chain_flags = sc_desc.Flags;
+    if( r->flip_model )
+    {
+        IDXGIDevice1 *dxgi_device = NULL;
+        if( SUCCEEDED( ID3D11Device_QueryInterface( r->device, &IID_IDXGIDevice1, (void **)&dxgi_device ) ) )
+        {
+            IDXGIDevice1_SetMaximumFrameLatency( dxgi_device, 1 );
+            IDXGIDevice1_Release( dxgi_device );
+        }
     }
 
     /* ---- render target ------------------------------------------------ */
@@ -1406,6 +1480,13 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
 
     if( r->context )
         ID3D11DeviceContext_ClearState( r->context );
+    for( i = 0; i < WP_DX11_GPU_QUERY_COUNT; ++i )
+    {
+        wp_gpu_frame_query *q = &r->gpu_queries[i];
+        if( q->disjoint ) ID3D11Query_Release( q->disjoint );
+        if( q->start ) ID3D11Query_Release( q->start );
+        if( q->end ) ID3D11Query_Release( q->end );
+    }
 
     if( r->atlas_initialized )
         wp_font_atlas_clear( &r->atlas );
@@ -1525,7 +1606,7 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
     wp_renderer_dx11_release_targets( r );
 
     hr = IDXGISwapChain_ResizeBuffers( r->swap_chain, 0, (UINT)width, (UINT)height, DXGI_FORMAT_UNKNOWN,
-                                       0 );
+                                       r->swap_chain_flags );
     if( FAILED( hr ) )
     {
         /* ResizeBuffers leaves the old swap-chain buffers intact on failure. */
@@ -1541,7 +1622,7 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
         /* Roll the swap chain back so a failed resize does not strand the renderer. */
         wp_renderer_dx11_release_targets( r );
         hr = IDXGISwapChain_ResizeBuffers( r->swap_chain, 0, (UINT)old_width, (UINT)old_height,
-                                           DXGI_FORMAT_UNKNOWN, 0 );
+                                           DXGI_FORMAT_UNKNOWN, r->swap_chain_flags );
         if( SUCCEEDED( hr ) )
         {
             r->width = old_width;
@@ -1576,11 +1657,127 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
  * Frame lifecycle
  * ====================================================================== */
 
+void wp_renderer_dx11_invalidate_state( wp_renderer_dx11 *r )
+{
+    if( !r ) return;
+    r->pntc_bindings_valid = 0;
+    r->rs_state = NULL;
+    r->bs_state = NULL;
+    r->dss_state = NULL;
+    r->rs_dirty = r->bs_dirty = r->dss_dirty = 1;
+}
+
+void wp_renderer_dx11_reset_statistics( wp_renderer_dx11 *r )
+{
+    if( r ) InterlockedExchange( &r->reset_statistics, 1 );
+}
+
+static int compare_frame_interval( const void *a, const void *b )
+{
+    double x = *(const double *)a, y = *(const double *)b;
+    return x < y ? -1 : x > y;
+}
+
+void wp_renderer_dx11_get_statistics( const wp_renderer_dx11 *r,
+                                      wp_render_statistics_dx11 *out )
+{
+    double *sorted;
+    size_t count;
+    if( !out ) return;
+    memset( out, 0, sizeof( *out ) );
+    if( !r ) return;
+    *out = r->statistics;
+    out->flip_model = r->flip_model;
+    if( out->frames )
+    {
+        out->cpu_frame_ms = r->cpu_total / out->frames;
+        out->present_ms = r->present_total / out->frames;
+    }
+    if( out->gpu_samples ) out->gpu_frame_ms = r->gpu_total / out->gpu_samples;
+    if( !out->interval_samples ) return;
+    out->interval_ms = r->interval_total / out->interval_samples;
+    count = out->interval_samples < WP_DX11_FRAME_SAMPLES ?
+        (size_t)out->interval_samples : WP_DX11_FRAME_SAMPLES;
+    sorted = (double *)malloc( count * sizeof( double ) );
+    if( sorted )
+    {
+        memcpy( sorted, r->frame_intervals, count * sizeof( double ) );
+        qsort( sorted, count, sizeof( double ), compare_frame_interval );
+        out->interval_p95_ms = sorted[( count * 95 + 99 ) / 100 - 1];
+        free( sorted );
+    }
+}
+
+static void begin_frame_statistics( wp_renderer_dx11 *r )
+{
+    wp_s32 i;
+    D3D11_QUERY_DESC desc;
+    if( r->frame_measuring ) return; /* Multiple offscreen/window passes form one frame. */
+    if( InterlockedExchange( &r->reset_statistics, 0 ) )
+    {
+        memset( &r->statistics, 0, sizeof( r->statistics ) );
+        r->interval_total = r->cpu_total = r->present_total = r->gpu_total = 0;
+        r->last_present.QuadPart = 0;
+        ++r->statistics_epoch;
+        r->measuring = 1;
+    }
+    if( !r->measuring ) return;
+    r->frame_measuring = 1;
+    QueryPerformanceCounter( &r->frame_start );
+    if( !r->gpu_queries_initialized )
+    {
+        r->gpu_queries_initialized = 1;
+        desc.MiscFlags = 0;
+        for( i = 0; i < WP_DX11_GPU_QUERY_COUNT; ++i )
+        {
+            wp_gpu_frame_query *q = &r->gpu_queries[i];
+            desc.Query = D3D11_QUERY_TIMESTAMP_DISJOINT;
+            if( FAILED( ID3D11Device_CreateQuery( r->device, &desc, &q->disjoint ) ) ) continue;
+            desc.Query = D3D11_QUERY_TIMESTAMP;
+            ID3D11Device_CreateQuery( r->device, &desc, &q->start );
+            ID3D11Device_CreateQuery( r->device, &desc, &q->end );
+        }
+    }
+    r->active_gpu_query = -1;
+    for( i = 0; i < WP_DX11_GPU_QUERY_COUNT; ++i )
+    {
+        wp_gpu_frame_query *q = &r->gpu_queries[i];
+        if( q->pending )
+        {
+            D3D11_QUERY_DATA_TIMESTAMP_DISJOINT timing;
+            UINT64 start, end;
+            if( ID3D11DeviceContext_GetData( r->context, (ID3D11Asynchronous *)q->disjoint,
+                    &timing, sizeof( timing ), D3D11_ASYNC_GETDATA_DONOTFLUSH ) != S_OK ||
+                ID3D11DeviceContext_GetData( r->context, (ID3D11Asynchronous *)q->start,
+                    &start, sizeof( start ), D3D11_ASYNC_GETDATA_DONOTFLUSH ) != S_OK ||
+                ID3D11DeviceContext_GetData( r->context, (ID3D11Asynchronous *)q->end,
+                    &end, sizeof( end ), D3D11_ASYNC_GETDATA_DONOTFLUSH ) != S_OK ) continue;
+            q->pending = 0;
+            if( q->epoch == r->statistics_epoch && !timing.Disjoint && timing.Frequency && end >= start )
+            {
+                r->gpu_total += 1000.0 * (double)( end - start ) / timing.Frequency;
+                ++r->statistics.gpu_samples;
+            }
+        }
+        if( r->active_gpu_query < 0 && q->disjoint && q->start && q->end )
+            r->active_gpu_query = i;
+    }
+    if( r->active_gpu_query >= 0 )
+    {
+        wp_gpu_frame_query *q = &r->gpu_queries[r->active_gpu_query];
+        q->epoch = r->statistics_epoch;
+        ID3D11DeviceContext_Begin( r->context, (ID3D11Asynchronous *)q->disjoint );
+        ID3D11DeviceContext_End( r->context, (ID3D11Asynchronous *)q->start );
+    }
+}
+
 void wp_renderer_dx11_begin_frame( wp_renderer_dx11 *r )
 {
     if( !r )
         return;
 
+    begin_frame_statistics( r );
+    wp_renderer_dx11_invalidate_state( r );
     ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
                                             r->active_ds_view );
 
@@ -1599,10 +1796,37 @@ void wp_renderer_dx11_end_frame( wp_renderer_dx11 *r )
 
 void wp_renderer_dx11_present( wp_renderer_dx11 *r, wp_s32 vsync )
 {
+    LARGE_INTEGER before, after;
     if( !r || !r->swap_chain )
         return;
-
-    IDXGISwapChain_Present( r->swap_chain, vsync ? 1 : 0, 0 );
+    if( r->frame_measuring && r->active_gpu_query >= 0 )
+    {
+        wp_gpu_frame_query *q = &r->gpu_queries[r->active_gpu_query];
+        ID3D11DeviceContext_End( r->context, (ID3D11Asynchronous *)q->end );
+        ID3D11DeviceContext_End( r->context, (ID3D11Asynchronous *)q->disjoint );
+        q->pending = 1;
+    }
+    QueryPerformanceCounter( &before );
+    IDXGISwapChain_Present( r->swap_chain, vsync ? 1 : 0,
+                           !vsync && r->flip_model ? DXGI_PRESENT_ALLOW_TEARING : 0 );
+    QueryPerformanceCounter( &after );
+    if( r->frame_measuring )
+    {
+        double scale = 1000.0 / r->clock_frequency.QuadPart;
+        if( r->last_present.QuadPart )
+        {
+            double interval = ( after.QuadPart - r->last_present.QuadPart ) * scale;
+            r->frame_intervals[r->statistics.interval_samples % WP_DX11_FRAME_SAMPLES] = interval;
+            ++r->statistics.interval_samples;
+            r->interval_total += interval;
+        }
+        r->last_present = after;
+        ++r->statistics.frames;
+        r->cpu_total += ( after.QuadPart - r->frame_start.QuadPart ) * scale;
+        r->present_total += ( after.QuadPart - before.QuadPart ) * scale;
+        r->frame_measuring = 0;
+        r->active_gpu_query = -1;
+    }
 }
 
 /* =========================================================================
@@ -1819,17 +2043,20 @@ void wp_renderer_dx11_set_projection_matrix( wp_renderer_dx11 *r, const wp_mat4f
 void wp_renderer_dx11_set_material( wp_renderer_dx11 *r,
                                     const wp_material_dx11 *material )
 {
-    if( !r || !material || memcmp( &r->material, material, sizeof( *material ) ) == 0 )
-        return;
-    r->material = *material;
-    r->material.environment.x = r->environment_view ? 1.0f : 0.0f;
-    r->material.environment.y = r->environment_max_lod;
+    wp_material_dx11 resolved;
+    if( !r || !material ) return;
+    resolved = *material;
+    resolved.environment.x = r->environment_view ? 1.0f : 0.0f;
+    resolved.environment.y = r->environment_max_lod;
+    if( memcmp( &r->material, &resolved, sizeof( resolved ) ) == 0 ) return;
+    r->material = resolved;
     r->material_dirty = 1;
 }
 
 void wp_renderer_dx11_set_environment( wp_renderer_dx11 *r, void *view, wp_f32 max_lod )
 {
-    if( !r ) return;
+    if( !r || ( r->environment_view == (ID3D11ShaderResourceView *)view &&
+                 r->environment_max_lod == max_lod ) ) return;
     r->environment_view = (ID3D11ShaderResourceView *)view;
     r->environment_max_lod = max_lod;
     r->material.environment.x = view ? 1.0f : 0.0f;
@@ -1845,7 +2072,10 @@ void wp_renderer_dx11_set_material_textures( wp_renderer_dx11 *r, void *const *v
     for( i = 0; i < 6; ++i )
         r->material_texture_views[i] = views ? (ID3D11ShaderResourceView *)views[i] : NULL;
     if( !views )
+    {
         ID3D11DeviceContext_PSSetShaderResources( r->context, 1, 6, r->material_texture_views );
+        r->pntc_bindings_valid = 0;
+    }
 }
 
 void wp_renderer_dx11_set_material_sampler( wp_renderer_dx11 *r, wp_u32 wrap_u,
@@ -1908,6 +2138,7 @@ static void dx11_draw_vertices( wp_renderer_dx11 *r, const void *vertex_data, wp
     if( !wp_renderer_dx11_ensure_vb( r, size_bytes ) )
         return;
 
+    r->pntc_bindings_valid = 0;
     wp_renderer_dx11_apply_state( r );
     if( !wp_renderer_dx11_upload_mvp( r ) )
         return;
@@ -1942,6 +2173,9 @@ static void dx11_draw_vertices( wp_renderer_dx11 *r, const void *vertex_data, wp
 
     ID3D11DeviceContext_IASetVertexBuffers( r->context, 0, 1, &r->vb, &s, &offset );
     ID3D11DeviceContext_IASetPrimitiveTopology( r->context, topology );
+    ++r->statistics.draws;
+    if( topology == D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST )
+        r->statistics.triangles += (uint64_t)vertex_count / 3;
     ID3D11DeviceContext_Draw( r->context, (UINT)vertex_count, 0 );
 }
 
@@ -2016,6 +2250,7 @@ static void dx11_draw_prepared_indexed( wp_renderer_dx11 *r, wp_s32 index_start,
     if( !r || index_start < 0 || index_count <= 0 )
         return;
 
+    r->pntc_bindings_valid = 0;
     wp_renderer_dx11_apply_state( r );
     if( !wp_renderer_dx11_upload_mvp( r ) )
         return;
@@ -2029,6 +2264,8 @@ static void dx11_draw_prepared_indexed( wp_renderer_dx11 *r, wp_s32 index_start,
         ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &texture_view );
     }
 
+    ++r->statistics.draws;
+    r->statistics.triangles += (uint64_t)index_count / 3;
     ID3D11DeviceContext_DrawIndexed( r->context, (UINT)index_count, (UINT)index_start,
                                      (INT)base_vertex );
 }
@@ -2102,6 +2339,7 @@ void wp_renderer_dx11_set_render_target_native( wp_renderer_dx11 *r, void *rende
     if( !r )
         return;
 
+    r->pntc_bindings_valid = 0;
     r->active_rt_view =
         render_target_view ? (ID3D11RenderTargetView *)render_target_view : r->rt_view;
     r->active_ds_view = r->ds_view;
@@ -2198,6 +2436,7 @@ void wp_renderer_dx11_set_render_texture( wp_renderer_dx11 *r, wp_render_texture
     ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &null_view );
     r->ptc_external_texture_view = NULL;
 
+    r->pntc_bindings_valid = 0;
     r->active_rt_view = target ? target->rt_view : r->rt_view;
     r->active_ds_view = target ? target->ds_view : r->ds_view;
     ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
@@ -2358,6 +2597,7 @@ wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_ptc(
     geometry->vertex_count = vertex_count;
     geometry->index_count = index_count;
     geometry->index_format = indices_are_u32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+    ++r->statistics.geometry_creations;
     return geometry;
 }
 
@@ -2409,6 +2649,7 @@ wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_pntc(
     geometry->vertex_count = vertex_count;
     geometry->index_count = index_count;
     geometry->index_format = indices_are_u32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
+    ++r->statistics.geometry_creations;
     return geometry;
 }
 
@@ -2437,6 +2678,7 @@ void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *r,
         index_count > geometry->index_count - index_start )
         return;
 
+    r->pntc_bindings_valid = 0;
     wp_renderer_dx11_apply_state( r );
     if( !wp_renderer_dx11_upload_mvp( r ) )
         return;
@@ -2456,6 +2698,8 @@ void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *r,
                                           geometry->index_format, 0 );
     ID3D11DeviceContext_IASetPrimitiveTopology( r->context,
                                                 D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+    ++r->statistics.draws;
+    r->statistics.triangles += (uint64_t)index_count / 3;
     ID3D11DeviceContext_DrawIndexed( r->context, (UINT)index_count, (UINT)index_start,
                                      (INT)base_vertex );
 }
@@ -2482,31 +2726,64 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
         if( !wp_renderer_dx11_upload_constants( r, r->cb_material, &r->material, sizeof( r->material ) ) )
             return;
         r->material_dirty = 0;
+        ++r->statistics.material_uploads;
     }
     // ptc_texture_view is the ImGui atlas. It is a valid fallback for UI draws,
     // but an untextured mesh must sample white rather than arbitrary font glyphs.
     texture_view = r->ptc_external_texture_view ? r->ptc_external_texture_view
                                                  : r->ptc_white_texture_view;
 
-    ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_pntc );
-    ID3D11DeviceContext_VSSetShader( r->context, r->vs_pntc, NULL, 0 );
-    ID3D11DeviceContext_PSSetShader( r->context, r->ps_pntc, NULL, 0 );
-    ID3D11DeviceContext_VSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
-    ID3D11DeviceContext_PSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
-    ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &texture_view );
-    ID3D11DeviceContext_PSSetShaderResources( r->context, 1, 6, r->material_texture_views );
-    ID3D11DeviceContext_PSSetShaderResources( r->context, 7, 1, &r->environment_view );
-    ID3D11DeviceContext_PSSetSamplers( r->context, 1, 1, &r->environment_sampler_state );
+    if( !r->pntc_bindings_valid )
+    {
+        ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_pntc );
+        ID3D11DeviceContext_VSSetShader( r->context, r->vs_pntc, NULL, 0 );
+        ID3D11DeviceContext_PSSetShader( r->context, r->ps_pntc, NULL, 0 );
+        ID3D11DeviceContext_VSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
+        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
+        ID3D11DeviceContext_PSSetSamplers( r->context, 1, 1, &r->environment_sampler_state );
+        ID3D11DeviceContext_IASetPrimitiveTopology( r->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+        r->statistics.state_bindings += 7;
+    }
+    if( !r->pntc_bindings_valid || r->bound_textures[0] != texture_view )
+    {
+        ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &texture_view );
+        r->bound_textures[0] = texture_view;
+        ++r->statistics.state_bindings;
+    }
+    if( !r->pntc_bindings_valid || memcmp( r->bound_textures + 1,
+                                         r->material_texture_views, sizeof( r->material_texture_views ) ) )
+    {
+        ID3D11DeviceContext_PSSetShaderResources( r->context, 1, 6, r->material_texture_views );
+        memcpy( r->bound_textures + 1, r->material_texture_views, sizeof( r->material_texture_views ) );
+        ++r->statistics.state_bindings;
+    }
+    if( !r->pntc_bindings_valid || r->bound_textures[7] != r->environment_view )
+    {
+        ID3D11DeviceContext_PSSetShaderResources( r->context, 7, 1, &r->environment_view );
+        r->bound_textures[7] = r->environment_view;
+        ++r->statistics.state_bindings;
+    }
     {
         ID3D11SamplerState *sampler = r->material_sampler ? r->material_sampler : r->pntc_sampler_state;
-        ID3D11DeviceContext_PSSetSamplers( r->context, 0, 1, &sampler );
+        if( !r->pntc_bindings_valid || r->bound_sampler != sampler )
+        {
+            ID3D11DeviceContext_PSSetSamplers( r->context, 0, 1, &sampler );
+            r->bound_sampler = sampler;
+            ++r->statistics.state_bindings;
+        }
     }
-    ID3D11DeviceContext_IASetVertexBuffers( r->context, 0, 1, &geometry->vertex_buffer,
-                                            &stride, &offset );
-    ID3D11DeviceContext_IASetIndexBuffer( r->context, geometry->index_buffer,
-                                          geometry->index_format, 0 );
-    ID3D11DeviceContext_IASetPrimitiveTopology( r->context,
-                                                D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+    if( !r->pntc_bindings_valid || r->bound_vertex_buffer != geometry->vertex_buffer ||
+        r->bound_index_buffer != geometry->index_buffer )
+    {
+        ID3D11DeviceContext_IASetVertexBuffers( r->context, 0, 1, &geometry->vertex_buffer, &stride, &offset );
+        ID3D11DeviceContext_IASetIndexBuffer( r->context, geometry->index_buffer, geometry->index_format, 0 );
+        r->bound_vertex_buffer = geometry->vertex_buffer;
+        r->bound_index_buffer = geometry->index_buffer;
+        r->statistics.state_bindings += 2;
+    }
+    r->pntc_bindings_valid = 1;
+    ++r->statistics.draws;
+    r->statistics.triangles += (uint64_t)index_count / 3;
     ID3D11DeviceContext_DrawIndexed( r->context, (UINT)index_count, (UINT)index_start,
                                      (INT)base_vertex );
 }
@@ -2661,6 +2938,7 @@ void wp_renderer_dx11_render( wp_renderer_dx11 *r, enum wp_anti_aliasing anti_al
     if( !r || !r->ui_initialized || !r->cmds_initialized || !r->context )
         return;
 
+    wp_renderer_dx11_invalidate_state( r );
     hr = ID3D11DeviceContext_Map( r->context, (ID3D11Resource *)r->vertex_buffer, 0,
                                   D3D11_MAP_WRITE_DISCARD, 0, &vertices );
     if( FAILED( hr ) )
@@ -2744,6 +3022,8 @@ void wp_renderer_dx11_render( wp_renderer_dx11 *r, enum wp_anti_aliasing anti_al
         texture_view = (ID3D11ShaderResourceView *)cmd->texture.ptr;
         ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &texture_view );
         ID3D11DeviceContext_RSSetScissorRects( r->context, 1, &scissor );
+        ++r->statistics.draws;
+        r->statistics.triangles += (uint64_t)cmd->elem_count / 3;
         ID3D11DeviceContext_DrawIndexed( r->context, (UINT)cmd->elem_count, index_offset, 0 );
         index_offset += cmd->elem_count;
     }

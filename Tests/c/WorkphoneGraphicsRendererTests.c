@@ -22,6 +22,7 @@ static int g_render_order_count;
 static int g_material_sync_calls;
 static int g_material_bind_calls;
 static int g_submit_calls;
+static int g_handled_calls;
 
 static wp_s32 sync_test_material( const wp_graphics_material *material, void *native,
                                   void *user_data )
@@ -91,8 +92,9 @@ static void record_render_order( wp_graphics_object *object, wp_renderer *render
 static wp_s32 submit_test_object( wp_graphics_object *object, wp_renderer *renderer, void *user_data )
 {
     ++g_submit_calls;
-    if( object == (wp_graphics_object *)user_data )
+    if( wp_graphics_object_get_submit_data( object ) == user_data )
     {
+        ++g_handled_calls;
         record_render_order( object, renderer );
         return 1;
     }
@@ -369,12 +371,21 @@ int main( void )
         wp_camera_set_visibility_mask( camera, 0x1u );
         g_render_order_count = 0;
         g_submit_calls = 0;
+        g_handled_calls = 0;
+        wp_graphics_object_set_submit_data( second_object, second_object );
         wp_camera_set_visibility_mask( camera, 0x2u );
         wp_graphics_scene_render_with_submit( scene, renderer, submit_test_object, second_object );
-        ok &= check( g_submit_calls == 3 && g_render_order_count == 3,
+        ok &= check( g_submit_calls == 3 && g_handled_calls == 1 && g_render_order_count == 3,
                      "submission override should draw handled objects once and retain fallback" );
         ok &= check( g_render_order[0] == 1 && g_render_order[1] == 2 && g_render_order[2] == 0,
                      "submission override should preserve sorted render order" );
+        wp_graphics_object_set_submit_data( second_object, NULL );
+        g_render_order_count = 0;
+        g_handled_calls = 0;
+        wp_graphics_scene_render_with_submit( scene, renderer, submit_test_object, second_object );
+        ok &= check( g_handled_calls == 0 && g_render_order_count == 3 &&
+                         g_render_order[0] == 1 && g_render_order[1] == 2 && g_render_order[2] == 0,
+                     "cleared wrapper context should retain the native ordered fallback" );
         wp_camera_set_visibility_mask( camera, 0x1u );
         g_render_order_count = 0;
         g_submit_calls = 0;

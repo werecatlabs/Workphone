@@ -106,6 +106,26 @@ void wp_renderer_dx11_end_frame( wp_renderer_dx11 *renderer );
  */
 void wp_renderer_dx11_present( wp_renderer_dx11 *renderer, wp_s32 vsync );
 
+/** Optional benchmark counters. Reset is requested from any thread and applied
+ * at the next render frame. Read statistics on the render thread or under the
+ * graphics system lock. GPU queries are polled without forcing a flush.
+ * Counts include offscreen, window and UI passes. CPU frame time spans the
+ * first begin_frame through Present, including the separately reported wait.
+ * Intervals measure consecutive completed Presents; p95 uses at most the last
+ * 8192 intervals. Other means and counters span the complete measurement. */
+typedef struct wp_render_statistics_dx11
+{
+    uint64_t frames, interval_samples, gpu_samples, draws, triangles;
+    uint64_t material_uploads, transform_uploads, geometry_creations, state_bindings;
+    double interval_ms, interval_p95_ms, cpu_frame_ms, present_ms, gpu_frame_ms;
+    wp_s32 flip_model;
+} wp_render_statistics_dx11;
+/** Call after external code (e.g. ImGui) changes the immediate context state. */
+void wp_renderer_dx11_invalidate_state( wp_renderer_dx11 *renderer );
+void wp_renderer_dx11_reset_statistics( wp_renderer_dx11 *renderer );
+void wp_renderer_dx11_get_statistics( const wp_renderer_dx11 *renderer,
+                                      wp_render_statistics_dx11 *statistics );
+
 /* =========================================================================
  * Clear
  * ====================================================================== */

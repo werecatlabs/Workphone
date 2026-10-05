@@ -134,6 +134,8 @@ function SampleVehicleAdvanced:generate()
         self.started = true
         self.performanceStart, self.performanceLast = self.timer:now(), nil
         self.performanceFrames = {}
+        self.renderPerformanceStarted = false
+        self.renderSnapshotRequested = false
         self:drawText(DEBUG_TEXT_ID + 3, 0.02, "W/S: throttle/brake  A/D: steer  R: reset")
         self:drawText(DEBUG_TEXT_ID + 4, 0.06, "Arrows: drive  Mouse wheel: zoom  Esc: quit")
     end)
@@ -348,11 +350,35 @@ end
 function SampleVehicleAdvanced:updatePerformanceTest()
     local now = self.timer:now()
     if now - self.performanceStart < 10 then return end
-    if self.performanceLast then
+    if not self.renderPerformanceStarted then
+        self.renderPerformanceStarted = true
+        local graphics = self.application:getGraphicsSystem()
+        if graphics then
+            local properties = graphics:getProperties()
+            properties:setPropertyAsBool("reset_render_statistics", true)
+            graphics:setProperties(properties)
+        end
+    end
+    if self.performanceLast and not self.renderSnapshotRequested then
         table.insert(self.performanceFrames, (now - self.performanceLast) * 1000)
     end
     self.performanceLast = now
     if now - self.performanceStart < 40 or #self.performanceFrames == 0 then return end
+    local graphics = self.application:getGraphicsSystem()
+    local renderSummary = ""
+    if graphics then
+        if not self.renderSnapshotRequested then
+            self.renderSnapshotRequested = true
+            local properties = graphics:getProperties()
+            properties:setPropertyAsBool("request_render_statistics", true)
+            graphics:setProperties(properties)
+        end
+        local snapshot = graphics:getProperties()
+        renderSummary = snapshot:getProperty("render_statistics", "")
+        local counters = snapshot:getProperty("render_counters", "")
+        if counters ~= "" then renderSummary = renderSummary .. "\n" .. counters end
+        if renderSummary == "" and now - self.performanceStart < 45 then return end
+    end
     local frames, sum = self.performanceFrames, 0
     for _, interval in ipairs(frames) do sum = sum + interval end
     table.sort(frames)
@@ -364,6 +390,7 @@ function SampleVehicleAdvanced:updatePerformanceTest()
     if file then
         file:write(result, "\n")
         local ok, failure = pcall(function()
+            if graphics then file:write(renderSummary, "\n") end
             local profiler = self.application:getProfiler()
             if not profiler then return end
             for _, profile in ipairs(profiler:getProfiles()) do
