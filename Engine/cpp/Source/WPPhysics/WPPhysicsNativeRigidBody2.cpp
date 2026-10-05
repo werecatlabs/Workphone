@@ -1,5 +1,6 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsNativeRigidBody2.hpp>
+#include <WPPhysics/WPPhysicsShape2T.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cmath>
@@ -28,14 +29,20 @@ namespace workphone::physics
                 return nullptr;
             }
 
-            auto nativeObject = dynamic_cast<INativePhysicsObject2 *>( shape.get() );
-            WP_ASSERT( nativeObject );
-            if( !nativeObject )
+            wp_collision_shape *nativeShape = nullptr;
+            if( auto box = dynamic_cast<WPPhysicsShape2T<BoxShape2> *>( shape.get() ) )
+            {
+                nativeShape = box->getShape();
+            }
+            else if( auto sphere = dynamic_cast<WPPhysicsShape2T<SphereShape2> *>( shape.get() ) )
+            {
+                nativeShape = sphere->getShape();
+            }
+            if( !nativeShape )
             {
                 return nullptr;
             }
 
-            auto nativeShape = static_cast<wp_collision_shape *>( nativeObject->getNativeObject() );
             WP_ASSERT( nativeShape );
             return nativeShape;
         }

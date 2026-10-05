@@ -6,7 +6,7 @@
 
 namespace workphone::physics
 {
-    WPPhysicsNativeSphereShape2::WPPhysicsNativeSphereShape2() : WPPhysicsShape2( WORKPHONE_COLLISION_SHAPE_SPHERE )
+    WPPhysicsNativeSphereShape2::WPPhysicsNativeSphereShape2() : WPPhysicsShape2T<SphereShape2>( WORKPHONE_COLLISION_SHAPE_SPHERE )
     {
         setRadius( static_cast<real_Num>( 0.5 ) );
     }
@@ -72,75 +72,15 @@ namespace workphone::physics
         WP_ASSERT( massData->getMass() >= 0.0f );
     }
 
-    bool WPPhysicsNativeSphereShape2::isAttached() const
-    {
-        return WPPhysicsShape2::isAttached();
-    }
-    void WPPhysicsNativeSphereShape2::_getObject( void **ppObject ) const
-    {
-        WPPhysicsShape2::_getObject( ppObject );
-    }
-    u8 WPPhysicsNativeSphereShape2::getType() const
-    {
-        return WPPhysicsShape2::getType();
-    }
-    bool WPPhysicsNativeSphereShape2::isEnabled() const
-    {
-        return WPPhysicsShape2::isEnabled();
-    }
-    void WPPhysicsNativeSphereShape2::setEnabled( bool enabled )
-    {
-        WPPhysicsShape2::setEnabled( enabled );
-    }
-    bool WPPhysicsNativeSphereShape2::isTrigger() const
-    {
-        return WPPhysicsShape2::isTrigger();
-    }
-    void WPPhysicsNativeSphereShape2::setTrigger( bool trigger )
-    {
-        WPPhysicsShape2::setTrigger( trigger );
-    }
-    void WPPhysicsNativeSphereShape2::setCollisionType( u32 mask )
-    {
-        WPPhysicsShape2::setCollisionType( mask );
-    }
-    u32 WPPhysicsNativeSphereShape2::getCollisionType() const
-    {
-        return WPPhysicsShape2::getCollisionType();
-    }
-    void WPPhysicsNativeSphereShape2::setCollisionMask( u32 mask )
-    {
-        WPPhysicsShape2::setCollisionMask( mask );
-    }
-    u32 WPPhysicsNativeSphereShape2::getCollisionMask() const
-    {
-        return WPPhysicsShape2::getCollisionMask();
-    }
-    SmartPtr<IStateContext> WPPhysicsNativeSphereShape2::getStateContext() const
-    {
-        return WPPhysicsShape2::getStateContext();
-    }
-    void WPPhysicsNativeSphereShape2::setStateContext( SmartPtr<IStateContext> stateContext )
-    {
-        WPPhysicsShape2::setStateContext( stateContext );
-    }
-    SmartPtr<IStateListener> WPPhysicsNativeSphereShape2::getStateListener() const
-    {
-        return WPPhysicsShape2::getStateListener();
-    }
-    void WPPhysicsNativeSphereShape2::setStateListener( SmartPtr<IStateListener> stateListener )
-    {
-        WPPhysicsShape2::setStateListener( stateListener );
-    }
     SmartPtr<Properties> WPPhysicsNativeSphereShape2::getProperties() const
     {
-        auto properties = WPPhysicsShape2::getProperties();
+        auto properties = WPPhysicsShape2T<SphereShape2>::getProperties();
         properties->setProperty( "radius", static_cast<f32>( getRadius() ) );
         return properties;
     }
     void WPPhysicsNativeSphereShape2::setProperties( SmartPtr<Properties> properties )
     {
-        WPPhysicsShape2::setProperties( properties );
+        WPPhysicsShape2T<SphereShape2>::setProperties( properties );
         if( !properties )
         {
             return;

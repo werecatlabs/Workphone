@@ -19,7 +19,7 @@ namespace workphone::physics
         }
     } // namespace
 
-    WPPhysicsNativeBoxShape2::WPPhysicsNativeBoxShape2() : WPPhysicsShape2( WORKPHONE_COLLISION_SHAPE_BOX )
+    WPPhysicsNativeBoxShape2::WPPhysicsNativeBoxShape2() : WPPhysicsShape2T<BoxShape2>( WORKPHONE_COLLISION_SHAPE_BOX )
     {
         setAABB( AABB2<real_Num>( Vector2<real_Num>( -0.5, -0.5 ), Vector2<real_Num>( 0.5, 0.5 ) ) );
     }
@@ -82,76 +82,16 @@ namespace workphone::physics
         WP_ASSERT( massData->getMass() >= 0.0f );
     }
 
-    bool WPPhysicsNativeBoxShape2::isAttached() const
-    {
-        return WPPhysicsShape2::isAttached();
-    }
-    void WPPhysicsNativeBoxShape2::_getObject( void **ppObject ) const
-    {
-        WPPhysicsShape2::_getObject( ppObject );
-    }
-    u8 WPPhysicsNativeBoxShape2::getType() const
-    {
-        return WPPhysicsShape2::getType();
-    }
-    bool WPPhysicsNativeBoxShape2::isEnabled() const
-    {
-        return WPPhysicsShape2::isEnabled();
-    }
-    void WPPhysicsNativeBoxShape2::setEnabled( bool enabled )
-    {
-        WPPhysicsShape2::setEnabled( enabled );
-    }
-    bool WPPhysicsNativeBoxShape2::isTrigger() const
-    {
-        return WPPhysicsShape2::isTrigger();
-    }
-    void WPPhysicsNativeBoxShape2::setTrigger( bool trigger )
-    {
-        WPPhysicsShape2::setTrigger( trigger );
-    }
-    void WPPhysicsNativeBoxShape2::setCollisionType( u32 mask )
-    {
-        WPPhysicsShape2::setCollisionType( mask );
-    }
-    u32 WPPhysicsNativeBoxShape2::getCollisionType() const
-    {
-        return WPPhysicsShape2::getCollisionType();
-    }
-    void WPPhysicsNativeBoxShape2::setCollisionMask( u32 mask )
-    {
-        WPPhysicsShape2::setCollisionMask( mask );
-    }
-    u32 WPPhysicsNativeBoxShape2::getCollisionMask() const
-    {
-        return WPPhysicsShape2::getCollisionMask();
-    }
-    SmartPtr<IStateContext> WPPhysicsNativeBoxShape2::getStateContext() const
-    {
-        return WPPhysicsShape2::getStateContext();
-    }
-    void WPPhysicsNativeBoxShape2::setStateContext( SmartPtr<IStateContext> stateContext )
-    {
-        WPPhysicsShape2::setStateContext( stateContext );
-    }
-    SmartPtr<IStateListener> WPPhysicsNativeBoxShape2::getStateListener() const
-    {
-        return WPPhysicsShape2::getStateListener();
-    }
-    void WPPhysicsNativeBoxShape2::setStateListener( SmartPtr<IStateListener> stateListener )
-    {
-        WPPhysicsShape2::setStateListener( stateListener );
-    }
     SmartPtr<Properties> WPPhysicsNativeBoxShape2::getProperties() const
     {
-        auto properties = WPPhysicsShape2::getProperties();
+        auto properties = WPPhysicsShape2T<BoxShape2>::getProperties();
         properties->setProperty( "center", m_aabb.getCenter() );
         properties->setProperty( "size", m_aabb.getSize() );
         return properties;
     }
     void WPPhysicsNativeBoxShape2::setProperties( SmartPtr<Properties> properties )
     {
-        WPPhysicsShape2::setProperties( properties );
+        WPPhysicsShape2T<BoxShape2>::setProperties( properties );
         if( !properties )
         {
             return;

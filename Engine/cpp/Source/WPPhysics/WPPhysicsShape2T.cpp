@@ -1,11 +1,12 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
-#include <WPPhysics/WPPhysicsShape2.hpp>
+#include <WPPhysics/WPPhysicsShape2T.hpp>
 #include <Workphone/Workphone.hpp>
 #include <stdexcept>
 
 namespace workphone::physics
 {
-    WPPhysicsShape2::WPPhysicsShape2( wp_collision_shape_type type ) :
+    template <class T>
+    WPPhysicsShape2T<T>::WPPhysicsShape2T( wp_collision_shape_type type ) :
         m_shape( wp_collision_shape_create( type ) )
     {
         if( !m_shape )
@@ -14,36 +15,42 @@ namespace workphone::physics
         }
     }
 
-    WPPhysicsShape2::WPPhysicsShape2( wp_collision_shape *shape ) : m_shape( shape )
+    template <class T>
+    WPPhysicsShape2T<T>::WPPhysicsShape2T( wp_collision_shape *shape ) : m_shape( shape )
     {
         WP_ASSERT( m_shape );
     }
 
-    WPPhysicsShape2::~WPPhysicsShape2()
+    template <class T>
+    WPPhysicsShape2T<T>::~WPPhysicsShape2T()
     {
         wp_collision_shape_destroy( m_shape );
         m_shape = nullptr;
     }
 
-    void *WPPhysicsShape2::getNativeObject() const
+    template <class T>
+    void *WPPhysicsShape2T<T>::getNativeObject() const
     {
         WP_ASSERT( m_shape );
         return m_shape;
     }
 
-    wp_collision_shape *WPPhysicsShape2::getShape() const
+    template <class T>
+    wp_collision_shape *WPPhysicsShape2T<T>::getShape() const
     {
         WP_ASSERT( m_shape );
         return m_shape;
     }
 
-    bool WPPhysicsShape2::isAttached() const
+    template <class T>
+    bool WPPhysicsShape2T<T>::isAttached() const
     {
         WP_ASSERT( m_shape );
         return wp_collision_shape_is_attached( m_shape ) != 0;
     }
 
-    void WPPhysicsShape2::_getObject( void **ppObject ) const
+    template <class T>
+    void WPPhysicsShape2T<T>::_getObject( void **ppObject ) const
     {
         WP_ASSERT( ppObject );
         if( ppObject )
@@ -53,85 +60,99 @@ namespace workphone::physics
         }
     }
 
-    u8 WPPhysicsShape2::getType() const
+    template <class T>
+    u8 WPPhysicsShape2T<T>::getType() const
     {
         WP_ASSERT( m_shape );
         return static_cast<u8>( wp_collision_shape_get_type( m_shape ) );
     }
 
-    bool WPPhysicsShape2::isEnabled() const
+    template <class T>
+    bool WPPhysicsShape2T<T>::isEnabled() const
     {
         WP_ASSERT( m_shape );
         return wp_collision_shape_is_enabled( m_shape ) != 0;
     }
 
-    void WPPhysicsShape2::setEnabled( bool enabled )
+    template <class T>
+    void WPPhysicsShape2T<T>::setEnabled( bool enabled )
     {
         WP_ASSERT( m_shape );
         wp_collision_shape_set_enabled( m_shape, enabled );
         WP_ASSERT( isEnabled() == enabled );
     }
 
-    bool WPPhysicsShape2::isTrigger() const
+    template <class T>
+    bool WPPhysicsShape2T<T>::isTrigger() const
     {
         WP_ASSERT( m_shape );
         return wp_collision_shape_is_trigger( m_shape ) != 0;
     }
 
-    void WPPhysicsShape2::setTrigger( bool trigger )
+    template <class T>
+    void WPPhysicsShape2T<T>::setTrigger( bool trigger )
     {
         WP_ASSERT( m_shape );
         wp_collision_shape_set_trigger( m_shape, trigger );
         WP_ASSERT( isTrigger() == trigger );
     }
 
-    void WPPhysicsShape2::setCollisionType( u32 mask )
+    template <class T>
+    void WPPhysicsShape2T<T>::setCollisionType( u32 mask )
     {
         WP_ASSERT( m_shape );
         wp_collision_shape_set_collision_type( m_shape, mask );
         WP_ASSERT( getCollisionType() == mask );
     }
 
-    u32 WPPhysicsShape2::getCollisionType() const
+    template <class T>
+    u32 WPPhysicsShape2T<T>::getCollisionType() const
     {
         WP_ASSERT( m_shape );
         return wp_collision_shape_get_collision_type( m_shape );
     }
 
-    void WPPhysicsShape2::setCollisionMask( u32 mask )
+    template <class T>
+    void WPPhysicsShape2T<T>::setCollisionMask( u32 mask )
     {
         WP_ASSERT( m_shape );
         wp_collision_shape_set_collision_mask( m_shape, mask );
         WP_ASSERT( getCollisionMask() == mask );
     }
 
-    u32 WPPhysicsShape2::getCollisionMask() const
+    template <class T>
+    u32 WPPhysicsShape2T<T>::getCollisionMask() const
     {
         WP_ASSERT( m_shape );
         return wp_collision_shape_get_collision_mask( m_shape );
     }
 
-    SmartPtr<IStateContext> WPPhysicsShape2::getStateContext() const
+    template <class T>
+    SmartPtr<IStateContext> WPPhysicsShape2T<T>::getStateContext() const
     {
         return m_stateContext;
     }
 
-    void WPPhysicsShape2::setStateContext( SmartPtr<IStateContext> stateContext )
+    template <class T>
+    void WPPhysicsShape2T<T>::setStateContext( SmartPtr<IStateContext> stateContext )
     {
         m_stateContext = stateContext;
     }
 
-    SmartPtr<IStateListener> WPPhysicsShape2::getStateListener() const
+    template <class T>
+    SmartPtr<IStateListener> WPPhysicsShape2T<T>::getStateListener() const
     {
         return m_stateListener;
     }
 
-    void WPPhysicsShape2::setStateListener( SmartPtr<IStateListener> stateListener )
+    template <class T>
+    void WPPhysicsShape2T<T>::setStateListener( SmartPtr<IStateListener> stateListener )
     {
         m_stateListener = stateListener;
     }
 
-    SmartPtr<Properties> WPPhysicsShape2::getProperties() const
+    template <class T>
+    SmartPtr<Properties> WPPhysicsShape2T<T>::getProperties() const
     {
         auto properties = m_properties ? workphone::make_ptr<Properties>( *m_properties )
                                        : workphone::make_ptr<Properties>();
@@ -142,11 +163,12 @@ namespace workphone::physics
         return properties;
     }
 
-    void WPPhysicsShape2::setProperties( SmartPtr<Properties> properties )
+    template <class T>
+    void WPPhysicsShape2T<T>::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
         {
-            WP_LOG_ERROR( "WPPhysicsShape2::setProperties: properties are null." );
+            WP_LOG_ERROR( "WPPhysicsShape2T::setProperties: properties are null." );
             return;
         }
 
@@ -164,4 +186,6 @@ namespace workphone::physics
         setCollisionMask( collisionMask );
         m_properties = workphone::make_ptr<Properties>( *properties );
     }
+    template class WPPhysicsShape2T<BoxShape2>;
+    template class WPPhysicsShape2T<SphereShape2>;
 } // namespace workphone::physics

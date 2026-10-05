@@ -1,12 +1,12 @@
 #ifndef WPPHYSICSNATIVEBOXSHAPE2_HPP
 #define WPPHYSICSNATIVEBOXSHAPE2_HPP
 
-#include <WPPhysics/WPPhysicsShape2.hpp>
+#include <WPPhysics/WPPhysicsShape2T.hpp>
 #include <Workphone/Interface/Physics/IBoxShape2.hpp>
 
 namespace workphone::physics
 {
-    class WPPhysicsNativeBoxShape2 : public WPPhysicsShape2, public IBoxShape2
+    class WPPhysicsNativeBoxShape2 : public WPPhysicsShape2T<BoxShape2>
     {
     public:
         WPPhysicsNativeBoxShape2();
@@ -18,21 +18,6 @@ namespace workphone::physics
         void getPoints( Array<Vector2<real_Num>> &points ) const override;
         void computeMass( SmartPtr<IMassData2> massData, real_Num density ) const override;
 
-        bool isAttached() const override;
-        void _getObject( void **ppObject ) const override;
-        u8 getType() const override;
-        bool isEnabled() const override;
-        void setEnabled( bool enabled ) override;
-        bool isTrigger() const override;
-        void setTrigger( bool trigger ) override;
-        void setCollisionType( u32 mask ) override;
-        u32 getCollisionType() const override;
-        void setCollisionMask( u32 mask ) override;
-        u32 getCollisionMask() const override;
-        SmartPtr<IStateContext> getStateContext() const override;
-        void setStateContext( SmartPtr<IStateContext> stateContext ) override;
-        SmartPtr<IStateListener> getStateListener() const override;
-        void setStateListener( SmartPtr<IStateListener> stateListener ) override;
         SmartPtr<Properties> getProperties() const override;
         void setProperties( SmartPtr<Properties> properties ) override;
         bool handleStateChanged( const SmartPtr<IStateMessage> &message ) override;

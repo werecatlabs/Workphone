@@ -1,9 +1,10 @@
-#ifndef WPPHYSICSSHAPE2_HPP
-#define WPPHYSICSSHAPE2_HPP
+#ifndef WPPHYSICSSHAPE2T_HPP
+#define WPPHYSICSSHAPE2T_HPP
 
 #include <WPPhysics/WPPhysicsPrerequisites.hpp>
-#include <Workphone/Interface/Physics/INativePhysicsObject2.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape2.hpp>
+#include <Workphone/Physics/BoxShape2.hpp>
+#include <Workphone/Physics/SphereShape2.hpp>
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 
@@ -13,14 +14,15 @@ extern "C" {
 
 namespace workphone::physics
 {
-    class WPPhysicsShape2 : public INativePhysicsObject2
+    template <class T>
+    class WPPhysicsShape2T : public T
     {
     public:
-        explicit WPPhysicsShape2( wp_collision_shape_type type );
-        explicit WPPhysicsShape2( wp_collision_shape *shape );
-        ~WPPhysicsShape2() override;
+        explicit WPPhysicsShape2T( wp_collision_shape_type type );
+        explicit WPPhysicsShape2T( wp_collision_shape *shape );
+        ~WPPhysicsShape2T() override;
 
-        void *getNativeObject() const override;
+        void *getNativeObject() const;
         wp_collision_shape *getShape() const;
 
         bool isAttached() const;
@@ -47,6 +49,8 @@ namespace workphone::physics
         SmartPtr<IStateListener> m_stateListener;
         SmartPtr<Properties> m_properties;
     };
+    extern template class WPPhysicsShape2T<BoxShape2>;
+    extern template class WPPhysicsShape2T<SphereShape2>;
 }  // namespace workphone::physics
 
 #endif

@@ -5,7 +5,7 @@
 #include "WPPhysics/WPPhysicsManager2.hpp"
 #include "WPPhysics/WPPhysicsScene2.hpp"
 #include "WPPhysics/WPPhysicsNativeRigidBody2.hpp"
-#include "WPPhysics/WPPhysicsShape2.hpp"
+#include "WPPhysics/WPPhysicsShape2T.hpp"
 #include "WPPhysics/WPPhysicsNativeBoxShape2.hpp"
 #include "WPPhysics/WPPhysicsNativeSphereShape2.hpp"
 #include "WPPhysics/WPPhysicsManager3.hpp"
