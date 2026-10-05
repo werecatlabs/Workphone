@@ -19,6 +19,8 @@ namespace workphone
         if( auto scene = getScene() )
         {
             ScopedLock lock( scene.get() );
+            if( !scene->isLoaded() )
+                return;
             auto state = scene->getState();
             switch( state )
             {

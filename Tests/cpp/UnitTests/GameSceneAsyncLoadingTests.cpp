@@ -7,14 +7,14 @@
 #include <boost/test/unit_test.hpp>
 #include <chrono>
 #include <thread>
+#include <atomic>
+#include <fstream>
 
 using namespace workphone;
 using namespace workphone::scene;
 
 namespace
 {
-    const String AsyncTestScenePath = "Tests/ui_test.fbscene";
-
     SmartPtr<Properties> actorData( const String &name, const String &uuid = StringUtil::getUUID() )
     {
         auto data = make_ptr<Properties>();
@@ -32,6 +32,28 @@ namespace
         return DataUtil::toString( data.get() );
     }
 
+    String createFileScene( TestGuard &guard )
+    {
+        auto data = make_ptr<Properties>();
+        auto canvas = actorData( "Canvas" );
+        for( const auto &name : { "Panel", "Dropdown" } )
+        {
+            auto child = actorData( name );
+            child->setName( GameActorUtil::childStr );
+            canvas->addChild( child );
+        }
+        data->addChild( canvas );
+        auto path = Path::lexically_normal( Path::getWorkingDirectory(),
+                                            "scene-test-" + StringUtil::getUUID() + ".fbscene" );
+        guard.trackFilesystemPath( path );
+        std::ofstream file( path.c_str(), std::ios::binary );
+        BOOST_REQUIRE( file.is_open() );
+        auto text = DataUtil::toString( data.get() );
+        file.write( text.c_str(), static_cast<std::streamsize>( text.size() ) );
+        BOOST_REQUIRE( file.good() );
+        return path;
+    }
+
     void drainLoad( TestGuard &guard )
     {
         auto queue = guard.applicationManager->getJobQueue();
@@ -40,7 +62,8 @@ namespace
         {
             queue->update();
             guard.taskManager->update();
-            if( !queue->hasJobs() )
+            if( !queue->hasJobs() &&
+                guard.scene->getSceneLoadingState() != IGameScene::SceneLoadingState::Loading )
                 return;
             std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
         } while( std::chrono::steady_clock::now() < deadline );
@@ -79,6 +102,7 @@ BOOST_AUTO_TEST_CASE( gamescene_async_file_load_completes_through_job_queue )
 {
     TestGuard guard;
     BOOST_REQUIRE( guard.isAvailable );
+    const auto AsyncTestScenePath = createFileScene( guard );
 
     guard.sceneManager->clear();
     guard.scene->setState( IGameScene::State::Edit );
@@ -100,6 +124,7 @@ BOOST_AUTO_TEST_CASE( gamescene_async_file_load_can_reload_after_clear )
 {
     TestGuard guard;
     BOOST_REQUIRE( guard.isAvailable );
+    const auto AsyncTestScenePath = createFileScene( guard );
 
     guard.sceneManager->clear();
     guard.scene->setState( IGameScene::State::Edit );
@@ -226,6 +251,21 @@ BOOST_AUTO_TEST_CASE( duplicate_uuid_load_fails_without_leaking_registered_actor
     BOOST_CHECK_EQUAL( guard.sceneManager->getNumActors(), count );
 }
 
+BOOST_AUTO_TEST_CASE( cleared_pending_actor_job_cannot_attach_its_actor )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    resetScene( guard );
+    auto job = make_ptr<ActorLoadJob>();
+    job->setScene( guard.scene );
+    job->setProperties( actorData( "CancelledActor" ) );
+    guard.applicationManager->getJobQueue()->addJob( job );
+    guard.scene->clear( true );
+    drainLoad( guard );
+    BOOST_CHECK( !job->getActor() );
+    BOOST_CHECK( guard.scene->getActors().empty() );
+}
+
 BOOST_AUTO_TEST_CASE( malformed_inline_scene_reports_failure )
 {
     TestGuard guard;
@@ -235,6 +275,60 @@ BOOST_AUTO_TEST_CASE( malformed_inline_scene_reports_failure )
     drainLoad( guard );
     BOOST_CHECK( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Failed );
     BOOST_CHECK( guard.scene->getActors().empty() );
+}
+
+BOOST_AUTO_TEST_CASE( ordered_async_load_with_zero_one_and_multiple_job_workers )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    auto originalPool = guard.applicationManager->getThreadPool();
+    auto pool = make_ptr<ThreadPool>();
+    guard.applicationManager->setThreadPool( pool );
+    struct RestorePool
+    {
+        SmartPtr<core::IApplicationManager> application;
+        SmartPtr<IThreadPool> original;
+        ~RestorePool()
+        {
+            application->setThreadPool( original );
+        }
+    } restore{ guard.applicationManager, originalPool };
+    auto queue = guard.applicationManager->getJobQueue();
+    for( u32 count : { 0u, 1u, 3u } )
+    {
+        resetScene( guard );
+        pool->setNumThreads( count );
+        std::atomic<bool> stop{ false };
+        std::vector<std::thread> workers;
+        struct JoinWorkers
+        {
+            std::atomic<bool> &stop;
+            std::vector<std::thread> &workers;
+            ~JoinWorkers()
+            {
+                stop = true;
+                for( auto &worker : workers )
+                    worker.join();
+            }
+        } join{ stop, workers };
+        for( u32 i = 0; i < count; ++i )
+            workers.emplace_back( [&, i] {
+                Thread::setCurrentThreadId( static_cast<Thread::ThreadId>( i ) );
+                while( !stop.load() )
+                {
+                    queue->update();
+                    std::this_thread::yield();
+                }
+            } );
+        guard.scene->loadSceneDataStr( orderedSceneData(), true );
+        drainLoad( guard );
+        BOOST_REQUIRE( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Loaded );
+        auto actors = guard.scene->getActors();
+        BOOST_REQUIRE_EQUAL( actors.size(), 3u );
+        BOOST_CHECK_EQUAL( actors[0]->getName(), "First" );
+        BOOST_CHECK_EQUAL( actors[1]->getName(), "Second" );
+        BOOST_CHECK_EQUAL( actors[2]->getName(), "Third" );
+    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

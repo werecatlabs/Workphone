@@ -319,8 +319,8 @@ namespace workphone::scene
                         auto transformTask = transform->getTask();
 
                         auto smoothTransform = transform->getWorldTransform();
-                        if( gameManager->getTransformState( id, transformTime, smoothTransform,
-                                                            transformTask ) )
+                        if( gameManager->getTransformState( id, transformTime, smoothDeltaTime,
+                                                            smoothTransform, transformTask ) )
                         {
                             auto fPosition = smoothTransform.getPosition();
                             auto fOrientation = smoothTransform.getOrientation();

@@ -198,7 +198,7 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_returns_latest_state )
     sceneManager->addTransformState( id, time_interval( 10 ), expected );
 
     Transform3<real_Num> actual;
-    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 10 ), actual, task ) );
+    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 10 ), time_interval(1), actual, task ) );
     checkTransformClose( actual, expected );
 }
 
@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_interpolates_between_saved_states )
                                      makeTransform( Vector3<real_Num>( 10.0, 20.0, 30.0 ) ) );
 
     Transform3<real_Num> actual;
-    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 5 ), actual, task ) );
+    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 5 ), time_interval(1), actual, task ) );
     checkVectorClose( actual.getPosition(), Vector3<real_Num>( 5.0, 10.0, 15.0 ) );
 }
 
@@ -237,7 +237,7 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_extrapolates_with_linear_velocity )
                                      Vector3<real_Num>( 2.0, 0.0, -1.0 ), Vector3<real_Num>::zero() );
 
     Transform3<real_Num> actual;
-    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 12 ), actual, task ) );
+    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 12 ), time_interval(1), actual, task ) );
     checkVectorClose( actual.getPosition(), Vector3<real_Num>( 5.0, 2.0, 1.0 ) );
 }
 
@@ -245,7 +245,7 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_returns_false_for_unknown_id )
 {
     Transform3<real_Num> actual;
 
-    BOOST_CHECK( !sceneManager->getTransformState( std::numeric_limits<u32>::max(), time_interval( 0 ),
+    BOOST_CHECK( !sceneManager->getTransformState( std::numeric_limits<u32>::max(), time_interval( 0 ), time_interval(1),
                                                    actual, Thread::getCurrentTask() ) );
 }
 
@@ -264,14 +264,14 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_extrapolates_latest_of_multiple_phy
                                      Vector3<real_Num>::zero() );
 
     Transform3<real_Num> actual;
-    BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 10 ), actual, task ) );
+    BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 10 ), time_interval(1), actual, task ) );
     checkTransformClose( actual, latest );
     for( u32 query = 0; query < 2; ++query )
     {
-        BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 12 ), actual, task ) );
+        BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 12 ), time_interval(1), actual, task ) );
         checkVectorClose( actual.getPosition(), Vector3<real_Num>( 7.0, 2.0, 0.0 ) );
     }
-    BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 10 ), actual, task ) );
+    BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 10 ), time_interval(1), actual, task ) );
     checkTransformClose( actual, latest );
 }
 
@@ -291,7 +291,7 @@ BOOST_AUTO_TEST_CASE( duplicate_transform_state_time_keeps_first_value )
                                      makeTransform( Vector3<real_Num>( 99.0, 99.0, 99.0 ) ) );
 
     Transform3<real_Num> actual;
-    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 7 ), actual, task ) );
+    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 7 ), time_interval(1), actual, task ) );
     checkTransformClose( actual, first );
 }
 

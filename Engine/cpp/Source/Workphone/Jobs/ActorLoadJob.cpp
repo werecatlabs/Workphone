@@ -39,6 +39,8 @@ namespace workphone
         auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
         if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
             return;
+        if( parent && parent->getScene() != scene )
+            return;
 
         // One owner loads the entire hierarchy; no nested worker jobs or timed waits.
         auto actors = scene::GameActorUtil::loadSceneActors( { getProperties() }, scene );
