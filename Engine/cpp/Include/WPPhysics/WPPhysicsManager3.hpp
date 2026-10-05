@@ -76,16 +76,6 @@ namespace workphone::physics
         SmartPtr<IRigidStatic3> addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape,
                                                 SmartPtr<Properties> properties ) override;
 
-        /** @brief Creates a vehicle associated with the given chassis rigid body. */
-        SmartPtr<IPhysicsVehicle3> addVehicle( SmartPtr<IRigidBody3> chassis ) override;
-
-        /** @brief Removes a vehicle from the simulation. Returns true if successful. */
-        bool removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle ) override;
-
-        /** @brief Creates a vehicle with a given chassis and specific properties. */
-        SmartPtr<IPhysicsVehicle3> addVehicle( SmartPtr<IRigidBody3> chassis,
-                                               const SmartPtr<Properties> &properties ) override;
-
         /** @brief Performs a raycast test in the physics world. */
         bool rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
                       Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal, u32 collisionType = 0,
@@ -166,7 +156,6 @@ namespace workphone::physics
         Array<SmartPtr<IPhysicsScene3>> m_scenes;        ///< Collection of managed scenes.
         Array<SmartPtr<IPhysicsShape3>> m_shapes;        ///< Collection of created shapes.
         Array<SmartPtr<IRigidBody3>> m_bodies;           ///< Collection of managed rigid bodies.
-        Array<SmartPtr<IPhysicsVehicle3>> m_vehicles;    ///< Collection of managed vehicles.
         Array<SmartPtr<ICharacterController3>> m_characters;  ///< Collection of managed characters.
         Array<SmartPtr<IRaycastHit>> m_raycastHits;  ///< Collection of raycast hit data buffers.
         SmartPtr<IPhysicsScene3> m_physicsScene;     ///< The main simulation scene.

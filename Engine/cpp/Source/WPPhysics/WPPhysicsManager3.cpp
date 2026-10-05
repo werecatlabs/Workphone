@@ -1,7 +1,6 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsBoxShape3.hpp>
 #include <WPPhysics/WPPhysicsManager3.hpp>
-#include <WPPhysics/WPPhysicsVehicle3.hpp>
 #include <WPPhysics/WPPhysicsMaterial3.hpp>
 #include <WPPhysics/WPPhysicsShape3T.hpp>
 #include <WPPhysics/WPPhysicsMeshShape3.hpp>
@@ -584,8 +583,9 @@ namespace workphone::physics
             {
                 return;
             }
+
             if( getLoadingState() == LoadingState::Unloaded && m_constraints.empty() &&
-                m_vehicles.empty() && m_characters.empty() && m_raycastHits.empty() &&
+                m_characters.empty() && m_raycastHits.empty() &&
                 m_bodies.empty() && m_shapes.empty() && m_materials.empty() && m_scenes.empty() )
             {
                 return;
@@ -594,7 +594,6 @@ namespace workphone::physics
             setLoadingState( LoadingState::Unloading );
 
             constraints.swap( m_constraints );
-            vehicles.swap( m_vehicles );
             characters.swap( m_characters );
             raycastHits.swap( m_raycastHits );
             bodies.swap( m_bodies );
@@ -1002,30 +1001,11 @@ namespace workphone::physics
                     std::remove( m_constraints.begin(), m_constraints.end(), constraint ),
                     m_constraints.end() );
             }
-
-            for( const auto &vehicle : m_vehicles )
-            {
-                const auto backendVehicle = dynamic_cast<WPPhysicsVehicle3 *>( vehicle.get() );
-                if( backendVehicle && backendVehicle->getChassis().get() == body.get() )
-                {
-                    vehiclesToRemove.push_back( vehicle );
-                }
-            }
-            for( const auto &vehicle : vehiclesToRemove )
-            {
-                m_vehicles.erase( std::remove( m_vehicles.begin(), m_vehicles.end(), vehicle ),
-                                  m_vehicles.end() );
-            }
         }
 
         for( auto &constraint : constraintsToRemove )
         {
             constraint->unload( nullptr );
-        }
-
-        for( auto &vehicle : vehiclesToRemove )
-        {
-            vehicle->unload( nullptr );
         }
 
         if( auto scene = body->getScene() )
@@ -1138,127 +1118,6 @@ namespace workphone::physics
 
         applyRigidBodyProperties( body, properties );
         return body;
-    }
-    SmartPtr<IPhysicsVehicle3> WPPhysicsManager3::addVehicle( SmartPtr<IRigidBody3> chassis )
-    {
-        return addVehicle( chassis, nullptr );
-    }
-
-    bool WPPhysicsManager3::removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle )
-    {
-        if( !vehicle )
-        {
-            return false;
-        }
-
-        {
-            ScopedLock lock( this );
-            const auto it = std::find( m_vehicles.begin(), m_vehicles.end(), vehicle );
-            if( it == m_vehicles.end() )
-            {
-                return false;
-            }
-            m_vehicles.erase( it );
-        }
-        vehicle->unload( nullptr );
-        return true;
-    }
-
-    SmartPtr<IPhysicsVehicle3> WPPhysicsManager3::addVehicle( SmartPtr<IRigidBody3>       chassis,
-                                                             const SmartPtr<Properties> &properties )
-    {
-        if( !chassis )
-        {
-            WP_LOG_ERROR( "WPPhysicsManager3::addVehicle: chassis is null." );
-            return nullptr;
-        }
-        if( !dynamic_cast<WPPhysicsRigidDynamic3 *>( chassis.get() ) )
-        {
-            WP_LOG_ERROR(
-                "WPPhysicsManager3::addVehicle: chassis must be a WPPhysics dynamic rigid body." );
-            return nullptr;
-        }
-
-        try
-        {
-            ScopedLock lock( this );
-            if( std::none_of( m_bodies.begin(), m_bodies.end(),
-                              [&chassis]( const SmartPtr<IRigidBody3> &body )
-                              { return body.get() == chassis.get(); } ) )
-            {
-                WP_LOG_ERROR( "WPPhysicsManager3::addVehicle: chassis is not managed by this manager." );
-                return nullptr;
-            }
-            if( std::any_of( m_vehicles.begin(), m_vehicles.end(),
-                             [&chassis]( const SmartPtr<IPhysicsVehicle3> &vehicle )
-                             {
-                                 const auto backend = dynamic_cast<WPPhysicsVehicle3 *>( vehicle.get() );
-                                 return backend && backend->getChassis().get() == chassis.get();
-                             } ) )
-            {
-                WP_LOG_ERROR( "WPPhysicsManager3::addVehicle: chassis already belongs to a vehicle." );
-                return nullptr;
-            }
-
-            auto vehicle = workphone::make_ptr<WPPhysicsVehicle3>( chassis );
-            u32  wheelCount = 0;
-            f32  wheelRadius = 0.35f;
-            f32  wheelWidth = 0.25f;
-            f32  suspensionTravelCm = 20.0f;
-            f32  suspensionForce = 6000.0f;
-            f32  suspensionStiffness = 35.0f;
-            f32  suspensionDamping = 4.5f;
-            f32  frictionSlip = 1.0f;
-            u32  materialId = 0;
-            bool enabled = true;
-            bool finalize = false;
-
-            if( properties )
-            {
-                properties->getPropertyValue( "wheelCount", wheelCount );
-                properties->getPropertyValue( "wheelRadius", wheelRadius );
-                properties->getPropertyValue( "wheelWidth", wheelWidth );
-                properties->getPropertyValue( "suspensionTravelCm", suspensionTravelCm );
-                properties->getPropertyValue( "suspensionForce", suspensionForce );
-                properties->getPropertyValue( "suspensionStiffness", suspensionStiffness );
-                properties->getPropertyValue( "suspensionDamping", suspensionDamping );
-                properties->getPropertyValue( "frictionSlip", frictionSlip );
-                properties->getPropertyValue( "materialId", materialId );
-                properties->getPropertyValue( "enabled", enabled );
-                properties->getPropertyValue( "finalize", finalize );
-            }
-
-            wheelCount = std::min<u32>( wheelCount, 32u );
-            for( u32 i = 0; i < wheelCount; ++i )
-            {
-                auto wheel = vehicle->addWheel();
-                if( !wheel )
-                {
-                    break;
-                }
-                wheel->setRadius( static_cast<real_Num>( wheelRadius ) );
-                wheel->setWidth( static_cast<real_Num>( wheelWidth ) );
-                wheel->setMaxSuspensionTravelCm( static_cast<real_Num>( suspensionTravelCm ) );
-                wheel->setMaxSuspensionForce( static_cast<real_Num>( suspensionForce ) );
-                wheel->setSuspensionStiffness( static_cast<real_Num>( suspensionStiffness ) );
-                wheel->setSuspensionDamping( static_cast<real_Num>( suspensionDamping ) );
-                wheel->setFrictionSlip( static_cast<real_Num>( frictionSlip ) );
-            }
-            vehicle->setMaterialId( materialId );
-            vehicle->setEnabled( enabled );
-            if( finalize )
-            {
-                vehicle->finalize();
-            }
-
-            m_vehicles.push_back( vehicle );
-            return vehicle;
-        }
-        catch( const std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-            return nullptr;
-        }
     }
 
     bool WPPhysicsManager3::rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,

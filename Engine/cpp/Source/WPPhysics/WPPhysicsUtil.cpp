@@ -1,6 +1,5 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsUtil.hpp>
-#include <WPPhysics/WPPhysicsVehicleWheel.hpp>
 #include <Workphone/Physics/PhysicsManager.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
 #include <WPPhysics/WPPhysicsShape3T.hpp>
