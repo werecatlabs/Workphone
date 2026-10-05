@@ -15,7 +15,6 @@
 #include <Workphone/Interface/Physics/IPhysicsMaterial3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
-#include <Workphone/Interface/Physics/IPhysicsVehicle3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsSoftBody3.hpp>
 #include <Workphone/Interface/Physics/ICharacterController3.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>

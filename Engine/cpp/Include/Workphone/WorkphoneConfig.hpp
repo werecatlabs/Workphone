@@ -498,7 +498,7 @@
  * @brief Minor version number of the WorkPhone engine.
  * @details Incremented for feature releases with backward compatibility.
  */
-#define WP_VERSION_MINOR 9
+#define WP_VERSION_MINOR 10
 
 /**
  * @def WP_VERSION_PATCH

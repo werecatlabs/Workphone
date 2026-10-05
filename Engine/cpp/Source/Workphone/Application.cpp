@@ -26,7 +26,6 @@
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
-#include <Workphone/Interface/Physics/IPhysicsVehicle3.hpp>
 #include <Workphone/Interface/Sound/ISound.hpp>
 #include <Workphone/Interface/Sound/ISoundManager.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>

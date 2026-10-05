@@ -441,21 +441,6 @@ namespace workphone
             virtual void setEnableGravity( bool enableGravity ) = 0;
 
             /**
-             * @brief Add a physics effect to this body.
-             * @param effect Smart pointer to an effect instance.
-             *
-             * Effects provide modular, composable behaviour (forces, modifiers, etc.) applied
-             * to the body by the physics system.
-             */
-            virtual void addEffect( SmartPtr<IPhysicsEffect2> effect ) = 0;
-
-            /**
-             * @brief Remove a previously added physics effect.
-             * @param effect Smart pointer to the effect to remove.
-             */
-            virtual void removeEffect( SmartPtr<IPhysicsEffect2> effect ) = 0;
-
-            /**
              * @brief Get the list of constraints attached to this body.
              * @return Array of constraints (smart pointers).
              */

@@ -202,10 +202,6 @@
 #include <Workphone/Interface/Physics/ISphereShape2.hpp>
 #include <Workphone/Interface/Physics/ISphereShape3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager.hpp>
-#include <Workphone/Interface/Physics/IPhysicsEffect2.hpp>
-#include <Workphone/Interface/Physics/IPhysicsVehicle3.hpp>
-#include <Workphone/Interface/Physics/IPhysicsVehicleInput3.hpp>
-#include <Workphone/Interface/Physics/IPhysicsVehicleWheel3.hpp>
 #include <Workphone/Interface/Physics/ITerrainShape.hpp>
 #include <Workphone/Interface/Physics/IRigidStatic3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene2.hpp>
@@ -223,9 +219,6 @@
 #include <Workphone/Interface/Physics/IMassData2.hpp>
 #include <Workphone/Interface/Physics/IMassData3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsBody2D.hpp>
-#include <Workphone/Interface/Physics/IPhysicsBodyEffect2.hpp>
-#include <Workphone/Interface/Physics/IPhysicsBodyEffectSnap2.hpp>
-#include <Workphone/Interface/Physics/IPhysicsCompositeShape3.hpp>
 #include <Workphone/Interface/Physics/IPhysicsConstraint.hpp>
 #include <Workphone/Interface/Physics/IPhysicsDebug.hpp>
 #include <Workphone/Interface/Physics/IPhysicsShape.hpp>

@@ -664,14 +664,10 @@ namespace workphone
         physics::IMeshShape::setupTypeInfo();
         physics::IPhysicsBody2D::setupTypeInfo();
         physics::IPhysicsBody3::setupTypeInfo();
-        physics::IPhysicsBodyEffect2::setupTypeInfo();
-        physics::IPhysicsBodyEffectSnap2::setupTypeInfo();
-        physics::IPhysicsCompositeShape3::setupTypeInfo();
         physics::IPhysicsConstraint::setupTypeInfo();
         physics::IPhysicsConstraint2::setupTypeInfo();
         physics::IPhysicsConstraint3::setupTypeInfo();
         physics::IPhysicsDebug::setupTypeInfo();
-        physics::IPhysicsEffect2::setupTypeInfo();
         physics::IPhysicsManager::setupTypeInfo();
         physics::IPhysicsManager2D::setupTypeInfo();
         physics::IPhysicsMaterial2::setupTypeInfo();
@@ -686,9 +682,6 @@ namespace workphone
         physics::IPhysicsSoftBody2::setupTypeInfo();
         physics::IPhysicsSoftBody3::setupTypeInfo();
         physics::IPhysicsSpring::setupTypeInfo();
-        physics::IPhysicsVehicle3::setupTypeInfo();
-        physics::IPhysicsVehicleInput3::setupTypeInfo();
-        physics::IPhysicsVehicleWheel3::setupTypeInfo();
         physics::IPlaneShape3::setupTypeInfo();
         physics::IRaycastHit::setupTypeInfo();
         physics::IRigidBody2::setupTypeInfo();
