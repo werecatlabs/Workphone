@@ -219,7 +219,8 @@ function SampleVehicleAdvanced:updateControls()
             self:finishSmokeTest(true, "Full circuit")
         end
     end
-    self.raceScene:setControls(throttle, brake, steering)
+    
+	--self.raceScene:setControls(throttle, brake, steering)
     local resetDown = self:keyDown(KeyCode.R)
     if resetDown and not self.resetWasDown then self:reset() end
     self.resetWasDown = resetDown

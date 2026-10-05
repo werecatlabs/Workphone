@@ -210,20 +210,22 @@ namespace workphone::scene
             performReset();
         if( !car )
             return;
-        const auto throttle = m_throttle.load(), brake = m_brake.load(), steering = m_steering.load();
-        car->setThrottle( throttle );
-        car->setBrake( brake );
-        car->setSteering( steering );
+        //const auto throttle = m_throttle.load(), brake = m_brake.load(), steering = m_steering.load();
+        //car->setThrottle( throttle );
+        //car->setBrake( brake );
+        //car->setSteering( steering );
         if( auto vehicle = car->getVehicleController() )
         {
-            vehicle->setChannel( 0, throttle );
-            vehicle->setChannel( 1, brake );
-            vehicle->setChannel( 2, steering );
+            //vehicle->setChannel( 0, throttle );
+            //vehicle->setChannel( 1, brake );
+            //vehicle->setChannel( 2, steering );
         }
+        
         auto lamp = m_assets.vehicleMaterials[size_t( procedural::VehicleMaterialSlot::RainLight )];
-        const ColourF emissive( brake > 0 ? 1.f : .15f, .003f, .001f, 1 );
-        if( lamp->getEmissive() != emissive )
-            lamp->setEmissive( emissive );
+        //const ColourF emissive( brake > 0 ? 1.f : .15f, .003f, .001f, 1 );
+        //if( lamp->getEmissive() != emissive )
+        //    lamp->setEmissive( emissive );
+
         if( m_physicsConfigured )
         {
             updateSurfaceGrip();

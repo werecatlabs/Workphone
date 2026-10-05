@@ -5,7 +5,6 @@
 #include "WPLuabind/ParamConverter.hpp"
 #include "WPLuabind/Helpers/PhysicsHelper3.hpp"
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Interface/Physics/INativePhysicsObject2.hpp>
 
 namespace workphone
 {
@@ -291,6 +290,7 @@ namespace workphone
         module( L )[class_<IBoxShape2, IPhysicsShape2, SmartPtr<IBoxShape2>>( "IBoxShape2" )
                         .def( "setAABB", &IBoxShape2::setAABB )
                         .scope[def( "typeInfo", IBoxShape2::typeInfo )]];
+
         module( L )[class_<ISphereShape2, IPhysicsShape2, SmartPtr<ISphereShape2>>( "ISphereShape2" )
                         .def( "setRadius", &ISphereShape2::setRadius )
                         .def( "getRadius", &ISphereShape2::getRadius )
@@ -382,13 +382,12 @@ namespace workphone
                         .def( "setGravity", &IPhysicsBody2D::setGravity )
                         .def( "getEnableGravity", &IPhysicsBody2D::getEnableGravity )
                         .def( "setEnableGravity", &IPhysicsBody2D::setEnableGravity )
-                        .def( "addEffect", &IPhysicsBody2D::addEffect )
-                        .def( "removeEffect", &IPhysicsBody2D::removeEffect )
                         .def( "getConstraints", &IPhysicsBody2D::getConstraints )
                         .def( "removeConstraints", &IPhysicsBody2D::removeConstraints )
                         .def( "removeConstraint", &IPhysicsBody2D::removeConstraint )
                         .def( "addConstraint", &IPhysicsBody2D::addConstraint )
                         .scope[def( "typeInfo", IPhysicsBody2D::typeInfo )]];
+
         module( L )[class_<IPhysicsMaterial2, ISharedObject, SmartPtr<IPhysicsMaterial2>>(
                         "IPhysicsMaterial2" )
                         .def( "setFriction", &IPhysicsMaterial2::setFriction )
@@ -404,18 +403,17 @@ namespace workphone
                         .def( "setPhysicsBodyB", &IPhysicsMaterial2::setPhysicsBodyB )
                         .def( "getPhysicsBodyB", &IPhysicsMaterial2::getPhysicsBodyB )
                         .scope[def( "typeInfo", IPhysicsMaterial2::typeInfo )]];
+
         module( L )[class_<IRigidBody2, IPhysicsBody2D, SmartPtr<IRigidBody2>>( "IRigidBody2" )
                         .def( "setCollisionShape", &IRigidBody2::setCollisionShape )
                         .def( "getCollisionShape", &IRigidBody2::getCollisionShape )
                         .scope[def( "typeInfo", IRigidBody2::typeInfo )]];
+
         module( L )[class_<IPhysicsParticle2, IPhysicsBody2D, SmartPtr<IPhysicsParticle2>>(
                         "IPhysicsParticle2" )
                         .def( "setCollisionShape", &IPhysicsParticle2::setCollisionShape )
                         .def( "getCollisionShape", &IPhysicsParticle2::getCollisionShape )
                         .scope[def( "typeInfo", IPhysicsParticle2::typeInfo )]];
-
-        module( L )[class_<INativePhysicsObject2>( "INativePhysicsObject2" )
-                        .def( "getNativeObject", &INativePhysicsObject2::getNativeObject )];
 
         module( L )[class_<IPhysicsBody3, ISharedObject, SmartPtr<IPhysicsBody3>>( "IPhysicsBody3" )
                         .def( "getScene", &IPhysicsBody3::getScene )
@@ -671,12 +669,6 @@ namespace workphone
                     .def( "addRigidStatic", static_cast<SmartPtr<IRigidStatic3> ( IPhysicsManager::* )(
                                                 SmartPtr<IPhysicsShape3>, SmartPtr<Properties> )>(
                                                 &IPhysicsManager::addRigidStatic ) )
-                    .def( "addVehicle", static_cast<SmartPtr<IPhysicsVehicle3> ( IPhysicsManager::* )(
-                                            SmartPtr<IRigidBody3> )>( &IPhysicsManager::addVehicle ) )
-                    .def( "addVehicle", static_cast<SmartPtr<IPhysicsVehicle3> ( IPhysicsManager::* )(
-                                            SmartPtr<IRigidBody3>, const SmartPtr<Properties> & )>(
-                                            &IPhysicsManager::addVehicle ) )
-                    .def( "removeVehicle", &IPhysicsManager::removeVehicle )
                     .def( "rayTest", &IPhysicsManager::rayTest )
                     .def( "intersects", &IPhysicsManager::intersects )
                     .def( "addConstraintD6", &IPhysicsManager::addConstraintD6 )
@@ -791,36 +783,6 @@ namespace workphone
                         "IConstraintFixed3" )
                         .scope[def( "typeInfo", IConstraintFixed3::typeInfo )]];
 
-        module(
-            L )[class_<IPhysicsEffect2, ISharedObject, SmartPtr<IPhysicsEffect2>>( "IPhysicsEffect2" )
-                    .def( "isEnabled", &IPhysicsEffect2::isEnabled )
-                    .def( "setEnabled", &IPhysicsEffect2::setEnabled )
-                    .def( "getStrength", &IPhysicsEffect2::getStrength )
-                    .def( "setStrength", &IPhysicsEffect2::setStrength )
-                    .def( "handleEvent", &IPhysicsEffect2::handleEvent )
-                    .scope[def( "typeInfo", IPhysicsEffect2::typeInfo )]];
-
-        module( L )[class_<IPhysicsBodyEffect2, IPhysicsEffect2, SmartPtr<IPhysicsBodyEffect2>>(
-                        "IPhysicsBodyEffect2" )
-                        .def( "getOwner", &IPhysicsBodyEffect2::getOwner )
-                        .def( "setOwner", &IPhysicsBodyEffect2::setOwner )
-                        .scope[def( "typeInfo", IPhysicsBodyEffect2::typeInfo )]];
-
-        module(
-            L )[class_<IPhysicsBodyEffectSnap2, IPhysicsBodyEffect2, SmartPtr<IPhysicsBodyEffectSnap2>>(
-                    "IPhysicsBodyEffectSnap2" )
-                    .def( "getTarget", &IPhysicsBodyEffectSnap2::getTarget )
-                    .def( "setTarget", &IPhysicsBodyEffectSnap2::setTarget )
-                    .def( "getUseAxis", &IPhysicsBodyEffectSnap2::getUseAxis )
-                    .def( "setUseAxis", &IPhysicsBodyEffectSnap2::setUseAxis )
-                    .scope[def( "typeInfo", IPhysicsBodyEffectSnap2::typeInfo )]];
-
-        module( L )[class_<IPhysicsCompositeShape3, IPhysicsShape3, SmartPtr<IPhysicsCompositeShape3>>(
-                        "IPhysicsCompositeShape3" )
-                        .def( "getShapes", &IPhysicsCompositeShape3::getShapes )
-                        .def( "setShapes", &IPhysicsCompositeShape3::setShapes )
-                        .scope[def( "typeInfo", IPhysicsCompositeShape3::typeInfo )]];
-
         module( L )[class_<IPhysicsDebug, ISharedObject, SmartPtr<IPhysicsDebug>>( "IPhysicsDebug" )
                         .def( "drawLine", &IPhysicsDebug::drawLine )
                         .scope[def( "typeInfo", IPhysicsDebug::typeInfo )]];
@@ -896,85 +858,6 @@ namespace workphone
                         .def( "setPosition", &IPhysicsSoftBody3::setPosition )
                         .def( "getPosition", &IPhysicsSoftBody3::getPosition )
                         .scope[def( "typeInfo", IPhysicsSoftBody3::typeInfo )]];
-
-        module(
-            L )[class_<IPhysicsVehicle3, ISharedObject, SmartPtr<IPhysicsVehicle3>>( "IPhysicsVehicle3" )
-                    .def( "addWheel", &IPhysicsVehicle3::addWheel )
-                    .def( "getWheel", &IPhysicsVehicle3::getWheel )
-                    .def( "getNumWheels", &IPhysicsVehicle3::getNumWheels )
-                    .def( "finalize", &IPhysicsVehicle3::finalize )
-                    .def( "applyEngineForce", &IPhysicsVehicle3::applyEngineForce )
-                    .def( "setBrake", &IPhysicsVehicle3::setBrake )
-                    .def( "setSteeringValue", &IPhysicsVehicle3::setSteeringValue )
-                    .def( "setPosition", &IPhysicsVehicle3::setPosition )
-                    .def( "getPosition", &IPhysicsVehicle3::getPosition )
-                    .def( "setOrientation", &IPhysicsVehicle3::setOrientation )
-                    .def( "getOrientation", &IPhysicsVehicle3::getOrientation )
-                    .def( "setVelocity", &IPhysicsVehicle3::setVelocity )
-                    .def( "getVelocity", &IPhysicsVehicle3::getVelocity )
-                    .def( "setMaterialId", &IPhysicsVehicle3::setMaterialId )
-                    .def( "getMaterialId", &IPhysicsVehicle3::getMaterialId )
-                    .def( "getLocalAABB", &IPhysicsVehicle3::getLocalAABB )
-                    .def( "getWorldAABB", &IPhysicsVehicle3::getWorldAABB )
-                    .def( "setEnabled", &IPhysicsVehicle3::setEnabled )
-                    .def( "isEnabled", &IPhysicsVehicle3::isEnabled )
-                    .def( "getVehicleInput",
-                          static_cast<const SmartPtr<IPhysicsVehicleInput3> &(IPhysicsVehicle3::*)()
-                                          const>( &IPhysicsVehicle3::getVehicleInput ) )
-                    .def( "getWheelTransformations", &IPhysicsVehicle3::getWheelTransformations )
-                    .scope[def( "typeInfo", IPhysicsVehicle3::typeInfo )]];
-
-        module( L )[class_<IPhysicsVehicleInput3, ISharedObject, SmartPtr<IPhysicsVehicleInput3>>(
-                        "IPhysicsVehicleInput3" )
-                        .def( "setDigitalAccel", &IPhysicsVehicleInput3::setDigitalAccel )
-                        .def( "setDigitalBrake", &IPhysicsVehicleInput3::setDigitalBrake )
-                        .def( "setDigitalHandbrake", &IPhysicsVehicleInput3::setDigitalHandbrake )
-                        .def( "setDigitalSteerLeft", &IPhysicsVehicleInput3::setDigitalSteerLeft )
-                        .def( "setDigitalSteerRight", &IPhysicsVehicleInput3::setDigitalSteerRight )
-                        .def( "getDigitalAccel", &IPhysicsVehicleInput3::getDigitalAccel )
-                        .def( "getDigitalBrake", &IPhysicsVehicleInput3::getDigitalBrake )
-                        .def( "getDigitalHandbrake", &IPhysicsVehicleInput3::getDigitalHandbrake )
-                        .def( "getDigitalSteerLeft", &IPhysicsVehicleInput3::getDigitalSteerLeft )
-                        .def( "getDigitalSteerRight", &IPhysicsVehicleInput3::getDigitalSteerRight )
-                        .def( "setAnalogAccel", &IPhysicsVehicleInput3::setAnalogAccel )
-                        .def( "setAnalogBrake", &IPhysicsVehicleInput3::setAnalogBrake )
-                        .def( "setAnalogHandbrake", &IPhysicsVehicleInput3::setAnalogHandbrake )
-                        .def( "setAnalogSteer", &IPhysicsVehicleInput3::setAnalogSteer )
-                        .def( "getAnalogAccel", &IPhysicsVehicleInput3::getAnalogAccel )
-                        .def( "getAnalogBrake", &IPhysicsVehicleInput3::getAnalogBrake )
-                        .def( "getAnalogHandbrake", &IPhysicsVehicleInput3::getAnalogHandbrake )
-                        .def( "getAnalogSteer", &IPhysicsVehicleInput3::getAnalogSteer )
-                        .def( "setGearUp", &IPhysicsVehicleInput3::setGearUp )
-                        .def( "setGearDown", &IPhysicsVehicleInput3::setGearDown )
-                        .def( "getGearUp", &IPhysicsVehicleInput3::getGearUp )
-                        .def( "getGearDown", &IPhysicsVehicleInput3::getGearDown )
-                        .scope[def( "typeInfo", IPhysicsVehicleInput3::typeInfo )]];
-
-        module(
-            L )[class_<IPhysicsVehicleWheel3, ISharedObject, SmartPtr<IPhysicsVehicleWheel3>>(
-                    "IPhysicsVehicleWheel3" )
-                    .def( "getRadius", &IPhysicsVehicleWheel3::getRadius )
-                    .def( "setRadius", &IPhysicsVehicleWheel3::setRadius )
-                    .def( "getWidth", &IPhysicsVehicleWheel3::getWidth )
-                    .def( "setWidth", &IPhysicsVehicleWheel3::setWidth )
-                    .def( "getMaxSuspensionTravelCm", &IPhysicsVehicleWheel3::getMaxSuspensionTravelCm )
-                    .def( "setMaxSuspensionTravelCm", &IPhysicsVehicleWheel3::setMaxSuspensionTravelCm )
-                    .def( "getMaxSuspensionForce", &IPhysicsVehicleWheel3::getMaxSuspensionForce )
-                    .def( "setMaxSuspensionForce", &IPhysicsVehicleWheel3::setMaxSuspensionForce )
-                    .def( "getSuspensionStiffness", &IPhysicsVehicleWheel3::getSuspensionStiffness )
-                    .def( "setSuspensionStiffness", &IPhysicsVehicleWheel3::setSuspensionStiffness )
-                    .def( "getSuspensionDamping", &IPhysicsVehicleWheel3::getSuspensionDamping )
-                    .def( "setSuspensionDamping", &IPhysicsVehicleWheel3::setSuspensionDamping )
-                    .def( "getFrictionSlip", &IPhysicsVehicleWheel3::getFrictionSlip )
-                    .def( "setFrictionSlip", &IPhysicsVehicleWheel3::setFrictionSlip )
-                    .def( "getSteering", &IPhysicsVehicleWheel3::getSteering )
-                    .def( "setSteering", &IPhysicsVehicleWheel3::setSteering )
-                    .def( "getEngineForce", &IPhysicsVehicleWheel3::getEngineForce )
-                    .def( "setEngineForce", &IPhysicsVehicleWheel3::setEngineForce )
-                    .def( "getBrake", &IPhysicsVehicleWheel3::getBrake )
-                    .def( "setBrake", &IPhysicsVehicleWheel3::setBrake )
-                    .def( "isInContact", &IPhysicsVehicleWheel3::isInContact )
-                    .scope[def( "typeInfo", IPhysicsVehicleWheel3::typeInfo )]];
 
         module( L )[class_<IPlaneShape3, IPhysicsShape3, SmartPtr<IPlaneShape3>>( "IPlaneShape3" )
                         .def( "getDistance", &IPlaneShape3::getDistance )

@@ -1151,8 +1151,8 @@ namespace workphone::scene
                     if( joystickEventType == static_cast<u32>( IJoystickState::Type::AxisMoved ) )
                     {
                         // hard coded for now, but should be configurable
-                        throttle = -joystick->getAxis( 0 );
-                        steering = joystick->getAxis( 3 );
+                        throttle = joystick->getAxis( 4 );
+                        steering = joystick->getAxis( 0 );
                     }
                     else if( joystickEventType ==
                              static_cast<u32>( IJoystickState::Type::ButtonPressed ) )
