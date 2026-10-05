@@ -368,4 +368,10 @@ namespace workphone::physics
     {
         return nullptr;
     }
+
+    void PhysicsManager::_getObject( void **object ) const
+    {
+        throw std::logic_error( "The method or operation is not implemented." );
+    }
+
 }  // namespace workphone::physics

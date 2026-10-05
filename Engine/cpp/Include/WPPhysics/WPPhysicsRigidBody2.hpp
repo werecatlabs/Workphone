@@ -3,7 +3,6 @@
 
 #include <WPPhysics/WPPhysicsPrerequisites.hpp>
 #include <Workphone/Interface/Physics/IRigidBody2.hpp>
-#include <Workphone/Interface/Physics/INativePhysicsObject2.hpp>
 
 extern "C" {
 #include <WorkphonePhysics/workphone_physics_2d.h>
@@ -19,7 +18,7 @@ namespace workphone::physics
      * kinematics, collision properties, and constraints. It serves as a wrapper around
      * the native wp_rigidbody.
      */
-    class WPPhysicsRigidBody2 : public IRigidBody2, public INativePhysicsObject2
+    class WPPhysicsRigidBody2 : public IRigidBody2
     {
     public:
         /**
@@ -28,9 +27,6 @@ namespace workphone::physics
          */
         explicit WPPhysicsRigidBody2( wp_rigidbody_type type = WORKPHONE_RIGIDBODY_DYNAMIC );
         ~WPPhysicsRigidBody2() override;
-
-        /** @brief Returns the native physics object pointer. */
-        void *getNativeObject() const override;
 
         /** @brief Returns the underlying native rigid body pointer. */
         wp_rigidbody *getBody() const;
@@ -214,12 +210,6 @@ namespace workphone::physics
         /** @brief Enables or disables gravity for this body. */
         void setEnableGravity( bool enableGravity ) override;
 
-        /** @brief Adds a physics effect to the body. */
-        void addEffect( SmartPtr<IPhysicsEffect2> effect ) override;
-
-        /** @brief Removes a specific physics effect. */
-        void removeEffect( SmartPtr<IPhysicsEffect2> effect ) override;
-
         /** @brief Returns a list of all constraints attached to this body. */
         Array<SmartPtr<IPhysicsConstraint2>> getConstraints() const override;
 
@@ -249,7 +239,6 @@ namespace workphone::physics
         real_Num m_airResistance = 0;                ///< Air resistance coefficient.
         real_Num m_restitution = 0;                  ///< Coefficient of restitution.
         bool m_kinematicMode = false;                ///< Whether the body is kinematic.
-        Array<SmartPtr<IPhysicsEffect2>> m_effects;  ///< List of active physics effects.
         Array<SmartPtr<IPhysicsConstraint2>> m_constraints;  ///< List of active constraints.
     };
 }  // namespace workphone::physics

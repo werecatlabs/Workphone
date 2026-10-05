@@ -385,6 +385,9 @@ namespace workphone
 
             WP_CLASS_REGISTER_DECL;
 
+
+ void _getObject( void **object ) const override;
+
         protected:
             ///< Container of rigid bodies currently in the scene
             ConcurrentArray<SmartPtr<IRigidBody3>> m_rigidBodies;

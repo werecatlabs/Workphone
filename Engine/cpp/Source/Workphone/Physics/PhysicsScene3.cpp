@@ -385,4 +385,9 @@ namespace workphone::physics
         return ContactOptions();
     }
 
+    void PhysicsScene3::_getObject( void **object ) const
+    {
+        throw std::logic_error( "The method or operation is not implemented." );
+    }
+
 }  // namespace workphone::physics

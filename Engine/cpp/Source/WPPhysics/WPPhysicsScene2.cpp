@@ -29,15 +29,8 @@ namespace workphone::physics
                 return nullptr;
             }
 
-            auto nativeObject = dynamic_cast<INativePhysicsObject2 *>( body.get() );
-            WP_ASSERT( nativeObject );
-            if( !nativeObject )
-            {
-                return nullptr;
-            }
-
-            auto nativeBody = static_cast<wp_rigidbody *>( nativeObject->getNativeObject() );
-            WP_ASSERT( nativeBody );
+            wp_rigidbody *nativeBody = nullptr;
+            body->_getObject( (void**)&nativeBody );
             return nativeBody;
         }
     } // namespace

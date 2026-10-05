@@ -3,11 +3,10 @@
 
 #include <WPPhysics/WPPhysicsPrerequisites.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager2D.hpp>
-#include <Workphone/Interface/Physics/INativePhysicsObject2.hpp>
 
 namespace workphone::physics
 {
-    class WPPhysicsManager2 : public IPhysicsManager2D, public INativePhysicsObject2
+    class WPPhysicsManager2 : public IPhysicsManager2D
     {
     public:
         WPPhysicsManager2();

@@ -270,6 +270,12 @@ namespace workphone
             virtual void setControlsScene( SmartPtr<IPhysicsScene3> controlsScene ) = 0;
 
             /**
+             * @brief Gets the underlying implementation object.
+             * @param object A pointer to store the implementation object.
+             */
+            virtual void _getObject( void **object ) const = 0;
+
+            /**
              * @brief Creates a collision shape of the specified template type.
              * @tparam T The type of collision shape to create.
              * @param data Additional data needed to create the shape.

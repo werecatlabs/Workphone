@@ -36,17 +36,6 @@ namespace workphone::physics
 
     WPPhysicsParticle2::~WPPhysicsParticle2()
     {
-        for( auto &effect : m_effects )
-        {
-            if( auto bodyEffect = workphone::dynamic_pointer_cast<IPhysicsBodyEffect2>( effect ) )
-            {
-                if( bodyEffect->getOwner() == this )
-                {
-                    bodyEffect->setOwner( nullptr );
-                }
-            }
-        }
-        m_effects.clear();
     }
 
     const String &WPPhysicsParticle2::getComponentType() const
@@ -338,36 +327,12 @@ namespace workphone::physics
         return m_restitution;
     }
 
-    void WPPhysicsParticle2::removeEffect( SmartPtr<IPhysicsEffect2> effect )
-    {
-        if( auto bodyEffect = workphone::dynamic_pointer_cast<IPhysicsBodyEffect2>( effect ) )
-        {
-            if( bodyEffect->getOwner() == this )
-            {
-                bodyEffect->setOwner( nullptr );
-            }
-        }
-        m_effects.erase( std::remove( m_effects.begin(), m_effects.end(), effect ), m_effects.end() );
-    }
-
-    void WPPhysicsParticle2::addEffect( SmartPtr<IPhysicsEffect2> effect )
-    {
-        if( effect && std::find( m_effects.begin(), m_effects.end(), effect ) == m_effects.end() )
-        {
-            m_effects.push_back( effect );
-            if( auto bodyEffect = workphone::dynamic_pointer_cast<IPhysicsBodyEffect2>( effect ) )
-            {
-                bodyEffect->setOwner( this );
-            }
-        }
-    }
-
     void WPPhysicsParticle2::setGravity( const Vector2<real_Num> &gravity )
     {
         m_gravity = gravity;
     }
 
-    workphone::Vector2<workphone::real_Num> WPPhysicsParticle2::getGravity() const
+    Vector2<real_Num> WPPhysicsParticle2::getGravity() const
     {
         return m_gravity;
     }

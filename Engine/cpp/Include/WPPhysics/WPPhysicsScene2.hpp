@@ -3,7 +3,6 @@
 
 #include <WPPhysics/WPPhysicsPrerequisites.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene2.hpp>
-#include <Workphone/Interface/Physics/INativePhysicsObject2.hpp>
 
 extern "C" {
 #include <WorkphonePhysics/workphone_physics_2d.h>
@@ -11,7 +10,7 @@ extern "C" {
 
 namespace workphone::physics
 {
-    class WPPhysicsScene2 : public IPhysicsScene2, public INativePhysicsObject2
+    class WPPhysicsScene2 : public IPhysicsScene2
     {
     public:
         WPPhysicsScene2();

@@ -180,10 +180,6 @@ namespace workphone::physics
 
         void setEnableGravity( bool enableGravity ) override;
 
-        void addEffect( SmartPtr<IPhysicsEffect2> effect ) override;
-
-        void removeEffect( SmartPtr<IPhysicsEffect2> effect ) override;
-
     protected:
         /// @brief State context for the particle.
         SmartPtr<IStateContext> m_stateContext;
@@ -255,14 +251,11 @@ namespace workphone::physics
         bool m_kinematicMode;
         /// @brief Flag indicating if the particle is sleeping.
         bool m_sleeping = false;
-        /// @brief List of active physics effects applying to this particle.
-        Array<SmartPtr<IPhysicsEffect2>> m_effects;
 
         /// @brief Static counter for generating unique particle IDs.
         static u32 m_nextId;
     };
 
-    using WPPhysicsParticle2Ptr = SmartPtr<WPPhysicsParticle2>;
 }  // namespace workphone::physics
 
 // end namespace

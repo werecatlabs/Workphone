@@ -398,29 +398,7 @@ namespace workphone::physics
     {
         setFlag( WORKPHONE_RIGIDBODY_FLAG_GRAVITY, enableGravity );
     }
-    void WPPhysicsRigidBody2::addEffect( SmartPtr<IPhysicsEffect2> effect )
-    {
-        WP_ASSERT( effect );
-        if( effect && std::find( m_effects.begin(), m_effects.end(), effect ) == m_effects.end() )
-        {
-            m_effects.push_back( effect );
-            if( auto bodyEffect = workphone::dynamic_pointer_cast<IPhysicsBodyEffect2>( effect ) )
-            {
-                bodyEffect->setOwner( this );
-            }
-        }
-    }
-    void WPPhysicsRigidBody2::removeEffect( SmartPtr<IPhysicsEffect2> effect )
-    {
-        if( auto bodyEffect = workphone::dynamic_pointer_cast<IPhysicsBodyEffect2>( effect ) )
-        {
-            if( bodyEffect->getOwner() == this )
-            {
-                bodyEffect->setOwner( nullptr );
-            }
-        }
-        m_effects.erase( std::remove( m_effects.begin(), m_effects.end(), effect ), m_effects.end() );
-    }
+
     Array<SmartPtr<IPhysicsConstraint2>> WPPhysicsRigidBody2::getConstraints() const
     {
         return m_constraints;

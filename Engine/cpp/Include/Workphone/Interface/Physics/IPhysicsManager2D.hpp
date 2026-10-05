@@ -171,6 +171,12 @@ namespace workphone
              */
             virtual bool isColliding( IPhysicsBody2D *bodyA, IPhysicsBody2D *bodyB ) const = 0;
 
+            /**
+             * @brief Gets the underlying implementation object.
+             * @param object A pointer to store the implementation object.
+             */
+            virtual void _getObject( void **object ) const = 0;
+
             WP_CLASS_REGISTER_DECL;
         };
     }  // end namespace physics
