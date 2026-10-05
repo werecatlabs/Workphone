@@ -233,22 +233,6 @@ namespace workphone::physics
         return nullptr;
     }
 
-    SmartPtr<IPhysicsVehicle3> PhysicsManager::addVehicle( SmartPtr<IRigidBody3> chassis )
-    {
-        return nullptr;
-    }
-
-    SmartPtr<IPhysicsVehicle3> PhysicsManager::addVehicle( SmartPtr<IRigidBody3> chassis,
-                                                           const SmartPtr<Properties> &properties )
-    {
-        return nullptr;
-    }
-
-    bool PhysicsManager::removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle )
-    {
-        return false;
-    }
-
     bool PhysicsManager::rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
                                   Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal,
                                   u32 collisionType /*= 0*/, u32 collisionMask /*= 0 */ )

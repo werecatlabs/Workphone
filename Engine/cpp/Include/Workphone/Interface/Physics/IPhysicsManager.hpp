@@ -156,27 +156,6 @@ namespace workphone
             virtual SmartPtr<IRigidStatic3> addRigidStatic( SmartPtr<IPhysicsShape3> collisionShape,
                                                             SmartPtr<Properties> properties ) = 0;
 
-            /**
-             * @brief Creates a new vehicle with the specified chassis.
-             * @param chassis The rigid body to use as the vehicle's chassis.
-             * @return A smart pointer to the newly created vehicle.
-             */
-            virtual SmartPtr<IPhysicsVehicle3> addVehicle( SmartPtr<IRigidBody3> chassis ) = 0;
-
-            /**
-             * @brief Removes a vehicle from the manager.
-             * @param vehicle The vehicle to remove.
-             * @return True if the vehicle was successfully removed, false otherwise.
-             */
-            virtual bool removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle ) = 0;
-
-            /**
-             * @brief Creates a new D6 constraint between two bodies.
-             * @param actor0 The first body involved in the constraint.
-            /** Adds a vehicle. */
-            virtual SmartPtr<IPhysicsVehicle3> addVehicle( SmartPtr<IRigidBody3> chassis,
-                                                           const SmartPtr<Properties> &properties ) = 0;
-
             /** Performs a ray intersection test. */
             virtual bool rayTest( const Vector3<real_Num> &start, const Vector3<real_Num> &direction,
                                   Vector3<real_Num> &hitPos, Vector3<real_Num> &hitNormal,

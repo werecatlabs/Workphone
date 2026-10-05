@@ -430,12 +430,8 @@ namespace workphone
         class ISphereShape3;
         class ITerrainShape;
         class IPhysicsVehicle3;
-        class IPhysicsVehicleInput3;
-        class IPhysicsVehicleWheel3;
         class IPhysicsScene2;
         class IPhysicsScene3;
-        class IPhysicsEffect2;
-        class IPhysicsBodyEffectSnap2;
         class IRaycastHit;
         class IPhysicsConstraint2;
         class IPhysicsConstraint3;

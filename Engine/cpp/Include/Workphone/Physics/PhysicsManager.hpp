@@ -164,29 +164,6 @@ namespace workphone
                                                     SmartPtr<Properties> properties ) override;
 
             /**
-             * @brief Creates a new physics vehicle
-             * @param chassis The rigid body to use as the vehicle chassis
-             * @return Smart pointer to the newly created physics vehicle
-             */
-            SmartPtr<IPhysicsVehicle3> addVehicle( SmartPtr<IRigidBody3> chassis ) override;
-
-            /**
-             * @brief Creates a new physics vehicle with properties
-             * @param chassis The rigid body to use as the vehicle chassis
-             * @param properties Additional properties for the vehicle
-             * @return Smart pointer to the newly created physics vehicle
-             */
-            SmartPtr<IPhysicsVehicle3> addVehicle( SmartPtr<IRigidBody3> chassis,
-                                                   const SmartPtr<Properties> &properties ) override;
-
-            /**
-             * @brief Removes a physics vehicle
-             * @param vehicle The vehicle to remove
-             * @return true if removal was successful, false otherwise
-             */
-            bool removeVehicle( SmartPtr<IPhysicsVehicle3> vehicle ) override;
-
-            /**
              * @brief Performs a ray test in the physics world
              * @param start Starting point of the ray
              * @param direction Direction of the ray
