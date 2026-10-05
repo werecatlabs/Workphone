@@ -1,6 +1,6 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsScene2.hpp>
-#include <WPPhysics/WPPhysicsNativeRigidBody2.hpp>
+#include <WPPhysics/WPPhysicsRigidBody2.hpp>
 #include <WPPhysics/WPPhysicsParticle2.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
@@ -85,7 +85,7 @@ namespace workphone::physics
 
         for( auto &body : m_bodies )
         {
-            auto backendBody = dynamic_cast<WPPhysicsNativeRigidBody2 *>( body.get() );
+            auto backendBody = dynamic_cast<WPPhysicsRigidBody2 *>( body.get() );
             if( !backendBody )
             {
                 continue;
@@ -102,7 +102,7 @@ namespace workphone::physics
 
         for( auto &body : m_bodies )
         {
-            auto backendBody = dynamic_cast<WPPhysicsNativeRigidBody2 *>( body.get() );
+            auto backendBody = dynamic_cast<WPPhysicsRigidBody2 *>( body.get() );
             if( !backendBody )
             {
                 continue;

@@ -4,10 +4,10 @@
 
 #include "WPPhysics/WPPhysicsManager2.hpp"
 #include "WPPhysics/WPPhysicsScene2.hpp"
-#include "WPPhysics/WPPhysicsNativeRigidBody2.hpp"
+#include "WPPhysics/WPPhysicsRigidBody2.hpp"
 #include "WPPhysics/WPPhysicsShape2T.hpp"
-#include "WPPhysics/WPPhysicsNativeBoxShape2.hpp"
-#include "WPPhysics/WPPhysicsNativeSphereShape2.hpp"
+#include "WPPhysics/WPPhysicsBoxShape2.hpp"
+#include "WPPhysics/WPPhysicsSphereShape2.hpp"
 #include "WPPhysics/WPPhysicsManager3.hpp"
 #include "WPPhysics/WPPhysicsScene3.hpp"
 #include "WPPhysics/WPPhysicsMaterial3.hpp"
@@ -32,9 +32,9 @@ namespace workphone
         {
             FactoryUtil::addFactory<WPPhysicsManager2>();
             FactoryUtil::addFactory<WPPhysicsScene2>();
-            FactoryUtil::addFactory<WPPhysicsNativeRigidBody2>();
-            FactoryUtil::addFactory<WPPhysicsNativeBoxShape2>();
-            FactoryUtil::addFactory<WPPhysicsNativeSphereShape2>();
+            FactoryUtil::addFactory<WPPhysicsRigidBody2>();
+            FactoryUtil::addFactory<WPPhysicsBoxShape2>();
+            FactoryUtil::addFactory<WPPhysicsSphereShape2>();
 
             FactoryUtil::addFactory<WPPhysicsManager3>();
             FactoryUtil::addFactory<WPPhysicsScene3>();
@@ -57,9 +57,9 @@ namespace workphone
             FactoryUtil::removeFactory<WPPhysicsScene3>();
             FactoryUtil::removeFactory<WPPhysicsManager3>();
 
-            FactoryUtil::removeFactory<WPPhysicsNativeSphereShape2>();
-            FactoryUtil::removeFactory<WPPhysicsNativeBoxShape2>();
-            FactoryUtil::removeFactory<WPPhysicsNativeRigidBody2>();
+            FactoryUtil::removeFactory<WPPhysicsSphereShape2>();
+            FactoryUtil::removeFactory<WPPhysicsBoxShape2>();
+            FactoryUtil::removeFactory<WPPhysicsRigidBody2>();
             FactoryUtil::removeFactory<WPPhysicsScene2>();
             FactoryUtil::removeFactory<WPPhysicsManager2>();
         }

@@ -1,9 +1,9 @@
 #include <WPPhysics/WPPhysicsPCH.hpp>
 #include <WPPhysics/WPPhysicsManager2.hpp>
 #include <WPPhysics/WPPhysicsScene2.hpp>
-#include <WPPhysics/WPPhysicsNativeRigidBody2.hpp>
-#include <WPPhysics/WPPhysicsNativeBoxShape2.hpp>
-#include <WPPhysics/WPPhysicsNativeSphereShape2.hpp>
+#include <WPPhysics/WPPhysicsRigidBody2.hpp>
+#include <WPPhysics/WPPhysicsBoxShape2.hpp>
+#include <WPPhysics/WPPhysicsSphereShape2.hpp>
 #include <WPPhysics/WPPhysicsParticle2.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
@@ -220,11 +220,11 @@ namespace workphone::physics
         SmartPtr<IPhysicsShape2> shape;
         if( type == IBoxShape2::typeInfo() )
         {
-            shape = SmartPtr<IPhysicsShape2>( new WPPhysicsNativeBoxShape2 );
+            shape = SmartPtr<IPhysicsShape2>( new WPPhysicsBoxShape2 );
         }
         else if( type == ISphereShape2::typeInfo() )
         {
-            shape = SmartPtr<IPhysicsShape2>( new WPPhysicsNativeSphereShape2 );
+            shape = SmartPtr<IPhysicsShape2>( new WPPhysicsSphereShape2 );
         }
         else
         {
@@ -242,7 +242,7 @@ namespace workphone::physics
 
     SmartPtr<IRigidBody2> WPPhysicsManager2::createRigidBody()
     {
-        auto body = SmartPtr<IRigidBody2>( new WPPhysicsNativeRigidBody2 );
+        auto body = SmartPtr<IRigidBody2>( new WPPhysicsRigidBody2 );
         WP_ASSERT( body );
         {
             ScopedLock lock( this );
