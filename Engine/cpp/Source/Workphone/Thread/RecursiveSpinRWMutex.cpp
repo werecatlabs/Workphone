@@ -6,12 +6,18 @@
 #    include "Workphone/Thread/ThreadDiagnostics.hpp"
 #endif
 
-#if defined _DEBUG
-#    include <Workphone/System/DebugUtil.hpp>
-#endif
 
 namespace workphone
 {
+    namespace
+    {
+        auto readerRecursionMap()
+            -> std::unordered_map<const RecursiveSpinRWMutex *, unsigned> &
+        {
+            static thread_local std::unordered_map<const RecursiveSpinRWMutex *, unsigned> counts;
+            return counts;
+        }
+    }
 
     RecursiveSpinRWMutex::RecursiveSpinRWMutex() = default;
 
@@ -39,9 +45,6 @@ namespace workphone
     {
         const auto tid = std::this_thread::get_id();
 
-#if defined _DEBUG
-        debugStr = DebugUtil::getStackTrace();
-#endif
 
         // Case 1: Writer recursion - writer can acquire read locks freely
         // These are tracked separately and don't affect global state
@@ -135,6 +138,7 @@ namespace workphone
             // Last recursive unlock - release global reader count
             [[maybe_unused]] int prev = state.fetch_sub( 1, std::memory_order_release );
             assert( prev > 0 && "State inconsistency: unlock_shared with no readers" );
+            clear_local_reader_recursion();
         }
     }
 
@@ -147,9 +151,6 @@ namespace workphone
         {
             ++writer_recursion;
 
-#if defined _DEBUG
-            debugStr = DebugUtil::getStackTrace();
-#endif
             return true;
         }
 
@@ -172,9 +173,6 @@ namespace workphone
                 writer_read_recursion = recursion;
                 recursion = 0;
 
-#if defined _DEBUG
-                debugStr = DebugUtil::getStackTrace();
-#endif
                 return true;
             }
 
@@ -190,9 +188,6 @@ namespace workphone
             writer_owner.store( tid, std::memory_order_relaxed );
             writer_recursion = 1;
 
-#if defined _DEBUG
-            debugStr = DebugUtil::getStackTrace();
-#endif
             return true;
         }
 
@@ -241,9 +236,6 @@ namespace workphone
     {
         const auto tid = std::this_thread::get_id();
 
-#if defined _DEBUG
-        debugStr = DebugUtil::getStackTrace();
-#endif
 
         // Case 1: Recursive write
         if( writer_owner.load( std::memory_order_acquire ) == tid )
@@ -318,18 +310,16 @@ namespace workphone
 
         if( --writer_recursion == 0 )
         {
-#if !WP_FINAL
-            thread_diagnostics::check(
-                writer_read_recursion == 0,
-                "RecursiveSpinRWMutex writer unlocked while still holding shared locks" );
-#endif
-
-            // Verify no outstanding read locks held by writer
-            assert( writer_read_recursion == 0 &&
-                    "Writer releasing write lock while still holding read locks" );
-
+            const auto reads = writer_read_recursion;
+            if( reads > 0 )
+                local_reader_recursion() = reads;
+            else
+                clear_local_reader_recursion();
+            writer_read_recursion = 0;
             writer_owner.store( std::thread::id{}, std::memory_order_relaxed );
-            state.store( 0, std::memory_order_release );
+            // Transfer outstanding writer-held reads before another writer
+            // can enter. Global state counts reader threads, not recursion.
+            state.store( reads > 0 ? 1 : 0, std::memory_order_release );
         }
     }
 
@@ -367,23 +357,18 @@ namespace workphone
 
     unsigned &RecursiveSpinRWMutex::local_reader_recursion()
     {
-        // Per-thread map from mutex instance to recursion count
-        // This fixes the critical bug where all mutexes shared the same counter
-        static thread_local std::unordered_map<const RecursiveSpinRWMutex *, unsigned> recursion_map;
-        return recursion_map[this];
+        return readerRecursionMap()[this];
     }
 
     unsigned RecursiveSpinRWMutex::local_reader_recursion() const
     {
-        static thread_local std::unordered_map<const RecursiveSpinRWMutex *, unsigned> recursion_map;
-        auto it = recursion_map.find( this );
-        return ( it != recursion_map.end() ) ? it->second : 0;
+        auto &counts = readerRecursionMap();
+        auto it = counts.find( this );
+        return it != counts.end() ? it->second : 0;
     }
 
     void RecursiveSpinRWMutex::clear_local_reader_recursion()
     {
-        static thread_local std::unordered_map<const RecursiveSpinRWMutex *, unsigned> recursion_map;
-        recursion_map.erase( this );
+        readerRecursionMap().erase( this );
     }
-
 }  // namespace workphone

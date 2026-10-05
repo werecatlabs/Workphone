@@ -28,7 +28,10 @@ namespace workphone
     /**
      * @brief Thread-safe sorted unique collection backed by contiguous Workphone Array storage.
      *
-     * reserve() preallocates element storage. Insertions never allocate while size() < capacity().
+     * reserve() preallocates element storage. Move-assignable elements reuse it on insertion.
+     * Non-assignable elements require rebuilding storage. Throwing assignments during
+     * an in-place shift clear the set to preserve its ordering invariant.
+     * Iterators expose const keys; change a key by erasing and inserting it.
      * GrowthPolicy::Fixed disables implicit growth while still allowing explicit reserve().
      */
     template <class T, class Cmp = ConcurrentSetDefaultCompare<T>>
@@ -39,7 +42,7 @@ namespace workphone
         using value_type = T;
         using size_type = typename container_type::size_type;
         using difference_type = typename container_type::difference_type;
-        using iterator = typename container_type::iterator;
+        using iterator = typename container_type::const_iterator;
         using const_iterator = typename container_type::const_iterator;
 
     private:
@@ -101,7 +104,7 @@ namespace workphone
             ReadLockedView( const ReadLockedView & ) = delete;
             ReadLockedView &operator=( const ReadLockedView & ) = delete;
 
-            ReadLockedView( ReadLockedView &&other ) noexcept : m_owner( other.m_owner )
+            ReadLockedView( ReadLockedView &&other ) : m_owner( other.m_owner )
             {
                 other.m_owner = nullptr;
             }
@@ -116,11 +119,11 @@ namespace workphone
 
             const_iterator begin() const noexcept
             {
-                return m_owner->m_values.begin();
+                return m_owner->m_values.cbegin();
             }
             const_iterator end() const noexcept
             {
-                return m_owner->m_values.end();
+                return m_owner->m_values.cend();
             }
             bool empty() const noexcept
             {
@@ -157,7 +160,7 @@ namespace workphone
             WriteLockedView( const WriteLockedView & ) = delete;
             WriteLockedView &operator=( const WriteLockedView & ) = delete;
 
-            WriteLockedView( WriteLockedView &&other ) noexcept : m_owner( other.m_owner )
+            WriteLockedView( WriteLockedView &&other ) : m_owner( other.m_owner )
             {
                 other.m_owner = nullptr;
             }
@@ -172,11 +175,11 @@ namespace workphone
 
             iterator begin() noexcept
             {
-                return m_owner->m_values.begin();
+                return m_owner->m_values.cbegin();
             }
             iterator end() noexcept
             {
-                return m_owner->m_values.end();
+                return m_owner->m_values.cend();
             }
             bool empty() const noexcept
             {
@@ -241,13 +244,13 @@ namespace workphone
         ConcurrentSetBase( const ConcurrentSetBase & ) = delete;
         ConcurrentSetBase &operator=( const ConcurrentSetBase & ) = delete;
 
-        ConcurrentSetBase( ConcurrentSetBase &&other ) noexcept
+        ConcurrentSetBase( ConcurrentSetBase &&other )
         {
             ExclusiveGuard lock( other );
             moveFromUnlocked( other );
         }
 
-        ConcurrentSetBase &operator=( ConcurrentSetBase &&other ) noexcept
+        ConcurrentSetBase &operator=( ConcurrentSetBase &&other )
         {
             if( this == &other )
             {
@@ -324,8 +327,7 @@ namespace workphone
             {
                 return false;
             }
-            ensureCapacityForOneUnlocked();
-            m_values.insert( m_values.begin() + static_cast<difference_type>( index ), value );
+            insertAtUnlocked( index, value );
             return true;
         }
 
@@ -341,9 +343,7 @@ namespace workphone
             {
                 return false;
             }
-            ensureCapacityForOneUnlocked();
-            m_values.insert( m_values.begin() + static_cast<difference_type>( index ),
-                             std::move( value ) );
+            insertAtUnlocked( index, std::move( value ) );
             return true;
         }
 
@@ -554,6 +554,39 @@ namespace workphone
             }
         }
 
+        template <class U>
+        void insertAtUnlocked( size_type index, U &&value )
+        {
+            T stableValue( std::forward<U>( value ) );
+            ensureCapacityForOneUnlocked();
+            if constexpr( !std::is_move_assignable<T>::value )
+            {
+                m_values.insert( m_values.begin() + static_cast<difference_type>( index ),
+                                 std::move( stableValue ) );
+            }
+            else
+            {
+                const auto oldSize = m_values.size();
+                if( index == oldSize )
+                {
+                    m_values.emplace_back( std::move_if_noexcept( stableValue ) );
+                    return;
+                }
+                m_values.emplace_back( std::move_if_noexcept( m_values.back() ) );
+                try
+                {
+                    for( auto i = oldSize - 1; i > index; --i )
+                        m_values[i] = std::move_if_noexcept( m_values[i - 1] );
+                    m_values[index] = std::move( stableValue );
+                }
+                catch( ... )
+                {
+                    m_values.clear();
+                    throw;
+                }
+            }
+        }
+
         bool insertUnlocked( const T &value )
         {
             const auto index = lowerBoundIndexUnlocked( value );
@@ -562,8 +595,7 @@ namespace workphone
                 return false;
             }
 
-            ensureCapacityForOneUnlocked();
-            m_values.insert( m_values.begin() + static_cast<difference_type>( index ), value );
+            insertAtUnlocked( index, value );
             return true;
         }
 
@@ -575,9 +607,7 @@ namespace workphone
                 return false;
             }
 
-            ensureCapacityForOneUnlocked();
-            m_values.insert( m_values.begin() + static_cast<difference_type>( index ),
-                             std::move( value ) );
+            insertAtUnlocked( index, std::move( value ) );
             return true;
         }
 

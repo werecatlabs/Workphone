@@ -48,6 +48,9 @@ namespace workphone
          */
         TryLockGuard( T *object );
 
+        TryLockGuard( const TryLockGuard & ) = delete;
+        TryLockGuard &operator=( const TryLockGuard & ) = delete;
+
         /**
          * @brief Destructor releases the lock if it was acquired.
          *

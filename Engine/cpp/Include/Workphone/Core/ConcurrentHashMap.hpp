@@ -465,9 +465,7 @@ namespace workphone
                 return;
             }
 
-            ensureCapacityForOneUnlocked();
-            const auto probe = probeForInsertUnlocked( key );
-            constructAtUnlocked( probe.index, key, value );
+            emplaceUnlocked( key, value );
         }
 
         void insert( const Key &key, T &&value )
@@ -480,9 +478,7 @@ namespace workphone
                 return;
             }
 
-            ensureCapacityForOneUnlocked();
-            const auto probe = probeForInsertUnlocked( key );
-            constructAtUnlocked( probe.index, key, std::move( value ) );
+            emplaceUnlocked( key, std::move( value ) );
         }
 
         template <typename... Args>
@@ -872,7 +868,17 @@ namespace workphone
                 return { iterator( this, existing ), false };
             }
 
-            ensureCapacityForOneUnlocked();
+            if( m_size == m_capacity )
+            {
+                // Inputs may refer to this table. Consume them before rehash
+                // destroys the old slots, even when a caller holds a view.
+                Key stableKey( key );
+                T stableValue( std::forward<Args>( args )... );
+                ensureCapacityForOneUnlocked();
+                const auto probe = probeForInsertUnlocked( stableKey );
+                constructAtUnlocked( probe.index, stableKey, std::move_if_noexcept( stableValue ) );
+                return { iterator( this, probe.index ), true };
+            }
             const auto probe = probeForInsertUnlocked( key );
             constructAtUnlocked( probe.index, key, std::forward<Args>( args )... );
             return { iterator( this, probe.index ), true };
@@ -962,7 +968,7 @@ namespace workphone
                 throw std::length_error( "ConcurrentHashmapBase fixed capacity exhausted" );
 
             case GrowthPolicy::Grow:
-                if( m_capacity > max_size() - m_growthSize )
+                if( m_capacity > max_size() || m_growthSize > max_size() - m_capacity )
                 {
                     throw std::length_error( "ConcurrentHashmapBase capacity overflow" );
                 }
@@ -990,6 +996,8 @@ namespace workphone
 
         void reserveUnlocked( size_type requestedCapacity )
         {
+            if( requestedCapacity > max_size() )
+                throw std::length_error( "ConcurrentHashmapBase capacity overflow" );
             if( requestedCapacity <= m_capacity )
             {
                 return;

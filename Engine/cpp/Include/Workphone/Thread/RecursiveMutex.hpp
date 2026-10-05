@@ -56,6 +56,9 @@ namespace workphone
              */
             explicit ScopedLock( RecursiveMutex &mutex );
 
+            ScopedLock( const ScopedLock & ) = delete;
+            ScopedLock &operator=( const ScopedLock & ) = delete;
+
             /**
              * @brief Release the exclusive lock if held.
              */
@@ -85,6 +88,9 @@ namespace workphone
              * @param mutex Reference to the `RecursiveMutex` to lock.
              */
             explicit ScopedSharedLock( RecursiveMutex &mutex );
+
+            ScopedSharedLock( const ScopedSharedLock & ) = delete;
+            ScopedSharedLock &operator=( const ScopedSharedLock & ) = delete;
 
             /**
              * @brief Release the shared lock if held.

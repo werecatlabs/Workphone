@@ -2,6 +2,7 @@
 #include <Workphone/Thread/RecursiveMutex.hpp>
 #include <unordered_map>
 #include <thread>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -37,10 +38,8 @@ namespace workphone
         {
             // Thread holds shared locks - use try_unlock_shared_and_lock() instead
             // or assert/throw to indicate improper usage
-            WP_ASSERT(
-                false &&
+            throw std::logic_error(
                 "Cannot call lock() while holding shared locks - use try_unlock_shared_and_lock()" );
-            return;
         }
 
         // Wait until no thread has exclusive access AND no shared readers AND not in upgrade mode
@@ -74,9 +73,6 @@ namespace workphone
         if( it != m_shared_locks_per_thread.end() && it->second > 0 )
         {
             // Thread holds shared locks - use try_unlock_shared_and_lock() instead
-            WP_ASSERT(
-                false &&
-                "Cannot call try_lock() while holding shared locks - use try_unlock_shared_and_lock()" );
             return false;
         }
 
@@ -103,24 +99,16 @@ namespace workphone
             return;
         }
 
-        // Check if this thread already holds shared locks - potential deadlock scenario
-        auto it = m_shared_locks_per_thread.find( current_thread );
-        if( it != m_shared_locks_per_thread.end() && it->second > 0 )
-        {
-            // Thread already holds shared locks - cannot safely acquire upgrade capability
-            // This could deadlock if another thread is waiting to upgrade
-            WP_ASSERT( false && "Cannot call lock_shared_write() while already holding shared locks" );
-            return;
-        }
-
-        // Check if this thread already holds the upgrade lock
         if( m_upgrade_thread == current_thread && m_upgrade_mode )
         {
-            // Already has upgrade capability, just add shared lock count
             ++m_shared_count;
             m_shared_locks_per_thread[current_thread]++;
             return;
         }
+
+        auto it = m_shared_locks_per_thread.find( current_thread );
+        if( it != m_shared_locks_per_thread.end() && it->second > 0 )
+            throw std::logic_error( "Use try_lock_upgrade() when already holding shared locks" );
 
         // Wait until no thread has exclusive access and no other upgrade is in progress
         m_condition.wait( lock, [this] { return m_count == 0 && !m_upgrade_mode; } );
@@ -134,58 +122,9 @@ namespace workphone
 
     void RecursiveMutex::unlock_shared_write()
     {
-        std::thread::id current_thread = std::this_thread::get_id();
-        std::unique_lock<std::mutex> lock( m_mutex );
-
-        // Check per-thread shared lock tracking
-        auto it = m_shared_locks_per_thread.find( current_thread );
-        if( it == m_shared_locks_per_thread.end() || it->second == 0 )
-        {
-            // Thread doesn't hold any shared locks - this is an error condition
-            WP_ASSERT( false && "unlock_shared_write() called without holding shared locks" );
-            return;
-        }
-
-        // If this thread has exclusive access, handle shared unlock differently
-        if( m_owner_thread == current_thread && m_count > 0 )
-        {
-            // Decrement per-thread shared count only
-            --it->second;
-            if( it->second == 0 )
-            {
-                m_shared_locks_per_thread.erase( it );
-            }
-            return;
-        }
-
-        // Verify this thread actually holds the upgrade lock
-        if( m_upgrade_thread != current_thread || !m_upgrade_mode )
-        {
-            // Thread called unlock_shared_write() but doesn't hold upgrade capability
-            // They should use unlock_shared() instead
-            WP_ASSERT(
-                false &&
-                "unlock_shared_write() called without holding upgrade lock - use unlock_shared()" );
-            return;
-        }
-
-        // Normal shared unlock
-        --it->second;
-        --m_shared_count;
-
-        // Only release upgrade capability when this is the last shared lock for this thread
-        if( it->second == 0 )
-        {
-            m_upgrade_mode = false;
-            m_upgrade_thread = std::thread::id();
-            m_shared_locks_per_thread.erase( it );
-        }
-
-        // Notify waiting threads
-        if( m_shared_count == 0 || !m_upgrade_mode )
-        {
-            m_condition.notify_all();
-        }
+        // The last shared release also clears an upgrade reservation. This
+        // works after downgrading a writer-held shared-write acquisition too.
+        unlock_shared();
     }
 
     void RecursiveMutex::lock_shared()
@@ -351,10 +290,10 @@ namespace workphone
         {
             m_owner_thread = std::thread::id();
 
-            // Note: Any shared locks acquired while holding exclusive remain valid
-            // in m_shared_locks_per_thread but don't contribute to m_shared_count,
-            // so they won't block new exclusive lockers. This is by design - the
-            // caller should ensure balanced lock_shared/unlock_shared calls.
+            // Preserve outstanding shared ownership when downgrading.
+            const auto shared = m_shared_locks_per_thread.find( current_thread );
+            if( shared != m_shared_locks_per_thread.end() )
+                m_shared_count += shared->second;
 
             // Notify all waiting threads (both exclusive and shared)
             m_condition.notify_all();
@@ -446,11 +385,15 @@ namespace workphone
         }
 
         // Check if we can acquire exclusive lock (only this thread holds shared locks)
-        if( m_count == 0 && m_shared_count == it->second && !m_upgrade_mode )
+        if( m_count == 0 && m_shared_count == it->second &&
+            ( !m_upgrade_mode || m_upgrade_thread == current_thread ) )
         {
             // Convert all our shared locks to one exclusive lock
             m_shared_count -= it->second;
             m_shared_locks_per_thread.erase( it );
+
+            m_upgrade_mode = false;
+            m_upgrade_thread = std::thread::id();
 
             m_owner_thread = current_thread;
             m_count = 1;

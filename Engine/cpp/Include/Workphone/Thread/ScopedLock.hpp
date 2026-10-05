@@ -32,6 +32,9 @@ namespace workphone
         explicit ScopedLock( const SmartPtr<T> &object, bool write = true );
         explicit ScopedLock( const T *object, bool write = true );
 
+        ScopedLock( const ScopedLock & ) = delete;
+        ScopedLock &operator=( const ScopedLock & ) = delete;
+
         /**
          * Destructs a `ScopeLock` object and unlocks the specified shared object.
          *

@@ -2,6 +2,7 @@
 #define ConcurrentQueue_h__
 
 #include <Workphone/Core/Allocator.hpp>
+#include <Workphone/WorkphoneEnums.hpp>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -58,22 +59,10 @@ namespace workphone
         }
 
         ConcurrentQueueBase( const ConcurrentQueueBase &other ) :
-            m_allocator( allocator_traits::select_on_container_copy_construction( other.m_allocator ) )
-        {
-            std::lock_guard<mutex_type> lock( other.m_mutex );
+            ConcurrentQueueBase( other, std::unique_lock<mutex_type>( other.m_mutex ) ) {}
 
-            m_growthPolicy = other.m_growthPolicy;
-            m_growthSize = other.m_growthSize;
-
-            copyStorageFromUnlocked( other );
-        }
-
-        ConcurrentQueueBase( ConcurrentQueueBase &&other ) noexcept :
-            m_allocator( std::move( other.m_allocator ) )
-        {
-            std::lock_guard<mutex_type> lock( other.m_mutex );
-            stealStorageFromUnlocked( other );
-        }
+        ConcurrentQueueBase( ConcurrentQueueBase &&other ) :
+            ConcurrentQueueBase( other, std::unique_lock<mutex_type>( other.m_mutex ), 0 ) {}
 
         ~ConcurrentQueueBase()
         {
@@ -133,7 +122,7 @@ namespace workphone
             return *this;
         }
 
-        ConcurrentQueueBase &operator=( ConcurrentQueueBase &&other ) noexcept
+        ConcurrentQueueBase &operator=( ConcurrentQueueBase &&other )
         {
             if( this == &other )
             {
@@ -583,6 +572,22 @@ namespace workphone
             m_capacity = other.m_capacity;
             m_size = other.m_size;
             m_head = 0;
+        }
+
+        // The lock parameter remains alive through allocator initialization
+        // and storage transfer; neither may precede locking the source.
+        ConcurrentQueueBase( const ConcurrentQueueBase &other, std::unique_lock<mutex_type> ) :
+            m_allocator( allocator_traits::select_on_container_copy_construction( other.m_allocator ) )
+        {
+            m_growthPolicy = other.m_growthPolicy;
+            m_growthSize = other.m_growthSize;
+            copyStorageFromUnlocked( other );
+        }
+
+        ConcurrentQueueBase( ConcurrentQueueBase &other, std::unique_lock<mutex_type>, int ) :
+            m_allocator( std::move( other.m_allocator ) )
+        {
+            stealStorageFromUnlocked( other );
         }
 
         void stealStorageFromUnlocked( ConcurrentQueueBase &other ) noexcept

@@ -20,12 +20,16 @@ namespace workphone
             /** Constructor. */
             ScopedLock( SharedMutex &m, bool write = true );
 
+            ScopedLock( const ScopedLock & ) = delete;
+            ScopedLock &operator=( const ScopedLock & ) = delete;
+
             /** Destructor. */
             ~ScopedLock();
 
         protected:
             /** The mutex. */
             SharedMutex &m_mutex;
+            bool m_write;
         };
 
         /** Constructor. */

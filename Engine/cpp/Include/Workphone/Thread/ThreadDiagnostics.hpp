@@ -31,20 +31,21 @@ namespace workphone::thread_diagnostics
 
     inline auto trackerMutex() -> std::mutex &
     {
-        static std::mutex mutex;
-        return mutex;
+        // Static mutex destructors must be able to use diagnostics at shutdown.
+        static auto *mutex = new std::mutex;
+        return *mutex;
     }
 
     inline auto exclusiveOwners() -> std::unordered_map<const void *, std::thread::id> &
     {
-        static std::unordered_map<const void *, std::thread::id> owners;
-        return owners;
+        static auto *owners = new std::unordered_map<const void *, std::thread::id>;
+        return *owners;
     }
 
     inline auto sharedTotals() -> std::unordered_map<const void *, s32> &
     {
-        static std::unordered_map<const void *, s32> totals;
-        return totals;
+        static auto *totals = new std::unordered_map<const void *, s32>;
+        return *totals;
     }
 
     inline auto currentThreadSharedLocks() -> std::unordered_map<const void *, s32> &

@@ -3,6 +3,9 @@
 #include <Workphone/Thread/SpinRWMutex.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <thread>
+#if defined( _MSC_VER )
+#    include <intrin.h>
+#endif
 
 #if WP_USE_ONETBB
 //#    include <tbb/tbb_thread.h>
@@ -170,46 +173,48 @@ namespace workphone
 
     void Thread::interlockedExchange( volatile long *target, long value )
     {
-#if defined( WP_USE_INTERLOCKED_FUNCTIONS ) && defined( WP_USE_BOOST )
-        BOOST_INTERLOCKED_EXCHANGE( target, value );
+#if defined( _MSC_VER )
+        _InterlockedExchange( target, value );
 #else
-        *target = value;
+        __atomic_exchange_n( target, value, __ATOMIC_SEQ_CST );
 #endif
     }
 
     void Thread::interlockedExchangePointer( void **target, void *value )
     {
-#if defined( WP_USE_INTERLOCKED_FUNCTIONS ) && defined( WP_USE_BOOST )
-        BOOST_INTERLOCKED_EXCHANGE_POINTER( target, value );
+#if defined( _MSC_VER )
+        _InterlockedExchangePointer( target, value );
 #else
-        *target = value;
+        __atomic_exchange_n( target, value, __ATOMIC_SEQ_CST );
 #endif
     }
 
-    auto Thread::interlockedCompareExchange( volatile long *a, long b, long c ) -> long
+    long Thread::interlockedCompareExchange( volatile long *target, long expected, long desired )
     {
-#if defined( WP_USE_INTERLOCKED_FUNCTIONS ) && defined( WP_USE_BOOST )
-        return BOOST_INTERLOCKED_COMPARE_EXCHANGE( a, b, c );
+#if defined( _MSC_VER )
+        return _InterlockedCompareExchange( target, desired, expected );
 #else
-        return 0;
+        __atomic_compare_exchange_n( target, &expected, desired, false,
+                                     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST );
+        return expected;
 #endif
     }
 
-    auto Thread::interlockedDecrement( volatile long *value ) -> long
+    long Thread::interlockedDecrement( volatile long *value )
     {
-#if defined( WP_USE_INTERLOCKED_FUNCTIONS ) && defined( WP_USE_BOOST )
-        return BOOST_INTERLOCKED_DECREMENT( value );
+#if defined( _MSC_VER )
+        return _InterlockedDecrement( value );
 #else
-        return --( *value );
+        return __atomic_sub_fetch( value, 1, __ATOMIC_SEQ_CST );
 #endif
     }
 
-    auto Thread::interlockedIncrement( volatile long *value ) -> long
+    long Thread::interlockedIncrement( volatile long *value )
     {
-#if defined( WP_USE_INTERLOCKED_FUNCTIONS ) && defined( WP_USE_BOOST )
-        return BOOST_INTERLOCKED_INCREMENT( value );
+#if defined( _MSC_VER )
+        return _InterlockedIncrement( value );
 #else
-        return ++( *value );
+        return __atomic_add_fetch( value, 1, __ATOMIC_SEQ_CST );
 #endif
     }
 
@@ -241,7 +246,7 @@ namespace workphone
 #elif WP_USE_TBB
         return tbb::tbb_thread::hardware_concurrency();
 #else
-        return 0;
+        return std::thread::hardware_concurrency();
 #endif
     }
 
@@ -252,7 +257,7 @@ namespace workphone
 #elif WP_USE_TBB
         return tbb::tbb_thread::hardware_concurrency();
 #else
-        return 0;
+        return std::thread::hardware_concurrency();
 #endif
     }
 

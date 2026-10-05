@@ -476,10 +476,11 @@ BOOST_AUTO_TEST_CASE( concurrent_array_thread_safety_mixed_operations )
         readers.emplace_back( [&arr, &should_stop, &read_count]() {
             while( !should_stop.load() )
             {
-                auto size = arr.size();
+                auto snapshot = arr.snapshot();
+                auto size = snapshot.size();
                 if( size > 0 )
                 {
-                    auto value = arr[size - 1];  // Read last element
+                    auto value = snapshot[size - 1];  // Copy while the source is protected
                     read_count.fetch_add( 1 );
                 }
                 std::this_thread::sleep_for( std::chrono::microseconds( 1 ) );

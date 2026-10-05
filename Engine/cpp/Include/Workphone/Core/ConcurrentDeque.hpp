@@ -13,6 +13,8 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <functional>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -36,7 +38,8 @@ namespace workphone
      * @brief Random-access iterator for ConcurrentDeque.
      *
      * Iterators returned directly by ConcurrentDeque::begin() acquire an exclusive
-     * lock and keep it for their lifetime. end() returns a non-locking sentinel.
+     * lock and keep it for their lifetime. end() also retains a lock, so
+     * either argument evaluation order produces one protected range.
      * Iterators returned by WriteLockedView do not acquire an additional lock,
      * because the view already owns the exclusive lock.
      */
@@ -816,7 +819,7 @@ namespace workphone
 
         ConcurrentDeque( std::initializer_list<value_type> il )
         {
-            if( !il.empty() )
+            if( il.size() != 0 )
             {
                 reserveUnlocked( static_cast<size_type>( il.size() ) );
                 for( const auto &value : il )
@@ -836,30 +839,10 @@ namespace workphone
         }
 
         ConcurrentDeque( const ConcurrentDeque &other ) :
-            m_allocator( allocator_traits::select_on_container_copy_construction( other.m_allocator ) )
-        {
-            other.lock_shared();
-            try
-            {
-                m_growthPolicy = other.m_growthPolicy;
-                m_growthSize = other.m_growthSize;
-                copyStorageFromUnlocked( other );
-                other.unlock_shared();
-            }
-            catch( ... )
-            {
-                other.unlock_shared();
-                throw;
-            }
-        }
+            ConcurrentDeque( other, std::unique_lock<mutex_type>( other.m_mutex ) ) {}
 
-        ConcurrentDeque( ConcurrentDeque &&other ) noexcept :
-            m_allocator( std::move( other.m_allocator ) )
-        {
-            other.lock();
-            stealStorageFromUnlocked( other );
-            other.unlock();
-        }
+        ConcurrentDeque( ConcurrentDeque &&other ) :
+            ConcurrentDeque( other, std::unique_lock<mutex_type>( other.m_mutex ), 0 ) {}
 
         ~ConcurrentDeque()
         {
@@ -922,7 +905,7 @@ namespace workphone
             return *this;
         }
 
-        ConcurrentDeque &operator=( ConcurrentDeque &&other ) noexcept
+        ConcurrentDeque &operator=( ConcurrentDeque &&other )
         {
             if( this == &other )
             {
@@ -1528,7 +1511,9 @@ namespace workphone
 
         iterator end()
         {
-            return iterator( this, sizeUnsafeForEnd(), ConcurrentDequeIteratorLockMode::None );
+            auto result = iterator( this, 0, ConcurrentDequeIteratorLockMode::Exclusive );
+            result.m_index = m_size;
+            return result;
         }
 
         const_iterator begin() const
@@ -1538,7 +1523,9 @@ namespace workphone
 
         const_iterator end() const
         {
-            return const_iterator( this, sizeUnsafeForEnd(), ConcurrentDequeIteratorLockMode::None );
+            auto result = const_iterator( this, 0, ConcurrentDequeIteratorLockMode::Shared );
+            result.m_index = m_size;
+            return result;
         }
 
         const_iterator cbegin() const
@@ -1585,20 +1572,26 @@ namespace workphone
         friend class ConcurrentDequeIterator<T, A>;
         friend class ConcurrentDequeConstIterator<T, A>;
 
+        ConcurrentDeque( const ConcurrentDeque &other, std::unique_lock<mutex_type> ) :
+            m_allocator( allocator_traits::select_on_container_copy_construction( other.m_allocator ) )
+        {
+            m_growthPolicy = other.m_growthPolicy;
+            m_growthSize = other.m_growthSize;
+            copyStorageFromUnlocked( other );
+        }
+
+        ConcurrentDeque( ConcurrentDeque &other, std::unique_lock<mutex_type>, int ) :
+            m_allocator( std::move( other.m_allocator ) )
+        {
+            stealStorageFromUnlocked( other );
+        }
+
         static void validateGrowthSize( size_type growthSize )
         {
             if( growthSize == 0 )
             {
                 throw std::invalid_argument( "ConcurrentDeque growth size cannot be zero." );
             }
-        }
-
-        size_type sizeUnsafeForEnd() const noexcept
-        {
-            // end() itself does not lock: in the intended iteration pattern the
-            // begin iterator already owns the lock. Locked views are preferred
-            // for explicit concurrent traversal.
-            return m_size;
         }
 
         size_type physicalIndexUnlocked( size_type logicalIndex ) const noexcept
@@ -2061,7 +2054,7 @@ namespace workphone
         {
             // Address order avoids deadlock without depending on std::lock support
             // in the custom RecursiveSpinMutex.
-            if( this < &other )
+            if( std::less<const ConcurrentDeque *>()( this, &other ) )
             {
                 lock();
                 other.lock_shared();
@@ -2082,7 +2075,7 @@ namespace workphone
 
         void lockBothExclusive( ConcurrentDeque &other )
         {
-            if( this < &other )
+            if( std::less<const ConcurrentDeque *>()( this, &other ) )
             {
                 lock();
                 other.lock();

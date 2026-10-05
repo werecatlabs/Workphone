@@ -10,45 +10,6 @@
 
 namespace workphone
 {
-#if !WP_FINAL
-    namespace
-    {
-        auto scopedLockModesMutex() -> std::mutex &
-        {
-            static std::mutex mutex;
-            return mutex;
-        }
-
-        auto scopedLockModes() -> std::unordered_map<const SharedMutex::ScopedLock *, bool> &
-        {
-            static std::unordered_map<const SharedMutex::ScopedLock *, bool> modes;
-            return modes;
-        }
-
-        void rememberScopedLockMode( const SharedMutex::ScopedLock *lock, bool write )
-        {
-            std::lock_guard<std::mutex> guard( scopedLockModesMutex() );
-            scopedLockModes()[lock] = write;
-        }
-
-        auto takeScopedLockMode( const SharedMutex::ScopedLock *lock ) -> bool
-        {
-            std::lock_guard<std::mutex> guard( scopedLockModesMutex() );
-            auto it = scopedLockModes().find( lock );
-            thread_diagnostics::check( it != scopedLockModes().end(),
-                                       "SharedMutex::ScopedLock destroyed without tracked lock mode" );
-
-            const auto write = it != scopedLockModes().end() ? it->second : true;
-            if( it != scopedLockModes().end() )
-            {
-                scopedLockModes().erase( it );
-            }
-
-            return write;
-        }
-    }  // namespace
-#endif
-
     SharedMutex::SharedMutex() = default;
     SharedMutex::~SharedMutex()
     {
@@ -129,12 +90,8 @@ namespace workphone
         writeCondition_.notify_one();
     }
 
-    SharedMutex::ScopedLock::ScopedLock( SharedMutex &m, bool write ) : m_mutex( m )
+    SharedMutex::ScopedLock::ScopedLock( SharedMutex &m, bool write ) : m_mutex( m ), m_write( write )
     {
-#if !WP_FINAL
-        rememberScopedLockMode( this, write );
-#endif
-
         if( write )
         {
             m_mutex.lock();
@@ -147,25 +104,10 @@ namespace workphone
 
     SharedMutex::ScopedLock::~ScopedLock()
     {
-#if !WP_FINAL
-        if( takeScopedLockMode( this ) )
-        {
+        if( m_write )
             m_mutex.unlock();
-        }
         else
-        {
             m_mutex.unlock_shared();
-        }
-#else
-        if( m_mutex.writeLocked_ )
-        {
-            m_mutex.unlock();
-        }
-        else
-        {
-            m_mutex.unlock_shared();
-        }
-#endif
     }
 
 }  // namespace workphone

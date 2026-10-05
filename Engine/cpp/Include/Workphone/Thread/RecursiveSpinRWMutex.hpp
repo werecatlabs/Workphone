@@ -2,7 +2,6 @@
 #define RecursiveSpinRWMutex_h__
 
 #include <Workphone/WorkphoneTypes.hpp>
-#include <Workphone/Core/StringTypes.hpp>
 #include <atomic>
 #include <thread>
 #include <cassert>
@@ -117,9 +116,9 @@ namespace workphone
          *
          * While a writer holds the lock, `state == -1` to indicate exclusive access.
          *
-         * @warning If the caller holds a read lock, this will attempt to upgrade.
-         *          Upgrading can cause deadlock if another thread also holds a read lock
-         *          and attempts to upgrade simultaneously. Use try_lock() for safe upgrades.
+         * @warning A blocking upgrade releases read ownership before waiting.
+         *          Recheck protected data afterward. Use try_lock() for an atomic
+         *          upgrade that preserves reads on failure.
          */
         void lock();
 
@@ -127,7 +126,8 @@ namespace workphone
          * @brief Release a previously acquired write lock.
          *
          * Decrements the write recursion counter and, when it reaches zero, clears
-         * the writer ownership and restores `state` to zero so readers may proceed.
+         * the writer ownership. Outstanding shared locks remain held as ordinary
+         * read ownership, allowing a balanced downgrade.
          *
          * @pre The calling thread must be the current write owner.
          */
@@ -202,10 +202,6 @@ namespace workphone
          * This allows proper unlock_shared() behavior when the writer releases read locks.
          */
         unsigned writer_read_recursion{ 0 };
-
-#if defined _DEBUG
-        String debugStr;
-#endif
 
         /**
          * @brief Platform-agnostic CPU relaxation hint used while spinning.

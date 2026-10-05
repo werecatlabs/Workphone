@@ -25,6 +25,9 @@ namespace workphone
              */
             ScopedLock( SpinMutex &m );
 
+            ScopedLock( const ScopedLock & ) = delete;
+            ScopedLock &operator=( const ScopedLock & ) = delete;
+
             /**
              * Releases the SpinMutex lock.
              */
