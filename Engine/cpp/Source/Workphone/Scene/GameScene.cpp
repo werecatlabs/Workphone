@@ -1352,8 +1352,6 @@ namespace workphone::scene
 
     void GameScene::setState( State state )
     {
-        ScopedLock lock( this );
-
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto threadPool = applicationManager->getThreadPoolPtr();
         auto taskManager = applicationManager->getTaskManagerPtr();

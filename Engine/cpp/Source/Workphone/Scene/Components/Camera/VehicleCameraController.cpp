@@ -280,6 +280,24 @@ namespace workphone::scene
 
             if( actor->isSmoothMotion() )
             {
+                auto applicationManager = core::IApplicationManager::instancePtr();
+                auto gameManager = applicationManager->getGameManagerPtr();
+                auto timer = applicationManager->getTimerPtr();
+
+                if( !m_target )
+                {
+                    auto vehicle = gameManager->getObjectByType<VehicleController>();
+                    if( vehicle )
+                    {
+                        m_target = vehicle->getActor();
+                    }
+                }
+
+                if( !m_target )
+                {
+                    return;
+                }
+
                 auto enabled = isEnabled() && actor->isEnabledInScene();
                 if( enabled )
                 {

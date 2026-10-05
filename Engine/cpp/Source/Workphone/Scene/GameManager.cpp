@@ -261,7 +261,7 @@ namespace workphone::scene
 
                     auto timer = applicationManager->getTimerPtr();
 
-                    auto smoothDeltaTime = timer->getDeltaTime();
+                    auto smoothDeltaTime = timer->getSmoothDeltaTime();
                     auto previousTime = timer->getPreviousTime( task );
                     auto transformTime = previousTime + smoothDeltaTime + ( 1.0 / 30.0 );
 
@@ -379,13 +379,15 @@ namespace workphone::scene
                                             if( object->isDerived<IComponent>() )
                                             {
                                                 auto component =
-                                                    workphone::static_pointer_cast<IComponent>( SmartPtr<ISharedObject>( object ) );
+                                                    workphone::static_pointer_cast<IComponent>(
+                                                        SmartPtr<ISharedObject>( object ) );
                                                 component->setProperties( p.second );
                                             }
                                             else if( object->isDerived<IComponentEventListener>() )
                                             {
                                                 auto component = workphone::static_pointer_cast<
-                                                    IComponentEventListener>( SmartPtr<ISharedObject>( object ) );
+                                                    IComponentEventListener>(
+                                                    SmartPtr<ISharedObject>( object ) );
                                                 component->setProperties( p.second );
                                             }
                                         }
@@ -534,8 +536,8 @@ namespace workphone::scene
                                     auto transformTask = transform->getTask();
 
                                     auto smoothTransform = transform->getWorldTransform();
-                                    if( getTransformState( id, transformTime, smoothTransform,
-                                                           transformTask ) )
+                                    if( getTransformState( id, transformTime, smoothDeltaTime,
+                                                           smoothTransform, transformTask ) )
                                     {
                                         transform->setWorldTransform( smoothTransform );
                                         transform->setLocalDirty( true, false );
@@ -569,7 +571,8 @@ namespace workphone::scene
 
                                                 auto renderTransform = Transform3<real_Num>();
                                                 if( getTransformState( id, transformTime,
-                                                                       renderTransform, transformTask ) )
+                                                                       smoothDeltaTime, renderTransform,
+                                                                       transformTask ) )
                                                 {
                                                     component->updateTransform( renderTransform );
 
@@ -1250,7 +1253,7 @@ namespace workphone::scene
         auto pos = std::distance( components.begin(), componentIt );
 
         if( componentIt == components.end() )
-            throw std::runtime_error("Component capacity exhausted");
+            throw std::runtime_error( "Component capacity exhausted" );
         components[pos] = component;
 
         if( handle )
@@ -1618,7 +1621,8 @@ namespace workphone::scene
 #endif
     }
 
-    void GameManager::loadObject( SmartPtr<ISharedObject> object, SmartPtr<ISharedObject> data, bool forceQueue )
+    void GameManager::loadObject( SmartPtr<ISharedObject> object, SmartPtr<ISharedObject> data,
+                                  bool forceQueue )
     {
 #if 1
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -2172,8 +2176,8 @@ namespace workphone::scene
         }
     }
 
-    bool GameManager::getTransformState( u32 id, time_interval t, Transform3<real_Num> &transform,
-                                         TaskId task )
+    bool GameManager::getTransformState( u32 id, time_interval t, time_interval dt,
+                                         Transform3<real_Num> &transform, TaskId task )
     {
         TryLockGuard lock( this );
         if( lock.locked() )
@@ -2310,6 +2314,14 @@ namespace workphone::scene
                             transform = Transform3<real_Num>( Vector3<real_Num>( p.x, p.y, p.z ),
                                                               Quaternion<real_Num>( o.w, o.x, o.y, o.z ),
                                                               scale );
+
+                            const auto &last = lastTransforms[0];
+                            const auto &latest = transforms.front();
+                            const auto elapsed = static_cast<real_Num>( t - times.front() );
+                            const auto position = last.getPosition() +
+                                                  ( transform.getPosition() - last.getPosition() ) * dt;
+                            transform = Transform3<real_Num>( position, latest.getOrientation(),
+                                                              latest.getScale() );
                             lastTransforms[0] = transform;
                             return true;
                         }
@@ -2318,16 +2330,22 @@ namespace workphone::scene
             }
             else
             {
-                // Predict from the newest physics sample, just as in the
-                // single-sample path. Accumulating from the previous rendered
-                // transform makes moving actors lag farther behind each frame.
-                const auto &latest = transforms.front();
-                const auto elapsed = static_cast<real_Num>( t - times.front() );
-                const auto position =
-                    latest.getPosition() + motions.front().linearVelocity * elapsed;
-                transform = Transform3<real_Num>( position, latest.getOrientation(), latest.getScale() );
-                lastTransforms[0] = transform;
-                return true;
+                auto timer = core::IApplicationManager::instancePtr()->getTimerPtr();
+                if( timer->getTimeSinceSceneLoad() > 5.0 )
+                {
+                    // Predict from the newest physics sample, just as in the
+                    // single-sample path. Accumulating from the previous rendered
+                    // transform makes moving actors lag farther behind each frame.
+                    const auto &last = lastTransforms[0];
+                    const auto &latest = transforms.front();
+                    const auto elapsed = static_cast<real_Num>( t - times.front() );
+                    const auto position =
+                        last.getPosition() + ( latest.getPosition() - last.getPosition() ) * t;
+                    transform =
+                        Transform3<real_Num>( position, latest.getOrientation(), latest.getScale() );
+                    lastTransforms[0] = transform;
+                    return true;
+                }
             }
         }
 

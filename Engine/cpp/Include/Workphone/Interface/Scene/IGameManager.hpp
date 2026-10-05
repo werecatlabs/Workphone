@@ -355,7 +355,8 @@ namespace workphone
              * @param task The task ID associated with the retrieval.
              * @return True if the transform state was found, false otherwise.
              */
-            virtual bool getTransformState( u32 id, time_interval t, Transform3<real_Num> &transform,
+            virtual bool getTransformState( u32 id, time_interval t, time_interval dt,
+                                            Transform3<real_Num> &transform,
                                             TaskId task ) = 0;
 
             /**

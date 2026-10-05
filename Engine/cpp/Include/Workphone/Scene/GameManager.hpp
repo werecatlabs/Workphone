@@ -577,7 +577,8 @@ namespace workphone
              * @param transform The transform state data to fill.
              * @return True if the state was found, false otherwise.
              */
-            bool getTransformState( u32 id, time_interval t, Transform3<real_Num> &transform,
+            bool getTransformState( u32 id, time_interval t, time_interval dt,
+                                    Transform3<real_Num> &transform,
                                     TaskId task ) override;
 
             /**
