@@ -57,7 +57,7 @@ namespace workphone
                         parent->addChild( actor );
                     }
 
-                    gameManager->loadObject( actor, actorData, true );
+                    gameManager->loadObject( actor, actorData, false );
                     setActor( actor );
 
                     auto childrenData =
@@ -72,7 +72,7 @@ namespace workphone
                         auto actorJob = factoryManager->make_ptr<ActorLoadJob>();
                         actorJob->setProperties( childData );
                         actorJob->setParent( actor );
-                        actorJob->setCreateChildJobs( false );
+                        actorJob->setCreateChildJobs( true );
                         jobQueue->addJob( actorJob );
                         actorJobs.push_back( actorJob );
                     }

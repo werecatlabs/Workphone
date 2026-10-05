@@ -394,7 +394,7 @@ namespace workphone::scene
             {
                 job->setScene( this );
                 job->setFilePath( path );
-                job->setCreateActorJobs( true );
+                job->setCreateActorJobs( async );
 
                 if( async )
                 {
