@@ -16,7 +16,6 @@
 #include <Workphone/Physics/ConstraintDrive.hpp>
 #include <Workphone/Physics/ConstraintFixed3.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
-#include <Workphone/Interface/Physics/IPhysicsVehicleWheel3.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -569,7 +568,6 @@ namespace workphone::physics
     void WPPhysicsManager3::unload( SmartPtr<ISharedObject> data )
     {
         Array<SmartPtr<IPhysicsConstraint3>>   constraints;
-        Array<SmartPtr<IPhysicsVehicle3>>      vehicles;
         Array<SmartPtr<ICharacterController3>> characters;
         Array<SmartPtr<IRaycastHit>>           raycastHits;
         Array<SmartPtr<IRigidBody3>>           bodies;
@@ -615,15 +613,7 @@ namespace workphone::physics
             }
         }
 
-        for( auto &vehicle : vehicles )
-        {
-            if( vehicle )
-            {
-                vehicle->unload( data );
-            }
-        }
-
-        for( auto &character : characters )
+for( auto &character : characters )
         {
             if( character )
             {
@@ -976,7 +966,6 @@ namespace workphone::physics
         }
 
         Array<SmartPtr<IPhysicsConstraint3>> constraintsToRemove;
-        Array<SmartPtr<IPhysicsVehicle3>>    vehiclesToRemove;
         {
             ScopedLock lock( this );
             const auto bodyIt = std::find( m_bodies.begin(), m_bodies.end(), body );

@@ -8,6 +8,11 @@
 
 namespace workphone::physics
 {
+    void WPPhysicsScene2::_getObject( void **object ) const
+    {
+        if( object ) *object = getNativeObject();
+    }
+
     namespace
     {
         wp_vec2f toWp( const Vector2<real_Num> &v )
@@ -29,9 +34,8 @@ namespace workphone::physics
                 return nullptr;
             }
 
-            wp_rigidbody *nativeBody = nullptr;
-            body->_getObject( (void**)&nativeBody );
-            return nativeBody;
+            auto backend = dynamic_cast<WPPhysicsRigidBody2 *>( body.get() );
+            return backend ? backend->getBody() : nullptr;
         }
     } // namespace
 

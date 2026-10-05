@@ -118,6 +118,11 @@ namespace workphone::physics
         return nullptr;
     }
 
+    void WPPhysicsManager2::_getObject( void **object ) const
+    {
+        if( object ) *object = getNativeObject();
+    }
+
     void WPPhysicsManager2::updateRigidBodies()
     {
         Array<SmartPtr<IPhysicsScene2>> worlds;

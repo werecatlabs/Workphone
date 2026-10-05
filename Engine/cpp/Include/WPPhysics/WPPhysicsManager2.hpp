@@ -12,7 +12,8 @@ namespace workphone::physics
         WPPhysicsManager2();
         ~WPPhysicsManager2() override;
 
-        void *getNativeObject() const override;
+        void *getNativeObject() const;
+        void _getObject( void **object ) const override;
 
         void updateRigidBodies() override;
         void updateParticles() override;

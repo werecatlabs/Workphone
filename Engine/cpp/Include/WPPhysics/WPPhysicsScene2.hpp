@@ -16,7 +16,8 @@ namespace workphone::physics
         WPPhysicsScene2();
         ~WPPhysicsScene2() override;
 
-        void *getNativeObject() const override;
+        void *getNativeObject() const;
+        void _getObject( void **object ) const override;
         wp_physics_scene *getScene() const;
 
         void updateRigidBodies() override;

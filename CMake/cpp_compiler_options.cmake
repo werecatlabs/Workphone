@@ -207,6 +207,19 @@ else()
 endif()
 
 if(MSVC)
+  # MSBuild can build several projects at once. Unbounded /MP multiplies that
+  # parallelism and exhausts memory when each compiler loads a large PCH.
+  set(WP_MSVC_COMPILE_PROCESSES "2" CACHE STRING "Maximum compiler processes per MSVC project")
+  if(NOT WP_MSVC_COMPILE_PROCESSES MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "WP_MSVC_COMPILE_PROCESSES must be a positive integer")
+  endif()
+  foreach(_wp_language C CXX)
+    foreach(_wp_configuration DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+      set(_wp_flags "CMAKE_${_wp_language}_FLAGS_${_wp_configuration}")
+      string(REGEX REPLACE "/MP([0-9]+)?([ ]|$)" "/MP${WP_MSVC_COMPILE_PROCESSES}\\2"
+        ${_wp_flags} "${${_wp_flags}}")
+    endforeach()
+  endforeach()
   # Force to always compile with W4
   #if(CMAKE_CXX_FLAGS MATCHES "/W[0-4]")
   #  string(REGEX REPLACE "/W[0-4]" "/W4" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")

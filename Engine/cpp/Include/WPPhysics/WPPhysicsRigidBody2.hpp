@@ -30,6 +30,7 @@ namespace workphone::physics
 
         /** @brief Returns the underlying native rigid body pointer. */
         wp_rigidbody *getBody() const;
+        void *getNativeObject() const;
 
         /** @brief Assigns a collision shape to this rigid body. */
         void setCollisionShape( const SmartPtr<IPhysicsShape2> &shape ) override;
