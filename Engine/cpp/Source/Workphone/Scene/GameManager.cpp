@@ -542,7 +542,7 @@ namespace workphone::scene
                                                            smoothTransform, transformTask ) )
                                     {
                                         transform->setWorldTransform( smoothTransform );
-                                        transform->setLocalDirty( true, false );
+                                        transform->setLocalDirty( true );
                                         transform->update();
                                     }
                                 }
@@ -594,13 +594,16 @@ namespace workphone::scene
             return true;
         }
 
-        // Independently simulated children use their own world-space history.
-        // Attached meshes have no history: compose their local pose with the
-        // sampled parent, even when that parent has no renderer component.
-        if( !getTransformState( id, time, dt, worldTransform, transform->getTask() ) )
+        // Attached children also acquire application-task history. That history
+        // is not an independent simulation pose: always compose their local pose
+        // with the sampled parent so a stationary body mesh follows its chassis.
+        auto parent = actor->getParentPtr();
+        const bool attached = parent && parent->isSmoothMotion() &&
+                              transform->getTask() != TaskId::Physics;
+        if( attached || !getTransformState( id, time, dt, worldTransform, transform->getTask() ) )
         {
             Transform3<real_Num> parentTransform;
-            if( !getActorTransformState( actor->getParentPtr(), time, dt, parentTransform,
+            if( !getActorTransformState( parent, time, dt, parentTransform,
                                          sampledTransforms ) )
                 return false;
             worldTransform.transformFromParent( parentTransform, transform->getLocalTransform() );

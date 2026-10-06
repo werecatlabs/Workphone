@@ -553,10 +553,11 @@ namespace workphone::scene
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto taskManager = applicationManager->getTaskManagerPtr();
-            auto threadPool = applicationManager->getThreadPoolPtr();
 
-            if( threadPool && threadPool->getNumThreads() > 0 && taskManager &&
-                taskManager->getNumTasks() > 0 )
+            // Render-task sampling also runs when tasks share a single executor.
+            // A hierarchy update must not overwrite that sampled pose with the
+            // latest physics pose merely because there are no worker threads.
+            if( taskManager && taskManager->getNumTasks() > 0 )
             {
                 if( auto actor = getActorPtr() )
                 {

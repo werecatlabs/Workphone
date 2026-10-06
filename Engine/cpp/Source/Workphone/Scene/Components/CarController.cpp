@@ -192,6 +192,13 @@ namespace workphone::scene
     {
         try
         {
+            // Scene updates run on several tasks. Animate wheel transforms once
+            // on the application task, never while the render task samples them.
+            auto application = core::IApplicationManager::instancePtr();
+            const auto task = Thread::getCurrentTask();
+            if( application && task != TaskId::Application &&
+                ( application->hasTasks() || task != TaskId::Primary ) )
+                return;
             VehicleController::update();
 
             auto app = core::IApplicationManager::instancePtr();

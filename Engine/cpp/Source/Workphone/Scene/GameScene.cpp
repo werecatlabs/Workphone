@@ -379,8 +379,8 @@ namespace workphone::scene
 
     void GameScene::loadScene( const String &path, bool async )
     {
-        ScopedLock lock( this );
         beginSceneLoad();
+
         if( isLoaded() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -416,8 +416,8 @@ namespace workphone::scene
 
     void GameScene::loadSceneDataStr( const String &data, bool async )
     {
-        ScopedLock lock( this );
         beginSceneLoad();
+
         if( isLoaded() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();

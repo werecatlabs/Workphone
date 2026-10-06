@@ -73,7 +73,12 @@ namespace workphone
                     ( actual.getScale() - expected.getScale() ).length() > 0.01f ||
                     ( actual.forward() - expected.forward() ).length() > 0.01f ||
                     ( actual.up() - expected.up() ).length() > 0.01f )
+                {
+                    WP_LOG_ERROR( "Vehicle scene-node mismatch: " + actor->getName() +
+                                  " position error=" + StringUtil::toString( ( actual.getPosition() - expected.getPosition() ).length() ) +
+                                  " orientation error=" + StringUtil::toString( ( actual.forward() - expected.forward() ).length() ) );
                     return false;
+                }
 
 #if WP_GRAPHICS_SYSTEM_CLAW
                 auto mesh = dynamic_pointer_cast<render::ClawMesh>( renderer->getGraphicsObject() );
@@ -94,7 +99,13 @@ namespace workphone
                 for( size_t i = 0; i < 16; ++i )
                     if( Math<real_Num>::Abs( rendered.m[i / 4][i % 4] - expectedMatrix.ptr()[i] ) >
                         0.01f )
+                    {
+                        WP_LOG_ERROR( "Vehicle render mismatch: " + actor->getName() +
+                                      " matrix element " + StringUtil::toString( i ) +
+                                      " actual=" + StringUtil::toString( rendered.m[i / 4][i % 4] ) +
+                                      " expected=" + StringUtil::toString( expectedMatrix.ptr()[i] ) );
                         return false;
+                    }
 #endif
             }
 

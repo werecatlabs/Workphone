@@ -116,7 +116,7 @@ function SampleVehicleAdvanced:generate()
 
         self.cameraActor = self:createActor("Vehicle Follow Camera")
         self:resetCamera()
-        self.cameraActor:setSmoothMotion(true)
+        self.cameraActor:setSmoothMotion(true, false)
         self.camera = self.cameraActor:addComponent("Camera")
         self.camera:setNearClipDistance(0.5)
         self.camera:setFarClipDistance(1000)

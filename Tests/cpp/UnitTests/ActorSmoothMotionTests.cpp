@@ -1,6 +1,7 @@
 #include "UnitTests.hpp"
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/GraphicsSceneNode.hpp>
 #include <boost/test/unit_test.hpp>
 #include <thread>
 
@@ -86,6 +87,20 @@ namespace
         }
         bool sampled = false;
         Transform3<real_Num> pose;
+    };
+
+    class PoseNode : public render::GraphicsSceneNode
+    {
+    public:
+        void setTransform( const Transform3<real_Num> &value ) override { pose = value; }
+        Transform3<real_Num> getTransform() const override { return pose; }
+        Transform3<real_Num> pose;
+    };
+
+    class PlayingRenderer : public scene::Renderer
+    {
+    public:
+        State getState() const override { return State::Play; }
     };
 
     struct ActorSmoothMotionFixture : TestGuard
@@ -463,6 +478,10 @@ BOOST_AUTO_TEST_CASE( render_mesh_samples_parent_without_a_parent_renderer )
     parent->getTransform()->setTask( TaskId::Primary );
     sceneManager->addTransformState( parent->getHandle()->getInstanceId(), 0,
                                      makeTransform( Vector3<real_Num>( 10, 0, 0 ) ) );
+    // Application history on an attached mesh must not override its physics parent.
+    child->getTransform()->setTask( TaskId::Application );
+    sceneManager->addTransformState( child->getHandle()->getInstanceId(), 0,
+                                     makeTransform( Vector3<real_Num>( -100, 0, 0 ) ) );
     auto capture = workphone::make_ptr<SmoothTransformCapture>();
     capture->setActor( child );
     capture->setLoadingState( LoadingState::Loaded );
@@ -476,6 +495,30 @@ BOOST_AUTO_TEST_CASE( render_mesh_samples_parent_without_a_parent_renderer )
     checkVectorClose( capture->pose.getPosition(), Vector3<real_Num>( 12, 3, 4 ) );
     capture->setActor( nullptr );
     capture->setLoadingState( LoadingState::Unloaded );
+}
+
+BOOST_AUTO_TEST_CASE( single_executor_hierarchy_update_preserves_sampled_render_pose )
+{
+    BOOST_REQUIRE( taskManager->getNumTasks() > 0 );
+    auto pool = applicationManager->getThreadPool();
+    BOOST_REQUIRE( pool );
+    auto previousThreads = pool->getNumThreads();
+    pool->setNumThreads( 0 );
+    addCleanup( [pool, previousThreads]() { pool->setNumThreads( previousThreads ); } );
+    auto actor = createSceneActor( *this, "SampledRenderPose" );
+    actor->setSmoothMotion( true );
+    actor->setPosition( Vector3<real_Num>( 100, 0, 0 ) );
+    actor->updateTransform();
+    auto node = workphone::make_ptr<PoseNode>();
+    auto renderer = workphone::make_ptr<PlayingRenderer>();
+    renderer->setActor( actor );
+    renderer->setGraphicsNode( node );
+    const auto sampled = makeTransform( Vector3<real_Num>( 10, 0, 0 ) );
+    renderer->updateTransform( sampled );
+    renderer->updateTransform();
+    checkTransformClose( node->getTransform(), sampled );
+    renderer->setGraphicsNode( nullptr );
+    renderer->setActor( nullptr );
 }
 
 BOOST_AUTO_TEST_SUITE_END()
