@@ -1,3 +1,4 @@
+#include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/WPAudioSoundListener.hpp>
 #include <Workphone/Workphone.hpp>
 

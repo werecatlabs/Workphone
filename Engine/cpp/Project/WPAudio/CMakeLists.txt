@@ -35,6 +35,12 @@ else ()
     add_library(WPAudio SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+if (WP_USE_PRECOMPILED_HEADERS)
+    wp_use_precompiled_header(WPAudio "WPAudio/WPAudioPCH.hpp"
+        "${WP_ROOT}/Engine/cpp/Source/WPAudio/WPAudioPCH.cpp"
+        "WPAudio/WPAudioPCH.hpp")
+endif()
+
 if (WIN32)
     target_link_libraries(WPAudio xaudio2 winmm ole32)
 elseif (APPLE)

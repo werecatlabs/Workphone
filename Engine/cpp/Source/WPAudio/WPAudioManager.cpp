@@ -1,3 +1,4 @@
+#include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/WPAudioManager.hpp>
 #include <WPAudio/WPAudioSound.hpp>
 #include <WPAudio/WPAudioSoundListener.hpp>
