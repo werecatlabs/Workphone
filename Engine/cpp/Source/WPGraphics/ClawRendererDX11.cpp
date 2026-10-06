@@ -736,6 +736,75 @@ namespace workphone::render
         return m_renderer;
     }
 
+    void ClawRendererDX11::renderParticles( const Array<wp_particle_sample> &particles,
+        const Matrix4F &world, const Vector3F &scale, const SmartPtr<IMaterial> &material )
+    {
+        if( !m_renderer || particles.empty() ) return;
+        const auto view = m_camera ? Matrix4F( m_camera->getViewMatrix().ptr() ) : Matrix4F::identity();
+        const auto inverseView = view.inverse();
+        const Vector3F right( inverseView[0][0], inverseView[1][0], inverseView[2][0] );
+        const Vector3F up( inverseView[0][1], inverseView[1][1], inverseView[2][1] );
+        struct DrawParticle { Vector3F center; f32 depth; const wp_particle_sample *particle; };
+        Array<DrawParticle> draw;
+        draw.reserve( particles.size() );
+        for( const auto &particle : particles )
+        {
+            const auto center = world.transformAffine( Vector3F( particle.position.x * scale.X(),
+                particle.position.y * scale.Y(), particle.position.z * scale.Z() ) );
+            draw.push_back( { center, view.transformAffine( center ).Z(), &particle } );
+        }
+        std::stable_sort( draw.begin(), draw.end(), []( const auto &a, const auto &b ) { return a.depth < b.depth; } );
+        const auto oldBlend = wp_renderer_get_blend_mode( m_renderer );
+        const auto oldCull = wp_renderer_get_cull_mode( m_renderer );
+        const auto oldDepthWrite = wp_renderer_get_depth_write_enabled( m_renderer );
+        const auto oldDepthTest = wp_renderer_get_depth_test_enabled( m_renderer );
+        const auto oldDepthFunc = wp_renderer_get_depth_func( m_renderer );
+        const auto oldFill = wp_renderer_get_fill_mode( m_renderer );
+        auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() ) : WORKPHONE_BLEND_MODE_ALPHA;
+        if( blend == WORKPHONE_BLEND_MODE_NONE ) blend = WORKPHONE_BLEND_MODE_ALPHA;
+        wp_renderer_set_blend_mode( m_renderer, blend );
+        wp_renderer_set_cull_mode( m_renderer, WORKPHONE_CULL_MODE_NONE );
+        wp_renderer_set_depth_test_enabled( m_renderer, 1 );
+        wp_renderer_set_depth_write_enabled( m_renderer, 0 );
+        wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_LEQUAL );
+        wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
+        void *texture = nullptr;
+        if( material ) if( auto input = material->getTexture( 0 ) ) input->getTextureFinal( &texture );
+        wp_renderer_set_texture_native( m_renderer, texture );
+        setTransforms( Matrix4F::identity() );
+        // Bounded batches avoid overflowing the transient native vertex buffer.
+        constexpr size_t batchSize = 1024;
+        Array<wp_vertex_ptc> vertices;
+        vertices.reserve( batchSize * 6 );
+        for( size_t start = 0; start < draw.size(); start += batchSize )
+        {
+            vertices.clear();
+            const auto end = std::min( start + batchSize, draw.size() );
+            for( size_t i = start; i < end; ++i )
+            {
+                const auto &p = *draw[i].particle;
+                const auto half = p.size * 0.5f;
+                const auto r = right * ( half * std::abs( scale.X() ) );
+                const auto u = up * ( half * std::abs( scale.Y() ) );
+                const Vector3F corners[] = { draw[i].center-r-u, draw[i].center+r-u,
+                    draw[i].center+r+u, draw[i].center-r+u };
+                const wp_vec2f uv[] = { {0,1}, {1,1}, {1,0}, {0,0} };
+                const auto colour = packColour( ColourF( p.color[0], p.color[1], p.color[2], p.color[3] ) );
+                for( auto index : k_quadIndices )
+                    vertices.push_back( { { corners[index].X(), corners[index].Y(), corners[index].Z() }, uv[index], colour } );
+            }
+            wp_renderer_draw_triangles_ptc( m_renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ) );
+            m_primitiveCount += static_cast<u32>( vertices.size() / 3 );
+        }
+        wp_renderer_set_texture_native( m_renderer, nullptr );
+        wp_renderer_set_blend_mode( m_renderer, oldBlend );
+        wp_renderer_set_cull_mode( m_renderer, oldCull );
+        wp_renderer_set_depth_write_enabled( m_renderer, oldDepthWrite );
+        wp_renderer_set_depth_test_enabled( m_renderer, oldDepthTest );
+        wp_renderer_set_depth_func( m_renderer, oldDepthFunc );
+        wp_renderer_set_fill_mode( m_renderer, oldFill );
+    }
+
     void ClawRendererDX11::setSceneLighting( const ColourF &ambient, const Vector3F &direction,
                                              const ColourF &colour, f32 intensity )
     {

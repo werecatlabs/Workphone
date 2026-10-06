@@ -656,6 +656,24 @@ namespace workphone
                             return 1;
                         },
                         dx11Renderer );
+                    // Particle simulation is updated by GraphicsScene::update, once per
+                    // simulation cycle. Each camera consumes its own immutable draw snapshot.
+                    for( auto &object : m_particleSystems.snapshot() )
+                    {
+                        auto particles = dynamic_pointer_cast<CParticleSystem>( object );
+                        if( !particles || !particles->isVisible() || !particles->isLoaded() ) continue;
+                        if( camera && !( particles->getVisibilityFlags() & camera->getVisibilityMask() ) ) continue;
+                        auto owner = particles->getOwner();
+                        const Matrix4F world = owner ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
+                                                     : Matrix4F::identity();
+                        SmartPtr<IMaterial> material;
+                        if( auto manager = core::IApplicationManager::instancePtr() )
+                            if( auto materials = manager->getGraphicsSystem()->getMaterialManager() )
+                                material = dynamic_pointer_cast<IMaterial>( materials->getByName( particles->getMaterialName() ) );
+                        const auto scale = particles->getScale();
+                        dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
+                            Vector3F( scale.X(), scale.Y(), scale.Z() ), material );
+                    }
                 }
                 else
                 {

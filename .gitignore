@@ -118,4 +118,6 @@ steam_appid.txt
 /project_x64_vs2022
 /build_ninja
 /wpimgui-build.log
+/project_graphics_contracts/
+/project_claw_windows/
 /wpimgui-build.log

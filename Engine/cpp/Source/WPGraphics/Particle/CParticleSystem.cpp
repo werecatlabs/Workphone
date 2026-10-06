@@ -9,6 +9,7 @@
 #include "WPGraphics/Particle/Renderers/BillboardRenderer.hpp"
 #include "WPGraphics/Particle/CParticleTechnique.hpp"
 #include <Workphone/Workphone.hpp>
+#include <cmath>
 
 namespace workphone
 {
@@ -25,6 +26,8 @@ namespace workphone
             m_isPlaying( false ),
             m_isVisible( true )
         {
+            m_scale = Vector3<real_Num>( 1, 1, 1 );
+            m_velocityScale = Vector3<real_Num>( 1, 1, 1 );
             u32 maxNumParticles = m_poolSize;
             m_particles.setNextSize( maxNumParticles );
             m_positions.setNextSize( maxNumParticles );
@@ -34,6 +37,7 @@ namespace workphone
         //-------------------------------------------------
         CParticleSystem::~CParticleSystem()
         {
+            wp_particle_simulation_destroy( m_simulation );
         }
 
         //-------------------------------------------------
@@ -144,30 +148,11 @@ namespace workphone
         //-------------------------------------------------
         void CParticleSystem::update()
         {
-            auto applicationManager = core::ApplicationManager::instance();
-            auto timer = applicationManager->getTimer();
-
-            auto task = Thread::getCurrentTask();
-            auto t = timer->getTime();
-            auto dt = timer->getDeltaTime();
-
-            if( m_isPlaying )
-            {
-                switch( task )
-                {
-                case TaskId::Application:
-                    animate();
-                    break;
-                case TaskId::Render:
-                {
-                    render();
-                }
-                break;
-                default:
-                {
-                }
-                }
-            }
+            if( Thread::getCurrentTask() == TaskId::Render ) return;
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
+            if( timer && !simulate( static_cast<f32>( timer->getDeltaTime() ) ) && isLoaded() )
+                WP_LOG_ERROR( "Claw particles: invalid timestep or settings; frame was not advanced." );
         }
 
         //-------------------------------------------------
@@ -179,89 +164,19 @@ namespace workphone
         //-------------------------------------------------
         void CParticleSystem::animate()
         {
-#if 0
-
-			// update emitters
-			for (u32 i = 0; i < m_emitters.size(); ++i)
-			{
-				m_emitters[i]->update();
-			}
-
-			ParticleTechniques::iterator particleTechniqueIt = m_particleTechniques.begin();
-			for (; particleTechniqueIt != m_particleTechniques.end(); ++particleTechniqueIt)
-			{
-				SmartPtr<IParticleTechnique>& technique = particleTechniqueIt->second;
-				technique->update();
-			}
-
-			std::list<SmartPtr<IParticle>> activeParticles = getActiveParticles();
-			std::list<SmartPtr<IParticle>>::iterator it = activeParticles.begin();
-			for (; it != activeParticles.end(); ++it)
-			{
-				ParticleData* particle = (ParticleData*)((*it)->getData());
-				particle->update(dt);
-			}
-
-
-
-			// remove old particles
-			std::list<SmartPtr<IParticle>>::iterator eraseIt = activeParticles.begin();
-			for (; eraseIt != activeParticles.end(); ++eraseIt)
-			{
-				SmartPtr<IParticle> particle = (*eraseIt);
-				ParticleData* particleData = (ParticleData*)(particle->getData());
-				if (particleData->getLifeTime() >= particleData->getMaxLifeTime())
-				{
-					SmartPtr<IParticleTechnique> technique = particleData->getTechnique();
-					if (technique)
-					{
-						Array<SmartPtr<IParticleRenderer>> renderers = technique->getParticleRenderers();
-						for (u32 i = 0; i < renderers.size(); ++i)
-						{
-							SmartPtr<IParticleRenderer> particleRenderer = renderers[i];
-							particleRenderer->removeParticle(particle);
-						}
-					}
-
-					activeParticles.erase(eraseIt);
-					eraseIt = activeParticles.begin();
-					if (eraseIt == activeParticles.end())
-						break;
-				}
-			}
-
-			setActiveParticles(activeParticles);
-#else
-            auto particleTechniqueIt = m_particleTechniques.begin();
-            for( ; particleTechniqueIt != m_particleTechniques.end(); ++particleTechniqueIt )
-            {
-                SmartPtr<IParticleTechnique> &technique = particleTechniqueIt->second;
-                technique->update();
-            }
-#endif
+            update();
         }
 
         //-------------------------------------------------
         void CParticleSystem::render()
         {
-            auto it = m_particleTechniques.begin();
-            for( ; it != m_particleTechniques.end(); ++it )
-            {
-                SmartPtr<IParticleTechnique> technique = it->second;
-
-                Array<SmartPtr<IParticleRenderer>> renderers = technique->getParticleRenderers();
-                for( u32 i = 0; i < renderers.size(); ++i )
-                {
-                    SmartPtr<IParticleRenderer> particleRenderer = renderers[i];
-                    particleRenderer->update();
-                }
-            }
+            // Rendering consumes getRenderSnapshot() through ClawScene, without advancing time.
         }
 
         //-------------------------------------------------
         void CParticleSystem::_getObject( void **ppObject ) const
         {
-            // m_bbSet->_getObject(ppObject);
+            if( ppObject ) *ppObject = m_simulation;
         }
 
         void CParticleSystem::handleEvent( SmartPtr<IEvent> event )
@@ -270,7 +185,19 @@ namespace workphone
 
         AABB3<real_Num> CParticleSystem::getLocalAABB() const
         {
-            return {};
+            auto samples = getRenderSnapshot();
+            if( samples.empty() ) return {};
+            Vector3<real_Num> minimum( samples[0].position.x, samples[0].position.y, samples[0].position.z );
+            auto maximum = minimum;
+            for( const auto &p : samples )
+            {
+                const real_Num half = p.size * 0.5f;
+                minimum = Vector3<real_Num>( std::min(minimum.X(), real_Num(p.position.x)-half),
+                    std::min(minimum.Y(), real_Num(p.position.y)-half), std::min(minimum.Z(), real_Num(p.position.z)-half) );
+                maximum = Vector3<real_Num>( std::max(maximum.X(), real_Num(p.position.x)+half),
+                    std::max(maximum.Y(), real_Num(p.position.y)+half), std::max(maximum.Z(), real_Num(p.position.z)+half) );
+            }
+            return AABB3<real_Num>( minimum, maximum );
         }
 
         void CParticleSystem::setLocalAABB( const AABB3<real_Num> &localAABB )
@@ -301,15 +228,17 @@ namespace workphone
 
         void CParticleSystem::load( void *data /*= nullptr */ )
         {
+            load( SmartPtr<ISharedObject>() );
         }
 
         void CParticleSystem::unload()
         {
+            unload( SmartPtr<ISharedObject>() );
         }
 
         SmartPtr<IParticleTechnique> CParticleSystem::getTechnique( const String &name ) const
         {
-            return nullptr;
+            return ParticleSystem::getTechnique( name );
         }
 
         Vector3<real_Num> CParticleSystem::getScale() const
@@ -383,25 +312,12 @@ namespace workphone
 
         u32 CParticleSystem::getVisibilityFlags() const
         {
-            return 0;  // m_bbSet->getVisibilityFlags();
+            return ParticleSystem::getVisibilityFlags();
         }
 
         void CParticleSystem::setVisibilityFlags( u32 flags )
         {
-            // m_bbSet->setVisibilityFlags( flags );
-
-            auto it = m_particleTechniques.begin();
-            for( ; it != m_particleTechniques.end(); ++it )
-            {
-                SmartPtr<IParticleTechnique> technique = it->second;
-
-                Array<SmartPtr<IParticleRenderer>> renderers = technique->getParticleRenderers();
-                for( u32 i = 0; i < renderers.size(); ++i )
-                {
-                    SmartPtr<IParticleRenderer> particleRenderer = renderers[i];
-                    particleRenderer->setVisibilityFlags( flags );
-                }
-            }
+            ParticleSystem::setVisibilityFlags( flags );
         }
 
         bool CParticleSystem::isVisible() const
@@ -434,29 +350,32 @@ namespace workphone
 
         String CParticleSystem::getMaterialName( s32 index /*= -1*/ ) const
         {
-            return StringUtil::EmptyString;
+            return m_materialName;
         }
 
         void CParticleSystem::setMaterialName( const String &materialName, s32 index /*= -1*/ )
         {
+            m_materialName = materialName;
         }
 
         void CParticleSystem::_attachToParent( SmartPtr<IGraphicsSceneNode> parent )
         {
+            setOwner( parent );
         }
 
         void CParticleSystem::detachFromParent()
         {
+            setOwner( nullptr );
         }
 
         u32 CParticleSystem::getId() const
         {
-            return 0;
+            return ParticleSystem::getId();
         }
 
         String CParticleSystem::getName() const
         {
-            return StringUtil::EmptyString;
+            return ParticleSystem::getName();
         }
 
         bool CParticleSystem::isOccluder() const
@@ -535,6 +454,12 @@ namespace workphone
 
         void CParticleSystem::setPoolSize( u32 poolSize )
         {
+            std::lock_guard<std::mutex> lock( m_simulationMutex );
+            if( m_simulation || !poolSize || poolSize > WP_PARTICLE_SIMULATION_MAX_CAPACITY )
+            {
+                WP_LOG_ERROR( "Claw particles: capacity must be valid and configured before load." );
+                return;
+            }
             m_poolSize = poolSize;
         }
 

@@ -28,6 +28,9 @@ set_target_properties(WorkphoneGraphicsMeshTests PROPERTIES FOLDER Tests/C)
 
 add_test(
     NAME WorkphoneGraphics.mesh_serializer
+    COMMAND WorkphoneGraphicsMeshTests)
+add_test(
+    NAME WorkphoneGraphics.mesh_import_assets
     COMMAND WorkphoneGraphicsMeshTests
             ${WP_ROOT}/Bin/Media/Ogre/models/Barrel.mesh
             ${WP_ROOT}/Bin/Media/Ogre/models/athene.mesh
@@ -35,6 +38,7 @@ add_test(
             ${WP_ROOT}/Bin/Media/Ogre/models/ogrehead.mesh
             ${WP_ROOT}/Bin/Media/Ogre/mygui/Common/Scene/Mikki.mesh
             ${WP_ROOT}/Bin/Media/OgreNext/models/char_feet.mesh)
+set_tests_properties(WorkphoneGraphics.mesh_import_assets PROPERTIES SKIP_RETURN_CODE 77 LABELS "graphics;external-assets")
 
 add_executable(WorkphonePhysicsMaterialTests WorkphonePhysicsMaterialTests.c)
 target_include_directories(

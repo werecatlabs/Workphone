@@ -2,6 +2,7 @@
 #define ClawRendererDX11_h__
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
+#include <workphone_graphics_particle_simulation.h>
 #include <Workphone/Interface/Graphics/IRenderer3.hpp>
 #include <Workphone/Math/Matrix4.hpp>
 #include <Workphone/Memory/AtomicSmartPtr.hpp>
@@ -146,6 +147,10 @@ namespace workphone
              * @param transform World transform applied to the mesh.
              */
             void renderMesh( ClawMesh *mesh, const Matrix4F &transform );
+            /** Draw an immutable particle snapshot; does not advance simulation. */
+            void renderParticles( const Array<wp_particle_sample> &particles,
+                                  const Matrix4F &world, const Vector3F &scale,
+                                  const SmartPtr<IMaterial> &material = nullptr );
 
             /**
              * @brief Render terrain.

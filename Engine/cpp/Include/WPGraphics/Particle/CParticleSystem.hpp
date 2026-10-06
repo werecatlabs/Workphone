@@ -9,12 +9,14 @@
 #include <Workphone/Core/HashMap.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <list>
+#include <workphone_graphics_particle_simulation.h>
+#include <mutex>
 
 namespace workphone
 {
     namespace render
     {
-        class CParticleSystem : public ParticleSystem
+        class WPGraphics_API CParticleSystem : public ParticleSystem
         {
         public:
             static const hash32 UPDATE_HASH;
@@ -28,6 +30,20 @@ namespace workphone
             void createComponent( SmartPtr<IParticleNode> particleComponent );
 
             void update() override;
+            void load( SmartPtr<ISharedObject> data ) override;
+            void unload( SmartPtr<ISharedObject> data ) override;
+            void setState( ParticleSystemState state ) override;
+            ParticleSystemState getState() const override;
+            size_t getNumParticles() const override;
+            size_t getNumEmitters() const override;
+
+            /** Advance simulation once; drawing never advances time. dt must be in [0,1]. */
+            bool simulate( f32 seconds );
+            Array<wp_particle_sample> getRenderSnapshot() const;
+            bool setSimulationSettings( const wp_particle_simulation_settings &settings );
+            void setSeed( u32 seed );
+            u32 getDroppedParticleCount() const;
+            WP_CLASS_REGISTER_DECL;
 
             SmartPtr<IParticle> createParticle( SmartPtr<IParticleEmitter> emitter );
 
@@ -130,7 +146,13 @@ namespace workphone
             void setPoolSize( u32 poolSize );
 
         protected:
-            u32 m_zOrder;
+            u32 m_zOrder = 0;
+            mutable std::mutex m_simulationMutex;
+            wp_particle_simulation *m_simulation = nullptr;
+            wp_particle_simulation_settings m_simulationSettings{};
+            u32 m_seed = 1;
+            String m_materialName;
+            bool m_customSimulationSettings = false;
 
             Pool<ParticleData> m_particles;
             Pool<Vector3<real_Num>> m_positions;

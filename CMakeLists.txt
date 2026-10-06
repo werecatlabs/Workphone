@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.5)
+option(WP_BUILD_GRAPHICS_CONTRACTS_ONLY "Build isolated graphics production contracts without engine dependencies" OFF)
+if(WP_BUILD_GRAPHICS_CONTRACTS_ONLY)
+    project(WorkphoneGraphicsContracts C)
+    enable_testing()
+    add_subdirectory(Tests/GraphicsProduction)
+    return()
+endif()
 #set(CMAKE_USER_MAKE_RULES_OVERRIDE "CMakeRules.cmake")
 
 include(CMake/Mobile.cmake)
