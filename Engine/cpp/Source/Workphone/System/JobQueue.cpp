@@ -75,6 +75,34 @@ namespace workphone
         };
     }  // namespace
 
+    void JobQueue::EventListener::setOwner( SmartPtr<JobQueue> owner )
+    {
+        m_owner = owner;
+    }
+
+    SmartPtr<JobQueue> JobQueue::EventListener::getOwner() const
+    {
+        auto p = m_owner.load();
+        return p.lock();
+    }
+
+    Parameter JobQueue::EventListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                    const Array<Parameter> &arguments,
+                                                    SmartPtr<ISharedObject> sender,
+                                                    SmartPtr<ISharedObject> object,
+                                                    SmartPtr<IEvent> event )
+    {
+        return {};
+    }
+
+    JobQueue::EventListener::~EventListener()
+    {
+    }
+
+    JobQueue::EventListener::EventListener()
+    {
+    }
+
     JobQueue::JobQueue() = default;
 
     JobQueue::~JobQueue() = default;

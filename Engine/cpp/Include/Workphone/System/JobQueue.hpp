@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Atomics/AtomicFloat.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>
 
@@ -28,6 +29,25 @@ namespace workphone
     class WPCore_API JobQueue : public IJobQueue
     {
     public:
+        class EventListener : public IEventListener
+        {
+        public:
+            EventListener();
+
+            ~EventListener() override;
+
+            Parameter handleEvent( EventType eventType, hash_type eventValue,
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+
+            SmartPtr<JobQueue> getOwner() const;
+
+            void setOwner( SmartPtr<JobQueue> owner );
+
+        protected:
+            AtomicWeakPtr<JobQueue> m_owner;
+        };
+
         /**
          * @brief Constructor.
          * Initializes the job queue with default settings (running=true, rate=1/15 seconds).
