@@ -149,9 +149,12 @@ namespace workphone::scene
 
     void ProceduralRaceScene::setControls( f32 throttle, f32 brake, f32 steering )
     {
-        m_throttle = std::clamp( throttle, 0.f, 1.f );
-        m_brake = std::clamp( brake, 0.f, 1.f );
-        m_steering = std::clamp( steering, -1.f, 1.f );
+        if( auto car = getCarController() ) car->setControls( throttle, brake, steering );
+    }
+
+    void ProceduralRaceScene::usePlayerControls()
+    {
+        if( auto car = getCarController() ) car->usePlayerControls();
     }
 
     void ProceduralRaceScene::reset() { m_resetRequested = true; }
@@ -212,21 +215,9 @@ namespace workphone::scene
             performReset();
         if( !car )
             return;
-        //const auto throttle = m_throttle.load(), brake = m_brake.load(), steering = m_steering.load();
-        //car->setThrottle( throttle );
-        //car->setBrake( brake );
-        //car->setSteering( steering );
-        if( auto vehicle = car->getVehicleController() )
-        {
-            //vehicle->setChannel( 0, throttle );
-            //vehicle->setChannel( 1, brake );
-            //vehicle->setChannel( 2, steering );
-        }
-        
         auto lamp = m_assets.vehicleMaterials[size_t( procedural::VehicleMaterialSlot::RainLight )];
-        //const ColourF emissive( brake > 0 ? 1.f : .15f, .003f, .001f, 1 );
-        //if( lamp->getEmissive() != emissive )
-        //    lamp->setEmissive( emissive );
+        const ColourF emissive( car->getBrake() > 0 ? 1.f : .15f, .003f, .001f, 1 );
+        if( lamp && lamp->getEmissive() != emissive ) lamp->setEmissive( emissive );
 
         if( m_physicsConfigured )
         {

@@ -38,7 +38,8 @@ local function fixture()
     local body = {velocity=Vector3F(0, 0, 0)}
     function body:getLinearVelocity() return self.velocity end
     function body:getRigidDynamic() return nil end
-    function race:setControls(...) self.controls = {...} end
+    function race:setControls(...) self.controls = {...}; self.playerControls = false end
+    function race:usePlayerControls() self.playerControls = true end
     function race:reset() self.resets = (self.resets or 0) + 1 end
     function race:getWheelbase() return 2.8 end
     function race:getMaxSteeringAngle() return 0.5 end
@@ -130,17 +131,11 @@ assert(drawn[0x56454803] and drawn[0x56454804], "Driving instructions must be di
 
 keys[KeyCode.Up], keys[KeyCode.Left] = true, true
 sample:updateControls()
-assert(race.controls[1] == 1 and race.controls[2] == 0 and race.controls[3] == -1)
-keys[KeyCode.Right] = true
+assert(race.playerControls, "Normal driving must delegate player input to CarController")
+local previousControls = race.controls
+keys[KeyCode.D] = true
 sample:updateControls()
-assert(race.controls[3] == 0, "Opposing steering keys cancel")
-keys[KeyCode.Right] = false
-body.velocity = Vector3F(30, 0, 0)
-sample:updateControls()
-assert(math.abs(race.controls[3]) < 0.1, "Steering must be limited at speed")
-keys[KeyCode.Down] = true
-sample:updateControls()
-assert(race.controls[2] == 1)
+assert(race.controls == previousControls, "Script must not publish competing keyboard channels")
 keys[KeyCode.R] = true
 sample:updateControls(); sample:updateControls()
 assert(race.resets == 1, "A held reset key must reset only once")
@@ -170,6 +165,9 @@ assert(sample.nextCheckpoint == 1, "Off-road checkpoints must not count")
 
 sample:setSmokeTest(true); sample.smokePhase = 2; sample:updateControls()
 assert(race.controls[1] == 1 and race.controls[3] > 0)
+assert(not race.playerControls, "Smoke driving must select a programmatic override")
+sample:setSmokeTest(false); sample:updateControls()
+assert(race.playerControls, "Finishing scripted driving must return control to CarController input")
 sample:setTrackSmokeTest(true)
 assert(sample.trackSmokeTest and not sample.smokeTest, "Smoke modes are mutually exclusive")
 sample:generate()

@@ -184,11 +184,7 @@ function SampleVehicleAdvanced:keyDown(key)
 end
 
 function SampleVehicleAdvanced:updateControls()
-    local throttle = (self:keyDown(KeyCode.W) or self:keyDown(KeyCode.Up)) and 1 or 0
-    local brake = (self:keyDown(KeyCode.S) or self:keyDown(KeyCode.Down)) and 1 or 0
-    local left = self:keyDown(KeyCode.A) or self:keyDown(KeyCode.Left)
-    local right = self:keyDown(KeyCode.D) or self:keyDown(KeyCode.Right)
-    local steering = (right and 1 or 0) - (left and 1 or 0)
+    local throttle, brake, steering = 0, 0, 0
     local speed = length(self.rigidbody:getLinearVelocity())
     local maxSteer, wheelbase = self.raceScene:getMaxSteeringAngle(), self.raceScene:getWheelbase()
     if self.smokeTest then
@@ -221,7 +217,11 @@ function SampleVehicleAdvanced:updateControls()
         end
     end
     
-	--self.raceScene:setControls(throttle, brake, steering)
+    if self.smokeTest or self.trackSmokeTest then
+        self.raceScene:setControls(throttle, brake, steering)
+    else
+        self.raceScene:usePlayerControls()
+    end
     local resetDown = self:keyDown(KeyCode.R)
     if resetDown and not self.resetWasDown then self:reset() end
     self.resetWasDown = resetDown

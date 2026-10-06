@@ -2,6 +2,7 @@
 #define CarController_h__
 
 #include <Workphone/Scene/Components/VehicleController.hpp>
+#include <atomic>
 #include <Workphone/Interface/Vehicle/IVehicleCallback.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 
@@ -407,6 +408,10 @@ namespace workphone
              */
             void setSteering( f32 steering );
 
+            /** Programmatic controls exclude keyboard/gamepad input until usePlayerControls(). */
+            void setControls( f32 throttle, f32 brake, f32 steering );
+            void usePlayerControls();
+
             /**
              * @brief Get the configured drive type (FWD/RWD/AWD).
              *
@@ -465,9 +470,10 @@ namespace workphone
             f32 m_massFraction = 0.25f;         ///< Fraction of vehicle mass allocated per wheel
 
             // Runtime control inputs
-            f32 m_throttle = 0.0f;  ///< Throttle input [0..1]
-            f32 m_brake = 0.0f;     ///< Brake input [0..1]
-            f32 m_steering = 0.0f;  ///< Steering angle (degrees)
+            std::atomic<bool> m_playerControls{true}, m_joystickActive{false};
+            std::atomic<f32> m_throttle{0.0f};  ///< Throttle input [0..1]
+            std::atomic<f32> m_brake{0.0f};     ///< Brake input [0..1]
+            std::atomic<f32> m_steering{0.0f};  ///< Steering angle (degrees)
 
             VehicleDriveType m_driveType = VehicleDriveType::AllWheelDrive;  ///< Drive configuration
 
