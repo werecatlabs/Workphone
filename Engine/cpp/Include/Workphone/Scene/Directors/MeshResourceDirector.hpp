@@ -64,6 +64,9 @@ namespace workphone
             /** Property key for forcing triangulation of polygons. */
             static const String triangulateStr;
 
+            /** Property key for reversing imported face index order. */
+            static const String flipWindingOrderStr;
+
             /** Property key for joining identical vertices to reduce mesh size. */
             static const String joinIdenticalVerticesStr;
 
@@ -267,6 +270,12 @@ namespace workphone
              */
             void setTriangulate( bool triangulate );
 
+            /** Whether imported face index order is reversed. Default: false. */
+            bool getFlipWindingOrder() const;
+
+            /** Reverse imported winding without changing vertex positions or normals. */
+            void setFlipWindingOrder( bool flipWindingOrder );
+
             /**
              * @brief Query whether identical vertices should be merged to reduce vertex count.
              * @return True if joining is enabled (default: false).
@@ -302,6 +311,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            /** Reverse imported face indices. Default: false. */
+            bool m_flipWindingOrder = false;
+
             /** Uniform scale applied to imported geometry. Default: 1.0f. */
             f32 m_scale = 1.0f;
 

@@ -20,6 +20,7 @@ namespace workphone::scene
     const String MeshResourceDirector::generateTangentsStr = String( "generateTangents" );
     const String MeshResourceDirector::genUVCoordsStr = String( "genUVCoords" );
     const String MeshResourceDirector::triangulateStr = String( "triangulate" );
+    const String MeshResourceDirector::flipWindingOrderStr = String( "flipWindingOrder" );
     const String MeshResourceDirector::joinIdenticalVerticesStr = String( "joinIdenticalVertices" );
     const String MeshResourceDirector::hasSharedVertexDataStr = String( "hasSharedVertexData" );
     const String MeshResourceDirector::useMeshInstancingStr = String( "useMeshInstancing" );
@@ -51,6 +52,7 @@ namespace workphone::scene
         properties->setProperty( generateTangentsStr, m_genTangents );
         properties->setProperty( genUVCoordsStr, m_genUVCoords );
         properties->setProperty( triangulateStr, m_triangulate );
+        properties->setProperty( flipWindingOrderStr, m_flipWindingOrder );
         properties->setProperty( joinIdenticalVerticesStr, m_joinIdenticalVertices );
         properties->setProperty( hasSharedVertexDataStr, m_hasSharedVertexData );
         properties->setProperty( useMeshInstancingStr, m_useMeshInstancing );
@@ -61,7 +63,6 @@ namespace workphone::scene
 
     void MeshResourceDirector::setProperties( SmartPtr<Properties> properties )
     {
-        ResourceDirector::setProperties( properties );
         if( !properties )
         {
             return;
@@ -81,6 +82,7 @@ namespace workphone::scene
         auto genTangents = getGenTangents();
         auto genUVCoords = getGenUVCoords();
         auto triangulate = getTriangulate();
+        auto flipWindingOrder = getFlipWindingOrder();
         auto joinIdenticalVertices = getJoinIdenticalVertices();
         auto sharedVertexData = hasSharedVertexData();
         auto useMeshInstancing = getUseMeshInstancing();
@@ -99,6 +101,7 @@ namespace workphone::scene
         properties->getPropertyValue( generateTangentsStr, genTangents );
         properties->getPropertyValue( genUVCoordsStr, genUVCoords );
         properties->getPropertyValue( triangulateStr, triangulate );
+        properties->getPropertyValue( flipWindingOrderStr, flipWindingOrder );
         properties->getPropertyValue( joinIdenticalVerticesStr, joinIdenticalVertices );
         properties->getPropertyValue( hasSharedVertexDataStr, sharedVertexData );
         properties->getPropertyValue( useMeshInstancingStr, useMeshInstancing );
@@ -124,9 +127,13 @@ namespace workphone::scene
         setGenTangents( genTangents );
         setGenUVCoords( genUVCoords );
         setTriangulate( triangulate );
+        setFlipWindingOrder( flipWindingOrder );
         setJoinIdenticalVertices( joinIdenticalVertices );
         setHasSharedVertexData( sharedVertexData );
         setUseMeshInstancing( useMeshInstancing );
+
+        // Save/Import buttons must observe the options from this property update.
+        ResourceDirector::setProperties( properties );
     }
 
     void MeshResourceDirector::setLightmapUVs( bool lightmapUVs )
@@ -227,6 +234,16 @@ namespace workphone::scene
     bool MeshResourceDirector::getTriangulate() const
     {
         return m_triangulate;
+    }
+
+    void MeshResourceDirector::setFlipWindingOrder( bool flipWindingOrder )
+    {
+        m_flipWindingOrder = flipWindingOrder;
+    }
+
+    bool MeshResourceDirector::getFlipWindingOrder() const
+    {
+        return m_flipWindingOrder;
     }
 
     void MeshResourceDirector::setGenUVCoords( bool genUVCoords )

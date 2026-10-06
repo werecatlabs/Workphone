@@ -1,6 +1,10 @@
 #include "UnitTests.hpp"
 #include <Workphone/Mesh/ProgressiveMeshOptions.hpp>
 #include <Workphone/Scene/Directors/MeshResourceDirector.hpp>
+#include <Workphone/Core/Properties.hpp>
+#include <Workphone/Memory/PointerUtil.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/Interface/IApplicationManager.hpp>
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
@@ -85,6 +89,102 @@ BOOST_AUTO_TEST_CASE( mesh_import_director_persists_progressive_mesh_defaults )
     restored.setProperties( director.getProperties() );
 
     BOOST_CHECK( restored.getProgressiveMeshOptions() == options );
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_SUITE( MeshImportWindingTests )
+
+BOOST_AUTO_TEST_CASE( winding_option_defaults_off_and_round_trips )
+{
+    scene::MeshResourceDirector director;
+    BOOST_CHECK( !director.getFlipWindingOrder() );
+    director.setFlipWindingOrder( true );
+
+    scene::MeshResourceDirector restored;
+    restored.setProperties( director.getProperties() );
+    BOOST_CHECK( restored.getFlipWindingOrder() );
+
+    restored.setFlipWindingOrder( false );
+    director.setProperties( restored.getProperties() );
+    BOOST_CHECK( !director.getFlipWindingOrder() );
+}
+
+BOOST_AUTO_TEST_CASE( legacy_properties_preserve_winding_defaults )
+{
+    auto properties = make_ptr<Properties>();
+    properties->setProperty( scene::MeshResourceDirector::triangulateStr, true );
+    scene::MeshResourceDirector director;
+    director.setProperties( properties );
+    BOOST_CHECK( !director.getFlipWindingOrder() );
+    BOOST_CHECK( director.getTriangulate() );
+
+    director.setFlipWindingOrder( true );
+    director.setProperties( properties );
+    BOOST_CHECK( director.getFlipWindingOrder() );
+}
+
+BOOST_AUTO_TEST_CASE( save_and_import_buttons_observe_updated_winding )
+{
+    class TestDirector : public scene::MeshResourceDirector
+    {
+    public:
+        bool savedWinding = false;
+        bool importedWinding = false;
+        unsigned savedCalls = 0;
+        unsigned importedCalls = 0;
+        String importedPath;
+        void save() override { ++savedCalls; savedWinding = getFlipWindingOrder(); }
+        void import() override
+        {
+            ++importedCalls;
+            importedWinding = getFlipWindingOrder();
+            importedPath = getResourcePath();
+        }
+    };
+
+    TestDirector director;
+    auto properties = director.getProperties();
+    properties->setProperty( scene::MeshResourceDirector::flipWindingOrderStr, true );
+    properties->setProperty( scene::ResourceDirector::resourcePathStr, String("winding_fixture.glb") );
+    properties->setButtonPressed( scene::ResourceDirector::saveStr, true );
+    properties->setButtonPressed( scene::ResourceDirector::importStr, true );
+    director.setProperties( properties );
+    BOOST_CHECK( director.savedWinding );
+    BOOST_CHECK( director.importedWinding );
+    BOOST_CHECK_EQUAL( director.savedCalls, 1u );
+    BOOST_CHECK_EQUAL( director.importedCalls, 1u );
+    BOOST_CHECK_EQUAL( director.importedPath, "winding_fixture.glb" );
+}
+
+BOOST_AUTO_TEST_CASE( explicit_import_rebuilds_existing_mesh_cache )
+{
+    class TestDatabase : public ResourceDatabase
+    {
+    public:
+        bool overwriteCache = false;
+        String importedPath;
+        void importFile( const String &path, bool overwrite ) override
+        {
+            importedPath = path;
+            overwriteCache = overwrite;
+        }
+    };
+    auto application = core::IApplicationManager::instance();
+    BOOST_REQUIRE( application );
+    struct RestoreDatabase
+    {
+        SmartPtr<core::IApplicationManager> application;
+        SmartPtr<IResourceDatabase> database;
+        ~RestoreDatabase() { application->setResourceDatabase(database); }
+    } restore{ application, application->getResourceDatabase() };
+    auto database = make_ptr<TestDatabase>();
+    application->setResourceDatabase(database);
+    scene::MeshResourceDirector director;
+    director.setResourcePath("winding_fixture.glb");
+    director.import();
+    BOOST_CHECK( database->overwriteCache );
+    BOOST_CHECK_EQUAL( database->importedPath, "winding_fixture.glb" );
 }
 
 BOOST_AUTO_TEST_SUITE_END()

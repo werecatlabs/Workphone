@@ -356,6 +356,11 @@ namespace workphone
                 flags |= aiProcess_Triangulate;
             }
 
+            if( director->getFlipWindingOrder() )
+            {
+                flags |= aiProcess_FlipWindingOrder;
+            }
+
             if( director->getJoinIdenticalVertices() )
             {
                 flags |= aiProcess_JoinIdenticalVertices;

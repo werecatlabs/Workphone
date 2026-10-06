@@ -45,7 +45,8 @@ namespace workphone::scene
             return;
         }
 
-        resourceDatabase->importFile( resourcePath );
+        // An explicit reimport must rebuild cached data using the saved options.
+        resourceDatabase->importFile( resourcePath, true );
     }
 
     String ResourceDirector::getResourcePath() const
@@ -70,7 +71,6 @@ namespace workphone::scene
 
     void ResourceDirector::setProperties( SmartPtr<Properties> properties )
     {
-        Director::setProperties( properties );
         if( !properties )
         {
             return;
@@ -83,15 +83,8 @@ namespace workphone::scene
         setResourcePath( resourcePath );
         setResourceUUID( resourceUUID );
 
-        if( properties->isButtonPressed( saveStr ) )
-        {
-            save();
-        }
-
-        if( properties->isButtonPressed( importStr ) )
-        {
-            import();
-        }
+        // Director dispatches the buttons once, after the resource path is current.
+        Director::setProperties( properties );
     }
 
     SmartPtr<Properties> ResourceDirector::getProperties() const
