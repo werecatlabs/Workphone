@@ -253,14 +253,13 @@ namespace workphone
         }
 
         // The application camera is a render object, so only touch its scene node from the render
-        // task. The camera rig itself is updated by VehicleCameraController on the application task.
+        // task. VehicleCameraController advances the smooth rig on the render task.
         if( Thread::getCurrentTask() == TaskId::Render )
         {
             // Physics listeners publish the root pose between scene updates. Resolve its dirty
             // descendants before drawing, preserving their local offsets and wheel rotations.
             if( m_vehicleActor )
                 m_vehicleActor->updateTransform();
-            updateRenderCamera();
         }
 
         Application::update();
@@ -271,6 +270,7 @@ namespace workphone
 
         if( Thread::getCurrentTask() == TaskId::Render )
         {
+            updateRenderCamera();
             if( m_smokeTest && m_smokePhase > 0 )
             {
                 auto car = m_vehicleActor->getComponent<scene::CarController>();
@@ -293,7 +293,15 @@ namespace workphone
                         core::IApplicationManager::instance()->setQuit( true );
                     }
                 }
-                if( !checkMeshTransforms( m_vehicleActor, m_vehicleActor->getWorldTransform() ) )
+                auto app = core::IApplicationManager::instance();
+                auto timer = app->getTimer();
+                auto transform = m_vehicleActor->getTransform();
+                auto expectedPose = m_vehicleActor->getWorldTransform();
+                app->getGameManager()->getTransformState(
+                    m_vehicleActor->getHandle()->getInstanceId(),
+                    timer->getTime( TaskId::Render ) - scene::IGameManager::smoothMotionDelay,
+                    timer->getDeltaTime( TaskId::Render ), expectedPose, transform->getTask() );
+                if( !checkMeshTransforms( m_vehicleActor, expectedPose ) )
                 {
                     WP_LOG_ERROR( "Vehicle smoke: rendered vehicle hierarchy does not match its pose." );
                     m_smokeTestPassed = false;
@@ -787,6 +795,7 @@ namespace workphone
         m_cameraActor = sceneManager->createActor();
         WP_ASSERT( m_cameraActor );
         m_cameraActor->setName( "Vehicle Follow Camera" );
+        m_cameraActor->setSmoothMotion( true );
         m_cameraActor->setPosition( getInitialCameraPosition() );
         m_cameraActor->lookAt( getVehicleSpawnPosition(), Vector3<real_Num>::unitY() );
 

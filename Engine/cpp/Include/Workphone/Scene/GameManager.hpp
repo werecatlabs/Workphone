@@ -17,6 +17,7 @@
 #include <Workphone/State/States/TransformStateData.hpp>
 #include <Workphone/State/States/PhysicsBodyState.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
+#include <mutex>
 
 namespace workphone
 {
@@ -690,29 +691,27 @@ namespace workphone
              */
             s32 getLoadPriority( ISharedObject *obj );
 
-            /**
-             * @brief Updates the transform state for an actor.
-             * @param actor Smart pointer to the actor.
-             * @param t The transform state data.
-             */
-            void updateActorTransformState( SmartPtr<IGameActor> actor, const Transform3<real_Num> &t );
+            /// Sample an actor or compose its local pose with a sampled ancestor.
+            bool getActorTransformState( IGameActor *actor, time_interval time, time_interval dt,
+                                         Transform3<real_Num> &worldTransform,
+                                         UnorderedMap<u32, Transform3<real_Num>> &sampledTransforms );
 
-            /// Stores transform times for each actor/component.
-            FixedArray<ConcurrentArray<ConcurrentArray<time_interval>>, (u32)TaskId::Count>
-                m_transformTimes;
+            struct TransformSample
+            {
+                time_interval time = 0;
+                Transform3<real_Num> transform;
+                Vector3<real_Num> linearVelocity = Vector3<real_Num>::zero();
+                Vector3<real_Num> angularVelocity = Vector3<real_Num>::zero();
+                bool hasVelocity = false;
+            };
 
-            /// Stores transform states for each actor/component.
-            FixedArray<ConcurrentArray<ConcurrentArray<Transform3<real_Num>>>, (u32)TaskId::Count>
-                m_transformStates;
+            void storeTransformSample( u32 id, const TransformSample &sample );
 
-            /** Stores the last transform states for each actor/component.
-             */
-            FixedArray<ConcurrentArray<ConcurrentArray<Transform3<real_Num>>>, (u32)TaskId::Count>
-                m_lastTransformStates;
-
-            /** Stores motion states for each actor/component.
-             */
-            FixedArray<ConcurrentArray<ConcurrentArray<MotionState>>, (u32)TaskId::Count> m_motionStates;
+            // Each producer task owns a timestamped history per actor. The mutex
+            // protects publication and sampling independently of scene operations.
+            FixedArray<UnorderedMap<u32, Array<TransformSample>>, (u32)TaskId::Count>
+                m_transformHistory;
+            mutable std::mutex m_transformHistoryMutex;
 
             /// Update flags for objects.
             Array<Array<bool>> m_updateObjects;

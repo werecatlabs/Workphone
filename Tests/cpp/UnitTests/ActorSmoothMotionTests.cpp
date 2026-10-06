@@ -2,6 +2,7 @@
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
+#include <thread>
 
 using namespace workphone;
 
@@ -29,7 +30,8 @@ namespace
 
     void checkVectorClose( const Vector3<real_Num> &actual, const Vector3<real_Num> &expected )
     {
-        BOOST_CHECK( MathUtil<real_Num>::equals( actual, expected ) );
+        // Allow sub-millimetre floating-point error from timestamp interpolation.
+        BOOST_CHECK( MathUtil<real_Num>::equals( actual, expected, real_Num( 0.0001 ) ) );
     }
 
     void checkQuaternionClose( const Quaternion<real_Num> &actual, const Quaternion<real_Num> &expected )
@@ -73,6 +75,18 @@ namespace
         guard.scene->addActor( actor );
         return actor;
     }
+
+    class SmoothTransformCapture : public scene::Component
+    {
+    public:
+        void updateTransform( const Transform3<real_Num> &value ) override
+        {
+            sampled = true;
+            pose = value;
+        }
+        bool sampled = false;
+        Transform3<real_Num> pose;
+    };
 
     struct ActorSmoothMotionFixture : TestGuard
     {
@@ -237,8 +251,8 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_extrapolates_with_linear_velocity )
                                      Vector3<real_Num>( 2.0, 0.0, -1.0 ), Vector3<real_Num>::zero() );
 
     Transform3<real_Num> actual;
-    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 12 ), time_interval(1), actual, task ) );
-    checkVectorClose( actual.getPosition(), Vector3<real_Num>( 5.0, 2.0, 1.0 ) );
+    BOOST_CHECK( sceneManager->getTransformState( id, time_interval( 10.05 ), time_interval(1), actual, task ) );
+    checkVectorClose( actual.getPosition(), Vector3<real_Num>( 1.1, 2.0, 2.95 ) );
 }
 
 BOOST_AUTO_TEST_CASE( transform_state_lookup_returns_false_for_unknown_id )
@@ -268,8 +282,8 @@ BOOST_AUTO_TEST_CASE( transform_state_lookup_extrapolates_latest_of_multiple_phy
     checkTransformClose( actual, latest );
     for( u32 query = 0; query < 2; ++query )
     {
-        BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 12 ), time_interval(1), actual, task ) );
-        checkVectorClose( actual.getPosition(), Vector3<real_Num>( 7.0, 2.0, 0.0 ) );
+        BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 10.05 ), time_interval(1), actual, task ) );
+        checkVectorClose( actual.getPosition(), Vector3<real_Num>( 3.1, 2.0, 1.95 ) );
     }
     BOOST_REQUIRE( sceneManager->getTransformState( id, time_interval( 10 ), time_interval(1), actual, task ) );
     checkTransformClose( actual, latest );
@@ -331,6 +345,137 @@ BOOST_AUTO_TEST_CASE( disabling_smooth_motion_after_updates_preserves_current_tr
     BOOST_CHECK( !actor->isSmoothMotion() );
     BOOST_CHECK( !actor->getTransform()->getSmoothMotion() );
     checkVectorClose( actor->getPosition(), position );
+}
+
+BOOST_AUTO_TEST_CASE( sampling_is_independent_of_render_delta_and_query_order )
+{
+    auto actor = createSceneActor( *this, "StatelessSampling" );
+    const auto id = actor->getHandle()->getInstanceId();
+    const auto task = Thread::getCurrentTask();
+    sceneManager->addTransformState( id, 10, makeTransform( Vector3<real_Num>::zero() ) );
+    sceneManager->addTransformState( id, 10.1, makeTransform( Vector3<real_Num>( 1, 0, 0 ) ) );
+    Transform3<real_Num> actual;
+    for( auto dt : { 0.0, 0.001, 0.5 } )
+    {
+        BOOST_REQUIRE( sceneManager->getTransformState( id, 10.05, dt, actual, task ) );
+        checkVectorClose( actual.getPosition(), Vector3<real_Num>( .5, 0, 0 ) );
+        BOOST_REQUIRE( sceneManager->getTransformState( id, 10.15, dt, actual, task ) );
+        checkVectorClose( actual.getPosition(), Vector3<real_Num>( 1.5, 0, 0 ) );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( interpolation_preserves_rotation_scale_and_history_boundaries )
+{
+    auto actor = createSceneActor( *this, "FullPoseSampling" );
+    const auto id = actor->getHandle()->getInstanceId();
+    const auto task = Thread::getCurrentTask();
+    const auto start = makeTransform( Vector3<real_Num>::zero() );
+    Quaternion<real_Num> rotation;
+    rotation.fromAngleAxis( real_Num( 1 ), Vector3<real_Num>::unitY() );
+    const Transform3<real_Num> end( Vector3<real_Num>( 2, 0, 0 ), rotation,
+                                   Vector3<real_Num>( 3, 3, 3 ) );
+    // Late arrivals must still be sorted by timestamp.
+    sceneManager->addTransformState( id, 2, end );
+    sceneManager->addTransformState( id, 1, start );
+    Transform3<real_Num> actual;
+    BOOST_REQUIRE( sceneManager->getTransformState( id, 1.5, .016, actual, task ) );
+    checkVectorClose( actual.getPosition(), Vector3<real_Num>( 1, 0, 0 ) );
+    checkVectorClose( actual.getScale(), Vector3<real_Num>( 2, 2, 2 ) );
+    Quaternion<real_Num> halfway;
+    halfway.fromAngleAxis( real_Num( .5 ), Vector3<real_Num>::unitY() );
+    checkQuaternionClose( actual.getOrientation(), halfway );
+    BOOST_REQUIRE( sceneManager->getTransformState( id, 1, .016, actual, task ) );
+    checkTransformClose( actual, start );
+    BOOST_REQUIRE( sceneManager->getTransformState( id, 0, .016, actual, task ) );
+    checkTransformClose( actual, start );
+    BOOST_REQUIRE( sceneManager->getTransformState( id, 2, .016, actual, task ) );
+    checkTransformClose( actual, end );
+}
+
+BOOST_AUTO_TEST_CASE( prediction_integrates_angular_velocity_and_stops_after_short_gap )
+{
+    auto actor = createSceneActor( *this, "BoundedPrediction" );
+    const auto id = actor->getHandle()->getInstanceId();
+    const auto task = Thread::getCurrentTask();
+    sceneManager->addTransformState( id, 10, makeTransform( Vector3<real_Num>::zero() ),
+                                     Vector3<real_Num>( 2, 0, 0 ), Vector3<real_Num>( 0, 1, 0 ) );
+    Transform3<real_Num> actual;
+    BOOST_REQUIRE( sceneManager->getTransformState( id, 1000, .016, actual, task ) );
+    checkVectorClose( actual.getPosition(), Vector3<real_Num>( .2, 0, 0 ) );
+    Quaternion<real_Num> rotation;
+    rotation.fromAngleAxis( real_Num( .1 ), Vector3<real_Num>::unitY() );
+    checkQuaternionClose( actual.getOrientation(), rotation );
+}
+
+BOOST_AUTO_TEST_CASE( scene_lock_does_not_drop_transform_samples )
+{
+    auto actor = createSceneActor( *this, "IndependentHistoryLock" );
+    const auto id = actor->getHandle()->getInstanceId();
+    const auto task = Thread::getCurrentTask();
+    const auto expected = makeTransform( Vector3<real_Num>( 1, 2, 3 ) );
+    sceneManager->addTransformState( id, 10, expected );
+    Transform3<real_Num> actual;
+    bool sampled = false;
+    sceneManager->lock();
+    std::thread reader( [&]() {
+        sampled = sceneManager->getTransformState( id, 10, .016, actual, task );
+    } );
+    reader.join();
+    sceneManager->unlock();
+    BOOST_REQUIRE( sampled );
+    checkTransformClose( actual, expected );
+}
+
+BOOST_AUTO_TEST_CASE( free_running_producer_and_renderer_preserve_constant_speed )
+{
+    auto actor = createSceneActor( *this, "IndependentCadences" );
+    const auto id = actor->getHandle()->getInstanceId();
+    const auto task = Thread::getCurrentTask();
+    const Vector3<real_Num> velocity( 20, 0, -10 );
+    time_interval producerTime = 0;
+    for( size_t frame = 0; frame < 300; ++frame )
+    {
+        const time_interval renderTime = frame / 144.0;
+        // Deliberately vary delivery lag so queries cross interpolation/prediction boundaries.
+        const time_interval deliveryTime = renderTime - ( frame % 7 == 0 ? .025 : .003 );
+        while( producerTime <= deliveryTime || frame == 0 )
+        {
+            sceneManager->addTransformState( id, producerTime,
+                makeTransform( velocity * static_cast<real_Num>( producerTime ) ),
+                velocity, Vector3<real_Num>::zero() );
+            producerTime += 1.0 / 120.0;
+            if( frame == 0 ) break;
+        }
+        const auto sampleTime = std::max( time_interval( 0 ), renderTime - scene::IGameManager::smoothMotionDelay );
+        Transform3<real_Num> actual;
+        BOOST_REQUIRE( sceneManager->getTransformState( id, sampleTime, 1.0 / 144.0, actual, task ) );
+        checkVectorClose( actual.getPosition(), velocity * static_cast<real_Num>( sampleTime ) );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( render_mesh_samples_parent_without_a_parent_renderer )
+{
+    auto parent = createSceneActor( *this, "PhysicsParentOnly" );
+    auto child = createSceneActor( *this, "AttachedRenderMesh" );
+    parent->addChild( child );
+    child->setLocalPosition( Vector3<real_Num>( 2, 3, 4 ) );
+    parent->setSmoothMotion( true, true );
+    parent->getTransform()->setTask( TaskId::Primary );
+    sceneManager->addTransformState( parent->getHandle()->getInstanceId(), 0,
+                                     makeTransform( Vector3<real_Num>( 10, 0, 0 ) ) );
+    auto capture = workphone::make_ptr<SmoothTransformCapture>();
+    capture->setActor( child );
+    capture->setLoadingState( LoadingState::Loaded );
+    sceneManager->registerComponentUpdate( TaskId::Render, Thread::UpdateState::Transform, capture );
+    const auto previousTask = Thread::getCurrentTask();
+    Thread::setCurrentTask( TaskId::Render );
+    sceneManager->preUpdate();
+    Thread::setCurrentTask( previousTask );
+    sceneManager->unregisterComponentUpdate( TaskId::Render, Thread::UpdateState::Transform, capture );
+    BOOST_REQUIRE( capture->sampled );
+    checkVectorClose( capture->pose.getPosition(), Vector3<real_Num>( 12, 3, 4 ) );
+    capture->setActor( nullptr );
+    capture->setLoadingState( LoadingState::Unloaded );
 }
 
 BOOST_AUTO_TEST_SUITE_END()

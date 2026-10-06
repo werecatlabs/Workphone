@@ -59,7 +59,6 @@ namespace workphone::scene
             if( auto manager = app->getVehicleManager() )
                 manager->load( nullptr );
 
-            actor->setSmoothMotion( false );
             if( !actor->getComponent<CollisionBox>() )
                 actor->addComponent<CollisionBox>();
             auto body = actor->getComponent<Rigidbody>();
@@ -83,6 +82,9 @@ namespace workphone::scene
             ground->addComponent<Rigidbody>();
             app->getGameManager()->getCurrentScene()->addActor( ground );
             race::buildScene( m_assets, actor, m_seed, m_quality );
+            // Render the chassis and attached meshes from the same sampled parent pose.
+            actor->setSmoothMotion( true, true );
+            actor->getTransform()->setTask( TaskId::Physics );
             car->refreshWheels();
             configurePhysics();
             // Scene play can reconstruct the body and controller; configure again after settling.

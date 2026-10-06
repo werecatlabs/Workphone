@@ -72,6 +72,8 @@ namespace workphone::scene
             setLoadingState( LoadingState::Loading );
 
             CameraController::load( data );
+            if( auto actor = getActor() )
+                m_cameraTransform = actor->getWorldTransform();
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -128,6 +130,8 @@ namespace workphone::scene
 
                 auto t = timer->getTime();
                 auto dt = timer->getDeltaTime();
+                if( dt <= 0.0 )
+                    return;
 
                 auto inputDeviceManager = applicationManager->getInputDeviceManager();
 
@@ -166,8 +170,8 @@ namespace workphone::scene
                             auto fOrientation = worldTransform->getOrientation();
 
                             auto position = Vector3<real_dNum>( fPosition.x, fPosition.y, fPosition.z );
-                            auto orientation = Quaternion<real_dNum>( fOrientation.x, fOrientation.y,
-                                                                      fOrientation.z, fOrientation.w );
+                            auto orientation = Quaternion<real_dNum>( fOrientation.w, fOrientation.x,
+                                                                      fOrientation.y, fOrientation.z );
 
                             m_targetHeight = position.y + m_height;
 
@@ -307,10 +311,21 @@ namespace workphone::scene
 
                     auto t = timer->getTime();
                     auto dt = timer->getDeltaTime();
+                    if( dt <= 0.0 )
+                        return;
 
-                    auto smoothDeltaTime = timer->getDeltaTime();
-                    auto previousTime = timer->getPreviousTime( task );
-                    auto transformTime = previousTime + smoothDeltaTime + ( 1.0 / 30.0 );
+                    if( auto input = applicationManager->getInputDeviceManager() )
+                    {
+                        const auto scroll = input->getMouseScroll().y;
+                        if( scroll > 0 )
+                            m_distance -= m_zoomSpeed * static_cast<real_dNum>( dt );
+                        else if( scroll < 0 )
+                            m_distance += m_zoomSpeed * static_cast<real_dNum>( dt );
+                        m_distance = Math<real_dNum>::clamp( m_distance, m_minDistance, m_maxDistance );
+                    }
+
+                    auto smoothDeltaTime = timer->getDeltaTime( task );
+                    auto transformTime = timer->getTime( task ) - IGameManager::smoothMotionDelay;
 
                     if( auto transform = m_target->getTransform() )
                     {
@@ -326,8 +341,8 @@ namespace workphone::scene
                             auto fOrientation = smoothTransform.getOrientation();
 
                             auto position = Vector3<real_dNum>( fPosition.x, fPosition.y, fPosition.z );
-                            auto orientation = Quaternion<real_dNum>( fOrientation.x, fOrientation.y,
-                                                                      fOrientation.z, fOrientation.w );
+                            auto orientation = Quaternion<real_dNum>( fOrientation.w, fOrientation.x,
+                                                                      fOrientation.y, fOrientation.z );
 
                             m_targetHeight = position.y + m_height;
 
@@ -421,23 +436,23 @@ namespace workphone::scene
                                 Vector3<real_Num>( (real_Num)finalPosition.x, (real_Num)finalPosition.y,
                                                    (real_Num)finalPosition.z );
 
-                            cameraRenderPosition = Vector3<real_Num>(
-                                (real_Num)position.x, (real_Num)position.y, (real_Num)position.z );
-
-                            auto vec = Vector3<real_Num>( (real_Num)position.x, (real_Num)position.y,
-                                                          (real_Num)position.z ) -
-                                       cameraRenderPosition;
+                            auto lookAtPosition = Vector3<real_Num>(
+                                (real_Num)position.x, (real_Num)position.y + m_lookAtHeight,
+                                (real_Num)position.z );
+                            auto vec = lookAtPosition - cameraRenderPosition;
                             auto cameraRenderOrientation =
                                 MathUtil<real_Num>::getOrientationFromDirection( vec );
-
                             auto camera = actor->getComponentPtr<Camera>();
 
-                            cameraRenderPosition =
-                                cameraRenderPosition + ( cameraRenderOrientation *
-                                                         Vector3<real_Num>( 0, 0, m_targetDistance ) );
                             m_cameraTransform =
                                 Transform3F( cameraRenderPosition, cameraRenderOrientation );
-                            camera->updateTransform( m_cameraTransform );
+                            // Keep LOD queries and the standalone sample camera on this render pose.
+                            auto actorTransform = actor->getTransform();
+                            actorTransform->setWorldTransform( m_cameraTransform );
+                            actorTransform->setLocalDirty( true, false );
+                            actorTransform->update();
+                            if( camera )
+                                camera->updateTransform( m_cameraTransform );
                         }
                     }
                 }

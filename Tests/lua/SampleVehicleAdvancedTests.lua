@@ -67,6 +67,7 @@ local function fixture()
     local function actor()
         local a = {position=Vector3F(0, 0.3, 0), children={}}
         function a:setName(name) self.name = name end
+        function a:setSmoothMotion(value) self.smoothMotion = value end
         function a:addChild(child) table.insert(self.children, child) end
         function a:setPosition(position) self.position = position end
         function a:getPosition() return self.position end
@@ -124,6 +125,7 @@ sample:update()
 assert(sample.started and app.playing and race.seed == 7 and race.quality == 2)
 assert(app.playTransitions == 1, "Actors generated during play must enter play state")
 assert(sample.vehicleActor.position.y == 0.42 and sample.cameraActor.position.z == 8)
+assert(sample.cameraActor.smoothMotion, "Follow camera must use the render smoothing path")
 assert(drawn[0x56454803] and drawn[0x56454804], "Driving instructions must be displayed")
 
 keys[KeyCode.Up], keys[KeyCode.Left] = true, true

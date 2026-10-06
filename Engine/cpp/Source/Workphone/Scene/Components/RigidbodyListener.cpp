@@ -77,6 +77,9 @@ namespace workphone::scene
         auto actorTransform = actor->getTransform();
         if( actorTransform->getSmoothMotion() )
         {
+            // History is keyed by the publishing task, including when smoothing
+            // is enabled at runtime after the rigidbody entered play.
+            actorTransform->setTask( Thread::getCurrentTask() );
             const auto actorHandle = actor->getHandle();
             const auto id = actorHandle->getInstanceId();
 

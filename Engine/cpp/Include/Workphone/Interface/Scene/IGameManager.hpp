@@ -25,6 +25,9 @@ namespace workphone
         class WPCore_API IGameManager : public ISharedObject
         {
         public:
+            /// Shared presentation delay for vehicle meshes and follow cameras (seconds).
+            static constexpr time_interval smoothMotionDelay = 1.0 / 60.0;
+
             static const hash_type sceneLoadedHash;  ///< The hash for the scene loaded event.
 
             /**
@@ -350,7 +353,9 @@ namespace workphone
             /**
              * @brief Gets the transform state for the specified actor at a given time.
              * @param id The ID of the actor.
-             * @param t The time interval at which to retrieve the transform state.
+             * @param t Sample time in the producer clock domain; interpolation uses stored timestamps.
+             * Forward prediction is limited to 100 ms beyond the newest sample.
+             * @param dt Retained for compatibility; does not affect timestamp-based sampling.
              * @param transform [out] The retrieved transform state.
              * @param task The task ID associated with the retrieval.
              * @return True if the transform state was found, false otherwise.

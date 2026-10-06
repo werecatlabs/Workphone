@@ -29,6 +29,8 @@
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
 #include <Workphone/Thread/TryLockGuard.hpp>
 #include <crtdbg.h>
+#include <algorithm>
+#include <cmath>
 
 namespace workphone::scene
 {
@@ -261,9 +263,9 @@ namespace workphone::scene
 
                     auto timer = applicationManager->getTimerPtr();
 
-                    auto smoothDeltaTime = timer->getSmoothDeltaTime();
-                    auto previousTime = timer->getPreviousTime( task );
-                    auto transformTime = previousTime + smoothDeltaTime + ( 1.0 / 30.0 );
+                    auto smoothDeltaTime = timer->getDeltaTime( task );
+                    // One frame of buffering lets free-running producers bracket the query.
+                    auto transformTime = timer->getTime( task ) - IGameManager::smoothMotionDelay;
 
                     auto sceneLoadingState = scene->getSceneLoadingState();
                     if( sceneLoadingState == IGameScene::SceneLoadingState::Loaded )
@@ -549,46 +551,17 @@ namespace workphone::scene
                     }
                     else
                     {
+                        UnorderedMap<u32, Transform3<real_Num>> sampledTransforms;
                         for( auto component : components )
                         {
-                            if( component )
+                            if( component && component->isLoaded() )
                             {
-                                if( component->isLoaded() )
+                                if( auto actor = component->getActorPtr() )
                                 {
-                                    if( auto actor = component->getActorPtr() )
-                                    {
-                                        if( actor->isSmoothMotion() )
-                                        {
-                                            if( auto transform = actor->getTransform() )
-                                            {
-                                                auto handle = actor->getHandle();
-                                                auto id = handle->getInstanceId();
-                                                auto transformTask = transform->getTask();
-                                                if( transformTask == TaskId::Application )
-                                                {
-                                                    continue;
-                                                }
-
-                                                auto renderTransform = Transform3<real_Num>();
-                                                if( getTransformState( id, transformTime,
-                                                                       smoothDeltaTime, renderTransform,
-                                                                       transformTask ) )
-                                                {
-                                                    component->updateTransform( renderTransform );
-
-                                                    auto children = actor->getChildren();
-                                                    for( auto &child : children )
-                                                    {
-                                                        if( child->isSmoothMotion() )
-                                                        {
-                                                            updateActorTransformState( child,
-                                                                                       renderTransform );
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    Transform3<real_Num> renderTransform;
+                                    if( getActorTransformState( actor, transformTime, smoothDeltaTime,
+                                                                renderTransform, sampledTransforms ) )
+                                        component->updateTransform( renderTransform );
                                 }
                             }
                         }
@@ -604,35 +577,37 @@ namespace workphone::scene
         }
     }
 
-    void GameManager::updateActorTransformState( SmartPtr<IGameActor> actor,
-                                                 const Transform3<real_Num> &t )
+    bool GameManager::getActorTransformState(
+        IGameActor *actor, time_interval time, time_interval dt,
+        Transform3<real_Num> &worldTransform,
+        UnorderedMap<u32, Transform3<real_Num>> &sampledTransforms )
     {
-        if( actor )
+        if( !actor || !actor->isSmoothMotion() )
+            return false;
+        auto transform = actor->getTransform();
+        if( !transform )
+            return false;
+        const auto id = actor->getHandle()->getInstanceId();
+        auto it = sampledTransforms.find( id );
+        if( it != sampledTransforms.end() )
         {
-            if( auto transform = actor->getTransform() )
-            {
-                auto localTransform = transform->getLocalTransform();
-                auto worldTransform = transform->getWorldTransform();
-
-                Transform3<real_Num> actorWorldTransform;
-                actorWorldTransform.transformFromParent( t, localTransform );
-
-                auto components = actor->getComponents();
-                for( auto &component : components )
-                {
-                    component->updateTransform( actorWorldTransform );
-                }
-
-                auto children = actor->getChildren();
-                for( auto &child : children )
-                {
-                    if( child->isSmoothMotion() )
-                    {
-                        updateActorTransformState( child, actorWorldTransform );
-                    }
-                }
-            }
+            worldTransform = it->second;
+            return true;
         }
+
+        // Independently simulated children use their own world-space history.
+        // Attached meshes have no history: compose their local pose with the
+        // sampled parent, even when that parent has no renderer component.
+        if( !getTransformState( id, time, dt, worldTransform, transform->getTask() ) )
+        {
+            Transform3<real_Num> parentTransform;
+            if( !getActorTransformState( actor->getParentPtr(), time, dt,
+                                         parentTransform, sampledTransforms ) )
+                return false;
+            worldTransform.transformFromParent( parentTransform, transform->getLocalTransform() );
+        }
+        sampledTransforms.emplace( id, worldTransform );
+        return true;
     }
 
     s32 GameManager::getLoadPriority( ISharedObject *obj )
@@ -1096,29 +1071,10 @@ namespace workphone::scene
                 removeDirty( actor );
 
                 ScopedLock lock( this );
-                for( u32 i = 0; i < static_cast<u32>( TaskId::Count ); ++i )
                 {
-                    if( actorId < static_cast<s32>( m_transformTimes[i].size() ) )
-                    {
-                        m_transformTimes[i][actorId].clear();
-                    }
-
-                    if( actorId < static_cast<s32>( m_transformStates[i].size() ) )
-                    {
-                        m_transformStates[i][actorId].clear();
-                    }
-
-                    if( actorId < static_cast<s32>( m_motionStates[i].size() ) )
-                    {
-                        m_motionStates[i][actorId].clear();
-                    }
-
-                    if( actorId < static_cast<s32>( m_lastTransformStates[i].size() ) )
-                    {
-                        auto &lastTransformStates = m_lastTransformStates[i][actorId];
-                        lastTransformStates.clear();
-                        lastTransformStates.resize( 1 );
-                    }
+                    std::lock_guard<std::mutex> historyLock( m_transformHistoryMutex );
+                    for( auto &history : m_transformHistory )
+                        history.erase( static_cast<u32>( actorId ) );
                 }
 
                 m_fsmListeners[actorId] = nullptr;
@@ -1987,101 +1943,10 @@ namespace workphone::scene
     void GameManager::addTransformState( u32 id, time_interval time,
                                          const Transform3<real_Num> &transform )
     {
-        ScopedLock lock( this );
-
-        const auto requiredSize = static_cast<size_t>( id ) + 1;
-        for( u32 i = 0; i < static_cast<u32>( TaskId::Count ); ++i )
-        {
-            if( m_transformTimes[i].size() < requiredSize )
-            {
-                m_transformTimes[i].resize( requiredSize );
-            }
-            if( m_transformStates[i].size() < requiredSize )
-            {
-                m_transformStates[i].resize( requiredSize );
-            }
-            if( m_lastTransformStates[i].size() < requiredSize )
-            {
-                m_lastTransformStates[i].resize( requiredSize );
-            }
-            if( m_lastTransformStates[i][id].empty() )
-            {
-                m_lastTransformStates[i][id].resize( 1 );
-            }
-            if( m_motionStates[i].size() < requiredSize )
-            {
-                m_motionStates[i].resize( requiredSize );
-            }
-        }
-
-        auto task = Thread::getCurrentTask();
-        auto &transformTimes = m_transformTimes[(u32)task];
-        auto &transformStates = m_transformStates[(u32)task];
-        auto &motionStates = m_motionStates[(u32)task];
-
-        if( id >= transformTimes.size() )
-        {
-            return;
-        }
-
-        if( id >= transformStates.size() )
-        {
-            return;
-        }
-
-        if( id >= motionStates.size() )
-        {
-            return;
-        }
-
-        auto &times = transformTimes[id];
-        auto &transforms = transformStates[id];
-        auto &motions = motionStates[id];
-
-        auto hasTime = false;
-        for( auto &t : times )
-        {
-            if( Math<time_interval>::equals( t, time ) )
-            {
-                hasTime = true;
-            }
-        }
-
-        if( !hasTime )
-        {
-            if( times.capacity() < maxSmoothSize )
-            {
-                times.reserve( maxSmoothSize );
-            }
-
-            if( transforms.capacity() < maxSmoothSize )
-            {
-                transforms.reserve( maxSmoothSize );
-            }
-
-            if( motions.capacity() < maxSmoothSize )
-            {
-                motions.reserve( maxSmoothSize );
-            }
-
-            if( times.size() >= maxSmoothSize )
-            {
-                times.resize( maxSmoothSize - 1 );
-            }
-
-            if( transforms.size() >= maxSmoothSize )
-            {
-                transforms.resize( maxSmoothSize - 1 );
-            }
-
-            times.insert( times.begin(), time );
-            transforms.insert( transforms.begin(), transform );
-
-            MotionState motion;
-            motion.linearVelocity = Vector3<real_Num>::zero();
-            motion.angularVelocity = Vector3<real_Num>::zero();
-            motions.insert( motions.begin(), motion );
-        }
+        TransformSample sample;
+        sample.time = time;
+        sample.transform = transform;
+        storeTransformSample( id, sample );
     }
 
     void GameManager::addTransformState( u32 id, time_interval time,
@@ -2089,284 +1954,123 @@ namespace workphone::scene
                                          const Vector3<real_Num> &linearVelocity,
                                          const Vector3<real_Num> &angularVelocity )
     {
-        ScopedLock lock( this );
+        TransformSample sample;
+        sample.time = time;
+        sample.transform = transform;
+        sample.linearVelocity = linearVelocity;
+        sample.angularVelocity = angularVelocity;
+        sample.hasVelocity = true;
+        storeTransformSample( id, sample );
+    }
 
-        const auto requiredSize = static_cast<size_t>( id ) + 1;
-        for( u32 i = 0; i < static_cast<u32>( TaskId::Count ); ++i )
-        {
-            if( m_transformTimes[i].size() < requiredSize )
-            {
-                m_transformTimes[i].resize( requiredSize );
-            }
-            if( m_transformStates[i].size() < requiredSize )
-            {
-                m_transformStates[i].resize( requiredSize );
-            }
-            if( m_lastTransformStates[i].size() < requiredSize )
-            {
-                m_lastTransformStates[i].resize( requiredSize );
-            }
-            if( m_lastTransformStates[i][id].empty() )
-            {
-                m_lastTransformStates[i][id].resize( 1 );
-            }
-            if( m_motionStates[i].size() < requiredSize )
-            {
-                m_motionStates[i].resize( requiredSize );
-            }
-        }
-
-        auto task = Thread::getCurrentTask();
-        auto &transformTimes = m_transformTimes[(u32)task];
-        auto &transformStates = m_transformStates[(u32)task];
-        auto &motionStates = m_motionStates[(u32)task];
-
-        const auto maxElementCount = 12;
-
-        if( id >= transformTimes.size() )
-        {
+    void GameManager::storeTransformSample( u32 id, const TransformSample &sample )
+    {
+        const auto task = static_cast<u32>( Thread::getCurrentTask() );
+        if( task >= static_cast<u32>( TaskId::Count ) || !std::isfinite( sample.time ) )
             return;
-        }
 
-        if( id >= transformStates.size() )
-        {
+        std::lock_guard<std::mutex> lock( m_transformHistoryMutex );
+        auto &history = m_transformHistory[task][id];
+        // Keep pose, time and velocity together, newest first, even for late arrivals.
+        auto it = std::lower_bound( history.begin(), history.end(), sample.time,
+            []( const TransformSample &state, time_interval time ) { return state.time > time; } );
+        if( it != history.end() && it->time == sample.time )
             return;
-        }
-
-        if( id >= motionStates.size() )
-        {
-            return;
-        }
-
-        auto &times = transformTimes[id];
-        auto &transforms = transformStates[id];
-        auto &motions = motionStates[id];
-
-        auto hasTime = false;
-        for( auto &t : times )
-        {
-            if( Math<time_interval>::equals( t, time ) )
-            {
-                hasTime = true;
-            }
-        }
-
-        if( !hasTime )
-        {
-            if( times.capacity() < maxElementCount )
-            {
-                times.reserve( maxElementCount );
-            }
-
-            if( transforms.capacity() < maxElementCount )
-            {
-                transforms.reserve( maxElementCount );
-            }
-
-            if( motions.capacity() < maxElementCount )
-            {
-                motions.reserve( maxElementCount );
-            }
-
-            if( times.size() >= maxElementCount )
-            {
-                times.resize( maxElementCount - 1 );
-            }
-
-            if( transforms.size() >= maxElementCount )
-            {
-                transforms.resize( maxElementCount - 1 );
-            }
-
-            if( motions.size() >= maxElementCount )
-            {
-                motions.resize( maxElementCount - 1 );
-            }
-
-            times.insert( times.begin(), time );
-            transforms.insert( transforms.begin(), transform );
-
-            MotionState motion;
-            motion.linearVelocity = linearVelocity;
-            motion.angularVelocity = angularVelocity;
-            motions.insert( motions.begin(), motion );
-        }
+        history.insert( it, sample );
+        if( history.size() > maxSmoothSize )
+            history.resize( maxSmoothSize );
     }
 
     bool GameManager::getTransformState( u32 id, time_interval t, time_interval dt,
                                          Transform3<real_Num> &transform, TaskId task )
     {
-        TryLockGuard lock( this );
-        if( lock.locked() )
+        const auto taskIndex = static_cast<u32>( task );
+        if( taskIndex >= static_cast<u32>( TaskId::Count ) || !std::isfinite( t ) )
+            return false;
+
+        TransformSample newer, older;
+        bool interpolate = false;
+        bool hasPrevious = false;
         {
-            auto &transformTimes = m_transformTimes[(u32)task];
-            auto &transformStates = m_transformStates[(u32)task];
-            auto &lastTransformStates = m_lastTransformStates[(u32)task];
-            auto &motionStates = m_motionStates[(u32)task];
-
-            if( id >= transformTimes.size() )
-            {
+            // Reads must not drop frames because scene work holds the manager lock.
+            // Copy only the required samples; perform all math outside this short lock.
+            std::lock_guard<std::mutex> lock( m_transformHistoryMutex );
+            const auto &histories = m_transformHistory[taskIndex];
+            auto it = histories.find( id );
+            if( it == histories.end() || it->second.empty() )
                 return false;
-            }
-
-            if( id >= transformStates.size() )
+            const auto &history = it->second;
+            newer = history.front();
+            if( t < history.back().time )
             {
-                return false;
-            }
-
-            if( id >= motionStates.size() )
-            {
-                return false;
-            }
-
-            const auto &times = transformTimes[id];
-            const auto &transforms = transformStates[id];
-            auto &lastTransforms = lastTransformStates[id];
-            const auto &motions = motionStates[id];
-
-            if( times.empty() )
-            {
-                return false;
-            }
-
-            if( transforms.empty() )
-            {
-                return false;
-            }
-
-            if( motions.empty() )
-            {
-                return false;
-            }
-
-            // Only one state available - we can only return it directly or extrapolate
-            // using the stored motion state, but there is no previous state to derive
-            // a velocity from.
-            if( times.size() == 1 )
-            {
-                const auto &time0 = times.front();
-                const auto &frontTransform = transforms.front();
-                const auto &frontMotion = motions.front();
-
-                // Exact match
-                if( Math<time_interval>::equals( time0, t ) )
-                {
-                    transform = frontTransform;
-                    lastTransforms[0] = transform;
-                    return true;
-                }
-
-                // Extrapolate forward using the stored linear velocity.
-                auto diffFrame = t - time0;
-                if( diffFrame > 0.0 )
-                {
-                    auto position =
-                        frontTransform.getPosition() + frontMotion.linearVelocity * (real_Num)diffFrame;
-                    transform = Transform3<real_Num>( position, frontTransform.getOrientation(),
-                                                      frontTransform.getScale() );
-                    lastTransforms[0] = transform;
-                    return true;
-                }
-
-                // t is before the single stored state - cannot extrapolate backward
-                // without prior data, so return the state at time0.
-                transform = frontTransform;
-                lastTransforms[0] = transform;
+                transform = history.back().transform;
                 return true;
             }
-
-            if( times.size() >= 2 && times.front() > t )
+            if( t < newer.time )
             {
-                for( size_t i = 1; i < times.size(); ++i )
+                for( size_t i = 1; i < history.size(); ++i )
                 {
-                    auto &time = times[i];
-                    if( time < t )
+                    if( t >= history[i].time )
                     {
-                        auto cur = i;
-                        auto next = Math<s32>::clamp( static_cast<s32>( cur - 1 ), 0,
-                                                      static_cast<s32>( times.size() - 1 ) );
-
-                        auto &time0 = times[next];
-                        auto &time1 = times[cur];
-
-                        if( next == cur )
-                        {
-                            transform = transforms.front();
-                            return true;
-                        }
-
-                        auto &transform0 = transforms[next];
-                        auto &transform1 = transforms[cur];
-
-                        auto &fPosition0 = transform0.getPosition();
-                        auto &fPosition1 = transform1.getPosition();
-
-                        auto &fOrientation0 = transform0.getOrientation();
-                        auto &fOrientation1 = transform1.getOrientation();
-
-                        auto position0 = Vector3<real_dNum>( fPosition0.x, fPosition0.y, fPosition0.z );
-                        auto position1 = Vector3<real_dNum>( fPosition1.x, fPosition1.y, fPosition1.z );
-
-                        auto orientation0 = Quaternion<real_dNum>( fOrientation0.w, fOrientation0.x,
-                                                                   fOrientation0.y, fOrientation0.z );
-                        auto orientation1 = Quaternion<real_dNum>( fOrientation1.w, fOrientation1.x,
-                                                                   fOrientation1.y, fOrientation1.z );
-
-                        auto diff = time0 - time1;
-                        if( diff > 0.0 )
-                        {
-                            auto diffFrame = t - time1;
-                            auto delta = diffFrame / diff;
-
-                            auto p = Math<real_dNum>::lerp( position1, position0, delta );
-
-                            auto o =
-                                Quaternion<real_dNum>::slerp( delta, orientation1, orientation0, true );
-                            o.normalise();
-
-                            auto scale =
-                                Math<real_Num>::lerp( transform1.getScale(), transform0.getScale(),
-                                                      static_cast<real_Num>( delta ) );
-
-                            transform = Transform3<real_Num>( Vector3<real_Num>( p.x, p.y, p.z ),
-                                                              Quaternion<real_Num>( o.w, o.x, o.y, o.z ),
-                                                              scale );
-
-                            const auto &last = lastTransforms[0];
-                            const auto &latest = transforms.front();
-                            const auto elapsed = static_cast<real_Num>( t - times.front() );
-                            const auto position = last.getPosition() +
-                                                  ( transform.getPosition() - last.getPosition() ) * dt;
-                            transform = Transform3<real_Num>( position, latest.getOrientation(),
-                                                              latest.getScale() );
-                            lastTransforms[0] = transform;
-                            return true;
-                        }
+                        newer = history[i - 1];
+                        older = history[i];
+                        interpolate = true;
+                        break;
                     }
                 }
             }
-            else
+            else if( history.size() > 1 )
             {
-                auto timer = core::IApplicationManager::instancePtr()->getTimerPtr();
-                if( timer->getTimeSinceSceneLoad() > 5.0 )
-                {
-                    // Predict from the newest physics sample, just as in the
-                    // single-sample path. Accumulating from the previous rendered
-                    // transform makes moving actors lag farther behind each frame.
-                    const auto &last = lastTransforms[0];
-                    const auto &latest = transforms.front();
-                    const auto elapsed = static_cast<real_Num>( t - times.front() );
-                    const auto position =
-                        last.getPosition() + ( latest.getPosition() - last.getPosition() ) * t;
-                    transform =
-                        Transform3<real_Num>( position, latest.getOrientation(), latest.getScale() );
-                    lastTransforms[0] = transform;
-                    return true;
-                }
+                older = history[1];
+                hasPrevious = true;
             }
         }
 
-        return false;
+        // dt is retained for interface compatibility. Sampling depends only on
+        // sample timestamps, never on the previous caller's rendered transform.
+        (void)dt;
+        if( interpolate )
+        {
+            const auto alpha = static_cast<real_Num>( ( t - older.time ) /
+                                                       ( newer.time - older.time ) );
+            auto orientation = Quaternion<real_Num>::slerp(
+                alpha, older.transform.getOrientation(), newer.transform.getOrientation(), true );
+            orientation.normalise();
+            transform = Transform3<real_Num>(
+                Math<real_Num>::lerp( older.transform.getPosition(), newer.transform.getPosition(), alpha ),
+                orientation,
+                Math<real_Num>::lerp( older.transform.getScale(), newer.transform.getScale(), alpha ) );
+            return true;
+        }
+
+        transform = newer.transform;
+        // Bridge short producer gaps; hold the final prediction after 100 ms.
+        const auto elapsed = static_cast<real_Num>( std::clamp( t - newer.time,
+                                                               time_interval( 0 ), time_interval( 0.1 ) ) );
+        auto velocity = newer.linearVelocity;
+        if( !newer.hasVelocity && hasPrevious )
+            velocity = ( newer.transform.getPosition() - older.transform.getPosition() ) /
+                       static_cast<real_Num>( newer.time - older.time );
+        transform.setPosition( newer.transform.getPosition() + velocity * elapsed );
+        auto orientation = newer.transform.getOrientation();
+        const auto angularSpeed = newer.angularVelocity.length();
+        if( newer.hasVelocity && angularSpeed > real_Num( 0 ) && elapsed > real_Num( 0 ) )
+        {
+            Quaternion<real_Num> rotation;
+            rotation.fromAngleAxis( angularSpeed * elapsed, newer.angularVelocity / angularSpeed );
+            // Physics angular velocity is expressed in world space.
+            orientation = rotation * orientation;
+            orientation.normalise();
+        }
+        else if( !newer.hasVelocity && hasPrevious && elapsed > real_Num( 0 ) )
+        {
+            orientation = Quaternion<real_Num>::slerp(
+                real_Num( 1 ) + elapsed / static_cast<real_Num>( newer.time - older.time ),
+                older.transform.getOrientation(), newer.transform.getOrientation(), true );
+            orientation.normalise();
+        }
+        transform.setOrientation( orientation );
+        return true;
     }
 
     ConcurrentArray<SmartPtr<IComponent>> &GameManager::getRegisteredComponents(
