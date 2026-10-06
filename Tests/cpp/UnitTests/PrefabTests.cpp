@@ -2,7 +2,6 @@
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
-#include <Workphone/Scene/GamePrefab.hpp>
 #include <Workphone/Scene/GamePrefabManager.hpp>
 #include <Workphone/Scene/Components/Camera/CameraFollow.hpp>
 #include <Workphone/Scene/Components/Camera/CameraTarget.hpp>
@@ -40,9 +39,10 @@ BOOST_AUTO_TEST_CASE( prefab_instances_have_unique_graph_ids_and_local_reference
     follow->setProperty( CameraFollow::targetStr, targetUUID );
     data->addChild( follow );
     const auto serializedTemplate = DataUtil::toString( data.get() );
-    auto prefab = make_ptr<GamePrefab>();
-    prefab->setData( data );
     auto manager = make_ptr<GamePrefabManager>();
+    auto prefab = workphone::dynamic_pointer_cast<IGamePrefab>( manager->create( StringUtil::getUUID() ) );
+    BOOST_REQUIRE( prefab );
+    prefab->setData( data );
     Array<SmartPtr<IGameActor>> instances;
     auto original = GameActorUtil::loadSceneActors( { data } ).front();
     instances.push_back( original );
