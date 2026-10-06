@@ -1,5 +1,6 @@
 -- Run from the repository root with luavm.exe Tests/lua/SampleVehicleAdvancedTests.lua.
 -- The real Lua port is exercised against a small scene/input fixture.
+function include(name) return dofile("bin/Media/Scripts/Lua/Game/Core/" .. name) end
 function class(name)
     _G[name] = _G[name] or {}
     return function(base)
@@ -68,7 +69,10 @@ local function fixture()
     local function actor()
         local a = {position=Vector3F(0, 0.3, 0), children={}}
         function a:setName(name) self.name = name end
-        function a:setSmoothMotion(value) self.smoothMotion = value end
+        function a:setSmoothMotion(value, cascade)
+            assert(type(cascade) == "boolean", "Lua binding requires the cascade argument")
+            self.smoothMotion = value
+        end
         function a:addChild(child) table.insert(self.children, child) end
         function a:setPosition(position) self.position = position end
         function a:getPosition() return self.position end
@@ -150,10 +154,10 @@ app.paused, app.quit = false, false
 
 sample:resetRaceProgress()
 sample.vehicleActor.position = Vector3F(0, 0.3, 0)
-for _, index in ipairs({0, 25, 50, 75, 99, 0}) do
+for _, index in ipairs({0, 10, 20, 25, 35, 45, 50, 60, 70, 75, 85, 95, 99, 0}) do
     race.index = index; app.now = app.now + 1; sample:updateDebugText()
 end
-assert(sample.lap == 2 and sample.lastLapTime == 5 and sample.bestLapTime == 5)
+assert(sample.lap == 2 and sample.lastLapTime == 13 and sample.bestLapTime == 13)
 sample:resetRaceProgress()
 race.index = 99; app.now = app.now + 1; sample:updateDebugText()
 race.index = 0; app.now = app.now + 1; sample:updateDebugText()
@@ -243,3 +247,4 @@ assert(sample.startFailed and not sample.started and #destroyed == 1)
 sample:update()
 assert(#destroyed == 1, "Failed generation must not retry every frame")
 print("SampleVehicleAdvanced Lua behavior: PASS")
+return {fixture = fixture}

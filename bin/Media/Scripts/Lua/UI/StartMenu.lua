@@ -32,6 +32,8 @@ function StartMenu:__init(component)
 	-- Content and navigation.
 	self.title = "LIONCAT"
 	self.subtitle = "Simulation"
+	self.subtitleHeight = 48
+	self.buttonCentreY = 15
 	self.versionText = ""
 	self.startScene = "Game"
 	self.workshopScene = "Workshop"
@@ -308,7 +310,7 @@ function StartMenu:generate()
 		if transform then
 			transform:setPosition(position)
 			transform:setSize(size)
-			transform:setZOrder(zOrder or 0)
+			transform:setZOrder(zOrder or 0, false)
 		end
 		return transform
 	end
@@ -443,8 +445,10 @@ function StartMenu:generate()
 		self.lastError = "failed to create complete title text"
 		return nil
 	end
-	local _, subtitleText = createText(card, "Subtitle", self.subtitle, Vector2F(0.0, -290.0),
-		Vector2F(520.0, 48.0), colours.secondaryText, 3)
+	local subtitleHeight = self.subtitleHeight or 48
+	local _, subtitleText = createText(card, "Subtitle", self.subtitle,
+		Vector2F(0.0, -270.0 + (subtitleHeight - 48) * 0.5),
+		Vector2F(520.0, subtitleHeight), colours.secondaryText, 3)
 	if self.subtitle ~= "" and not subtitleText then
 		table.insert(generationWarnings, "subtitle text component was not created")
 	end
@@ -457,7 +461,7 @@ function StartMenu:generate()
 	if self.showExit then table.insert(specs, { "Exit", self.exitLabel, true }) end
 
 	local spacing = 88.0
-	local centreY = 15.0
+	local centreY = self.buttonCentreY or 15.0
 	for index, spec in ipairs(specs) do
 		local y = centreY + (index - (#specs + 1) * 0.5) * spacing
 		createButton(card, spec[1], spec[2], Vector2F(0.0, y), spec[3])

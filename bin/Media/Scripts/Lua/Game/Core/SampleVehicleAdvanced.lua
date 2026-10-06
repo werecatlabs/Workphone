@@ -3,6 +3,7 @@
 -- Attach this class to an actor and press Generate, or enter play mode to start.
 -- ProceduralRaceScene owns generated assets and runs forces/reset/suspension on
 -- the physics task. This script owns input, the camera rig, lap timing and HUD.
+if not RaceSession then include("RaceSession.lua") end
 class 'SampleVehicleAdvanced' (BaseComponent)
 
 local SPAWN_HEIGHT, CAMERA_DISTANCE, CAMERA_HEIGHT = 0.42, 8, 3
@@ -38,9 +39,7 @@ function SampleVehicleAdvanced:setGenerationOptions(seed, quality)
 end
 
 function SampleVehicleAdvanced:resetRaceProgress()
-    self.lastTrackIndex, self.nextCheckpoint, self.lap = 0, 1, 1
-    self.lapStart = nil
-    self.lastLapTime, self.bestLapTime = 0, 0
+    RaceSession.resetProgress(self)
     self.nextDebugUpdate, self.nextDebugLog = 0, 0
 end
 
@@ -241,15 +240,7 @@ function SampleVehicleAdvanced:updateDebugText()
     local index, count = self.raceScene:nearestCircuitSample(position), self.raceScene:getCircuitSampleCount()
     local offset = length(flat(position - self.raceScene:getCircuitPosition(index)))
     local onRoad = offset < 6.85
-    if self.lastTrackIndex > count * 3 / 4 and index < count / 4 and self.nextCheckpoint == 4 and onRoad then
-        self.lastLapTime = now - self.lapStart
-        if self.bestLapTime == 0 or self.lastLapTime < self.bestLapTime then self.bestLapTime = self.lastLapTime end
-        self.lap, self.lapStart, self.nextCheckpoint = self.lap + 1, now, 1
-    end
-    if math.floor(index * 4 / count) == self.nextCheckpoint and onRoad then
-        self.nextCheckpoint = self.nextCheckpoint + 1
-    end
-    self.lastTrackIndex = index
+    RaceSession.advanceLap(self, index, count, onRoad, now)
     local vehicle = self.car:getVehicleController()
     local drive = vehicle and vehicle:getDriveTrain()
     local properties = drive and drive:getProperties()

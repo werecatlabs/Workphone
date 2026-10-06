@@ -1,1 +1,0 @@
-class 'Car_Controller' (BaseComponent)
