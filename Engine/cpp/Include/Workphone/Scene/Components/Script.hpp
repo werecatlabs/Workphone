@@ -202,6 +202,12 @@ namespace workphone
              * @brief Gets the script invoker for this component.
              * @return Smart pointer to the script invoker.
              */
+            IScriptInvoker *getInvokerPtr() const;
+
+            /**
+             * @brief Gets the script invoker for this component.
+             * @return Smart pointer to the script invoker.
+             */
             SmartPtr<IScriptInvoker> getInvoker() const;
 
             /**

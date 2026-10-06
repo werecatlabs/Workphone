@@ -160,6 +160,11 @@ namespace workphone::scene
         }
     }
 
+    IScriptInvoker *Script::getInvokerPtr() const
+    {
+        return m_invoker.get();
+    }
+
     auto Script::getInvoker() const -> SmartPtr<IScriptInvoker>
     {
         return m_invoker;
