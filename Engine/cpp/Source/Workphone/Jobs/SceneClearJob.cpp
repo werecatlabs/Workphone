@@ -53,7 +53,6 @@ namespace workphone
                             }
                         }
                     }
-
                 }
                 else
                 {
@@ -67,7 +66,6 @@ namespace workphone
                     }
 
                     m_actors.clear();
-
                 }
 
                 const auto label = String( "Untitled" );

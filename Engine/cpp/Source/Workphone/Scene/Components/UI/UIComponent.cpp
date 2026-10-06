@@ -503,7 +503,8 @@ namespace workphone::scene
             auto actor = getActor();
             if( sender != actor )
             {
-                if( sender && object && sender->isDerived<IGameActor>() && object->isDerived<IGameActor>() )
+                if( sender && object && sender->isDerived<IGameActor>() &&
+                    object->isDerived<IGameActor>() )
                 {
                     auto parent = workphone::static_pointer_cast<IGameActor>( sender );
                     auto child = workphone::static_pointer_cast<IGameActor>( object );

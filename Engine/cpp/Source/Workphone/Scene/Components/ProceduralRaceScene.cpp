@@ -109,7 +109,8 @@ namespace workphone::scene
         auto app = core::IApplicationManager::instancePtr();
         auto manager = app ? app->getGameManager() : nullptr;
         if( !m_assets.treeLODs.empty() )
-            if( auto system = dynamic_pointer_cast<LODSystem>( m_assets.treeLODs.front()->getComponentSystem() ) )
+            if( auto system =
+                    dynamic_pointer_cast<LODSystem>( m_assets.treeLODs.front()->getComponentSystem() ) )
                 system->clearViewOverride();
         if( manager )
             for( auto it = m_assets.actors.rbegin(); it != m_assets.actors.rend(); ++it )
@@ -149,15 +150,20 @@ namespace workphone::scene
 
     void ProceduralRaceScene::setControls( f32 throttle, f32 brake, f32 steering )
     {
-        if( auto car = getCarController() ) car->setControls( throttle, brake, steering );
+        if( auto car = getCarController() )
+            car->setControls( throttle, brake, steering );
     }
 
     void ProceduralRaceScene::usePlayerControls()
     {
-        if( auto car = getCarController() ) car->usePlayerControls();
+        if( auto car = getCarController() )
+            car->usePlayerControls();
     }
 
-    void ProceduralRaceScene::reset() { m_resetRequested = true; }
+    void ProceduralRaceScene::reset()
+    {
+        m_resetRequested = true;
+    }
 
     void ProceduralRaceScene::performReset()
     {
@@ -217,7 +223,8 @@ namespace workphone::scene
             return;
         auto lamp = m_assets.vehicleMaterials[size_t( procedural::VehicleMaterialSlot::RainLight )];
         const ColourF emissive( car->getBrake() > 0 ? 1.f : .15f, .003f, .001f, 1 );
-        if( lamp && lamp->getEmissive() != emissive ) lamp->setEmissive( emissive );
+        if( lamp && lamp->getEmissive() != emissive )
+            lamp->setEmissive( emissive );
 
         if( m_physicsConfigured )
         {
@@ -243,12 +250,13 @@ namespace workphone::scene
         const auto speed = velocity.length();
         const auto &aero = m_assets.vehicle.physics.aero;
         auto force = -velocity * float( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
-                                       aero.dragCoefficient * speed );
+                                        aero.dragCoefficient * speed );
         force.y = -float( .5 * aero.airDensityKgPerM3 * aero.referenceAreaM2 *
                           aero.downforceCoefficient * speed * speed );
         body->addForce( force );
         auto vehicle = getCarController()->getVehicleController();
-        const auto acceleration = 9.81f - force.y / float( m_assets.vehicle.physics.massProperties.massKg );
+        const auto acceleration =
+            9.81f - force.y / float( m_assets.vehicle.physics.massProperties.massKg );
         for( u32 i = 0; i < 4; ++i )
         {
             auto wheel = vehicle->getWheelController( i );
@@ -286,8 +294,8 @@ namespace workphone::scene
                 continue;
             // Reuse the contact solver's raycast result instead of casting four
             // more rays and allocating four hit objects every physics step.
-            const auto extension = wheel->getSuspensionTravel() *
-                                   ( 1 - std::clamp( wheel->getCompression(), 0.f, 1.f ) );
+            const auto extension =
+                wheel->getSuspensionTravel() * ( 1 - std::clamp( wheel->getCompression(), 0.f, 1.f ) );
             auto position = wheel->getLocalTransform().getPosition();
             position.y -= extension;
             m_assets.wheels[i]->setLocalPosition( position );
@@ -308,7 +316,8 @@ namespace workphone::scene
         m_assets.shadow->updateTransform();
     }
 
-    void ProceduralRaceScene::setView( const Vector3F &position, f32 fovRadians, f32 nearClip, f32 lodBias )
+    void ProceduralRaceScene::setView( const Vector3F &position, f32 fovRadians, f32 nearClip,
+                                       f32 lodBias )
     {
         if( m_assets.treeLODs.empty() )
             return;
@@ -325,19 +334,42 @@ namespace workphone::scene
     }
 
     void ProceduralRaceScene::setQuality( s32 quality )
-    { m_quality = static_cast<procedural::VehicleAppearanceQuality>( std::clamp( quality, 0, 3 ) ); }
+    {
+        m_quality = static_cast<procedural::VehicleAppearanceQuality>( std::clamp( quality, 0, 3 ) );
+    }
     u32 ProceduralRaceScene::nearestCircuitSample( const Vector3F &position ) const
-    { return static_cast<u32>( m_assets.circuit.nearest( position ) ); }
+    {
+        return static_cast<u32>( m_assets.circuit.nearest( position ) );
+    }
     Vector3F ProceduralRaceScene::getCircuitPosition( u32 index ) const
-    { return m_assets.circuit.samples.at( index ).position; }
+    {
+        return m_assets.circuit.samples.at( index ).position;
+    }
     Vector3F ProceduralRaceScene::getCircuitRight( u32 index ) const
-    { return m_assets.circuit.samples.at( index ).right; }
-    f32 ProceduralRaceScene::getWheelbase() const { return float( m_assets.vehicle.physics.wheelbaseM ); }
-    f32 ProceduralRaceScene::getMaxSteeringAngle() const { return float( m_assets.vehicle.physics.wheels[0].maxSteerRad ); }
-    SmartPtr<IGameActor> ProceduralRaceScene::getWheelActor( u32 index ) const { return m_assets.wheels.at( index ); }
+    {
+        return m_assets.circuit.samples.at( index ).right;
+    }
+    f32 ProceduralRaceScene::getWheelbase() const
+    {
+        return float( m_assets.vehicle.physics.wheelbaseM );
+    }
+    f32 ProceduralRaceScene::getMaxSteeringAngle() const
+    {
+        return float( m_assets.vehicle.physics.wheels[0].maxSteerRad );
+    }
+    SmartPtr<IGameActor> ProceduralRaceScene::getWheelActor( u32 index ) const
+    {
+        return m_assets.wheels.at( index );
+    }
     SmartPtr<CarController> ProceduralRaceScene::getCarController() const
-    { auto actor = getActor(); return actor ? actor->getComponent<CarController>() : nullptr; }
-    bool ProceduralRaceScene::validateReflection() const { return race::validateReflection( m_assets ); }
+    {
+        auto actor = getActor();
+        return actor ? actor->getComponent<CarController>() : nullptr;
+    }
+    bool ProceduralRaceScene::validateReflection() const
+    {
+        return race::validateReflection( m_assets );
+    }
 
     SmartPtr<Properties> ProceduralRaceScene::getProperties() const
     {
@@ -350,7 +382,8 @@ namespace workphone::scene
     }
     void ProceduralRaceScene::setProperties( SmartPtr<Properties> p )
     {
-        if( !p ) return;
+        if( !p )
+            return;
         Component::setProperties( p );
         p->getPropertyValue( "Seed", m_seed );
         s32 quality = getQuality();
@@ -359,4 +392,4 @@ namespace workphone::scene
         if( p->isButtonPressed( "Regenerate" ) )
             regenerate();
     }
-}
+}  // namespace workphone::scene

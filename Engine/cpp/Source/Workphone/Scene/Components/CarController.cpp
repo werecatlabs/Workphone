@@ -203,11 +203,16 @@ namespace workphone::scene
                 if( driving && m_playerControls.load() )
                     if( auto input = app->getInputDeviceManager() )
                     {
-                        const bool throttle = input->isKeyPressed( KeyCodes::KEY_KEY_W ) || input->isKeyPressed( KeyCodes::KEY_UP );
-                        const bool brake = input->isKeyPressed( KeyCodes::KEY_KEY_S ) || input->isKeyPressed( KeyCodes::KEY_DOWN );
-                        const bool left = input->isKeyPressed( KeyCodes::KEY_KEY_A ) || input->isKeyPressed( KeyCodes::KEY_LEFT );
-                        const bool right = input->isKeyPressed( KeyCodes::KEY_KEY_D ) || input->isKeyPressed( KeyCodes::KEY_RIGHT );
-                        if( throttle || brake || left || right ) m_joystickActive = false;
+                        const bool throttle = input->isKeyPressed( KeyCodes::KEY_KEY_W ) ||
+                                              input->isKeyPressed( KeyCodes::KEY_UP );
+                        const bool brake = input->isKeyPressed( KeyCodes::KEY_KEY_S ) ||
+                                           input->isKeyPressed( KeyCodes::KEY_DOWN );
+                        const bool left = input->isKeyPressed( KeyCodes::KEY_KEY_A ) ||
+                                          input->isKeyPressed( KeyCodes::KEY_LEFT );
+                        const bool right = input->isKeyPressed( KeyCodes::KEY_KEY_D ) ||
+                                           input->isKeyPressed( KeyCodes::KEY_RIGHT );
+                        if( throttle || brake || left || right )
+                            m_joystickActive = false;
                         if( !m_joystickActive.load() )
                         {
                             setThrottle( throttle ? 1.f : 0.f );
@@ -217,8 +222,10 @@ namespace workphone::scene
                     }
                 if( auto vehicle = getVehicleController() )
                 {
-                    vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ), driving ? getThrottle() : 0.f );
-                    vehicle->setChannel( s32( vehicle::IVehicle::Input::BRAKE ), driving ? getBrake() : 0.f );
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ),
+                                         driving ? getThrottle() : 0.f );
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::BRAKE ),
+                                         driving ? getBrake() : 0.f );
                     float steering = getSteering();
                     if( m_playerControls.load() && m_chassis )
                     {
@@ -226,14 +233,19 @@ namespace workphone::scene
                         auto rear = vehicle->getWheelController( 2 );
                         if( front && rear )
                         {
-                            const auto wheelbase = MathF::Abs( float( front->getLocalTransform().getPosition().Z() - rear->getLocalTransform().getPosition().Z() ) );
+                            const auto wheelbase =
+                                MathF::Abs( float( front->getLocalTransform().getPosition().Z() -
+                                                   rear->getLocalTransform().getPosition().Z() ) );
                             const auto speed = float( m_chassis->getLinearVelocity().length() );
                             const auto maxSteer = MathF::Abs( MathF::DegToRad( m_maxSteeringAngle ) );
                             if( maxSteer > 0 && wheelbase > 0 )
-                                steering *= std::min( 1.f, wheelbase * 8.f / ( std::max( speed * speed, 1.f ) * maxSteer ) );
+                                steering *=
+                                    std::min( 1.f, wheelbase * 8.f /
+                                                       ( std::max( speed * speed, 1.f ) * maxSteer ) );
                         }
                     }
-                    vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ), driving ? steering : 0.f );
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ),
+                                         driving ? steering : 0.f );
                 }
             }
 
@@ -316,8 +328,8 @@ namespace workphone::scene
                     }
                 }
 
-                const auto steering = Quaternion<real_Num>::eulerDegrees(
-                    0.0, steeringAngle * m_visualSteeringSign, 0.0 );
+                const auto steering =
+                    Quaternion<real_Num>::eulerDegrees( 0.0, steeringAngle * m_visualSteeringSign, 0.0 );
                 const auto spin = Quaternion<real_Num>::angleAxis( m_wheelSpinAngles[i], spinAxis );
                 wheelActor->setLocalOrientation( m_wheelBaseOrientations[i] * steering * spin );
             }
@@ -334,7 +346,8 @@ namespace workphone::scene
         WP_ASSERT( applicationManager );
 
         auto vehicleController = getVehicleController();
-        if( !vehicleController ) return;
+        if( !vehicleController )
+            return;
 
         // position wheels
         if( auto actor = getActor() )
@@ -1050,9 +1063,11 @@ namespace workphone::scene
     auto CarController::InputListener::inputEvent( SmartPtr<IInputEvent> event ) -> bool
     {
         auto owner = getOwner();
-        if( !owner || !event ) return false;
+        if( !owner || !event )
+            return false;
         ScopedLock controlsLock( owner.get(), true );
-        if( !owner->m_playerControls.load() ) return false;
+        if( !owner->m_playerControls.load() )
+            return false;
         if( event->getEventType() == IInputEvent::EventType::Key )
         {
             if( auto state = event->getKeyboardState() )
@@ -1076,8 +1091,9 @@ namespace workphone::scene
                     steering = joystick->getAxis( 0 );
                 }
                 else
-                    throttle = joystick->isButtonPressed( 0 ) ? 1.f :
-                               joystick->isButtonPressed( 1 ) ? -1.f : 0.f;
+                    throttle = joystick->isButtonPressed( 0 )   ? 1.f
+                               : joystick->isButtonPressed( 1 ) ? -1.f
+                                                                : 0.f;
                 owner->m_joystickActive = true;
                 owner->setThrottle( std::max( throttle, 0.f ) );
                 owner->setBrake( std::max( -throttle, 0.f ) );

@@ -578,8 +578,7 @@ namespace workphone::scene
     }
 
     bool GameManager::getActorTransformState(
-        IGameActor *actor, time_interval time, time_interval dt,
-        Transform3<real_Num> &worldTransform,
+        IGameActor *actor, time_interval time, time_interval dt, Transform3<real_Num> &worldTransform,
         UnorderedMap<u32, Transform3<real_Num>> &sampledTransforms )
     {
         if( !actor || !actor->isSmoothMotion() )
@@ -601,8 +600,8 @@ namespace workphone::scene
         if( !getTransformState( id, time, dt, worldTransform, transform->getTask() ) )
         {
             Transform3<real_Num> parentTransform;
-            if( !getActorTransformState( actor->getParentPtr(), time, dt,
-                                         parentTransform, sampledTransforms ) )
+            if( !getActorTransformState( actor->getParentPtr(), time, dt, parentTransform,
+                                         sampledTransforms ) )
                 return false;
             worldTransform.transformFromParent( parentTransform, transform->getLocalTransform() );
         }
@@ -1972,7 +1971,8 @@ namespace workphone::scene
         std::lock_guard<std::mutex> lock( m_transformHistoryMutex );
         auto &history = m_transformHistory[task][id];
         // Keep pose, time and velocity together, newest first, even for late arrivals.
-        auto it = std::lower_bound( history.begin(), history.end(), sample.time,
+        auto it = std::lower_bound(
+            history.begin(), history.end(), sample.time,
             []( const TransformSample &state, time_interval time ) { return state.time > time; } );
         if( it != history.end() && it->time == sample.time )
             return;
@@ -2031,13 +2031,13 @@ namespace workphone::scene
         (void)dt;
         if( interpolate )
         {
-            const auto alpha = static_cast<real_Num>( ( t - older.time ) /
-                                                       ( newer.time - older.time ) );
-            auto orientation = Quaternion<real_Num>::slerp(
-                alpha, older.transform.getOrientation(), newer.transform.getOrientation(), true );
+            const auto alpha = static_cast<real_Num>( ( t - older.time ) / ( newer.time - older.time ) );
+            auto orientation = Quaternion<real_Num>::slerp( alpha, older.transform.getOrientation(),
+                                                            newer.transform.getOrientation(), true );
             orientation.normalise();
             transform = Transform3<real_Num>(
-                Math<real_Num>::lerp( older.transform.getPosition(), newer.transform.getPosition(), alpha ),
+                Math<real_Num>::lerp( older.transform.getPosition(), newer.transform.getPosition(),
+                                      alpha ),
                 orientation,
                 Math<real_Num>::lerp( older.transform.getScale(), newer.transform.getScale(), alpha ) );
             return true;
@@ -2045,8 +2045,8 @@ namespace workphone::scene
 
         transform = newer.transform;
         // Bridge short producer gaps; hold the final prediction after 100 ms.
-        const auto elapsed = static_cast<real_Num>( std::clamp( t - newer.time,
-                                                               time_interval( 0 ), time_interval( 0.1 ) ) );
+        const auto elapsed = static_cast<real_Num>(
+            std::clamp( t - newer.time, time_interval( 0 ), time_interval( 0.1 ) ) );
         auto velocity = newer.linearVelocity;
         if( !newer.hasVelocity && hasPrevious )
             velocity = ( newer.transform.getPosition() - older.transform.getPosition() ) /

@@ -87,7 +87,8 @@ namespace workphone::scene::race
             if( buffer.pixels.empty() )
                 return nullptr;
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
-            auto name = assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
+            auto name =
+                assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
             auto texture = graphics->getTextureManager()->createManual( name, "General", 2, buffer.width,
                                                                         buffer.height, 1, 0, 0 );
             if( !texture )
@@ -150,8 +151,8 @@ namespace workphone::scene::race
             auto generated =
                 MeshUtil::createMesh( g.positions, g.normals, g.tangents, g.uv, renderIndices );
             generated->updateAABB( true );
-            auto path = assets.resourcePrefix + "/mesh/" +
-                        StringUtil::toString( assets.meshes.size() ) + ".meshbin";
+            auto path = assets.resourcePrefix + "/mesh/" + StringUtil::toString( assets.meshes.size() ) +
+                        ".meshbin";
             auto resource =
                 dynamic_pointer_cast<IMeshResource>( manager->createOrRetrieve( path ).first );
             resource->setName( path );
@@ -639,7 +640,8 @@ namespace workphone::scene::race
             skyObject->setDistance( 500 );
             skyObject->setVisible( true );
 
-            auto reflection = app->getGraphicsSystem()->getTextureManager()->createCubeMap( reflectionFaces );
+            auto reflection =
+                app->getGraphicsSystem()->getTextureManager()->createCubeMap( reflectionFaces );
             if( reflection )
             {
                 reflection->setName( assets.resourcePrefix + "/reflection" );
@@ -823,7 +825,6 @@ namespace workphone::scene::race
         void *native = nullptr;
         assets.reflectionTexture->getTextureFinal( &native );
         return native != nullptr;
-
     }
     void validateCircuit()
     {

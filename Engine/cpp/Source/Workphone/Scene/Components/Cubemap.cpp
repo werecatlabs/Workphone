@@ -991,8 +991,8 @@ namespace workphone::scene
         const auto renderActive = active && m_sourceType == SourceType::Realtime;
         const auto activeChanged = m_runtimeActive != active;
         m_runtimeActive = active;
-        if( m_renderCubemap && m_renderCubemap->getSceneManager() &&
-            !m_renderStateDirty && !activeChanged )
+        if( m_renderCubemap && m_renderCubemap->getSceneManager() && !m_renderStateDirty &&
+            !activeChanged )
         {
             // Moving probes still follow their actor, and late-loaded/replaced
             // materials still receive the reflection. Capture settings are unchanged.

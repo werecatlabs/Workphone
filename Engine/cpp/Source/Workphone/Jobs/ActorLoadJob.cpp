@@ -18,7 +18,6 @@ namespace workphone
 
     ActorLoadJob::ActorLoadJob()
     {
-        setPrimary( true );
         if( auto app = core::IApplicationManager::instancePtr() )
             if( auto manager = app->getGameManager() )
                 setScene( manager->getCurrentScene() );
@@ -32,13 +31,14 @@ namespace workphone
         auto manager = app->getGameManager();
         auto parent = getParent();
         auto scene = getScene();
-        if( !scene || !getProperties() ) 
+        if( !scene || !getProperties() )
             return;
-        
+
         ScopedLock lock( scene.get() );
         auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
         if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
             return;
+
         if( parent && parent->getScene() != scene )
             return;
 
@@ -50,20 +50,29 @@ namespace workphone
             manager->destroyActor( actor );
             return;
         }
-        try {
-            if( parent ) parent->addChild(actor);
-            else scene->addActor(actor);
-        } catch(...) {
-            manager->destroyActor(actor);
+
+        try
+        {
+            if( parent )
+                parent->addChild( actor );
+
+            else
+                scene->addActor( actor );
+        }
+        catch( ... )
+        {
+            manager->destroyActor( actor );
             throw;
         }
+
         if( !scene->isLoaded() || ( concrete && concrete->getLoadGeneration() != m_sceneGeneration ) )
         {
             manager->destroyActor( actor );
             return;
         }
-        setActor(actor);
-        setChildJobs({});
+
+        setActor( actor );
+        setChildJobs( {} );
     }
 
     SmartPtr<scene::IGameScene> ActorLoadJob::getScene() const

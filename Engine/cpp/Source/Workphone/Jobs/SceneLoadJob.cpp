@@ -44,7 +44,8 @@ namespace workphone
             std::unordered_set<String> reserved;
             visit( sceneData, [&]( const auto &data ) {
                 if( data->hasProperty( scene::GameActorUtil::uuidStr ) )
-                    reserved.insert( data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue() );
+                    reserved.insert(
+                        data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue() );
             } );
             for( const auto &root : sceneData->getChildrenByName( ApplicationUtil::actorsStr ) )
             {
@@ -61,8 +62,10 @@ namespace workphone
                     if( !seen.insert( uuid ).second )
                     {
                         String replacement;
-                        do { replacement = StringUtil::getUUID(); }
-                        while( !reserved.insert( replacement ).second );
+                        do
+                        {
+                            replacement = StringUtil::getUUID();
+                        } while( !reserved.insert( replacement ).second );
                         replacements.emplace( uuid, replacement );
                     }
                 } );
@@ -83,11 +86,14 @@ namespace workphone
                         root->getPropertyObject( scene::GameActorUtil::labelStr ).getValue() );
             }
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, SceneLoadJob, Job );
 
-    SceneLoadJob::SceneLoadJob() { setPrimary( true ); }
+    SceneLoadJob::SceneLoadJob()
+    {
+        setPrimary( true );
+    }
 
     SceneLoadJob::~SceneLoadJob() = default;
 
@@ -121,10 +127,10 @@ namespace workphone
             auto path = getFilePath();
             auto inlineData = getDataStr();
             auto projectPath = app->getProjectPath();
-            m_preparedPath = projectPath.empty() || Path::isPathAbsolute( path )
-                                                 ? StringUtil::cleanupPath( path )
-                                                 : Path::lexically_normal(
-                                                       projectPath, StringUtil::cleanupPath( path ) );
+            m_preparedPath =
+                projectPath.empty() || Path::isPathAbsolute( path )
+                    ? StringUtil::cleanupPath( path )
+                    : Path::lexically_normal( projectPath, StringUtil::cleanupPath( path ) );
             if( path.empty() && !inlineData.empty() )
                 m_preparedPath = String();
             m_preparedLabel = Path::getFileNameWithoutExtension( path );
@@ -234,11 +240,13 @@ namespace workphone
         auto manager = app->getGameManager();
         Array<SmartPtr<scene::IGameActor>> actors;
         auto rollback = [&] {
-            for( const auto &actor : actors ) {
+            for( const auto &actor : actors )
+            {
                 if( actor && actor->getLoadingState() != LoadingState::Unloaded )
-                    manager->destroyActor(actor);
+                    manager->destroyActor( actor );
             }
-            if( current() ) target->setSceneLoadingState(scene::IGameScene::SceneLoadingState::Failed);
+            if( current() )
+                target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Failed );
         };
         try
         {
@@ -290,12 +298,12 @@ namespace workphone
         catch( const std::exception &e )
         {
             rollback();
-            WP_LOG_EXCEPTION(e);
+            WP_LOG_EXCEPTION( e );
         }
-        catch(...)
+        catch( ... )
         {
             rollback();
-            WP_LOG_ERROR("Unknown error committing scene");
+            WP_LOG_ERROR( "Unknown error committing scene" );
         }
     }
 
@@ -307,7 +315,7 @@ namespace workphone
     void SceneLoadJob::setScene( SmartPtr<scene::IGameScene> scene )
     {
         m_scene = scene;
-        auto concreteScene = workphone::dynamic_pointer_cast<scene::GameScene>(scene);
+        auto concreteScene = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
         m_loadGeneration = concreteScene ? concreteScene->getLoadGeneration() : 0;
     }
 

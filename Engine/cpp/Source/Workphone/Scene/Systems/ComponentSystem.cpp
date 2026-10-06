@@ -256,7 +256,8 @@ namespace workphone::scene
     }
 
     Parameter ComponentSystem::handleEvent( EventType eventType, hash_type eventValue,
-                                            const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                            const Array<Parameter> &arguments,
+                                            SmartPtr<ISharedObject> sender,
                                             SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         return {};

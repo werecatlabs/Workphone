@@ -37,8 +37,8 @@ namespace workphone::scene
             if( auto node = m_light->getSceneNode() )
             {
                 const auto direction = m_results.sunAltitude >= 0 ? m_results.sunDir : m_results.moonDir;
-                const auto orientation = Quaternion<real_Num>::getRotationTo(
-                    Vector3<real_Num>( 0, 0, -1 ), -direction );
+                const auto orientation =
+                    Quaternion<real_Num>::getRotationTo( Vector3<real_Num>( 0, 0, -1 ), -direction );
                 if( node->getOrientation() != orientation )
                     node->setOrientation( orientation );
             }
@@ -67,7 +67,8 @@ namespace workphone::scene
                 if( scene && m_applyLighting )
                     scene->setAmbientLight( m_results.ambientColour );
                 if( scene && m_applyFog )
-                    scene->setFog( render::IGraphicsScene::FOG_EXP2, m_results.fogColour, m_results.fogDensity );
+                    scene->setFog( render::IGraphicsScene::FOG_EXP2, m_results.fogColour,
+                                   m_results.fogDensity );
             }
             if( m_applyLighting )
                 if( auto actor = getActor() )

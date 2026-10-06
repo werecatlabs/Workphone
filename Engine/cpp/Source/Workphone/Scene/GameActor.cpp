@@ -2433,8 +2433,7 @@ namespace workphone::scene
 
         for( auto component : getComponents() )
         {
-            component->handleEvent( eventType, eventValue, arguments, sender, object,
-                                    event );
+            component->handleEvent( eventType, eventValue, arguments, sender, object, event );
         }
 
         for( auto &child : getChildren() )

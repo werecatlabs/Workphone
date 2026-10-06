@@ -66,8 +66,7 @@ namespace workphone
         // repeatedly. Snapshots keep listener removal during a callback safe.
         std::unordered_set<IEventListener *> dispatchedListeners;
         auto dispatch = [&]( auto listeners ) {
-            Array<SmartPtr<IEventListener>> retainedListeners( listeners.begin(),
-                                                             listeners.end() );
+            Array<SmartPtr<IEventListener>> retainedListeners( listeners.begin(), listeners.end() );
             for( auto &listener : retainedListeners )
             {
                 if( !listener || !dispatchedListeners.insert( listener.get() ).second )
@@ -77,8 +76,7 @@ namespace workphone
 
                 try
                 {
-                    listener->handleEvent( eventType, eventValue, arguments, sender, object,
-                                           event );
+                    listener->handleEvent( eventType, eventValue, arguments, sender, object, event );
                 }
                 catch( std::exception &e )
                 {

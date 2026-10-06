@@ -780,7 +780,8 @@ namespace workphone::scene
                     if( m_actors.size() >= m_actors.capacity() )
                         throw std::length_error( "Scene actor capacity exhausted" );
                     m_actors.push_back( actor );
-                    if( m_partitioner ) m_partitioner->addActor(actor);
+                    if( m_partitioner )
+                        m_partitioner->addActor( actor );
 
                     // Scene ownership includes update ownership.  In particular, loaded
                     // rigidbodies rely on their actor update to copy the simulated transform
@@ -1048,8 +1049,7 @@ namespace workphone::scene
                 auto component = workphone::static_pointer_cast<IComponent>( target );
                 if( component->isLoaded() )
                 {
-                    component->handleEvent( eventType, eventValue, arguments, sender, object,
-                                            event );
+                    component->handleEvent( eventType, eventValue, arguments, sender, object, event );
                 }
             }
             else if( target && target->isDerived<IGameActor>() )
