@@ -92,6 +92,18 @@ namespace workphone
                                                     SmartPtr<ISharedObject> object,
                                                     SmartPtr<IEvent> event )
     {
+        if (auto jobQueue = getOwner())
+        {
+            auto jobs = jobQueue->m_executingJobs;
+            for( auto &job : jobs )
+            {
+                if( job )
+                {
+                    job->handleEvent( eventType, eventValue, arguments, sender, object, event );
+                }
+            }
+        }
+
         return {};
     }
 

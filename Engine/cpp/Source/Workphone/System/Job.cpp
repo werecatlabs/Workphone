@@ -164,4 +164,11 @@ namespace workphone
         m_callbackFunction = callbackFunction;
     }
 
+    Parameter Job::handleEvent( EventType eventType, hash_type eventValue,
+                                const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    {
+        return {};
+    }
+
 }  // namespace workphone
