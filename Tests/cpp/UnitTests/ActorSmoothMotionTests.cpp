@@ -504,7 +504,7 @@ BOOST_AUTO_TEST_CASE( single_executor_hierarchy_update_preserves_sampled_render_
     BOOST_REQUIRE( pool );
     auto previousThreads = pool->getNumThreads();
     pool->setNumThreads( 0 );
-    addCleanup( [pool, previousThreads]() { pool->setNumThreads( previousThreads ); } );
+    //addCleanup( [pool, previousThreads]() { pool->setNumThreads( previousThreads ); } );
     auto actor = createSceneActor( *this, "SampledRenderPose" );
     actor->setSmoothMotion( true );
     actor->setPosition( Vector3<real_Num>( 100, 0, 0 ) );
