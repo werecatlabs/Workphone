@@ -31,6 +31,16 @@ endif ()
 # Set the BOOST_INSTALL_LAYOUT
 set(BOOST_INSTALL_LAYOUT "SYSTEM" CACHE STRING "Boost install layout")
 	
+# Only compile the Boost libraries used by the engine, tools and tests.
+# Boost's CMake build adds their transitive dependencies automatically.
+option(WP_BUILD_ALL_BOOST_LIBRARIES "Build every bundled Boost library" OFF)
+if(NOT WP_BUILD_ALL_BOOST_LIBRARIES AND NOT BOOST_INCLUDE_LIBRARIES)
+    set(BOOST_INCLUDE_LIBRARIES
+        chrono context date_time filesystem json system thread timer)
+    if(WP_BUILD_TESTS OR WP_EDITOR_TESTS)
+        list(APPEND BOOST_INCLUDE_LIBRARIES test)
+    endif()
+endif()
 add_subdirectory(boost)
 add_subdirectory(cppsqlite)
 add_subdirectory(FreeImage)
@@ -47,58 +57,49 @@ add_subdirectory(tinyusdz)
 add_subdirectory(zlib)
 add_subdirectory(zzip)
 
-set_target_properties (boost_assert PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_atomic PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_chrono PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_container PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_context PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_contract PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_core PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_coroutine PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_date_time PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_exception PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_fiber PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_fiber_numa PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_filesystem PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_graph PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_iostreams PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_json PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_locale PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_log PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_nowide PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_prg_exec_monitor PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_program_options PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_log_setup PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_random PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_serialization PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_stacktrace_basic PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_stacktrace_noop PROPERTIES FOLDER Dependencies/boost)
-
-if (WIN32)
-	set_target_properties (boost_stacktrace_windbg PROPERTIES FOLDER Dependencies/boost)
-	set_target_properties (boost_stacktrace_windbg_cached PROPERTIES FOLDER Dependencies/boost)
-endif()
-
-set_target_properties (boost_system PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_test_exec_monitor PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_thread PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_timer PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_type_erasure PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_unit_test_framework PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_url PROPERTIES FOLDER Dependencies/boost)
-
-set_target_properties (boost_variant2 PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_wave PROPERTIES FOLDER Dependencies/boost)
-set_target_properties (boost_wserialization PROPERTIES FOLDER Dependencies/boost)
+foreach(_wp_boost_target IN ITEMS
+        boost_assert
+        boost_atomic
+        boost_chrono
+        boost_container
+        boost_context
+        boost_contract
+        boost_core
+        boost_coroutine
+        boost_date_time
+        boost_exception
+        boost_fiber
+        boost_fiber_numa
+        boost_filesystem
+        boost_graph
+        boost_iostreams
+        boost_json
+        boost_locale
+        boost_log
+        boost_nowide
+        boost_prg_exec_monitor
+        boost_program_options
+        boost_log_setup
+        boost_random
+        boost_serialization
+        boost_stacktrace_basic
+        boost_stacktrace_noop
+        boost_stacktrace_windbg
+        boost_stacktrace_windbg_cached
+        boost_system
+        boost_test_exec_monitor
+        boost_thread
+        boost_timer
+        boost_type_erasure
+        boost_unit_test_framework
+        boost_url
+        boost_variant2
+        boost_wave
+        boost_wserialization)
+    if(TARGET ${_wp_boost_target})
+        set_target_properties(${_wp_boost_target} PROPERTIES FOLDER Dependencies/boost)
+    endif()
+endforeach()
 
 set_target_properties (FreeImage PROPERTIES FOLDER Dependencies/FreeImage)
 set_target_properties (freetype PROPERTIES FOLDER Dependencies/freetype)

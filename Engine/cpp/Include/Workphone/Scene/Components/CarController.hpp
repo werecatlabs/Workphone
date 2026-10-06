@@ -53,7 +53,7 @@ namespace workphone
              * owning `CarController`'s throttle, brake and steering values. The
              * listener keeps a weak reference to the owner to avoid ownership cycles.
              */
-            class InputListener : public IEventListener
+            class WPCore_API InputListener : public IEventListener
             {
             public:
                 /**

@@ -148,7 +148,6 @@ add_executable(UnitTests ${HEADER_FILES} ${SOURCE_FILES})
 
 if (WIN32)
 target_link_options(UnitTests PUBLIC 
-$<$<CONFIG:Debug>:/LTCG>
 $<$<CONFIG:Release>:/LTCG>
 $<$<CONFIG:MinSizeRel>:/LTCG>
 $<$<CONFIG:RelWithDebInfo>:/LTCG>
