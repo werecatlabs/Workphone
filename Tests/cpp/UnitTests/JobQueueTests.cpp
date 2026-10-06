@@ -114,6 +114,13 @@ public:
     void stop() override
     {
     }
+
+    Parameter handleEvent(EventType eventType, hash_type eventValue, const Array<Parameter>& arguments,
+        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
+        SmartPtr<IEvent> event)
+    {
+        return {};
+    }
 };
 
 class MockJobQueue : public IJobQueue
