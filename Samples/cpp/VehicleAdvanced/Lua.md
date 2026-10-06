@@ -83,6 +83,16 @@ drawing, graphics preparation, Editor UI, UI submission and presentation.
 
 ## Reusable component
 
+CarController owns keyboard/gamepad input and is the single publisher of throttle,
+brake and steering channels. W/A/S/D and the arrow keys are read together, so
+opposing steering keys cancel and releasing one alias does not cancel a held
+alias. Speed-dependent steering limiting is applied to player input there.
+The samples retain reset/camera commands and smoke-test/AI policy only.
+`ProceduralRaceScene::setControls()` delegates an exclusive programmatic override
+to CarController; `usePlayerControls()` returns to keyboard/gamepad input.
+Input events cannot overwrite an active override. Pausing or leaving play mode
+publishes zero channels instead of leaving the last driving command active.
+
 `scene::ProceduralRaceScene` owns the seeded vehicle mesh hierarchy, textures,
 closed circuit, collision plane, trackside scenery, sky, reflection probe and
 contact shadow. Both this C++ sample and the Lua sample use it. Attach it to the

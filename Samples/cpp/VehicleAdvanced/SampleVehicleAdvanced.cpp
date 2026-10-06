@@ -431,19 +431,7 @@ namespace workphone
             return;
         }
 
-        auto throttle =
-            ( input->isKeyPressed( KeyCodes::KEY_KEY_W ) || input->isKeyPressed( KeyCodes::KEY_UP ) )
-                ? 1.0f
-                : 0.0f;
-        auto brake =
-            ( input->isKeyPressed( KeyCodes::KEY_KEY_S ) || input->isKeyPressed( KeyCodes::KEY_DOWN ) )
-                ? 1.0f
-                : 0.0f;
-        const auto left =
-            input->isKeyPressed( KeyCodes::KEY_KEY_A ) || input->isKeyPressed( KeyCodes::KEY_LEFT );
-        const auto right =
-            input->isKeyPressed( KeyCodes::KEY_KEY_D ) || input->isKeyPressed( KeyCodes::KEY_RIGHT );
-        auto steering = static_cast<f32>( right ) - static_cast<f32>( left );
+        float throttle = 0, brake = 0, steering = 0;
 
         if( m_smokeTest )
         {
@@ -505,7 +493,10 @@ namespace workphone
                 applicationManager->setQuit( true );
             }
         }
-        m_raceScene->setControls( throttle, brake, steering );
+        if( m_smokeTest || m_trackSmokeTest )
+            m_raceScene->setControls( throttle, brake, steering );
+        else
+            m_raceScene->usePlayerControls();
     }
 
     void SampleVehicleAdvanced::updateWheelVisuals()

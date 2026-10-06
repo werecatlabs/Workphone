@@ -66,6 +66,7 @@ namespace workphone::scene
         void clearGeneratedScene();
         void configurePhysics();
         void setControls( f32 throttle, f32 brake, f32 steering );
+        void usePlayerControls();
         void reset();
         void performReset();
         void updateWheelVisuals();
@@ -102,7 +103,6 @@ namespace workphone::scene
         String m_generationError;
         bool m_physicsConfigured = false;
         f32 m_surfaceGrip = 1;
-        std::atomic<f32> m_throttle{0}, m_brake{0}, m_steering{0};
         std::atomic<bool> m_resetRequested{false};
     };
 }

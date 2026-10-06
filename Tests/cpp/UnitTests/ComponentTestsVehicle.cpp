@@ -4,6 +4,8 @@
 #include <WPVehiclePhysics/CCarController.hpp>
 #include <WPVehiclePhysics/WheelControllerBrush.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Input/InputEvent.hpp>
+#include <Workphone/Input/KeyboardState.hpp>
 #include <boost/test/unit_test.hpp>
 #include <array>
 
@@ -548,6 +550,54 @@ BOOST_AUTO_TEST_CASE( components_car_controller_vehicle_association_is_a_child_o
 
     controller->setVehicleController( nullptr );
     BOOST_CHECK( !controller->getVehicleController() );
+}
+
+BOOST_AUTO_TEST_CASE( components_car_input_override_has_one_channel_writer )
+{
+    TestGuard fixture;
+    BOOST_REQUIRE( fixture.isAvailable );
+    VehicleFactoryGuard factoryGuard;
+    auto actor = fixture.sceneManager->createActor();
+    auto controller = actor->addComponent<CarController>();
+    auto vehicle = controller->getVehicleController();
+    BOOST_REQUIRE( vehicle );
+    const auto previousTask = Thread::getCurrentTask();
+    const auto previousPlaying = fixture.applicationManager->isPlaying();
+    const auto previousPaused = fixture.applicationManager->isPaused();
+    fixture.addCleanup( [app = fixture.applicationManager, previousTask, previousPlaying, previousPaused]() mutable {
+        Thread::setCurrentTask( previousTask );
+        app->setPlaying( previousPlaying );
+        app->setPaused( previousPaused );
+    } );
+    Thread::setCurrentTask( TaskId::Application );
+    fixture.applicationManager->setPlaying( true );
+    fixture.applicationManager->setPaused( false );
+    const auto throttleChannel = s32( vehicle::IVehicle::Input::THROTTLE );
+    vehicle->setChannel( throttleChannel, 0 );
+    controller->setControls( .7f, .1f, -.4f );
+    auto listener = make_ptr<CarController::InputListener>();
+    listener->setOwner( controller );
+    auto key = make_ptr<KeyboardState>();
+    key->setKeyCode( u32( KeyCodes::KEY_KEY_W ) );
+    key->setPressedDown( true );
+    auto event = make_ptr<InputEvent>();
+    event->setEventType( IInputEvent::EventType::Key );
+    event->setKeyboardState( key );
+    listener->inputEvent( event );
+    checkClose( controller->getThrottle(), .7f );
+    checkClose( vehicle->getChannel( throttleChannel ), 0 );
+    controller->update();
+    checkClose( vehicle->getChannel( throttleChannel ), .7f );
+    checkClose( vehicle->getChannel( s32( vehicle::IVehicle::Input::BRAKE ) ), .1f );
+    checkClose( vehicle->getChannel( s32( vehicle::IVehicle::Input::STEERING ) ), -.4f );
+    fixture.applicationManager->setPaused( true );
+    controller->update();
+    checkClose( vehicle->getChannel( throttleChannel ), 0 );
+    controller->usePlayerControls();
+    checkClose( controller->getThrottle(), 0 );
+    checkClose( controller->getBrake(), 0 );
+    checkClose( controller->getSteering(), 0 );
+    fixture.sceneManager->destroyActor( actor );
 }
 
 BOOST_AUTO_TEST_CASE( components_car_controller_loads_concrete_vehicle_and_releases_resources )

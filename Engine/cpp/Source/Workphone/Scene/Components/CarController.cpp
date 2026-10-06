@@ -194,6 +194,49 @@ namespace workphone::scene
         {
             VehicleController::update();
 
+            auto app = core::IApplicationManager::instancePtr();
+            if( app && ( Thread::getCurrentTask() == TaskId::Application ||
+                         ( !app->hasTasks() && Thread::getCurrentTask() == TaskId::Primary ) ) )
+            {
+                ScopedLock controlsLock( this, true );
+                const bool driving = app->isPlaying() && !app->isPaused() && isEnabled();
+                if( driving && m_playerControls.load() )
+                    if( auto input = app->getInputDeviceManager() )
+                    {
+                        const bool throttle = input->isKeyPressed( KeyCodes::KEY_KEY_W ) || input->isKeyPressed( KeyCodes::KEY_UP );
+                        const bool brake = input->isKeyPressed( KeyCodes::KEY_KEY_S ) || input->isKeyPressed( KeyCodes::KEY_DOWN );
+                        const bool left = input->isKeyPressed( KeyCodes::KEY_KEY_A ) || input->isKeyPressed( KeyCodes::KEY_LEFT );
+                        const bool right = input->isKeyPressed( KeyCodes::KEY_KEY_D ) || input->isKeyPressed( KeyCodes::KEY_RIGHT );
+                        if( throttle || brake || left || right ) m_joystickActive = false;
+                        if( !m_joystickActive.load() )
+                        {
+                            setThrottle( throttle ? 1.f : 0.f );
+                            setBrake( brake ? 1.f : 0.f );
+                            setSteering( float( right ) - float( left ) );
+                        }
+                    }
+                if( auto vehicle = getVehicleController() )
+                {
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ), driving ? getThrottle() : 0.f );
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::BRAKE ), driving ? getBrake() : 0.f );
+                    float steering = getSteering();
+                    if( m_playerControls.load() && m_chassis )
+                    {
+                        auto front = vehicle->getWheelController( 0 );
+                        auto rear = vehicle->getWheelController( 2 );
+                        if( front && rear )
+                        {
+                            const auto wheelbase = MathF::Abs( float( front->getLocalTransform().getPosition().Z() - rear->getLocalTransform().getPosition().Z() ) );
+                            const auto speed = float( m_chassis->getLinearVelocity().length() );
+                            const auto maxSteer = MathF::Abs( MathF::DegToRad( m_maxSteeringAngle ) );
+                            if( maxSteer > 0 && wheelbase > 0 )
+                                steering *= std::min( 1.f, wheelbase * 8.f / ( std::max( speed * speed, 1.f ) * maxSteer ) );
+                        }
+                    }
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ), driving ? steering : 0.f );
+                }
+            }
+
             if( m_wheels.empty() )
             {
                 setupWheels();
@@ -290,56 +333,8 @@ namespace workphone::scene
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
-        auto inputManager = applicationManager->getInputDeviceManager();
-        if( inputManager )
-        {
-            if( inputManager->isKeyPressed( KeyCodes::KEY_UP ) )
-            {
-                setThrottle( 1.0f );
-            }
-            else
-            {
-                setThrottle( 0.0f );
-            }
-
-            if( inputManager->isKeyPressed( KeyCodes::KEY_DOWN ) )
-            {
-                setBrake( 1.0f );
-            }
-            else
-            {
-                setBrake( 0.0f );
-            }
-
-            if( inputManager->isKeyPressed( KeyCodes::KEY_LEFT ) )
-            {
-                setSteering( -1.0f );
-            }
-            else if( inputManager->isKeyPressed( KeyCodes::KEY_RIGHT ) )
-            {
-                setSteering( 1.0f );
-            }
-            else
-            {
-                setSteering( 0.0f );
-            }
-        }
-
         auto vehicleController = getVehicleController();
-        if( !vehicleController )
-        {
-            return;
-        }
-
-        if( vehicleController )
-        {
-            vehicleController->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ),
-                                           m_throttle );
-            vehicleController->setChannel( static_cast<s32>( vehicle::IVehicle::Input::BRAKE ),
-                                           m_brake );
-            vehicleController->setChannel( static_cast<s32>( vehicle::IVehicle::Input::STEERING ),
-                                           m_steering );
-        }
+        if( !vehicleController ) return;
 
         // position wheels
         if( auto actor = getActor() )
@@ -886,6 +881,27 @@ namespace workphone::scene
         m_vehicleController = vehicleController;
     }
 
+    void CarController::setControls( f32 throttle, f32 brake, f32 steering )
+    {
+        ScopedLock controlsLock( this, true );
+        m_playerControls = false;
+        setThrottle( std::clamp( throttle, 0.f, 1.f ) );
+        setBrake( std::clamp( brake, 0.f, 1.f ) );
+        setSteering( std::clamp( steering, -1.f, 1.f ) );
+    }
+
+    void CarController::usePlayerControls()
+    {
+        ScopedLock controlsLock( this, true );
+        if( !m_playerControls.exchange( true ) )
+        {
+            m_joystickActive = false;
+            setThrottle( 0.f );
+            setBrake( 0.f );
+            setSteering( 0.f );
+        }
+    }
+
     auto CarController::getThrottle() const -> f32
     {
         return m_throttle;
@@ -1033,187 +1049,42 @@ namespace workphone::scene
 
     auto CarController::InputListener::inputEvent( SmartPtr<IInputEvent> event ) -> bool
     {
-        if( auto owner = getOwner() )
+        auto owner = getOwner();
+        if( !owner || !event ) return false;
+        ScopedLock controlsLock( owner.get(), true );
+        if( !owner->m_playerControls.load() ) return false;
+        if( event->getEventType() == IInputEvent::EventType::Key )
         {
-            auto eventType = event->getEventType();
-            switch( eventType )
+            if( auto state = event->getKeyboardState() )
             {
-            case IInputEvent::EventType::Key:
-            {
-                if( auto keyboardState = event->getKeyboardState() )
-                {
-                    if( keyboardState->isPressedDown() )
-                    {
-                        if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_W ) )
-                        {
-                            owner->setThrottle( 1.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), 1.0 );
-                            }
-                        }
-                        else if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_A ) )
-                        {
-                            owner->setSteering( -1.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::STEERING ), -1.0 );
-                            }
-                        }
-                        else if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_S ) )
-                        {
-                            owner->setBrake( 1.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), 1.0 );
-                            }
-                        }
-                        else if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_D ) )
-                        {
-                            owner->setSteering( 1.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::STEERING ), 1.0 );
-                            }
-                        }
-                    }
-                    else if( !keyboardState->isPressedDown() )
-                    {
-                        if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_W ) )
-                        {
-                            owner->setThrottle( 0.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), 0.0 );
-                            }
-                        }
-                        else if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_A ) )
-                        {
-                            owner->setSteering( 0.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::STEERING ), 0.0 );
-                            }
-                        }
-                        else if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_S ) )
-                        {
-                            owner->setBrake( 0.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), 0.0 );
-                            }
-                        }
-                        else if( keyboardState->getKeyCode() == static_cast<u32>( KeyCodes::KEY_KEY_D ) )
-                        {
-                            owner->setSteering( 0.0f );
-
-                            auto vehicleController = owner->getVehicleController();
-                            if( vehicleController )
-                            {
-                                vehicleController->setChannel(
-                                    static_cast<s32>( vehicle::IVehicle::Input::STEERING ), 0.0 );
-                            }
-                        }
-                    }
-                }
-            }
-            break;
-            case IInputEvent::EventType::Joystick:
-            {
-                if( auto joystick = event->getJoystickState() )
-                {
-                    auto joystickEventType = joystick->getEventType();
-
-                    auto throttle = 0.0f;
-                    auto steering = 0.0f;
-
-                    if( joystickEventType == static_cast<u32>( IJoystickState::Type::AxisMoved ) )
-                    {
-                        // hard coded for now, but should be configurable
-                        throttle = joystick->getAxis( 4 );
-                        steering = joystick->getAxis( 0 );
-                    }
-                    else if( joystickEventType ==
-                             static_cast<u32>( IJoystickState::Type::ButtonPressed ) )
-                    {
-                        // throttle and brake buttons
-                        if( joystick->isButtonPressed( 0 ) )
-                        {
-                            throttle = 1.0f;
-                        }
-                        else if( joystick->isButtonPressed( 1 ) )
-                        {
-                            throttle = -1.0f;
-                        }
-                    }
-
-                    owner->setThrottle( throttle );
-                    owner->setSteering( steering );
-
-                    if( auto vehicleController = owner->getVehicleController() )
-                    {
-                        if( throttle > 0.0f )
-                        {
-                            vehicleController->setChannel(
-                                static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ),
-                                MathF::Abs( throttle ) );
-                        }
-
-                        if( throttle < 0.0f )
-                        {
-                            owner->setBrake( MathF::Abs( throttle ) );
-                            vehicleController->setChannel(
-                                static_cast<s32>( vehicle::IVehicle::Input::BRAKE ),
-                                MathF::Abs( throttle ) );
-                        }
-                        else
-                        {
-                            owner->setBrake( 0.0f );
-                            vehicleController->setChannel(
-                                static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), 0.0f );
-                        }
-
-                        if( steering < 0.0f || steering > 0.0 )
-                        {
-                            vehicleController->setChannel(
-                                static_cast<s32>( vehicle::IVehicle::Input::STEERING ), steering );
-                        }
-                        else
-                        {
-                            vehicleController->setChannel(
-                                static_cast<s32>( vehicle::IVehicle::Input::STEERING ), 0.0f );
-                        }
-                    }
-                }
-            }
-            break;
-            default:
-            {
-            }
+                const auto key = state->getKeyCode();
+                if( key == u32( KeyCodes::KEY_KEY_W ) || key == u32( KeyCodes::KEY_KEY_S ) ||
+                    key == u32( KeyCodes::KEY_KEY_A ) || key == u32( KeyCodes::KEY_KEY_D ) ||
+                    key == u32( KeyCodes::KEY_UP ) || key == u32( KeyCodes::KEY_DOWN ) ||
+                    key == u32( KeyCodes::KEY_LEFT ) || key == u32( KeyCodes::KEY_RIGHT ) )
+                    owner->m_joystickActive = false;
             }
         }
-
+        else if( event->getEventType() == IInputEvent::EventType::Joystick )
+        {
+            if( auto joystick = event->getJoystickState() )
+            {
+                float throttle = 0, steering = owner->getSteering();
+                if( joystick->getEventType() == u32( IJoystickState::Type::AxisMoved ) )
+                {
+                    throttle = joystick->getAxis( 4 );
+                    steering = joystick->getAxis( 0 );
+                }
+                else
+                    throttle = joystick->isButtonPressed( 0 ) ? 1.f :
+                               joystick->isButtonPressed( 1 ) ? -1.f : 0.f;
+                owner->m_joystickActive = true;
+                owner->setThrottle( std::max( throttle, 0.f ) );
+                owner->setBrake( std::max( -throttle, 0.f ) );
+                owner->setSteering( steering );
+            }
+        }
+        // Only CarController::update publishes channels; input events never write the vehicle.
         return false;
     }
 

@@ -1019,6 +1019,8 @@ namespace workphone
                         .def( "setBrake", &CarController::setBrake )
                         .def( "getSteering", &CarController::getSteering )
                         .def( "setSteering", &CarController::setSteering )
+                        .def( "setControls", &CarController::setControls )
+                        .def( "usePlayerControls", &CarController::usePlayerControls )
                         .def( "getVehicleController", &CarController::getVehicleController )
                         .scope[def( "typeInfo", CarController::typeInfo )]];
 
@@ -1027,6 +1029,7 @@ namespace workphone
                         .def( "clearGeneratedScene", &ProceduralRaceScene::clearGeneratedScene )
                         .def( "configurePhysics", &ProceduralRaceScene::configurePhysics )
                         .def( "setControls", &ProceduralRaceScene::setControls )
+                        .def( "usePlayerControls", &ProceduralRaceScene::usePlayerControls )
                         .def( "reset", &ProceduralRaceScene::reset )
                         .def( "isGenerated", &ProceduralRaceScene::isGenerated )
                         .def( "isPhysicsConfigured", &ProceduralRaceScene::isPhysicsConfigured )
