@@ -110,19 +110,37 @@ namespace workphone
     void AssetDatabaseManager::create()
     {
         ScopedLock lock(this);
-        CatalogTransaction transaction(*this);
-        if( !transaction.active() ) return;
-        if( !queryCatalog(*this, "CREATE TABLE IF NOT EXISTS resources(id INTEGER PRIMARY KEY, uuid VARCHAR, path VARCHAR, type VARCHAR)") ||
-            !queryCatalog(*this, "CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_uuid_unique ON resources(uuid)") ||
-            !queryCatalog(*this, "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE INSERT ON resources "
+        bool ready = false;
+        {
+            CatalogTransaction transaction(*this);
+            if( !transaction.active() ) return;
+            auto initialize = [&]() {
+                if( !queryCatalog(*this, "CREATE TABLE IF NOT EXISTS resources(id INTEGER PRIMARY KEY, uuid VARCHAR, path VARCHAR, type VARCHAR)") ) return false;
+                const char *checks[] = {
+                    "SELECT id FROM resources WHERE uuid IS NULL OR uuid='' OR path IS NULL OR path='' LIMIT 1",
+                    "SELECT uuid FROM resources GROUP BY uuid HAVING count(*)>1 LIMIT 1",
+                    "SELECT path FROM resources WHERE path<>'scene' GROUP BY path HAVING count(*)>1 LIMIT 1"
+                };
+                for( const auto check : checks )
+                {
+                    auto rows = queryCatalog(*this, check);
+                    if( !rows || !rows->eof() ) return false;
+                }
+                return queryCatalog(*this, "CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_uuid_unique ON resources(uuid)") &&
+                    queryCatalog(*this, "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE INSERT ON resources "
                 "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM resources WHERE path=NEW.path) "
-                "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END") ||
-            !queryCatalog(*this, "CREATE TRIGGER IF NOT EXISTS resources_file_path_update BEFORE UPDATE OF path ON resources "
+                "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END") &&
+                    queryCatalog(*this, "CREATE TRIGGER IF NOT EXISTS resources_file_path_update BEFORE UPDATE OF path ON resources "
                 "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM resources WHERE path=NEW.path AND id<>NEW.id) "
-                "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END") ||
-            !queryCatalog(*this, "CREATE INDEX IF NOT EXISTS idx_resources_path ON resources(path)") || !transaction.commit() )
+                "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END") &&
+                    queryCatalog(*this, "CREATE INDEX IF NOT EXISTS idx_resources_path ON resources(path)") && transaction.commit();
+            };
+            ready = initialize();
+        } // Roll back schema work before closing an unusable catalog.
+        if( !ready )
         {
             WP_LOG_ERROR("Catalog schema initialization failed; legacy duplicates require explicit repair.");
+            if( auto database = getDatabase() ) database->close();
         }
     }
     void AssetDatabaseManager::destroy() { unload(nullptr); }
