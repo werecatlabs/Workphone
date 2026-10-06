@@ -21,6 +21,9 @@ file(GLOB_RECURSE HEADER_FILES "../../Include/WorkphoneRuntime/*.h" )
 file(GLOB_RECURSE SOURCE_FILES "../../Source/WorkphoneRuntime/*.c")
 
 add_executable(WorkphoneRuntime ${HEADER_FILES} ${SOURCE_FILES})
+# Only the native runtime consumes this path. Keeping it on this target avoids
+# passing quoted paths with spaces to Boost.Context's MASM sources.
+target_compile_definitions(WorkphoneRuntime PRIVATE WP_MEDIA_PATH="${CMAKE_SOURCE_DIR}/bin/media")
 
 if (WIN32)
     target_link_libraries(WorkphoneRuntime WorkphoneCore.lib)

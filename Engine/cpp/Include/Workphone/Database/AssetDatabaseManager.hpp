@@ -48,8 +48,9 @@ namespace workphone
          */
         void loadFromFile( const StringW &filePath ) override;
 
-        /** @brief Creates the database and necessary tables.
-         *  Initializes the database structure for asset management.
+        /** @brief Initializes the versioned catalog schema and validates existing rows.
+         *  Valid legacy rows are retained with an in-database pre-migration backup.
+         *  Failed or unsupported migrations roll back changes and close the connection.
          */
         void create() override;
 
@@ -59,7 +60,7 @@ namespace workphone
         void destroy() override;
 
         /** @brief Clears all data from the database.
-         *  Removes all entries from the resources and components tables.
+         *  Removes active resource entries; schema and migration backups are retained.
          */
         void clearDatabase();
 

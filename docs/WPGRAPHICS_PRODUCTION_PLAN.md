@@ -1,6 +1,7 @@
 # WPGraphics production readiness and feature implementation plan
 
 Date: 6 October 2026; revised after implementation review at `8a767dda5`.
+Catalog follow-up: local implementation/validation on `brodex`, starting from `d5c859612`, with Visual Studio 2026/MSVC 19.51 and CMake 4.4.4, RelWithDebInfo.
 Status: Implementation in progress; initial contracts and DX11 integration validated. Neither R1 nor R2 is certified.
 Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, AssetDatabaseManager and the existing resource pipeline, and the engine/editor integration needed to ship it.
 User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration in the feature roadmap.
@@ -17,6 +18,8 @@ Use two release gates:
 DX12 and additional platforms receive their own certification gates. They do not inherit production status from DX11. Advanced ocean simulation, ray tracing, and virtualized geometry are subsequent optional work.
 
 This review reran the existing graphics binaries: 11 tests passed and one external mesh import test was skipped for missing media. The two isolated native contract tests also passed; these duplicate two contracts in the full suite, rather than adding two distinct feature gates. No rebuild, database runtime tests, GPU capture, benchmark, clean-machine build or remote CI run was performed in this review. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and evidence limits. Neither R1 nor R2 is certified.
+
+The subsequent catalog increment built the required SQLite catalog target and Workphone/WPSQLite dependencies, verified existing identity/mutation/switching contracts, and added schema-version/migration/rollback coverage. Its CTest target and the two retained native reference tests passed locally. Catalog preset configuration was verified with the local build-directory override. GPU rendering and remote CI were not rerun for that increment.
 
 ## 2. Evidence and current gaps
 
@@ -50,7 +53,7 @@ Paths below are relative to the repository root. Observations are limited to the
 | ANIM-02/05 | CPU reference and explicit mesh deformation validated | Imported skin/clip bridge, multiple independent instances, bind/inverse-bind correctness, repeated GPU cache updates and CPU/GPU comparison |
 | FX-01/02/03/05 | Basic lifecycle, seed/step/pool and visible billboard path validated | Templates/serialization, full lifecycle/space semantics, multi-view integration, sorting/depth/state tests and stress budgets |
 | CORE-01/02/05 | Some mesh ownership/cache invalidation and synchronized particle copies exist | Teardown/reload races, generation-safe bounded caches, device recovery and immutable frame snapshots |
-| M1A asset catalog | Existing implementation inspected; production requirements remain open | Durable identity and safe CRUD contracts, migration, concurrency/failure evidence and graphics-resource bridge |
+| M1A asset catalog | Required SQLite CRUD/identity contracts and schema-v1 migration/backup/rollback validated locally | Canonical paths/asset kinds, broader concurrency/lifecycle/durability, graphics-resource bridge and remote CI |
 | M4/M5/M6 | Existing materials, static geometry, UI and CPU effects provide a baseline | Cooked graphics assets, GPU passes/shadows/HDR, streaming and mixed-scene validation |
 | M7 water | Unavailable; interface only | Implement WATER-01 through WATER-06 after frame/depth/reflection prerequisites |
 | M8/M9 | Not certified | Packaging, clean CI, performance/soak/recovery evidence; DX12 independently |
@@ -193,7 +196,9 @@ Retain the existing resource table, UUID/path indexes, CRUD, ResourceDirector lo
 | Cache bounds and path identity are unspecified | Caches strongly retain mutable directors, use fixed-size keys (256/1024) and have no eviction policy; source paths are not canonicalized here | P0 length/path validation; P1 bounded caches/retained-director policy |
 | Coverage can omit database behavior | ResourceDatabaseTests contains plugin/headless early returns; the graphics runner/minimal preset do not require a database backend | P0: standalone contracts with required backend |
 
-These are source-review findings. Database failure, concurrency and persistence behavior was not exercised in this review; add focused reproductions before treating repairs as verified.
+These are historical findings from the `8a767dda5` review. Subsequent identity/mutation repairs are now exercised by `WPAssetCatalogTests`: real SQLite, bound quoted paths, scoped scene deletion, miss semantics, duplicate rejection, failed-rename rollback, detached directors, concurrent reads and narrow/wide database switching. Mutation/unload races and the full graphics-resource bridge remain unverified.
+
+The current increment adds catalog schema version 1 in `wp_asset_catalog_schema`, without taking ownership of `PRAGMA user_version`. Valid unversioned `resources` rows migrate transactionally and retain IDs/UUIDs; a one-time `wp_asset_catalog_backup_v0` table preserves their original row contents inside the same database. Value/uniqueness guards protect subsequent writes using the bundled SQLite backend. Invalid legacy rows or duplicate identities/paths require explicit repair rather than automatic data loss. Reserved-object collisions and unsupported/newer metadata fail closed, with rollback restoring the original schema/data. The row snapshot is not an independent file backup; canonical paths and explicit file/scene kinds remain DB-04/DB-01 follow-up work.
 
 | ID | Deliverable | Acceptance evidence |
 |---|---|---|
@@ -385,7 +390,7 @@ Owners to assign: graphics lead (contracts/gates), asset/resource engineer (cata
 
 Each increment should be independently reviewable and preserve the baseline tests.
 
-1. **Required catalog contracts (`DB-01/02/03/10`):** reproduce shared-scene-path deletion, quoted paths, missing-lookup/restart identity and duplicates using SQLite without graphics. Resolve safe identity/mutation/schema behavior while preserving callers.
+1. **Required catalog contracts (`DB-01/02/03/10`):** existing identity/mutation/switching contracts and versioned legacy migration, row backup, schema guards, rollback and future-version rejection now pass locally against mandatory SQLite. The `asset-catalog` preset and catalog CI job require the target/backend; remote CI remains unverified. Explicit asset kinds, canonical path identity and broader failure/race coverage remain open.
 2. **Catalog lifecycle/bridge (`DB-04/05/06/07`):** consistent paths/database switching, safe caches, then catalog material/texture → compile → load → DX11 draw. Add a database-enabled configuration alongside lightweight graphics contracts.
 3. **Imported animation (`BASE-04`, `ANIM-01/02/04/05/06`):** reuse CPU skinning; cook a two-bone mesh/clip with inverse-bind transforms and drive it through the scene. Prove independent instances, bounds and events, then extend to a licensed character.
 4. **Particle assets/scene (`FX-01/04/06/08`, `DB-07/08`):** load a versioned effect, round-trip settings, define once-per-frame simulation and space/scale rules, test multiple cameras and lifecycle/reload. Preserve analytical and direct-draw tests.
@@ -396,4 +401,4 @@ Each increment should be independently reviewable and preserve the baseline test
 9. **R2 water/richer features:** WATER-01 through WATER-06 via the catalog/GPU frame plus P1 work; validate lake/pool/river and mixed particle/water sequences before R2 certification.
 10. **Backend expansion:** DX12 remains experimental until its own presentation/material/UI/resource/performance gates pass.
 
-Completion records include changed files, actual tests/skips, reference captures, measured costs and limitations. The next executable task is the required-backend catalog contract suite and safe identity/mutation repairs; CPU skinning and basic particle rendering form the retained baseline.
+Completion records include changed files, actual tests/skips, reference captures, measured costs and limitations. The next executable task is catalog path/lifecycle hardening and the UUID/source-to-ResourceID bridge, followed by catalog-resolved compiled material/texture rendering; CPU skinning and basic particle rendering form the retained baseline. Use the implementation status for current catalog commands and evidence limits.

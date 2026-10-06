@@ -1,9 +1,9 @@
 name: Graphics production contracts
 on:
   push:
-    paths: ['Engine/c/**', 'Tests/GraphicsProduction/**', 'CMakeLists.txt', '.github/workflows/graphics-contracts.yml']
+    paths: ['Engine/c/**', 'Engine/cpp/**', 'CMake/**', 'Tests/GraphicsProduction/**', 'Tests/cpp/AssetCatalogTests.cpp', 'Tests/cpp/CMakeLists.txt', 'CMakeLists.txt', 'CMakePresets.json', '.github/workflows/graphics-contracts.yml']
   pull_request:
-    paths: ['Engine/c/**', 'Tests/GraphicsProduction/**', 'CMakeLists.txt', '.github/workflows/graphics-contracts.yml']
+    paths: ['Engine/c/**', 'Engine/cpp/**', 'CMake/**', 'Tests/GraphicsProduction/**', 'Tests/cpp/AssetCatalogTests.cpp', 'Tests/cpp/CMakeLists.txt', 'CMakeLists.txt', 'CMakePresets.json', '.github/workflows/graphics-contracts.yml']
 jobs:
   windows-contracts:
     runs-on: windows-latest
@@ -20,3 +20,23 @@ jobs:
         with:
           name: graphics-contract-results
           path: build-contracts/results.xml
+  catalog-contracts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure with the required SQLite backend
+        run: >-
+          cmake -S . -B build-catalog
+          -DWP_BUILD_DEPENDENCIES=ON -DWP_BUILD_SQLITE=ON
+          -DWP_BUILD_TESTS=ON -DWP_BUILD_TOOLS=OFF -DWP_BUILD_SAMPLES=OFF
+          -DWP_BUILD_CSHARP=OFF -DWP_MSVC_COMPILE_PROCESSES=4
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - name: Build the real catalog and SQLite contracts
+        run: cmake --build build-catalog --config RelWithDebInfo --target WPAssetCatalogTests --parallel 4
+      - name: Require catalog contracts without graphics or external media
+        run: ctest --test-dir build-catalog -C RelWithDebInfo -R '^WorkphoneAssets\.catalog_contracts$' --output-on-failure --no-tests=error --output-junit results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: asset-catalog-results
+          path: build-catalog/results.xml
