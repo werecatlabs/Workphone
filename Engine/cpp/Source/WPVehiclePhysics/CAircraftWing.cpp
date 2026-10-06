@@ -34,19 +34,19 @@ namespace workphone
             m_tipLiftPosition = Vector3<real_Num>::zero();
             m_liftLineChordPosition = static_cast<real_Num>( 0.5 );
 
-            m_aoa = std::array<real_Num, MaxSections>( { 0 } );
-            m_chordLengths = std::array<real_Num, MaxSections>( { 0 } );
+            m_aoa = std::array<real_Num, m_maxSections>( { 0 } );
+            m_chordLengths = std::array<real_Num, m_maxSections>( { 0 } );
 
-            m_re = std::array<real_Num, MaxSections>( { 0 } );
-            m_area = std::array<real_Num, MaxSections>( { 0 } );
+            m_re = std::array<real_Num, m_maxSections>( { 0 } );
+            m_area = std::array<real_Num, m_maxSections>( { 0 } );
 
-            m_totalLift = std::array<real_Num, MaxSections>( { 0 } );
-            m_totalDrag = std::array<real_Num, MaxSections>( { 0 } );
-            m_totalPitch = std::array<real_Num, MaxSections>( { 0 } );
+            m_totalLift = std::array<real_Num, m_maxSections>( { 0 } );
+            m_totalDrag = std::array<real_Num, m_maxSections>( { 0 } );
+            m_totalPitch = std::array<real_Num, m_maxSections>( { 0 } );
 
-            m_fStallControlCL = std::array<real_Num, MaxSections>( { 0 } );
-            m_fStallControlCD = std::array<real_Num, MaxSections>( { 0 } );
-            m_fStallControlCM = std::array<real_Num, MaxSections>( { 0 } );
+            m_fStallControlCL = std::array<real_Num, m_maxSections>( { 0 } );
+            m_fStallControlCD = std::array<real_Num, m_maxSections>( { 0 } );
+            m_fStallControlCM = std::array<real_Num, m_maxSections>( { 0 } );
         }
 
         CAircraftWing::~CAircraftWing()

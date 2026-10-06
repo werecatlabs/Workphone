@@ -16,9 +16,9 @@ namespace workphone
         public:
             struct FrameOfRef
             {
-                Vector3<real_Num> xAxis;
-                Vector3<real_Num> yAxis;
-                Vector3<real_Num> zAxis;
+                Vector3<real_Num> m_xAxis;
+                Vector3<real_Num> m_yAxis;
+                Vector3<real_Num> m_zAxis;
             };
 
             CAircraftPropeller();

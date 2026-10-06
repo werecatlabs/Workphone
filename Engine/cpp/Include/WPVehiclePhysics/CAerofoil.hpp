@@ -152,13 +152,13 @@ namespace workphone
             //     Array<data::aircraft_curve_value> values );
 
             /// Lift coefficient lookup curve (CL).
-            SmartPtr<LookupCurve<real_Num>> CL;
+            SmartPtr<LookupCurve<real_Num>> m_cl;
 
             /// Drag coefficient lookup curve (CD).
-            SmartPtr<LookupCurve<real_Num>> CD;
+            SmartPtr<LookupCurve<real_Num>> m_cd;
 
             /// Pitching moment coefficient lookup curve (CM).
-            SmartPtr<LookupCurve<real_Num>> CM;
+            SmartPtr<LookupCurve<real_Num>> m_cm;
 
             /// Owning or referencing aircraft instance for context-dependent queries.
             SmartPtr<IAircraft> m_aircraft;

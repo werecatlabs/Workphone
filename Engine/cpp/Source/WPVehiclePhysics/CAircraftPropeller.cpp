@@ -839,22 +839,22 @@ namespace workphone
                                     Math<real_Num>::Pow( m_propDia, static_cast<real_Num>( 4.0 ) ) /
                                     static_cast<real_Num>( 128.0 );
 
-            m_propFrame.xAxis.X() =
+            m_propFrame.m_xAxis.X() =
                 Math<real_Num>::Cos( m_downThrust ) * Math<real_Num>::Cos( m_sideThrust );
             //
-            m_propFrame.xAxis.Y() = Math<real_Num>::Sin( m_sideThrust );
-            m_propFrame.xAxis.Z() = Math<real_Num>::Sin( m_downThrust );
-            m_propFrame.xAxis = m_propFrame.xAxis.normaliseCopy();
+            m_propFrame.m_xAxis.Y() = Math<real_Num>::Sin( m_sideThrust );
+            m_propFrame.m_xAxis.Z() = Math<real_Num>::Sin( m_downThrust );
+            m_propFrame.m_xAxis = m_propFrame.m_xAxis.normaliseCopy();
 
-            m_propFrame.yAxis.X() = -Math<real_Num>::Sin( m_sideThrust );
-            m_propFrame.yAxis.Y() = Math<real_Num>::Cos( m_sideThrust );
-            m_propFrame.yAxis.Z() = static_cast<real_Num>( 0.0 );
-            m_propFrame.yAxis = m_propFrame.yAxis.normaliseCopy(); // make it a unit vector
+            m_propFrame.m_yAxis.X() = -Math<real_Num>::Sin( m_sideThrust );
+            m_propFrame.m_yAxis.Y() = Math<real_Num>::Cos( m_sideThrust );
+            m_propFrame.m_yAxis.Z() = static_cast<real_Num>( 0.0 );
+            m_propFrame.m_yAxis = m_propFrame.m_yAxis.normaliseCopy();  // make it a unit vector
 
-            m_propFrame.zAxis.X() = -Math<real_Num>::Sin( m_downThrust );
-            m_propFrame.zAxis.Y() = static_cast<real_Num>( 0.0 );
-            m_propFrame.zAxis.Z() = Math<real_Num>::Cos( m_downThrust );
-            m_propFrame.zAxis = m_propFrame.zAxis.normaliseCopy(); // make it a unit vector
+            m_propFrame.m_zAxis.X() = -Math<real_Num>::Sin( m_downThrust );
+            m_propFrame.m_zAxis.Y() = static_cast<real_Num>( 0.0 );
+            m_propFrame.m_zAxis.Z() = Math<real_Num>::Cos( m_downThrust );
+            m_propFrame.m_zAxis = m_propFrame.m_zAxis.normaliseCopy();  // make it a unit vector
         }
     } // namespace vehicle
 } // namespace workphone

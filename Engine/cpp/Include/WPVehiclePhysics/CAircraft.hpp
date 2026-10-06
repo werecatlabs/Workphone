@@ -48,21 +48,21 @@ namespace workphone
         {
         public:
             /// Standard RC channel indices for common controls.
-            static const int THR_CHANNEL = 0;  ///< Throttle channel index
-            static const int AIL_CHANNEL = 1;  ///< Aileron (roll) channel index
-            static const int ELE_CHANNEL = 2;  ///< Elevator (pitch) channel index
-            static const int YAW_CHANNEL = 3;  ///< Rudder (yaw) channel index
-            static const int GEAR_CHANNEL = 4; ///< Landing gear channel index
-            static const int COL_CHANNEL = 5;  ///< Collective / auxiliary channel index
-            static const int AUX1_CHANNEL = 6; ///< Auxiliary channel 1
-            static const int AUX2_CHANNEL = 7; ///< Auxiliary channel 2
+            static const int m_thrChannel = 0;   ///< Throttle channel index
+            static const int m_ailChannel = 1;   ///< Aileron (roll) channel index
+            static const int m_eleChannel = 2;   ///< Elevator (pitch) channel index
+            static const int m_yawChannel = 3;   ///< Rudder (yaw) channel index
+            static const int m_gearChannel = 4;  ///< Landing gear channel index
+            static const int m_colChannel = 5;   ///< Collective / auxiliary channel index
+            static const int m_aux1Channel = 6;  ///< Auxiliary channel 1
+            static const int m_aux2Channel = 7;  ///< Auxiliary channel 2
 
             /// Keyboard key codes used for simple input (platform dependent).
-            const short unsigned int Keyleft = 37;  ///< Left arrow key code
-            const short unsigned int Keytop = 38;   ///< Up arrow key code
-            const short unsigned int Keyright = 39; ///< Right arrow key code
-            const short unsigned int Keydown = 40;  ///< Down arrow key code
-            const short unsigned int Keyexit = 81;  ///< Exit key (Q) code
+            const short unsigned int m_keyLeft = 37;   ///< Left arrow key code
+            const short unsigned int m_keyTop = 38;    ///< Up arrow key code
+            const short unsigned int m_keyRight = 39;  ///< Right arrow key code
+            const short unsigned int m_keyDown = 40;   ///< Down arrow key code
+            const short unsigned int m_keyExit = 81;   ///< Exit key (Q) code
 
             CAircraft();
             ~CAircraft() override;

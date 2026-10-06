@@ -19,24 +19,24 @@ namespace workphone
         {
             setFlowSettlingTime( static_cast<real_Num>( 0.1 ) );
 
-            downWashCoef = -0.01f;
-            torqueMultiplier = 10.0f;
-            ModelIsElectric = true;
-            inFlowTC = 4.0;
+            m_downWashCoef = -0.01f;
+            m_torqueMultiplier = 10.0f;
+            m_modelIsElectric = true;
+            m_inFlowTC = 4.0;
 
-            clSlopes.resize( 1024 );
-            cdSlopes.resize( 1024 );
+            m_clSlopes.resize( 1024 );
+            m_cdSlopes.resize( 1024 );
 
-            gfValue = 1.0f;
-            inflowFollowTC = 10.0f;
-            inflowDotProduct = 1.0f;
-            propPowerCoef = 1.0f;
-            fixedVRSModifier = 45.0f;
-            stallPoint = 0.3f;
-            stallThrust = 0.4f;
+            m_gfValue = 1.0f;
+            m_inflowFollowTC = 10.0f;
+            m_inflowDotProduct = 1.0f;
+            m_propPowerCoef = 1.0f;
+            m_fixedVRSModifier = 45.0f;
+            m_stallPoint = 0.3f;
+            m_stallThrust = 0.4f;
 
-            ModelIsElectric = true;
-            vrs = true;
+            m_modelIsElectric = true;
+            m_vrs = true;
 
             m_id = StringUtil::parseInt( "PropellerUnit" + StringUtil::toString( m_idExt++ ) );
         }
@@ -81,7 +81,7 @@ namespace workphone
                 static_cast<int>( Math<real_Num>::Floor( Math<real_Num>::Abs( angle ) * 572.95f ) );
             num = ( ( !( static_cast<float>( num ) > 899.0f ) ) ? num : 899 );
             num = ( ( !( static_cast<float>( num ) < 0.0f ) ) ? num : 0 );
-            return 0.7f * clSlopes[num] * prop.propClCoef();
+            return 0.7f * m_clSlopes[num] * prop.propClCoef();
         }
 
         float CAircraftPropellerUnit::lookupCdSlope( float angle )
@@ -98,10 +98,10 @@ namespace workphone
                 static_cast<int>( Math<real_Num>::Floor( Math<real_Num>::Abs( angle ) * 572.95f ) );
             num = ( ( !( static_cast<float>( num ) > 899.0f ) ) ? num : 899 );
             num = ( ( !( static_cast<float>( num ) < 0.0f ) ) ? num : 0 );
-            return 0.25f * cdSlopes[num];
+            return 0.25f * m_cdSlopes[num];
         }
 
-        void CAircraftPropellerUnit::EPropellerSimple( const double &t, const double &dt )
+        void CAircraftPropellerUnit::ePropellerSimple( const double &t, const double &dt )
         {
             auto aircraftBody = getParent();
             auto aircraft = getParentAircraft();
@@ -137,7 +137,7 @@ namespace workphone
             }
         }
 
-        void CAircraftPropellerUnit::EPropellerOld( const double &time, const double &deltaTime )
+        void CAircraftPropellerUnit::ePropellerOld( const double &time, const double &deltaTime )
         {
             WP_ASSERT( Math<real_Num>::isFinite( time ) );
             WP_ASSERT( Math<real_Num>::isFinite( deltaTime ) );
@@ -188,9 +188,9 @@ namespace workphone
             auto tv2 = Vector3<real_Num>::zero();
 
             // find the axial flow component
-            prop.m_discFlow.X() = prop.m_propFrame.xAxis.dotProduct( cfFlow );
-            prop.m_discFlow.Y() = prop.m_propFrame.yAxis.dotProduct( cfFlow );
-            prop.m_discFlow.Z() = prop.m_propFrame.zAxis.dotProduct( cfFlow );
+            prop.m_discFlow.X() = prop.m_propFrame.m_xAxis.dotProduct( cfFlow );
+            prop.m_discFlow.Y() = prop.m_propFrame.m_yAxis.dotProduct( cfFlow );
+            prop.m_discFlow.Z() = prop.m_propFrame.m_zAxis.dotProduct( cfFlow );
 
             // for slip when calculating the effective pitch
             prop.m_discFlow = prop.m_discFlow * 1.0;
@@ -265,9 +265,9 @@ namespace workphone
             prop.m_pitchDrag = static_cast<real_Num>( -0.5 ) * roAir * prop.m_propCd * prop.m_bladeArea *
                                bladeSpeed * prop.m_discFlow.Z();
 
-            auto propThrust = ( prop.m_propFrame.xAxis * prop.m_propThrustValue ) +
-                              ( prop.m_propFrame.yAxis * prop.m_yawDrag ) +
-                              ( prop.m_propFrame.zAxis * prop.m_pitchDrag );
+            auto propThrust = ( prop.m_propFrame.m_xAxis * prop.m_propThrustValue ) +
+                              ( prop.m_propFrame.m_yAxis * prop.m_yawDrag ) +
+                              ( prop.m_propFrame.m_zAxis * prop.m_pitchDrag );
             // sum the thrust and drag components into thrust vector
 
             auto thrustLineRotation = MathUtil<real_Num>::getOrientationFromDirection(
@@ -356,12 +356,12 @@ namespace workphone
 
             // if (prop.m_reversed)
             //{
-            //	prop.m_wakeRotationVector = prop.m_propFrame.xAxis * -prop.m_wakeRotation; //this for a
+            //	prop.m_wakeRotationVector = prop.m_propFrame.m_xAxis * -prop.m_wakeRotation; //this for a
             // reverse rotation prop
             // }
             // else
             //{
-            //	prop.m_wakeRotationVector = prop.m_propFrame.xAxis * prop.m_wakeRotation; //this for a
+            //	prop.m_wakeRotationVector = prop.m_propFrame.m_xAxis * prop.m_wakeRotation; //this for a
             // conventional prop rotation
             // }
 
@@ -409,12 +409,12 @@ namespace workphone
             // prop.m_bladeArea;
 
             //	//tread the stopped prop as a drag area with a Cd of about 2.1 (possibly slightly high)
-            //	//thisProp.m_propThrust:=VScale(thisProp.m_propFrame.xAxis ,thisProp.m_propThrustValue) ;
+            //	//thisProp.m_propThrust:=VScale(thisProp.m_propFrame.m_xAxis ,thisProp.m_propThrustValue) ;
             ////the thrust in vector form
             //	//now sum the thrust and the inplane drag inbalances into the thrust vector
-            //	prop.m_propThrust = (prop.m_propFrame.xAxis * prop.m_propThrustValue) +
-            //		(prop.m_propFrame.yAxis * prop.m_yawDrag),
-            //		(prop.m_propFrame.zAxis * prop.m_pitchDrag); //sum the thrust and drag components
+            //	prop.m_propThrust = (prop.m_propFrame.m_xAxis * prop.m_propThrustValue) +
+            //		(prop.m_propFrame.m_yAxis * prop.m_yawDrag),
+            //		(prop.m_propFrame.m_zAxis * prop.m_pitchDrag); //sum the thrust and drag components
             // into thrust vector } //end of deadstick drag case
 
             // prop.m_angMomentum = prop.m_wProp * prop.m_totMoI; //calc ang momentum of
@@ -423,12 +423,12 @@ namespace workphone
             //	prop.m_angMomentum = -prop.m_angMomentum; //apply reverser to the angular momentum
             // }
 
-            // prop.m_angMomVector = (prop.m_propFrame.xAxis * prop.m_angMomentum);
+            // prop.m_angMomVector = (prop.m_propFrame.m_xAxis * prop.m_angMomentum);
 
-            // prop.m_reactionVector = (prop.m_propFrame.xAxis * prop.m_reaction);
+            // prop.m_reactionVector = (prop.m_propFrame.m_xAxis * prop.m_reaction);
             ////make the reaction vector for use in the OutputForces proc.
-            // prop.m_reactionVector = prop.m_reactionVector + (prop.m_propFrame.yAxis *
-            // prop.m_pitchPFac) + (prop.m_propFrame.zAxis * 	prop.m_yawPFac); //add the P-Factor
+            // prop.m_reactionVector = prop.m_reactionVector + (prop.m_propFrame.m_yAxis *
+            // prop.m_pitchPFac) + (prop.m_propFrame.m_zAxis * 	prop.m_yawPFac); //add the P-Factor
             // torques
             // in to the reaction vector
 
@@ -476,7 +476,7 @@ namespace workphone
             }
         }
 
-        void CAircraftPropellerUnit::EPropellerNew( const double &time, const double &deltaTime )
+        void CAircraftPropellerUnit::ePropellerNew( const double &time, const double &deltaTime )
         {
             WP_ASSERT( m_pu );
             WP_ASSERT( m_propeller );
@@ -500,31 +500,31 @@ namespace workphone
             auto worldTransform = getWorldTransform();
 
             auto localTransform = getLocalTransform();
-            flag = 0;
+            m_flag = 0;
             Vector3<real_Num> velocity = aircraftBody->getVelocity();
             auto              cfFlow = worldTransform.inverseTransformVector( velocity );
 
             float airDensity = 1.225f;
-            float timeConstant = inFlowTC;
+            float timeConstant = m_inFlowTC;
             prop.m_discFlow.X() = cfFlow.Y();
             prop.m_discFlow.Y() = cfFlow.X();
             prop.m_discFlow.Z() = cfFlow.Z();
-            propDiskFlowX = prop.m_discFlow.X();
+            m_propDiskFlowX = prop.m_discFlow.X();
             float bladeSpeed = 0.4f * prop.m_propDia * prop.m_wProp;
-            PropGA = 0.0f;
+            m_propGA = 0.0f;
 
             if( bladeSpeed != 0.0f )
             {
-                PropGA = prop.m_geomerticPitch -
-                         ( prop.m_discFlow.X() + vortex +
-                           prop.m_propWash * inflowDotProduct * gfValue * thrustAccelerationModifier ) /
-                             bladeSpeed;
+                m_propGA = prop.m_geomerticPitch - ( prop.m_discFlow.X() + m_vortex +
+                                                     prop.m_propWash * m_inflowDotProduct * m_gfValue *
+                                                         m_thrustAccelerationModifier ) /
+                                                       bladeSpeed;
             }
 
             cfFlow.X() = 0.0f;
             cfFlow.Z() = 0.0f;
-            prop.m_propCl =
-                ( ( !( PropGA < 0.0f ) ) ? lookupSlope( PropGA ) : ( 0.0f - lookupSlope( PropGA ) ) );
+            prop.m_propCl = ( ( !( m_propGA < 0.0f ) ) ? lookupSlope( m_propGA )
+                                                       : ( 0.0f - lookupSlope( m_propGA ) ) );
 
             if( prop.m_propCl > 0.0f )
             {
@@ -540,96 +540,96 @@ namespace workphone
             prop.m_propThrustValue = 0.5f * airDensity * Math<real_Num>::Pow( bladeSpeed, 2.0f ) *
                                      prop.m_propCl * prop.m_bladeArea;
             prop.m_proprThrustKg = prop.m_propThrustValue / 9.81f;
-            ThisPW = 0.0f;
-            vh = 0.0f;
-            vc = 0.0f;
-            vh = Math<real_Num>::Sqrt( Math<real_Num>::Abs( prop.m_propThrustValue ) /
-                                       ( 2.0f * airDensity * prop.m_propArea ) );
+            m_thisPW = 0.0f;
+            m_vh = 0.0f;
+            m_vc = 0.0f;
+            m_vh = Math<real_Num>::Sqrt( Math<real_Num>::Abs( prop.m_propThrustValue ) /
+                                         ( 2.0f * airDensity * prop.m_propArea ) );
 
             if( prop.m_propThrustValue < 0.0f )
             {
-                vh = 0.0f - vh;
+                m_vh = 0.0f - m_vh;
             }
 
-            if( vh == 0.0f )
+            if( m_vh == 0.0f )
             {
-                ThisPW = 0.0f;
+                m_thisPW = 0.0f;
             }
-            else if( !vrs )
+            else if( !m_vrs )
             {
-                vc = prop.m_discFlow.X() / vh;
-                if( vc > 0.0f )
+                m_vc = prop.m_discFlow.X() / m_vh;
+                if( m_vc > 0.0f )
                 {
-                    ThisPW = vh * Math<real_Num>::Pow( 1.414f, 0.0f - vc );
+                    m_thisPW = m_vh * Math<real_Num>::Pow( 1.414f, 0.0f - m_vc );
                 }
-                else if( vc < -2.0f )
+                else if( m_vc < -2.0f )
                 {
-                    ThisPW = vh * Math<real_Num>::Pow( 2.0f, 2.0f + vc );
+                    m_thisPW = m_vh * Math<real_Num>::Pow( 2.0f, 2.0f + m_vc );
                 }
                 else
                 {
-                    flag = 10;
-                    ThisPW = vh;
+                    m_flag = 10;
+                    m_thisPW = m_vh;
                 }
             }
             else
             {
-                vc = prop.m_discFlow.X() / vh;
-                if( vc > 0.0f )
+                m_vc = prop.m_discFlow.X() / m_vh;
+                if( m_vc > 0.0f )
                 {
-                    ThisPW = vh * Math<real_Num>::Pow( 1.414f, 0.0f - vc );
+                    m_thisPW = m_vh * Math<real_Num>::Pow( 1.414f, 0.0f - m_vc );
                 }
-                else if( vc < -2.0f )
+                else if( m_vc < -2.0f )
                 {
-                    ThisPW = vh * Math<real_Num>::Pow( 1.414f, vc );
+                    m_thisPW = m_vh * Math<real_Num>::Pow( 1.414f, m_vc );
                 }
                 else
                 {
-                    flag = 10;
-                    ThisPW = vh * Math<real_Num>::Pow( 1.414f, vc );
+                    m_flag = 10;
+                    m_thisPW = m_vh * Math<real_Num>::Pow( 1.414f, m_vc );
                 }
             }
 
             float flowFactor =
                 Math<real_Num>::Abs( prop.m_discFlow.Y() ) + Math<real_Num>::Abs( prop.m_discFlow.Z() );
             flowFactor = Math<real_Num>::Pow( flowFactor, 2.0f ) / 80.0f;
-            ThisPW /= 1.0f + flowFactor;
+            m_thisPW /= 1.0f + flowFactor;
             float deltaFactor = deltaTime * timeConstant;
 
-            if( Math<real_Num>::isFinite( ThisPW ) )
+            if( Math<real_Num>::isFinite( m_thisPW ) )
             {
-                prop.m_propWash = ( 1.0f - deltaFactor ) * prop.m_propWash + deltaFactor * ThisPW;
+                prop.m_propWash = ( 1.0f - deltaFactor ) * prop.m_propWash + deltaFactor * m_thisPW;
             }
 
-            vortex = 0.0f;
+            m_vortex = 0.0f;
 
-            if( prop.m_discFlow.X() < 0.0f && vrs )
+            if( prop.m_discFlow.X() < 0.0f && m_vrs )
             {
                 float translationFactor =
                     Math<real_Num>::Sqrt( prop.m_discFlow.Y() * prop.m_discFlow.Y() +
                                           prop.m_discFlow.Z() * prop.m_discFlow.Z() );
                 translationFactor = 1.0f - translationFactor / ( 1.0f + translationFactor );
-                translation = ( 1.0f - deltaFactor ) * translation + deltaFactor * translationFactor;
-                vortex = ThisPW * prop.m_discFlow.X() * translation * ( vrsModifier / 100.0f );
-                vortex = ( ( !( vortex < -15.0f ) ) ? vortex : ( -15.0f ) );
-                vortex = ( ( !( vortex > 15.0f ) ) ? vortex : 15.0f );
+                m_translation = ( 1.0f - deltaFactor ) * m_translation + deltaFactor * translationFactor;
+                m_vortex = m_thisPW * prop.m_discFlow.X() * m_translation * ( m_vrsModifier / 100.0f );
+                m_vortex = ( ( !( m_vortex < -15.0f ) ) ? m_vortex : ( -15.0f ) );
+                m_vortex = ( ( !( m_vortex > 15.0f ) ) ? m_vortex : 15.0f );
             }
 
-            inflowQuat = Quaternion<real_Num>::slerp( deltaTime * inflowFollowTC, inflowQuat,
-                                                      worldTransform.getOrientation() );
+            m_inflowQuat = Quaternion<real_Num>::slerp( deltaTime * m_inflowFollowTC, m_inflowQuat,
+                                                        worldTransform.getOrientation() );
             Vector3<real_Num> worldDown = worldTransform.getOrientation() * Vector3<real_Num>::down();
-            inflowVec = inflowQuat * Vector3<real_Num>::down();
-            inflowDotProduct = inflowVec.normaliseCopy().dotProduct( worldDown.normaliseCopy() );
-            vortex *= inflowDotProduct;
-            Pdrag =
+            m_inflowVec = m_inflowQuat * Vector3<real_Num>::down();
+            m_inflowDotProduct = m_inflowVec.normaliseCopy().dotProduct( worldDown.normaliseCopy() );
+            m_vortex *= m_inflowDotProduct;
+            m_pdrag =
                 prop.m_propDragPowerFactor * prop.m_propCd * Math<real_Num>::Pow( prop.m_wProp, 3.0f );
-            Pind = prop.m_propThrustValue * prop.m_propWash;
+            m_pind = prop.m_propThrustValue * prop.m_propWash;
             prop.m_massFlow = airDensity * prop.m_propArea * ( prop.m_discFlow.X() + prop.m_propWash );
             prop.m_wakeMoI = prop.m_massFlow * prop.m_propDia * prop.m_propDia / 8.0f;
 
             if( Math<real_Num>::Abs( prop.m_wProp ) > std::numeric_limits<real_Num>::epsilon() )
             {
-                auto propTorque = ( Pind + Pdrag ) / prop.m_wProp;
+                auto propTorque = ( m_pind + m_pdrag ) / prop.m_wProp;
                 prop.propTorque( propTorque );
             }
             else
@@ -688,7 +688,7 @@ namespace workphone
             }
         }
 
-        void CAircraftPropellerUnit::PropellerNitro( const double &deltaTime )
+        void CAircraftPropellerUnit::propellerNitro( const double &deltaTime )
         {
             auto aircraft = m_parentAircraft;
 
@@ -871,10 +871,10 @@ namespace workphone
         {
             WP_ASSERT( m_pu );
 
-            // EPropellerNew(t, dt);
-            EPropellerOld( t, dt );
-            // PropellerNitro(dt);
-            // EPropellerSimple(t, dt);
+            // ePropellerNew(t, dt);
+            ePropellerOld( t, dt );
+            // propellerNitro(dt);
+            // ePropellerSimple(t, dt);
 
             // WP_LOG(std::string("Thrust: ") + StringUtil::toString(m_propeller->getThrustValue()));
 
@@ -889,7 +889,7 @@ namespace workphone
             setPropwash( -thrust );
 
             // auto throttlePos = real_Num(0.8) -
-            // (real_Num)m_parentAircraft->getChannel(CAircraft::THR_CHANNEL); auto throttle =
+            // (real_Num)m_parentAircraft->getChannel(CAircraft::m_thrChannel); auto throttle =
             // throttlePos / (0.8 * 2.0); auto thrust = throttlePos * 200.0 * Vector3<real_Num>::UNIT_Z *
             // m_pu->getThrustMultiplier(); m_thrust = thrust;
 
@@ -905,7 +905,7 @@ namespace workphone
             }
         }
 
-        void CAircraftPropellerUnit::ESCCutoutControl( SmartPtr<IESController> pESC, float dt )
+        void CAircraftPropellerUnit::escCutoutControl( SmartPtr<IESController> pESC, float dt )
         {
             SmartPtr<CESController> pCESC = workphone::static_pointer_cast<CESController>( pESC );
             CESController          &ESC = *pCESC;

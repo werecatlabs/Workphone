@@ -18,7 +18,7 @@ namespace workphone
         /**
          * @brief Simple orthonormal frame-of-reference container.
          *
-         * Holds three basis vectors (XAxis, YAxis, ZAxis) representing a local
+         * Holds three basis vectors (m_xAxis, m_yAxis, m_zAxis) representing a local
          * coordinate frame. The class is intentionally lightweight and
          * trivially-copyable so it can be used in tight loops within the
          * physics simulation.
@@ -43,11 +43,11 @@ namespace workphone
             FrameOfRef &operator=( const FrameOfRef &other );
 
             /// Basis vector pointing along the local X axis
-            physics_Vec XAxis = physics_Vec::zero();
+            physics_Vec m_xAxis = physics_Vec::zero();
             /// Basis vector pointing along the local Y axis
-            physics_Vec YAxis = physics_Vec::zero();
+            physics_Vec m_yAxis = physics_Vec::zero();
             /// Basis vector pointing along the local Z axis
-            physics_Vec ZAxis = physics_Vec::zero();
+            physics_Vec m_zAxis = physics_Vec::zero();
         }; // FrameOfRef
 
     } // namespace vehicle

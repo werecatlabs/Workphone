@@ -68,8 +68,8 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_propunit )
     auto wheelController = workphone::make_ptr<WheelController>();
     //aircraft->addWheel( wheelController );
 
-    aircraft->setChannel( CAircraft::THR_CHANNEL, 1.0f );
-    BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) > 0.9f );
+    aircraft->setChannel( CAircraft::m_thrChannel, 1.0f );
+    BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) > 0.9f );
 
     real_Num fT = 0.0;
     real_Num fDT = 1.0 / 3000.0;
@@ -77,15 +77,15 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_propunit )
     BOOST_CHECK( aircraft->isValid() );
     if( aircraft->isValid() )
     {
-        aircraft->setChannel( CAircraft::THR_CHANNEL, 0.0f );
-        BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) <
+        aircraft->setChannel( CAircraft::m_thrChannel, 0.0f );
+        BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) <
                      std::numeric_limits<f32>::epsilon() );
 
         size_t numSteps = 10000;
         for( size_t i = 0; i < numSteps; ++i )
         {
             f32 throttleValue = static_cast<f32>( i ) / static_cast<f32>( numSteps );
-            aircraft->setChannel( CAircraft::THR_CHANNEL, throttleValue );
+            aircraft->setChannel( CAircraft::m_thrChannel, throttleValue );
 
             aircraft->update( fT, fDT );
             fT += fDT;
@@ -190,8 +190,8 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_propunit_simple )
     auto wheelController = workphone::make_ptr<WheelController>();
     //aircraft->addWheel( wheelController );
 
-    aircraft->setChannel( CAircraft::THR_CHANNEL, 1.0f );
-    BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) > 0.9f );
+    aircraft->setChannel( CAircraft::m_thrChannel, 1.0f );
+    BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) > 0.9f );
 
     real_Num fT = 0.0;
     real_Num fDT = 1.0 / 3000.0;
@@ -199,15 +199,15 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_propunit_simple )
     BOOST_CHECK( aircraft->isValid() );
     if( aircraft->isValid() )
     {
-        aircraft->setChannel( CAircraft::THR_CHANNEL, 0.0f );
-        BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) <
+        aircraft->setChannel( CAircraft::m_thrChannel, 0.0f );
+        BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) <
                      std::numeric_limits<f32>::epsilon() );
 
         size_t numSteps = 10000;
         for( size_t i = 0; i < numSteps; ++i )
         {
             f32 throttleValue = static_cast<f32>( i ) / static_cast<f32>( numSteps );
-            aircraft->setChannel( CAircraft::THR_CHANNEL, throttleValue );
+            aircraft->setChannel( CAircraft::m_thrChannel, throttleValue );
 
             aircraft->update( fT, fDT );
             fT += fDT;
@@ -360,8 +360,8 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_airfoil )
 
         BOOST_CHECK( Math<real_Num>::equals( firstAngle, secondAngle ) );
 
-        aircraft->setChannel( CAircraft::THR_CHANNEL, 1.0f );
-        BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) > 0.9f );
+        aircraft->setChannel( CAircraft::m_thrChannel, 1.0f );
+        BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) > 0.9f );
 
         real_Num fT = 0.0;
         real_Num fDT = 1.0 / 3000.0;
@@ -369,15 +369,15 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_airfoil )
         BOOST_CHECK( aircraft->isValid() );
         if( aircraft->isValid() )
         {
-            aircraft->setChannel( CAircraft::THR_CHANNEL, 0.0f );
-            BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) <
+            aircraft->setChannel( CAircraft::m_thrChannel, 0.0f );
+            BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) <
                          std::numeric_limits<f32>::epsilon() );
 
             size_t numSteps = 10;
             for( size_t i = 0; i < numSteps; ++i )
             {
                 f32 throttleValue = static_cast<f32>( i ) / static_cast<f32>( numSteps );
-                aircraft->setChannel( CAircraft::THR_CHANNEL, throttleValue );
+                aircraft->setChannel( CAircraft::m_thrChannel, throttleValue );
 
                 aircraft->update( fT, fDT );
                 fT += fDT;
@@ -489,8 +489,8 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_throttle )
         auto wheelController = workphone::make_ptr<WheelController>();
         //aircraft->addWheel( wheelController );
 
-        aircraft->setChannel( CAircraft::THR_CHANNEL, 1.0f );
-        BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) > 0.9f );
+        aircraft->setChannel( CAircraft::m_thrChannel, 1.0f );
+        BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) > 0.9f );
 
         real_Num fT = 0.0;
         real_Num fDT = 1.0 / 3000.0;
@@ -498,15 +498,15 @@ BOOST_AUTO_TEST_CASE( vehicle_aerodynamics_throttle )
         BOOST_CHECK( aircraft->isValid() );
         if( aircraft->isValid() )
         {
-            aircraft->setChannel( CAircraft::THR_CHANNEL, 0.0f );
-            BOOST_CHECK( aircraft->getChannel( CAircraft::THR_CHANNEL ) <
+            aircraft->setChannel( CAircraft::m_thrChannel, 0.0f );
+            BOOST_CHECK( aircraft->getChannel( CAircraft::m_thrChannel ) <
                          std::numeric_limits<f32>::epsilon() );
 
             size_t numSteps = 10;
             for( size_t i = 0; i < numSteps; ++i )
             {
                 f32 throttleValue = static_cast<f32>( i ) / static_cast<f32>( numSteps );
-                aircraft->setChannel( CAircraft::THR_CHANNEL, throttleValue );
+                aircraft->setChannel( CAircraft::m_thrChannel, throttleValue );
 
                 aircraft->update( fT, fDT );
                 fT += fDT;

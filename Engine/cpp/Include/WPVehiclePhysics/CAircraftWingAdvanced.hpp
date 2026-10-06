@@ -17,7 +17,7 @@ namespace workphone
         class WPVehiclePhysics_API CAircraftWingAdvanced : public CAircraftAttachment<IAircraftWing>
         {
         public:
-            static const s32 MaxSections = 200;
+            static const s32 m_maxSections = 200;
 
             /** Default constructor. Sets up default values. */
             CAircraftWingAdvanced();

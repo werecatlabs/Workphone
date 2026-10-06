@@ -48,12 +48,12 @@ namespace workphone
             void              setPropwash( const Vector3<real_Num> &propwash ) override;
 
         protected:
-            void EPropellerSimple( const double &t, const double &dt );
-            void EPropellerOld( const double &t, const double &dt );
-            void EPropellerNew( const double &t, const double &dt );
-            void PropellerNitro( const double &dt );
+            void ePropellerSimple( const double &t, const double &dt );
+            void ePropellerOld( const double &t, const double &dt );
+            void ePropellerNew( const double &t, const double &dt );
+            void propellerNitro( const double &dt );
 
-            void ESCCutoutControl( SmartPtr<IESController> pESC, float dt );
+            void escCutoutControl( SmartPtr<IESController> pESC, float dt );
 
             float lookupSlope( float angle );
             float lookupCdSlope( float angle );
@@ -66,54 +66,54 @@ namespace workphone
             Vector3<real_Num> m_thrust;
             Vector3<real_Num> m_propwash;
 
-            Vector3<real_Num> inflowVec;
-            Vector3<real_Num> windTunnel;
+            Vector3<real_Num> m_inflowVec;
+            Vector3<real_Num> m_windTunnel;
 
-            Quaternion<real_Num> inflowQuat;
+            Quaternion<real_Num> m_inflowQuat;
 
             real_Num m_inFlowSettlingTime;
 
-            real_Num downWashCoef;
-            real_Num torqueMultiplier;
-            real_Num TotalCurrent;
-            real_Num inFlowTC;
-            real_Num vh;
-            real_Num vc;
-            real_Num ThisPW;
-            real_Num inflowFollowTC;
-            real_Num inflowDotProduct;
-            real_Num lastTime;
-            real_Num vibration;
-            real_Num propPowerCoef;
-            real_Num negativeLift;
-            real_Num vrsModifier;
-            real_Num fixedVRSModifier;
-            real_Num thrustAccelerationModifier;
-            real_Num Temp;
-            real_Num PropGA;
-            real_Num propWash;
-            real_Num propDiskFlowX;
-            real_Num Pind;
-            real_Num Pdrag;
-            real_Num lastPropThrust;
-            real_Num stallPoint;
-            real_Num stallThrust;
-            real_Num thrustSlope;
-            real_Num vortex;
-            real_Num translation;
-            real_Num gfValue;
+            real_Num m_downWashCoef;
+            real_Num m_torqueMultiplier;
+            real_Num m_totalCurrent;
+            real_Num m_inFlowTC;
+            real_Num m_vh;
+            real_Num m_vc;
+            real_Num m_thisPW;
+            real_Num m_inflowFollowTC;
+            real_Num m_inflowDotProduct;
+            real_Num m_lastTime;
+            real_Num m_vibration;
+            real_Num m_propPowerCoef;
+            real_Num m_negativeLift;
+            real_Num m_vrsModifier;
+            real_Num m_fixedVRSModifier;
+            real_Num m_thrustAccelerationModifier;
+            real_Num m_temp;
+            real_Num m_propGA;
+            real_Num m_propWash;
+            real_Num m_propDiskFlowX;
+            real_Num m_pind;
+            real_Num m_pdrag;
+            real_Num m_lastPropThrust;
+            real_Num m_stallPoint;
+            real_Num m_stallThrust;
+            real_Num m_thrustSlope;
+            real_Num m_vortex;
+            real_Num m_translation;
+            real_Num m_gfValue;
 
-            s32 frameCount;
-            s32 flag;
+            s32 m_frameCount;
+            s32 m_flag;
 
-            bool packDead = false;
-            bool propDamageVibration = false;
-            bool ModelIsElectric = true;
-            bool motorReversed = false;
-            bool vrs = false;
+            bool m_packDead = false;
+            bool m_propDamageVibration = false;
+            bool m_modelIsElectric = true;
+            bool m_motorReversed = false;
+            bool m_vrs = false;
 
-            Array<float> clSlopes;
-            Array<float> cdSlopes;
+            Array<float> m_clSlopes;
+            Array<float> m_cdSlopes;
 
             s32 m_id;
 

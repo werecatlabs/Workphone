@@ -19,7 +19,7 @@ namespace workphone
         class WPVehiclePhysics_API CAircraftWingFast : public CAircraftAttachment<IAircraftWing>
         {
         public:
-            static constexpr s32 MaxSections = 10;
+            static constexpr s32 m_maxSections = 10;
 
             /** Default constructor. Sets up default values. */
             CAircraftWingFast();
@@ -139,67 +139,67 @@ namespace workphone
 
             Array<Array<int>> m_debugIds;
 
-            std::array<Vector3<real_Num>, MaxSections> m_relativeWind;
-            std::array<Vector3<real_Num>, MaxSections> m_relativeWindPlus10;
-            std::array<Vector3<real_Num>, MaxSections> m_relativeWindMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_relativeWind;
+            std::array<Vector3<real_Num>, m_maxSections> m_relativeWindPlus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_relativeWindMinus10;
 
-            std::array<Vector3<real_Num>, MaxSections> m_currentRelativeWind;
+            std::array<Vector3<real_Num>, m_maxSections> m_currentRelativeWind;
 
-            std::array<Vector3<real_Num>, MaxSections> m_sectionA;
-            std::array<Vector3<real_Num>, MaxSections> m_sectionB;
-            std::array<Vector3<real_Num>, MaxSections> m_sectionC;
-            std::array<Vector3<real_Num>, MaxSections> m_sectionD;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionA;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionB;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionC;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionD;
 
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionA;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionB;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionC;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionD;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionA;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionB;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionC;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionD;
 
-            std::array<Vector3<real_Num>, MaxSections> m_visualSectionA;
-            std::array<Vector3<real_Num>, MaxSections> m_visualSectionB;
-            std::array<Vector3<real_Num>, MaxSections> m_visualSectionC;
-            std::array<Vector3<real_Num>, MaxSections> m_visualSectionD;
+            std::array<Vector3<real_Num>, m_maxSections> m_visualSectionA;
+            std::array<Vector3<real_Num>, m_maxSections> m_visualSectionB;
+            std::array<Vector3<real_Num>, m_maxSections> m_visualSectionC;
+            std::array<Vector3<real_Num>, m_maxSections> m_visualSectionD;
 
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionA10;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionB10;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionC10;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionD10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionA10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionB10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionC10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionD10;
 
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionAMinus10;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionBMinus10;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionCMinus10;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionDMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionAMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionBMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionCMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionDMinus10;
 
-            std::array<Vector3<real_Num>, MaxSections> m_aerodynamicCenters;
-            std::array<Vector3<real_Num>, MaxSections> m_aerodynamicCentersPlus10;
-            std::array<Vector3<real_Num>, MaxSections> m_aerodynamicCentersMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_aerodynamicCenters;
+            std::array<Vector3<real_Num>, m_maxSections> m_aerodynamicCentersPlus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_aerodynamicCentersMinus10;
 
-            std::array<Vector3<real_Num>, MaxSections> m_chordLines;
-            std::array<Vector3<real_Num>, MaxSections> m_chordLinesPlus10;
-            std::array<Vector3<real_Num>, MaxSections> m_chordLinesMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_chordLines;
+            std::array<Vector3<real_Num>, m_maxSections> m_chordLinesPlus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_chordLinesMinus10;
 
-            std::array<Vector3<real_Num>, MaxSections> m_up;
-            std::array<Vector3<real_Num>, MaxSections> m_upPlus10;
-            std::array<Vector3<real_Num>, MaxSections> m_upMinus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_up;
+            std::array<Vector3<real_Num>, m_maxSections> m_upPlus10;
+            std::array<Vector3<real_Num>, m_maxSections> m_upMinus10;
 
-            std::array<real_Num, MaxSections> m_aoa;
-            std::array<real_Num, MaxSections> m_aoaPlus10;
-            std::array<real_Num, MaxSections> m_aoaMinus10;
+            std::array<real_Num, m_maxSections> m_aoa;
+            std::array<real_Num, m_maxSections> m_aoaPlus10;
+            std::array<real_Num, m_maxSections> m_aoaMinus10;
 
-            std::array<real_Num, MaxSections> m_chordLengthsMinus10;
-            std::array<real_Num, MaxSections> m_chordLengthsPlus10;
-            std::array<real_Num, MaxSections> m_chordLengths;
+            std::array<real_Num, m_maxSections> m_chordLengthsMinus10;
+            std::array<real_Num, m_maxSections> m_chordLengthsPlus10;
+            std::array<real_Num, m_maxSections> m_chordLengths;
 
-            std::array<real_Num, MaxSections> m_re;
-            std::array<real_Num, MaxSections> m_area;
+            std::array<real_Num, m_maxSections> m_re;
+            std::array<real_Num, m_maxSections> m_area;
 
-            std::array<real_Num, MaxSections> m_totalLift;
-            std::array<real_Num, MaxSections> m_totalDrag;
-            std::array<real_Num, MaxSections> m_totalPitch;
+            std::array<real_Num, m_maxSections> m_totalLift;
+            std::array<real_Num, m_maxSections> m_totalDrag;
+            std::array<real_Num, m_maxSections> m_totalPitch;
 
-            std::array<real_Num, MaxSections> m_fStallControlCL;
-            std::array<real_Num, MaxSections> m_fStallControlCD;
-            std::array<real_Num, MaxSections> m_fStallControlCM;
+            std::array<real_Num, m_maxSections> m_fStallControlCL;
+            std::array<real_Num, m_maxSections> m_fStallControlCD;
+            std::array<real_Num, m_maxSections> m_fStallControlCM;
 
             real_Num m_nextUpdateTime = 0.0;
             real_Num m_nextGeometryUpdate = 0.0;

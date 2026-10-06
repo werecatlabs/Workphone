@@ -80,24 +80,24 @@ namespace workphone
             //	}
             //}
 
-            // if ((GetAsyncKeyState(Keyleft) & 0x8000) != 0)
+            // if ((GetAsyncKeyState(m_keyLeft) & 0x8000) != 0)
             //{
-            //	return Keyleft;
+            //	return m_keyLeft;
             // }
 
-            if( ( GetAsyncKeyState( Keytop ) & 0x8000 ) != 0 )
+            if( ( GetAsyncKeyState( m_keyTop ) & 0x8000 ) != 0 )
             {
-                return Keytop;
+                return m_keyTop;
             }
 
-            if( ( GetAsyncKeyState( Keyright ) & 0x8000 ) != 0 )
+            if( ( GetAsyncKeyState( m_keyRight ) & 0x8000 ) != 0 )
             {
-                return Keyright;
+                return m_keyRight;
             }
 
-            if( ( GetAsyncKeyState( Keydown ) & 0x8000 ) != 0 )
+            if( ( GetAsyncKeyState( m_keyDown ) & 0x8000 ) != 0 )
             {
-                return Keydown;
+                return m_keyDown;
             }
 
             return -1;
@@ -162,7 +162,7 @@ namespace workphone
             // if (ctrl)
             //{
             //	int keyCode = getKey();
-            //	if (keyCode == Keyleft)
+            //	if (keyCode == m_keyLeft)
             //	{
             //		for (auto e : m_engines)
             //		{
@@ -175,7 +175,7 @@ namespace workphone
             //			}
             //		}
             //	}
-            //	else if (keyCode == Keyright)
+            //	else if (keyCode == m_keyRight)
             //	{
             //		for (auto e : m_engines)
             //		{
@@ -411,7 +411,7 @@ namespace workphone
                                                    static_cast<real_Num>( 80000.0 ) );
 
             const auto throttle =
-                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( THR_CHANNEL ) ),
+                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( m_thrChannel ) ),
                                        static_cast<real_Num>( 0.0 ), static_cast<real_Num>( 1.0 ) );
             const auto thrust = throttle *
                                 Math<real_Num>::max( getMass(), static_cast<real_Num>( 1.0 ) ) *
@@ -420,13 +420,13 @@ namespace workphone
             addLocalForce( 0, Vector3<real_Num>( 0, lift, -thrust ), m_cg );
 
             const auto roll =
-                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( AIL_CHANNEL ) ),
+                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( m_ailChannel ) ),
                                        static_cast<real_Num>( -1.0 ), static_cast<real_Num>( 1.0 ) );
             const auto pitch =
-                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( ELE_CHANNEL ) ),
+                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( m_eleChannel ) ),
                                        static_cast<real_Num>( -1.0 ), static_cast<real_Num>( 1.0 ) );
             const auto yaw =
-                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( YAW_CHANNEL ) ),
+                Math<real_Num>::clamp( static_cast<real_Num>( getChannel( m_yawChannel ) ),
                                        static_cast<real_Num>( -1.0 ), static_cast<real_Num>( 1.0 ) );
 
             const auto mass = Math<real_Num>::max( getMass(), static_cast<real_Num>( 1.0 ) );

@@ -79,7 +79,7 @@ namespace workphone::vehicle
         // m_thrustMultiplier = data->thrustMultiplier;
     }
 
-    void CAircraftMotorTest::MotorCalc( CBatteryPackStandard &Pack, CESController &ESC )
+    void CAircraftMotorTest::motorCalc( CBatteryPackStandard &Pack, CESController &ESC )
     {
         real_Num currentLim = static_cast<real_Num>( 0.0 );
         // the limit depending on the ESC and motor limits (the lower of the two ruling)
@@ -123,7 +123,7 @@ namespace workphone::vehicle
 
     void CAircraftMotorTest::update( const double &t, const double &dt )
     {
-        // real_Num motorIn =  m_parentAircraft->getChannel(CAircraft::THR_CHANNEL);
+        // real_Num motorIn =  m_parentAircraft->getChannel(CAircraft::m_thrChannel);
 
         // float Thr = 0.0f;
         ////first sort out the throttle signal from the raw throttle channel value and allow for slightly
@@ -198,9 +198,9 @@ namespace workphone::vehicle
         for( LL = 0; LL < Loops; LL++ )
         {
             // LookupEnginePower(Throttle,TheEngineClutch); //get the engine output
-            MotorCalc( *workphone::static_pointer_cast<CBatteryPackStandard>( batteryPack ),
-                       ESC ); // todo refactor
-            // MotorCalc(EM, ESC, batteryPack->getTerminalVoltage());
+            motorCalc( *workphone::static_pointer_cast<CBatteryPackStandard>( batteryPack ),
+                       ESC );  // todo refactor
+            // motorCalc(EM, ESC, batteryPack->getTerminalVoltage());
 
             real_Num dischargeRate = ( m_motorCurrent * MicroT ) / static_cast<real_Num>( 3600.0 );
             batteryPack->setDischargeRate( dischargeRate );
@@ -417,8 +417,8 @@ namespace workphone::vehicle
     }
 
     // modified to bring pack resistive losses out to be handled in the discharge procedure for the sum
-    // of the motor currents Procedure MotorCalc(Var Motor:TEMotor; ESC:TESController);
-    void CAircraftMotorTest::MotorCalc( CAircraftMotorTest &motor, CESController &esc,
+    // of the motor currents Procedure motorCalc(Var Motor:TEMotor; ESC:TESController);
+    void CAircraftMotorTest::motorCalc( CAircraftMotorTest &motor, CESController &esc,
                                         float packTerminalV )
     {
         m_msrGainFactor = 4.0f; // gain adjustment for crude governor

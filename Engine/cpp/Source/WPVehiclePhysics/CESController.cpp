@@ -172,7 +172,7 @@ namespace workphone
             auto esc = pThis;
             auto motor = m_motor;
 
-            m_input = m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+            m_input = m_parentAircraft->getChannel( CAircraft::m_thrChannel );
             m_input = ( static_cast<real_Num>( 0.8 ) + m_input ) /
                     ( static_cast<real_Num>( 0.8 ) * static_cast<real_Num>( 2.0 ) );
             m_input = static_cast<real_Num>( 1.0 ) - m_input;

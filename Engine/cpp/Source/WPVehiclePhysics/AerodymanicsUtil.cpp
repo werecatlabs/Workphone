@@ -403,8 +403,9 @@ namespace workphone
                 stabVec.z = static_cast<physics_Num>( 0 );
 
                 // Blend VBar vector toward vertical based on stabilization gain
-                vBar.m_frame.YAxis = VSum( vBar.m_frame.YAxis, VScale( stabVec, dt * vBar.m_stabGain ) );
-                vBar.m_frame.YAxis = VUnit( vBar.m_frame.YAxis );
+                vBar.m_frame.m_yAxis =
+                    VSum( vBar.m_frame.m_yAxis, VScale( stabVec, dt * vBar.m_stabGain ) );
+                vBar.m_frame.m_yAxis = VUnit( vBar.m_frame.m_yAxis );
             }
 
             // Bail-out mode processing
@@ -420,28 +421,31 @@ namespace workphone
                 stabVec.y = static_cast<physics_Num>( 1 );
                 stabVec.z = static_cast<physics_Num>( 0 );
 
-                vBar.m_frame.YAxis = VSum( vBar.m_frame.YAxis, VScale( stabVec, dt * vBar.m_stabGain ) );
-                vBar.m_frame.YAxis = VUnit( vBar.m_frame.YAxis );
+                vBar.m_frame.m_yAxis =
+                    VSum( vBar.m_frame.m_yAxis, VScale( stabVec, dt * vBar.m_stabGain ) );
+                vBar.m_frame.m_yAxis = VUnit( vBar.m_frame.m_yAxis );
                 break;
             }
 
             // Calculate error between shaft orientation and VBar reference
-            vBar.m_errorVector = VDif( heliAero->m_rotorHead->m_shaftFrame.YAxis, vBar.m_frame.YAxis );
+            vBar.m_errorVector =
+                VDif( heliAero->m_rotorHead->m_shaftFrame.m_yAxis, vBar.m_frame.m_yAxis );
             vBar.m_errorMag = VMag( vBar.m_errorVector );
 
             // Apply angle limit to prevent excessive VBar-to-shaft deviation
             if( vBar.m_errorMag > vBar.m_angleLimit )
             {
                 vBar.m_errorVector = VScale( vBar.m_errorVector, vBar.m_angleLimit / vBar.m_errorMag );
-                vBar.m_frame.YAxis =
-                    VDif( heliAero->m_rotorHead->m_shaftFrame.YAxis, vBar.m_errorVector );
+                vBar.m_frame.m_yAxis =
+                    VDif( heliAero->m_rotorHead->m_shaftFrame.m_yAxis, vBar.m_errorVector );
             }
 
             // Apply exponential decay to error vector
             vBar.m_errorVector =
                 VScale( vBar.m_errorVector, static_cast<physics_Num>( 1.0 ) - ( dt / vBar.m_decay ) );
-            vBar.m_frame.YAxis = VDif( heliAero->m_rotorHead->m_shaftFrame.YAxis, vBar.m_errorVector );
-            vBar.m_frame.YAxis = VUnit( vBar.m_frame.YAxis );
+            vBar.m_frame.m_yAxis =
+                VDif( heliAero->m_rotorHead->m_shaftFrame.m_yAxis, vBar.m_errorVector );
+            vBar.m_frame.m_yAxis = VUnit( vBar.m_frame.m_yAxis );
         }
 
         void AerodymanicsUtil::controlVBar( physics_Num dt, physics_Num ailInSig, physics_Num eleInSig,
@@ -512,11 +516,11 @@ namespace workphone
             pitchAngle = dt * vBar.m_eleDemand;
 
             // Create precession correction vector and apply to VBar
-            tVec = VSum( VScale( heliAero->m_rotorHead->m_shaftFrame.XAxis, rollAngle ),
-                         VScale( heliAero->m_rotorHead->m_shaftFrame.ZAxis, pitchAngle ) );
+            tVec = VSum( VScale( heliAero->m_rotorHead->m_shaftFrame.m_xAxis, rollAngle ),
+                         VScale( heliAero->m_rotorHead->m_shaftFrame.m_zAxis, pitchAngle ) );
 
-            vBar.m_frame.YAxis = VSum( vBar.m_frame.YAxis, tVec );
-            vBar.m_frame.YAxis = VUnit( vBar.m_frame.YAxis );
+            vBar.m_frame.m_yAxis = VSum( vBar.m_frame.m_yAxis, tVec );
+            vBar.m_frame.m_yAxis = VUnit( vBar.m_frame.m_yAxis );
         }
 
         void AerodymanicsUtil::getVBarOutputs( physics_Num &ailOut, physics_Num &eleOut,
@@ -526,9 +530,9 @@ namespace workphone
 
             // Calculate error angles by projecting VBar onto shaft axes
             vBar.m_rollErrorAngle =
-                VDot( heliAero->m_rotorHead->m_shaftFrame.XAxis, vBar.m_frame.YAxis );
+                VDot( heliAero->m_rotorHead->m_shaftFrame.m_xAxis, vBar.m_frame.m_yAxis );
             vBar.m_pitchErrorAngle =
-                VDot( heliAero->m_rotorHead->m_shaftFrame.ZAxis, vBar.m_frame.YAxis );
+                VDot( heliAero->m_rotorHead->m_shaftFrame.m_zAxis, vBar.m_frame.m_yAxis );
 
             // Output combines VBar correction with direct stick input
             ailOut = vBar.m_rollErrorAngle * vBar.m_rollGain + vBar.m_ailCommand * vBar.m_directMix;
@@ -880,7 +884,7 @@ namespace workphone
                 // Force disengage at low RPM
                 if( EC.getCrankRPM() < EC.m_biteRPM )
                 {
-                    EC.m_clutchMode = kDisengaged;
+                    EC.m_clutchMode = m_kDisengaged;
                 }
 
                 lookupEnginePower( Throttle, TheEngineClutch );
@@ -889,7 +893,7 @@ namespace workphone
 
                 switch( EC.m_clutchMode )
                 {
-                case kDisengaged:
+                case m_kDisengaged:
                 {
                     if( ModeSwitched == false )
                     {
@@ -907,16 +911,16 @@ namespace workphone
                         if( EC.getCrankRPM() > EC.m_biteRPM )
                         {
                             if( EC.getCrankRPM() > EC.m_spragRPM )
-                                EC.m_clutchMode = kSlipping;
+                                EC.m_clutchMode = m_kSlipping;
                             else
-                                EC.m_clutchMode = kOverrun;
+                                EC.m_clutchMode = m_kOverrun;
                         }
                         ModeSwitched = true;
                     }
                 }
                 break;
 
-                case kSlipping:
+                case m_kSlipping:
                 {
                     if( ModeSwitched == false )
                     {
@@ -932,7 +936,7 @@ namespace workphone
 
                         if( EC.getCrankRPM() < EC.m_biteRPM )
                         {
-                            EC.m_clutchMode = kDisengaged;
+                            EC.m_clutchMode = m_kDisengaged;
                         }
 
                         // Check for lock-up: speeds matched and clutch has capacity
@@ -940,21 +944,21 @@ namespace workphone
                             ( EC.m_clutchCapability > EC.getEngineTorque() ) &&
                             ( EC.getEngineTorque() > 0 ) )
                         {
-                            EC.m_clutchMode = kLocked;
+                            EC.m_clutchMode = m_kLocked;
                             ModeSwitched = true;
                         }
 
                         // Check for overrun: load driving engine
                         if( ( EC.m_spragRPM > EC.getCrankRPM() ) && ( EC.getEngineTorque() < 0 ) )
                         {
-                            EC.m_clutchMode = kOverrun;
+                            EC.m_clutchMode = m_kOverrun;
                             ModeSwitched = true;
                         }
                     }
                 }
                 break;
 
-                case kLocked:
+                case m_kLocked:
                 {
                     if( ModeSwitched == false )
                     {
@@ -970,28 +974,28 @@ namespace workphone
                         // Check for slip: torque exceeds clutch capacity
                         if( EC.m_clutchCapability < EC.getEngineTorque() )
                         {
-                            EC.m_clutchMode = kSlipping;
+                            EC.m_clutchMode = m_kSlipping;
                             ModeSwitched = true;
                         }
 
                         // Check for overrun
                         if( EC.getEngineTorque() < 0 )
                         {
-                            EC.m_clutchMode = kOverrun;
+                            EC.m_clutchMode = m_kOverrun;
                             ModeSwitched = true;
                         }
 
                         // Check for disengage
                         if( EC.getCrankRPM() < EC.m_biteRPM )
                         {
-                            EC.m_clutchMode = kDisengaged;
+                            EC.m_clutchMode = m_kDisengaged;
                             ModeSwitched = true;
                         }
                     }
                 }
                 break;
 
-                case kOverrun:
+                case m_kOverrun:
                 {
                     if( ModeSwitched == false )
                     {
@@ -1007,14 +1011,14 @@ namespace workphone
 
                         if( EC.getCrankRPM() < EC.m_biteRPM )
                         {
-                            EC.m_clutchMode = kDisengaged;
+                            EC.m_clutchMode = m_kDisengaged;
                             ModeSwitched = true;
                         }
 
                         // Re-engage when engine catches up
                         if( EC.getCrankRPM() > EC.m_spragRPM )
                         {
-                            EC.m_clutchMode = kSlipping;
+                            EC.m_clutchMode = m_kSlipping;
                             ModeSwitched = true;
                         }
                     }
@@ -1400,7 +1404,7 @@ namespace workphone
             Motor.m_motorAccel = 0;
             Motor.m_spragRpm = 0;
             Motor.m_spragOmega = 0;
-            Motor.m_spragMode = kOverrun; // set the motor mode to a realistic one!
+            Motor.m_spragMode = m_kOverrun;  // set the motor mode to a realistic one!
             ESC.m_remoteSig = 0;
             ESC.m_active = false;
             ESC.m_lastActive = false;
@@ -1659,7 +1663,7 @@ namespace workphone
                 ModeSwitched = false;
                 switch( EM.m_spragMode )
                 {
-                case kLocked:
+                case m_kLocked:
                 {
                     if( ModeSwitched == false )
                     {
@@ -1678,14 +1682,14 @@ namespace workphone
                         EM.m_motorRpm = EM.m_spragRpm;     // and likewise the rpm
                         if( EM.m_motorTorque < static_cast<physics_Num>( 0.0 ) )
                         {
-                            EM.m_spragMode = kOverrun;
+                            EM.m_spragMode = m_kOverrun;
                             ModeSwitched = true;
                         } // if motor torque is less than zero then go to overrun state
                     }
                 }
                 break; // Locked
 
-                case kOverrun:
+                case m_kOverrun:
                 {
                     if( ModeSwitched == false )
                     {
@@ -1706,7 +1710,7 @@ namespace workphone
                         if( EM.m_motorRpm > EM.m_spragRpm )
                         // if the motor has accelerated to exceed the sprag speed then go to locked mode
                         {
-                            EM.m_spragMode = kLocked;          // set the mode to locked
+                            EM.m_spragMode = m_kLocked;        // set the mode to locked
                             EM.m_motorRpm = EM.m_spragRpm;     // match the motor to the sprag speed
                             EM.m_motorOmega = EM.m_spragOmega; //(both omega and rpm)
                             ModeSwitched = true;               // flag the mode change

@@ -114,17 +114,17 @@ namespace workphone
             //                WP_ASSERT( cm.values.empty() == false );
             //
             // #if !WP_AIRFOIL_USE_SPLINE
-            //                CL->setPoints( getPointsArray( cl.values ) );
-            //                CD->setPoints( getPointsArray( cd.values ) );
-            //                CM->setPoints( getPointsArray( cm.values ) );
+            //                m_cl->setPoints( getPointsArray( cl.values ) );
+            //                m_cd->setPoints( getPointsArray( cd.values ) );
+            //                m_cm->setPoints( getPointsArray( cm.values ) );
             // #else
             //				auto clPoints = getPoints(cl.values);
             //				auto cdPoints = getPoints(cd.values);
             //				auto cmPoints = getPoints(cm.values);
             //
-            //				CL->setPoints(clPoints);
-            //				CD->setPoints(cdPoints);
-            //				CM->setPoints(cmPoints);
+            //				m_cl->setPoints(clPoints);
+            //				m_cd->setPoints(cdPoints);
+            //				m_cm->setPoints(cmPoints);
             // #endif
             //            }
             //            else
@@ -138,47 +138,47 @@ namespace workphone
 
         LookupCurve<real_Num> *CAerofoil::getCLPtr()
         {
-            return CL.get();
+            return m_cl.get();
         }
 
         SmartPtr<LookupCurve<real_Num>> CAerofoil::getCL() const
         {
-            return CL;
+            return m_cl;
         }
 
         void CAerofoil::setCL( SmartPtr<LookupCurve<real_Num>> cl )
         {
-            CL = cl;
+            m_cl = cl;
         }
 
         LookupCurve<real_Num> *CAerofoil::getCDPtr()
         {
-            return CD.get();
+            return m_cd.get();
         }
 
         SmartPtr<LookupCurve<real_Num>> CAerofoil::getCD() const
         {
-            return CD;
+            return m_cd;
         }
 
         void CAerofoil::setCD( SmartPtr<LookupCurve<real_Num>> cd )
         {
-            CD = cd;
+            m_cd = cd;
         }
 
         LookupCurve<real_Num> *CAerofoil::getCMPtr()
         {
-            return CM.get();
+            return m_cm.get();
         }
 
         SmartPtr<LookupCurve<real_Num>> CAerofoil::getCM() const
         {
-            return CM;
+            return m_cm;
         }
 
         void CAerofoil::setCM( SmartPtr<LookupCurve<real_Num>> cm )
         {
-            CM = cm;
+            m_cm = cm;
         }
 
         IAircraft *CAerofoil::getAircraftPtr() const

@@ -18,7 +18,7 @@ namespace workphone
         class WPVehiclePhysics_API CAircraftWing : public CAircraftAttachment<IAircraftWing>
         {
         public:
-            static constexpr s32 MaxSections = 10;
+            static constexpr s32 m_maxSections = 10;
 
             /** Default constructor. Sets up default values. */
             CAircraftWing();
@@ -114,39 +114,39 @@ namespace workphone
 
             Array<Array<int>> m_debugIds;
 
-            std::array<Vector3<real_Num>, MaxSections> m_relativeWind;
-            std::array<Vector3<real_Num>, MaxSections> m_relativeWindReversed;
+            std::array<Vector3<real_Num>, m_maxSections> m_relativeWind;
+            std::array<Vector3<real_Num>, m_maxSections> m_relativeWindReversed;
 
-            std::array<Vector3<real_Num>, MaxSections> m_sectionA;
-            std::array<Vector3<real_Num>, MaxSections> m_sectionB;
-            std::array<Vector3<real_Num>, MaxSections> m_sectionC;
-            std::array<Vector3<real_Num>, MaxSections> m_sectionD;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionA;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionB;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionC;
+            std::array<Vector3<real_Num>, m_maxSections> m_sectionD;
 
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionA;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionB;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionC;
-            std::array<Vector3<real_Num>, MaxSections> m_modifiedSectionD;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionA;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionB;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionC;
+            std::array<Vector3<real_Num>, m_maxSections> m_modifiedSectionD;
 
-            std::array<Vector3<real_Num>, MaxSections> m_aerodynamicCenters;
-            std::array<Vector3<real_Num>, MaxSections> m_chordLines;
-            std::array<Vector3<real_Num>, MaxSections> m_up;
+            std::array<Vector3<real_Num>, m_maxSections> m_aerodynamicCenters;
+            std::array<Vector3<real_Num>, m_maxSections> m_chordLines;
+            std::array<Vector3<real_Num>, m_maxSections> m_up;
 
-            std::array<Vector3<real_Num>, MaxSections> m_aerodynamicCentersReverse;
-            std::array<Vector3<real_Num>, MaxSections> m_chordLinesReverse;
-            std::array<Vector3<real_Num>, MaxSections> m_upReverse;
+            std::array<Vector3<real_Num>, m_maxSections> m_aerodynamicCentersReverse;
+            std::array<Vector3<real_Num>, m_maxSections> m_chordLinesReverse;
+            std::array<Vector3<real_Num>, m_maxSections> m_upReverse;
 
-            std::array<real_Num, MaxSections> m_aoa;
-            std::array<real_Num, MaxSections> m_aoaReverse;
+            std::array<real_Num, m_maxSections> m_aoa;
+            std::array<real_Num, m_maxSections> m_aoaReverse;
 
-            std::array<real_Num, MaxSections> m_chordLengths;
-            std::array<real_Num, MaxSections> m_re;
-            std::array<real_Num, MaxSections> m_area;
-            std::array<real_Num, MaxSections> m_totalLift;
-            std::array<real_Num, MaxSections> m_totalDrag;
-            std::array<real_Num, MaxSections> m_totalPitch;
-            std::array<real_Num, MaxSections> m_fStallControlCL;
-            std::array<real_Num, MaxSections> m_fStallControlCD;
-            std::array<real_Num, MaxSections> m_fStallControlCM;
+            std::array<real_Num, m_maxSections> m_chordLengths;
+            std::array<real_Num, m_maxSections> m_re;
+            std::array<real_Num, m_maxSections> m_area;
+            std::array<real_Num, m_maxSections> m_totalLift;
+            std::array<real_Num, m_maxSections> m_totalDrag;
+            std::array<real_Num, m_maxSections> m_totalPitch;
+            std::array<real_Num, m_maxSections> m_fStallControlCL;
+            std::array<real_Num, m_maxSections> m_fStallControlCD;
+            std::array<real_Num, m_maxSections> m_fStallControlCM;
 
             real_Num m_liftLineAlphaStart =
                 static_cast<real_Num>( 70.0 ); // AOA at which transition starts

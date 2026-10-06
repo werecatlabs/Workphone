@@ -100,23 +100,23 @@ namespace workphone
 
         void HeliAero::cageRotor( TRotor &rotor, FrameOfRef &shaftFrame, physics_Num angleLimit )
         {
-            physics_Vec errorVector =
-                VDif( rotor.m_frame.YAxis,
-                      shaftFrame.YAxis ); // calculate the difference vector between shaft and rotor axis
+            physics_Vec errorVector = VDif(
+                rotor.m_frame.m_yAxis,
+                shaftFrame.m_yAxis );  // calculate the difference vector between shaft and rotor axis
             physics_Num errorMag = VMag( errorVector );
             if( errorMag > angleLimit )
             {
                 // error exceeds limit so apply limit
                 errorVector = VScale( errorVector, angleLimit / errorMag );
                 // rescale ErrorVec to be in direction of unlimited error but of limiting length
-                rotor.m_frame.YAxis = VSum( shaftFrame.YAxis, errorVector );
+                rotor.m_frame.m_yAxis = VSum( shaftFrame.m_yAxis, errorVector );
                 // construct new VBar vector from the shaft vector and the limited error vector
-                rotor.m_frame.ZAxis = VUnit(
-                    VCross( m_body.m_frame.XAxis,
-                            rotor.m_frame.YAxis ) ); // this is the forward pointing axis of the rotor
-                rotor.m_frame.XAxis = VUnit(
-                    VCross( rotor.m_frame.YAxis,
-                            rotor.m_frame.ZAxis ) ); // this is the left pointing axis of the rotor
+                rotor.m_frame.m_zAxis = VUnit(
+                    VCross( m_body.m_frame.m_xAxis,
+                            rotor.m_frame.m_yAxis ) );  // this is the forward pointing axis of the rotor
+                rotor.m_frame.m_xAxis = VUnit(
+                    VCross( rotor.m_frame.m_yAxis,
+                            rotor.m_frame.m_zAxis ) );  // this is the left pointing axis of the rotor
             }
         }
 
@@ -1019,13 +1019,13 @@ namespace workphone
             XA = VUnit( VCross( YA, ZA ) ); // generate the X axis as the cross product of y and z
             // just in case of a slight move between the y and z axis 'readings' we re-create the Y axis
             YA = VCross( ZA, XA );
-            m_modelFrame.XAxis = XA;
-            m_modelFrame.YAxis = YA;
-            m_modelFrame.ZAxis = ZA; // transfer result to a global
+            m_modelFrame.m_xAxis = XA;
+            m_modelFrame.m_yAxis = YA;
+            m_modelFrame.m_zAxis = ZA;  // transfer result to a global
 
-            WP_ASSERT( m_modelFrame.XAxis.isFinite() );
-            WP_ASSERT( m_modelFrame.YAxis.isFinite() );
-            WP_ASSERT( m_modelFrame.ZAxis.isFinite() );
+            WP_ASSERT( m_modelFrame.m_xAxis.isFinite() );
+            WP_ASSERT( m_modelFrame.m_yAxis.isFinite() );
+            WP_ASSERT( m_modelFrame.m_zAxis.isFinite() );
         }
 
         // gets the Frame of Reference of the visual rotor in world frame
@@ -1050,13 +1050,13 @@ namespace workphone
             XA = VUnit( VCross( YA, ZA ) ); // generate the X axis as the cross product of y and z
             // just in case of a slight move between the y and z axis 'readings' we re-create the Y axis
             YA = VCross( ZA, XA );
-            m_visualRotorFrame.XAxis = XA;
-            m_visualRotorFrame.YAxis = YA;
-            m_visualRotorFrame.ZAxis = ZA; // transfer result to a global
+            m_visualRotorFrame.m_xAxis = XA;
+            m_visualRotorFrame.m_yAxis = YA;
+            m_visualRotorFrame.m_zAxis = ZA;  // transfer result to a global
 
-            WP_ASSERT( m_visualRotorFrame.XAxis.isFinite() );
-            WP_ASSERT( m_visualRotorFrame.YAxis.isFinite() );
-            WP_ASSERT( m_visualRotorFrame.ZAxis.isFinite() );
+            WP_ASSERT( m_visualRotorFrame.m_xAxis.isFinite() );
+            WP_ASSERT( m_visualRotorFrame.m_yAxis.isFinite() );
+            WP_ASSERT( m_visualRotorFrame.m_zAxis.isFinite() );
         }
 
         // gets the angular velocity of the model
@@ -1181,16 +1181,16 @@ namespace workphone
                 physics_Vec RotVec; // temp vector to hold elements of the shaft frame rotation
                 /*with Body do*/
                 {
-                    m_body.m_frame.XAxis.x = 1;
-                    m_body.m_frame.XAxis.y = 0;
-                    m_body.m_frame.XAxis.z =
-                        0; // set the body frame as upright pointing in the x direction
-                    m_body.m_frame.YAxis.x = 0;
-                    m_body.m_frame.YAxis.y = 1;
-                    m_body.m_frame.YAxis.z = 0;
-                    m_body.m_frame.ZAxis.x = 0;
-                    m_body.m_frame.ZAxis.y = 0;
-                    m_body.m_frame.ZAxis.z = 1; //
+                    m_body.m_frame.m_xAxis.x = 1;
+                    m_body.m_frame.m_xAxis.y = 0;
+                    m_body.m_frame.m_xAxis.z =
+                        0;  // set the body frame as upright pointing in the x direction
+                    m_body.m_frame.m_yAxis.x = 0;
+                    m_body.m_frame.m_yAxis.y = 1;
+                    m_body.m_frame.m_yAxis.z = 0;
+                    m_body.m_frame.m_zAxis.x = 0;
+                    m_body.m_frame.m_zAxis.y = 0;
+                    m_body.m_frame.m_zAxis.z = 1;  //
 
                     m_body.m_frontCDA = 0.01;
                     m_body.m_sideCDA = 0.03;
@@ -1251,15 +1251,15 @@ namespace workphone
                         mr.m_eleCyclic = 0;
                         /*with Frame do*/
                         {
-                            mr.m_frame.XAxis.x = 1;
-                            mr.m_frame.XAxis.y = 0;
-                            mr.m_frame.XAxis.z = 0;
-                            mr.m_frame.YAxis.x = 0;
-                            mr.m_frame.YAxis.y = 1;
-                            mr.m_frame.YAxis.z = 0;
-                            mr.m_frame.ZAxis.x = 0;
-                            mr.m_frame.ZAxis.y = 0;
-                            mr.m_frame.ZAxis.z = 1;
+                            mr.m_frame.m_xAxis.x = 1;
+                            mr.m_frame.m_xAxis.y = 0;
+                            mr.m_frame.m_xAxis.z = 0;
+                            mr.m_frame.m_yAxis.x = 0;
+                            mr.m_frame.m_yAxis.y = 1;
+                            mr.m_frame.m_yAxis.z = 0;
+                            mr.m_frame.m_zAxis.x = 0;
+                            mr.m_frame.m_zAxis.y = 0;
+                            mr.m_frame.m_zAxis.z = 1;
                         } // setting the reference frame vectors aligned with the ground frame
 
                         /*with Sector[zz] do*/
@@ -1295,15 +1295,15 @@ namespace workphone
                         fb.m_eleCyclic = 0;
                         /*with Frame do*/
                         {
-                            fb.m_frame.XAxis.x = 1;
-                            fb.m_frame.XAxis.y = 0;
-                            fb.m_frame.XAxis.z = 0;
-                            fb.m_frame.YAxis.x = 0;
-                            fb.m_frame.YAxis.y = 1;
-                            fb.m_frame.YAxis.z = 0;
-                            fb.m_frame.ZAxis.x = 0;
-                            fb.m_frame.ZAxis.y = 0;
-                            fb.m_frame.ZAxis.z = 1;
+                            fb.m_frame.m_xAxis.x = 1;
+                            fb.m_frame.m_xAxis.y = 0;
+                            fb.m_frame.m_xAxis.z = 0;
+                            fb.m_frame.m_yAxis.x = 0;
+                            fb.m_frame.m_yAxis.y = 1;
+                            fb.m_frame.m_yAxis.z = 0;
+                            fb.m_frame.m_zAxis.x = 0;
+                            fb.m_frame.m_zAxis.y = 0;
+                            fb.m_frame.m_zAxis.z = 1;
                         } // setting the reference frame vectors aligned with the ground frame
 
                         /*with Sector[zz] do*/
@@ -1345,17 +1345,17 @@ namespace workphone
 
                     /*with Frame do*/
                     {
-                        tr.m_frame.XAxis.x = 0;
-                        tr.m_frame.XAxis.y = -1;
-                        tr.m_frame.XAxis.z =
-                            0; // note the tail rotor set up pointing left in the world frame
-                        tr.m_frame.YAxis.x = 1;
-                        tr.m_frame.YAxis.y = 0;
-                        tr.m_frame.YAxis.z =
-                            0; // we need to have a way of making this track the heli's frame
-                        tr.m_frame.ZAxis.x = 0;
-                        tr.m_frame.ZAxis.y = 0;
-                        tr.m_frame.ZAxis.z = 1;
+                        tr.m_frame.m_xAxis.x = 0;
+                        tr.m_frame.m_xAxis.y = -1;
+                        tr.m_frame.m_xAxis.z =
+                            0;  // note the tail rotor set up pointing left in the world frame
+                        tr.m_frame.m_yAxis.x = 1;
+                        tr.m_frame.m_yAxis.y = 0;
+                        tr.m_frame.m_yAxis.z =
+                            0;  // we need to have a way of making this track the heli's frame
+                        tr.m_frame.m_zAxis.x = 0;
+                        tr.m_frame.m_zAxis.y = 0;
+                        tr.m_frame.m_zAxis.z = 1;
                     } // setting the reference frame vectors aligned with the ground frame
 
                     /*with Sector[zz] do*/
@@ -1516,7 +1516,7 @@ namespace workphone
         }
 
         // calculates the ground frame axes of the rotor and calculates the hub centre flow
-        // note the Frame.YAxis is the TPP for the rotor and is not affected by this coordinate rotation
+        // note the Frame.m_yAxis is the TPP for the rotor and is not affected by this coordinate rotation
         void HeliAero::calcAllRotorFrameFlows()
         {
             physics_Vec wnd;
@@ -1529,24 +1529,24 @@ namespace workphone
 
             {
                 TRotor &mr = m_rotorHead->m_mainRotor;
-                mr.m_frame.ZAxis = VUnit(
-                    VCross( m_body.m_frame.XAxis,
-                            mr.m_frame.YAxis ) ); // this is the forward pointing axis of the rotor
-                mr.m_frame.XAxis =
-                    VUnit( VCross( mr.m_frame.YAxis,
-                                   mr.m_frame.ZAxis ) ); // this is the left pointing axis of the rotor
+                mr.m_frame.m_zAxis = VUnit(
+                    VCross( m_body.m_frame.m_xAxis,
+                            mr.m_frame.m_yAxis ) );  // this is the forward pointing axis of the rotor
+                mr.m_frame.m_xAxis = VUnit(
+                    VCross( mr.m_frame.m_yAxis,
+                            mr.m_frame.m_zAxis ) );  // this is the left pointing axis of the rotor
                 mr.m_hubFlow = VecToFrame( m_totalFlow, mr.m_frame );
                 // note hub flow is in the opposite direction to the model velocity so hub flow
             }
 
             {
                 TRotor &fb = m_rotorHead->m_flyBar;
-                fb.m_frame.ZAxis = VUnit(
-                    VCross( m_body.m_frame.XAxis,
-                            fb.m_frame.YAxis ) ); // this is the forward pointing axis of the rotor
-                fb.m_frame.XAxis =
-                    VUnit( VCross( fb.m_frame.YAxis,
-                                   fb.m_frame.ZAxis ) ); // this is the left pointing axis of the rotor
+                fb.m_frame.m_zAxis = VUnit(
+                    VCross( m_body.m_frame.m_xAxis,
+                            fb.m_frame.m_yAxis ) );  // this is the forward pointing axis of the rotor
+                fb.m_frame.m_xAxis = VUnit(
+                    VCross( fb.m_frame.m_yAxis,
+                            fb.m_frame.m_zAxis ) );  // this is the left pointing axis of the rotor
                 fb.m_hubFlow = VecToFrame( m_totalFlow, fb.m_frame );
                 // note hub flow is in the opposite direction to the model velocity so hub flow
             }
@@ -1926,13 +1926,13 @@ namespace workphone
             // WP_LOG('CF = ' + FloatToStr(CF) + '  TF = ' + FloatToStr(TF));
 
             // do the ray-casting to get ground effect here
-            if( ( ( m_rotorHead->m_mainRotor.m_frame.YAxis.y > static_cast<physics_Num>( 0.0 ) ) &&
+            if( ( ( m_rotorHead->m_mainRotor.m_frame.m_yAxis.y > static_cast<physics_Num>( 0.0 ) ) &&
                   ( Vh < -std::numeric_limits<physics_Num>::epsilon() ) ) ||
-                ( ( m_rotorHead->m_mainRotor.m_frame.YAxis.y < static_cast<physics_Num>( 0.0 ) ) &&
+                ( ( m_rotorHead->m_mainRotor.m_frame.m_yAxis.y < static_cast<physics_Num>( 0.0 ) ) &&
                   ( Vh > std::numeric_limits<physics_Num>::epsilon() ) ) )
             {
                 // Vh is towards the ground (so ground effect possible)
-                if( m_rotorHead->m_mainRotor.m_frame.YAxis.y > static_cast<physics_Num>( 0.0 ) )
+                if( m_rotorHead->m_mainRotor.m_frame.m_yAxis.y > static_cast<physics_Num>( 0.0 ) )
                 {
                     Dir.y = static_cast<physics_Num>( -2.0 );
                 }
@@ -2525,13 +2525,14 @@ namespace workphone
         void HeliAero::alignFrames()
         {
             physics_Vec RotVec;
-            m_tailRotor->m_frame.XAxis =
-                VScale( m_body.m_frame.YAxis,
-                        -1.0 ); // the x axis of the tail rotor is pointing downwards in the body frame
-            m_tailRotor->m_frame.YAxis =
-                m_body.m_frame.XAxis; // the y axis of the tail rotor is pointing left in the body frame
-            m_tailRotor->m_frame.ZAxis =
-                m_body.m_frame.ZAxis; // the tail rotor's Z axis is parallel to the body's
+            m_tailRotor->m_frame.m_xAxis =
+                VScale( m_body.m_frame.m_yAxis,
+                        -1.0 );  // the x axis of the tail rotor is pointing downwards in the body frame
+            m_tailRotor->m_frame.m_yAxis =
+                m_body.m_frame
+                    .m_xAxis;  // the y axis of the tail rotor is pointing left in the body frame
+            m_tailRotor->m_frame.m_zAxis =
+                m_body.m_frame.m_zAxis;  // the tail rotor's Z axis is parallel to the body's
             /*with RotorHead do*/
             {
                 // sort out the mainshaft frame WRT the Body frame allowing for rake and tilt
@@ -2562,14 +2563,14 @@ namespace workphone
             try
             {
                 // Tail rotor orientation
-                m_tailRotor->m_frame.XAxis =
-                    VScale( m_body.m_frame.YAxis,
-                            -1 ); // the x axis of the tail rotor is pointing downwards in the body frame
-                m_tailRotor->m_frame.YAxis =
+                m_tailRotor->m_frame.m_xAxis = VScale(
+                    m_body.m_frame.m_yAxis,
+                    -1 );  // the x axis of the tail rotor is pointing downwards in the body frame
+                m_tailRotor->m_frame.m_yAxis =
                     m_body.m_frame
-                        .XAxis; // the y axis of the tail rotor is pointing left in the body frame
-                m_tailRotor->m_frame.ZAxis =
-                    m_body.m_frame.ZAxis; // the tail rotor's Z axis is parallel to the body's
+                        .m_xAxis;  // the y axis of the tail rotor is pointing left in the body frame
+                m_tailRotor->m_frame.m_zAxis =
+                    m_body.m_frame.m_zAxis;  // the tail rotor's Z axis is parallel to the body's
                 /*with RotorHead do*/
                 {
                     // sort out the mainshaft frame WRT the Body frame allowing for rake and tilt
@@ -2588,18 +2589,18 @@ namespace workphone
                     ExLoc = 2;
                     // sort the elevator and aileron axis deflections of the flybar WRT the mainshaft
                     m_rotorHead->m_flyBar.m_eleAngle =
-                        VDot( m_rotorHead->m_flyBar.m_frame.YAxis, m_rotorHead->m_shaftFrame.ZAxis );
+                        VDot( m_rotorHead->m_flyBar.m_frame.m_yAxis, m_rotorHead->m_shaftFrame.m_zAxis );
                     m_rotorHead->m_flyBar.m_ailAngle =
-                        -VDot( m_rotorHead->m_flyBar.m_frame.YAxis,
-                               m_rotorHead->m_shaftFrame.XAxis ); // note a sign change here
+                        -VDot( m_rotorHead->m_flyBar.m_frame.m_yAxis,
+                               m_rotorHead->m_shaftFrame.m_xAxis );  // note a sign change here
                     ExLoc = 3;
                     // sort out the elevator and aileron axis deflections of the main rotor WRT the
                     // mainshaft
-                    m_rotorHead->m_mainRotor.m_eleAngle =
-                        VDot( m_rotorHead->m_mainRotor.m_frame.YAxis, m_rotorHead->m_shaftFrame.ZAxis );
+                    m_rotorHead->m_mainRotor.m_eleAngle = VDot( m_rotorHead->m_mainRotor.m_frame.m_yAxis,
+                                                                m_rotorHead->m_shaftFrame.m_zAxis );
                     m_rotorHead->m_mainRotor.m_ailAngle =
-                        -VDot( m_rotorHead->m_mainRotor.m_frame.YAxis,
-                               m_rotorHead->m_shaftFrame.XAxis ); // note a sign change here
+                        -VDot( m_rotorHead->m_mainRotor.m_frame.m_yAxis,
+                               m_rotorHead->m_shaftFrame.m_xAxis );  // note a sign change here
                     ExLoc = 4;
                     // calc the resulting cyclic pitches for the flybar
                     m_rotorHead->m_flyBar.m_eleCyclic =
@@ -3427,15 +3428,15 @@ namespace workphone
             m_rotorHead->m_mainRotor.m_collective = 0.0 * Math<real_dNum>::pi() / 180.0;
             m_rotorHead->m_mainRotor.m_cone = 0.0 * Math<real_dNum>::pi() / 180.0;
             m_rotorHead->m_flyBar.m_cone = 0.0 * Math<real_dNum>::pi() / 180.0;
-            m_rotorHead->m_mainRotor.m_frame.XAxis.x = 1.0;
-            m_rotorHead->m_mainRotor.m_frame.XAxis.y = 0.0;
-            m_rotorHead->m_mainRotor.m_frame.XAxis.z = 0.0;
-            m_rotorHead->m_mainRotor.m_frame.YAxis.x = 0.0;
-            m_rotorHead->m_mainRotor.m_frame.YAxis.y = 1.0;
-            m_rotorHead->m_mainRotor.m_frame.YAxis.z = 0.0;
-            m_rotorHead->m_mainRotor.m_frame.ZAxis.x = 0.0;
-            m_rotorHead->m_mainRotor.m_frame.ZAxis.y = 0.0;
-            m_rotorHead->m_mainRotor.m_frame.ZAxis.z = 1.0;
+            m_rotorHead->m_mainRotor.m_frame.m_xAxis.x = 1.0;
+            m_rotorHead->m_mainRotor.m_frame.m_xAxis.y = 0.0;
+            m_rotorHead->m_mainRotor.m_frame.m_xAxis.z = 0.0;
+            m_rotorHead->m_mainRotor.m_frame.m_yAxis.x = 0.0;
+            m_rotorHead->m_mainRotor.m_frame.m_yAxis.y = 1.0;
+            m_rotorHead->m_mainRotor.m_frame.m_yAxis.z = 0.0;
+            m_rotorHead->m_mainRotor.m_frame.m_zAxis.x = 0.0;
+            m_rotorHead->m_mainRotor.m_frame.m_zAxis.y = 0.0;
+            m_rotorHead->m_mainRotor.m_frame.m_zAxis.z = 1.0;
             m_rotorHead->m_flyBar.m_frame = m_rotorHead->m_mainRotor.m_frame;
             m_rotorHead->m_flyBar.m_hubPosition = m_rotorHead->m_mainRotor.m_hubPosition;
             m_rotorHead->m_torques.x = 0.0;
@@ -3452,15 +3453,15 @@ namespace workphone
             m_rotorHead->m_mainRotor.m_hubFlow.y = 0;
             m_rotorHead->m_mainRotor.m_hubFlow.z = 0;
             m_rotorHead->m_flyBar.m_hubFlow = m_rotorHead->m_mainRotor.m_hubFlow;
-            m_body.m_frame.XAxis.x = 1;
-            m_body.m_frame.XAxis.y = 0;
-            m_body.m_frame.XAxis.z = 0; // set body frame
-            m_body.m_frame.YAxis.x = 0;
-            m_body.m_frame.YAxis.y = 1;
-            m_body.m_frame.YAxis.z = 0;
-            m_body.m_frame.ZAxis.x = 0;
-            m_body.m_frame.ZAxis.y = 0;
-            m_body.m_frame.ZAxis.z = 1;
+            m_body.m_frame.m_xAxis.x = 1;
+            m_body.m_frame.m_xAxis.y = 0;
+            m_body.m_frame.m_xAxis.z = 0;  // set body frame
+            m_body.m_frame.m_yAxis.x = 0;
+            m_body.m_frame.m_yAxis.y = 1;
+            m_body.m_frame.m_yAxis.z = 0;
+            m_body.m_frame.m_zAxis.x = 0;
+            m_body.m_frame.m_zAxis.y = 0;
+            m_body.m_frame.m_zAxis.z = 1;
             rotVec.x = 0;
             rotVec.y = 0;
             rotVec.z = 0; // set up any initial rotation needed between main rotor and body
@@ -3520,10 +3521,12 @@ namespace workphone
                 vrdc = static_cast<physics_Num>( 0.000125 );
             }
 
-            rollAngleError = -VDot( m_rotorHead->m_mainRotor.m_frame.YAxis, m_visualRotorFrame.XAxis );
+            rollAngleError =
+                -VDot( m_rotorHead->m_mainRotor.m_frame.m_yAxis, m_visualRotorFrame.m_xAxis );
             Math<physics_Num>::Limit( rollAngleError,
                                       0.15 ); // limit the angle to about 9 degrees for force limitation
-            pitchAngleError = VDot( m_rotorHead->m_mainRotor.m_frame.YAxis, m_visualRotorFrame.ZAxis );
+            pitchAngleError =
+                VDot( m_rotorHead->m_mainRotor.m_frame.m_yAxis, m_visualRotorFrame.m_zAxis );
             Math<physics_Num>::Limit( pitchAngleError,
                                       0.15 ); // limit the angle to about 9 degrees for force limitation
             rollSpeedError =
@@ -3573,11 +3576,11 @@ namespace workphone
             // The pitch axis forces are generated by looking at the angle between the VisualRotor and
             // the main rotor
             rollError =
-                -VDot( m_rotorHead->m_mainRotor.m_frame.YAxis, m_visualRotorFrame.XAxis ) -
+                -VDot( m_rotorHead->m_mainRotor.m_frame.m_yAxis, m_visualRotorFrame.m_xAxis ) -
                 static_cast<physics_Num>( 0.1 ) *
                     ( m_visualRotorAngularVelocity.z - m_rotorHead->m_mainRotor.m_precessionRate.z );
             pitchError =
-                VDot( m_rotorHead->m_mainRotor.m_frame.YAxis, m_visualRotorFrame.ZAxis ) -
+                VDot( m_rotorHead->m_mainRotor.m_frame.m_yAxis, m_visualRotorFrame.m_zAxis ) -
                 static_cast<physics_Num>( 0.1 ) *
                     ( m_visualRotorAngularVelocity.x - m_rotorHead->m_mainRotor.m_precessionRate.x );
 
@@ -3689,18 +3692,18 @@ namespace workphone
             // and apply this force
             addLocalForce( CB_MODEL, m_body.m_dragForce, m_body.m_dragCentre, 9.0 );
             // if showVectors then DisplayLocalVector(CB_MODEL, m_body.m_dragForce, m_body.m_dragCentre);
-            tVec = VecToFrame( m_rotorHead->m_flyBar.m_frame.YAxis, m_body.m_frame );
+            tVec = VecToFrame( m_rotorHead->m_flyBar.m_frame.m_yAxis, m_body.m_frame );
             // if showVectors then DisplayLocalVector(CB_MODEL, tVec,
             // m_rotorHead->m_mainRotor.m_hubPosition);
-            tVec = VecToFrame( m_rotorHead->m_linkage.m_swashFrame.YAxis, m_body.m_frame );
+            tVec = VecToFrame( m_rotorHead->m_linkage.m_swashFrame.m_yAxis, m_body.m_frame );
             if( showVectors )
                 displayLocalVector( CB_MODEL, VScale( tVec, 0.5 ),
                                     m_rotorHead->m_mainRotor.m_hubPosition );
-            tVec = VecToFrame( m_rotorHead->m_mainRotor.m_frame.YAxis, m_body.m_frame );
+            tVec = VecToFrame( m_rotorHead->m_mainRotor.m_frame.m_yAxis, m_body.m_frame );
             if( showVectors )
                 displayLocalVector( CB_MODEL, VScale( tVec, 1.2 ),
                                     m_rotorHead->m_mainRotor.m_hubPosition );
-            tVec = VecToFrame( m_rotorHead->m_shaftFrame.YAxis, m_body.m_frame );
+            tVec = VecToFrame( m_rotorHead->m_shaftFrame.m_yAxis, m_body.m_frame );
             // if showVectors then DisplayLocalVector(CB_MODEL, VScale(tVec, 1.5),
             // m_rotorHead->m_mainRotor.m_hubPosition);
         } // OutputForces;
@@ -3752,7 +3755,7 @@ namespace workphone
         void HeliAero::drawVBar()
         {
             physics_Vec F, Loc;
-            F = VScale( m_theVBar->m_frame.YAxis, 0.1 );
+            F = VScale( m_theVBar->m_frame.m_yAxis, 0.1 );
             Loc.x = 0.0;
             Loc.y = 0.5;
             Loc.z = 0.0;
@@ -4258,7 +4261,7 @@ namespace workphone
             Loc.z = 0;
             addLocalForce( CB_MODEL, F, Loc, 0 );
             displayLocalVector( CB_MODEL, F, Loc );
-            WP_LOG( StringUtil::toString( m_modelFrame.YAxis.z ) );
+            WP_LOG( StringUtil::toString( m_modelFrame.m_yAxis.z ) );
             // if Time<SpinTime then F.x:= 1*(SpinSpeed+m_modelAngularVelocity.y) else
             // F.x:=1*(m_modelAngularVelocity.y);  //add in a tail force to get the model doing a piro
             F.x = static_cast<physics_Num>( 10 ) * m_txChannel[YAW_CHANNEL];

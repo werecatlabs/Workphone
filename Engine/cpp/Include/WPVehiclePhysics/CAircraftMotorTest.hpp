@@ -68,8 +68,8 @@ namespace workphone
             s32 getDebugId( s32 i ) const;
             s32 getDebugId( s32 section, s32 index ) const;
 
-            void MotorCalc( CBatteryPackStandard &Pack, CESController &ESC );
-            void MotorCalc( CAircraftMotorTest &motor, CESController &esc, float packTerminalV );
+            void motorCalc( CBatteryPackStandard &Pack, CESController &ESC );
+            void motorCalc( CAircraftMotorTest &motor, CESController &esc, float packTerminalV );
 
             SmartPtr<IAircraftPropeller> m_propeller;
             SmartPtr<IBatteryPack>       m_batteryPack;

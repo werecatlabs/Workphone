@@ -6,7 +6,7 @@ namespace workphone
 {
     namespace vehicle
     {
-        const real_dNum CAerodymanicsWind::KvonKarmen = 0.41; // VonKarmen's constant
+        const real_dNum CAerodymanicsWind::m_kvonKarmen = 0.41;  // VonKarmen's constant
 
         CAerodymanicsWind::CAerodymanicsWind()
         {
@@ -41,7 +41,7 @@ namespace workphone
             m_convCrossY =
                 -Math<real_Num>::Sin( ( static_cast<real_Num>( 90 ) + Direction - m_directionOffset ) /
                                       static_cast<real_Num>( 57.296 ) );
-            m_uStar = ( m_meanWindSpeed * KvonKarmen ) / Math<real_Num>::Ln( 10.0f / m_roughness );
+            m_uStar = ( m_meanWindSpeed * m_kvonKarmen ) / Math<real_Num>::Ln( 10.0f / m_roughness );
             // calculate UStar
 
             // set the angular frequency for the windspeed spectral components
@@ -123,7 +123,7 @@ namespace workphone
             real_Num LogWind; // the MeanWind at the models height
 
             if( ScaleHt > static_cast<real_Num>( 1.0 ) )
-                LogWind = ( m_uStar / KvonKarmen ) * Math<real_Num>::Ln( ScaleHt );
+                LogWind = ( m_uStar / m_kvonKarmen ) * Math<real_Num>::Ln( ScaleHt );
             else
                 LogWind = static_cast<real_Num>( 0.0 ); // calculate the Mean wind at this height
 
@@ -166,7 +166,7 @@ namespace workphone
 
             if( ScaleHt > 1 )
             {
-                LogWind = ( m_uStar / KvonKarmen ) * Math<real_Num>::Ln( ScaleHt );
+                LogWind = ( m_uStar / m_kvonKarmen ) * Math<real_Num>::Ln( ScaleHt );
             }
             else
             {

@@ -54,7 +54,7 @@ namespace workphone
                         if( m_propellerUnit )
                         {
                             auto throttlePos = static_cast<real_Num>( 0.8 ) -
-                                               m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+                                               m_parentAircraft->getChannel( CAircraft::m_thrChannel );
                             auto throttle = throttlePos / ( 0.8 * 2.0 );
 
                             auto thrust = m_propellerUnit->getThrust();

@@ -56,17 +56,17 @@ namespace workphone
              */
 
             /** @brief Clutch state: fully disengaged, no torque transmission */
-            static const int kDisengaged = 0;
+            static const int m_kDisengaged = 0;
 
             /** @brief Clutch state: slipping between engaged and disengaged, partial torque transmission
              * with friction losses */
-            static const int kSlipping = 1;
+            static const int m_kSlipping = 1;
 
             /** @brief Clutch state: fully locked/engaged, rigid torque transmission */
-            static const int kLocked = 2;
+            static const int m_kLocked = 2;
 
             /** @brief Clutch state: overrun condition where output speed exceeds engine speed */
-            static const int kOverrun = 3;
+            static const int m_kOverrun = 3;
 
             /** @} */
 

@@ -189,7 +189,7 @@ namespace workphone
 
         void EngineSimple::updateRunning()
         {
-            float input = 0.8f - m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+            float input = 0.8f - m_parentAircraft->getChannel( CAircraft::m_thrChannel );
             input = MathF::clamp( input, 0.0f, 1.0f );
             m_desiredRpm = m_idleRpm + ( ( m_maxRpm - m_idleRpm ) * input );
         }

@@ -17,9 +17,9 @@ namespace workphone
 
         workphone::vehicle::FrameOfRef &FrameOfRef::operator=( const FrameOfRef &other )
         {
-            XAxis = other.XAxis;
-            YAxis = other.YAxis;
-            ZAxis = other.ZAxis;
+            m_xAxis = other.m_xAxis;
+            m_yAxis = other.m_yAxis;
+            m_zAxis = other.m_zAxis;
             return *this;
         }
 

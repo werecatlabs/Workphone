@@ -62,11 +62,11 @@ namespace workphone
             Vector3<real_Num>    m_localPos;
 
             real_Num m_maxTorque;
-            real_Num lastInput;
-            real_Num slewRateUp;
-            real_Num slewRateDown;
-            real_Num slewedInput;
-            bool     powerOn;
+            real_Num m_lastInput;
+            real_Num m_slewRateUp;
+            real_Num m_slewRateDown;
+            real_Num m_slewedInput;
+            bool m_powerOn;
             int      m_debugId;
             f32      m_averageMotorRPM;
             s32      m_index;

@@ -69,7 +69,7 @@ namespace workphone::vehicle
     void CAircraftEngine::update( const double &time, const double &deltaTime )
     {
         auto throttlePos =
-            static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+            static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::m_thrChannel );
         setThrottle( throttlePos );
 
         auto idleRPM = m_peakPowerRevs * 0.01;

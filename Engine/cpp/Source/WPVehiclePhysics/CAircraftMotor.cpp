@@ -99,7 +99,7 @@ namespace workphone
         void CAircraftMotor::motorCalc( double dt, CBatteryPackStandard &pack, CESController &esc )
         {
             auto throttlePos =
-                static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+                static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::m_thrChannel );
             auto throttle = throttlePos / ( 0.8 * 2.0 );
 
             auto currentLim = static_cast<real_Num>( 0.0 );
@@ -200,7 +200,7 @@ namespace workphone
                 batteryPack->discharge( m_motorCurrent, dt );
 
                 auto throttlePos = static_cast<real_Num>( 0.8 ) -
-                                   m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+                                   m_parentAircraft->getChannel( CAircraft::m_thrChannel );
                 auto idleRPM = ESC.m_fixedRpm * 0.0;
                 auto throttle = throttlePos / ( 0.8 * 2.0 );
                 auto rpm = idleRPM + ( ( ESC.m_fixedRpm - idleRPM ) * throttle );
@@ -459,7 +459,7 @@ namespace workphone
         {
             // hack
             auto throttlePos =
-                static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+                static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::m_thrChannel );
             auto throttle = throttlePos / ( 0.8 * 2.0 );
 
             m_msrGainFactor = 0.0f; // gain adjustment for crude governor

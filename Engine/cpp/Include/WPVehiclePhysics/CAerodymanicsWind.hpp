@@ -147,7 +147,7 @@ namespace workphone
             void initWeather();
 
             /** @brief Von Kármán's constant used in logarithmic wind profile equation (˜0.41). */
-            static const real_dNum KvonKarmen;
+            static const real_dNum m_kvonKarmen;
 
             /** @brief Mean wind speed at 2 meters altitude as provided by configuration (m/s). */
             real_Num m_meanWindSpeed;

@@ -58,17 +58,18 @@ namespace workphone::vehicle
                 for( n = 0; n < Steps; n++ ) // now do the rotation in n steps
                 {
                     ExLoc = 5;
-                    F.XAxis = VUnit( V3Sum( VScale( F.XAxis, Kx ), VScale( F.YAxis, Rz ),
-                                            VScale( F.ZAxis, -Ry ) ) ); // new XAxis
+                    F.m_xAxis = VUnit( V3Sum( VScale( F.m_xAxis, Kx ), VScale( F.m_yAxis, Rz ),
+                                              VScale( F.m_zAxis, -Ry ) ) );  // new XAxis
                     ExLoc = 6;
-                    F.YAxis = VUnit( V3Sum( VScale( F.YAxis, Ky ), VScale( F.XAxis, -Rz ),
-                                            VScale( F.ZAxis, Rx ) ) ); // new YAxis
+                    F.m_yAxis = VUnit( V3Sum( VScale( F.m_yAxis, Ky ), VScale( F.m_xAxis, -Rz ),
+                                              VScale( F.m_zAxis, Rx ) ) );  // new YAxis
                     ExLoc = 7;
-                    F.ZAxis =
-                        VUnit( VCross( F.XAxis, F.YAxis ) ); // new Z axis perpendicular to new X and Y
+                    F.m_zAxis = VUnit(
+                        VCross( F.m_xAxis, F.m_yAxis ) );  // new Z axis perpendicular to new X and Y
                     ExLoc = 8;
-                    F.XAxis = VCross(
-                        F.YAxis, F.ZAxis ); // re-do XAxis as cross of Y & Z to ensure orthoganality!
+                    F.m_xAxis =
+                        VCross( F.m_yAxis,
+                                F.m_zAxis );  // re-do XAxis as cross of Y & Z to ensure orthoganality!
                 } // for n loop
                 ExLoc = 9;
                 result = F; // pass the finished frame of reference back
@@ -170,14 +171,14 @@ namespace workphone::vehicle
         // calculate the flow component in the direction of the rotor's X axis
         // calculate the flow component in the direction of the rotor's Y axis
         // calculate the flow component in the direction of the rotor's Z axis
-        return physics_Vec( VDot( VecInGF, Frame.XAxis ), VDot( VecInGF, Frame.YAxis ),
-                            VDot( VecInGF, Frame.ZAxis ) );
+        return physics_Vec( VDot( VecInGF, Frame.m_xAxis ), VDot( VecInGF, Frame.m_yAxis ),
+                            VDot( VecInGF, Frame.m_zAxis ) );
     }
 
     workphone::vehicle::physics_Vec VecFromFrame( const physics_Vec &V, const FrameOfRef &Frame )
     {
-        return V3Sum( VScale( Frame.XAxis, V.x ), VScale( Frame.YAxis, V.y ),
-                      VScale( Frame.ZAxis, V.z ) ); //
+        return V3Sum( VScale( Frame.m_xAxis, V.x ), VScale( Frame.m_yAxis, V.y ),
+                      VScale( Frame.m_zAxis, V.z ) );  //
     }
 
 } // namespace workphone::vehicle

@@ -49,19 +49,19 @@ namespace workphone
         {
             if( m_axisName == "Throttle" )
             {
-                return m_parentAircraft->getChannel( CAircraft::THR_CHANNEL );
+                return m_parentAircraft->getChannel( CAircraft::m_thrChannel );
             }
             if( m_axisName == "Roll" )
             {
-                return m_parentAircraft->getChannel( CAircraft::AIL_CHANNEL ) * 3.0f;
+                return m_parentAircraft->getChannel( CAircraft::m_ailChannel ) * 3.0f;
             }
             if( m_axisName == "Pitch" )
             {
-                return m_parentAircraft->getChannel( CAircraft::ELE_CHANNEL );
+                return m_parentAircraft->getChannel( CAircraft::m_eleChannel );
             }
             if( m_axisName == "Yaw" )
             {
-                return m_parentAircraft->getChannel( CAircraft::YAW_CHANNEL );
+                return m_parentAircraft->getChannel( CAircraft::m_yawChannel );
             }
 
             return 0.0f;
