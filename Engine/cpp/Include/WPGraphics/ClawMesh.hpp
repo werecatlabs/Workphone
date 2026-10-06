@@ -2,6 +2,7 @@
 #define ClawMesh_h__
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
+#include <workphone_graphics_skinning.h>
 #include <Workphone/Graphics/GraphicsMesh.hpp>
 #include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Atomics/AtomicFixedString.hpp>
@@ -102,6 +103,12 @@ namespace workphone
             /** Assigns a skeleton for skeletal animation. */
             void setSkeleton( SmartPtr<IGraphicsSkeleton> skeleton ) override;
 
+            /** Initial CPU deformation path; call from the mesh-owning render thread.
+             * Joint palettes are model-space current_joint * inverse_bind. */
+            bool setSkinningData( const Array<wp_skin_vertex> &vertices );
+            bool applySkinningPalette( const Array<wp_mat4f> &palette );
+            bool hasSkinningData() const;
+
             /** Creates a deep copy of the mesh object. */
             SmartPtr<IGraphicsObject> clone(
                 const String &name = StringUtil::EmptyString ) const override;
@@ -112,6 +119,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            Array<wp_skin_vertex> m_skinVertices;
+            Array<wp_skin_result> m_skinOutput;
             wp_graphics_mesh *m_mesh = nullptr;  ///< Pointer to the native Claw mesh structure.
             wp_graphics_object *m_renderObject =
                 nullptr;                   ///< Pointer to the native render object used for submission.

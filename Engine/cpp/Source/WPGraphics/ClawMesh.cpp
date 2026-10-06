@@ -128,6 +128,11 @@ namespace workphone
 
         ClawMesh::~ClawMesh()
         {
+            if( m_mesh )
+            {
+                ClawRendererDX11::forgetMesh( m_mesh );
+                wp_graphics_mesh_destroy( m_mesh );
+            }
         }
 
         void ClawMesh::load( SmartPtr<ISharedObject> data )
@@ -229,6 +234,8 @@ namespace workphone
 
         void ClawMesh::reload( SmartPtr<ISharedObject> data )
         {
+            m_skinVertices.clear();
+            m_skinOutput.clear();
             // Keep the scene's native render object attached while replacing its mesh.
             if( m_renderObject )
                 wp_graphics_object_set_mesh( m_renderObject, nullptr );
@@ -243,6 +250,8 @@ namespace workphone
 
         void ClawMesh::unload( SmartPtr<ISharedObject> data )
         {
+            m_skinVertices.clear();
+            m_skinOutput.clear();
             setLoadingState( LoadingState::Unloading );
 
             bindNativeRenderObject( nullptr );
@@ -434,6 +443,52 @@ namespace workphone
         void ClawMesh::setSkeleton( SmartPtr<IGraphicsSkeleton> skeleton )
         {
             GraphicsMesh::setSkeleton( skeleton );
+        }
+
+        bool ClawMesh::setSkinningData( const Array<wp_skin_vertex> &vertices )
+        {
+            if( !m_mesh || vertices.size() != wp_graphics_mesh_get_vertex_count( m_mesh ) || vertices.empty() ) return false;
+            const auto format = wp_graphics_mesh_get_vertex_format( m_mesh );
+            if( format != WORKPHONE_VERTEX_FORMAT_PNT && format != WORKPHONE_VERTEX_FORMAT_PNTC ) return false;
+            // Validate indices/weights with an identity palette before publishing bind data.
+            Array<wp_mat4f> identity( WP_SKIN_MAX_JOINTS );
+            for( auto &matrix : identity )
+            {
+                std::memset( &matrix, 0, sizeof(matrix) );
+                for( u32 i = 0; i < 4; ++i ) matrix.m[i][i] = 1.0f;
+            }
+            Array<wp_skin_result> validated( vertices.size() );
+            if( !wp_skin_vertices( vertices.data(), static_cast<wp_u32>( vertices.size() ),
+                identity.data(), static_cast<wp_u32>( identity.size() ), validated.data() ) ) return false;
+            m_skinVertices = vertices;
+            m_skinOutput = std::move( validated );
+            return true;
+        }
+
+        bool ClawMesh::hasSkinningData() const { return !m_skinVertices.empty(); }
+
+        bool ClawMesh::applySkinningPalette( const Array<wp_mat4f> &palette )
+        {
+            if( !m_mesh || m_skinVertices.empty() || m_skinVertices.size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
+                palette.empty() || palette.size() > WP_SKIN_MAX_JOINTS ) return false;
+            if( !wp_skin_vertices( m_skinVertices.data(), static_cast<wp_u32>( m_skinVertices.size() ),
+                palette.data(), static_cast<wp_u32>( palette.size() ), m_skinOutput.data() ) ) return false;
+            const auto count = wp_graphics_mesh_get_vertex_count( m_mesh );
+            const auto stride = wp_graphics_mesh_get_vertex_stride( m_mesh );
+            const auto source = static_cast<const u8 *>( wp_graphics_mesh_get_vertices( m_mesh ) );
+            if( !source || stride < sizeof(wp_vec3f) * 2 ) return false;
+            Array<u8> vertices( static_cast<size_t>(count) * stride );
+            std::memcpy( vertices.data(), source, vertices.size() );
+            for( u32 i = 0; i < count; ++i )
+            {
+                std::memcpy( vertices.data() + static_cast<size_t>(i) * stride, &m_skinOutput[i].position, sizeof(wp_vec3f) );
+                std::memcpy( vertices.data() + static_cast<size_t>(i) * stride + sizeof(wp_vec3f), &m_skinOutput[i].normal, sizeof(wp_vec3f) );
+            }
+            if( !wp_graphics_mesh_set_vertices( m_mesh, wp_graphics_mesh_get_vertex_format(m_mesh), vertices.data(), count ) ) return false;
+            ClawRendererDX11::forgetMesh( m_mesh );
+            wp_graphics_mesh_compute_aabb( m_mesh );
+            if( m_renderObject ) wp_graphics_object_set_local_aabb( m_renderObject, wp_graphics_mesh_get_local_aabb(m_mesh) );
+            return true;
         }
 
         SmartPtr<IGraphicsObject> ClawMesh::clone( const String &name ) const

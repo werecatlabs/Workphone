@@ -662,14 +662,22 @@ namespace workphone
                     {
                         auto particles = dynamic_pointer_cast<CParticleSystem>( object );
                         if( !particles || !particles->isVisible() || !particles->isLoaded() ) continue;
-                        if( camera && !( particles->getVisibilityFlags() & camera->getVisibilityMask() ) ) continue;
+                        auto viewport = rawRenderer->getViewport();
+                        if( viewport && !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) ) continue;
                         auto owner = particles->getOwner();
-                        const Matrix4F world = owner ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
-                                                     : Matrix4F::identity();
+                        Matrix4F world = owner ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
+                                               : Matrix4F::identity();
+                        if( auto clawOwner = dynamic_pointer_cast<ClawSceneNode>( owner ) )
+                        {
+                            wp_mat4f nativeWorld{};
+                            wp_scenenode_get_world_matrix( clawOwner->getNativeNode(), &nativeWorld );
+                            world = Matrix4F( nativeWorld.m[0] );
+                        }
                         SmartPtr<IMaterial> material;
                         if( auto manager = core::IApplicationManager::instancePtr() )
-                            if( auto materials = manager->getGraphicsSystem()->getMaterialManager() )
-                                material = dynamic_pointer_cast<IMaterial>( materials->getByName( particles->getMaterialName() ) );
+                            if( auto graphics = manager->getGraphicsSystem() )
+                                if( auto materials = graphics->getMaterialManager() )
+                                    material = dynamic_pointer_cast<IMaterial>( materials->getByName( particles->getMaterialName() ) );
                         const auto scale = particles->getScale();
                         dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
                             Vector3F( scale.X(), scale.Y(), scale.Z() ), material );

@@ -1,0 +1,22 @@
+name: Graphics production contracts
+on:
+  push:
+    paths: ['Engine/c/**', 'Tests/GraphicsProduction/**', 'CMakeLists.txt', '.github/workflows/graphics-contracts.yml']
+  pull_request:
+    paths: ['Engine/c/**', 'Tests/GraphicsProduction/**', 'CMakeLists.txt', '.github/workflows/graphics-contracts.yml']
+jobs:
+  windows-contracts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure without engine or third-party dependencies
+        run: cmake -S . -B build-contracts -DWP_BUILD_GRAPHICS_CONTRACTS_ONLY=ON
+      - name: Build
+        run: cmake --build build-contracts --config RelWithDebInfo --parallel 2
+      - name: Test
+        run: ctest --test-dir build-contracts -C RelWithDebInfo --output-on-failure --no-tests=error --output-junit results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: graphics-contract-results
+          path: build-contracts/results.xml

@@ -11,6 +11,7 @@ int main( void )
     wp_particle_sample saved;
     const wp_particle_sample *samples;
     unsigned int i;
+    union { wp_u32 bits; wp_f32 value; } nonfinite;
     CHECK( !wp_particle_simulation_create(0, 1) );
     CHECK( !wp_particle_simulation_create(WP_PARTICLE_SIMULATION_MAX_CAPACITY + 1, 1) );
     a = wp_particle_simulation_create(256, 42);
@@ -43,6 +44,12 @@ int main( void )
     CHECK( !wp_particle_simulation_advance(a, 2.0f) );
     CHECK( !wp_particle_simulation_set_state(a, WORKPHONE_PARTICLE_STATE_PAUSED_TIMED) );
     invalid = settings; invalid.rate = -1.0f;
+    CHECK( !wp_particle_simulation_configure(a, &invalid) );
+    nonfinite.bits = 0x7fc00000u;
+    CHECK( !wp_particle_simulation_advance(a, nonfinite.value) );
+    invalid = settings; invalid.lifetime_max = nonfinite.value;
+    CHECK( !wp_particle_simulation_configure(a, &invalid) );
+    invalid = settings; invalid.color_start[1] = nonfinite.value;
     CHECK( !wp_particle_simulation_configure(a, &invalid) );
     CHECK( wp_particle_simulation_set_state(a, WORKPHONE_PARTICLE_STATE_STOPPED_FADE) );
     for( i = 0; i < 5; ++i ) CHECK( wp_particle_simulation_advance(a, 1.0f) );

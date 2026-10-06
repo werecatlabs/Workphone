@@ -148,7 +148,7 @@ namespace workphone
         //-------------------------------------------------
         void CParticleSystem::update()
         {
-            if( Thread::getCurrentTask() == TaskId::Render ) return;
+            // GraphicsScene advances particles during preparation, before all view draws.
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
             if( timer && !simulate( static_cast<f32>( timer->getDeltaTime() ) ) && isLoaded() )
@@ -312,11 +312,12 @@ namespace workphone
 
         u32 CParticleSystem::getVisibilityFlags() const
         {
-            return ParticleSystem::getVisibilityFlags();
+            return m_visibilityFlags;
         }
 
         void CParticleSystem::setVisibilityFlags( u32 flags )
         {
+            m_visibilityFlags = flags;
             ParticleSystem::setVisibilityFlags( flags );
         }
 

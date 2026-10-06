@@ -153,6 +153,7 @@ namespace workphone
             u32 m_seed = 1;
             String m_materialName;
             bool m_customSimulationSettings = false;
+            u32 m_visibilityFlags = 0xFFFFFFFFu;
 
             Pool<ParticleData> m_particles;
             Pool<Vector3<real_Num>> m_positions;

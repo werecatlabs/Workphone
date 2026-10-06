@@ -1307,6 +1307,11 @@ namespace workphone
             return m_configuredRendererType;
         }
 
+        ClawCapabilities ClawHammerSystem::getCapabilities() const
+        {
+            return getClawCapabilities( m_renderApi );
+        }
+
         bool ClawHammerSystem::switchRenderer( RenderApi api )
         {
             if( !m_sys )

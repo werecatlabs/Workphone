@@ -2,6 +2,7 @@
 #define GraphicsSystemClaw_h__
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
+#include <WPGraphics/ClawCapabilities.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -152,6 +153,7 @@ namespace workphone
              * @return The renderer API type
              */
             RenderApi getRendererType() const;
+            ClawCapabilities getCapabilities() const;
 
             /**
              * @brief Switch to a different renderer at runtime.

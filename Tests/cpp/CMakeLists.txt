@@ -59,6 +59,19 @@ if (WP_BUILD_TESTS)
 	endif()
 
 	if (WP_GRAPHICS_SYSTEM_CLAW AND TARGET WPGraphics)
+        if(WIN32 AND WP_BUILD_RENDERER_DX11)
+            add_executable(WPGraphicsClawProductionTests ClawProductionTests.cpp)
+            target_include_directories(WPGraphicsClawProductionTests PRIVATE
+                ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+                ${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+            target_link_libraries(WPGraphicsClawProductionTests PRIVATE
+                WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
+            target_link_directories(WPGraphicsClawProductionTests PRIVATE
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+            set_target_properties(WPGraphicsClawProductionTests PROPERTIES FOLDER Tests/Cpp)
+            add_test(NAME WPGraphics.claw_production_render COMMAND WPGraphicsClawProductionTests)
+            set_tests_properties(WPGraphics.claw_production_render PROPERTIES LABELS "graphics;gpu;production" TIMEOUT 60)
+        endif()
 		add_executable(WPGraphicsClawRendererTests ClawRendererContractTests.cpp)
 		target_include_directories(
 			WPGraphicsClawRendererTests

@@ -82,7 +82,21 @@ namespace workphone::render
             WP_LOG_ERROR( "Claw particles: unsupported particle state." );
             return;
         }
+        const bool starting = m_simulation && state == ParticleSystemState::Started &&
+            wp_particle_simulation_get_state( m_simulation ) == WORKPHONE_PARTICLE_STATE_STOPPED;
         if( m_simulation ) wp_particle_simulation_set_state( m_simulation, static_cast<wp_particle_state>( state ) );
+        if( starting && getFastForwardTime() > 0.0f )
+        {
+            auto remaining = getFastForwardTime();
+            if( !std::isfinite( remaining ) || remaining > 10.0f )
+                WP_LOG_ERROR( "Claw particles: prewarm must be finite and at most ten seconds." );
+            else while( remaining > 0.0f )
+            {
+                const auto slice = std::min( remaining, 1.0f );
+                wp_particle_simulation_advance( m_simulation, slice );
+                remaining -= slice;
+            }
+        }
         m_state = state;
     }
 

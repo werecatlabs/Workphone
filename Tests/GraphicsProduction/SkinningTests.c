@@ -17,6 +17,7 @@ int main( void )
     wp_skin_vertex vertices[3];
     wp_skin_result output[3], previous[3];
     int i;
+    union { wp_u32 bits; wp_f32 value; } nonfinite;
     identity( &palette[0] ); identity( &palette[1] );
     memset( vertices, 0, sizeof(vertices) );
     for( i = 0; i < 3; ++i )
@@ -54,6 +55,9 @@ int main( void )
     CHECK( fabs(output[2].position.x - 2.0f) < 1e-5 && fabs(output[2].normal.x - 1.0f) < 1e-5 );
     CHECK( !wp_skin_vertices( vertices, 3, palette, WP_SKIN_MAX_JOINTS + 1, output ) );
     CHECK( !wp_skin_vertices( NULL, 3, palette, 2, output ) );
+    nonfinite.bits = 0x7fc00000u;
+    vertices[0].weights[0] = nonfinite.value;
+    CHECK( !wp_skin_vertices( vertices, 3, palette, 2, output ) );
     puts("PASS: bind pose, two-joint deformation, weights, normals, limits, transactional failures");
     return 0;
 }
