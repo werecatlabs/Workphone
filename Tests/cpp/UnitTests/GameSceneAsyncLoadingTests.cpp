@@ -164,6 +164,66 @@ BOOST_AUTO_TEST_CASE( inline_load_preserves_root_order_sync_and_async )
     }
 }
 
+BOOST_AUTO_TEST_CASE( file_load_repairs_copied_root_ids_and_internal_references )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    auto data = make_ptr<Properties>();
+    const auto rootUUID = StringUtil::getUUID();
+    const auto childUUID = StringUtil::getUUID();
+    const auto componentUUID = StringUtil::getUUID();
+    for( const auto &name : { "Original", "Copy" } )
+    {
+        auto root = actorData( name, rootUUID );
+        auto child = actorData( "Target", childUUID );
+        child->setName( GameActorUtil::childStr );
+        root->addChild( child );
+        auto follow = make_ptr<Properties>();
+        follow->setName( GameActorUtil::componentStr );
+        follow->setProperty( GameActorUtil::componentTypeStr, "CameraFollow" );
+        follow->setProperty( GameActorUtil::uuidStr, componentUUID );
+        follow->setProperty( CameraFollow::followObjectStr, childUUID );
+        root->addChild( follow );
+        data->addChild( root );
+    }
+    const auto path = Path::lexically_normal( Path::getWorkingDirectory(),
+                                             "copied-scene-" + StringUtil::getUUID() + ".fbscene" );
+    guard.trackFilesystemPath( path );
+    const auto text = DataUtil::toString( data.get() );
+    {
+        std::ofstream file( path.c_str(), std::ios::binary );
+        BOOST_REQUIRE( file.is_open() );
+        file.write( text.c_str(), static_cast<std::streamsize>( text.size() ) );
+        BOOST_REQUIRE( file.good() );
+    }
+    const auto originalProjectPath = guard.applicationManager->getProjectPath();
+    guard.addCleanup( [app = guard.applicationManager, originalProjectPath]() mutable {
+        app->setProjectPath( originalProjectPath );
+    } );
+    // Absolute asset paths must remain absolute even with a project directory configured.
+    guard.applicationManager->setProjectPath( Path::getWorkingDirectory() );
+    for( bool async : { false, true } )
+    {
+        resetScene( guard );
+        guard.sceneManager->loadScene( path, async );
+        drainLoad( guard );
+        BOOST_REQUIRE( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Loaded );
+        auto roots = guard.scene->getActors();
+        BOOST_REQUIRE_EQUAL( roots.size(), 2u );
+        BOOST_CHECK_EQUAL( roots[0]->getHandle()->getUUIDAsString(), rootUUID );
+        BOOST_CHECK( roots[1]->getHandle()->getUUIDAsString() != rootUUID );
+        for( const auto &root : roots )
+        {
+            auto follow = root->getComponent<CameraFollow>();
+            BOOST_REQUIRE( follow );
+            BOOST_CHECK( follow->getFollowObject() == root->findChildByName( "Target" ) );
+        }
+        BOOST_CHECK( roots[0]->getComponent<CameraFollow>()->getHandle()->getUUIDAsString() !=
+                     roots[1]->getComponent<CameraFollow>()->getHandle()->getUUIDAsString() );
+    }
+    BOOST_CHECK_EQUAL( Path::readAllText( path ), text );
+}
+
 BOOST_AUTO_TEST_CASE( components_resolve_forward_actor_and_component_references )
 {
     TestGuard guard;

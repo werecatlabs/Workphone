@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/GamePrefab.hpp>
+#include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameScene.hpp>
 
@@ -21,23 +22,12 @@ namespace workphone::scene
         auto sceneManager = applicationManager->getGameManager();
         WP_ASSERT( sceneManager );
 
-        auto actor = sceneManager->createActor();
-        WP_ASSERT( actor );
-
-        if( actor )
-        {
-            auto data = getData();
-            if( !data )
-            {
-                sceneManager->destroyActor( actor );
-                return nullptr;
-            }
-
-            actor->fromData( data );
-            return actor;
-        }
-
-        return nullptr;
+        auto data = workphone::dynamic_pointer_cast<Properties>( getData() );
+        if( !data )
+            return nullptr;
+        auto instanceData = GameActorUtil::createInstanceData( data );
+        auto actors = GameActorUtil::loadSceneActors( { instanceData } );
+        return actors.empty() ? nullptr : actors.front();
     }
 
     void GamePrefab::save()

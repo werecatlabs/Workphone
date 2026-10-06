@@ -65,11 +65,14 @@ namespace workphone::scene
         auto factoryManager = applicationManager->getFactoryManagerPtr();
         WP_ASSERT( factoryManager );
 
-        auto newActor = sceneManager->createActor();
-        auto prefabData = prefab->toData();
-        newActor->fromData( prefabData );
-
-        return newActor;
+        if( !prefab )
+            return nullptr;
+        auto prefabData = workphone::dynamic_pointer_cast<Properties>( prefab->toData() );
+        auto instanceData = GameActorUtil::createInstanceData( prefabData );
+        if( !instanceData )
+            return nullptr;
+        auto actors = GameActorUtil::loadSceneActors( { instanceData } );
+        return actors.empty() ? nullptr : actors.front();
     }
 
     SmartPtr<IGameActor> GamePrefabManager::loadActor( SmartPtr<Properties> data,

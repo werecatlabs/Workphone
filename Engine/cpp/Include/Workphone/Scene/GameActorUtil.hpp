@@ -34,6 +34,8 @@ namespace workphone
         class WPCore_API GameActorUtil
         {
         public:
+            // Deep-copy a prefab graph with fresh actor/component IDs and remapped local references.
+            static SmartPtr<Properties> createInstanceData( SmartPtr<Properties> data );
             // Creates all shells before loading any component properties. Caller owns scene lock.
             static Array<SmartPtr<IGameActor>> loadSceneActors(
                 const Array<SmartPtr<Properties>> &data, SmartPtr<IGameScene> target = nullptr );

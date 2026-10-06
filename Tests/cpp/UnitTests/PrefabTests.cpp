@@ -1,10 +1,117 @@
 #include "UnitTests.hpp"
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/GameActorUtil.hpp>
+#include <Workphone/Scene/GamePrefab.hpp>
+#include <Workphone/Scene/GamePrefabManager.hpp>
+#include <Workphone/Scene/Components/Camera/CameraFollow.hpp>
+#include <Workphone/Scene/Components/Camera/CameraTarget.hpp>
+#include <unordered_set>
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
 using namespace workphone::scene;
+
+BOOST_AUTO_TEST_CASE( prefab_instances_have_unique_graph_ids_and_local_references )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    guard.scene->clear( true );
+    auto data = make_ptr<Properties>();
+    data->setProperty( GameActorUtil::labelStr, "Template" );
+    data->setProperty( GameActorUtil::uuidStr, StringUtil::getUUID() );
+    auto child = make_ptr<Properties>();
+    child->setName( GameActorUtil::childStr );
+    child->setProperty( GameActorUtil::labelStr, "Target" );
+    const auto childUUID = StringUtil::getUUID();
+    child->setProperty( GameActorUtil::uuidStr, childUUID );
+    const auto targetUUID = StringUtil::getUUID();
+    auto target = make_ptr<Properties>();
+    target->setName( GameActorUtil::componentStr );
+    target->setProperty( GameActorUtil::componentTypeStr, "CameraTarget" );
+    target->setProperty( GameActorUtil::uuidStr, targetUUID );
+    child->addChild( target );
+    data->addChild( child );
+    auto follow = make_ptr<Properties>();
+    follow->setName( GameActorUtil::componentStr );
+    follow->setProperty( GameActorUtil::componentTypeStr, "CameraFollow" );
+    follow->setProperty( GameActorUtil::uuidStr, StringUtil::getUUID() );
+    follow->setProperty( CameraFollow::followObjectStr, childUUID );
+    follow->setProperty( CameraFollow::targetStr, targetUUID );
+    data->addChild( follow );
+    const auto serializedTemplate = DataUtil::toString( data.get() );
+    auto prefab = make_ptr<GamePrefab>();
+    prefab->setData( data );
+    auto manager = make_ptr<GamePrefabManager>();
+    Array<SmartPtr<IGameActor>> instances;
+    auto original = GameActorUtil::loadSceneActors( { data } ).front();
+    instances.push_back( original );
+    instances.push_back( prefab->createActor() );
+    instances.push_back( prefab->createActor() );
+    instances.push_back( manager->createInstance( original ) );
+    instances.push_back( manager->createInstance( original ) );
+    std::unordered_set<String> ids;
+    for( auto instance : instances )
+    {
+        BOOST_REQUIRE( instance );
+        guard.scene->addActor( instance );
+        auto targetActor = instance->findChildByName( "Target" );
+        BOOST_REQUIRE( targetActor );
+        auto cameraFollow = instance->getComponent<CameraFollow>();
+        BOOST_REQUIRE( cameraFollow );
+        BOOST_CHECK( cameraFollow->getFollowObject() == targetActor );
+        BOOST_CHECK( cameraFollow->getTarget() == targetActor->getComponent<CameraTarget>() );
+        for( auto actor : { instance, targetActor } )
+        {
+            BOOST_CHECK( ids.insert( actor->getHandle()->getUUIDAsString() ).second );
+            for( auto component : actor->getComponents() )
+                BOOST_CHECK( ids.insert( component->getHandle()->getUUIDAsString() ).second );
+        }
+    }
+    BOOST_CHECK_EQUAL( DataUtil::toString( data.get() ), serializedTemplate );
+    auto savedScene = make_ptr<Properties>();
+    for( auto instance : instances )
+    {
+        auto actorData = workphone::static_pointer_cast<Properties>( instance->toData() );
+        actorData->setName( ApplicationUtil::actorsStr );
+        savedScene->addChild( actorData );
+    }
+    guard.scene->clear( true );
+    guard.scene->loadSceneDataStr( DataUtil::toString( savedScene.get() ), false );
+    BOOST_CHECK( guard.scene->getSceneLoadingState() == IGameScene::SceneLoadingState::Loaded );
+    BOOST_CHECK_EQUAL( guard.scene->getActors().size(), instances.size() );
+    for( auto instance : guard.scene->getActors() )
+    {
+        auto cameraFollow = instance->getComponent<CameraFollow>();
+        BOOST_REQUIRE( cameraFollow );
+        auto targetActor = instance->findChildByName( "Target" );
+        BOOST_REQUIRE( targetActor );
+        BOOST_CHECK( cameraFollow->getFollowObject() == targetActor );
+        BOOST_CHECK( cameraFollow->getTarget() == targetActor->getComponent<CameraTarget>() );
+    }
+    guard.scene->clear( true );
+}
+
+BOOST_AUTO_TEST_CASE( prefab_instance_data_remaps_reference_arrays_and_keeps_external_ids )
+{
+    auto data = make_ptr<Properties>();
+    const auto actorUUID = StringUtil::getUUID();
+    const auto externalUUID = StringUtil::getUUID();
+    data->setProperty( GameActorUtil::uuidStr, actorUUID );
+    data->setProperty( "references", Array<String>{ actorUUID, externalUUID } );
+    data->setProperty( "serializedReferences", actorUUID + ";" + externalUUID + ";" );
+    auto copy = GameActorUtil::createInstanceData( data );
+    const auto newUUID = copy->getPropertyObject( GameActorUtil::uuidStr ).getValue();
+    BOOST_CHECK( newUUID != actorUUID );
+    Array<String> refs;
+    StringUtil::parseArray( copy->getPropertyObject( "references" ).getValue(), refs );
+    BOOST_REQUIRE_EQUAL( refs.size(), 2u );
+    BOOST_CHECK_EQUAL( refs[0], newUUID );
+    BOOST_CHECK_EQUAL( refs[1], externalUUID );
+    BOOST_CHECK_EQUAL( copy->getPropertyObject( "serializedReferences" ).getValue(),
+                       newUUID + ";" + externalUUID + ";" );
+    BOOST_CHECK_EQUAL( data->getPropertyObject( GameActorUtil::uuidStr ).getValue(), actorUUID );
+}
 
 BOOST_AUTO_TEST_CASE( prefab_create )
 {

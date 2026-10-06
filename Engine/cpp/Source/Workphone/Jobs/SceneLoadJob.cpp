@@ -19,11 +19,71 @@
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <Workphone/Core/XmlUtil.hpp>
 #include <tinyxml.h>
 
 namespace workphone
 {
+    namespace
+    {
+        // Older editor copies retained actor/component UUIDs. Repair collisions between
+        // root trees in memory, keeping references inside each copied tree together.
+        void repairCopiedRootIdentities( const SmartPtr<Properties> &sceneData )
+        {
+            std::unordered_set<String> seen;
+            std::function<void( SmartPtr<Properties>,
+                                const std::function<void( SmartPtr<Properties> )> & )>
+                visit = [&]( SmartPtr<Properties> data, const auto &action ) {
+                    action( data );
+                    for( const auto &child : data->getChildren() )
+                        visit( child, action );
+                };
+            // Reserve every serialized identity so generated IDs cannot collide with later roots.
+            std::unordered_set<String> reserved;
+            visit( sceneData, [&]( const auto &data ) {
+                if( data->hasProperty( scene::GameActorUtil::uuidStr ) )
+                    reserved.insert( data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue() );
+            } );
+            for( const auto &root : sceneData->getChildrenByName( ApplicationUtil::actorsStr ) )
+            {
+                std::unordered_map<String, String> replacements;
+                std::unordered_set<String> local;
+                visit( root, [&]( const auto &data ) {
+                    if( !data->hasProperty( scene::GameActorUtil::uuidStr ) )
+                        return;
+                    auto uuid = data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue();
+                    if( uuid.empty() )
+                        return;
+                    if( !local.insert( uuid ).second )
+                        throw std::runtime_error( "Duplicate UUID inside scene actor tree: " + uuid );
+                    if( !seen.insert( uuid ).second )
+                    {
+                        String replacement;
+                        do { replacement = StringUtil::getUUID(); }
+                        while( !reserved.insert( replacement ).second );
+                        replacements.emplace( uuid, replacement );
+                    }
+                } );
+                if( replacements.empty() )
+                    continue;
+                visit( root, [&]( auto data ) {
+                    for( auto property : data->getPropertiesAsArray() )
+                    {
+                        auto found = replacements.find( property.getValue() );
+                        if( found != replacements.end() )
+                        {
+                            property.setValue( found->second );
+                            data->setProperty( property );
+                        }
+                    }
+                } );
+                WP_LOG( "Repaired copied scene identities in " +
+                        root->getPropertyObject( scene::GameActorUtil::labelStr ).getValue() );
+            }
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone, SceneLoadJob, Job );
 
@@ -61,7 +121,8 @@ namespace workphone
             auto path = getFilePath();
             auto inlineData = getDataStr();
             auto projectPath = app->getProjectPath();
-            m_preparedPath = projectPath.empty() ? StringUtil::cleanupPath( path )
+            m_preparedPath = projectPath.empty() || Path::isPathAbsolute( path )
+                                                 ? StringUtil::cleanupPath( path )
                                                  : Path::lexically_normal(
                                                        projectPath, StringUtil::cleanupPath( path ) );
             if( path.empty() && !inlineData.empty() )
@@ -131,6 +192,8 @@ namespace workphone
                     throw std::runtime_error( "Unsupported scene format" );
                 DataUtil::parse( text, data.get(), format );
             }
+            if( inlineData.empty() )
+                repairCopiedRootIdentities( data );
             m_preparedData = data;
         }
         catch( const std::exception &e )

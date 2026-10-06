@@ -537,7 +537,7 @@ namespace workphone::editor
                         parent->addChild( node );
                     }
 
-                    auto binFolder = Path::getWorkingDirectory();
+                    auto projectFolder = applicationManager->getProjectPath();
                     auto subFolders = listing->getSubFolders();
                     std::sort( subFolders.begin(), subFolders.end(),
                                []( const auto &left, const auto &right ) {
@@ -561,8 +561,7 @@ namespace workphone::editor
                     for( const auto &file : files )
                     {
                         auto filePath = StringUtil::cleanupPath( file );
-                        filePath = Path::getRelativePath( binFolder, filePath );
-                        //filePath = Path::lexically_relative( projectFolder, filePath );
+                        filePath = Path::getRelativePath( projectFolder, filePath );
                         auto pathHash = StringUtil::getUUID( filePath );
 
                         //auto pFileData = factoryManager->make_ptr<Data<FileInfo>>();

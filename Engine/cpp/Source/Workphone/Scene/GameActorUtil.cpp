@@ -395,6 +395,73 @@ namespace workphone::scene
         }
     }  // namespace
 
+    SmartPtr<Properties> GameActorUtil::createInstanceData( SmartPtr<Properties> data )
+    {
+        if( !data )
+            return nullptr;
+        std::unordered_map<String, String> identities;
+        std::function<void( SmartPtr<Properties> )> index = [&]( SmartPtr<Properties> object ) {
+            String uuid;
+            if( getDirectStringProperty( object.get(), uuidStr, uuid ) && !uuid.empty() )
+            {
+                if( !identities.emplace( uuid, StringUtil::getUUID() ).second )
+                    throw std::runtime_error( "Duplicate prefab UUID: " + uuid );
+            }
+            Array<SmartPtr<Properties>> components;
+            Array<SmartPtr<Properties>> children;
+            for( auto child : object->getChildren() )
+            {
+                if( child->getName() == componentStr || child->getName() == componentsStr )
+                    addComponentData( components, child );
+                else if( child->getName() == childStr || child->getName() == childrenStr )
+                    addActorData( children, child );
+            }
+            for( auto component : components )
+            {
+                if( getDirectStringProperty( component.get(), uuidStr, uuid ) && !uuid.empty() )
+                    if( !identities.emplace( uuid, StringUtil::getUUID() ).second )
+                        throw std::runtime_error( "Duplicate prefab UUID: " + uuid );
+            }
+            for( auto child : children )
+                index( child );
+        };
+        index( data );
+        std::function<SmartPtr<Properties>( SmartPtr<Properties> )> copy =
+            [&]( SmartPtr<Properties> source ) {
+                auto result = workphone::make_ptr<Properties>();
+                result->setName( source->getName() );
+                for( auto property : source->getPropertiesAsArray() )
+                {
+                    auto found = identities.find( property.getValue() );
+                    if( found != identities.end() )
+                        property.setValue( found->second );
+                    // Serialized reference arrays may arrive as plain semicolon-separated strings.
+                    else if( property.getValue().find( ';' ) != String::npos )
+                    {
+                        Array<String> values;
+                        StringUtil::parseArray( property.getValue(), values );
+                        bool changed = false;
+                        for( auto &value : values )
+                        {
+                            auto entry = identities.find( value );
+                            if( entry != identities.end() )
+                            {
+                                value = entry->second;
+                                changed = true;
+                            }
+                        }
+                        if( changed )
+                            property.setValue( StringUtil::toString( values ) );
+                    }
+                    result->setProperty( property );
+                }
+                for( auto child : source->getChildren() )
+                    result->addChild( copy( child ) );
+                return result;
+            };
+        return copy( data );
+    }
+
     Array<SmartPtr<IGameActor>> GameActorUtil::loadSceneActors( const Array<SmartPtr<Properties>> &data,
                                                                 SmartPtr<IGameScene> target )
     {
