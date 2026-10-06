@@ -3,7 +3,6 @@
 -- Attach this class to an actor and press Generate, or enter play mode to start.
 -- ProceduralRaceScene owns generated assets and runs forces/reset/suspension on
 -- the physics task. This script owns input, the camera rig, lap timing and HUD.
-
 class 'SampleVehicleAdvanced' (BaseComponent)
 
 local SPAWN_HEIGHT, CAMERA_DISTANCE, CAMERA_HEIGHT = 0.42, 8, 3
