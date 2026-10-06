@@ -42,9 +42,189 @@ namespace
     }
     String entryId(SmartPtr<IBuildDirector> entry)
     {
-        auto director = dynamic_pointer_cast<scene::ResourceDirector>(entry);
-        require(director != nullptr,"Expected catalog ResourceDirector");
+        auto director = dynamic_pointer_cast<scene::ResourceDirector>( entry );
+        require( director != nullptr, "Expected catalog ResourceDirector" );
         return director->getResourceUUID();
+    }
+    SmartPtr<IDatabase> openDatabase( const std::filesystem::path &path )
+    {
+        auto app = core::IApplicationManager::instance();
+        auto database = app->getFactoryManager()->make_object<IDatabase>();
+        require( database != nullptr, "SQLite backend is mandatory; cannot skip" );
+        database->loadFromFile( String( path.string().c_str() ) );
+        require( database->isLoaded(), "SQLite fixture must open" );
+        return database;
+    }
+    SmartPtr<IDatabaseQuery> sql( SmartPtr<IDatabase> database, const String &statement,
+                                  const Array<String> &values = {} )
+    {
+        auto bound = dynamic_cast<IParameterizedDatabase *>( database.get() );
+        require( bound != nullptr, "Parameterized SQLite backend is mandatory; cannot skip" );
+        return bound->queryBound( statement, values );
+    }
+    int scalar( SmartPtr<IDatabase> database, const String &statement, const Array<String> &values = {} )
+    {
+        auto result = sql( database, statement, values );
+        require( result && !result->eof(), "Expected a scalar SQLite result" );
+        return result->getFieldValueAsInt( "n" );
+    }
+    void seedLegacyCatalog( SmartPtr<IDatabase> database )
+    {
+        require( sql( database,
+                      "CREATE TABLE Resources(id INTEGER PRIMARY KEY, uuid VARCHAR, path VARCHAR, type "
+                      "VARCHAR)" ) != nullptr,
+                 "Legacy fixture schema must be created" );
+        require( sql( database, "CREATE INDEX idx_resources_uuid ON resources(uuid)" ) != nullptr,
+                 "Legacy nonunique UUID index must be created" );
+    }
+    void migrationContracts( const std::filesystem::path &folder )
+    {
+        const auto path = folder / "legacy.db";
+        const String quoted = u8"textures/caf\u00e9/\u7eb9\u7406's.tex";
+        auto database = openDatabase( path );
+        seedLegacyCatalog( database );
+        require( sql( database, "CREATE INDEX idx_resources_uuid_unique ON resources(uuid)" ) != nullptr,
+                 "Legacy fixture must include a misleadingly named nonunique index" );
+        require( sql( database, "INSERT INTO resources(id,uuid,path,type) VALUES(7,?,?,?)",
+                      { "legacy-texture", quoted, "Texture" } ) != nullptr,
+                 "Legacy texture must insert" );
+        require( sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                      { "scene-a", "scene", "Actor" } ) != nullptr,
+                 "First legacy scene entry must insert" );
+        require( sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                      { "scene-b", "scene", "Actor" } ) != nullptr,
+                 "Second legacy scene entry must insert" );
+        require( sql( database, "PRAGMA user_version=42" ) != nullptr,
+                 "Unrelated database version must set" );
+        database->close();
+        database = nullptr;
+
+        auto catalog = make_ptr<AssetDatabaseManager>();
+        catalog->loadFromFile( String( path.string().c_str() ) );
+        database = catalog->getDatabase();
+        require( database && database->isLoaded(), "Valid legacy catalog must migrate" );
+        require( scalar( database, "SELECT version AS n FROM wp_asset_catalog_schema WHERE id=1" ) == 1,
+                 "Migration must record its own catalog schema version" );
+        require( scalar( database, "SELECT count(*) AS n FROM resources" ) == 3,
+                 "Migration must preserve all legacy rows, including shared scene paths" );
+        require(
+            scalar( database, "SELECT id AS n FROM resources WHERE uuid=?", { "legacy-texture" } ) == 7,
+            "Migration must preserve legacy row IDs" );
+        require( entryId( catalog->getResourceEntryFromPath( quoted ) ) == "legacy-texture",
+                 "Unicode/apostrophe path and UUID must survive migration" );
+        require( scalar( database, "SELECT count(*) AS n FROM wp_asset_catalog_backup_v0" ) == 3,
+                 "Migration must retain a pre-migration row backup" );
+        require( !sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                       { "legacy-texture", "textures/duplicate.tex", "Texture" } ),
+                 "Migration must replace a nonunique UUID guard with a unique index" );
+        auto userVersion = sql( database, "PRAGMA user_version" );
+        require( userVersion && userVersion->getFieldValueAsInt( "user_version" ) == 42,
+                 "Catalog versioning must not overwrite another subsystem's user_version" );
+        require( !sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                       { "invalid-empty", "", "Texture" } ),
+                 "Schema must reject empty paths through direct SQL" );
+        require( !sql( database, "UPDATE resources SET uuid='' WHERE uuid=?", { "legacy-texture" } ),
+                 "Schema must reject invalid identity updates" );
+        require( !sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                       { "invalid-long", String( 1025, 'x' ), "Texture" } ),
+                 "Schema must reject oversized keys" );
+        require( !sql( database,
+                       "INSERT INTO resources(uuid,path,type) VALUES('invalid-nul',CAST(X'610062' AS "
+                       "TEXT),'Texture')" ),
+                 "Schema must reject embedded NULs even through direct SQL" );
+        require( scalar( database, "SELECT count(*) AS n FROM resources" ) == 3,
+                 "Rejected mutations must preserve the catalog" );
+        require( sql( database, "UPDATE resources SET path=? WHERE uuid=?",
+                      { "textures/renamed.tex", "legacy-texture" } ) != nullptr,
+                 "Valid rename must succeed" );
+        catalog->destroy();
+        database = nullptr;
+        catalog->loadFromFile( StringW( path.wstring().c_str() ) );
+        database = catalog->getDatabase();
+        require( database && database->isLoaded(), "Migrated schema must reopen idempotently" );
+        require(
+            entryId( catalog->getResourceEntryFromPath( "textures/renamed.tex" ) ) == "legacy-texture",
+            "Renamed identity must survive migration/reopen" );
+        auto backup = sql( database, "SELECT path FROM wp_asset_catalog_backup_v0 WHERE uuid=?",
+                           { "legacy-texture" } );
+        require( backup && backup->getFieldValue( "path" ) == quoted,
+                 "Reopen must not overwrite the original migration backup" );
+        catalog->destroy();
+        database = nullptr;
+
+        for( const auto fixture : { "duplicate-uuid", "duplicate-path", "invalid-key", "embedded-nul",
+                                    "backup-conflict", "metadata-conflict", "future-version" } )
+        {
+            const auto rejectedPath = folder / ( std::string( fixture ) + ".db" );
+            database = openDatabase( rejectedPath );
+            seedLegacyCatalog( database );
+            const String secondUUID = String( fixture ) == "duplicate-uuid" ? "first-id" : "second-id";
+            const String secondPath = String( fixture ) == "duplicate-path" ? "first.mesh"
+                                      : String( fixture ) == "invalid-key"  ? ""
+                                                                            : "second.mesh";
+            require( sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                          { "first-id", "first.mesh", "Mesh" } ) != nullptr,
+                     "First invalid fixture row must seed" );
+            require( sql( database, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
+                          { secondUUID, secondPath, "Mesh" } ) != nullptr,
+                     "Second invalid fixture row must seed" );
+            if( String( fixture ) == "embedded-nul" )
+                require( sql( database, "UPDATE resources SET path=CAST(X'610062' AS TEXT) WHERE uuid=?",
+                              { secondUUID } ) != nullptr,
+                         "Embedded-NUL legacy fixture must seed" );
+            if( String( fixture ) == "backup-conflict" )
+                require( sql( database, "CREATE TABLE wp_asset_catalog_backup_v0(marker INTEGER)" ) !=
+                             nullptr,
+                         "Backup collision fixture must seed" );
+            if( String( fixture ) == "metadata-conflict" )
+                require( sql( database,
+                              "CREATE VIEW wp_asset_catalog_schema AS SELECT 99 AS id, 1 AS version" ) !=
+                             nullptr,
+                         "Late migration failure fixture must seed" );
+            if( String( fixture ) == "future-version" )
+            {
+                require( sql( database,
+                              "CREATE TABLE wp_asset_catalog_schema(id INTEGER PRIMARY KEY, version "
+                              "INTEGER NOT NULL)" ) != nullptr,
+                         "Future metadata fixture must seed" );
+                require( sql( database, "INSERT INTO wp_asset_catalog_schema VALUES(1,2)" ) != nullptr,
+                         "Future schema version must seed" );
+            }
+            database->close();
+            database = nullptr;
+            catalog->loadFromFile( String( rejectedPath.string().c_str() ) );
+            require( catalog->getDatabase() && !catalog->getDatabase()->isLoaded(),
+                     "Invalid or newer catalog must fail closed" );
+            catalog->destroy();
+            database = openDatabase( rejectedPath );
+            require( scalar( database, "SELECT count(*) AS n FROM resources" ) == 2,
+                     "Failed migration must preserve every original row" );
+            require(
+                scalar(
+                    database,
+                    "SELECT count(*) AS n FROM sqlite_master WHERE name='idx_resources_uuid_unique'" ) ==
+                    0,
+                "Failed migration must roll back schema changes" );
+            require(
+                scalar(
+                    database,
+                    "SELECT count(*) AS n FROM sqlite_master WHERE name='wp_asset_catalog_schema'" ) ==
+                    ( String( fixture ) == "future-version" || String( fixture ) == "metadata-conflict"
+                          ? 1
+                          : 0 ),
+                "Failed migration must preserve original metadata state" );
+            require( scalar( database,
+                             "SELECT count(*) AS n FROM sqlite_master WHERE "
+                             "name='wp_asset_catalog_backup_v0'" ) ==
+                         ( String( fixture ) == "backup-conflict" ? 1 : 0 ),
+                     "Failed migration must roll back new backups and preserve existing backups" );
+            if( String( fixture ) == "future-version" )
+                require( scalar( database,
+                                 "SELECT version AS n FROM wp_asset_catalog_schema WHERE id=1" ) == 2,
+                         "Newer schema must never be downgraded" );
+            database->close();
+            database = nullptr;
+        }
     }
     void contracts(AssetDatabaseManager &catalog, const std::filesystem::path &folder)
     {
@@ -145,6 +325,8 @@ int main()
             require(catalog->getDatabase() && catalog->getDatabase()->isLoaded(),"Real SQLite backend must open");
             contracts(*catalog,folder);
             std::cout << "PASS: catalog identity, parameter binding, scoped deletion, rollback, detached lookups, concurrency and persistence\n";
+            migrationContracts(folder);
+            std::cout << "PASS: versioned catalog migration, Unicode identity, retained backup, invalid-row rollback and future-version rejection\n";
         }
         catch(const std::exception &error) { std::cerr << "FAIL: " << error.what() << '\n'; result=1; }
         catalog->unload(nullptr); catalog=nullptr;

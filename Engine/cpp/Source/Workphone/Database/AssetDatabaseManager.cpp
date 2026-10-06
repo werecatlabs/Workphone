@@ -107,50 +107,166 @@ namespace workphone
     void AssetDatabaseManager::loadFromFile( const StringW &path )
     {
         // Both overloads use the same switching and project path policy.
-        loadFromFile(StringUtilW::toUTF16to8(path));
+        loadFromFile( StringUtilW::toUTF16to8( path ) );
     }
     void AssetDatabaseManager::create()
     {
-        ScopedLock lock(this);
+        ScopedLock lock( this );
         bool ready = false;
         {
-            CatalogTransaction transaction(*this);
-            if( !transaction.active() ) return;
+            CatalogTransaction transaction( *this );
+            if( !transaction.active() )
+                return;
             auto initialize = [&]() {
-                if( !queryCatalog(*this, "CREATE TABLE IF NOT EXISTS resources(id INTEGER PRIMARY KEY, uuid VARCHAR, path VARCHAR, type VARCHAR)") ) return false;
+                auto resourceTable = queryCatalog( *this,
+                                                   "SELECT name FROM sqlite_master WHERE type='table' "
+                                                   "AND name='resources' COLLATE NOCASE" );
+                auto schemaTable = queryCatalog( *this,
+                                                 "SELECT name FROM sqlite_master WHERE type='table' AND "
+                                                 "name='wp_asset_catalog_schema' COLLATE NOCASE" );
+                if( !resourceTable || !schemaTable )
+                    return false;
+                const bool hadResources = !resourceTable->eof();
+                const bool hadSchema = !schemaTable->eof();
+                if( hadSchema )
+                {
+                    auto version =
+                        queryCatalog( *this, "SELECT id,version FROM wp_asset_catalog_schema" );
+                    if( !hadResources || !version || version->eof() ||
+                        version->getFieldValue( "id" ) != "1" ||
+                        version->getFieldValue( "version" ) != "1" )
+                    {
+                        WP_LOG_ERROR(
+                            "Unsupported or invalid asset catalog schema version; catalog left "
+                            "unchanged." );
+                        return false;
+                    }
+                    version->nextRow();
+                    if( !version->eof() )
+                        return false;
+                }
+                if( !queryCatalog( *this,
+                                   "CREATE TABLE IF NOT EXISTS resources(id INTEGER PRIMARY KEY, uuid "
+                                   "VARCHAR, path VARCHAR, type VARCHAR)" ) )
+                    return false;
+                // SQLite 3.7.9 has no partial indexes or instr(). The same value
+                // predicate protects legacy migration and subsequent SQL writes.
+                // Comparing the full text's hex with its length-bounded substring
+                // also detects embedded NULs without rejecting Unicode paths.
+                auto invalidFields = []( const String &prefix ) {
+                    auto invalidField = [&]( const String &name, const String &limit ) {
+                        const auto field = prefix + name;
+                        String condition = "typeof(" + field + ")<>'text' OR " + field + "=''";
+                        condition += " OR length(CAST(" + field + " AS BLOB))>" + limit;
+                        condition +=
+                            " OR hex(" + field + ")<>hex(substr(" + field + ",1,length(" + field + ")))";
+                        return condition;
+                    };
+                    return invalidField( "uuid", "256" ) + " OR " + invalidField( "path", "1024" ) +
+                           " OR " + invalidField( "type", "256" );
+                };
+                auto invalidRows = queryCatalog(
+                    *this, "SELECT id FROM resources WHERE " + invalidFields( "" ) + " LIMIT 1" );
+                if( !invalidRows || !invalidRows->eof() )
+                {
+                    WP_LOG_ERROR(
+                        "Invalid legacy catalog identity, path or type; explicit repair required." );
+                    return false;
+                }
                 const char *checks[] = {
-                    "SELECT id FROM resources WHERE uuid IS NULL OR uuid='' OR path IS NULL OR path='' LIMIT 1",
                     "SELECT uuid FROM resources GROUP BY uuid HAVING count(*)>1 LIMIT 1",
-                    "SELECT path FROM resources WHERE path<>'scene' GROUP BY path HAVING count(*)>1 LIMIT 1"
+                    "SELECT path FROM resources WHERE path<>'scene' GROUP BY path HAVING count(*)>1 "
+                    "LIMIT 1"
                 };
                 for( const auto check : checks )
                 {
-                    auto rows = queryCatalog(*this, check);
-                    if( !rows || !rows->eof() ) return false;
+                    auto rows = queryCatalog( *this, check );
+                    if( !rows || !rows->eof() )
+                        return false;
                 }
-                return queryCatalog(*this, "CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_uuid_unique ON resources(uuid)") &&
-                    queryCatalog(*this, "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE INSERT ON resources "
-                "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM resources WHERE path=NEW.path) "
-                "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END") &&
-                    queryCatalog(*this, "CREATE TRIGGER IF NOT EXISTS resources_file_path_update BEFORE UPDATE OF path ON resources "
-                "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM resources WHERE path=NEW.path AND id<>NEW.id) "
-                "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END") &&
-                    queryCatalog(*this, "CREATE INDEX IF NOT EXISTS idx_resources_path ON resources(path)") && transaction.commit();
+                // Retain original legacy rows once. A colliding backup name fails
+                // the transaction rather than overwriting potentially useful data.
+                if( !hadSchema && hadResources &&
+                    !queryCatalog(
+                        *this, "CREATE TABLE wp_asset_catalog_backup_v0 AS SELECT * FROM resources" ) )
+                    return false;
+                const char *resetGuards[] = { "DROP INDEX IF EXISTS idx_resources_uuid_unique",
+                                              "DROP TRIGGER IF EXISTS resources_file_path_insert",
+                                              "DROP TRIGGER IF EXISTS resources_file_path_update",
+                                              "DROP TRIGGER IF EXISTS resources_values_insert",
+                                              "DROP TRIGGER IF EXISTS resources_values_update" };
+                if( !hadSchema )
+                {
+                    for( const auto reset : resetGuards )
+                        if( !queryCatalog( *this, reset ) )
+                            return false;
+                }
+                const auto invalidNewFields = invalidFields( "NEW." );
+                const bool guarded =
+                    queryCatalog( *this,
+                                  "CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_uuid_unique ON "
+                                  "resources(uuid)" ) &&
+                    queryCatalog( *this,
+                                  "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE "
+                                  "INSERT ON resources "
+                                  "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM "
+                                  "resources WHERE path=NEW.path) "
+                                  "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END" ) &&
+                    queryCatalog(
+                        *this,
+                        "CREATE TRIGGER IF NOT EXISTS resources_file_path_update BEFORE UPDATE OF path "
+                        "ON resources "
+                        "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM resources "
+                        "WHERE path=NEW.path AND id<>NEW.id) "
+                        "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END" ) &&
+                    queryCatalog( *this,
+                                  "CREATE TRIGGER IF NOT EXISTS resources_values_insert BEFORE INSERT "
+                                  "ON resources WHEN " +
+                                      invalidNewFields +
+                                      " BEGIN SELECT RAISE(ABORT,'Invalid catalog value'); END" ) &&
+                    queryCatalog(
+                        *this,
+                        "CREATE TRIGGER IF NOT EXISTS resources_values_update BEFORE UPDATE OF "
+                        "uuid,path,type ON resources WHEN " +
+                            invalidNewFields +
+                            " BEGIN SELECT RAISE(ABORT,'Invalid catalog value'); END" ) &&
+                    queryCatalog( *this,
+                                  "CREATE INDEX IF NOT EXISTS idx_resources_path ON resources(path)" );
+                if( !guarded )
+                    return false;
+                if( !hadSchema )
+                {
+                    // Do not use user_version: other database services may own it.
+                    if( !queryCatalog(
+                            *this,
+                            "CREATE TABLE wp_asset_catalog_schema("
+                            "id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL)" ) ||
+                        !queryCatalog( *this,
+                                       "INSERT INTO wp_asset_catalog_schema(id,version) VALUES(1,1)" ) )
+                        return false;
+                }
+                return transaction.commit();
             };
             ready = initialize();
-        } // Roll back schema work before closing an unusable catalog.
+        }  // Roll back schema work before closing an unusable catalog.
         if( !ready )
         {
-            WP_LOG_ERROR("Catalog schema initialization failed; legacy duplicates require explicit repair.");
-            if( auto database = getDatabase() ) database->close();
+            WP_LOG_ERROR( "Catalog schema initialization failed; catalog changes rolled back." );
+            if( auto database = getDatabase() )
+                database->close();
         }
     }
-    void AssetDatabaseManager::destroy() { unload(nullptr); }
+    void AssetDatabaseManager::destroy()
+    {
+        unload( nullptr );
+    }
     void AssetDatabaseManager::clearDatabase()
     {
-        ScopedLock lock(this);
-        CatalogTransaction transaction(*this);
-        if( transaction.active() && queryCatalog(*this,"DELETE FROM resources") && transaction.commit() ) clearResourceEntryCache();
+        ScopedLock lock( this );
+        CatalogTransaction transaction( *this );
+        if( transaction.active() && queryCatalog( *this, "DELETE FROM resources" ) &&
+            transaction.commit() )
+            clearResourceEntryCache();
     }
     void AssetDatabaseManager::clearResourceEntryCache()
     {

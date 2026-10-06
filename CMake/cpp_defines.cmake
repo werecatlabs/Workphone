@@ -3,7 +3,6 @@ add_compile_definitions (WP_GC_MAX_SHARED_OBJECTS=32768)
 add_compile_definitions (WP_GC_MAX_OBJECTS_REMOVED=1024)
 add_compile_definitions (WP_UNITY_BUILD=1)
 add_compile_definitions (WP_SIMD_ALIGNMENT=16)
-add_compile_definitions (WP_MEDIA_PATH="${CMAKE_SOURCE_DIR}/bin/media")
 add_compile_definitions (_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS)
 
 add_compile_definitions( BOOST_ALL_NO_LIB )
