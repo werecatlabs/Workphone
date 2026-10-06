@@ -47,6 +47,7 @@ namespace workphone
                     reserved.insert(
                         data->getPropertyObject( scene::GameActorUtil::uuidStr ).getValue() );
             } );
+
             for( const auto &root : sceneData->getChildrenByName( ApplicationUtil::actorsStr ) )
             {
                 std::unordered_map<String, String> replacements;
@@ -101,6 +102,7 @@ namespace workphone
     {
         auto app = core::IApplicationManager::instancePtr();
         auto prepareJob = app->getFactoryManagerPtr()->make_ptr<JobFunction>();
+        
         SmartPtr<SceneLoadJob> commit( this );
         std::function<void()> preparation = [commit]() mutable {
             if( commit->isInterrupted() )
@@ -111,6 +113,7 @@ namespace workphone
             commit->prepare();
             core::IApplicationManager::instancePtr()->getJobQueue()->addJob( commit );
         };
+
         prepareJob->setFunction( preparation );
         app->getJobQueue()->addJob( prepareJob );
     }
@@ -119,7 +122,9 @@ namespace workphone
     {
         if( m_prepared )
             return;
+
         m_prepared = true;
+
         try
         {
             auto app = core::IApplicationManager::instancePtr();
@@ -217,27 +222,30 @@ namespace workphone
         auto target = getScene();
         if( !target )
             return;
+
         // Preparation is safe off-thread; direct synchronous execution also uses it.
         prepare();
+
         struct TaskScope
         {
             TaskId previous = Thread::getCurrentTask();
             TaskScope()
             {
-                Thread::setCurrentTask( TaskId::Primary );
+                Thread::setCurrentTask( TaskId::None );
             }
             ~TaskScope()
             {
                 Thread::setCurrentTask( previous );
             }
         } taskScope;
-        ScopedLock sceneLock( target.get() );
+
         auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( target );
         auto current = [&] { return !concrete || concrete->getLoadGeneration() == m_loadGeneration; };
         if( !current() || !target->isLoaded() )
             return;
         auto app = core::IApplicationManager::instancePtr();
         auto manager = app->getGameManager();
+
         Array<SmartPtr<scene::IGameActor>> actors;
         auto rollback = [&] {
             for( const auto &actor : actors )
@@ -291,6 +299,7 @@ namespace workphone
             target->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
             if( !current() )
                 return;
+
             app->triggerEvent( EventType::Loading, scene::IGameManager::sceneLoadedHash,
                                Array<Parameter>(), target, target, nullptr, false,
                                Thread::Application_Flag );

@@ -29,6 +29,10 @@ namespace workphone
             static constexpr time_interval smoothMotionDelay = 1.0 / 60.0;
 
             static const hash_type sceneLoadedHash;  ///< The hash for the scene loaded event.
+            static const hash_type sceneUnloadedHash;  ///< The hash for the scene unloaded event.
+            static const hash_type scenePlayHash;      ///< The hash for the scene play event.
+            static const hash_type sceneEditHash;      ///< The hash for the scene edit event.
+            static const hash_type sceneClearHash;     ///< The hash for the scene clear event.
 
             /**
              * @brief Virtual destructor.

@@ -18,9 +18,9 @@ namespace workphone
     {
         if( auto scene = getScene() )
         {
-            ScopedLock lock( scene.get() );
             if( !scene->isLoaded() )
                 return;
+
             auto state = scene->getState();
             switch( state )
             {
@@ -72,6 +72,10 @@ namespace workphone
                 auto concrete = workphone::dynamic_pointer_cast<scene::GameScene>( scene );
                 if( !concrete || concrete->getLoadGeneration() == m_sceneGeneration )
                     scene->setLabel( label );
+
+                applicationManager->triggerEvent(
+                    EventType::Loading, scene::IGameManager::sceneClearHash, Array<Parameter>(), scene,
+                    scene, nullptr, false, Thread::Application_Flag );
             }
             break;
             case scene::IGameScene::State::Reset:

@@ -273,6 +273,7 @@ namespace workphone
         Render,          ///< Rendering operations.
         Sound,           ///< Audio processing.
         SoftBody,        ///< Soft body physics simulation.
+
         Count            ///< Total number of task types.
     };
 
