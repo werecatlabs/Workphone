@@ -1548,7 +1548,13 @@ namespace workphone
             if( director )
             {
                 auto entry = assetDatabaseManager->getResourceEntryFromPath( path );
+                if( !entry )
+                {
+                    WP_LOG_ERROR( "Resource director requires a persisted catalog entry: " + path );
+                    return nullptr;
+                }
                 auto properties = entry->getProperties();
+                if( !properties ) return nullptr;
 
                 auto id = String();
                 auto uuid = String();

@@ -149,6 +149,35 @@ namespace workphone
         return nullptr;
     }
 
+    SmartPtr<IDatabaseQuery> SQLiteDatabase::queryBound( const String &sql,
+                                                       const Array<String> &values )
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock( m_boundQueryMutex );
+            if( !m_database || !isLoaded() || sql.empty() ) return nullptr;
+            auto statement = m_database->compileStatement( sql.c_str() );
+            for( size_t i = 0; i < values.size(); ++i )
+            {
+                if( values[i].find( '\0' ) != String::npos ) return nullptr;
+                statement.bind( static_cast<int>(i + 1), values[i].c_str() );
+            }
+            auto query = statement.execQuery();
+            auto result = workphone::make_ptr<SQLiteQuery>();
+            result->setQuery( query );
+            return result;
+        }
+        catch( CppSQLite3Exception &e )
+        {
+            WP_LOG_ERROR( e.errorMessage() );
+        }
+        catch( std::exception &e )
+        {
+            WP_LOG_EXCEPTION( e );
+        }
+        return nullptr;
+    }
+
     SmartPtr<IDatabaseQuery> SQLiteDatabase::query( const StringW &queryStr )
     {
         try
@@ -198,9 +227,11 @@ namespace workphone
 
     void SQLiteDatabase::close()
     {
+        std::lock_guard<std::mutex> lock( m_boundQueryMutex );
         if( m_database )
         {
             m_database->close();
         }
+        setLoadingState( LoadingState::Unloaded );
     }
 }  // namespace workphone

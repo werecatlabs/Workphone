@@ -1,9 +1,9 @@
 # WPGraphics production readiness and feature implementation plan
 
-Date: 6 October 2026  
+Date: 6 October 2026; revised after implementation review at `8a767dda5`.
 Status: Implementation in progress; initial contracts and DX11 integration validated. Neither R1 nor R2 is certified.
-Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, and the engine/editor integration needed to ship it.  
-User priorities: explicitly validate animation and particle systems; include water rendering in the feature roadmap.
+Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, AssetDatabaseManager and the existing resource pipeline, and the engine/editor integration needed to ship it.
+User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration in the feature roadmap.
 
 ## 1. Intended outcome
 
@@ -16,7 +16,7 @@ Use two release gates:
 
 DX12 and additional platforms receive their own certification gates. They do not inherit production status from DX11. Advanced ocean simulation, ray tracing, and virtualized geometry are subsequent optional work.
 
-This plan does not certify the current build. Source and test code were inspected; builds, tests, GPU captures, and benchmarks were not run for this planning task. An implementation or test file establishes a starting point, not successful runtime behavior.
+This review reran the existing graphics binaries: 11 tests passed and one external mesh import test was skipped for missing media. The two isolated native contract tests also passed; these duplicate two contracts in the full suite, rather than adding two distinct feature gates. No rebuild, database runtime tests, GPU capture, benchmark, clean-machine build or remote CI run was performed in this review. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and evidence limits. Neither R1 nor R2 is certified.
 
 ## 2. Evidence and current gaps
 
@@ -29,15 +29,41 @@ Paths below are relative to the repository root. Observations are limited to the
 | Post-processing | [ClawGraphicsPipeline](../Engine/cpp/Source/WPGraphics/ClawGraphicsPipeline.cpp) creates CPU effect buffers; [ClawHammerSystem](../Engine/cpp/Source/WPGraphics/ClawHammerSystem.cpp) restricts capture/presentation to the software default-window path | Implement a GPU pipeline for DX11; existing TAA/GTAO/SSR/etc. APIs do not establish GPU integration |
 | DX11 materials | `ClawRendererDX11.cpp` has material/channel mapping, mesh caches, and sky environment caches; native DX11 has material and statistics APIs | Extend and test the existing material path; audit cache ownership, invalidation, and bounded growth |
 | DX12 | [DX12 source](../Engine/cpp/Source/WPGraphics/ClawRendererDX12.cpp) uses an offscreen target, quad-oriented draw paths, and waits for the GPU at frame end; its header returns a null native renderer for UI integration | Treat as experimental; complete mesh/material drawing, presentation, UI, and per-draw resource safety before certification |
-| Animation | [ClawMesh](../Engine/cpp/Source/WPGraphics/ClawMesh.cpp) delegates animation/controller/skeleton methods to `GraphicsMesh`; base vertex-processing hook is empty; native skeleton header contains bone identity storage | Trace import through final deformation. Implement missing controller, palette, vertex attributes, and skinning integration instead of assuming skeletal rendering exists |
+| Animation | [ClawMesh](../Engine/cpp/Source/WPGraphics/ClawMesh.cpp) now accepts explicit skinning data/palettes; native CPU skinning supports four influences/256 joints with validated rigid/uniform-scale transforms; controller methods still delegate to the base | Reuse the validated CPU reference; complete import, inverse-bind/palette ownership and controller-to-scene integration. GPU skinning and full animated instances remain open |
 | Animation tests | [Graph tests](../Tests/cpp/UnitTests/AnimationGraphTests.cpp) and [IK tests](../Tests/cpp/UnitTests/AnimationIKTests.cpp) exercise time/events/graph sampling and solvers | Retain these tests; add pose evaluation, import, skinning, rendered output, and scene/component tests |
-| Particles | [CParticleSystem](../Engine/cpp/Source/WPGraphics/Particle/CParticleSystem.cpp) has empty load/unload and technique lookup; [BillboardRenderer](../Engine/cpp/Source/WPGraphics/Particle/Renderers/BillboardRenderer.cpp) update is commented out; manager contains empty methods | Establish one authoritative simulation/rendering path and repair lifecycle and visible rendering |
+| Particles | [ClawParticleSimulation](../Engine/cpp/Source/WPGraphics/Particle/ClawParticleSimulation.cpp) owns bounded seeded 120 Hz native simulation; [DX11 rendering](../Engine/cpp/Source/WPGraphics/ClawRendererDX11.cpp) batches billboards; legacy technique/manager/renderer paths remain incomplete | Extend the new authoritative path. Complete asset templates, emitter/space semantics, frame identity, global transparency sorting, authoring and budgets; retire or adapt legacy paths |
 | Particle tests | [ParticleSystemTests](../Tests/cpp/UnitTests/ParticleSystemTests.cpp) can return early in headless/unavailable-backend cases; [component tests](../Tests/cpp/UnitTests/ComponentTestsParticleSystem.cpp) use a test renderer | Make skipped/unavailable cases visible in CI; add real Claw rendering tests and deterministic simulation tests |
 | Water | [IGraphicsWater](../Engine/cpp/Include/Workphone/Interface/Graphics/IGraphicsWater.hpp) exists; searched water/ocean paths found no concrete implementation | Add a Claw water object and rendering passes; reuse the interface where applicable |
 | Resources | [ResourceSystem.md](../Engine/cpp/Project/Workphone/ResourceSystem.md) describes versioned compilation, dependency tracking, atomic publication, runtime validation, and caching | Integrate graphics compilers and GPU upload/residency with this system rather than creating another database/cache |
+| Asset catalog | [AssetDatabaseManager.hpp](../Engine/cpp/Include/Workphone/Database/AssetDatabaseManager.hpp) and [implementation](../Engine/cpp/Source/Workphone/Database/AssetDatabaseManager.cpp) expose CRUD, UUID/path lookup, ResourceDirector caches and database lifecycle; [ResourceDatabase](../Engine/cpp/Source/Workphone/Database/ResourceDatabase.cpp) calls these paths | Add M1A below: durable identity, safe mutations, schema migration, path mapping, cache/lifecycle hardening and a bridge to ResourceSystem. The catalog is separate from the compilation metadata database |
+| Database coverage | [ResourceDatabaseTests](../Tests/cpp/UnitTests/ResourceDatabaseTests.cpp) covers basic persistence/idempotence/removal, but some cases return for missing plugins or headless graphics; build/import/reimport cases also return immediately in headless mode | Add focused database contracts with a required SQLite backend, independent of graphics; do not treat these early returns as executed database coverage |
 | Tests | [C++ registration](../Tests/cpp/CMakeLists.txt) includes Claw text, DX11 target, UI destruction, and cubemap/PBR targets; C tests cover renderer/shader/pipeline contracts | Preserve regression coverage and extend it to complete frames and failure/recovery paths |
 | Editor | `AnimationEditor.lua`, `ParticleEditor.lua`, `MaterialEditor.lua`, and `ShaderEditor.lua` exist | Extend existing authoring tools and bind native capabilities |
-| Build/distribution | Root presets cover Android/iOS; WPGraphics build uses recursive source globbing and platform library paths; no root `.github` directory was present | Add reproducible graphics presets, explicit platform sources/dependencies, CI, install/export rules, and an external consumer test |
+| Build/distribution | Windows Claw and isolated contract presets now exist, along with [contract CI](../.github/workflows/graphics-contracts.yml) and [validation runner](../Tools/ValidateClawGraphics.ps1); source globbing/platform paths remain | Verify clean builds and remote CI, add full graphics/database CI and GPU runners, and complete install/export plus external-consumer coverage |
+
+### 2.1 Current completion and evidence limits
+
+| Work package | Current status | Next evidence needed |
+|---|---|---|
+| BASE-01/02/03 | Partial: inventory, presets, explicit skip reporting and local test baseline exist | Clean Debug/RelWithDebInfo builds, database coverage, actual adapter/driver evidence and remote CI |
+| BASE-04/05 | Partial generated triangle/particle fixtures; representative content and budgets pending | Licensed imported character/effect/water fixtures, reference sequences and measured costs |
+| ANIM-02/05 | CPU reference and explicit mesh deformation validated | Imported skin/clip bridge, multiple independent instances, bind/inverse-bind correctness, repeated GPU cache updates and CPU/GPU comparison |
+| FX-01/02/03/05 | Basic lifecycle, seed/step/pool and visible billboard path validated | Templates/serialization, full lifecycle/space semantics, multi-view integration, sorting/depth/state tests and stress budgets |
+| CORE-01/02/05 | Some mesh ownership/cache invalidation and synchronized particle copies exist | Teardown/reload races, generation-safe bounded caches, device recovery and immutable frame snapshots |
+| M1A asset catalog | Existing implementation inspected; production requirements remain open | Durable identity and safe CRUD contracts, migration, concurrency/failure evidence and graphics-resource bridge |
+| M4/M5/M6 | Existing materials, static geometry, UI and CPU effects provide a baseline | Cooked graphics assets, GPU passes/shadows/HDR, streaming and mixed-scene validation |
+| M7 water | Unavailable; interface only | Implement WATER-01 through WATER-06 after frame/depth/reflection prerequisites |
+| M8/M9 | Not certified | Packaging, clean CI, performance/soak/recovery evidence; DX12 independently |
+
+The GPU regression directly supplies a palette and particle snapshot and checks selected pixels. It does not exercise importer/controller-to-scene animation, automatic scene particle timing, multi-camera rendering or catalog-to-cook-to-render integration. `production` is a test label, not a release certification. Capability statuses in `ClawCapabilities.cpp` are an implementation inventory; they still need alignment with compiled backends and actual device availability.
+
+### 2.2 Graphics findings for the next increments
+
+- **Animation ownership/performance:** `applySkinningPalette` copies/replaces vertex storage and invalidates the DX11 geometry cache on each pose. Preserve the correctness reference; measure costs and add reusable dynamic buffers/GPU palettes. `clone()` does not copy the new bind vertices/palette state, so imported instances need shared immutable bind data and independent poses before ANIM-05 passes.
+- **Particle scheduling:** `update()` and `animate()` can both advance simulation. Scene preparation is the intended owner, but copied snapshots have no frame stamp. Audit callers, make once-per-frame evaluation explicit and test two views, hidden/paused effects, reload and destruction.
+- **Particle scale/transparency/state:** centers use the owner transform; billboard extents use effect scale and camera axes. Define parent scaling, and test moving/scaled owners, camera handedness, inter-effect ordering, alpha/additive textures and subsequent draw-state restoration. The red-pixel fixture does not establish these variants.
+- **Allocation/capacity:** native stepping is preallocated; wrapper snapshots, per-view sorting and transient batching allocate. Bound/profile these across many effects. The one-million-particle capacity limit is an allocation limit, not a verified performance tier.
+- **Asset integration:** explicit skin/effect settings bypass catalog compilation. Particle templates are rejected, while inspected generic ResourceDatabase type inference handles legacy mesh/material/texture paths. DB-07 and typed compilers must include skeleton/clip/shader/effect/water assets rather than relying only on extension guessing.
 
 ## 3. Scope and engineering rules
 
@@ -45,11 +71,12 @@ Paths below are relative to the repository root. Observations are limited to the
 2. **Software renderer:** a bounded fallback and headless/reference path. Certify a documented subset and fail explicitly for unsupported features. Do not promise GPU-quality parity or GPU frame rates.
 3. **Keep existing engine contracts stable.** Prefer internal services, concrete implementation settings, and additive native APIs. Avoid new virtual methods in shared `Workphone/Interface` headers during this pass; document any eventual ABI migration separately.
 4. **Editor work follows existing conventions:** extend Lua authoring UI; use C++ for native rendering and thin bindings. Respect [editor conventions](../Tools/cpp/Editor/docs/CONVENTIONS.md) and coordinate with the existing editor upgrade plan.
-5. **One owner per responsibility:** Workphone owns animation graph/IK evaluation; WPGraphics consumes final poses and handles deformation/rendering. Define whether particle simulation lives in Claw or native C during M0; both layers must not independently advance the same effect.
+5. **One owner per responsibility:** Workphone owns animation graph/IK evaluation; WPGraphics consumes final poses and handles deformation/rendering. Native C now owns particle simulation and Claw owns lifecycle/scheduling/snapshot presentation; legacy update paths must not advance the same effect independently.
 6. **Explicit capabilities:** feature availability must describe implemented rendering behavior and limits. Unsupported requests produce a diagnostic or a documented fallback, never a successful no-op. Until full switching exists, expose renderer selection as a restart-required configuration.
 7. **Separate simulation and presentation:** immutable, frame-stamped snapshots cross worker/render boundaries. GPU creation/destruction runs on the owning render context. Cancel and drain jobs before scene/device teardown.
 8. **GPU residency:** normal GPU frames retain color/depth/normal/velocity data on the GPU. Use asynchronous readback for tests, screenshots, and diagnostics; avoid routine full-frame CPU round trips.
 9. **Feature definition of done:** runtime integration, asset validation, serialization, authoring controls where relevant, tests, profiling, fallback behavior, documentation, and a sample scene.
+10. **Asset identity and compilation stay distinct:** AssetDatabaseManager owns the editor/project catalog and durable UUID/path/type mapping; ResourceSystem and IResourceCompilationDatabase own compile hashes, versions, dependencies and compiled containers. WPGraphics owns device resources, uploads and residency. Connect these layers through an explicit adapter and avoid duplicating their databases or caches.
 
 ## 4. Feature coverage
 
@@ -70,7 +97,7 @@ P0 is required for R1. P1 is required for the documented R2 feature tier. P2 is 
 | Sky/environment | Existing sky/cubemap path, cached IBL | Atmosphere, time of day, fog, environment transitions | Volumetric clouds/weather |
 | UI/text | Claw UI and ImGui, clipping, text/glyph lifecycle, DPI | Localization/complex text integration, multi-viewport behavior | Specialist text rendering |
 | Tool integration | Material, animation and particle preview; picking/debug views | Water controls, effect diagnostics, render graph/profiler views | Specialized capture/inspection tools |
-| Resources | Cook/load/version validation, bounded uploads, failure-safe reload | Residency budgets, prefetch, eviction, dependency reload | Large-world streaming specialization |
+| Resources | Durable catalog UUIDs, safe CRUD/migration, source-to-ResourceID bridge, cook/load/version validation, bounded uploads, failure-safe reload | Residency budgets, prefetch, eviction, dependency reload, catalog/editor diagnostics | Large-world streaming specialization |
 | Operations | Diagnostics, test matrix, clean packaging, symbols, migration notes | Backend parity reports, performance dashboards | Additional independently certified platforms |
 
 ## 5. Proposed rendering architecture
@@ -83,6 +110,7 @@ Preserve `ClawHammerSystem` as orchestration and existing wrappers as engine-fac
 - **Pass graph:** explicit resource reads/writes, formats, dimensions, clear/load behavior, lifetimes, execution order, and per-view history. Validate conflicting bindings; pool compatible transient resources.
 - **Draw lists:** depth/shadow/opaque/alpha-test/water/transparent/UI lists with pass-appropriate sorting and bounded material variants.
 - **Graphics asset compilers:** mesh/skeleton/clip/material/shader/texture/particle/water settings plugged into the existing resource compiler registry.
+- **Catalog adapter:** resolve AssetDatabaseManager UUIDs and ResourceDirector source paths to canonical `resource::ResourceID` values, route compilation/loading through ResourceSystem, and publish generation-stamped GPU replacement requests. Renaming a source preserves its catalog UUID; path-derived ResourceIDs need explicit remapping and dependent rebuilds.
 
 Start with explicit DX11 passes; avoid building a generic multi-API framework before the first complete frame. Reuse CPU effects as references where useful. DX12 can adopt these contracts after DX11 is proven.
 
@@ -110,16 +138,17 @@ Effort ranges below are provisional **engineer-weeks**, including implementation
 |---|---|---|---|---|
 | M0 | Baseline, capability contract, fixtures, build/test inventory | — | 2–3 | G0 |
 | M1 | Device, lifecycle, resource and threading hardening | M0 | 5–8 | G1 |
-| M2 | Animation asset-to-screen implementation and validation | M0; GPU integration uses M1 | 6–10 | GA |
-| M3 | Particle simulation, visible rendering and lifecycle | M0; GPU integration uses M1 | 5–8 | GP |
-| M4 | Materials, textures, shaders, lighting and geometry | M1; coordinates with M2/M3 | 6–10 | G4 |
+| M1A | AssetDatabaseManager hardening and catalog/resource bridge | M0; lifecycle coordinates with M1 | 3–5 | GD |
+| M2 | Animation asset-to-screen implementation and validation | M0; assets use M1A; GPU integration uses M1 | 6–10 | GA |
+| M3 | Particle simulation, visible rendering and lifecycle | M0; effects use M1A; GPU integration uses M1 | 5–8 | GP |
+| M4 | Materials, textures, shaders, lighting and geometry | M1, M1A; coordinates with M2/M3 | 6–10 | G4 |
 | M5 | GPU pass graph, shadows and image pipeline | M1, M4; temporal deformation uses M2 | 7–12 | G5/R1 |
 | M6 | Scene scale, terrain, streaming, UI and tools | M1–M5 as relevant | 5–8 | G6 |
 | M7 | Water and richer effects/animation feature tier | M2, M3, M5; streaming integration M6 | 5–8 | GW/R2 |
 | M8 | Final certification, documentation and distribution | Applicable release packages | 3–5 | GR |
 | M9 | DX12 certification; other backends separately scoped | Stable R1 contracts | 6–12 per DX12 track | GB |
 
-R1 uses P0 subsets of these work packages and an initial M8 certification. R2 completes P1 subsets and repeats certification for newly enabled features. Broad serial effort for M0–M8 is 44–72 engineer-weeks; sequencing, reuse and staffing determine elapsed time. Track DX12/platform expansion separately. Do not schedule water or cosmetic effects ahead of resolving animation/particle blockers.
+R1 uses P0 subsets of these work packages and an initial M8 certification. R2 completes P1 subsets and repeats certification for newly enabled features. Original planning ranges plus M1A total 47–77 engineer-weeks; this is a scope estimate, not a fresh estimate of remaining work. Credit the validated portions in section 2.1 and re-estimate the remaining packages after catalog contracts, representative imported assets and profiling are available. Track DX12/platform expansion separately. Water design/fixtures can proceed now; its rendering implementation depends on completing the depth/color/reflection frame contracts.
 
 ### M0 — establish an honest baseline
 
@@ -142,6 +171,44 @@ R1 uses P0 subsets of these work packages and an initial M8 certification. R2 co
 - **CORE-07:** Add debug-layer messages, resource names, GPU markers, allocation/upload counters and actionable failure logs. Wire a regression runner to fail on relevant graphics validation errors.
 
 **G1:** Resize/target-switch/repeated-load tests and failure injection complete without corruption, leaks or stale references. Recovery checks follow [Microsoft's Direct3D 11 device-removal guidance](https://learn.microsoft.com/en-us/windows/uwp/gaming/handling-device-lost-scenarios).
+
+### M1A — AssetDatabaseManager and graphics asset integration
+
+Include [AssetDatabaseManager.hpp](../Engine/cpp/Include/Workphone/Database/AssetDatabaseManager.hpp) and its implementation in the production scope, together with DatabaseManager, ResourceDatabase, ResourceDirector and the WPSQLite implementation of IResourceCompilationDatabase. Preserve shared interfaces; use internal/additive adapters and explicitly version schema changes.
+
+Retain the existing resource table, UUID/path indexes, CRUD, ResourceDirector lookup/caches and cache clearing on mutations/unload. The narrow-string database-switch handling is also a useful starting point. These do not yet constitute a complete graphics asset pipeline.
+
+#### Review findings driving this work
+
+| Finding | Evidence and implication | Priority |
+|---|---|---|
+| Deletion can affect unrelated scene entries | `removeResourceEntry` combines UUID and path with `OR`; actors/components use the shared path `scene`. Removing one such object can match other scene rows | P0 correctness blocker |
+| SQL values are concatenated | CRUD/lookup concatenate UUID, type and path into quoted SQL. An apostrophe in a valid path breaks query semantics; crafted values may change the statement | P0: bound values and transactional mutations |
+| Missing-path identity is temporary | `getResourceEntryFromPath` creates/caches a random UUID on a miss without persisting it; UUID lookup returns null on a miss. Cache invalidation/restart can change identity | P0: explicit lookup versus create/import behavior |
+| Cache operations lack retained synchronization | `find`/iterator dereference and `operator[]` assignments do not retain map locks; ConcurrentMap documents that iterator/reference protection ends when the call returns. DB calls lock individually, not across query/mutation/cache publication | P0 concurrency risk: catalog serialization, lock order and generation-safe publication |
+| UUID/path indexes allow duplicate identities | `id` is unique; UUID/path indexes are ordinary indexes. Check-then-insert is not a transaction. Scene entries deliberately share a path | P0: UUID uniqueness and asset-kind-aware path constraints |
+| Update/path fallback and lifecycle differ | Update omits resource-path fallback when a nonnil filesystem ID cannot be resolved; wide-string base loading does not switch an already-loaded database like the narrow overload | P0: consistent resolution and database switching |
+| Failure is hard to distinguish from success/miss | Base query paths catch/log failures; executeDML always returns zero, catalog mutations expose void, and missing-path fallback may run after a failed query | P0: internal structured outcomes and publication only after confirmed success |
+| Header promises exceed implemented schema | Table-name fields/setters exist, but SQL uses literal `resources`; only that table is created/cleared, `destroy()` is empty, and component-table settings are unused in inspected methods | P1: specify lifecycle/table configuration; keep a compatibility alias if correcting `sestResourcesTableName` |
+| Cache bounds and path identity are unspecified | Caches strongly retain mutable directors, use fixed-size keys (256/1024) and have no eviction policy; source paths are not canonicalized here | P0 length/path validation; P1 bounded caches/retained-director policy |
+| Coverage can omit database behavior | ResourceDatabaseTests contains plugin/headless early returns; the graphics runner/minimal preset do not require a database backend | P0: standalone contracts with required backend |
+
+These are source-review findings. Database failure, concurrency and persistence behavior was not exercised in this review; add focused reproductions before treating repairs as verified.
+
+| ID | Deliverable | Acceptance evidence |
+|---|---|---|
+| DB-01 | Durable catalog identity, asset/scene entry kinds, lookup/miss/create semantics and duplicate policy. UUID survives move/reimport; runtime misses do not create editor assets | Miss leaves catalog unchanged; import creates one persistent UUID; restart/rename/reimport retains it; conflicting IDs fail deterministically |
+| DB-02 | Prepared/bound operations via concrete SQLite/internal adapter, checked mutation results and transaction ownership. Preserve shared interfaces | Apostrophe/Unicode paths round-trip; malformed values cannot alter queries; failed mutations roll back and do not update caches |
+| DB-03 | Versioned schema migration with backup/rollback, UUID uniqueness and conditional canonical-path uniqueness for file assets; scene entries remain UUID-addressed | Duplicate rows diagnosed/migrated; two rows sharing `scene` survive deletion of just one; failed migration preserves original data |
+| DB-04 | Canonical project-root paths, validated lengths, filesystem-ID fallback, case/separator policy and source-to-ResourceID mapping | Equivalent spellings resolve one asset; traversal/outside-root rejected; project relocation works; long keys reject rather than alias |
+| DB-05 | Serialized mutation/cache publication, retained views where needed, catalog generations and bounded caches; define retained-director semantics | Lookup/delete/reload/unload races cannot republish stale entries; rename invalidates both keys; directors cannot silently alter catalog state |
+| DB-06 | Aligned narrow/wide load, close/reopen/unload/destroy and table configuration; absent-plugin/open/schema errors. Audit `optimise()` durability settings before authoritative-catalog use | A/B switching works through both overloads; open failure is reported rather than creating a fabricated asset; outstanding work drains on unload |
+| DB-07 | Adapter from catalog UUID/type/source metadata to ResourceIDs and ResourceSystem compile/runtime requests; compile versions/hashes/dependencies stay in IResourceCompilationDatabase | Catalog material and texture dependencies compile, upload and draw on DX11; type/target/version mismatches produce diagnostics |
+| DB-08 | Failure-safe reimport across catalog, compiled outputs and GPU generations using staging/recovery records; cancellation and last-good asset policy | Compile/upload failure retains old visible asset; interrupted publication can be reconciled; stale jobs cannot replace newer assets |
+| DB-09 | Lua/editor catalog/import/reimport diagnostics and read-only packaged runtime manifest; reference remapping for source moves | Editor/runtime use matching cooked identities/dependencies; packaged app needs no source files/editor DB writes; declared fallbacks apply |
+| DB-10 | Required-backend catalog target, ResourceSystem contracts and integrated graphics fixtures in CI, with explicit unavailable outcomes | No plugin/headless early-return pass; identity/mutation/migration/race/failure contracts execute; cooked character/effect/material reaches Claw rendering |
+
+**GD:** Stable identities, correct transactional CRUD and cache/lifecycle semantics; a catalog-resolved cooked material and texture reach a DX11 draw, and failure preserves the last good asset. R1 also requires this path for imported mesh/skeleton/clip and particle assets. Water assets join the same pipeline for R2.
 
 ### M2 — animation: close the entire deformation path
 
@@ -197,7 +264,7 @@ Required tests:
 
 ### M4 — assets, materials, geometry and lighting
 
-- **ASSET-01:** Register graphics compilers with existing `ResourceSystem`; validate meshes, skeletons, clips, textures, materials, shaders and effects. Include target/format/compiler versions in derived outputs.
+- **ASSET-01:** Use DB-01 through DB-07 catalog identity/resolution and register graphics compilers with existing `ResourceSystem`; validate meshes, skeletons, clips, textures, materials, shaders and effects. Include target/format/compiler versions in derived outputs and resolve types/dependencies explicitly. Add water settings at M7.
 - **ASSET-02:** Compile shaders offline with reflection and bounded variant keys; validate bindings, vertex layouts and constant-buffer alignment; retain last good shader on failed development reload.
 - **MAT-01:** Complete consistent metallic/roughness PBR, correct linear/sRGB treatment, normal/tangent conventions, packed-channel mapping, alpha-test/blend and material instances. Test against material sphere/texture fixtures.
 - **TEX-01:** Audit mips, sampler states, row pitches, cubemap faces, compression and missing-texture fallback. Integrate incremental background decode and bounded render-thread upload.
@@ -272,13 +339,14 @@ Use [Microsoft's fence-based resource management guidance](https://learn.microso
 | Layer | Purpose | Examples |
 |---|---|---|
 | Unit/headless | Fast, deterministic correctness | Pose/weight math, particle trajectories/counts, resource validation, pass dependencies, settings serialization |
+| Database contracts | Prove durable identity and safe persistence without graphics | UUID/miss/rename/restart, scoped deletion, quoted paths, migration/rollback, DB switching, cache races, required SQLite backend |
 | Component/integration | Prove scheduling and ownership | Graph/controller/mesh bridge, effect lifecycle, reload/cancellation, scene teardown, upload queue |
 | GPU contract | Catch native state/resource errors | Independent per-draw constants, target switching, bindings, formats, skinned buffers, device reset |
 | Visual/sequence | Prove final appearance and time behavior | Materials, skinned shadows, motion vectors, smoke sorting, water clipping, temporal stability |
 | Performance/soak | Prove predictable cost and longevity | Crowds, particle overdraw, streaming, terrain, multi-view UI, repeated reload and eight-hour scenes |
 | Packaging | Prove someone else can use it | Clean installation, cooked-content sample, external consumer, no local dependency paths |
 
-Preserve existing tests. Add focused executables for animation, particle simulation, particle rendering, GPU pipeline and water alongside the Claw tests, using the existing registration style. GPU tests may require a hardware runner; WARP/offscreen checks supplement hardware coverage where viable. Do not count a headless early return as evidence that a GPU feature works.
+Preserve existing tests. Extend the existing native skinning/particle and DX11 pixel harnesses; add focused catalog, imported-animation, scene-particle, GPU-pipeline and water targets using current registration conventions. The database-enabled target requires SQLite independently of graphics; the dependency-free contract preset stays lightweight. GPU tests require backend availability; WARP/offscreen checks supplement hardware coverage where viable. Headless/plugin early returns cannot satisfy release gates.
 
 Proposed budgets, to calibrate in M0:
 
@@ -290,7 +358,7 @@ Proposed budgets, to calibrate in M0:
 - At least 1,000 repeated scene-load/unload and target-resize cycles; injected creation/upload/decode failures preserve valid state. Device recovery tests restore a usable scene or produce the specified bounded failure outcome.
 - Certification covers selected AMD/NVIDIA/Intel adapters where available, with recorded drivers. The initial supported set is the machines actually validated, then broadened deliberately.
 
-**R1 checklist:** G0, G1, GA, GP, P0 portions of G4/G5/G6, initial GR; licensed cooked sample; no unresolved crash/data corruption/resource leak; no mandatory feature tests skipped; documented performance and capabilities.
+**R1 checklist:** G0, G1, GD, GA, GP, P0 portions of G4/G5/G6, initial GR; catalog-to-cooked-asset-to-screen evidence; licensed cooked sample; no unresolved crash/data corruption/resource leak; no mandatory feature tests skipped; documented performance and capabilities.
 
 **R2 checklist:** R1 plus every advertised P1 feature gate, GW, expanded performance/visual/soak suite and renewed GR. If a P1 feature is deferred, adjust the published scope and retain its explicit backlog entry.
 
@@ -298,7 +366,10 @@ Proposed budgets, to calibrate in M0:
 
 | Risk/decision | Response |
 |---|---|
-| Animation/particle code exists but final rendering may be missing | Prioritize asset-to-screen fixtures and GA/GP; budget implementation work, not only tests |
+| Direct skinning/particle draws pass but complete scene behavior is unproven | Prioritize catalog-resolved imported fixtures and GA/GP; retain the validated reference paths |
+| Missing-path lookup invents identities and shared scene path broadens deletion | Resolve DB-01/02/03 before using the catalog for skeletal/effect/water assets |
+| Catalog and compilation index use different identity models | Add UUID/source-to-ResourceID mapping/reconciliation; compiler dependencies remain in IResourceCompilationDatabase |
+| Director caches outlive database generations | Serialize publication, define retained-handle validity and budgets, test unload/switch races |
 | Multiple animation representations and particle update paths | Define authoritative data and ownership; adapt existing layers rather than updating twice |
 | Bone/keyframe/influence limits differ between code and assets | Publish validated per-backend limits; compiler rejects overflow or performs documented partitioning |
 | Shared interface ABI and other graphics implementations | Keep this pass internally additive; test compatibility; isolate any later versioned interface change |
@@ -308,21 +379,21 @@ Proposed budgets, to calibrate in M0:
 | Legacy dependency paths and missing GPU CI | Resolve clean build/packaging and hardware access before expanding the feature promise |
 | Feature breadth outgrows staffing | Ship R1 first; complete R2 work in bounded packages; estimate P2 independently |
 
-Owners to assign: graphics lead (contracts/gates), native rendering engineer (device/passes), animation engineer (pose/deformation), effects engineer (particles/water), technical artist (fixtures/reference scenes), and QA/build engineer (CI/certification). One person may hold several roles; staffing changes elapsed time and parallelism, not the acceptance criteria.
+Owners to assign: graphics lead (contracts/gates), asset/resource engineer (catalog/schema/compiler bridge), native rendering engineer (device/passes), animation engineer (pose/deformation), effects engineer (particles/water), technical artist (fixtures/reference scenes), and QA/build engineer (CI/certification). One person may hold several roles; staffing changes elapsed time and parallelism, not the acceptance criteria.
 
-## 9. First implementation increments
+## 9. Next implementation increments from the current baseline
 
 Each increment should be independently reviewable and preserve the baseline tests.
 
-1. `BASE-01/02/03`: capability/skip inventory, minimal Windows Claw presets and recorded test baseline.
-2. `BASE-04`: two-bone animation and seeded particle fixtures plus real-backend test harnesses that fail clearly when required capabilities are absent.
-3. `ANIM-01/02`: imported skeleton/clip tracing, validated bind transforms/weights and a CPU deformation reference.
-4. `FX-01/02`: authoritative particle lifecycle/simulation path, deterministic seed/time policy and analytical simulation tests.
-5. `CORE-01/02/05`: resource ownership, cache generations and safe scene/job teardown required by animated meshes/effects.
-6. `ANIM-04/05`: graph-to-pose bridge and visibly correct DX11 skinning with independent instances.
-7. `FX-03/05/06`: pooled simulation snapshots and real batched particle rendering, bounds and multi-camera correctness.
-8. `PIPE-01/02` and `SHADOW-01`: GPU HDR frame with correct static/skinned shadows and transparent composition.
-9. Complete remaining P0 asset/material/UI/recovery work; run R1 certification and package the mixed-scene sample.
-10. Implement P1 features in measured packages, beginning with animation/effect completeness and WATER-01 through WATER-06; certify R2 before promoting its capabilities.
+1. **Required catalog contracts (`DB-01/02/03/10`):** reproduce shared-scene-path deletion, quoted paths, missing-lookup/restart identity and duplicates using SQLite without graphics. Resolve safe identity/mutation/schema behavior while preserving callers.
+2. **Catalog lifecycle/bridge (`DB-04/05/06/07`):** consistent paths/database switching, safe caches, then catalog material/texture → compile → load → DX11 draw. Add a database-enabled configuration alongside lightweight graphics contracts.
+3. **Imported animation (`BASE-04`, `ANIM-01/02/04/05/06`):** reuse CPU skinning; cook a two-bone mesh/clip with inverse-bind transforms and drive it through the scene. Prove independent instances, bounds and events, then extend to a licensed character.
+4. **Particle assets/scene (`FX-01/04/06/08`, `DB-07/08`):** load a versioned effect, round-trip settings, define once-per-frame simulation and space/scale rules, test multiple cameras and lifecycle/reload. Preserve analytical and direct-draw tests.
+5. **Ownership/performance (`CORE-01/02/05`, `ANIM-05`, `FX-03/05`):** generations/teardown, dynamic/GPU deformation, reusable particle buffers, draw-state restoration and global transparency sorting; record CPU/GPU/upload/memory costs.
+6. **Complete baseline (`BASE-02/03/05`, `DB-09/10`):** clean Debug/RelWithDebInfo builds, remote native/database CI, GPU runner, versioned fixtures and budgets. Local tests remain mandatory regressions.
+7. **GPU frame (`PIPE-01/02`, `SHADOW-01`):** HDR, depth/normals/velocity, per-view resources, shadows and animated/particle composition. Define water input contracts here.
+8. **R1 completion:** cooked assets, material/light/UI/terrain correctness, reload/recovery/streaming and packaging; certify G0/G1/GD/GA/GP/G4/G5/G6/GR for P0.
+9. **R2 water/richer features:** WATER-01 through WATER-06 via the catalog/GPU frame plus P1 work; validate lake/pool/river and mixed particle/water sequences before R2 certification.
+10. **Backend expansion:** DX12 remains experimental until its own presentation/material/UI/resource/performance gates pass.
 
-Completion records for every increment should include changed files, actual tests and skips, reference captures where relevant, measured costs, and remaining limitations. This document is the roadmap; the first executable task is the baseline and animation/particle validation harness.
+Completion records include changed files, actual tests/skips, reference captures, measured costs and limitations. The next executable task is the required-backend catalog contract suite and safe identity/mutation repairs; CPU skinning and basic particle rendering form the retained baseline.

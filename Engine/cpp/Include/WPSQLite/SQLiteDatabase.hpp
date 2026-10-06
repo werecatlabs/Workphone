@@ -3,7 +3,9 @@
 
 #include <WPSQLite/WPSQLitePrerequisites.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
+#include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Memory/SharedPtr.hpp>
+#include <mutex>
 
 namespace workphone
 {
@@ -16,7 +18,7 @@ namespace workphone
      * the IDatabase interface. It handles database connections, queries, and DML operations
      * for SQLite databases.
      */
-    class SQLiteDatabase : public IDatabase
+    class SQLiteDatabase : public IDatabase, public IParameterizedDatabase
     {
     public:
         /**
@@ -62,6 +64,9 @@ namespace workphone
          */
         SmartPtr<IDatabaseQuery> query( const String &queryStr ) override;
 
+        SmartPtr<IDatabaseQuery> queryBound( const String &sql,
+                                            const Array<String> &values ) override;
+
         /**
          * @brief Executes a wide-character query and returns a query result object
          * @param queryStr The SQL query string in wide-character format
@@ -92,6 +97,7 @@ namespace workphone
     protected:
         /// Internal SQLite database handle
         SharedPtr<CppSQLite3DB> m_database;
+        std::mutex m_boundQueryMutex;
     };
 }  // namespace workphone
 
