@@ -1,5 +1,6 @@
+if not RacingSupport then include("RacingSupport.lua") end
 if not StartMenu then include("StartMenu.lua") end
-class 'MenuManager' (BaseComponent)
+class 'MenuManager' (RacingComponent)
 local actions = {"Resume", "Start", "Workshop", "Settings", "Exit"}
 function MenuManager:__init(component)
     BaseComponent.__init(self, component)
@@ -9,6 +10,12 @@ function MenuManager:__init(component)
 end
 -- Reuse StartMenu's layout, buttons, listeners and generated-root ownership.
 function MenuManager:show(title, subtitle, items, status)
+    assert(type(title)=="string" and type(items)=="table" and items.Start,"Menu needs a title and primary action")
+    for action,spec in pairs(items) do
+        assert(action=="Start" or action=="Resume" or action=="Workshop" or action=="Settings" or action=="Exit","Unknown menu action")
+        assert(type(spec)=="table" and type(spec[1])=="string" and type(spec[2])=="function","Invalid menu item")
+    end
+    self.manager = IApplicationManager.instance():getGameManager()
     local view = self.view
     view.title, view.subtitle, view.versionText = title, subtitle or "", "WORKPHONE RACING"
     local _, breaks = view.subtitle:gsub("\n", "")
@@ -41,12 +48,20 @@ function MenuManager:refreshSelection()
     end
 end
 function MenuManager:move(direction)
+    assert(self.visible and #self.items>0 and (direction==-1 or direction==1),"Menu is hidden or navigation direction is invalid")
     self.selected = (self.selected - 1 + direction) % #self.items + 1
     self:refreshSelection()
 end
-function MenuManager:activate() self.view:dispatchAction(self.items[self.selected].action) end
+function MenuManager:activate()
+    assert(self.visible and self.items[self.selected],"Menu is hidden")
+    self.view:dispatchAction(self.items[self.selected].action)
+end
 function MenuManager:hide() self.visible = false; self.view:hide() end
 function MenuManager:destroy(manager)
-    if self.view.generatedRoot then manager:destroyActor(self.view.generatedRoot, true) end
+    manager = manager or self.manager
+    if self.view.generatedRoot then assert(manager,"Menu manager is unbound"):destroyActor(self.view.generatedRoot, true) end
     self.view.generatedRoot, self.visible = nil, false
+    self.view.callbacks, self.view.buttons, self.view.buttonActors, self.items = {}, {}, {}, {}
+    self.view.statusText, self.manager = nil, nil
 end
+MenuManager.shutdown = MenuManager.destroy

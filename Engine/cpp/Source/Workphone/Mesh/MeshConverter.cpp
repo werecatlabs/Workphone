@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Mesh/MeshConverter.hpp>
 #include <Workphone/Mesh/MeshSerializer.hpp>
+#include <Workphone/Mesh/Mesh.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
@@ -36,8 +37,21 @@ namespace workphone
                         MeshSerializer serializer;
 
                         auto cacheFolder = applicationManager->getCachePath();
-                        auto workingDir = Path::getWorkingDirectory();
-                        Path::setWorkingDirectory( cacheFolder );
+                        if( StringUtil::isNullOrEmpty( cacheFolder ) )
+                        {
+                            WP_LOG_ERROR( "MeshConverter::writeMesh: Cache path is empty." );
+                            return;
+                        }
+                        if( !Path::isPathAbsolute( cacheFolder ) )
+                        {
+                            auto projectFolder = applicationManager->getProjectPath();
+                            if( StringUtil::isNullOrEmpty( projectFolder ) )
+                            {
+                                projectFolder = Path::getWorkingDirectory();
+                            }
+                            cacheFolder = Path::getAbsolutePath( projectFolder, cacheFolder );
+                        }
+                        Path::createDirectories( cacheFolder );
                         auto fileName = pMesh->getName();
 
                         static const auto ext = String( ".fbmeshbin" );
@@ -47,8 +61,8 @@ namespace workphone
                         }
 
                         fileName = Path::getFileName( fileName );
-                        serializer.exportMesh( (Mesh *)pMesh, fileName );
-                        Path::setWorkingDirectory( workingDir );
+                        const auto outputPath = Path::lexically_normal( cacheFolder, fileName );
+                        serializer.exportMesh( static_cast<Mesh *>( pMesh ), outputPath );
                     }
                 }
             }

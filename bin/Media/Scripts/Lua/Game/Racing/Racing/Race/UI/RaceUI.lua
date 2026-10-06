@@ -1,10 +1,15 @@
+if not RacingSupport then include("RacingSupport.lua") end
 if not RaceSession then include("RaceSession.lua") end
-class 'RaceUI' (BaseComponent)
+class 'RaceUI' (RacingComponent)
 function RaceUI:__init(component) BaseComponent.__init(self, component); self.lastText = {} end
 function RaceUI:generate(manager, owner)
+    self:destroy()
     self.manager = manager
+    local ok, failure = pcall(function()
     local function actor(parent, name, x, y, width, height, z)
         local item = manager:createActor()
+        assert(item, "Cannot create HUD actor: " .. name)
+        if parent == owner then self.root = item end -- Track ownership before a binding can fail.
         item:setName(name); parent:addChild(item)
         local layout = item:addComponent("LayoutTransform")
         layout:setPosition(Vector2F(x, y)); layout:setSize(Vector2F(width, height)); layout:setZOrder(z, false)
@@ -28,6 +33,9 @@ function RaceUI:generate(manager, owner)
     self.countdown = text(self.root, "Countdown", -100, 140, 72)
     self.help = text(self.root, "Controls", 470, 48, 22)
     self.help:setText("W/S or arrows: throttle/brake   A/D: steer   R: restart   C: camera   Esc: pause")
+    end)
+    if not ok then self:destroy(); error("RaceUI: " .. tostring(failure)) end
+    return true
 end
 function RaceUI:setText(field, value)
     if self.lastText[field] ~= value then self[field]:setText(value); self.lastText[field] = value end
@@ -46,4 +54,6 @@ function RaceUI:show(value) if self.root then self.root:setEnabled(value) end en
 function RaceUI:destroy()
     if self.root then self.manager:destroyActor(self.root, true) end
     self.root, self.lastText = nil, {}
+    self.dashboard, self.countdown, self.help = nil, nil, nil
 end
+RaceUI.shutdown = RaceUI.destroy

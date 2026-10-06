@@ -79,36 +79,12 @@ namespace workphone::editor
             auto project = editorManager->getProject();
             WP_ASSERT( project );
 
-            project->setPath( filePath );
-
             auto uiManager = editorManager->getUI();
             WP_ASSERT( uiManager );
 
-            auto fileSystem = applicationManager->getFileSystem();
-            WP_ASSERT( fileSystem );
-
-            auto path = Path::getFilePath( filePath );
-            path = StringUtil::cleanupPath( path );
-
-            applicationManager->setProjectPath( path );
-
-            auto projectPath = applicationManager->getProjectPath();
-            if( StringUtil::isNullOrEmpty( projectPath ) )
-            {
-                projectPath = Path::getWorkingDirectory();
-            }
-
-            fileSystem->addFolder( path, true );
-
-            auto cachePath = path + "/Cache/";
-            fileSystem->addFolder( cachePath, true );
-            applicationManager->setCachePath( cachePath );
-
-            auto settingsCachePath = path + "/SettingsCache/";
-            fileSystem->addFolder( settingsCachePath, true );
-            applicationManager->setSettingsPath( settingsCachePath );
-
             project->loadFromFile( filePath );
+            setProjectPath( applicationManager->getProjectPath() );
+            setCachePath( applicationManager->getCachePath() );
 
             if( auto editorSettings = applicationManager->getEditorSettings() )
             {

@@ -1,5 +1,5 @@
 if not RacingSupport then include("RacingSupport.lua") end
-class 'RacingCarController' (BaseComponent)
+class 'RacingCarController' (RacingComponent)
 function RacingCarController:__init(component) BaseComponent.__init(self, component) end
 function RacingCarController:bind(car, actor)
     assert(car, "Native CarController required")

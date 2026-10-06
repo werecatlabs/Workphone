@@ -1,220 +1,69 @@
-class 'RaceManagerView' (BaseComponent)
-
-function RaceManagerView:__init()
-    BaseComponent.__init(self)
-    self.startTime = 0.0
-    self.endTime = 0.0
-    self.m_IsStarted = false
-    self.isFinished = false
-    self.isHost = false
-    self.m_TotalLaps = 3
-    self.m_NextStateUpdateTime = 0.0
-    self.m_ViewData = nil
+if not RacingSupport then include("RacingSupport.lua") end
+if not RaceView then include("RaceView.lua") end
+if not RacingNetworkTransport then include("RacingNetworkTransport.lua") end
+class 'RaceManagerView' (RacingComponent)
+function RaceManagerView:__init(component)
+    BaseComponent.__init(self, component); self.views, self.isHost, self.id = {}, true, 0
 end
-
-function RaceManagerView:GetRaceViewById(id)
-    local raceManager = RaceManager.instance
-    if raceManager then
-        for _, raceView in ipairs(raceManager.m_RaceViews) do
-            if raceView:GetId() == id then
-                return raceView
-            end
-        end
-    end
-    return nil
+function RaceManagerView:bind(manager, ranks, transport) self.manager, self.ranks, self.transport = manager, ranks, transport end
+function RaceManagerView:JoinRace(view)
+    assert(view:IsReady(), "Racer is not ready")
+    assert(not self.views[view.id] or self.views[view.id] == view, "Duplicate racer")
+    local count = 0; for _ in pairs(self.views) do count=count+1 end
+    assert(self.views[view.id] or count < 64, "Race is full")
+    self.views[view.id] = view
+    if self.ranks then self.ranks:register(view); self.ranks:refresh() end
+    self:RefreshRaceViews()
 end
-
-function RaceManagerView:get_isStarted()
-    return self.m_IsStarted
+function RaceManagerView:LeaveRace(view)
+    if self.views[view.id] ~= view then return false end
+    self.views[view.id] = nil
+    if self.ranks then self.ranks:remove(view.id) end
+    self:RefreshRaceViews(); return true
 end
-
-function RaceManagerView:set_isStarted(value)
-    self.m_IsStarted = value
-end
-
-function RaceManagerView:get_viewData()
-    return self.m_ViewData
-end
-
-function RaceManagerView:set_viewData(value)
-    self.m_ViewData = value
-end
-
-function RaceManagerView:OnJoinedRoom()
-    local rankManager = RankManager.instance
-    if rankManager then
-        rankManager:RefreshRacerCount()
-    end
-end
-
-function RaceManagerView:OnLeftRoom()
-    local rankManager = RankManager.instance
-    if rankManager then
-        rankManager:RefreshRacerCount()
-    end
-    local raceManager = RaceManager.instance
-    if raceManager and not raceManager.isRestarting and raceManager.isHost then
-        self:OnHostQuit()
-    end
-end
-
-function RaceManagerView:HostQuit()
-    local applicationManager = ApplicationManager.instance
-    if applicationManager and applicationManager.isRaceMode then
-        local raceManager = RaceManager.instance
-        if raceManager then
-            raceManager:HostQuit()
-        end
-    end
-end
-
-function RaceManagerView:OnHostQuit()
-    -- To be overridden if needed
-end
-
-function RaceManagerView:SetTotalLaps(totalLaps)
-    self.m_TotalLaps = totalLaps
-    local raceManager = RaceManager.instance
-    if raceManager then
-        raceManager.totalLaps = totalLaps
-    end
-    print("RaceManagerView.OnSetTotalLapsRPC: " .. tostring(totalLaps))
-end
-
-function RaceManagerView:OnSetTotalLaps(totalLaps)
-    -- To be overridden if needed
-end
-
-function RaceManagerView:ToJson()
-    local data = {}
-    local raceManager = RaceManager.instance
-    if raceManager then
-        data.totalLaps = raceManager.totalLaps
-        data.totalRacers = raceManager.totalRacers
-        data.raceViewData = {}
-        for _, raceView in ipairs(raceManager.m_RaceViews) do
-            table.insert(data.raceViewData, raceView:ToJson())
-        end
-    end
-    return data
-end
-
-function RaceManagerView:FromJson(data)
-    local raceManager = RaceManager.instance
-    if raceManager then
-        raceManager.totalLaps = data.totalLaps
-        raceManager.totalRacers = data.totalRacers
-        if RankManager.instance then
-            RankManager.instance.totalRacers = data.totalRacers
-        end
-        if data.raceViewData then
-            for _, raceViewData in ipairs(data.raceViewData) do
-                local raceView = self:GetRaceViewById(raceViewData.id)
-                if raceView then
-                    raceView:FromJson(raceViewData)
-                end
-            end
-        end
-    end
-    self.viewData = data
-end
-
-function RaceManagerView:SetViewData(dataStr)
-    -- Assume a JSON decode function is available as JsonUtility.FromJson
-    local ok, data = pcall(function() return JsonUtility.FromJson(dataStr) end)
-    if ok and data then
-        self:FromJson(data)
-    else
-        print("RaceManagerView:SetViewData error: " .. tostring(data))
-    end
-end
-
-function RaceManagerView:JoinRace(raceView)
-    local raceManager = RaceManager.instance
-    if raceManager then
-        raceManager:JoinRace(raceView)
-    end
-    local modelController = raceView:GetComponent("ModelController")
-    if modelController then
-        local applicationManager = ApplicationManager.instance
-        if applicationManager and applicationManager.isRaceMode then
-            local playerName = modelController.playerName
-            if playerName and playerName ~= "" then
-                if UIManager and UIManager.instance then
-                    UIManager.instance:ShowInformation(playerName .. " joined race.", 1.0)
-                end
-            end
-        end
-    end
-end
-
-function RaceManagerView:LeaveRace(raceView)
-    local raceManager = RaceManager.instance
-    if raceManager then
-        raceManager:LeaveRace(raceView)
-    end
-    local modelController = raceView:GetComponent("ModelController")
-    if modelController then
-        local applicationManager = ApplicationManager.instance
-        if applicationManager and applicationManager.isRaceMode then
-            local playerName = modelController.playerName
-            if playerName and playerName ~= "" then
-                if UIManager and UIManager.instance then
-                    UIManager.instance:ShowInformation(playerName .. " left race.", 1.0)
-                end
-            end
-        end
-    end
-end
-
-function RaceManagerView:HasRaceView(raceView)
-    local raceManager = RaceManager.instance
-    if raceManager then
-        for _, rv in ipairs(raceManager.m_RaceViews) do
-            if rv == raceView then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-function RaceManagerView:HasActiveRaceView(raceView)
-    local raceManager = RaceManager.instance
-    if raceManager then
-        for _, rv in ipairs(raceManager.m_ActiveRaceViews) do
-            if rv == raceView then
-                return true
-            end
-        end
-    end
-    return false
-end
-
 function RaceManagerView:RefreshRaceViews()
-    -- To be overridden if needed
+    local count = 0; for _ in pairs(self.views) do count=count+1 end
+    if self.manager then self.manager.totalRacers = count end
 end
-
-function RaceManagerView:RefreshRaceViewsCoroutine(delay)
-    -- Simulate coroutine with timer if available, otherwise just call after delay
-    if Timer then
-        Timer.Create(delay, function() self:RefreshRaceViews() end)
-    else
-        self:RefreshRaceViews()
-    end
+function RaceManagerView:GetRaceViewById(id) return self.views[id] end
+function RaceManagerView:HasRaceView(view) return self.views[view.id] == view end
+function RaceManagerView:SetTotalLaps(laps)
+    assert(self.manager, "Manager is unbound"); self.manager.totalLaps = RacingSupport.integer(laps, 1, 10, "laps")
 end
-
-function RaceManagerView:RefreshRaceViewsWithDelay(delay)
-    self:RefreshRaceViewsCoroutine(delay)
-end
-
 function RaceManagerView:RestartRace()
-    local raceManager = RaceManager.instance
-    if raceManager then
-        raceManager:RestartRace()
-    end
+    assert(self.isHost and self.manager, "Only the host may restart")
+    for _, view in pairs(self.views) do view:RestartRace() end
+    self.manager:InitializeRace(self.manager._raceType == 1 and "timeTrial" or "race", self.manager.totalLaps)
 end
-
-function RaceManagerView:OnRestartRace()
-    -- To be overridden if needed
+function RaceManagerView:publish()
+    assert(self.isHost and self.transport, "Host transport required")
+    self.transport:sendSession(self:ToData())
+    for _, view in pairs(self.views) do self.transport:sendRacer(view:ToData()) end
+end
+local states={idle=0,countdown=1,racing=2,paused=3,finished=4}
+local names={[0]="idle",[1]="countdown",[2]="racing",[3]="paused",[4]="finished"}
+function RaceManagerView:ToData()
+    local s=assert(self.manager,"Manager is unbound").session
+    return {id=self.id,mode=s.mode or "race",state=states[s.state],resume=states[s.resumeState] or 0,
+        laps=self.manager.totalLaps,racers=math.max(1,self.manager.totalRacers),elapsed=s.elapsed or 0,countdown=s.countdown or 0,
+        lap=s.lap or 1,completed=s.completedLaps or 0,best=s.bestLapTime or 0,last=s.lastLapTime or 0}
+end
+function RaceManagerView:receiveSession(data)
+    assert(not self.isHost and self.manager,"Only clients receive host session state")
+    data=RacingNetworkTransport.validateSession(data); assert(data.id==self.id,"Wrong session view")
+    local s=self.manager.session
+    s.mode,s.state,s.resumeState=data.mode,names[data.state],data.resume>0 and names[data.resume] or nil
+    s.lapLimit,s.elapsed,s.countdown,s.lap,s.completedLaps=data.laps,data.elapsed,data.countdown,data.lap,data.completed
+    s.bestLapTime,s.lastLapTime,s.lapTimes=data.best,data.last,s.lapTimes or {}
+    s.lapStart=s.elapsed; self.manager.totalLaps,self.manager.totalRacers=data.laps,data.racers
+    self.manager:syncState()
+end
+function RaceManagerView:receive(data)
+    assert(not self.isHost, "Host state cannot be replaced by a remote snapshot")
+    local view = self.views[data.id]; assert(view, "Unknown racer")
+    view:FromData(data)
+end
+function RaceManagerView:shutdown()
+    if self.ranks then for id in pairs(self.views) do self.ranks:remove(id) end end
+    self.views, self.manager, self.ranks, self.transport = {}, nil, nil, nil
 end

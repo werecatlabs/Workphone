@@ -1,5 +1,14 @@
 -- Shared validation/math for racing components. No scene or singleton ownership.
 RacingSupport = RacingSupport or {}
+if not RacingComponent then
+    class 'RacingComponent' (BaseComponent)
+    function RacingComponent:__init(component) BaseComponent.__init(self,component) end
+    function RacingComponent:__finalize()
+        if self.shutdown then self:shutdown() end
+        BaseComponent.__finalize(self)
+        self.component = nil
+    end
+end
 local R = RacingSupport
 function R.finite(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end
 function R.number(value, low, high, name)
@@ -7,6 +16,7 @@ function R.number(value, low, high, name)
     return value
 end
 function R.clamp(value, low, high) return math.max(low, math.min(high, value)) end
+function R.atan2(y, x) return math.atan2 and math.atan2(y,x) or math.atan(y,x) end
 function R.integer(value, low, high, name)
     R.number(value, low, high, name); assert(value == math.floor(value), (name or "value") .. " must be an integer")
     return value

@@ -45,6 +45,12 @@ namespace workphone::editor
             return fs::absolute( fs::u8path( value.c_str() ) ).lexically_normal();
         }
 
+        String cacheDirectoryPath( const fs::path &directory )
+        {
+            // Resource and prefab writers append filenames to these directory paths.
+            return directory.generic_u8string() + "/";
+        }
+
         Array<String> cleanPaths( const Array<String> &paths )
         {
             Array<String> result;
@@ -346,6 +352,10 @@ namespace workphone::editor
         // DataUtil can log malformed JSON without throwing. Reject incomplete documents.
         if( !properties->hasProperty( "projectVersion" ) && !properties->hasProperty( "version" ) )
             throw std::runtime_error( "Invalid project document: missing projectVersion" );
+        const auto cacheDirectory = destination.parent_path() / "Cache";
+        const auto settingsDirectory = destination.parent_path() / "SettingsCache";
+        fs::create_directories( cacheDirectory );
+        fs::create_directories( settingsDirectory );
         if( m_plugin )
         {
             if( core::IApplicationManager::instancePtr() )
@@ -366,8 +376,8 @@ namespace workphone::editor
         if( auto app = core::IApplicationManager::instancePtr() )
         {
             app->setProjectPath( m_projectDirectory );
-            app->setCachePath( m_projectDirectory + "/Cache" );
-            app->setSettingsPath( m_projectDirectory + "/SettingsCache" );
+            app->setCachePath( cacheDirectoryPath( cacheDirectory ) );
+            app->setSettingsPath( cacheDirectoryPath( settingsDirectory ) );
             auto fileSystem = app->getFileSystem();
             if( fileSystem ) fileSystem->addFolder( m_projectDirectory, true );
             if( fileSystem )
@@ -377,7 +387,8 @@ namespace workphone::editor
                 folders.insert( folders.end(), m_paths.begin(), m_paths.end() );
                 for( const auto &folder : cleanPaths( folders ) )
                 {
-                    const auto resolved = destination.parent_path() / fs::u8path( folder.c_str() );
+                    const auto resolved =
+                        ( destination.parent_path() / fs::u8path( folder.c_str() ) ).lexically_normal();
                     if( fs::is_directory( resolved ) ) fileSystem->addFolder( resolved.u8string(), true );
                 }
             }
@@ -719,7 +730,7 @@ namespace workphone::editor
             manager->generateProject();
         }
         const auto configuration = app->getBuildConfig();
-        app->setCachePath( ( directory / "Cache" ).u8string() );
+        app->setCachePath( cacheDirectoryPath( directory / "Cache" ) );
         app->setProjectLibraryName( "Plugin" );
         const auto library = app->getProjectLibraryPath();
         const auto outputDirectory = checkedPath( library ).parent_path().u8string();

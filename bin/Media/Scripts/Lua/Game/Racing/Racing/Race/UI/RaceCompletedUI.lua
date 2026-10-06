@@ -1,5 +1,6 @@
+if not RacingSupport then include("RacingSupport.lua") end
 if not RaceSession then include("RaceSession.lua") end
-class 'RaceCompletedUI' (BaseComponent)
+class 'RaceCompletedUI' (RacingComponent)
 function RaceCompletedUI:__init(component) BaseComponent.__init(self, component) end
 function RaceCompletedUI:summary(session, seed, record)
     local text = {string.format("Track %d   |   %d completed laps", seed, session.completedLaps),

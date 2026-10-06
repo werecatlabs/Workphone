@@ -1,6 +1,6 @@
 if not RacingSupport then include("RacingSupport.lua") end
 -- Bounded ribbon data. A renderer callback receives a segment; no per-frame actors.
-class 'Skidmark' (BaseComponent)
+class 'Skidmark' (RacingComponent)
 function Skidmark:__init(component)
     BaseComponent.__init(self, component); self.capacity, self.minimumDistance = 256, 0.15
     self:clear()

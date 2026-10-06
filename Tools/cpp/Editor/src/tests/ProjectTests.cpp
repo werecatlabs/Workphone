@@ -10,6 +10,9 @@
 #    include <stdexcept>
 #    include <Workphone/System/ApplicationManager.hpp>
 #    include <Workphone/System/PluginManager.hpp>
+#    include <Workphone/Database/ResourceDatabase.hpp>
+#    include <Workphone/Mesh/MeshSerializer.hpp>
+#    include <EditorApplication.hpp>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -279,6 +282,136 @@ BOOST_AUTO_TEST_CASE( project_owner_and_unload_test )
     BOOST_CHECK_EQUAL( project.getProperties()->getProperty( "label" ), "Retained" );
 }
 
+BOOST_AUTO_TEST_CASE( project_loaded_cache_paths_test )
+{
+    ProjectTestDirectory temporary;
+    struct ApplicationGuard
+    {
+        SmartPtr<core::IApplicationManager> previous = core::IApplicationManager::instance();
+        SmartPtr<core::ApplicationManager> app = workphone::make_ptr<core::ApplicationManager>();
+        ApplicationGuard() { core::IApplicationManager::setInstance( app ); }
+        ~ApplicationGuard() { core::IApplicationManager::setInstance( previous ); }
+    } guard;
+    const auto workingDirectory = std::filesystem::current_path();
+    Project project;
+    for( const auto &name : { "First Project", "Second Project" } )
+    {
+        const auto directory = temporary.path / name;
+        std::filesystem::create_directories( directory );
+        const auto file = directory / "project.fbproject";
+        std::ofstream( file ) << "{\"projectVersion\":\"1.0.0\"}";
+        // Resolve the selected file once, even when the selection is relative to the editor.
+        project.loadFromFile( std::filesystem::relative( file, workingDirectory ).u8string() );
+        BOOST_CHECK( std::filesystem::u8path( guard.app->getProjectPath().c_str() ) == directory );
+        BOOST_CHECK_EQUAL( guard.app->getCachePath(), ( directory / "Cache" ).generic_u8string() + "/" );
+        BOOST_CHECK_EQUAL( guard.app->getSettingsPath(),
+                           ( directory / "SettingsCache" ).generic_u8string() + "/" );
+        BOOST_CHECK( std::filesystem::is_directory( directory / "Cache" ) );
+        BOOST_CHECK( std::filesystem::is_directory( directory / "SettingsCache" ) );
+        const auto prefab = ApplicationUtil::getPrefabPath( "Assets/Triangle.obj" );
+        BOOST_CHECK( std::filesystem::u8path( prefab.c_str() ).parent_path() == directory / "Cache" );
+        const auto settings = guard.app->getSettingsPath() + "mesh.resourcedata";
+        BOOST_CHECK( std::filesystem::u8path( settings.c_str() ).parent_path() == directory / "SettingsCache" );
+        BOOST_CHECK( std::filesystem::current_path() == workingDirectory );
+    }
+    const auto previousCache = guard.app->getCachePath();
+    const auto previousProject = guard.app->getProjectPath();
+    const auto invalid = temporary.path / "invalid.fbproject";
+    std::ofstream( invalid ) << "{}";
+    BOOST_CHECK_THROW( project.loadFromFile( invalid.u8string() ), std::runtime_error );
+    BOOST_CHECK_EQUAL( guard.app->getProjectPath(), previousProject );
+    BOOST_CHECK_EQUAL( guard.app->getCachePath(), previousCache );
+}
+
+BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
+{
+    ProjectTestDirectory temporary;
+    const auto directory = temporary.path / "Mesh Project with spaces";
+    Project project;
+    project.create( directory.u8string() );
+    project.setMediaPaths( {} );
+    project.save();
+    std::ofstream( directory / "Assets/Triangle.obj" ) <<
+        "o Triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+        "vt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\nf 1/1/1 2/2/1 3/3/1\n";
+    const auto configuration = temporary.path / "plugins.cfg";
+    std::ofstream plugins( configuration );
+    plugins << "PluginFolder=.\n";
+#    if WP_GRAPHICS_SYSTEM_OGRENEXT
+    plugins << "Plugin=WPGraphicsOgreNext\n";
+#    elif WP_GRAPHICS_SYSTEM_OGRE
+    plugins << "Plugin=WPGraphicsOgre\n";
+#    else
+    plugins << "Plugin=WPGraphics\n";
+#    endif
+    plugins << "Plugin=WPSQLite\nPlugin=WPPhysics\nPlugin=WPAssimp\n";
+    plugins.close();
+    struct EditorGuard
+    {
+        EditorApplication app;
+        ~EditorGuard()
+        {
+            if( auto manager = core::IApplicationManager::instance() )
+            {
+                manager->setQuit( true );
+                manager->setRunning( false );
+            }
+            app.unload( nullptr );
+        }
+    } guard;
+    guard.app.pluginConfiguration = configuration.generic_u8string().c_str();
+    guard.app.setDebugMode( true );
+    guard.app.setActiveThreads( 0 );
+    guard.app.load( nullptr );
+    BOOST_REQUIRE( guard.app.isLoaded() );
+    auto app = core::IApplicationManager::instance();
+    BOOST_REQUIRE( app );
+    auto editor = EditorManager::getSingletonPtr();
+    BOOST_REQUIRE( editor );
+    const auto workingDirectory = std::filesystem::current_path();
+    editor->loadProject( project.getFilePath() );
+    BOOST_CHECK_EQUAL( editor->getCachePath(), app->getCachePath() );
+    BOOST_REQUIRE( app->getGraphicsSystem()->getMeshConverter() );
+    BOOST_REQUIRE( app->getMeshLoader() );
+    ResourceDatabase::ImportFileJob job;
+    job.setFilePath( "Assets/Triangle.obj" );
+    job.setOverwrite( true );
+    job.execute();
+    BOOST_CHECK( std::filesystem::current_path() == workingDirectory );
+    const auto prefab = ApplicationUtil::getPrefabPath( "Assets/Triangle.obj" );
+    BOOST_CHECK( std::filesystem::is_regular_file( std::filesystem::u8path( prefab.c_str() ) ) );
+    const auto settings = app->getSettingsPath() +
+        StringUtil::toString( StringUtil::getUUID( "Assets/Triangle.obj" ) ) + ".resourcedata";
+    BOOST_CHECK( std::filesystem::is_regular_file( std::filesystem::u8path( settings.c_str() ) ) );
+    size_t meshCount = 0;
+    for( const auto &entry : std::filesystem::directory_iterator( directory / "Cache" ) )
+    {
+        if( entry.path().extension() != ".fbmeshbin" ) continue;
+        ++meshCount;
+        BOOST_REQUIRE( std::filesystem::file_size( entry.path() ) > 0 );
+        const auto relativePath = std::filesystem::relative( entry.path(), directory ).generic_u8string();
+        auto stream = app->getFileSystem()->open( relativePath, true, true, false, false, false );
+        BOOST_REQUIRE( stream );
+        MeshSerializer serializer;
+        auto mesh = serializer.loadMesh( stream );
+        BOOST_REQUIRE( mesh );
+        BOOST_CHECK_EQUAL( mesh->getNumSubMeshes(), 1u );
+        BOOST_CHECK_EQUAL( mesh->getSubMesh( 0 )->getIndexBuffer()->getNumIndices(), 3u );
+        auto graphicsScene = app->getGraphicsSystem()->getGraphicsScene();
+        BOOST_REQUIRE( graphicsScene );
+        auto graphicsMesh = workphone::dynamic_pointer_cast<render::IGraphicsMesh>(
+            graphicsScene->addGraphicsObjectByTypeId( render::IGraphicsMesh::typeInfo() ) );
+        BOOST_REQUIRE( graphicsMesh );
+        graphicsMesh->setMeshName( relativePath );
+        graphicsMesh->load( nullptr );
+        BOOST_CHECK( graphicsMesh->isLoaded() );
+        graphicsScene->removeGraphicsObject( graphicsMesh );
+    }
+    BOOST_CHECK_EQUAL( meshCount, 1u );
+    for( const auto &entry : std::filesystem::directory_iterator( directory ) )
+        BOOST_CHECK( entry.path().extension() != ".prefab" && entry.path().extension() != ".resourcedata" );
+}
+
 #if defined(_WIN32)
 BOOST_AUTO_TEST_CASE( project_compile_integration_test )
 {
@@ -315,6 +448,7 @@ BOOST_AUTO_TEST_CASE( project_compile_integration_test )
     const auto originalDirectory = std::filesystem::current_path();
     project.compile();
     BOOST_REQUIRE( project.getPlugin() );
+    BOOST_CHECK_EQUAL( guard.app->getCachePath(), ( directory / "Cache" ).generic_u8string() + "/" );
     BOOST_CHECK( project.getPlugin()->getLibraryHandle() );
     BOOST_CHECK( project.getPlugin()->getFunction( "workphone_get_version" ) );
     BOOST_CHECK( project.getPlugin()->getFunction( "loadPlugin" ) );

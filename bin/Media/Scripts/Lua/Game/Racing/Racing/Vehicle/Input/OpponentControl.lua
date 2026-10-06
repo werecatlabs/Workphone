@@ -1,5 +1,5 @@
 if not RacingSupport then include("RacingSupport.lua") end
-class 'OpponentControl' (BaseComponent)
+class 'OpponentControl' (RacingComponent)
 function OpponentControl:__init(component)
     BaseComponent.__init(self, component)
     self.targetSpeed, self.lookAhead, self.enabled, self.zones = 25, 12, false, {}
@@ -15,6 +15,8 @@ end
 function OpponentControl:update(dt)
     RacingSupport.delta(self, dt)
     if not self.enabled or not self.car then return end
+    local application=IApplicationManager.instance()
+    if application and application:isPaused() then self.car:setControls(0,1,0); return end
     local position, speed = self.actor:getPosition(), RacingSupport.length(self.body:getLinearVelocity())
     local index = self.circuit:nearest(position)
     local route = self.circuit:GetRoutePoint(self.circuit:distanceAt(index) + self.lookAhead + speed*0.4)

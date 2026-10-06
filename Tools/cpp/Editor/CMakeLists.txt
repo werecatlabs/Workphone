@@ -1034,6 +1034,8 @@ if (WP_EDITOR_TESTS)
         project_serialization_roundtrip_test
         project_legacy_defaults_and_dirty_test
         project_file_lifecycle_test
+        project_loaded_cache_paths_test
+        project_mesh_import_cache_test
         project_owner_and_unload_test
         script_window_class_name_test
         editor_script_manager_lua_support_test

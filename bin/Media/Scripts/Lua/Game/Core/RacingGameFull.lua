@@ -14,6 +14,8 @@ if not PlayerData then include("PlayerData.lua") end
 if not TimeTrialConfig then include("TimeTrialConfig.lua") end
 if not PlayerCamera then include("PlayerCamera.lua") end
 if not PlayerControl then include("PlayerControl.lua") end
+if not RankManager then include("RankManager.lua") end
+if not RaceManagerView then include("RaceManagerView.lua") end
 class 'RacingGameFull' (SampleVehicleAdvanced)
 
 local qualities = {"Preview", "Standard", "High", "Cinematic"}
@@ -28,6 +30,7 @@ function RacingGameFull:__init(component)
     self.circuit, self.progress = WaypointCircuit(component), ProgressTracker(component)
     self.results, self.playerCamera = RaceCompletedUI(component), PlayerCamera(component)
     self.playerControl, self.timeTrial = PlayerControl(component), TimeTrialConfig(component)
+    self.ranks, self.raceView, self.managerView = RankManager(component), RaceView(component), RaceManagerView(component)
 end
 
 -- The full game uses RaceUI instead of the sample's debug-text overlay.
@@ -40,6 +43,10 @@ function RacingGameFull:bindGeneratedScene()
     self.progress:bind(self.vehicleActor, self.circuit)
     self.playerControl:bind(self.car)
     self.playerCamera:bind(self.cameraController)
+    self.raceView:bind(1, self.vehicleActor, self.statistics, self.progress)
+    self.raceView.localPlayer, self.raceView.name = true, "You"
+    self.managerView:bind(self.manager, self.ranks)
+    self.managerView:JoinRace(self.raceView)
 end
 
 -- Inspector actions run directly in edit mode, without requiring script updates.
@@ -49,7 +56,8 @@ function RacingGameFull:generate()
     self:bindGeneratedScene()
     self.playerControl:enable(false)
     self.editPreview = not self.application:isPlaying()
-    self:initializeGame()
+    local ok, failure = pcall(self.initializeGame, self)
+    if not ok then self:shutdown(); self.gameStartFailed = true; error(failure) end
     return true
 end
 
@@ -179,10 +187,11 @@ function RacingGameFull:startRace()
         self:bindGeneratedScene()
     end
     SampleVehicleAdvanced.reset(self)
+    self.progress:RestartRace()
     self.playerControl:enable(false)
     if self.mode == "timeTrial" then self.timeTrial:apply(self.manager)
     else self.manager:InitializeRace("race", self.totalLaps) end
-    self.statistics:Setup()
+    self.raceView:RestartRace()
     self.raceSeed, self.lastNow = self.generatedSeed, self.timer:now()
     self.readyAt, self.gameState = self.lastNow + 0.35, "loading"
     self.menu:hide()
@@ -272,7 +281,13 @@ function RacingGameFull:update()
         self.editPreview = false
         self:showMainMenu()
     end
-    self:initializeGame()
+    if self.gameStartFailed then return end
+    local initialized, failure = pcall(self.initializeGame, self)
+    if not initialized then
+        self:shutdown(); self.gameStartFailed = true
+        print("RacingGameFull startup failed: " .. tostring(failure))
+        return
+    end
     local now = self.timer:now()
     local dt = math.max(0, now - self.lastNow)
     self.lastNow = now
@@ -306,16 +321,20 @@ function RacingGameFull:update()
             local progress = self.progress:sample()
             local event = self.manager:OnUpdate(dt, progress)
             self.gameState = self.manager.session.state
-            if event == "go" then self.playerControl:enable(true) end
+            if event == "go" then self.raceView.m_IsStarted = true; self.playerControl:enable(true) end
             if event == "lap" or event == "finish" then
                 self.records:record(self.raceSeed, self.manager.session.lastLapTime)
                 self:savePreferences()
             end
-            if event == "finish" then self:finishRace(); return end
+            if event == "finish" then
+                self.statistics:updateSession(self.manager.session, progress, RacingSupport.length(self.rigidbody:getLinearVelocity()))
+                self.ranks:refresh(); self:finishRace(); return
+            end
             if now >= self.nextHudUpdate then
                 self.nextHudUpdate = now + 0.1
                 local speed = self.rigidbody:getLinearVelocity():length()
                 self.statistics:updateSession(self.manager.session, progress, speed)
+                self.ranks:refresh()
                 local vehicle = self.car:getVehicleController()
                 local drive = vehicle and vehicle:getDriveTrain()
                 local properties = drive and drive:getProperties()
@@ -360,7 +379,11 @@ function RacingGameFull:shutdown()
     self:unpauseSimulation()
     if self.hud then self.hud:destroy() end
     if self.menu then self.menu:destroy(self.gameManager) end
+    self.managerView:shutdown()
+    self.ranks:shutdown(); self.raceView:shutdown()
+    self.playerControl:shutdown(); self.playerCamera:shutdown()
     self.hud, self.menu, self.pendingAction = nil, nil, nil
     self.gameInitialized, self.gameState, self.keys = false, "main", {}
     self.editPreview = false
+    self.gameStartFailed = false
 end

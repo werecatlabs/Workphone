@@ -3,8 +3,8 @@ local fixtureLibrary = dofile("Tests/lua/SampleVehicleAdvancedTests.lua")
 local core = "bin/Media/Scripts/Lua/Game/Core/"
 local racing = "bin/Media/Scripts/Lua/Game/Racing/Racing/"
 function include(name)
-    for _, folder in ipairs({core, "bin/Media/Scripts/Lua/UI/", racing .. "Misc/", racing .. "Race/System/",
-        racing .. "Race/UI/", racing .. "Race/Others/", racing .. "Vehicle/Input/"}) do
+    for _, folder in ipairs({core, "bin/Media/Scripts/Lua/UI/", racing, "bin/Media/Scripts/Lua/Game/Racing/", racing .. "Misc/", racing .. "Race/System/",
+        racing .. "Race/UI/", racing .. "Race/Others/", racing .. "Race/Helpers/", racing .. "Vehicle/", racing .. "Vehicle/Input/"}) do
         local file = io.open(folder .. name, "r")
         if file then file:close(); return dofile(folder .. name) end
     end
@@ -129,7 +129,12 @@ function race:getCircuitPosition(index) return Vector3F(0, 0, -index) end
 local store = os.tmpname()
 os.remove(store)
 local realOpen = io.open
-io.open = function(path, mode) return realOpen(path == "./RacingGameFull.records" and store or path, mode) end
+local realRename, realRemove = os.rename, os.remove
+local prefix = "./RacingGameFull.records"
+local function redirect(path) return path:sub(1,#prefix)==prefix and store..path:sub(#prefix+1) or path end
+io.open = function(path, mode) return realOpen(redirect(path), mode) end
+os.rename = function(from, to) return realRename(redirect(from),redirect(to)) end
+os.remove = function(path) return realRemove(redirect(path)) end
 local game = RacingGameFull({getActor=function() return owner end})
 local inspector = {values={Seed="19", ["Appearance Quality"]=0, Laps=2}, buttons={}}
 function inspector:setPropertyAsString(name, value) self.values[name] = value end
@@ -204,5 +209,7 @@ game:quitGame()
 assert(not app.playing and not app.paused and app.edited and not app.quit)
 assert(not game.gameInitialized and game.hud == nil and game.menu == nil)
 io.open = realOpen
+os.rename, os.remove = realRename, realRemove
 os.remove(store)
+os.remove(store..".tmp"); os.remove(store..".bak")
 print("RacingGameFull session, menu, controls, restart, results and persistence: PASS")

@@ -57,6 +57,7 @@
 #include <Workphone/Interface/System/ITask.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/Graphics/GraphicsSettings.hpp>
+#include <Workphone/Mesh/MeshConverter.hpp>
 namespace workphone::render
 {
     WP_CLASS_REGISTER_DERIVED( workphone::render, GraphicsSystem,
@@ -82,8 +83,10 @@ namespace workphone::render
 
     void GraphicsSystem::load( SmartPtr<ISharedObject> data )
     {
-        // Base implementation - derived classes should override with backend-specific initialization
-        // This method can be used to initialize any common graphics system components
+        if( !m_meshConverter )
+        {
+            m_meshConverter = workphone::make_ptr<MeshConverter>();
+        }
     }
 
     void GraphicsSystem::unload( SmartPtr<ISharedObject> data )

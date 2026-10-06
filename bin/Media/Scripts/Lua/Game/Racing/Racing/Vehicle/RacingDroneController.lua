@@ -1,7 +1,7 @@
 if not RacingSupport then include("RacingSupport.lua") end
 -- Native Rigidbody owns integration. Call physicsUpdate exactly once per physics
 -- step from the physics owner; the ordinary Script update does not apply forces.
-class 'RacingDroneController' (BaseComponent)
+class 'RacingDroneController' (RacingComponent)
 function RacingDroneController:__init(component)
     BaseComponent.__init(self, component)
     self.throttle, self.roll, self.pitch, self.yaw = 0, 0, 0, 0
@@ -17,7 +17,6 @@ end
 function RacingDroneController:arm(value) self.armed = value == true end
 function RacingDroneController:physicsUpdate()
     if not self.armed or not self.body then return end
-    local rotation = self.actor:getWorldTransform():getOrientation()
     local mass = self.body:getMass()
     local up = self.actor:getWorldTransform():up()
     self.body:addForce(up * (self.throttle*self.maxAcceleration*mass) - self.body:getLinearVelocity()*(self.drag*mass))
