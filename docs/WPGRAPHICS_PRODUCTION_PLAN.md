@@ -1,7 +1,7 @@
 # WPGraphics production readiness and feature implementation plan
 
 Date: 6 October 2026  
-Status: Proposed implementation roadmap, based on repository inspection.  
+Status: Implementation in progress; initial contracts and DX11 integration validated. Neither R1 nor R2 is certified.
 Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, and the engine/editor integration needed to ship it.  
 User priorities: explicitly validate animation and particle systems; include water rendering in the feature roadmap.
 

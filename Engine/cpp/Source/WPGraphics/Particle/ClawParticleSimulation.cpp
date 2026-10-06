@@ -3,6 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace workphone::render
 {
@@ -89,7 +90,9 @@ namespace workphone::render
         {
             auto remaining = getFastForwardTime();
             if( !std::isfinite( remaining ) || remaining > 10.0f )
+            {
                 WP_LOG_ERROR( "Claw particles: prewarm must be finite and at most ten seconds." );
+            }
             else while( remaining > 0.0f )
             {
                 const auto slice = std::min( remaining, 1.0f );
@@ -134,7 +137,8 @@ namespace workphone::render
         if( count )
         {
             const auto samples = wp_particle_simulation_get_samples( m_simulation );
-            result.assign( samples, samples + count );
+            result.resize( count );
+            std::memcpy( result.data(), samples, static_cast<size_t>(count) * sizeof(wp_particle_sample) );
         }
         return result;
     }

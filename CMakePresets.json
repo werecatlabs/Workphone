@@ -95,8 +95,8 @@
   ],
   "buildPresets": [
     { "name": "claw-contracts", "configurePreset": "claw-contracts", "configuration": "RelWithDebInfo" },
-    { "name": "claw-windows-debug", "configurePreset": "claw-windows", "configuration": "Debug", "targets": ["WPGraphics", "WPGraphicsClawDX11TargetTests", "WPGraphicsClawRendererTests", "WPGraphicsClawUIDestructionTests", "ClawCubemapTests", "WPGraphicsSkinningTests", "WPGraphicsParticleSimulationTests", "WorkphoneGraphicsRendererTests", "WorkphoneGraphicsShaderTests", "WorkphoneGraphicsPipelineTests", "WorkphoneGraphicsMeshTests"] },
-    { "name": "claw-windows", "configurePreset": "claw-windows", "configuration": "RelWithDebInfo", "targets": ["WPGraphics", "WPGraphicsClawDX11TargetTests", "WPGraphicsClawRendererTests", "WPGraphicsClawUIDestructionTests", "ClawCubemapTests", "WPGraphicsSkinningTests", "WPGraphicsParticleSimulationTests", "WorkphoneGraphicsRendererTests", "WorkphoneGraphicsShaderTests", "WorkphoneGraphicsPipelineTests", "WorkphoneGraphicsMeshTests"] },
+    { "name": "claw-windows-debug", "configurePreset": "claw-windows", "configuration": "Debug", "targets": ["WPGraphics", "WPGraphicsClawProductionTests", "WPGraphicsClawDX11TargetTests", "WPGraphicsClawRendererTests", "WPGraphicsClawUIDestructionTests", "ClawCubemapTests", "WPGraphicsSkinningTests", "WPGraphicsParticleSimulationTests", "WorkphoneGraphicsRendererTests", "WorkphoneGraphicsShaderTests", "WorkphoneGraphicsPipelineTests", "WorkphoneGraphicsMeshTests"] },
+    { "name": "claw-windows", "configurePreset": "claw-windows", "configuration": "RelWithDebInfo", "targets": ["WPGraphics", "WPGraphicsClawProductionTests", "WPGraphicsClawDX11TargetTests", "WPGraphicsClawRendererTests", "WPGraphicsClawUIDestructionTests", "ClawCubemapTests", "WPGraphicsSkinningTests", "WPGraphicsParticleSimulationTests", "WorkphoneGraphicsRendererTests", "WorkphoneGraphicsShaderTests", "WorkphoneGraphicsPipelineTests", "WorkphoneGraphicsMeshTests"] },
     {
       "name": "android-arm64",
       "configurePreset": "android-arm64"

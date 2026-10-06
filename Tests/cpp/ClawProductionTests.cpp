@@ -1,3 +1,5 @@
+#include <Workphone/Interface/Graphics/IMaterial.hpp>
+#include <Workphone/Interface/IBuildDirector.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawMesh.hpp>
@@ -46,7 +48,7 @@ namespace
                 { {0,0.2f,0.5f}, {0,0,-1}, {0.5f,1} }
             };
             wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNT, vertices, 3 );
-            const wp_u16 indices[] = {0,1,2};
+            const wp_u16 indices[] = {0,2,1};
             wp_graphics_mesh_set_indices_u16( m_mesh, indices, 3 );
         }
     };
