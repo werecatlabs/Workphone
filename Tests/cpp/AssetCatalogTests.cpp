@@ -19,6 +19,12 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
     };
     WP_CLASS_REGISTER_DERIVED(workphone, CatalogTestResource, Resource<IResource>);
+    class CatalogTestSceneEntry : public ISharedObject
+    {
+    public:
+        WP_CLASS_REGISTER_DECL;
+    };
+    WP_CLASS_REGISTER_DERIVED(workphone, CatalogTestSceneEntry, ISharedObject);
 }
 using namespace workphone;
 namespace
@@ -74,9 +80,10 @@ namespace
         require(!catalog.getResourceEntryFromPath(quoted),"Rename must remove old path");
         require(entryId(catalog.getResourceEntryFromPath(first->getFilePath())) == firstId,"Rename with unresolved filesystem ID preserves UUID");
 
-        auto a = make_ptr<scene::ResourceDirector>(); a->getHandle()->setUUID(StringUtil::getUUID());
-        auto b = make_ptr<scene::ResourceDirector>(); b->getHandle()->setUUID(StringUtil::getUUID());
+        auto a = make_ptr<CatalogTestSceneEntry>(); a->getHandle()->setUUID(StringUtil::getUUID());
+        auto b = make_ptr<CatalogTestSceneEntry>(); b->getHandle()->setUUID(StringUtil::getUUID());
         catalog.addResourceEntry(a); catalog.addResourceEntry(b);
+        require(catalog.hasResourceById(a->getHandle()->getUUIDAsString()) && catalog.hasResourceById(b->getHandle()->getUUIDAsString()),"Scene entries must insert independently");
         require(!catalog.getResourceEntryFromPath("scene"),"Shared scene path lookup must reject ambiguity");
         catalog.removeResourceEntry(a);
         require(!catalog.hasResourceById(a->getHandle()->getUUIDAsString()) && catalog.hasResourceById(b->getHandle()->getUUIDAsString()),"Scene deletion must target just its UUID");

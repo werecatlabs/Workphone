@@ -7,6 +7,7 @@
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
+#include <Workphone/Interface/Scene/IComponent.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/Core/FileInfo.hpp>
 
@@ -51,7 +52,8 @@ namespace workphone
         };
         String resourcePath( SmartPtr<ISharedObject> object )
         {
-            if( !object || !object->isDerived<IResource>() ) return "scene";
+            if( !object || object->isDerived<scene::IGameActor>() ||
+                object->isDerived<scene::IComponent>() || !object->isDerived<IResource>() ) return "scene";
             auto resource = static_pointer_cast<IResource>(object);
             String path;
             auto app = core::IApplicationManager::instancePtr();
