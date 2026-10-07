@@ -773,6 +773,11 @@ endif()
 
 set_target_properties (UnitTests PROPERTIES FOLDER Tests/Cpp)
 
+add_custom_command(TARGET UnitTests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/Fixtures" "$<TARGET_FILE_DIR:UnitTests>"
+    COMMENT "Copying unit test scene fixtures")
+
 if(WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
     target_include_directories(UnitTests PRIVATE
         ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics

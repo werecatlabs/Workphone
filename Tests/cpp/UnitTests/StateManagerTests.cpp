@@ -1,8 +1,30 @@
 #include "UnitTests.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/GraphicsScene.hpp>
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
+
+BOOST_AUTO_TEST_CASE( state_listener_registrations_are_independent_between_contexts )
+{
+    auto manager = core::IApplicationManager::instance()->getStateManager();
+    auto first = manager->addStateContext();
+    auto second = manager->addStateContext();
+    auto shared = make_ptr<render::GraphicsScene::StateListener>();
+    auto other = make_ptr<render::GraphicsScene::StateListener>();
+    const auto initialReferences = shared->getReferences();
+    first->addStateListener( shared );
+    second->addStateListener( shared );
+    first->addStateListener( other );
+    BOOST_CHECK_EQUAL( first->getStateListeners().size(), 2u );
+    BOOST_CHECK_EQUAL( second->getStateListeners().size(), 1u );
+    BOOST_CHECK_EQUAL( shared->getReferences(), initialReferences + 2 );
+    manager->removeStateContext( first );
+    BOOST_CHECK_EQUAL( second->getStateListeners().size(), 1u );
+    BOOST_CHECK_EQUAL( shared->getReferences(), initialReferences + 1 );
+    manager->removeStateContext( second );
+    BOOST_CHECK_EQUAL( shared->getReferences(), initialReferences );
+}
 
 BOOST_AUTO_TEST_CASE( state_unload_after_owner_destruction )
 {

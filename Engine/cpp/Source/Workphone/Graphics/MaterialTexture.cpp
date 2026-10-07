@@ -208,7 +208,12 @@ namespace workphone::render
             if( resourceDatabase )
             {
                 auto sTextureUUID = properties->getProperty( MaterialTexture::textureStr );
-                if( !StringUtil::isNullOrEmpty( sTextureUUID ) )
+                // Older material files stored a texture path in the texture field.
+                // Only parse identifiers here; retain legacy paths as a fallback.
+                const auto isUUID = sTextureUUID.size() == 36u &&
+                    sTextureUUID[8] == '-' && sTextureUUID[13] == '-' &&
+                    sTextureUUID[18] == '-' && sTextureUUID[23] == '-';
+                if( isUUID )
                 {
                     auto uuid = StringUtil::parseUUID( sTextureUUID );
                     if( auto textureResource = resourceDatabase->loadResourceById( uuid ) )
@@ -226,6 +231,7 @@ namespace workphone::render
                 if( !getTexture() )
                 {
                     auto path = properties->getProperty( texturePathStr );
+                    if( path.empty() && !isUUID ) path = sTextureUUID;
                     if( !path.empty() )
                     {
                         if( auto texture = resourceDatabase->loadResourceByType<ITexture>( path ) )

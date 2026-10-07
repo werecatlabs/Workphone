@@ -54,6 +54,7 @@ namespace workphone::physics
         void _getObject( void **ppObject ) const;
 
         bool hasShapeData() const;
+        bool isValid() const override;
 
         SmartPtr<IPhysicsShape3> clone() override;
 

@@ -32,6 +32,7 @@ namespace workphone::physics
         {
             throw std::runtime_error( "Failed to create a WPPhysics collision shape." );
         }
+        this->setLoadingState( LoadingState::Loaded );
     }
 
     template <class T>
@@ -39,6 +40,7 @@ namespace workphone::physics
     {
         wp_collision_shape_destroy( m_shape );
         m_shape = nullptr;
+        this->setLoadingState( LoadingState::Unloaded );
     }
 
     template <class T>
@@ -120,6 +122,21 @@ namespace workphone::physics
     bool WPPhysicsShape3T<T>::hasShapeData() const
     {
         return m_shape != nullptr;
+    }
+
+    template <class T>
+    bool WPPhysicsShape3T<T>::isValid() const
+    {
+        if( !m_shape || !this->isLoaded() || !getLocalPose().isValid() )
+            return false;
+        if( getType() == WORKPHONE_COLLISION_SHAPE_BOX )
+        {
+            const auto extents = getExtents();
+            return extents.isFinite() && extents.X() > 0 && extents.Y() > 0 && extents.Z() > 0;
+        }
+        if( getType() == WORKPHONE_COLLISION_SHAPE_SPHERE )
+            return Math<real_Num>::isFinite( getRadius() ) && getRadius() > 0;
+        return true;
     }
 
     template <class T>

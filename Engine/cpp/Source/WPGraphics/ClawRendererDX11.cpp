@@ -848,6 +848,81 @@ namespace workphone::render
         }
     }
 
+    bool ClawRendererDX11::beginShadowMap( s32 mapSize )
+    {
+        disableShadows();
+        auto camera = getCamera();
+        auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
+        if( !dx11 || !camera || m_lightDirection.dotProduct( m_lightDirection ) < 1e-8f ) return false;
+        mapSize = std::clamp( mapSize, 64, 8192 );
+        const auto direction = m_lightDirection.normaliseCopy();
+        const Vector3F up = std::abs( direction.Y() ) > 0.95f ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 );
+        const auto right = up.crossProduct( direction ).normaliseCopy();
+        const auto vertical = direction.crossProduct( right );
+        auto lightView = Matrix4F::identity();
+        for( int i = 0; i < 3; ++i )
+        {
+            lightView[0][i] = right[i]; lightView[1][i] = vertical[i]; lightView[2][i] = direction[i];
+        }
+        const auto inverse = ( Matrix4F( camera->getProjectionMatrix().ptr() ) *
+                               Matrix4F( camera->getViewMatrix().ptr() ) ).inverse();
+        const auto transformPoint = []( const Matrix4F &matrix, const Vector3F &point ) {
+            const float w = matrix[3][0] * point[0] + matrix[3][1] * point[1] +
+                            matrix[3][2] * point[2] + matrix[3][3];
+            Vector3F result;
+            for( int i = 0; i < 3; ++i ) result[i] = ( matrix[i][0] * point[0] +
+                matrix[i][1] * point[1] + matrix[i][2] * point[2] + matrix[i][3] ) / w;
+            return result;
+        };
+        Vector3F minimum( 1e30f, 1e30f, 1e30f ), maximum( -1e30f, -1e30f, -1e30f );
+        const float nearClip = camera->getNearClipDistance();
+        const float farClip = camera->getFarClipDistance();
+        const float fraction = std::clamp( ( std::min( farClip, 200.0f ) - nearClip ) /
+                                          std::max( farClip - nearClip, 0.001f ), 0.001f, 1.0f );
+        for( int y = -1; y <= 1; y += 2 ) for( int x = -1; x <= 1; x += 2 )
+        {
+            const auto nearPoint = transformPoint( inverse, Vector3F( static_cast<float>( x ), static_cast<float>( y ), -1 ) );
+            const auto farPoint = transformPoint( inverse, Vector3F( static_cast<float>( x ), static_cast<float>( y ), 1 ) );
+            for( const auto &point : { nearPoint, nearPoint + ( farPoint - nearPoint ) * fraction } )
+            {
+                const auto p = transformPoint( lightView, point );
+                for( int i = 0; i < 3; ++i )
+                {
+                    minimum[i] = std::min( minimum[i], p[i] ); maximum[i] = std::max( maximum[i], p[i] );
+                }
+            }
+        }
+        // Leave depth room for casters outside the camera frustum toward the light.
+        minimum[2] -= 500.0f; maximum[2] += 50.0f;
+        auto projection = Matrix4F::identity();
+        for( int i = 0; i < 3; ++i )
+        {
+            const float extent = std::max( maximum[i] - minimum[i], 1.0f ) + 2.0f;
+            float center = ( minimum[i] + maximum[i] ) * 0.5f;
+            if( i < 2 ) center = std::floor( center / ( extent / static_cast<float>( mapSize ) ) ) * ( extent / static_cast<float>( mapSize ) );
+            projection[i][i] = 2.0f / extent; projection[i][3] = -2.0f * center / extent;
+        }
+        m_shadowMatrix = projection * lightView;
+        const auto matrix = toCMatrix( m_shadowMatrix );
+        m_shadowPass = wp_renderer_dx11_begin_shadow_map( dx11, &matrix, mapSize ) != 0;
+        return m_shadowPass;
+    }
+
+    void ClawRendererDX11::endShadowMap()
+    {
+        if( !m_shadowPass ) return;
+        wp_renderer_dx11_end_shadow_map( wp_renderer_get_dx11( m_renderer ) );
+        m_shadowPass = false;
+        m_shadowsEnabled = true;
+        setTransforms( Matrix4F::identity() );
+    }
+
+    void ClawRendererDX11::disableShadows()
+    {
+        m_shadowsEnabled = false;
+        if( m_renderer ) wp_renderer_dx11_enable_shadow_receiving( wp_renderer_get_dx11( m_renderer ), 0 );
+    }
+
     void ClawRendererDX11::renderMesh( ClawMesh *mesh, const Matrix4F &transform )
     {
         auto nativeMesh = mesh ? mesh->getNativeMesh() : nullptr;
@@ -937,6 +1012,9 @@ namespace workphone::render
 
             // These are Workphone/Ogre PBS slots, not the low-level C material slots.
             const auto state = getPrimaryMaterialPassState( material );
+            if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) ) continue;
+            wp_renderer_dx11_enable_shadow_receiving( dx11, m_shadowsEnabled && mesh->getReceiveShadows() &&
+                ( !state || state->getFlag( receiveShadowsFlag ) ) );
             u32 textureSlots[] = { 1u, 2u, 3u, 13u, 22u, 24u };
             if( state )
             {
@@ -998,15 +1076,15 @@ namespace workphone::render
             if( material && material->isTransparent() && blend == WORKPHONE_BLEND_MODE_NONE )
                 blend = WORKPHONE_BLEND_MODE_ALPHA;
             wp_renderer_set_blend_mode( m_renderer, blend );
-            wp_renderer_set_depth_write_enabled( m_renderer, !material || material->getDepthWrite() );
+            wp_renderer_set_depth_write_enabled( m_renderer, m_shadowPass || !material || material->getDepthWrite() );
             // The editor's comparison list differs from the C renderer enum.
             constexpr wp_depth_func depthFunctions[] = { WORKPHONE_DEPTH_FUNC_NEVER,
                 WORKPHONE_DEPTH_FUNC_LESS, WORKPHONE_DEPTH_FUNC_LEQUAL, WORKPHONE_DEPTH_FUNC_EQUAL,
                 WORKPHONE_DEPTH_FUNC_GEQUAL, WORKPHONE_DEPTH_FUNC_GREATER, WORKPHONE_DEPTH_FUNC_ALWAYS };
             const auto depthTest = material ? material->getDepthTest() : 2u;
             wp_renderer_set_depth_test_enabled( m_renderer, 1 );
-            wp_renderer_set_depth_func( m_renderer, depthFunctions[std::min( depthTest, 6u )] );
-            wp_renderer_set_fill_mode( m_renderer, state && state->getFlag( showWireframeFlag )
+            wp_renderer_set_depth_func( m_renderer, m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS : depthFunctions[std::min( depthTest, 6u )] );
+            wp_renderer_set_fill_mode( m_renderer, !m_shadowPass && state && state->getFlag( showWireframeFlag )
                 ? WORKPHONE_FILL_MODE_WIREFRAME : WORKPHONE_FILL_MODE_SOLID );
             wp_renderer_set_cull_mode( m_renderer, isMaterialDoubleSided( material )
                                                        ? WORKPHONE_CULL_MODE_NONE
@@ -1080,7 +1158,8 @@ namespace workphone::render
 
     void ClawRendererDX11::renderTerrain( const SmartPtr<ClawTerrain> &terrain )
     {
-        auto nativeMesh = terrain ? terrain->getNativeRenderMesh() : nullptr;
+        if( !terrain || !terrain->isVisible() ) return;
+        auto nativeMesh = terrain->getNativeRenderMesh();
         auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
         if( !nativeMesh || !dx11 )
             return;
@@ -1104,6 +1183,7 @@ namespace workphone::render
             texture->getTextureFinal( &nativeTexture );
         wp_renderer_set_texture_native( m_renderer, nativeTexture );
 
+        wp_renderer_dx11_enable_shadow_receiving( dx11, m_shadowsEnabled );
         wp_renderer_dx11_set_material_textures( dx11, nullptr );
         wp_material_dx11 material{};
         material.base_color = { 1.0f, 1.0f, 1.0f, 1.0f };
@@ -1114,9 +1194,24 @@ namespace workphone::render
         wp_renderer_dx11_set_material( dx11, &material );
 
         const auto oldCull = wp_renderer_get_cull_mode( m_renderer );
+        const auto oldDepthTest = wp_renderer_get_depth_test_enabled( m_renderer );
+        const auto oldDepthWrite = wp_renderer_get_depth_write_enabled( m_renderer );
+        const auto oldDepthFunc = wp_renderer_get_depth_func( m_renderer );
+        const auto oldFill = wp_renderer_get_fill_mode( m_renderer );
         wp_renderer_set_cull_mode( m_renderer, WORKPHONE_CULL_MODE_NONE );
+        if( m_shadowPass )
+        {
+            wp_renderer_set_depth_test_enabled( m_renderer, 1 );
+            wp_renderer_set_depth_write_enabled( m_renderer, 1 );
+            wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_LESS );
+            wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
+        }
         wp_renderer_dx11_draw_geometry_pntc( dx11, geometry, 0, static_cast<wp_s32>( indexCount ), 0 );
         wp_renderer_set_cull_mode( m_renderer, oldCull );
+        wp_renderer_set_depth_test_enabled( m_renderer, oldDepthTest );
+        wp_renderer_set_depth_write_enabled( m_renderer, oldDepthWrite );
+        wp_renderer_set_depth_func( m_renderer, oldDepthFunc );
+        wp_renderer_set_fill_mode( m_renderer, oldFill );
         wp_renderer_set_texture_native( m_renderer, nullptr );
         m_primitiveCount += indexCount / 3;
     }
@@ -1242,8 +1337,8 @@ namespace workphone::render
     {
         auto camera = getCamera();
         const auto nativeWorld = toCMatrix( world );
-        const auto view = camera ? Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
-        const auto projection =
+        const auto view = !m_shadowPass && camera ? Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
+        const auto projection = m_shadowPass ? m_shadowMatrix :
             camera ? Matrix4F( camera->getProjectionMatrix().ptr() ) : Matrix4F::identity();
         const auto nativeView = toCMatrix( view );
         const auto nativeProjection = toCMatrix( projection );

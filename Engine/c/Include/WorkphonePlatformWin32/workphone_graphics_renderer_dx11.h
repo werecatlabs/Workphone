@@ -54,6 +54,13 @@ typedef struct wp_material_dx11
     wp_vec4f environment;       /* x enabled, y maximum LOD, z authored probe radiance (otherwise ambient-scaled) */
 } wp_material_dx11;
 
+/** Directional depth pass. light_matrix uses the mesh shader's OpenGL clip convention.
+ * End restores output targets, viewport and scissor. Caller submits caster geometry
+ * with light_matrix, then enables shadow receiving for each colour draw. */
+wp_s32 wp_renderer_dx11_begin_shadow_map( wp_renderer_dx11 *renderer, const wp_mat4f *light_matrix, wp_s32 size );
+void wp_renderer_dx11_end_shadow_map( wp_renderer_dx11 *renderer );
+void wp_renderer_dx11_enable_shadow_receiving( wp_renderer_dx11 *renderer, wp_s32 enabled );
+
 /* =========================================================================
  * Lifecycle
  * ====================================================================== */

@@ -46,6 +46,14 @@ namespace workphone
             void setFarClipDistance( f32 farDist ) override;
             f32 getAspectRatio() const override;
             void setAspectRatio( f32 ratio ) override;
+            bool getAutoAspectRatio() const override { return m_autoAspectRatio; }
+            void setAutoAspectRatio( bool value ) override { m_autoAspectRatio = value; }
+            f32 getLodBias() const override { return m_lodBias; }
+            void setLodBias( f32 value ) override { m_lodBias = value; }
+            s32 getScreenWidth() const override { return m_screenWidth; }
+            void setScreenWidth( s32 value ) override { m_screenWidth = value; }
+            s32 getScreenHeight() const override { return m_screenHeight; }
+            void setScreenHeight( s32 value ) override { m_screenHeight = value; }
             /** @} */
 
             /**
@@ -95,6 +103,10 @@ namespace workphone
         protected:
             /** @brief The underlying native camera implementation. */
             wp_camera *m_camera;
+            bool m_autoAspectRatio = false;
+            f32 m_lodBias = 1.0f;
+            s32 m_screenWidth = 0;
+            s32 m_screenHeight = 0;
         };
     }  // namespace render
 }  // namespace workphone

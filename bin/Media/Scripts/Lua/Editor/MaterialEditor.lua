@@ -1069,9 +1069,9 @@ function MaterialEditor:load()
 	textureTab:addChild(channelHeader);
 
 	self.metallicSourceDropDown = self:addBoundDropdown(ui, channelHeader, "Metallic Source", MaterialEditorTypes.MetallicSourceId, "metallicSource",
-		{ "Metallic R", "Metallic A", "Albedo A", "Packed Mask R" }, "setMetallicSource");
+		{ "Metallic R", "Metallic A", "Albedo A", "Packed Mask R", "Metallic B (glTF)" }, "setMetallicSource");
 	self.roughnessSourceDropdown = self:addBoundDropdown(ui, channelHeader, "Roughness Source", MaterialEditorTypes.RoughnessSourceId, "roughnessSource",
-		{ "Roughness R", "Roughness A", "Metallic A", "Packed Mask G", "Invert Smoothness A" }, "setRoughnessSource");
+		{ "Roughness R", "Roughness A", "Metallic A", "Packed Mask G", "Invert Smoothness A", "Roughness G (glTF)" }, "setRoughnessSource");
 	self.aoSourceDropdown = self:addBoundDropdown(ui, channelHeader, "AO Source", MaterialEditorTypes.AoSourceId, "aoSource",
 		{ "AO R", "Packed Mask B", "Vertex Color A", "None" }, "setAmbientOcclusionSource");
 	self.opacitySourceDropdown = self:addBoundDropdown(ui, channelHeader, "Opacity Source", MaterialEditorTypes.OpacitySourceId, "opacitySource",

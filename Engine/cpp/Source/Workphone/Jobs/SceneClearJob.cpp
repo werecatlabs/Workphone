@@ -50,6 +50,7 @@ namespace workphone
                             if( actor->getPerpetual() == false )
                             {
                                 gameManager->destroyActor( actor );
+                                scene->removeActor( actor );
                             }
                         }
                     }
@@ -62,6 +63,7 @@ namespace workphone
                         if( actor )
                         {
                             gameManager->destroyActor( actor );
+                            scene->removeActor( actor );
                         }
                     }
 

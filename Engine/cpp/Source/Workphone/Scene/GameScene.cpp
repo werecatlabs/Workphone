@@ -780,6 +780,10 @@ namespace workphone::scene
                     if( m_actors.size() >= m_actors.capacity() )
                         throw std::length_error( "Scene actor capacity exhausted" );
                     m_actors.push_back( actor );
+                    // A cancelled load leaves an empty scene available for manual editing.
+                    // Publishing a new actor makes that scene ready for state updates again.
+                    if( getSceneLoadingState() == SceneLoadingState::Cancelled )
+                        m_sceneLoadingState = SceneLoadingState::Loaded;
                     if( m_partitioner )
                         m_partitioner->addActor( actor );
 

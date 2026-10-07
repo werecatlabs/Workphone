@@ -24,11 +24,11 @@
 #include <Workphone/State/States/MaterialStateData.hpp>
 #include <Workphone/State/States/MaterialPassStateData.hpp>
 #include <Workphone/Graphics/GraphicsUtil.hpp>
-
 #include <cmath>
 
 namespace workphone::render
 {
+
     const String Material::materialTypeStr = String( "Material Type" );
     const String Material::materialTypeDataStr = String( "materialType" );
     const String Material::shaderIDStr = String( "Shader ID" );
@@ -2363,9 +2363,6 @@ namespace workphone::render
     {
     }
 
-    //---------------------------------------------------------------------------------------
-    // Data-driven shader parameters (Esoterica integration, step 2)
-    //---------------------------------------------------------------------------------------
     void Material::syncPBRToShaderParameters()
     {
         if( !isDataDriven() || !m_shaderParameters.IsValid() )
@@ -2403,7 +2400,7 @@ namespace workphone::render
 
     //---------------------------------------------------------------------------------------
     // Renderer push-back (step 3b): flow data-driven parameter values into the legacy
-    // setters the existing renderer (OgreNext Pbs/Unlit datablock mapping) already consumes,
+    // setters the existing renderer (datablock mapping) already consumes,
     // so editing the data-driven buffer actually changes what is rendered without requiring any
     // renderer-backend changes. The native OgreNext datablock consumption remains a future
     // optimization (step 3c).

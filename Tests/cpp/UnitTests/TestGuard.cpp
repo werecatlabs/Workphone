@@ -42,6 +42,11 @@ namespace workphone
 
         setupThread();
 
+        // Each test starts with an editable, ready scene even when the previous
+        // test cancelled a load or left the scene playing.
+        sceneManager->edit();
+        scene->setSceneLoadingState( scene::IGameScene::SceneLoadingState::Loaded );
+
         auto currentTask = Thread::getCurrentTask();
         u32 taskFlags = std::numeric_limits<u32>::max();
         Thread::setTaskFlags( currentTask, taskFlags );

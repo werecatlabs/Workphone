@@ -19,6 +19,7 @@
 #include <WPGraphics/Jobs/SceneNodeCullJob.hpp>
 #include <Workphone/Interface/System/IJobQueue.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_scenenode.h"
 
@@ -70,6 +71,7 @@ namespace workphone
         {
             setType( "ClawScene" );
             createStateContext();
+            setEnableShadows( true );
         }
 
         ClawScene::~ClawScene()
@@ -613,6 +615,7 @@ namespace workphone
                     Vector3F lightDirection( 0.0f, -1.0f, 0.0f );
                     ColourF lightColour = ColourF::White;
                     f32 lightIntensity = 0.0f;
+                    bool lightCastsShadows = false;
                     for( const auto &object : objects )
                     {
                         if( auto light = dynamic_pointer_cast<ClawLight>( object ) )
@@ -623,12 +626,42 @@ namespace workphone
                                 lightDirection = Vector3F( direction.X(), direction.Y(), direction.Z() );
                                 lightColour = light->getDiffuseColour();
                                 lightIntensity = light->getPowerScale();
+                                lightCastsShadows = light->getCastShadows();
                                 break;
                             }
                         }
                     }
                     dx11Renderer->setSceneLighting( getAmbientLight(), lightDirection, lightColour,
                                                     lightIntensity );
+                    dx11Renderer->disableShadows();
+                    const auto viewport = rawRenderer->getViewport();
+                    SmartPtr<IGraphicsPipeline> pipeline;
+                    if( auto manager = core::IApplicationManager::instancePtr() )
+                        if( auto graphics = manager->getGraphicsSystem() ) pipeline = graphics->getGraphicsPipeline();
+                    const bool shadows = ( !pipeline || pipeline->isCSMEnabled() ) && getEnableShadows() && lightCastsShadows && lightIntensity > 0.0f &&
+                                         ( !viewport || viewport->getShadowsEnabled() );
+                    if( shadows && dx11Renderer->beginShadowMap( pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 ) )
+                    {
+                        // Camera culling cannot exclude casters: offscreen objects can shadow visible receivers.
+                        const auto mask = m_scene->visibility_mask &
+                            ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() ) : ~u32( 0 ) ) &
+                            ( viewport ? viewport->getVisibilityMask() : ~u32( 0 ) );
+                        for( s32 i = 0; i < m_scene->object_count; ++i )
+                        {
+                            auto object = m_scene->objects[i];
+                            if( !object || !wp_graphics_object_is_visible( object ) ||
+                                !( wp_graphics_object_get_visibility_flags( object ) & mask ) ) continue;
+                            auto mesh = static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
+                            if( !mesh || !mesh->getCastShadows() ) continue;
+                            wp_mat4f world;
+                            wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &world );
+                            dx11Renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
+                        }
+                        for( auto &object : m_terrains.snapshot() )
+                            if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
+                                dx11Renderer->renderTerrain( terrain );
+                        dx11Renderer->endShadowMap();
+                    }
                     for( auto &sky : m_skies.snapshot() )
                     {
                         dx11Renderer->renderSky( sky );
@@ -673,14 +706,15 @@ namespace workphone
                             wp_scenenode_get_world_matrix( clawOwner->getNativeNode(), &nativeWorld );
                             world = Matrix4F( nativeWorld.m[0] );
                         }
-                        SmartPtr<IMaterial> material;
-                        if( auto manager = core::IApplicationManager::instancePtr() )
-                            if( auto graphics = manager->getGraphicsSystem() )
-                                if( auto materials = graphics->getMaterialManager() )
-                                    material = dynamic_pointer_cast<IMaterial>( materials->getByName( particles->getMaterialName() ) );
-                        const auto scale = particles->getScale();
-                        dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
-                            Vector3F( scale.X(), scale.Y(), scale.Z() ), material );
+
+                        //SmartPtr<IMaterial> material;
+                        //if( auto manager = core::IApplicationManager::instancePtr() )
+                        //    if( auto graphics = manager->getGraphicsSystem() )
+                        //        if( auto materials = graphics->getMaterialManager() )
+                        //            material = dynamic_pointer_cast<IMaterial>( materials->getByName( particles->getMaterialName() ) );
+                        //const auto scale = particles->getScale();
+                        //dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
+                        //    Vector3F( scale.X(), scale.Y(), scale.Z() ), material );
                     }
                 }
                 else

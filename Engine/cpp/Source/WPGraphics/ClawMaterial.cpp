@@ -88,6 +88,7 @@ namespace workphone
             if( !m_material || getNumTechniques() == 0u )
                 return;
             wp_graphics_material_desc desc;
+            wp_graphics_material_desc_init( &desc );
             wp_graphics_material_get_desc( m_material, &desc );
             desc.diffuse = ClawUtil::toCColour( getDiffuse() );
             desc.specular = ClawUtil::toCColour( getSpecular() );

@@ -237,6 +237,7 @@ namespace workphone::render
 
     void GraphicsSystem::updateLoadQueue()
     {
+        ScopedLock lock( this );
         if( !m_loadQueue.empty() )
         {
             SmartPtr<ISharedObject> obj;
@@ -797,6 +798,7 @@ namespace workphone::render
     void GraphicsSystem::loadObject( SmartPtr<ISharedObject> graphicsObject,
                                      bool forceQueue /*= false */ )
     {
+        ScopedLock queueLock( this );
         if( !graphicsObject )
         {
             return;
@@ -861,10 +863,21 @@ namespace workphone::render
     void GraphicsSystem::unloadObject( SmartPtr<ISharedObject> graphicsObject,
                                        bool forceQueue /*= false */ )
     {
+        ScopedLock queueLock( this );
         if( !graphicsObject )
         {
             return;
         }
+
+        // Cancel pending creation before releasing the renderer resource. A queued
+        // load must not resurrect an object removed before its first render tick.
+        Array<SmartPtr<ISharedObject>> pending;
+        SmartPtr<ISharedObject> queued;
+        while( m_loadQueue.try_pop( queued ) )
+            if( queued != graphicsObject )
+                pending.push_back( queued );
+        for( auto &object : pending )
+            m_loadQueue.push( object );
 
         if( forceQueue )
         {

@@ -196,14 +196,14 @@ namespace workphone::scene
             // on the application task, never while the render task samples them.
             auto application = core::IApplicationManager::instancePtr();
             const auto task = Thread::getCurrentTask();
-            if( application && task != TaskId::Application &&
-                ( application->hasTasks() || task != TaskId::Primary ) )
+            const auto gameManager = application ? application->getGameManager() : nullptr;
+            const auto stateTask = gameManager ? gameManager->getStateTask() : TaskId::Primary;
+            if( application && task != stateTask )
                 return;
             VehicleController::update();
 
             auto app = core::IApplicationManager::instancePtr();
-            if( app && ( Thread::getCurrentTask() == TaskId::Application ||
-                         ( !app->hasTasks() && Thread::getCurrentTask() == TaskId::Primary ) ) )
+            if( app && task == stateTask )
             {
                 ScopedLock controlsLock( this, true );
                 const bool driving = app->isPlaying() && !app->isPaused() && isEnabled();

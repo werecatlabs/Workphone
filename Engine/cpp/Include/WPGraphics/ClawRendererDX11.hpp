@@ -141,6 +141,11 @@ namespace workphone
 
             wp_renderer *getNativeRenderer() const;
 
+            /** Camera-fitted directional shadows, rendered before the colour pass. */
+            bool beginShadowMap( s32 mapSize = 2048 );
+            void endShadowMap();
+            void disableShadows();
+
             /**
              * @brief Render a mesh object.
              * @param mesh      Pointer to the mesh to render.
@@ -229,6 +234,9 @@ namespace workphone
             u32 m_windowHeight = 720;
             u32 m_primitiveCount = 0;
             bool m_inFrame = false;
+            bool m_shadowPass = false;
+            bool m_shadowsEnabled = false;
+            Matrix4F m_shadowMatrix = Matrix4F::identity();
         };
     }  // namespace render
 }  // namespace workphone

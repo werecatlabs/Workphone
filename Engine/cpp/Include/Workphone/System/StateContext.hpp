@@ -452,8 +452,9 @@ namespace workphone
         mutable RecursiveSpinMutex m_statesMutex;
 
         /// Null-terminated, C-style linked list of state change listeners
-        IStateListener *m_listenersHead = nullptr;
-        IStateListener *m_listenersTail = nullptr;
+        // A listener may belong to several contexts; its intrusive next pointer
+        // cannot represent those independent registrations.
+        Array<SmartPtr<IStateListener>> m_stateListeners;
         mutable RecursiveSpinMutex m_listenersMutex;
 
         /// Null-terminated, C-style linked list of per-thread message queues

@@ -810,7 +810,7 @@ namespace workphone::scene
         auto actors = getActors();
         for( auto actor : actors )
         {
-            if( actor && actor->getLoadingState() != LoadingState::Unloaded )
+            if( actor )
             {
                 destroyActor( actor );
             }

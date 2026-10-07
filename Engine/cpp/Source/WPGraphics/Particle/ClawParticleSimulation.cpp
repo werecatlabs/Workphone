@@ -47,10 +47,11 @@ namespace workphone::render
             return;
         }
         m_simulation = simulation;
-        wp_particle_simulation_set_state( m_simulation, static_cast<wp_particle_state>( m_state ) );
+        const auto requestedState = m_state;
         lock.unlock();
         ParticleSystem::load( data );
         setLoadingState( LoadingState::Loaded );
+        setState( requestedState );
     }
 
     void CParticleSystem::unload( SmartPtr<ISharedObject> data )
@@ -60,6 +61,7 @@ namespace workphone::render
         m_simulation = nullptr;
         lock.unlock();
         ParticleSystem::unload( data );
+        setLoadingState( LoadingState::Unloaded );
     }
 
     bool CParticleSystem::setSimulationSettings( const wp_particle_simulation_settings &settings )

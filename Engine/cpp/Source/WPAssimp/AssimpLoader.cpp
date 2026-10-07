@@ -2230,12 +2230,22 @@ namespace workphone
             const aiTextureType textureTypes[] = {
                 aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE,          aiTextureType_EMISSIVE,
                 aiTextureType_SPECULAR,   aiTextureType_NORMALS,          aiTextureType_HEIGHT,
-                aiTextureType_METALNESS,  aiTextureType_DIFFUSE_ROUGHNESS
+                aiTextureType_METALNESS,  aiTextureType_DIFFUSE_ROUGHNESS, aiTextureType_LIGHTMAP
             };
 
-            u32 layerIdx = 0;
             for( auto textureType : textureTypes )
             {
+                // Assimp discovery order is not the renderer's PBS slot order.
+                u32 layerIdx = 0u;
+                switch( textureType )
+                {
+                case aiTextureType_NORMALS: case aiTextureType_HEIGHT: layerIdx = 1u; break;
+                case aiTextureType_SPECULAR: case aiTextureType_METALNESS: layerIdx = 2u; break;
+                case aiTextureType_DIFFUSE_ROUGHNESS: layerIdx = 3u; break;
+                case aiTextureType_EMISSIVE: layerIdx = 13u; break;
+                case aiTextureType_LIGHTMAP: layerIdx = 22u; break;
+                default: break;
+                }
                 aiString path;
                 if( mat->GetTexture( textureType, 0, &path ) != AI_SUCCESS )
                 {
@@ -2277,7 +2287,15 @@ namespace workphone
                     pass->setTexture( texturePath, layerIdx );
                 }
 
-                ++layerIdx;
+                // glTF packs metallic in B and roughness in G of the same image.
+                aiString packedPath;
+                if( textureType == aiTextureType_METALNESS &&
+                    mat->GetTexture( aiTextureType_DIFFUSE_ROUGHNESS, 0, &packedPath ) == AI_SUCCESS &&
+                    textureName == String( packedPath.C_Str() ) )
+                {
+                    material->setEditorUInt( "metallicSource", 4u );
+                    material->setEditorUInt( "roughnessSource", 5u );
+                }
             }
         }
     }

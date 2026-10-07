@@ -125,6 +125,17 @@ static const wp_c8 s_vs_pntc_src[] =
     "  float(i.color & 255u)) / 255.0; return o; }\n";
 
 static const wp_c8 s_ps_pntc_src[] =
+    "Texture2D shadow_tex : register(t8); SamplerComparisonState shadow_sampler : register(s2);\n"
+    "cbuffer Shadow : register(b2) { row_major float4x4 light_matrix; float4 shadow_controls; };\n"
+    "float shadowVisibility(float3 position, float ndl) {\n"
+    " if (shadow_controls.x < 0.5) return 1.0;\n"
+    " float4 p = mul(light_matrix, float4(position, 1.0)); float3 q = p.xyz / p.w;\n"
+    " q = q * float3(0.5, -0.5, 0.5) + 0.5;\n"
+    " if (any(q < 0.0) || any(q > 1.0)) return 1.0;\n"
+    " float visibility = 0.0; float bias = shadow_controls.w * (1.0 + 2.0 * (1.0 - ndl));\n"
+    " [unroll] for (int y = -1; y <= 1; ++y) [unroll] for (int x = -1; x <= 1; ++x)\n"
+    " visibility += shadow_tex.SampleCmpLevelZero(shadow_sampler, q.xy + float2(x,y) * shadow_controls.z, q.z - bias);\n"
+    " return visibility / 9.0; }\n"
     "TextureCube environment_tex : register(t7); SamplerState environment_sampler : register(s1);\n"
     "Texture2D tex : register(t0); SamplerState tex_sampler : register(s0);\n"
     "Texture2D normal_tex : register(t1); Texture2D metallic_tex : register(t2);\n"
@@ -166,6 +177,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "     float4 opacity = opacity_tex.Sample(tex_sampler, i.uv);\n"
     "     alpha *= texture_sources.w < 1.5 ? opacity.r : opacity.a; }\n"
     " if (controls.z >= 0.0) clip(alpha - controls.z);\n"
+    " if (shadow_controls.y > 0.5) { clip(alpha - 0.001); return 0.0; }\n"
     " float3 emission = emissive_color.rgb;\n"
     " if (map_flags.w > 0.5) emission *= pow(max(emission_tex.Sample(tex_sampler, i.uv).rgb, 0.0), 2.2);\n"
     " if (uv_transform.z < 0.5) { float3 c = pow(max(albedo + emission, 0.0), 1.0 / 2.2);\n"
@@ -175,11 +187,13 @@ static const wp_c8 s_ps_pntc_src[] =
     " float4 metallic = map_flags.y > 0.5 ? metallic_tex.Sample(tex_sampler, i.uv) : 1.0;\n"
     " float4 rough = map_flags.z > 0.5 ? roughness_tex.Sample(tex_sampler, i.uv) : 1.0;\n"
     " if (map_flags.y > 0.5) metalness *= texture_sources.x > 0.5 && texture_sources.x < 1.5 ? metallic.a : metallic.r;\n"
+    " if (map_flags.y > 0.5 && texture_sources.x > 3.5) metalness = surface.x * metallic.b;\n"
     " if (texture_sources.x > 1.5 && texture_sources.x < 2.5) metalness = surface.x * sampled.a;\n"
     " if (map_flags.z > 0.5) {\n"
     "     float channel = texture_sources.y < 0.5 ? rough.r : rough.a;\n"
     "     if (texture_sources.y > 2.5 && texture_sources.y < 3.5) channel = rough.g;\n"
-    "     if (texture_sources.y > 3.5) channel = 1.0 - rough.a;\n"
+    "     if (texture_sources.y > 3.5 && texture_sources.y < 4.5) channel = 1.0 - rough.a;\n"
+    "     if (texture_sources.y > 4.5) channel = rough.g;\n"
     "     roughness *= channel; }\n"
     " roughness = clamp(roughness, 0.045, 1.0);\n"
     " float3 n = normalize(front ? i.normal : -i.normal);\n"
@@ -211,7 +225,7 @@ static const wp_c8 s_ps_pntc_src[] =
     " float3 diffuse = (1.0 - f) * (1.0 - metalness) * albedo / 3.14159265;\n"
     " float3 radiance = light_color.rgb * light_color.a;\n"
     " float hemi = 0.35 + 0.65 * saturate(n.y * 0.5 + 0.5);\n"
-    " float3 color = (diffuse + specular) * radiance * ndl;\n"
+    " float3 color = (diffuse + specular) * radiance * ndl * shadowVisibility(i.world_pos, ndl);\n"
     " float ao = 1.0;\n"
     " if (extra_map_flags.x > 0.5 && texture_sources.z < 1.5) {\n"
     "     float4 occlusion = ao_tex.Sample(tex_sampler, i.uv);\n"
@@ -234,6 +248,12 @@ static const wp_c8 s_ps_pntc_src[] =
     " color = max(color, 0.0); color = color / (color + 1.0);\n"
     " color = pow(color, 1.0 / 2.2);\n"
     " return float4(controls.w > 0.5 ? color * alpha : color, alpha); }\n";
+
+typedef struct wp_shadow_constants_dx11
+{
+    wp_mat4f light_matrix;
+    wp_vec4f controls;
+} wp_shadow_constants_dx11;
 
 typedef struct wp_transform_constants_dx11
 {
@@ -310,6 +330,18 @@ struct wp_renderer_dx11
     ID3D11ShaderResourceView *material_texture_views[6];
     ID3D11Buffer *cb_material;
     wp_material_dx11 material;
+    ID3D11Texture2D *shadow_texture;
+    ID3D11DepthStencilView *shadow_depth;
+    ID3D11ShaderResourceView *shadow_view;
+    ID3D11SamplerState *shadow_sampler;
+    ID3D11Buffer *cb_shadow;
+    wp_shadow_constants_dx11 shadow;
+    wp_s32 shadow_size, shadow_pass, shadow_ready, shadow_dirty;
+    ID3D11RenderTargetView *shadow_saved_rt;
+    ID3D11DepthStencilView *shadow_saved_ds;
+    wp_viewport_i shadow_saved_viewport;
+    wp_s32 shadow_saved_scissor;
+
 
     /* Dynamic buffers */
     ID3D11Buffer *vb;
@@ -1413,6 +1445,15 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
         return NULL;
     }
 
+    buf_desc.ByteWidth = sizeof( wp_shadow_constants_dx11 );
+    hr = ID3D11Device_CreateBuffer( r->device, &buf_desc, NULL, &r->cb_shadow );
+    if( FAILED( hr ) )
+    {
+        wp_renderer_dx11_destroy( r );
+        return NULL;
+    }
+    r->shadow_dirty = 1;
+
     /* ---- initial dynamic buffers -------------------------------------- */
     r->vb_size = DX11_INITIAL_VB_SIZE;
     r->ib_size = DX11_INITIAL_IB_SIZE;
@@ -1559,6 +1600,12 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
         ID3D11ShaderResourceView_Release( r->ptc_texture_view );
     if( r->ptc_white_texture_view )
         ID3D11ShaderResourceView_Release( r->ptc_white_texture_view );
+    if( r->shadow_texture ) ID3D11Texture2D_Release( r->shadow_texture );
+    if( r->shadow_depth ) ID3D11DepthStencilView_Release( r->shadow_depth );
+    if( r->shadow_view ) ID3D11ShaderResourceView_Release( r->shadow_view );
+    if( r->shadow_sampler ) ID3D11SamplerState_Release( r->shadow_sampler );
+    if( r->cb_shadow ) ID3D11Buffer_Release( r->cb_shadow );
+
     if( r->layout_pntc )
         ID3D11InputLayout_Release( r->layout_pntc );
     if( r->vs_pntc )
@@ -2728,6 +2775,11 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
         r->material_dirty = 0;
         ++r->statistics.material_uploads;
     }
+    if( r->shadow_dirty )
+    {
+        if( !wp_renderer_dx11_upload_constants( r, r->cb_shadow, &r->shadow, sizeof( r->shadow ) ) ) return;
+        r->shadow_dirty = 0;
+    }
     // ptc_texture_view is the ImGui atlas. It is a valid fallback for UI draws,
     // but an untextured mesh must sample white rather than arbitrary font glyphs.
     texture_view = r->ptc_external_texture_view ? r->ptc_external_texture_view
@@ -2735,6 +2787,10 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
 
     if( !r->pntc_bindings_valid )
     {
+        ID3D11ShaderResourceView *shadow_view = r->shadow_pass ? NULL : r->shadow_view;
+        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 2, 1, &r->cb_shadow );
+        ID3D11DeviceContext_PSSetShaderResources( r->context, 8, 1, &shadow_view );
+        ID3D11DeviceContext_PSSetSamplers( r->context, 2, 1, &r->shadow_sampler );
         ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_pntc );
         ID3D11DeviceContext_VSSetShader( r->context, r->vs_pntc, NULL, 0 );
         ID3D11DeviceContext_PSSetShader( r->context, r->ps_pntc, NULL, 0 );
@@ -2742,7 +2798,7 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
         ID3D11DeviceContext_PSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
         ID3D11DeviceContext_PSSetSamplers( r->context, 1, 1, &r->environment_sampler_state );
         ID3D11DeviceContext_IASetPrimitiveTopology( r->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
-        r->statistics.state_bindings += 7;
+        r->statistics.state_bindings += 10;
     }
     if( !r->pntc_bindings_valid || r->bound_textures[0] != texture_view )
     {
@@ -2786,6 +2842,108 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
     r->statistics.triangles += (uint64_t)index_count / 3;
     ID3D11DeviceContext_DrawIndexed( r->context, (UINT)index_count, (UINT)index_start,
                                      (INT)base_vertex );
+}
+
+/* Reuse a directional depth map across scene/viewport passes. */
+wp_s32 wp_renderer_dx11_begin_shadow_map( wp_renderer_dx11 *r, const wp_mat4f *light_matrix, wp_s32 size )
+{
+    ID3D11ShaderResourceView *null_view = NULL;
+    D3D11_TEXTURE2D_DESC td;
+    D3D11_DEPTH_STENCIL_VIEW_DESC dd;
+    D3D11_SHADER_RESOURCE_VIEW_DESC vd;
+    D3D11_SAMPLER_DESC sd;
+    ID3D11Texture2D *texture = NULL;
+    ID3D11DepthStencilView *depth = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    if( !r || !light_matrix || r->shadow_pass || size < 64 || size > 8192 ) return 0;
+    wp_renderer_dx11_enable_shadow_receiving( r, 0 );
+    r->shadow_ready = 0;
+    ID3D11DeviceContext_PSSetShaderResources( r->context, 8, 1, &null_view );
+    if( !r->shadow_sampler )
+    {
+        memset( &sd, 0, sizeof( sd ) );
+        sd.Filter = D3D11_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT;
+        sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+        sd.BorderColor[0] = sd.BorderColor[1] = sd.BorderColor[2] = sd.BorderColor[3] = 1.0f;
+        sd.ComparisonFunc = D3D11_COMPARISON_LESS_EQUAL;
+        sd.MaxLOD = D3D11_FLOAT32_MAX;
+        if( FAILED( ID3D11Device_CreateSamplerState( r->device, &sd, &r->shadow_sampler ) ) ) return 0;
+    }
+    if( r->shadow_size != size )
+    {
+        memset( &td, 0, sizeof( td ) );
+        td.Width = td.Height = (UINT)size;
+        td.MipLevels = td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_R32_TYPELESS;
+        td.SampleDesc.Count = 1;
+        td.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+        memset( &dd, 0, sizeof( dd ) );
+        dd.Format = DXGI_FORMAT_D32_FLOAT;
+        dd.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+        memset( &vd, 0, sizeof( vd ) );
+        vd.Format = DXGI_FORMAT_R32_FLOAT;
+        vd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        vd.Texture2D.MipLevels = 1;
+        if( FAILED( ID3D11Device_CreateTexture2D( r->device, &td, NULL, &texture ) ) ||
+            FAILED( ID3D11Device_CreateDepthStencilView( r->device, (ID3D11Resource *)texture, &dd, &depth ) ) ||
+            FAILED( ID3D11Device_CreateShaderResourceView( r->device, (ID3D11Resource *)texture, &vd, &view ) ) )
+        {
+            if( texture ) ID3D11Texture2D_Release( texture );
+            if( depth ) ID3D11DepthStencilView_Release( depth );
+            if( view ) ID3D11ShaderResourceView_Release( view );
+            return 0;
+        }
+        if( r->shadow_texture ) ID3D11Texture2D_Release( r->shadow_texture );
+        if( r->shadow_depth ) ID3D11DepthStencilView_Release( r->shadow_depth );
+        if( r->shadow_view ) ID3D11ShaderResourceView_Release( r->shadow_view );
+        r->shadow_texture = texture; r->shadow_depth = depth; r->shadow_view = view;
+        r->shadow_size = size;
+    }
+    r->shadow_saved_rt = r->active_rt_view;
+    r->shadow_saved_ds = r->active_ds_view;
+    r->shadow_saved_viewport = r->viewport;
+    r->shadow_saved_scissor = r->scissor_enabled;
+    r->shadow_pass = 1;
+    r->shadow.light_matrix = *light_matrix;
+    r->shadow.controls.y = 1.0f;
+    r->shadow.controls.z = 1.0f / size;
+    r->shadow.controls.w = 0.0003f;
+    r->shadow_dirty = 1;
+    r->pntc_bindings_valid = 0;
+    r->active_rt_view = NULL;
+    r->active_ds_view = r->shadow_depth;
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 0, NULL, r->shadow_depth );
+    ID3D11DeviceContext_ClearDepthStencilView( r->context, r->shadow_depth, D3D11_CLEAR_DEPTH, 1.0f, 0 );
+    wp_renderer_dx11_set_scissor_enabled( r, 0 );
+    { wp_viewport_i viewport = { 0, 0, size, size }; wp_renderer_dx11_set_viewport( r, viewport ); }
+    return 1;
+}
+
+void wp_renderer_dx11_end_shadow_map( wp_renderer_dx11 *r )
+{
+    if( !r || !r->shadow_pass ) return;
+    r->shadow_pass = 0;
+    r->shadow_ready = 1;
+    r->shadow.controls.y = 0.0f;
+    r->shadow_dirty = 1;
+    r->pntc_bindings_valid = 0;
+    r->active_rt_view = r->shadow_saved_rt;
+    r->active_ds_view = r->shadow_saved_ds;
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view, r->active_ds_view );
+    wp_renderer_dx11_set_viewport( r, r->shadow_saved_viewport );
+    wp_renderer_dx11_set_scissor_enabled( r, r->shadow_saved_scissor );
+}
+
+void wp_renderer_dx11_enable_shadow_receiving( wp_renderer_dx11 *r, wp_s32 enabled )
+{
+    wp_f32 value;
+    if( !r ) return;
+    value = enabled && r->shadow_ready && !r->shadow_pass ? 1.0f : 0.0f;
+    if( r->shadow.controls.x != value )
+    {
+        r->shadow.controls.x = value;
+        r->shadow_dirty = 1;
+    }
 }
 
 /* =========================================================================

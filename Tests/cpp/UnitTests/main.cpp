@@ -8,6 +8,8 @@
 #    define _CRTDBG_MAP_ALLOC
 #    include <stdlib.h>
 #    include <crtdbg.h>
+#    include <dbghelp.h>
+#    pragma comment( lib, "dbghelp.lib" )
 #endif
 
 #ifdef min
@@ -283,6 +285,26 @@ int main( int argc, char *argv[] )
     try
     {
         configureDebugCrtForUnitTests();
+        AddVectoredExceptionHandler( 1, []( EXCEPTION_POINTERS *exception ) -> LONG {
+            if( exception->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION )
+            {
+                SymInitialize( GetCurrentProcess(), nullptr, TRUE );
+                void *frames[64];
+                auto count = CaptureStackBackTrace( 0, 64, frames, nullptr );
+                std::cerr << "ACCESS VIOLATION " << exception->ExceptionRecord->ExceptionAddress << std::endl;
+                for( unsigned i = 0; i < count; ++i )
+                {
+                    alignas( SYMBOL_INFO ) char buffer[sizeof( SYMBOL_INFO ) + 1024] = {};
+                    auto symbol = reinterpret_cast<SYMBOL_INFO *>( buffer );
+                    symbol->SizeOfStruct = sizeof( SYMBOL_INFO );
+                    symbol->MaxNameLen = 1024;
+                    DWORD64 displacement = 0;
+                    if( SymFromAddr( GetCurrentProcess(), reinterpret_cast<DWORD64>( frames[i] ), &displacement, symbol ) )
+                        std::cerr << symbol->Name << " + " << displacement << std::endl;
+                }
+            }
+            return EXCEPTION_CONTINUE_SEARCH;
+        } );
 
         // prototype for user's unit test init function
 #ifdef BOOST_TEST_ALTERNATIVE_INIT_API

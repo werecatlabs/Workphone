@@ -4,6 +4,7 @@
 #include "Workphone/Workphone.hpp"
 #include <boost/test/unit_test.hpp>
 #include <memory>
+#include <filesystem>
 
 #ifdef _WP_STATIC_LIB_
 #    include "FBAssimp/FBAssimp.hpp"
@@ -523,6 +524,11 @@ namespace workphone
         taskManager->load( nullptr );
         applicationManager->setTaskManager( taskManager );
 
+        auto threadPool = factoryManager->make_ptr<ThreadPool>();
+        threadPool->setNumThreads( 0 );
+        applicationManager->setThreadPool( threadPool );
+        threadPool->load( nullptr );
+
         auto fileSystem = factoryManager->make_object<IFileSystem>();
         applicationManager->setFileSystem( fileSystem );
         BOOST_CHECK( fileSystem );
@@ -553,6 +559,8 @@ namespace workphone
         fileSystem->addFolder( mediaFolderPath, false );
         fileSystem->addFolder( mediaFolderPath + "/Scripts", true );
         fileSystem->addFolder( mediaFolderPath + "/Tests", true );
+        const auto fixtures = std::filesystem::path( __FILE__ ).parent_path() / "Fixtures";
+        fileSystem->addFolder( String( fixtures.generic_string().c_str() ), true );
 
         auto absoluteScriptsPath = Path::lexically_normal( workingDirectory, mediaFolderPath );
         applicationManager->setMediaPath( mediaFolderPath );

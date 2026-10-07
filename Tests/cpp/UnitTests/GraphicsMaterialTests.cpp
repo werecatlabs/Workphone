@@ -1034,6 +1034,12 @@ BOOST_AUTO_TEST_CASE( material_texture_unit_resolves_path_and_clears_binding )
     unit->setTextureName( String() );
     BOOST_TEST( !unit->getTexture() );
     BOOST_TEST( unit->getTextureName().empty() );
+
+    auto legacyData = workphone::make_ptr<Properties>();
+    legacyData->setProperty( "texture", String( "panel.png" ) );
+    unit->fromData( legacyData );
+    BOOST_REQUIRE( unit->getTexture() );
+    BOOST_TEST( unit->getTexture()->isLoaded() );
 }
 
 BOOST_AUTO_TEST_SUITE_END()
