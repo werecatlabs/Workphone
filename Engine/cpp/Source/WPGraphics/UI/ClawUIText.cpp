@@ -158,8 +158,9 @@ namespace workphone::ui
         auto height = MathF::min( MathF::max( m_textSize, 1.0f ), bounds.h / lines.size() );
         for( const auto &line : lines )
         {
-            const auto width = m_drawFont->width( m_drawFont->userdata, height,
-                                                  line.c_str(), static_cast<int>( line.size() ) );
+            const auto width =
+                m_drawFont->width( m_drawFont->userdata, height, (const wp_c8 *)line.c_str(),
+                                   static_cast<int>( line.size() ) );
             if( width > bounds.w && width > 0.0f )
                 height *= bounds.w / width;
         }
@@ -172,15 +173,16 @@ namespace workphone::ui
             y += bounds.h - blockHeight;
         for( const auto &line : lines )
         {
-            const auto width = m_drawFont->width( m_drawFont->userdata, height,
-                                                  line.c_str(), static_cast<int>( line.size() ) );
+            const auto width =
+                m_drawFont->width( m_drawFont->userdata, height, (const wp_c8 *)line.c_str(),
+                                   static_cast<int>( line.size() ) );
             auto x = bounds.x;
             if( m_horizontalAlignment == static_cast<u8>( HorizontalAlignment::CENTER ) )
                 x += ( bounds.w - width ) * 0.5f;
             else if( m_horizontalAlignment == static_cast<u8>( HorizontalAlignment::RIGHT ) )
                 x += bounds.w - width;
             const struct wp_rect lineBounds = { x, y, width, height };
-            wp_draw_text( wp_window_get_canvas( ctx ), lineBounds, line.c_str(),
+            wp_draw_text( wp_window_get_canvas( ctx ), lineBounds, (const c8 *)line.c_str(),
                           static_cast<int>( line.size() ), m_drawFont.get(), wp_rgba( 0, 0, 0, 0 ),
                           ClawUIWorkphoneContext::toWorkphoneColor( getColour() ) );
             y += height;

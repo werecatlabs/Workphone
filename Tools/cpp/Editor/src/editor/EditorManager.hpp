@@ -231,14 +231,4 @@ namespace workphone
     }  // end namespace editor
 }  // namespace workphone
 
-#endif  // AppRoot_h__
-
-        inline bool EditorManager::getShowDebug() const
-        {
-            return m_showDebug;
-        }
-
-    }  // end namespace editor
-}  // namespace workphone
-
-#endif  // AppRoot_h__
+#endif  // __EditorManager_h__
