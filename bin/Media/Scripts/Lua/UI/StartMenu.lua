@@ -355,8 +355,8 @@ function StartMenu:generate()
 			properties:setPropertyAsInt("size", name == "Title" and 40 or name == "Subtitle" and 20 or 16)
 			text:setProperties(properties)
 			text:setColour(colour or colours.primaryText)
-			text:setHorizontalAlignment(1)
-			text:setVerticalAlignment(1)
+			text:setHorizontalAlignment(2)
+			text:setVerticalAlignment(2)
 		end
 		return actor, text, transform
 	end

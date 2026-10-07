@@ -22,8 +22,10 @@ namespace workphone::ui
         wp_font_atlas_init_default( &m_atlas );
         wp_font_atlas_begin( &m_atlas );
 
-        struct wp_font_config cfg = wp_font_config( 13.0f );
-        struct wp_font *defaultFont = wp_font_atlas_add_default( &m_atlas, 13.0f, &cfg );
+        // Bake larger glyphs for menu headings while keeping the default widget
+        // font height. Per-element text scales this shared atlas at draw time.
+        struct wp_font_config cfg = wp_font_config( 32.0f );
+        struct wp_font *defaultFont = wp_font_atlas_add_default( &m_atlas, 32.0f, &cfg );
         int width = 0;
         int height = 0;
         const void *pixels =
@@ -44,6 +46,8 @@ namespace workphone::ui
         m_nullTexture.uv.y = 0.0f;
         wp_font_atlas_end( &m_atlas, m_fontTexture, &m_nullTexture );
 
+        if( defaultFont )
+            defaultFont->handle.height = 13.0f;
         const struct wp_user_font *userFont = defaultFont ? &defaultFont->handle : nullptr;
 
         // Initialise fixed-size Nuklear context.

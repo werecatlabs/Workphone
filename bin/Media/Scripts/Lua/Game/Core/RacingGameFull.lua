@@ -83,19 +83,6 @@ function RacingGameFull:initializeGame()
     self.hud:show(false)
     self.gameInitialized, self.lastNow = true, self.timer:now()
     self:showMainMenu()
-    local report = io.open("RacingGameFull.render.log", "w")
-    if report then
-        local ok, failure = pcall(function()
-            local ui = self.application:getRenderUI()
-            report:write(tostring(ui), "\n")
-            report:write("UI loaded=", tostring(ui:isLoaded()), " state=", tostring(ui:getLoadingState()), "\n")
-            local editorActor = self.application:getCameraManager():getEditorCamera()
-            local camera = editorActor:getComponent("Camera")
-            report:write("camera UI=", tostring(camera:getEnableUI()), " viewport UI=", tostring(camera:getViewport():getEnableUI()), "\n")
-        end)
-        if not ok then report:write(tostring(failure)) end
-        report:close()
-    end
 end
 
 function RacingGameFull:savePreferences()

@@ -134,11 +134,6 @@ namespace workphone
             void createUI() override;
 
             /**
-             * @brief The color of the text (default: black).
-             */
-            ColourF m_colour = ColourF::Black;
-
-            /**
              * @brief The underlying UI text object.
              */
             SmartPtr<ui::IUIText> m_textObject;

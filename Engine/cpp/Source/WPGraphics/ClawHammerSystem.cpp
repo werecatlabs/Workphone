@@ -574,14 +574,6 @@ namespace workphone
                             }
 
                             renderScenePass();
-                            static bool reviewViewport = false;
-                            if( !reviewViewport && renderUI )
-                            {
-                                reviewViewport = true;
-                                WP_LOG( "Racing viewport: UI=" + StringUtil::toString(targetViewport->getEnableUI()) +
-                                        " loaded=" + StringUtil::toString(renderUI->isLoaded()) +
-                                        " type=" + TypeManager::instance()->getName(renderUI->getTypeInfo()) );
-                            }
                             if( targetViewport->getEnableUI() && renderUI && renderUI->isLoaded() )
                             {
                                 renderUI->render();

@@ -143,31 +143,48 @@ namespace workphone::ui
             return;
         }
 
-        wp_flags alignment = WORKPHONE_TEXT_ALIGN_LEFT;
-        if( m_horizontalAlignment == 1 )
-        {
-            alignment = WORKPHONE_TEXT_ALIGN_CENTERED;
-        }
-        else if( m_horizontalAlignment >= 2 )
-        {
-            alignment = WORKPHONE_TEXT_ALIGN_RIGHT;
-        }
+        struct wp_rect bounds;
+        if( wp_widget( &bounds, ctx ) == WORKPHONE_WIDGET_INVALID || !ctx->style.font )
+            return;
 
-        if( m_verticalAlignment == 1 )
+        // Commands retain their font pointer until conversion. Keep a per-element
+        // font descriptor alive, sharing the atlas while honoring the requested size.
+        if( !m_drawFont )
+            m_drawFont = std::make_unique<wp_user_font>();
+        *m_drawFont = *ctx->style.font;
+        auto lines = StringUtil::split( text, "\n" );
+        if( lines.empty() )
+            return;
+        auto height = MathF::min( MathF::max( m_textSize, 1.0f ), bounds.h / lines.size() );
+        for( const auto &line : lines )
         {
-            alignment |= WORKPHONE_TEXT_ALIGN_MIDDLE;
+            const auto width = m_drawFont->width( m_drawFont->userdata, height,
+                                                  line.c_str(), static_cast<int>( line.size() ) );
+            if( width > bounds.w && width > 0.0f )
+                height *= bounds.w / width;
         }
-        else if( m_verticalAlignment >= 2 )
+        m_drawFont->height = height;
+        const auto blockHeight = height * lines.size();
+        auto y = bounds.y;
+        if( m_verticalAlignment == static_cast<u8>( VerticalAlignment::CENTER ) )
+            y += ( bounds.h - blockHeight ) * 0.5f;
+        else if( m_verticalAlignment == static_cast<u8>( VerticalAlignment::BOTTOM ) )
+            y += bounds.h - blockHeight;
+        for( const auto &line : lines )
         {
-            alignment |= WORKPHONE_TEXT_ALIGN_BOTTOM;
-        }
-        else
-        {
-            alignment |= WORKPHONE_TEXT_ALIGN_TOP;
-        }
-
-        wp_label_colored( ctx, reinterpret_cast<const wp_c8 *>( text.c_str() ), alignment,
+            const auto width = m_drawFont->width( m_drawFont->userdata, height,
+                                                  line.c_str(), static_cast<int>( line.size() ) );
+            auto x = bounds.x;
+            if( m_horizontalAlignment == static_cast<u8>( HorizontalAlignment::CENTER ) )
+                x += ( bounds.w - width ) * 0.5f;
+            else if( m_horizontalAlignment == static_cast<u8>( HorizontalAlignment::RIGHT ) )
+                x += bounds.w - width;
+            const struct wp_rect lineBounds = { x, y, width, height };
+            wp_draw_text( wp_window_get_canvas( ctx ), lineBounds, line.c_str(),
+                          static_cast<int>( line.size() ), m_drawFont.get(), wp_rgba( 0, 0, 0, 0 ),
                           ClawUIWorkphoneContext::toWorkphoneColor( getColour() ) );
+            y += height;
+        }
         drawWorkphoneChildren( ctx );
     }
 }  // namespace workphone::ui

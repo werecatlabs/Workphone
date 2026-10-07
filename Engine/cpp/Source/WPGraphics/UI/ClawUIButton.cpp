@@ -125,7 +125,11 @@ namespace workphone::ui
             label = "Button";
         }
 
-        if( wp_button_label( ctx, label.c_str() ) )
+        // Scene buttons can provide a separate Text child with their own font,
+        // alignment and colour. Do not draw a second label underneath it.
+        const bool hasTextChild = std::any_of( m_children.begin(), m_children.end(),
+            []( const SmartPtr<IUIElement> &child ) { return child && child->isDerived<IUIText>(); } );
+        if( wp_button_label( ctx, hasTextChild ? "" : label.c_str() ) )
         {
             handleButtonClick();
         }

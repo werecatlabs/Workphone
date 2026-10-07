@@ -1022,7 +1022,8 @@ namespace workphone::scene
             case State::Edit:
             case State::Play:
             {
-                setActive( false );
+                // Keep the selected camera active across Edit/Play transitions.
+                // Enter restores the viewport from this persistent selection flag.
                 updateActiveState( false );
             }
             break;

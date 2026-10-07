@@ -28,7 +28,7 @@ function RaceUI:generate(manager, owner)
         local properties = label:getProperties()
         properties:setPropertyAsInt("size", size)
         label:setProperties(properties)
-        label:setHorizontalAlignment(1); label:setVerticalAlignment(1)
+        label:setHorizontalAlignment(2); label:setVerticalAlignment(2)
         label:setColour(ColourF(0.94, 0.97, 1, 1))
         return label
     end

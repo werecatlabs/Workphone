@@ -23,7 +23,10 @@ namespace workphone::scene
     const String Text::verticalAlignmentPropertyStr = String( "verticalAlignment" );
     const String Text::horizontalAlignmentPropertyStr = String( "horizontalAlignment" );
 
-    Text::Text() = default;
+    Text::Text()
+    {
+        setColour( ColourF::Black );
+    }
 
     Text::~Text()
     {
@@ -191,7 +194,7 @@ namespace workphone::scene
 
             properties->setProperty( sizePropertyStr, m_size );
 
-            properties->setProperty( colourPropertyStr, m_colour );
+            properties->setProperty( colourPropertyStr, getColour() );
 
             auto verticalAlignmentOptions = Array<String>{ "Top", "Bottom", "Center" };
             properties->setPropertyAsEnum( verticalAlignmentPropertyStr,
@@ -218,7 +221,9 @@ namespace workphone::scene
 
         properties->getPropertyValue( textPropertyStr, text );
         properties->getPropertyValue( sizePropertyStr, m_size );
-        properties->getPropertyValue( colourPropertyStr, m_colour );
+        auto colour = getColour();
+        properties->getPropertyValue( colourPropertyStr, colour );
+        setColour( colour );
         properties->getPropertyValue( verticalAlignmentPropertyStr, verticalAlignment );
         properties->getPropertyValue( horizontalAlignmentPropertyStr, horizontalAlignment );
 
@@ -238,7 +243,7 @@ namespace workphone::scene
         {
             text->setText( m_text );
             text->setTextSize( static_cast<f32>( m_size ) );
-            text->setColour( m_colour );
+            text->setColour( getColour() );
             text->setVerticalAlignment( m_verticalAlignment );
             text->setHorizontalAlignment( m_horizontalAlignment );
         }
@@ -247,6 +252,7 @@ namespace workphone::scene
     void Text::setHorizontalAlignment( u8 horizontalAlignment )
     {
         m_horizontalAlignment = horizontalAlignment;
+        updateElementState();
     }
 
     u8 Text::getHorizontalAlignment() const
@@ -257,6 +263,7 @@ namespace workphone::scene
     void Text::setVerticalAlignment( u8 verticalAlignment )
     {
         m_verticalAlignment = verticalAlignment;
+        updateElementState();
     }
 
     u8 Text::getVerticalAlignment() const

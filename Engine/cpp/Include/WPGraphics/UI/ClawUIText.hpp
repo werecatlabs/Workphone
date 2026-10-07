@@ -4,8 +4,10 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Interface/UI/IUIText.hpp>
 #include <WPGraphics/UI/ClawUIElement.hpp>
+#include <memory>
 
 struct wp_context;
+struct wp_user_font;
 
 namespace workphone
 {
@@ -130,6 +132,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
+            std::unique_ptr<wp_user_font> m_drawFont;
             FixedString<1024> m_text;            ///< Cached text content.
             f32 m_textSize = 12.0f;              ///< Cached text size in pixels.
             u8 m_verticalAlignment = 0;          ///< Cached vertical alignment value.

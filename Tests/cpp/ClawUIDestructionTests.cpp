@@ -15,6 +15,8 @@
 #include <Workphone/Interface/UI/IUIToggle.hpp>
 #include <Workphone/Interface/UI/IUILayoutWindow.hpp>
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>
+#include <Workphone/Scene/Components/UI/Text.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <cstdio>
 #include <memory>
 
@@ -83,6 +85,38 @@ namespace
             element = nullptr;
             ok &= check( weak.expired(), "removed UI elements must actually be destroyed" );
         }
+        return ok;
+    }
+
+    bool testSceneTextAppearance()
+    {
+        ui::ClawUIManager manager;
+        auto element = manager.addElement( ui::IUIText::typeInfo() );
+        auto textElement = dynamic_pointer_cast<ui::IUIText>( element );
+        if( !textElement )
+            return check( false, "text element must be created" );
+        auto component = make_ptr<scene::Text>();
+        component->setTextObject( textElement );
+        component->setElement( element );
+        const ColourF colour( 0.8f, 0.9f, 1.0f, 1.0f );
+        component->setColour( colour );
+        component->updateElementState();
+        bool ok = check( element->getColour() == colour,
+                         "text state updates must preserve the public colour setting" );
+        auto properties = component->getProperties();
+        ColourF serializedColour;
+        properties->getPropertyValue( scene::Text::colourPropertyStr, serializedColour );
+        ok &= check( serializedColour == colour,
+                     "text properties must serialize the same colour that is rendered" );
+        component->setHorizontalAlignment( static_cast<u8>( HorizontalAlignment::CENTER ) );
+        component->setVerticalAlignment( static_cast<u8>( VerticalAlignment::CENTER ) );
+        ok &= check( textElement->getHorizontalAlignment() == static_cast<u8>( HorizontalAlignment::CENTER ) &&
+                     textElement->getVerticalAlignment() == static_cast<u8>( VerticalAlignment::CENTER ),
+                     "alignment setters must immediately update the render element" );
+        component->setTextObject( nullptr );
+        component->setElement( nullptr );
+        component = nullptr;
+        manager.clear();
         return ok;
     }
 
@@ -218,6 +252,7 @@ int main()
 {
     Fixture fixture;
     bool ok = testRemoveEachElement();
+    ok &= testSceneTextAppearance();
     ok &= testChildRemoval();
     ok &= testBulkRemoval();
     ok &= testTreeCleanup( Cleanup::Clear );

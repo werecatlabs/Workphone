@@ -347,15 +347,6 @@ namespace workphone::ui
 
     void ClawUIManager::render()
     {
-        static bool reviewRendered = false;
-        if( !reviewRendered )
-        {
-            reviewRendered = true;
-            WP_LOG( "Racing UI render: elements=" + StringUtil::toString( static_cast<u32>(m_elements.size()) ) );
-            for( auto &element : getElements() )
-                if( element && !element->getParent() )
-                    WP_LOG( "Racing UI root: visible=" + StringUtil::toString(element->isVisible()) + " children=" + StringUtil::toString(element->getNumChildren()) );
-        }
         if( !m_workphoneContext || !m_workphoneContext->isValid() )
         {
             return;
@@ -563,7 +554,6 @@ namespace workphone::ui
         {
             graphicsSystem->loadObject( element );
             m_elements.push_back( element );
-            WP_LOG( "Racing UI added: count=" + StringUtil::toString( static_cast<u32>(m_elements.size()) ) );
             return element;
         }
 
