@@ -359,7 +359,7 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
             app.unload( nullptr );
         }
     } guard;
-    guard.app.pluginConfiguration = configuration.generic_u8string().c_str();
+    //guard.app.pluginConfiguration = configuration.generic_u8string().c_str();
     guard.app.setDebugMode( true );
     guard.app.setActiveThreads( 0 );
     guard.app.load( nullptr );
