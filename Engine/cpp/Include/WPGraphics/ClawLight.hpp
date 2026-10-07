@@ -23,6 +23,9 @@ namespace workphone
             ClawLight( const ClawLight & ) = delete;
             ClawLight &operator=( const ClawLight & ) = delete;
 
+            void load( SmartPtr<ISharedObject> data ) override;
+            void unload( SmartPtr<ISharedObject> data ) override;
+
             /** @brief Sets the type of the light. */
             void setType( LightTypes type ) override;
 

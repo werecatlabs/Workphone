@@ -8,14 +8,32 @@ namespace workphone::render
 {
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawLight, GraphicsLight );
 
-    ClawLight::ClawLight() : m_light( wp_light_create() )
+    ClawLight::ClawLight() : m_light( nullptr )
     {
     }
 
     ClawLight::~ClawLight()
     {
-        wp_light_destroy( m_light );
-        m_light = nullptr;
+    }
+
+    void ClawLight::load( SmartPtr<ISharedObject> data )
+    {
+        setLoadingState( LoadingState::Loading );
+        m_light = wp_light_create();
+        setLoadingState( LoadingState::Loaded );
+    }
+
+    void ClawLight::unload( SmartPtr<ISharedObject> data )
+    {
+        setLoadingState( LoadingState::Unloading );
+
+        if( m_light )
+        {
+            wp_light_destroy( m_light );
+            m_light = nullptr;
+        }
+
+        setLoadingState( LoadingState::Unloaded );
     }
 
     void ClawLight::setType( LightTypes type )
@@ -30,7 +48,8 @@ namespace workphone::render
 
     LightTypes ClawLight::getType() const
     {
-        return m_light ? static_cast<LightTypes>( wp_light_get_type( m_light ) ) : GraphicsLight::getType();
+        return m_light ? static_cast<LightTypes>( wp_light_get_type( m_light ) )
+                       : GraphicsLight::getType();
     }
 
     void ClawLight::setDiffuseColour( const ColourF &colour )
@@ -74,22 +93,26 @@ namespace workphone::render
 
     f32 ClawLight::getAttenuationRange() const
     {
-        return m_light ? wp_light_get_attenuation_range( m_light ) : GraphicsLight::getAttenuationRange();
+        return m_light ? wp_light_get_attenuation_range( m_light )
+                       : GraphicsLight::getAttenuationRange();
     }
 
     f32 ClawLight::getAttenuationConstant() const
     {
-        return m_light ? wp_light_get_attenuation_constant( m_light ) : GraphicsLight::getAttenuationConstant();
+        return m_light ? wp_light_get_attenuation_constant( m_light )
+                       : GraphicsLight::getAttenuationConstant();
     }
 
     f32 ClawLight::getAttenuationLinear() const
     {
-        return m_light ? wp_light_get_attenuation_linear( m_light ) : GraphicsLight::getAttenuationLinear();
+        return m_light ? wp_light_get_attenuation_linear( m_light )
+                       : GraphicsLight::getAttenuationLinear();
     }
 
     f32 ClawLight::getAttenuationQuadric() const
     {
-        return m_light ? wp_light_get_attenuation_quadratic( m_light ) : GraphicsLight::getAttenuationQuadric();
+        return m_light ? wp_light_get_attenuation_quadratic( m_light )
+                       : GraphicsLight::getAttenuationQuadric();
     }
 
     void ClawLight::setDirection( const Vector3<real_Num> &direction )
