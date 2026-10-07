@@ -4,6 +4,7 @@
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawLight.hpp>
+#include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/Particle/CParticleSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
@@ -16,6 +17,7 @@
 #include <workphone_graphics_light.h>
 #include <workphone_graphics_scenenode.h>
 #include <workphone_graphics_object.h>
+#include <workphone_graphics_camera.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <cstdio>
@@ -166,6 +168,83 @@ namespace
         return ok;
     }
 
+    class ShadowReceiver : public ClawMesh
+    {
+    public:
+        ShadowReceiver()
+        {
+            m_mesh = wp_graphics_mesh_create();
+            const wp_graphics_mesh_vertex_pnt vertices[] = {
+                { {-1,-1,0}, {0,0,1}, {0,0} }, { {1,-1,0}, {0,0,1}, {1,0} },
+                { {1,1,0}, {0,0,1}, {1,1} }, { {-1,1,0}, {0,0,1}, {0,1} }
+            };
+            const wp_u16 indices[] = {0,1,2,0,2,3};
+            wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNT, vertices, 4 );
+            wp_graphics_mesh_set_indices_u16( m_mesh, indices, 6 );
+        }
+    };
+
+    bool testMeshShadows( ClawRendererDX11 &renderer )
+    {
+        auto target = make_ptr<ClawRenderTarget>(); target->setSize({64,64});
+        renderer.setRenderTarget(target);
+        auto camera = make_ptr<ClawCamera>();
+        camera->setNearClipDistance(0.1f); camera->setFarClipDistance(10); camera->setAspectRatio(1);
+        wp_camera_set_position(camera->getNativeCamera(), {0,0,3});
+        renderer.setCamera(camera);
+        renderer.setSceneLighting(ColourF::White * 0.02f, Vector3F(0,0,-1), ColourF::White, 3);
+        ShadowReceiver receiver, caster;
+        auto casterWorld = Matrix4F::identity();
+        casterWorld[0][0] = 0.25f; casterWorld[0][3] = -0.5f; casterWorld[2][3] = 1;
+        auto *native = wp_renderer_get_dx11(renderer.getNativeRenderer());
+        auto *device = static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(native));
+        auto *context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(native));
+        bool ok = true;
+        for( int pass = 0; pass < 3; ++pass )
+        {
+            caster.setCastShadows(pass != 2); receiver.setReceiveShadows(pass != 1);
+            const bool begun = renderer.beginShadowMap(512);
+            ok &= check(begun, "C++ mesh shadow pass must begin");
+            if( !begun ) break;
+            if( caster.getCastShadows() ) renderer.renderMesh(&caster, casterWorld);
+            renderer.endShadowMap();
+            renderer.clear(ColourF::Black);
+            renderer.renderMesh(&receiver, Matrix4F::identity());
+            ID3D11RenderTargetView *view = nullptr;
+            context->OMGetRenderTargets(1, &view, nullptr);
+            if( !view ) { ok &= check(false,"mesh receiver target must be bound"); break; }
+            ID3D11Resource *resource = nullptr; view->GetResource(&resource); view->Release();
+            ID3D11Texture2D *source = nullptr, *staging = nullptr;
+            resource->QueryInterface(IID_PPV_ARGS(&source)); resource->Release();
+            if( !source ) { ok &= check(false,"mesh receiver must have a texture"); break; }
+            D3D11_TEXTURE2D_DESC desc{}; source->GetDesc(&desc);
+            desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            const bool allocated = SUCCEEDED(device->CreateTexture2D(&desc,nullptr,&staging));
+            ok &= check(allocated,"mesh shadow readback must allocate");
+            if( allocated )
+            {
+                context->CopyResource(staging,source);
+                D3D11_MAPPED_SUBRESOURCE mapped{};
+                const bool readable = SUCCEEDED(context->Map(staging,0,D3D11_MAP_READ,0,&mapped));
+                ok &= check(readable,"mesh shadow pixels must map");
+                if( readable )
+                {
+                    const auto *row = static_cast<const unsigned char *>(mapped.pData) + 32 * mapped.RowPitch;
+                    const int shadow = row[19 * 4 + 1], lit = row[45 * 4 + 1];
+                    std::printf("C++ mesh shadow pass %d: shadow=%d lit=%d\n",pass,shadow,lit);
+                    ok &= check(lit > 100,"C++ mesh receiver must have direct lighting");
+                    ok &= check(pass == 0 ? shadow + 40 < lit : std::abs(shadow-lit) < 15,
+                        "C++ meshes must cast and receive shadows, and honor both shadow toggles");
+                    context->Unmap(staging,0);
+                }
+                staging->Release();
+            }
+            source->Release();
+        }
+        renderer.disableShadows(); renderer.setCamera(nullptr); renderer.setRenderTarget(nullptr);
+        return ok;
+    }
+
     bool testRenderedFeatures( ClawRendererDX11 &renderer )
     {
         auto target = make_ptr<ClawRenderTarget>(); target->setSize({64,64});
@@ -234,7 +313,11 @@ int main()
     {
         ClawRendererDX11 renderer; renderer.load(window);
         ok &= check(renderer.isLoaded(), "required DX11 backend must initialize; this test cannot silently skip");
-        if( renderer.isLoaded() ) ok &= testRenderedFeatures(renderer);
+        if( renderer.isLoaded() )
+        {
+            ok &= testRenderedFeatures(renderer);
+            ok &= testMeshShadows(renderer);
+        }
         renderer.unload(nullptr);
         DestroyWindow(window->handle);
     }
