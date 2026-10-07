@@ -3,8 +3,11 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawMesh.hpp>
+#include <WPGraphics/ClawLight.hpp>
 #include <WPGraphics/Particle/CParticleSystem.hpp>
 #include <Workphone/Graphics/GraphicsWindow.hpp>
+#include <Workphone/Graphics/GraphicsSceneNode.hpp>
+#include <Workphone/Scene/Components/Light.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
@@ -48,10 +51,44 @@ namespace
                 { {0,0.2f,0.5f}, {0,0,-1}, {0.5f,1} }
             };
             wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNT, vertices, 3 );
-            const wp_u16 indices[] = {0,2,1};
+            const wp_u16 indices[] = {0,1,2};
             wp_graphics_mesh_set_indices_u16( m_mesh, indices, 3 );
         }
     };
+
+    class TestLightNode : public GraphicsSceneNode
+    {
+    public:
+        Quaternion<real_Num> orientation = Quaternion<real_Num>::identity();
+        void setPosition( const Vector3<real_Num> & ) override {}
+        void setScale( const Vector3<real_Num> & ) override {}
+        void setOrientation( const Quaternion<real_Num> &value ) override { orientation = value; }
+        Quaternion<real_Num> getWorldOrientation() const override { return orientation; }
+    };
+
+    bool testLightDirection()
+    {
+        auto node = make_ptr<TestLightNode>();
+        auto light = make_ptr<ClawLight>();
+        light->setOwner( node );
+        scene::Light component;
+        component.setLight( light );
+        component.setSceneNode( node );
+        Transform3<real_Num> transform;
+        transform.setOrientation( Quaternion<real_Num>::eulerDegrees( -60, -30, 0 ) );
+        component.updateTransform( transform );
+        const auto expected = transform.getOrientation() * -Vector3<real_Num>::unitY();
+        const auto actual = light->getDerivedDirection();
+        bool ok = check( ( actual - expected ).lengthSquared() < 1e-6f,
+                         "light component rotation must reach WPGraphics exactly once" );
+        ok &= check( actual.Y() < -0.1f, "SamplePhysics sun must illuminate the ground from above" );
+        // A subsequent transform update must not accumulate another rotation.
+        component.updateTransform( transform );
+        ok &= check( ( light->getDerivedDirection() - expected ).lengthSquared() < 1e-6f,
+                     "repeated light transforms must preserve the derived direction" );
+        light->setOwner( nullptr );
+        return ok;
+    }
 
     bool hasPixel( wp_renderer_dx11 *native, int x, int y, bool redOnly )
     {
@@ -164,6 +201,7 @@ int main()
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance(application);
     bool ok = testParticleLifecycle();
+    ok &= testLightDirection();
     auto window = make_ptr<TestWindow>();
     window->handle = CreateWindowExW(0,L"STATIC",L"Claw production regression",WS_OVERLAPPEDWINDOW,
         0,0,128,128,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);

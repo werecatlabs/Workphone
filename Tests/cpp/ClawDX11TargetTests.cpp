@@ -52,7 +52,7 @@ namespace
             { { 1, 1,0}, {0,0,1}, {1,1}, 0xFFFFFFFFu },
             { {-1, 1,0}, {0,0,1}, {0,1}, 0xFFFFFFFFu }
         };
-        const wp_u16 indices[] = {0,2,1,0,3,2};
+        const wp_u16 indices[] = {0,1,2,0,2,3};
         auto *geometry = wp_renderer_dx11_create_indexed_geometry_pntc( renderer, vertices, 4, indices, 6, 0 );
         bool ok = check( geometry != nullptr, "shadow geometry must be created" );
         wp_mat4f identity{};

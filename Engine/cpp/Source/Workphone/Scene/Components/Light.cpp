@@ -283,11 +283,12 @@ namespace workphone::scene
                     sceneNode->setWorldTransform( t );
                 }
 
-                auto direction = t.getOrientation() * -Vector3<real_Num>::unitY();
                 auto light = getLight();
                 if( light )
                 {
-                    light->setDirection( direction );
+                    // Direction is local to the light's scene node. The renderer
+                    // applies the node's world orientation when deriving it.
+                    light->setDirection( -Vector3<real_Num>::unitY() );
                 }
 
                 if( auto sceneNode = getSceneNode() )
@@ -315,11 +316,10 @@ namespace workphone::scene
             sceneNode->setOrientation( r );
             sceneNode->setScale( s );
 
-            auto direction = r * -Vector3<real_Num>::unitY();
             auto light = getLight();
             if( light )
             {
-                light->setDirection( direction );
+                light->setDirection( -Vector3<real_Num>::unitY() );
             }
         }
 

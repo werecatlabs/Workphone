@@ -26,6 +26,7 @@ namespace workphone
         void createPlugins() override;
 
         SmartPtr<scene::IGameActor> m_boxGround;
+        SmartPtr<scene::IGameActor> m_lightActor;
 
         SmartPtr<scene::IGameActor> m_cameraActor;
         Array<SmartPtr<scene::IGameActor>> m_boxes;

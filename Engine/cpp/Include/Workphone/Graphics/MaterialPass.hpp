@@ -572,7 +572,7 @@ namespace workphone
             ColourF m_emissive = ColourF::Black; /**< Emissive (self-lit) colour. */
 
             f32 m_metalness = 0.5f;  /**< PBR metalness factor [0,1]. */
-            f32 m_roughness = 0.01f; /**< PBR roughness factor [0,1]. */
+            f32 m_roughness = 0.5f; /**< PBR roughness factor [0,1]. */
 
             /**< Thread-safe container of textures. */
             ConcurrentArray<SmartPtr<IMaterialTexture>> m_textures;

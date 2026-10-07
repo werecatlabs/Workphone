@@ -172,6 +172,7 @@ namespace workphone
             }
 
             m_boxGround = nullptr;
+            m_lightActor = nullptr;
             m_cameraActor = nullptr;
             m_boxes.clear();
 
@@ -239,12 +240,22 @@ namespace workphone
 
         if( m_smokeTest && ( belowGround > 0 || timer->getTimeSinceSceneLoad() >= 12.0 ) )
         {
+            auto graphics = applicationManager->getGraphicsSystem();
+            auto graphicsScene = graphics ? graphics->getGraphicsScene() : nullptr;
+            auto pipeline = graphics ? graphics->getGraphicsPipeline() : nullptr;
+            auto component = m_lightActor ? m_lightActor->getComponent<scene::Light>() : nullptr;
+            auto light = component ? component->getLight() : nullptr;
+            const bool shadowsReady = graphicsScene && graphicsScene->getEnableShadows() &&
+                m_viewport && m_viewport->getShadowsEnabled() &&
+                ( !pipeline || pipeline->isCSMEnabled() ) && light && light->isVisible() &&
+                light->getCastShadows() && light->getDerivedDirection().Y() < -0.1f;
             m_smokeTestPassed = belowGround == 0 && bodies == boxesPerAxis * boxesPerAxis * boxesPerAxis &&
-                                lowestY >= 0.25f && highestY < 5.0f && m_physicsUpdates > 10;
+                                lowestY >= 0.25f && highestY < 5.0f && m_physicsUpdates > 10 && shadowsReady;
             std::ostringstream result;
             result << "Physics smoke test " << ( m_smokeTestPassed ? "passed" : "FAILED" )
                    << ": bodies=" << bodies << " below ground=" << belowGround
-                   << " lowest Y=" << lowestY << " highest Y=" << highestY;
+                   << " lowest Y=" << lowestY << " highest Y=" << highestY
+                   << " shadows=" << ( shadowsReady ? "ready" : "FAILED" );
             WP_LOG( String( result.str().c_str() ) );
             applicationManager->setQuit( true );
         }
@@ -360,6 +371,7 @@ namespace workphone
         if( m_viewport )
         {
             m_viewport->setActive( true );
+            m_viewport->setShadowsEnabled( true );
         }
 
         const auto cameraPosition = Vector3<real_Num>( 10.0f, 8.0f, 15.0f );
@@ -368,6 +380,9 @@ namespace workphone
         WP_ASSERT( m_cameraSceneNode );
         m_cameraSceneNode->setPosition( cameraPosition );
         m_cameraSceneNode->lookAt( stackCentre );
+        // Keep the camera-fitted shadow map concentrated on the physics demo.
+        m_camera->setNearClipDistance( 0.1f );
+        m_camera->setFarClipDistance( 80.0f );
 
         ApplicationUtil::createDefaultSky();
 
@@ -376,19 +391,29 @@ namespace workphone
             if( auto graphicsScene = graphicsSystem->getGraphicsScene() )
             {
                 graphicsScene->setAmbientLight( ColourF::White * 0.25f );
+                graphicsScene->setEnableShadows( true );
             }
+            if( auto pipeline = graphicsSystem->getGraphicsPipeline() )
+                pipeline->enableCSM( true );
         }
 
         auto light = ApplicationUtil::createDirectionalLight();
         WP_ASSERT( light );
+        m_lightActor = light;
         light->setOrientation( QuaternionF::eulerDegrees( -60.0f, -30.0f, 0.0f ) );
+        if( auto component = light->getComponent<scene::Light>() )
+            if( auto graphicsLight = component->getLight() )
+                graphicsLight->setCastShadows( true );
 
         auto stackMaterial = ApplicationUtil::createDefaultMaterial();
         WP_ASSERT( stackMaterial );
+        stackMaterial->setLightingEnabled( true );
+        stackMaterial->setDiffuse(ColourF( 0.8f, 0.8f, 0.8f, 1.0f ));
+        stackMaterial->setSpecular(ColourF( 0.2f, 0.2f, 0.2f, 1.0f ));
 
         // Set the ground transform before its physics components are created. Its top is Y=0.
         m_boxGround = createBox( sceneManager, stackMaterial,
-                                 Vector3<real_Num>( 0.0f, -0.5f, 0.0f ), true,
+                                 Vector3<real_Num>( 0.0f, -0.5f, -250.0f * 0.5f ), true,
                                  Vector3<real_Num>( 500.0f, 1.0f, 500.0f ) );
         m_boxGround->setName( "Ground" );
         scene->addActor( m_boxGround );
