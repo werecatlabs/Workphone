@@ -956,11 +956,14 @@ namespace workphone::scene
                         {
                             if( auto element = getElement() )
                             {
-                                element->setLayout( layout );
-
-                                if( element->getParent() != layout )
+                                // A canvas is its own UI element, not its own child.
+                                if( element.get() != layout.get() )
                                 {
-                                    layout->addChild( element );
+                                    element->setLayout( layout );
+                                    if( element->getParent() != layout )
+                                    {
+                                        layout->addChild( element );
+                                    }
                                 }
 
                                 auto order = canvas->getZOrder( actor );
@@ -1059,11 +1062,15 @@ namespace workphone::scene
 
         if( auto actor = getActor() )
         {
-            if( auto rootActor = actor->getSceneRoot() )
+            for( auto ancestor = actor; ancestor; ancestor = ancestor->getParent() )
             {
-                auto canvas = rootActor->getComponentInThisAndChildren<Layout>();
-                setCanvas( canvas );
+                if( auto canvas = ancestor->getComponent<Layout>() )
+                {
+                    setCanvas( canvas );
+                    return;
+                }
             }
+            setCanvas( nullptr );
         }
     }
 

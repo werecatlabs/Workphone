@@ -2,6 +2,8 @@
 #include <WPLuabind/Bindings/ComponentBind.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Scene/Components/UI/Button.hpp>
+#include <Workphone/Scene/Components/ComponentEvent.hpp>
+#include <Workphone/Scene/Components/ComponentEventListener.hpp>
 #include <Workphone/Scene/Components/UI/Dropdown.hpp>
 #include <Workphone/Scene/Components/UI/GridLayout.hpp>
 #include <Workphone/Scene/Components/UI/HorizontalLayout.hpp>
@@ -29,6 +31,34 @@
 
 namespace workphone
 {
+    void buttonSetClickHandler( scene::Button *button, scene::IComponent *component,
+                                const String &functionName )
+    {
+        if( !button || !component || functionName.empty() )
+        {
+            throw std::invalid_argument( "Button click handler requires a component and function" );
+        }
+
+        // Keep native event containers behind the binding. Lua owns the button;
+        // the event listener holds only weak references to its target script.
+        auto event = workphone::make_ptr<scene::ComponentEvent>();
+        event->setEventHash( IEvent::CLICK_HASH );
+        auto listener = workphone::make_ptr<scene::ComponentEventListener>();
+        listener->setEvent( event );
+        listener->setComponent( component );
+        listener->setFunction( functionName );
+        event->addListener( listener );
+        // Replace the previous click handler while preserving hover events.
+        for( const auto &existing : button->getEvents() )
+        {
+            if( existing && existing->getEventHash() == IEvent::CLICK_HASH )
+            {
+                button->removeEvent( existing );
+            }
+        }
+        button->addEvent( event );
+    }
+
     lua_Integer _getInputFieldType( const scene::InputField *inputField )
     {
         return static_cast<lua_Integer>( inputField->getInputType() );
@@ -231,6 +261,7 @@ namespace workphone
                         .scope[def( "typeInfo", UIComponent::UIElementListener::typeInfo )]];
 
         module( L )[class_<Button, UIComponent, SmartPtr<Button>>( "UIButtonComponent" )
+                        .def( "setClickHandler", buttonSetClickHandler )
                         .def( "getImage", &Button::getImage )
                         .def( "setImage", &Button::setImage )
                         .def( "getText", &Button::getText )

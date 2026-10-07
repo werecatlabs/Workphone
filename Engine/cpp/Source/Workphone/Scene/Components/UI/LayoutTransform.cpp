@@ -909,16 +909,15 @@ namespace workphone::scene
     {
         if( auto actor = getActorPtr() )
         {
-            if( auto rootActor = actor->getSceneRootPtr() )
+            for( auto ancestor = actor; ancestor; ancestor = ancestor->getParentPtr() )
             {
-                auto layout = rootActor->getComponentInThisAndChildren<Layout>();
-                setLayout( layout );
+                if( auto layout = ancestor->getComponent<Layout>() )
+                {
+                    setLayout( layout );
+                    return;
+                }
             }
-            else
-            {
-                auto layout = actor->getComponentInThisAndChildren<Layout>();
-                setLayout( layout );
-            }
+            setLayout( nullptr );
         }
     }
 

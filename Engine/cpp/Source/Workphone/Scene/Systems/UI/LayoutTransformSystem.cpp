@@ -12,6 +12,7 @@
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/Core/BitUtil.hpp>
+#include <Workphone/Core/LogManager.hpp>
 
 namespace workphone::scene
 {
@@ -297,6 +298,18 @@ namespace workphone::scene
         auto gameManager = applicationManager->getGameManagerPtr();
         auto gameScene = gameManager->getCurrentScenePtr();
 
+        static bool reviewReported = false;
+        const auto reviewDirty = getDirtyComponents();
+        if( !reviewReported && !reviewDirty.empty() )
+        {
+            reviewReported = true;
+            auto first = reviewDirty.front();
+            WP_LOG( "Racing layout review: scene=" + StringUtil::toString( static_cast<u32>( gameScene->getSceneLoadingState() ) ) +
+                    " dirty=" + StringUtil::toString( static_cast<u32>( reviewDirty.size() ) ) +
+                    " loaded=" + StringUtil::toString( first->isLoaded() ) +
+                    " elapsed=" + StringUtil::toString( applicationManager->getTimerPtr()->getTimeSinceSceneLoad() ) );
+        }
+
         if( gameScene->getSceneLoadingState() != IGameScene::SceneLoadingState::Loaded )
         {
             return;
@@ -378,6 +391,10 @@ namespace workphone::scene
             auto layoutState = layoutTransformData->layoutState;
             auto transformState = layoutTransformData->transformState;
             auto anchorState = layoutTransformData->anchorState;
+            static u32 reviewStateCount = 0;
+            if( reviewStateCount++ < 60 )
+                WP_LOG( "Racing layout record: valid=" + StringUtil::toString( bool(layoutState) && bool(transformState) && bool(anchorState) ) +
+                        " flags=" + StringUtil::toString( layoutState ? static_cast<u32>(layoutState->flags) : 0u ) );
             if( !layoutState || !transformState || !anchorState )
             {
                 cleanComponents.push_back( component );
@@ -396,6 +413,14 @@ namespace workphone::scene
             layoutState->owner = canvasTransform;
 
             auto actor = canvasTransform->getActorPtr();
+            static u32 reviewCount = 0;
+            if( actor && reviewCount < 60 )
+            {
+                ++reviewCount;
+                WP_LOG( "Racing layout element: " + actor->getName() +
+                        " enabled=" + StringUtil::toString( actor->isEnabledInScene() ) +
+                        " size=" + StringUtil::toString( transformState->size.x ) + "," + StringUtil::toString( transformState->size.y ) );
+            }
             if( !actor )
             {
                 layoutState->flags =
@@ -450,6 +475,13 @@ namespace workphone::scene
             transformState->absoluteSize = elementSize;
             transformState->absoluteMin = elementMin;
             transformState->absoluteMax = elementMax;
+            static bool reviewBounds = false;
+            if( !reviewBounds && actor->getName() == "__StartMenuGenerated" )
+            {
+                reviewBounds = true;
+                WP_LOG( "Racing layout bounds: calculated=" + StringUtil::toString(elementSize.x) + "," + StringUtil::toString(elementSize.y) +
+                        " getter=" + StringUtil::toString(canvasTransform->getAbsoluteSize().x) + "," + StringUtil::toString(canvasTransform->getAbsoluteSize().y) );
+            }
 
             const auto relativePos = safeDivide( elementPos, referenceSize );
             const auto relativeSize = safeDivide( elementSize, referenceSize );

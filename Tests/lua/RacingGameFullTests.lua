@@ -12,6 +12,7 @@ function include(name)
 end
 function ColourF(...) return {...} end
 IEvent = {ACTIVATE_HASH = 1, CLICK_HASH = 2}
+State = {Edit=2, Play=3}
 KeyCode.Return, KeyCode.C = 100, 101
 local vec = getmetatable(Vector3F(0, 0, 0))
 function vec:length() return math.sqrt(self:dotProduct(self)) end
@@ -63,7 +64,7 @@ local manager = app:getGameManager()
 local function array(items) return {size=function() return #items end, at=function(_, i) return items[i+1] end} end
 local function uiComponent()
     local value = {}
-    for _, method in ipairs({"setPosition","setSize","setZOrder","setColour","setMaterialPath","setText",
+    for _, method in ipairs({"setPosition","setSize","setAnchor","setAnchorMin","setAnchorMax","setZOrder","setColour","setMaterialPath","setText",
         "setTextSize","setTextStr","setHorizontalAlignment","setVerticalAlignment","setNormalColour",
         "setHighlightedColour","setPressedColour","setDisabledColour","setEnabled"}) do
         value[method] = function(self, item) self[method .. "Value"] = item end
@@ -73,20 +74,29 @@ local function uiComponent()
         self.setZOrderValue = z
     end
     value.getProperties = function(self)
-        return {setPropertyAsInt=function(_, name, item) self[name] = item end}
+        return {setPropertyAsInt=function(_, name, item) self[name] = item end,
+            setPropertyAsBool=function(_, name, item) self[name] = item end}
     end
     value.setProperties = function() end
-    local listener = {setComponent=function(self,c) self.component=c end, setFunction=function(self, fn) self.fn=fn end}
-    local event = {getEventHash=function() return IEvent.ACTIVATE_HASH end, getListeners=function() return array({listener}) end}
-    value.getEvents = function() return array({event}) end
-    value.listener = listener
+    value.setState = function(self, state) self.state=state end
+    value.getEvents = function() error("Native event arrays are not Lua-bound") end
+    value.setClickHandler = function(self, component, functionName)
+        self.listener = {component=component, fn=functionName, hash=IEvent.CLICK_HASH}
+    end
     return value
 end
+local nextActorId = 0
 local function enhance(actor)
+    nextActorId = nextActorId + 1
+    actor.instanceId = nextActorId
+    function actor:getHandle() return {getInstanceId=function() return self.instanceId end} end
     actor.enabled = true
     function actor:getName() return self.name end
     function actor:getChildren() return array(self.children) end
-    function actor:setEnabled(value) self.enabled = value end
+    function actor:setEnabled(value, cascade)
+        assert(type(cascade) == "boolean", "native actor setEnabled requires cascade")
+        self.enabled = value
+    end
     function actor:isEnabled() return self.enabled end
     local oldAddChild = actor.addChild
     function actor:addChild(child) child.parent = self; oldAddChild(self, child) end
@@ -98,9 +108,11 @@ local function enhance(actor)
     end
     local oldAdd = actor.addComponent
     function actor:addComponent(name)
-        if name == "LayoutTransform" or name == "Image" or name == "Material" or name == "Text" or name == "Button" then
+        if name == "Layout" or name == "LayoutTransform" or name == "Image" or name == "Material" or name == "Text" or name == "Button" then
             local component = uiComponent()
             if name == "Text" then component.setTextSize = nil end -- Only IUIText exposes this.
+            self.uiComponents = self.uiComponents or {}
+            self.uiComponents[name] = component
             return component
         end
         return oldAdd(self, name)
@@ -169,6 +181,25 @@ app.playing = true
 game:update()
 assert(game.gameState == "main" and game.menu.visible and not game.started)
 assert(#game.menu.view.generationWarnings == 0)
+assert(game.menu.view.generatedRoot.uiComponents.Layout.flagNoInput == false,
+    "Menu needs an interactive native canvas")
+assert(game.hud.root.uiComponents.Layout.flagNoInput == true,
+    "HUD must let native driving input through")
+local function checkLayout(actor, parentWidth, parentHeight)
+    local ui = actor.uiComponents
+    if not ui or not ui.LayoutTransform then return end
+    local layout = ui.LayoutTransform
+    assert(layout.setAnchorValue.x == 0.5 and layout.setAnchorValue.y == 0.5,
+        "Generated UI must explicitly center its pivot")
+    local size, position = layout.setSizeValue, layout.setPositionValue
+    if parentWidth then
+        assert(math.abs(position.x) + size.x / 2 <= parentWidth / 2 + 0.001, actor.name .. " overflows horizontally")
+        assert(math.abs(position.y) + size.y / 2 <= parentHeight / 2 + 0.001, actor.name .. " overflows vertically")
+    end
+    for _, child in ipairs(actor.children) do checkLayout(child, size.x, size.y) end
+end
+checkLayout(game.menu.view.generatedRoot, 1920, 1080)
+checkLayout(game.hud.root, 1920, 1080)
 local button = game.menu.view.buttons.Start
 assert(button.listener.fn == "handleStartClicked", "Real menu listener must target full-game handler")
 game:handleStartClicked()
@@ -197,8 +228,23 @@ for _, index in ipairs({10,20,25,35,45,50,60,70,75,85,95,99,0}) do
     app.now = app.now + 1; game:update()
 end
 assert(game.gameState == "results" and app.paused and game.records:getBest(7) > 0)
+game.manager.session.lapTimes = {12,13,14,15,16,17,18,19,20,21}
+game:showResults()
+checkLayout(game.menu.view.generatedRoot, 1920, 1080)
 game:startRace()
 assert(game.generatedRoot == root, "Retry should reuse expensive generated scene")
+assert(game.hud.dashboard.setTextValue == "Preparing vehicle and circuit...", "Retry must clear previous telemetry")
+local oldConfigured = race.isPhysicsConfigured
+race.isPhysicsConfigured = function() return false end
+app.now = app.now + 16; game:update()
+assert(game.gameState == "main" and game.menu.visible and app.paused, "Loading timeout must return to a usable menu")
+race.isPhysicsConfigured = oldConfigured
+game:startRace()
+root = game.generatedRoot
+keys[KeyCode.Escape] = true; game:update()
+assert(game.gameState == "main" and game.menu.visible, "Loading must be cancellable")
+keys[KeyCode.Escape] = false
+game:startRace()
 game:pauseRace(); game:showMainMenu()
 assert(game.gameState == "main" and app.paused)
 game.mode = "timeTrial"; game:startRace()
@@ -208,6 +254,9 @@ assert(game.generatedRoot ~= root and game.generatedSeed == 8, "New track must r
 game:quitGame()
 assert(not app.playing and not app.paused and app.edited and not app.quit)
 assert(not game.gameInitialized and game.hud == nil and game.menu == nil)
+local sampleClass = SampleVehicleAdvanced
+include("RacingGameApplication.lua")
+assert(SampleVehicleAdvanced == sampleClass, "Application entry point must not redefine the sample")
 io.open = realOpen
 os.rename, os.remove = realRename, realRemove
 os.remove(store)

@@ -1,4 +1,5 @@
 include("UIDialog.lua")
+if not UICanvas then include("UICanvas.lua") end
 
 class 'StartMenu' (UIDialog)
 
@@ -223,10 +224,15 @@ function StartMenu:generate()
 	-- Keep the current menu alive until its replacement has been built. This
 	-- also avoids deleting unrelated children owned by the StartMenu actor.
 	local oldRoots = {}
+	local function sameActor(a, b)
+		if rawequal(a, b) then return true end
+		if not a or not b then return false end
+		return a:getHandle():getInstanceId() == b:getHandle():getInstanceId()
+	end
 	local function rememberOldRoot(candidate)
 		if not candidate then return end
 		for _, existing in ipairs(oldRoots) do
-			if existing == candidate then return end
+			if sameActor(existing, candidate) then return end
 		end
 		table.insert(oldRoots, candidate)
 	end
@@ -255,12 +261,12 @@ function StartMenu:generate()
 		local ok = pcall(function() gameManager:destroyActor(candidate, true) end)
 		if not ok then
 			pcall(function() root:removeChild(candidate) end)
-			pcall(function() candidate:setEnabled(false) end)
+			pcall(function() candidate:setEnabled(false, false) end)
 		end
 		return ok
 	end
 
-	local buildOk, buildResult = pcall(function()
+	local buildOk, buildResult = xpcall(function()
 
 	local colours = {
 		background = ColourF(0.012, 0.022, 0.040, 1.0),
@@ -277,7 +283,7 @@ function StartMenu:generate()
 
 	local function addComponent(actor, className)
 		if not actor then return nil end
-		local ok, component = pcall(function() return actor:addComponent(className) end)
+		local ok, component = pcall(function() return UICanvas.addComponent(actor, className) end)
 		if not ok then
 			table.insert(generationWarnings, "unable to add " .. className .. ": " .. tostring(component))
 			return nil
@@ -308,6 +314,7 @@ function StartMenu:generate()
 		if not actor then return nil end
 		local transform = addComponent(actor, "LayoutTransform")
 		if transform then
+			UICanvas.center(transform)
 			transform:setPosition(position)
 			transform:setSize(size)
 			transform:setZOrder(zOrder or 0, false)
@@ -373,8 +380,7 @@ function StartMenu:generate()
 			button:setPressedColour(colours.pressed)
 			button:setDisabledColour(colours.disabled)
 
-			-- Button creates its activation event/listener internally. Point that
-			-- listener at this UserComponent so clicks invoke Lua directly.
+			-- Route native clicks to the owning script through a reusable adapter.
 			local functionNames = {
 				Resume = "handleResumeClicked",
 				Start = "handleStartClicked",
@@ -382,25 +388,8 @@ function StartMenu:generate()
 				Settings = "handleSettingsClicked",
 				Exit = "handleExitClicked"
 			}
-			local events = button:getEvents()
-			if events then
-				for eventIndex = 0, events:size() - 1 do
-					local event = events:at(eventIndex)
-					if event and event:getEventHash() == IEvent.ACTIVATE_HASH then
-						local listeners = event:getListeners()
-						if listeners then
-							for listenerIndex = 0, listeners:size() - 1 do
-								local listener = listeners:at(listenerIndex)
-								if listener then
-									listener:setComponent(self.component)
-									listener:setFunction(functionNames[action])
-									listenerWired = true
-								end
-							end
-						end
-					end
-				end
-			end
+			UICanvas.bindButton(button, self.component, functionNames[action])
+			listenerWired = true
 		end
 		if button and not listenerWired then
 			table.insert(generationWarnings, action .. " button has no activation listener")
@@ -417,10 +406,13 @@ function StartMenu:generate()
 		return actor, button
 	end
 
+	local canvas = assert(createActor(root, "__StartMenuGenerated"), "Cannot create menu canvas")
+	newRoot = canvas
+	addTransform(canvas, Vector2F(0, 0), Vector2F(1920, 1080), 20)
+	UICanvas.attach(canvas, true)
 	local background, backgroundImage, backgroundTransform = createPanel(
-		root, "__StartMenuGenerated", Vector2F(0.0, 0.0),
+		canvas, "Backdrop", Vector2F(0.0, 0.0),
 		Vector2F(1920.0, 1080.0), colours.background, 0)
-	newRoot = background
 	if not background then
 		self.lastError = "failed to create background actor"
 		return nil
@@ -434,39 +426,44 @@ function StartMenu:generate()
 		return nil
 	end
 
-	local card, cardImage, cardTransform = createPanel(background, "MenuCard", Vector2F(0.0, 0.0),
-		Vector2F(620.0, 900.0), colours.card, 1)
-	if not card or not cardImage or not cardTransform then
-		self.lastError = "failed to create complete menu card"
-		print("StartMenu:generate aborted: " .. self.lastError)
-		return nil
-	end
-	local titleActor, titleText, titleTransform = createText(
-		card, "Title", self.title, Vector2F(0.0, -350.0),
-		Vector2F(540.0, 100.0), colours.primaryText, 3)
-	if not titleActor or not titleText or not titleTransform then
-		self.lastError = "failed to create complete title text"
-		return nil
-	end
-	local subtitleHeight = self.subtitleHeight or 48
-	local _, subtitleText = createText(card, "Subtitle", self.subtitle,
-		Vector2F(0.0, -270.0 + (subtitleHeight - 48) * 0.5),
-		Vector2F(520.0, subtitleHeight), colours.secondaryText, 3)
-	if self.subtitle ~= "" and not subtitleText then
-		table.insert(generationWarnings, "subtitle text component was not created")
-	end
-
 	local specs = {}
 	if self.showResume then table.insert(specs, { "Resume", self.resumeLabel, false }) end
 	table.insert(specs, { "Start", self.startLabel, false })
 	if self.showWorkshop then table.insert(specs, { "Workshop", self.workshopLabel, false }) end
 	if self.showSettings then table.insert(specs, { "Settings", self.settingsLabel, false }) end
 	if self.showExit then table.insert(specs, { "Exit", self.exitLabel, true }) end
+	local subtitleHeight = math.max(48, self.subtitleHeight or 48)
+	local buttonsHeight = #specs * 72 + (#specs - 1) * 16
+	local cardHeight = math.max(900, 284 + subtitleHeight + buttonsHeight)
+	assert(cardHeight <= 1040, "Menu content exceeds the canvas height")
+	local titleY = -cardHeight * 0.5 + 64
+	local subtitleY = titleY + 52 + subtitleHeight * 0.5
+	local firstButtonY = subtitleY + subtitleHeight * 0.5 + 60
+	local statusY = firstButtonY + (#specs - 1) * 88 + 84
+	local card, cardImage, cardTransform = createPanel(background, "MenuCard", Vector2F(0.0, 0.0),
+		Vector2F(720.0, cardHeight), colours.card, 1)
+	if not card or not cardImage or not cardTransform then
+		self.lastError = "failed to create complete menu card"
+		print("StartMenu:generate aborted: " .. self.lastError)
+		return nil
+	end
+	local titleActor, titleText, titleTransform = createText(
+		card, "Title", self.title, Vector2F(0.0, titleY),
+		Vector2F(660.0, 80.0), colours.primaryText, 3)
+	if not titleActor or not titleText or not titleTransform then
+		self.lastError = "failed to create complete title text"
+		return nil
+	end
+	local _, subtitleText = createText(card, "Subtitle", self.subtitle,
+		Vector2F(0.0, subtitleY),
+		Vector2F(660.0, subtitleHeight), colours.secondaryText, 3)
+	if self.subtitle ~= "" and not subtitleText then
+		table.insert(generationWarnings, "subtitle text component was not created")
+	end
 
 	local spacing = 88.0
-	local centreY = self.buttonCentreY or 15.0
 	for index, spec in ipairs(specs) do
-		local y = centreY + (index - (#specs + 1) * 0.5) * spacing
+		local y = firstButtonY + (index - 1) * spacing
 		createButton(card, spec[1], spec[2], Vector2F(0.0, y), spec[3])
 	end
 	for _, spec in ipairs(specs) do
@@ -477,25 +474,25 @@ function StartMenu:generate()
 	end
 
 	local statusActor, statusText, statusTransform = createText(
-		card, "Status", "", Vector2F(0.0, 320.0),
-		Vector2F(520.0, 44.0), colours.secondaryText, 3)
+		card, "Status", "", Vector2F(0.0, statusY),
+		Vector2F(660.0, 48.0), colours.secondaryText, 3)
 	if not statusActor or not statusText or not statusTransform then
 		self.lastError = "failed to create complete status text"
 		return nil
 	end
-	local _, versionComponent = createText(card, "Version", self.versionText, Vector2F(0.0, 395.0),
-		Vector2F(520.0, 36.0), colours.secondaryText, 3)
+	local _, versionComponent = createText(card, "Version", self.versionText, Vector2F(0.0, cardHeight * 0.5 - 28),
+		Vector2F(660.0, 24.0), colours.secondaryText, 3)
 	if self.versionText ~= "" and not versionComponent then
 		table.insert(generationWarnings, "version text component was not created")
 	end
 
 	return {
-		root = background,
+		root = canvas,
 		statusActor = statusActor,
 		statusText = statusText,
 		versionComponent = versionComponent
 	}
-	end)
+	end, function(failure) return debug.traceback(tostring(failure), 2) end)
 
 	if not buildOk or not buildResult then
 		if not buildOk then self.lastError = "generation failed: " .. tostring(buildResult) end
@@ -514,7 +511,7 @@ function StartMenu:generate()
 	-- Commit only after all required UI exists. The old hierarchy is destroyed
 	-- last, so a failed rebuild leaves the prior menu usable.
 	for _, oldRoot in ipairs(oldRoots) do
-		if oldRoot ~= buildResult.root then
+		if not sameActor(oldRoot, buildResult.root) then
 			local destroyed = destroyGenerated(oldRoot)
 			if not destroyed then
 				table.insert(generationWarnings, "a previous generated hierarchy could not be destroyed")
@@ -531,7 +528,7 @@ function StartMenu:generate()
 	self.buttonActions = newButtonActions
 	self.busy = false
 	self.visible = previousVisible
-	pcall(function() buildResult.root:setEnabled(previousVisible) end)
+	buildResult.root:setEnabled(previousVisible, false)
 	self.lastError = ""
 	self.generationWarnings = generationWarnings
 	for _, warning in ipairs(generationWarnings) do print("StartMenu warning: " .. warning) end
@@ -811,13 +808,13 @@ function StartMenu:handleEvent(parameters, results)
 end
 
 function StartMenu:show()
-	if self.generatedRoot then self.generatedRoot:setEnabled(true) end
+	if self.generatedRoot then self.generatedRoot:setEnabled(true, false) end
 	self.visible = true
 	self:setBusy(false, "")
 end
 
 function StartMenu:hide()
-	if self.generatedRoot then self.generatedRoot:setEnabled(false) end
+	if self.generatedRoot then self.generatedRoot:setEnabled(false, false) end
 	self.visible = false
 end
 

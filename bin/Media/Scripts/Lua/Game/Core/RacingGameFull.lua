@@ -83,6 +83,19 @@ function RacingGameFull:initializeGame()
     self.hud:show(false)
     self.gameInitialized, self.lastNow = true, self.timer:now()
     self:showMainMenu()
+    local report = io.open("RacingGameFull.render.log", "w")
+    if report then
+        local ok, failure = pcall(function()
+            local ui = self.application:getRenderUI()
+            report:write(tostring(ui), "\n")
+            report:write("UI loaded=", tostring(ui:isLoaded()), " state=", tostring(ui:getLoadingState()), "\n")
+            local editorActor = self.application:getCameraManager():getEditorCamera()
+            local camera = editorActor:getComponent("Camera")
+            report:write("camera UI=", tostring(camera:getEnableUI()), " viewport UI=", tostring(camera:getViewport():getEnableUI()), "\n")
+        end)
+        if not ok then report:write(tostring(failure)) end
+        report:close()
+    end
 end
 
 function RacingGameFull:savePreferences()
@@ -193,10 +206,10 @@ function RacingGameFull:startRace()
     else self.manager:InitializeRace("race", self.totalLaps) end
     self.raceView:RestartRace()
     self.raceSeed, self.lastNow = self.generatedSeed, self.timer:now()
-    self.readyAt, self.gameState = self.lastNow + 0.35, "loading"
+    self.readyAt, self.loadingDeadline, self.gameState = self.lastNow + 0.35, self.lastNow + 15, "loading"
     self.menu:hide()
     self.hud:show(true)
-    self.hud:setText("countdown", "GET READY")
+    self.hud:resetSession()
     self.nextHudUpdate = 0
 end
 
@@ -210,9 +223,9 @@ function RacingGameFull:showPauseMenu()
     self:showMenu("pause", "PAUSED", "Race time stops while this menu is open.", {
         Resume = item("Continue", function() self:resumeRace() end),
         Start = item("Restart run", function() self:startRace() end),
-        Workshop = item(self.mode == "timeTrial" and "Finish time trial" or "Main menu", function()
-            if self.mode == "timeTrial" then self.manager:EndRace(); self:finishRace() else self:showMainMenu() end
-        end),
+        Workshop = self.mode == "timeTrial" and item("Finish time trial", function()
+            self.manager:EndRace(); self:finishRace()
+        end) or nil,
         Settings = item("Settings & controls", function() self.settingsReturn = "pause"; self:showSettings() end),
         Exit = item("Main menu", function() self:showMainMenu() end)
     })
@@ -312,7 +325,16 @@ function RacingGameFull:update()
         return
     end
     if self.gameState == "loading" then
-        if now >= self.readyAt and self.raceScene:isPhysicsConfigured() then self.gameState = "countdown" end
+        if keys.Escape then self:showMainMenu(); return end
+        if now >= self.readyAt and self.raceScene:isPhysicsConfigured() then
+            self.gameState, self.lastNow = "countdown", now
+            self.hud:setText("countdown", "3")
+        elseif now >= self.loadingDeadline then
+            self.generatedQuality = nil -- Force a fresh native scene on the next attempt.
+            self:showMainMenu()
+            self.menu.view:setStatus("Vehicle physics could not start. Try generating the circuit again.", true)
+            return
+        end
     else
         if keys.Escape then self:pauseRace(); return end
         if keys.R then self.pendingAction = function() self:startRace() end; return end
@@ -374,6 +396,8 @@ function RacingGameFull:setProperties(parameters)
 end
 
 function RacingGameFull:shutdown()
+    -- Release native driving ownership while the generated controller is still alive.
+    self.playerControl:shutdown(); self.playerCamera:shutdown()
     SampleVehicleAdvanced.shutdown(self)
     if self.rebuilding then return end
     self:unpauseSimulation()
@@ -381,7 +405,8 @@ function RacingGameFull:shutdown()
     if self.menu then self.menu:destroy(self.gameManager) end
     self.managerView:shutdown()
     self.ranks:shutdown(); self.raceView:shutdown()
-    self.playerControl:shutdown(); self.playerCamera:shutdown()
+    self.manager:shutdown()
+    self.progress.actor, self.circuit.scene = nil, nil
     self.hud, self.menu, self.pendingAction = nil, nil, nil
     self.gameInitialized, self.gameState, self.keys = false, "main", {}
     self.editPreview = false

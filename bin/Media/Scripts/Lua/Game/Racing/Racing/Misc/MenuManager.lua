@@ -20,7 +20,6 @@ function MenuManager:show(title, subtitle, items, status)
     view.title, view.subtitle, view.versionText = title, subtitle or "", "WORKPHONE RACING"
     local _, breaks = view.subtitle:gsub("\n", "")
     view.subtitleHeight = math.max(48, (breaks + 1) * 24)
-    view.buttonCentreY = math.min(110, 15 + math.max(0, view.subtitleHeight - 80))
     view.showResume, view.showWorkshop, view.showSettings, view.showExit = false, false, false, false
     view.callbacks, self.items = {}, {}
     for _, action in ipairs(actions) do

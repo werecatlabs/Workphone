@@ -174,6 +174,7 @@ namespace workphone
                                           value( "Right", static_cast<u32>( KeyCodes::KEY_RIGHT ) ),
                                           value( "Down", static_cast<u32>( KeyCodes::KEY_DOWN ) ),
                                           value( "A", static_cast<u32>( KeyCodes::KEY_KEY_A ) ),
+                                          value( "C", static_cast<u32>( KeyCodes::KEY_KEY_C ) ),
                                           value( "D", static_cast<u32>( KeyCodes::KEY_KEY_D ) ),
                                           value( "E", static_cast<u32>( KeyCodes::KEY_KEY_E ) ),
                                           value( "Q", static_cast<u32>( KeyCodes::KEY_KEY_Q ) ),

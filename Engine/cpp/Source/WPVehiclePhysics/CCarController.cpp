@@ -261,7 +261,7 @@ namespace workphone
             WP_ASSERT( force.length() < MaxDebugForce );
             WP_ASSERT( position.length() < MaxDebugForce );
         }
-    } // namespace
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, CCarController, CVehicleController<IVehicle> );
 
@@ -384,8 +384,16 @@ namespace workphone
             auto brakeValue = static_cast<physics_Num>( getChannel( 1 ) );
             auto steeringChannel = static_cast<physics_Num>( getChannel( 2 ) );
             auto steeringValue = steeringChannel * getPlaySteeringScale();
+
+#if !WP_FINAL
             assertControlInputs( throttleValue, brakeValue, steeringChannel, getPlaySteeringScale(),
                                  steeringValue );
+#endif
+
+            // clamp values
+            throttleValue = Math<physics_Num>::clamp01( throttleValue );
+            brakeValue = Math<physics_Num>::clamp01( brakeValue );
+            steeringValue = Math<physics_Num>::clamp( steeringChannel, -1.0, 1.0 );
 
             if( m_keyboardInput && inputManager->isKeyPressed( KeyCodes::KEY_UP ) )
             {
@@ -671,7 +679,7 @@ namespace workphone
     SmartPtr<Properties> CCarController::getProperties() const
     {
         auto properties = CVehicleController<Vehicle>::getProperties();
-        properties->setProperty("Keyboard Input",m_keyboardInput);
+        properties->setProperty( "Keyboard Input", m_keyboardInput );
         WP_ASSERT( properties );
 
         properties->setProperty( "Edit Steering Scale", getEditSteeringScale() );
@@ -692,12 +700,12 @@ namespace workphone
         }
 
         CVehicleController<Vehicle>::setProperties( properties );
-        properties->getPropertyValue("Keyboard Input",m_keyboardInput);
+        properties->getPropertyValue( "Keyboard Input", m_keyboardInput );
 
         physics_Num editSteeringScale = getEditSteeringScale();
         physics_Num playSteeringScale = getPlaySteeringScale();
         physics_Num defaultMass = getDefaultMass();
-        s32         driveType = static_cast<s32>( getDriveType() );
+        s32 driveType = static_cast<s32>( getDriveType() );
 
         properties->getPropertyValue( "Edit Steering Scale", editSteeringScale );
         properties->getPropertyValue( "Play Steering Scale", playSteeringScale );
@@ -727,8 +735,8 @@ namespace workphone
         WP_ASSERT( editSteeringScale >= static_cast<physics_Num>( 0.0 ) );
         WP_ASSERT( editSteeringScale <= MaxSteeringScale );
         m_editSteeringScale = editSteeringScale >= static_cast<physics_Num>( 0.0 )
-                                ? editSteeringScale
-                                : static_cast<physics_Num>( 0.0 );
+                                  ? editSteeringScale
+                                  : static_cast<physics_Num>( 0.0 );
     }
 
     physics_Num CCarController::getPlaySteeringScale() const
@@ -742,8 +750,8 @@ namespace workphone
         WP_ASSERT( playSteeringScale >= static_cast<physics_Num>( 0.0 ) );
         WP_ASSERT( playSteeringScale <= MaxSteeringScale );
         m_playSteeringScale = playSteeringScale >= static_cast<physics_Num>( 0.0 )
-                                ? playSteeringScale
-                                : static_cast<physics_Num>( 0.0 );
+                                  ? playSteeringScale
+                                  : static_cast<physics_Num>( 0.0 );
     }
 
     physics_Num CCarController::getDefaultMass() const
@@ -764,4 +772,4 @@ namespace workphone
 
         m_defaultMass = defaultMass;
     }
-} // namespace workphone
+}  // namespace workphone
