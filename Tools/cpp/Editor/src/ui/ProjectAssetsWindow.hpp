@@ -204,7 +204,8 @@ namespace workphone
             void refreshFolders( const Array<String> &folderPaths );
 
             String getAssetsRootPath() const;
-            bool navigateToFolder( const String &folderPath, bool addToHistory = true );
+            bool navigateToFolder( const String &folderPath, bool addToHistory = true,
+                                   bool expandNode = true );
             void navigateBack();
             void navigateForward();
             void navigateUp();

@@ -931,7 +931,8 @@ namespace workphone::editor
             }
             else if( ownerType == "folder" )
             {
-                navigateToFolder( projectTreeData->getObjectType() );
+                // ImGui already toggled the folder on double-click.
+                navigateToFolder( projectTreeData->getObjectType(), true, false );
             }
         }
     }
@@ -1226,7 +1227,8 @@ namespace workphone::editor
         return fileSystem && fileSystem->isExistingFolder( assetsPath ) ? assetsPath : projectPath;
     }
 
-    bool ProjectAssetsWindow::navigateToFolder( const String &folderPath, bool addToHistory )
+    bool ProjectAssetsWindow::navigateToFolder( const String &folderPath, bool addToHistory,
+                                               bool expandNode )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto tree = getTree();
@@ -1261,7 +1263,10 @@ namespace workphone::editor
 
         m_currentFolder = path;
         tree->setSelectedTreeNode( node );
-        tree->expand( node );
+        if( expandNode )
+        {
+            tree->expand( node );
+        }
         updateThumbnailPreview( {} );
         updateNavigationControls();
         return true;
@@ -1765,7 +1770,8 @@ namespace workphone::editor
                         static const auto folderType = String( "folder" );
                         if( treeData->getOwnerType() == folderType )
                         {
-                            owner->navigateToFolder( treeData->getObjectType() );
+                            // Keep the expansion state chosen by the tree click.
+                            owner->navigateToFolder( treeData->getObjectType(), true, false );
                         }
                         else
                         {
