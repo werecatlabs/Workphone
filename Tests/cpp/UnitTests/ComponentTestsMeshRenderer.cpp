@@ -3,6 +3,12 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/GraphicsMesh.hpp>
 #include <Workphone/Graphics/Material.hpp>
+#include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/Mesh/MeshConverter.hpp>
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Mesh/MeshUtil.hpp>
+#include <Workphone/Interface/System/IEventListener.hpp>
+#include <filesystem>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <algorithm>
@@ -13,6 +19,43 @@ using namespace workphone::scene;
 
 namespace
 {
+    class ReimportGraphicsSystem : public render::GraphicsSystem
+    {
+    public:
+        void reloadObject( SmartPtr<ISharedObject> object, bool forceQueue ) override
+        {
+            reloadedObject = object;
+            queued = forceQueue;
+            ++reloadCount;
+        }
+
+        SmartPtr<ISharedObject> reloadedObject;
+        bool queued = false;
+        u32 reloadCount = 0;
+    };
+
+    class MeshImportListener : public IEventListener
+    {
+    public:
+        Parameter handleEvent( EventType type, hash_type value, const Array<Parameter> &args,
+                               SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
+                               SmartPtr<IEvent> event ) override
+        {
+            if( value == IEvent::meshLoaded )
+            {
+                ++notifications;
+                fileWritten = std::filesystem::file_size( outputPath.c_str() ) > 0;
+                renderer->handleEvent( type, value, args, sender, object, event );
+            }
+            return {};
+        }
+
+        SmartPtr<MeshRenderer> renderer;
+        String outputPath;
+        u32 notifications = 0;
+        bool fileWritten = false;
+    };
+
     class TestGraphicsMesh : public render::GraphicsMesh
     {
     public:
@@ -136,6 +179,82 @@ namespace
                              } ) != children.end();
     }
 }  // namespace
+
+BOOST_AUTO_TEST_CASE( components_mesh_renderer_reimport_refreshes_unchanged_path )
+{
+    TestGuard guard;
+    auto app = guard.applicationManager;
+    const auto oldGraphics = app->getGraphicsSystem();
+    const auto oldPool = app->getThreadPool();
+    const auto oldCache = app->getCachePath();
+    const auto cache = String( ( std::filesystem::temp_directory_path() /
+                                StringUtil::getUUID().c_str() ).generic_string() );
+    guard.trackFilesystemPath( cache );
+    guard.addCleanup( [app, oldGraphics, oldPool, oldCache]() mutable {
+        app->setGraphicsSystem( oldGraphics );
+        app->setThreadPool( oldPool );
+        app->setCachePath( oldCache );
+    } );
+
+    auto actor = guard.sceneManager->createActor();
+    auto component = actor->addComponent<scene::Mesh>();
+    auto resource = workphone::dynamic_pointer_cast<IMeshResource>(
+        app->getMeshManager()->create( StringUtil::getUUID() ) );
+    BOOST_REQUIRE( resource );
+    resource->setFilePath( "Cache/reimport_test.fbmeshbin" );
+    auto mesh = MeshUtil::createBox();
+    mesh->setName( resource->getFilePath() );
+    resource->setMesh( mesh );
+    component->setMeshResource( resource );
+
+    auto renderer = actor->addComponent<MeshRenderer>();
+    auto graphicsMesh = makeGraphicsMesh();
+    graphicsMesh->setMeshName( resource->getFilePath() );
+    renderer->setGraphicsObject( graphicsMesh );
+
+    auto graphics = workphone::make_ptr<ReimportGraphicsSystem>();
+    app->setGraphicsSystem( graphics );
+    app->setThreadPool( nullptr ); // Deliver deterministically without background tasks.
+    app->setCachePath( cache );
+
+    auto listener = workphone::make_ptr<MeshImportListener>();
+    listener->renderer = renderer;
+    listener->outputPath = cache + "/reimport_test.fbmeshbin";
+    app->addObjectListener( listener );
+    guard.addCleanup( [app, listener]() mutable { app->removeObjectListener( listener ); } );
+
+    MeshConverter converter;
+    converter.writeMesh( actor );
+    BOOST_CHECK_EQUAL( listener->notifications, 1u );
+    BOOST_CHECK( listener->fileWritten );
+    BOOST_CHECK_EQUAL( graphics->reloadCount, 1u );
+    BOOST_CHECK( graphics->queued );
+    BOOST_CHECK( graphics->reloadedObject == graphicsMesh );
+    BOOST_CHECK_EQUAL( graphicsMesh->getMeshName(), resource->getFilePath() );
+
+    for( u32 attempt = 2; attempt <= 3; ++attempt )
+    {
+        auto updatedMesh = MeshUtil::createBox( static_cast<f32>( attempt ), 1.f, 1.f );
+        updatedMesh->setName( resource->getFilePath() );
+        resource->setMesh( updatedMesh );
+        converter.writeMesh( actor );
+        BOOST_CHECK_EQUAL( listener->notifications, attempt );
+        BOOST_CHECK_EQUAL( graphics->reloadCount, attempt );
+        BOOST_CHECK( listener->fileWritten );
+        BOOST_CHECK( graphics->queued );
+        BOOST_CHECK( graphics->reloadedObject == graphicsMesh );
+    }
+
+    auto unrelated = workphone::dynamic_pointer_cast<IMeshResource>(
+        app->getMeshManager()->create( StringUtil::getUUID() ) );
+    BOOST_REQUIRE( unrelated );
+    unrelated->setFilePath( "Cache/other.fbmeshbin" );
+    renderer->handleEvent( EventType::Renderer, IEvent::meshLoaded, {}, nullptr, unrelated, nullptr );
+    renderer->handleEvent( EventType::Renderer, IEvent::meshLoaded, {}, nullptr, nullptr, nullptr );
+    renderer->handleEvent( EventType::Renderer, IEvent::meshLoaded, {}, nullptr, mesh, nullptr );
+    BOOST_CHECK_EQUAL( graphics->reloadCount, 3u );
+    renderer->setGraphicsObject( nullptr );
+}
 
 BOOST_AUTO_TEST_CASE( components_mesh_renderer_default_state_and_properties )
 {

@@ -351,7 +351,7 @@ namespace workphone::scene
                                          SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
                                          SmartPtr<IEvent> event )
     {
-        if( eventValue == IEvent::meshLoaded )
+        if( eventValue == IEvent::meshLoaded && object && object->isDerived<IMeshResource>() )
         {
             if( auto actor = getActorPtr() )
             {
@@ -367,9 +367,14 @@ namespace workphone::scene
 
                         if( meshFilePathA == meshFilePathB )
                         {
-                            if( auto meshObject = getGraphicsObjectByTypePtr<render::IGraphicsMesh>() )
+                            if( auto meshObject = getGraphicsObjectByType<render::IGraphicsMesh>() )
                             {
-                                meshObject->reload( nullptr );
+                                auto applicationManager = core::IApplicationManager::instancePtr();
+                                if( auto graphicsSystem = applicationManager->getGraphicsSystemPtr() )
+                                {
+                                    // Native mesh and GPU cache replacement belongs to the render task.
+                                    graphicsSystem->reloadObject( meshObject, true );
+                                }
                             }
                         }
                     }

@@ -7,6 +7,7 @@
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/System/IResource.hpp>
+#include <Workphone/Interface/System/IEvent.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Core/LogManager.hpp>
@@ -63,6 +64,12 @@ namespace workphone
                         fileName = Path::getFileName( fileName );
                         const auto outputPath = Path::lexically_normal( cacheFolder, fileName );
                         serializer.exportMesh( static_cast<Mesh *>( pMesh ), outputPath );
+
+                        // The file is closed before notifying scene instances. Reimport keeps
+                        // the same resource path, so assigning the mesh again will not reload it.
+                        applicationManager->triggerEvent(
+                            EventType::Renderer, IEvent::meshLoaded, {}, nullptr, meshResource,
+                            nullptr, false, Thread::Application_Flag );
                     }
                 }
             }

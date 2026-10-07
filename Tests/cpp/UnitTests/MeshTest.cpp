@@ -2,6 +2,11 @@
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
+#include <fstream>
+#include <Workphone/Interface/Mesh/IMeshLoader.hpp>
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Scene/Components/Mesh.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
 #include <vector>
 
 using namespace workphone;
@@ -589,5 +594,76 @@ BOOST_AUTO_TEST_CASE( mesh_load_same_asset_returns_cached_resource )
     {
         WP_LOG_EXCEPTION( e );
         BOOST_FAIL( "Exception in cached mesh load test: " + std::string( e.what() ) );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_attempt )
+{
+    TestGuard guard;
+    auto app = guard.applicationManager;
+    auto loader = app->getMeshLoader();
+    BOOST_REQUIRE( loader );
+    const auto oldProject = app->getProjectPath();
+    const auto oldCache = app->getCachePath();
+    const auto oldSettings = app->getSettingsPath();
+    auto oldDatabase = app->getResourceDatabase();
+    const auto oldOverwrite = loader->getOverwrite();
+    const auto directory = std::filesystem::temp_directory_path() / StringUtil::getUUID().c_str();
+    std::filesystem::create_directories( directory / "Cache" );
+    std::filesystem::create_directories( directory / "SettingsCache" );
+    guard.trackFilesystemPath( directory.generic_string() );
+    auto database = workphone::make_ptr<ResourceDatabase>();
+    guard.addCleanup( [app, loader, database, oldDatabase, oldProject, oldCache, oldSettings,
+                       oldOverwrite]() mutable {
+        database->unload( nullptr );
+        app->setResourceDatabase( oldDatabase );
+        app->setProjectPath( oldProject );
+        app->setCachePath( oldCache );
+        app->setSettingsPath( oldSettings );
+        loader->setOverwrite( oldOverwrite );
+    } );
+    app->setProjectPath( directory.generic_string() );
+    app->setCachePath( ( directory / "Cache" ).generic_string() + "/" );
+    app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
+    app->setResourceDatabase( database );
+    database->load( nullptr );
+    const auto folder = String( directory.generic_string() );
+    app->getFileSystem()->addFolder( folder, true );
+    guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
+    // Keep the source resource cached, as it is after the Editor's first import.
+    auto sourceResource = app->getMeshManager()->createOrRetrieve( String( "triangle.obj" ) ).first;
+    BOOST_REQUIRE( sourceResource );
+
+    std::function<SmartPtr<IMesh>( SmartPtr<scene::IGameActor> )> findMesh;
+    findMesh = [&]( SmartPtr<scene::IGameActor> actor ) -> SmartPtr<IMesh> {
+        if( auto component = actor->getComponent<scene::Mesh>() )
+            if( auto resource = component->getMeshResource() )
+                return resource->getMesh();
+        for( auto child : actor->getChildren() )
+            if( auto mesh = findMesh( child ) )
+                return mesh;
+        return nullptr;
+    };
+
+    for( int attempt = 1; attempt <= 3; ++attempt )
+    {
+        std::ofstream source( directory / "triangle.obj", std::ios::trunc );
+        source << "o Triangle\nv 0 0 0\nv " << attempt << " 0 0\nv 0 1 0\nf 1 2 3\n";
+        source.close();
+        std::ofstream settings( directory / "SettingsCache" /
+                                ( StringUtil::toString( StringUtil::getUUID( "triangle.obj" ) ) +
+                                  ".resourcedata" ).c_str(), std::ios::trunc );
+        settings << "{\"scale\":" << attempt << "}";
+        settings.close();
+        app->getFileSystem()->refreshPath( folder, false );
+        loader->setOverwrite( true );
+        auto actor = loader->loadActor( String( "triangle.obj" ) );
+        BOOST_REQUIRE( actor );
+        auto mesh = findMesh( actor );
+        BOOST_REQUIRE( mesh );
+        mesh->updateAABB( true );
+        BOOST_CHECK_CLOSE( mesh->getAABB().getMaximum().x,
+                           static_cast<real_Num>( attempt * attempt ), 0.001 );
+        guard.sceneManager->destroyActor( actor );
     }
 }

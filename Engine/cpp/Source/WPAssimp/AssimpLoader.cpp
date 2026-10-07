@@ -797,6 +797,14 @@ namespace workphone
                 auto director = resourceDatabase->loadDirectorFromResourcePath(
                     m_meshPath, scene::MeshResourceDirector::typeInfo() );
                 setMeshDirector( director );
+
+                // loadFromFile can return the source resource from an earlier import.
+                // Use the current saved options rather than its cached scale on reimport.
+                if( auto meshDirector = getMeshDirector() )
+                {
+                    meshResource->setScale( meshDirector->getScale() );
+                    setMeshScale( Vector3<f32>::unit() * meshDirector->getScale() );
+                }
             }
 
             m_meshPath = meshName;
