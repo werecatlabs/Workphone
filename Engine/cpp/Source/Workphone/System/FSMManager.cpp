@@ -13,7 +13,7 @@ namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, FSMManager, IFSMManager );
 
-    u32 FSMManager::m_idExt = 0;
+    atomic_s32 FSMManager::m_idExt = 0;
 
     FSMManager::FSMManager() = default;
 
@@ -21,7 +21,7 @@ namespace workphone
 
     auto FSMManager::createFSM() -> SmartPtr<IFSM>
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
+        ScopedLock lock( &m_mutex );
 
         WP_ASSERT( isValid() );
         WP_ASSERT( isLoaded() );
@@ -61,7 +61,7 @@ namespace workphone
 
     void FSMManager::destroyFSM( SmartPtr<IFSM> fsm )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
+        ScopedLock lock( &m_mutex );
 
         WP_ASSERT( fsm );
         WP_ASSERT( isValid() );
@@ -105,8 +105,6 @@ namespace workphone
     {
         try
         {
-            RecursiveMutex::ScopedLock lock( m_mutex );
-
             setLoadingState( LoadingState::Loading );
 
             auto growSize = getGrowSize();
@@ -123,7 +121,7 @@ namespace workphone
 
     void FSMManager::resize( size_t size )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
+        ScopedLock lock( &m_mutex );
 
         auto currentSize = getSize();
         if( currentSize != size )
@@ -389,14 +387,12 @@ namespace workphone
 
     auto FSMManager::getStateChangeTime( u32 id ) const -> f64
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_stateChangeTimes.size() );
         return m_stateChangeTimes[id];
     }
 
     void FSMManager::setStateChangeTime( u32 id, const f64 &stateChangeTime )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_stateChangeTimes.size() );
         m_stateChangeTimes[id] = stateChangeTime;
     }
@@ -466,8 +462,6 @@ namespace workphone
 
     void FSMManager::stateOverride( u32 id, s32 state )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-
         // Directly set all state values without triggering listeners
         setPreviousState( id, getCurrentState( id ) );
         setCurrentState( id, state );
@@ -497,7 +491,6 @@ namespace workphone
 
     auto FSMManager::isStateChangeComplete( u32 id ) const -> bool
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_stateChangeComplete.size() )
         {
             return m_stateChangeComplete[id];
@@ -508,7 +501,6 @@ namespace workphone
 
     void FSMManager::setStateChangeComplete( u32 id, bool value )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_stateChangeComplete.size() )
         {
             m_stateChangeComplete[id] = value;
@@ -523,8 +515,6 @@ namespace workphone
 
     void FSMManager::removeListener( u32 id, SmartPtr<IFSMListener> listener )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-
         auto listeners = getListeners( id );
 
         auto it = std::find( listeners.begin(), listeners.end(), listener );
@@ -543,8 +533,6 @@ namespace workphone
 
     void FSMManager::removeListeners( u32 id )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-
         auto listeners = getListeners( id );
 
         for( auto &listener : listeners )
@@ -561,7 +549,6 @@ namespace workphone
 
     auto FSMManager::getAutoChangeState( u32 id ) const -> bool
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_autoChangeState.size() )
         {
             return m_autoChangeState[id];
@@ -571,7 +558,6 @@ namespace workphone
 
     void FSMManager::setAutoChangeState( u32 id, bool value )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_autoChangeState.size() )
         {
             m_autoChangeState[id] = value;
@@ -580,7 +566,6 @@ namespace workphone
 
     auto FSMManager::getAllowStateChange( u32 id ) const -> bool
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_allowStateChange.size() )
         {
             return m_allowStateChange[id];
@@ -590,7 +575,6 @@ namespace workphone
 
     void FSMManager::setAllowStateChange( u32 id, bool value )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_allowStateChange.size() )
         {
             m_allowStateChange[id] = value;
@@ -599,21 +583,18 @@ namespace workphone
 
     auto FSMManager::isReady( u32 id ) const -> bool
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_ready.size() );
         return m_ready[id];
     }
 
     void FSMManager::setReady( u32 id, bool ready )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_ready.size() );
         m_ready[id] = ready;
     }
 
     auto FSMManager::getAutoTriggerEnterStateComplete( u32 id ) const -> bool
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_autoTriggerEnterStateComplete.size() )
         {
             return m_autoTriggerEnterStateComplete[id];
@@ -623,7 +604,6 @@ namespace workphone
 
     void FSMManager::setAutoTriggerEnterStateComplete( u32 id, bool value )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_autoTriggerEnterStateComplete.size() )
         {
             m_autoTriggerEnterStateComplete[id] = value;
@@ -639,7 +619,6 @@ namespace workphone
 
     auto FSMManager::getStateTicks( u32 id ) const -> s32
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_stateTicks.size() )
         {
             return m_stateTicks[id];
@@ -649,7 +628,6 @@ namespace workphone
 
     void FSMManager::setStateTicks( u32 id, s32 ticks )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_stateTicks.size() )
         {
             m_stateTicks[id] = ticks;
@@ -658,7 +636,6 @@ namespace workphone
 
     auto FSMManager::getListenerPriority( u32 id ) -> u32
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_listenerPriority.size() )
         {
             return m_listenerPriority[id];
@@ -668,7 +645,6 @@ namespace workphone
 
     void FSMManager::setListenerPriority( u32 id, u32 priority )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         if( id < m_listenerPriority.size() )
         {
             m_listenerPriority[id] = priority;
@@ -677,21 +653,18 @@ namespace workphone
 
     auto FSMManager::getFlagsPtr( u32 id ) const -> u32 *
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_flags.size() );
         return const_cast<u32 *>( &m_flags[id] );
     }
 
     auto FSMManager::getFlags( u32 id ) -> u32
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_flags.size() );
         return m_flags[id];
     }
 
     void FSMManager::setFlags( u32 id, u32 flags )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_flags.size() );
         m_flags[id] = flags;
     }
@@ -716,14 +689,12 @@ namespace workphone
 
     auto FSMManager::getStateTime( u32 id ) const -> time_interval
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_stateTimes.size() );
         return m_stateTimes[id];
     }
 
     void FSMManager::setStateTime( u32 id, time_interval stateTime )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         WP_ASSERT( id < m_stateTimes.size() );
         WP_ASSERT( Math<time_interval>::isFinite( stateTime ) );
         m_stateTimes[id] = stateTime;
@@ -731,8 +702,6 @@ namespace workphone
 
     void FSMManager::addStateTime( u32 id, time_interval stateTime )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-
         if( id < m_stateTimes.size() )
         {
             m_stateTimes[id] += stateTime;
@@ -776,25 +745,21 @@ namespace workphone
 
     auto FSMManager::getSize() const -> size_t
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         return m_size;
     }
 
     void FSMManager::setSize( size_t size )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         m_size = size;
     }
 
     auto FSMManager::getGrowSize() const -> size_t
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         return m_growSize;
     }
 
     void FSMManager::setGrowSize( size_t growSize )
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
         m_growSize = growSize;
     }
 

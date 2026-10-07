@@ -6,7 +6,7 @@
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentQueue.hpp>
 #include <Workphone/Memory/AtomicSharedPtr.hpp>
-#include <Workphone/Thread/RecursiveMutex.hpp>
+#include <Workphone/Thread/RecursiveSpinMutex.hpp>
 
 namespace workphone
 {
@@ -459,43 +459,43 @@ namespace workphone
         u32 createNewId();
 
         /// Counter used to hand out unique ids.
-        u32 m_idCount = 0;
+        atomic_s32 m_idCount = 0;
 
         /// Number of FSM slots currently allocated.
-        size_t m_size = 0;
+        atomic_s32 m_size = 0;
 
         /// Grow size used during resize operations (allocation granularity).
-        size_t m_growSize = 12;
+        atomic_s32 m_growSize = 12;
 
         /// Per-FSM auto-change state flags
-        Array<atomic_bool> m_autoChangeState;
+        ConcurrentArray<atomic_bool> m_autoChangeState;
 
         /// Per-FSM allow state change flags
-        Array<atomic_bool> m_allowStateChange;
+        ConcurrentArray<atomic_bool> m_allowStateChange;
 
         /// Per-FSM state change complete flags
-        Array<atomic_bool> m_stateChangeComplete;
+        ConcurrentArray<atomic_bool> m_stateChangeComplete;
 
         /// Per-FSM auto-trigger enter state complete flags
-        Array<atomic_bool> m_autoTriggerEnterStateComplete;
+        ConcurrentArray<atomic_bool> m_autoTriggerEnterStateComplete;
 
         /// Per-FSM flags stored as bitmask values.
-        Array<u32> m_flags;
+        ConcurrentArray<u32> m_flags;
 
         /// Per-FSM state tick counters
-        Array<atomic_s32> m_stateTicks;
+        ConcurrentArray<atomic_s32> m_stateTicks;
 
         /// Per-FSM listener priorities
-        Array<atomic_u32> m_listenerPriority;
+        ConcurrentArray<atomic_u32> m_listenerPriority;
 
         /// Time (timestamp) of the last state change for each FSM.
-        Array<time_interval> m_stateChangeTimes;
+        ConcurrentArray<time_interval> m_stateChangeTimes;
 
         /// Elapsed time spent in the current state for each FSM.
-        Array<time_interval> m_stateTimes;
+        ConcurrentArray<time_interval> m_stateTimes;
 
         /// Ready flags indicating whether each FSM is initialised and ready.
-        Array<atomic_bool> m_ready;
+        ConcurrentArray<atomic_bool> m_ready;
 
         /// Listeners per-FSM: outer array indexed by FSM id, each entry may be null.
         ConcurrentArray<ConcurrentArray<SmartPtr<IFSMListener>>> m_listeners;
@@ -515,11 +515,10 @@ namespace workphone
         /// Queue of FSMs marked dirty for deferred processing (thread-safe).
         ConcurrentQueue<SmartPtr<IFSM>> m_dirtyQueue;
 
-        /// Recursive mutex protecting complex operations and array mutation.
-        mutable RecursiveMutex m_mutex;
+        RecursiveSpinMutex m_mutex;  ///< Mutex for thread-safe operations that modify internal arrays.
 
         /// External id offset (static extension).
-        static u32 m_idExt;
+        static atomic_s32 m_idExt;
     };
 }  // namespace workphone
 
