@@ -13,6 +13,9 @@
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <workphone_graphics_mesh.h>
 #include <workphone_graphics_renderer.h>
+#include <workphone_graphics_light.h>
+#include <workphone_graphics_scenenode.h>
+#include <workphone_graphics_object.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <cstdio>
@@ -86,6 +89,15 @@ namespace
         component.updateTransform( transform );
         ok &= check( ( light->getDerivedDirection() - expected ).lengthSquared() < 1e-6f,
                      "repeated light transforms must preserve the derived direction" );
+        auto nativeNode = wp_scenenode_create();
+        const auto rotation = transform.getOrientation();
+        wp_scenenode_set_orientation( nativeNode, { rotation.w, rotation.x, rotation.y, rotation.z } );
+        wp_light_attach_to_node( light->getNativeLight(), nativeNode );
+        node->orientation = Quaternion<real_Num>::identity(); // Simulate a stale C++ transform cache.
+        ok &= check( ( light->getDerivedDirection() - expected ).lengthSquared() < 1e-6f,
+                     "attached light must use the current native scene-node rotation" );
+        wp_light_detach_from_node( light->getNativeLight(), nativeNode );
+        wp_scenenode_destroy( nativeNode );
         light->setOwner( nullptr );
         return ok;
     }
@@ -167,6 +179,19 @@ namespace
         renderer.renderParticles(samples, Matrix4F::identity(), Vector3F(1,1,1));
         bool ok = check(hasPixel(native,32,32,true), "particle snapshot must produce red pixels on DX11");
         TestMesh mesh;
+        ok &= check( mesh.getCastShadows() && mesh.getReceiveShadows(),
+                     "Claw meshes must cast and receive shadows without a state context" );
+        mesh.setCastShadows( false ); mesh.setReceiveShadows( false );
+        ok &= check( !mesh.getCastShadows() && !mesh.getReceiveShadows(),
+                     "Claw mesh shadow settings must persist before native object attachment" );
+        auto object = wp_graphics_object_create();
+        mesh.bindNativeRenderObject( object );
+        ok &= check( !wp_graphics_object_get_cast_shadows( object ) && !wp_graphics_object_get_receive_shadows( object ),
+                     "native mesh object must inherit disabled shadow settings" );
+        mesh.setCastShadows( true ); mesh.setReceiveShadows( true );
+        ok &= check( wp_graphics_object_get_cast_shadows( object ) && wp_graphics_object_get_receive_shadows( object ),
+                     "shadow toggles must reach the attached native mesh object" );
+        mesh.bindNativeRenderObject( nullptr ); wp_graphics_object_destroy( object );
         Array<wp_skin_vertex> vertices(3);
         std::memset(vertices.data(),0,vertices.size()*sizeof(wp_skin_vertex));
         const auto *source = static_cast<const wp_graphics_mesh_vertex_pnt *>(wp_graphics_mesh_get_vertices(mesh.getNativeMesh()));

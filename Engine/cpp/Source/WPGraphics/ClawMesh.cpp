@@ -394,16 +394,28 @@ namespace workphone
 
         void ClawMesh::setCastShadows( bool castShadows )
         {
+            m_castShadows = castShadows;
             GraphicsMesh::setCastShadows( castShadows );
             if( m_renderObject )
                 wp_graphics_object_set_cast_shadows( m_renderObject, castShadows ? 1 : 0 );
         }
 
+        bool ClawMesh::getCastShadows() const
+        {
+            return m_castShadows.load();
+        }
+
         void ClawMesh::setReceiveShadows( bool receiveShadows )
         {
+            m_receiveShadows = receiveShadows;
             GraphicsMesh::setReceiveShadows( receiveShadows );
             if( m_renderObject )
                 wp_graphics_object_set_receive_shadows( m_renderObject, receiveShadows ? 1 : 0 );
+        }
+
+        bool ClawMesh::getReceiveShadows() const
+        {
+            return m_receiveShadows.load();
         }
 
         void ClawMesh::setVisibilityFlags( u32 flags )
@@ -501,6 +513,7 @@ namespace workphone
             mesh->setSkeleton( getSkeleton() );
             mesh->setVisible( isVisible() );
             mesh->setCastShadows( getCastShadows() );
+            mesh->setReceiveShadows( getReceiveShadows() );
             mesh->setVisibilityFlags( getVisibilityFlags() );
             return mesh;
         }

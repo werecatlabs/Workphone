@@ -857,8 +857,10 @@ namespace workphone::render
         mapSize = std::clamp( mapSize, 64, 8192 );
         const auto direction = m_lightDirection.normaliseCopy();
         const Vector3F up = std::abs( direction.Y() ) > 0.95f ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 );
-        const auto right = up.crossProduct( direction ).normaliseCopy();
-        const auto vertical = direction.crossProduct( right );
+        // Match the camera's screen-space winding while depth increases along
+        // the light direction, so single-sided casters retain their front faces.
+        const auto right = direction.crossProduct( up ).normaliseCopy();
+        const auto vertical = right.crossProduct( direction );
         auto lightView = Matrix4F::identity();
         for( int i = 0; i < 3; ++i )
         {

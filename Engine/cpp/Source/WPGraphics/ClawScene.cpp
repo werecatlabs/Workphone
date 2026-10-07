@@ -642,8 +642,6 @@ namespace workphone
                                          ( !viewport || viewport->getShadowsEnabled() );
                     if( shadows && dx11Renderer->beginShadowMap( pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 ) )
                     {
-                        static int diagnosticFrames = 0;
-                        if( diagnosticFrames++ == 100 ) std::printf("Shadow scene objects=%d sun=%f,%f,%f intensity=%f\n", m_scene->object_count, lightDirection.X(), lightDirection.Y(), lightDirection.Z(), lightIntensity);
                         // Camera culling cannot exclude casters: offscreen objects can shadow visible receivers.
                         const auto mask = m_scene->visibility_mask &
                             ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() ) : ~u32( 0 ) ) &

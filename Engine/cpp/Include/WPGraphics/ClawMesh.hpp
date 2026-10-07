@@ -78,9 +78,11 @@ namespace workphone
 
             /** Configures whether the mesh casts shadows into the scene. */
             void setCastShadows( bool castShadows ) override;
+            bool getCastShadows() const override;
 
             /** Configures whether the mesh receives shadows from other objects. */
             void setReceiveShadows( bool receiveShadows ) override;
+            bool getReceiveShadows() const override;
 
             /** Sets specific visibility flags for filtering during the render pass. */
             void setVisibilityFlags( u32 flags ) override;
@@ -125,6 +127,8 @@ namespace workphone
             wp_graphics_object *m_renderObject =
                 nullptr;                   ///< Pointer to the native render object used for submission.
             atomic_bool m_visible = true;  ///< Atomic flag indicating the visibility state of the mesh.
+            atomic_bool m_castShadows = true;
+            atomic_bool m_receiveShadows = true;
             atomic_fixed_string<WP_MAX_PATH> m_meshName;  ///< Name of the mesh resource.
             ProgressiveMeshOptions m_options;  ///< Configuration for progressive mesh / LOD levels.
         };

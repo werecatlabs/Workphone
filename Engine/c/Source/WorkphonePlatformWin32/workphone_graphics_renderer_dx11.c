@@ -2921,23 +2921,7 @@ wp_s32 wp_renderer_dx11_begin_shadow_map( wp_renderer_dx11 *r, const wp_mat4f *l
 
 void wp_renderer_dx11_end_shadow_map( wp_renderer_dx11 *r )
 {
-    static int diagnostic_frames = 0;
     if( !r || !r->shadow_pass ) return;
-    if( ++diagnostic_frames == 100 )
-    {
-        D3D11_TEXTURE2D_DESC d; ID3D11Texture2D *staging = NULL; D3D11_MAPPED_SUBRESOURCE mapped;
-        ID3D11Texture2D_GetDesc(r->shadow_texture, &d); d.Usage=D3D11_USAGE_STAGING; d.BindFlags=0; d.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
-        if(SUCCEEDED(ID3D11Device_CreateTexture2D(r->device,&d,NULL,&staging))) {
-            ID3D11DeviceContext_CopyResource(r->context,(ID3D11Resource*)staging,(ID3D11Resource*)r->shadow_texture);
-            if(SUCCEEDED(ID3D11DeviceContext_Map(r->context,(ID3D11Resource*)staging,0,D3D11_MAP_READ,0,&mapped))) {
-                float minimum=1,maximum=0; int count=0; UINT x,y;
-                for(y=0;y<d.Height;++y) { const float *row=(const float*)((const char*)mapped.pData+y*mapped.RowPitch);
-                    for(x=0;x<d.Width;++x) { if(row[x]<1)++count; if(row[x]<minimum)minimum=row[x]; if(row[x]>maximum)maximum=row[x]; } }
-                printf("Shadow depth count=%d min=%f max=%f matrix=%f,%f,%f,%f\n",count,minimum,maximum,r->shadow.light_matrix.m[0][0],r->shadow.light_matrix.m[1][1],r->shadow.light_matrix.m[2][2],r->shadow.light_matrix.m[2][3]);
-                ID3D11DeviceContext_Unmap(r->context,(ID3D11Resource*)staging,0);
-            } ID3D11Texture2D_Release(staging);
-        }
-    }
     r->shadow_pass = 0;
     r->shadow_ready = 1;
     r->shadow.controls.y = 0.0f;
