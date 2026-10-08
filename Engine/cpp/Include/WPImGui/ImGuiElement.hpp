@@ -680,7 +680,7 @@ namespace workphone
             AtomicObject<String> m_label;
 
             /// Thread-safe container of children.
-            ConcurrentFixedArrayGrowable<SmartPtr<IUIElement>, 1024> m_children;
+            ConcurrentArray<SmartPtr<IUIElement>> m_children;
 
             /// Static counter used to generate default names.
             static u32 m_nextGeneratedNameExt;

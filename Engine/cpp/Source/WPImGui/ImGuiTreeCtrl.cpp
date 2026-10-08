@@ -65,6 +65,7 @@ namespace workphone::ui
 
     void ImGuiTreeCtrl::load( SmartPtr<ISharedObject> data )
     {
+        m_children.reserve(1024)
         setLoadingState( LoadingState::Loaded );
     }
 

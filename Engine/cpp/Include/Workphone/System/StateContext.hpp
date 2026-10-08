@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
+#include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Core/ConcurrentFixedArrayGrowable.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
@@ -446,11 +447,10 @@ namespace workphone
         static constexpr size_t listenerCapacity = 32;
 
         /// Owned registrations in insertion order, synchronized by each container.
-        ConcurrentFixedArrayGrowable<SmartPtr<IEventListener>, listenerCapacity> m_eventListeners;
+        ConcurrentArray<SmartPtr<IEventListener>> m_eventListeners;
         ConcurrentArray<SmartPtr<IState>> m_states;
-        ConcurrentFixedArrayGrowable<SmartPtr<IStateListener>, listenerCapacity> m_stateListeners;
-        ConcurrentFixedArrayGrowable<SmartPtr<IStateQueue>, static_cast<size_t>( TaskId::Count )>
-            m_stateQueues;
+        ConcurrentArray<SmartPtr<IStateListener>> m_stateListeners;
+        ConcurrentFixedArrayGrowable<SmartPtr<IStateQueue>, static_cast<size_t>( TaskId::Count )> m_stateQueues;
 
         /// Static counter for generating unique name extensions
         static u32 m_nextGeneratedNameExt;
