@@ -342,11 +342,21 @@ namespace workphone
             {
                 auto car = m_vehicleActor->getComponent<scene::CarController>();
                 auto vehicle = car->getVehicleController();
-                // Check the sustained turn after the application task has published
-                // the new steering pose; input changes can precede it by one frame.
-                for( u32 i = 0; m_smokePhase == 2 && m_smokeTime > .5 && i < 2; ++i )
+                // Check the sustained turn and return to centre after the application
+                // task has published the pose; input changes can precede it by one frame.
+                for( u32 i = 0; m_smokePhase >= 2 && m_smokeTime > .5 && i < 2; ++i )
                 {
                     const auto angle = vehicle->getWheelController( i )->getSteeringAngle();
+                    const auto expectedAngle = float( vehicle->getChannel(
+                        s32( vehicle::IVehicle::Input::STEERING ) ) ) *
+                        float( m_assets.vehicle.physics.wheels[i].maxSteerRad * 180.0 /
+                               3.14159265358979323846 );
+                    if( std::abs( float( angle ) - expectedAngle ) > .01f )
+                    {
+                        WP_LOG_ERROR( "Vehicle smoke: steering input lost its configured angle scale." );
+                        m_smokeTestPassed = false;
+                        core::IApplicationManager::instance()->setQuit( true );
+                    }
                     const auto expectedAxle =
                         QuaternionF::eulerDegrees( 0, -float( angle ), 0 ) * Vector3F::unitX();
                     const auto renderedAxle =

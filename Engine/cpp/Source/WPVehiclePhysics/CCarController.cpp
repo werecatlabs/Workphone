@@ -393,7 +393,8 @@ namespace workphone
             // clamp values
             throttleValue = Math<physics_Num>::clamp01( throttleValue );
             brakeValue = Math<physics_Num>::clamp01( brakeValue );
-            steeringValue = Math<physics_Num>::clamp( steeringChannel, -1.0, 1.0 );
+            steeringValue = Math<physics_Num>::clamp( steeringChannel, -1.0, 1.0 ) *
+                            getPlaySteeringScale();
 
             if( m_keyboardInput && inputManager->isKeyPressed( KeyCodes::KEY_UP ) )
             {

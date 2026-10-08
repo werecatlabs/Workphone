@@ -68,6 +68,34 @@ namespace workphone
     WP_CLASS_REGISTER_DERIVED( workphone, TargetedEventComponent, scene::Component );
 }  // namespace workphone
 
+BOOST_AUTO_TEST_CASE( event_listener_registrations_are_independent_between_contexts )
+{
+    auto manager = core::IApplicationManager::instance()->getStateManager();
+    auto first = manager->addStateContext();
+    auto second = manager->addStateContext();
+    auto shared = make_ptr<DefaultEventListener>();
+    auto other = make_ptr<DefaultEventListener>();
+    const auto initialReferences = shared->getReferences();
+    first->addEventListener( shared );
+    first->addEventListener( other );
+    second->addEventListener( shared );
+    first->addEventListener( shared );
+    BOOST_REQUIRE_EQUAL( first->getEventListeners().size(), 2u );
+    BOOST_CHECK( first->getEventListeners()[1] == other );
+    BOOST_CHECK_EQUAL( shared->getReferences(), initialReferences + 2 );
+    BOOST_CHECK( first->removeEventListener( shared ) );
+    BOOST_CHECK( !first->removeEventListener( shared ) );
+    BOOST_REQUIRE_EQUAL( first->getEventListeners().size(), 1u );
+    BOOST_CHECK( first->getEventListeners()[0] == other );
+    BOOST_REQUIRE_EQUAL( second->getEventListeners().size(), 1u );
+    BOOST_CHECK( second->getEventListeners()[0] == shared );
+    manager->removeStateContext( first );
+    BOOST_REQUIRE_EQUAL( second->getEventListeners().size(), 1u );
+    BOOST_CHECK_EQUAL( shared->getReferences(), initialReferences + 1 );
+    manager->removeStateContext( second );
+    BOOST_CHECK_EQUAL( shared->getReferences(), initialReferences );
+}
+
 BOOST_AUTO_TEST_CASE( event_listener_add )
 {
     try

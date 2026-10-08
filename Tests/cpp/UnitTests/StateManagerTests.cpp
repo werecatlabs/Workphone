@@ -5,6 +5,49 @@
 
 using namespace workphone;
 
+BOOST_AUTO_TEST_CASE( state_context_supports_2048_states_and_preserves_order )
+{
+    auto manager = core::IApplicationManager::instance()->getStateManager();
+    auto context = manager->addStateContext();
+    Array<SmartPtr<IState>> states;
+    for( u32 i = 0; i < 2048; ++i )
+    {
+        auto state = make_ptr<State>();
+        state->setId( i );
+        states.push_back( state );
+        context->addState( state );
+    }
+
+    context->addState( states[0] );
+    auto snapshot = context->getStates();
+    BOOST_REQUIRE_EQUAL( snapshot.size(), 2048u );
+    for( u32 i = 0; i < 2048; ++i )
+    {
+        BOOST_CHECK( snapshot[i] == states[i] );
+    }
+
+    auto overflow = make_ptr<State>();
+    const auto references = overflow->getReferences();
+    BOOST_CHECK_THROW( context->addState( overflow ), std::length_error );
+    BOOST_CHECK_EQUAL( overflow->getReferences(), references );
+    BOOST_CHECK( !overflow->getStateContext() );
+    BOOST_CHECK_EQUAL( context->getStates().size(), 2048u );
+
+    context->removeState( states[1024] );
+    context->addState( overflow );
+    auto remaining = context->getStates();
+    BOOST_REQUIRE_EQUAL( remaining.size(), 2048u );
+    BOOST_CHECK( remaining[1023] == states[1023] );
+    BOOST_CHECK( remaining[1024] == states[1025] );
+    BOOST_CHECK( remaining.back() == overflow );
+    BOOST_CHECK( snapshot[1024] == states[1024] );
+
+    states[1024]->setStateContext( nullptr );
+    manager->removeStateContext( context );
+    BOOST_CHECK( context->getStates().empty() );
+    BOOST_CHECK( !overflow->getStateContext() );
+}
+
 BOOST_AUTO_TEST_CASE( state_listener_registrations_are_independent_between_contexts )
 {
     auto manager = core::IApplicationManager::instance()->getStateManager();
