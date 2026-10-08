@@ -77,6 +77,7 @@ success.
 ./SampleVehicleAdvanced.exe --track-smoke-test --quality low
 ./SampleVehicleAdvanced.exe --collision-smoke-test --quality low
 ./SampleVehicleAdvanced.exe --audio-smoke-test --quality low
+./SampleVehicleAdvanced.exe --effects-smoke-test --quality low --no-audio
 ./SampleVehicleAdvanced.exe --capture car.bmp --view car --quality high
 ./SampleVehicleAdvanced.exe --capture track.bmp --view track --quality high
 ./SampleVehicleAdvanced.exe --capture corner.bmp --view corner --quality high
@@ -270,11 +271,38 @@ redline/skid, airborne and paused gain checks. The RelWithDebInfo build and mix
 tests passed locally. The platform check is blocked here because XAudio2 cannot
 open an output device (`0x80070490`); audible playback is unverified.
 
+Vehicle visual effects are enabled by default in the C++ sample. Grounded tyres
+emit smoke when slipping on the track and dust when moving across the runoff.
+Sharp velocity losses at speed produce small spark bursts. Sparks use a velocity
+change heuristic, rather than contact reports from the physics backend.
+`--no-effects` disables particles and skid decals.
+
+Skid marks follow the wheel contact points and normals, using a single batched
+surface mesh with feathered tread textures. They fade after 16 seconds and expire
+after 20 seconds. Grip recovery, airborne wheels, pause and reset break trails;
+reset also clears live particles and marks. These are road-surface decal strips,
+rather than decals projected onto arbitrary scene geometry.
+
+The existing Claw particle simulator and DX11 billboard renderer handle smoke,
+dust and sparks. Textures are generated in memory; there are no additional asset
+downloads. Low/medium/high quality caps each particle system at 64/192/384 live
+particles and skid strips at 256/1024/2048. Explicit emission preserves old
+particles in world space. Decal geometry uploads are limited to 30 Hz.
+
+`VehicleDecalTests` checks trail continuity, teleport rejection, invalid contacts,
+capacity, fade and reset. The native particle contracts also check explicit
+emission, world-space trajectories, pause, capacity and invalid input.
+`--effects-smoke-test` uses scripted effect telemetry while checking that real
+vehicle ground-contact rays resolve. Its five phases exercise road smoke/skids,
+airborne decay, off-road dust, pause and reset/resume. With
+`--effects-capture PATH.bmp`, it saves the road capture and `PATH.bmp.dust.bmp`.
+These fixtures check effects independently of the car's handling tune.
+
 Generated RGBA maps are uploaded in memory. Albedo is sRGB; normal/ORM channels
 are linear. ORM is split explicitly into AO, roughness and metalness slots. The
 sample includes a soft ground contact shadow, daylight and a procedural sky.
-DX11 has a single directional shadow map. Cascaded shadows, GPU bloom and
-particle effects remain follow-ups; graphics toggles alone are not
+DX11 has a single directional shadow map. Cascaded shadows and GPU bloom
+remain follow-ups; graphics toggles alone are not
 evidence that those effects render. GPU HDR/TAA/AO, dithered LOD transitions and
 true instance buffers are subsequent roadmap stages. The current tree change
 reduces near submissions per patch, while distant patches remain separate draws.

@@ -36,7 +36,10 @@ namespace workphone::advanced
     };
 
     VehicleVisualEffects::VehicleVisualEffects() = default;
-    VehicleVisualEffects::~VehicleVisualEffects() = default;
+    VehicleVisualEffects::~VehicleVisualEffects()
+    {
+        unload();
+    }
 
     bool VehicleVisualEffects::load( unsigned quality, unsigned seed )
     {
@@ -231,7 +234,8 @@ namespace workphone::advanced
                                             : render::ParticleSystemState::Paused );
         if( !frame.playing )
         {
-            for( size_t i = 0; i < 4; ++i ) fx.marks.breakTrail( i );
+            for( size_t i = 0; i < 4; ++i )
+                fx.marks.breakTrail( i );
             fx.hadVelocity = false;
             return;
         }

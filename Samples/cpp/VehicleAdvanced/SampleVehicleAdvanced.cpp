@@ -757,6 +757,8 @@ namespace workphone
             m_effectsTestEmitted=m_effects.emitted();
             m_effectsTestParticles=particleCount;
             if(!m_effectsCapture.empty()) passed=advanced::captureFrame(m_effectsCapture+".dust.bmp") && passed;
+            frame.playing = false;
+            m_effects.update( frame, dt );
         }
         else if(m_effectsTestPhase==3)
         {

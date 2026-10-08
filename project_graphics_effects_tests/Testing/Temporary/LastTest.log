@@ -1,26 +1,26 @@
-Start testing: Oct 08 23:06 GMT Daylight Time
+Start testing: Oct 08 23:19 GMT Daylight Time
 ----------------------------------------------------------
 2/2 Testing: WPGraphics.production_ParticleSimulation
 2/2 Test: WPGraphics.production_ParticleSimulation
 Command: "G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction/RelWithDebInfo/WPGraphicsParticleSimulationTests.exe"
 Directory: G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction
-"WPGraphics.production_ParticleSimulation" start time: Oct 08 23:06 GMT Daylight Time
+"WPGraphics.production_ParticleSimulation" start time: Oct 08 23:19 GMT Daylight Time
 Output:
 ----------------------------------------------------------
 PASS: deterministic stepping, trajectories, pause, drain, restart, capacity and duration
 <end of output>
-Test time =   0.13 sec
+Test time =   0.05 sec
 ----------------------------------------------------------
 Test Passed.
-"WPGraphics.production_ParticleSimulation" end time: Oct 08 23:06 GMT Daylight Time
+"WPGraphics.production_ParticleSimulation" end time: Oct 08 23:19 GMT Daylight Time
 "WPGraphics.production_ParticleSimulation" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Oct 08 23:06 GMT Daylight Time
+End testing: Oct 08 23:19 GMT Daylight Time
 
-graphics =   0.13 sec*proc
+graphics =   0.05 sec*proc
 
-headless =   0.13 sec*proc
+headless =   0.05 sec*proc
 
-production =   0.13 sec*proc
+production =   0.05 sec*proc
 
