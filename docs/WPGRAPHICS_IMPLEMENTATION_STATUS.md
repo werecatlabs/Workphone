@@ -1,6 +1,27 @@
 # WPGraphics implementation status
 
-## Current planning review — 8 October 2026
+## Verification increment — 8 October 2026
+
+Rebuilt the selected graphics, native, SQLite catalog and ResourceSystem targets on `brodex` at `22e542cca`, with the local verification changes described below. **Debug: 13 passed, 1 unavailable. RelWithDebInfo: 13 passed, 1 unavailable.** All mandatory tests executed; the unavailable test is `WorkphoneGraphics.mesh_import_assets`, whose six external Ogre/OgreNext mesh files are absent. Neither release gate is certified.
+
+The toolchain was Visual Studio Community 2026, MSVC **19.51.36260.0**, Windows SDK **10.0.26100.0**, and CMake/CTest **4.4.4**. The three GPU test executables recorded the actual DX11 device: **NVIDIA GeForce RTX 3090**, feature level **11.0**, driver **32.0.16.1692**. The DX11 target fixture reported the legacy-discard presentation path; this run does not certify flip presentation or representative frame performance.
+
+Changes since the catalog increment at `597c6e5c5` retain schema-v1 migration and add long-text UI/serialization, editor-camera behavior, visibility, winding/capture changes, directional shadow regressions, core state/container refactors, and procedural circuit/open-city racing support. This increment validates the selected WPGraphics contracts; the complete racing/editor/unit suites were not run.
+
+Completed verification work:
+
+- Added `wpgraphics-baseline` configure/build/test presets and `Tools/BuildWPGraphicsBaseline.ps1`, which builds Debug and RelWithDebInfo with required SQLite/ResourceSystem support. The runner selects installed CMake explicitly and normalizes environment-variable names only in the build child process to avoid MSBuild's duplicate `PATH`/`Path` failure.
+- Fixed the minimal graphics build's missing `imgui.lib`: WPGraphics now links the `imgui` CMake target so its dependency is built automatically.
+- Updated two stale test fixtures to match the current implementation: explicitly load/unload the native Claw light and use the renderer's current front-face winding for the PBR triangle. Existing lighting/PBR assertions remain intact.
+- Expanded `ValidateClawGraphics.ps1` to require all 14 registered tests, including catalog and ResourceSystem coverage. It writes configuration-specific JUnit and JSON evidence containing revision/local-diff identity, toolchain, adapter/driver, source/fixture and executable hashes, actual outcomes and coverage limits. GPU output includes selected-device evidence and diagnostic microbenchmark timings.
+- Restored `.github/workflows/graphics-contracts.yml` and removed `.github` from ignore rules. Its native and full baseline jobs cover Debug and RelWithDebInfo. The hosted jobs explicitly use Visual Studio 2022, matching the [Windows 2022 runner inventory](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md); local validation used Visual Studio 2026. Remote execution remains unverified.
+- Verified that missing required registrations fail preflight and `-RequireExternalAssets` fails for the unavailable mesh fixtures. Default development validation reports that gap explicitly; it does not certify a release.
+
+Local evidence is in the ignored `cmake-build-debug-vs2026-readiness` build directory: `baseline-configure.log`, `baseline-Debug-build.log`, `baseline-RelWithDebInfo-build.log`, and `claw-graphics-<configuration>-results.xml` / `claw-graphics-<configuration>-evidence.json`. Strict external-asset results are retained separately as `strict-external-assets-results.xml` / `strict-external-assets-evidence.json`. Generated mesh serialization, native deformation/particles, GPU PBR/shadows/deformation/particles, UI/text/camera, SQLite CRUD/migration and ResourceSystem compilation contracts pass. Imported animation/effects, catalog-to-GPU integration, packaged consumers, remote CI and representative performance/recovery/soak evidence remain open.
+
+The next implementation increment is canonical catalog paths/entry kinds and lifecycle policy, then UUID/source-to-ResourceID mapping and a cooked material/texture reaching DX11. Batch A's local verification deliverable is complete; external-media release coverage and remote CI confirmation remain outstanding.
+
+## Planning review before the rebuild — 8 October 2026
 
 Source reviewed at `d2e81cdb4`. The catalog repairs/migration, explicit CPU skinning and basic DX11 particles remain present. Recent source also adds long-text UI/serialization, visibility, editor-camera-during-Play and sample capture/winding improvements.
 
@@ -20,7 +41,7 @@ The production roadmap is only partially implemented. This stage supplies execut
 
 ## Implemented in this stage
 
-- Dependency-free C90 contract build for skinning and particle simulation; the previously recorded CI workflow is absent in the current checkout.
+- Dependency-free C90 contract build for skinning and particle simulation; CI definitions are restored by the current verification increment, with remote execution still unverified.
 - CPU reference skinning with four influences, up to 256 joints, weight normalization, validated affine transforms, and transactional rejection of invalid input. Supported transforms are rigid or uniformly scaled; nonuniform scale and shear are rejected.
 - Explicit ClawMesh skinning data and palette APIs that update native positions and normals, invalidate cached GPU geometry, and recompute bounds. The caller supplies the palette on the owning rendering thread.
 - Seeded, bounded CPU particle simulation at 120 Hz, with gravity, lifetime, size ranges, color interpolation, duration, pause, stop, drain, and bounded prewarm. No allocation occurs per simulation step.
@@ -32,32 +53,38 @@ The production roadmap is only partially implemented. This stage supplies execut
 - Required SQLite catalog coverage for existing bound CRUD, durable UUIDs, shared-scene deletion, failed rename rollback, detached lookups, concurrent reads and database switching.
 - Catalog schema version 1 in its own metadata table, preserving unrelated `user_version` values. Valid unversioned catalogs retain their original rows/IDs and a one-time `wp_asset_catalog_backup_v0` row copy inside the same database. This is a migration snapshot, not an independent database-file backup.
 - Schema guards reject invalid/oversized/NUL-containing values and enforce UUID/file-path uniqueness while allowing shared scene paths. Conflicting legacy data, reserved-name collisions and unsupported schema versions fail closed; the migration transaction rolls back schema and data changes.
-- Catalog migration regressions for Unicode/apostrophe paths, a misleading nonunique UUID index, retained backup/reopen behavior, duplicate identities/paths, invalid legacy keys, embedded NULs, early/late migration failure and newer-version preservation. The dedicated catalog preset requires the backend; restore its CI job in this checkout.
+- Catalog migration regressions for Unicode/apostrophe paths, a misleading nonunique UUID index, retained backup/reopen behavior, duplicate identities/paths, invalid legacy keys, embedded NULs, early/late migration failure and newer-version preservation. The dedicated catalog preset and restored full-baseline CI definition require the backend.
 - Windows build repair: the media-path definition is scoped to its native-runtime consumer so paths with spaces do not break Boost.Context's MASM compilation.
 
 The GPU fixture calls deformation and particle drawing directly. It does not yet establish imported/controller-driven animation, automatic scene scheduling, multi-camera correctness or catalog-to-cook-to-render behavior. Particle scene preparation is implemented as the intended update owner; once-per-frame behavior remains to be validated across all callers.
 
 ## Run validation
 
-From the repository root in PowerShell:
+From the repository root with PowerShell 7, build and validate both configurations:
 
 ```powershell
-cmake --preset asset-catalog
-cmake --build --preset asset-catalog
-ctest --preset asset-catalog
-
-cmake --preset claw-contracts
-cmake --build --preset claw-contracts
-ctest --preset claw-contracts
-
-cmake --preset claw-windows
-cmake --build --preset claw-windows
-Tools/ValidateClawGraphics.ps1 -BuildDirectory project_claw_windows
+pwsh -File Tools/BuildWPGraphicsBaseline.ps1
 ```
 
-Use `-RequireExternalAssets` when validating a release environment with the media fixtures installed. The isolated contract build was built and tested; the fresh full-engine preset was configured. Full-engine compilation and GPU validation were performed in the existing `project_x64` build tree.
+Use `-Configuration Debug` or `-Configuration RelWithDebInfo` for one configuration, `-BuildDirectory` for a different build tree, and `-CMakeExecutable` / `-Generator` for an explicit toolchain. The default configure preset uses Visual Studio 2026. Revalidate an existing baseline with `pwsh -File Tools/ValidateClawGraphics.ps1 -BuildDirectory project_wpgraphics_baseline -Configuration Debug`. Reports include catalog and ResourceSystem contracts as mandatory coverage.
 
-Historical catalog result: **1 CTest target passed**, exercising the CRUD and migration contracts above. Historical isolated native reference result: **2 passed**. Historical full graphics result: **11 passed, 1 skipped**; the skipped external mesh import test required missing `Bin/Media/Ogre/models` assets. These are not results of the current 8 October review. Remote CI remains unverified and its definitions are absent from this checkout.
+The narrower catalog/native presets remain available:
+
+```powershell
+$baselineCMake = Join-Path $env:ProgramFiles 'CMake/bin/cmake.exe'
+$baselineCTest = Join-Path $env:ProgramFiles 'CMake/bin/ctest.exe'
+& $baselineCMake --preset asset-catalog
+& $baselineCMake --build --preset asset-catalog
+& $baselineCTest --preset asset-catalog
+
+& $baselineCMake --preset claw-contracts
+& $baselineCMake --build --preset claw-contracts
+& $baselineCTest --preset claw-contracts
+```
+
+Use `-RequireExternalAssets` when validating a release environment with the media fixtures installed; missing media blocks that gate. The current baseline was configured/built through `BuildWPGraphicsBaseline.ps1` with `-BuildDirectory cmake-build-debug-vs2026-readiness`, then validated in both configurations. This is a selected-target local rebuild, not a clean-machine packaging check.
+
+Historical catalog result: **1 CTest target passed**, exercising the CRUD and migration contracts above. Historical isolated native reference result: **2 passed**. Historical full graphics result: **11 passed, 1 skipped**. The current rebuilt baseline supersedes those results for the selected targets with **13 passed, 1 unavailable per configuration**. Remote CI remains unverified; its definitions are restored locally.
 
 ## Remaining release work
 

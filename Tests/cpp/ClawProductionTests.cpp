@@ -20,6 +20,7 @@
 #include <workphone_graphics_camera.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
+#include "DX11TestEvidence.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -75,6 +76,10 @@ namespace
     {
         auto node = make_ptr<TestLightNode>();
         auto light = make_ptr<ClawLight>();
+        light->load( nullptr );
+        if( !check( light->isLoaded() && light->getNativeLight(),
+                    "light direction fixture must load its native light" ) )
+            return false;
         light->setOwner( node );
         scene::Light component;
         component.setLight( light );
@@ -101,6 +106,9 @@ namespace
         wp_light_detach_from_node( light->getNativeLight(), nativeNode );
         wp_scenenode_destroy( nativeNode );
         light->setOwner( nullptr );
+        light->unload( nullptr );
+        ok &= check( !light->isLoaded() && !light->getNativeLight(),
+                     "light unload must release the native light" );
         return ok;
     }
 
@@ -315,6 +323,10 @@ int main()
         ok &= check(renderer.isLoaded(), "required DX11 backend must initialize; this test cannot silently skip");
         if( renderer.isLoaded() )
         {
+            auto *native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+            ok &= check( recordDX11TestDevice( static_cast<ID3D11Device *>(
+                             wp_renderer_dx11_get_device( native ) ) ),
+                         "DX11 device evidence must be available" );
             ok &= testRenderedFeatures(renderer);
             ok &= testMeshShadows(renderer);
         }
