@@ -65,7 +65,8 @@ explicit status message.
 The sky images use top-to-bottom UV orientation. Material cubemap radiance is
 independent of diffuse ambient brightness, and normal variance filtering reduces
 sparkling specular highlights on the carbon weave. Capture runs also validate the
-cubemap actor, native texture and every vehicle material binding before reporting
+cubemap actor, native texture, every vehicle material binding and area-weighted
+triangle winding against each generated mesh section's normals before reporting
 success.
 
 ## Checks and captures

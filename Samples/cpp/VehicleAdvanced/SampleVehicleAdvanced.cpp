@@ -55,6 +55,7 @@ namespace workphone
             {
                 for( const auto &section : resource->getMesh()->getSubMeshes() )
                 {
+                    double alignment = 0;
                     auto vertices = section->getVertexBuffer();
                     auto declaration = vertices->getVertexDeclaration();
                     auto position = declaration->findElementBySemantic( VertexElementSemantic::VES_POSITION );
@@ -86,12 +87,16 @@ namespace workphone
                         const auto outward = readVector( a, normal->getOffset() ) +
                                              readVector( b, normal->getOffset() ) +
                                              readVector( c, normal->getOffset() );
-                        if( face.dotProduct( outward ) < -1e-5f * face.length() * outward.length() )
-                        {
-                            WP_LOG_ERROR( "VehicleAdvanced: reversed triangle in " + resource->getFilePath() );
-                            return false;
-                        }
+                        // Smooth normals at narrow/concave car seams can oppose an individual
+                        // face. Area-weighted section alignment detects a reversed upload without
+                        // requiring every authored smooth normal to equal its triangle normal.
+                        alignment += face.dotProduct( outward );
                         ++checked;
+                    }
+                    if( alignment <= 0 )
+                    {
+                        WP_LOG_ERROR( "VehicleAdvanced: reversed winding in " + resource->getFilePath() );
+                        return false;
                     }
                 }
             }
@@ -556,7 +561,7 @@ namespace workphone
                 applicationManager->setQuit( true );
             }
         }
-        if( m_smokeTest || m_trackSmokeTest )
+        if( m_smokeTest || m_trackSmokeTest || !m_capturePath.empty() )
             m_raceScene->setControls( throttle, brake, steering );
         else
             m_raceScene->usePlayerControls();
