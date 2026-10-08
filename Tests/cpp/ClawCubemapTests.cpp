@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include "DX11TestEvidence.hpp"
+#include "ClawTextureMipContracts.hpp"
 #include <workphone_graphics_renderer_dx11.h>
 #include <array>
 #include <cmath>
@@ -62,6 +63,7 @@ int main()
     int result = 0;
     try
     {
+        claw_texture_mip_contracts::run();
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
         require( recordDX11TestDevice( device ), "DX11 device evidence must be available" );
         auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );

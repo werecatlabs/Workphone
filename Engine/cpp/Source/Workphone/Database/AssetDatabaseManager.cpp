@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
@@ -10,12 +11,22 @@
 #include <Workphone/Interface/Scene/IComponent.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/Core/FileInfo.hpp>
+#include <atomic>
+#include <filesystem>
+#include <set>
 
 namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, AssetDatabaseManager, DatabaseManager );
     namespace
     {
+        std::atomic<u64> nextCatalogInstance{ 1 };
+#ifdef _WIN32
+        const String pathPolicy = "windows-ascii-fold";
+#else
+        const String pathPolicy = "exact";
+#endif
+
         bool validValue( const String &value, size_t limit )
         {
             return !value.empty() && value.size() <= limit && value.find( '\0' ) == String::npos;
@@ -78,29 +89,288 @@ namespace workphone
             }
             return path.empty() ? resource->getFilePath() : path;
         }
-        SmartPtr<IBuildDirector> readEntry( SmartPtr<IDatabaseQuery> query )
+        AssetDatabaseManager::EntryKind resourceKind( SmartPtr<ISharedObject> object )
         {
-            if( !query || query->eof() )
-                return nullptr;
-            const auto uuid = query->getFieldValue( "uuid" );
-            const auto path = query->getFieldValue( "path" );
-            query->nextRow();
-            if( !query->eof() || !validValue( uuid, 256 ) || !validValue( path, 1024 ) )
+            return object && object->isDerived<IResource>() && !object->isDerived<scene::IGameActor>() &&
+                           !object->isDerived<scene::IComponent>()
+                       ? AssetDatabaseManager::EntryKind::File
+                       : AssetDatabaseManager::EntryKind::Scene;
+        }
+        bool resolveResourcePath( AssetDatabaseManager &manager, SmartPtr<ISharedObject> object,
+                                  AssetCatalogPath &path )
+        {
+            if( resourceKind( object ) == AssetDatabaseManager::EntryKind::Scene )
             {
-                WP_LOG_ERROR( "Ambiguous or invalid asset catalog entry." );
-                return nullptr;
+                path.path = "scene";
+                path.key.clear();
+                return true;
             }
-            auto director = make_ptr<scene::ResourceDirector>();
-            director->setResourcePath( path );
-            director->setResourceUUID( uuid );
-            return director;
+            String error;
+            if( canonicalAssetCatalogPath( manager.getProjectRoot(), resourcePath( object ), path,
+                                           error ) )
+                return true;
+            WP_LOG_ERROR( "Invalid catalog source path: " + error );
+            return false;
+        }
+        String kindName( AssetDatabaseManager::EntryKind kind )
+        {
+            return kind == AssetDatabaseManager::EntryKind::File ? "file" : "scene";
+        }
+
+        // Version 2 stores explicit file/scene kinds and a canonical file lookup key.
+        // Keep this separate from ResourceSystem's compilation metadata and user_version.
+        bool migrateIdentity( AssetDatabaseManager &manager, const String &root, bool backup )
+        {
+            auto rows = queryCatalog( manager, "SELECT uuid,path FROM resources ORDER BY id" );
+            if( !rows )
+                return false;
+            struct Identity
+            {
+                String uuid;
+                AssetCatalogPath path;
+                String kind;
+            };
+            Array<Identity> identities;
+            std::set<std::string> keys;
+            while( !rows->eof() )
+            {
+                Identity identity;
+                identity.uuid = rows->getFieldValue( "uuid" );
+                const auto oldPath = rows->getFieldValue( "path" );
+                identity.kind = oldPath == "scene" ? "scene" : "file";
+                if( identity.kind == "scene" )
+                    identity.path.path = "scene";
+                else
+                {
+                    String error;
+                    if( !canonicalAssetCatalogPath( root, oldPath, identity.path, error ) ||
+                        !keys.insert( identity.path.key.c_str() ).second )
+                    {
+                        WP_LOG_ERROR( "Catalog path migration needs explicit repair: " + oldPath + " " +
+                                      error );
+                        return false;
+                    }
+                }
+                identities.push_back( identity );
+                rows->nextRow();
+            }
+            if( backup &&
+                !queryCatalog( manager,
+                               "CREATE TABLE wp_asset_catalog_backup_v1 AS SELECT * FROM resources" ) )
+                return false;
+            for( const auto statement :
+                 { "DROP TRIGGER IF EXISTS resources_file_path_insert",
+                   "DROP TRIGGER IF EXISTS resources_file_path_update",
+                   "DROP TRIGGER IF EXISTS resources_values_insert",
+                   "DROP TRIGGER IF EXISTS resources_values_update",
+                   "ALTER TABLE resources ADD COLUMN kind TEXT NOT NULL DEFAULT 'file'",
+                   "ALTER TABLE resources ADD COLUMN path_key TEXT NOT NULL DEFAULT ''",
+                   "ALTER TABLE wp_asset_catalog_schema ADD COLUMN path_policy TEXT NOT NULL DEFAULT "
+                   "'legacy'" } )
+                if( !queryCatalog( manager, statement ) )
+                    return false;
+            for( const auto &identity : identities )
+                if( !queryCatalog(
+                        manager, "UPDATE resources SET path=?,kind=?,path_key=? WHERE uuid=?",
+                        { identity.path.path, identity.kind, identity.path.key, identity.uuid } ) )
+                    return false;
+            return queryCatalog( manager,
+                                 "UPDATE wp_asset_catalog_schema SET version=2,path_policy=? WHERE id=1",
+                                 { pathPolicy } ) != nullptr;
+        }
+
+        String invalidIdentityFields();
+        bool validateIdentity( AssetDatabaseManager &manager, const String &root )
+        {
+            auto policy = queryCatalog( manager,
+                                        "SELECT path_policy FROM wp_asset_catalog_schema WHERE id=1 AND "
+                                        "typeof(path_policy)='text' AND path_policy=?",
+                                        { pathPolicy } );
+            if( !policy || policy->eof() || policy->getFieldValue( "path_policy" ) != pathPolicy )
+                return false;
+            auto invalid = queryCatalog( manager, "SELECT id FROM resources AS NEW WHERE " +
+                                                      invalidIdentityFields() + " LIMIT 1" );
+            if( !invalid || !invalid->eof() )
+                return false;
+            auto rows = queryCatalog( manager, "SELECT uuid,path,type,kind,path_key FROM resources" );
+            if( !rows )
+                return false;
+            std::set<std::string> ids, keys;
+            while( !rows->eof() )
+            {
+                const auto uuid = rows->getFieldValue( "uuid" );
+                const auto path = rows->getFieldValue( "path" );
+                const auto kind = rows->getFieldValue( "kind" );
+                const auto key = rows->getFieldValue( "path_key" );
+                if( !validValue( uuid, 256 ) || !validValue( rows->getFieldValue( "type" ), 256 ) ||
+                    !ids.insert( uuid.c_str() ).second )
+                    return false;
+                if( kind == "file" )
+                {
+                    AssetCatalogPath canonical;
+                    String error;
+                    if( !canonicalAssetCatalogPath( root, path, canonical, error ) ||
+                        canonical.key != key || !keys.insert( key.c_str() ).second )
+                        return false;
+                }
+                else if( kind != "scene" || path != "scene" || !key.empty() )
+                    return false;
+                rows->nextRow();
+            }
+            return true;
+        }
+
+        String invalidIdentityFields()
+        {
+            auto invalidValue = []( const String &field, const String &limit ) {
+                return "typeof(" + field + ")<>'text' OR " + field + "='' OR length(CAST(" + field +
+                       " AS BLOB))>" + limit + " OR hex(" + field + ")<>hex(substr(" + field +
+                       ",1,length(" + field + ")))";
+            };
+            String invalid = invalidValue( "NEW.uuid", "256" ) + " OR " +
+                             invalidValue( "NEW.path", "1024" ) + " OR " +
+                             invalidValue( "NEW.type", "256" ) +
+                             " OR typeof(NEW.kind)<>'text' OR NEW.kind NOT IN ('file','scene')"
+                             " OR typeof(NEW.path_key)<>'text'"
+                             " OR (NEW.kind='scene' AND (NEW.path<>'scene' OR NEW.path_key<>''))"
+                             " OR (NEW.kind='file' AND (" +
+                             invalidValue( "NEW.path_key", "1024" ) +
+                             " OR NEW.path LIKE '/%' OR NEW.path LIKE '%//%'"
+                             " OR NEW.path<>replace(NEW.path,'\\','/')"
+                             " OR NEW.path IN ('.','..') OR NEW.path LIKE './%' OR NEW.path LIKE '../%'"
+                             " OR NEW.path LIKE '%/./%' OR NEW.path LIKE '%/../%'"
+                             " OR NEW.path LIKE '%/.' OR NEW.path LIKE '%/..' OR NEW.path LIKE '%/'";
+#ifdef _WIN32
+            invalid += " OR NEW.path LIKE '%:%' OR NEW.path_key<>lower(NEW.path)";
+#else
+            invalid += " OR NEW.path_key<>NEW.path";
+#endif
+            invalid += "))";
+            return invalid;
+        }
+        bool guardIdentity( AssetDatabaseManager &manager )
+        {
+            const auto invalid = invalidIdentityFields();
+            // These names belong to this catalog. Rebuild them transactionally so
+            // older or incorrectly non-unique guards cannot silently survive.
+            for( const auto statement : { "DROP INDEX IF EXISTS idx_resources_uuid_unique",
+                                          "DROP INDEX IF EXISTS idx_resources_kind_path",
+                                          "DROP TRIGGER IF EXISTS resources_file_path_insert",
+                                          "DROP TRIGGER IF EXISTS resources_file_path_update",
+                                          "DROP TRIGGER IF EXISTS resources_values_insert",
+                                          "DROP TRIGGER IF EXISTS resources_values_update" } )
+                if( !queryCatalog( manager, statement ) )
+                    return false;
+            return queryCatalog( manager,
+                                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_uuid_unique ON "
+                                 "resources(uuid)" ) &&
+                   queryCatalog( manager,
+                                 "CREATE INDEX IF NOT EXISTS idx_resources_kind_path ON "
+                                 "resources(kind,path_key)" ) &&
+                   queryCatalog( manager,
+                                 "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE INSERT "
+                                 "ON resources "
+                                 "WHEN NEW.kind='file' AND EXISTS(SELECT 1 FROM resources WHERE "
+                                 "kind='file' AND path_key=NEW.path_key) "
+                                 "BEGIN SELECT RAISE(ABORT,'Conflicting canonical asset path'); END" ) &&
+                   queryCatalog( manager,
+                                 "CREATE TRIGGER IF NOT EXISTS resources_file_path_update BEFORE UPDATE "
+                                 "OF path_key,kind ON resources "
+                                 "WHEN NEW.kind='file' AND EXISTS(SELECT 1 FROM resources WHERE "
+                                 "kind='file' AND path_key=NEW.path_key AND id<>NEW.id) "
+                                 "BEGIN SELECT RAISE(ABORT,'Conflicting canonical asset path'); END" ) &&
+                   queryCatalog( manager,
+                                 "CREATE TRIGGER IF NOT EXISTS resources_values_insert BEFORE INSERT ON "
+                                 "resources WHEN " +
+                                     invalid +
+                                     " BEGIN SELECT RAISE(ABORT,'Invalid catalog identity'); END" ) &&
+                   queryCatalog( manager,
+                                 "CREATE TRIGGER IF NOT EXISTS resources_values_update BEFORE UPDATE OF "
+                                 "uuid,path,type,kind,path_key ON resources WHEN " +
+                                     invalid +
+                                     " BEGIN SELECT RAISE(ABORT,'Invalid catalog identity'); END" );
         }
     }  // namespace
     AssetDatabaseManager::AssetDatabaseManager()
     {
         m_resourcesTableName = "resources";
+        m_catalogInstance = nextCatalogInstance.fetch_add( 1 );
     }
     AssetDatabaseManager::~AssetDatabaseManager() = default;
+    void AssetDatabaseManager::invalidateCatalog()
+    {
+        ++m_catalogGeneration;
+        clearResourceEntryCache();
+    }
+    bool AssetDatabaseManager::setProjectRoot( const String &root )
+    {
+        ScopedLock lock( this );
+        if( auto database = getDatabase(); database && database->isLoaded() )
+            return false;
+        String canonical, error;
+        if( !canonicalAssetCatalogRoot( root, canonical, error ) )
+        {
+            WP_LOG_ERROR( "Invalid catalog project root: " + error );
+            return false;
+        }
+        m_projectRootOverride = canonical;
+        m_projectRoot = canonical;
+        invalidateCatalog();
+        return true;
+    }
+    String AssetDatabaseManager::getProjectRoot()
+    {
+        ScopedLock lock( this );
+        return m_projectRoot;
+    }
+    u64 AssetDatabaseManager::getCatalogGeneration()
+    {
+        ScopedLock lock( this );
+        return m_catalogGeneration;
+    }
+    bool AssetDatabaseManager::captureProjectRoot()
+    {
+        String root = m_projectRootOverride;
+        if( root.empty() )
+        {
+            auto application = core::IApplicationManager::instancePtr();
+            root = application ? application->getProjectPath() : String();
+        }
+        if( root.empty() )
+        {
+            std::error_code error;
+            const auto databasePath = getDatabasePath();
+            if( databasePath.empty() )
+                return false;
+            const auto absolute =
+                std::filesystem::absolute( std::filesystem::u8path( databasePath.c_str() ), error );
+            if( error )
+                return false;
+            root = absolute.parent_path().generic_u8string().c_str();
+        }
+        String error;
+        if( !canonicalAssetCatalogRoot( root, m_projectRoot, error ) )
+        {
+            WP_LOG_ERROR( "Cannot capture catalog project root: " + error );
+            return false;
+        }
+        return true;
+    }
+    void AssetDatabaseManager::open()
+    {
+        ScopedLock lock( this );
+        loadFromFile( getDatabasePath() );
+        if( m_catalogReady )
+            for( auto database : m_attached )
+                attach( database );
+    }
+    void AssetDatabaseManager::close()
+    {
+        ScopedLock lock( this );
+        m_catalogReady = false;
+        invalidateCatalog();
+        DatabaseManager::close();
+    }
     void AssetDatabaseManager::load( SmartPtr<ISharedObject> data )
     {
         ScopedLock lock( this );
@@ -109,6 +379,8 @@ namespace workphone
     void AssetDatabaseManager::unload( SmartPtr<ISharedObject> data )
     {
         ScopedLock lock( this );
+        m_catalogReady = false;
+        invalidateCatalog();
         if( auto db = getDatabase() )
             db->close();
         setDatabase( nullptr );
@@ -118,7 +390,10 @@ namespace workphone
     void AssetDatabaseManager::loadFromFile( const String &path )
     {
         ScopedLock lock( this );
-        clearResourceEntryCache();
+        // Reopen even the same relative database name: the application's project
+        // may have changed since the previous connection was established.
+        close();
+        m_projectRoot.clear();
         DatabaseManager::loadFromFile( path );
         create();
     }
@@ -130,12 +405,23 @@ namespace workphone
     void AssetDatabaseManager::create()
     {
         ScopedLock lock( this );
+        if( m_catalogReady && getDatabase() && getDatabase()->isLoaded() )
+            return;
         bool ready = false;
         {
             CatalogTransaction transaction( *this );
-            if( !transaction.active() )
-                return;
             auto initialize = [&]() {
+                if( !transaction.active() || !captureProjectRoot() )
+                    return false;
+                auto foreignGuard =
+                    queryCatalog( *this,
+                                  "SELECT name FROM sqlite_master WHERE name COLLATE NOCASE IN "
+                                  "('idx_resources_uuid_unique','idx_resources_kind_path',"
+                                  "'resources_file_path_insert','resources_file_path_update',"
+                                  "'resources_values_insert','resources_values_update') "
+                                  "AND tbl_name<>'resources' COLLATE NOCASE LIMIT 1" );
+                if( !foreignGuard || !foreignGuard->eof() )
+                    return false;
                 auto resourceTable = queryCatalog( *this,
                                                    "SELECT name FROM sqlite_master WHERE type='table' "
                                                    "AND name='resources' COLLATE NOCASE" );
@@ -146,19 +432,28 @@ namespace workphone
                     return false;
                 const bool hadResources = !resourceTable->eof();
                 const bool hadSchema = !schemaTable->eof();
+                String schemaVersion;
                 if( hadSchema )
                 {
+                    auto invalidMetadata = queryCatalog(
+                        *this,
+                        "SELECT id FROM wp_asset_catalog_schema WHERE typeof(id)<>'integer' OR "
+                        "id<>1 OR typeof(version)<>'integer' OR version NOT IN (1,2) LIMIT 1" );
+                    if( !invalidMetadata || !invalidMetadata->eof() )
+                        return false;
                     auto version =
                         queryCatalog( *this, "SELECT id,version FROM wp_asset_catalog_schema" );
                     if( !hadResources || !version || version->eof() ||
                         version->getFieldValue( "id" ) != "1" ||
-                        version->getFieldValue( "version" ) != "1" )
+                        ( version->getFieldValue( "version" ) != "1" &&
+                          version->getFieldValue( "version" ) != "2" ) )
                     {
                         WP_LOG_ERROR(
                             "Unsupported or invalid asset catalog schema version; catalog left "
                             "unchanged." );
                         return false;
                     }
+                    schemaVersion = version->getFieldValue( "version" );
                     version->nextRow();
                     if( !version->eof() )
                         return false;
@@ -191,6 +486,32 @@ namespace workphone
                         "Invalid legacy catalog identity, path or type; explicit repair required." );
                     return false;
                 }
+                if( schemaVersion == "2" )
+                    return validateIdentity( *this, m_projectRoot ) && guardIdentity( *this ) &&
+                           transaction.commit();
+                if( hadResources )
+                {
+                    // SQLite 3.7.9 reloads triggers after ALTER using a binary
+                    // tbl_name comparison. A custom trigger whose ON spelling
+                    // differs from the actual table name would be silently skipped.
+                    // Our own guards are replaced below; other triggers need repair
+                    // before migration rather than bypassing their constraints.
+                    auto unsafeTriggers = queryCatalog(
+                        *this,
+                        "SELECT name FROM sqlite_master WHERE type='trigger' AND "
+                        "tbl_name='resources' COLLATE NOCASE AND tbl_name<>? COLLATE BINARY "
+                        "AND name COLLATE NOCASE NOT IN ('resources_file_path_insert',"
+                        "'resources_file_path_update','resources_values_insert',"
+                        "'resources_values_update') LIMIT 1",
+                        { resourceTable->getFieldValue( "name" ) } );
+                    if( !unsafeTriggers || !unsafeTriggers->eof() )
+                    {
+                        WP_LOG_ERROR(
+                            "Catalog migration requires custom trigger table spelling "
+                            "to match the resources table exactly." );
+                        return false;
+                    }
+                }
                 const char *checks[] = {
                     "SELECT uuid FROM resources GROUP BY uuid HAVING count(*)>1 LIMIT 1",
                     "SELECT path FROM resources WHERE path<>'scene' GROUP BY path HAVING count(*)>1 "
@@ -208,50 +529,6 @@ namespace workphone
                     !queryCatalog(
                         *this, "CREATE TABLE wp_asset_catalog_backup_v0 AS SELECT * FROM resources" ) )
                     return false;
-                const char *resetGuards[] = { "DROP INDEX IF EXISTS idx_resources_uuid_unique",
-                                              "DROP TRIGGER IF EXISTS resources_file_path_insert",
-                                              "DROP TRIGGER IF EXISTS resources_file_path_update",
-                                              "DROP TRIGGER IF EXISTS resources_values_insert",
-                                              "DROP TRIGGER IF EXISTS resources_values_update" };
-                if( !hadSchema )
-                {
-                    for( const auto reset : resetGuards )
-                        if( !queryCatalog( *this, reset ) )
-                            return false;
-                }
-                const auto invalidNewFields = invalidFields( "NEW." );
-                const bool guarded =
-                    queryCatalog( *this,
-                                  "CREATE UNIQUE INDEX IF NOT EXISTS idx_resources_uuid_unique ON "
-                                  "resources(uuid)" ) &&
-                    queryCatalog( *this,
-                                  "CREATE TRIGGER IF NOT EXISTS resources_file_path_insert BEFORE "
-                                  "INSERT ON resources "
-                                  "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM "
-                                  "resources WHERE path=NEW.path) "
-                                  "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END" ) &&
-                    queryCatalog(
-                        *this,
-                        "CREATE TRIGGER IF NOT EXISTS resources_file_path_update BEFORE UPDATE OF path "
-                        "ON resources "
-                        "WHEN NEW.path<>'scene' AND NEW.path<>'' AND EXISTS(SELECT 1 FROM resources "
-                        "WHERE path=NEW.path AND id<>NEW.id) "
-                        "BEGIN SELECT RAISE(ABORT,'Conflicting asset path'); END" ) &&
-                    queryCatalog( *this,
-                                  "CREATE TRIGGER IF NOT EXISTS resources_values_insert BEFORE INSERT "
-                                  "ON resources WHEN " +
-                                      invalidNewFields +
-                                      " BEGIN SELECT RAISE(ABORT,'Invalid catalog value'); END" ) &&
-                    queryCatalog(
-                        *this,
-                        "CREATE TRIGGER IF NOT EXISTS resources_values_update BEFORE UPDATE OF "
-                        "uuid,path,type ON resources WHEN " +
-                            invalidNewFields +
-                            " BEGIN SELECT RAISE(ABORT,'Invalid catalog value'); END" ) &&
-                    queryCatalog( *this,
-                                  "CREATE INDEX IF NOT EXISTS idx_resources_path ON resources(path)" );
-                if( !guarded )
-                    return false;
                 if( !hadSchema )
                 {
                     // Do not use user_version: other database services may own it.
@@ -263,10 +540,14 @@ namespace workphone
                                        "INSERT INTO wp_asset_catalog_schema(id,version) VALUES(1,1)" ) )
                         return false;
                 }
-                return transaction.commit();
+                return migrateIdentity( *this, m_projectRoot, hadResources ) &&
+                       validateIdentity( *this, m_projectRoot ) && guardIdentity( *this ) &&
+                       transaction.commit();
             };
             ready = initialize();
         }  // Roll back schema work before closing an unusable catalog.
+        m_catalogReady = ready;
+        invalidateCatalog();
         if( !ready )
         {
             WP_LOG_ERROR( "Catalog schema initialization failed; catalog changes rolled back." );
@@ -281,10 +562,14 @@ namespace workphone
     void AssetDatabaseManager::clearDatabase()
     {
         ScopedLock lock( this );
+        if( !m_catalogReady )
+            return;
         CatalogTransaction transaction( *this );
-        if( transaction.active() && queryCatalog( *this, "DELETE FROM resources" ) &&
+        auto rows =
+            transaction.active() ? queryCatalog( *this, "SELECT 1 FROM resources LIMIT 1" ) : nullptr;
+        if( rows && !rows->eof() && queryCatalog( *this, "DELETE FROM resources" ) &&
             transaction.commit() )
-            clearResourceEntryCache();
+            invalidateCatalog();
     }
     void AssetDatabaseManager::clearResourceEntryCache()
     {
@@ -295,25 +580,26 @@ namespace workphone
     bool AssetDatabaseManager::hasResourceEntry( SmartPtr<ISharedObject> object )
     {
         ScopedLock lock( this );
-        if( !object || !object->getHandle() )
+        if( !m_catalogReady || !object || !object->getHandle() )
             return false;
         if( hasResourceById( object->getHandle()->getUUIDAsString() ) )
             return true;
-        if( !object->isDerived<IResource>() )
+        if( resourceKind( object ) != EntryKind::File )
             return false;
         return getResourceEntryFromPath( resourcePath( object ) ) != nullptr;
     }
     void AssetDatabaseManager::addResourceEntry( SmartPtr<ISharedObject> object )
     {
         ScopedLock lock( this );
-        if( !object || !object->getHandle() )
+        if( !m_catalogReady || !object || !object->getHandle() )
             return;
         auto uuid = object->getHandle()->getUUIDAsString();
         if( uuid.empty() )
             uuid = StringUtil::getUUID();
-        const auto path = resourcePath( object );
+        AssetCatalogPath path;
+        const auto kind = kindName( resourceKind( object ) );
         auto types = TypeManager::instance();
-        if( !types || !validValue( uuid, 256 ) || !validValue( path, 1024 ) )
+        if( !types || !validValue( uuid, 256 ) || !resolveResourcePath( *this, object, path ) )
             return;
         auto type = types->getName( object->getTypeInfo() );
         if( object->isDerived<scene::IGameActor>() )
@@ -327,15 +613,17 @@ namespace workphone
         CatalogTransaction transaction( *this );
         if( !transaction.active() )
             return;
-        auto existing = queryCatalog(
-            *this, "SELECT uuid,path,type FROM resources WHERE uuid=? OR (path=? AND path<>'scene')",
-            { uuid, path } );
+        auto existing = queryCatalog( *this,
+                                      "SELECT uuid,path_key,kind,type FROM resources WHERE uuid=? OR "
+                                      "(kind='file' AND ?='file' AND path_key=?)",
+                                      { uuid, kind, path.key } );
         if( !existing )
             return;
         if( !existing->eof() )
         {
             const bool identical = existing->getFieldValue( "uuid" ) == uuid &&
-                                   existing->getFieldValue( "path" ) == path &&
+                                   existing->getFieldValue( "path_key" ) == path.key &&
+                                   existing->getFieldValue( "kind" ) == kind &&
                                    existing->getFieldValue( "type" ) == type;
             existing->nextRow();
             if( identical && existing->eof() )
@@ -346,79 +634,151 @@ namespace workphone
             }
             return;
         }
-        if( queryCatalog( *this, "INSERT INTO resources(uuid,path,type) VALUES(?,?,?)",
-                          { uuid, path, type } ) &&
+        if( queryCatalog( *this, "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,?,?)",
+                          { uuid, path.path, type, kind, path.key } ) &&
             transaction.commit() )
         {
             object->getHandle()->setUUID( uuid );
-            clearResourceEntryCache();
+            invalidateCatalog();
         }
     }
     void AssetDatabaseManager::updateResourceEntry( SmartPtr<ISharedObject> object )
     {
         ScopedLock lock( this );
-        if( !object || !object->getHandle() )
+        if( !m_catalogReady || !object || !object->getHandle() )
             return;
         const auto uuid = object->getHandle()->getUUIDAsString();
-        const auto path = resourcePath( object );
-        if( !validValue( uuid, 256 ) || !validValue( path, 1024 ) )
+        AssetCatalogPath path;
+        const auto kind = kindName( resourceKind( object ) );
+        if( !validValue( uuid, 256 ) || !resolveResourcePath( *this, object, path ) )
             return;
         CatalogTransaction transaction( *this );
-        if( transaction.active() &&
-            queryCatalog( *this, "UPDATE resources SET path=? WHERE uuid=?", { path, uuid } ) &&
+        auto existing =
+            transaction.active()
+                ? queryCatalog( *this, "SELECT path_key,kind FROM resources WHERE uuid=?", { uuid } )
+                : nullptr;
+        if( !existing || existing->eof() || existing->getFieldValue( "kind" ) != kind )
+            return;
+        if( existing->getFieldValue( "path_key" ) == path.key )
+            return;
+        if( queryCatalog( *this, "UPDATE resources SET path=?,path_key=? WHERE uuid=?",
+                          { path.path, path.key, uuid } ) &&
             transaction.commit() )
-            clearResourceEntryCache();
+            invalidateCatalog();
     }
     void AssetDatabaseManager::removeResourceEntry( SmartPtr<ISharedObject> object )
     {
         ScopedLock lock( this );
-        if( !object || !object->getHandle() )
+        if( !m_catalogReady || !object || !object->getHandle() )
             return;
         const auto uuid = object->getHandle()->getUUIDAsString();
         // UUID is authoritative: never broaden deletion to a shared or stale path.
         if( !validValue( uuid, 256 ) )
             return;
         CatalogTransaction transaction( *this );
-        if( transaction.active() &&
+        if( transaction.active() && hasResourceById( uuid ) &&
             queryCatalog( *this, "DELETE FROM resources WHERE uuid=?", { uuid } ) &&
             transaction.commit() )
-            clearResourceEntryCache();
+            invalidateCatalog();
     }
     void AssetDatabaseManager::removeResourceEntryFromPath( const String &path )
     {
         ScopedLock lock( this );
-        if( path == "scene" || !validValue( path, 1024 ) )
+        AssetCatalogPath canonical;
+        String error;
+        if( !m_catalogReady || !canonicalAssetCatalogPath( m_projectRoot, path, canonical, error ) )
             return;
         CatalogTransaction transaction( *this );
-        if( transaction.active() &&
-            queryCatalog( *this, "DELETE FROM resources WHERE path=?", { path } ) &&
+        if( transaction.active() && getResourceEntryFromPath( path ) &&
+            queryCatalog( *this, "DELETE FROM resources WHERE kind='file' AND path_key=?",
+                          { canonical.key } ) &&
             transaction.commit() )
-            clearResourceEntryCache();
+            invalidateCatalog();
     }
     bool AssetDatabaseManager::hasResourceById( const String &uuid )
     {
         ScopedLock lock( this );
-        if( !validValue( uuid, 256 ) )
+        if( !m_catalogReady || !validValue( uuid, 256 ) )
             return false;
+        // Membership and UUID-scoped deletion must remain available even when
+        // the source has become inaccessible or no longer resolves safely.
         auto query = queryCatalog( *this, "SELECT 1 FROM resources WHERE uuid=? LIMIT 1", { uuid } );
         return query && !query->eof();
     }
     SmartPtr<IBuildDirector> AssetDatabaseManager::getResourceEntry( const String &uuid )
     {
         ScopedLock lock( this );
-        if( !validValue( uuid, 256 ) )
+        EntrySnapshot entry;
+        if( !tryGetEntry( uuid, entry ) )
             return nullptr;
-        return readEntry(
-            queryCatalog( *this, "SELECT uuid,path FROM resources WHERE uuid=? LIMIT 2", { uuid } ) );
+        auto director = make_ptr<scene::ResourceDirector>();
+        director->setResourcePath( entry.path );
+        director->setResourceUUID( entry.uuid );
+        return director;
     }
     SmartPtr<IBuildDirector> AssetDatabaseManager::getResourceEntryFromPath( const String &path )
     {
         ScopedLock lock( this );
-        if( !validValue( path, 1024 ) )
+        AssetCatalogPath canonical;
+        String error;
+        if( !m_catalogReady || !canonicalAssetCatalogPath( m_projectRoot, path, canonical, error ) )
             return nullptr;
         // A miss never creates an identity. Detached results cannot mutate the catalog.
-        return readEntry(
-            queryCatalog( *this, "SELECT uuid,path FROM resources WHERE path=? LIMIT 2", { path } ) );
+        auto rows =
+            queryCatalog( *this, "SELECT uuid FROM resources WHERE kind='file' AND path_key=? LIMIT 2",
+                          { canonical.key } );
+        if( !rows || rows->eof() )
+            return nullptr;
+        const auto uuid = rows->getFieldValue( "uuid" );
+        rows->nextRow();
+        return rows->eof() ? getResourceEntry( uuid ) : nullptr;
+    }
+    bool AssetDatabaseManager::tryGetEntry( const String &uuid, EntrySnapshot &output )
+    {
+        ScopedLock lock( this );
+        output = EntrySnapshot();
+        if( !m_catalogReady || !validValue( uuid, 256 ) )
+            return false;
+        auto row = queryCatalog(
+            *this, "SELECT uuid,path,type,kind,path_key FROM resources WHERE uuid=? LIMIT 2", { uuid } );
+        if( !row || row->eof() )
+            return false;
+        EntrySnapshot entry;
+        entry.uuid = row->getFieldValue( "uuid" );
+        entry.path = row->getFieldValue( "path" );
+        entry.type = row->getFieldValue( "type" );
+        const auto kind = row->getFieldValue( "kind" );
+        const auto key = row->getFieldValue( "path_key" );
+        if( !validValue( entry.type, 256 ) )
+            return false;
+        if( kind == "file" )
+        {
+            AssetCatalogPath canonical;
+            String error;
+            if( !canonicalAssetCatalogPath( m_projectRoot, entry.path, canonical, error ) ||
+                canonical.key != key )
+                return false;
+        }
+        else if( kind == "scene" && entry.path == "scene" && key.empty() )
+            entry.kind = EntryKind::Scene;
+        else
+            return false;
+        row->nextRow();
+        if( !row->eof() )
+            return false;
+        entry.generation = m_catalogGeneration;
+        entry.catalogInstance = m_catalogInstance;
+        output = entry;
+        return true;
+    }
+    bool AssetDatabaseManager::isEntryCurrent( const EntrySnapshot &snapshot )
+    {
+        ScopedLock lock( this );
+        if( snapshot.catalogInstance != m_catalogInstance || snapshot.generation != m_catalogGeneration )
+            return false;
+        EntrySnapshot current;
+        return tryGetEntry( snapshot.uuid, current ) && current.path == snapshot.path &&
+               current.type == snapshot.type && current.kind == snapshot.kind;
     }
     String AssetDatabaseManager::getResourcesTableName() const
     {

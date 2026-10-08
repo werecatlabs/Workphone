@@ -49,11 +49,16 @@ $fixturePaths = @(
 $testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/GraphicsProduction') -Filter '*Tests.c') +
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/c') -Filter 'WorkphoneGraphics*Tests.c') +
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter 'Claw*Tests.cpp') +
+    @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter '*Contracts.hpp') +
     @(Get-Item -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp/AssetCatalogTests.cpp'), (Join-Path $repositoryRoot 'Tests/cpp/ResourceSystem/ResourceSystemSmoke.cpp'))
 $verificationPaths = @(
     'Tests/cpp/DX11TestEvidence.hpp', 'Tools/ValidateClawGraphics.ps1',
     'Tools/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
-    'Engine/cpp/Project/WPGraphics/CMakeLists.txt', '.github/workflows/graphics-contracts.yml'
+    'Engine/cpp/Project/WPGraphics/CMakeLists.txt', '.github/workflows/graphics-contracts.yml',
+    'Engine/cpp/Include/Workphone/Database/AssetCatalogPath.hpp',
+    'Engine/cpp/Source/Workphone/Database/AssetCatalogPath.cpp',
+    'Engine/cpp/Include/Workphone/Database/CatalogResourceAdapter.hpp',
+    'Engine/cpp/Source/Workphone/Database/CatalogResourceAdapter.cpp'
 )
 $testSources += @($verificationPaths | ForEach-Object { Get-Item -LiteralPath (Join-Path $repositoryRoot $_) })
 $hashes = @($testSources | ForEach-Object { [ordered]@{ path = [System.IO.Path]::GetRelativePath($repositoryRoot, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
