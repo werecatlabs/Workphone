@@ -50,6 +50,7 @@ filtering; disable traction control only after testing throttle modulation.
   slip feedback, forward/reverse ABS and tyre saturation continuity checks.
 - Four focused native vehicle cases passed all 48 assertions, including assist
   defaults, property restoration and reset.
+- The native rotated-inertia regression check passed.
 - Both seed 7 / low and seed 42 / high graphics passed all five driving phases:
   settle, accelerate, full-input turn, brake/reset and settle again. The existing
   suspension thresholds were retained; the acceleration check now requires
