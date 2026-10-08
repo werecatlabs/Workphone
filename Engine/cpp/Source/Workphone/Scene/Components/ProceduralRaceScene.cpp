@@ -3,6 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
+#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -81,6 +82,10 @@ namespace workphone::scene
             ground->addComponent<CollisionBox>()->setExtents(Vector3F(1100, 1, 1100));
             ground->addComponent<Rigidbody>();
             app->getGameManager()->getCurrentScene()->addActor(ground);
+            if(m_openCity) m_cityLayout = procedural::OpenCityLayout::generate(m_seed, m_cityBlocks, m_cityRoute);
+            m_assets.openCity = m_openCity;
+            m_assets.cityBlocks = m_cityBlocks;
+            m_assets.cityRoute = m_cityRoute;
             race::buildScene(m_assets, actor, m_seed, m_quality);
             // Render the chassis and attached meshes from the same sampled parent pose.
             actor->setSmoothMotion(true, true);
@@ -270,7 +275,10 @@ namespace workphone::scene
         auto p = getActor()->getPosition();
         auto offset = p - getCircuitPosition(nearestCircuitSample(p));
         offset.y = 0;
-        const auto grip = offset.length() < 6.85f ? 1.f : offset.length() < 11.f ? .55f : .35f;
+        const auto roadDistance = m_assets.openCity
+            ? m_cityLayout.roadDistance(p.x, p.z)
+            : offset.length();
+        const auto grip = roadDistance < 6.85f ? 1.f : roadDistance < 11.f ? .55f : .35f;
         if(grip == m_surfaceGrip)
             return;
         m_surfaceGrip = grip;
@@ -385,6 +393,9 @@ namespace workphone::scene
         auto p = Component::getProperties();
         p->setProperty("Seed", m_seed);
         p->setProperty("Appearance Quality", getQuality());
+        p->setProperty("Open City", m_openCity);
+        p->setProperty("City Blocks", m_cityBlocks);
+        p->setProperty("City Route", m_cityRoute);
         p->setProperty("Generation Error", m_generationError);
         p->setButtonPressed("Regenerate", false);
         return p;
@@ -399,6 +410,11 @@ namespace workphone::scene
         s32 quality = getQuality();
         p->getPropertyValue("Appearance Quality", quality);
         setQuality(quality);
+        p->getPropertyValue("Open City", m_openCity);
+        p->getPropertyValue("City Blocks", m_cityBlocks);
+        p->getPropertyValue("City Route", m_cityRoute);
+        m_cityBlocks = std::clamp(m_cityBlocks / 2 * 2, 6, 10);
+        m_cityRoute = std::clamp(m_cityRoute, 0, 2);
         if(p->isButtonPressed("Regenerate"))
             regenerate();
     }

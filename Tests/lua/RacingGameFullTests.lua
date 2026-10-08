@@ -276,3 +276,6 @@ os.rename, os.remove = realRename, realRemove
 os.remove(store)
 os.remove(store..".tmp"); os.remove(store..".bak")
 print("RacingGameFull session, menu, controls, restart, results and persistence: PASS")
+
+-- Reusable native/UI fixture for derived games.
+return {app=app, race=race, body=body, keys=keys, owner=owner, manager=manager, array=array}

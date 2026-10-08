@@ -38,7 +38,7 @@ function RacingGameFull:drawText() end
 
 function RacingGameFull:bindGeneratedScene()
     self.generatedSeed, self.generatedQuality = self.seed, self.quality
-    self.generatedRoot:setName("RacingGameFull.Generated")
+    self.generatedRoot:setName(self.generatedRootName or "RacingGameFull.Generated")
     self.circuit:setProceduralScene(self.raceScene)
     self.progress:bind(self.vehicleActor, self.circuit)
     self.playerControl:bind(self.car)
@@ -75,7 +75,7 @@ function RacingGameFull:initializeGame()
         for i = 0, owner:getNumChildren() - 1 do
             local child = owner:getChildByIndex(i)
             local name = child:getName()
-            if name == "RacingGameFull.Generated" or name == "Racing.HUD" or name == "__StartMenuGenerated" then
+            if name == (self.generatedRootName or "RacingGameFull.Generated") or name == "Racing.HUD" or name == "__StartMenuGenerated" then
                 restored[#restored + 1] = child
             end
         end
@@ -84,7 +84,7 @@ function RacingGameFull:initializeGame()
     local project = self.application:getProjectPath()
     if project == "" then project = "." end
     self.playerData = PlayerData(self.component)
-    self.records = self.playerData:open(project .. "/RacingGameFull.records")
+    self.records = self.playerData:open(project .. "/" .. (self.recordsFile or "RacingGameFull.records"))
     if not self.configured then
         self.seed, self.quality, self.totalLaps = self.records.settings.seed, self.records.settings.quality, self.records.settings.laps
     end
@@ -205,7 +205,7 @@ function RacingGameFull:startRace()
     self.playerCamera:selectViewport(false)
     self.progress:RestartRace()
     self.playerControl:enable(false)
-    if self.mode == "timeTrial" then self.timeTrial:apply(self.manager)
+    if self.mode == "timeTrial" or self.mode == "freeDrive" then self.timeTrial:apply(self.manager)
     else self.manager:InitializeRace("race", self.totalLaps) end
     self.raceView:RestartRace()
     self.raceSeed, self.lastNow = self.generatedSeed, self.timer:now()

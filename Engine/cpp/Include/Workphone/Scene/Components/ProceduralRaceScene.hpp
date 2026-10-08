@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
+#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <array>
 #include <atomic>
 #include <vector>
@@ -21,6 +22,8 @@ namespace workphone::scene::race
     };
     struct SceneAssets
     {
+        bool openCity = false;
+        int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
         Circuit circuit;
         std::array<SmartPtr<IGameActor>, 4> wheels;
@@ -73,53 +76,23 @@ namespace workphone::scene
         void updateShadow();
         void setView( const Vector3F &position, f32 fovRadians, f32 nearClip, f32 lodBias );
 
-        u32 getSeed() const
-        {
-            return m_seed;
-        }
-        void setSeed( u32 seed )
-        {
-            m_seed = seed;
-        }
-        s32 getQuality() const
-        {
-            return static_cast<s32>( m_quality );
-        }
+        u32 getSeed() const;
+        void setSeed( u32 seed );
+        s32 getQuality() const;
         void setQuality( s32 quality );
-        bool isGenerated() const
-        {
-            return !m_assets.circuit.samples.empty();
-        }
-        bool isPhysicsConfigured() const
-        {
-            return m_physicsConfigured;
-        }
-        String getGenerationError() const
-        {
-            return m_generationError;
-        }
-        const race::SceneAssets &getAssets() const
-        {
-            return m_assets;
-        }
-        u32 getCircuitSampleCount() const
-        {
-            return static_cast<u32>( m_assets.circuit.samples.size() );
-        }
-        f32 getCircuitLength() const
-        {
-            return m_assets.circuit.length;
-        }
+        bool isGenerated() const;
+        bool isPhysicsConfigured() const;
+        String getGenerationError() const;
+        const race::SceneAssets &getAssets() const;
+        u32 getCircuitSampleCount() const;
+        f32 getCircuitLength() const;
         u32 nearestCircuitSample( const Vector3F &position ) const;
         Vector3F getCircuitPosition( u32 index ) const;
         Vector3F getCircuitRight( u32 index ) const;
         f32 getWheelbase() const;
         f32 getMaxSteeringAngle() const;
         SmartPtr<IGameActor> getWheelActor( u32 index ) const;
-        SmartPtr<IGameActor> getBodyActor() const
-        {
-            return m_assets.body;
-        }
+        SmartPtr<IGameActor> getBodyActor() const;
         SmartPtr<CarController> getCarController() const;
         bool validateReflection() const;
         WP_CLASS_REGISTER_DECL;
@@ -130,6 +103,9 @@ namespace workphone::scene
         race::SceneAssets m_assets;
         u32 m_seed = 7;
         procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;
+        procedural::OpenCityLayout m_cityLayout{};
+        bool m_openCity = false;
+        s32 m_cityBlocks = 8, m_cityRoute = 0;
         String m_generationError;
         bool m_physicsConfigured = false;
         f32 m_surfaceGrip = 1;

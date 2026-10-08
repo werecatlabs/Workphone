@@ -108,6 +108,7 @@ function SampleVehicleAdvanced:generate()
         assert(self.raceScene, "ProceduralRaceScene is unavailable; rebuild Workphone and WPLua")
         self.raceScene:setSeed(self.seed)
         self.raceScene:setQuality(self.quality)
+        if self.configureRaceScene then self:configureRaceScene(self.raceScene) end
         assert(self.raceScene:regenerate(), self.raceScene:getGenerationError())
         self.car = self.raceScene:getCarController()
         self.rigidbody = self.vehicleActor:getComponent("Rigidbody")
