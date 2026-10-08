@@ -13,12 +13,14 @@ namespace workphone::scene::race
         Vector3F position, right;
         float distance = 0;
     };
+
     struct WPCore_API Circuit
     {
         std::vector<CircuitSample> samples;
         float length = 0;
         size_t nearest( const Vector3F &position ) const;
     };
+
     struct SceneAssets
     {
         procedural::GeneratedVehicle vehicle;
@@ -36,13 +38,14 @@ namespace workphone::scene::race
         String resourcePrefix;
         u64 triangles = 0, textureBytes = 0;
     };
+
     WPCore_API Circuit generateCircuit( u32 seed );
     WPCore_API void validateCircuit();
     WPCore_API bool validateReflection( const SceneAssets &assets );
     WPCore_API void buildScene( SceneAssets &assets, SmartPtr<IGameActor> vehicle, u32 seed,
-                               procedural::VehicleAppearanceQuality quality );
+                                procedural::VehicleAppearanceQuality quality );
     WPCore_API void configurePhysics( const SceneAssets &assets, SmartPtr<IGameActor> vehicle );
-}
+}  // namespace workphone::scene::race
 
 namespace workphone::scene
 {
@@ -55,10 +58,13 @@ namespace workphone::scene
     public:
         ProceduralRaceScene();
         ~ProceduralRaceScene() override;
+
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
+
         void update() override;
         void postUpdate() override;
+
         SmartPtr<Properties> getProperties() const override;
         void setProperties( SmartPtr<Properties> properties ) override;
 
@@ -73,23 +79,23 @@ namespace workphone::scene
         void updateShadow();
         void setView( const Vector3F &position, f32 fovRadians, f32 nearClip, f32 lodBias );
 
-        u32 getSeed() const { return m_seed; }
-        void setSeed( u32 seed ) { m_seed = seed; }
-        s32 getQuality() const { return static_cast<s32>( m_quality ); }
+        u32 getSeed() const;
+        void setSeed( u32 seed );
+        s32 getQuality() const;
         void setQuality( s32 quality );
-        bool isGenerated() const { return !m_assets.circuit.samples.empty(); }
-        bool isPhysicsConfigured() const { return m_physicsConfigured; }
-        String getGenerationError() const { return m_generationError; }
-        const race::SceneAssets &getAssets() const { return m_assets; }
-        u32 getCircuitSampleCount() const { return static_cast<u32>( m_assets.circuit.samples.size() ); }
-        f32 getCircuitLength() const { return m_assets.circuit.length; }
+        bool isGenerated() const;
+        bool isPhysicsConfigured() const;
+        String getGenerationError() const;
+        const race::SceneAssets &getAssets() const;
+        u32 getCircuitSampleCount() const;
+        f32 getCircuitLength() const;
         u32 nearestCircuitSample( const Vector3F &position ) const;
         Vector3F getCircuitPosition( u32 index ) const;
         Vector3F getCircuitRight( u32 index ) const;
         f32 getWheelbase() const;
         f32 getMaxSteeringAngle() const;
         SmartPtr<IGameActor> getWheelActor( u32 index ) const;
-        SmartPtr<IGameActor> getBodyActor() const { return m_assets.body; }
+        SmartPtr<IGameActor> getBodyActor() const;
         SmartPtr<CarController> getCarController() const;
         bool validateReflection() const;
         WP_CLASS_REGISTER_DECL;
@@ -103,6 +109,6 @@ namespace workphone::scene
         String m_generationError;
         bool m_physicsConfigured = false;
         f32 m_surfaceGrip = 1;
-        std::atomic<bool> m_resetRequested{false};
+        std::atomic<bool> m_resetRequested{ false };
     };
-}
+}  // namespace workphone::scene
