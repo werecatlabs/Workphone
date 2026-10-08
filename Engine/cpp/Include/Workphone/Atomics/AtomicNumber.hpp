@@ -110,6 +110,11 @@ namespace workphone
         bool compareExchange( T &expected, T desired,
                               memory_semantics order = memory_semantics::full_fence ) noexcept;
 
+        bool exchange( T value, memory_semantics order = memory_semantics::full_fence ) noexcept
+        {
+            return m_value.exchange( value, order );
+        } 
+
     private:
         /// The value
         Atomic<T> m_value;
