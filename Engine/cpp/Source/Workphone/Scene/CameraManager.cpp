@@ -78,6 +78,14 @@ namespace workphone::scene
                 break;
                 case State::Play:
                 {
+                    // The editor camera lives outside the game scene. Continue
+                    // processing its component transitions while it is selected.
+                    if( applicationManager->isEditorCamera() )
+                    {
+                        if( auto editorCamera = getEditorCameraPtr() )
+                            editorCamera->update();
+                    }
+
                     auto sceneManager = applicationManager->getGameManagerPtr();
                     if( !sceneManager )
                         break;

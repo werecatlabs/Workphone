@@ -17,6 +17,10 @@
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>
 #include <Workphone/Scene/Components/UI/Text.hpp>
 #include <Workphone/Core/Properties.hpp>
+#include <Workphone/Scene/CameraManager.hpp>
+#include <Workphone/Scene/GameActor.hpp>
+#include <Workphone/Interface/System/IFSMManager.hpp>
+#include <Workphone/Scene/GameManager.hpp>
 #include <cstdio>
 #include <memory>
 
@@ -35,12 +39,14 @@ namespace
             core::IApplicationManager::setInstance( application );
             application->setFactoryManager( make_ptr<FactoryManager>() );
             application->setGraphicsSystem( make_ptr<render::ClawHammerSystem>() );
+            application->setGameManager( make_ptr<scene::GameManager>() );
             Thread::setCurrentTask( TaskId::Render );
         }
 
         ~Fixture()
         {
             application->setRenderUI( nullptr );
+            application->setGameManager( nullptr );
             application->setGraphicsSystem( nullptr );
             application->setFactoryManager( nullptr );
             core::IApplicationManager::setInstance( nullptr );
@@ -96,6 +102,7 @@ namespace
         if( !textElement )
             return check( false, "text element must be created" );
         auto component = make_ptr<scene::Text>();
+        component->setEnabled( true );
         component->setTextObject( textElement );
         component->setElement( element );
         const ColourF colour( 0.8f, 0.9f, 1.0f, 1.0f );
@@ -103,7 +110,19 @@ namespace
         component->updateElementState();
         bool ok = check( element->getColour() == colour,
                          "text state updates must preserve the public colour setting" );
+        const String telemetry( 2048, 'T' );
+        component->setText( telemetry );
+        ok &= check( component->getText() == telemetry && textElement->getText() == telemetry,
+                     "HUD text longer than 128 characters must reach the render element intact" );
         auto properties = component->getProperties();
+        String serializedText;
+        properties->getPropertyValue( scene::Text::textPropertyStr, serializedText );
+        ok &= check( serializedText == telemetry,
+                     "long text must serialize without truncation" );
+        component->setText( "short" );
+        component->setProperties( properties );
+        ok &= check( component->getText() == telemetry && textElement->getText() == telemetry,
+                     "serialized long text must restore to the component and renderer" );
         ColourF serializedColour;
         properties->getPropertyValue( scene::Text::colourPropertyStr, serializedColour );
         ok &= check( serializedColour == colour,
@@ -113,10 +132,58 @@ namespace
         ok &= check( textElement->getHorizontalAlignment() == static_cast<u8>( HorizontalAlignment::CENTER ) &&
                      textElement->getVerticalAlignment() == static_cast<u8>( VerticalAlignment::CENTER ),
                      "alignment setters must immediately update the render element" );
+        class VisibilityActor : public scene::GameActor
+        {
+        public:
+            bool isEnabledInScene() const override { return enabledInScene; }
+            bool isVisible() const override { return true; }
+            bool enabledInScene = true;
+        };
+        auto actor = make_ptr<VisibilityActor>();
+        component->setActor( actor );
+        const auto enabledFlags = scene::IGameActor::ActorFlagEnabled |
+                                  scene::IGameActor::ActorFlagEnabledInScene;
+        actor->enabledInScene = false;
+        component->updateFlags( scene::IGameActor::ActorFlagEnabled, enabledFlags );
+        ok &= check( !element->isVisible() && !element->isEnabled(),
+                     "hiding a UI parent must hide and disable its text" );
+        actor->enabledInScene = true;
+        component->updateFlags( enabledFlags, scene::IGameActor::ActorFlagEnabled );
+        ok &= check( element->isVisible() && element->isEnabled(),
+                     "showing a UI parent must restore its text" );
+        component->setActor( nullptr );
         component->setTextObject( nullptr );
         component->setElement( nullptr );
         component = nullptr;
         manager.clear();
+        return ok;
+    }
+
+    bool testEditorCameraDuringPlay( Fixture &fixture )
+    {
+        class CountingActor : public scene::GameActor
+        {
+        public:
+            void update() override { ++updates; }
+            u32 updates = 0;
+        };
+        auto actor = make_ptr<CountingActor>();
+        scene::CameraManager manager;
+        manager.load( nullptr );
+        manager.setEditorCamera( actor );
+        manager.setState( scene::ICameraManager::State::Play );
+        Thread::setCurrentTask( TaskId::Application );
+        fixture.application->setEditorCamera( true );
+        manager.update();
+        bool ok = check( actor->updates == 1,
+                         "the selected editor camera must process transitions during Play" );
+        fixture.application->setEditorCamera( false );
+        manager.update();
+        ok &= check( actor->updates == 1,
+                     "an unselected editor camera must not consume game input" );
+        manager.unload( nullptr );
+        actor = nullptr;
+        Thread::setCurrentTask( TaskId::Render );
         return ok;
     }
 
@@ -253,6 +320,7 @@ int main()
     Fixture fixture;
     bool ok = testRemoveEachElement();
     ok &= testSceneTextAppearance();
+    ok &= testEditorCameraDuringPlay( fixture );
     ok &= testChildRemoval();
     ok &= testBulkRemoval();
     ok &= testTreeCleanup( Cleanup::Clear );

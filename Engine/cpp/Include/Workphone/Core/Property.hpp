@@ -315,7 +315,7 @@ namespace workphone
         FixedString<128> m_name;
 
         /** The value of the property as a string. */
-        FixedString<256> m_value;
+        String m_value;
 
         /** The attributes associated with this property. */
         Array<Pair<FixedString<128>, FixedString<256>>> m_attributes;

@@ -137,6 +137,13 @@ namespace workphone::scene
         {
             m_element->addObjectListener( m_elementListener );
             m_element->setOwner( this );
+            // Scene layout is calculated asynchronously. Until its first pass,
+            // do not let the widget's default unit size cover the whole viewport.
+            if( auto actor = getActorPtr() )
+            {
+                if( actor->getComponent<LayoutTransform>() )
+                    m_element->setSize( Vector2F( 0.0f, 0.0f ) );
+            }
         }
     }
 
@@ -335,8 +342,8 @@ namespace workphone::scene
             case State::Edit:
             case State::Play:
             {
-                if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagEnabled ) !=
-                    BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagEnabled ) )
+                if( ( flags ^ oldFlags ) &
+                    ( IGameActor::ActorFlagEnabled | IGameActor::ActorFlagEnabledInScene ) )
                 {
                     auto enabled = isEnabled() && actor->isEnabledInScene();
                     if( enabled )

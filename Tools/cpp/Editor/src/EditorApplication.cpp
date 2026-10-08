@@ -831,6 +831,16 @@ namespace workphone::editor
             break;
             case TaskId::Primary:
             {
+                // Scripts can request a return to edit mode through the shared
+                // application interface. Complete the same snapshot restoration
+                // used by the toolbar before accepting another Play request.
+                if( !applicationManager->isPlaying() && editorManager &&
+                    editorManager->getPlayModeSceneData() )
+                {
+                    auto job = workphone::make_ptr<LeavePlaymodeJob>();
+                    job->execute();
+                }
+
                 auto jobQueue = applicationManager->getJobQueue();
                 if( jobQueue )
                 {
@@ -853,6 +863,21 @@ namespace workphone::editor
                 if( jobQueue )
                 {
                     jobQueue->postUpdate();
+                }
+
+                if( editorManager )
+                {
+                    if( auto ui = editorManager->getUI() )
+                    {
+                        if( auto toggle = ui->getPlaymodeToggle() )
+                        {
+                            toggle->setValue( applicationManager->isPlaying() );
+                        }
+                        if( auto toggle = ui->getEditorCameraToggle() )
+                        {
+                            toggle->setValue( applicationManager->isEditorCamera() );
+                        }
+                    }
                 }
 
                 if( applicationManager->getQuit() )

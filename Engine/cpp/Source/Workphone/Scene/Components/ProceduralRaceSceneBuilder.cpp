@@ -144,12 +144,10 @@ namespace workphone::scene::race
                 manager = make_ptr<MeshManager>();
                 app->setMeshManager( manager );
             }
-            // WPGraphics' DX11 rasterizer declares clockwise triangles front-facing.
-            auto renderIndices = g.indices;
-            for( size_t i = 0; i < renderIndices.size(); i += 3 )
-                std::swap( renderIndices[i + 1], renderIndices[i + 2] );
+            // Preserve outward winding. DX11's material rasterizer uses counterclockwise
+            // front faces; reversing these indices also reverses its two-sided lighting normal.
             auto generated =
-                MeshUtil::createMesh( g.positions, g.normals, g.tangents, g.uv, renderIndices );
+                MeshUtil::createMesh( g.positions, g.normals, g.tangents, g.uv, g.indices );
             generated->updateAABB( true );
             auto path = assets.resourcePrefix + "/mesh/" + StringUtil::toString( assets.meshes.size() ) +
                         ".meshbin";

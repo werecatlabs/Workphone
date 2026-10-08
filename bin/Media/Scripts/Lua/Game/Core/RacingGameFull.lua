@@ -58,6 +58,7 @@ function RacingGameFull:generate()
     self.editPreview = not self.application:isPlaying()
     local ok, failure = pcall(self.initializeGame, self)
     if not ok then self:shutdown(); self.gameStartFailed = true; error(failure) end
+    if self.editPreview then self.menu:hide() end
     return true
 end
 
@@ -67,6 +68,19 @@ function RacingGameFull:initializeGame()
     self.gameManager = assert(self.application:getGameManager())
     self.timer, self.input = self.application:getTimer(), self.application:getInputDeviceManager()
     local owner = assert(self:getActor())
+    -- Editor snapshot restoration recreates actors without the Lua references
+    -- that owned them. Remove only this game's generated roots before rebuilding.
+    if not self.started then
+        local restored = {}
+        for i = 0, owner:getNumChildren() - 1 do
+            local child = owner:getChildByIndex(i)
+            local name = child:getName()
+            if name == "RacingGameFull.Generated" or name == "Racing.HUD" or name == "__StartMenuGenerated" then
+                restored[#restored + 1] = child
+            end
+        end
+        for _, child in ipairs(restored) do self.gameManager:destroyActor(child, true) end
+    end
     local project = self.application:getProjectPath()
     if project == "" then project = "." end
     self.playerData = PlayerData(self.component)
@@ -119,6 +133,7 @@ function RacingGameFull:unpauseSimulation()
 end
 
 function RacingGameFull:showMainMenu()
+    if not self.started and self.application:isPlaying() then self.playerCamera:selectViewport(true) end
     if self.started and self.application:isPlaying() then self:pauseSimulation() end
     self:showMenu("main", "WORKPHONE RACING", "Procedural circuits. Your car. Your best lap.", {
         Start = item("Circuit challenge", function() self.mode = "race"; self:showSetup() end),
@@ -187,6 +202,7 @@ function RacingGameFull:startRace()
         self:bindGeneratedScene()
     end
     SampleVehicleAdvanced.reset(self)
+    self.playerCamera:selectViewport(false)
     self.progress:RestartRace()
     self.playerControl:enable(false)
     if self.mode == "timeTrial" then self.timeTrial:apply(self.manager)
@@ -341,7 +357,7 @@ function RacingGameFull:update()
             end
             if now >= self.nextHudUpdate then
                 self.nextHudUpdate = now + 0.1
-                local speed = self.rigidbody:getLinearVelocity():length()
+                local speed = RacingSupport.length(self.rigidbody:getLinearVelocity())
                 self.statistics:updateSession(self.manager.session, progress, speed)
                 self.ranks:refresh()
                 local vehicle = self.car:getVehicleController()
@@ -363,7 +379,9 @@ function RacingGameFull:handleResumeClicked() if self.menu and self.menu.visible
 function RacingGameFull:handleStartClicked() if self.menu and self.menu.visible then self.menu.view:handleStartClicked() end end
 function RacingGameFull:handleWorkshopClicked() if self.menu and self.menu.visible then self.menu.view:handleWorkshopClicked() end end
 function RacingGameFull:handleSettingsClicked() if self.menu and self.menu.visible then self.menu.view:handleSettingsClicked() end end
-function RacingGameFull:handleExitClicked() if self.menu and self.menu.visible then self.menu.view:handleExitClicked() end end
+function RacingGameFull:handleExitClicked()
+    if self.menu and self.menu.visible then self.menu.view:handleExitClicked() end
+end
 
 function RacingGameFull:getProperties(parameters)
     local p = parameters:at(0)

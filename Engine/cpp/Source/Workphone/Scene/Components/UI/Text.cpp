@@ -149,20 +149,15 @@ namespace workphone::scene
             auto applicationManager = core::IApplicationManager::instance();
             WP_ASSERT( applicationManager );
 
-            if( BitUtil::getFlagValue( flags, IGameActor::ActorFlagEnabled ) !=
-                BitUtil::getFlagValue( oldFlags, IGameActor::ActorFlagEnabled ) )
+            if( ( flags ^ oldFlags ) &
+                ( IGameActor::ActorFlagEnabled | IGameActor::ActorFlagEnabledInScene ) )
             {
-                auto visible = isEnabled() && actor->isEnabledInScene();
-
                 if( !m_textObject )
                 {
                     createUI();
                 }
 
-                if( m_textObject )
-                {
-                    m_textObject->setVisible( visible );
-                }
+                updateVisibility();
 
                 if( auto text = getTextObject() )
                 {

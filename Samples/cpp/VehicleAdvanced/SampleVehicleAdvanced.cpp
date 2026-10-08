@@ -48,6 +48,57 @@ namespace workphone
         constexpr real_Num cameraDistance = static_cast<real_Num>( 8.0 );
         constexpr real_Num cameraHeight = static_cast<real_Num>( 3.0 );
 
+        bool checkSceneWinding( const advanced::SceneAssets &assets )
+        {
+            size_t checked = 0;
+            for( const auto &resource : assets.meshes )
+            {
+                for( const auto &section : resource->getMesh()->getSubMeshes() )
+                {
+                    auto vertices = section->getVertexBuffer();
+                    auto declaration = vertices->getVertexDeclaration();
+                    auto position = declaration->findElementBySemantic( VertexElementSemantic::VES_POSITION );
+                    auto normal = declaration->findElementBySemantic( VertexElementSemantic::VES_NORMAL );
+                    auto indices = section->getIndexBuffer();
+                    if( !position || !normal || !indices || indices->getNumIndices() % 3 != 0 )
+                        return false;
+                    auto readVector = [&]( u32 index, u32 offset ) {
+                        const auto data = reinterpret_cast<const f32 *>(
+                            static_cast<const u8 *>( vertices->getVertexData() ) +
+                            size_t( index ) * declaration->getSize() + offset );
+                        return Vector3F( data[0], data[1], data[2] );
+                    };
+                    auto readIndex = [&]( u32 index ) -> u32 {
+                        return indices->getIndexType() == IIndexBuffer::Type::IT_16BIT
+                                   ? static_cast<const u16 *>( indices->getIndexData() )[index]
+                                   : static_cast<const u32 *>( indices->getIndexData() )[index];
+                    };
+                    for( u32 i = 0; i < indices->getNumIndices(); i += 3 )
+                    {
+                        const auto a = readIndex( i ), b = readIndex( i + 1 ), c = readIndex( i + 2 );
+                        if( a >= vertices->getNumVertices() || b >= vertices->getNumVertices() ||
+                            c >= vertices->getNumVertices() )
+                            return false;
+                        const auto face = ( readVector( b, position->getOffset() ) -
+                                            readVector( a, position->getOffset() ) )
+                                              .crossProduct( readVector( c, position->getOffset() ) -
+                                                             readVector( a, position->getOffset() ) );
+                        const auto outward = readVector( a, normal->getOffset() ) +
+                                             readVector( b, normal->getOffset() ) +
+                                             readVector( c, normal->getOffset() );
+                        if( face.dotProduct( outward ) < -1e-5f * face.length() * outward.length() )
+                        {
+                            WP_LOG_ERROR( "VehicleAdvanced: reversed triangle in " + resource->getFilePath() );
+                            return false;
+                        }
+                        ++checked;
+                    }
+                }
+            }
+            WP_LOG( "VehicleAdvanced outward winding validated: triangles=" + StringUtil::toString( checked ) );
+            return checked > 0;
+        }
+
         Vector3<real_Num> getVehicleSpawnPosition()
         {
             return Vector3<real_Num>::unitY() * vehicleSpawnHeight;
@@ -357,7 +408,8 @@ namespace workphone
                 const bool reflectionValid = advanced::validateReflection( m_assets );
                 if( !reflectionValid )
                     WP_LOG_ERROR("VehicleAdvanced: cubemap actor, texture or vehicle material binding is invalid.");
-                m_capturePassed = advanced::captureFrame( m_capturePath ) && treeLODValid && reflectionValid;
+                const bool windingValid = checkSceneWinding( m_assets );
+                m_capturePassed = advanced::captureFrame( m_capturePath ) && treeLODValid && reflectionValid && windingValid;
                 if( !treeLODValid )
                     WP_LOG_ERROR( "Tree LOD: expected exactly one visible level per patch." );
                 WP_LOG( m_capturePassed ? "VehicleAdvanced capture saved."

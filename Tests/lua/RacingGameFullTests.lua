@@ -15,7 +15,6 @@ IEvent = {ACTIVATE_HASH = 1, CLICK_HASH = 2}
 State = {Edit=2, Play=3}
 KeyCode.Return, KeyCode.C = 100, 101
 local vec = getmetatable(Vector3F(0, 0, 0))
-function vec:length() return math.sqrt(self:dotProduct(self)) end
 function vec.__add(a, b) return Vector3F(a.x+b.x, a.y+b.y, a.z+b.z) end
 function vec.__mul(a, b) return Vector3F(a.x*b, a.y*b, a.z*b) end
 include("RacingGameFull.lua")
@@ -93,6 +92,8 @@ local function enhance(actor)
     actor.enabled = true
     function actor:getName() return self.name end
     function actor:getChildren() return array(self.children) end
+    function actor:getNumChildren() return #self.children end
+    function actor:getChildByIndex(index) return self.children[index + 1] end
     function actor:setEnabled(value, cascade)
         assert(type(cascade) == "boolean", "native actor setEnabled requires cascade")
         self.enabled = value
@@ -131,6 +132,8 @@ end
 function manager:edit() app.edited = true end
 function app:getProjectPath() return "." end
 function app:isEditor() return true end
+function app:setEditorCamera(value) self.editorCamera = value end
+function app:getCameraManager() return {reset=function() self.cameraResets = (self.cameraResets or 0) + 1 end} end
 function app:setPaused(value) self.paused = value end
 local car = race:getCarController()
 function car:setControls(...) race:setControls(...) end
@@ -162,7 +165,7 @@ assert(inspector.buttons.Generate == false, "Inspector must expose Generate")
 inspector.values.Seed, inspector.values["Appearance Quality"], inspector.values.Laps = "19", 0, 2
 inspector.buttons.Generate = true
 game:setProperties(array({inspector}))
-assert(game.started and game.editPreview and game.menu.visible and not app.playing and not app.paused)
+assert(game.started and game.editPreview and not game.menu.visible and not app.playing and not app.paused)
 assert(game.generatedSeed == 19 and game.generatedQuality == 0 and game.totalLaps == 2)
 local previewRoot, previewChildren = game.generatedRoot, #owner.children
 game:update()
@@ -178,8 +181,18 @@ game:shutdown(); app.playing = false
 game.seed, game.quality, game.totalLaps = 7, 1, 3
 inspector.buttons.Generate = false
 app.playing = true
+local restoredRoots = {}
+for _, name in ipairs({"RacingGameFull.Generated", "Racing.HUD", "__StartMenuGenerated"}) do
+    local actor = manager:createActor()
+    actor:setName(name); owner:addChild(actor)
+    restoredRoots[#restoredRoots + 1] = actor
+end
 game:update()
+for _, actor in ipairs(restoredRoots) do
+    for _, child in ipairs(owner.children) do assert(child ~= actor, "Restored generated roots must be replaced") end
+end
 assert(game.gameState == "main" and game.menu.visible and not game.started)
+assert(app.editorCamera == true, "The initial menu needs a renderable Editor viewport")
 assert(#game.menu.view.generationWarnings == 0)
 assert(game.menu.view.generatedRoot.uiComponents.Layout.flagNoInput == false,
     "Menu needs an interactive native canvas")
@@ -209,6 +222,7 @@ assert(game.gameState == "setup")
 game.totalLaps = 1
 game:startRace()
 local root = game.generatedRoot
+assert(app.editorCamera == false, "Race startup must select the generated game camera")
 assert(game.started and game.gameState == "loading" and race.controls[2] == 1)
 app.now = 2; game:update()
 assert(game.gameState == "countdown")

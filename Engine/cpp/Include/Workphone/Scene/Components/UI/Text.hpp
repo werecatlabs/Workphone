@@ -156,7 +156,7 @@ namespace workphone
             /**
              * @brief The text string displayed by this component.
              */
-            FixedString<128> m_text;
+            String m_text;
         };
     }  // namespace scene
 }  // namespace workphone

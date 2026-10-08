@@ -120,16 +120,8 @@ namespace workphone::ui
         }
 
         auto label = getLabel();
-        if( label.empty() )
-        {
-            label = "Button";
-        }
-
-        // Scene buttons can provide a separate Text child with their own font,
-        // alignment and colour. Do not draw a second label underneath it.
-        const bool hasTextChild = std::any_of( m_children.begin(), m_children.end(),
-            []( const SmartPtr<IUIElement> &child ) { return child && child->isDerived<IUIText>(); } );
-        if( wp_button_label( ctx, hasTextChild ? "" : label.c_str() ) )
+        // An empty label supports scene buttons with a separate Text component.
+        if( wp_button_label( ctx, label.c_str() ) )
         {
             handleButtonClick();
         }
