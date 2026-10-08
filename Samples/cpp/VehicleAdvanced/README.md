@@ -76,6 +76,7 @@ success.
 ./SampleVehicleAdvanced.exe --smoke-test --quality low
 ./SampleVehicleAdvanced.exe --track-smoke-test --quality low
 ./SampleVehicleAdvanced.exe --collision-smoke-test --quality low
+./SampleVehicleAdvanced.exe --audio-smoke-test --quality low
 ./SampleVehicleAdvanced.exe --capture car.bmp --view car --quality high
 ./SampleVehicleAdvanced.exe --capture track.bmp --view track --quality high
 ./SampleVehicleAdvanced.exe --capture corner.bmp --view corner --quality high
@@ -250,11 +251,30 @@ The driving smoke check passed before the concurrent grip change from 1.25 to
 0.7. With the merged tuning it repeatedly fails the acceleration phase at about
 11.7 m/s against its 20 m/s threshold; that tuning and threshold are preserved.
 
+Vehicle audio is enabled by default. Six engine loops blend with drivetrain
+RPM and throttle; rolling noise follows road speed, and tyre squeal follows
+measured slip on grounded wheels. Gain changes are smoothed, tyre sounds fade
+while airborne, and all loops fade while paused. This is a centred driver mix,
+using generic racing recordings rather than an F1 2012 engine recording.
+`--no-audio` disables the car sounds. A missing output device or asset disables
+audio gracefully; the vehicle remains driveable.
+
+CMake copies the bundled WAV files and [audio credits](Audio/CREDITS.md) into
+`Audio/VehicleAdvanced` beside the executable. Engine recordings are CC0, tyre
+squeal is CC-BY 3.0, and the generated rolling loop is CC0; retain the credits
+when redistributing. Builds and playback do not download assets.
+
+`VehicleAudioMixTests` checks the RPM crossfade, slip/contact gating, fades and
+invalid telemetry. `--audio-smoke-test` runs real platform voices through idle,
+redline/skid, airborne and paused gain checks. The RelWithDebInfo build and mix
+tests passed locally. The platform check is blocked here because XAudio2 cannot
+open an output device (`0x80070490`); audible playback is unverified.
+
 Generated RGBA maps are uploaded in memory. Albedo is sRGB; normal/ORM channels
 are linear. ORM is split explicitly into AO, roughness and metalness slots. The
 sample includes a soft ground contact shadow, daylight and a procedural sky.
-DX11 has a single directional shadow map. Cascaded shadows, GPU bloom, engine
-audio and particle effects remain follow-ups; graphics toggles alone are not
+DX11 has a single directional shadow map. Cascaded shadows, GPU bloom and
+particle effects remain follow-ups; graphics toggles alone are not
 evidence that those effects render. GPU HDR/TAA/AO, dithered LOD transitions and
 true instance buffers are subsequent roadmap stages. The current tree change
 reduces near submissions per patch, while distant patches remain separate draws.

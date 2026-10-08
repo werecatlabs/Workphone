@@ -253,7 +253,11 @@ namespace workphone
             m_raceScene->configurePhysics();
 
             if( m_audioEnabled && !m_audio.load( applicationManager->getSoundManager() ) )
+            {
                 WP_LOG_WARNING( "Vehicle audio unavailable: check the audio device and bundled WAV files." );
+                if( !m_audioSmokeTest )
+                    m_audioEnabled = false;
+            }
 
             setLoadingState( LoadingState::Loaded );
         }
