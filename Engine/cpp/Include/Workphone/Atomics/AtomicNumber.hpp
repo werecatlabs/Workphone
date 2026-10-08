@@ -84,7 +84,8 @@ namespace workphone
 
         T fetch_sub( T arg, memory_semantics order = memory_semantics::full_fence ) noexcept
         {
-            static_assert( detail::AtomicArithmetic<T>::integral, "fetch_sub requires an integral type" );
+            static_assert( detail::AtomicArithmetic<T>::integral,
+                           "fetch_sub requires an integral type" );
             return m_value.fetch_sub( arg, order );
         }
 

@@ -44,13 +44,13 @@ namespace workphone
              */
             enum class SceneLoadingState
             {
-                None,      ///< No loading state.
-                Loaded,    ///< The scene is loaded.
-                Unloaded,  ///< The scene is unloaded.
-                Loading,   ///< Preparation or graph commit is pending.
-                Failed,    ///< Loading failed; no completion event was emitted.
-                Cancelled, ///< A pending load was superseded or cleared.
-                Count      ///< The number of states in the enumeration.
+                None,       ///< No loading state.
+                Loaded,     ///< The scene is loaded.
+                Unloaded,   ///< The scene is unloaded.
+                Loading,    ///< Preparation or graph commit is pending.
+                Failed,     ///< Loading failed; no completion event was emitted.
+                Cancelled,  ///< A pending load was superseded or cleared.
+                Count       ///< The number of states in the enumeration.
 
             };
 

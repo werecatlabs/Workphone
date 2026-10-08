@@ -106,8 +106,7 @@ namespace workphone
             void dispatchBatch( const SharedPtr<LODBatch> &batch );
             void applyBatch( const SharedPtr<LODBatch> &batch );
 
-            static void calculateRange( const SharedPtr<LODBatch> &batch, size_t begin,
-                                        size_t end );
+            static void calculateRange( const SharedPtr<LODBatch> &batch, size_t begin, size_t end );
             static s32 selectLOD( f32 screenRelativeHeight, const f32 *thresholds, size_t thresholdCount,
                                   s32 previousLOD, s32 forcedLOD, f32 hysteresis,
                                   bool cullBelowLastLOD );

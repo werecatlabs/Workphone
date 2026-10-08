@@ -102,7 +102,7 @@ namespace workphone
     {
         auto app = core::IApplicationManager::instancePtr();
         auto prepareJob = app->getFactoryManagerPtr()->make_ptr<JobFunction>();
-        
+
         SmartPtr<SceneLoadJob> commit( this );
         std::function<void()> preparation = [commit]() mutable {
             if( commit->isInterrupted() )

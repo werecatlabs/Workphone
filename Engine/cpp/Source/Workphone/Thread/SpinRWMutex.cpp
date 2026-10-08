@@ -88,8 +88,7 @@ namespace workphone
 #endif
     }
 
-    SpinRWMutex::ScopedLock::ScopedLock( SpinRWMutex &m, bool write ) :
-        m_mutex( m ), m_write( write )
+    SpinRWMutex::ScopedLock::ScopedLock( SpinRWMutex &m, bool write ) : m_mutex( m ), m_write( write )
     {
         if( m_write )
             m_mutex.lock();
@@ -107,7 +106,7 @@ namespace workphone
 
     SpinRWMutex::ScopedLock::operator bool() const
     {
-        return m_write ? (m_mutex.writers.load( std::memory_order_acquire ) > 0)
-                       : (m_mutex.readers.load( std::memory_order_acquire ) > 0);
+        return m_write ? ( m_mutex.writers.load( std::memory_order_acquire ) > 0 )
+                       : ( m_mutex.readers.load( std::memory_order_acquire ) > 0 );
     }
 }  // namespace workphone

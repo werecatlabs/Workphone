@@ -22,7 +22,7 @@ namespace workphone
         Array<render::IGraphicsCamera::CompositeLayer> compositeLayers;
 
         f32 lodBias = 1.0f;
-        u32 flags = ( 1u << 1 ); // Cameras render UI by default.
+        u32 flags = ( 1u << 1 );  // Cameras render UI by default.
         Vector4F windowDimensions = Vector4F( 0.0f, 0.0f, 1.0f, 1.0f );
 
         WP_CLASS_REGISTER_DECL;

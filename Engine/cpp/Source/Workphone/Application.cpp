@@ -668,7 +668,8 @@ namespace workphone::core
 
                 SmartPtr<Properties> gameGraphics;
                 auto settingsPath = applicationManager->getProjectPath();
-                if( !settingsPath.empty() ) settingsPath += "/";
+                if( !settingsPath.empty() )
+                    settingsPath += "/";
                 auto settingsText = Path::readAllText( settingsPath + "GameGraphics.settings" );
                 if( !settingsText.empty() )
                 {

@@ -145,7 +145,6 @@ namespace workphone
 
         /// Indicates whether the worker thread is currently updating (default: false).
         atomic_bool m_isUpdating = false;
-
     };
 
 }  // namespace workphone

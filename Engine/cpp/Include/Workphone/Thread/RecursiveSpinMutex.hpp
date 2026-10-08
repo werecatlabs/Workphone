@@ -13,7 +13,8 @@ namespace workphone
      *
      * This mutex implementation uses busy-waiting (spinning) and supports:
      *  - Exclusive (recursive) locking via `lock`, `try_lock`, and `unlock`.
-     *  - Shared API aliases for exclusive locking via `lock_shared`, `try_lock_shared`, and `unlock_shared`.
+     *  - Shared API aliases for exclusive locking via `lock_shared`, `try_lock_shared`, and
+     * `unlock_shared`.
      *
      * Notes:
      *  - Exclusive ownership is tracked per-thread using `owner` and `recursion`.

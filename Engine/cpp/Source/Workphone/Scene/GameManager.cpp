@@ -598,13 +598,12 @@ namespace workphone::scene
         // is not an independent simulation pose: always compose their local pose
         // with the sampled parent so a stationary body mesh follows its chassis.
         auto parent = actor->getParentPtr();
-        const bool attached = parent && parent->isSmoothMotion() &&
-                              transform->getTask() != TaskId::Physics;
+        const bool attached =
+            parent && parent->isSmoothMotion() && transform->getTask() != TaskId::Physics;
         if( attached || !getTransformState( id, time, dt, worldTransform, transform->getTask() ) )
         {
             Transform3<real_Num> parentTransform;
-            if( !getActorTransformState( parent, time, dt, parentTransform,
-                                         sampledTransforms ) )
+            if( !getActorTransformState( parent, time, dt, parentTransform, sampledTransforms ) )
                 return false;
             worldTransform.transformFromParent( parentTransform, transform->getLocalTransform() );
         }

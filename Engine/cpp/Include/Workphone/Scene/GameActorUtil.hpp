@@ -37,8 +37,8 @@ namespace workphone
             // Deep-copy a prefab graph with fresh actor/component IDs and remapped local references.
             static SmartPtr<Properties> createInstanceData( SmartPtr<Properties> data );
             // Creates all shells before loading any component properties. Caller owns scene lock.
-            static Array<SmartPtr<IGameActor>> loadSceneActors(
-                const Array<SmartPtr<Properties>> &data, SmartPtr<IGameScene> target = nullptr );
+            static Array<SmartPtr<IGameActor>> loadSceneActors( const Array<SmartPtr<Properties>> &data,
+                                                                SmartPtr<IGameScene> target = nullptr );
             /**
              * @name Common property key strings
              * @{
@@ -163,7 +163,7 @@ namespace workphone
 
             /** Restore editor camera settings without creating duplicate components. */
             static void restoreEditorCameraData( SmartPtr<IGameActor> editorCamera,
-                                                SmartPtr<Properties> actorData );
+                                                 SmartPtr<Properties> actorData );
 
             /**
              * @brief Serialize an actor to a `Properties` object.

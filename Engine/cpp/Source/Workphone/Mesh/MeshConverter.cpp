@@ -67,9 +67,9 @@ namespace workphone
 
                         // The file is closed before notifying scene instances. Reimport keeps
                         // the same resource path, so assigning the mesh again will not reload it.
-                        applicationManager->triggerEvent(
-                            EventType::Renderer, IEvent::meshLoaded, {}, nullptr, meshResource,
-                            nullptr, false, Thread::Application_Flag );
+                        applicationManager->triggerEvent( EventType::Renderer, IEvent::meshLoaded, {},
+                                                          nullptr, meshResource, nullptr, false,
+                                                          Thread::Application_Flag );
                     }
                 }
             }

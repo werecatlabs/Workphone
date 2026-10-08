@@ -437,7 +437,6 @@
 #    include <Workphone/Core/OSX/macUtils.hpp>
 #endif
 
-
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>

@@ -839,10 +839,14 @@ namespace workphone
         }
 
         ConcurrentDeque( const ConcurrentDeque &other ) :
-            ConcurrentDeque( other, std::unique_lock<mutex_type>( other.m_mutex ) ) {}
+            ConcurrentDeque( other, std::unique_lock<mutex_type>( other.m_mutex ) )
+        {
+        }
 
         ConcurrentDeque( ConcurrentDeque &&other ) :
-            ConcurrentDeque( other, std::unique_lock<mutex_type>( other.m_mutex ), 0 ) {}
+            ConcurrentDeque( other, std::unique_lock<mutex_type>( other.m_mutex ), 0 )
+        {
+        }
 
         ~ConcurrentDeque()
         {

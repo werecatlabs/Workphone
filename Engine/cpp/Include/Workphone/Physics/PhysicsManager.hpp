@@ -343,8 +343,7 @@ namespace workphone
 
             WP_CLASS_REGISTER_DECL;
 
-
- void _getObject( void **object ) const override;
+            void _getObject( void **object ) const override;
 
         protected:
             struct DebugForceCommand

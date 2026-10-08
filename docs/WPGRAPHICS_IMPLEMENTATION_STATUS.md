@@ -1,5 +1,15 @@
 # WPGraphics implementation status
 
+## Current planning review — 8 October 2026
+
+Source reviewed at `d2e81cdb4`. The catalog repairs/migration, explicit CPU skinning and basic DX11 particles remain present. Recent source also adds long-text UI/serialization, visibility, editor-camera-during-Play and sample capture/winding improvements.
+
+A current `project_x64` Debug CTest attempt selected 14 graphics/catalog/resource targets: **14 unavailable, 0 executed**, because their expected executables were missing. This is a build-artifact/verification gap, not evidence of source assertion failures. No rebuild, performance measurement or GPU capture was performed for this planning request. `.github` and its previously documented workflows are absent from this checkout; restore/version CI before marking that work complete.
+
+The revised [production plan](WPGRAPHICS_PRODUCTION_PLAN.md) starts with a rebuilt traceable baseline, then canonical catalog identity and a cooked material/texture reaching DX11, followed by imported animation and particle scene integration. The implementation and test results below are historical evidence, with their original configurations; neither release gate is certified.
+
+## Historical implementation evidence
+
 Catalog increment validated on 6 October 2026, Windows x64, Visual Studio 2026/MSVC 19.51, CMake 4.4.4, RelWithDebInfo, starting from `d5c859612` on `brodex`.
 
 Current local evidence: the required SQLite catalog target and its Workphone/WPSQLite dependencies were built, and the catalog contracts passed without graphics or external media. The two isolated skinning/particle reference tests also passed. The catalog preset was configured with the existing verification build directory overridden to `cmake-build-debug-vs2026-readiness`.
@@ -10,7 +20,7 @@ The production roadmap is only partially implemented. This stage supplies execut
 
 ## Implemented in this stage
 
-- Dependency-free C90 contract build and CI workflow for skinning and particle simulation.
+- Dependency-free C90 contract build for skinning and particle simulation; the previously recorded CI workflow is absent in the current checkout.
 - CPU reference skinning with four influences, up to 256 joints, weight normalization, validated affine transforms, and transactional rejection of invalid input. Supported transforms are rigid or uniformly scaled; nonuniform scale and shear are rejected.
 - Explicit ClawMesh skinning data and palette APIs that update native positions and normals, invalidate cached GPU geometry, and recompute bounds. The caller supplies the palette on the owning rendering thread.
 - Seeded, bounded CPU particle simulation at 120 Hz, with gravity, lifetime, size ranges, color interpolation, duration, pause, stop, drain, and bounded prewarm. No allocation occurs per simulation step.
@@ -22,7 +32,7 @@ The production roadmap is only partially implemented. This stage supplies execut
 - Required SQLite catalog coverage for existing bound CRUD, durable UUIDs, shared-scene deletion, failed rename rollback, detached lookups, concurrent reads and database switching.
 - Catalog schema version 1 in its own metadata table, preserving unrelated `user_version` values. Valid unversioned catalogs retain their original rows/IDs and a one-time `wp_asset_catalog_backup_v0` row copy inside the same database. This is a migration snapshot, not an independent database-file backup.
 - Schema guards reject invalid/oversized/NUL-containing values and enforce UUID/file-path uniqueness while allowing shared scene paths. Conflicting legacy data, reserved-name collisions and unsupported schema versions fail closed; the migration transaction rolls back schema and data changes.
-- Catalog migration regressions for Unicode/apostrophe paths, a misleading nonunique UUID index, retained backup/reopen behavior, duplicate identities/paths, invalid legacy keys, embedded NULs, early/late migration failure and newer-version preservation. A dedicated catalog preset and CI job require the backend and fail on missing tests.
+- Catalog migration regressions for Unicode/apostrophe paths, a misleading nonunique UUID index, retained backup/reopen behavior, duplicate identities/paths, invalid legacy keys, embedded NULs, early/late migration failure and newer-version preservation. The dedicated catalog preset requires the backend; restore its CI job in this checkout.
 - Windows build repair: the media-path definition is scoped to its native-runtime consumer so paths with spaces do not break Boost.Context's MASM compilation.
 
 The GPU fixture calls deformation and particle drawing directly. It does not yet establish imported/controller-driven animation, automatic scene scheduling, multi-camera correctness or catalog-to-cook-to-render behavior. Particle scene preparation is implemented as the intended update owner; once-per-frame behavior remains to be validated across all callers.
@@ -47,7 +57,7 @@ Tools/ValidateClawGraphics.ps1 -BuildDirectory project_claw_windows
 
 Use `-RequireExternalAssets` when validating a release environment with the media fixtures installed. The isolated contract build was built and tested; the fresh full-engine preset was configured. Full-engine compilation and GPU validation were performed in the existing `project_x64` build tree.
 
-Latest catalog result: **1 CTest target passed**, exercising the CRUD and migration contracts above. Latest isolated native reference result: **2 passed**. Historical full graphics result: **11 passed, 1 skipped**; the skipped external mesh import test requires missing `Bin/Media/Ogre/models` assets. The new catalog CI job has not been verified by a remote run.
+Historical catalog result: **1 CTest target passed**, exercising the CRUD and migration contracts above. Historical isolated native reference result: **2 passed**. Historical full graphics result: **11 passed, 1 skipped**; the skipped external mesh import test required missing `Bin/Media/Ogre/models` assets. These are not results of the current 8 October review. Remote CI remains unverified and its definitions are absent from this checkout.
 
 ## Remaining release work
 

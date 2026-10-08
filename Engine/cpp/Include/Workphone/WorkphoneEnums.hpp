@@ -274,7 +274,7 @@ namespace workphone
         Sound,           ///< Audio processing.
         SoftBody,        ///< Soft body physics simulation.
 
-        Count            ///< Total number of task types.
+        Count  ///< Total number of task types.
     };
 
     /**

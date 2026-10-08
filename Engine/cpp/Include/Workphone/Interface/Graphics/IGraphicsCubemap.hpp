@@ -250,7 +250,7 @@ namespace workphone
 
             /**
              * @brief Get whether updates are automatic or explicitly requested.
- */
+             */
             virtual UpdateMode getUpdateMode() const;
 
             /**
@@ -260,7 +260,7 @@ namespace workphone
 
             /**
              * @brief Get how cubemap faces are distributed across render frames.
- */
+             */
             virtual TimeSlicingMode getTimeSlicingMode() const;
 
             /**
@@ -271,12 +271,12 @@ namespace workphone
 
             /**
              * @brief Get the six-bit mask of faces included in a refresh.
- */
+             */
             virtual u32 getFaceMask() const;
 
             /**
              * @brief Set the six-bit mask of faces included in a refresh.
- */
+             */
             virtual void setFaceMask( u32 faceMask );
 
             /**
@@ -291,7 +291,7 @@ namespace workphone
 
             /**
              * @brief Return true while a requested refresh is queued or in progress.
- */
+             */
             virtual bool isUpdatePending() const;
 
             /**

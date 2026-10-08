@@ -468,7 +468,7 @@ namespace workphone
                                ///< typeInfo).
         Array<atomic_u8>
             objectFlags;  ///< Per-object flags stored as atomic bytes (one per object slot).
-        GenericPool<BaseObjectData> baseObjectDataPool;  ///< Pool of base object data instances.
+        GenericPool<BaseObjectData> baseObjectDataPool;      ///< Pool of base object data instances.
         GenericPool<SharedObjectData> sharedObjectDataPool;  ///< Pool of shared object data instances.
         Array<GenericPool<BaseObjectData>>
             baseObjectDataPools;  ///< Array of base object data pools for different groups.

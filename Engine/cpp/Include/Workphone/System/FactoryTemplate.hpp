@@ -396,8 +396,10 @@ namespace workphone
         {
             auto pObject = (T *)object;
             const auto typeName = TypeManager::instance()->getName( T::typeInfo() );
-            const bool traceMessage = typeName && StringUtil::isEqual( typeName, "workphone::StateMessageObject" );
-            if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate freeObject start %p\n", pObject );
+            const bool traceMessage =
+                typeName && StringUtil::isEqual( typeName, "workphone::StateMessageObject" );
+            if( traceMessage )
+                std::fprintf( stderr, "TRACE FactoryTemplate freeObject start %p\n", pObject );
             WP_ASSERT( pObject );
             if( !pObject )
             {
@@ -406,26 +408,34 @@ namespace workphone
 
             if( pObject->isPoolElement() )
             {
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate pooled object\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate pooled object\n" );
                 m_instances.erase( pObject );
 
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate destroy start\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate destroy start\n" );
                 pObject->~T();
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate destroy end\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate destroy end\n" );
 
                 releaseObjectMemory( pObject, true );
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate memory release end\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate memory release end\n" );
             }
             else
             {
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate nonpool object\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate nonpool object\n" );
                 m_instances.erase( pObject );
 
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate destroy start\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate destroy start\n" );
                 pObject->~T();
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate destroy end\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate destroy end\n" );
                 Factory::freeObject( object );
-                if( traceMessage ) std::fprintf( stderr, "TRACE FactoryTemplate memory release end\n" );
+                if( traceMessage )
+                    std::fprintf( stderr, "TRACE FactoryTemplate memory release end\n" );
             }
         }
         catch( std::exception &e )

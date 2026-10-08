@@ -179,8 +179,8 @@ namespace workphone
     auto Manipulator::SelectionManagerListener::handleEvent( EventType eventType, hash_type eventValue,
                                                              const Array<Parameter> &arguments,
                                                              SmartPtr<ISharedObject> sender,
-                                                             SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
-        -> Parameter
+                                                             SmartPtr<ISharedObject> object,
+                                                             SmartPtr<IEvent> event ) -> Parameter
     {
         if( eventValue == IEvent::addSelectedObject )
         {

@@ -6,18 +6,16 @@
 #    include "Workphone/Thread/ThreadDiagnostics.hpp"
 #endif
 
-
 namespace workphone
 {
     namespace
     {
-        auto readerRecursionMap()
-            -> std::unordered_map<const RecursiveSpinRWMutex *, unsigned> &
+        auto readerRecursionMap() -> std::unordered_map<const RecursiveSpinRWMutex *, unsigned> &
         {
             static thread_local std::unordered_map<const RecursiveSpinRWMutex *, unsigned> counts;
             return counts;
         }
-    }
+    }  // namespace
 
     RecursiveSpinRWMutex::RecursiveSpinRWMutex() = default;
 
@@ -44,7 +42,6 @@ namespace workphone
     void RecursiveSpinRWMutex::lock_shared()
     {
         const auto tid = std::this_thread::get_id();
-
 
         // Case 1: Writer recursion - writer can acquire read locks freely
         // These are tracked separately and don't affect global state
@@ -235,7 +232,6 @@ namespace workphone
     void RecursiveSpinRWMutex::lock()
     {
         const auto tid = std::this_thread::get_id();
-
 
         // Case 1: Recursive write
         if( writer_owner.load( std::memory_order_acquire ) == tid )

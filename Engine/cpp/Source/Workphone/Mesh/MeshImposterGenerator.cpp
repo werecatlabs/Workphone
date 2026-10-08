@@ -16,7 +16,7 @@ namespace workphone
             tileHeight > 1024 || !MathUtil<f32>::isFinite( lo ) || !MathUtil<f32>::isFinite( hi ) ||
             hi.x <= lo.x || hi.y <= lo.y || hi.z <= lo.z )
             throw std::invalid_argument( "Invalid mesh imposter bake dimensions or bounds." );
-        
+
         MeshImposterAtlas result;
         result.width = tileWidth * 3;
         result.height = tileHeight;
@@ -25,10 +25,10 @@ namespace workphone
         result.views = { { { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, {}, {} },
                            { { 0, 0, 1 }, { 0, 1, 0 }, { -1, 0, 0 }, {}, {} },
                            { { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 }, {}, {} } } };
-        
+
         auto light = Vector3F( .4f, .75f, .5f );
         light.normalise();
-        
+
         for( size_t viewIndex = 0; viewIndex < result.views.size(); ++viewIndex )
         {
             auto &view = result.views[viewIndex];
@@ -44,10 +44,10 @@ namespace workphone
                 view.maximum.x = std::max( view.maximum.x, x );
                 view.maximum.y = std::max( view.maximum.y, y );
             }
-            
+
             Array<float> depth( size_t( tileWidth ) * tileHeight,
                                 -std::numeric_limits<float>::infinity() );
-            
+
             for( const auto &triangle : triangles )
             {
                 std::array<Vector3F, 3> projected;

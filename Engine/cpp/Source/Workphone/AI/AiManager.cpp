@@ -2420,8 +2420,10 @@ launchFlightSimulator()
                     }
                 }
                 const auto labelLength = std::min<size_t>( name.size(), 64 );
-                const auto label = name.empty() ? String() : " (" + String( name.data(), labelLength ) + ")";
-                result.failures.emplace_back( "Action " + StringUtil::toString( index ) + label + ": " + failure );
+                const auto label =
+                    name.empty() ? String() : " (" + String( name.data(), labelLength ) + ")";
+                result.failures.emplace_back( "Action " + StringUtil::toString( index ) + label + ": " +
+                                              failure );
             }
             return result;
         }

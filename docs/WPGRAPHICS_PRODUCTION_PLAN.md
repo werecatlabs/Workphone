@@ -1,8 +1,8 @@
 # WPGraphics production readiness and feature implementation plan
 
-Date: 6 October 2026; revised after implementation review at `8a767dda5`.
-Catalog follow-up: local implementation/validation on `brodex`, starting from `d5c859612`, with Visual Studio 2026/MSVC 19.51 and CMake 4.4.4, RelWithDebInfo.
-Status: Implementation in progress; initial contracts and DX11 integration validated. Neither R1 nor R2 is certified.
+Date: 8 October 2026; current source review at `d2e81cdb4`.
+Historical implementation evidence: initial graphics review at `8a767dda5`; catalog follow-up starting from `d5c859612`, Visual Studio 2026/MSVC 19.51 and CMake 4.4.4, RelWithDebInfo.
+Status: Implementation in progress. Reference deformation, basic particles and catalog contracts have historical validation; current-checkout verification is incomplete. Neither R1 nor R2 is certified.
 Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, AssetDatabaseManager and the existing resource pipeline, and the engine/editor integration needed to ship it.
 User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration in the feature roadmap.
 
@@ -17,7 +17,9 @@ Use two release gates:
 
 DX12 and additional platforms receive their own certification gates. They do not inherit production status from DX11. Advanced ocean simulation, ray tracing, and virtualized geometry are subsequent optional work.
 
-This review reran the existing graphics binaries: 11 tests passed and one external mesh import test was skipped for missing media. The two isolated native contract tests also passed; these duplicate two contracts in the full suite, rather than adding two distinct feature gates. No rebuild, database runtime tests, GPU capture, benchmark, clean-machine build or remote CI run was performed in this review. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and evidence limits. Neither R1 nor R2 is certified.
+Historical graphics evidence is 11 passed and one external mesh import test skipped; historical catalog evidence includes required SQLite CRUD/migration contracts. On 8 October, the existing `project_x64` Debug configuration selected 14 graphics/catalog/resource targets but **all 14 were unavailable because their executables were missing**. None ran. This establishes a build-artifact gap, not a source-code test failure. No rebuild, GPU capture, benchmark or remote CI run was performed for this planning request. The two isolated native tests duplicate contracts in the graphics suite. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and evidence limits.
+
+The immediate objective is a rebuilt, traceable baseline and one cooked material/texture resolved through the catalog and drawn on DX11. Then finish animation and particle scene integration, followed by the GPU frame and release certification. Water remains a required R2 workstream. The comprehensive feature table in section 4 defines the release scope; optional ocean/ray-tracing/backend work has separate gates.
 
 The subsequent catalog increment built the required SQLite catalog target and Workphone/WPSQLite dependencies, verified existing identity/mutation/switching contracts, and added schema-version/migration/rollback coverage. Its CTest target and the two retained native reference tests passed locally. Catalog preset configuration was verified with the local build-directory override. GPU rendering and remote CI were not rerun for that increment.
 
@@ -38,23 +40,24 @@ Paths below are relative to the repository root. Observations are limited to the
 | Particle tests | [ParticleSystemTests](../Tests/cpp/UnitTests/ParticleSystemTests.cpp) can return early in headless/unavailable-backend cases; [component tests](../Tests/cpp/UnitTests/ComponentTestsParticleSystem.cpp) use a test renderer | Make skipped/unavailable cases visible in CI; add real Claw rendering tests and deterministic simulation tests |
 | Water | [IGraphicsWater](../Engine/cpp/Include/Workphone/Interface/Graphics/IGraphicsWater.hpp) exists; searched water/ocean paths found no concrete implementation | Add a Claw water object and rendering passes; reuse the interface where applicable |
 | Resources | [ResourceSystem.md](../Engine/cpp/Project/Workphone/ResourceSystem.md) describes versioned compilation, dependency tracking, atomic publication, runtime validation, and caching | Integrate graphics compilers and GPU upload/residency with this system rather than creating another database/cache |
-| Asset catalog | [AssetDatabaseManager.hpp](../Engine/cpp/Include/Workphone/Database/AssetDatabaseManager.hpp) and [implementation](../Engine/cpp/Source/Workphone/Database/AssetDatabaseManager.cpp) expose CRUD, UUID/path lookup, ResourceDirector caches and database lifecycle; [ResourceDatabase](../Engine/cpp/Source/Workphone/Database/ResourceDatabase.cpp) calls these paths | Add M1A below: durable identity, safe mutations, schema migration, path mapping, cache/lifecycle hardening and a bridge to ResourceSystem. The catalog is separate from the compilation metadata database |
-| Database coverage | [ResourceDatabaseTests](../Tests/cpp/UnitTests/ResourceDatabaseTests.cpp) covers basic persistence/idempotence/removal, but some cases return for missing plugins or headless graphics; build/import/reimport cases also return immediately in headless mode | Add focused database contracts with a required SQLite backend, independent of graphics; do not treat these early returns as executed database coverage |
+| Asset catalog | [AssetDatabaseManager.hpp](../Engine/cpp/Include/Workphone/Database/AssetDatabaseManager.hpp) and [implementation](../Engine/cpp/Source/Workphone/Database/AssetDatabaseManager.cpp) now use bound transactional CRUD, UUID-scoped deletion, detached lookup results and schema-v1 migration/rollback; [ResourceDatabase](../Engine/cpp/Source/Workphone/Database/ResourceDatabase.cpp) is the integration caller | Retain repairs; finish canonical paths, explicit asset kinds, lifecycle/failure policy, and catalog-to-ResourceSystem/GPU bridge. The compilation metadata database remains separate |
+| Database coverage | [AssetCatalogTests](../Tests/cpp/AssetCatalogTests.cpp) requires SQLite and tests identity/mutations/migration. Older [ResourceDatabaseTests](../Tests/cpp/UnitTests/ResourceDatabaseTests.cpp) still contain plugin/headless early returns | Rebuild and execute the required catalog target in this checkout; add resource-to-render integration and mutation/unload races; early returns do not count as coverage |
 | Tests | [C++ registration](../Tests/cpp/CMakeLists.txt) includes Claw text, DX11 target, UI destruction, and cubemap/PBR targets; C tests cover renderer/shader/pipeline contracts | Preserve regression coverage and extend it to complete frames and failure/recovery paths |
-| Editor | `AnimationEditor.lua`, `ParticleEditor.lua`, `MaterialEditor.lua`, and `ShaderEditor.lua` exist | Extend existing authoring tools and bind native capabilities |
-| Build/distribution | Windows Claw and isolated contract presets now exist, along with [contract CI](../.github/workflows/graphics-contracts.yml) and [validation runner](../Tools/ValidateClawGraphics.ps1); source globbing/platform paths remain | Verify clean builds and remote CI, add full graphics/database CI and GPU runners, and complete install/export plus external-consumer coverage |
+| Editor/UI | Existing animation/particle/material/shader Lua editors; recent source changes add long-text serialization/render coverage, visibility checks, editor-camera selection during Play and snapshot restoration | Validate the new tests in rebuilt binaries, preserve camera/runtime transitions, and connect previews to runtime asset/render paths |
+| Instrumentation/samples | ClawHammerSystem reports CPU/Present/GPU and upload/draw counters; recent VehicleAdvanced changes validate capture bindings and mesh winding | Use repeatable capture scenes and counters to establish budgets; sample smoke checks do not certify feature performance or end-to-end animation/effects |
+| Build/distribution | Windows graphics, catalog and isolated contract presets plus [validation runner](../Tools/ValidateClawGraphics.ps1) exist; `.github` is absent in this checkout and selected Debug executables are missing | Restore/version CI definitions, rebuild required targets, record source/config/adapter/driver evidence, then validate packaging/export and an external consumer |
 
 ### 2.1 Current completion and evidence limits
 
 | Work package | Current status | Next evidence needed |
 |---|---|---|
-| BASE-01/02/03 | Partial: inventory, presets, explicit skip reporting and local test baseline exist | Clean Debug/RelWithDebInfo builds, database coverage, actual adapter/driver evidence and remote CI |
+| BASE-01/02/03 | Partial inventory/presets/runner; current Debug tests unavailable due to missing executables; CI definitions absent | Rebuilt Debug/RelWithDebInfo targets, required catalog coverage, adapter/driver evidence and restored remote CI |
 | BASE-04/05 | Partial generated triangle/particle fixtures; representative content and budgets pending | Licensed imported character/effect/water fixtures, reference sequences and measured costs |
 | ANIM-02/05 | CPU reference and explicit mesh deformation validated | Imported skin/clip bridge, multiple independent instances, bind/inverse-bind correctness, repeated GPU cache updates and CPU/GPU comparison |
 | FX-01/02/03/05 | Basic lifecycle, seed/step/pool and visible billboard path validated | Templates/serialization, full lifecycle/space semantics, multi-view integration, sorting/depth/state tests and stress budgets |
 | CORE-01/02/05 | Some mesh ownership/cache invalidation and synchronized particle copies exist | Teardown/reload races, generation-safe bounded caches, device recovery and immutable frame snapshots |
 | M1A asset catalog | Required SQLite CRUD/identity contracts and schema-v1 migration/backup/rollback validated locally | Canonical paths/asset kinds, broader concurrency/lifecycle/durability, graphics-resource bridge and remote CI |
-| M4/M5/M6 | Existing materials, static geometry, UI and CPU effects provide a baseline | Cooked graphics assets, GPU passes/shadows/HDR, streaming and mixed-scene validation |
+| M4/M5/M6 | Existing materials/static geometry/UI/CPU effects; new long-text/visibility/editor-camera tests present in source | Rebuild tests, cook graphics assets, implement GPU passes/shadows/HDR, streaming and mixed-scene validation |
 | M7 water | Unavailable; interface only | Implement WATER-01 through WATER-06 after frame/depth/reflection prerequisites |
 | M8/M9 | Not certified | Packaging, clean CI, performance/soak/recovery evidence; DX12 independently |
 
@@ -73,7 +76,7 @@ The GPU regression directly supplies a palette and particle snapshot and checks 
 1. **Proposed first supported configuration:** Windows x64, DX11, C++17 wrappers, C90 native modules, SDR output. Select supported OS versions, adapter feature levels, toolchain, and driver versions during M0; record them rather than relying on the old README.
 2. **Software renderer:** a bounded fallback and headless/reference path. Certify a documented subset and fail explicitly for unsupported features. Do not promise GPU-quality parity or GPU frame rates.
 3. **Keep existing engine contracts stable.** Prefer internal services, concrete implementation settings, and additive native APIs. Avoid new virtual methods in shared `Workphone/Interface` headers during this pass; document any eventual ABI migration separately.
-4. **Editor work follows existing conventions:** extend Lua authoring UI; use C++ for native rendering and thin bindings. Respect [editor conventions](../Tools/cpp/Editor/docs/CONVENTIONS.md) and coordinate with the existing editor upgrade plan.
+4. **Editor work follows existing conventions:** extend existing C++ windows and Lua tools where each feature currently lives; keep rendering/resource logic native and scripting bindings thin. Respect [editor conventions](../Tools/cpp/Editor/docs/CONVENTIONS.md) and coordinate with the existing editor upgrade plan. Preview/runtime must share asset and render services.
 5. **One owner per responsibility:** Workphone owns animation graph/IK evaluation; WPGraphics consumes final poses and handles deformation/rendering. Native C now owns particle simulation and Claw owns lifecycle/scheduling/snapshot presentation; legacy update paths must not advance the same effect independently.
 6. **Explicit capabilities:** feature availability must describe implemented rendering behavior and limits. Unsupported requests produce a diagnostic or a documented fallback, never a successful no-op. Until full switching exists, expose renderer selection as a restart-required configuration.
 7. **Separate simulation and presentation:** immutable, frame-stamped snapshots cross worker/render boundaries. GPU creation/destruction runs on the owning render context. Cancel and drain jobs before scene/device teardown.
@@ -183,6 +186,8 @@ Retain the existing resource table, UUID/path indexes, CRUD, ResourceDirector lo
 
 #### Review findings driving this work
 
+The following table records the historical problems that motivated the catalog repairs. It is not a list of unchanged current defects; the status table below distinguishes retained implementations from remaining work.
+
 | Finding | Evidence and implication | Priority |
 |---|---|---|
 | Deletion can affect unrelated scene entries | `removeResourceEntry` combines UUID and path with `OR`; actors/components use the shared path `scene`. Removing one such object can match other scene rows | P0 correctness blocker |
@@ -198,7 +203,17 @@ Retain the existing resource table, UUID/path indexes, CRUD, ResourceDirector lo
 
 These are historical findings from the `8a767dda5` review. Subsequent identity/mutation repairs are now exercised by `WPAssetCatalogTests`: real SQLite, bound quoted paths, scoped scene deletion, miss semantics, duplicate rejection, failed-rename rollback, detached directors, concurrent reads and narrow/wide database switching. Mutation/unload races and the full graphics-resource bridge remain unverified.
 
-The current increment adds catalog schema version 1 in `wp_asset_catalog_schema`, without taking ownership of `PRAGMA user_version`. Valid unversioned `resources` rows migrate transactionally and retain IDs/UUIDs; a one-time `wp_asset_catalog_backup_v0` table preserves their original row contents inside the same database. Value/uniqueness guards protect subsequent writes using the bundled SQLite backend. Invalid legacy rows or duplicate identities/paths require explicit repair rather than automatic data loss. Reserved-object collisions and unsupported/newer metadata fail closed, with rollback restoring the original schema/data. The row snapshot is not an independent file backup; canonical paths and explicit file/scene kinds remain DB-04/DB-01 follow-up work.
+The current source includes catalog schema version 1 in `wp_asset_catalog_schema`, without taking ownership of `PRAGMA user_version`. Valid unversioned `resources` rows migrate transactionally and retain IDs/UUIDs; a one-time `wp_asset_catalog_backup_v0` table preserves their original row contents inside the same database. Value/uniqueness guards protect subsequent writes using the bundled SQLite backend. Invalid legacy rows or duplicate identities/paths require explicit repair rather than automatic data loss. Reserved-object collisions and unsupported/newer metadata fail closed, with rollback restoring original schema/data. The row snapshot is not an independent file backup; canonical paths and explicit file/scene kinds remain DB-04/DB-01 follow-up work.
+
+| Work | Retain from current implementation | Remaining acceptance work |
+|---|---|---|
+| DB-01/02 | Persistent UUID CRUD, lookup misses return null, bound values, transactional conflicts/rollback and scoped scene deletion | Explicit file/scene/subasset kinds, stable reimport/move references, structured public operation outcomes and cross-process conflicts |
+| DB-03 | Version-1 migration, row snapshot, validation/uniqueness guards, collision/new-version rejection | Fresh rebuild/run, independent backup/recovery procedures and future migration policy |
+| DB-04 | Key-length/NUL rejection and filesystem-ID path fallback | Project-root canonicalization, case/separator/relocation policy and UUID-to-ResourceID mapping |
+| DB-05 | Catalog-wide recursive locking; fresh detached results avoid caching mutable directors | Mutation/unload/database-switch races, generation validity and cache policy if caching is reintroduced |
+| DB-06 | Unified narrow/wide loading, explicit destroy/unload behavior and rejection of unsupported table names | Open-failure recovery, backend capability diagnostics, durability/busy policy and outstanding-job cancellation |
+| DB-07/08/09 | ResourceSystem separately supplies compilation/container/dependency contracts | Catalog adapter, graphics compilers, failure-safe GPU publication, editor diagnostics and packaged runtime manifest |
+| DB-10 | Required SQLite test target and catalog preset | Missing CI definitions must be restored; current binaries rebuilt, race/failure tests and catalog-to-render fixtures executed |
 
 | ID | Deliverable | Acceptance evidence |
 |---|---|---|
@@ -295,7 +310,7 @@ Required tests:
 - **SCENE-01:** Audit per-camera visibility jobs and snapshot completeness; introduce frame completion barriers or immutable visibility results. Measure frustum culling, sorting and scene traversal with representative content.
 - **WORLD-01:** Validate terrain geometry, blend layers, normals, bounds and seams; add terrain LOD/chunk streaming and foliage instancing/wind/impostors for P1.
 - **STREAM-01:** Budget CPU/GPU memory, uploads and concurrent work; prioritize visible assets, retain safe placeholders, cancel requests on unload and evict only unused resources.
-- **UI-01:** Validate runtime UI/ImGui/text clipping, state restoration, font/glyph lifetimes, DPI, render textures, multiple views and device recovery.
+- **UI-01:** Retain the recent long-text/serialization, empty-label, visibility and editor-camera-during-Play fixes and tests. Validate clipping, state restoration, font/glyph lifetimes, DPI, render textures, multiple views, Play/Stop snapshot restoration and device recovery through rebuilt binaries.
 - **TOOL-01:** Extend existing Lua editors; expose skeleton/palette/bounds diagnostics, particle pool/overdraw views, material reload errors, pass timing and texture residency.
 - **TOOL-02:** Add picking, debug shading modes and inspectable capabilities/settings. Native implementation detail stays in diagnostics rather than ordinary user flows.
 
@@ -372,9 +387,9 @@ Proposed budgets, to calibrate in M0:
 | Risk/decision | Response |
 |---|---|
 | Direct skinning/particle draws pass but complete scene behavior is unproven | Prioritize catalog-resolved imported fixtures and GA/GP; retain the validated reference paths |
-| Missing-path lookup invents identities and shared scene path broadens deletion | Resolve DB-01/02/03 before using the catalog for skeletal/effect/water assets |
+| Catalog repairs regress during broader resource integration | Preserve required SQLite identity/migration/deletion tests; expand to explicit kinds, canonical paths and actual cooked graphics assets |
 | Catalog and compilation index use different identity models | Add UUID/source-to-ResourceID mapping/reconciliation; compiler dependencies remain in IResourceCompilationDatabase |
-| Director caches outlive database generations | Serialize publication, define retained-handle validity and budgets, test unload/switch races |
+| Old catalog results or pending jobs survive database generations | Keep detached lookups; define retained-handle validity and publication generations; test mutation/unload/switch races |
 | Multiple animation representations and particle update paths | Define authoritative data and ownership; adapt existing layers rather than updating twice |
 | Bone/keyframe/influence limits differ between code and assets | Publish validated per-backend limits; compiler rejects overflow or performs documented partitioning |
 | Shared interface ABI and other graphics implementations | Keep this pass internally additive; test compatibility; isolate any later versioned interface change |
@@ -390,8 +405,8 @@ Owners to assign: graphics lead (contracts/gates), asset/resource engineer (cata
 
 Each increment should be independently reviewable and preserve the baseline tests.
 
-1. **Required catalog contracts (`DB-01/02/03/10`):** existing identity/mutation/switching contracts and versioned legacy migration, row backup, schema guards, rollback and future-version rejection now pass locally against mandatory SQLite. The `asset-catalog` preset and catalog CI job require the target/backend; remote CI remains unverified. Explicit asset kinds, canonical path identity and broader failure/race coverage remain open.
-2. **Catalog lifecycle/bridge (`DB-04/05/06/07`):** consistent paths/database switching, safe caches, then catalog material/texture → compile → load → DX11 draw. Add a database-enabled configuration alongside lightweight graphics contracts.
+1. **Rebuild the current baseline (`BASE-02/03`, `DB-10`, `UI-01`):** configure/build selected Debug and RelWithDebInfo graphics, catalog and resource targets; execute them with required backends and explicit unavailable reporting. Record commit/toolchain/configuration/adapter/driver/fixture hashes. Restore CI definitions that are absent in this checkout. Retain the historical catalog/native/GPU evidence, but do not count it as fresh certification.
+2. **Catalog lifecycle/bridge (`DB-01/04/05/06/07`):** preserve bound CRUD and schema-v1 repairs; implement explicit asset kinds, canonical project paths, publication generations and failure/race policy, then catalog material/texture → compile → load → DX11 draw. The dedicated `asset-catalog` preset already exists; add the graphics integration fixture to it or a companion configuration.
 3. **Imported animation (`BASE-04`, `ANIM-01/02/04/05/06`):** reuse CPU skinning; cook a two-bone mesh/clip with inverse-bind transforms and drive it through the scene. Prove independent instances, bounds and events, then extend to a licensed character.
 4. **Particle assets/scene (`FX-01/04/06/08`, `DB-07/08`):** load a versioned effect, round-trip settings, define once-per-frame simulation and space/scale rules, test multiple cameras and lifecycle/reload. Preserve analytical and direct-draw tests.
 5. **Ownership/performance (`CORE-01/02/05`, `ANIM-05`, `FX-03/05`):** generations/teardown, dynamic/GPU deformation, reusable particle buffers, draw-state restoration and global transparency sorting; record CPU/GPU/upload/memory costs.
@@ -401,4 +416,14 @@ Each increment should be independently reviewable and preserve the baseline test
 9. **R2 water/richer features:** WATER-01 through WATER-06 via the catalog/GPU frame plus P1 work; validate lake/pool/river and mixed particle/water sequences before R2 certification.
 10. **Backend expansion:** DX12 remains experimental until its own presentation/material/UI/resource/performance gates pass.
 
-Completion records include changed files, actual tests/skips, reference captures, measured costs and limitations. The next executable task is catalog path/lifecycle hardening and the UUID/source-to-ResourceID bridge, followed by catalog-resolved compiled material/texture rendering; CPU skinning and basic particle rendering form the retained baseline. Use the implementation status for current catalog commands and evidence limits.
+Completion records include changed files, actual tests/skips/unavailable results, reference captures, measured costs and limitations. The next executable task is rebuilding/running the current baseline and restoring CI, followed by catalog path/lifecycle hardening and UUID/source-to-ResourceID mapping. CPU skinning, basic particles and catalog migration form the retained implementation baseline. Use the implementation status for commands and historical evidence limits.
+
+## 10. First three reviewable delivery batches
+
+| Batch | Concrete deliverable | Exit condition |
+|---|---|---|
+| A — verification baseline | Current graphics/native/catalog/resource tests built in Debug and RelWithDebInfo; latest UI/camera tests included; reproducible runner and versioned CI | All required tests run and pass; external-media gaps explicitly resolved or block the applicable release gate; evidence records match source/configuration |
+| B — one complete graphics asset | Canonical catalog identity mapped to ResourceID, material/texture compilers, dependency loading and render-thread upload/publication | Imported material and texture draw identically in preview/runtime; failed compile/upload retains old output; rename/reload/unload races are covered |
+| C — animation and effects through the scene | Imported two-bone mesh/clip → evaluated pose → deformation; catalog-loaded seeded effect → once-per-frame simulation → camera-dependent draw | Independent character instances and two views behave correctly; bounds, lifetime, pause/restart/reload are verified; timings/allocations are recorded |
+
+After these batches, prioritize GPU pass resources, HDR/shadows and recovery for R1. Add lake/pool/river water, soft particles and richer animation against those same frame/asset contracts for R2. Do not estimate the remaining calendar schedule from historical effort ranges until A–C establish representative content, hardware and staffing.

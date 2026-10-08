@@ -92,7 +92,7 @@ namespace workphone
                                                     SmartPtr<ISharedObject> object,
                                                     SmartPtr<IEvent> event )
     {
-        if (auto jobQueue = getOwner())
+        if( auto jobQueue = getOwner() )
         {
             auto jobs = jobQueue->m_executingJobs;
             for( auto &job : jobs )

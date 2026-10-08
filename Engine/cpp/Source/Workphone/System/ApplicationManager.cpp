@@ -46,16 +46,16 @@
 #include <crtdbg.h>
 
 #if defined( _DEBUG )
-#    define WP_CHECK_CRT_HEAP( label )                                                                          \
-        do                                                                                                       \
-        {                                                                                                        \
-            if( !_CrtCheckMemory() )                                                                             \
-            {                                                                                                    \
-                std::fprintf( stderr, "CRT heap damaged at ApplicationManager::unload: %s\n", label );        \
-            }                                                                                                    \
+#    define WP_CHECK_CRT_HEAP( label )                                                                 \
+        do                                                                                             \
+        {                                                                                              \
+            if( !_CrtCheckMemory() )                                                                   \
+            {                                                                                          \
+                std::fprintf( stderr, "CRT heap damaged at ApplicationManager::unload: %s\n", label ); \
+            }                                                                                          \
         } while( false )
 #else
-#    define WP_CHECK_CRT_HEAP( label ) ((void)0)
+#    define WP_CHECK_CRT_HEAP( label ) ( (void)0 )
 #endif
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Interface/System/IFSMManager.hpp>

@@ -96,8 +96,7 @@ namespace workphone
         return static_cast<u32>( listeners.size() );
     }
 
-    ISharedObject::ScopedLoadstateWait::ScopedLoadstateWait( ISharedObject *object ) :
-        m_object( object )
+    ISharedObject::ScopedLoadstateWait::ScopedLoadstateWait( ISharedObject *object ) : m_object( object )
     {
         if( m_object )
         {

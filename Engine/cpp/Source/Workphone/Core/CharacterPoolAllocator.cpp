@@ -17,5 +17,5 @@ namespace workphone
         static Pool instance;
         return instance;
     }
-}
+}  // namespace workphone
 #endif

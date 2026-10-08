@@ -154,8 +154,8 @@ namespace workphone
         virtual void setCallbackFunction( std::function<void( int )> callbackFunction ) = 0;
 
         virtual Parameter handleEvent( EventType eventType, hash_type eventValue,
-                               const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                               SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) = 0;
+                                       const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                       SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) = 0;
 
         WP_CLASS_REGISTER_DECL;
     };

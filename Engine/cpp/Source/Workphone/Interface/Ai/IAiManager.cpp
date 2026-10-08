@@ -17,7 +17,7 @@ namespace workphone
     String IAiManager::processResponseWithFeedback( const String &response ) const
     {
         return processResponse( response ) ? String( "Engine actions applied." )
-                                            : String( "No engine actions were applied." );
+                                           : String( "No engine actions were applied." );
     }
 
 }  // namespace workphone

@@ -125,7 +125,7 @@ namespace workphone
 
             /**
              * @brief Synchronizes the renderer node with the owning actor.
- */
+             */
             void updateTransform() override;
 
             /**
@@ -138,7 +138,7 @@ namespace workphone
 
             /**
              * @brief Synchronizes renderer visibility with the component and actor.
- */
+             */
             void updateVisibility() override;
 
             /**

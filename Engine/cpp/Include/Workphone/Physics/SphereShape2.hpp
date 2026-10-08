@@ -43,24 +43,25 @@ namespace workphone::physics
             for( u32 i = 0; i < count; ++i )
             {
                 const auto angle = twoPi * static_cast<real_Num>( i ) / count;
-                points.emplace_back( std::cos( angle ) * getRadius(),
-                                     std::sin( angle ) * getRadius() );
+                points.emplace_back( std::cos( angle ) * getRadius(), std::sin( angle ) * getRadius() );
             }
         }
 
         void computeMass( SmartPtr<IMassData2> massData, real_Num density ) const override
         {
-            if( !massData ) return;
+            if( !massData )
+                return;
             const auto radius = getRadius();
             const auto pi = static_cast<real_Num>( 3.14159265358979323846 );
             const auto mass = pi * radius * radius * std::max( density, static_cast<real_Num>( 0 ) );
             massData->setMass( static_cast<f32>( mass ) );
             massData->setCenter( Vector2<real_Num>::zero() );
-            massData->setInertia( static_cast<f32>( static_cast<real_Num>( 0.5 ) * mass * radius * radius ) );
+            massData->setInertia(
+                static_cast<f32>( static_cast<real_Num>( 0.5 ) * mass * radius * radius ) );
         }
 
     private:
         real_Num m_radius = static_cast<real_Num>( 0.5 );
     };
-}
+}  // namespace workphone::physics
 #endif

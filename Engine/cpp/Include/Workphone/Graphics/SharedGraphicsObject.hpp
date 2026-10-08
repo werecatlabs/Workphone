@@ -228,8 +228,7 @@ namespace workphone
                     }
 
                     if( ownsContext ||
-                        ( stateContext->getOwnerPtr() == nullptr &&
-                          stateContext->getStates().empty() &&
+                        ( stateContext->getOwnerPtr() == nullptr && stateContext->getStates().empty() &&
                           stateContext->getStateListeners().empty() ) )
                     {
                         stateManager->removeStateContext( stateContext );
@@ -338,10 +337,9 @@ namespace workphone
                             stateContext->setOwner( nullptr );
                         }
 
-                        if( ownsContext ||
-                            ( stateContext->getOwnerPtr() == nullptr &&
-                              stateContext->getStates().empty() &&
-                              stateContext->getStateListeners().empty() ) )
+                        if( ownsContext || ( stateContext->getOwnerPtr() == nullptr &&
+                                             stateContext->getStates().empty() &&
+                                             stateContext->getStateListeners().empty() ) )
                         {
                             stateManager->removeStateContext( stateContext );
                         }

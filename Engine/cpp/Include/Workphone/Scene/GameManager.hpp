@@ -448,7 +448,8 @@ namespace workphone
             /**
              * @copydoc ISceneManager::loadObject
              */
-            void loadObject( SmartPtr<ISharedObject> object, SmartPtr<ISharedObject> data, bool forceQueue ) override;
+            void loadObject( SmartPtr<ISharedObject> object, SmartPtr<ISharedObject> data,
+                             bool forceQueue ) override;
 
             /**
              * @copydoc ISceneManager::unloadObject
@@ -463,7 +464,8 @@ namespace workphone
              * @param object Smart pointer to the object.
              * @param properties Smart pointer to the properties to queue.
              */
-            void queueProperties( SmartPtr<ISharedObject> object, SmartPtr<Properties> properties ) override;
+            void queueProperties( SmartPtr<ISharedObject> object,
+                                  SmartPtr<Properties> properties ) override;
 
             /**
              * @brief Gets the task used to update the state.
@@ -579,8 +581,7 @@ namespace workphone
              * @return True if the state was found, false otherwise.
              */
             bool getTransformState( u32 id, time_interval t, time_interval dt,
-                                    Transform3<real_Num> &transform,
-                                    TaskId task ) override;
+                                    Transform3<real_Num> &transform, TaskId task ) override;
 
             /**
              * @brief Gets the registered components for a given update state and task.
@@ -709,8 +710,7 @@ namespace workphone
 
             // Each producer task owns a timestamped history per actor. The mutex
             // protects publication and sampling independently of scene operations.
-            FixedArray<UnorderedMap<u32, Array<TransformSample>>, (u32)TaskId::Count>
-                m_transformHistory;
+            FixedArray<UnorderedMap<u32, Array<TransformSample>>, (u32)TaskId::Count> m_transformHistory;
             mutable std::mutex m_transformHistoryMutex;
 
             /// Update flags for objects.

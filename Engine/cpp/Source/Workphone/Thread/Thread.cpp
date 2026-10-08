@@ -194,8 +194,8 @@ namespace workphone
 #if defined( _MSC_VER )
         return _InterlockedCompareExchange( target, desired, expected );
 #else
-        __atomic_compare_exchange_n( target, &expected, desired, false,
-                                     __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST );
+        __atomic_compare_exchange_n( target, &expected, desired, false, __ATOMIC_SEQ_CST,
+                                     __ATOMIC_SEQ_CST );
         return expected;
 #endif
     }

@@ -32,7 +32,10 @@ namespace workphone
 
     WP_CLASS_REGISTER_DERIVED( workphone, Properties, ISharedObject );
 
-    namespace { thread_local Properties::ObjectResolver loadObjectResolver; }
+    namespace
+    {
+        thread_local Properties::ObjectResolver loadObjectResolver;
+    }
     Properties::ObjectResolver Properties::exchangeObjectResolver( ObjectResolver resolver )
     {
         auto previous = std::move( loadObjectResolver );
@@ -46,7 +49,7 @@ namespace workphone
     }
 
     bool Properties::getPropertyResources( const String &name,
-                                          Array<SmartPtr<ISharedObject>> &value ) const
+                                           Array<SmartPtr<ISharedObject>> &value ) const
     {
         if( !hasProperty( name ) )
         {
@@ -92,8 +95,8 @@ namespace workphone
         }
     }
 
-    bool Properties::getPropertyAsTypeImpl( const String &name, u32 type,
-                                          SmartPtr<ISharedObject> &value, bool &assignValue ) const
+    bool Properties::getPropertyAsTypeImpl( const String &name, u32 type, SmartPtr<ISharedObject> &value,
+                                            bool &assignValue ) const
     {
         assignValue = false;
         if( !hasProperty( name ) )
@@ -112,7 +115,8 @@ namespace workphone
         auto resourceDatabase = applicationManager->getResourceDatabase();
         auto resource =
             loadObjectResolver ? loadObjectResolver( StringUtil::toString( uuid ) ) : nullptr;
-        if( !resource ) resource = resourceDatabase->getObject( uuid );
+        if( !resource )
+            resource = resourceDatabase->getObject( uuid );
         if( resource )
         {
             auto typeManager = TypeManager::instance();

@@ -31,20 +31,25 @@ namespace workphone::render
         };
 
         const PipelineToggle pipelineToggles[] = {
-            { "Temporal anti-aliasing", &IGraphicsPipeline::isTAAEnabled, &IGraphicsPipeline::enableTAA },
+            { "Temporal anti-aliasing", &IGraphicsPipeline::isTAAEnabled,
+              &IGraphicsPipeline::enableTAA },
             { "Ambient occlusion", &IGraphicsPipeline::isGTAOEnabled, &IGraphicsPipeline::enableGTAO },
-            { "Screen-space reflections", &IGraphicsPipeline::isSSREnabled, &IGraphicsPipeline::enableSSR },
-            { "Contact shadows", &IGraphicsPipeline::isContactShadowsEnabled, &IGraphicsPipeline::enableContactShadows },
+            { "Screen-space reflections", &IGraphicsPipeline::isSSREnabled,
+              &IGraphicsPipeline::enableSSR },
+            { "Contact shadows", &IGraphicsPipeline::isContactShadowsEnabled,
+              &IGraphicsPipeline::enableContactShadows },
             { "Depth of field", &IGraphicsPipeline::isDOFEnabled, &IGraphicsPipeline::enableDOF },
             { "Bloom", &IGraphicsPipeline::isBloomEnabled, &IGraphicsPipeline::enableBloom },
-            { "Auto exposure", &IGraphicsPipeline::isExposureEnabled, &IGraphicsPipeline::enableExposure },
-            { "Motion blur", &IGraphicsPipeline::isMotionBlurEnabled, &IGraphicsPipeline::enableMotionBlur },
+            { "Auto exposure", &IGraphicsPipeline::isExposureEnabled,
+              &IGraphicsPipeline::enableExposure },
+            { "Motion blur", &IGraphicsPipeline::isMotionBlurEnabled,
+              &IGraphicsPipeline::enableMotionBlur },
             { "Cascaded shadows", &IGraphicsPipeline::isCSMEnabled, &IGraphicsPipeline::enableCSM }
         };
 
         template <class T>
-        bool readPipelineValue( const Properties &properties, const char *name,
-                                T &value, T minimum, T maximum )
+        bool readPipelineValue( const Properties &properties, const char *name, T &value, T minimum,
+                                T maximum )
         {
             T candidate = value;
             if( !properties.getPropertyValue( name, candidate ) || !std::isfinite( candidate ) )
@@ -55,7 +60,7 @@ namespace workphone::render
             value = candidate;
             return true;
         }
-    }
+    }  // namespace
 
     SmartPtr<Properties> GraphicsPipeline::getProperties() const
     {
@@ -99,13 +104,17 @@ namespace workphone::render
         if( readPipelineValue( *properties, "TAA feedback", taa.m_feedback, 0.0f, 0.99f ) )
             setTaaSettings( taa );
         auto ao = getTaoaSettings();
-        const bool radiusChanged = readPipelineValue( *properties, "AO radius", ao.m_radius, 0.01f, 100.0f );
-        const bool intensityChanged = readPipelineValue( *properties, "AO intensity", ao.m_intensity, 0.0f, 10.0f );
+        const bool radiusChanged =
+            readPipelineValue( *properties, "AO radius", ao.m_radius, 0.01f, 100.0f );
+        const bool intensityChanged =
+            readPipelineValue( *properties, "AO intensity", ao.m_intensity, 0.0f, 10.0f );
         if( radiusChanged || intensityChanged )
             setTaoaSettings( ao );
         auto hdr = getHdrSettings();
-        const bool thresholdChanged = readPipelineValue( *properties, "Bloom threshold", hdr.m_bloomThreshold, 0.0f, 100.0f );
-        const bool bloomChanged = readPipelineValue( *properties, "Bloom intensity", hdr.m_bloomIntensity, 0.0f, 10.0f );
+        const bool thresholdChanged =
+            readPipelineValue( *properties, "Bloom threshold", hdr.m_bloomThreshold, 0.0f, 100.0f );
+        const bool bloomChanged =
+            readPipelineValue( *properties, "Bloom intensity", hdr.m_bloomIntensity, 0.0f, 10.0f );
         if( thresholdChanged || bloomChanged )
             setHdrSettings( hdr );
         auto csm = getCsmSettings();

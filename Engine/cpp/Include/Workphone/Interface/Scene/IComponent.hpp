@@ -399,7 +399,8 @@ namespace workphone
              * and return meaningful result parameters used by callers.
              */
             virtual Parameter handleEvent( EventType eventType, hash_type eventValue,
-                                           const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                           const Array<Parameter> &arguments,
+                                           SmartPtr<ISharedObject> sender,
                                            SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) = 0;
 
             /**

@@ -308,8 +308,14 @@ namespace workphone
              * @return The current loading state.
              */
             SceneLoadingState getSceneLoadingState() const override;
-            u64 beginSceneLoad() { return ++m_loadGeneration; }
-            u64 getLoadGeneration() const { return m_loadGeneration.load(); }
+            u64 beginSceneLoad()
+            {
+                return ++m_loadGeneration;
+            }
+            u64 getLoadGeneration() const
+            {
+                return m_loadGeneration.load();
+            }
 
             /**
              * @brief Sorts the objects in memory for efficient access or rendering.
@@ -436,7 +442,7 @@ namespace workphone
              * @var m_sceneLoadingState
              * @brief The current loading state of the scene (loaded, unloaded, etc.).
              */
-            std::atomic<u64> m_loadGeneration{0};
+            std::atomic<u64> m_loadGeneration{ 0 };
             AtomicValue<SceneLoadingState> m_sceneLoadingState = SceneLoadingState::Loaded;
 
             /**

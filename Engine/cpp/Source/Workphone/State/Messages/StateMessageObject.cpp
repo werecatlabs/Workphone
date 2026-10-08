@@ -14,14 +14,16 @@ namespace workphone
 
     void StateMessageObject::unload( SmartPtr<ISharedObject> data )
     {
-        std::fprintf( stderr, "TRACE StateMessageObject unload %p payload before %p\n", this, m_object.get() );
+        std::fprintf( stderr, "TRACE StateMessageObject unload %p payload before %p\n", this,
+                      m_object.get() );
         StateMessage::unload( data );
 
         // The pointee may already have been reclaimed by its factory by the time a
         // queued state message is drained. Clear the raw weak reference without
         // touching that potentially stale pooled object.
         m_object.forceReset();
-        std::fprintf( stderr, "TRACE StateMessageObject unload %p payload after %p\n", this, m_object.get() );
+        std::fprintf( stderr, "TRACE StateMessageObject unload %p payload after %p\n", this,
+                      m_object.get() );
     }
 
     auto StateMessageObject::getObject() const -> SmartPtr<ISharedObject>

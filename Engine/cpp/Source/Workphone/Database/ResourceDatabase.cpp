@@ -1554,7 +1554,8 @@ namespace workphone
                     return nullptr;
                 }
                 auto properties = entry->getProperties();
-                if( !properties ) return nullptr;
+                if( !properties )
+                    return nullptr;
 
                 auto id = String();
                 auto uuid = String();

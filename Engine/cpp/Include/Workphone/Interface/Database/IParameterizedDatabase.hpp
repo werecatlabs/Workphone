@@ -14,8 +14,8 @@ namespace workphone
     {
     public:
         virtual ~IParameterizedDatabase() = default;
-        virtual SmartPtr<IDatabaseQuery> queryBound(
-            const String &sql, const Array<String> &values ) = 0;
+        virtual SmartPtr<IDatabaseQuery> queryBound( const String &sql,
+                                                     const Array<String> &values ) = 0;
     };
-}
+}  // namespace workphone
 #endif

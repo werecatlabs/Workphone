@@ -347,7 +347,10 @@ namespace workphone
             SmartPtr<vehicle::IVehicle> getVehicleController() const;
 
             /** Rebind visual wheel components after replacing a generated wheel hierarchy. */
-            void refreshWheels() { setupWheels(); }
+            void refreshWheels()
+            {
+                setupWheels();
+            }
 
             /**
              * @brief Attach a physics vehicle implementation to this controller.
@@ -466,14 +469,14 @@ namespace workphone
             f32 m_handbrakeFrictionTorque = 0;  ///< Peak handbrake torque (N*m)
             f32 m_frictionTorque = 10;          ///< Rolling resistance torque (N*m)
             f32 m_maxSteeringAngle = 28.f;      ///< Max steering angle (degrees)
-            f32 m_visualSteeringSign = 1.f;    ///< Match the selected physics steering convention
+            f32 m_visualSteeringSign = 1.f;     ///< Match the selected physics steering convention
             f32 m_massFraction = 0.25f;         ///< Fraction of vehicle mass allocated per wheel
 
             // Runtime control inputs
-            std::atomic<bool> m_playerControls{true}, m_joystickActive{false};
-            std::atomic<f32> m_throttle{0.0f};  ///< Throttle input [0..1]
-            std::atomic<f32> m_brake{0.0f};     ///< Brake input [0..1]
-            std::atomic<f32> m_steering{0.0f};  ///< Steering angle (degrees)
+            std::atomic<bool> m_playerControls{ true }, m_joystickActive{ false };
+            std::atomic<f32> m_throttle{ 0.0f };  ///< Throttle input [0..1]
+            std::atomic<f32> m_brake{ 0.0f };     ///< Brake input [0..1]
+            std::atomic<f32> m_steering{ 0.0f };  ///< Steering angle (degrees)
 
             VehicleDriveType m_driveType = VehicleDriveType::AllWheelDrive;  ///< Drive configuration
 

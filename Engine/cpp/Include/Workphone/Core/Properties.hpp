@@ -54,7 +54,7 @@ namespace workphone
     {
     public:
         // A scoped loader may resolve objects in its pinned graph before scene publication.
-        using ObjectResolver = std::function<SmartPtr<ISharedObject>(const String &)>;
+        using ObjectResolver = std::function<SmartPtr<ISharedObject>( const String & )>;
         static ObjectResolver exchangeObjectResolver( ObjectResolver resolver );
         /** @brief Empty string constant used for default values. */
         static const String emptyStr;
@@ -148,8 +148,8 @@ namespace workphone
          *
          * @note This does not check for an existing property of the same name; it will be overwritten.
          */
-        void addProperty( const String &name, const String &value,
-                          const String &type = emptyStr, bool readOnly = false );
+        void addProperty( const String &name, const String &value, const String &type = emptyStr,
+                          bool readOnly = false );
 
         /**
          * @brief Sets a property value as a string with type information.
@@ -1007,8 +1007,8 @@ namespace workphone
         static String getResourceUUID( const ISharedObject *object );
         bool getPropertyResources( const String &name, Array<SmartPtr<ISharedObject>> &value ) const;
         void setPropertyAsTypeImpl( const String &name, ISharedObject *value, u32 type );
-        bool getPropertyAsTypeImpl( const String &name, u32 type,
-                                    SmartPtr<ISharedObject> &value, bool &assignValue ) const;
+        bool getPropertyAsTypeImpl( const String &name, u32 type, SmartPtr<ISharedObject> &value,
+                                    bool &assignValue ) const;
 
         /**
          * @brief The array containing all properties in this group.

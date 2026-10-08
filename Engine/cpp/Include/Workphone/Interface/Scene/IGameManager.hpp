@@ -28,7 +28,7 @@ namespace workphone
             /// Shared presentation delay for vehicle meshes and follow cameras (seconds).
             static constexpr time_interval smoothMotionDelay = 1.0 / 60.0;
 
-            static const hash_type sceneLoadedHash;  ///< The hash for the scene loaded event.
+            static const hash_type sceneLoadedHash;    ///< The hash for the scene loaded event.
             static const hash_type sceneUnloadedHash;  ///< The hash for the scene unloaded event.
             static const hash_type scenePlayHash;      ///< The hash for the scene play event.
             static const hash_type sceneEditHash;      ///< The hash for the scene edit event.
@@ -365,8 +365,7 @@ namespace workphone
              * @return True if the transform state was found, false otherwise.
              */
             virtual bool getTransformState( u32 id, time_interval t, time_interval dt,
-                                            Transform3<real_Num> &transform,
-                                            TaskId task ) = 0;
+                                            Transform3<real_Num> &transform, TaskId task ) = 0;
 
             /**
              * @brief Gets the registered components for the specified update state and task.

@@ -59,10 +59,14 @@ namespace workphone
         }
 
         ConcurrentQueueBase( const ConcurrentQueueBase &other ) :
-            ConcurrentQueueBase( other, std::unique_lock<mutex_type>( other.m_mutex ) ) {}
+            ConcurrentQueueBase( other, std::unique_lock<mutex_type>( other.m_mutex ) )
+        {
+        }
 
         ConcurrentQueueBase( ConcurrentQueueBase &&other ) :
-            ConcurrentQueueBase( other, std::unique_lock<mutex_type>( other.m_mutex ), 0 ) {}
+            ConcurrentQueueBase( other, std::unique_lock<mutex_type>( other.m_mutex ), 0 )
+        {
+        }
 
         ~ConcurrentQueueBase()
         {

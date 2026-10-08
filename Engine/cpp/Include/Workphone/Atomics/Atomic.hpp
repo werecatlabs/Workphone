@@ -108,19 +108,19 @@ namespace workphone
             static constexpr bool pointer = false;
         };
 
-#define WP_DETAIL_ATOMIC_INTEGER( Integer )                       \
-        template <>                                              \
-        struct AtomicArithmetic<Integer>                         \
-        {                                                        \
-            using difference_type = Integer;                     \
-            static constexpr bool enabled = true;                \
-            static constexpr bool integral = true;               \
-            static constexpr bool pointer = false;               \
-            static Integer offset( Integer value ) noexcept      \
-            {                                                    \
-                return value;                                    \
-            }                                                    \
-        };
+#define WP_DETAIL_ATOMIC_INTEGER( Integer )             \
+    template <>                                         \
+    struct AtomicArithmetic<Integer>                    \
+    {                                                   \
+        using difference_type = Integer;                \
+        static constexpr bool enabled = true;           \
+        static constexpr bool integral = true;          \
+        static constexpr bool pointer = false;          \
+        static Integer offset( Integer value ) noexcept \
+        {                                               \
+            return value;                               \
+        }                                               \
+    };
 
         WP_DETAIL_ATOMIC_INTEGER( char )
         WP_DETAIL_ATOMIC_INTEGER( signed char )
@@ -164,12 +164,12 @@ namespace workphone
         struct AtomicWord;
 
 #define WP_DETAIL_ATOMIC_WORD( Size, Signed, Unsigned ) \
-        template <>                                    \
-        struct AtomicWord<Size>                        \
-        {                                              \
-            using type = Signed;                       \
-            using unsigned_type = Unsigned;            \
-        };
+    template <>                                         \
+    struct AtomicWord<Size>                             \
+    {                                                   \
+        using type = Signed;                            \
+        using unsigned_type = Unsigned;                 \
+    };
         WP_DETAIL_ATOMIC_WORD( 1, char, uint8_t )
         WP_DETAIL_ATOMIC_WORD( 2, short, uint16_t )
 #if defined( _MSC_VER )
@@ -189,20 +189,21 @@ namespace workphone
 
         constexpr memory_semantics atomicFailureOrder( memory_semantics order ) noexcept
         {
-            return order == memory_semantics::release ? memory_semantics::relaxed :
-                   order == memory_semantics::acq_rel ? memory_semantics::acquire : order;
+            return order == memory_semantics::release   ? memory_semantics::relaxed
+                   : order == memory_semantics::acq_rel ? memory_semantics::acquire
+                                                        : order;
         }
 
         inline void atomicCheckCompareOrder( memory_semantics success,
                                              memory_semantics failure ) noexcept
         {
             assert( atomicValidOrder( success ) && atomicValidOrder( failure ) );
-            assert( failure == memory_semantics::relaxed ||
-                    ( failure == memory_semantics::acquire &&
-                      ( success == memory_semantics::acquire || success == memory_semantics::acq_rel ||
-                        success == memory_semantics::full_fence ) ) ||
-                    ( failure == memory_semantics::full_fence &&
-                      success == memory_semantics::full_fence ) );
+            assert(
+                failure == memory_semantics::relaxed ||
+                ( failure == memory_semantics::acquire &&
+                  ( success == memory_semantics::acquire || success == memory_semantics::acq_rel ||
+                    success == memory_semantics::full_fence ) ) ||
+                ( failure == memory_semantics::full_fence && success == memory_semantics::full_fence ) );
             (void)success;
             (void)failure;
         }
@@ -221,11 +222,10 @@ namespace workphone
             static Word load( volatile Word *location, memory_semantics order ) noexcept
             {
                 return AtomicMachine<Word>::compare_and_swap( location, 0, 0, order,
-                                                               memory_semantics::relaxed );
+                                                              memory_semantics::relaxed );
             }
 
-            static Word exchange( volatile Word *location, Word value,
-                                  memory_semantics order ) noexcept
+            static Word exchange( volatile Word *location, Word value, memory_semantics order ) noexcept
             {
                 Word expected = load( location, memory_semantics::relaxed );
                 for( ;; )
@@ -240,36 +240,35 @@ namespace workphone
                 }
             }
 
-            static void store( volatile Word *location, Word value,
-                               memory_semantics order ) noexcept
+            static void store( volatile Word *location, Word value, memory_semantics order ) noexcept
             {
                 exchange( location, value, order );
             }
         };
 
-#define WP_DETAIL_ATOMIC_INTERLOCKED( Word, Intrinsic )                                  \
-        template <>                                                                     \
-        struct AtomicMachine<Word> : AtomicInterlockedOperations<Word>                   \
-        {                                                                               \
-            static Word compare_and_swap( volatile Word *location, Word value,           \
-                                          Word comparand, memory_semantics,             \
-                                          memory_semantics ) noexcept                   \
-            {                                                                           \
-                return Intrinsic( location, value, comparand );                         \
-            }                                                                           \
+#    define WP_DETAIL_ATOMIC_INTERLOCKED( Word, Intrinsic )                                    \
+        template <>                                                                            \
+        struct AtomicMachine<Word> : AtomicInterlockedOperations<Word>                         \
+        {                                                                                      \
+            static Word compare_and_swap( volatile Word *location, Word value, Word comparand, \
+                                          memory_semantics, memory_semantics ) noexcept        \
+            {                                                                                  \
+                return Intrinsic( location, value, comparand );                                \
+            }                                                                                  \
         };
         WP_DETAIL_ATOMIC_INTERLOCKED( char, _InterlockedCompareExchange8 )
         WP_DETAIL_ATOMIC_INTERLOCKED( short, _InterlockedCompareExchange16 )
         WP_DETAIL_ATOMIC_INTERLOCKED( long, _InterlockedCompareExchange )
         WP_DETAIL_ATOMIC_INTERLOCKED( int64_t, _InterlockedCompareExchange64 )
-#undef WP_DETAIL_ATOMIC_INTERLOCKED
+#    undef WP_DETAIL_ATOMIC_INTERLOCKED
 #else
         constexpr int atomicBuiltinOrder( memory_semantics order ) noexcept
         {
-            return order == memory_semantics::relaxed ? __ATOMIC_RELAXED :
-                   order == memory_semantics::acquire ? __ATOMIC_ACQUIRE :
-                   order == memory_semantics::release ? __ATOMIC_RELEASE :
-                   order == memory_semantics::acq_rel ? __ATOMIC_ACQ_REL : __ATOMIC_SEQ_CST;
+            return order == memory_semantics::relaxed   ? __ATOMIC_RELAXED
+                   : order == memory_semantics::acquire ? __ATOMIC_ACQUIRE
+                   : order == memory_semantics::release ? __ATOMIC_RELEASE
+                   : order == memory_semantics::acq_rel ? __ATOMIC_ACQ_REL
+                                                        : __ATOMIC_SEQ_CST;
         }
 
         template <typename Word>
@@ -285,21 +284,18 @@ namespace workphone
                 return __atomic_load_n( location, atomicBuiltinOrder( order ) );
             }
 
-            static void store( volatile Word *location, Word value,
-                               memory_semantics order ) noexcept
+            static void store( volatile Word *location, Word value, memory_semantics order ) noexcept
             {
                 __atomic_store_n( location, value, atomicBuiltinOrder( order ) );
             }
 
-            static Word exchange( volatile Word *location, Word value,
-                                  memory_semantics order ) noexcept
+            static Word exchange( volatile Word *location, Word value, memory_semantics order ) noexcept
             {
                 return __atomic_exchange_n( location, value, atomicBuiltinOrder( order ) );
             }
 
             static Word compare_and_swap( volatile Word *location, Word value, Word comparand,
-                                          memory_semantics success,
-                                          memory_semantics failure ) noexcept
+                                          memory_semantics success, memory_semantics failure ) noexcept
             {
                 __atomic_compare_exchange_n( location, &comparand, value, false,
                                              atomicBuiltinOrder( success ),
@@ -391,7 +387,8 @@ namespace workphone
         T load() const volatile noexcept
         {
             static_assert( detail::atomicValidOrder( M ) && M != memory_semantics::release &&
-                               M != memory_semantics::acq_rel, "Invalid atomic load ordering" );
+                               M != memory_semantics::acq_rel,
+                           "Invalid atomic load ordering" );
             return load( M );
         }
 
@@ -406,7 +403,8 @@ namespace workphone
         void store( T value ) volatile noexcept
         {
             static_assert( detail::atomicValidOrder( M ) && M != memory_semantics::acquire &&
-                               M != memory_semantics::acq_rel, "Invalid atomic store ordering" );
+                               M != memory_semantics::acq_rel,
+                           "Invalid atomic store ordering" );
             store( value, M );
         }
 
@@ -428,8 +426,8 @@ namespace workphone
         {
             detail::atomicCheckCompareOrder( success, failure );
             Word comparand = toWord( expected );
-            Word observed = Machine::compare_and_swap( &m_value, toWord( desired ), comparand,
-                                                       success, failure );
+            Word observed =
+                Machine::compare_and_swap( &m_value, toWord( desired ), comparand, success, failure );
             if( observed == comparand )
             {
                 return true;
@@ -438,10 +436,12 @@ namespace workphone
             return false;
         }
 
-        bool compare_exchange_strong( T &expected, T desired,
-                                      memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        bool compare_exchange_strong(
+            T &expected, T desired,
+            memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
-            return compare_exchange_strong( expected, desired, order, detail::atomicFailureOrder( order ) );
+            return compare_exchange_strong( expected, desired, order,
+                                            detail::atomicFailureOrder( order ) );
         }
 
         // A strong implementation also satisfies the weak compare-exchange contract.
@@ -451,8 +451,9 @@ namespace workphone
             return compare_exchange_strong( expected, desired, success, failure );
         }
 
-        bool compare_exchange_weak( T &expected, T desired,
-                                    memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        bool compare_exchange_weak(
+            T &expected, T desired,
+            memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
             return compare_exchange_strong( expected, desired, order );
         }
@@ -474,36 +475,38 @@ namespace workphone
         }
 
         template <typename U = T>
-        ArithmeticResult<U> fetch_add( difference_type addend,
-                                       memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        ArithmeticResult<U> fetch_add(
+            difference_type addend,
+            memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
             return fetchUpdate( offset( addend ), Update::Add, order );
         }
 
         template <typename U = T>
-        ArithmeticResult<U> fetch_sub( difference_type subtrahend,
-                                       memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        ArithmeticResult<U> fetch_sub(
+            difference_type subtrahend,
+            memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
             return fetchUpdate( offset( subtrahend ), Update::Subtract, order );
         }
 
         template <typename U = T>
-        IntegralResult<U> fetch_and( T bits,
-                                     memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        IntegralResult<U> fetch_and(
+            T bits, memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
             return fetchUpdate( static_cast<Unsigned>( toWord( bits ) ), Update::And, order );
         }
 
         template <typename U = T>
-        IntegralResult<U> fetch_or( T bits,
-                                    memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        IntegralResult<U> fetch_or(
+            T bits, memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
             return fetchUpdate( static_cast<Unsigned>( toWord( bits ) ), Update::Or, order );
         }
 
         template <typename U = T>
-        IntegralResult<U> fetch_xor( T bits,
-                                     memory_semantics order = memory_semantics::full_fence ) volatile noexcept
+        IntegralResult<U> fetch_xor(
+            T bits, memory_semantics order = memory_semantics::full_fence ) volatile noexcept
         {
             return fetchUpdate( static_cast<Unsigned>( toWord( bits ) ), Update::Xor, order );
         }
@@ -587,8 +590,8 @@ namespace workphone
         }
 
         template <typename U = T>
-        typename detail::AtomicEnableIf<detail::AtomicSameType<T, U>::value &&
-                                            detail::AtomicArithmetic<U>::pointer, T>::type
+        typename detail::AtomicEnableIf<
+            detail::AtomicSameType<T, U>::value && detail::AtomicArithmetic<U>::pointer, T>::type
         operator->() const volatile noexcept
         {
             return load();
