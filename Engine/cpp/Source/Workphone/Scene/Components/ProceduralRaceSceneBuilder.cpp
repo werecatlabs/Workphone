@@ -921,7 +921,7 @@ namespace workphone::scene::race
             wheelProps->setProperty( "Contact Effective Mass", float( effectiveMass ) );
             wheelProps->setProperty( "Inertia", float( w.tire.wheelInertiaKgM2 ) );
             wheelProps->setProperty( "Brake Friction Torque", float( w.brakeTorqueNm ) );
-            wheelProps->setProperty( "Grip", 1.f );
+            wheelProps->setProperty( "Grip", 1.25f );
             wheelProps->setProperty(
                 "Static Friction Coefficient",
                 float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) ) );

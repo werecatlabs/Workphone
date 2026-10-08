@@ -197,13 +197,13 @@ namespace workphone::scene
             auto application = core::IApplicationManager::instancePtr();
             const auto task = Thread::getCurrentTask();
             const auto gameManager = application ? application->getGameManager() : nullptr;
-            const auto stateTask = gameManager ? gameManager->getStateTask() : TaskId::Primary;
-            if( application && task != stateTask )
+            const auto sceneTask = gameManager ? gameManager->getSceneTask() : TaskId::Primary;
+            if( application && task != sceneTask )
                 return;
             VehicleController::update();
 
             auto app = core::IApplicationManager::instancePtr();
-            if( app && task == stateTask )
+            if( app && task == sceneTask )
             {
                 ScopedLock controlsLock( this, true );
                 const bool driving = app->isPlaying() && !app->isPaused() && isEnabled();
@@ -327,12 +327,6 @@ namespace workphone::scene
                 if( wheelController->isSteeringWheel() )
                 {
                     steeringAngle = static_cast<real_Num>( wheelController->getSteeringAngle() );
-                    if( Math<real_Num>::Abs( steeringAngle ) <=
-                        std::numeric_limits<real_Num>::epsilon() )
-                    {
-                        steeringAngle = static_cast<real_Num>( m_steering ) *
-                                        static_cast<real_Num>( m_maxSteeringAngle );
-                    }
                 }
 
                 const auto steering =

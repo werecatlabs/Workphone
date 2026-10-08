@@ -14,7 +14,6 @@
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/System/DebugUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
-#include <Workphone/Thread/ScopedLock.hpp>
 #include <unordered_set>
 
 namespace workphone
@@ -51,144 +50,78 @@ namespace workphone
     StateContext::~StateContext()
     {
         unload( nullptr );
-        clearStateNodes();
-        clearStateListenerNodes();
-        clearStateQueueNodes();
-        clearEventListenerNodes();
+        clearStates();
+        clearStateListeners();
+        clearStateQueues();
+        clearEventListeners();
 
         WP_ASSERT( getOwnerPtr() == nullptr );
     }
 
     Array<SmartPtr<IState>> StateContext::snapshotStates() const
     {
-        Array<SmartPtr<IState>> states;
-        ScopedLock lock( &m_statesMutex, false );
-
-        for( auto state = m_statesHead; state != nullptr; state = state->m_next.load() )
-        {
-            states.push_back( state );
-        }
-
-        return states;
+        auto values = m_states.snapshot();
+        return Array<SmartPtr<IState>>( values.begin(), values.end() );
     }
 
-    void StateContext::clearStateNodes()
+    void StateContext::clearStates()
     {
-        {
-            ScopedLock lock( &m_statesMutex );
-
-            auto state = m_statesHead;
-            m_statesHead = nullptr;
-            m_statesTail = nullptr;
-
-            while( state != nullptr )
-            {
-                auto next = state->m_next.load();
-                state->m_next = nullptr;
-                state->removeReference();
-                state = next;
-            }
-        }
+        m_states.clear();
     }
 
     Array<SmartPtr<IStateListener>> StateContext::snapshotStateListeners() const
     {
-        ScopedLock lock( &m_listenersMutex, false );
-        return m_stateListeners;
+        auto values = m_stateListeners.readLocked();
+        return Array<SmartPtr<IStateListener>>( values.begin(), values.end() );
     }
 
-    void StateContext::clearStateListenerNodes()
+    void StateContext::clearStateListeners()
     {
-        Array<SmartPtr<IStateListener>> listeners;
+        // Release references outside the lock: destructors may re-enter the context.
+        decltype( m_stateListeners )::storage_type removed;
         {
-            ScopedLock lock( &m_listenersMutex );
-            listeners.swap( m_stateListeners );
+            auto values = m_stateListeners.writeLocked();
+            removed = std::move( *values );
         }
-        // Destructors may call back into this context; release outside the lock.
     }
 
     Array<SmartPtr<IStateQueue>> StateContext::snapshotStateQueues() const
     {
-        Array<SmartPtr<IStateQueue>> stateQueues;
-        ScopedLock lock( &m_stateQueuesMutex, false );
-
-        for( auto stateQueue = m_stateQueuesHead; stateQueue != nullptr;
-             stateQueue = stateQueue->m_next.load() )
-        {
-            stateQueues.push_back( stateQueue );
-        }
-
-        return stateQueues;
+        auto values = m_stateQueues.readLocked();
+        return Array<SmartPtr<IStateQueue>>( values.begin(), values.end() );
     }
 
-    void StateContext::clearStateQueueNodes()
+    void StateContext::clearStateQueues()
     {
-        ScopedLock lock( &m_stateQueuesMutex );
-
-        auto stateQueue = m_stateQueuesHead;
-        m_stateQueuesHead = nullptr;
-        m_stateQueuesTail = nullptr;
-
-        while( stateQueue != nullptr )
+        // Release references outside the lock: destructors may re-enter the context.
+        decltype( m_stateQueues )::storage_type removed;
         {
-            auto next = stateQueue->m_next.load();
-            stateQueue->m_next = nullptr;
-            stateQueue->removeReference();
-            stateQueue = next;
+            auto values = m_stateQueues.writeLocked();
+            removed = std::move( *values );
+        }
+    }
+
+    Array<SmartPtr<IEventListener>> StateContext::snapshotEventListeners() const
+    {
+        auto values = m_eventListeners.readLocked();
+        return Array<SmartPtr<IEventListener>>( values.begin(), values.end() );
+    }
+
+    void StateContext::clearEventListeners()
+    {
+        // Release references outside the lock: destructors may re-enter the context.
+        decltype( m_eventListeners )::storage_type removed;
+        {
+            auto values = m_eventListeners.writeLocked();
+            removed = std::move( *values );
         }
     }
 
     void StateContext::appendStateQueue( SmartPtr<IStateQueue> stateQueue )
     {
-        if( !stateQueue )
+        if( stateQueue )
         {
-            return;
-        }
-
-        ScopedLock lock( &m_stateQueuesMutex );
-        stateQueue->m_next = nullptr;
-        stateQueue->addReference();
-
-        if( m_stateQueuesTail != nullptr )
-        {
-            m_stateQueuesTail->m_next = stateQueue.get();
-        }
-        else
-        {
-            m_stateQueuesHead = stateQueue.get();
-        }
-
-        m_stateQueuesTail = stateQueue.get();
-    }
-
-    Array<SmartPtr<IEventListener>> StateContext::snapshotEventListeners() const
-    {
-        Array<SmartPtr<IEventListener>> eventListeners;
-        ScopedLock lock( &m_eventListenersMutex, false );
-
-        for( auto eventListener = m_eventListenersHead; eventListener != nullptr;
-             eventListener = eventListener->m_next.load() )
-        {
-            eventListeners.push_back( eventListener );
-        }
-
-        return eventListeners;
-    }
-
-    void StateContext::clearEventListenerNodes()
-    {
-        ScopedLock lock( &m_eventListenersMutex );
-
-        auto eventListener = m_eventListenersHead;
-        m_eventListenersHead = nullptr;
-        m_eventListenersTail = nullptr;
-
-        while( eventListener != nullptr )
-        {
-            auto next = eventListener->m_next.load();
-            eventListener->m_next = nullptr;
-            eventListener->removeReference();
-            eventListener = next;
+            m_stateQueues.push_back( stateQueue );
         }
     }
 
@@ -242,6 +175,8 @@ namespace workphone
             sharedObjectListener->setOwner( this );
             m_sharedObjectListener = sharedObjectListener;
 
+            m_states.reserve( stateCapacity );
+
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -266,8 +201,8 @@ namespace workphone
                     m_sharedObjectListener = nullptr;
                 }
 
-                clearStateListenerNodes();
-                clearEventListenerNodes();
+                clearStateListeners();
+                clearEventListeners();
                 m_owner.forceReset();
                 return;
             }
@@ -348,7 +283,7 @@ namespace workphone
                     WP_LOG_WARNING( "StateContext::unload: encountered null state during teardown." );
                 }
             }
-            clearStateNodes();
+            clearStates();
             std::fprintf( stderr, "TRACE StateContext states cleared\n" );
 
             // Unload state queues.
@@ -365,7 +300,7 @@ namespace workphone
                 }
             }
 
-            clearStateQueueNodes();
+            clearStateQueues();
             std::fprintf( stderr, "TRACE StateContext queues cleared\n" );
 
             // Release the context-owned listener before dropping the weak owner reference. The
@@ -378,8 +313,8 @@ namespace workphone
             }
             std::fprintf( stderr, "TRACE StateContext shared listener cleared\n" );
 
-            clearStateListenerNodes();
-            clearEventListenerNodes();
+            clearStateListeners();
+            clearEventListeners();
             m_owner.forceReset();
 
             setLoadingState( LoadingState::Unloaded );
@@ -548,7 +483,7 @@ namespace workphone
     {
         if( !isLoaded() )
         {
-            WP_LOG_WARNING( "StateContext::addMessage: dropping message — context is not loaded." );
+            WP_LOG_WARNING( "StateContext::addMessage: dropping message â€” context is not loaded." );
             return;
         }
 
@@ -615,10 +550,11 @@ namespace workphone
             return;
         }
 
-        ScopedLock lock( &m_listenersMutex );
-        if( std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener ) ==
-            m_stateListeners.end() )
-            m_stateListeners.push_back( stateListener );
+        auto listeners = m_stateListeners.writeLocked();
+        if( std::find( listeners.begin(), listeners.end(), stateListener ) == listeners.end() )
+        {
+            listeners->push_back( stateListener );
+        }
     }
 
     bool StateContext::removeStateListener( SmartPtr<IStateListener> stateListener )
@@ -636,11 +572,11 @@ namespace workphone
 
         bool removed = false;
         {
-            ScopedLock lock( &m_listenersMutex );
-            auto it = std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener );
-            if( it != m_stateListeners.end() )
+            auto listeners = m_stateListeners.writeLocked();
+            auto it = std::find( listeners.begin(), listeners.end(), stateListener );
+            if( it != listeners.end() )
             {
-                m_stateListeners.erase( it );
+                listeners->erase( it );
                 removed = true;
             }
         }
@@ -666,29 +602,14 @@ namespace workphone
             return;
         }
 
-        ScopedLock lock( &m_eventListenersMutex );
-        for( auto current = m_eventListenersHead; current != nullptr; current = current->m_next.load() )
+        auto values = m_eventListeners.writeLocked();
+        if( std::find( values.begin(), values.end(), eventListener ) != values.end() )
         {
-            if( current == eventListener.get() )
-            {
-                WP_LOG_WARNING( "StateContext::addEventListener: listener is already in context." );
-                return;
-            }
+            WP_LOG_WARNING( "StateContext::addEventListener: listener is already in context." );
+            return;
         }
 
-        eventListener->m_next = nullptr;
-        eventListener->addReference();
-
-        if( m_eventListenersTail != nullptr )
-        {
-            m_eventListenersTail->m_next = eventListener.get();
-        }
-        else
-        {
-            m_eventListenersHead = eventListener.get();
-        }
-
-        m_eventListenersTail = eventListener.get();
+        values->push_back( eventListener );
     }
 
     bool StateContext::removeEventListener( SmartPtr<IEventListener> eventListener )
@@ -701,37 +622,12 @@ namespace workphone
 
         bool removed = false;
         {
-            ScopedLock lock( &m_eventListenersMutex );
-            IEventListener *previous = nullptr;
-            auto current = m_eventListenersHead;
-
-            while( current != nullptr )
+            auto values = m_eventListeners.writeLocked();
+            auto it = std::find( values.begin(), values.end(), eventListener );
+            if( it != values.end() )
             {
-                auto next = current->m_next.load();
-                if( current == eventListener.get() )
-                {
-                    if( previous != nullptr )
-                    {
-                        previous->m_next = next;
-                    }
-                    else
-                    {
-                        m_eventListenersHead = next;
-                    }
-
-                    if( m_eventListenersTail == current )
-                    {
-                        m_eventListenersTail = previous;
-                    }
-
-                    current->m_next = nullptr;
-                    current->removeReference();
-                    removed = true;
-                    break;
-                }
-
-                previous = current;
-                current = next;
+                values->erase( it );
+                removed = true;
             }
         }
 
@@ -771,9 +667,8 @@ namespace workphone
 
     SmartPtr<IStateQueue> StateContext::getStateQueue( u32 taskId )
     {
-        ScopedLock lock( &m_stateQueuesMutex, false );
-        for( auto stateQueue = m_stateQueuesHead; stateQueue != nullptr;
-             stateQueue = stateQueue->m_next.load() )
+        auto queues = m_stateQueues.readLocked();
+        for( const auto &stateQueue : queues )
         {
             if( stateQueue->getTaskId() == taskId )
             {
@@ -788,9 +683,8 @@ namespace workphone
 
     SmartPtr<IStateQueue> StateContext::getStateQueue( u32 taskId ) const
     {
-        ScopedLock lock( &m_stateQueuesMutex, false );
-        for( auto stateQueue = m_stateQueuesHead; stateQueue != nullptr;
-             stateQueue = stateQueue->m_next.load() )
+        auto queues = m_stateQueues.readLocked();
+        for( const auto &stateQueue : queues )
         {
             if( stateQueue->getTaskId() == taskId )
             {
@@ -874,29 +768,18 @@ namespace workphone
             return;
         }
 
-        ScopedLock lock( &m_statesMutex );
-        for( auto current = m_statesHead; current != nullptr; current = current->m_next.load() )
         {
-            if( current == state.get() )
+            auto values = m_states.snapshot();
+            if( std::find( values.begin(), values.end(), state ) != values.end() )
             {
                 WP_LOG_WARNING( "StateContext::addState: state is already in context." );
                 return;
             }
+
+            m_states.push_back( state );
         }
 
         state->setStateContext( this );
-        state->m_next = nullptr;
-        state->addReference();
-
-        if( m_statesTail != nullptr )
-        {
-            m_statesTail->m_next = state.get();
-        }
-        else
-        {
-            m_statesHead = state.get();
-        }
-        m_statesTail = state.get();
     }
 
     void StateContext::removeState( SmartPtr<IState> state )
@@ -908,38 +791,13 @@ namespace workphone
         }
 
         bool removed = false;
+
         {
-            ScopedLock lock( &m_statesMutex );
-            IState *previous = nullptr;
-            auto current = m_statesHead;
-
-            while( current != nullptr )
+            auto it = std::find( m_states.begin(), m_states.end(), state );
+            if( it != m_states.end() )
             {
-                auto next = current->m_next.load();
-                if( current == state.get() )
-                {
-                    if( previous != nullptr )
-                    {
-                        previous->m_next = next;
-                    }
-                    else
-                    {
-                        m_statesHead = next;
-                    }
-
-                    if( m_statesTail == current )
-                    {
-                        m_statesTail = previous;
-                    }
-
-                    current->m_next = nullptr;
-                    current->removeReference();
-                    removed = true;
-                    break;
-                }
-
-                previous = current;
-                current = next;
+                m_states.erase( it );
+                removed = true;
             }
         }
 
@@ -997,7 +855,7 @@ namespace workphone
             }
         }
 
-        clearStateQueueNodes();
+        clearStateQueues();
 
         auto states = snapshotStates();
         for( auto &state : states )
@@ -1012,7 +870,7 @@ namespace workphone
             }
         }
 
-        clearStateNodes();
+        clearStates();
     }
 
     SmartPtr<IState> StateContext::getStateById( hash_type id ) const
@@ -1080,8 +938,8 @@ namespace workphone
 
     void *StateContext::getStateDataPtrById( hash_type id, hash_type typeinfo ) const
     {
-        ScopedLock lock( &m_statesMutex, false );
-        for( auto state = m_statesHead; state != nullptr; state = state->m_next.load() )
+        auto states = snapshotStates();
+        for( const auto &state : states )
         {
             if( state && state->getId() == id )
             {
@@ -1105,8 +963,8 @@ namespace workphone
 
     bool StateContext::isDirty() const
     {
-        ScopedLock lock( &m_statesMutex, false );
-        for( auto state = m_statesHead; state != nullptr; state = state->m_next.load() )
+        auto states = snapshotStates();
+        for( const auto &state : states )
         {
             if( state )
             {
@@ -1193,7 +1051,7 @@ namespace workphone
 
     void StateContext::setStateListeners( Array<SmartPtr<IStateListener>> listeners )
     {
-        clearStateListenerNodes();
+        clearStateListeners();
         for( auto &listener : listeners )
         {
             addStateListener( listener );
@@ -1202,7 +1060,7 @@ namespace workphone
 
     void StateContext::setEventListeners( Array<SmartPtr<IEventListener>> eventListeners )
     {
-        clearEventListenerNodes();
+        clearEventListeners();
         for( auto &eventListener : eventListeners )
         {
             addEventListener( eventListener );

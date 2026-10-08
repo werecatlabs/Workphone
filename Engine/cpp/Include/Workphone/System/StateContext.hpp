@@ -3,11 +3,11 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
+#include <Workphone/Core/ConcurrentFixedArrayGrowable.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/System/StateQueue.hpp>
 #include <Workphone/System/Job.hpp>
-#include <Workphone/Thread/RecursiveSpinMutex.hpp>
 
 namespace workphone
 {
@@ -354,14 +354,14 @@ namespace workphone
 
     protected:
         Array<SmartPtr<IState>> snapshotStates() const;
-        void clearStateNodes();
+        void clearStates();
         Array<SmartPtr<IStateListener>> snapshotStateListeners() const;
-        void clearStateListenerNodes();
+        void clearStateListeners();
         Array<SmartPtr<IStateQueue>> snapshotStateQueues() const;
-        void clearStateQueueNodes();
+        void clearStateQueues();
         void appendStateQueue( SmartPtr<IStateQueue> stateQueue );
         Array<SmartPtr<IEventListener>> snapshotEventListeners() const;
-        void clearEventListenerNodes();
+        void clearEventListeners();
 
         /**
          * @brief Checks if a specific bit is set in a flags value.
@@ -441,26 +441,16 @@ namespace workphone
         /// Counter for removal operations
         atomic_u32 m_removeCount;
 
-        /// Null-terminated, C-style linked list of event listeners
-        IEventListener *m_eventListenersHead = nullptr;
-        IEventListener *m_eventListenersTail = nullptr;
-        mutable RecursiveSpinMutex m_eventListenersMutex;
+        // Inline capacities; insertion beyond these limits throws std::length_error.
+        static constexpr size_t stateCapacity = 12;
+        static constexpr size_t listenerCapacity = 32;
 
-        /// Null-terminated, C-style linked list of managed states
-        IState *m_statesHead = nullptr;
-        IState *m_statesTail = nullptr;
-        mutable RecursiveSpinMutex m_statesMutex;
-
-        /// Null-terminated, C-style linked list of state change listeners
-        // A listener may belong to several contexts; its intrusive next pointer
-        // cannot represent those independent registrations.
-        Array<SmartPtr<IStateListener>> m_stateListeners;
-        mutable RecursiveSpinMutex m_listenersMutex;
-
-        /// Null-terminated, C-style linked list of per-thread message queues
-        IStateQueue *m_stateQueuesHead = nullptr;
-        IStateQueue *m_stateQueuesTail = nullptr;
-        mutable RecursiveSpinMutex m_stateQueuesMutex;
+        /// Owned registrations in insertion order, synchronized by each container.
+        ConcurrentFixedArrayGrowable<SmartPtr<IEventListener>, listenerCapacity> m_eventListeners;
+        ConcurrentArray<SmartPtr<IState>> m_states;
+        ConcurrentFixedArrayGrowable<SmartPtr<IStateListener>, listenerCapacity> m_stateListeners;
+        ConcurrentFixedArrayGrowable<SmartPtr<IStateQueue>, static_cast<size_t>( TaskId::Count )>
+            m_stateQueues;
 
         /// Static counter for generating unique name extensions
         static u32 m_nextGeneratedNameExt;
