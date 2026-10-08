@@ -213,6 +213,14 @@ namespace workphone
             applicationManager->setApplication( this );
 
             Application::load( data );
+            // Application::load logs scene exceptions instead of propagating them.
+            // Do not enter Play with a partially generated vehicle/circuit.
+            if( !m_raceScene || !m_raceScene->isGenerated() || m_assets.circuit.samples.empty() ||
+                !m_cameraActor )
+            {
+                const auto error = m_raceScene ? m_raceScene->getGenerationError() : String();
+                throw std::runtime_error( error.empty() ? "Vehicle scene initialization failed." : error.c_str() );
+            }
 
             m_inputListener = workphone::make_ptr<InputListener>();
             m_inputListener->setOwner( this );
@@ -672,7 +680,8 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
-        if( !timer || !m_vehicleActor || timer->getTime() < m_nextDebugUpdate )
+        if( !timer || !m_vehicleActor || m_assets.circuit.samples.empty() ||
+            timer->getTime() < m_nextDebugUpdate )
         {
             return;
         }

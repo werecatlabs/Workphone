@@ -148,6 +148,18 @@ if(TARGET WorkphonePhysics)
 endif()
 
 if(TARGET Workphone)
+    add_executable(StateContextListenerTests StateContextListenerTests.cpp)
+    target_compile_definitions(StateContextListenerTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(StateContextListenerTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
+    target_link_libraries(StateContextListenerTests PRIVATE Workphone)
+    if(WIN32)
+        target_link_directories(StateContextListenerTests PRIVATE
+            ${WP_ROOT}/Dependencies/lib/windows/boost
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    endif()
+    set_target_properties(StateContextListenerTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME Workphone.state_listener_fanout COMMAND StateContextListenerTests)
+
     add_executable(MeshImposterTests MeshImposterTests.cpp)
     target_compile_definitions(MeshImposterTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(MeshImposterTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)

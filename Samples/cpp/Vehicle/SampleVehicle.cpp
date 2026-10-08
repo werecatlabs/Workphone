@@ -247,6 +247,8 @@ namespace workphone
             sceneManager->play();
 
             auto car = m_vehicleActor->getComponent<scene::CarController>();
+            if( m_smokeTest )
+                car->setControls( 0, 0, 0 );
             auto vehicleController = car->getVehicleController();
             car->setMOI( Vector3<real_Num>( 2500.0f, 3000.0f, 1000.0f ) );
 
@@ -449,13 +451,10 @@ namespace workphone
             steering = m_smokePhase == 2 ? 0.35f : 0.0f;
         }
 
-        //car->setThrottle( throttle );
-        //car->setBrake( brake );
-        //car->setSteering( steering );
-
-        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), throttle );
-        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), brake );
-        //vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::STEERING ), steering );
+        if( m_smokeTest )
+        {
+            car->setControls( throttle, brake, steering );
+        }
     }
 
     void SampleVehicle::updateWheelVisuals()

@@ -432,7 +432,7 @@ namespace workphone::scene
         properties->getPropertyAsType<Collision>( collisionStr, m_collision );
         properties->getPropertyAsType<Rigidbody>( chassisStr, m_chassis );
 
-        s32 tireModel = 0;
+        s32 tireModel = static_cast<s32>( m_tireModel );
         properties->getPropertyValue( tireModelStr, tireModel );
         m_tireModel = static_cast<TireModel>( tireModel );
 

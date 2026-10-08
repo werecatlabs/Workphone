@@ -61,6 +61,10 @@ namespace workphone::scene
             if( vehicleController )
             {
                 vehicleController->load( nullptr );
+                // Reflect the tire implementation selected by the vehicle backend.
+                // Property round-trips must not send the Simple default to Brush wheels.
+                if( auto wheel = vehicleController->getWheelController( 0 ) )
+                    m_tireModel = wheel->getTireModel();
                 vehicleController->setVehicleCallback( m_vehicleCallback );
                 vehicleController->setDisplayDebugData( true );
 

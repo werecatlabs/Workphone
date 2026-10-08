@@ -71,17 +71,17 @@ namespace workphone
 
     Array<SmartPtr<IStateListener>> StateContext::snapshotStateListeners() const
     {
-        auto values = m_stateListeners.readLocked();
-        return Array<SmartPtr<IStateListener>>( values.begin(), values.end() );
+        return m_stateListeners.snapshot();
     }
 
     void StateContext::clearStateListeners()
     {
         // Release references outside the lock: destructors may re-enter the context.
-        decltype( m_stateListeners )::storage_type removed;
+        Array<SmartPtr<IStateListener>> removed;
         {
-            auto values = m_stateListeners.writeLocked();
-            removed = std::move( *values );
+            ScopedLock lock( &m_stateListeners );
+            removed = m_stateListeners.snapshot();
+            m_stateListeners.clear();
         }
     }
 
@@ -550,10 +550,10 @@ namespace workphone
             return;
         }
 
-        auto listeners = m_stateListeners.writeLocked();
-        if( std::find( listeners.begin(), listeners.end(), stateListener ) == listeners.end() )
+        ScopedLock lock( &m_stateListeners );
+        if( std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener ) == m_stateListeners.end() )
         {
-            listeners->push_back( stateListener );
+            m_stateListeners.push_back( stateListener );
         }
     }
 
@@ -572,11 +572,11 @@ namespace workphone
 
         bool removed = false;
         {
-            auto listeners = m_stateListeners.writeLocked();
-            auto it = std::find( listeners.begin(), listeners.end(), stateListener );
-            if( it != listeners.end() )
+            ScopedLock lock( &m_stateListeners );
+            auto it = std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener );
+            if( it != m_stateListeners.end() )
             {
-                listeners->erase( it );
+                m_stateListeners.erase( it );
                 removed = true;
             }
         }
