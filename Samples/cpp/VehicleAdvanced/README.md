@@ -239,6 +239,17 @@ Hills and tree foliage are decorative; track elevation and moving-platform
 wheel contacts are not part of this sample. The collision smoke check probes
 the generated physics shapes, checks gantry clearance and drives into a garage.
 
+Collision validation passed in RelWithDebInfo with seed 7 / low (452 static
+boxes) and seed 42 / high with tree imposters forced on (543 boxes). Both garage
+impact checks stopped the vehicle at the wall. Physics scene storage now grows
+beyond the old 256-body limit; a 529-body regression checks registration, ray
+queries, contacts, removal and reuse. Sorting only the modified update list
+during actor registration reduced measured generation time from 52.7 to 4.6
+seconds on low and from 80.8 to 8.1 seconds on high with these colliders enabled.
+The driving smoke check passed before the concurrent grip change from 1.25 to
+0.7. With the merged tuning it repeatedly fails the acceleration phase at about
+11.7 m/s against its 20 m/s threshold; that tuning and threshold are preserved.
+
 Generated RGBA maps are uploaded in memory. Albedo is sRGB; normal/ORM channels
 are linear. ORM is split explicitly into AO, roughness and metalness slots. The
 sample includes a soft ground contact shadow, daylight and a procedural sky.

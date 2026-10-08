@@ -190,10 +190,8 @@ namespace workphone::scene::race
         void staticBox( SceneAssets &assets, const String &name, Vector3F centre, Vector3F size,
                         QuaternionF orientation = QuaternionF::identity() )
         {
-            const auto probeStart = std::chrono::steady_clock::now();
             auto app = core::IApplicationManager::instance();
             auto actor = app->getGameManager()->createActor();
-            const auto probeActor = std::chrono::steady_clock::now();
             // Own these independently of batched render meshes and tree LODs.
             // The normal generated-scene cleanup also removes their physics bodies.
             assets.actors.push_back( actor );
@@ -201,18 +199,10 @@ namespace workphone::scene::race
             actor->setStatic( true );
             actor->setPosition( centre );
             actor->setOrientation( orientation );
-            const auto probeTransform = std::chrono::steady_clock::now();
             // CollisionBox takes full dimensions, not half extents.
             actor->addComponent<scene::CollisionBox>()->setExtents( size );
-            const auto probeShape = std::chrono::steady_clock::now();
             actor->addComponent<scene::Rigidbody>();
-            const auto probeBody = std::chrono::steady_clock::now();
             app->getGameManager()->getCurrentScene()->addActor( actor );
-            static double probeTimes[5] = {};
-            static unsigned probeCount = 0;
-            const std::chrono::steady_clock::time_point probes[] = {probeStart, probeActor, probeTransform, probeShape, probeBody, std::chrono::steady_clock::now()};
-            for (int i = 0; i < 5; ++i) probeTimes[i] += std::chrono::duration<double, std::milli>(probes[i+1]-probes[i]).count();
-            if (++probeCount % 100 == 0) printf("Collision creation timing %u: actor %.1f transform %.1f shape %.1f body %.1f scene %.1f\n", probeCount, probeTimes[0], probeTimes[1], probeTimes[2], probeTimes[3], probeTimes[4]);
         }
 
         void railCollision( SceneAssets &assets, Vector3F start, Vector3F end )
