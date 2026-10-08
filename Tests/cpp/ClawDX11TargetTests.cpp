@@ -9,6 +9,7 @@
 #include <WorkphoneGraphics/workphone_graphics_object.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
+#include "DX11TestEvidence.hpp"
 #include <chrono>
 #include <cstdio>
 #include <cmath>
@@ -318,6 +319,9 @@ int main()
         if( !check( renderer.isLoaded(), "DX11 device must be created (hardware or WARP)" ) )
             return 1;
         auto *native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        ok &= check( recordDX11TestDevice( static_cast<ID3D11Device *>(
+                         wp_renderer_dx11_get_device( native ) ) ),
+                     "DX11 device evidence must be available" );
         auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
         renderer.setRenderTarget( window );
         auto *originalDepth = depthTarget( context );

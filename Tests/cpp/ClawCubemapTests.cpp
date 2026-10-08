@@ -1,6 +1,7 @@
 #include <WPGraphics/ClawCubemap.hpp>
 #include <windows.h>
 #include <d3d11.h>
+#include "DX11TestEvidence.hpp"
 #include <workphone_graphics_renderer_dx11.h>
 #include <array>
 #include <cmath>
@@ -62,6 +63,7 @@ int main()
     try
     {
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
+        require( recordDX11TestDevice( device ), "DX11 device evidence must be available" );
         auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );
         ClawCubemap cube;
         std::array<ID3D11ShaderResourceView *, 6> views{};
@@ -126,7 +128,9 @@ int main()
         const wp_vertex_pntc vertices[] = { { { -1, -1, 0 }, { 0, 0, -1 }, { 0, 1 }, 0xFFFFFFFF },
                                             { { 1, -1, 0 }, { 0, 0, -1 }, { 1, 1 }, 0xFFFFFFFF },
                                             { { 0, 1, 0 }, { 0, 0, -1 }, { 0.5f, 0 }, 0xFFFFFFFF } };
-        const unsigned short indices[] = { 0, 2, 1 };
+        // Match the renderer's front-face winding so SV_IsFrontFace preserves
+        // the authored normal pointing toward the fixture camera.
+        const unsigned short indices[] = { 0, 1, 2 };
         auto geometry =
             wp_renderer_dx11_create_indexed_geometry_pntc( renderer, vertices, 3, indices, 3, 0 );
         require( geometry != nullptr, "PBR geometry" );

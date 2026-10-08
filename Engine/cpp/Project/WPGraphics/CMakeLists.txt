@@ -116,7 +116,7 @@ if (WP_BUILD_IMGUI)
     # WPGraphicsOgreNext.
     if (WIN32 AND NOT WP_STATIC_LIB)
         target_link_libraries(WPGraphics WPImGui)
-        target_link_libraries(WPGraphics imgui.lib)
+        target_link_libraries(WPGraphics imgui)
     endif()
 
     if (TARGET WPImGui)
