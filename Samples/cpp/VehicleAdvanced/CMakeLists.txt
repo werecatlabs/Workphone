@@ -126,6 +126,8 @@ endif (WIN32)
 file(GLOB_RECURSE HEADER_FILES "./*.h")
 file(GLOB_RECURSE SOURCE_FILES "./*.c" "./*.cpp")
 
+cmake_policy(PUSH)
+cmake_policy(SET CMP0112 NEW)
 add_executable(SampleVehicleAdvanced ${HEADER_FILES} ${SOURCE_FILES})
 
 if (WIN32)
@@ -243,3 +245,17 @@ endif()
 
 add_dependencies(SampleVehicleAdvanced WPProcedural)
 target_link_libraries(SampleVehicleAdvanced WPProcedural)
+
+# Keep the sample self-contained, including asset-only incremental builds.
+add_custom_target(VehicleAdvancedAudio
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SampleVehicleAdvanced>/Audio/VehicleAdvanced"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/Audio"
+        "$<TARGET_FILE_DIR:SampleVehicleAdvanced>/Audio/VehicleAdvanced"
+    VERBATIM)
+cmake_policy(POP)
+set_target_properties(VehicleAdvancedAudio PROPERTIES FOLDER Samples)
+add_dependencies(SampleVehicleAdvanced VehicleAdvancedAudio)
+if(TARGET WPAudio)
+    add_dependencies(SampleVehicleAdvanced WPAudio)
+endif()

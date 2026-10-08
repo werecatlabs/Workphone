@@ -5,6 +5,7 @@
 #include "Workphone/Core/Parameter.hpp"
 #include "Workphone/Interface/System/IEventListener.hpp"
 #include "ProceduralScene.h"
+#include "VehicleAudio.h"
 #include <atomic>
 #include <array>
 #include <limits>
@@ -49,6 +50,11 @@ namespace workphone
             m_trackSmokeTest = enabled;
         }
         bool smokeTestPassed() const;
+        void setAudioOptions( bool enabled, bool smokeTest )
+        {
+            m_audioEnabled = enabled;
+            m_audioSmokeTest = smokeTest;
+        }
         void setCollisionSmokeTest( bool enabled ) { m_collisionSmokeTest = enabled; }
 
     protected:
@@ -80,6 +86,7 @@ namespace workphone
         };
 
         void createPlugins() override;
+        bool createSoundManager() override;
 
         void createScene() override;
 
@@ -89,6 +96,11 @@ namespace workphone
         void performReset();
         void updateDebugText();
         void updateSmokeTest();
+        void updateVehicleAudio();
+        advanced::VehicleAudio m_audio;
+        bool m_audioEnabled = true, m_audioSmokeTest = false;
+        f64 m_audioElapsed = 0, m_audioSmokeTime = 0;
+        u32 m_audioSmokePhase = 0;
 
         std::string m_capturePath, m_captureView;
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;

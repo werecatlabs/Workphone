@@ -138,6 +138,11 @@ endif()
 
 
 
+add_executable(VehicleAudioMixTests VehicleAudioMixTests.cpp)
+target_include_directories(VehicleAudioMixTests PRIVATE ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
+set_target_properties(VehicleAudioMixTests PROPERTIES FOLDER Tests/Cpp)
+add_test(NAME WPVehicle.audio_mix COMMAND VehicleAudioMixTests)
+
 if(TARGET WorkphonePhysics)
     add_executable(PhysicsSceneCapacityTests PhysicsSceneCapacityTests.cpp)
     target_include_directories(PhysicsSceneCapacityTests PRIVATE

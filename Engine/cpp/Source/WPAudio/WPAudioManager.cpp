@@ -116,6 +116,7 @@ namespace workphone
         }
         else if( comResult != RPC_E_CHANGED_MODE )
         {
+            WP_LOG_ERROR( "WPAudio: COM initialization failed: " + StringUtil::toString( comResult ) );
             cleanupPlatformAudio();
             return false;
         }
@@ -124,6 +125,7 @@ namespace workphone
         auto result = XAudio2Create( &state->xAudio2 );
         if( FAILED( result ) )
         {
+            WP_LOG_ERROR( "WPAudio: XAudio2 initialization failed: " + StringUtil::toString( result ) );
             cleanupPlatformAudio();
             return false;
         }
@@ -131,6 +133,7 @@ namespace workphone
         result = state->xAudio2->CreateMasteringVoice( &state->masterVoice );
         if( FAILED( result ) )
         {
+            WP_LOG_ERROR( "WPAudio: cannot open the output device: " + StringUtil::toString( result ) );
             cleanupPlatformAudio();
             return false;
         }

@@ -252,6 +252,9 @@ namespace workphone
             auto vehicleController = car->getVehicleController();
             m_raceScene->configurePhysics();
 
+            if( m_audioEnabled && !m_audio.load( applicationManager->getSoundManager() ) )
+                WP_LOG_WARNING( "Vehicle audio unavailable: check the audio device and bundled WAV files." );
+
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -272,6 +275,8 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Unloading );
+
+            m_audio.unload();
 
             if( m_inputListener )
             {
@@ -341,6 +346,8 @@ namespace workphone
         }
 
         Application::update();
+        if( m_audioEnabled && Thread::getCurrentTask() == TaskId::Physics )
+            updateVehicleAudio();
         if( m_collisionSmokeTest && Thread::getCurrentTask() == TaskId::Physics )
             updateCollisionSmokeTest();
         if( m_smokeTest && Thread::getCurrentTask() == TaskId::Physics )
@@ -659,6 +666,95 @@ namespace workphone
             m_raceScene->usePlayerControls();
     }
 
+    void SampleVehicleAdvanced::updateVehicleAudio()
+    {
+        auto app = core::IApplicationManager::instance();
+        const auto dt = app->getTimer()->getDeltaTime();
+        if( !std::isfinite( dt ) || dt <= 0 )
+            return;
+        m_audioElapsed += std::min( dt, 1.0 / 30.0 );
+        if( m_audioElapsed < 1.0 / 30.0 )
+            return;
+        const auto audioDt = float( m_audioElapsed );
+        m_audioElapsed = 0;
+        advanced::VehicleAudioInput input;
+        const auto &drivetrain = m_assets.vehicle.physics.drivetrain;
+        input.idleRpm = float( drivetrain.idleRpm );
+        input.redlineRpm = float( drivetrain.redlineRpm );
+        input.playing = app->isPlaying() && !app->isPaused();
+        if( auto car = m_vehicleActor->getComponent<scene::CarController>() )
+        {
+            if( auto vehicle = car->getVehicleController() )
+            {
+                input.throttle = vehicle->getChannel( 0 );
+                if( auto drive = vehicle->getDriveTrain() )
+                {
+                    double rpm = 0;
+                    drive->getProperties()->getPropertyValue( "RPM", rpm );
+                    input.rpm = float( rpm );
+                }
+                for( u32 i = 0; i < 4; ++i )
+                    if( auto wheel = vehicle->getWheelController( i ) )
+                    {
+                        auto properties = wheel->getProperties();
+                        bool grounded = false;
+                        double slip = 0;
+                        properties->getPropertyValue( "Is On Ground", grounded );
+                        properties->getPropertyValue( "Slip Velocity", slip );
+                        if( grounded )
+                        {
+                            input.grounded = true;
+                            input.slipSpeed = std::max( input.slipSpeed, float( slip ) );
+                        }
+                    }
+            }
+        }
+        if( auto body = m_vehicleActor->getComponent<scene::Rigidbody>() )
+            input.speed = float( body->getLinearVelocity().length() );
+        if( m_audioSmokeTest )
+        {
+            // Exercise the real platform voices without depending on driving-test tuning.
+            input.rpm = m_audioSmokePhase == 0 ? input.idleRpm : input.redlineRpm;
+            input.throttle = m_audioSmokePhase == 0 ? 0.f : 1.f;
+            input.speed = m_audioSmokePhase == 0 ? 0.f : 40.f;
+            input.slipSpeed = m_audioSmokePhase == 0 ? 0.f : 8.f;
+            input.grounded = m_audioSmokePhase < 2;
+            input.playing = m_audioSmokePhase < 3;
+        }
+        m_audio.update( input, audioDt );
+        if( !m_audioSmokeTest )
+            return;
+        m_audioSmokeTime += audioDt;
+        if( m_audioSmokeTime < 2 )
+            return;
+        const auto &gains = m_audio.gains();
+        bool passed = m_audio.isPlaying();
+        if( m_audioSmokePhase == 0 )
+            passed = passed && gains.engine[0] > .19f && gains.squeal < .001f;
+        else if( m_audioSmokePhase == 1 )
+            passed = passed && gains.engine[5] > .39f && gains.squeal > .27f && gains.rolling > .05f;
+        else if( m_audioSmokePhase == 2 )
+            passed = passed && gains.squeal < .001f && gains.rolling < .001f;
+        else
+        {
+            for( const auto gain : gains.engine )
+                passed = passed && gain < .001f;
+            passed = passed && gains.squeal < .001f && gains.rolling < .001f;
+        }
+        WP_LOG( "Vehicle audio smoke phase " + StringUtil::toString( m_audioSmokePhase ) +
+                ( passed ? ": PASS" : ": FAIL" ) + " idle=" + StringUtil::toString( gains.engine[0] ) +
+                " redline=" + StringUtil::toString( gains.engine[5] ) +
+                " rolling=" + StringUtil::toString( gains.rolling ) +
+                " squeal=" + StringUtil::toString( gains.squeal ) );
+        if( !passed || m_audioSmokePhase == 3 )
+        {
+            m_smokeTestPassed = passed;
+            app->setQuit( true );
+        }
+        ++m_audioSmokePhase;
+        m_audioSmokeTime = 0;
+    }
+
     void SampleVehicleAdvanced::updateCollisionSmokeTest()
     {
         auto app = core::IApplicationManager::instance();
@@ -974,12 +1070,39 @@ namespace workphone
         }
     }
 
+    bool SampleVehicleAdvanced::createSoundManager()
+    {
+        if( !m_audioEnabled )
+            return Application::createSoundManager();
+        auto app = core::IApplicationManager::instance();
+        // Select the platform backend explicitly: the generic factory can resolve
+        // ISoundManager to the base SoundManager, which has no playback device.
+        auto factory = app->getFactoryManager()->getFactoryByName( "workphone::WPAudioManager" );
+        if( !factory )
+        {
+            WP_LOG_WARNING( "Vehicle audio: WPAudioManager factory is unavailable." );
+            return false;
+        }
+        auto manager = factory->make_ptr<ISoundManager>();
+        manager->load( nullptr );
+        app->setSoundManager( manager );
+        WP_LOG( "Vehicle audio manager: " + factory->getObjectTypeName() +
+                ( manager->isLoaded() ? " loaded" : " initialization failed" ) );
+        return manager->isLoaded();
+    }
+
     void SampleVehicleAdvanced::createPlugins()
     {
         Application::createPlugins();
 
 #ifndef _WP_STATIC_LIB_
         auto factoryManager = core::IApplicationManager::instance()->getFactoryManager();
+        if( m_audioEnabled && !factoryManager->hasFactoryByName( "workphone::WPAudioManager" ) )
+        {
+            auto job = factoryManager->make_ptr<LoadPluginJob>();
+            job->setPluginPath( "WPAudio" );
+            job->execute();
+        }
         if( !factoryManager->hasFactoryByName( "workphone::CCarController" ) )
         {
             auto job = factoryManager->make_ptr<LoadPluginJob>();
@@ -1294,6 +1417,8 @@ int main( int argc, char **argv )
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
                    "  --benchmark SECONDS [--orbit] Measure after five seconds of warmup\n"
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
+                   "  --no-audio                    Disable vehicle sounds\n"
+                   "  --audio-smoke-test            Check idle, redline, skid and mute playback\n"
                    "  W/Up throttle; S/Down brake; A/D steer; R reset; Esc quit; wheel camera zoom\n";
             return 0;
         }
@@ -1302,6 +1427,7 @@ int main( int argc, char **argv )
     bool ownsTypeManager = false;
     SmartPtr<SampleVehicleAdvanced> app;
     bool smokeTest = false, trackSmokeTest = false, collisionSmokeTest = false;
+    bool audioEnabled = true, audioSmokeTest = false;
     String pluginsConfig;
     std::string capturePath, captureView = "follow";
     u32 seed = 7;
@@ -1317,6 +1443,10 @@ int main( int argc, char **argv )
         {
             if( String( argv[i] ) == "--smoke-test" )
                 smokeTest = true;
+            else if( String( argv[i] ) == "--no-audio" )
+                audioEnabled = false;
+            else if( String( argv[i] ) == "--audio-smoke-test" )
+                audioSmokeTest = true;
             else if( String( argv[i] ) == "--collision-smoke-test" )
                 collisionSmokeTest = true;
             else if( String( argv[i] ) == "--no-hud" )
@@ -1388,9 +1518,11 @@ int main( int argc, char **argv )
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" )
             throw std::runtime_error( "View must be follow, car, track, or corner." );
-        if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) > 1 ||
-            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest ) ) )
+        if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) > 1 ||
+            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
+        if( audioSmokeTest && !audioEnabled )
+            throw std::runtime_error( "--audio-smoke-test requires audio to be enabled." );
         if( orbit && benchmarkSeconds <= 0 ) throw std::runtime_error( "--orbit requires --benchmark." );
     }
     catch( const std::exception &e )
@@ -1442,6 +1574,7 @@ int main( int argc, char **argv )
         app->setTrackSmokeTest( trackSmokeTest );
         app->setCollisionSmokeTest( collisionSmokeTest );
         app->setGenerationOptions( seed, quality );
+        app->setAudioOptions( audioEnabled, audioSmokeTest );
         app->setCapture( capturePath, captureView );
         app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
         if( !pluginsConfig.empty() )
@@ -1450,7 +1583,7 @@ int main( int argc, char **argv )
         if( app->getLoadingState() != LoadingState::Loaded )
             throw std::runtime_error( "SampleVehicleAdvanced failed to load." );
         app->run();
-        exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest ) && !app->smokeTestPassed() ) ||
+        exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest ) && !app->smokeTestPassed() ) ||
                            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() )
                        ? 1
                        : 0;
