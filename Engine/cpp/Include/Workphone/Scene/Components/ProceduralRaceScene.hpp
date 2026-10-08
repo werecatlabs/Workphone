@@ -2,8 +2,11 @@
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
 #include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
+#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/FixedArray.hpp>
+#include <array>
+#include <vector>
 
 namespace workphone::scene::race
 {
@@ -52,6 +55,8 @@ namespace workphone::scene::race
      */
     struct SceneAssets
     {
+        bool openCity = false;
+        int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
         Circuit circuit;
         std::array<SmartPtr<IGameActor>, 4> wheels;
@@ -245,6 +250,15 @@ namespace workphone::scene
 
         /** Visual quality level used when building the vehicle appearance. */
         procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;
+
+        /** Generated city layout used for street surface queries. */
+        procedural::OpenCityLayout m_cityLayout{};
+
+        /** Select open-city generation instead of the standalone circuit. */
+        bool m_openCity = false;
+
+        /** City size and selected street route used for generation. */
+        s32 m_cityBlocks = 8, m_cityRoute = 0;
 
         /** Last generation error message, empty when generation succeeded. */
         String m_generationError;
