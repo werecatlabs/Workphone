@@ -85,6 +85,8 @@ namespace workphone
 
                 Array<Vector3<real_Num>> worldReferencePoints;
                 Array<f32> worldRadii;
+                Array<u32> detailOffsets;
+                Array<u32> detailCounts;
                 Array<f32> lodBiases;
                 Array<f32> hysteresis;
                 Array<s32> previousLODs;

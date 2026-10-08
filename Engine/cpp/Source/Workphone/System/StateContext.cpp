@@ -108,7 +108,13 @@ namespace workphone
 
     void StateContext::clearEventListeners()
     {
-        m_eventListeners.clear();
+        // Retain references until outside the lock, as listener teardown may re-enter.
+        Array<SmartPtr<IEventListener>> removed;
+        {
+            ScopedLock lock( &m_eventListeners );
+            removed = m_eventListeners.snapshot();
+            m_eventListeners.clear();
+        }
     }
 
     void StateContext::appendStateQueue( SmartPtr<IStateQueue> stateQueue )
@@ -597,6 +603,7 @@ namespace workphone
             return;
         }
 
+        ScopedLock lock( &m_eventListeners );
         if( std::find( m_eventListeners.begin(), m_eventListeners.end(), eventListener ) !=
             m_eventListeners.end() )
         {
@@ -617,6 +624,7 @@ namespace workphone
 
         bool removed = false;
         {
+            ScopedLock lock( &m_eventListeners );
             auto it = std::find( m_eventListeners.begin(), m_eventListeners.end(), eventListener );
             if( it != m_eventListeners.end() )
             {

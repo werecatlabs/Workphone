@@ -5,6 +5,7 @@
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
+#include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
 #include <WorkphoneGraphics/workphone_graphics_object.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
@@ -193,18 +194,192 @@ namespace
         return ok;
     }
 
+    bool testMipsAndFog( wp_renderer_dx11 *renderer )
+    {
+        using namespace workphone::render;
+        const std::uint8_t checker[] = { 0,   0,   0,   255, 255, 255, 255, 255,
+                                         255, 255, 255, 255, 0,   0,   0,   255 };
+        const auto colour = generateTextureMips( checker, 2, 2, { TextureMipFilter::Colour } );
+        const auto data = generateTextureMips( checker, 2, 2, { TextureMipFilter::Data } );
+        bool ok = check( colour.size() == 2 && colour[1].bgra[0] > 180 && colour[1].bgra[0] < 190,
+                         "colour mip averages must be linear-light, not dark encoded averages" );
+        ok &= check( data[1].bgra[0] == 128, "data mip averages must remain linear" );
+        const auto roughness = generateTextureMips( checker, 2, 2, { TextureMipFilter::Roughness } );
+        ok &= check( roughness[1].bgra[0] >= 214 && roughness[1].bgra[0] <= 215,
+                     "roughness mips must average the fourth moment used by GGX" );
+        std::vector<std::uint8_t> odd( 3 * 3 * 4, 0 );
+        odd[8 * 4] = 255;
+        const auto oddMips = generateTextureMips( odd.data(), 3, 3, { TextureMipFilter::Data } );
+        ok &= check( oddMips.size() == 2 && oddMips[1].bgra[0] == 28,
+                     "odd mip dimensions must include the final row and column" );
+        const std::uint8_t normals[] = { 255, 128, 128, 255, 128, 128, 255, 255,
+                                         255, 128, 128, 255, 128, 128, 255, 255 };
+        const auto normal = generateTextureMips( normals, 2, 2, { TextureMipFilter::Normal } );
+        float norm = 0;
+        for( int c = 0; c < 3; ++c )
+        {
+            const float v = normal[1].bgra[c] / 255.f * 2 - 1;
+            norm += v * v;
+        }
+        ok &= check( std::abs( norm - 1 ) < .025f, "averaged normals must remain unit length" );
+        std::vector<std::uint8_t> atlas( 12 * 4 * 4, 0 );
+        for( int y = 0; y < 4; ++y )
+            for( int x = 0; x < 12; ++x )
+            {
+                auto *p = atlas.data() + ( y * 12 + x ) * 4;
+                p[x / 4] = 255;
+                p[3] = ( x % 4 < 2 ) ? 255 : 0;
+            }
+        const auto cards =
+            generateTextureMips( atlas.data(), 12, 4, { TextureMipFilter::Cutout, 3, .5f } );
+        ok &= check( cards.size() == 3 && cards.back().width == 3,
+                     "atlas mip chain must stop before views merge" );
+        for( int tile = 0; tile < 3; ++tile )
+        {
+            const auto *p = cards[1].bgra.data() + tile * 2 * 4;
+            ok &= check( p[tile] == 255 && p[( tile + 1 ) % 3] == 0 && p[3] == 255 && p[7] == 0,
+                         "atlas tiles must keep their colour, alpha coverage and transparent gutters" );
+        }
+        const std::uint8_t edge[] = { 0, 0, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        const auto border = generateTextureMips( edge, 2, 2, { TextureMipFilter::Colour } );
+        ok &= check( border[1].bgra[2] == 255, "transparent black must not darken cutout edge colour" );
+        std::vector<wp_texture_mip_dx11> upload;
+        for( const auto &level : colour )
+            upload.push_back( { level.bgra.data(), level.width, level.height } );
+        auto *view =
+            static_cast<ID3D11ShaderResourceView *>( wp_renderer_dx11_create_texture_mips_native(
+                renderer, upload.data(), wp_u32( upload.size() ) ) );
+        ok &= check( view != nullptr, "GPU mip texture must allocate" );
+        auto *device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
+        auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );
+        if( view )
+        {
+            ID3D11Resource *resource = nullptr;
+            ID3D11Texture2D *texture = nullptr, *staging = nullptr;
+            view->GetResource( &resource );
+            resource->QueryInterface( __uuidof( ID3D11Texture2D ),
+                                      reinterpret_cast<void **>( &texture ) );
+            if( texture )
+            {
+                D3D11_TEXTURE2D_DESC desc{};
+                texture->GetDesc( &desc );
+                ok &= check( desc.MipLevels == 2, "GPU resource must expose the mip chain" );
+                desc.Usage = D3D11_USAGE_STAGING;
+                desc.BindFlags = 0;
+                desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+                if( SUCCEEDED( device->CreateTexture2D( &desc, nullptr, &staging ) ) )
+                {
+                    context->CopyResource( staging, texture );
+                    D3D11_MAPPED_SUBRESOURCE mapped{};
+                    if( SUCCEEDED( context->Map( staging, 1, D3D11_MAP_READ, 0, &mapped ) ) )
+                    {
+                        ok &= check(
+                            static_cast<const std::uint8_t *>( mapped.pData )[0] == colour[1].bgra[0],
+                            "uploaded GPU mip must contain the filtered pixels" );
+                        context->Unmap( staging, 1 );
+                    }
+                    else
+                        ok &= check( false, "GPU mip readback must map" );
+                    staging->Release();
+                }
+                else
+                    ok &= check( false, "GPU mip staging must allocate" );
+                texture->Release();
+            }
+            else
+                ok &= check( false, "GPU mip texture must be queryable" );
+            resource->Release();
+            view->Release();
+        }
+        auto invalid = upload;
+        invalid[1].width = 2;
+        ok &= check( !wp_renderer_dx11_create_texture_mips_native( renderer, invalid.data(),
+                                                                   wp_u32( invalid.size() ) ),
+                     "invalid GPU mip dimensions must be rejected" );
+        auto *target = wp_renderer_dx11_create_render_texture( renderer, 16, 16 );
+        if( !check( target != nullptr, "fog test target must allocate" ) )
+            return false;
+        const wp_vertex_pntc vertices[] = { { { -1, -1, 0 }, { 0, 0, 1 }, { 0, 0 }, 0xFFFFFFFFu },
+                                            { { 1, -1, 0 }, { 0, 0, 1 }, { 1, 0 }, 0xFFFFFFFFu },
+                                            { { 1, 1, 0 }, { 0, 0, 1 }, { 1, 1 }, 0xFFFFFFFFu },
+                                            { { -1, 1, 0 }, { 0, 0, 1 }, { 0, 1 }, 0xFFFFFFFFu } };
+        const wp_u16 indices[] = { 0, 1, 2, 0, 2, 3 };
+        auto *geometry =
+            wp_renderer_dx11_create_indexed_geometry_pntc( renderer, vertices, 4, indices, 6, 0 );
+        ok &= check( geometry != nullptr, "fog geometry must allocate" );
+        auto *resource =
+            static_cast<ID3D11Texture2D *>( wp_renderer_dx11_get_render_texture_resource( target ) );
+        D3D11_TEXTURE2D_DESC desc{};
+        resource->GetDesc( &desc );
+        desc.Usage = D3D11_USAGE_STAGING;
+        desc.BindFlags = 0;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        ID3D11Texture2D *staging = nullptr;
+        ok &= check( SUCCEEDED( device->CreateTexture2D( &desc, nullptr, &staging ) ),
+                     "fog staging must allocate" );
+        wp_mat4f identity{};
+        for( int i = 0; i < 4; ++i )
+            identity.m[i][i] = 1;
+        wp_renderer_dx11_set_render_texture( renderer, target );
+        wp_renderer_dx11_set_viewport( renderer, { 0, 0, 16, 16 } );
+        wp_renderer_dx11_set_world_matrix( renderer, &identity );
+        wp_renderer_dx11_set_view_matrix( renderer, &identity );
+        wp_renderer_dx11_set_projection_matrix( renderer, &identity );
+        wp_renderer_dx11_set_cull_mode( renderer, WORKPHONE_CULL_MODE_NONE );
+        wp_renderer_dx11_set_depth_test_enabled( renderer, 0 );
+        wp_renderer_dx11_set_blend_mode( renderer, WORKPHONE_BLEND_MODE_NONE );
+        wp_renderer_dx11_set_scissor_enabled( renderer, 0 );
+        wp_renderer_dx11_set_texture_native( renderer, nullptr );
+        wp_renderer_dx11_set_material_textures( renderer, nullptr );
+        wp_renderer_dx11_set_environment( renderer, nullptr, 0 );
+        for( int mode = 0; geometry && staging && mode < 4; ++mode )
+        {
+            wp_material_dx11 material{};
+            material.base_color = { 0, 0, 1, 1 };
+            material.surface = { 0, 1, 1, 1 };
+            material.uv_transform.z = 1;
+            material.camera_position = { 0, 0, 2, 1 };
+            material.ambient_color = { 1, 1, 1, 1 };
+            material.light_direction = { 0, 0, -1, 0 };
+            material.controls.z = -1;
+            material.fog_color = { 1, 0, 0, 1 };
+            material.fog_params = { float( mode ), 8, 0, 1 };
+            wp_renderer_dx11_set_material( renderer, &material );
+            wp_renderer_dx11_clear( renderer, WORKPHONE_CLEAR_FLAG_ALL );
+            wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0, 6, 0 );
+            context->CopyResource( staging, resource );
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if( SUCCEEDED( context->Map( staging, 0, D3D11_MAP_READ, 0, &mapped ) ) )
+            {
+                const auto *pixel =
+                    static_cast<const std::uint8_t *>( mapped.pData ) + 8 * mapped.RowPitch + 8 * 4;
+                ok &= check( mode ? pixel[0] > 170 && pixel[2] < 5 : pixel[2] > 100 && pixel[0] < 5,
+                             "linear, exponential and squared fog must change rendered pixels; disabled "
+                             "fog must preserve them" );
+                context->Unmap( staging, 0 );
+            }
+            else
+                ok &= check( false, "fog pixels must map" );
+        }
+        if ( staging )
+            staging->Release();
+        wp_renderer_dx11_destroy_geometry( geometry );
+        wp_renderer_dx11_set_render_texture( renderer, nullptr );
+        wp_renderer_dx11_destroy_render_texture( target );
+        return ok;
+    }
+
     bool testDrawConstants( wp_renderer_dx11 *renderer )
     {
         auto *device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
         auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );
         auto *target = wp_renderer_dx11_create_render_texture( renderer, 64, 64 );
-        if( !check( target != nullptr, "constant-buffer test target must be created" ) )
+        if ( !check( target != nullptr, "constant-buffer test target must be created" ) )
             return false;
         const wp_vertex_pntc vertices[] = {
             { { -0.2f, -0.3f, 0.0f }, { 0, 0, 1 }, { 0, 0 }, 0xFFFFFFFFu },
             { { 0.2f, -0.3f, 0.0f }, { 0, 0, 1 }, { 0, 0 }, 0xFFFFFFFFu },
-            { { 0.0f, 0.3f, 0.0f }, { 0, 0, 1 }, { 0, 0 }, 0xFFFFFFFFu }
-        };
+            { { 0.0f, 0.3f, 0.0f }, { 0, 0, 1 }, { 0, 0 }, 0xFFFFFFFFu } };
         const wp_u16 indices[] = { 0, 1, 2 };
         auto *geometry = wp_renderer_dx11_create_indexed_geometry_pntc( renderer, vertices, 3, indices, 3, 0 );
         bool ok = check( geometry != nullptr, "constant-buffer test geometry must be created" );
@@ -380,6 +555,7 @@ int main()
             originalDepth->Release();
         ok &= testShadows( renderer );
         ok &= testDrawConstants( native );
+        ok &= testMipsAndFog( native );
         renderer.setRenderTarget( window );
         renderer.setViewport( nullptr );
         auto *swapChain = static_cast<IDXGISwapChain *>( wp_renderer_dx11_get_swap_chain( native ) );

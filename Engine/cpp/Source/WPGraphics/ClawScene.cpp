@@ -633,6 +633,9 @@ namespace workphone
                     }
                     dx11Renderer->setSceneLighting( getAmbientLight(), lightDirection, lightColour,
                                                     lightIntensity );
+                    dx11Renderer->setSceneFog( static_cast<u32>( m_scene->fog_mode ),
+                        ColourF( m_scene->fog_colour.r, m_scene->fog_colour.g, m_scene->fog_colour.b, 1 ),
+                        m_scene->fog_density, m_scene->fog_start, m_scene->fog_end );
                     dx11Renderer->disableShadows();
                     const auto viewport = rawRenderer->getViewport();
                     SmartPtr<IGraphicsPipeline> pipeline;

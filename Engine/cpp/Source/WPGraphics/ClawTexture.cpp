@@ -3,6 +3,8 @@
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <Workphone/Graphics/TextureMipGenerator.hpp>
+#include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
@@ -26,6 +28,7 @@ namespace
         bool decodeAttempted = false;
         void *textureView = nullptr;
         wp_renderer_dx11 *renderer = nullptr;
+        workphone::render::TextureMipSettings mipSettings;
     };
 
     std::mutex g_textureMutex;
@@ -201,8 +204,12 @@ namespace
 
         destroyTextureView( data );
         const auto size = texture->getSize();
-        data.textureView = wp_renderer_dx11_create_texture_native(
-            dx11, data.pixels.data(), size.x, size.y, WORKPHONE_PIXEL_FORMAT_BGRA8 );
+        const auto levels = generateTextureMips( data.pixels.data(), size.x, size.y, data.mipSettings );
+        std::vector<wp_texture_mip_dx11> nativeLevels;
+        for( const auto &level : levels )
+            nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
+        data.textureView = wp_renderer_dx11_create_texture_mips_native(
+            dx11, nativeLevels.data(), static_cast<wp_u32>( nativeLevels.size() ) );
         data.renderer = data.textureView ? dx11 : nullptr;
     }
 }  // namespace
@@ -384,6 +391,43 @@ namespace workphone
             // _getObject is consumed as a native backend texture by ImGui and
             // render APIs. A C++ wrapper is not a valid ID3D11ShaderResourceView.
             getTextureFinal( ppObject );
+        }
+
+        SmartPtr<Properties> ClawTexture::getProperties() const
+        {
+            auto properties = Texture::getProperties();
+            std::scoped_lock lock( g_textureMutex );
+            const auto found = g_textureData.find( this );
+            const auto settings =
+                found == g_textureData.end() ? TextureMipSettings{} : found->second.mipSettings;
+            properties->setProperty( "mipmapFilter", static_cast<s32>( settings.filter ) );
+            properties->setProperty( "mipmapAtlasColumns", settings.atlasColumns );
+            properties->setProperty( "mipmapAlphaCutoff", settings.alphaCutoff );
+            return properties;
+        }
+
+        void ClawTexture::setProperties( SmartPtr<Properties> properties )
+        {
+            Texture::setProperties( properties );
+            if( !properties )
+                return;
+            std::scoped_lock lock( g_textureMutex );
+            auto &data = g_textureData[this];
+            auto settings = data.mipSettings;
+            s32 filter = static_cast<s32>( settings.filter );
+            properties->getPropertyValue( "mipmapFilter", filter );
+            properties->getPropertyValue( "mipmapAtlasColumns", settings.atlasColumns );
+            properties->getPropertyValue( "mipmapAlphaCutoff", settings.alphaCutoff );
+            settings.filter = static_cast<TextureMipFilter>( std::clamp( filter, 0, 5 ) );
+            settings.atlasColumns = std::max( settings.atlasColumns, 1u );
+            settings.alphaCutoff = std::isfinite( settings.alphaCutoff )
+                                       ? std::clamp( settings.alphaCutoff, .001f, .999f )
+                                       : .5f;
+            if( settings.filter != data.mipSettings.filter ||
+                settings.atlasColumns != data.mipSettings.atlasColumns ||
+                settings.alphaCutoff != data.mipSettings.alphaCutoff )
+                destroyTextureView( data );
+            data.mipSettings = settings;
         }
     }  // namespace render
 }  // namespace workphone

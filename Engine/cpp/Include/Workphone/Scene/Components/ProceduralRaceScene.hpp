@@ -67,6 +67,7 @@ namespace workphone::scene::race
         std::vector<SmartPtr<IMeshResource>> meshes;
         std::vector<SmartPtr<IGameActor>> actors;
         Array<SmartPtr<LODGroup>> treeLODs;
+        SmartPtr<LODGroup> vehicleLOD;
         SmartPtr<render::ISky> sky;
         SmartPtr<render::IGraphicsLight> sun;
         String resourcePrefix;

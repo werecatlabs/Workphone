@@ -14,6 +14,9 @@
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMesh.hpp>
+#    include <WPGraphics/ClawRendererDX11.hpp>
+#    include <workphone_graphics_renderer.h>
+#    include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #    include <WPGraphics/ClawSceneNode.hpp>
 #    include <workphone_graphics_object.h>
 #endif
@@ -397,14 +400,24 @@ namespace workphone
             updateDebugText();
             auto app = core::IApplicationManager::instance();
             const auto profileNow = app->getTimer()->getTimeSinceSceneLoad();
+            if( profileNow > 5 && !m_benchmarkStarted )
+            {
+                m_benchmarkStarted = true;
+#if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
+                if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>(
+                        app->getGraphicsSystem()->getRendererPtr() ) )
+                    wp_renderer_dx11_reset_statistics(
+                        wp_renderer_get_dx11( renderer->getNativeRenderer() ) );
+#endif
+            }
             if( profileNow > 5 )
             {
                 if( m_profileStart == 0 )
                     m_profileStart = profileNow;
                 ++m_profileFrames;
             }
-            if( !m_capturePath.empty() && !m_captureAttempted &&
-                app->getTimer()->getTimeSinceSceneLoad() > 8 )
+            if( ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && !m_captureAttempted &&
+                profileNow > ( m_benchmarkSeconds > 0 ? 5 + m_benchmarkSeconds : 8 ) )
             {
                 size_t treeMeshes = 0, treeImposters = 0;
                 bool treeLODValid = !m_assets.treeLODs.empty();
@@ -413,13 +426,29 @@ namespace workphone
                     auto levels = group->getLevels();
                     treeLODValid &=
                         levels[0].renderers[0]->isLODVisible() != levels[1].renderers[0]->isLODVisible();
-                    treeLODValid &=
-                        levels[0].renderers[0]->isLODVisible() == levels[0].renderers[1]->isLODVisible();
                     treeMeshes += levels[0].renderers[0]->isLODVisible() ? 1 : 0;
                     treeImposters += levels[1].renderers[0]->isLODVisible() ? 1 : 0;
                 }
                 WP_LOG( String( "Tree LOD patches: meshes=" ) + StringUtil::toString( treeMeshes ) +
                         " imposters=" + StringUtil::toString( treeImposters ) );
+                bool vehicleLODValid = m_assets.vehicleLOD && m_assets.vehicleLOD->validate();
+                if( vehicleLODValid )
+                {
+                    size_t visibleLevels = 0;
+                    auto levels = m_assets.vehicleLOD->getLevels();
+                    for( size_t i = 0; i < levels.size(); ++i )
+                    {
+                        const bool visible = levels[i].renderers.front()->isLODVisible();
+                        for( const auto &renderer : levels[i].renderers )
+                            vehicleLODValid &= renderer->isLODVisible() == visible;
+                        if( visible )
+                        {
+                            ++visibleLevels;
+                            WP_LOG( String( "Vehicle LOD level=" ) + StringUtil::toString( i ) );
+                        }
+                    }
+                    vehicleLODValid &= visibleLevels == 1;
+                }
                 WP_LOG( String( "VehicleAdvanced mean frame milliseconds=" ) +
                         StringUtil::toString( m_profileFrames > 1
                                                   ? 1000 * ( profileNow - m_profileStart ) /
@@ -428,14 +457,41 @@ namespace workphone
                         " scene meshes=" + StringUtil::toString( m_assets.meshes.size() ) +
                         " textures=" + StringUtil::toString( m_assets.textures.size() ) );
                 m_captureAttempted = true;
+#if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
+                if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>(
+                        app->getGraphicsSystem()->getRendererPtr() ) )
+                {
+                    wp_render_statistics_dx11 stats{};
+                    wp_renderer_dx11_get_statistics(
+                        wp_renderer_get_dx11( renderer->getNativeRenderer() ), &stats );
+                    const auto frames = double( std::max<uint64_t>( stats.frames, 1 ) );
+                    std::ostringstream report;
+                    report << "VehicleAdvanced benchmark: frames=" << stats.frames
+                           << " gpuSamples=" << stats.gpu_samples << " meanMs=" << stats.interval_ms
+                           << " p95Ms=" << stats.interval_p95_ms
+                           << " cpuIncludingPresentMs=" << stats.cpu_frame_ms
+                           << " presentMs=" << stats.present_ms << " gpuMs=" << stats.gpu_frame_ms
+                           << " drawsPerFrame=" << stats.draws / frames
+                           << " trianglesPerFrame=" << stats.triangles / frames
+                           << " materialUploadsPerFrame=" << stats.material_uploads / frames
+                           << " transformUploadsPerFrame=" << stats.transform_uploads / frames
+                           << " stateBindingsPerFrame=" << stats.state_bindings / frames;
+                    WP_LOG( report.str() );
+                }
+#endif
                 const bool reflectionValid = advanced::validateReflection( m_assets );
                 if( !reflectionValid )
-                    WP_LOG_ERROR("VehicleAdvanced: cubemap actor, texture or vehicle material binding is invalid.");
+                    WP_LOG_ERROR(
+                        "VehicleAdvanced: cubemap actor, texture or vehicle material binding is "
+                        "invalid." );
                 const bool windingValid = checkSceneWinding( m_assets );
-                m_capturePassed = advanced::captureFrame( m_capturePath ) && treeLODValid && reflectionValid && windingValid;
+                m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
+                                  treeLODValid && vehicleLODValid && reflectionValid && windingValid;
+                if( !vehicleLODValid )
+                    WP_LOG_ERROR( "Vehicle LOD visibility validation failed." );
                 if( !treeLODValid )
                     WP_LOG_ERROR( "Tree LOD: expected exactly one visible level per patch." );
-                WP_LOG( m_capturePassed ? "VehicleAdvanced capture saved."
+                WP_LOG( m_capturePassed ? "VehicleAdvanced review completed."
                                         : "VehicleAdvanced capture failed." );
                 app->setQuit( true );
             }
@@ -526,7 +582,7 @@ namespace workphone
             steering = m_smokePhase == 2 ? 0.35f : 0.0f;
         }
 
-        if( !m_capturePath.empty() )
+        if( !m_capturePath.empty() || m_benchmarkSeconds > 0 )
         {
             throttle = 0;
             brake = 1;
@@ -680,7 +736,7 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
-        if( !timer || !m_vehicleActor || m_assets.circuit.samples.empty() ||
+        if( !m_hudEnabled || !timer || !m_vehicleActor || m_assets.circuit.samples.empty() ||
             timer->getTime() < m_nextDebugUpdate )
         {
             return;
@@ -864,6 +920,14 @@ namespace workphone
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
+        for( auto &group : m_assets.treeLODs ) group->setForcedLOD( m_forcedLOD );
+        m_assets.vehicleLOD->setForcedLOD( m_forcedVehicleLOD );
+        // The fixed high-altitude circuit review must retain surface contrast.
+        if( m_captureView == "track" && !m_orbitCamera )
+            applicationManager->getGraphicsSystem()->getGraphicsScene()->setFog(
+                render::IGraphicsScene::FOG_NONE );
+        if( auto window = applicationManager->getGraphicsSystem()->getDefaultWindow() )
+            window->setSize( Vector2I( m_reviewWidth, m_reviewHeight ) );
         m_boxGround = m_assets.ground;
         m_chassisMeshActor = m_assets.body;
         m_wheelActors = m_assets.wheels;
@@ -890,14 +954,14 @@ namespace workphone
         {
             // The overhead view needs more depth precision to resolve the road's
             // millimetre surface offsets at a distance of nearly 500 metres.
-            m_camera->setNearClipDistance( m_captureView == "track" ? 10.f : .5f );
+            m_camera->setNearClipDistance( m_captureView == "track" && !m_orbitCamera ? 10.f : .5f );
             m_camera->setFarClipDistance( 1000 );
         }
         updateRenderCamera();
 
         if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
         {
-            if( auto debug = graphicsSystem->getDebug() )
+            if( auto debug = m_hudEnabled ? graphicsSystem->getDebug() : nullptr )
             {
                 debug->drawText(
                     0, Vector2F( 0.02f, 0.02f ),
@@ -914,9 +978,18 @@ namespace workphone
             if( auto transform = m_cameraActor->getTransform() )
             {
                 m_cameraSceneNode->setTransform( transform->getWorldTransform() );
-                if( !m_capturePath.empty() && m_captureView != "follow" )
+                if( ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && ( m_captureView != "follow" || m_orbitCamera ) )
                 {
-                    if( m_captureView == "corner" )
+                    if( m_orbitCamera )
+                    {
+                        const auto elapsed = core::IApplicationManager::instance()->getTimer()->getTimeSinceSceneLoad();
+                        const auto angle = float( std::max( elapsed - 5.0, 0.0 ) * .15 );
+                        const auto target = m_assets.circuit.samples.front().position + Vector3F( 0, 1, 0 );
+                        const auto radius = 45.f + 35.f * ( 1 + std::sin( angle * .5f ) );
+                        m_cameraActor->setPosition( target + Vector3F( std::sin(angle)*radius, 8, std::cos(angle)*radius ) );
+                        m_cameraActor->lookAt( target, Vector3F::unitY() );
+                    }
+                    else if( m_captureView == "corner" )
                     {
                         const auto &point =
                             m_assets.circuit.samples[m_assets.circuit.samples.size() / 4];
@@ -940,10 +1013,10 @@ namespace workphone
                 }
             }
         }
-        if( m_camera && m_cameraActor && !m_assets.treeLODs.empty() )
+        if( m_camera && m_cameraActor && m_assets.vehicleLOD )
         {
             auto system = workphone::static_pointer_cast<scene::LODSystem>(
-                m_assets.treeLODs.front()->getComponentSystem() );
+                m_assets.vehicleLOD->getComponentSystem() );
             if( system )
             {
                 scene::LODSystem::View view;
@@ -1067,6 +1140,10 @@ int main( int argc, char **argv )
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
                    "  --capture PATH.bmp --view follow|car|track|corner   Save a rendered view and "
                    "exit\n"
+                   "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
+                   "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
+                   "  --benchmark SECONDS [--orbit] Measure after five seconds of warmup\n"
+                   "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
                    "  W/Up throttle; S/Down brake; A/D steer; R reset; Esc quit; wheel camera zoom\n";
             return 0;
         }
@@ -1079,12 +1156,58 @@ int main( int argc, char **argv )
     std::string capturePath, captureView = "follow";
     u32 seed = 7;
     auto quality = procedural::VehicleAppearanceQuality::High;
+    bool hud = true, orbit = false;
+    s32 forcedLOD = -1;
+    s32 forcedVehicleLOD = -1;
+    f64 benchmarkSeconds = 0;
+    u32 width = 1280, height = 720;
     try
     {
         for( int i = 1; i < argc; ++i )
         {
             if( String( argv[i] ) == "--smoke-test" )
                 smokeTest = true;
+            else if( String( argv[i] ) == "--no-hud" )
+                hud = false;
+            else if( String( argv[i] ) == "--orbit" )
+                orbit = true;
+            else if( String( argv[i] ) == "--force-lod" && i + 1 < argc )
+            {
+                const String value = argv[++i];
+                if( value != "auto" && value != "0" && value != "1" )
+                    throw std::runtime_error( "Forced LOD must be auto, 0, or 1." );
+                forcedLOD = value == "auto" ? -1 : value == "0" ? 0 : 1;
+            }
+            else if( String( argv[i] ) == "--force-vehicle-lod" && i + 1 < argc )
+            {
+                const std::string value = argv[++i];
+                if( value != "auto" && value != "0" && value != "1" && value != "2" )
+                    throw std::runtime_error( "Vehicle LOD must be auto, 0, 1 or 2." );
+                forcedVehicleLOD = value == "auto" ? -1 : std::stoi( value );
+            }
+            else if( String( argv[i] ) == "--benchmark" && i + 1 < argc )
+            {
+                size_t consumed = 0;
+                const std::string value = argv[++i];
+                benchmarkSeconds = std::stod( value, &consumed );
+                if( consumed != value.size() || !std::isfinite( benchmarkSeconds ) ||
+                    benchmarkSeconds <= 0 || benchmarkSeconds > 3600 )
+                    throw std::runtime_error(
+                        "Benchmark duration must be between zero and 3600 seconds." );
+            }
+            else if( String( argv[i] ) == "--resolution" && i + 1 < argc )
+            {
+                const std::string value = argv[++i];
+                const auto separator = value.find( 'x' );
+                if( separator == std::string::npos )
+                    throw std::runtime_error( "Resolution must be WIDTHxHEIGHT." );
+                size_t left = 0, right = 0;
+                width = std::stoul( value.substr( 0, separator ), &left );
+                height = std::stoul( value.substr( separator + 1 ), &right );
+                if( left != separator || right != value.size() - separator - 1 || width < 320 ||
+                    height < 180 || width > 7680 || height > 4320 )
+                    throw std::runtime_error( "Resolution must be between 320x180 and 7680x4320." );
+            }
             else if( String( argv[i] ) == "--track-smoke-test" )
                 trackSmokeTest = true;
             else if( String( argv[i] ) == "--plugins" && i + 1 < argc )
@@ -1114,8 +1237,9 @@ int main( int argc, char **argv )
             captureView != "corner" )
             throw std::runtime_error( "View must be follow, car, track, or corner." );
         if( ( smokeTest && trackSmokeTest ) ||
-            ( ( !capturePath.empty() ) && ( smokeTest || trackSmokeTest ) ) )
+            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
+        if( orbit && benchmarkSeconds <= 0 ) throw std::runtime_error( "--orbit requires --benchmark." );
     }
     catch( const std::exception &e )
     {
@@ -1166,6 +1290,7 @@ int main( int argc, char **argv )
         app->setTrackSmokeTest( trackSmokeTest );
         app->setGenerationOptions( seed, quality );
         app->setCapture( capturePath, captureView );
+        app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
         if( !pluginsConfig.empty() )
             app->setPluginsConfigFilePath( pluginsConfig );
         app->load( nullptr );
@@ -1173,7 +1298,7 @@ int main( int argc, char **argv )
             throw std::runtime_error( "SampleVehicleAdvanced failed to load." );
         app->run();
         exitCode = ( ( smokeTest || trackSmokeTest ) && !app->smokeTestPassed() ) ||
-                           ( !capturePath.empty() && !app->capturePassed() )
+                           ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() )
                        ? 1
                        : 0;
 

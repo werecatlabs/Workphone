@@ -36,6 +36,12 @@ namespace workphone
         {
             return m_capturePassed;
         }
+        void setReviewOptions( bool hud, s32 forcedLOD, s32 forcedVehicleLOD, f64 benchmarkSeconds, bool orbit, u32 width, u32 height )
+        {
+            m_hudEnabled = hud; m_forcedLOD = forcedLOD; m_benchmarkSeconds = benchmarkSeconds;
+            m_forcedVehicleLOD = forcedVehicleLOD;
+            m_orbitCamera = orbit; m_reviewWidth = width; m_reviewHeight = height;
+        }
         void reset();
         void setSmokeTest( bool enabled );
         void setTrackSmokeTest( bool enabled )
@@ -85,6 +91,11 @@ namespace workphone
 
         std::string m_capturePath, m_captureView;
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;
+        bool m_hudEnabled = true, m_orbitCamera = false, m_benchmarkStarted = false;
+        s32 m_forcedLOD = -1;
+        s32 m_forcedVehicleLOD = -1;
+        f64 m_benchmarkSeconds = 0;
+        u32 m_reviewWidth = 1280, m_reviewHeight = 720;
         advanced::SceneAssets m_assets;
         SmartPtr<scene::ProceduralRaceScene> m_raceScene;
         u64 m_profileFrames = 0;

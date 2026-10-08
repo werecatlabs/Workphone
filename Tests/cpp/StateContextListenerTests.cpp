@@ -20,6 +20,13 @@ namespace
         bool handleStateChanged(SmartPtr<IState> &) override { ++notifications; return true; }
         unsigned notifications = 0;
     };
+    class EventListener : public IEventListener
+    {
+    public:
+        Parameter handleEvent( EventType, hash_type, const Array<Parameter> &,
+                               SmartPtr<ISharedObject>, SmartPtr<ISharedObject>,
+                               SmartPtr<IEvent> ) override { return {}; }
+    };
 }
 int main()
 {
@@ -53,10 +60,32 @@ int main()
         context._processStateUpdate(state);
         require(listeners[100]->notifications == 1 && listeners[101]->notifications == 2,
                 "Removed listeners must stop receiving updates");
+        std::vector<SmartPtr<EventListener>> events;
+        for(unsigned i = 0; i < 256; ++i) events.push_back(make_ptr<EventListener>());
+        threads.clear();
+        // Duplicate attempts race with growth unless search and insertion share a lock.
+        for(unsigned worker = 0; worker < 4; ++worker)
+            threads.emplace_back([&]() {
+                for(const auto &listener : events) context.addEventListener(listener);
+            });
+        for(auto &thread : threads) thread.join();
+        const auto eventSnapshot = context.getEventListeners();
+        require(eventSnapshot.size() == events.size(), "Event listeners must grow and remain unique");
+        threads.clear();
+        for(unsigned worker = 0; worker < 4; ++worker)
+            threads.emplace_back([&, worker]() {
+                for(unsigned i = worker; i < events.size(); i += 4)
+                    context.removeEventListener(events[i]);
+            });
+        for(auto &thread : threads) thread.join();
+        require(context.getEventListeners().empty() && eventSnapshot.size() == events.size(),
+                "Concurrent removal must preserve event snapshots");
+        for(const auto &listener : events) context.addEventListener(listener);
         context.setLoadingState(LoadingState::Unloaded);
         context.unload(nullptr);
-        require(context.getStateListeners().empty(), "Teardown must release all registrations");
-        std::cout << "State listeners: shared-material fan-out, concurrent deduplication, dispatch and cleanup PASS\n";
+        require(context.getStateListeners().empty() && context.getEventListeners().empty(),
+                "Teardown must release all registrations");
+        std::cout << "State/event listeners: fan-out, concurrent deduplication, dispatch and cleanup PASS\n";
     }
     catch(const std::exception &error)
     {

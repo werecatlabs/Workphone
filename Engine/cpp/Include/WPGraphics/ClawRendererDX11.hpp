@@ -178,6 +178,7 @@ namespace workphone
              */
             void setSceneLighting( const ColourF &ambient, const Vector3F &direction,
                                    const ColourF &colour, f32 intensity );
+            void setSceneFog( u32 mode, const ColourF &colour, f32 density, f32 start, f32 end );
             /**
              * @brief Release a mesh previously handed to the native renderer.
              * @param mesh Pointer to the native mesh structure.
@@ -227,6 +228,7 @@ namespace workphone
             Vector3F m_lightDirection = Vector3F( -0.35f, -0.8f, -0.45f );
             ColourF m_lightColour = ColourF::White;
             f32 m_lightIntensity = 3.0f;
+            wp_vec4f m_fogColour{}, m_fogParams{};
 
             u32 m_rtWidth = 1280;
             u32 m_rtHeight = 720;

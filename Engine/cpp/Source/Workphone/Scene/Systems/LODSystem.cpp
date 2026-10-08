@@ -374,9 +374,25 @@ namespace workphone::scene
                 Math<real_Num>::Abs( scale.X() ),
                 std::max( Math<real_Num>::Abs( scale.Y() ), Math<real_Num>::Abs( scale.Z() ) ) ) );
 
-            batch->worldReferencePoints.push_back(
-                worldTransform.convertLocalToWorldPosition( group->m_localReferencePoint ) );
-            batch->worldRadii.push_back( std::max( group->m_size * maximumScale * 0.5f, 0.0005f ) );
+            batch->detailOffsets.push_back( static_cast<u32>( batch->worldRadii.size() ) );
+            batch->detailCounts.push_back(
+                static_cast<u32>( std::max<size_t>( group->m_detailBounds.size(), 1 ) ) );
+            if( group->m_detailBounds.empty() )
+            {
+                batch->worldReferencePoints.push_back(
+                    worldTransform.convertLocalToWorldPosition( group->m_localReferencePoint ) );
+                batch->worldRadii.push_back( std::max( group->m_size * maximumScale * 0.5f, 0.0005f ) );
+            }
+            else
+            {
+                for( const auto &bound : group->m_detailBounds )
+                {
+                    batch->worldReferencePoints.push_back(
+                        worldTransform.convertLocalToWorldPosition( bound.centre ) );
+                    batch->worldRadii.push_back(
+                        std::max( bound.diameter * maximumScale * .5f, .0005f ) );
+                }
+            }
             batch->lodBiases.push_back( group->m_lodBias * m_globalLODBias * cameraLODBias );
             batch->hysteresis.push_back( group->m_hysteresis );
             batch->previousLODs.push_back( m_currentLODs[slot] );
@@ -408,7 +424,8 @@ namespace workphone::scene
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto jobQueue = applicationManager ? applicationManager->getJobQueuePtr() : nullptr;
-        if( !jobQueue || !jobQueue->isRunning() )
+        // One small batch is cheaper to calculate directly than queue and consume next frame.
+        if( itemCount <= m_grainSize || !jobQueue || !jobQueue->isRunning() )
         {
             calculateRange( batch, 0, itemCount );
             return;
@@ -475,19 +492,25 @@ namespace workphone::scene
         for( auto index = begin; index < end; ++index )
         {
             f32 screenRelativeHeight = 0.0f;
-            if( batch->orthographic )
+            const auto detailEnd = batch->detailOffsets[index] + batch->detailCounts[index];
+            for( auto detail = batch->detailOffsets[index]; detail < detailEnd; ++detail )
             {
-                screenRelativeHeight = calculateOrthographicScreenRelativeHeight(
-                    batch->worldRadii[index], batch->orthographicHeight, batch->lodBiases[index] );
-            }
-            else
-            {
-                const auto offset = batch->worldReferencePoints[index] - batch->cameraPosition;
-                const auto distance =
-                    std::max( static_cast<f32>( offset.length() ), batch->nearClipDistance );
-                screenRelativeHeight = calculatePerspectiveScreenRelativeHeight(
-                    batch->worldRadii[index], distance, batch->verticalFovRadians,
-                    batch->lodBiases[index] );
+                f32 memberHeight;
+                if( batch->orthographic )
+                {
+                    memberHeight = calculateOrthographicScreenRelativeHeight(
+                        batch->worldRadii[detail], batch->orthographicHeight, batch->lodBiases[index] );
+                }
+                else
+                {
+                    const auto offset = batch->worldReferencePoints[detail] - batch->cameraPosition;
+                    const auto distance =
+                        std::max( static_cast<f32>( offset.length() ), batch->nearClipDistance );
+                    memberHeight = calculatePerspectiveScreenRelativeHeight(
+                        batch->worldRadii[detail], distance, batch->verticalFovRadians,
+                        batch->lodBiases[index] );
+                }
+                screenRelativeHeight = std::max( screenRelativeHeight, memberHeight );
             }
 
             const auto offset = batch->thresholdOffsets[index];

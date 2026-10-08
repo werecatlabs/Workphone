@@ -52,6 +52,8 @@ typedef struct wp_material_dx11
     wp_vec4f projection;        /* mode: mesh/world box/object box/world XZ/XY/YZ/screen; scale, unused x2 */
     wp_vec4f ambient_color;     /* rgb ambient radiance; w enables RGB instead of legacy scalar */
     wp_vec4f environment;       /* x enabled, y maximum LOD, z authored probe radiance (otherwise ambient-scaled) */
+    wp_vec4f fog_color;         /* linear scene fog radiance */
+    wp_vec4f fog_params;        /* mode (0 none, 1 exp, 2 exp2, 3 linear), density, start, end */
 } wp_material_dx11;
 
 /** Directional depth pass. light_matrix uses the mesh shader's OpenGL clip convention.
@@ -216,6 +218,14 @@ void *wp_renderer_dx11_create_texture_native( wp_renderer_dx11 *renderer, const 
                                                wp_s32 width, wp_s32 height,
                                                wp_pixel_format format );
 void wp_renderer_dx11_destroy_texture_native( void *texture_view );
+typedef struct wp_texture_mip_dx11
+{
+    const void *bgra;
+    wp_u32 width, height;
+} wp_texture_mip_dx11;
+/** Immutable BGRA8 mip chain; dimensions halve at each level. */
+void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *renderer,
+    const wp_texture_mip_dx11 *levels, wp_u32 level_count );
 
 /**
  * @brief Creates an off-screen colour/depth target that can also be sampled as a texture.

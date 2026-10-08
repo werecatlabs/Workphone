@@ -101,7 +101,8 @@ checks world-space torque on a body with unequal principal moments in two poses.
 ## Reusable tree LOD and generated imposters
 
 Trees are grouped into 64-metre patches, each with a scene `LODGroup`. LOD0
-contains trunk and canopy renderers; LOD1 contains three cutout cards per tree
+combines trunks and canopies into one opaque draw using a two-colour palette;
+LOD1 contains three cutout cards per tree
 (two crossed side views and an overhead view). A shared 384 x 256 RGBA atlas is
 baked from the same procedural pine mesh at startup using the engine's
 `generateMeshImposters` API. The depth-tested CPU bake preserves the silhouette
@@ -110,7 +111,7 @@ adds 393,216 bytes (0.375 MiB). Each distant tree uses six triangles, compared
 with sixty stored triangles in the near mesh. Both representations stay allocated.
 
 The reusable `LODSystem` snapshots bounds, thresholds and camera data into flat
-arrays, selects levels in worker jobs and applies renderer visibility on the scene
+arrays, selects larger sets in worker jobs and applies renderer visibility on the scene
 thread. Trees have no individual update callbacks. Other generated meshes can use
 the same components by adding renderer sets to a `LODGroup` in descending screen
 height order. `setSize`, `setLocalReferencePoint`, `setHysteresis`, `setForcedLOD`
@@ -119,19 +120,19 @@ the default; applications with a separate rendering camera can publish a plain
 `LODSystem::View` through `setViewOverride`, or restore discovery with
 `clearViewOverride`. VehicleAdvanced publishes its actual follow/capture camera.
 
-Tree patches use a representative seven-metre tree size, a screen height threshold
-of 0.085 and 15% hysteresis. At a 45-degree vertical field of view, an initially
-selected patch switches around 100 metres from its centre; hysteresis retains
-meshes out to roughly 117 metres and restores them inside roughly 86 metres.
-Distances change with camera field of view and LOD bias. Selection uses the patch
-centre, so individual trees within a patch can be closer or farther away. The last
+Small sets up to the configured grain size calculate synchronously, avoiding job
+dispatch and a frame of result latency. Tree patches use `setDetailBounds` with
+each tree's actual position and four-to-eleven-metre height, a screen height
+threshold of 0.085 and 15% hysteresis. A patch retains its near representation
+while any member requires it. Nonuniform actor scale uses the largest absolute
+axis conservatively. Distances change with camera field of view and LOD bias. The last
 level stays visible at all distances. Transitions are discrete, without blending.
 
 `MeshImposterTests` checks deterministic baking, front-surface depth selection,
 transparent borders, rejected invalid input and tree thresholds in both directions.
 The existing `LODSystemTests` covers perspective/orthographic projection, forced
 levels, culling and hysteresis. Captures also check that each tree patch has exactly
-one visible level and that the trunk and canopy agree. Both test executables and
+one visible level. Both test executables and
 the sample build and pass the focused checks in Debug and RelWithDebInfo. The
 Debug low-quality close capture selected four mesh and 24 imposter patches.
 
@@ -145,6 +146,9 @@ cd Bin/windows/v145/x64/MD/RelWithDebInfo
 ```
 
 ## Verified configuration and measurements
+
+The measurements below describe earlier revisions. See the implementation
+report in `review/IMPLEMENTATION.md` for the graphics and LOD update.
 
 Verified on Windows x64 / v145 using WPGraphics (DX11), WPPhysics,
 WPVehiclePhysics and WPProcedural. Both Debug and RelWithDebInfo build with the
@@ -187,6 +191,40 @@ These timings are not isolated GPU measurements.
 
 ## Current scope
 
+The graphics update adds explicit mip filtering for generated textures: linear-light
+colour, normalized normal vectors, linear data, GGX roughness moments and
+alpha-coverage-preserving cutouts. Atlas views remain isolated through the mip
+chain. Grass and gravel now have seeded surface maps and anisotropic sampling.
+DX11 materials receive scene fog for exponential, squared-exponential and linear
+modes; fog is applied before the existing display transform. Its horizon colour
+matches the generated sky through that transform, and the generated sun follows
+the sky's sun direction. The sky remains unfogged. The fixed high-altitude
+`--view track` review disables fog so circuit details remain visible.
+
+The car now uses the generated LOD renderer sets under the original chassis and
+four wheel actors. High/medium use all three levels; low starts at the middle
+level. Levels share materials and wheel hub transforms. The player car retains
+high detail during close views, with discrete hysteretic changes at distance.
+
+For repeatable comparisons, use the following controls from the executable directory:
+
+```powershell
+./SampleVehicleAdvanced.exe --quality high --seed 7 --view car --no-hud --resolution 1280x720 --capture car.bmp
+./SampleVehicleAdvanced.exe --quality high --seed 7 --view track --no-hud --force-lod 0 --benchmark 10
+./SampleVehicleAdvanced.exe --quality high --seed 7 --view track --no-hud --force-lod 1 --benchmark 10
+./SampleVehicleAdvanced.exe --quality high --seed 7 --no-hud --benchmark 15 --orbit
+```
+
+`--force-lod auto|0|1` applies to trees. `--force-vehicle-lod auto|0|1|2`
+selects a vehicle level within the current preset; low has two levels and clamps
+the index accordingly. Benchmark mode holds the car stationary,
+waits five seconds for warmup, resets native statistics and measures the requested
+seconds. Logs include frame-interval mean/p95, CPU frame time including Present,
+Present time, GPU time/sample count, draws, submitted triangles, constant uploads
+and state binds per frame. GPU samples are asynchronous and may trail the frame
+count. Counts include shadows/offscreen work. Capture mode also verifies tree and
+vehicle LOD exclusivity, reflections and winding. Orbit mode requires benchmark mode.
+
 The road and runoff are level and share one continuous static contact plane;
 visual millimetre offsets prevent coplanar rendering artifacts. Trees, hills,
 pits and guardrails are decorative. Track elevation, barrier collisions and
@@ -195,5 +233,8 @@ moving-platform wheel contacts are not part of this sample.
 Generated RGBA maps are uploaded in memory. Albedo is sRGB; normal/ORM channels
 are linear. ORM is split explicitly into AO, roughness and metalness slots. The
 sample includes a soft ground contact shadow, daylight and a procedural sky.
-Full shadow maps, bloom, engine audio and particle effects remain renderer/audio
-follow-ups; graphics toggles alone are not evidence that those effects render.
+DX11 has a single directional shadow map. Cascaded shadows, GPU bloom, engine
+audio and particle effects remain follow-ups; graphics toggles alone are not
+evidence that those effects render. GPU HDR/TAA/AO, dithered LOD transitions and
+true instance buffers are subsequent roadmap stages. The current tree change
+reduces near submissions per patch, while distant patches remain separate draws.

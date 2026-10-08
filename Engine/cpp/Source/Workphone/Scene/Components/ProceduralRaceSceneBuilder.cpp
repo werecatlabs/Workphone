@@ -10,6 +10,7 @@
 #include <Workphone/Interface/Procedural/ISkyAtmosphere.hpp>
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
+#include <Workphone/Graphics/TextureMipGenerator.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -83,7 +84,9 @@ namespace workphone::scene::race
             assets.materials.push_back( m );
             return m;
         }
-        SmartPtr<render::ITexture> upload( SceneAssets &assets, const TextureBuffer &buffer )
+        SmartPtr<render::ITexture> upload(
+            SceneAssets &assets, const TextureBuffer &buffer,
+            render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1 )
         {
             if( buffer.pixels.empty() )
                 return nullptr;
@@ -94,6 +97,10 @@ namespace workphone::scene::race
                                                                         buffer.height, 1, 0, 0 );
             if( !texture )
                 throw std::runtime_error( "Cannot create procedural texture." );
+            auto properties = texture->getProperties();
+            properties->setProperty( "mipmapFilter", static_cast<s32>( filter ) );
+            properties->setProperty( "mipmapAtlasColumns", atlasColumns );
+            texture->setProperties( properties );
             // ClawTexture's native storage uses BGRA8, while procedural buffers use RGBA8.
             auto bgra = buffer.pixels;
             for( size_t i = 0; i < bgra.size(); i += 4 )
@@ -112,7 +119,7 @@ namespace workphone::scene::race
                 m->setTexture( upload( assets, albedo ), 0 );
             }
             if( !normal.pixels.empty() )
-                m->setTexture( upload( assets, normal ), 1 );
+                m->setTexture( upload( assets, normal, render::TextureMipFilter::Normal ), 1 );
             // The generated ORM is AO/Roughness/Metalness. WPGraphics' separate map slots
             // read red, so expand each channel explicitly, without applying an sRGB transfer.
             if( !orm.pixels.empty() )
@@ -126,7 +133,12 @@ namespace workphone::scene::race
                             orm.pixels[i + channel];
                         split.pixels[i + 3] = 255;
                     }
-                    m->setTexture( upload( assets, split ), channel == 0 ? 22 : channel == 1 ? 3 : 2 );
+                    m->setTexture( upload( assets, split,
+                                           channel == 1 ? render::TextureMipFilter::Roughness
+                                                        : render::TextureMipFilter::Data ),
+                                   channel == 0   ? 22
+                                   : channel == 1 ? 3
+                                                  : 2 );
                 }
                 m->setRoughness( 1 );
                 m->setMetalness( 1 );
@@ -306,57 +318,70 @@ namespace workphone::scene::race
                 assets.wheels[i] = wheel;
                 assets.actors.push_back( wheel );
             }
-            auto lod = quality == VehicleAppearanceQuality::Preview ? 1u : 0u;
-            for( const auto &section :
-                 assets.vehicle.geometry
-                     .lods[std::min<size_t>( lod, assets.vehicle.geometry.lods.size() - 1 )]
-                     .sections )
+            auto vehicleLOD = actor->addComponent<scene::LODGroup>();
+            assets.vehicleLOD = vehicleLOD;
+            vehicleLOD->setSize( 4.5f );
+            vehicleLOD->setHysteresis( .15f );
+            vehicleLOD->setCullBelowLastLOD( false );
+            const size_t firstLOD = quality == VehicleAppearanceQuality::Preview ? 1 : 0;
+            for( size_t lod = firstLOD; lod < assets.vehicle.geometry.lods.size(); ++lod )
             {
-                auto m = materials[size_t( generator->materialSlotFor( section.material ) )];
-                bool rotating = section.material == VehicleMaterial::Tyre ||
-                                section.material == VehicleMaterial::Rim ||
-                                section.material == VehicleMaterial::Brake;
-                // Wheel sections contain four disconnected assemblies. Assign whole triangles
-                // to their closest authored axle; preserve winding, UVs and normals unchanged.
-                std::array<Geometry, 4> parts;
-                for( size_t index = 0; index < section.indices.size(); index += 3 )
+                Array<SmartPtr<scene::Renderer>> renderers;
+                for( const auto &section : assets.vehicle.geometry.lods[lod].sections )
                 {
-                    size_t corner = 0;
-                    if( rotating )
+                    auto m = materials[size_t( generator->materialSlotFor( section.material ) )];
+                    bool rotating = section.material == VehicleMaterial::Tyre ||
+                                    section.material == VehicleMaterial::Rim ||
+                                    section.material == VehicleMaterial::Brake;
+                    // Wheel sections contain four disconnected assemblies. Assign whole triangles
+                    // to their closest authored axle; preserve winding, UVs and normals unchanged.
+                    std::array<Geometry, 4> parts;
+                    for( size_t index = 0; index < section.indices.size(); index += 3 )
                     {
-                        auto centre = ( section.vertices[section.indices[index]].position +
-                                        section.vertices[section.indices[index + 1]].position +
-                                        section.vertices[section.indices[index + 2]].position ) /
-                                      3.0f;
-                        float closest = std::numeric_limits<float>::max();
-                        for( size_t i = 0; i < 4; ++i )
+                        size_t corner = 0;
+                        if( rotating )
                         {
-                            auto distance = ( centre - hubs[i] ).length();
-                            if( distance < closest )
+                            auto centre = ( section.vertices[section.indices[index]].position +
+                                            section.vertices[section.indices[index + 1]].position +
+                                            section.vertices[section.indices[index + 2]].position ) /
+                                          3.0f;
+                            float closest = std::numeric_limits<float>::max();
+                            for( size_t i = 0; i < 4; ++i )
                             {
-                                closest = distance;
-                                corner = i;
+                                auto distance = ( centre - hubs[i] ).length();
+                                if( distance < closest )
+                                {
+                                    closest = distance;
+                                    corner = i;
+                                }
                             }
                         }
+                        auto &g = parts[corner];
+                        for( size_t j = 0; j < 3; ++j )
+                        {
+                            const auto &v = section.vertices[section.indices[index + j]];
+                            g.indices.push_back( static_cast<u32>( g.positions.size() ) );
+                            g.positions.push_back( v.position - ( rotating ? hubs[corner] : com ) );
+                            g.normals.push_back( v.normal );
+                            g.uv.push_back( { v.uv.x, v.uv.y, 0 } );
+                            g.tangents.push_back(
+                                { v.tangent.x, v.tangent.y, v.tangent.z, v.tangentSign } );
+                        }
                     }
-                    auto &g = parts[corner];
-                    for( size_t j = 0; j < 3; ++j )
+                    for( size_t i = 0; i < ( rotating ? 4u : 1u ); ++i )
                     {
-                        const auto &v = section.vertices[section.indices[index + j]];
-                        g.indices.push_back( static_cast<u32>( g.positions.size() ) );
-                        g.positions.push_back( v.position - ( rotating ? hubs[corner] : com ) );
-                        g.normals.push_back( v.normal );
-                        g.uv.push_back( { v.uv.x, v.uv.y, 0 } );
-                        g.tangents.push_back( { v.tangent.x, v.tangent.y, v.tangent.z, v.tangentSign } );
+                        auto part = mesh( assets, "LOD" + StringUtil::toString( lod ) + " " +
+                            String( section.name.c_str() ), parts[i], m,
+                                          rotating ? assets.wheels[i] : actor );
+                        if( !assets.body && !rotating )
+                            assets.body = part;
+                        if( part )
+                            renderers.push_back( part->getComponent<scene::MeshRenderer>() );
                     }
                 }
-                for( size_t i = 0; i < ( rotating ? 4u : 1u ); ++i )
-                {
-                    auto part = mesh( assets, String( section.name.c_str() ), parts[i], m,
-                                      rotating ? assets.wheels[i] : actor );
-                    if( !assets.body && !rotating )
-                        assets.body = part;
-                }
+                vehicleLOD->addLevel(
+                    lod + 1 == assets.vehicle.geometry.lods.size() ? 0.f : ( lod == 0 ? .32f : .085f ),
+                    renderers );
             }
             generator = nullptr;
         }
@@ -387,9 +412,40 @@ namespace workphone::scene::race
             maps( assets, roadMat, asphalt.albedo, asphalt.normal, asphalt.orm );
             roadMat->setNormalStrength( .2f );
             auto grass = material( assets, { .28f, .43f, .16f, 1 }, 1 );
+            auto grassMaps = forge->bakeSurface( SurfaceTag::Dirt, params );
+            auto gravelMaps = forge->bakeSurface( SurfaceTag::Stone, params );
+            for( size_t i = 0; i < grassMaps.albedo.pixels.size(); i += 4 )
+            {
+                const float variation = .72f + grassMaps.albedo.pixels[i] / 255.f * .55f;
+                grassMaps.albedo.pixels[i] = u8( 82 * variation );
+                grassMaps.albedo.pixels[i + 1] = u8( 112 * variation );
+                grassMaps.albedo.pixels[i + 2] = u8( 48 * variation );
+                grassMaps.albedo.pixels[i + 3] = 255;
+                const float stone = .7f + gravelMaps.albedo.pixels[i] / 255.f * .6f;
+                gravelMaps.albedo.pixels[i] = u8( 142 * stone );
+                gravelMaps.albedo.pixels[i + 1] = u8( 127 * stone );
+                gravelMaps.albedo.pixels[i + 2] = u8( 104 * stone );
+            }
+            maps( assets, grass, grassMaps.albedo, grassMaps.normal, grassMaps.orm );
+            grass->setNormalStrength( .15f );
+            grass->setUVProjection( 3 );
             auto red = material( assets, { .5f, .018f, .013f, 1 }, .72f );
             auto white = material( assets, { .8f, .8f, .72f, 1 }, .8f );
             auto gravel = material( assets, { .35f, .29f, .2f, 1 }, 1 );
+            maps( assets, gravel, gravelMaps.albedo, gravelMaps.normal, gravelMaps.orm );
+            gravel->setNormalStrength( .3f );
+            gravel->setUVProjection( 3 );
+            for( auto sampled : { roadMat, grass, gravel } )
+            {
+                // Only change sampler fields. A full material property round-trip reloads
+                // texture names, which can discard anonymous procedural texture bindings.
+                auto properties = make_ptr<Properties>();
+                properties->setProperty( "uvFilter", u32( 3 ) );
+                properties->setProperty( "uvAniso", 8.f );
+                if( sampled != roadMat )
+                    properties->setProperty( "uvTriplanarScale", sampled == grass ? .08f : .25f );
+                sampled->setProperties( properties );
+            }
             auto steel = material( assets, { .34f, .37f, .4f, 1 }, .45f, .7f );
             auto dark = material( assets, { .015f, .025f, .035f, 1 }, .55f, .35f );
             Geometry road, kerbRed, kerbWhite, lines, runoff, barriers;
@@ -473,13 +529,14 @@ namespace workphone::scene::race
             struct TreePatch
             {
                 Geometry trunks, leaves, imposters;
+                Array<scene::LODDetailBound> detailBounds;
             };
             std::map<std::pair<int, int>, TreePatch> patches;
             const auto atlas = bakePineImposter();
             TextureBuffer treeTexture( atlas.width, atlas.height );
             treeTexture.pixels.assign( atlas.rgba.begin(), atlas.rgba.end() );
             auto imposterMaterial = material( assets, ColourF::White, 1 );
-            auto imposterTexture = upload( assets, treeTexture );
+            auto imposterTexture = upload( assets, treeTexture, render::TextureMipFilter::Cutout, 3 );
             imposterMaterial->setTexture( imposterTexture, 0 );
             // Colour is already lit by the CPU bake. Keep its alpha mask in the
             // albedo slot and supply baked colour through the PBS emission slot.
@@ -491,8 +548,12 @@ namespace workphone::scene::race
             imposterMaterial->setAlphaClip( .5f );
             imposterMaterial->setTransparent( false );
             imposterMaterial->setDepthWrite( true );
-            auto trunkMaterial = material( assets, { .12f, .055f, .018f, 1 }, 1 );
-            auto canopyMaterial = material( assets, { .18f, .32f, .13f, 1 }, 1 );
+            // A two-texel palette preserves both surface colours in one opaque draw.
+            // No mip reduction: these are categorical entries, not a continuous image.
+            TextureBuffer palette( 2, 1 );
+            palette.pixels = { 31, 14, 5, 255, 46, 82, 33, 255 };
+            auto nearTreeMaterial = material( assets, ColourF::White, 1 );
+            nearTreeMaterial->setTexture( upload( assets, palette, render::TextureMipFilter::None ), 0 );
             int treeCount = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
             for( int i = 0; i < treeCount; ++i )
             {
@@ -506,6 +567,7 @@ namespace workphone::scene::race
                     std::make_pair( int( std::floor( p.x / 64 ) ), int( std::floor( p.z / 64 ) ) );
                 const Vector3F centre( key.first * 64.f + 32, 0, key.second * 64.f + 32 );
                 auto &patch = patches[key];
+                patch.detailBounds.push_back( { p - centre + Vector3F( 0, h * .5f, 0 ), h } );
                 pineGeometry( patch.trunks, patch.leaves, p - centre, h );
                 pineImposterGeometry( patch.imposters, atlas, p - centre, h );
             }
@@ -516,46 +578,79 @@ namespace workphone::scene::race
                 assets.actors.push_back( root );
                 root->setPosition( { key.first * 64.f + 32, 0, key.second * 64.f + 32 } );
                 app->getGameManager()->getCurrentScene()->addActor( root );
-                auto trunks = mesh( assets, "LOD0 pine trunks", patch.trunks, trunkMaterial, root );
-                auto canopy = mesh( assets, "LOD0 pine canopy", patch.leaves, canopyMaterial, root );
+                Geometry nearTrees;
+                auto append = [&]( const Geometry &source, float paletteU ) {
+                    const auto base = static_cast<u32>( nearTrees.positions.size() );
+                    nearTrees.positions.insert( nearTrees.positions.end(), source.positions.begin(),
+                                           source.positions.end() );
+                    nearTrees.normals.insert( nearTrees.normals.end(), source.normals.begin(),
+                                         source.normals.end() );
+                    nearTrees.tangents.insert( nearTrees.tangents.end(), source.tangents.begin(),
+                                          source.tangents.end() );
+                    nearTrees.uv.insert( nearTrees.uv.end(), source.positions.size(),
+                                    Vector3F( paletteU, .5f, 0 ) );
+                    for( auto index : source.indices )
+                        nearTrees.indices.push_back( base + index );
+                };
+                append( patch.trunks, .25f );
+                append( patch.leaves, .75f );
+                auto trees = mesh( assets, "LOD0 pine batch", nearTrees, nearTreeMaterial, root );
                 auto cards =
                     mesh( assets, "LOD1 pine imposters", patch.imposters, imposterMaterial, root );
                 auto lod = root->addComponent<scene::LODGroup>();
                 lod->setLocalReferencePoint( { 0, 3.5f, 0 } );
                 lod->setSize( 7 );
+                lod->setDetailBounds( patch.detailBounds );
                 lod->setHysteresis( .15f );
                 lod->setCullBelowLastLOD( false );
-                lod->addLevel( .085f, { trunks->getComponent<scene::MeshRenderer>(),
-                                        canopy->getComponent<scene::MeshRenderer>() } );
+                lod->addLevel( .085f, { trees->getComponent<scene::MeshRenderer>() } );
                 lod->addLevel( 0, { cards->getComponent<scene::MeshRenderer>() } );
                 String error;
                 if( !lod->validate( &error ) )
                     throw std::runtime_error( "Invalid generated tree LOD group: " + error );
                 assets.treeLODs.push_back( lod );
             }
-            for( int hill = 0; hill < 14; ++hill )
-            {
-                float a = 2 * pi * hill / 14, r = 330 + unit( rng ) * 80, h = 30 + unit( rng ) * 55;
-                Vector3F p( 80 + std::cos( a ) * r, 0, -25 + std::sin( a ) * r );
-                for( int s = 0; s < 18; ++s )
+            // Keep the track and all authored tree positions on the flat contact plane.
+            // Outside that footprint, a continuous ridge replaces overlapping cone silhouettes.
+            const auto height = [seed]( float x, float z ) {
+                const float radius = std::hypot( x - 80, z + 25 );
+                const float t = std::clamp( ( radius - 300 ) / 160, 0.f, 1.f );
+                const float phase = float( seed % 1000 ) * .073f;
+                return -.15f +
+                       t * t * ( 3 - 2 * t ) *
+                           ( 58 + 19 * std::sin( x * .009f + phase ) +
+                             13 * std::cos( z * .012f - phase ) + 8 * std::sin( ( x + z ) * .018f ) );
+            };
+            const int grid = quality == VehicleAppearanceQuality::Preview ? 24 : 32;
+            for( int z = 0; z <= grid; ++z )
+                for( int x = 0; x <= grid; ++x )
                 {
-                    float a0 = 2 * pi * s / 18, a1 = 2 * pi * ( s + 1 ) / 18;
-                    auto p0 = p + Vector3F( std::cos( a0 ) * 85, 0, std::sin( a0 ) * 85 );
-                    auto p1 = p + Vector3F( std::cos( a1 ) * 85, 0, std::sin( a1 ) * 85 );
-                    auto top = p + Vector3F( 0, h, 0 );
-                    auto n = ( p1 - p0 ).crossProduct( top - p0 );
-                    n.normalise();
-                    hills.quad( p0, p1, top, top, n );
+                    const float px = 80 - 640 + x * 1280.f / grid;
+                    const float pz = -25 - 640 + z * 1280.f / grid;
+                    hills.positions.push_back( { px, height( px, pz ), pz } );
+                    auto normal = Vector3F( height( px - 2, pz ) - height( px + 2, pz ), 4,
+                                            height( px, pz - 2 ) - height( px, pz + 2 ) );
+                    normal.normalise();
+                    hills.normals.push_back( normal );
+                    hills.tangents.push_back( { 1, 0, 0, 1 } );
+                    hills.uv.push_back( { px * .08f, pz * .08f, 0 } );
+                    if( x < grid && z < grid )
+                    {
+                        const u32 a = z * ( grid + 1 ) + x, b = a + 1;
+                        const u32 c = a + grid + 1, d = c + 1;
+                        for( auto index : { a, c, d, a, d, b } )
+                            hills.indices.push_back( index );
+                    }
                 }
-            }
-            mesh( assets, "Distant hills", hills, material( assets, { .22f, .35f, .25f, 1 }, 1 ) );
+            mesh( assets, "Distant terrain", hills, grass );
         }
         void buildCity( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
-            const auto city = OpenCityLayout::generate(seed, assets.cityBlocks, assets.cityRoute);
+            const auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute );
             auto app = core::IApplicationManager::instance();
-            auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>("IRoadSystem");
-            if(!roads) throw std::runtime_error("Open city requires the WPProcedural road service.");
+            auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>( "IRoadSystem" );
+            if( !roads )
+                throw std::runtime_error( "Open city requires the WPProcedural road service." );
             roads->setSeed(seed);
             Geometry asphalt, pavement, markings, buildings[3], windows, parks;
             // Match the existing flat physics proxy. Preserve library topology,
@@ -808,8 +903,18 @@ namespace workphone::scene::race
             }
 
             graphicsScene->setAmbientLight( ColourF( .28f, .32f, .38f, 1 ) );
-            graphicsScene->setFog( render::IGraphicsScene::FOG_LINEAR, result.fogColour, .0007f, 180,
-                                   800 );
+            // Use the same horizon palette as the unlit sky. Lit surfaces pass through
+            // Reinhard, so invert that transform to converge to the sky's displayed colour.
+            auto horizon = sky->computeSkyColour( Vector3F( 1, 0, 0 ), result.sunDir,
+                                                  state.turbidity, result.sunAltitude );
+            const auto fogRadiance = []( float displayedLinear ) {
+                const float colour = std::clamp( displayedLinear, 0.f, .95f );
+                return colour / ( 1 - colour );
+            };
+            graphicsScene->setFog( render::IGraphicsScene::FOG_LINEAR,
+                ColourF( fogRadiance( .41f + horizon.r * .15f ),
+                         fogRadiance( .57f + horizon.g * .15f ),
+                         fogRadiance( .82f + horizon.b * .15f ), 1 ), .0007f, 180, 800 );
             // Keep the host scene's lights; reuse its directional lighting if present.
             for( auto light : graphicsScene->getGraphicsObjectsByType<render::IGraphicsLight>() )
                 if( light->getType() == LightTypes::LT_DIRECTIONAL && light->isVisible() )
@@ -817,7 +922,7 @@ namespace workphone::scene::race
             auto sun = graphicsScene->addGraphicsObjectByType<render::IGraphicsLight>();
             assets.sun = sun;
             sun->setType( LightTypes::LT_DIRECTIONAL );
-            sun->setDirection( Vector3F( -.4f, -.75f, -.5f ) );
+            sun->setDirection( -result.sunDir );
             sun->setDiffuseColour( ColourF( 1, .96f, .88f, 1 ) );
             sun->setPowerScale( 1.8f );
             sun->setVisible( true );
@@ -902,8 +1007,10 @@ namespace workphone::scene::race
         assets.resourcePrefix = "__procedural/race/" + StringUtil::getUUID();
         const auto started = std::chrono::steady_clock::now();
         buildCar( assets, actor, seed, quality );
-        if(assets.openCity) buildCity(assets,seed,quality);
-        else buildTrack( assets, seed, quality );
+        if( assets.openCity )
+            buildCity( assets, seed, quality );
+        else
+            buildTrack( assets, seed, quality );
         buildSky( assets, actor );
         TextureBuffer shade( 64, 64 );
         for( u32 y = 0; y < 64; ++y )
@@ -923,19 +1030,19 @@ namespace workphone::scene::race
         shadowGeometry.quad( { -1.6f, .025f, -3.7f }, { 1.6f, .025f, -3.7f }, { 1.6f, .025f, 3.7f },
                              { -1.6f, .025f, 3.7f }, { 0, 1, 0 } );
         assets.shadow = mesh( assets, "Vehicle contact shadow", shadowGeometry, shadowMaterial );
-        if(assets.openCity)
-            if(auto root = actor->getParent())
+        if( assets.openCity )
+            if( auto root = actor->getParent() )
             {
                 auto scene = core::IApplicationManager::instance()->getGameManager()->getCurrentScene();
                 // Serialize the generated city only under the game's owned root.
                 // Removing the old root after Editor restoration then removes all
                 // streets/colliders too, even when Lua's native references were lost.
-                for(const auto &generated : assets.actors)
-                    if(!generated->getParent())
+                for( const auto &generated : assets.actors )
+                    if( !generated->getParent() )
                     {
-                        scene->removeActor(generated);
-                        root->addChild(generated);
-                        scene->registerAllUpdates(generated);
+                        scene->removeActor( generated );
+                        root->addChild( generated );
+                        scene->registerAllUpdates( generated );
                     }
             }
 

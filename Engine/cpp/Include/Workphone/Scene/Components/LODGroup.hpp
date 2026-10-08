@@ -30,6 +30,13 @@ namespace workphone
             f32 fadeTransitionWidth = 0.0f;
         };
 
+        /** Detail bounds for members of a merged batch; independent of its culling bounds. */
+        struct LODDetailBound
+        {
+            Vector3<real_Num> centre = Vector3<real_Num>::zero();
+            f32 diameter = 1.0f;
+        };
+
         /**
          * @brief Defines the visual levels and bounds used by the data-oriented LOD system.
          *
@@ -66,6 +73,10 @@ namespace workphone
             /** Set the approximate local-space diameter of the group. */
             void setSize( f32 size );
             f32 getSize() const;
+
+            /** Retain detail whenever any member needs it. Empty uses the group size. */
+            void setDetailBounds( const Array<LODDetailBound> &bounds );
+            Array<LODDetailBound> getDetailBounds() const;
 
             /** Set the per-group LOD bias. Values above one retain detail for longer. */
             void setLODBias( f32 bias );
@@ -116,6 +127,7 @@ namespace workphone
             static const String recalculateBoundsStr;
 
             Array<LODLevel> m_levels;
+            Array<LODDetailBound> m_detailBounds;
             Vector3<real_Num> m_localReferencePoint = Vector3<real_Num>::zero();
             f32 m_size = 1.0f;
             f32 m_lodBias = 1.0f;

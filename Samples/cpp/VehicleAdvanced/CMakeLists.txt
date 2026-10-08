@@ -63,6 +63,9 @@ elseif (WP_GRAPHICS_SYSTEM_OGRE)
 endif()
 
 include_directories( ${WP_ROOT}/Engine/cpp/Include )
+if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
+    include_directories( ${WP_ROOT}/Engine/c/Include )
+endif()
 include_directories(Source)
 
 if (WIN32)

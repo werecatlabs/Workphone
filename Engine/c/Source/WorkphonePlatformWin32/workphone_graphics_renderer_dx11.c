@@ -108,7 +108,7 @@ static const wp_c8 s_vs_pntc_src[] =
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
     " float4 specular_color; float4 light_color; float4 light_direction;\n"
     " float4 camera_position; float4 surface; float4 uv_transform;\n"
-    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; };\n"
+    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n"
     "struct VS_IN { float3 pos : POSITION; float3 normal : NORMAL;\n"
     " float2 uv : TEXCOORD0; uint color : COLOR; };\n"
     "struct VS_OUT { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
@@ -144,7 +144,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
     " float4 specular_color; float4 light_color; float4 light_direction;\n"
     " float4 camera_position; float4 surface; float4 uv_transform;\n"
-    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; };\n"
+    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n"
     "struct PS_IN { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
     " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
     " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; };\n"
@@ -245,6 +245,12 @@ static const wp_c8 s_ps_pntc_src[] =
     "     float3 envScale = environment.z > 0.5 ? float3(1.0, 1.0, 1.0) : ambient;\n"
     "     color += env * max(f0 * ab.x + ab.y, 0.0) * envScale * specAO; }\n"
     " color += emission;\n"
+    " if (fog_params.x > 0.5) {\n"
+    "     float distanceToEye = length(camera_position.xyz - i.world_pos);\n"
+    "     float amount = fog_params.x < 1.5 ? 1.0 - exp(-fog_params.y * distanceToEye) :\n"
+    "         fog_params.x < 2.5 ? 1.0 - exp(-pow(fog_params.y * distanceToEye, 2.0)) :\n"
+    "         (distanceToEye - fog_params.z) / max(fog_params.w - fog_params.z, 0.001);\n"
+    "     color = lerp(color, max(fog_color.rgb, 0.0), saturate(amount)); }\n"
     " color = max(color, 0.0); color = color / (color + 1.0);\n"
     " color = pow(color, 1.0 / 2.2);\n"
     " return float4(controls.w > 0.5 ? color * alpha : color, alpha); }\n";
@@ -2379,6 +2385,40 @@ void wp_renderer_dx11_destroy_texture_native( void *texture_view )
 {
     if( texture_view )
         ID3D11ShaderResourceView_Release( (ID3D11ShaderResourceView *)texture_view );
+}
+
+void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *r,
+    const wp_texture_mip_dx11 *levels, wp_u32 level_count )
+{
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_SUBRESOURCE_DATA data[15];
+    ID3D11Texture2D *texture = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    wp_u32 i, width, height;
+    HRESULT hr;
+    if( !r || !levels || !level_count || level_count > 15 ||
+        !wp_renderer_dx11_dimensions_supported( r, levels[0].width, levels[0].height ) ) return NULL;
+    width = levels[0].width; height = levels[0].height;
+    memset( data, 0, sizeof(data) );
+    for( i = 0; i < level_count; ++i )
+    {
+        if( !levels[i].bgra || levels[i].width != width || levels[i].height != height ) return NULL;
+        data[i].pSysMem = levels[i].bgra;
+        data[i].SysMemPitch = width * 4u;
+        if( width == 1 && height == 1 && i + 1 < level_count ) return NULL;
+        width = width > 1 ? width / 2 : 1; height = height > 1 ? height / 2 : 1;
+    }
+    memset( &desc, 0, sizeof(desc) );
+    desc.Width = levels[0].width; desc.Height = levels[0].height;
+    desc.MipLevels = level_count; desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    hr = ID3D11Device_CreateTexture2D( r->device, &desc, data, &texture );
+    if( FAILED(hr) ) return NULL;
+    hr = ID3D11Device_CreateShaderResourceView( r->device, (ID3D11Resource *)texture, NULL, &view );
+    ID3D11Texture2D_Release(texture);
+    return SUCCEEDED(hr) ? view : NULL;
 }
 
 void wp_renderer_dx11_set_render_target_native( wp_renderer_dx11 *r, void *render_target_view )

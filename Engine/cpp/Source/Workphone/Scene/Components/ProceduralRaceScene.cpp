@@ -113,10 +113,13 @@ namespace workphone::scene
         m_surfaceGrip = 1;
         auto app = core::IApplicationManager::instancePtr();
         auto manager = app ? app->getGameManager() : nullptr;
-        if(!m_assets.treeLODs.empty())
+        if(m_assets.vehicleLOD)
             if(auto system =
-                dynamic_pointer_cast<LODSystem>(m_assets.treeLODs.front()->getComponentSystem()))
+                dynamic_pointer_cast<LODSystem>(m_assets.vehicleLOD->getComponentSystem()))
                 system->clearViewOverride();
+        if( m_assets.vehicleLOD )
+            if( auto actor = getActor() )
+                actor->removeComponentInstance( m_assets.vehicleLOD );
         if(manager)
             for(auto it = m_assets.actors.rbegin(); it != m_assets.actors.rend(); ++it)
                 manager->destroyActor(*it);
@@ -332,9 +335,9 @@ namespace workphone::scene
     void ProceduralRaceScene::setView(const Vector3F &position, f32 fovRadians, f32 nearClip,
                                       f32 lodBias)
     {
-        if(m_assets.treeLODs.empty())
+        if(!m_assets.vehicleLOD)
             return;
-        auto system = dynamic_pointer_cast<LODSystem>(m_assets.treeLODs.front()->getComponentSystem());
+        auto system = dynamic_pointer_cast<LODSystem>(m_assets.vehicleLOD->getComponentSystem());
         if(system)
         {
             LODSystem::View view;

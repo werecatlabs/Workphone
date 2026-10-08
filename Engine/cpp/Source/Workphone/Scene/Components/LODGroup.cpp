@@ -6,6 +6,7 @@
 #include <Workphone/System/RttiClassDefinition.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <unordered_set>
 
@@ -87,6 +88,17 @@ namespace workphone::scene
             properties->addChild( levelProperties );
         }
 
+        const auto detailBounds = getDetailBounds();
+        for( const auto &bound : detailBounds )
+        {
+            auto child = make_ptr<Properties>();
+            child->setName( "detailBound" );
+            child->setProperty( "centre", bound.centre );
+            child->setProperty( "diameter", bound.diameter );
+            properties->addChild( child );
+        }
+        properties->setProperty( "detailBoundCount", static_cast<u32>( detailBounds.size() ),
+                                 true );
         return properties;
     }
 
@@ -123,6 +135,20 @@ namespace workphone::scene
         setCullBelowLastLOD( cullBelowLastLOD );
         setLODEnabled( lodEnabled );
 
+        u32 boundCount = 0;
+        if( properties->getPropertyValue( "detailBoundCount", boundCount ) )
+        {
+            Array<LODDetailBound> bounds;
+            for( const auto &child : properties->getChildrenByName( "detailBound" ) )
+            {
+                LODDetailBound bound;
+                child->getPropertyValue( "centre", bound.centre );
+                child->getPropertyValue( "diameter", bound.diameter );
+                bounds.push_back( bound );
+            }
+            setDetailBounds( bounds );
+        }
+
         const auto levelProperties = properties->getChildrenByName( levelStr );
         if( !levelProperties.empty() )
         {
@@ -145,6 +171,27 @@ namespace workphone::scene
         {
             recalculateBounds();
         }
+    }
+
+    void LODGroup::setDetailBounds( const Array<LODDetailBound> &bounds )
+    {
+        RecursiveMutex::ScopedLock lock( m_lodMutex );
+        m_detailBounds.clear();
+        for( auto bound : bounds )
+        {
+            if( !std::isfinite( bound.diameter ) || bound.diameter <= 0 ||
+                !std::isfinite( bound.centre.x ) || !std::isfinite( bound.centre.y ) ||
+                !std::isfinite( bound.centre.z ) )
+                continue;
+            m_detailBounds.push_back( bound );
+        }
+        incrementRevision();
+    }
+
+    Array<LODDetailBound> LODGroup::getDetailBounds() const
+    {
+        RecursiveMutex::ScopedLock lock( m_lodMutex );
+        return m_detailBounds;
     }
 
     void LODGroup::updateVisibility()

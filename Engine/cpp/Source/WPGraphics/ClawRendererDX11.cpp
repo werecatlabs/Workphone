@@ -815,6 +815,13 @@ namespace workphone::render
         m_lightIntensity = std::max( intensity, 0.0f );
     }
 
+    void ClawRendererDX11::setSceneFog( u32 mode, const ColourF &colour, f32 density, f32 start, f32 end )
+    {
+        m_fogColour = { colour.r, colour.g, colour.b, 1.f };
+        m_fogParams = { static_cast<f32>( std::min( mode, 3u ) ), std::max( density, 0.f ),
+            std::max( start, 0.f ), std::max( end, start + .001f ) };
+    }
+
     void ClawRendererDX11::applySceneLighting( wp_material_dx11 &material ) const
     {
         Vector3F cameraPosition = Vector3F::zero();
@@ -833,6 +840,8 @@ namespace workphone::render
         material.camera_position = { cameraPosition.X(), cameraPosition.Y(), cameraPosition.Z(),
                                      ambient };
         material.ambient_color = { m_ambientLight.r, m_ambientLight.g, m_ambientLight.b, 1.0f };
+        material.fog_color = m_fogColour;
+        material.fog_params = m_shadowPass ? wp_vec4f{} : m_fogParams;
         auto dx11 = wp_renderer_get_dx11( m_renderer );
         if( dx11 && !m_hasSkyEnvironment && !m_previewEnvironment.getView() )
             m_previewEnvironment.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
