@@ -18,6 +18,35 @@ namespace workphone
     class WPCore_API AssetDatabaseManager : public DatabaseManager
     {
     public:
+        enum class EntryKind
+        {
+            File,
+            Scene
+        };
+
+        /** Detached catalog identity. Generation and instance bind it to one live catalog. */
+        struct EntrySnapshot
+        {
+            String uuid;
+            String path;
+            String type;
+            EntryKind kind = EntryKind::File;
+            u64 generation = 0;
+            u64 catalogInstance = 0;
+        };
+
+        /** Capture an explicit source root while closed. Otherwise opening captures the
+         * application's project root, or the database directory when no project is set.
+         * Stored file paths are relative to this root; changing it requires closing first.
+         */
+        bool setProjectRoot( const String &root );
+        String getProjectRoot();
+        u64 getCatalogGeneration();
+        bool tryGetEntry( const String &uuid, EntrySnapshot &output );
+        bool isEntryCurrent( const EntrySnapshot &snapshot );
+        void open() override;
+        void close() override;
+
         /** @brief Default constructor.
          *  Initializes a new instance of the AssetDatabaseManager.
          */
@@ -142,6 +171,14 @@ namespace workphone
 
     protected:
         void clearResourceEntryCache();
+        void invalidateCatalog();
+        bool captureProjectRoot();
+
+        String m_projectRoot;
+        String m_projectRootOverride;
+        u64 m_catalogGeneration = 0;
+        u64 m_catalogInstance = 0;
+        bool m_catalogReady = false;
 
         AtomicObject<FixedString<128>>
             m_resourcesTableName;  ///< Name of the resources table in the database

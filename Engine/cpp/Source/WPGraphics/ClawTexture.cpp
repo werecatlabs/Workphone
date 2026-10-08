@@ -29,14 +29,23 @@ namespace
         void *textureView = nullptr;
         wp_renderer_dx11 *renderer = nullptr;
         workphone::render::TextureMipSettings mipSettings;
+        workphone::Vector2I pixelSize{ 0, 0 };
+        bool uploadPending = true;
+        wp_renderer_dx11 *attemptedRenderer = nullptr;
     };
 
     std::mutex g_textureMutex;
     std::unordered_map<const workphone::render::ClawTexture *, ClawTextureData> g_textureData;
     struct FreeImageLifetime
     {
-        FreeImageLifetime() { FreeImage_Initialise( FALSE ); }
-        ~FreeImageLifetime() { FreeImage_DeInitialise(); }
+        FreeImageLifetime()
+        {
+            FreeImage_Initialise( FALSE );
+        }
+        ~FreeImageLifetime()
+        {
+            FreeImage_DeInitialise();
+        }
     };
 
     void destroyTextureView( ClawTextureData &data )
@@ -77,8 +86,8 @@ namespace
             {
                 return !data.pixels.empty();
             }
-            destroyTextureView( data );
             data.pixels.clear();
+            data.pixelSize = { 0, 0 };
             data.sourcePath = filePath;
             data.decodeAttempted = true;
         }
@@ -94,14 +103,16 @@ namespace
         if( !stream || streamSize == 0 ||
             streamSize > static_cast<size_Num>( std::numeric_limits<DWORD>::max() ) )
         {
-            WP_LOG_ERROR( "WPGraphics/Texture: cannot read '" + filePath + "'; stream is missing, empty or exceeds the decoder size limit." );
+            WP_LOG_ERROR( "WPGraphics/Texture: cannot read '" + filePath +
+                          "'; stream is missing, empty or exceeds the decoder size limit." );
             return false;
         }
 
         Array<u8> encoded( streamSize );
         if( stream->read( encoded.data(), streamSize ) != streamSize )
         {
-            WP_LOG_ERROR( "WPGraphics/Texture: incomplete read of '" + filePath + "'; expected " + std::to_string( streamSize ) + " bytes." );
+            WP_LOG_ERROR( "WPGraphics/Texture: incomplete read of '" + filePath + "'; expected " +
+                          std::to_string( streamSize ) + " bytes." );
             return false;
         }
 
@@ -110,7 +121,8 @@ namespace
         auto memory = FreeImage_OpenMemory( encoded.data(), static_cast<DWORD>( encoded.size() ) );
         if( !memory )
         {
-            WP_LOG_ERROR( "WPGraphics/Texture: failed to allocate decoder stream for '" + filePath + "'." );
+            WP_LOG_ERROR( "WPGraphics/Texture: failed to allocate decoder stream for '" + filePath +
+                          "'." );
             return false;
         }
 
@@ -130,7 +142,8 @@ namespace
 
         if( !converted )
         {
-            WP_LOG_ERROR( "WPGraphics/Texture: failed to decode '" + filePath + "'; file format is unsupported or image data is invalid." );
+            WP_LOG_ERROR( "WPGraphics/Texture: failed to decode '" + filePath +
+                          "'; file format is unsupported or image data is invalid." );
             return false;
         }
 
@@ -141,7 +154,8 @@ namespace
                 std::numeric_limits<size_t>::max() / ( static_cast<size_t>( height ) * 4u ) )
         {
             FreeImage_Unload( converted );
-            WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image dimensions in '" + filePath + "'." );
+            WP_LOG_ERROR( "WPGraphics/Texture: invalid or oversized image dimensions in '" + filePath +
+                          "'." );
             return false;
         }
 
@@ -158,8 +172,9 @@ namespace
         texture->setSize( Vector2I( static_cast<s32>( width ), static_cast<s32>( height ) ) );
         std::scoped_lock lock( g_textureMutex );
         auto &data = g_textureData[texture];
-        destroyTextureView( data );
         data.pixels = std::move( pixels );
+        data.pixelSize = { static_cast<s32>( width ), static_cast<s32>( height ) };
+        data.uploadPending = true;
         return true;
     }
 
@@ -177,7 +192,7 @@ namespace
         return decodeTexture( texture );
     }
 
-    void ensureTextureView( const workphone::render::ClawTexture *texture )
+    void *ensureTextureView( const workphone::render::ClawTexture *texture )
     {
         using namespace workphone;
         using namespace render;
@@ -191,26 +206,48 @@ namespace
 
         std::scoped_lock lock( g_textureMutex );
         auto found = g_textureData.find( texture );
-        if( found == g_textureData.end() || found->second.pixels.empty() || !dx11 )
+        if( found == g_textureData.end() || !dx11 )
         {
-            return;
+            return nullptr;
         }
 
         auto &data = found->second;
-        if( data.textureView && data.renderer == dx11 )
+        const auto previousView = data.renderer == dx11 ? data.textureView : nullptr;
+        if( data.pixels.empty() || ( !data.uploadPending && data.attemptedRenderer == dx11 ) )
         {
-            return;
+            return previousView;
         }
 
-        destroyTextureView( data );
-        const auto size = texture->getSize();
-        const auto levels = generateTextureMips( data.pixels.data(), size.x, size.y, data.mipSettings );
-        std::vector<wp_texture_mip_dx11> nativeLevels;
-        for( const auto &level : levels )
-            nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
-        data.textureView = wp_renderer_dx11_create_texture_mips_native(
-            dx11, nativeLevels.data(), static_cast<wp_u32>( nativeLevels.size() ) );
-        data.renderer = data.textureView ? dx11 : nullptr;
+        // Retry a failed candidate only when its pixels/settings or device change.
+        data.uploadPending = false;
+        data.attemptedRenderer = dx11;
+        try
+        {
+            const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
+                                                     data.pixelSize.y, data.mipSettings );
+            std::vector<wp_texture_mip_dx11> nativeLevels;
+            for( const auto &level : levels )
+                nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
+            auto *candidate = wp_renderer_dx11_create_texture_mips_native(
+                dx11, nativeLevels.data(), static_cast<wp_u32>( nativeLevels.size() ) );
+            if( !candidate )
+            {
+                WP_LOG_WARNING(
+                    "WPGraphics/Texture: GPU mip upload failed; retaining the previous texture." );
+                return previousView;
+            }
+            destroyTextureView( data );
+            data.textureView = candidate;
+            data.renderer = dx11;
+            return candidate;
+        }
+        catch( const std::exception &e )
+        {
+            WP_LOG_WARNING(
+                String( "WPGraphics/Texture: mip upload rejected; retaining the previous texture: " ) +
+                e.what() );
+            return previousView;
+        }
     }
 }  // namespace
 
@@ -267,7 +304,10 @@ namespace workphone
                 if( found != g_textureData.end() )
                 {
                     destroyTextureView( found->second );
-                    g_textureData.erase( found );
+                    // Authored properties outlive decoded pixels and GPU residency.
+                    const auto settings = found->second.mipSettings;
+                    found->second = ClawTextureData{};
+                    found->second.mipSettings = settings;
                 }
             }
             Texture::unload( data );
@@ -298,9 +338,11 @@ namespace workphone
                     static_cast<size_t>( size.x ) * static_cast<size_t>( size.y ) * 4u;
                 std::scoped_lock lock( g_textureMutex );
                 auto &textureData = g_textureData[this];
-                destroyTextureView( textureData );
-                textureData.pixels.resize( byteCount );
-                std::memcpy( textureData.pixels.data(), data, byteCount );
+                Array<u8> pixels( byteCount );
+                std::memcpy( pixels.data(), data, byteCount );
+                textureData.pixels = std::move( pixels );
+                textureData.pixelSize = size;
+                textureData.uploadPending = true;
             }
 
             if( auto renderTarget = getRenderTarget() )
@@ -341,10 +383,7 @@ namespace workphone
                 else
                 {
                     ensureTextureDecoded( const_cast<ClawTexture *>( this ) );
-                    ensureTextureView( this );
-                    std::scoped_lock lock( g_textureMutex );
-                    auto found = g_textureData.find( this );
-                    *ppTexture = found != g_textureData.end() ? found->second.textureView : nullptr;
+                    *ppTexture = ensureTextureView( this );
                 }
             }
         }
@@ -361,10 +400,7 @@ namespace workphone
                 else
                 {
                     ensureTextureDecoded( const_cast<ClawTexture *>( this ) );
-                    ensureTextureView( this );
-                    std::scoped_lock lock( g_textureMutex );
-                    auto found = g_textureData.find( this );
-                    *ppTexture = found != g_textureData.end() ? found->second.textureView : nullptr;
+                    *ppTexture = ensureTextureView( this );
                 }
             }
         }
@@ -408,9 +444,9 @@ namespace workphone
 
         void ClawTexture::setProperties( SmartPtr<Properties> properties )
         {
-            Texture::setProperties( properties );
             if( !properties )
                 return;
+            Texture::setProperties( properties );
             std::scoped_lock lock( g_textureMutex );
             auto &data = g_textureData[this];
             auto settings = data.mipSettings;
@@ -423,10 +459,19 @@ namespace workphone
             settings.alphaCutoff = std::isfinite( settings.alphaCutoff )
                                        ? std::clamp( settings.alphaCutoff, .001f, .999f )
                                        : .5f;
+            if( settings.atlasColumns > 16384 ||
+                ( data.pixelSize.x > 0 &&
+                  static_cast<u32>( data.pixelSize.x ) % settings.atlasColumns != 0 ) )
+            {
+                WP_LOG_WARNING(
+                    "WPGraphics/Texture: mip atlas columns must divide the texture width; preserving "
+                    "the previous settings." );
+                return;
+            }
             if( settings.filter != data.mipSettings.filter ||
                 settings.atlasColumns != data.mipSettings.atlasColumns ||
                 settings.alphaCutoff != data.mipSettings.alphaCutoff )
-                destroyTextureView( data );
+                data.uploadPending = true;
             data.mipSettings = settings;
         }
     }  // namespace render

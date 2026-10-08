@@ -10,6 +10,8 @@ else()
 endif()
 
 if (NOT WP_BUILD_RESOURCE_SYSTEM)
+    list(FILTER HEADER_FILES EXCLUDE REGEX "/Database/CatalogResourceAdapter\\.(h|hpp|inl)$")
+    list(FILTER SOURCE_FILES EXCLUDE REGEX "/Database/CatalogResourceAdapter\\.(c|cpp|mm)$")
     set(_RESOURCE_SYSTEM_FILES
         CompiledResource
         ResourceCompiler
