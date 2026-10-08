@@ -46,6 +46,11 @@ wp_particle_state wp_particle_simulation_get_state( const wp_particle_simulation
 wp_s32 wp_particle_simulation_advance( wp_particle_simulation *simulation, wp_f32 seconds );
 wp_u32 wp_particle_simulation_get_count( const wp_particle_simulation *simulation );
 wp_u32 wp_particle_simulation_get_dropped( const wp_particle_simulation *simulation );
+/* Emit at an explicit simulation-space position. Uses configured color fade;
+ * existing particles retain their positions when an emitter moves. No allocation.
+ * Returns 1 on success; full pools count a drop, invalid/paused requests do not. */
+wp_s32 wp_particle_simulation_emit( wp_particle_simulation *simulation, wp_vec3f position,
+                                  wp_vec3f velocity, wp_f32 size, wp_f32 lifetime );
 /* Borrowed storage, valid until next mutation. Caller must synchronize access. */
 const wp_particle_sample *wp_particle_simulation_get_samples( const wp_particle_simulation *simulation );
 

@@ -143,6 +143,11 @@ target_include_directories(VehicleAudioMixTests PRIVATE ${WP_ROOT}/Samples/cpp/V
 set_target_properties(VehicleAudioMixTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME WPVehicle.audio_mix COMMAND VehicleAudioMixTests)
 
+add_executable(VehicleDecalTests VehicleDecalTests.cpp)
+target_include_directories(VehicleDecalTests PRIVATE ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
+set_target_properties(VehicleDecalTests PROPERTIES FOLDER Tests/Cpp)
+add_test(NAME WPVehicle.skid_decals COMMAND VehicleDecalTests)
+
 if(TARGET WorkphonePhysics)
     add_executable(PhysicsSceneCapacityTests PhysicsSceneCapacityTests.cpp)
     target_include_directories(PhysicsSceneCapacityTests PRIVATE

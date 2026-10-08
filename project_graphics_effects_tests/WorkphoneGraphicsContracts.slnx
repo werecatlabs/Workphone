@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Folder Name="/CMakePredefinedTargets/">
+		<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="786ad651-2467-3e06-b3e6-fe7a819d38c7" DefaultStartup="true">
+			<BuildDependency Project="Tests/GraphicsProduction/WPGraphicsParticleSimulationTests.vcxproj"/>
+			<BuildDependency Project="Tests/GraphicsProduction/WPGraphicsProductionReference.vcxproj"/>
+			<BuildDependency Project="Tests/GraphicsProduction/WPGraphicsSkinningTests.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="RUN_TESTS.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="1558d0c6-bbf7-3e30-828a-0b7b9dd9234a">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="ef5a2750-ef3a-3796-a91d-43c7c693c909"/>
+	</Folder>
+	<Folder Name="/Tests/"/>
+	<Folder Name="/Tests/C/">
+		<Project Path="Tests/GraphicsProduction/WPGraphicsParticleSimulationTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="6947d181-c6be-3bba-ae42-29f5474a3d89">
+			<BuildDependency Project="Tests/GraphicsProduction/WPGraphicsProductionReference.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+		<Project Path="Tests/GraphicsProduction/WPGraphicsProductionReference.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="f99e349a-97e8-3ba4-beaf-0b37c5c785c9">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+		<Project Path="Tests/GraphicsProduction/WPGraphicsSkinningTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="dd357bfb-774c-332a-a19a-9c75d904bb61">
+			<BuildDependency Project="Tests/GraphicsProduction/WPGraphicsProductionReference.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+	</Folder>
+</Solution>

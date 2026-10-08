@@ -751,7 +751,11 @@ namespace workphone::render
         {
             const auto center = world.transformAffine( Vector3F( particle.position.x * scale.X(),
                 particle.position.y * scale.Y(), particle.position.z * scale.Z() ) );
-            draw.push_back( { center, view.transformAffine( center ).Z(), &particle } );
+            // Native camera inversion can round the affine bottom-right element.
+            // Depth only needs the view's third row, without an exact-affine assertion.
+            const auto depth = view[2][0] * center.X() + view[2][1] * center.Y() +
+                view[2][2] * center.Z() + view[2][3];
+            draw.push_back( { center, depth, &particle } );
         }
         std::stable_sort( draw.begin(), draw.end(), []( const auto &a, const auto &b ) { return a.depth < b.depth; } );
         const auto oldBlend = wp_renderer_get_blend_mode( m_renderer );

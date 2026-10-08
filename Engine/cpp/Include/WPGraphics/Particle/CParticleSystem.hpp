@@ -43,6 +43,8 @@ namespace workphone
             bool setSimulationSettings( const wp_particle_simulation_settings &settings );
             void setSeed( u32 seed );
             u32 getDroppedParticleCount() const;
+            bool emitParticle( const Vector3F &position, const Vector3F &velocity, f32 size,
+                               f32 lifetime );
             WP_CLASS_REGISTER_DECL;
 
             SmartPtr<IParticle> createParticle( SmartPtr<IParticleEmitter> emitter );

@@ -1,0 +1,7 @@
+G:/Workphone/project_graphics_effects_tests/CMakeFiles/RUN_TESTS.dir
+G:/Workphone/project_graphics_effects_tests/CMakeFiles/ALL_BUILD.dir
+G:/Workphone/project_graphics_effects_tests/CMakeFiles/ZERO_CHECK.dir
+G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction/CMakeFiles/WPGraphicsProductionReference.dir
+G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction/CMakeFiles/WPGraphicsSkinningTests.dir
+G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction/CMakeFiles/WPGraphicsParticleSimulationTests.dir
+G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction/CMakeFiles/RUN_TESTS.dir

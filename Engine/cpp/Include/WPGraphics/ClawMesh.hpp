@@ -110,6 +110,9 @@ namespace workphone
             bool setSkinningData( const Array<wp_skin_vertex> &vertices );
             bool applySkinningPalette( const Array<wp_mat4f> &palette );
             bool hasSkinningData() const;
+            /** Replace a bounded dynamic mesh on the render thread, keeping scene ownership. */
+            bool updateGeometry( const Array<wp_graphics_mesh_vertex_pntc> &vertices,
+                                 const Array<u32> &indices );
 
             /** Creates a deep copy of the mesh object. */
             SmartPtr<IGraphicsObject> clone(

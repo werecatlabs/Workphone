@@ -6,6 +6,7 @@
 #include "Workphone/Interface/System/IEventListener.hpp"
 #include "ProceduralScene.h"
 #include "VehicleAudio.h"
+#include "VehicleVisualEffects.h"
 #include <atomic>
 #include <array>
 #include <limits>
@@ -55,6 +56,12 @@ namespace workphone
             m_audioEnabled = enabled;
             m_audioSmokeTest = smokeTest;
         }
+        void setEffectsOptions( bool enabled, bool smokeTest, const std::string &capture )
+        {
+            m_effectsEnabled = enabled;
+            m_effectsSmokeTest = smokeTest;
+            m_effectsCapture = capture;
+        }
         void setCollisionSmokeTest( bool enabled ) { m_collisionSmokeTest = enabled; }
 
     protected:
@@ -97,6 +104,15 @@ namespace workphone
         void updateDebugText();
         void updateSmokeTest();
         void updateVehicleAudio();
+        void updateVehicleEffects();
+        advanced::VehicleVisualEffects m_effects;
+        bool m_effectsEnabled = true, m_effectsSmokeTest = false;
+        f64 m_effectsTestTime = 0;
+        u32 m_effectsTestPhase = 0;
+        size_t m_effectsTestEmitted = 0;
+        size_t m_effectsTestParticles = 0, m_effectsTestDecals = 0;
+        bool m_effectsTestGrounded = false;
+        std::string m_effectsCapture;
         advanced::VehicleAudio m_audio;
         bool m_audioEnabled = true, m_audioSmokeTest = false;
         f64 m_audioElapsed = 0, m_audioSmokeTime = 0;

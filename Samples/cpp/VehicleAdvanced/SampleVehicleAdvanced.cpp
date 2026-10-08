@@ -11,6 +11,7 @@
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
+#include <Workphone/Physics/RaycastHit.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMesh.hpp>
@@ -252,6 +253,13 @@ namespace workphone
             auto vehicleController = car->getVehicleController();
             m_raceScene->configurePhysics();
 
+            if( m_effectsEnabled && !m_effects.load(
+                    m_quality == procedural::VehicleAppearanceQuality::Preview ? 0u :
+                    m_quality == procedural::VehicleAppearanceQuality::Standard ? 1u : 2u, m_seed ) )
+            {
+                WP_LOG_WARNING( "Vehicle visual effects initialization failed." );
+                if( !m_effectsSmokeTest ) m_effectsEnabled = false;
+            }
             if( m_audioEnabled && !m_audio.load( applicationManager->getSoundManager() ) )
             {
                 WP_LOG_WARNING( "Vehicle audio unavailable: check the audio device and bundled WAV files." );
@@ -281,6 +289,7 @@ namespace workphone
             setLoadingState( LoadingState::Unloading );
 
             m_audio.unload();
+            m_effects.unload();
 
             if( m_inputListener )
             {
@@ -362,6 +371,7 @@ namespace workphone
         if( Thread::getCurrentTask() == TaskId::Render )
         {
             updateRenderCamera();
+            if( m_effectsEnabled ) updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
             {
                 auto car = m_vehicleActor->getComponent<scene::CarController>();
@@ -541,6 +551,7 @@ namespace workphone
 
     void SampleVehicleAdvanced::performReset()
     {
+        m_effects.reset();
         if( m_raceScene ) m_raceScene->setControls( 0, 0, 0 );
         m_lapStart = 0;
         m_nextCheckpoint = 1;
@@ -668,6 +679,98 @@ namespace workphone
             m_raceScene->setControls( throttle, brake, steering );
         else
             m_raceScene->usePlayerControls();
+    }
+
+    void SampleVehicleAdvanced::updateVehicleEffects()
+    {
+        auto app = core::IApplicationManager::instance();
+        const auto dt = float(app->getTimer()->getDeltaTime());
+        if(!std::isfinite(dt) || dt<=0) return;
+        advanced::VehicleEffectsFrame frame;
+        frame.playing=app->isPlaying() && !app->isPaused();
+        frame.position=m_vehicleActor->getPosition();
+        frame.velocity=m_vehicleActor->getComponent<scene::Rigidbody>()->getLinearVelocity();
+        auto vehicle=m_vehicleActor->getComponent<scene::CarController>()->getVehicleController();
+        for(u32 i=0;i<4;++i)
+        {
+            auto wheel=vehicle->getWheelController(i);
+            if(!wheel) continue;
+            auto properties=wheel->getProperties();
+            bool grounded=false; double slip=0;
+            properties->getPropertyValue("Is On Ground",grounded);
+            properties->getPropertyValue("Slip Velocity",slip);
+            frame.slip[i]=float(slip);
+            frame.width[i]=float(m_assets.vehicle.physics.wheels[i].tire.widthM*.82);
+            if(!grounded) continue;
+            const auto hub=wheel->getWorldTransform().getPosition();
+            SmartPtr<physics::IRaycastHit> hit=make_ptr<physics::RaycastHit>();
+            // Reuse the vehicle callback, which excludes its own chassis.
+            if(vehicle->getBody()->castWorldRay(Ray3<real_Num>(hub+Vector3F(0,.25f,0),Vector3F(0,-1,0)),hit) &&
+               hit->getDistance()<1.5f && hit->getNormal().y>.5f)
+            {
+                frame.grounded[i]=true;
+                frame.contact[i]=hit->getPoint(); frame.normal[i]=hit->getNormal();
+                const auto index=m_assets.circuit.nearest(frame.contact[i]);
+                auto offset=frame.contact[i]-m_assets.circuit.samples[index].position;
+                offset.y=0;
+                frame.onRoad[i]=offset.length()<6.85f;
+            }
+        }
+        if(m_effectsSmokeTest)
+        {
+            m_effectsTestGrounded = m_effectsTestGrounded ||
+                std::any_of(frame.grounded.begin(),frame.grounded.end(),[](bool contact){return contact;});
+            const bool road = m_effectsTestPhase == 0;
+            const bool dust = m_effectsTestPhase == 2 || m_effectsTestPhase == 3;
+            frame.position={0,.45f,float(4-m_effectsTestTime*4)};
+            frame.velocity=road && m_effectsTestTime<2.92 ? Vector3F(0,0,-10) :
+                dust ? Vector3F(0,0,-20) : Vector3F::zero();
+            frame.playing = m_effectsTestPhase != 3;
+            for(size_t i=0;i<4;++i)
+            {
+                frame.contact[i]={i%2 ? .95f : -.95f,.026f,float(4-m_effectsTestTime*4)+(i<2 ? -1.5f : 1.5f)};
+                frame.normal[i]=Vector3F::unitY(); frame.slip[i]=8; frame.width[i]=.28f;
+                frame.grounded[i]=road || dust; frame.onRoad[i]=!dust;
+            }
+        }
+        m_effects.update(frame,dt);
+        if(!m_effectsSmokeTest) return;
+        m_effectsTestTime+=std::min(dt,.05f);
+        const float durations[] = {3.f,2.f,1.f,1.f,.5f};
+        if(m_effectsTestTime<durations[m_effectsTestPhase]) return;
+        const auto particleCount=m_effects.particles(), decalCount=m_effects.decals();
+        bool passed=m_effects.uploaded();
+        if(m_effectsTestPhase==0)
+        {
+            passed=passed && particleCount>0 && decalCount>0 && m_effectsTestGrounded;
+            m_effectsTestEmitted=m_effects.emitted();
+            m_effectsTestDecals=decalCount;
+            if(!m_effectsCapture.empty()) passed=advanced::captureFrame(m_effectsCapture) && passed;
+        }
+        else if(m_effectsTestPhase==1)
+        {
+            passed=passed && particleCount==0 && m_effects.emitted()==m_effectsTestEmitted && decalCount>0;
+        }
+        else if(m_effectsTestPhase==2)
+        {
+            passed=passed && particleCount>0 && m_effects.emitted()>m_effectsTestEmitted && decalCount==m_effectsTestDecals;
+            m_effectsTestEmitted=m_effects.emitted();
+            m_effectsTestParticles=particleCount;
+            if(!m_effectsCapture.empty()) passed=advanced::captureFrame(m_effectsCapture+".dust.bmp") && passed;
+        }
+        else if(m_effectsTestPhase==3)
+        {
+            passed=passed && particleCount==m_effectsTestParticles && m_effects.emitted()==m_effectsTestEmitted && decalCount==m_effectsTestDecals;
+            m_effects.reset();
+            passed=passed && m_effects.decals()==0 && m_effects.particles()==0;
+        }
+        else
+            passed=passed && particleCount==0 && decalCount==0 && m_effects.emitted()==m_effectsTestEmitted;
+        WP_LOG("Vehicle FX smoke phase "+StringUtil::toString(m_effectsTestPhase)+
+               (passed ? ": PASS" : ": FAIL")+" particles="+StringUtil::toString(particleCount)+
+               " decals="+StringUtil::toString(decalCount));
+        if(!passed || m_effectsTestPhase==4) { m_smokeTestPassed=passed; app->setQuit(true); }
+        ++m_effectsTestPhase; m_effectsTestTime=0;
     }
 
     void SampleVehicleAdvanced::updateVehicleAudio()
@@ -1423,6 +1526,8 @@ int main( int argc, char **argv )
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
                    "  --no-audio                    Disable vehicle sounds\n"
                    "  --audio-smoke-test            Check idle, redline, skid and mute playback\n"
+                   "  --no-effects                  Disable particles and skid decals\n"
+                   "  --effects-smoke-test [--effects-capture PATH.bmp] Check effects and reset\n"
                    "  W/Up throttle; S/Down brake; A/D steer; R reset; Esc quit; wheel camera zoom\n";
             return 0;
         }
@@ -1432,6 +1537,8 @@ int main( int argc, char **argv )
     SmartPtr<SampleVehicleAdvanced> app;
     bool smokeTest = false, trackSmokeTest = false, collisionSmokeTest = false;
     bool audioEnabled = true, audioSmokeTest = false;
+    bool effectsEnabled = true, effectsSmokeTest = false;
+    std::string effectsCapture;
     String pluginsConfig;
     std::string capturePath, captureView = "follow";
     u32 seed = 7;
@@ -1451,6 +1558,12 @@ int main( int argc, char **argv )
                 audioEnabled = false;
             else if( String( argv[i] ) == "--audio-smoke-test" )
                 audioSmokeTest = true;
+            else if( String( argv[i] ) == "--no-effects" )
+                effectsEnabled = false;
+            else if( String( argv[i] ) == "--effects-smoke-test" )
+                effectsSmokeTest = true;
+            else if( String( argv[i] ) == "--effects-capture" && i + 1 < argc )
+                effectsCapture = argv[++i];
             else if( String( argv[i] ) == "--collision-smoke-test" )
                 collisionSmokeTest = true;
             else if( String( argv[i] ) == "--no-hud" )
@@ -1522,11 +1635,13 @@ int main( int argc, char **argv )
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" )
             throw std::runtime_error( "View must be follow, car, track, or corner." );
-        if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) > 1 ||
-            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest ) ) )
+        if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) + int(audioSmokeTest) + int(effectsSmokeTest) > 1 ||
+            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
         if( audioSmokeTest && !audioEnabled )
             throw std::runtime_error( "--audio-smoke-test requires audio to be enabled." );
+        if( (effectsSmokeTest && !effectsEnabled) || (!effectsCapture.empty() && !effectsSmokeTest) )
+            throw std::runtime_error("Effects capture requires --effects-smoke-test with effects enabled.");
         if( orbit && benchmarkSeconds <= 0 ) throw std::runtime_error( "--orbit requires --benchmark." );
     }
     catch( const std::exception &e )
@@ -1579,6 +1694,7 @@ int main( int argc, char **argv )
         app->setCollisionSmokeTest( collisionSmokeTest );
         app->setGenerationOptions( seed, quality );
         app->setAudioOptions( audioEnabled, audioSmokeTest );
+        app->setEffectsOptions( effectsEnabled, effectsSmokeTest, effectsCapture );
         app->setCapture( capturePath, captureView );
         app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
         if( !pluginsConfig.empty() )
@@ -1587,7 +1703,7 @@ int main( int argc, char **argv )
         if( app->getLoadingState() != LoadingState::Loaded )
             throw std::runtime_error( "SampleVehicleAdvanced failed to load." );
         app->run();
-        exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest ) && !app->smokeTestPassed() ) ||
+        exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest || audioSmokeTest || effectsSmokeTest ) && !app->smokeTestPassed() ) ||
                            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() )
                        ? 1
                        : 0;

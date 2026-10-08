@@ -72,6 +72,32 @@ int main( void )
     CHECK( wp_particle_simulation_set_state(a, WORKPHONE_PARTICLE_STATE_STARTED) );
     CHECK( wp_particle_simulation_advance(a, 1.0f) );
     CHECK( wp_particle_simulation_get_count(a) == 30 );
+    CHECK( wp_particle_simulation_set_state(small, WORKPHONE_PARTICLE_STATE_STOPPED) );
+    settings.rate = 0;
+    CHECK( wp_particle_simulation_configure(small, &settings) );
+    CHECK( wp_particle_simulation_set_state(small, WORKPHONE_PARTICLE_STATE_STARTED) );
+    {
+        wp_vec3f position = { 10, 2, 3 }, velocity = { 2, 0, 0 };
+        CHECK( wp_particle_simulation_emit(small, position, velocity, .5f, 2) );
+        position.x = 30;
+        CHECK( wp_particle_simulation_emit(small, position, velocity, .5f, 2) );
+        CHECK( !wp_particle_simulation_emit(small, position, velocity, .5f, 2) );
+        CHECK( wp_particle_simulation_get_dropped(small) == 1 );
+        CHECK( wp_particle_simulation_advance(small, .5f) );
+        samples = wp_particle_simulation_get_samples(small);
+        CHECK( fabs(samples[0].position.x - 11) < .001 );
+        CHECK( fabs(samples[1].position.x - 31) < .001 );
+        CHECK( wp_particle_simulation_set_state(small, WORKPHONE_PARTICLE_STATE_PAUSED) );
+        CHECK( !wp_particle_simulation_emit(small, position, velocity, .5f, 2) );
+        CHECK( wp_particle_simulation_get_dropped(small) == 1 );
+        CHECK( wp_particle_simulation_set_state(small, WORKPHONE_PARTICLE_STATE_STOPPED) );
+        CHECK( wp_particle_simulation_set_state(small, WORKPHONE_PARTICLE_STATE_STARTED) );
+        CHECK( !wp_particle_simulation_emit(small, position, velocity, .5f, -1) );
+        position.x = nonfinite.value;
+        CHECK( !wp_particle_simulation_emit(small, position, velocity, .5f, 2) );
+        CHECK( wp_particle_simulation_get_count(small) == 0 );
+        CHECK( wp_particle_simulation_get_dropped(small) == 0 );
+    }
     wp_particle_simulation_destroy(a); wp_particle_simulation_destroy(b); wp_particle_simulation_destroy(small);
     puts("PASS: deterministic stepping, trajectories, pause, drain, restart, capacity and duration");
     return 0;

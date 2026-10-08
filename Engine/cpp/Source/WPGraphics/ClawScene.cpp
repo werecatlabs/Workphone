@@ -710,14 +710,15 @@ namespace workphone
                             world = Matrix4F( nativeWorld.m[0] );
                         }
 
-                        //SmartPtr<IMaterial> material;
-                        //if( auto manager = core::IApplicationManager::instancePtr() )
-                        //    if( auto graphics = manager->getGraphicsSystem() )
-                        //        if( auto materials = graphics->getMaterialManager() )
-                        //            material = dynamic_pointer_cast<IMaterial>( materials->getByName( particles->getMaterialName() ) );
-                        //const auto scale = particles->getScale();
-                        //dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
-                        //    Vector3F( scale.X(), scale.Y(), scale.Z() ), material );
+                        SmartPtr<IMaterial> material;
+                        if( auto manager = core::IApplicationManager::instancePtr() )
+                            if( auto graphics = manager->getGraphicsSystem() )
+                                if( auto materials = graphics->getMaterialManager() )
+                                    material = dynamic_pointer_cast<IMaterial>(
+                                        materials->getByName( particles->getMaterialName() ) );
+                        const auto scale = particles->getScale();
+                        dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
+                            Vector3F( scale.X(), scale.Y(), scale.Z() ), material );
                     }
                 }
                 else

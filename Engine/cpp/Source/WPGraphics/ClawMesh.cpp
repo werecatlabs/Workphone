@@ -503,6 +503,25 @@ namespace workphone
             return true;
         }
 
+        bool ClawMesh::updateGeometry( const Array<wp_graphics_mesh_vertex_pntc> &vertices,
+                                       const Array<u32> &indices )
+        {
+            if( !m_mesh || vertices.empty() || indices.empty() ) return false;
+            for( auto index : indices ) if( index >= vertices.size() ) return false;
+            if( !wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNTC,
+                                                vertices.data(), static_cast<u32>( vertices.size() ) ) ||
+                !wp_graphics_mesh_set_indices_u32( m_mesh, indices.data(), static_cast<u32>( indices.size() ) ) )
+                return false;
+            wp_graphics_mesh_clear_submeshes( m_mesh );
+            if( wp_graphics_mesh_add_submesh( m_mesh, 0, static_cast<u32>( indices.size() ), 0 ) < 0 )
+                return false;
+            wp_graphics_mesh_compute_aabb( m_mesh );
+            ClawRendererDX11::forgetMesh( m_mesh );
+            if( m_renderObject )
+                wp_graphics_object_set_local_aabb( m_renderObject, wp_graphics_mesh_get_local_aabb( m_mesh ) );
+            return true;
+        }
+
         SmartPtr<IGraphicsObject> ClawMesh::clone( const String &name ) const
         {
             auto mesh = workphone::make_ptr<ClawMesh>();

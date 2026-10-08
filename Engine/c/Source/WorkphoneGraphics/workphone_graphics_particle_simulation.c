@@ -109,6 +109,29 @@ wp_particle_state wp_particle_simulation_get_state( const wp_particle_simulation
     return s ? s->state : WORKPHONE_PARTICLE_STATE_STOPPED;
 }
 
+wp_s32 wp_particle_simulation_emit( wp_particle_simulation *s, wp_vec3f position,
+                                  wp_vec3f velocity, wp_f32 size, wp_f32 lifetime )
+{
+    wp_particle_sample *p;
+    wp_u32 c;
+    if( !s || s->state != WORKPHONE_PARTICLE_STATE_STARTED || !valid_vector( position ) ||
+        !valid_vector( velocity ) || !finite_value( size ) || size <= 0 || size > 1e6f ||
+        !finite_value( lifetime ) || lifetime <= 0 || lifetime > 86400 ) return 0;
+    if( s->count == s->capacity )
+    {
+        if( s->dropped != (wp_u32)~0u ) ++s->dropped;
+        return 0;
+    }
+    p = &s->samples[s->count++];
+    memset( p, 0, sizeof(*p) );
+    p->position = position;
+    p->velocity = velocity;
+    p->size = size;
+    p->lifetime = lifetime;
+    for( c = 0; c < 4; ++c ) p->color[c] = s->settings.color_start[c];
+    return 1;
+}
+
 static void step( wp_particle_simulation *s )
 {
     wp_u32 i, c, spawn, available, dropped;

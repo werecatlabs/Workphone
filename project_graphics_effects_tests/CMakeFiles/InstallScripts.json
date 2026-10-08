@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"G:/Workphone/project_graphics_effects_tests/cmake_install.cmake",
+		"G:/Workphone/project_graphics_effects_tests/Tests/GraphicsProduction/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -163,6 +163,15 @@ namespace workphone::render
         return wp_particle_simulation_get_dropped( m_simulation );
     }
 
+    bool CParticleSystem::emitParticle( const Vector3F &position, const Vector3F &velocity,
+                                       f32 size, f32 lifetime )
+    {
+        std::lock_guard<std::mutex> lock( m_simulationMutex );
+        return wp_particle_simulation_emit( m_simulation,
+            { position.x, position.y, position.z }, { velocity.x, velocity.y, velocity.z },
+            size, lifetime ) != 0;
+    }
+
     void CParticleSystem::setSeed( u32 seed )
     {
         std::lock_guard<std::mutex> lock( m_simulationMutex );
