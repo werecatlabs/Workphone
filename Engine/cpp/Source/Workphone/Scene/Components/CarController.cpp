@@ -252,7 +252,7 @@ namespace workphone::scene
                             if( maxSteer > 0 && wheelbase > 0 )
                                 steering *=
                                     std::min( 1.f, wheelbase * 8.f /
-                                                       ( std::max( speed * speed, 1.f ) * maxSteer ) );
+                                                       ( std::max( speed * speed * 0.25f, 1.f ) * maxSteer ) );
                         }
                     }
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ),
