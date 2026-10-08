@@ -139,6 +139,12 @@ endif()
 
 
 if(TARGET WorkphonePhysics)
+    add_executable(PhysicsSceneCapacityTests PhysicsSceneCapacityTests.cpp)
+    target_include_directories(PhysicsSceneCapacityTests PRIVATE
+        ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+    target_link_libraries(PhysicsSceneCapacityTests PRIVATE WorkphonePhysics WorkphoneCore)
+    set_target_properties(PhysicsSceneCapacityTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPPhysics.scene_capacity COMMAND PhysicsSceneCapacityTests)
     add_executable(VehicleHandlingTests VehicleHandlingTests.cpp)
     target_include_directories(VehicleHandlingTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
     set_target_properties(VehicleHandlingTests PROPERTIES FOLDER Tests/Cpp)

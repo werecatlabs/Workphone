@@ -341,6 +341,8 @@ namespace workphone
         }
 
         Application::update();
+        if( m_collisionSmokeTest && Thread::getCurrentTask() == TaskId::Physics )
+            updateCollisionSmokeTest();
         if( m_smokeTest && Thread::getCurrentTask() == TaskId::Physics )
         {
             updateSmokeTest();
@@ -592,7 +594,7 @@ namespace workphone
         {
             throttle = m_smokePhase == 1 || m_smokePhase == 2 ? 1.0f : 0.0f;
             brake = m_smokePhase == 3 ? 1.0f : 0.0f;
-            steering = m_smokePhase == 2 ? 1.0f : 0.0f;
+            steering = m_smokePhase == 2 ? .35f : 0.0f;
         }
 
         if( !m_capturePath.empty() || m_benchmarkSeconds > 0 )
@@ -610,9 +612,8 @@ namespace workphone
         const auto steerScale =
             std::min( 1.0, m_assets.vehicle.physics.wheelbaseM * 8.0 /
                                ( std::max( double( speed * speed ), 1.0 ) * maxSteer ) );
-        // Exercise the backend assist with full digital lock in the smoke run.
-        if( !m_smokeTest )
-            steering *= float( steerScale );
+        // Keep the handling fixture on the track, clear of the physical barriers.
+        steering *= float( steerScale );
         if( m_trackSmokeTest && m_physicsConfigured )
         {
             const auto position = m_vehicleActor->getPosition();
@@ -650,10 +651,111 @@ namespace workphone
                 applicationManager->setQuit( true );
             }
         }
-        if( m_smokeTest || m_trackSmokeTest || !m_capturePath.empty() )
+        if( m_collisionSmokeTest )
+            m_raceScene->setControls( 0, 0, 0 );
+        else if( m_smokeTest || m_trackSmokeTest || !m_capturePath.empty() )
             m_raceScene->setControls( throttle, brake, steering );
         else
             m_raceScene->usePlayerControls();
+    }
+
+    void SampleVehicleAdvanced::updateCollisionSmokeTest()
+    {
+        auto app = core::IApplicationManager::instance();
+        if( !m_physicsConfigured || app->getTimer()->getTimeSinceSceneLoad() <= 3 )
+            return;
+        auto physics = app->getPhysicsManager()->getPhysicsScene();
+        auto chassis = m_vehicleActor->getComponent<scene::Rigidbody>()->getRigidDynamic();
+        if( !m_collisionProbeStarted )
+        {
+            size_t count = 0;
+            auto fail = [&]( const String &message ) {
+                WP_LOG_ERROR( "Trackside collision smoke: FAIL " + message );
+                m_smokeTestPassed = false;
+                app->setQuit( true );
+            };
+            for( const auto &actor : m_assets.actors )
+            {
+                if( actor->getName().find( "Trackside collision: " ) != 0 )
+                    continue;
+                ++count;
+                auto box = actor->getComponent<scene::CollisionBox>();
+                auto body = actor->getComponent<scene::Rigidbody>();
+                if( !box || !box->getShape() || !body || !body->getRigidStatic() ||
+                    body->getRigidStatic()->getScene() != physics || !box->getShape()->isAttached() )
+                {
+                    fail( actor->getName() + " has no static box body" );
+                    return;
+                }
+                const auto centre = actor->getPosition();
+                const auto orientation = actor->getOrientation();
+                const auto size = box->getExtents();
+                const auto nativePose = body->getRigidStatic()->getTransform();
+                if( (nativePose.getPosition() - centre).length() > .001f ||
+                    (nativePose.getOrientation() * Vector3F::unitX() - orientation * Vector3F::unitX()).length() > .001f )
+                {
+                    fail( actor->getName() + " native pose does not match the generated box" );
+                    return;
+                }
+                // Short rays cannot hit the ground below. Probe the thin rotated
+                // rail side too, so an incorrect yaw cannot pass the top-face check.
+                for( int axis = 0; axis < (actor->getName() == "Trackside collision: Guardrail beam" ? 2 : 1); ++axis )
+                {
+                    const auto normal = orientation * (axis ? Vector3F::unitX() : Vector3F::unitY());
+                    const auto halfSize = (axis ? size.x : size.y) * .5f;
+                    const auto face = centre + normal * halfSize;
+                    Vector3F hitPosition, hitNormal;
+                    SmartPtr<ISharedObject> object;
+                    if( !physics->intersects( face + normal * .04f, face - normal * .04f,
+                                             hitPosition, hitNormal, object ) ||
+                        !object ||
+                        // Adjacent rails can overlap on tight inside corners.
+                        // Their registration and poses were checked above; a
+                        // neighboring face can be the closest result here.
+                        (object == body->getRigidStatic() && (hitPosition - face).length() > .015f) )
+                    {
+                        fail( actor->getName() + " face does not match its physics shape axis=" +
+                              StringUtil::toString(axis) + " expected=" + StringUtil::toString(face) +
+                              " actual=" + StringUtil::toString(hitPosition) +
+                              " body=" + StringUtil::toString(body->getRigidStatic()->getTransform().getPosition()) );
+                        return;
+                    }
+                }
+            }
+            Vector3F hitPosition, hitNormal;
+            SmartPtr<ISharedObject> object;
+            if( count == 0 || physics->intersects( { 0, .5f, 2 }, { 0, .5f, 4 },
+                                                  hitPosition, hitNormal, object ) )
+            {
+                fail( "gantry opening is obstructed or no colliders were generated" );
+                return;
+            }
+            WP_LOG( "Trackside collision smoke: verified static boxes=" + StringUtil::toString(count) );
+            // Coast into the first garage to verify actual contact response.
+            auto car = m_vehicleActor->getComponent<scene::CarController>();
+            car->getVehicleController()->reset();
+            const Transform3F spawn( { -28, .42f, -3 }, QuaternionF::identity() );
+            chassis->clearForce();
+            chassis->clearTorque();
+            chassis->setTransform( spawn );
+            chassis->setLinearVelocity( { 0, 0, -10 } );
+            chassis->setAngularVelocity( Vector3F::zero() );
+            m_vehicleActor->setPosition( spawn.getPosition() );
+            m_vehicleActor->setOrientation( spawn.getOrientation() );
+            m_vehicleActor->updateTransform();
+            m_collisionProbeStarted = true;
+            return;
+        }
+        m_collisionProbeTime += std::clamp(app->getTimer()->getDeltaTime(), 0.0, 1.0 / 30.0);
+        if( m_collisionProbeTime < 3 )
+            return;
+        const auto position = chassis->getTransform().getPosition();
+        const auto velocity = chassis->getLinearVelocity();
+        m_smokeTestPassed = position.z < -4 && position.z > -8 && std::abs(velocity.z) < 2;
+        WP_LOG( String("Trackside collision smoke: garage impact ") +
+                (m_smokeTestPassed ? "PASS" : "FAIL") + " position=" + StringUtil::toString(position) +
+                " velocity=" + StringUtil::toString(velocity) );
+        app->setQuit( true );
     }
 
     void SampleVehicleAdvanced::updateWheelVisuals()
@@ -1184,6 +1286,7 @@ int main( int argc, char **argv )
                 << "SampleVehicleAdvanced [--seed N] [--quality low|medium|high] [--plugins PATH]\n"
                    "  --smoke-test                 Settle, accelerate, turn, brake and reset checks\n"
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
+                   "  --collision-smoke-test        Verify trackside boxes and a garage impact\n"
                    "  --validate-circuit           Validate 100 generated closed circuits\n"
                    "  --capture PATH.bmp --view follow|car|track|corner   Save a rendered view and "
                    "exit\n"
@@ -1198,7 +1301,7 @@ int main( int argc, char **argv )
     TypeManager *typeManager = nullptr;
     bool ownsTypeManager = false;
     SmartPtr<SampleVehicleAdvanced> app;
-    bool smokeTest = false, trackSmokeTest = false;
+    bool smokeTest = false, trackSmokeTest = false, collisionSmokeTest = false;
     String pluginsConfig;
     std::string capturePath, captureView = "follow";
     u32 seed = 7;
@@ -1214,6 +1317,8 @@ int main( int argc, char **argv )
         {
             if( String( argv[i] ) == "--smoke-test" )
                 smokeTest = true;
+            else if( String( argv[i] ) == "--collision-smoke-test" )
+                collisionSmokeTest = true;
             else if( String( argv[i] ) == "--no-hud" )
                 hud = false;
             else if( String( argv[i] ) == "--orbit" )
@@ -1283,8 +1388,8 @@ int main( int argc, char **argv )
         if( captureView != "follow" && captureView != "car" && captureView != "track" &&
             captureView != "corner" )
             throw std::runtime_error( "View must be follow, car, track, or corner." );
-        if( ( smokeTest && trackSmokeTest ) ||
-            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest ) ) )
+        if( int(smokeTest) + int(trackSmokeTest) + int(collisionSmokeTest) > 1 ||
+            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && ( smokeTest || trackSmokeTest || collisionSmokeTest ) ) )
             throw std::runtime_error( "Choose one smoke test or a capture per run." );
         if( orbit && benchmarkSeconds <= 0 ) throw std::runtime_error( "--orbit requires --benchmark." );
     }
@@ -1335,6 +1440,7 @@ int main( int argc, char **argv )
         app->setActiveThreads( activeThreadCount );
         app->setSmokeTest( smokeTest );
         app->setTrackSmokeTest( trackSmokeTest );
+        app->setCollisionSmokeTest( collisionSmokeTest );
         app->setGenerationOptions( seed, quality );
         app->setCapture( capturePath, captureView );
         app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
@@ -1344,7 +1450,7 @@ int main( int argc, char **argv )
         if( app->getLoadingState() != LoadingState::Loaded )
             throw std::runtime_error( "SampleVehicleAdvanced failed to load." );
         app->run();
-        exitCode = ( ( smokeTest || trackSmokeTest ) && !app->smokeTestPassed() ) ||
+        exitCode = ( ( smokeTest || trackSmokeTest || collisionSmokeTest ) && !app->smokeTestPassed() ) ||
                            ( ( !capturePath.empty() || benchmarkSeconds > 0 ) && !app->capturePassed() )
                        ? 1
                        : 0;

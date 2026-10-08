@@ -49,6 +49,7 @@ namespace workphone
             m_trackSmokeTest = enabled;
         }
         bool smokeTestPassed() const;
+        void setCollisionSmokeTest( bool enabled ) { m_collisionSmokeTest = enabled; }
 
     protected:
         class InputListener : public IEventListener
@@ -118,6 +119,9 @@ namespace workphone
         f64 m_nextDebugUpdate = 0.0;
         f64 m_nextDebugLog = 0.0;
         bool m_trackSmokeTest = false;
+        void updateCollisionSmokeTest();
+        bool m_collisionSmokeTest = false, m_collisionProbeStarted = false;
+        f64 m_collisionProbeTime = 0;
         bool m_smokeTest = false;
         bool m_smokeTestPassed = false;
         u32 m_smokePhase = 0;

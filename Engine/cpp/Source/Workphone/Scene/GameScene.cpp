@@ -1017,7 +1017,9 @@ namespace workphone::scene
         if( it == updateObjects.end() )
         {
             updateObjects.push_back( object );
-            sortObjects();
+            // Only this list changed. Sorting every task/phase list for each
+            // registration makes procedural scenes with many actors costly.
+            std::sort( updateObjects.begin(), updateObjects.end() );
         }
     }
 

@@ -187,6 +187,45 @@ namespace workphone::scene::race
         {
             return { float( p.x ), float( p.y ), float( p.z ) };
         }
+        void staticBox( SceneAssets &assets, const String &name, Vector3F centre, Vector3F size,
+                        QuaternionF orientation = QuaternionF::identity() )
+        {
+            const auto probeStart = std::chrono::steady_clock::now();
+            auto app = core::IApplicationManager::instance();
+            auto actor = app->getGameManager()->createActor();
+            const auto probeActor = std::chrono::steady_clock::now();
+            // Own these independently of batched render meshes and tree LODs.
+            // The normal generated-scene cleanup also removes their physics bodies.
+            assets.actors.push_back( actor );
+            actor->setName( "Trackside collision: " + name );
+            actor->setStatic( true );
+            actor->setPosition( centre );
+            actor->setOrientation( orientation );
+            const auto probeTransform = std::chrono::steady_clock::now();
+            // CollisionBox takes full dimensions, not half extents.
+            actor->addComponent<scene::CollisionBox>()->setExtents( size );
+            const auto probeShape = std::chrono::steady_clock::now();
+            actor->addComponent<scene::Rigidbody>();
+            const auto probeBody = std::chrono::steady_clock::now();
+            app->getGameManager()->getCurrentScene()->addActor( actor );
+            static double probeTimes[5] = {};
+            static unsigned probeCount = 0;
+            const std::chrono::steady_clock::time_point probes[] = {probeStart, probeActor, probeTransform, probeShape, probeBody, std::chrono::steady_clock::now()};
+            for (int i = 0; i < 5; ++i) probeTimes[i] += std::chrono::duration<double, std::milli>(probes[i+1]-probes[i]).count();
+            if (++probeCount % 100 == 0) printf("Collision creation timing %u: actor %.1f transform %.1f shape %.1f body %.1f scene %.1f\n", probeCount, probeTimes[0], probeTimes[1], probeTimes[2], probeTimes[3], probeTimes[4]);
+        }
+
+        void railCollision( SceneAssets &assets, Vector3F start, Vector3F end )
+        {
+            auto direction = end - start;
+            direction.y = 0;
+            const auto length = direction.length();
+            if( length <= 1e-4f )
+                return;
+            const auto yaw = std::atan2( direction.x, direction.z ) * 180.f / pi;
+            staticBox( assets, "Guardrail beam", ( start + end ) * .5f + Vector3F( 0, .5f, 0 ),
+                       { .2f, .5f, length }, QuaternionF::eulerDegrees( 0, yaw, 0 ) );
+        }
         void pineGeometry( Geometry &trunks, Geometry &leaves, Vector3F p, float h )
         {
             trunks.box( p + Vector3F( 0, h * .3f, 0 ), { h * .05f, h * .6f, h * .05f } );
@@ -472,8 +511,11 @@ namespace workphone::scene::race
                     {
                         auto p = a.position + a.right * ( sign * 13.f );
                         barriers.box( p + Vector3F( 0, .45f, 0 ), { .22f, .9f, .22f } );
+                        staticBox( assets, "Guardrail post", p + Vector3F( 0, .45f, 0 ),
+                                   { .22f, .9f, .22f } );
                         auto next = points[( i + 6 ) % points.size()].position +
                                     points[( i + 6 ) % points.size()].right * ( sign * 13.f );
+                        railCollision( assets, p, next );
                         auto side = ( next - p );
                         side.normalise();
                         side = Vector3F( -side.z, 0, side.x ) * .1f;
@@ -511,15 +553,23 @@ namespace workphone::scene::race
             gantry.box( { -8, 3, 3 }, { .6f, 6, .6f } );
             gantry.box( { 8, 3, 3 }, { .6f, 6, .6f } );
             gantry.box( { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
+            staticBox( assets, "Gantry left post", { -8, 3, 3 }, { .6f, 6, .6f } );
+            staticBox( assets, "Gantry right post", { 8, 3, 3 }, { .6f, 6, .6f } );
+            staticBox( assets, "Gantry overhead beam", { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
             mesh( assets, "Start gantry", gantry, dark );
             for( int i = 0; i < 6; ++i )
             {
                 pits.box( { -28, 2.5f, float( -12 - i * 10 ) }, { 12, 5, 8 } );
+                staticBox( assets, "Pit garage", { -28, 2.5f, float( -12 - i * 10 ) }, { 12, 5, 8 } );
             }
             mesh( assets, "Pit garages", pits, white );
             Geometry pitDoors;
             for( int i = 0; i < 6; ++i )
+            {
                 pitDoors.box( { -21.9f, 1.7f, float( -12 - i * 10 ) }, { .12f, 3.4f, 6 } );
+                staticBox( assets, "Pit door", { -21.9f, 1.7f, float( -12 - i * 10 ) },
+                           { .12f, 3.4f, 6 } );
+            }
             mesh( assets, "Pit doors", pitDoors, dark );
             // Batch trees into 64-metre patches. The shared data-oriented LODSystem
             // chooses one renderer set per patch, without per-tree update callbacks.
@@ -563,6 +613,8 @@ namespace workphone::scene::race
                     ( p.x < -15 && p.z > -85 && p.z < 15 ) )
                     continue;
                 float h = 4 + unit( rng ) * 7;
+                staticBox( assets, "Tree trunk", p + Vector3F( 0, h * .3f, 0 ),
+                           { h * .05f, h * .6f, h * .05f } );
                 const auto key =
                     std::make_pair( int( std::floor( p.x / 64 ) ), int( std::floor( p.z / 64 ) ) );
                 const Vector3F centre( key.first * 64.f + 32, 0, key.second * 64.f + 32 );

@@ -64,6 +64,11 @@ These are automated driving and render-pose checks. Subjective keyboard,
 gamepad and steering-wheel feel, race-distance handling and exact F1 2012
 performance have not been verified. Logs are under `review/handling-*.log`.
 
+The full-input turn measurements above predate trackside collisions. With
+physical barriers enabled, the normal driving smoke uses a moderate turn within
+the circuit boundaries. `--collision-smoke-test` separately validates the static
+boxes and an actual vehicle impact against a pit garage.
+
 Build the physics plugin explicitly; building the sample alone does not rebuild
 its dynamically loaded WPVehiclePhysics DLL:
 

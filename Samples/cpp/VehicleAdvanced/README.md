@@ -75,6 +75,7 @@ success.
 ./SampleVehicleAdvanced.exe --validate-circuit
 ./SampleVehicleAdvanced.exe --smoke-test --quality low
 ./SampleVehicleAdvanced.exe --track-smoke-test --quality low
+./SampleVehicleAdvanced.exe --collision-smoke-test --quality low
 ./SampleVehicleAdvanced.exe --capture car.bmp --view car --quality high
 ./SampleVehicleAdvanced.exe --capture track.bmp --view track --quality high
 ./SampleVehicleAdvanced.exe --capture corner.bmp --view corner --quality high
@@ -156,8 +157,9 @@ original and advanced samples present. Procedural service and rotated-inertia
 regression tests pass in both configurations; the 100-seed circuit check passes.
 The assisted handling revision passes the five-phase driving check in
 RelWithDebInfo with seed 7 / low graphics and seed 42 / high graphics. The turn
-now uses full throttle and full steering input, and checks body slip and yaw
-rate as well as suspension and render poses. See [HANDLING.md](HANDLING.md) for
+checks body slip and yaw rate as well as suspension and render poses. With
+trackside collisions enabled, the turn uses moderate steering to stay within
+the barriers. See [HANDLING.md](HANDLING.md) for
 the setup, tuning settings and measured results. Earlier Debug checks predate
 this handling revision.
 Before the wheel revision, the advanced sample completed a checkpointed lap under
@@ -228,9 +230,14 @@ count. Counts include shadows/offscreen work. Capture mode also verifies tree an
 vehicle LOD exclusivity, reflections and winding. Orbit mode requires benchmark mode.
 
 The road and runoff are level and share one continuous static contact plane;
-visual millimetre offsets prevent coplanar rendering artifacts. Trees, hills,
-pits and guardrails are decorative. Track elevation, barrier collisions and
-moving-platform wheel contacts are not part of this sample.
+visual millimetre offsets prevent coplanar rendering artifacts. Guardrail beams
+and posts, pit garages and doors, gantry supports and overhead beam, and tree
+trunks have generated static box collisions. Rail boxes follow each segment's
+yaw; separate gantry boxes preserve clearance over the road. Colliders remain
+active through tree LOD changes and are removed with their generated scene.
+Hills and tree foliage are decorative; track elevation and moving-platform
+wheel contacts are not part of this sample. The collision smoke check probes
+the generated physics shapes, checks gantry clearance and drives into a garage.
 
 Generated RGBA maps are uploaded in memory. Albedo is sRGB; normal/ORM channels
 are linear. ORM is split explicitly into AO, roughness and metalness slots. The

@@ -4,6 +4,7 @@
  */
 
 #include "workphone_physics_scene.h"
+#include <limits.h>
 #include "workphone_physics_rigidbody.h"
 #include "workphone_physics_collisionshape.h"
 #include "workphone_physics_constraint.h"
@@ -39,7 +40,7 @@ static wp_s32 should_update_manifold( wp_physics_scene *scene, wp_contact_cache_
 static void update_manifold_cache( wp_physics_scene *scene, wp_rigidbody *a, wp_rigidbody *b, wp_contact_manifold *manifold );
 static wp_grid *grid_create( wp_physics_scene *scene );
 static void grid_destroy( wp_grid *grid );
-static void grid_insert_actor( wp_grid *grid, wp_rigidbody *body );
+static wp_s32 grid_insert_actor( wp_grid *grid, wp_rigidbody *body );
 static void solve_grid_contacts( wp_physics_scene *scene, wp_grid *grid );
 
 /* =========================================================================
@@ -48,9 +49,10 @@ static void solve_grid_contacts( wp_physics_scene *scene, wp_grid *grid );
 
 typedef struct wp_physics_scene
 {
-    wp_rigidbody *actors[WP_SCENE_MAX_ACTORS];
-    wp_s32 actor_count;
-    wp_f32 sleep_time[WP_SCENE_MAX_ACTORS];
+    wp_rigidbody **actors;
+    wp_s32 actor_count, actor_capacity;
+    wp_f32 *sleep_time;
+    struct wp_scene_aabb *actor_bounds;
 
     wp_vec3f size;
     wp_vec3f gravity;
@@ -608,6 +610,38 @@ static wp_s32 ray_triangle( wp_vec3f start, wp_vec3f dir, wp_f32 max_dist, wp_ve
     return 1;
 }
 
+/* Grow opaque scene storage atomically, retaining sleep state and scratch space. */
+static wp_s32 reserve_scene_actors( wp_physics_scene *scene, wp_s32 required )
+{
+    wp_s32 capacity = scene->actor_capacity ? scene->actor_capacity : WP_SCENE_MAX_ACTORS;
+    wp_rigidbody **actors;
+    wp_f32 *sleep_time;
+    wp_scene_aabb *bounds;
+    if( required <= scene->actor_capacity ) return 1;
+    if( capacity < 8 ) capacity = 8;
+    while( capacity < required ) {
+        if( capacity > INT_MAX / 2 ) return 0;
+        capacity *= 2;
+    }
+    actors = (wp_rigidbody **)calloc( capacity, sizeof(*actors) );
+    sleep_time = (wp_f32 *)calloc( capacity, sizeof(*sleep_time) );
+    bounds = (wp_scene_aabb *)calloc( capacity, sizeof(*bounds) );
+    if( !actors || !sleep_time || !bounds ) {
+        free(actors); free(sleep_time); free(bounds);
+        return 0;
+    }
+    if( scene->actor_count ) {
+        memcpy(actors, scene->actors, scene->actor_count * sizeof(*actors));
+        memcpy(sleep_time, scene->sleep_time, scene->actor_count * sizeof(*sleep_time));
+    }
+    free(scene->actors); free(scene->sleep_time); free(scene->actor_bounds);
+    scene->actors = actors;
+    scene->sleep_time = sleep_time;
+    scene->actor_bounds = bounds;
+    scene->actor_capacity = capacity;
+    return 1;
+}
+
 /* =========================================================================
  * Lifecycle
  * ====================================================================== */
@@ -621,6 +655,10 @@ wp_physics_scene *wp_physics_scene_create( void )
     }
 
     memset( scene, 0, sizeof( wp_physics_scene ) );
+    if( !reserve_scene_actors(scene, 1) ) {
+        free(scene);
+        return NULL;
+    }
 
     /* Default gravity: Earth-like, Y-down */
     scene->gravity.y = -9.81f;
@@ -635,6 +673,7 @@ wp_physics_scene *wp_physics_scene_create( void )
     scene->narrowphase = wp_narrowphase_create( WORKPHONE_NARROWPHASE_HYBRID );
     if( !scene->narrowphase )
     {
+        free(scene->actors); free(scene->sleep_time); free(scene->actor_bounds);
         free( scene );
         return NULL;
     }
@@ -664,8 +703,9 @@ void wp_physics_scene_destroy( wp_physics_scene *scene )
     if( scene->partition_data ) {
         if( scene->spatial_partitioning == WP_SPATIAL_PARTITION_GRID ) {
             grid_destroy( (wp_grid *)scene->partition_data );
+        } else {
+            free( scene->partition_data );
         }
-        free( scene->partition_data );
     }
 
     wp_narrowphase_destroy( scene->narrowphase );
@@ -675,6 +715,7 @@ void wp_physics_scene_destroy( wp_physics_scene *scene )
         free( scene->contact_cache );
     }
 
+    free(scene->actors); free(scene->sleep_time); free(scene->actor_bounds);
     free( scene );
 }
 
@@ -685,8 +726,8 @@ void wp_physics_scene_clear( wp_physics_scene *scene )
         return;
     }
 
-    memset( scene->actors, 0, sizeof( scene->actors ) );
-    memset( scene->sleep_time, 0, sizeof( scene->sleep_time ) );
+    memset( scene->actors, 0, scene->actor_capacity * sizeof(*scene->actors) );
+    memset( scene->sleep_time, 0, scene->actor_capacity * sizeof(*scene->sleep_time) );
     scene->actor_count = 0;
 }
 
@@ -698,7 +739,7 @@ wp_s32 wp_physics_scene_add_actor( wp_physics_scene *scene, wp_rigidbody *body )
 {
     wp_s32 i;
 
-    if( !scene || !body || scene->actor_count >= WP_SCENE_MAX_ACTORS )
+    if( !scene || !body )
     {
         return 0;
     }
@@ -711,6 +752,8 @@ wp_s32 wp_physics_scene_add_actor( wp_physics_scene *scene, wp_rigidbody *body )
         }
     }
 
+    if( scene->actor_count == INT_MAX || !reserve_scene_actors(scene, scene->actor_count + 1) )
+        return 0;
     scene->actors[scene->actor_count] = body;
     scene->sleep_time[scene->actor_count] = 0.0f;
     ++scene->actor_count;
@@ -1664,8 +1707,8 @@ static void update_manifold_cache( wp_physics_scene *scene, wp_rigidbody *a, wp_
  * ====================================================================== */
 
 typedef struct wp_grid_cell {
-    wp_rigidbody *actors[WP_SCENE_MAX_ACTORS];
-    wp_s32 count;
+    wp_rigidbody **actors;
+    wp_s32 count, capacity;
     wp_f32 sleep_timer;
     wp_u32 last_update_frame;
 } wp_grid_cell;
@@ -1705,6 +1748,7 @@ static wp_grid *grid_create( wp_physics_scene *scene ) {
     grid->dim_z = 10;
     grid->cells = (wp_grid_cell *)calloc( grid->dim_x * grid->dim_y * grid->dim_z, sizeof( wp_grid_cell ) );
 
+    if( !grid->cells ) { free(grid); return NULL; }
     grid->origin = vec3f_scale( scene->size, -0.5f );
     grid->cell_size.x = scene->size.x / (wp_f32)grid->dim_x;
     grid->cell_size.y = scene->size.y / (wp_f32)grid->dim_y;
@@ -1715,12 +1759,14 @@ static wp_grid *grid_create( wp_physics_scene *scene ) {
 
 static void grid_destroy( wp_grid *grid ) {
     if( grid ) {
+        for(wp_s32 i = 0; i < grid->dim_x * grid->dim_y * grid->dim_z; ++i)
+            free(grid->cells[i].actors);
         free( grid->cells );
         free( grid );
     }
 }
 
-static void grid_insert_actor( wp_grid *grid, wp_rigidbody *body ) {
+static wp_s32 grid_insert_actor( wp_grid *grid, wp_rigidbody *body ) {
     wp_scene_aabb bounds;
     body_world_aabb( body, &bounds );
 
@@ -1745,12 +1791,21 @@ static void grid_insert_actor( wp_grid *grid, wp_rigidbody *body ) {
         for( wp_s32 y = start_y; y <= end_y; ++y ) {
             for( wp_s32 z = start_z; z <= end_z; ++z ) {
                 wp_grid_cell *cell = &grid->cells[x * grid->dim_y * grid->dim_z + y * grid->dim_z + z];
-                if( cell->count < WP_SCENE_MAX_ACTORS ) {
-                    cell->actors[cell->count++] = body;
+                if( cell->count == cell->capacity ) {
+                    wp_s32 capacity;
+                    wp_rigidbody **actors;
+                    if( cell->capacity > INT_MAX / 2 ) return 0;
+                    capacity = cell->capacity ? cell->capacity * 2 : 8;
+                    actors = (wp_rigidbody **)realloc(cell->actors, capacity * sizeof(*actors));
+                    if( !actors ) return 0;
+                    cell->actors = actors;
+                    cell->capacity = capacity;
                 }
+                cell->actors[cell->count++] = body;
             }
         }
     }
+    return 1;
 }
 
 static void solve_grid_contacts( wp_physics_scene *scene, wp_grid *grid ) {
@@ -1815,15 +1870,21 @@ static void solve_scene_contacts( wp_physics_scene *scene )
     if( scene->spatial_partitioning == WP_SPATIAL_PARTITION_GRID && scene->partition_data ) {
         wp_grid *grid = (wp_grid *)scene->partition_data;
         
-        memset( grid->cells, 0, sizeof(wp_grid_cell) * grid->dim_x * grid->dim_y * grid->dim_z );
+        wp_s32 complete = 1;
+        for(wp_s32 i = 0; i < grid->dim_x * grid->dim_y * grid->dim_z; ++i)
+            grid->cells[i].count = 0;
         for( wp_s32 i = 0; i < scene->actor_count; ++i ) {
-            if( scene->actors[i] ) grid_insert_actor( grid, scene->actors[i] );
+            if( scene->actors[i] && !grid_insert_actor(grid, scene->actors[i]) ) {
+                complete = 0;
+                break;
+            }
         }
-        
-        solve_grid_contacts( scene, grid );
-    } else {
+        if( complete ) { solve_grid_contacts(scene, grid); return; }
+        /* Allocation failure must not silently drop contacts. Fall back below. */
+    }
+    {
         wp_s32 actor_a;
-        wp_scene_aabb actor_bounds[WP_SCENE_MAX_ACTORS];
+        wp_scene_aabb *actor_bounds = scene->actor_bounds;
 
         for( actor_a = 0; actor_a < scene->actor_count; ++actor_a ) {
             body_world_aabb( scene->actors[actor_a], &actor_bounds[actor_a] );
