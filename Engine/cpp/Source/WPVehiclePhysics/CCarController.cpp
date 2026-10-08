@@ -423,10 +423,10 @@ namespace workphone
                 {
                     if( w->isSteeringWheel() )
                     {
-                        const auto filtered = handling::steering(steeringValue, w->getSteeringAngle(),
-                            getBody()->getVelocity().length(), m_steeringWheelbase,
-                            m_steeringAcceleration, m_steeringRate, dt);
-                        w->setSteeringAngle(filtered);
+                        const auto filtered = handling::steering(
+                            steeringValue, w->getSteeringAngle(), getBody()->getVelocity().length(),
+                            m_steeringWheelbase, m_steeringAcceleration, m_steeringRate, dt );
+                        w->setSteeringAngle( filtered );
                     }
                 }
             }
@@ -710,9 +710,17 @@ namespace workphone
         properties->getPropertyValue( "Steering Rate", m_steeringRate );
         properties->getPropertyValue( "Steering Wheelbase", m_steeringWheelbase );
         properties->getPropertyValue( "Steering Acceleration", m_steeringAcceleration );
-        m_steeringRate = std::isfinite(m_steeringRate) ? std::clamp(m_steeringRate, physics_Num(0), physics_Num(1080)) : 0;
-        m_steeringWheelbase = std::isfinite(m_steeringWheelbase) ? std::clamp(m_steeringWheelbase, physics_Num(0), physics_Num(20)) : 0;
-        m_steeringAcceleration = std::isfinite(m_steeringAcceleration) ? std::clamp(m_steeringAcceleration, physics_Num(0), physics_Num(100)) : 0;
+        m_steeringRate = std::isfinite( m_steeringRate )
+                             ? std::clamp( m_steeringRate, physics_Num( 0 ), physics_Num( 1080 ) )
+                             : 0;
+        m_steeringWheelbase =
+            std::isfinite( m_steeringWheelbase )
+                ? std::clamp( m_steeringWheelbase, physics_Num( 0 ), physics_Num( 20 ) )
+                : 0;
+        m_steeringAcceleration =
+            std::isfinite( m_steeringAcceleration )
+                ? std::clamp( m_steeringAcceleration, physics_Num( 0 ), physics_Num( 100 ) )
+                : 0;
 
         physics_Num editSteeringScale = getEditSteeringScale();
         physics_Num playSteeringScale = getPlaySteeringScale();

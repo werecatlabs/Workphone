@@ -416,10 +416,11 @@ namespace workphone
                 else
                 {
                     const auto brush = wheel->isDerived<WheelControllerBrush>();
-                    if(brush)
-                        wheel->setBrake(m_brake);
-                    const auto wheelBrakeTorque = brush ? physics_Num(0) :
-                        calcBrakeTorque(wheelAngularVelocity, m_brake, physics_Num(0));
+                    if( brush )
+                        wheel->setBrake( m_brake );
+                    const auto wheelBrakeTorque =
+                        brush ? physics_Num( 0 )
+                              : calcBrakeTorque( wheelAngularVelocity, m_brake, physics_Num( 0 ) );
                     WP_ASSERT( isFiniteValue( wheelBrakeTorque ) );
                     WP_ASSERT( Math<physics_Num>::Abs( wheelBrakeTorque ) < MaxTorque );
                     wheel->setTorque( wheelBrakeTorque );
@@ -536,10 +537,11 @@ namespace workphone
                 {
                     const auto wheelAngularVelocity = getWheelAngularVelocity( wheel );
                     const auto brush = wheel->isDerived<WheelControllerBrush>();
-                    if(brush)
-                        wheel->setBrake(brakeInput);
-                    const auto wheelBrakeTorque = brush ? physics_Num(0) :
-                        calcBrakeTorque(wheelAngularVelocity, brakeInput, physics_Num(0));
+                    if( brush )
+                        wheel->setBrake( brakeInput );
+                    const auto wheelBrakeTorque =
+                        brush ? physics_Num( 0 )
+                              : calcBrakeTorque( wheelAngularVelocity, brakeInput, physics_Num( 0 ) );
                     WP_ASSERT( isFiniteValue( wheelBrakeTorque ) );
                     WP_ASSERT( Math<physics_Num>::Abs( wheelBrakeTorque ) < MaxTorque );
 
