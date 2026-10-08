@@ -2,6 +2,7 @@
 #include <sstream>
 #include <WPVehiclePhysics/CDriveTrain.hpp>
 #include <WPVehiclePhysics/WheelControllerPacejka.hpp>
+#include <WPVehiclePhysics/WheelControllerBrush.hpp>
 #include <Workphone/Workphone.hpp>
 
 namespace workphone
@@ -414,8 +415,11 @@ namespace workphone
                 }
                 else
                 {
-                    const auto wheelBrakeTorque = calcBrakeTorque( wheelAngularVelocity, m_brake,
-                                                                   static_cast<physics_Num>( 0.0 ) );
+                    const auto brush = wheel->isDerived<WheelControllerBrush>();
+                    if(brush)
+                        wheel->setBrake(m_brake);
+                    const auto wheelBrakeTorque = brush ? physics_Num(0) :
+                        calcBrakeTorque(wheelAngularVelocity, m_brake, physics_Num(0));
                     WP_ASSERT( isFiniteValue( wheelBrakeTorque ) );
                     WP_ASSERT( Math<physics_Num>::Abs( wheelBrakeTorque ) < MaxTorque );
                     wheel->setTorque( wheelBrakeTorque );
@@ -531,8 +535,11 @@ namespace workphone
                 else
                 {
                     const auto wheelAngularVelocity = getWheelAngularVelocity( wheel );
-                    const auto wheelBrakeTorque = calcBrakeTorque( wheelAngularVelocity, brakeInput,
-                                                                   static_cast<physics_Num>( 0.0 ) );
+                    const auto brush = wheel->isDerived<WheelControllerBrush>();
+                    if(brush)
+                        wheel->setBrake(brakeInput);
+                    const auto wheelBrakeTorque = brush ? physics_Num(0) :
+                        calcBrakeTorque(wheelAngularVelocity, brakeInput, physics_Num(0));
                     WP_ASSERT( isFiniteValue( wheelBrakeTorque ) );
                     WP_ASSERT( Math<physics_Num>::Abs( wheelBrakeTorque ) < MaxTorque );
 

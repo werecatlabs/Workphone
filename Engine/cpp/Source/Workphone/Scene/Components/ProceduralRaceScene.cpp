@@ -293,7 +293,9 @@ namespace workphone::scene
         for(u32 i = 0; i < 4; ++i)
         {
             auto wheel = vehicle->getWheelController(i);
-            wheel->setGrip(grip);
+            // Preserve the authored tyre multiplier when changing surface; the old
+            // path silently replaced 1.25 with 1.0 on the first physics tick.
+            wheel->setGrip(grip * 1.25f);
         }
     }
 

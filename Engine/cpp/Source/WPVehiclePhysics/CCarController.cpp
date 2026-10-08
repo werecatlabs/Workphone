@@ -1,5 +1,6 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include <WPVehiclePhysics/CCarController.hpp>
+#include <WPVehiclePhysics/VehicleHandling.hpp>
 #include <WPVehiclePhysics/CDriveTrain.hpp >
 #include <WPVehiclePhysics/CVehicleBody.hpp>
 #include <WPVehiclePhysics/WheelControllerArcade.hpp>
@@ -422,9 +423,10 @@ namespace workphone
                 {
                     if( w->isSteeringWheel() )
                     {
-                        w->setSteeringAngle( steeringValue );
-                        WP_ASSERT( Math<physics_Num>::Abs( w->getSteeringAngle() - steeringValue ) <=
-                                   Math<physics_Num>::epsilon() );
+                        const auto filtered = handling::steering(steeringValue, w->getSteeringAngle(),
+                            getBody()->getVelocity().length(), m_steeringWheelbase,
+                            m_steeringAcceleration, m_steeringRate, dt);
+                        w->setSteeringAngle(filtered);
                     }
                 }
             }
@@ -681,6 +683,9 @@ namespace workphone
     {
         auto properties = CVehicleController<Vehicle>::getProperties();
         properties->setProperty( "Keyboard Input", m_keyboardInput );
+        properties->setProperty( "Steering Rate", m_steeringRate );
+        properties->setProperty( "Steering Wheelbase", m_steeringWheelbase );
+        properties->setProperty( "Steering Acceleration", m_steeringAcceleration );
         WP_ASSERT( properties );
 
         properties->setProperty( "Edit Steering Scale", getEditSteeringScale() );
@@ -702,6 +707,12 @@ namespace workphone
 
         CVehicleController<Vehicle>::setProperties( properties );
         properties->getPropertyValue( "Keyboard Input", m_keyboardInput );
+        properties->getPropertyValue( "Steering Rate", m_steeringRate );
+        properties->getPropertyValue( "Steering Wheelbase", m_steeringWheelbase );
+        properties->getPropertyValue( "Steering Acceleration", m_steeringAcceleration );
+        m_steeringRate = std::isfinite(m_steeringRate) ? std::clamp(m_steeringRate, physics_Num(0), physics_Num(1080)) : 0;
+        m_steeringWheelbase = std::isfinite(m_steeringWheelbase) ? std::clamp(m_steeringWheelbase, physics_Num(0), physics_Num(20)) : 0;
+        m_steeringAcceleration = std::isfinite(m_steeringAcceleration) ? std::clamp(m_steeringAcceleration, physics_Num(0), physics_Num(100)) : 0;
 
         physics_Num editSteeringScale = getEditSteeringScale();
         physics_Num playSteeringScale = getPlaySteeringScale();

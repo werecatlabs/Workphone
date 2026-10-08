@@ -1122,6 +1122,9 @@ namespace workphone::scene::race
         car->setProperties( visualProperties );
         auto controllerProperties = vehicle->getProperties();
         controllerProperties->setProperty( "Keyboard Input", false );
+        controllerProperties->setProperty( "Steering Rate", 90.f );
+        controllerProperties->setProperty( "Steering Wheelbase", float(config.wheelbaseM) );
+        controllerProperties->setProperty( "Steering Acceleration", 14.f );
         controllerProperties->setProperty( "Play Steering Scale",
                                            float( config.wheels[0].maxSteerRad * 180.0 / pi ) );
         vehicle->setProperties( controllerProperties );
@@ -1167,6 +1170,8 @@ namespace workphone::scene::race
             wheel->setPoweredWheel( w.driven );
             auto wheelProps = wheel->getProperties();
             wheelProps->setProperty( "Stable Contacts", true );
+            wheelProps->setProperty( "Traction Control", true );
+            wheelProps->setProperty( "Anti Lock Brakes", true );
             const auto &inertia = config.massProperties.inertia;
             const auto effectiveMass = 1.0 / ( 1.0 / config.massProperties.massKg +
                                                p.x * p.x / inertia.zz + p.z * p.z / inertia.xx );
@@ -1178,7 +1183,7 @@ namespace workphone::scene::race
                 "Static Friction Coefficient",
                 float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) ) );
             wheelProps->setProperty( "Sliding Friction Coefficient",
-                                     float( w.tire.peakLateralFriction * .8 ) );
+                                     float( std::min(w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction) * .94 ) );
             wheelProps->setProperty( "Longitudinal Stiffness",
                                      float( w.tire.longitudinalStiffnessNPerSlip ) );
             wheelProps->setProperty( "Lateral Stiffness", float( w.tire.corneringStiffnessNPerRad ) );

@@ -120,6 +120,8 @@ namespace workphone
         physics_Num m_suspensionTravel = static_cast<physics_Num>( 0.52 );
         physics_Num m_suspensionDistance = static_cast<physics_Num>( 0.52 );
         bool m_implicitSuspension = false;
+        bool m_tractionControl = false;
+        bool m_antiLockBrakes = false;
         physics_Num m_contactAcceleration = 9.81;
         physics_Num m_contactEffectiveMass = 0;
         physics_Num m_springRate = static_cast<physics_Num>( 5000.0 );

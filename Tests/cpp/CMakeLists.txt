@@ -139,6 +139,10 @@ endif()
 
 
 if(TARGET WorkphonePhysics)
+    add_executable(VehicleHandlingTests VehicleHandlingTests.cpp)
+    target_include_directories(VehicleHandlingTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)
+    set_target_properties(VehicleHandlingTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPVehicle.assisted_handling COMMAND VehicleHandlingTests)
     add_executable(VehicleInertiaTests VehicleInertiaTests.cpp)
     target_include_directories(VehicleInertiaTests PRIVATE
         ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)

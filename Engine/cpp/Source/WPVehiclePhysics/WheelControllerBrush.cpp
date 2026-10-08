@@ -1,4 +1,5 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
+#include <WPVehiclePhysics/VehicleHandling.hpp>
 #include <WPVehiclePhysics/WheelControllerBrush.hpp>
 #include <Workphone/Workphone.hpp>
 #include <limits>
@@ -437,10 +438,29 @@ namespace workphone
 
         if( m_inertia > Math<physics_Num>::epsilon() )
         {
-            m_angularVelocity += ( m_driveTorque * dt ) / m_inertia;
+            auto driveTorque = m_driveTorque;
+            if( m_tractionControl && isPoweredWheel() )
+            {
+                const auto lateralDemand = m_lateralStiffness * m_grip *
+                    std::atan2(m_localVelo.X(), std::max(std::abs(m_localVelo.Z()), physics_Num(3)));
+                driveTorque = handling::tractionTorque(driveTorque, m_normalForce,
+                    m_staticFrictionCoefficient, m_grip, lateralDemand, m_radius);
+            }
+            m_angularVelocity += ( driveTorque * dt ) / m_inertia;
+            if( m_tractionControl && isPoweredWheel() && m_driveTorque != 0 )
+                m_angularVelocity = handling::rollingLimit(m_angularVelocity, -m_localVelo.Z(),
+                                                          m_radius, .08);
         }
 
-        const auto brakeTorque = m_brakeFrictionTorque * m_brake +
+        auto serviceBrakeTorque = m_brakeFrictionTorque * m_brake;
+        if( m_antiLockBrakes && dt > 0 && m_radius > 0 && std::abs(m_localVelo.Z()) > 3 )
+        {
+            // Release the service brake before locking; handbrake remains explicit.
+            const auto minimumOmega = .88 * std::abs(m_localVelo.Z()) / m_radius;
+            serviceBrakeTorque = std::min(serviceBrakeTorque,
+                std::max(physics_Num(0), (std::abs(m_angularVelocity) - minimumOmega) * m_inertia / dt));
+        }
+        const auto brakeTorque = serviceBrakeTorque +
                                  m_handbrakeFrictionTorque * m_handbrake + m_rollingResistanceTorque;
         applyAngularFriction( brakeTorque, dt );
 
@@ -589,23 +609,7 @@ namespace workphone
             return Vector3<physics_Num>::zero();
         }
 
-        physics_Num forceMagnitude = static_cast<physics_Num>( 0.0 );
-        const auto  brushRatio = requestedMagnitude / staticLimit;
-        if( brushRatio < static_cast<physics_Num>( 3.0 ) )
-        {
-            forceMagnitude =
-                requestedMagnitude *
-                ( static_cast<physics_Num>( 1.0 ) - brushRatio / static_cast<physics_Num>( 3.0 ) +
-                  ( brushRatio * brushRatio ) / static_cast<physics_Num>( 27.0 ) );
-            if( forceMagnitude > staticLimit )
-            {
-                forceMagnitude = staticLimit;
-            }
-        }
-        else
-        {
-            forceMagnitude = slidingLimit;
-        }
+        const auto forceMagnitude = handling::brushMagnitude(requestedMagnitude, staticLimit, slidingLimit);
 
         const auto result = requestedForce * ( forceMagnitude / requestedMagnitude );
 
@@ -1191,6 +1195,8 @@ namespace workphone
         properties->setProperty( "Wheel Velocity", getWheelVelo(), true );
         properties->setProperty( "Local Velocity", getLocalVelo(), true );
         properties->setProperty( "Stable Contacts", m_implicitSuspension );
+        properties->setProperty( "Traction Control", m_tractionControl );
+        properties->setProperty( "Anti Lock Brakes", m_antiLockBrakes );
         properties->setProperty( "Contact Effective Mass", m_contactEffectiveMass );
         properties->setProperty( "Contact Acceleration", m_contactAcceleration );
         properties->setProperty( "Suspension Force", getSuspensionForceVector(), true );
@@ -1235,6 +1241,8 @@ namespace workphone
         properties->getPropertyValue( "Radius", radius );
         properties->getPropertyValue( "Suspension Travel", suspensionTravel );
         properties->getPropertyValue( "Stable Contacts", m_implicitSuspension );
+        properties->getPropertyValue( "Traction Control", m_tractionControl );
+        properties->getPropertyValue( "Anti Lock Brakes", m_antiLockBrakes );
         properties->getPropertyValue( "Contact Effective Mass", m_contactEffectiveMass );
         m_contactEffectiveMass = clampNonNegativeFinite(m_contactEffectiveMass);
         properties->getPropertyValue( "Contact Acceleration", m_contactAcceleration );

@@ -719,8 +719,24 @@ namespace workphone
         WP_LOG( String( "Vehicle smoke phase " ) + StringUtil::toString( m_smokePhase ) +
                 ( passed ? ": PASS" : ": FAIL" ) + " position=" + StringUtil::toString( position ) +
                 " speed=" + StringUtil::toString( speed ) +
+                " min height=" + StringUtil::toString(m_smokeMinHeight) +
+                " max height=" + StringUtil::toString(m_smokeMaxHeight) +
+                " orientation=" + StringUtil::toString(body->getTransform().getOrientation()) +
+                " angular velocity=" + StringUtil::toString(body->getAngularVelocity()) +
                 " height range=" + StringUtil::toString( heightRange ) +
                 " peak vertical speed=" + StringUtil::toString( m_smokePeakVerticalSpeed ) );
+        if( auto car = m_vehicleActor->getComponent<scene::CarController>() )
+            for( u32 i = 0; i < 4; ++i )
+            {
+                auto wheel = car->getVehicleController()->getWheelController(i);
+                float load = 0, acceleration = 0;
+                auto props = wheel->getProperties();
+                props->getPropertyValue("Normal Force", load);
+                props->getPropertyValue("Contact Acceleration", acceleration);
+                WP_LOG("Handling wheel " + StringUtil::toString(i) + " compression=" +
+                    StringUtil::toString(wheel->getCompression()) + " load=" + StringUtil::toString(load) +
+                    " acceleration=" + StringUtil::toString(acceleration));
+            }
         m_smokeMinHeight = std::numeric_limits<real_Num>::max();
         m_smokeMaxHeight = std::numeric_limits<real_Num>::lowest();
         m_smokePeakVerticalSpeed = 0.0f;

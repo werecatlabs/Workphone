@@ -64,6 +64,9 @@ namespace workphone
             VehicleDriveType::RearWheelDrive; ///< The drive type configuration.
         physics_Num m_editSteeringScale = static_cast<physics_Num>( 70.0 );
         bool m_keyboardInput = true;
+        physics_Num m_steeringRate = 0;
+        physics_Num m_steeringWheelbase = 0;
+        physics_Num m_steeringAcceleration = 0;
         physics_Num m_playSteeringScale = static_cast<physics_Num>( 50.0 );
         physics_Num m_defaultMass = static_cast<physics_Num>( 1000.0 );
     };
