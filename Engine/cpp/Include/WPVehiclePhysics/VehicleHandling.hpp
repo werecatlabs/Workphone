@@ -40,6 +40,28 @@ namespace workphone::handling
         return std::clamp( omega, rolling - allowance, rolling + allowance );
     }
 
+    inline double slipLimitedTorque(double torque, double omega, double speed, double radius,
+                                    double inertia, double dt)
+    {
+        if (dt <= 0 || inertia <= 0 || radius <= 0)
+            return torque;
+        const auto predicted = omega + torque * dt / inertia;
+        const auto limited = rollingLimit(predicted, speed, radius, .08);
+        const auto allowed = (limited - omega) * inertia / dt;
+        // Traction control cuts requested torque; it never rewrites wheel speed
+        // or invents braking torque to remove an existing slide.
+        return torque >= 0 ? std::clamp(allowed, 0.0, torque) : std::clamp(allowed, torque, 0.0);
+    }
+
+    inline double brakeTorque(double requested, double omega, double speed, double radius,
+                              double inertia, double dt)
+    {
+        if (dt <= 0 || radius <= 0 || std::abs(speed) <= 3)
+            return requested;
+        const auto minimumOmega = .88 * std::abs(speed) / radius;
+        return std::min(requested, std::max(0.0, (std::abs(omega) - minimumOmega) * inertia / dt));
+    }
+
     inline double brushMagnitude( double demand, double peak, double sliding )
     {
         if( peak <= 0 || demand <= 0 )

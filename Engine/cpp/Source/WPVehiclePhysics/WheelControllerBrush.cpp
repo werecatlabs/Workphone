@@ -446,20 +446,16 @@ namespace workphone
                 driveTorque = handling::tractionTorque(driveTorque, m_normalForce,
                     m_staticFrictionCoefficient, m_grip, lateralDemand, m_radius);
             }
+            if( m_tractionControl && isPoweredWheel() )
+                driveTorque = handling::slipLimitedTorque(driveTorque, m_angularVelocity,
+                    -m_localVelo.Z(), m_radius, m_inertia, dt);
             m_angularVelocity += ( driveTorque * dt ) / m_inertia;
-            if( m_tractionControl && isPoweredWheel() && m_driveTorque != 0 )
-                m_angularVelocity = handling::rollingLimit(m_angularVelocity, -m_localVelo.Z(),
-                                                          m_radius, .08);
         }
 
         auto serviceBrakeTorque = m_brakeFrictionTorque * m_brake;
-        if( m_antiLockBrakes && dt > 0 && m_radius > 0 && std::abs(m_localVelo.Z()) > 3 )
-        {
-            // Release the service brake before locking; handbrake remains explicit.
-            const auto minimumOmega = .88 * std::abs(m_localVelo.Z()) / m_radius;
-            serviceBrakeTorque = std::min(serviceBrakeTorque,
-                std::max(physics_Num(0), (std::abs(m_angularVelocity) - minimumOmega) * m_inertia / dt));
-        }
+        if( m_antiLockBrakes )
+            serviceBrakeTorque = handling::brakeTorque(serviceBrakeTorque, m_angularVelocity,
+                -m_localVelo.Z(), m_radius, m_inertia, dt);
         const auto brakeTorque = serviceBrakeTorque +
                                  m_handbrakeFrictionTorque * m_handbrake + m_rollingResistanceTorque;
         applyAngularFriction( brakeTorque, dt );
@@ -614,8 +610,6 @@ namespace workphone
         const auto result = requestedForce * ( forceMagnitude / requestedMagnitude );
 
 #if !WP_FINAL
-        WP_ASSERT( isFiniteValue( brushRatio ) );
-        WP_ASSERT( brushRatio >= static_cast<physics_Num>( 0.0 ) );
         WP_ASSERT( isFiniteValue( forceMagnitude ) );
         WP_ASSERT( forceMagnitude >= static_cast<physics_Num>( 0.0 ) );
         WP_ASSERT( forceMagnitude <= staticLimit + Math<physics_Num>::epsilon() );
