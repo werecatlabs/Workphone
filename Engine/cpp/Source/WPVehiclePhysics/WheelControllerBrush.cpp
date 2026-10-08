@@ -390,32 +390,38 @@ namespace workphone
         const auto sprungWeightForce = vehicleMass * m_massFraction * static_cast<physics_Num>( 2.0 ) *
                                        static_cast<physics_Num>( 9.81 ) * m_compression;
         const auto damperForce = -verticalVelocity * m_damping;
-        auto       suspensionMagnitude = springForce + sprungWeightForce + damperForce;
+        auto suspensionMagnitude = springForce + sprungWeightForce + damperForce;
         if( m_implicitSuspension && dt > 0 )
         {
             // Backward Euler for a sprung corner. Retains the static spring rate while
             // avoiding an explicit spring/damper instability at low render frame rates.
-            const auto sprungMass = Math<physics_Num>::max( vehicleMass * m_massFraction,
-                                                           static_cast<physics_Num>( 1.0 ) );
-            // Four springs act on the same rigid body. Use a conservative coupled
-            // response bound, rather than treating each contact as an isolated mass.
-            const auto effectiveMass = (m_contactEffectiveMass > 0 ? m_contactEffectiveMass : sprungMass) / static_cast<physics_Num>(2);
-            const auto preloadRate = m_suspensionTravel > Math<physics_Num>::epsilon() ?
-                vehicleMass * m_massFraction * static_cast<physics_Num>( 19.62 ) / m_suspensionTravel : 0;
+            const auto sprungMass =
+                Math<physics_Num>::max( vehicleMass * m_massFraction, static_cast<physics_Num>( 1.0 ) );
+            // Allow for coupled contacts while retaining spring and damper response.
+            // Excessively reducing this mass makes stiff race suspension floaty.
+            const auto effectiveMass =
+                ( m_contactEffectiveMass > 0 ? m_contactEffectiveMass : sprungMass ) /
+                static_cast<physics_Num>( 2 );
+            const auto preloadRate = m_suspensionTravel > Math<physics_Num>::epsilon()
+                                         ? vehicleMass * m_massFraction *
+                                               static_cast<physics_Num>( 19.62 ) / m_suspensionTravel
+                                         : 0;
             const auto wheelRate = m_springRate + preloadRate;
             const auto response = m_damping * dt + wheelRate * dt * dt;
-            suspensionMagnitude = ( springForce + sprungWeightForce -
-                (m_damping + wheelRate * dt) * verticalVelocity + response * sprungMass / effectiveMass * m_contactAcceleration ) /
-                (static_cast<physics_Num>(1.0) + response / effectiveMass);
+            suspensionMagnitude =
+                ( springForce + sprungWeightForce - ( m_damping + wheelRate * dt ) * verticalVelocity +
+                  response * sprungMass / effectiveMass * m_contactAcceleration ) /
+                ( static_cast<physics_Num>( 1.0 ) + response / effectiveMass );
         }
         suspensionMagnitude = clampNonNegativeFinite( suspensionMagnitude );
 
         m_normalForce = suspensionMagnitude;
-        auto contactNormal=up;
-        if(m_implicitSuspension)
+        auto contactNormal = up;
+        if( m_implicitSuspension )
         {
-            contactNormal=m_hit->getNormal();
-            if(contactNormal.lengthSquared()<Math<physics_Num>::epsilon())contactNormal=Vector3<physics_Num>::unitY();
+            contactNormal = m_hit->getNormal();
+            if( contactNormal.lengthSquared() < Math<physics_Num>::epsilon() )
+                contactNormal = Vector3<physics_Num>::unitY();
             contactNormal.normalise();
         }
         m_suspensionForce = contactNormal * suspensionMagnitude;
@@ -441,48 +447,54 @@ namespace workphone
             auto driveTorque = m_driveTorque;
             if( m_tractionControl && isPoweredWheel() )
             {
-                const auto lateralDemand = m_lateralStiffness * m_grip *
-                    std::atan2(m_localVelo.X(), std::max(std::abs(m_localVelo.Z()), physics_Num(3)));
-                driveTorque = handling::tractionTorque(driveTorque, m_normalForce,
-                    m_staticFrictionCoefficient, m_grip, lateralDemand, m_radius);
+                const auto lateralDemand =
+                    m_lateralStiffness * m_grip *
+                    std::atan2( m_localVelo.X(),
+                                std::max( std::abs( m_localVelo.Z() ), physics_Num( 3 ) ) );
+                driveTorque =
+                    handling::tractionTorque( driveTorque, m_normalForce, m_staticFrictionCoefficient,
+                                              m_grip, lateralDemand, m_radius );
             }
             if( m_tractionControl && isPoweredWheel() )
-                driveTorque = handling::slipLimitedTorque(driveTorque, m_angularVelocity,
-                    -m_localVelo.Z(), m_radius);
+                driveTorque = handling::slipLimitedTorque( driveTorque, m_angularVelocity,
+                                                           -m_localVelo.Z(), m_radius );
             m_angularVelocity += ( driveTorque * dt ) / m_inertia;
         }
 
         auto serviceBrakeTorque = m_brakeFrictionTorque * m_brake;
         if( m_antiLockBrakes )
-            serviceBrakeTorque = handling::brakeTorque(serviceBrakeTorque, m_angularVelocity,
-                -m_localVelo.Z(), m_radius, m_inertia, dt);
-        const auto brakeTorque = serviceBrakeTorque +
-                                 m_handbrakeFrictionTorque * m_handbrake + m_rollingResistanceTorque;
+            serviceBrakeTorque = handling::brakeTorque( serviceBrakeTorque, m_angularVelocity,
+                                                        -m_localVelo.Z(), m_radius, m_inertia, dt );
+        const auto brakeTorque =
+            serviceBrakeTorque + m_handbrakeFrictionTorque * m_handbrake + m_rollingResistanceTorque;
         applyAngularFriction( brakeTorque, dt );
 
         m_angularVelocity =
             clampSignedFinite( m_angularVelocity, MaxAngularVelocity - static_cast<physics_Num>( 1.0 ) );
 
-        const auto cornerMass = Math<physics_Num>::max(vehicleMass * m_massFraction, physics_Num(1));
+        const auto cornerMass = Math<physics_Num>::max( vehicleMass * m_massFraction, physics_Num( 1 ) );
         auto brushLocalForce = calculateBrushForce( m_normalForce, dt, cornerMass );
         if( m_implicitSuspension && dt > Math<physics_Num>::epsilon() && m_inertia > 0 )
         {
             // Limit tire impulses to the impulse that would bring the wheel and contact
             // patch to rolling speed. A stiff tire must not reverse slip every frame.
-            const auto cornerMass = Math<physics_Num>::max(vehicleMass*m_massFraction,static_cast<physics_Num>(1));
-            const auto slipSpeed = m_angularVelocity*m_radius + m_localVelo.Z();
-            const auto impulseForce = Math<physics_Num>::Abs(slipSpeed) /
-                (dt*(m_radius*m_radius/m_inertia + static_cast<physics_Num>(1)/cornerMass));
-            brushLocalForce.Z() = Math<physics_Num>::clamp(brushLocalForce.Z(),-impulseForce,impulseForce);
-            const auto lateralLimit = Math<physics_Num>::Abs(m_localVelo.X())*cornerMass/(static_cast<physics_Num>(4)*dt);
-            brushLocalForce.X() = Math<physics_Num>::clamp(brushLocalForce.X(),-lateralLimit,lateralLimit);
+            const auto slipSpeed = m_angularVelocity * m_radius + m_localVelo.Z();
+            const auto impulseForce = Math<physics_Num>::Abs( slipSpeed ) /
+                                      ( dt * ( m_radius * m_radius / m_inertia +
+                                               static_cast<physics_Num>( 1 ) / cornerMass ) );
+            brushLocalForce.Z() =
+                Math<physics_Num>::clamp( brushLocalForce.Z(), -impulseForce, impulseForce );
+            const auto lateralLimit = Math<physics_Num>::Abs( m_localVelo.X() ) * cornerMass /
+                                      ( static_cast<physics_Num>( 4 ) * dt );
+            brushLocalForce.X() =
+                Math<physics_Num>::clamp( brushLocalForce.X(), -lateralLimit, lateralLimit );
         }
         auto vehicleLocalRoadForce = steeringRotation * brushLocalForce;
         m_roadForce = vehicleWorldTransform.transformVector( vehicleLocalRoadForce );
-        if(m_implicitSuspension)
+        if( m_implicitSuspension )
         {
-            m_roadForce -= contactNormal*m_roadForce.dotProduct(contactNormal);
-            vehicleLocalRoadForce=vehicleWorldTransform.inverseTransformVector(m_roadForce);
+            m_roadForce -= contactNormal * m_roadForce.dotProduct( contactNormal );
+            vehicleLocalRoadForce = vehicleWorldTransform.inverseTransformVector( m_roadForce );
         }
 
 #if !WP_FINAL
@@ -553,14 +565,16 @@ namespace workphone
                                               lateralSpeed * lateralSpeed );
 
         auto requestedLongitudinalForce = m_longitudinalStiffness * m_grip * m_slipRatio;
-        if(m_implicitSuspension && dt > 0 && m_inertia > 0)
+        if( m_implicitSuspension && dt > 0 && m_inertia > 0 )
         {
             // Bound the demand before combined-slip saturation. Limiting only
             // the output let transient pre-contact wheel spin consume all rear
             // lateral grip, even when its longitudinal impulse was later clipped.
-            const auto impulseLimit = std::abs(longitudinalSlipSpeed) /
-                (dt * (m_radius * m_radius / m_inertia + physics_Num(1) / cornerMass));
-            requestedLongitudinalForce = std::clamp(requestedLongitudinalForce, -impulseLimit, impulseLimit);
+            const auto impulseLimit =
+                std::abs( longitudinalSlipSpeed ) /
+                ( dt * ( m_radius * m_radius / m_inertia + physics_Num( 1 ) / cornerMass ) );
+            requestedLongitudinalForce =
+                std::clamp( requestedLongitudinalForce, -impulseLimit, impulseLimit );
         }
         const auto requestedLateralForce = -m_lateralStiffness * m_grip * m_slipAngle;
         const auto requestedForce = Vector3<physics_Num>(

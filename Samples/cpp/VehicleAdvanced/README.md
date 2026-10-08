@@ -154,10 +154,12 @@ Verified on Windows x64 / v145 using WPGraphics (DX11), WPPhysics,
 WPVehiclePhysics and WPProcedural. Both Debug and RelWithDebInfo build with the
 original and advanced samples present. Procedural service and rotated-inertia
 regression tests pass in both configurations; the 100-seed circuit check passes.
-After the detailed wheel revision, the Debug five-phase driving check and visual
-steering comparison pass. RelWithDebInfo also passes the steering comparison, but
-its broader driving check intermittently exceeds the suspension-height limit
-during turning or braking; this remains a simulation stability issue.
+The assisted handling revision passes the five-phase driving check in
+RelWithDebInfo with seed 7 / low graphics and seed 42 / high graphics. The turn
+now uses full throttle and full steering input, and checks body slip and yaw
+rate as well as suspension and render poses. See [HANDLING.md](HANDLING.md) for
+the setup, tuning settings and measured results. Earlier Debug checks predate
+this handling revision.
 Before the wheel revision, the advanced sample completed a checkpointed lap under
 physics control in approximately 154 seconds in RelWithDebInfo. Car, overhead
 circuit, corner and chase-camera views were captured and reviewed, with the car

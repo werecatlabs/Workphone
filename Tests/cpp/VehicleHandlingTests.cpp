@@ -40,20 +40,17 @@ int main()
            "Tyre loses grip abruptly at saturation" );
     check( brushMagnitude( 4000, 1000, 800 ) > brushMagnitude( 8000, 1000, 800 ),
            "Sliding grip does not transition progressively" );
-    check(std::abs(slipLimitedTorque(4000, 140, 36, .36)) < 1e-9,
-          "Traction control drives an already spinning tyre");
-    check(slipLimitedTorque(4000, 100, 36, .36) > 0,
-          "Traction control prevents acceleration at rolling speed");
-    check(slipLimitedTorque(4000, 200, 36, .36) == 0,
-          "Traction control invents braking torque");
-    check(std::abs(brakeTorque(3000, 100, 36, .36, 2, .02) - 1200) < 1e-9,
-          "ABS permits service brake lockup");
-    check(std::abs(brakeTorque(3000, -100, -36, .36, 2, .02) - 1200) < 1e-9,
-          "ABS changes with travel direction");
-    check(brakeTorque(3000, 80, 36, .36, 2, .02) == 0,
-          "ABS does not release a locking tyre");
-    check(brakeTorque(3000, 2, .5, .36, 2, .02) == 3000,
-          "ABS prevents stopping at walking speed");
+    check( std::abs( slipLimitedTorque( 4000, 140, 36, .36 ) ) < 1e-9,
+           "Traction control drives an already spinning tyre" );
+    check( slipLimitedTorque( 4000, 100, 36, .36 ) > 0,
+           "Traction control prevents acceleration at rolling speed" );
+    check( slipLimitedTorque( 4000, 200, 36, .36 ) == 0, "Traction control invents braking torque" );
+    check( std::abs( brakeTorque( 3000, 100, 36, .36, 2, .02 ) - 1200 ) < 1e-9,
+           "ABS permits service brake lockup" );
+    check( std::abs( brakeTorque( 3000, -100, -36, .36, 2, .02 ) - 1200 ) < 1e-9,
+           "ABS changes with travel direction" );
+    check( brakeTorque( 3000, 80, 36, .36, 2, .02 ) == 0, "ABS does not release a locking tyre" );
+    check( brakeTorque( 3000, 2, .5, .36, 2, .02 ) == 3000, "ABS prevents stopping at walking speed" );
     check( brushMagnitude( 100, 0, 0 ) == 0, "Zero load produces force" );
     std::cout << "Vehicle handling regression checks passed.\n";
 }

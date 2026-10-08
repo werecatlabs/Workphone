@@ -1123,7 +1123,7 @@ namespace workphone::scene::race
         auto controllerProperties = vehicle->getProperties();
         controllerProperties->setProperty( "Keyboard Input", false );
         controllerProperties->setProperty( "Steering Rate", 90.f );
-        controllerProperties->setProperty( "Steering Wheelbase", float(config.wheelbaseM) );
+        controllerProperties->setProperty( "Steering Wheelbase", float( config.wheelbaseM ) );
         controllerProperties->setProperty( "Steering Acceleration", 14.f );
         controllerProperties->setProperty( "Play Steering Scale",
                                            float( config.wheels[0].maxSteerRad * 180.0 / pi ) );
@@ -1183,13 +1183,16 @@ namespace workphone::scene::race
             const auto axleGrip = i < 2 ? 1.0 : 1.06;
             wheelProps->setProperty(
                 "Static Friction Coefficient",
-                float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) * axleGrip ) );
-            wheelProps->setProperty( "Sliding Friction Coefficient",
-                                     float( std::min(w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction) * axleGrip * .94 ) );
+                float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) *
+                       axleGrip ) );
+            wheelProps->setProperty(
+                "Sliding Friction Coefficient",
+                float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) *
+                       axleGrip * .94 ) );
             wheelProps->setProperty( "Longitudinal Stiffness",
                                      float( w.tire.longitudinalStiffnessNPerSlip ) );
             wheelProps->setProperty( "Lateral Stiffness", float( w.tire.corneringStiffnessNPerRad *
-                                                              (i < 2 ? 1.0 : 1.10) ) );
+                                                                 ( i < 2 ? 1.0 : 1.10 ) ) );
             wheel->setProperties( wheelProps );
             auto wheelActor = assets.wheels[i];
             wheelActor->setLocalPosition( p );

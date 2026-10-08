@@ -31,26 +31,27 @@ namespace workphone::handling
         return std::clamp( requested, -available * radius, available * radius );
     }
 
-    inline double slipLimitedTorque(double torque, double omega, double speed, double radius)
+    inline double slipLimitedTorque( double torque, double omega, double speed, double radius )
     {
-        if(radius <= 0)
+        if( radius <= 0 )
             return torque;
-        const auto slip = (std::abs(omega * radius) - std::abs(speed)) /
-                          std::max(std::abs(speed), 3.0);
+        const auto slip =
+            ( std::abs( omega * radius ) - std::abs( speed ) ) / std::max( std::abs( speed ), 3.0 );
         // Feedback from the previous contact solution. Ramp the torque cut to
         // avoid alternating full power and zero power on coarse physics steps.
-        if(torque * omega > 0)
-            return torque * std::clamp((.30 - slip) / .22, 0.0, 1.0);
+        if( torque * omega > 0 )
+            return torque * std::clamp( ( .30 - slip ) / .22, 0.0, 1.0 );
         return torque;
     }
 
-    inline double brakeTorque(double requested, double omega, double speed, double radius,
-                              double inertia, double dt)
+    inline double brakeTorque( double requested, double omega, double speed, double radius,
+                               double inertia, double dt )
     {
-        if (dt <= 0 || radius <= 0 || std::abs(speed) <= 3)
+        if( dt <= 0 || radius <= 0 || std::abs( speed ) <= 3 )
             return requested;
-        const auto minimumOmega = .88 * std::abs(speed) / radius;
-        return std::min(requested, std::max(0.0, (std::abs(omega) - minimumOmega) * inertia / dt));
+        const auto minimumOmega = .88 * std::abs( speed ) / radius;
+        return std::min( requested,
+                         std::max( 0.0, ( std::abs( omega ) - minimumOmega ) * inertia / dt ) );
     }
 
     inline double brushMagnitude( double demand, double peak, double sliding )

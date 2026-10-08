@@ -361,9 +361,11 @@ namespace workphone
                     // The assisted controller can be travelling toward the input
                     // or applying its speed limit. Check the authored lock rather
                     // than requiring an instantaneous, unfiltered input angle.
-                    if( !std::isfinite(float(angle)) || std::abs(float(angle)) >
-                        float(m_assets.vehicle.physics.wheels[i].maxSteerRad * 180.0 /
-                              3.14159265358979323846) + .01f )
+                    if( !std::isfinite( float( angle ) ) ||
+                        std::abs( float( angle ) ) >
+                            float( m_assets.vehicle.physics.wheels[i].maxSteerRad * 180.0 /
+                                   3.14159265358979323846 ) +
+                                .01f )
                     {
                         WP_LOG_ERROR( "Vehicle smoke: steering input lost its configured angle scale." );
                         m_smokeTestPassed = false;
@@ -377,9 +379,14 @@ namespace workphone
                     // that the visible steering frame matches the tyre contact frame.
                     // Physics can advance after the render wheel pose was
                     // published. Allow one tick of the configured steering slew.
-                    const auto steeringTolerance = .002f + float(90.0 *
-                        std::clamp(core::IApplicationManager::instance()->getTimer()->getDeltaTime(TaskId::Physics),
-                                   0.0, 1.0 / 30.0) * 3.14159265358979323846 / 180.0);
+                    const auto steeringTolerance =
+                        .002f +
+                        float(
+                            90.0 *
+                            std::clamp( core::IApplicationManager::instance()->getTimer()->getDeltaTime(
+                                            TaskId::Physics ),
+                                        0.0, 1.0 / 30.0 ) *
+                            3.14159265358979323846 / 180.0 );
                     if( ( expectedAxle - renderedAxle ).length() > steeringTolerance )
                     {
                         WP_LOG_ERROR( "Vehicle smoke: rendered steering disagrees with wheel physics." );
@@ -678,10 +685,14 @@ namespace workphone
         const auto speed = horizontalVelocity.length();
         if( speed > 5 )
         {
-            const auto localVelocity = body->getTransform().getOrientation().inverse() * horizontalVelocity;
-            m_smokePeakBodySlip = std::max(m_smokePeakBodySlip,
-                real_Num(std::atan2(std::abs(localVelocity.X()), std::max(std::abs(localVelocity.Z()), real_Num(.1)))));
-            m_smokePeakYawRate = std::max(m_smokePeakYawRate, std::abs(body->getAngularVelocity().Y()));
+            const auto localVelocity =
+                body->getTransform().getOrientation().inverse() * horizontalVelocity;
+            m_smokePeakBodySlip = std::max(
+                m_smokePeakBodySlip,
+                real_Num( std::atan2( std::abs( localVelocity.X() ),
+                                      std::max( std::abs( localVelocity.Z() ), real_Num( .1 ) ) ) ) );
+            m_smokePeakYawRate =
+                std::max( m_smokePeakYawRate, std::abs( body->getAngularVelocity().Y() ) );
         }
         if( m_smokeTime < phaseDuration )
             return;
@@ -734,25 +745,26 @@ namespace workphone
         WP_LOG( String( "Vehicle smoke phase " ) + StringUtil::toString( m_smokePhase ) +
                 ( passed ? ": PASS" : ": FAIL" ) + " position=" + StringUtil::toString( position ) +
                 " speed=" + StringUtil::toString( speed ) +
-                " min height=" + StringUtil::toString(m_smokeMinHeight) +
-                " max height=" + StringUtil::toString(m_smokeMaxHeight) +
-                " orientation=" + StringUtil::toString(body->getTransform().getOrientation()) +
-                " angular velocity=" + StringUtil::toString(body->getAngularVelocity()) +
-                " peak body slip=" + StringUtil::toString(m_smokePeakBodySlip) +
-                " peak yaw rate=" + StringUtil::toString(m_smokePeakYawRate) +
+                " min height=" + StringUtil::toString( m_smokeMinHeight ) +
+                " max height=" + StringUtil::toString( m_smokeMaxHeight ) +
+                " orientation=" + StringUtil::toString( body->getTransform().getOrientation() ) +
+                " angular velocity=" + StringUtil::toString( body->getAngularVelocity() ) +
+                " peak body slip=" + StringUtil::toString( m_smokePeakBodySlip ) +
+                " peak yaw rate=" + StringUtil::toString( m_smokePeakYawRate ) +
                 " height range=" + StringUtil::toString( heightRange ) +
                 " peak vertical speed=" + StringUtil::toString( m_smokePeakVerticalSpeed ) );
         if( auto car = m_vehicleActor->getComponent<scene::CarController>() )
             for( u32 i = 0; i < 4; ++i )
             {
-                auto wheel = car->getVehicleController()->getWheelController(i);
+                auto wheel = car->getVehicleController()->getWheelController( i );
                 float load = 0, acceleration = 0;
                 auto props = wheel->getProperties();
-                props->getPropertyValue("Normal Force", load);
-                props->getPropertyValue("Contact Acceleration", acceleration);
-                WP_LOG("Handling wheel " + StringUtil::toString(i) + " compression=" +
-                    StringUtil::toString(wheel->getCompression()) + " load=" + StringUtil::toString(load) +
-                    " acceleration=" + StringUtil::toString(acceleration));
+                props->getPropertyValue( "Normal Force", load );
+                props->getPropertyValue( "Contact Acceleration", acceleration );
+                WP_LOG( "Handling wheel " + StringUtil::toString( i ) +
+                        " compression=" + StringUtil::toString( wheel->getCompression() ) +
+                        " load=" + StringUtil::toString( load ) +
+                        " acceleration=" + StringUtil::toString( acceleration ) );
             }
         m_smokeMinHeight = std::numeric_limits<real_Num>::max();
         m_smokeMaxHeight = std::numeric_limits<real_Num>::lowest();
