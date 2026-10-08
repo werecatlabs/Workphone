@@ -103,18 +103,12 @@ namespace workphone
 
     Array<SmartPtr<IEventListener>> StateContext::snapshotEventListeners() const
     {
-        auto values = m_eventListeners.readLocked();
-        return Array<SmartPtr<IEventListener>>( values.begin(), values.end() );
+        return m_eventListeners.snapshot();
     }
 
     void StateContext::clearEventListeners()
     {
-        // Release references outside the lock: destructors may re-enter the context.
-        decltype( m_eventListeners )::storage_type removed;
-        {
-            auto values = m_eventListeners.writeLocked();
-            removed = std::move( *values );
-        }
+        m_eventListeners.clear();
     }
 
     void StateContext::appendStateQueue( SmartPtr<IStateQueue> stateQueue )
@@ -551,7 +545,8 @@ namespace workphone
         }
 
         ScopedLock lock( &m_stateListeners );
-        if( std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener ) == m_stateListeners.end() )
+        if( std::find( m_stateListeners.begin(), m_stateListeners.end(), stateListener ) ==
+            m_stateListeners.end() )
         {
             m_stateListeners.push_back( stateListener );
         }
@@ -602,14 +597,14 @@ namespace workphone
             return;
         }
 
-        auto values = m_eventListeners.writeLocked();
-        if( std::find( values.begin(), values.end(), eventListener ) != values.end() )
+        if( std::find( m_eventListeners.begin(), m_eventListeners.end(), eventListener ) !=
+            m_eventListeners.end() )
         {
             WP_LOG_WARNING( "StateContext::addEventListener: listener is already in context." );
             return;
         }
 
-        values->push_back( eventListener );
+        m_eventListeners.push_back( eventListener );
     }
 
     bool StateContext::removeEventListener( SmartPtr<IEventListener> eventListener )
@@ -622,11 +617,10 @@ namespace workphone
 
         bool removed = false;
         {
-            auto values = m_eventListeners.writeLocked();
-            auto it = std::find( values.begin(), values.end(), eventListener );
-            if( it != values.end() )
+            auto it = std::find( m_eventListeners.begin(), m_eventListeners.end(), eventListener );
+            if( it != m_eventListeners.end() )
             {
-                values->erase( it );
+                m_eventListeners.erase( it );
                 removed = true;
             }
         }
