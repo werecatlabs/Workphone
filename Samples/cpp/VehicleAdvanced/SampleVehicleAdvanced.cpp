@@ -253,12 +253,15 @@ namespace workphone
             auto vehicleController = car->getVehicleController();
             m_raceScene->configurePhysics();
 
-            if( m_effectsEnabled && !m_effects.load(
-                    m_quality == procedural::VehicleAppearanceQuality::Preview ? 0u :
-                    m_quality == procedural::VehicleAppearanceQuality::Standard ? 1u : 2u, m_seed ) )
+            if( m_effectsEnabled &&
+                !m_effects.load( m_quality == procedural::VehicleAppearanceQuality::Preview    ? 0u
+                                 : m_quality == procedural::VehicleAppearanceQuality::Standard ? 1u
+                                                                                               : 2u,
+                                 m_seed ) )
             {
                 WP_LOG_WARNING( "Vehicle visual effects initialization failed." );
-                if( !m_effectsSmokeTest ) m_effectsEnabled = false;
+                if( !m_effectsSmokeTest )
+                    m_effectsEnabled = false;
             }
             if( m_audioEnabled && !m_audio.load( applicationManager->getSoundManager() ) )
             {
@@ -371,7 +374,8 @@ namespace workphone
         if( Thread::getCurrentTask() == TaskId::Render )
         {
             updateRenderCamera();
-            if( m_effectsEnabled ) updateVehicleEffects();
+            if( m_effectsEnabled )
+                updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
             {
                 auto car = m_vehicleActor->getComponent<scene::CarController>();
@@ -683,96 +687,124 @@ namespace workphone
 
     void SampleVehicleAdvanced::updateVehicleEffects()
     {
+        if( m_effectsSmokeTest && m_effectsTestPhase >= 5 )
+            return;
         auto app = core::IApplicationManager::instance();
-        const auto dt = float(app->getTimer()->getDeltaTime());
-        if(!std::isfinite(dt) || dt<=0) return;
+        const auto dt = float( app->getTimer()->getDeltaTime() );
+        if( !std::isfinite( dt ) || dt <= 0 )
+            return;
         advanced::VehicleEffectsFrame frame;
-        frame.playing=app->isPlaying() && !app->isPaused();
-        frame.position=m_vehicleActor->getPosition();
-        frame.velocity=m_vehicleActor->getComponent<scene::Rigidbody>()->getLinearVelocity();
-        auto vehicle=m_vehicleActor->getComponent<scene::CarController>()->getVehicleController();
-        for(u32 i=0;i<4;++i)
+        frame.playing = app->isPlaying() && !app->isPaused();
+        frame.position = m_vehicleActor->getPosition();
+        frame.velocity = m_vehicleActor->getComponent<scene::Rigidbody>()->getLinearVelocity();
+        auto vehicle = m_vehicleActor->getComponent<scene::CarController>()->getVehicleController();
+        for( u32 i = 0; i < 4; ++i )
         {
-            auto wheel=vehicle->getWheelController(i);
-            if(!wheel) continue;
-            auto properties=wheel->getProperties();
-            bool grounded=false; double slip=0;
-            properties->getPropertyValue("Is On Ground",grounded);
-            properties->getPropertyValue("Slip Velocity",slip);
-            frame.slip[i]=float(slip);
-            frame.width[i]=float(m_assets.vehicle.physics.wheels[i].tire.widthM*.82);
-            if(!grounded) continue;
-            const auto hub=wheel->getWorldTransform().getPosition();
-            SmartPtr<physics::IRaycastHit> hit=make_ptr<physics::RaycastHit>();
+            auto wheel = vehicle->getWheelController( i );
+            if( !wheel )
+                continue;
+            auto properties = wheel->getProperties();
+            bool grounded = false;
+            double slip = 0;
+            properties->getPropertyValue( "Is On Ground", grounded );
+            properties->getPropertyValue( "Slip Velocity", slip );
+            frame.slip[i] = float( slip );
+            frame.width[i] = float( m_assets.vehicle.physics.wheels[i].tire.widthM * .82 );
+            if( !grounded )
+                continue;
+            const auto hub = wheel->getWorldTransform().getPosition();
+            SmartPtr<physics::IRaycastHit> hit = make_ptr<physics::RaycastHit>();
             // Reuse the vehicle callback, which excludes its own chassis.
-            if(vehicle->getBody()->castWorldRay(Ray3<real_Num>(hub+Vector3F(0,.25f,0),Vector3F(0,-1,0)),hit) &&
-               hit->getDistance()<1.5f && hit->getNormal().y>.5f)
+            if( vehicle->getBody()->castWorldRay(
+                    Ray3<real_Num>( hub + Vector3F( 0, .25f, 0 ), Vector3F( 0, -1, 0 ) ), hit ) &&
+                hit->getDistance() < 1.5f && hit->getNormal().y > .5f )
             {
-                frame.grounded[i]=true;
-                frame.contact[i]=hit->getPoint(); frame.normal[i]=hit->getNormal();
-                const auto index=m_assets.circuit.nearest(frame.contact[i]);
-                auto offset=frame.contact[i]-m_assets.circuit.samples[index].position;
-                offset.y=0;
-                frame.onRoad[i]=offset.length()<6.85f;
+                frame.grounded[i] = true;
+                frame.contact[i] = hit->getPoint();
+                frame.normal[i] = hit->getNormal();
+                const auto index = m_assets.circuit.nearest( frame.contact[i] );
+                auto offset = frame.contact[i] - m_assets.circuit.samples[index].position;
+                offset.y = 0;
+                frame.onRoad[i] = offset.length() < 6.85f;
             }
         }
-        if(m_effectsSmokeTest)
+        if( m_effectsSmokeTest )
         {
-            m_effectsTestGrounded = m_effectsTestGrounded ||
-                std::any_of(frame.grounded.begin(),frame.grounded.end(),[](bool contact){return contact;});
+            m_effectsTestGrounded =
+                m_effectsTestGrounded || std::any_of( frame.grounded.begin(), frame.grounded.end(),
+                                                      []( bool contact ) { return contact; } );
             const bool road = m_effectsTestPhase == 0;
             const bool dust = m_effectsTestPhase == 2 || m_effectsTestPhase == 3;
-            frame.position={0,.45f,float(4-m_effectsTestTime*4)};
-            frame.velocity=road && m_effectsTestTime<2.92 ? Vector3F(0,0,-10) :
-                dust ? Vector3F(0,0,-20) : Vector3F::zero();
+            frame.position = { 0, .45f, float( 4 - m_effectsTestTime * 4 ) };
+            frame.velocity = road && m_effectsTestTime < 2.92 ? Vector3F( 0, 0, -10 )
+                             : dust                           ? Vector3F( 0, 0, -20 )
+                                                              : Vector3F::zero();
             frame.playing = m_effectsTestPhase != 3;
-            for(size_t i=0;i<4;++i)
+            for( size_t i = 0; i < 4; ++i )
             {
-                frame.contact[i]={i%2 ? .95f : -.95f,.026f,float(4-m_effectsTestTime*4)+(i<2 ? -1.5f : 1.5f)};
-                frame.normal[i]=Vector3F::unitY(); frame.slip[i]=8; frame.width[i]=.28f;
-                frame.grounded[i]=road || dust; frame.onRoad[i]=!dust;
+                frame.contact[i] = { i % 2 ? .95f : -.95f, .026f,
+                                     float( 4 - m_effectsTestTime * 4 ) + ( i < 2 ? -1.5f : 1.5f ) };
+                frame.normal[i] = Vector3F::unitY();
+                frame.slip[i] = 8;
+                frame.width[i] = .28f;
+                frame.grounded[i] = road || dust;
+                frame.onRoad[i] = !dust;
             }
         }
-        m_effects.update(frame,dt);
-        if(!m_effectsSmokeTest) return;
-        m_effectsTestTime+=std::min(dt,.05f);
-        const float durations[] = {3.f,2.f,1.f,1.f,.5f};
-        if(m_effectsTestTime<durations[m_effectsTestPhase]) return;
-        const auto particleCount=m_effects.particles(), decalCount=m_effects.decals();
-        bool passed=m_effects.uploaded();
-        if(m_effectsTestPhase==0)
+        m_effects.update( frame, dt );
+        if( !m_effectsSmokeTest )
+            return;
+        m_effectsTestTime += std::min( dt, .05f );
+        const float durations[] = { 3.f, 2.f, 1.f, 1.f, .5f };
+        if( m_effectsTestTime < durations[m_effectsTestPhase] )
+            return;
+        const auto particleCount = m_effects.particles(), decalCount = m_effects.decals();
+        bool passed = m_effects.uploaded();
+        if( m_effectsTestPhase == 0 )
         {
-            passed=passed && particleCount>0 && decalCount>0 && m_effectsTestGrounded;
-            m_effectsTestEmitted=m_effects.emitted();
-            m_effectsTestDecals=decalCount;
-            if(!m_effectsCapture.empty()) passed=advanced::captureFrame(m_effectsCapture) && passed;
+            passed = passed && particleCount > 0 && decalCount > 0 && m_effectsTestGrounded;
+            m_effectsTestEmitted = m_effects.emitted();
+            m_effectsTestDecals = decalCount;
+            if( !m_effectsCapture.empty() )
+                passed = advanced::captureFrame( m_effectsCapture ) && passed;
         }
-        else if(m_effectsTestPhase==1)
+        else if( m_effectsTestPhase == 1 )
         {
-            passed=passed && particleCount==0 && m_effects.emitted()==m_effectsTestEmitted && decalCount>0;
+            passed = passed && particleCount == 0 && m_effects.emitted() == m_effectsTestEmitted &&
+                     decalCount > 0;
         }
-        else if(m_effectsTestPhase==2)
+        else if( m_effectsTestPhase == 2 )
         {
-            passed=passed && particleCount>0 && m_effects.emitted()>m_effectsTestEmitted && decalCount==m_effectsTestDecals;
-            m_effectsTestEmitted=m_effects.emitted();
-            m_effectsTestParticles=particleCount;
-            if(!m_effectsCapture.empty()) passed=advanced::captureFrame(m_effectsCapture+".dust.bmp") && passed;
+            passed = passed && particleCount > 0 && m_effects.emitted() > m_effectsTestEmitted &&
+                     decalCount == m_effectsTestDecals;
+            m_effectsTestEmitted = m_effects.emitted();
+            m_effectsTestParticles = particleCount;
+            if( !m_effectsCapture.empty() )
+                passed = advanced::captureFrame( m_effectsCapture + ".dust.bmp" ) && passed;
             frame.playing = false;
             m_effects.update( frame, dt );
         }
-        else if(m_effectsTestPhase==3)
+        else if( m_effectsTestPhase == 3 )
         {
-            passed=passed && particleCount==m_effectsTestParticles && m_effects.emitted()==m_effectsTestEmitted && decalCount==m_effectsTestDecals;
+            passed = passed && particleCount == m_effectsTestParticles &&
+                     m_effects.emitted() == m_effectsTestEmitted && decalCount == m_effectsTestDecals;
             m_effects.reset();
-            passed=passed && m_effects.decals()==0 && m_effects.particles()==0;
+            passed = passed && m_effects.decals() == 0 && m_effects.particles() == 0;
         }
         else
-            passed=passed && particleCount==0 && decalCount==0 && m_effects.emitted()==m_effectsTestEmitted;
-        WP_LOG("Vehicle FX smoke phase "+StringUtil::toString(m_effectsTestPhase)+
-               (passed ? ": PASS" : ": FAIL")+" particles="+StringUtil::toString(particleCount)+
-               " decals="+StringUtil::toString(decalCount));
-        if(!passed || m_effectsTestPhase==4) { m_smokeTestPassed=passed; app->setQuit(true); }
-        ++m_effectsTestPhase; m_effectsTestTime=0;
+            passed = passed && particleCount == 0 && decalCount == 0 &&
+                     m_effects.emitted() == m_effectsTestEmitted;
+        WP_LOG( "Vehicle FX smoke phase " + StringUtil::toString( m_effectsTestPhase ) +
+                ( passed ? ": PASS" : ": FAIL" ) +
+                " particles=" + StringUtil::toString( particleCount ) +
+                " decals=" + StringUtil::toString( decalCount ) );
+        if( !passed || m_effectsTestPhase == 4 )
+        {
+            m_smokeTestPassed = passed;
+            app->setQuit( true );
+        }
+        ++m_effectsTestPhase;
+        m_effectsTestTime = 0;
     }
 
     void SampleVehicleAdvanced::updateVehicleAudio()

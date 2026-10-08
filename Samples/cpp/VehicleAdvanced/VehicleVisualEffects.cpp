@@ -284,13 +284,14 @@ namespace workphone::advanced
             if( dust == 0 )
                 fx.dustClock[i] = 0;
         }
-        if( fx.hadVelocity && ( frame.velocity - fx.previousVelocity ).length() > 6.f &&
-            fx.previousVelocity.length() > 8.f )
+        const auto previousSpeed = fx.previousVelocity.length();
+        if( fx.hadVelocity && previousSpeed > 8.f )
         {
-            const auto direction = fx.previousVelocity.normaliseCopy();
-            for( int i = 0; i < 12; ++i )
-                emit( 2, frame.position + direction * 1.7f, Vector3F( 0, 1.5f, 0 ) - direction * 2.f,
-                      .035f, .3f );
+            const auto direction = fx.previousVelocity / previousSpeed;
+            if( previousSpeed - frame.velocity.dotProduct( direction ) > 6.f )
+                for( int i = 0; i < 12; ++i )
+                    emit( 2, frame.position + direction * 1.7f, Vector3F( 0, 1.5f, 0 ) - direction * 2.f,
+                          .035f, .3f );
         }
         fx.previousVelocity = frame.velocity;
         fx.hadVelocity = true;
@@ -323,9 +324,14 @@ namespace workphone::advanced
             for( auto index : { 0u, 1u, 2u, 0u, 2u, 3u } )
                 fx.indices.push_back( base + index );
         }
-        fx.decalMesh->setVisible( !fx.vertices.empty() );
         if( !fx.vertices.empty() )
-            fx.uploaded = fx.decalMesh->updateGeometry( fx.vertices, fx.indices ) && fx.uploaded;
+        {
+            const bool uploaded = fx.decalMesh->updateGeometry( fx.vertices, fx.indices );
+            fx.uploaded = uploaded && fx.uploaded;
+            fx.decalMesh->setVisible( uploaded );
+        }
+        else
+            fx.decalMesh->setVisible( false );
 #endif
     }
     size_t VehicleVisualEffects::particles() const
