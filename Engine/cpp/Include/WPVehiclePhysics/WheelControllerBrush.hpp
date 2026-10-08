@@ -110,7 +110,7 @@ namespace workphone
 
     protected:
         void                 updateWheel( physics_Num dt );
-        Vector3<physics_Num> calculateBrushForce( physics_Num normalForce );
+        Vector3<physics_Num> calculateBrushForce( physics_Num normalForce, physics_Num dt, physics_Num cornerMass );
         void                 integrateFreeSpin( physics_Num dt );
         void                 applyAngularFriction( physics_Num torque, physics_Num dt );
 

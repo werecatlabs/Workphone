@@ -463,7 +463,8 @@ namespace workphone
         m_angularVelocity =
             clampSignedFinite( m_angularVelocity, MaxAngularVelocity - static_cast<physics_Num>( 1.0 ) );
 
-        auto brushLocalForce = calculateBrushForce( m_normalForce );
+        const auto cornerMass = Math<physics_Num>::max(vehicleMass * m_massFraction, physics_Num(1));
+        auto brushLocalForce = calculateBrushForce( m_normalForce, dt, cornerMass );
         if( m_implicitSuspension && dt > Math<physics_Num>::epsilon() && m_inertia > 0 )
         {
             // Limit tire impulses to the impulse that would bring the wheel and contact
@@ -516,7 +517,7 @@ namespace workphone
 #endif
     }
 
-    Vector3<physics_Num> WheelControllerBrush::calculateBrushForce( physics_Num normalForce )
+    Vector3<physics_Num> WheelControllerBrush::calculateBrushForce( physics_Num normalForce, physics_Num dt, physics_Num cornerMass )
     {
 #if !WP_FINAL
         WP_ASSERT( isFiniteValue( normalForce ) );
@@ -551,7 +552,16 @@ namespace workphone
         m_slipVelo = Math<physics_Num>::Sqrt( longitudinalSlipSpeed * longitudinalSlipSpeed +
                                               lateralSpeed * lateralSpeed );
 
-        const auto requestedLongitudinalForce = m_longitudinalStiffness * m_grip * m_slipRatio;
+        auto requestedLongitudinalForce = m_longitudinalStiffness * m_grip * m_slipRatio;
+        if(m_implicitSuspension && dt > 0 && m_inertia > 0)
+        {
+            // Bound the demand before combined-slip saturation. Limiting only
+            // the output let transient pre-contact wheel spin consume all rear
+            // lateral grip, even when its longitudinal impulse was later clipped.
+            const auto impulseLimit = std::abs(longitudinalSlipSpeed) /
+                (dt * (m_radius * m_radius / m_inertia + physics_Num(1) / cornerMass));
+            requestedLongitudinalForce = std::clamp(requestedLongitudinalForce, -impulseLimit, impulseLimit);
+        }
         const auto requestedLateralForce = -m_lateralStiffness * m_grip * m_slipAngle;
         const auto requestedForce = Vector3<physics_Num>(
             requestedLateralForce, static_cast<physics_Num>( 0.0 ), -requestedLongitudinalForce );

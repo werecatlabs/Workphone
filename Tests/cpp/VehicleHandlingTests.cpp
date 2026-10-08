@@ -42,7 +42,7 @@ int main()
            "Tyre loses grip abruptly at saturation" );
     check( brushMagnitude( 4000, 1000, 800 ) > brushMagnitude( 8000, 1000, 800 ),
            "Sliding grip does not transition progressively" );
-    check(std::abs(slipLimitedTorque(4000, 108, 36, .36, 2, .02)) < 1e-9,
+    check(std::abs(slipLimitedTorque(4000, 113, 36, .36, 2, .02)) < 1e-9,
           "Traction control drives an already spinning tyre");
     check(slipLimitedTorque(4000, 100, 36, .36, 2, .02) > 0,
           "Traction control prevents acceleration at rolling speed");

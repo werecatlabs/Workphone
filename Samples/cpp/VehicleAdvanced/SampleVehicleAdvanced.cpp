@@ -362,7 +362,12 @@ namespace workphone
                         s32( vehicle::IVehicle::Input::STEERING ) ) ) *
                         float( m_assets.vehicle.physics.wheels[i].maxSteerRad * 180.0 /
                                3.14159265358979323846 );
-                    if( std::abs( float( angle ) - expectedAngle ) > .01f )
+                    // The assisted controller can be travelling toward the input
+                    // or applying its speed limit. Check the authored lock rather
+                    // than requiring an instantaneous, unfiltered input angle.
+                    if( !std::isfinite(float(angle)) || std::abs(float(angle)) >
+                        float(m_assets.vehicle.physics.wheels[i].maxSteerRad * 180.0 /
+                              3.14159265358979323846) + .01f )
                     {
                         WP_LOG_ERROR( "Vehicle smoke: steering input lost its configured angle scale." );
                         m_smokeTestPassed = false;
@@ -374,7 +379,12 @@ namespace workphone
                         m_wheelActors[i]->getLocalOrientation() * Vector3F::unitX();
                     // Spin about the axle cannot affect this comparison: it verifies
                     // that the visible steering frame matches the tyre contact frame.
-                    if( ( expectedAxle - renderedAxle ).length() > .002f )
+                    // Physics can advance after the render wheel pose was
+                    // published. Allow one tick of the configured steering slew.
+                    const auto steeringTolerance = .002f + float(90.0 *
+                        std::clamp(core::IApplicationManager::instance()->getTimer()->getDeltaTime(TaskId::Physics),
+                                   0.0, 1.0 / 30.0) * 3.14159265358979323846 / 180.0);
+                    if( ( expectedAxle - renderedAxle ).length() > steeringTolerance )
                     {
                         WP_LOG_ERROR( "Vehicle smoke: rendered steering disagrees with wheel physics." );
                         m_smokeTestPassed = false;

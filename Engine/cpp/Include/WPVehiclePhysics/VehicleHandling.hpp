@@ -45,12 +45,12 @@ namespace workphone::handling
     {
         if (dt <= 0 || inertia <= 0 || radius <= 0)
             return torque;
-        const auto predicted = omega + torque * dt / inertia;
-        const auto limited = rollingLimit(predicted, speed, radius, .08);
-        const auto allowed = (limited - omega) * inertia / dt;
-        // Traction control cuts requested torque; it never rewrites wheel speed
-        // or invents braking torque to remove an existing slide.
-        return torque >= 0 ? std::clamp(allowed, 0.0, torque) : std::clamp(allowed, torque, 0.0);
+        const auto excess = std::abs(omega * radius) - std::abs(speed);
+        // Feedback from the previous contact solution, rather than predicted
+        // pre-contact spin. The latter suppresses the impulse needed to launch.
+        if(torque * omega > 0 && excess > .12 * std::max(std::abs(speed), 3.0))
+            return 0;
+        return torque;
     }
 
     inline double brakeTorque(double requested, double omega, double speed, double radius,
