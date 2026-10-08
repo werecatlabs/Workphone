@@ -31,25 +31,16 @@ namespace workphone::handling
         return std::clamp( requested, -available * radius, available * radius );
     }
 
-    inline double rollingLimit( double omega, double speed, double radius, double slip )
+    inline double slipLimitedTorque(double torque, double omega, double speed, double radius)
     {
-        if( radius <= 0 )
-            return omega;
-        const auto allowance = slip * std::max( std::abs( speed ), 3.0 ) / radius;
-        const auto rolling = speed / radius;
-        return std::clamp( omega, rolling - allowance, rolling + allowance );
-    }
-
-    inline double slipLimitedTorque(double torque, double omega, double speed, double radius,
-                                    double inertia, double dt)
-    {
-        if (dt <= 0 || inertia <= 0 || radius <= 0)
+        if(radius <= 0)
             return torque;
-        const auto excess = std::abs(omega * radius) - std::abs(speed);
-        // Feedback from the previous contact solution, rather than predicted
-        // pre-contact spin. The latter suppresses the impulse needed to launch.
-        if(torque * omega > 0 && excess > .12 * std::max(std::abs(speed), 3.0))
-            return 0;
+        const auto slip = (std::abs(omega * radius) - std::abs(speed)) /
+                          std::max(std::abs(speed), 3.0);
+        // Feedback from the previous contact solution. Ramp the torque cut to
+        // avoid alternating full power and zero power on coarse physics steps.
+        if(torque * omega > 0)
+            return torque * std::clamp((.30 - slip) / .22, 0.0, 1.0);
         return torque;
     }
 

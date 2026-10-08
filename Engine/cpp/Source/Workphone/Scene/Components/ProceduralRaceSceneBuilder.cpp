@@ -1179,14 +1179,17 @@ namespace workphone::scene::race
             wheelProps->setProperty( "Inertia", float( w.tire.wheelInertiaKgM2 ) );
             wheelProps->setProperty( "Brake Friction Torque", float( w.brakeTorqueNm ) );
             wheelProps->setProperty( "Grip", 1.25f );
+            // A small rear reserve makes breakaway progressive under power.
+            const auto axleGrip = i < 2 ? 1.0 : 1.06;
             wheelProps->setProperty(
                 "Static Friction Coefficient",
-                float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) ) );
+                float( std::min( w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction ) * axleGrip ) );
             wheelProps->setProperty( "Sliding Friction Coefficient",
-                                     float( std::min(w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction) * .94 ) );
+                                     float( std::min(w.tire.peakLongitudinalFriction, w.tire.peakLateralFriction) * axleGrip * .94 ) );
             wheelProps->setProperty( "Longitudinal Stiffness",
                                      float( w.tire.longitudinalStiffnessNPerSlip ) );
-            wheelProps->setProperty( "Lateral Stiffness", float( w.tire.corneringStiffnessNPerRad ) );
+            wheelProps->setProperty( "Lateral Stiffness", float( w.tire.corneringStiffnessNPerRad *
+                                                              (i < 2 ? 1.0 : 1.10) ) );
             wheel->setProperties( wheelProps );
             auto wheelActor = assets.wheels[i];
             wheelActor->setLocalPosition( p );

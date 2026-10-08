@@ -35,18 +35,16 @@ int main()
     check( tractionTorque( 4000, 0, 1.8, 1.25, 0, .36 ) == 0, "Unloaded tyre transmits torque" );
     check( tractionTorque( 4000, 2000, 1.8, .35, 3500, .36 ) == 0, "Surface grip ignored" );
     check( tractionTorque( -4000, 2000, 1.8, 1.25, 0, .36 ) == -straight, "Reverse torque sign lost" );
-    check( std::abs( rollingLimit( 1000, 36, .36, .08 ) - 108 ) < 1e-9, "Wheelspin not limited" );
-    check( std::abs( rollingLimit( -1000, -36, .36, .08 ) + 108 ) < 1e-9, "Reverse slip not limited" );
     check( std::abs( brushMagnitude( 3000 - 1e-3, 1000, 800 ) -
                      brushMagnitude( 3000 + 1e-3, 1000, 800 ) ) < .001,
            "Tyre loses grip abruptly at saturation" );
     check( brushMagnitude( 4000, 1000, 800 ) > brushMagnitude( 8000, 1000, 800 ),
            "Sliding grip does not transition progressively" );
-    check(std::abs(slipLimitedTorque(4000, 113, 36, .36, 2, .02)) < 1e-9,
+    check(std::abs(slipLimitedTorque(4000, 140, 36, .36)) < 1e-9,
           "Traction control drives an already spinning tyre");
-    check(slipLimitedTorque(4000, 100, 36, .36, 2, .02) > 0,
+    check(slipLimitedTorque(4000, 100, 36, .36) > 0,
           "Traction control prevents acceleration at rolling speed");
-    check(slipLimitedTorque(4000, 200, 36, .36, 2, .02) == 0,
+    check(slipLimitedTorque(4000, 200, 36, .36) == 0,
           "Traction control invents braking torque");
     check(std::abs(brakeTorque(3000, 100, 36, .36, 2, .02) - 1200) < 1e-9,
           "ABS permits service brake lockup");

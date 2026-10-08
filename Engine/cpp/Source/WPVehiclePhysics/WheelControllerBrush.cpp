@@ -399,7 +399,7 @@ namespace workphone
                                                            static_cast<physics_Num>( 1.0 ) );
             // Four springs act on the same rigid body. Use a conservative coupled
             // response bound, rather than treating each contact as an isolated mass.
-            const auto effectiveMass = (m_contactEffectiveMass > 0 ? m_contactEffectiveMass : sprungMass) / static_cast<physics_Num>(8);
+            const auto effectiveMass = (m_contactEffectiveMass > 0 ? m_contactEffectiveMass : sprungMass) / static_cast<physics_Num>(2);
             const auto preloadRate = m_suspensionTravel > Math<physics_Num>::epsilon() ?
                 vehicleMass * m_massFraction * static_cast<physics_Num>( 19.62 ) / m_suspensionTravel : 0;
             const auto wheelRate = m_springRate + preloadRate;
@@ -448,7 +448,7 @@ namespace workphone
             }
             if( m_tractionControl && isPoweredWheel() )
                 driveTorque = handling::slipLimitedTorque(driveTorque, m_angularVelocity,
-                    -m_localVelo.Z(), m_radius, m_inertia, dt);
+                    -m_localVelo.Z(), m_radius);
             m_angularVelocity += ( driveTorque * dt ) / m_inertia;
         }
 

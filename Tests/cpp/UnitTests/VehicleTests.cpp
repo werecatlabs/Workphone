@@ -82,6 +82,29 @@ namespace
     };
 }  // namespace
 
+BOOST_AUTO_TEST_CASE( vehicle_brush_assists_property_roundtrip )
+{
+    WheelControllerBrush source;
+    auto props = source.getProperties();
+    bool traction = true, abs = true;
+    props->getPropertyValue("Traction Control", traction);
+    props->getPropertyValue("Anti Lock Brakes", abs);
+    BOOST_CHECK(!traction);
+    BOOST_CHECK(!abs);
+    props->setProperty("Traction Control", true);
+    props->setProperty("Anti Lock Brakes", true);
+    source.setProperties(props);
+    WheelControllerBrush restored;
+    restored.setProperties(source.getProperties());
+    restored.reset();
+    traction = abs = false;
+    props = restored.getProperties();
+    props->getPropertyValue("Traction Control", traction);
+    props->getPropertyValue("Anti Lock Brakes", abs);
+    BOOST_CHECK(traction);
+    BOOST_CHECK(abs);
+}
+
 BOOST_AUTO_TEST_CASE( vehicle_load_from_db )
 {
     try

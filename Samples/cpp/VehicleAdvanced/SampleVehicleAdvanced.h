@@ -128,6 +128,8 @@ namespace workphone
         real_Num m_smokeMinHeight = std::numeric_limits<real_Num>::max();
         real_Num m_smokeMaxHeight = std::numeric_limits<real_Num>::lowest();
         real_Num m_smokePeakVerticalSpeed = 0.0f;
+        real_Num m_smokePeakBodySlip = 0.0f;
+        real_Num m_smokePeakYawRate = 0.0f;
     };
 }  // namespace workphone
 

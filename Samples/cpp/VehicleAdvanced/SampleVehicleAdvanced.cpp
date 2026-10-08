@@ -358,10 +358,6 @@ namespace workphone
                 for( u32 i = 0; m_smokePhase >= 2 && m_smokeTime > .5 && i < 2; ++i )
                 {
                     const auto angle = vehicle->getWheelController( i )->getSteeringAngle();
-                    const auto expectedAngle = float( vehicle->getChannel(
-                        s32( vehicle::IVehicle::Input::STEERING ) ) ) *
-                        float( m_assets.vehicle.physics.wheels[i].maxSteerRad * 180.0 /
-                               3.14159265358979323846 );
                     // The assisted controller can be travelling toward the input
                     // or applying its speed limit. Check the authored lock rather
                     // than requiring an instantaneous, unfiltered input angle.
@@ -589,7 +585,7 @@ namespace workphone
         {
             throttle = m_smokePhase == 1 || m_smokePhase == 2 ? 1.0f : 0.0f;
             brake = m_smokePhase == 3 ? 1.0f : 0.0f;
-            steering = m_smokePhase == 2 ? 0.35f : 0.0f;
+            steering = m_smokePhase == 2 ? 1.0f : 0.0f;
         }
 
         if( !m_capturePath.empty() || m_benchmarkSeconds > 0 )
@@ -607,7 +603,9 @@ namespace workphone
         const auto steerScale =
             std::min( 1.0, m_assets.vehicle.physics.wheelbaseM * 8.0 /
                                ( std::max( double( speed * speed ), 1.0 ) * maxSteer ) );
-        steering *= float( steerScale );
+        // Exercise the backend assist with full digital lock in the smoke run.
+        if( !m_smokeTest )
+            steering *= float( steerScale );
         if( m_trackSmokeTest && m_physicsConfigured )
         {
             const auto position = m_vehicleActor->getPosition();
@@ -678,6 +676,13 @@ namespace workphone
         auto horizontalVelocity = body->getLinearVelocity();
         horizontalVelocity.Y() = 0.0f;
         const auto speed = horizontalVelocity.length();
+        if( speed > 5 )
+        {
+            const auto localVelocity = body->getTransform().getOrientation().inverse() * horizontalVelocity;
+            m_smokePeakBodySlip = std::max(m_smokePeakBodySlip,
+                real_Num(std::atan2(std::abs(localVelocity.X()), std::max(std::abs(localVelocity.Z()), real_Num(.1)))));
+            m_smokePeakYawRate = std::max(m_smokePeakYawRate, std::abs(body->getAngularVelocity().Y()));
+        }
         if( m_smokeTime < phaseDuration )
             return;
         m_smokeTime = 0.0;
@@ -692,7 +697,7 @@ namespace workphone
             m_smokeStartPosition = position;
             break;
         case 1:
-            passed = ( position - m_smokeStartPosition ).length() > 1.0f && speed > 0.5f;
+            passed = ( position - m_smokeStartPosition ).length() > 1.0f && speed > 20.0f;
             m_smokeStartOrientation = body->getTransform().getOrientation();
             break;
         case 2:
@@ -719,7 +724,7 @@ namespace workphone
             passed = position.Y() > 0.0f && position.Y() < vehicleSpawnHeight && speed < 2.0f;
             break;
         }
-        passed = passed && stable;
+        passed = passed && stable && m_smokePeakBodySlip < .35f && m_smokePeakYawRate < 1.5f;
         if( m_smokePhase == 4 )
         {
             m_smokeTestPassed = passed;
@@ -733,6 +738,8 @@ namespace workphone
                 " max height=" + StringUtil::toString(m_smokeMaxHeight) +
                 " orientation=" + StringUtil::toString(body->getTransform().getOrientation()) +
                 " angular velocity=" + StringUtil::toString(body->getAngularVelocity()) +
+                " peak body slip=" + StringUtil::toString(m_smokePeakBodySlip) +
+                " peak yaw rate=" + StringUtil::toString(m_smokePeakYawRate) +
                 " height range=" + StringUtil::toString( heightRange ) +
                 " peak vertical speed=" + StringUtil::toString( m_smokePeakVerticalSpeed ) );
         if( auto car = m_vehicleActor->getComponent<scene::CarController>() )
@@ -750,6 +757,8 @@ namespace workphone
         m_smokeMinHeight = std::numeric_limits<real_Num>::max();
         m_smokeMaxHeight = std::numeric_limits<real_Num>::lowest();
         m_smokePeakVerticalSpeed = 0.0f;
+        m_smokePeakBodySlip = 0.0f;
+        m_smokePeakYawRate = 0.0f;
         if( !passed || m_smokePhase == 4 )
         {
             app->setQuit( true );
