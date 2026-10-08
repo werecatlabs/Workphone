@@ -99,9 +99,10 @@ function RacingGameOpenCity:showMainMenu()
 end
 
 function RacingGameOpenCity:setupSummary()
-    return string.format("City seed %d | %d x %d blocks | %s\n%s | %d laps | Follow the cyan street arrows",
+    return string.format("City seed %d | %d x %d blocks | %s\n%s | %s | Follow the cyan street arrows",
         self.seed, self.cityBlocks, self.cityBlocks, routes[self.cityRoute + 1],
-        self.mode == "timeTrial" and "Time trial" or "Street circuit", self.totalLaps)
+        self.mode == "freeDrive" and "Free drive" or self.mode == "timeTrial" and "Time trial" or "Street circuit",
+        self.mode == "timeTrial" and "Unlimited timed laps" or tostring(self.totalLaps) .. " lap challenge")
 end
 
 function RacingGameOpenCity:showSetup()

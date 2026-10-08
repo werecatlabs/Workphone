@@ -71,6 +71,15 @@ game:update()
 assert(game.gameState=="results")
 game:shutdown()
 assert(not app.paused and not game.started and not game.gameInitialized)
+-- Unsupported native builds must fail cleanly without leaving a generated subtree.
+local children = #owner.children
+properties.values["Open City"] = nil
+app.playing=false
+local unsupported = RacingGameOpenCity({getActor=function() return owner end})
+local ok, failure = pcall(unsupported.generate, unsupported)
+assert(not ok and tostring(failure):find("Open City support"))
+assert(not unsupported.started and #owner.children==children)
+properties.values["Open City"] = true
 io.open, os.rename, os.remove=originalOpen,originalRename,originalRemove
 for path in pairs(files) do originalRemove(path) end
 print("Open city generation options, free drive, pause, races, route records and cleanup: PASS")

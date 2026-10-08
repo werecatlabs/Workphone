@@ -273,11 +273,15 @@ namespace workphone::scene
     void ProceduralRaceScene::updateSurfaceGrip()
     {
         auto p = getActor()->getPosition();
-        auto offset = p - getCircuitPosition(nearestCircuitSample(p));
-        offset.y = 0;
-        const auto roadDistance = m_assets.openCity
-            ? m_cityLayout.roadDistance(p.x, p.z)
-            : offset.length();
+        float roadDistance;
+        if(m_assets.openCity)
+            roadDistance = m_cityLayout.roadDistance(p.x, p.z);
+        else
+        {
+            auto offset = p - getCircuitPosition(nearestCircuitSample(p));
+            offset.y = 0;
+            roadDistance = offset.length();
+        }
         const auto grip = roadDistance < 6.85f ? 1.f : roadDistance < 11.f ? .55f : .35f;
         if(grip == m_surfaceGrip)
             return;

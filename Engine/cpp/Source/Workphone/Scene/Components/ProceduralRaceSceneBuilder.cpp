@@ -923,6 +923,22 @@ namespace workphone::scene::race
         shadowGeometry.quad( { -1.6f, .025f, -3.7f }, { 1.6f, .025f, -3.7f }, { 1.6f, .025f, 3.7f },
                              { -1.6f, .025f, 3.7f }, { 0, 1, 0 } );
         assets.shadow = mesh( assets, "Vehicle contact shadow", shadowGeometry, shadowMaterial );
+        if(assets.openCity)
+            if(auto root = actor->getParent())
+            {
+                auto scene = core::IApplicationManager::instance()->getGameManager()->getCurrentScene();
+                // Serialize the generated city only under the game's owned root.
+                // Removing the old root after Editor restoration then removes all
+                // streets/colliders too, even when Lua's native references were lost.
+                for(const auto &generated : assets.actors)
+                    if(!generated->getParent())
+                    {
+                        scene->removeActor(generated);
+                        root->addChild(generated);
+                        scene->registerAllUpdates(generated);
+                    }
+            }
+
         const auto generationMs =
             std::chrono::duration<double, std::milli>( std::chrono::steady_clock::now() - started )
                 .count();
