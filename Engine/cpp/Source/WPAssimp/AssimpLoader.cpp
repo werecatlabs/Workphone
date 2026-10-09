@@ -2258,7 +2258,7 @@ namespace workphone
                 if( !imported )
                 {
                     // loadResource registers the resource synchronously. importFile queues a job,
-                    // which can finish after the material has already serialized its texture UUID.
+                    // which can finish after the material has already serialized its texture reference.
                     imported = resourceDatabase->loadResourceByType<render::ITexture>( texturePath );
                 }
                 texture = imported;

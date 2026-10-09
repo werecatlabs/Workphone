@@ -762,9 +762,9 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
         auto handle = texture->getHandle();
         BOOST_REQUIRE( handle );
         BOOST_CHECK( database->loadResourceById( handle->getUUID() ) == texture );
-        const auto saved = app->getFileSystem()->readAllText( path );
-        BOOST_TEST_MESSAGE( name << " texture UUID " << handle->getUUIDAsString() << " saved " << saved );
-        BOOST_CHECK( saved.find( handle->getUUIDAsString() ) != String::npos );
+        const auto saved = app->getFileSystem()->readAllText(
+            String( ( directory / path.c_str() ).generic_string() ) );
+        BOOST_CHECK( saved.find( expected ) != String::npos );
         auto normal = material->getTexture( 1 );
         BOOST_REQUIRE( normal );
         BOOST_CHECK_EQUAL( StringUtil::cleanupPath( normal->getFilePath() ),
@@ -774,6 +774,14 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
             BOOST_CHECK( normal == sharedNormal );
         }
         sharedNormal = normal;
+        auto savedProperties = workphone::make_ptr<Properties>();
+        DataUtil::parse( saved, savedProperties.get() );
+        auto restored = workphone::dynamic_pointer_cast<render::IMaterial>(
+            app->getGraphicsSystem()->getMaterialManager()->create( String( "Restored_" ) + name ) );
+        BOOST_REQUIRE( restored );
+        restored->fromData( savedProperties );
+        BOOST_CHECK( restored->getTexture( 0 ) == texture );
+        BOOST_CHECK( restored->getTexture( 1 ) == normal );
     }
     BOOST_CHECK( !std::filesystem::exists( directory / "Materials" ) );
 }
