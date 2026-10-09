@@ -3,7 +3,7 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 #include <Workphone/Interface/Vehicle/IGearBox.hpp>
-#include "CVehicleComponent.hpp"
+#include "WPVehiclePhysics/CVehicleComponent.hpp"
 
 namespace workphone
 {

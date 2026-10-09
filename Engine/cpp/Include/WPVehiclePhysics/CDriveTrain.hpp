@@ -22,7 +22,7 @@ namespace workphone
      * The drivetrain approximates engine torque curves using peak torque/power values and RPM points
      * rather than storing complete torque curve data for performance and simplicity.
      *
-     * @see CVehicleComponent
+     * @see VehicleComponent
      * @see IDriveTrain
      * @author Fireblade Engine Team
      * @version 1.0

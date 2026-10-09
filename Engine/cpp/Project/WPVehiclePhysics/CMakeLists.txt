@@ -40,6 +40,10 @@ include_directories( ${WP_ROOT}/AdditionalLibraries/wildmagic/SDK/Include )
 include_directories( ../../Include )
 include_directories( ../../Include/WPVehiclePhysics )
 
+if (WP_USE_PRECOMPILED_HEADERS)
+    wp_use_precompiled_header(WPVehiclePhysics "WPVehiclePhysics/WPVehiclePhysicsPCH.hpp" "${CMAKE_SOURCE_DIR}/Engine/cpp/Source/WPVehiclePhysics/WPVehiclePhysicsPCH.cpp")
+endif()
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         link_directories(WPVehiclePhysics ${CMAKE_SOURCE_DIR}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})

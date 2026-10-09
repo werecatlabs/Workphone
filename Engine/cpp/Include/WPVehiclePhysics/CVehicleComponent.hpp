@@ -29,7 +29,7 @@ namespace workphone
      *
      * @par Usage Example
      * @code
-     * class MyWheelComponent : public CVehicleComponent<IWheelComponent>
+     * class MyWheelComponent : public CCVehicleComponent<IWheelComponent>
      * {
      *     // Implementation specific to wheel components
      * };
@@ -82,21 +82,21 @@ namespace workphone
          * @warning The returned pointer should not be stored long-term as it may become invalid.
          * Use getOwner() for safe smart pointer access.
          */
-        virtual IVehicle *getOwnerPtr() const;
+        virtual vehicle::IVehicle *getOwnerPtr() const;
 
         /**
          * @brief Gets a smart pointer to the vehicle owner.
          *
          * @return Smart pointer to the IVehicle owner, thread-safe access
          */
-        virtual SmartPtr<IVehicle> getOwner() const;
+        virtual SmartPtr<vehicle::IVehicle> getOwner() const;
 
         /**
          * @brief Sets the vehicle owner for this component.
          *
          * @param vehicle Smart pointer to the IVehicle that owns this component
          */
-        virtual void setOwner(SmartPtr<IVehicle> vehicle);
+        virtual void setOwner( SmartPtr<vehicle::IVehicle> vehicle );
 
         /**
          * @brief Updates the world transform of the component.
@@ -167,14 +167,14 @@ namespace workphone
          *
          * @param state The new state to set for this component
          */
-        virtual void setState(IVehicleComponent::State state);
+        virtual void setState(vehicle::IVehicleComponent::State state);
 
         /**
          * @copydoc IVehicleComponent::getState
          *
          * @return The current state of this component
          */
-        virtual IVehicleComponent::State getState() const;
+        virtual vehicle::IVehicleComponent::State getState() const;
 
         /**
          * @brief Gets the generic data pointer associated with this component.
@@ -220,10 +220,10 @@ namespace workphone
 
     protected:
         /// Current state of the component (AWAKE, DESTROYED, EDIT, PLAY, RESET)
-        IVehicleComponent::State m_state = IVehicleComponent::State::AWAKE;
+        vehicle::IVehicleComponent::State m_state = vehicle::IVehicleComponent::State::AWAKE;
 
         /// Thread-safe reference to the owning vehicle
-        AtomicSmartPtr<IVehicle> m_owner;
+        AtomicSmartPtr<vehicle::IVehicle> m_owner;
 
         /// Local transform relative to the parent vehicle
         Transform3<physics_Num> m_localTransform;
@@ -273,19 +273,19 @@ namespace workphone
     }
 
     template <class T>
-    IVehicle *CVehicleComponent<T>::getOwnerPtr() const
+    vehicle::IVehicle *CVehicleComponent<T>::getOwnerPtr() const
     {
         return m_owner.get();
     }
 
     template <class T>
-    SmartPtr<IVehicle> CVehicleComponent<T>::getOwner() const
+    SmartPtr<vehicle::IVehicle> CVehicleComponent<T>::getOwner() const
     {
         return m_owner;
     }
 
     template <class T>
-    void CVehicleComponent<T>::setOwner(SmartPtr<IVehicle> vehicle)
+    void CVehicleComponent<T>::setOwner( SmartPtr<vehicle::IVehicle> vehicle )
     {
         m_owner = vehicle;
     }
@@ -366,13 +366,13 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleComponent<T>::setState(IVehicleComponent::State state)
+    void CVehicleComponent<T>::setState(vehicle::IVehicleComponent::State state)
     {
         m_state = state;
     }
 
     template <class T>
-    IVehicleComponent::State CVehicleComponent<T>::getState() const
+    vehicle::IVehicleComponent::State CVehicleComponent<T>::getState() const
     {
         return m_state;
     }
@@ -441,7 +441,7 @@ namespace workphone
 
         setLocalTransform(localTransform);
         setWorldTransform(worldTransform);
-        setState(static_cast<IVehicleComponent::State>(state));
+        setState( static_cast<vehicle::IVehicleComponent::State>( state ) );
     }
 } // namespace workphone
 

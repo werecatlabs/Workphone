@@ -16,6 +16,7 @@ if not PlayerCamera then include("PlayerCamera.lua") end
 if not PlayerControl then include("PlayerControl.lua") end
 if not RankManager then include("RankManager.lua") end
 if not RaceManagerView then include("RaceManagerView.lua") end
+
 class 'RacingGameFull' (SampleVehicleAdvanced)
 
 local qualities = {"Preview", "Standard", "High", "Cinematic"}

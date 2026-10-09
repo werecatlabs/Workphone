@@ -1,8 +1,8 @@
-#ifndef WPVehiclePCH_h__
-#define WPVehiclePCH_h__
+#ifndef WPVehiclePhysicsPCH_h__
+#define WPVehiclePhysicsPCH_h__
 
 #if WP_USE_PRECOMPILED_HEADERS
-#    include <Workphone/WorkphoneHeaders.hpp>
+#    include <Workphone/Workphone.hpp>
 #endif
 
-#endif // WPVehiclePCH_h__
+#endif // WPVehiclePhysicsPCH_h__
