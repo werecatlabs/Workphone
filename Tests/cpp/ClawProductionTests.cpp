@@ -77,7 +77,10 @@ namespace
         auto node = make_ptr<TestLightNode>();
         auto light = make_ptr<ClawLight>();
         light->load( nullptr );
-        if( !check( light->isLoaded() && light->getNativeLight(),
+
+        wp_light *nativeLight = nullptr;
+        light->_getObject( reinterpret_cast<void **>( &nativeLight ) );
+        if( !check( light->isLoaded() && nativeLight,
                     "light direction fixture must load its native light" ) )
             return false;
         light->setOwner( node );
@@ -99,15 +102,21 @@ namespace
         auto nativeNode = wp_scenenode_create();
         const auto rotation = transform.getOrientation();
         wp_scenenode_set_orientation( nativeNode, { rotation.w, rotation.x, rotation.y, rotation.z } );
-        wp_light_attach_to_node( light->getNativeLight(), nativeNode );
+        
+        nativeLight =nullptr;
+        light->_getObject( reinterpret_cast<void **>( &nativeLight ) );
+        wp_light_attach_to_node( nativeLight, nativeNode );
         node->orientation = Quaternion<real_Num>::identity(); // Simulate a stale C++ transform cache.
         ok &= check( ( light->getDerivedDirection() - expected ).lengthSquared() < 1e-6f,
                      "attached light must use the current native scene-node rotation" );
-        wp_light_detach_from_node( light->getNativeLight(), nativeNode );
+        wp_light_detach_from_node( nativeLight, nativeNode );
         wp_scenenode_destroy( nativeNode );
         light->setOwner( nullptr );
         light->unload( nullptr );
-        ok &= check( !light->isLoaded() && !light->getNativeLight(),
+
+        nativeLight = nullptr;
+        light->_getObject( reinterpret_cast<void **>( &nativeLight ) );
+        ok &= check( !light->isLoaded() && !nativeLight,
                      "light unload must release the native light" );
         return ok;
     }

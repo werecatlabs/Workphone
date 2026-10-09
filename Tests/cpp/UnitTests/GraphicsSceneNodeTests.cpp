@@ -88,7 +88,10 @@ BOOST_AUTO_TEST_CASE( claw_scene_node_deferred_load_preserves_mesh_world_matrix 
     BOOST_CHECK( wp_scenenode_get_parent( child->getNativeNode() ) == parent->getNativeNode() );
     BOOST_CHECK( wp_graphics_object_get_owner( nativeObject ) == child->getNativeNode() );
     BOOST_CHECK( wp_camera_get_node( camera->getNativeCamera() ) == child->getNativeNode() );
-    BOOST_CHECK( wp_light_get_node( light->getNativeLight() ) == child->getNativeNode() );
+
+    wp_light* nativeLight = nullptr;
+    light->_getObject( reinterpret_cast<void **>( &nativeLight ) );
+    BOOST_CHECK( wp_light_get_node( nativeLight ) == child->getNativeNode() );
     BOOST_CHECK_EQUAL( wp_scenenode_get_object_count( child->getNativeNode() ), 1 );
     child->attachObject( mesh );
     BOOST_CHECK_EQUAL( child->getObjects().size(), 3u );
@@ -111,7 +114,10 @@ BOOST_AUTO_TEST_CASE( claw_scene_node_deferred_load_preserves_mesh_world_matrix 
     BOOST_CHECK( wp_graphics_object_get_owner( nativeObject ) == parent->getNativeNode() );
     child->unload( nullptr );
     BOOST_CHECK( !wp_camera_get_node( camera->getNativeCamera() ) );
-    BOOST_CHECK( !wp_light_get_node( light->getNativeLight() ) );
+
+    nativeLight = nullptr;
+    light->_getObject( reinterpret_cast<void **>( &nativeLight ) );
+    BOOST_CHECK( !wp_light_get_node( nativeLight ) );
     BOOST_CHECK( !camera->getOwner() );
     BOOST_CHECK( !light->getOwner() );
 }
