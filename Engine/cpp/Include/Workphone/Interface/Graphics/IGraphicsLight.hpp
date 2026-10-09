@@ -128,6 +128,24 @@ namespace workphone
              */
             virtual void setPowerScale( f32 powerScale ) = 0;
 
+            /** @brief Sets the position of the light. */
+            virtual void setPosition( const Vector3<real_Num> &position ) = 0;
+
+            /** @brief Gets the position of the light. */
+            virtual Vector3<real_Num> getPosition() const = 0;
+
+            /** @brief Sets the range and angles for a spotlight. */
+            virtual void setSpotlightRange( f32 innerAngle, f32 outerAngle, f32 falloff ) = 0;
+
+            /** @brief Gets the inner angle of the spotlight. */
+            virtual f32 getSpotlightInnerAngle() const = 0;
+
+            /** @brief Gets the outer angle of the spotlight. */
+            virtual f32 getSpotlightOuterAngle() const = 0;
+
+            /** @brief Gets the falloff of the spotlight. */
+            virtual f32 getSpotlightFalloff() const = 0;
+
             WP_CLASS_REGISTER_DECL;
         };
 

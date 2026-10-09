@@ -73,6 +73,24 @@ namespace workphone
             /** @copydoc GraphicsObject<IGraphicsLight>::setProperties */
             void setProperties( SmartPtr<Properties> properties ) override;
 
+            /** @brief Sets the position of the light. */
+            void setPosition( const Vector3<real_Num> &position );
+
+            /** @brief Gets the position of the light. */
+            Vector3<real_Num> getPosition() const;
+
+            /** @brief Sets the range and angles for a spotlight. */
+            void setSpotlightRange( f32 innerAngle, f32 outerAngle, f32 falloff );
+
+            /** @brief Gets the inner angle of the spotlight. */
+            f32 getSpotlightInnerAngle() const;
+
+            /** @brief Gets the outer angle of the spotlight. */
+            f32 getSpotlightOuterAngle() const;
+
+            /** @brief Gets the falloff of the spotlight. */
+            f32 getSpotlightFalloff() const;
+
             WP_CLASS_REGISTER_DECL;
         };
     }  // namespace render

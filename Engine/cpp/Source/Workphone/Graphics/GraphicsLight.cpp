@@ -242,4 +242,72 @@ namespace workphone::render
         GraphicsObject<IGraphicsLight>::setProperties( properties );
     }
 
+    void GraphicsLight::setSpotlightRange( f32 innerAngle, f32 outerAngle, f32 falloff )
+    {
+        if( auto stateContext = getStateContext() )
+        {
+            if( auto data = stateContext->invalidateStateDataById<LightStateData>( getId() ) )
+            {
+                data->spotlightInnerAngle = innerAngle;
+                data->spotlightOuterAngle = outerAngle;
+                data->spotlightFalloff = falloff;
+            }
+        }
+    }
+
+    f32 GraphicsLight::getSpotlightInnerAngle() const
+    {
+        if( auto stateContext = getStateContext() )
+        {
+            if( auto data = stateContext->getStateDataById<LightStateData>( getId() ) )
+            {
+                return data->spotlightInnerAngle;
+            }
+        }
+
+        return 0.0f;
+    }
+
+    f32 GraphicsLight::getSpotlightOuterAngle() const
+    {
+        if( auto stateContext = getStateContext() )
+        {
+            if( auto data = stateContext->getStateDataById<LightStateData>( getId() ) )
+            {
+                return data->spotlightOuterAngle;
+            }
+        }
+
+        return 0.0f;
+    }
+
+    f32 GraphicsLight::getSpotlightFalloff() const
+    {
+        if( auto stateContext = getStateContext() )
+        {
+            if( auto data = stateContext->getStateDataById<LightStateData>( getId() ) )
+            {
+                return data->spotlightFalloff;
+            }
+        }
+
+        return 0.0f;
+    }
+
+    void GraphicsLight::setPosition( const Vector3<real_Num> &position )
+    {
+        if( auto stateContext = getStateContext() )
+        {
+            if( auto data = stateContext->invalidateStateDataById<LightStateData>( getId() ) )
+            {
+                data->position = position;
+            }
+        }
+    }
+
+    Vector3<real_Num> GraphicsLight::getPosition() const
+    {
+        return {};
+    }
+
 }  // namespace workphone::render

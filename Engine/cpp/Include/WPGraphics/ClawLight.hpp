@@ -105,20 +105,29 @@ namespace workphone
             /** @brief Gets the position of the light. */
             Vector3<real_Num> getPosition() const;
 
-            /** @brief Sets the range and angles for a spotlight. */
-            void setSpotlightRange( f32 innerAngle, f32 outerAngle, f32 falloff );
-            
-            /** @brief Gets the inner angle of the spotlight. */
-            f32 getSpotlightInnerAngle() const;
-            
-            /** @brief Gets the outer angle of the spotlight. */
-            f32 getSpotlightOuterAngle() const;
-            
-            /** @brief Gets the falloff of the spotlight. */
-            f32 getSpotlightFalloff() const;
+            /**
+             * @brief Process a state message sent to this graphics object.
+             *
+             * Messages are delivered by the engine state system and can be used to apply
+             * asynchronous updates. Derived classes can handle specific message types.
+             *
+             * @param message Message to process.
+             * @return True if the message was handled; false otherwise.
+             */
+            bool handleStateMessage( const SmartPtr<IStateMessage> &message );
 
-            /** @brief Gets a pointer to the native wp_light implementation. */
-            wp_light *getNativeLight() const;
+            /**
+             * @brief Called when an attached IState object changes.
+             *
+             * This callback is intended for derived classes to react to state changes.
+             *
+             * @param state The state that changed.
+             * @return True if the change was handled; false otherwise.
+             */
+            bool handleStateChanged( SmartPtr<IState> &state );
+
+
+            void _getObject(void** ppObject) const override;
 
             WP_CLASS_REGISTER_DECL;
 

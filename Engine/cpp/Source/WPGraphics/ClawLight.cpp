@@ -228,6 +228,14 @@ namespace workphone::render
         }
     }
 
+    void ClawLight::_getObject( void **ppObject ) const
+    {
+        if( ppObject )
+        {
+            *ppObject = m_light;
+        }
+    }
+
     void ClawLight::setPosition( const Vector3<real_Num> &position )
     {
         if( m_light )
@@ -242,31 +250,26 @@ namespace workphone::render
                        : Vector3<real_Num>::zero();
     }
 
-    void ClawLight::setSpotlightRange( f32 innerAngle, f32 outerAngle, f32 falloff )
+    bool ClawLight::handleStateMessage( const SmartPtr<IStateMessage> &message )
     {
-        if( m_light )
+        // Implementation for handling state messages
+        return false;
+    }
+
+    bool ClawLight::handleStateChanged( SmartPtr<IState> &state )
+    {
+        auto data = state->getData();
+        if( data->isExactly<LightStateData>() )
         {
-            wp_light_set_spotlight_range( m_light, innerAngle, outerAngle, falloff );
+            auto lightState = workphone::dynamic_pointer_cast<LightStateData>( data );
+            wp_light_set_spotlight_range( m_light, lightState->spotlightInnerAngle,
+                                          lightState->spotlightOuterAngle,
+                                          lightState->spotlightFalloff );
+
+            return true;
         }
+
+        return false;
     }
 
-    f32 ClawLight::getSpotlightInnerAngle() const
-    {
-        return m_light ? wp_light_get_spotlight_inner_angle( m_light ) : 0.0f;
-    }
-
-    f32 ClawLight::getSpotlightOuterAngle() const
-    {
-        return m_light ? wp_light_get_spotlight_outer_angle( m_light ) : 0.0f;
-    }
-
-    f32 ClawLight::getSpotlightFalloff() const
-    {
-        return m_light ? wp_light_get_spotlight_falloff( m_light ) : 0.0f;
-    }
-
-    wp_light *ClawLight::getNativeLight() const
-    {
-        return m_light;
-    }
 }  // namespace workphone::render
