@@ -385,6 +385,11 @@ namespace workphone
                                             SmartPtr<render::IMaterialPass> pass, const aiMaterial *mat,
                                             s32 index, const String &folderPath );
 
+        /// Resolve and register scene textures before any material is populated or saved.
+        void importMaterialTextures( const aiScene *scene, const String &folderPath );
+
+        std::map<String, SmartPtr<render::ITexture>> m_importedTexturesByName;
+
         SmartPtr<scene::Material> assignMaterialComponent( SmartPtr<scene::IGameActor> actor, u32 index,
                                                            const aiMaterial *mat,
                                                            const String &folderPath );

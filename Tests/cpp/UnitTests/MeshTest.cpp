@@ -667,3 +667,113 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
         guard.sceneManager->destroyActor( actor );
     }
 }
+
+BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_before_saving )
+{
+    TestGuard guard;
+    auto app = guard.applicationManager;
+    auto loader = app->getMeshLoader();
+    BOOST_REQUIRE( loader );
+    const auto oldProject = app->getProjectPath();
+    const auto oldCache = app->getCachePath();
+    const auto oldSettings = app->getSettingsPath();
+    auto oldDatabase = app->getResourceDatabase();
+    const auto oldOverwrite = loader->getOverwrite();
+    const auto directory = std::filesystem::temp_directory_path() / StringUtil::getUUID().c_str();
+    const auto modelFolder = directory / "Assets" / "Model";
+    std::filesystem::create_directories( modelFolder / "Textures" );
+    std::filesystem::create_directories( directory / "Assets" / "Shared" );
+    std::filesystem::create_directories( directory / "Cache" );
+    std::filesystem::create_directories( directory / "SettingsCache" );
+    guard.trackFilesystemPath( directory.generic_string() );
+    auto database = workphone::make_ptr<ResourceDatabase>();
+    guard.addCleanup( [app, loader, database, oldDatabase, oldProject, oldCache, oldSettings,
+                       oldOverwrite]() mutable {
+        database->unload( nullptr );
+        app->setResourceDatabase( oldDatabase );
+        app->setProjectPath( oldProject );
+        app->setCachePath( oldCache );
+        app->setSettingsPath( oldSettings );
+        loader->setOverwrite( oldOverwrite );
+    } );
+    app->setProjectPath( directory.generic_string() );
+    app->setCachePath( ( directory / "Cache" ).generic_string() + "/" );
+    app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
+    app->setResourceDatabase( database );
+    database->load( nullptr );
+
+    // A valid 1x1, 24-bit BMP; fixtures need no external image assets.
+    const unsigned char bmp[] = {
+        0x42, 0x4d, 58, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0,
+        40, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0,
+        0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 0
+    };
+    for( const auto &path : { modelFolder / "Textures" / "Local.bmp",
+                              modelFolder / "Textures" / "Normal.bmp",
+                              directory / "Assets" / "Shared" / "Shared.bmp" } )
+    {
+        std::ofstream output( path, std::ios::binary );
+        output.write( reinterpret_cast<const char *>( bmp ), sizeof( bmp ) );
+    }
+    {
+        std::ofstream mtl( modelFolder / "triangle.mtl" );
+        mtl << "newmtl Local\nKd 1 1 1\nmap_Kd DeletedExport/LOCAL.BMP\n"
+               "map_Bump DeletedExport/NORMAL.BMP\n"
+               "newmtl Shared\nKd 1 1 1\nmap_Kd DeletedExport/SHARED.BMP\n"
+               "map_Bump DeletedExport/NORMAL.BMP\n"
+               "newmtl Missing\nKd 1 1 1\nmap_Kd DoesNotExist.bmp\n";
+        std::ofstream obj( modelFolder / "triangle.obj" );
+        obj << "mtllib triangle.mtl\no Triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl Local\nf 1/1 2/2 3/3\n"
+               "usemtl Shared\nf 1/1 2/2 3/3\n"
+               "usemtl Missing\nf 1/1 2/2 3/3\n";
+    }
+    const auto folder = String( directory.generic_string() );
+    app->getFileSystem()->addFolder( folder, true );
+    guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
+    loader->setOverwrite( true );
+
+    // Both entry points must prepare textures before creating material files.
+    auto mesh = loader->loadMesh( String( "Assets/Model/triangle.obj" ) );
+    BOOST_REQUIRE( mesh );
+    auto actor = loader->loadActor( String( "Assets/Model/triangle.obj" ) );
+    BOOST_REQUIRE( actor );
+    guard.addCleanup( [app, actor]() mutable { app->getGameManager()->destroyActor( actor ); } );
+
+    SmartPtr<render::ITexture> sharedNormal;
+    for( const auto &name : { String( "Local" ), String( "Shared" ), String( "Missing" ) } )
+    {
+        const auto path = String( "Assets/Model/Materials/" ) + name + ".mat";
+        BOOST_REQUIRE( std::filesystem::is_regular_file( directory / path.c_str() ) );
+        auto material = database->loadResourceByType<render::IMaterial>( path );
+        BOOST_REQUIRE( material );
+        auto texture = material->getTexture( 0 );
+        if( name == "Missing" )
+        {
+            BOOST_CHECK( !texture );
+            continue;
+        }
+        BOOST_REQUIRE( texture );
+        const auto expected = name == "Local" ? "Assets/Model/Textures/Local.bmp"
+                                               : "Assets/Shared/Shared.bmp";
+        BOOST_CHECK_EQUAL( StringUtil::cleanupPath( texture->getFilePath() ), expected );
+        auto handle = texture->getHandle();
+        BOOST_REQUIRE( handle );
+        BOOST_CHECK( database->loadResourceById( handle->getUUID() ) == texture );
+        const auto saved = app->getFileSystem()->readAllText( path );
+        BOOST_TEST_MESSAGE( name << " texture UUID " << handle->getUUIDAsString() << " saved " << saved );
+        BOOST_CHECK( saved.find( handle->getUUIDAsString() ) != String::npos );
+        auto normal = material->getTexture( 1 );
+        BOOST_REQUIRE( normal );
+        BOOST_CHECK_EQUAL( StringUtil::cleanupPath( normal->getFilePath() ),
+                           "Assets/Model/Textures/Normal.bmp" );
+        if( sharedNormal )
+        {
+            BOOST_CHECK( normal == sharedNormal );
+        }
+        sharedNormal = normal;
+    }
+    BOOST_CHECK( !std::filesystem::exists( directory / "Materials" ) );
+}

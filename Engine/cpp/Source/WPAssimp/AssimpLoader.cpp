@@ -1,5 +1,6 @@
 #include <WPAssimp/WPAssimpPCH.hpp>
 #include <WPAssimp/AssimpLoader.hpp>
+#include <WPAssimp/TexturePathResolver.hpp>
 #include <WPAssimp/LogStream.hpp>
 #include <WPAssimp/IOSystem.hpp>
 #include <Workphone/Workphone.hpp>
@@ -291,6 +292,15 @@ namespace workphone
             return !StringUtil::isNullOrEmpty( texturePath ) && texturePath[0] == '*';
         }
 
+#if WP_USE_ASSET_IMPORT
+        const aiTextureType materialTextureTypes[] = {
+            aiTextureType_BASE_COLOR,        aiTextureType_DIFFUSE,   aiTextureType_EMISSIVE,
+            aiTextureType_METALNESS,         aiTextureType_SPECULAR,  aiTextureType_NORMALS,
+            aiTextureType_HEIGHT,           aiTextureType_DIFFUSE_ROUGHNESS,
+            aiTextureType_AMBIENT_OCCLUSION, aiTextureType_LIGHTMAP
+        };
+#endif
+
         void hashBytes( u64 &hash, const void *data, size_t size )
         {
             const auto bytes = static_cast<const u8 *>( data );
@@ -454,6 +464,7 @@ namespace workphone
         m_sceneActorsByName.clear();
         m_meshInstancesByKey.clear();
         m_loadedMeshSignatures.clear();
+        m_importedTexturesByName.clear();
         m_aiSkeleton = nullptr;
 #endif
 
@@ -552,6 +563,7 @@ namespace workphone
             auto scene = importer.ReadFile( meshPath.c_str(), flags );
             if( scene && scene->mRootNode )
             {
+                importMaterialTextures( scene, Path::getFilePath( meshPath ) );
                 auto hash = StringUtil::getUUID( getMeshCacheSourceKey( meshPath ) );
                 m_fileUUID = hash;
 
@@ -701,6 +713,7 @@ namespace workphone
             auto scene = importer.ReadFile( m_meshPath.c_str(), flags );
             if( scene && scene->mRootNode )
             {
+                importMaterialTextures( scene, Path::getFilePath( m_meshPath ) );
                 auto hash = StringUtil::getUUID( getMeshCacheSourceKey( m_meshPath ) );
                 m_fileUUID = hash;
 
@@ -895,13 +908,15 @@ namespace workphone
                 auto scene = importer.ReadFile( meshFilePath.c_str(), flags );
                 if( scene && scene->mRootNode )
                 {
+                    const auto materialFolder = Path::getFilePath( meshFilePath );
+                    importMaterialTextures( scene, materialFolder );
                     auto numMaterials = scene->mNumMaterials;
                     for( size_t i = 0; scene->mMaterials && i < numMaterials; i++ )
                     {
                         auto pAIMaterial = scene->mMaterials[i];
                         if( pAIMaterial )
                         {
-                            createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, "" );
+                            createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, materialFolder );
                         }
                     }
 
@@ -1058,6 +1073,8 @@ namespace workphone
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );
             if( scene && scene->mRootNode )
             {
+                const auto materialFolder = Path::getFilePath( m_meshPath );
+                importMaterialTextures( scene, materialFolder );
                 auto hash = StringUtil::getUUID( getMeshCacheSourceKey( m_meshPath ) );
                 m_fileUUID = hash;
 
@@ -1078,7 +1095,7 @@ namespace workphone
                     auto pAIMaterial = scene->mMaterials[i];
                     if( pAIMaterial )
                     {
-                        createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, "" );
+                        createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, materialFolder );
                     }
                 }
 
@@ -1215,6 +1232,8 @@ namespace workphone
             const auto scene = importer.ReadFile( absolutePath.c_str(), flags );
             if( scene && scene->mRootNode )
             {
+                const auto materialFolder = Path::getFilePath( meshName );
+                importMaterialTextures( scene, materialFolder );
                 auto hash = StringUtil::getUUID( getMeshCacheSourceKey( m_meshPath ) );
                 m_fileUUID = hash;
 
@@ -1224,7 +1243,7 @@ namespace workphone
                     auto pAIMaterial = scene->mMaterials[i];
                     if( pAIMaterial )
                     {
-                        createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, "" );
+                        createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, materialFolder );
                     }
                 }
 
@@ -2154,6 +2173,103 @@ namespace workphone
         return result.first;
     }
 
+    void AssimpLoader::importMaterialTextures( const aiScene *scene, const String &folderPath )
+    {
+        m_importedTexturesByName.clear();
+        if( !scene || !m_materialImportOptions.importTextures )
+        {
+            return;
+        }
+
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabasePtr() : nullptr;
+        if( !resourceDatabase )
+        {
+            return;
+        }
+
+        auto projectFolder = applicationManager->getProjectPath();
+        if( StringUtil::isNullOrEmpty( projectFolder ) )
+        {
+            projectFolder = Path::getWorkingDirectory();
+        }
+        projectFolder = Path::getAbsolutePath( projectFolder );
+        auto localFolder = Path::getAbsolutePath( projectFolder, folderPath );
+        detail::TexturePathResolver resolver( localFolder.c_str(), projectFolder.c_str() );
+        std::map<String, SmartPtr<render::ITexture>> texturesByPath;
+
+        for( u32 i = 0; scene->mMaterials && i < scene->mNumMaterials; ++i )
+        {
+            const auto mat = scene->mMaterials[i];
+            if( !mat )
+            {
+                continue;
+            }
+            for( auto type : materialTextureTypes )
+            {
+                aiString reference;
+                if( mat->GetTexture( type, 0, &reference ) != AI_SUCCESS )
+                {
+                    continue;
+                }
+                const auto name = String( reference.C_Str() );
+                if( name.empty() || m_importedTexturesByName.find( name ) != m_importedTexturesByName.end() )
+                {
+                    continue;
+                }
+
+                // Cache missing references too, and retry them on the next import.
+                auto &texture = m_importedTexturesByName[name];
+                if( isEmbeddedTexturePath( name ) )
+                {
+                    WP_LOG( "Skipping embedded Assimp texture " + name );
+                    continue;
+                }
+                const auto resolvedPath = resolver.resolve( name.c_str() );
+                auto texturePath = String( resolvedPath.generic_string() );
+                if( texturePath.empty() && m_materialImportOptions.useFallbackTextureNames )
+                {
+                    // Keep the opt-in fallback for textures in registered virtual archives.
+                    auto fileSystem = applicationManager->getFileSystemPtr();
+                    const auto fileName = Path::getFileName( StringUtil::cleanupPath( name ) );
+                    if( fileSystem && fileSystem->isExistingFile( fileName ) )
+                    {
+                        texturePath = fileName;
+                    }
+                }
+                if( texturePath.empty() )
+                {
+                    WP_LOG_WARNING( "Assimp texture missing or ambiguous: " + name +
+                                    " for material " + getMaterialName( mat, static_cast<s32>( i ) ) );
+                    continue;
+                }
+
+                if( !resolvedPath.empty() )
+                {
+                    const auto relativePath = Path::getRelativePath( projectFolder, texturePath );
+                    if( !relativePath.empty() && !Path::isPathAbsolute( relativePath ) &&
+                        relativePath.rfind( "..", 0 ) != 0 )
+                    {
+                        texturePath = StringUtil::cleanupPath( relativePath );
+                    }
+                }
+
+                auto &imported = texturesByPath[texturePath];
+                if( !imported )
+                {
+                    // loadResource registers the resource synchronously. importFile queues a job,
+                    // which can finish after the material has already serialized its texture UUID.
+                    imported = resourceDatabase->loadResourceByType<render::ITexture>( texturePath );
+                }
+                texture = imported;
+                if( !texture )
+                {
+                    WP_LOG_WARNING( "Failed to register Assimp texture " + texturePath );
+                }
+            }
+        }
+    }
+
     void AssimpLoader::applyAssimpMaterialProperties( SmartPtr<render::IMaterial> material,
                                                       SmartPtr<render::IMaterialPass> pass,
                                                       const aiMaterial *mat, s32 index,
@@ -2235,13 +2351,8 @@ namespace workphone
 
         if( m_materialImportOptions.importTextures )
         {
-            const aiTextureType textureTypes[] = {
-                aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE,          aiTextureType_EMISSIVE,
-                aiTextureType_SPECULAR,   aiTextureType_NORMALS,          aiTextureType_HEIGHT,
-                aiTextureType_METALNESS,  aiTextureType_DIFFUSE_ROUGHNESS, aiTextureType_LIGHTMAP
-            };
-
-            for( auto textureType : textureTypes )
+            std::set<u32> assignedLayers;
+            for( auto textureType : materialTextureTypes )
             {
                 // Assimp discovery order is not the renderer's PBS slot order.
                 u32 layerIdx = 0u;
@@ -2251,7 +2362,7 @@ namespace workphone
                 case aiTextureType_SPECULAR: case aiTextureType_METALNESS: layerIdx = 2u; break;
                 case aiTextureType_DIFFUSE_ROUGHNESS: layerIdx = 3u; break;
                 case aiTextureType_EMISSIVE: layerIdx = 13u; break;
-                case aiTextureType_LIGHTMAP: layerIdx = 22u; break;
+                case aiTextureType_LIGHTMAP: case aiTextureType_AMBIENT_OCCLUSION: layerIdx = 22u; break;
                 default: break;
                 }
                 aiString path;
@@ -2266,33 +2377,17 @@ namespace workphone
                     continue;
                 }
 
-                if( isEmbeddedTexturePath( textureName ) )
+                const auto found = m_importedTexturesByName.find( textureName );
+                if( found == m_importedTexturesByName.end() || !found->second ||
+                    !assignedLayers.insert( layerIdx ).second )
                 {
-                    WP_LOG( "Skipping embedded Assimp texture " + textureName + " for material " +
-                            getMaterialName( mat, index ) );
                     continue;
                 }
 
-                auto applicationManager = core::IApplicationManager::instancePtr();
-                auto fileSystem = applicationManager ? applicationManager->getFileSystemPtr() : nullptr;
-                auto texturePath = textureName;
-                if( fileSystem && !fileSystem->isExistingFile( texturePath ) )
-                {
-                    auto localTexturePath = Path::lexically_normal( folderPath, textureName );
-                    if( fileSystem->isExistingFile( localTexturePath ) )
-                    {
-                        texturePath = localTexturePath;
-                    }
-                    else if( m_materialImportOptions.useFallbackTextureNames )
-                    {
-                        texturePath = Path::getFileName( textureName );
-                    }
-                }
-
-                material->setTexture( texturePath, layerIdx );
+                material->setTexture( found->second, layerIdx );
                 if( pass )
                 {
-                    pass->setTexture( texturePath, layerIdx );
+                    pass->setTexture( found->second, layerIdx );
                 }
 
                 // glTF packs metallic in B and roughness in G of the same image.
@@ -2343,7 +2438,8 @@ namespace workphone
                                              : Path::getAbsolutePath( projectFolder, materialsPath );
             absoluteMaterialsPath = StringUtil::cleanupPath( absoluteMaterialsPath );
 
-            if( !fileSystem->isExistingFolder( absoluteMaterialsPath ) )
+            if( m_materialImportOptions.createMaterialFiles &&
+                !fileSystem->isExistingFolder( absoluteMaterialsPath ) )
             {
                 fileSystem->createDirectories( absoluteMaterialsPath );
             }
@@ -2363,6 +2459,10 @@ namespace workphone
             }
 
             auto pass = ensureMaterialPass( material );
+            if( !m_materialImportOptions.createMaterialFiles )
+            {
+                applyAssimpMaterialProperties( material, pass, mat, index, folderPath );
+            }
             if( m_materialImportOptions.createMaterialFiles )
             {
                 auto absoluteMaterialPath = Path::isPathAbsolute( materialPath )
@@ -2398,10 +2498,7 @@ namespace workphone
             return nullptr;
         }
 
-        if( m_materialImportOptions.createMaterialFiles )
-        {
-            createMaterial( nullptr, static_cast<s32>( index ), mat, folderPath );
-        }
+        createMaterial( nullptr, static_cast<s32>( index ), mat, folderPath );
 
         auto material = createOrRetrieveMaterial( mat, static_cast<s32>( index ), folderPath );
         if( !material )
