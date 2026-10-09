@@ -114,6 +114,7 @@ if (WP_USE_ASSET_IMPORT)
     #include_directories( ${WP_ROOT}/AdditionalLibraries/assimp/include/vc142 )
 endif()
 
+include_directories( ${WP_ROOT}/Dependencies )
 include_directories( ${WP_ROOT}/Dependencies/tinybind )
 include_directories( ${WP_ROOT}/Dependencies/tinyusdz/src )
 include_directories( ${WP_ROOT}/Dependencies/tinyxml )

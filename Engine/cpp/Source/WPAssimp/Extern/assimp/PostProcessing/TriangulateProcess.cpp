@@ -62,7 +62,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "PostProcessing/TriangulateProcess.h"
 #include "PostProcessing/ProcessHelper.h"
 #include "Common/PolyTools.h"
-#include "contrib/earcut-hpp/earcut.hpp"
+#include "earcut-hpp/earcut.hpp"
 
 #include <memory>
 #include <cstdint>
