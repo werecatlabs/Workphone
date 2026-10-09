@@ -1,0 +1,5 @@
+#ifndef workphone_graphics_renderer_apple_h__
+#define workphone_graphics_renderer_apple_h__
+
+
+#endif // workphone_graphics_renderer_apple_h__

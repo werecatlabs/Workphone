@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include "workphone_vector.h"
+#include "workphone_physics_broadphase.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,13 +29,6 @@ typedef struct wp_solver_config wp_solver_config;
 /* -------------------------------------------------------------------------
  * Broadphase type
  * ---------------------------------------------------------------------- */
-
-typedef enum wp_broadphase_type
-{
-    WORKPHONE_BROADPHASE_SAP = 0, /**< Sweep-and-prune (default).       */
-    WORKPHONE_BROADPHASE_MBP = 1, /**< Multi-box pruning.                */
-    WORKPHONE_BROADPHASE_ABP = 2  /**< Automatic box pruning.            */
-} wp_broadphase_type;
 
 /* -------------------------------------------------------------------------
  * Solver type

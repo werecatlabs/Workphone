@@ -35,7 +35,8 @@ typedef enum wp_broadphase_type
 {
     WORKPHONE_BROADPHASE_SAP = 0,  /**< Sweep-and-prune */
     WORKPHONE_BROADPHASE_DBVT = 1, /**< Dynamic AABB tree */
-    WORKPHONE_BROADPHASE_MBP = 2   /**< Multi-box pruning */
+    WORKPHONE_BROADPHASE_MBP = 2,  /**< Legacy selection; currently uses the shared AABB tree. */
+    WORKPHONE_BROADPHASE_ABP = 3   /**< Legacy automatic-pruning selection. */
 } wp_broadphase_type;
 
 /* -------------------------------------------------------------------------
@@ -54,6 +55,7 @@ typedef struct wp_broadphase_pair
 
 wp_broadphase *wp_broadphase_create( wp_broadphase_type type );
 void wp_broadphase_destroy( wp_broadphase *bp );
+void wp_broadphase_clear( wp_broadphase *bp );
 
 /* =========================================================================
  * Configuration
@@ -81,11 +83,35 @@ void wp_broadphase_remove_proxy( wp_broadphase *bp, wp_rigidbody *body );
 void wp_broadphase_update_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f aabb_min,
                                  wp_vec3f aabb_max );
 
+/* Stable index handles avoid body searches during scene synchronization. Handles
+ * become invalid on removal/clear. All selections currently use a dynamic AABB
+ * tree. Bounds must be finite, ordered, and conservative for the whole body. */
+#define WP_BROADPHASE_INVALID_PROXY ( -1 )
+wp_s32 wp_broadphase_create_proxy( wp_broadphase *bp, wp_rigidbody *body,
+                                   wp_vec3f aabb_min, wp_vec3f aabb_max );
+void wp_broadphase_destroy_proxy( wp_broadphase *bp, wp_s32 proxy );
+void wp_broadphase_move_proxy( wp_broadphase *bp, wp_s32 proxy,
+                               wp_vec3f aabb_min, wp_vec3f aabb_max );
+/* Default enabled=1, movable=1. Disabled proxies are omitted from pairs/queries.
+ * Pairs with two immovable proxies are omitted. The order
+ * key controls canonical pair order; scene users set it to the actor index. */
+void wp_broadphase_configure_proxy( wp_broadphase *bp, wp_s32 proxy,
+                                    wp_s32 enabled, wp_s32 movable, wp_u32 order );
+
+typedef void ( *wp_broadphase_pair_callback )( const wp_broadphase_pair *pair, void *context );
+/* Visits exact AABB overlaps in order-key order without allocating pair storage.
+ * Callbacks must not modify the broadphase. Body transforms may change: bounds
+ * are a snapshot and must be synchronized before the next traversal. */
+void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback callback,
+                                void *context );
+
 /* =========================================================================
  * Overlap pair cache
  * ====================================================================== */
 
 void wp_broadphase_calculate_overlapping_pairs( wp_broadphase *bp );
+/* On allocation failure returns 0 and exposes no partial pair cache. */
+wp_s32 wp_broadphase_calculate_overlapping_pairs_checked( wp_broadphase *bp );
 const wp_broadphase_pair *wp_broadphase_get_pair_cache( const wp_broadphase *bp );
 wp_s32 wp_broadphase_get_pair_count( const wp_broadphase *bp );
 

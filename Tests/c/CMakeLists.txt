@@ -11,6 +11,14 @@ set_target_properties(WorkphonePhysicsCollisionTests PROPERTIES FOLDER Tests/C)
 
 add_test(NAME WorkphonePhysics.collision COMMAND WorkphonePhysicsCollisionTests)
 
+add_executable(WorkphonePhysicsBroadphaseTests WorkphonePhysicsBroadphaseTests.c)
+target_include_directories(WorkphonePhysicsBroadphaseTests PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphonePhysics
+    ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+target_link_libraries(WorkphonePhysicsBroadphaseTests PRIVATE WorkphonePhysics)
+set_target_properties(WorkphonePhysicsBroadphaseTests PROPERTIES FOLDER Tests/C)
+add_test(NAME WorkphonePhysics.broadphase COMMAND WorkphonePhysicsBroadphaseTests)
+
 add_executable(
     WorkphoneGraphicsMeshTests
     WorkphoneGraphicsMeshTests.c

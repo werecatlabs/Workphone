@@ -94,6 +94,9 @@ typedef enum wp_spatial_partitioning_method {
     WP_SPATIAL_PARTITION_COUNT
 } wp_spatial_partitioning_method;
 
+/* Scenes use the shared dynamic AABB tree (BVH) by default. Legacy NONE, GRID,
+ * and OCTREE selections are retained as compatibility aliases for that tree;
+ * they no longer select separate contact-generation implementations. */
 void wp_physics_scene_set_spatial_partitioning( wp_physics_scene *scene, wp_spatial_partitioning_method method );
 wp_spatial_partitioning_method wp_physics_scene_get_spatial_partitioning( const wp_physics_scene *scene );
 
