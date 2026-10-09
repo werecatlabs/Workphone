@@ -142,12 +142,12 @@ endif()
 
 
 add_executable(VehicleAudioMixTests VehicleAudioMixTests.cpp)
-target_include_directories(VehicleAudioMixTests PRIVATE ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
+target_include_directories(VehicleAudioMixTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
 set_target_properties(VehicleAudioMixTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME WPVehicle.audio_mix COMMAND VehicleAudioMixTests)
 
 add_executable(VehicleDecalTests VehicleDecalTests.cpp)
-target_include_directories(VehicleDecalTests PRIVATE ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
+target_include_directories(VehicleDecalTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Samples/cpp/VehicleAdvanced)
 set_target_properties(VehicleDecalTests PROPERTIES FOLDER Tests/Cpp)
 add_test(NAME WPVehicle.skid_decals COMMAND VehicleDecalTests)
 
@@ -194,4 +194,23 @@ if(TARGET Workphone)
     endif()
     set_target_properties(MeshImposterTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME Workphone.mesh_imposters COMMAND MeshImposterTests)
+endif()
+
+if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
+    # Scene bindings call concrete Lua classes which are not DLL-exported.
+    # Compile the production host sources into this focused binding executable.
+    add_executable(VehicleLuaBindingTests VehicleLuaBindingTests.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp)
+    target_compile_definitions(VehicleLuaBindingTests PRIVATE BOOST_ALL_NO_LIB BOOST_BIND_GLOBAL_PLACEHOLDERS WP_PROFILE_LUA_CALLS=0 WP_TEST_SOURCE_ROOT="${WP_ROOT}")
+    target_include_directories(VehicleLuaBindingTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+        ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+        ${WP_ROOT}/Dependencies/luabind/inc/luabind)
+    target_link_libraries(VehicleLuaBindingTests PRIVATE
+        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind)
+    add_dependencies(VehicleLuaBindingTests WPLuaBind Workphone)
+    set_target_properties(VehicleLuaBindingTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPVehicle.lua_presentation_bindings COMMAND VehicleLuaBindingTests)
 endif()

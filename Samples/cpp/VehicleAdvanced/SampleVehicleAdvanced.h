@@ -105,7 +105,6 @@ namespace workphone
         void updateSmokeTest();
         void updateVehicleAudio();
         void updateVehicleEffects();
-        advanced::VehicleVisualEffects m_effects;
         bool m_effectsEnabled = true, m_effectsSmokeTest = false;
         f64 m_effectsTestTime = 0;
         u32 m_effectsTestPhase = 0;
@@ -113,7 +112,6 @@ namespace workphone
         size_t m_effectsTestParticles = 0, m_effectsTestDecals = 0;
         bool m_effectsTestGrounded = false;
         std::string m_effectsCapture;
-        advanced::VehicleAudio m_audio;
         bool m_audioEnabled = true, m_audioSmokeTest = false;
         f64 m_audioElapsed = 0, m_audioSmokeTime = 0;
         u32 m_audioSmokePhase = 0;

@@ -1024,7 +1024,8 @@ namespace workphone
                         .def( "getVehicleController", &CarController::getVehicleController )
                         .scope[def( "typeInfo", CarController::typeInfo )]];
 
-        module( L )[class_<ProceduralRaceScene, Component, SmartPtr<ProceduralRaceScene>>( "ProceduralRaceScene" )
+        module( L )[class_<ProceduralRaceScene, Component, SmartPtr<ProceduralRaceScene>>(
+                        "ProceduralRaceScene" )
                         .def( "regenerate", &ProceduralRaceScene::regenerate )
                         .def( "clearGeneratedScene", &ProceduralRaceScene::clearGeneratedScene )
                         .def( "configurePhysics", &ProceduralRaceScene::configurePhysics )
@@ -1038,6 +1039,14 @@ namespace workphone
                         .def( "setSeed", &ProceduralRaceScene::setSeed )
                         .def( "getQuality", &ProceduralRaceScene::getQuality )
                         .def( "setQuality", &ProceduralRaceScene::setQuality )
+                        .def( "setAudioEnabled", &ProceduralRaceScene::setAudioEnabled )
+                        .def( "getAudioEnabled", &ProceduralRaceScene::getAudioEnabled )
+                        .def( "setEffectsEnabled", &ProceduralRaceScene::setEffectsEnabled )
+                        .def( "getEffectsEnabled", &ProceduralRaceScene::getEffectsEnabled )
+                        .def( "isAudioAvailable", &ProceduralRaceScene::isAudioAvailable )
+                        .def( "isEffectsAvailable", &ProceduralRaceScene::isEffectsAvailable )
+                        .def( "getParticleCount", &ProceduralRaceScene::getParticleCount )
+                        .def( "getSkidDecalCount", &ProceduralRaceScene::getSkidDecalCount )
                         .def( "getCircuitSampleCount", &ProceduralRaceScene::getCircuitSampleCount )
                         .def( "getCircuitLength", &ProceduralRaceScene::getCircuitLength )
                         .def( "nearestCircuitSample", &ProceduralRaceScene::nearestCircuitSample )

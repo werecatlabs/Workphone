@@ -253,23 +253,7 @@ namespace workphone
             auto vehicleController = car->getVehicleController();
             m_raceScene->configurePhysics();
 
-            if( m_effectsEnabled &&
-                !m_effects.load( m_quality == procedural::VehicleAppearanceQuality::Preview    ? 0u
-                                 : m_quality == procedural::VehicleAppearanceQuality::Standard ? 1u
-                                                                                               : 2u,
-                                 m_seed ) )
-            {
-                WP_LOG_WARNING( "Vehicle visual effects initialization failed." );
-                if( !m_effectsSmokeTest )
-                    m_effectsEnabled = false;
-            }
-            if( m_audioEnabled && !m_audio.load( applicationManager->getSoundManager() ) )
-            {
-                WP_LOG_WARNING( "Vehicle audio unavailable: check the audio device and bundled WAV files." );
-                if( !m_audioSmokeTest )
-                    m_audioEnabled = false;
-            }
-
+            m_raceScene->initializePresentation();
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -291,8 +275,6 @@ namespace workphone
 
             setLoadingState( LoadingState::Unloading );
 
-            m_audio.unload();
-            m_effects.unload();
 
             if( m_inputListener )
             {
@@ -362,7 +344,7 @@ namespace workphone
         }
 
         Application::update();
-        if( m_audioEnabled && Thread::getCurrentTask() == TaskId::Physics )
+        if ( m_audioSmokeTest && m_audioEnabled && Thread::getCurrentTask() == TaskId::Physics )
             updateVehicleAudio();
         if( m_collisionSmokeTest && Thread::getCurrentTask() == TaskId::Physics )
             updateCollisionSmokeTest();
@@ -374,8 +356,7 @@ namespace workphone
         if( Thread::getCurrentTask() == TaskId::Render )
         {
             updateRenderCamera();
-            if( m_effectsEnabled )
-                updateVehicleEffects();
+            if ( m_effectsSmokeTest && m_effectsEnabled ) updateVehicleEffects();
             if( m_smokeTest && m_smokePhase > 0 )
             {
                 auto car = m_vehicleActor->getComponent<scene::CarController>();
@@ -555,46 +536,10 @@ namespace workphone
 
     void SampleVehicleAdvanced::performReset()
     {
-        m_effects.reset();
-        if( m_raceScene ) m_raceScene->setControls( 0, 0, 0 );
+        if ( m_raceScene ) m_raceScene->performReset();
         m_lapStart = 0;
         m_nextCheckpoint = 1;
         m_lastTrackIndex = 0;
-        if( m_vehicleActor )
-        {
-            if( auto carController = m_vehicleActor->getComponent<scene::CarController>() )
-            {
-                carController->setThrottle( 0.0f );
-                carController->setBrake( 0.0f );
-                carController->setSteering( 0.0f );
-
-                if( auto vehicle = carController->getVehicleController() )
-                {
-                    vehicle->reset();
-                    vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), 0.0f );
-                    vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::BRAKE ), 0.0f );
-                    vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::STEERING ), 0.0f );
-                }
-            }
-
-            if( auto rigidbody = m_vehicleActor->getComponent<scene::Rigidbody>() )
-            {
-                rigidbody->setLinearVelocity( Vector3<real_Num>::zero() );
-                rigidbody->setAngularVelocity( Vector3<real_Num>::zero() );
-                if( auto body = rigidbody->getRigidDynamic() )
-                {
-                    body->clearForce();
-                    body->clearTorque();
-                    body->setTransform( Transform3<real_Num>( getVehicleSpawnPosition(),
-                                                              Quaternion<real_Num>::identity() ) );
-                }
-            }
-
-            m_vehicleActor->setPosition( getVehicleSpawnPosition() );
-            m_vehicleActor->setOrientation( Quaternion<real_Num>::identity() );
-            m_vehicleActor->updateTransform();
-        }
-
         if( m_cameraActor )
         {
             m_cameraActor->setPosition( getInitialCameraPosition() );
@@ -693,41 +638,7 @@ namespace workphone
         const auto dt = float( app->getTimer()->getDeltaTime() );
         if( !std::isfinite( dt ) || dt <= 0 )
             return;
-        advanced::VehicleEffectsFrame frame;
-        frame.playing = app->isPlaying() && !app->isPaused();
-        frame.position = m_vehicleActor->getPosition();
-        frame.velocity = m_vehicleActor->getComponent<scene::Rigidbody>()->getLinearVelocity();
-        auto vehicle = m_vehicleActor->getComponent<scene::CarController>()->getVehicleController();
-        for( u32 i = 0; i < 4; ++i )
-        {
-            auto wheel = vehicle->getWheelController( i );
-            if( !wheel )
-                continue;
-            auto properties = wheel->getProperties();
-            bool grounded = false;
-            double slip = 0;
-            properties->getPropertyValue( "Is On Ground", grounded );
-            properties->getPropertyValue( "Slip Velocity", slip );
-            frame.slip[i] = float( slip );
-            frame.width[i] = float( m_assets.vehicle.physics.wheels[i].tire.widthM * .82 );
-            if( !grounded )
-                continue;
-            const auto hub = wheel->getWorldTransform().getPosition();
-            SmartPtr<physics::IRaycastHit> hit = make_ptr<physics::RaycastHit>();
-            // Reuse the vehicle callback, which excludes its own chassis.
-            if( vehicle->getBody()->castWorldRay(
-                    Ray3<real_Num>( hub + Vector3F( 0, .25f, 0 ), Vector3F( 0, -1, 0 ) ), hit ) &&
-                hit->getDistance() < 1.5f && hit->getNormal().y > .5f )
-            {
-                frame.grounded[i] = true;
-                frame.contact[i] = hit->getPoint();
-                frame.normal[i] = hit->getNormal();
-                const auto index = m_assets.circuit.nearest( frame.contact[i] );
-                auto offset = frame.contact[i] - m_assets.circuit.samples[index].position;
-                offset.y = 0;
-                frame.onRoad[i] = offset.length() < 6.85f;
-            }
-        }
+        auto frame = m_raceScene->sampleVehicleEffects();
         if( m_effectsSmokeTest )
         {
             m_effectsTestGrounded =
@@ -751,49 +662,65 @@ namespace workphone
                 frame.onRoad[i] = !dust;
             }
         }
-        m_effects.update( frame, dt );
+        m_raceScene->getVehicleVisualEffects().update( frame, dt );
         if( !m_effectsSmokeTest )
             return;
         m_effectsTestTime += std::min( dt, .05f );
         const float durations[] = { 3.f, 2.f, 1.f, 1.f, .5f };
         if( m_effectsTestTime < durations[m_effectsTestPhase] )
             return;
-        const auto particleCount = m_effects.particles(), decalCount = m_effects.decals();
-        bool passed = m_effects.uploaded();
+        const auto particleCount = m_raceScene->getVehicleVisualEffects().particles(),
+                   decalCount = m_raceScene->getVehicleVisualEffects().decals();
+        bool passed = m_raceScene->getVehicleVisualEffects().uploaded();
         if( m_effectsTestPhase == 0 )
         {
             passed = passed && particleCount > 0 && decalCount > 0 && m_effectsTestGrounded;
-            m_effectsTestEmitted = m_effects.emitted();
+            m_effectsTestEmitted = m_raceScene->getVehicleVisualEffects().emitted();
             m_effectsTestDecals = decalCount;
             if( !m_effectsCapture.empty() )
                 passed = advanced::captureFrame( m_effectsCapture ) && passed;
         }
         else if( m_effectsTestPhase == 1 )
         {
-            passed = passed && particleCount == 0 && m_effects.emitted() == m_effectsTestEmitted &&
+            passed = passed && particleCount == 0 &&
+                     m_raceScene->getVehicleVisualEffects().emitted() == m_effectsTestEmitted &&
                      decalCount > 0;
         }
         else if( m_effectsTestPhase == 2 )
         {
-            passed = passed && particleCount > 0 && m_effects.emitted() > m_effectsTestEmitted &&
+            passed = passed && particleCount > 0 &&
+                     m_raceScene->getVehicleVisualEffects().emitted() > m_effectsTestEmitted &&
                      decalCount == m_effectsTestDecals;
-            m_effectsTestEmitted = m_effects.emitted();
+            m_effectsTestEmitted = m_raceScene->getVehicleVisualEffects().emitted();
             m_effectsTestParticles = particleCount;
             if( !m_effectsCapture.empty() )
                 passed = advanced::captureFrame( m_effectsCapture + ".dust.bmp" ) && passed;
             frame.playing = false;
-            m_effects.update( frame, dt );
+            m_raceScene->getVehicleVisualEffects().update( frame, dt );
         }
         else if( m_effectsTestPhase == 3 )
         {
             passed = passed && particleCount == m_effectsTestParticles &&
-                     m_effects.emitted() == m_effectsTestEmitted && decalCount == m_effectsTestDecals;
-            m_effects.reset();
-            passed = passed && m_effects.decals() == 0 && m_effects.particles() == 0;
+                     m_raceScene->getVehicleVisualEffects().emitted() == m_effectsTestEmitted &&
+                     decalCount == m_effectsTestDecals;
+            m_raceScene->getVehicleVisualEffects().reset();
+            passed = passed && m_raceScene->getVehicleVisualEffects().decals() == 0 &&
+                     m_raceScene->getVehicleVisualEffects().particles() == 0;
         }
         else
+        {
             passed = passed && particleCount == 0 && decalCount == 0 &&
-                     m_effects.emitted() == m_effectsTestEmitted;
+                     m_raceScene->getVehicleVisualEffects().emitted() == m_effectsTestEmitted;
+            // These are the same lifecycle controls exposed to the Lua sample.
+            m_raceScene->setEffectsEnabled(false);
+            m_raceScene->initializePresentation();
+            passed = passed && !m_raceScene->isEffectsAvailable() &&
+                     m_raceScene->getParticleCount() == 0 && m_raceScene->getSkidDecalCount() == 0;
+            m_raceScene->setEffectsEnabled(true);
+            m_raceScene->initializePresentation();
+            passed = passed && m_raceScene->isEffectsAvailable() &&
+                     m_raceScene->getParticleCount() == 0 && m_raceScene->getSkidDecalCount() == 0;
+        }
         WP_LOG( "Vehicle FX smoke phase " + StringUtil::toString( m_effectsTestPhase ) +
                 ( passed ? ": PASS" : ": FAIL" ) +
                 " particles=" + StringUtil::toString( particleCount ) +
@@ -818,40 +745,7 @@ namespace workphone
             return;
         const auto audioDt = float( m_audioElapsed );
         m_audioElapsed = 0;
-        advanced::VehicleAudioInput input;
-        const auto &drivetrain = m_assets.vehicle.physics.drivetrain;
-        input.idleRpm = float( drivetrain.idleRpm );
-        input.redlineRpm = float( drivetrain.redlineRpm );
-        input.playing = app->isPlaying() && !app->isPaused();
-        if( auto car = m_vehicleActor->getComponent<scene::CarController>() )
-        {
-            if( auto vehicle = car->getVehicleController() )
-            {
-                input.throttle = vehicle->getChannel( 0 );
-                if( auto drive = vehicle->getDriveTrain() )
-                {
-                    double rpm = 0;
-                    drive->getProperties()->getPropertyValue( "RPM", rpm );
-                    input.rpm = float( rpm );
-                }
-                for( u32 i = 0; i < 4; ++i )
-                    if( auto wheel = vehicle->getWheelController( i ) )
-                    {
-                        auto properties = wheel->getProperties();
-                        bool grounded = false;
-                        double slip = 0;
-                        properties->getPropertyValue( "Is On Ground", grounded );
-                        properties->getPropertyValue( "Slip Velocity", slip );
-                        if( grounded )
-                        {
-                            input.grounded = true;
-                            input.slipSpeed = std::max( input.slipSpeed, float( slip ) );
-                        }
-                    }
-            }
-        }
-        if( auto body = m_vehicleActor->getComponent<scene::Rigidbody>() )
-            input.speed = float( body->getLinearVelocity().length() );
+        auto input = m_raceScene->sampleVehicleAudio();
         if( m_audioSmokeTest )
         {
             // Exercise the real platform voices without depending on driving-test tuning.
@@ -862,14 +756,14 @@ namespace workphone
             input.grounded = m_audioSmokePhase < 2;
             input.playing = m_audioSmokePhase < 3;
         }
-        m_audio.update( input, audioDt );
+        m_raceScene->getVehicleAudio().update( input, audioDt );
         if( !m_audioSmokeTest )
             return;
         m_audioSmokeTime += audioDt;
         if( m_audioSmokeTime < 2 )
             return;
-        const auto &gains = m_audio.gains();
-        bool passed = m_audio.isPlaying();
+        const auto& gains = m_raceScene->getVehicleAudio().gains();
+        bool passed = m_raceScene->getVehicleAudio().isPlaying();
         if( m_audioSmokePhase == 0 )
             passed = passed && gains.engine[0] > .19f && gains.squeal < .001f;
         else if( m_audioSmokePhase == 1 )
@@ -1328,6 +1222,9 @@ namespace workphone
         m_vehicleActor->setName( "Procedural Grand Prix" );
         m_vehicleActor->setPosition( getVehicleSpawnPosition() );
         m_raceScene = m_vehicleActor->addComponent<scene::ProceduralRaceScene>();
+        m_raceScene->setAudioEnabled( m_audioEnabled );
+        m_raceScene->setEffectsEnabled( m_effectsEnabled );
+        m_raceScene->setAutomaticPresentation( !m_audioSmokeTest && !m_effectsSmokeTest );
         m_raceScene->setSeed( m_seed );
         m_raceScene->setQuality( static_cast<s32>( m_quality ) );
         if( !m_raceScene->regenerate() )

@@ -51,6 +51,8 @@ local function fixture()
     function race:isPhysicsConfigured() return true end
     function race:setSeed(seed) self.seed = seed end
     function race:setQuality(quality) self.quality = quality end
+    function race:setAudioEnabled(enabled) self.audioEnabled = enabled end
+    function race:setEffectsEnabled(enabled) self.effectsEnabled = enabled end
     function race:regenerate() return self.generated end
     function race:getGenerationError() return "Missing WPProcedural" end
     local car = {}
@@ -128,6 +130,10 @@ assert(not sample.started, "Edit mode must not auto-generate")
 app.playing = true
 sample:update()
 assert(sample.started and app.playing and race.seed == 7 and race.quality == 2)
+assert(race.audioEnabled and race.effectsEnabled, "Presentation defaults must reach the shared component")
+sample:setPresentationOptions(false, false)
+assert(not race.audioEnabled and not race.effectsEnabled, "Presentation switches must update the existing component")
+sample:setPresentationOptions(true, true)
 assert(app.playTransitions == 1, "Actors generated during play must enter play state")
 assert(sample.vehicleActor.position.y == 0.42 and sample.cameraActor.position.z == 8)
 assert(sample.cameraActor.smoothMotion, "Follow camera must use the render smoothing path")
@@ -237,6 +243,31 @@ assert(benchmarkOutput:find("mean=10.000 ms p95=10.000 ms updates=100.0/s", 1, t
     "Benchmark must use elapsed wall time for application update intervals")
 assert(benchmarkOutput:find("Render statistics fixture\nRender counters fixture", 1, true),
     "Benchmark must preserve timing and counter fields without sampling the snapshot wait")
+sample:shutdown()
+
+sample, app, race, body, keys, destroyed = fixture()
+local fields = {}
+local properties = {}
+function properties:setPropertyAsString(k,v) fields[k]=v end
+function properties:setPropertyAsInt(k,v) fields[k]=v end
+function properties:setPropertyAsBool(k,v) fields[k]=v end
+function properties:setButtonPressed(k,v) fields[k]=v end
+function properties:getPropertyAsString(k) return fields[k] end
+function properties:getPropertyAsInt(k,default) return fields[k] or default end
+function properties:getPropertyAsBool(k,default) if fields[k] == nil then return default end; return fields[k] end
+function properties:isButtonPressed(k) return fields[k] == true end
+local parameters = {at=function() return properties end}
+sample:getProperties(parameters)
+assert(fields["Audio Enabled"] and fields["Effects Enabled"], "Editor properties must expose presentation defaults")
+fields["Audio Enabled"], fields["Effects Enabled"] = false, false
+sample:setProperties(parameters)
+sample:generate()
+assert(not race.audioEnabled and not race.effectsEnabled, "Generate must honor saved presentation options")
+fields = { ["Effects Enabled"] = true }
+sample:setProperties(parameters)
+assert(not race.audioEnabled and race.effectsEnabled, "Partial property updates must preserve audio selection")
+sample:generate()
+assert(not race.audioEnabled and race.effectsEnabled and #destroyed == 1, "Regeneration must preserve presentation selection and replace its subtree")
 sample:shutdown()
 
 sample, app, race, body, keys, destroyed = fixture()

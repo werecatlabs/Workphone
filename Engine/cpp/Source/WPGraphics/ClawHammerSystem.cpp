@@ -1,32 +1,34 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
-#include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawDebug.hpp>
-#include <WPGraphics/ClawOverlayManager.hpp>
-#include <WPGraphics/ClawScene.hpp>
-#include <WPGraphics/ClawWindow.hpp>
-#include <WPGraphics/ClawRenderTarget.hpp>
-#include <WPGraphics/ClawShader.hpp>
-#include <WPGraphics/ClawResourceGroupManager.hpp>
 #include <WPGraphics/ClawFontManager.hpp>
 #include <WPGraphics/ClawGraphicsPipeline.hpp>
-#include <WPGraphics/ClawMaterialManager.hpp>
+#include <WPGraphics/ClawHammerSystem.hpp>
+#include <WPGraphics/ClawImguiManager.hpp>
 #include <WPGraphics/ClawMaterial.hpp>
+#include <WPGraphics/ClawMaterialManager.hpp>
 #include <WPGraphics/ClawMaterialPass.hpp>
 #include <WPGraphics/ClawMaterialTechnique.hpp>
 #include <WPGraphics/ClawMaterialTexture.hpp>
-#include <WPGraphics/ClawTexture.hpp>
-#include <WPGraphics/ClawTextureManager.hpp>
+#include <WPGraphics/ClawOverlayManager.hpp>
+#include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRendererDX12.hpp>
 #include <WPGraphics/ClawRendererSoftware.hpp>
+#include <WPGraphics/ClawResourceGroupManager.hpp>
+#include <WPGraphics/ClawScene.hpp>
+#include <WPGraphics/ClawShader.hpp>
+#include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/ClawTextureManager.hpp>
+#include <WPGraphics/ClawWindow.hpp>
 #include <WPGraphics/UI/ClawUIManager.hpp>
-#include <WPGraphics/ClawImguiManager.hpp>
-#include <Workphone/Workphone.hpp>
+#include <WPGraphics/Vehicle/ClawVehicleVisualEffects.hpp>
 #include <WPImGui/WPImGui.hpp>
-#include "workphone_graphics_system.h"
-#include "workphone_graphics_renderer_dx11.h"
+#include <Workphone/Workphone.hpp>
 #include <chrono>
 #include <cstdio>
+
+#include "workphone_graphics_renderer_dx11.h"
+#include "workphone_graphics_system.h"
 
 namespace workphone
 {
@@ -217,6 +219,7 @@ namespace workphone
                 setFactoryManager( factoryManager );
 
                 FactoryUtil::addFactory<ClawScene>( factoryManager );
+                FactoryUtil::addFactory<advanced::ClawVehicleVisualEffects>( factoryManager );
                 FactoryUtil::addFactory<ClawGraphicsPipeline>( factoryManager );
                 FactoryUtil::addFactory<ClawWindow>( factoryManager );
                 FactoryUtil::addFactory<ClawRenderTarget>( factoryManager );

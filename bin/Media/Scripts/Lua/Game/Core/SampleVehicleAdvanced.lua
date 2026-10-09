@@ -2,7 +2,8 @@
 -- Requires WPProcedural, WPVehiclePhysics and the ProceduralRaceScene Lua binding.
 -- Attach this class to an actor and press Generate, or enter play mode to start.
 -- ProceduralRaceScene owns generated assets and runs forces/reset/suspension on
--- the physics task. This script owns input, the camera rig, lap timing and HUD.
+-- the physics task. It also owns audio, tyre particles and skid decals on the
+-- render task. This script owns input, the camera rig, lap timing and HUD.
 if not RaceSession then include("RaceSession.lua") end
 class 'SampleVehicleAdvanced' (BaseComponent)
 
@@ -20,6 +21,7 @@ end
 
 function SampleVehicleAdvanced:__init(component)
     BaseComponent.__init(self, component)
+    self.audioEnabled, self.effectsEnabled = true, true
     self.seed, self.quality = 7, 2 -- Preview=0, Standard=1, High=2, Cinematic=3.
     self.started, self.startFailed, self.resetWasDown = false, false, false
     self.smokeTest, self.trackSmokeTest = false, false
@@ -36,6 +38,15 @@ end
 function SampleVehicleAdvanced:setGenerationOptions(seed, quality)
     self.seed = math.floor(clamp(seed, 0, 4294967295))
     self.quality = math.floor(clamp(quality, 0, 3))
+end
+
+-- Changes take effect on the component's next render update, including while paused.
+function SampleVehicleAdvanced:setPresentationOptions(audioEnabled, effectsEnabled)
+    self.audioEnabled, self.effectsEnabled = audioEnabled, effectsEnabled
+    if self.raceScene then
+        self.raceScene:setAudioEnabled(audioEnabled)
+        self.raceScene:setEffectsEnabled(effectsEnabled)
+    end
 end
 
 function SampleVehicleAdvanced:resetRaceProgress()
@@ -57,6 +68,8 @@ function SampleVehicleAdvanced:getProperties(parameters)
     local properties = parameters:at(0)
     properties:setPropertyAsString("Seed", tostring(self.seed))
     properties:setPropertyAsInt("Appearance Quality", self.quality)
+    properties:setPropertyAsBool("Audio Enabled", self.audioEnabled)
+    properties:setPropertyAsBool("Effects Enabled", self.effectsEnabled)
     properties:setPropertyAsBool("Smoke Test", self.smokeTest)
     properties:setPropertyAsBool("Track Smoke Test", self.trackSmokeTest)
     properties:setPropertyAsBool("Performance Test", self.performanceTest)
@@ -68,6 +81,8 @@ function SampleVehicleAdvanced:setProperties(parameters)
     local properties = parameters:at(0)
     self:setGenerationOptions(tonumber(properties:getPropertyAsString("Seed")) or self.seed,
         properties:getPropertyAsInt("Appearance Quality", self.quality))
+    self:setPresentationOptions(properties:getPropertyAsBool("Audio Enabled", self.audioEnabled),
+        properties:getPropertyAsBool("Effects Enabled", self.effectsEnabled))
     self:setSmokeTest(properties:getPropertyAsBool("Smoke Test", self.smokeTest))
     self:setTrackSmokeTest(properties:getPropertyAsBool("Track Smoke Test", self.trackSmokeTest))
     self.performanceTest = properties:getPropertyAsBool("Performance Test", self.performanceTest)
@@ -108,6 +123,7 @@ function SampleVehicleAdvanced:generate()
         assert(self.raceScene, "ProceduralRaceScene is unavailable; rebuild Workphone and WPLua")
         self.raceScene:setSeed(self.seed)
         self.raceScene:setQuality(self.quality)
+        self:setPresentationOptions(self.audioEnabled, self.effectsEnabled)
         if self.configureRaceScene then self:configureRaceScene(self.raceScene) end
         assert(self.raceScene:regenerate(), self.raceScene:getGenerationError())
         self.car = self.raceScene:getCarController()

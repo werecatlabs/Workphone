@@ -125,3 +125,6 @@ steam_appid.txt
 /wpimgui-build.log
 /*.log
 /Samples/cpp/VehicleAdvanced/review
+
+# Generated shared copy of the vehicle sample audio asset pack.
+/bin/Media/Audio/VehicleAdvanced/

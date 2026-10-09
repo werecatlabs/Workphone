@@ -293,3 +293,13 @@ if (WP_BUILD_DEPENDENCIES)
 		add_dependencies(Workphone zzip)
 	endif()
 endif()
+
+# Shared vehicle audio is also needed by Editor-hosted Lua samples.
+add_custom_target(WPVehicleAudioAssets
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${WP_ROOT}/bin/Media/Audio/VehicleAdvanced"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${WP_ROOT}/Samples/cpp/VehicleAdvanced/Audio"
+        "${WP_ROOT}/bin/Media/Audio/VehicleAdvanced"
+    VERBATIM)
+set_target_properties(WPVehicleAudioAssets PROPERTIES FOLDER Engine/Assets)
+add_dependencies(Workphone WPVehicleAudioAssets)

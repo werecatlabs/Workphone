@@ -1,11 +1,15 @@
 #pragma once
-#include <Workphone/Scene/Components/Component.hpp>
-#include <Workphone/Scene/Components/LODGroup.hpp>
-#include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
-#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
+#include <Workphone/Vehicle/VehicleAudio.h>
+#include <Workphone/Vehicle/VehicleVisualEffects.h>
+
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/FixedArray.hpp>
+#include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
+#include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
+#include <Workphone/Scene/Components/Component.hpp>
+#include <Workphone/Scene/Components/LODGroup.hpp>
 #include <array>
+#include <mutex>
 #include <vector>
 
 namespace workphone::scene::race
@@ -234,43 +238,67 @@ namespace workphone::scene
         /** Validate reflection resources for the current generated assets. */
         bool validateReflection() const;
 
+        // Shared presentation lifecycle for native and Lua hosts.
+        void initializePresentation();
+        void setAudioEnabled( bool enabled );
+        bool getAudioEnabled() const;
+        void setEffectsEnabled( bool enabled );
+        bool getEffectsEnabled() const;
+        void setAutomaticPresentation( bool enabled );
+        bool isAudioAvailable() const;
+        bool isEffectsAvailable() const;
+        u32 getParticleCount() const;
+        u32 getSkidDecalCount() const;
+        bool isRoadSurface( const Vector3F& position ) const;
+        advanced::VehicleAudioInput sampleVehicleAudio() const;
+        advanced::VehicleEffectsFrame sampleVehicleEffects() const;
+        advanced::VehicleAudio& getVehicleAudio();
+        advanced::VehicleVisualEffects& getVehicleVisualEffects();
         WP_CLASS_REGISTER_DECL;
 
     private:
-        /** Apply aerodynamic forces to the vehicle based on current velocity. */
-        void applyAerodynamics();
+     advanced::VehicleAudio m_vehicleAudio;
+     advanced::VehicleVisualEffects m_vehicleVisualEffects;
+     mutable std::recursive_mutex m_presentationMutex;
+     atomic_bool m_audioEnabled{ true }, m_effectsEnabled{ true }, m_automaticPresentation{ true };
+     atomic_bool m_presentationResetRequested{ false };
+     bool m_presentationInitialized = false, m_appliedAudioEnabled = false,
+          m_appliedEffectsEnabled = false;
+     float m_presentationAudioClock = 0;
+     /** Apply aerodynamic forces to the vehicle based on current velocity. */
+     void applyAerodynamics();
 
-        /** Update surface grip coefficient from current scene / physics state. */
-        void updateSurfaceGrip();
+     /** Update surface grip coefficient from current scene / physics state. */
+     void updateSurfaceGrip();
 
-        /** Generated scene assets owned by this component. */
-        race::SceneAssets m_assets;
+     /** Generated scene assets owned by this component. */
+     race::SceneAssets m_assets;
 
-        /** Deterministic seed used for procedural generation (default = 7). */
-        u32 m_seed = 7;
+     /** Deterministic seed used for procedural generation (default = 7). */
+     u32 m_seed = 7;
 
-        /** Visual quality level used when building the vehicle appearance. */
-        procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;
+     /** Visual quality level used when building the vehicle appearance. */
+     procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;
 
-        /** Generated city layout used for street surface queries. */
-        procedural::OpenCityLayout m_cityLayout{};
+     /** Generated city layout used for street surface queries. */
+     procedural::OpenCityLayout m_cityLayout{};
 
-        /** Select open-city generation instead of the standalone circuit. */
-        bool m_openCity = false;
+     /** Select open-city generation instead of the standalone circuit. */
+     bool m_openCity = false;
 
-        /** City size and selected street route used for generation. */
-        s32 m_cityBlocks = 8, m_cityRoute = 0;
+     /** City size and selected street route used for generation. */
+     s32 m_cityBlocks = 8, m_cityRoute = 0;
 
-        /** Last generation error message, empty when generation succeeded. */
-        String m_generationError;
+     /** Last generation error message, empty when generation succeeded. */
+     String m_generationError;
 
-        /** Per-scene surface grip multiplier applied to vehicle physics. */
-        f32 m_surfaceGrip = 1;
+     /** Per-scene surface grip multiplier applied to vehicle physics. */
+     f32 m_surfaceGrip = 1;
 
-        /** True when physics has been configured for the generated scene. */
-        bool m_physicsConfigured = false;
+     /** True when physics has been configured for the generated scene. */
+     bool m_physicsConfigured = false;
 
-        /** Flag used to request a reset safely across threads/tasks. */
-        atomic_bool m_resetRequested{ false };
+     /** Flag used to request a reset safely across threads/tasks. */
+     atomic_bool m_resetRequested{ false };
     };
 }  // namespace workphone::scene

@@ -1,8 +1,35 @@
 # Lua sample
 
 `bin/Media/Scripts/Lua/Game/Core/SampleVehicleAdvanced.lua` is the Script component
-version of this sample. Rebuild Workphone, WPGraphics and WPLua before using it.
+version of this sample. Rebuild Workphone, WPGraphics, WPLuaBind and Editor before using it.
 The editor plugin configuration must include WPProcedural and WPVehiclePhysics.
+
+The Lua and native samples share `ProceduralRaceScene`: procedural car/track assets,
+physics tuning, roadside box collision, LOD, wheel visuals, shadows, audio mixing,
+contact sampling, particles and skid decals. The engine component owns their lifetime;
+regeneration and actor destruction release them. Presentation updates run on the render
+task; no per-frame Lua particle or decal calls are needed.
+
+**Audio Enabled** and **Effects Enabled** default to true and can be changed live in
+script properties. They are independent of Smoke Test, which is a driving test.
+The Claw backend supplies smoke, dust, impact sparks and bounded skid marks, using
+quality-dependent budgets. Other graphics backends continue to run the sample but
+report effects as unavailable. Pause stops emission and fades audio; Reset clears
+particles and marks. Audio uses separate voices per vehicle, so deleting one sample
+does not stop another vehicle's sound.
+
+The Workphone build copies the existing WAV pack and its credits into
+`bin/Media/Audio/VehicleAdvanced`, where the engine audio loader resolves it for both
+Editor and the native application. A working audio output device and WPAudio plugin
+are required for sound. Presentation failures are logged without stopping generation.
+
+Lua can call `raceScene:setAudioEnabled(bool)`, `setEffectsEnabled(bool)`,
+`getAudioEnabled()`, `getEffectsEnabled()`, `isAudioAvailable()`, `isEffectsAvailable()`,
+`getParticleCount()` and `getSkidDecalCount()`. Availability becomes current after the
+first render update. Existing seed, quality, generation, collision and LOD APIs remain
+the shared entry points. C++ consumers can also use the engine's `VehicleAudio` and
+`VehicleVisualEffects` helpers; the latter selects a registered graphics implementation
+through `IVehicleVisualEffects`, keeping Workphone independent of WPGraphics.
 
 Create an empty actor in the Editor, add a **Script** component, and set its
 `className` to `SampleVehicleAdvanced` and enable **updateInPlayMode**.

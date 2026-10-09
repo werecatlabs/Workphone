@@ -1,9 +1,10 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
-#include <Workphone/Workphone.hpp>
-#include <Workphone/Mesh/MeshManager.hpp>
-#include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
+#include <Workphone/Mesh/MeshManager.hpp>
+#include <Workphone/Physics/RaycastHit.hpp>
+#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/Systems/LODSystem.hpp>
+#include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -40,6 +41,7 @@ namespace workphone::scene
 
     bool ProceduralRaceScene::regenerate()
     {
+        std::lock_guard<std::recursive_mutex> presentationLock(m_presentationMutex);
         auto actor = getActor();
         if(!actor)
         {
@@ -107,6 +109,12 @@ namespace workphone::scene
 
     void ProceduralRaceScene::clearGeneratedScene()
     {
+        std::lock_guard<std::recursive_mutex> presentationLock( m_presentationMutex );
+        m_vehicleAudio.unload();
+        m_vehicleVisualEffects.unload();
+        m_presentationInitialized = false;
+        m_presentationResetRequested = false;
+        m_presentationAudioClock = 0;
         setControls(0, 0, 0);
         m_resetRequested = false;
         m_physicsConfigured = false;
@@ -175,6 +183,7 @@ namespace workphone::scene
 
     void ProceduralRaceScene::performReset()
     {
+        m_presentationResetRequested = true;
         setControls(0, 0, 0);
         auto actor = getActor();
         if(!actor)
@@ -210,15 +219,34 @@ namespace workphone::scene
 
     void ProceduralRaceScene::update()
     {
-        if(!isEnabled() || !isGenerated())
-            return;
         auto app = core::IApplicationManager::instance();
         if(Thread::getCurrentTask() == TaskId::Render)
         {
+            // Generation may hold scene/graphics locks on the application task.
+            // Skip presentation rather than wait with render locks held.
+            std::unique_lock<std::recursive_mutex> presentationLock(m_presentationMutex, std::try_to_lock);
+            if (!presentationLock.owns_lock() || !isGenerated() || !getActor()) return;
             getActor()->updateTransform();
+            if ( m_presentationResetRequested.exchange( false ) ) m_vehicleVisualEffects.reset();
+            if ( m_automaticPresentation )
+            {
+                initializePresentation();
+                const auto dt = float( app->getTimer()->getDeltaTime() );
+                if ( std::isfinite( dt ) && dt > 0 )
+                {
+                    m_presentationAudioClock += std::min( dt, .05f );
+                    if ( m_presentationAudioClock >= 1.f / 30.f )
+                    {
+                        m_vehicleAudio.update( sampleVehicleAudio(), m_presentationAudioClock );
+                        m_presentationAudioClock = 0;
+                    }
+                    m_vehicleVisualEffects.update( sampleVehicleEffects(), dt );
+                }
+            }
             return;
         }
-        if(Thread::getCurrentTask() != TaskId::Physics || !app->isPlaying() || app->isPaused())
+        if ( !isGenerated() || !isEnabled() || Thread::getCurrentTask() != TaskId::Physics || !app->isPlaying() ||
+             app->isPaused() )
             return;
         auto car = getCarController();
         // Play rebuilds the wheel setup. Apply tuning after that transition.
@@ -402,6 +430,8 @@ namespace workphone::scene
         auto p = Component::getProperties();
         p->setProperty("Seed", m_seed);
         p->setProperty("Appearance Quality", getQuality());
+        p->setProperty( "Audio Enabled", getAudioEnabled() );
+        p->setProperty( "Effects Enabled", getEffectsEnabled() );
         p->setProperty("Open City", m_openCity);
         p->setProperty("City Blocks", m_cityBlocks);
         p->setProperty("City Route", m_cityRoute);
@@ -419,6 +449,11 @@ namespace workphone::scene
         s32 quality = getQuality();
         p->getPropertyValue("Appearance Quality", quality);
         setQuality(quality);
+        bool audio = getAudioEnabled(), effects = getEffectsEnabled();
+        p->getPropertyValue( "Audio Enabled", audio );
+        p->getPropertyValue( "Effects Enabled", effects );
+        setAudioEnabled( audio );
+        setEffectsEnabled( effects );
         p->getPropertyValue("Open City", m_openCity);
         p->getPropertyValue("City Blocks", m_cityBlocks);
         p->getPropertyValue("City Route", m_cityRoute);
@@ -476,5 +511,173 @@ namespace workphone::scene
     u32 ProceduralRaceScene::getSeed() const
     {
         return m_seed;
+    }
+
+    void ProceduralRaceScene::initializePresentation()
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        if ( !isGenerated() ) return;
+        auto app = core::IApplicationManager::instancePtr();
+        if ( !app ) return;
+        const bool audio = m_audioEnabled, effects = m_effectsEnabled;
+        if ( !m_presentationInitialized || audio != m_appliedAudioEnabled )
+        {
+            m_vehicleAudio.unload();
+            if ( audio && !m_vehicleAudio.load( app->getSoundManager() ) )
+                WP_LOG_WARNING(
+                    "Race vehicle audio unavailable: check the output device and bundled WAV "
+                    "files." );
+            m_appliedAudioEnabled = audio;
+        }
+        if ( !m_presentationInitialized || effects != m_appliedEffectsEnabled )
+        {
+            m_vehicleVisualEffects.unload();
+            if ( effects && !m_vehicleVisualEffects.load( getQuality() == 0   ? 0u
+                                                          : getQuality() == 1 ? 1u
+                                                                              : 2u,
+                                                          m_seed ) )
+                WP_LOG_WARNING(
+                    "Race vehicle visual effects unavailable in the active graphics backend." );
+            m_appliedEffectsEnabled = effects;
+        }
+        m_presentationInitialized = true;
+    }
+    void ProceduralRaceScene::setAudioEnabled( bool enabled ) { m_audioEnabled = enabled; }
+    bool ProceduralRaceScene::getAudioEnabled() const { return m_audioEnabled; }
+    void ProceduralRaceScene::setEffectsEnabled( bool enabled ) { m_effectsEnabled = enabled; }
+    bool ProceduralRaceScene::getEffectsEnabled() const { return m_effectsEnabled; }
+    void ProceduralRaceScene::setAutomaticPresentation( bool enabled )
+    {
+        m_automaticPresentation = enabled;
+    }
+    bool ProceduralRaceScene::isAudioAvailable() const
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        return m_vehicleAudio.isPlaying();
+    }
+    bool ProceduralRaceScene::isEffectsAvailable() const
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        return m_vehicleVisualEffects.uploaded();
+    }
+    u32 ProceduralRaceScene::getParticleCount() const
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        return u32( m_vehicleVisualEffects.particles() );
+    }
+    u32 ProceduralRaceScene::getSkidDecalCount() const
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_presentationMutex );
+        return u32( m_vehicleVisualEffects.decals() );
+    }
+    advanced::VehicleAudio& ProceduralRaceScene::getVehicleAudio() { return m_vehicleAudio; }
+    advanced::VehicleVisualEffects& ProceduralRaceScene::getVehicleVisualEffects()
+    {
+        return m_vehicleVisualEffects;
+    }
+    bool ProceduralRaceScene::isRoadSurface( const Vector3F& position ) const
+    {
+        if ( !isGenerated() ) return false;
+        if ( m_assets.openCity ) return m_cityLayout.roadDistance( position.x, position.z ) < 6.85f;
+        auto offset = position - getCircuitPosition( nearestCircuitSample( position ) );
+        offset.y = 0;
+        return offset.length() < 6.85f;
+    }
+    advanced::VehicleEffectsFrame ProceduralRaceScene::sampleVehicleEffects() const
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        if ( !app || !getActor() || !isGenerated() )
+        {
+            advanced::VehicleEffectsFrame empty;
+            empty.playing = false;
+            return empty;
+        }
+        advanced::VehicleEffectsFrame frame;
+        frame.playing = app->isPlaying() && !app->isPaused();
+        frame.position = getActor()->getPosition();
+        auto body = getActor()->getComponent<scene::Rigidbody>();
+        auto car = getActor()->getComponent<scene::CarController>();
+        auto vehicle = car ? car->getVehicleController() : nullptr;
+        if ( !body || !vehicle || !vehicle->getBody() )
+        {
+            frame.playing = false;
+            return frame;
+        }
+        frame.velocity = body->getLinearVelocity();
+        for ( u32 i = 0; i < 4; ++i )
+        {
+            auto wheel = vehicle->getWheelController( i );
+            if ( !wheel ) continue;
+            auto properties = wheel->getProperties();
+            bool grounded = false;
+            double slip = 0;
+            properties->getPropertyValue( "Is On Ground", grounded );
+            properties->getPropertyValue( "Slip Velocity", slip );
+            frame.slip[i] = float( slip );
+            frame.width[i] = float( m_assets.vehicle.physics.wheels[i].tire.widthM * .82 );
+            if ( !grounded ) continue;
+            const auto hub = wheel->getWorldTransform().getPosition();
+            SmartPtr<physics::IRaycastHit> hit = make_ptr<physics::RaycastHit>();
+            // Reuse the vehicle callback, which excludes its own chassis.
+            if ( vehicle->getBody()->castWorldRay(
+                     Ray3<real_Num>( hub + Vector3F( 0, .25f, 0 ), Vector3F( 0, -1, 0 ) ), hit ) &&
+                 hit->getDistance() < 1.5f && hit->getNormal().y > .5f )
+            {
+                frame.grounded[i] = true;
+                frame.contact[i] = hit->getPoint();
+                frame.normal[i] = hit->getNormal();
+                frame.onRoad[i] = isRoadSurface( frame.contact[i] );
+            }
+        }
+
+        frame.playing = frame.playing && isEnabled();
+        return frame;
+    }
+    advanced::VehicleAudioInput ProceduralRaceScene::sampleVehicleAudio() const
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        if ( !app || !getActor() || !isGenerated() )
+        {
+            advanced::VehicleAudioInput empty;
+            empty.playing = false;
+            return empty;
+        }
+        advanced::VehicleAudioInput input;
+        const auto& drivetrain = m_assets.vehicle.physics.drivetrain;
+        input.idleRpm = float( drivetrain.idleRpm );
+        input.redlineRpm = float( drivetrain.redlineRpm );
+        input.playing = app->isPlaying() && !app->isPaused();
+        if ( auto car = getActor()->getComponent<scene::CarController>() )
+        {
+            if ( auto vehicle = car->getVehicleController() )
+            {
+                input.throttle = vehicle->getChannel( 0 );
+                if ( auto drive = vehicle->getDriveTrain() )
+                {
+                    double rpm = 0;
+                    drive->getProperties()->getPropertyValue( "RPM", rpm );
+                    input.rpm = float( rpm );
+                }
+                for ( u32 i = 0; i < 4; ++i )
+                    if ( auto wheel = vehicle->getWheelController( i ) )
+                    {
+                        auto properties = wheel->getProperties();
+                        bool grounded = false;
+                        double slip = 0;
+                        properties->getPropertyValue( "Is On Ground", grounded );
+                        properties->getPropertyValue( "Slip Velocity", slip );
+                        if ( grounded )
+                        {
+                            input.grounded = true;
+                            input.slipSpeed = std::max( input.slipSpeed, float( slip ) );
+                        }
+                    }
+            }
+        }
+        if ( auto body = getActor()->getComponent<scene::Rigidbody>() )
+            input.speed = float( body->getLinearVelocity().length() );
+
+        input.playing = input.playing && isEnabled();
+        return input;
     }
 } // namespace workphone::scene
