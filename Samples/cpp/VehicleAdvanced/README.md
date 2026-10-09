@@ -248,9 +248,13 @@ beyond the old 256-body limit; a 529-body regression checks registration, ray
 queries, contacts, removal and reuse. Sorting only the modified update list
 during actor registration reduced measured generation time from 52.7 to 4.6
 seconds on low and from 80.8 to 8.1 seconds on high with these colliders enabled.
-The driving smoke check passed before the concurrent grip change from 1.25 to
-0.7. With the merged tuning it repeatedly fails the acceleration phase at about
-11.7 m/s against its 20 m/s threshold; that tuning and threshold are preserved.
+The assisted Grand Prix tyre grip is restored to 1.25, matching the on-road
+surface multiplier. The intervening 0.7 setting reduced initial traction and
+failed the acceleration check independently of audio. Seed 7 / low now reaches
+27.9 m/s with audio/effects enabled and 28.0 m/s with both disabled after the
+four-second acceleration phase (previously 15.6 and 15.8 m/s respectively).
+Acceleration and turning checks pass; the complete driving smoke still fails
+the later braking-phase slip/yaw stability check. Its thresholds are unchanged.
 
 Vehicle audio is enabled by default. Six engine loops blend with drivetrain
 RPM and throttle; rolling noise follows road speed, and tyre squeal follows

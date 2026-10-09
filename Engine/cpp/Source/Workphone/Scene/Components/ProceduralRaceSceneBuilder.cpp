@@ -1220,7 +1220,9 @@ namespace workphone::scene::race
             wheelProps->setProperty( "Contact Effective Mass", float( effectiveMass ) );
             wheelProps->setProperty( "Inertia", float( w.tire.wheelInertiaKgM2 ) );
             wheelProps->setProperty( "Brake Friction Torque", float( w.brakeTorqueNm ) );
-            wheelProps->setProperty( "Grip", 0.7f );
+            // Keep startup traction consistent with the assisted Grand Prix setup
+            // and ProceduralRaceScene::updateSurfaceGrip's on-road multiplier.
+            wheelProps->setProperty( "Grip", 1.0f );
             // A small rear reserve makes breakaway progressive under power.
             const auto axleGrip = i < 2 ? 1.0 : 1.06;
             wheelProps->setProperty(
