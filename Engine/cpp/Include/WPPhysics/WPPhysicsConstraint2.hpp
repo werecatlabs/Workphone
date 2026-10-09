@@ -3,26 +3,23 @@
 
 #include <Workphone/Interface/Physics/IPhysicsConstraint2.hpp>
 
-namespace workphone
+namespace workphone::physics
 {
-    namespace physics
+    class WPPhysicsConstraint2 : public IPhysicsConstraint2
     {
-        class WPPhysicsConstraint2 : public IPhysicsConstraint2
-        {
-        public:
-            WPPhysicsConstraint2();
-            virtual ~WPPhysicsConstraint2() override;
+    public:
+        WPPhysicsConstraint2();
+        ~WPPhysicsConstraint2() override;
 
-            virtual SmartPtr<IPhysicsBody2D> getBodyA() const override;
-            virtual void setBodyA( SmartPtr<IPhysicsBody2D> bodyA ) override;
-            virtual SmartPtr<IPhysicsBody2D> getBodyB() const override;
-            virtual void setBodyB( SmartPtr<IPhysicsBody2D> bodyB ) override;
+        SmartPtr<IPhysicsBody2D> getBodyA() const override;
+        void setBodyA(SmartPtr<IPhysicsBody2D> bodyA) override;
+        SmartPtr<IPhysicsBody2D> getBodyB() const override;
+        void setBodyB(SmartPtr<IPhysicsBody2D> bodyB) override;
 
-            virtual void *getUserData() const override;
-            virtual void setUserData( void *userData ) override;
+        void *getUserData() const override;
+        void setUserData(void *userData) override;
 
-            WP_CLASS_REGISTER_DECL;
-        };
-    }  // namespace physics
-}  // namespace workphone
+        WP_CLASS_REGISTER_DECL;
+    };
+}
 #endif

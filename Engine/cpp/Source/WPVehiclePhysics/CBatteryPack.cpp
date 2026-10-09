@@ -3,12 +3,9 @@
 #include "WPVehiclePhysics/HeliVars.hpp"
 #include "WPVehiclePhysics/HeliAero.hpp"
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
-    {
-        CBatteryPack::CBatteryPack() = default;
+    CBatteryPack::CBatteryPack() = default;
 
-        CBatteryPack::~CBatteryPack() = default;
-    } // namespace vehicle
-} // namespace workphone
+    CBatteryPack::~CBatteryPack() = default;
+}

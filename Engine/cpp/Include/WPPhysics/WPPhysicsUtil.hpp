@@ -16,34 +16,30 @@ extern "C" {
 #include <WorkphonePhysics/workphone_physics_rigidbody.h>
 #include <WorkphonePhysics/workphone_physics_scene.h>
 }
+
 #include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Math/Transform3.hpp>
 
-namespace workphone
+namespace workphone::physics
 {
-    namespace physics
+    class WPPhysicsUtil
     {
+    public:
+        static wp_vec3f toWp(const Vector3<real_Num> &v);
+        static Vector3<real_Num> fromWp(wp_vec3f v);
+        static wp_quatf toWp(const Quaternion<real_Num> &q);
+        static Quaternion<real_Num> fromWp(wp_quatf q);
+        static wp_force_mode toWp(ForceModeEnum mode);
 
-        class WPPhysicsUtil
-        {
-        public:
-            static wp_vec3f toWp( const Vector3<real_Num> &v );
-            static Vector3<real_Num> fromWp( wp_vec3f v );
-            static wp_quatf toWp( const Quaternion<real_Num> &q );
-            static Quaternion<real_Num> fromWp( wp_quatf q );
-            static wp_force_mode toWp( ForceModeEnum mode );
+        static AABB3<real_Num> transformBounds(const AABB3<real_Num> &bounds,
+                                               const Transform3<real_Num> &transform);
 
-            static AABB3<real_Num> transformBounds( const AABB3<real_Num> &bounds,
-                                                    const Transform3<real_Num> &transform );
+        static Vector3<real_Num> absoluteVector(const Vector3<real_Num> &value);
 
-            static Vector3<real_Num> absoluteVector( const Vector3<real_Num> &value );
+        static AABB3F toFloatBounds(const AABB3<real_Num> &bounds);
 
-            static AABB3F toFloatBounds( const AABB3<real_Num> &bounds );
-
-            static AABB3<real_Num> mergeShapeBounds( const Array<SmartPtr<IPhysicsShape3>> &shapes );
-        };
-
-    }  // namespace physics
-}  // namespace workphone
+        static AABB3<real_Num> mergeShapeBounds(const Array<SmartPtr<IPhysicsShape3>> &shapes);
+    };
+}
 
 #endif  // WPPhysicsUtil_h__

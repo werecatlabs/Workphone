@@ -3,22 +3,19 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class TailLinkage
     {
-        class TailLinkage
-        {
-        public:
-            TailLinkage() = default;
+    public:
+        TailLinkage() = default;
 
-            physics_Num m_input = static_cast<physics_Num>( 0.0 );
-            physics_Num m_trim = static_cast<physics_Num>( 0.0 );
-            physics_Num m_leftThrow = static_cast<physics_Num>( 0.0 );
-            physics_Num m_rightThrow = static_cast<physics_Num>( 0.0 );
-            physics_Num m_output = static_cast<physics_Num>( 0.0 );
-        };
-    } // namespace vehicle
-} // namespace workphone
+        physics_Num m_input = 0.0;
+        physics_Num m_trim = 0.0;
+        physics_Num m_leftThrow = 0.0;
+        physics_Num m_rightThrow = 0.0;
+        physics_Num m_output = 0.0;
+    };
+}
 
 #endif // TailLinkage_h__

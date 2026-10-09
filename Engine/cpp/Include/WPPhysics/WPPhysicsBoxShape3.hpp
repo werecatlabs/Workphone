@@ -19,6 +19,6 @@ namespace workphone::physics
         WPPhysicsBoxShape3();
         SmartPtr<IPhysicsShape3> clone() override;
     };
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 #endif

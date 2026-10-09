@@ -9,11 +9,10 @@ namespace workphone::physics
 {
     class WPPhysicsPolygon2 : public IPhysicsShape2
     {
-    public:
     private:
         Polygon2F m_polygon;
     };
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 // end namespace
 

@@ -10,11 +10,9 @@
 #include <Workphone/Math/Quaternion.hpp>
 #include <Workphone/Math/Transform3.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
-    {
-        /**
+    /**
          * @class AdvancedHelicopterController
          * @brief Physically-based helicopter flight controller.
          *
@@ -38,269 +36,267 @@ namespace workphone
          * Forces and torques are accumulated via the CAerodynamicsVehicle helpers
          * and dispatched to the physics body each frame.
          */
-        class WPVehiclePhysics_API AdvancedHelicopterController : public CAerodynamicsVehicle<IAircraft>
-        {
-        public:
-            AdvancedHelicopterController();
-            ~AdvancedHelicopterController() override;
+    class WPVehiclePhysics_API AdvancedHelicopterController : public CAerodynamicsVehicle<IAircraft>
+    {
+    public:
+        AdvancedHelicopterController();
+        ~AdvancedHelicopterController() override;
 
-            // ---------------------------------------------------------------
-            // ISharedObject / IVehicle lifecycle
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // ISharedObject / IVehicle lifecycle
+        // ---------------------------------------------------------------
 
-            bool isValid() const override;
+        bool isValid() const override;
 
-            void load( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
 
-            void update() override;
+        void update() override;
 
-            /**
+        /**
              * @brief Physics step — integrates rotor RPM and applies all forces.
              * @param t  Absolute simulation time (seconds).
              * @param dt Time-step duration (seconds).
              */
-            void update( const double &t, const double &dt );
+        void update(const double &t, const double &dt);
 
-            // ---------------------------------------------------------------
-            // Rotor physics parameters
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // Rotor physics parameters
+        // ---------------------------------------------------------------
 
-            /** @brief Rotational inertia of the main rotor system (kg·m²). */
-            real_Num getRotorInertia() const;
-            void     setRotorInertia( real_Num rotorInertia );
+        /** @brief Rotational inertia of the main rotor system (kg·m²). */
+        real_Num getRotorInertia() const;
+        void setRotorInertia(real_Num rotorInertia);
 
-            /** @brief Peak torque the engine can deliver to the rotor (N·m). */
-            real_Num getMaxEngineTorque() const;
-            void     setMaxEngineTorque( real_Num maxEngineTorque );
+        /** @brief Peak torque the engine can deliver to the rotor (N·m). */
+        real_Num getMaxEngineTorque() const;
+        void setMaxEngineTorque(real_Num maxEngineTorque);
 
-            /** @brief Rotor angular drag coefficient (N·m·s/rad). */
-            real_Num getRotorDrag() const;
-            void     setRotorDrag( real_Num rotorDrag );
+        /** @brief Rotor angular drag coefficient (N·m·s/rad). */
+        real_Num getRotorDrag() const;
+        void setRotorDrag(real_Num rotorDrag);
 
-            /** @brief Rotor speed ceiling (RPM). */
-            real_Num getMaxRotorRPM() const;
-            void     setMaxRotorRPM( real_Num maxRotorRPM );
+        /** @brief Rotor speed ceiling (RPM). */
+        real_Num getMaxRotorRPM() const;
+        void setMaxRotorRPM(real_Num maxRotorRPM);
 
-            /** @brief Current main rotor speed (RPM). Read-only query. */
-            real_Num getRotorRPM() const;
+        /** @brief Current main rotor speed (RPM). Read-only query. */
+        real_Num getRotorRPM() const;
 
-            // ---------------------------------------------------------------
-            // Lift parameters
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // Lift parameters
+        // ---------------------------------------------------------------
 
-            /** @brief Effective rotor disc area (m²). */
-            real_Num getRotorArea() const;
-            void     setRotorArea( real_Num rotorArea );
+        /** @brief Effective rotor disc area (m²). */
+        real_Num getRotorArea() const;
+        void setRotorArea(real_Num rotorArea);
 
-            /** @brief Ambient air density (kg/m³). Defaults to ISA sea-level 1.225. */
-            real_Num getAirDensity() const override;
-            void     setAirDensity( real_Num airDensity ) override;
+        /** @brief Ambient air density (kg/m³). Defaults to ISA sea-level 1.225. */
+        real_Num getAirDensity() const override;
+        void setAirDensity(real_Num airDensity) override;
 
-            /** @brief Non-dimensional rotor lift coefficient. */
-            real_Num getLiftCoefficient() const;
-            void     setLiftCoefficient( real_Num liftCoefficient );
+        /** @brief Non-dimensional rotor lift coefficient. */
+        real_Num getLiftCoefficient() const;
+        void setLiftCoefficient(real_Num liftCoefficient);
 
-            // ---------------------------------------------------------------
-            // Blade pitch parameters
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // Blade pitch parameters
+        // ---------------------------------------------------------------
 
-            /** @brief Maximum collective blade pitch (degrees). */
-            real_Num getMaxCollectivePitch() const;
-            void     setMaxCollectivePitch( real_Num maxCollectivePitch );
+        /** @brief Maximum collective blade pitch (degrees). */
+        real_Num getMaxCollectivePitch() const;
+        void setMaxCollectivePitch(real_Num maxCollectivePitch);
 
-            /** @brief Maximum cyclic disc-tilt angle from stick deflection (degrees). */
-            real_Num getCyclicTiltAngle() const;
-            void     setCyclicTiltAngle( real_Num cyclicTiltAngle );
+        /** @brief Maximum cyclic disc-tilt angle from stick deflection (degrees). */
+        real_Num getCyclicTiltAngle() const;
+        void setCyclicTiltAngle(real_Num cyclicTiltAngle);
 
-            // ---------------------------------------------------------------
-            // Tail rotor
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // Tail rotor
+        // ---------------------------------------------------------------
 
-            /** @brief Peak side-force the tail rotor can produce (N). */
-            real_Num getTailRotorForce() const;
-            void     setTailRotorForce( real_Num tailRotorForce );
+        /** @brief Peak side-force the tail rotor can produce (N). */
+        real_Num getTailRotorForce() const;
+        void setTailRotorForce(real_Num tailRotorForce);
 
-            // ---------------------------------------------------------------
-            // Ground effect
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // Ground effect
+        // ---------------------------------------------------------------
 
-            /**
+        /**
              * @brief AGL height below which ground-effect lift boost applies (m).
              *
              * The IGE boost is computed from the vehicle body's world-space Y
              * position when no raycast provider is available.
              */
-            real_Num getGroundEffectHeight() const;
-            void     setGroundEffectHeight( real_Num groundEffectHeight );
+        real_Num getGroundEffectHeight() const;
+        void setGroundEffectHeight(real_Num groundEffectHeight);
 
-            // ---------------------------------------------------------------
-            // Effective Translational Lift (ETL)
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // Effective Translational Lift (ETL)
+        // ---------------------------------------------------------------
 
-            /** @brief Airspeed at which ETL begins (m/s). */
-            real_Num getETLStartSpeed() const;
-            void     setETLStartSpeed( real_Num etlStartSpeed );
+        /** @brief Airspeed at which ETL begins (m/s). */
+        real_Num getETLStartSpeed() const;
+        void setETLStartSpeed(real_Num etlStartSpeed);
 
-            /** @brief Peak ETL lift multiplier (>= 1). */
-            real_Num getETLMaxBoost() const;
-            void     setETLMaxBoost( real_Num etlMaxBoost );
+        /** @brief Peak ETL lift multiplier (>= 1). */
+        real_Num getETLMaxBoost() const;
+        void setETLMaxBoost(real_Num etlMaxBoost);
 
-            // ---------------------------------------------------------------
-            // IAircraft stubs (unused subsystems return safe defaults)
-            // ---------------------------------------------------------------
+        // ---------------------------------------------------------------
+        // IAircraft stubs (unused subsystems return safe defaults)
+        // ---------------------------------------------------------------
 
-            real_Num getRPM() const;
-            void     setRPM( real_Num rpm );
+        real_Num getRPM() const;
+        void setRPM(real_Num rpm);
 
-            real_Num getThrottle() const;
-            void     setThrottle( real_Num throttle );
+        real_Num getThrottle() const;
+        void setThrottle(real_Num throttle);
 
-            real_Num getMoi() const;
-            void     setMoi( real_Num moi );
+        real_Num getMoi() const;
+        void setMoi(real_Num moi);
 
-            real_Num getThrustMultiplier() const;
-            void     setThrustMultiplier( real_Num thrustMultiplier );
+        real_Num getThrustMultiplier() const;
+        void setThrustMultiplier(real_Num thrustMultiplier);
 
-            real_Num getTorqueMultiplier() const;
-            void     setTorqueMultiplier( real_Num torqueMultiplier );
+        real_Num getTorqueMultiplier() const;
+        void setTorqueMultiplier(real_Num torqueMultiplier);
 
-            real_Num getPeakPowerW() const;
-            void     setPeakPowerW( real_Num peakPowerW );
+        real_Num getPeakPowerW() const;
+        void setPeakPowerW(real_Num peakPowerW);
 
-            real_Num getTorque( f32 throttlePosition ) const;
-            real_Num getMaxTorque( u32 rpm ) const;
-            real_Num getMinTorque( u32 rpm ) const;
-            real_Num getTorque() const;
+        real_Num getTorque(f32 throttlePosition) const;
+        real_Num getMaxTorque(u32 rpm) const;
+        real_Num getMinTorque(u32 rpm) const;
+        real_Num getTorque() const;
 
-            real_Num getEngineRPM( int idx ) const override;
-            real_Num getThrust( int idx ) const override;
+        real_Num getEngineRPM(int idx) const override;
+        real_Num getThrust(int idx) const override;
 
-            SmartPtr<IAircraftCallback> getCallback() const override;
-            void                        setCallback( SmartPtr<IAircraftCallback> callback ) override;
+        SmartPtr<IAircraftCallback> getCallback() const override;
+        void setCallback(SmartPtr<IAircraftCallback> callback) override;
 
-            SmartPtr<IBatteryPack> getBatteryPack() const override;
-            void                   setBatteryPack( SmartPtr<IBatteryPack> batteryPack ) override;
+        SmartPtr<IBatteryPack> getBatteryPack() const override;
+        void setBatteryPack(SmartPtr<IBatteryPack> batteryPack) override;
 
-            SmartPtr<IAerodymanicsWind> getWind() const override;
-            void                        setWind( SmartPtr<IAerodymanicsWind> wind ) override;
+        SmartPtr<IAerodymanicsWind> getWind() const override;
+        void setWind(SmartPtr<IAerodymanicsWind> wind) override;
 
-            void addPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit ) override;
-            void removePropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit ) override;
-            Array<SmartPtr<IAircraftPropellerUnit>> getPropellerUnits() const override;
-            void                                    setPropellerUnits(
-                const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits ) override;
+        void addPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit) override;
+        void removePropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit) override;
+        Array<SmartPtr<IAircraftPropellerUnit>> getPropellerUnits() const override;
+        void setPropellerUnits(
+            const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits) override;
 
-            void                             addWheel( SmartPtr<IWheelComponent> wheel ) override;
-            void                             removeWheel( SmartPtr<IWheelComponent> wheel ) override;
-            Array<SmartPtr<IWheelComponent>> getWheels() const override;
-            void setWheels( const Array<SmartPtr<IWheelComponent>> &wheels ) override;
+        void addWheel(SmartPtr<IWheelComponent> wheel) override;
+        void removeWheel(SmartPtr<IWheelComponent> wheel) override;
+        Array<SmartPtr<IWheelComponent>> getWheels() const override;
+        void setWheels(const Array<SmartPtr<IWheelComponent>> &wheels) override;
 
-            void setControlAngle( s32 id, f32 angle ) override;
+        void setControlAngle(s32 id, f32 angle) override;
 
-            real_Num getSectionMultiplier() const override;
-            void     setSectionMultiplier( real_Num sectionMultiplier ) override;
+        real_Num getSectionMultiplier() const override;
+        void setSectionMultiplier(real_Num sectionMultiplier) override;
 
-            String getModelDataFilePath() const override;
-            void   setModelDataFilePath( const String &filePath ) override;
+        String getModelDataFilePath() const override;
+        void setModelDataFilePath(const String &filePath) override;
 
-            Transform3<real_Num> getBodyTransform() const override;
-            void                 setBodyTransform( Transform3<real_Num> bodyTransform ) override;
+        Transform3<real_Num> getBodyTransform() const override;
+        void setBodyTransform(Transform3<real_Num> bodyTransform) override;
 
-            real_Num getRollwiseDamping() const override;
-            void     setRollwiseDamping( real_Num rollwiseDamping ) override;
+        real_Num getRollwiseDamping() const override;
+        void setRollwiseDamping(real_Num rollwiseDamping) override;
 
-            WP_CLASS_REGISTER_DECL;
+        WP_CLASS_REGISTER_DECL;
 
-        private:
-            // ---------------------------------------------------------------
-            // Internal simulation helpers
-            // ---------------------------------------------------------------
+    private:
+        // ---------------------------------------------------------------
+        // Internal simulation helpers
+        // ---------------------------------------------------------------
 
-            /** Integrate rotor RPM for this time-step. */
-            void updateRotorPhysics( real_Num dt );
+        /** Integrate rotor RPM for this time-step. */
+        void updateRotorPhysics(real_Num dt);
 
-            /**
+        /**
              * Compute and accumulate main-rotor lift and cyclic forces.
              * @param up    Body up direction in world space.
              * @param fwd   Body forward direction in world space.
              * @param right Body right direction in world space.
              */
-            void applyLift( const Vector3<real_Num> &up, const Vector3<real_Num> &fwd,
-                            const Vector3<real_Num> &right );
+        void applyLift(const Vector3<real_Num> &up, const Vector3<real_Num> &fwd,
+                       const Vector3<real_Num> &right);
 
-            /**
+        /**
              * Compute and accumulate tail rotor anti-torque and yaw control.
              * @param up Body up direction in world space.
              */
-            void applyTailRotor( const Vector3<real_Num> &up );
+        void applyTailRotor(const Vector3<real_Num> &up);
 
-            /**
+        /**
              * Ground-in-effect lift multiplier.
              * Approximated from the body world-space Y position.
              * @return Multiplier >= 1.
              */
-            real_Num computeGroundEffect() const;
+        real_Num computeGroundEffect() const;
 
-            /**
+        /**
              * Effective Translational Lift multiplier.
              * @param speed Current world-space airspeed magnitude (m/s).
              * @return Multiplier in [1, ETLMaxBoost].
              */
-            real_Num computeTranslationalLift( real_Num speed ) const;
+        real_Num computeTranslationalLift(real_Num speed) const;
 
-            // ---------------------------------------------------------------
-            // Parameters (rotor physics)
-            // ---------------------------------------------------------------
-            real_Num m_rotorInertia = static_cast<real_Num>( 120.0 );
-            real_Num m_maxEngineTorque = static_cast<real_Num>( 5000.0 );
-            real_Num m_rotorDrag = static_cast<real_Num>( 15.0 );
-            real_Num m_maxRotorRPM = static_cast<real_Num>( 450.0 );
+        // ---------------------------------------------------------------
+        // Parameters (rotor physics)
+        // ---------------------------------------------------------------
+        real_Num m_rotorInertia = 120.0;
+        real_Num m_maxEngineTorque = 5000.0;
+        real_Num m_rotorDrag = 15.0;
+        real_Num m_maxRotorRPM = 450.0;
 
-            // Parameters (lift)
-            real_Num m_rotorArea = static_cast<real_Num>( 120.0 );
-            real_Num m_airDensity = static_cast<real_Num>( 1.225 );
-            real_Num m_liftCoefficient = static_cast<real_Num>( 0.6 );
+        // Parameters (lift)
+        real_Num m_rotorArea = 120.0;
+        real_Num m_airDensity = 1.225;
+        real_Num m_liftCoefficient = 0.6;
 
-            // Parameters (blade pitch)
-            real_Num m_maxCollectivePitch = static_cast<real_Num>( 15.0 );
-            real_Num m_cyclicTiltAngle = static_cast<real_Num>( 10.0 );
+        // Parameters (blade pitch)
+        real_Num m_maxCollectivePitch = 15.0;
+        real_Num m_cyclicTiltAngle = 10.0;
 
-            // Parameters (tail rotor)
-            real_Num m_tailRotorForce = static_cast<real_Num>( 2000.0 );
+        // Parameters (tail rotor)
+        real_Num m_tailRotorForce = 2000.0;
 
-            // Parameters (ground effect)
-            real_Num m_groundEffectHeight = static_cast<real_Num>( 10.0 );
+        // Parameters (ground effect)
+        real_Num m_groundEffectHeight = 10.0;
 
-            // Parameters (ETL)
-            real_Num m_etlStartSpeed = static_cast<real_Num>( 8.0 );
-            real_Num m_etlMaxBoost = static_cast<real_Num>( 1.35 );
+        // Parameters (ETL)
+        real_Num m_etlStartSpeed = 8.0;
+        real_Num m_etlMaxBoost = 1.35;
 
-            // ---------------------------------------------------------------
-            // Runtime state
-            // ---------------------------------------------------------------
-            real_Num m_rotorRPM = static_cast<real_Num>( 0.0 );
-            real_Num m_engineTorque = static_cast<real_Num>( 0.0 );
+        // ---------------------------------------------------------------
+        // Runtime state
+        // ---------------------------------------------------------------
+        real_Num m_rotorRPM = 0.0;
+        real_Num m_engineTorque = 0.0;
 
-            // Passthrough IAircraft members (not used by this controller)
-            real_Num m_moi = static_cast<real_Num>( 1.0 );
-            real_Num m_thrustMultiplier = static_cast<real_Num>( 1.0 );
-            real_Num m_torqueMultiplier = static_cast<real_Num>( 1.0 );
-            real_Num m_peakPowerW = static_cast<real_Num>( 0.0 );
-            real_Num m_rollwiseDamping = static_cast<real_Num>( 0.0 );
+        // Passthrough IAircraft members (not used by this controller)
+        real_Num m_moi = 1.0;
+        real_Num m_thrustMultiplier = 1.0;
+        real_Num m_torqueMultiplier = 1.0;
+        real_Num m_peakPowerW = 0.0;
+        real_Num m_rollwiseDamping = 0.0;
 
-            SmartPtr<IAircraftCallback> m_aircraftCallback;
-            SmartPtr<IBatteryPack>      m_batteryPack;
-            SmartPtr<IAerodymanicsWind> m_wind;
-            Transform3<real_Num>        m_bodyTransform;
+        SmartPtr<IAircraftCallback> m_aircraftCallback;
+        SmartPtr<IBatteryPack> m_batteryPack;
+        SmartPtr<IAerodymanicsWind> m_wind;
+        Transform3<real_Num> m_bodyTransform;
 
-            Array<SmartPtr<IAircraftPropellerUnit>> m_propellerUnits;
-            Array<SmartPtr<IWheelComponent>>        m_wheels;
+        Array<SmartPtr<IAircraftPropellerUnit>> m_propellerUnits;
+        Array<SmartPtr<IWheelComponent>> m_wheels;
 
-            real_Num m_sectionMultiplier = static_cast<real_Num>( 1.0 );
-            String   m_modelDataFilePath;
-        };
-
-    } // namespace vehicle
-} // namespace workphone
+        real_Num m_sectionMultiplier = 1.0;
+        String m_modelDataFilePath;
+    };
+}
 
 #endif // AdvancedHelicopterController_h__

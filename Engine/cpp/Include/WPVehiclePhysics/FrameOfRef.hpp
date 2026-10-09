@@ -11,11 +11,9 @@
  * physics_Num (typedefs provided by WPAeroPrerequisites).
  */
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
-    {
-        /**
+    /**
          * @brief Simple orthonormal frame-of-reference container.
          *
          * Holds three basis vectors (m_xAxis, m_yAxis, m_zAxis) representing a local
@@ -23,34 +21,32 @@ namespace workphone
          * trivially-copyable so it can be used in tight loops within the
          * physics simulation.
          */
-        class FrameOfRef
-        {
-        public:
-            FrameOfRef();
+    class FrameOfRef
+    {
+    public:
+        FrameOfRef();
 
-            /**
+        /**
              * @brief Copy constructor delegates to operator=
              */
-            FrameOfRef( const FrameOfRef &other );
+        FrameOfRef(const FrameOfRef &other);
 
-            ~FrameOfRef();
+        ~FrameOfRef();
 
-            /**
+        /**
              * @brief Copy assignment.
              * @param other Frame to copy from.
              * @return Reference to this frame after assignment.
              */
-            FrameOfRef &operator=( const FrameOfRef &other );
+        FrameOfRef &operator=(const FrameOfRef &other);
 
-            /// Basis vector pointing along the local X axis
-            physics_Vec m_xAxis = physics_Vec::zero();
-            /// Basis vector pointing along the local Y axis
-            physics_Vec m_yAxis = physics_Vec::zero();
-            /// Basis vector pointing along the local Z axis
-            physics_Vec m_zAxis = physics_Vec::zero();
-        }; // FrameOfRef
-
-    } // namespace vehicle
-} // namespace workphone
+        /// Basis vector pointing along the local X axis
+        physics_Vec m_xAxis = physics_Vec::zero();
+        /// Basis vector pointing along the local Y axis
+        physics_Vec m_yAxis = physics_Vec::zero();
+        /// Basis vector pointing along the local Z axis
+        physics_Vec m_zAxis = physics_Vec::zero();
+    }; // FrameOfRef
+}
 
 #endif // FrameOfRef_h__

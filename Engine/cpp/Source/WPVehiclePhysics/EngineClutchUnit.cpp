@@ -12,38 +12,37 @@ namespace workphone::vehicle
 
     physics_Num EngineClutchUnit::getCrankRPM() const
     {
-        WP_ASSERT( Math<physics_Num>::isFinite( m_crankRPM ) );
+        WP_ASSERT(Math<physics_Num>::isFinite( m_crankRPM ));
         return m_crankRPM;
     }
 
-    void EngineClutchUnit::setCrankRPM( physics_Num rpm )
+    void EngineClutchUnit::setCrankRPM(physics_Num rpm)
     {
-        WP_ASSERT( Math<physics_Num>::isFinite( rpm ) );
+        WP_ASSERT(Math<physics_Num>::isFinite( rpm ));
         m_crankRPM = rpm;
     }
 
     physics_Num EngineClutchUnit::getCrankOmega() const
     {
-        WP_ASSERT( Math<physics_Num>::isFinite( m_crankOmega ) );
+        WP_ASSERT(Math<physics_Num>::isFinite( m_crankOmega ));
         return m_crankOmega;
     }
 
-    void EngineClutchUnit::setCrankOmega( physics_Num omega )
+    void EngineClutchUnit::setCrankOmega(physics_Num omega)
     {
-        WP_ASSERT( Math<physics_Num>::isFinite( omega ) );
+        WP_ASSERT(Math<physics_Num>::isFinite( omega ));
         m_crankOmega = omega;
     }
 
     physics_Num EngineClutchUnit::getEngineTorque() const
     {
-        WP_ASSERT( Math<physics_Num>::isFinite( m_engineTorque ) );
+        WP_ASSERT(Math<physics_Num>::isFinite( m_engineTorque ));
         return m_engineTorque;
     }
 
-    void EngineClutchUnit::setEngineTorque( physics_Num torque )
+    void EngineClutchUnit::setEngineTorque(physics_Num torque)
     {
-        WP_ASSERT( Math<physics_Num>::isFinite( torque ) );
+        WP_ASSERT(Math<physics_Num>::isFinite( torque ));
         m_engineTorque = torque;
     }
-
-}  // namespace workphone::vehicle
+} // namespace workphone::vehicle

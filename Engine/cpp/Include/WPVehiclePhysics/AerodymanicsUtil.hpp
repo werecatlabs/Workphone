@@ -9,11 +9,9 @@
 #include "WPVehiclePhysics/VecMath.hpp"
 #include <Workphone/Interface/Vehicle/IAerodymanicsWind.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
-    {
-        /**
+    /**
          * @class AerodymanicsUtil
          * @brief Utility class providing static methods for aerodynamics and helicopter physics
          * calculations.
@@ -34,10 +32,10 @@ namespace workphone
          * @note This class is used primarily in helicopter flight simulation but can be
          *       adapted for other rotorcraft applications.
          */
-        class WPVehiclePhysics_API AerodymanicsUtil
-        {
-        public:
-            /**
+    class WPVehiclePhysics_API AerodymanicsUtil
+    {
+    public:
+        /**
              * @name Unit Conversion Constants
              * @brief Conversion factors between RPM and angular velocity (rad/s).
              * @note Conversion formulas:
@@ -45,32 +43,32 @@ namespace workphone
              *       - ? to RPM: RPM = ? × 30/?
              * @{
              */
-            // const float RPMToOmega = Math<physics_Num>::pi() / 30.0f;
-            // const float OmegaToRPM = 30 / Math<physics_Num>::pi();
-            /** @} */
+        // const float RPMToOmega = Math<physics_Num>::pi() / 30.0f;
+        // const float OmegaToRPM = 30 / Math<physics_Num>::pi();
+        /** @} */
 
-            /**
+        /**
              * @name Clutch State Constants
              * @brief State machine values for centrifugal clutch engagement.
              * @{
              */
 
-            /** @brief Clutch state: fully disengaged, no torque transmission */
-            static const int m_kDisengaged = 0;
+        /** @brief Clutch state: fully disengaged, no torque transmission */
+        static constexpr int m_kDisengaged = 0;
 
-            /** @brief Clutch state: slipping between engaged and disengaged, partial torque transmission
+        /** @brief Clutch state: slipping between engaged and disengaged, partial torque transmission
              * with friction losses */
-            static const int m_kSlipping = 1;
+        static constexpr int m_kSlipping = 1;
 
-            /** @brief Clutch state: fully locked/engaged, rigid torque transmission */
-            static const int m_kLocked = 2;
+        /** @brief Clutch state: fully locked/engaged, rigid torque transmission */
+        static constexpr int m_kLocked = 2;
 
-            /** @brief Clutch state: overrun condition where output speed exceeds engine speed */
-            static const int m_kOverrun = 3;
+        /** @brief Clutch state: overrun condition where output speed exceeds engine speed */
+        static constexpr int m_kOverrun = 3;
 
-            /** @} */
+        /** @} */
 
-            /**
+        /**
              * @name Body Drag Variables (Legacy)
              * @brief Global variables for body drag calculations (commented out, kept for reference).
              * @note These were previously used for:
@@ -79,12 +77,12 @@ namespace workphone
              *       - BodyDrag: Resulting body drag force vector
              * @{
              */
-            // extern Vec BodyFlowInGF;
-            // extern Vec BodyCdA;
-            // extern Vec BodyDrag;
-            /** @} */
+        // extern Vec BodyFlowInGF;
+        // extern Vec BodyCdA;
+        // extern Vec BodyDrag;
+        /** @} */
 
-            /**
+        /**
              * @brief Calculates aerodynamic drag force on the aircraft body.
              *
              * Computes drag force using the simplified formula: F_drag = 0.5 × ? × v² × CdA
@@ -100,9 +98,9 @@ namespace workphone
              * @note Air density is typically assumed or embedded in the CdA values.
              * @note Force direction opposes the airflow direction.
              */
-            static physics_Vec bodyForce( const physics_Vec &SaracenFlow, const physics_Vec &BodyCdA );
+        static physics_Vec bodyForce(const physics_Vec &SaracenFlow, const physics_Vec &BodyCdA);
 
-            /**
+        /**
              * @name Gyroscope Control Methods
              * @brief Methods for simulating RC helicopter tail gyroscopes.
              *
@@ -111,7 +109,7 @@ namespace workphone
              * @{
              */
 
-            /**
+        /**
              * @brief Adjusts a gyroscope parameter by identifier.
              *
              * @param ParamID The parameter identifier to adjust (system-specific constant).
@@ -119,9 +117,9 @@ namespace workphone
              *
              * @note Parameter IDs and ranges are defined in the gyro configuration system.
              */
-            static void adjustGyroParam( int ParamID, float ParamVal );
+        static void adjustGyroParam(int ParamID, float ParamVal);
 
-            /**
+        /**
              * @brief Resets gyroscope to default values.
              *
              * Clears accumulated errors, integrator states, and resets all internal
@@ -131,9 +129,9 @@ namespace workphone
              *
              * @note Called when switching modes or reinitializing the system.
              */
-            static void resetGyro( CGyroUnit &Gyro );
+        static void resetGyro(CGyroUnit &Gyro);
 
-            /**
+        /**
              * @brief Handles stop control activity for the gyroscope.
              *
              * Implements decay and damping of gyro response when nearing the target heading
@@ -144,9 +142,9 @@ namespace workphone
              *
              * @note This prevents oscillation and overshoot in heading-hold mode.
              */
-            static void stopControl( CGyroUnit &TG, physics_Num dt );
+        static void stopControl(CGyroUnit &TG, physics_Num dt);
 
-            /**
+        /**
              * @brief Calculates the acceleration compensation for the gyroscope.
              *
              * Computes rate of change of error signal to provide derivative control
@@ -154,9 +152,9 @@ namespace workphone
              *
              * @param TG The gyroscope unit to calculate acceleration for.
              */
-            static void calcAcceleration( CGyroUnit &TG );
+        static void calcAcceleration(CGyroUnit &TG);
 
-            /**
+        /**
              * @brief Calculates the stop gain for the gyroscope.
              *
              * Determines the proportional gain used in stop control based on
@@ -166,9 +164,9 @@ namespace workphone
              *
              * @note Gain scheduling improves stability across different operating conditions.
              */
-            static void calcStopGain( CGyroUnit &TG );
+        static void calcStopGain(CGyroUnit &TG);
 
-            /**
+        /**
              * @brief Processes gyroscope input from Tx channel and outputs to servo.
              *
              * Main gyro processing function that:
@@ -186,10 +184,10 @@ namespace workphone
              *
              * @note Output servo position is stored in ThisGyro.Output after processing.
              */
-            static void gyroIn( physics_Num InSig, physics_Num GainSig, physics_Num dt,
-                                CGyroUnit &ThisGyro );
+        static void gyroIn(physics_Num InSig, physics_Num GainSig, physics_Num dt,
+                           CGyroUnit &ThisGyro);
 
-            /**
+        /**
              * @brief Gets the tail gyroscope output based on input signals and yaw rate.
              *
              * Convenience function that processes gyro inputs and returns the servo output
@@ -204,20 +202,20 @@ namespace workphone
              *
              * @note This is a stateless wrapper around gyroIn() using a static gyro instance.
              */
-            static physics_Num getTailGyro( physics_Num InSig, physics_Num GainSig, physics_Num dt,
-                                            physics_Num YawRate );
+        static physics_Num getTailGyro(physics_Num InSig, physics_Num GainSig, physics_Num dt,
+                                       physics_Num YawRate);
 
-            /**
+        /**
              * @brief Initializes the tail gyroscope system.
              *
              * Sets up default parameters, allocates resources, and prepares the gyro
              * for first use. Must be called before getTailGyro().
              */
-            static void initTailGyro();
+        static void initTailGyro();
 
-            /** @} */
+        /** @} */
 
-            /**
+        /**
              * @name Flybarless (VBar) Control Methods
              * @brief Methods for simulating flybarless stabilization systems.
              *
@@ -227,7 +225,7 @@ namespace workphone
              * @{
              */
 
-            /**
+        /**
              * @brief Initializes a flybarless (VBar) unit.
              *
              * Loads configuration parameters from XML, initializes sensor fusion,
@@ -239,9 +237,9 @@ namespace workphone
              *       XML file with other helicopter parameters.
              * @see HeliVars.hpp for parameter structure
              */
-            static void initVBar( CFlybarlessUnit &VB );
+        static void initVBar(CFlybarlessUnit &VB);
 
-            /**
+        /**
              * @brief Applies limits and decay to the VBar system.
              *
              * Enforces physical and safety limits on the virtual flybar vector,
@@ -253,9 +251,9 @@ namespace workphone
              * @note Decay prevents wind-up of the integrator in sustained maneuvers.
              * @note Limits prevent excessive control deflection.
              */
-            static void limitAndDecayVBar( physics_Num dt, CFlybarlessUnit &VB );
+        static void limitAndDecayVBar(physics_Num dt, CFlybarlessUnit &VB);
 
-            /**
+        /**
              * @brief Applies precession of the VBar vector based on control signals and orientation.
              *
              * Simulates the virtual flybar's angular momentum and gyroscopic precession.
@@ -272,10 +270,10 @@ namespace workphone
              * @note Phase angle and precession rate are configured per helicopter model.
              * @note This creates the characteristic "feel" of the flybarless system.
              */
-            static void controlVBar( physics_Num dt, physics_Num AilInSig, physics_Num EleInSig,
-                                     CFlybarlessUnit &VB );
+        static void controlVBar(physics_Num dt, physics_Num AilInSig, physics_Num EleInSig,
+                                CFlybarlessUnit &VB);
 
-            /**
+        /**
              * @brief Gets the VBar output signals for aileron and elevator servos.
              *
              * Reads the current virtual flybar state and converts it to servo
@@ -287,9 +285,9 @@ namespace workphone
              *
              * @note Output includes stabilization corrections and pilot inputs.
              */
-            static void getVBarOutputs( physics_Num &AilOut, physics_Num &EleOut, CFlybarlessUnit &VB );
+        static void getVBarOutputs(physics_Num &AilOut, physics_Num &EleOut, CFlybarlessUnit &VB);
 
-            /**
+        /**
              * @brief Main VBar processing loop combining control and output.
              *
              * Convenience function that executes the complete VBar cycle:
@@ -307,17 +305,17 @@ namespace workphone
              *
              * @note This is the typical entry point for VBar simulation in the main loop.
              */
-            static void vBarLoop( physics_Num dt, physics_Num AilInSig, physics_Num EleInSig,
-                                  physics_Num &AilOut, physics_Num &EleOut, CFlybarlessUnit &VB );
+        static void vBarLoop(physics_Num dt, physics_Num AilInSig, physics_Num EleInSig,
+                             physics_Num &AilOut, physics_Num &EleOut, CFlybarlessUnit &VB);
 
-            /** @} */
+        /** @} */
 
-            /**
+        /**
              * @name Parameter Parsing
              * @{
              */
 
-            /**
+        /**
              * @brief Searches for and extracts a parameter value from a configuration string.
              *
              * Parses a string for a named parameter in the format "ParamName=Value"
@@ -329,11 +327,11 @@ namespace workphone
              *
              * @note Used for parsing XML attributes and configuration file entries.
              */
-            static bool findValueOf( VehicleParam &Param, const String &PS );
+        static bool findValueOf(VehicleParam &Param, const String &PS);
 
-            /** @} */
+        /** @} */
 
-            /**
+        /**
              * @name Engine and Clutch System Methods
              * @brief Methods for simulating nitro/glow fuel engines with centrifugal clutches.
              *
@@ -345,7 +343,7 @@ namespace workphone
              * @{
              */
 
-            /**
+        /**
              * @brief Calculates clutch torque based on current engine RPM.
              *
              * Models a centrifugal clutch where shoes expand outward with RPM,
@@ -364,9 +362,9 @@ namespace workphone
              * @note Positive torque accelerates the output (main rotor).
              * @note Torque is zero when disengaged, rises quadratically with RPM when slipping.
              */
-            static float clutchTorque( float RPM, const EngineClutchUnit &EC );
+        static float clutchTorque(float RPM, const EngineClutchUnit &EC);
 
-            /**
+        /**
              * @brief Looks up engine power based on throttle position and updates the unit state.
              *
              * Uses a 2D lookup table (throttle × RPM) to determine engine power output,
@@ -378,9 +376,9 @@ namespace workphone
              * @note Power lookup table is loaded from engine data files via readPowerLookups().
              * @note Updated power is stored in EC.Power.
              */
-            static void lookupEnginePower( float Thr, EngineClutchUnit &EC );
+        static void lookupEnginePower(float Thr, EngineClutchUnit &EC);
 
-            /**
+        /**
              * @brief Reads power lookup table data for the engine from file.
              *
              * Loads the 2D power map (throttle vs RPM) that characterizes the
@@ -391,9 +389,9 @@ namespace workphone
              * @note Typically called once during initialization.
              * @see getLookups()
              */
-            static void readPowerLookups( EngineClutchUnit &EC );
+        static void readPowerLookups(EngineClutchUnit &EC);
 
-            /**
+        /**
              * @brief Loads all lookup tables for the engine system.
              *
              * Master function that loads power curves, efficiency maps, and other
@@ -401,9 +399,9 @@ namespace workphone
              *
              * @note Called during engine system initialization.
              */
-            static void getLookups();
+        static void getLookups();
 
-            /**
+        /**
              * @brief Reads engine parameters from data file.
              *
              * Loads engine specifications including:
@@ -414,25 +412,25 @@ namespace workphone
              *
              * @param EC The engine clutch unit to populate with configuration data.
              */
-            static void readEngineDataFile( EngineClutchUnit &EC );
+        static void readEngineDataFile(EngineClutchUnit &EC);
 
-            /**
+        /**
              * @brief Retrieves engine data from storage.
              *
              * Convenience function that loads all engine parameters and lookup tables
              * from the configured data source.
              */
-            static void getEngineData();
+        static void getEngineData();
 
-            /**
+        /**
              * @brief Starts the engine system.
              *
              * Initializes engine state for running (typically sets RPM to idle,
              * resets accumulators, and prepares for throttle input).
              */
-            static void startEngine();
+        static void startEngine();
 
-            /**
+        /**
              * @brief Calculates engine power output for given throttle setting.
              *
              * Simplified power calculation based on current throttle position,
@@ -443,9 +441,9 @@ namespace workphone
              *
              * @note This is a stateless version using default engine parameters.
              */
-            static float enginePower( float Thr );
+        static float enginePower(float Thr);
 
-            /**
+        /**
              * @brief Main simulation step for engine and clutch system.
              *
              * Performs one time step of the complete engine-clutch-load dynamics:
@@ -467,14 +465,14 @@ namespace workphone
              * @note Uses semi-implicit Euler integration for numerical stability.
              * @note Clutch state machine handles engagement, slipping, and overrun conditions.
              */
-            static void mainEngineClutchStep( physics_Num &OPRPM, physics_Num &ERPM,
-                                              physics_Num LoadInertia, physics_Num LoadTorque,
-                                              physics_Num dt, physics_Num Throttle,
-                                              EngineClutchUnit &EC );
+        static void mainEngineClutchStep(physics_Num &OPRPM, physics_Num &ERPM,
+                                         physics_Num LoadInertia, physics_Num LoadTorque,
+                                         physics_Num dt, physics_Num Throttle,
+                                         EngineClutchUnit &EC);
 
-            /** @} */
+        /** @} */
 
-            /**
+        /**
              * @name Governor System Methods
              * @brief Methods for simulating RPM governor systems.
              *
@@ -483,7 +481,7 @@ namespace workphone
              * @{
              */
 
-            /**
+        /**
              * @brief Resets governor parameters and clears transient state.
              *
              * Clears PID integrator, error history, and other variables not
@@ -493,9 +491,9 @@ namespace workphone
              *
              * @note Called when switching governor modes or re-engaging after manual flight.
              */
-            static void resetGovernor( CGovernorUnit &Gov );
+        static void resetGovernor(CGovernorUnit &Gov);
 
-            /**
+        /**
              * @brief Executes governor control loop for one time step.
              *
              * Implements a PID controller that:
@@ -513,10 +511,10 @@ namespace workphone
              * @note Output is stored in Gov.Output and typically feeds to throttle or pitch.
              * @note Gain scheduling may adjust PID coefficients based on RPM range.
              */
-            static void doGovernor( physics_Num InSig, physics_Num SpeedSig, physics_Num dt,
-                                    physics_Num RPM, CGovernorUnit &Gov );
+        static void doGovernor(physics_Num InSig, physics_Num SpeedSig, physics_Num dt,
+                               physics_Num RPM, CGovernorUnit &Gov);
 
-            /**
+        /**
              * @brief Initializes the governor system.
              *
              * Loads governor parameters from configuration, allocates state,
@@ -524,9 +522,9 @@ namespace workphone
              *
              * @note Must be called before using getGovernor().
              */
-            static void initGovernor() /* export */;
+        static void initGovernor() /* export */;
 
-            /**
+        /**
              * @brief Sets governor target RPM directly (legacy method).
              *
              * @param RPM Target RPM value to maintain [rev/min].
@@ -536,9 +534,9 @@ namespace workphone
              *             configured via XML configuration files for better maintainability.
              * @note Retained for backward compatibility with older configurations.
              */
-            static void setGovernorRPM( float RPM, float Gash );
+        static void setGovernorRPM(float RPM, float Gash);
 
-            /**
+        /**
              * @brief Gets governor output for given inputs (stateless interface).
              *
              * Convenience function that processes governor logic and returns the
@@ -552,12 +550,12 @@ namespace workphone
              *
              * @note Uses internal static governor state, not suitable for multiple helicopters.
              */
-            static physics_Num getGovernor( physics_Num InSig, physics_Num SpeedSig, physics_Num dt,
-                                            physics_Num RPM ) /* export */;
+        static physics_Num getGovernor(physics_Num InSig, physics_Num SpeedSig, physics_Num dt,
+                                       physics_Num RPM) /* export */;
 
-            /** @} */
+        /** @} */
 
-            /**
+        /**
              * @name Electric Motor and ESC System Methods
              * @brief Methods for simulating brushless electric motors, ESCs, and LiPo batteries.
              *
@@ -569,7 +567,7 @@ namespace workphone
              * @{
              */
 
-            /**
+        /**
              * @brief Controls ESC cutout based on battery pack state.
              *
              * Monitors battery voltage and implements low-voltage cutoff (LVC)
@@ -583,9 +581,9 @@ namespace workphone
              * @note May implement soft cutoff (gradual power reduction) or hard cutoff (immediate stop).
              * @warning Proper LVC is critical to prevent permanent battery damage.
              */
-            static void escCutoutControl( physics_Num dt, const CBatteryPack &Pack, CESController &ESC );
+        static void escCutoutControl(physics_Num dt, const CBatteryPack &Pack, CESController &ESC);
 
-            /**
+        /**
              * @brief Initializes electric motor and ESC systems.
              *
              * Loads configuration parameters including:
@@ -598,9 +596,9 @@ namespace workphone
              *
              * @note Typically called once during helicopter setup.
              */
-            static void initMotorAndESC( CEMotor &Motor, CESController &ESC );
+        static void initMotorAndESC(CEMotor &Motor, CESController &ESC);
 
-            /**
+        /**
              * @brief Resets electric motor to initial state.
              *
              * Clears motor RPM, current, temperature, and other transient state
@@ -608,9 +606,9 @@ namespace workphone
              *
              * @param Motor The electric motor to reset.
              */
-            static void resetMotor( CEMotor &Motor );
+        static void resetMotor(CEMotor &Motor);
 
-            /**
+        /**
              * @brief Charges the battery pack to full capacity.
              *
              * Sets pack state to 100% charge with nominal cell voltage (4.2V for LiPo).
@@ -620,9 +618,9 @@ namespace workphone
              *
              * @note In simulation, this is instant. Real charging follows CC-CV profile.
              */
-            static void chargePack( CBatteryPack &Pack );
+        static void chargePack(CBatteryPack &Pack);
 
-            /**
+        /**
              * @brief Discharges the battery pack based on current draw.
              *
              * Updates battery state of charge (SoC) and voltage based on current
@@ -648,9 +646,9 @@ namespace workphone
              * @note Pack voltage = NumCells × CellVoltage
              * @note Internal resistance causes additional voltage sag under load.
              */
-            static void dischargePack( CBatteryPack &Pack, physics_Num I, physics_Num dt );
+        static void dischargePack(CBatteryPack &Pack, physics_Num I, physics_Num dt);
 
-            /**
+        /**
              * @brief Calculates motor performance based on battery and ESC state.
              *
              * Computes motor torque, RPM, efficiency, and power draw using:
@@ -667,9 +665,9 @@ namespace workphone
              *       Torque = Kt×I (torque constant)
              *       Power_out = Torque × ?
              */
-            static void motorCalc( const CBatteryPack &Pack, CEMotor &Motor, const CESController &ESC );
+        static void motorCalc(const CBatteryPack &Pack, CEMotor &Motor, const CESController &ESC);
 
-            /**
+        /**
              * @brief Controls ESC throttle ramping (soft-start).
              *
              * Implements gradual throttle increase on startup to prevent:
@@ -683,9 +681,9 @@ namespace workphone
              * @note Ramp rate is configurable (e.g., 0-100% in 1-3 seconds).
              * @note Also handles throttle decay on shutdown.
              */
-            static void rampControl( physics_Num dt, CESController &ESC );
+        static void rampControl(physics_Num dt, CESController &ESC);
 
-            /**
+        /**
              * @brief Executes ESC governor control loop.
              *
              * Maintains constant rotor RPM by adjusting motor throttle using PID control.
@@ -700,10 +698,10 @@ namespace workphone
              * @note ESC governor is typically more aggressive than engine governor.
              * @note Accounts for battery voltage drop under load.
              */
-            static void escDoGovernor( physics_Num InSig, physics_Num dt, physics_Num RPM,
-                                       const CBatteryPack &Pack, CESController &ESC );
+        static void escDoGovernor(physics_Num InSig, physics_Num dt, physics_Num RPM,
+                                  const CBatteryPack &Pack, CESController &ESC);
 
-            /**
+        /**
              * @brief Main simulation step for electric motor system.
              *
              * Performs one time step of the complete electric drive dynamics:
@@ -723,12 +721,11 @@ namespace workphone
              * @note ERPM = mechanical RPM × pole pairs for brushless motors.
              * @note Uses motor equations: V = IR + Ke×?, T = Kt×I
              */
-            static void mainEMotorStep( physics_Num &OPRPM, physics_Num &ERPM, physics_Num LoadInertia,
-                                        physics_Num LoadTorque, physics_Num dt, CEMotor &EM );
+        static void mainEMotorStep(physics_Num &OPRPM, physics_Num &ERPM, physics_Num LoadInertia,
+                                   physics_Num LoadTorque, physics_Num dt, CEMotor &EM);
 
-            /** @} */
-        };
-    } // namespace vehicle
-} // namespace workphone
+        /** @} */
+    };
+}
 
 #endif // AerodymanicsUtil_h__

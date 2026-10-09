@@ -47,19 +47,19 @@ namespace workphone
          * @brief Load controller state from a shared object (serialized data).
          * @param data Serialized object containing saved state (may be null).
          */
-        void load( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
 
         /**
          * @brief Load controller state from a string (simple text path or serialized blob).
          * @param data String containing configuration or serialized state.
          */
-        void load( const std::string &data );
+        void load(const std::string &data);
 
         /**
          * @brief Reload runtime data.
          * @param pData Pointer to raw data used for reload (format depends on caller).
          */
-        void reload( void *pData );
+        void reload(void *pData);
 
         /** @brief Reset controller to default state. */
         void reset() override;
@@ -75,14 +75,14 @@ namespace workphone
          * @param idx Channel index (0..N-1).
          * @return Channel value.
          */
-        f32 getChannel( s32 idx ) const override;
+        f32 getChannel(s32 idx) const override;
 
         /**
          * @brief Set control channel value.
          * @param idx Channel index.
          * @param channel New channel value.
          */
-        void setChannel( s32 idx, f32 channel ) override;
+        void setChannel(s32 idx, f32 channel) override;
 
         /** @brief Get world scale from the underlying callback (if available). */
         Vector3<physics_Num> getScale() const;
@@ -91,25 +91,25 @@ namespace workphone
         Vector3<physics_Num> getPosition() const override;
 
         /** @brief Set vehicle world position. */
-        void setPosition( const Vector3<physics_Num> &position ) override;
+        void setPosition(const Vector3<physics_Num> &position) override;
 
         /** @brief Get vehicle orientation (queried from callback if present). */
         Quaternion<physics_Num> getOrientation() const;
 
         /** @brief Set vehicle orientation. */
-        void setOrientation( const Quaternion<physics_Num> &orientation );
+        void setOrientation(const Quaternion<physics_Num> &orientation);
 
         /** @brief True if the vehicle is currently controlled directly by the user. */
         bool isUserControlled() const override;
 
         /** @brief Mark/unmark vehicle as user controlled. */
-        void setUserControlled( bool userControlled ) override;
+        void setUserControlled(bool userControlled) override;
 
         /** @brief Get vehicle mass (delegates to attached IVehicleBody when available). */
         physics_Num getMass() const override;
 
         /** @brief Set vehicle mass on the attached IVehicleBody. */
-        void setMass( physics_Num mass ) override;
+        void setMass(physics_Num mass) override;
 
         /**
          * @brief Get the associated physics body wrapper.
@@ -121,19 +121,19 @@ namespace workphone
          * @brief Attach or detach a physics body wrapper.
          * @param body Smart pointer to IVehicleBody (may be null to detach).
          */
-        void setBody( SmartPtr<IVehicleBody> body ) override;
+        void setBody(SmartPtr<IVehicleBody> body) override;
 
         /** @brief Get calculated world transform for the controller. */
         Transform3<physics_Num> getWorldTransform() const override;
 
         /** @brief Set the controller's world transform. */
-        void setWorldTransform( const Transform3<physics_Num> &worldTransform ) override;
+        void setWorldTransform(const Transform3<physics_Num> &worldTransform) override;
 
         /** @brief Get the controller's local transform (relative to the body). */
         Transform3<physics_Num> getLocalTransform() const override;
 
         /** @brief Set the controller's local transform. */
-        void setLocalTransform( const Transform3<physics_Num> &localTransform ) override;
+        void setLocalTransform(const Transform3<physics_Num> &localTransform) override;
 
         /**
          * @brief Draw a world-space debug point (renders three short axis lines).
@@ -142,7 +142,7 @@ namespace workphone
          * @param positon Point in local coordinates that will be transformed to world.
          * @param color Color for the debug primitives.
          */
-        void drawPoint( s32 body, int id, const Vector3<physics_Num> &positon, u32 color ) override;
+        void drawPoint(s32 body, int id, const Vector3<physics_Num> &positon, u32 color) override;
 
         /**
          * @brief Draw a debug point whose input is already in local space.
@@ -151,7 +151,7 @@ namespace workphone
          * @param positon Local-space point to draw.
          * @param color Color for the debug primitives.
          */
-        void drawLocalPoint( s32 body, int id, const Vector3<physics_Num> &positon, u32 color ) override;
+        void drawLocalPoint(s32 body, int id, const Vector3<physics_Num> &positon, u32 color) override;
 
         /**
          * @brief Display a vector in local coordinates via the vehicle callback.
@@ -160,8 +160,8 @@ namespace workphone
          * @param end Vector end in local space.
          * @param colour Debug colour.
          */
-        void displayLocalVector( s32 bodyId, const Vector3<physics_Num> &start,
-                                 const Vector3<physics_Num> &end, u32 colour ) override;
+        void displayLocalVector(s32 bodyId, const Vector3<physics_Num> &start,
+                                const Vector3<physics_Num> &end, u32 colour) override;
 
         /**
          * @brief Display a world-space vector via the vehicle callback.
@@ -171,8 +171,8 @@ namespace workphone
          * @param end World-space end.
          * @param colour Debug colour.
          */
-        void displayVector( s32 bodyId, s32 id, const Vector3<physics_Num> &start,
-                            const Vector3<physics_Num> &end, u32 colour ) override;
+        void displayVector(s32 bodyId, s32 id, const Vector3<physics_Num> &start,
+                           const Vector3<physics_Num> &end, u32 colour) override;
 
         /**
          * @brief Display a local-space vector after transforming it into world space first.
@@ -182,14 +182,14 @@ namespace workphone
          * @param end Local-space end.
          * @param colour Debug colour.
          */
-        void displayLocalVector( s32 bodyId, s32 id, const Vector3<physics_Num> &start,
-                                 const Vector3<physics_Num> &end, u32 colour ) override;
+        void displayLocalVector(s32 bodyId, s32 id, const Vector3<physics_Num> &start,
+                                const Vector3<physics_Num> &end, u32 colour) override;
 
         /** @brief Get whether debug drawing is enabled for this controller. */
         bool getDisplayDebugData() const override;
 
         /** @brief Enable/disable debug drawing for this controller. */
-        void setDisplayDebugData( bool displayDebugData ) override;
+        void setDisplayDebugData(bool displayDebugData) override;
 
         /**
          * @brief Apply a world-space force at a world-space location (accumulates force + torque).
@@ -197,15 +197,15 @@ namespace workphone
          * @param Force Force vector in world coordinates.
          * @param Loc World-space application point.
          */
-        void addForce( s32 bodyIdx, const Vector3<physics_Num> &Force,
-                       const Vector3<physics_Num> &Loc ) override;
+        void addForce(s32 bodyIdx, const Vector3<physics_Num> &Force,
+                      const Vector3<physics_Num> &Loc) override;
 
         /**
          * @brief Apply a world-space torque (accumulates torque).
          * @param bodyIdx Index of the body.
          * @param Torque Torque vector in world coordinates.
          */
-        void addTorque( s32 bodyIdx, const Vector3<physics_Num> &Torque ) override;
+        void addTorque(s32 bodyIdx, const Vector3<physics_Num> &Torque) override;
 
         /**
          * @brief Apply a force given in local coordinates (transformed to world and accumulated).
@@ -213,22 +213,22 @@ namespace workphone
          * @param Force Local-space force vector.
          * @param Loc Local-space application point.
          */
-        void addLocalForce( s32 bodyIdx, const Vector3<physics_Num> &Force,
-                            const Vector3<physics_Num> &Loc ) override;
+        void addLocalForce(s32 bodyIdx, const Vector3<physics_Num> &Force,
+                           const Vector3<physics_Num> &Loc) override;
 
         /**
          * @brief Apply a torque given in local coordinates (transformed to world and accumulated).
          * @param bodyIdx Index of the body.
          * @param Torque Local-space torque.
          */
-        void addLocalTorque( s32 bodyIdx, const Vector3<physics_Num> &torque ) override;
+        void addLocalTorque(s32 bodyIdx, const Vector3<physics_Num> &torque) override;
 
         /**
          * @brief Get linear velocity of a point on the vehicle in world space.
          * @param p Point in world coordinates.
          * @return Linear velocity at point p.
          */
-        Vector3<physics_Num> getPointVelocity( const Vector3<physics_Num> &p ) override;
+        Vector3<physics_Num> getPointVelocity(const Vector3<physics_Num> &p) override;
 
         /** @brief Get current angular velocity (world-space). */
         Vector3<physics_Num> getAngularVelocity() override;
@@ -255,13 +255,13 @@ namespace workphone
         SmartPtr<IVehicleCallback> getVehicleCallback() const override;
 
         /** @brief Assign the vehicle callback used for platform-specific operations. */
-        void setVehicleCallback( SmartPtr<IVehicleCallback> callback ) override;
+        void setVehicleCallback(SmartPtr<IVehicleCallback> callback) override;
 
         /** @brief Get the vehicle centre of gravity in local coordinates. */
         Vector3<physics_Num> getCG() const override;
 
         /** @copydoc IVehicleController::setState */
-        virtual void setState( IVehicle::State state ) override;
+        virtual void setState(IVehicle::State state) override;
 
         /** @copydoc IVehicleController::getState */
         virtual IVehicle::State getState() const override;
@@ -271,16 +271,16 @@ namespace workphone
          * @param index Wheel index.
          * @return Smart pointer to a wheel component or nullptr if not supported.
          */
-        SmartPtr<IWheelComponent> getWheelController( u32 index ) const;
+        SmartPtr<IWheelComponent> getWheelController(u32 index) const;
 
-        WP_CLASS_REGISTER_TEMPLATE_DECL( CVehicleController, T );
+        WP_CLASS_REGISTER_TEMPLATE_DECL(CVehicleController, T);
 
     protected:
         /** @brief Accumulate a world-space force (internal helper). */
-        void addForce( const Vector3<physics_Num> &force );
+        void addForce(const Vector3<physics_Num> &force);
 
         /** @brief Accumulate a world-space torque (internal helper). */
-        void addTorque( const Vector3<physics_Num> &torque );
+        void addTorque(const Vector3<physics_Num> &torque);
 
         /** @brief Clear accumulated forces and torques. */
         void clearForces();
@@ -317,7 +317,7 @@ namespace workphone
         FixedArray<atomic_f32, 8> m_channels;
     };
 
-    WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, CVehicleController, T, T );
+    WP_CLASS_REGISTER_DERIVED_TEMPLATE(workphone, CVehicleController, T, T);
 
     template <class T>
     CVehicleController<T>::CVehicleController()
@@ -330,7 +330,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::load( SmartPtr<ISharedObject> data )
+    void CVehicleController<T>::load(SmartPtr<ISharedObject> data)
     {
         auto applicationManager = core::IApplicationManager::instance();
         auto factoryManager = applicationManager->getFactoryManager();
@@ -346,20 +346,20 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::load( const std::string &data )
+    void CVehicleController<T>::load(const std::string &data)
     {
         auto worldTransform = Transform3<physics_Num>();
-        setWorldTransform( worldTransform );
+        setWorldTransform(worldTransform);
 
         auto localTransform = Transform3<physics_Num>();
-        setLocalTransform( localTransform );
+        setLocalTransform(localTransform);
 
         auto bodyTransform = Transform3<physics_Num>();
         // m_bodyTransform = bodyTransform;
     }
 
     template <class T>
-    void CVehicleController<T>::reload( void *pData )
+    void CVehicleController<T>::reload(void *pData)
     {
     }
 
@@ -373,10 +373,10 @@ namespace workphone
     {
         updateTransform();
 
-        if( m_callback )
+        if(m_callback)
         {
-            m_callback->addForce( 0, m_force, Vector3<physics_Num>::zero() );
-            m_callback->addTorque( 0, m_torque );
+            m_callback->addForce(0, m_force, Vector3<physics_Num>::zero());
+            m_callback->addTorque(0, m_torque);
 
             m_force = Vector3<physics_Num>::zero();
             m_torque = Vector3<physics_Num>::zero();
@@ -384,13 +384,13 @@ namespace workphone
     }
 
     template <class T>
-    f32 CVehicleController<T>::getChannel( s32 idx ) const
+    f32 CVehicleController<T>::getChannel(s32 idx) const
     {
         return m_channels[idx];
     }
 
     template <class T>
-    void CVehicleController<T>::setChannel( s32 idx, f32 channel )
+    void CVehicleController<T>::setChannel(s32 idx, f32 channel)
     {
         m_channels[idx] = channel;
     }
@@ -401,38 +401,38 @@ namespace workphone
         auto p = getPosition();
         auto q = getOrientation();
 
-        WP_ASSERT( MathUtil<physics_Num>::isFinite( p ) );
-        WP_ASSERT( MathUtil<physics_Num>::isFinite( q ) );
+        WP_ASSERT(MathUtil<physics_Num>::isFinite( p ));
+        WP_ASSERT(MathUtil<physics_Num>::isFinite( q ));
 
         // p = Vector3<physics_Num>::zero();
         // q = Quaternion<physics_Num>::identity();
 
         // if (m_bodyTransform)
         {
-            m_bodyTransform.setPosition( p );
-            m_bodyTransform.setOrientation( q );
-            m_bodyTransform.setScale( Vector3<physics_Num>::unit() );
+            m_bodyTransform.setPosition(p);
+            m_bodyTransform.setOrientation(q);
+            m_bodyTransform.setScale(Vector3<physics_Num>::unit());
 
             // if (m_worldTransform)
             {
                 // if (m_localTransform)
                 {
-                    m_worldTransform.transformFromParent( m_bodyTransform, m_localTransform );
+                    m_worldTransform.transformFromParent(m_bodyTransform, m_localTransform);
                 }
             }
         }
 
-        if( auto body = getBody() )
+        if(auto body = getBody())
         {
-            auto cg = m_bodyTransform.transformPoint( m_cg );
-            body->setWorldCenterOfMass( cg );
+            auto cg = m_bodyTransform.transformPoint(m_cg);
+            body->setWorldCenterOfMass(cg);
         }
     }
 
     template <class T>
     Vector3<physics_Num> CVehicleController<T>::getScale() const
     {
-        if( m_callback )
+        if(m_callback)
         {
             return m_callback->getScale();
         }
@@ -443,7 +443,7 @@ namespace workphone
     template <class T>
     Vector3<physics_Num> CVehicleController<T>::getPosition() const
     {
-        if( m_callback )
+        if(m_callback)
         {
             return m_callback->getPosition();
         }
@@ -452,14 +452,14 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setPosition( const Vector3<physics_Num> &position )
+    void CVehicleController<T>::setPosition(const Vector3<physics_Num> &position)
     {
     }
 
     template <class T>
     Quaternion<physics_Num> CVehicleController<T>::getOrientation() const
     {
-        if( m_callback )
+        if(m_callback)
         {
             return m_callback->getOrientation();
         }
@@ -468,7 +468,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setOrientation( const Quaternion<physics_Num> &orientation )
+    void CVehicleController<T>::setOrientation(const Quaternion<physics_Num> &orientation)
     {
     }
 
@@ -479,27 +479,27 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setUserControlled( bool userControlled )
+    void CVehicleController<T>::setUserControlled(bool userControlled)
     {
     }
 
     template <class T>
     physics_Num CVehicleController<T>::getMass() const
     {
-        if( auto body = getBody() )
+        if(auto body = getBody())
         {
             return body->getMass();
         }
 
-        return static_cast<physics_Num>( 1.0 );
+        return 1.0;
     }
 
     template <class T>
-    void CVehicleController<T>::setMass( physics_Num mass )
+    void CVehicleController<T>::setMass(physics_Num mass)
     {
-        if( auto body = getBody() )
+        if(auto body = getBody())
         {
-            body->setMass( mass );
+            body->setMass(mass);
         }
     }
 
@@ -510,7 +510,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setBody( SmartPtr<IVehicleBody> rigidbody )
+    void CVehicleController<T>::setBody(SmartPtr<IVehicleBody> rigidbody)
     {
         m_rigidbody = rigidbody;
     }
@@ -522,7 +522,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setWorldTransform( const Transform3<physics_Num> &worldTransform )
+    void CVehicleController<T>::setWorldTransform(const Transform3<physics_Num> &worldTransform)
     {
         m_worldTransform = worldTransform;
     }
@@ -534,16 +534,16 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setLocalTransform( const Transform3<physics_Num> &localTransform )
+    void CVehicleController<T>::setLocalTransform(const Transform3<physics_Num> &localTransform)
     {
         m_localTransform = localTransform;
     }
 
     template <class T>
-    void CVehicleController<T>::drawPoint( s32 body, int id, const Vector3<physics_Num> &positon,
-                                           u32 color )
+    void CVehicleController<T>::drawPoint(s32 body, int id, const Vector3<physics_Num> &positon,
+                                          u32 color)
     {
-        auto size = static_cast<physics_Num>( 0.1 );
+        auto size = static_cast<physics_Num>(0.1);
         auto offset0 = Vector3<physics_Num>::forward() * size;
         auto offset1 = Vector3<physics_Num>::up() * size;
         auto offset2 = Vector3<physics_Num>::right() * size;
@@ -551,14 +551,14 @@ namespace workphone
         auto p = m_worldTransform.getOrientation() * positon;
         p += m_worldTransform.getPosition();
 
-        displayVector( body, id, p + offset0, p - offset0, color );
-        displayVector( body, id + 1, p + offset1, p - offset1, color );
-        displayVector( body, id + 2, p + offset2, p - offset2, color );
+        displayVector(body, id, p + offset0, p - offset0, color);
+        displayVector(body, id + 1, p + offset1, p - offset1, color);
+        displayVector(body, id + 2, p + offset2, p - offset2, color);
     }
 
     template <class T>
-    void CVehicleController<T>::drawLocalPoint( s32 body, int id, const Vector3<physics_Num> &positon,
-                                                u32 color )
+    void CVehicleController<T>::drawLocalPoint(s32 body, int id, const Vector3<physics_Num> &positon,
+                                               u32 color)
     {
         auto size = 0.1f;
         auto offset0 = Vector3<physics_Num>::forward() * size;
@@ -570,76 +570,76 @@ namespace workphone
             auto p = m_worldTransform.getOrientation() * positon;
             p += m_worldTransform.getPosition();
 
-            displayVector( body, id, p + offset0, p - offset0, color );
-            displayVector( body, id + 1000, p + offset1, p - offset1, color );
-            displayVector( body, id + 2000, p + offset2, p - offset2, color );
+            displayVector(body, id, p + offset0, p - offset0, color);
+            displayVector(body, id + 1000, p + offset1, p - offset1, color);
+            displayVector(body, id + 2000, p + offset2, p - offset2, color);
         }
     }
 
     template <class T>
-    void CVehicleController<T>::displayLocalVector( s32 bodyId, const Vector3<physics_Num> &start,
-                                                    const Vector3<physics_Num> &end, u32 colour )
+    void CVehicleController<T>::displayLocalVector(s32 bodyId, const Vector3<physics_Num> &start,
+                                                   const Vector3<physics_Num> &end, u32 colour)
     {
         try
         {
-            if( m_callback )
+            if(m_callback)
             {
                 m_callback->displayLocalVector(
-                    bodyId, Vector3<physics_Num>( start.X(), start.Y(), start.Z() ),
-                    Vector3<physics_Num>( end.X(), end.Y(), end.Z() ), colour );
+                    bodyId, Vector3<physics_Num>(start.X(), start.Y(), start.Z()),
+                    Vector3<physics_Num>(end.X(), end.Y(), end.Z()), colour);
             }
         }
-        catch( std::exception &Err )
+        catch(std::exception &Err)
         {
-            WP_LOG_EXCEPTION( Err );
+            WP_LOG_EXCEPTION(Err);
         }
     }
 
     template <class T>
-    void CVehicleController<T>::displayVector( s32 bodyId, s32 id, const Vector3<physics_Num> &start,
-                                               const Vector3<physics_Num> &end, u32 colour )
+    void CVehicleController<T>::displayVector(s32 bodyId, s32 id, const Vector3<physics_Num> &start,
+                                              const Vector3<physics_Num> &end, u32 colour)
     {
         try
         {
-            if( m_callback )
+            if(m_callback)
             {
-                m_callback->displayVector( bodyId, id, start, end, colour );
+                m_callback->displayVector(bodyId, id, start, end, colour);
             }
         }
-        catch( std::exception &Err )
+        catch(std::exception &Err)
         {
-            WP_LOG_EXCEPTION( Err );
+            WP_LOG_EXCEPTION(Err);
         }
     }
 
     template <class T>
-    void CVehicleController<T>::displayLocalVector( s32 bodyId, s32 id,
-                                                    const Vector3<physics_Num> &start,
-                                                    const Vector3<physics_Num> &end, u32 colour )
+    void CVehicleController<T>::displayLocalVector(s32 bodyId, s32 id,
+                                                   const Vector3<physics_Num> &start,
+                                                   const Vector3<physics_Num> &end, u32 colour)
     {
         try
         {
-            if( m_callback )
+            if(m_callback)
             {
                 auto worldTransform = getWorldTransform();
 
-                WP_ASSERT( worldTransform.isValid() );
+                WP_ASSERT(worldTransform.isValid());
 
-                WP_ASSERT( start.isValid() );
-                WP_ASSERT( end.isValid() );
+                WP_ASSERT(start.isValid());
+                WP_ASSERT(end.isValid());
 
-                auto worldStart = worldTransform.transformPoint( start );
-                auto worldEnd = worldTransform.transformPoint( end );
+                auto worldStart = worldTransform.transformPoint(start);
+                auto worldEnd = worldTransform.transformPoint(end);
 
-                WP_ASSERT( worldStart.isValid() );
-                WP_ASSERT( worldEnd.isValid() );
+                WP_ASSERT(worldStart.isValid());
+                WP_ASSERT(worldEnd.isValid());
 
-                m_callback->displayVector( bodyId, id, start, end, colour );
+                m_callback->displayVector(bodyId, id, start, end, colour);
             }
         }
-        catch( std::exception &Err )
+        catch(std::exception &Err)
         {
-            WP_LOG_EXCEPTION( Err );
+            WP_LOG_EXCEPTION(Err);
         }
     }
 
@@ -650,72 +650,72 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setDisplayDebugData( bool displayDebugData )
+    void CVehicleController<T>::setDisplayDebugData(bool displayDebugData)
     {
         m_displayDebugData = displayDebugData;
     }
 
     template <class T>
-    void CVehicleController<T>::addForce( s32 bodyIdx, const Vector3<physics_Num> &Force,
-                                          const Vector3<physics_Num> &Loc )
+    void CVehicleController<T>::addForce(s32 bodyIdx, const Vector3<physics_Num> &Force,
+                                         const Vector3<physics_Num> &Loc)
     {
-        WP_ASSERT( Force.length() < 1e5 );
-        WP_ASSERT( Loc.length() < 1e5 );
+        WP_ASSERT(Force.length() < 1e5);
+        WP_ASSERT(Loc.length() < 1e5);
 
         // if (m_callback)
         // {
         //     m_callback->addForce(Bdy, Force, Loc);
         // }
 
-        const Vector3<physics_Num> centerOfMass = m_worldTransform.transformPoint( m_cg );
-        const Vector3<physics_Num> torque = ( Loc - centerOfMass ).crossProduct( Force );
+        const Vector3<physics_Num> centerOfMass = m_worldTransform.transformPoint(m_cg);
+        const Vector3<physics_Num> torque = (Loc - centerOfMass).crossProduct(Force);
 
-        addForce( Force );
-        addTorque( torque );
+        addForce(Force);
+        addTorque(torque);
     }
 
     template <class T>
-    void CVehicleController<T>::addTorque( s32 bodyIdx, const Vector3<physics_Num> &Torque )
+    void CVehicleController<T>::addTorque(s32 bodyIdx, const Vector3<physics_Num> &Torque)
     {
-        WP_ASSERT( Torque.length() < 1e5 );
+        WP_ASSERT(Torque.length() < 1e5);
 
         // if (m_callback)
         // {
         //     m_callback->addTorque(Bdy, Torque);
         // }
 
-        addTorque( Torque );
+        addTorque(Torque);
     }
 
     template <class T>
-    void CVehicleController<T>::addLocalForce( s32 bodyIdx, const Vector3<physics_Num> &Force,
-                                               const Vector3<physics_Num> &Loc )
+    void CVehicleController<T>::addLocalForce(s32 bodyIdx, const Vector3<physics_Num> &Force,
+                                              const Vector3<physics_Num> &Loc)
     {
-        WP_ASSERT( Force.length() < 1e10 );
-        WP_ASSERT( Loc.length() < 1e10 );
+        WP_ASSERT(Force.length() < 1e10);
+        WP_ASSERT(Loc.length() < 1e10);
 
         // if (m_callback)
         // {
         //     m_callback->addLocalForce(Bdy, Force, Loc);
         // }
 
-        const auto worldPoint = m_worldTransform.transformPoint( Loc );
-        const auto force = m_worldTransform.transformVector( Force );
+        const auto worldPoint = m_worldTransform.transformPoint(Loc);
+        const auto force = m_worldTransform.transformVector(Force);
 
-        if( auto body = getBody() )
+        if(auto body = getBody())
         {
             const auto centerOfMass = body->getWorldCenterOfMass();
-            const auto torque = ( worldPoint - centerOfMass ).crossProduct( force );
+            const auto torque = (worldPoint - centerOfMass).crossProduct(force);
 
-            addForce( force );
-            addTorque( torque );
+            addForce(force);
+            addTorque(torque);
         }
     }
 
     template <class T>
-    void CVehicleController<T>::addLocalTorque( s32 bodyIdx, const Vector3<physics_Num> &t )
+    void CVehicleController<T>::addLocalTorque(s32 bodyIdx, const Vector3<physics_Num> &t)
     {
-        WP_ASSERT( t.length() < 1e5 );
+        WP_ASSERT(t.length() < 1e5);
 
         // if (m_callback)
         // {
@@ -723,15 +723,15 @@ namespace workphone
         // }
 
         auto torque = m_worldTransform.getOrientation() * t;
-        addTorque( torque );
+        addTorque(torque);
     }
 
     template <class T>
-    Vector3<physics_Num> CVehicleController<T>::getPointVelocity( const Vector3<physics_Num> &p )
+    Vector3<physics_Num> CVehicleController<T>::getPointVelocity(const Vector3<physics_Num> &p)
     {
-        if( m_callback )
+        if(m_callback)
         {
-            return m_callback->getPointVelocity( p );
+            return m_callback->getPointVelocity(p);
         }
 
         return Vector3<physics_Num>::zero();
@@ -740,7 +740,7 @@ namespace workphone
     template <class T>
     Vector3<physics_Num> CVehicleController<T>::getAngularVelocity()
     {
-        if( m_callback )
+        if(m_callback)
         {
             return m_callback->getAngularVelocity();
         }
@@ -751,7 +751,7 @@ namespace workphone
     template <class T>
     Vector3<physics_Num> CVehicleController<T>::getLinearVelocity()
     {
-        if( m_callback )
+        if(m_callback)
         {
             return m_callback->getLinearVelocity();
         }
@@ -762,10 +762,10 @@ namespace workphone
     template <class T>
     Vector3<physics_Num> CVehicleController<T>::getLocalAngularVelocity()
     {
-        if( m_callback )
+        if(m_callback)
         {
             auto worldAngularVelocity = m_callback->getAngularVelocity();
-            return m_worldTransform.inverseTransformVector( worldAngularVelocity );
+            return m_worldTransform.inverseTransformVector(worldAngularVelocity);
         }
 
         return Vector3<physics_Num>::zero();
@@ -774,7 +774,7 @@ namespace workphone
     template <class T>
     Vector3<physics_Num> CVehicleController<T>::getLocalLinearVelocity()
     {
-        if( m_callback )
+        if(m_callback)
         {
             return m_callback->getLocalLinearVelocity();
         }
@@ -795,7 +795,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setVehicleCallback( SmartPtr<IVehicleCallback> callback )
+    void CVehicleController<T>::setVehicleCallback(SmartPtr<IVehicleCallback> callback)
     {
         m_callback = callback;
     }
@@ -807,7 +807,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::setState( IVehicle::State state )
+    void CVehicleController<T>::setState(IVehicle::State state)
     {
         m_vehicleState = state;
     }
@@ -819,13 +819,13 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleController<T>::addForce( const Vector3<physics_Num> &force )
+    void CVehicleController<T>::addForce(const Vector3<physics_Num> &force)
     {
         m_force += force;
     }
 
     template <class T>
-    void CVehicleController<T>::addTorque( const Vector3<physics_Num> &torque )
+    void CVehicleController<T>::addTorque(const Vector3<physics_Num> &torque)
     {
         m_torque += torque;
     }
@@ -838,7 +838,7 @@ namespace workphone
     }
 
     template <class T>
-    SmartPtr<IWheelComponent> CVehicleController<T>::getWheelController( u32 index ) const
+    SmartPtr<IWheelComponent> CVehicleController<T>::getWheelController(u32 index) const
     {
         return nullptr;
     }

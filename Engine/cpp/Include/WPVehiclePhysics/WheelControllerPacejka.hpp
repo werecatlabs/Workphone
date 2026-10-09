@@ -44,7 +44,7 @@ namespace workphone
          *
          * Copy construction is not allowed for this class.
          */
-        WheelControllerPacejka( const WheelControllerPacejka &other ) = delete;
+        WheelControllerPacejka(const WheelControllerPacejka &other) = delete;
 
         /**
          * @brief Destructor.
@@ -55,7 +55,7 @@ namespace workphone
          * @brief Unloads the wheel controller and cleans up resources.
          * @param data Shared object data (unused in this implementation)
          */
-        void unload( SmartPtr<ISharedObject> data ) override;
+        void unload(SmartPtr<ISharedObject> data) override;
 
         /**
          * @brief Updates the wheel controller physics simulation.
@@ -72,14 +72,14 @@ namespace workphone
          * @param torque The amount of torque to add in Newton-meters
          * @note Currently not implemented in this version
          */
-        void addTorque( physics_Num torque ) override;
+        void addTorque(physics_Num torque) override;
 
         /**
          * @brief Sets the torque applied to the wheel.
          * @param torque The torque value in Newton-meters
          * @note Currently not implemented in this version
          */
-        void setTorque( physics_Num torque ) override;
+        void setTorque(physics_Num torque) override;
 
         /**
          * @brief Gets the current torque applied to the wheel.
@@ -98,7 +98,7 @@ namespace workphone
          * @brief Sets the mass of the chassis portion supported by this wheel.
          * @param mass The mass in kilograms
          */
-        void setMass( physics_Num mass ) override;
+        void setMass(physics_Num mass) override;
 
         /**
          * @brief Gets the wheel radius.
@@ -110,7 +110,7 @@ namespace workphone
          * @brief Sets the wheel radius.
          * @param radius The wheel radius in meters
          */
-        void setRadius( physics_Num radius ) override;
+        void setRadius(physics_Num radius) override;
 
         /**
          * @brief Gets the maximum suspension travel distance.
@@ -122,7 +122,7 @@ namespace workphone
          * @brief Sets the maximum suspension travel distance.
          * @param suspensionTravel The suspension travel in meters
          */
-        void setSuspensionTravel( physics_Num suspensionTravel ) override;
+        void setSuspensionTravel(physics_Num suspensionTravel) override;
 
         /**
          * @brief Gets the suspension damping coefficient.
@@ -134,7 +134,7 @@ namespace workphone
          * @brief Sets the suspension damping coefficient.
          * @param damping The damping coefficient in kg/s
          */
-        void setDamping( physics_Num damping ) override;
+        void setDamping(physics_Num damping) override;
 
         /**
          * @brief Gets the suspension spring rate.
@@ -146,7 +146,7 @@ namespace workphone
          * @brief Sets the suspension spring rate.
          * @param springRate The spring rate in N/m
          */
-        void setSpringRate( physics_Num springRate ) override;
+        void setSpringRate(physics_Num springRate) override;
 
         /**
          * @brief Gets the current suspension compression distance.
@@ -158,7 +158,7 @@ namespace workphone
          * @brief Sets the current suspension compression distance.
          * @param suspensionDistance The suspension distance in meters
          */
-        void setSuspensionDistance( physics_Num suspensionDistance ) override;
+        void setSuspensionDistance(physics_Num suspensionDistance) override;
 
         /**
          * @brief Gets the current steering angle of the wheel.
@@ -170,7 +170,7 @@ namespace workphone
          * @brief Sets the steering angle of the wheel.
          * @param steeringAngle The steering angle in degrees
          */
-        void setSteeringAngle( physics_Num steeringAngle ) override;
+        void setSteeringAngle(physics_Num steeringAngle) override;
 
         /**
          * @brief Checks if this wheel is a steering wheel.
@@ -182,7 +182,7 @@ namespace workphone
          * @brief Sets whether this wheel is a steering wheel.
          * @param isSteeringWheel True if this wheel should respond to steering input
          */
-        void setSteeringWheel( bool isSteeringWheel ) override;
+        void setSteeringWheel(bool isSteeringWheel) override;
 
         // Pacejka-specific tire force calculation methods
 
@@ -196,7 +196,7 @@ namespace workphone
          * @param slip Slip ratio (dimensionless, typically -1.0 to 1.0)
          * @return Longitudinal force in Newtons
          */
-        float calcLongitudinalForceUnit( float Fz, float slip );
+        float calcLongitudinalForceUnit(float Fz, float slip);
 
         /**
          * @brief Calculates lateral tire force using the Pacejka formula.
@@ -208,7 +208,7 @@ namespace workphone
          * @param slipAngle Slip angle in radians
          * @return Lateral force in Newtons
          */
-        float calcLateralForceUnit( float Fz, float slipAngle );
+        float calcLateralForceUnit(float Fz, float slipAngle);
 
         /**
          * @brief Calculates combined tire forces for both longitudinal and lateral directions.
@@ -221,7 +221,7 @@ namespace workphone
          * @param slipAngle Slip angle in radians
          * @return Combined force vector in local wheel coordinates
          */
-        Vector3<physics_Num> combinedForce( float Fz, float slip, float slipAngle );
+        Vector3<physics_Num> combinedForce(float Fz, float slip, float slipAngle);
 
         /**
          * @brief Initializes the maximum slip and slip angle values for tire force calculations.
@@ -262,7 +262,7 @@ namespace workphone
          * @param dt Time step in seconds
          * @return Total road force vector in world coordinates
          */
-        Vector3<physics_Num> roadForce( physics_Num dt );
+        Vector3<physics_Num> roadForce(physics_Num dt);
 
         /**
          * @brief Calculates the suspension force based on compression and velocity.
@@ -280,7 +280,7 @@ namespace workphone
          * @param slip Slip ratio (dimensionless)
          * @return Longitudinal force in Newtons
          */
-        float calcLongitudinalForce( float Fz, float slip );
+        float calcLongitudinalForce(float Fz, float slip);
 
         /**
          * @brief Calculates lateral tire force with full Pacejka formula.
@@ -288,7 +288,7 @@ namespace workphone
          * @param slipAngle Slip angle in radians
          * @return Lateral force in Newtons
          */
-        float calcLateralForce( float Fz, float slipAngle );
+        float calcLateralForce(float Fz, float slipAngle);
 
         /**
          * @brief Main wheel update method called by the physics system.
@@ -300,7 +300,7 @@ namespace workphone
          * @param t Current time in seconds
          * @param dt Time step in seconds
          */
-        void updateWheel( const int &task, const double &t, const double &dt );
+        void updateWheel(const int &task, const double &t, const double &dt);
 
         /**
          * @brief Gets the wheel's position relative to the vehicle.
@@ -312,7 +312,7 @@ namespace workphone
          * @brief Sets the wheel's position relative to the vehicle.
          * @param localPosition Local position vector in vehicle coordinates
          */
-        void setLocalPosition( const Vector3<physics_Num> &localPosition );
+        void setLocalPosition(const Vector3<physics_Num> &localPosition);
 
         /**
          * @brief Gets the wheel's position in world coordinates.
@@ -338,222 +338,222 @@ namespace workphone
          * @brief Sets whether this wheel receives power from the drivetrain.
          * @param poweredWheel True if this wheel should be powered by the engine
          */
-        void setPoweredWheel( bool poweredWheel ) override;
+        void setPoweredWheel(bool poweredWheel) override;
 
         // Accessor methods for member variables
 
         /** @brief Gets current wheel velocity in world coordinates */
         Vector3<physics_Num> getWheelVelo() const;
         /** @brief Sets current wheel velocity in world coordinates */
-        void setWheelVelo( const Vector3<physics_Num> &wheelVelo );
+        void setWheelVelo(const Vector3<physics_Num> &wheelVelo);
 
         /** @brief Gets current wheel velocity in local wheel coordinates */
         Vector3<physics_Num> getLocalVelo() const;
         /** @brief Sets current wheel velocity in local wheel coordinates */
-        void setLocalVelo( const Vector3<physics_Num> &localVelo );
+        void setLocalVelo(const Vector3<physics_Num> &localVelo);
 
         /** @brief Gets ground normal vector at contact point */
         Vector3<physics_Num> getGroundNormal() const;
         /** @brief Sets ground normal vector at contact point */
-        void setGroundNormal( const Vector3<physics_Num> &groundNormal );
+        void setGroundNormal(const Vector3<physics_Num> &groundNormal);
 
         /** @brief Gets current suspension force vector */
         Vector3<physics_Num> getSuspensionForceVector() const;
         /** @brief Sets current suspension force vector */
-        void setSuspensionForceVector( const Vector3<physics_Num> &suspensionForce );
+        void setSuspensionForceVector(const Vector3<physics_Num> &suspensionForce);
 
         /** @brief Gets current road/tire force vector */
         Vector3<physics_Num> getRoadForceVector() const;
         /** @brief Sets current road/tire force vector */
-        void setRoadForceVector( const Vector3<physics_Num> &roadForce );
+        void setRoadForceVector(const Vector3<physics_Num> &roadForce);
 
         /** @brief Gets local up direction vector */
         Vector3<physics_Num> getUp() const;
         /** @brief Sets local up direction vector */
-        void setUp( const Vector3<physics_Num> &up );
+        void setUp(const Vector3<physics_Num> &up);
 
         /** @brief Gets local right direction vector */
         Vector3<physics_Num> getRight() const;
         /** @brief Sets local right direction vector */
-        void setRight( const Vector3<physics_Num> &right );
+        void setRight(const Vector3<physics_Num> &right);
 
         /** @brief Gets local forward direction vector */
         Vector3<physics_Num> getForward() const;
         /** @brief Sets local forward direction vector */
-        void setForward( const Vector3<physics_Num> &forward );
+        void setForward(const Vector3<physics_Num> &forward);
 
         /** @brief Gets current wheel rotation quaternion */
         Quaternion<physics_Num> getLocalRotation() const;
         /** @brief Sets current wheel rotation quaternion */
-        void setLocalRotation( const Quaternion<physics_Num> &localRotation );
+        void setLocalRotation(const Quaternion<physics_Num> &localRotation);
 
         /** @brief Gets inverse of current wheel rotation quaternion */
         Quaternion<physics_Num> getInverseLocalRotation() const;
         /** @brief Sets inverse of current wheel rotation quaternion */
-        void setInverseLocalRotation( const Quaternion<physics_Num> &inverseLocalRotation );
+        void setInverseLocalRotation(const Quaternion<physics_Num> &inverseLocalRotation);
 
         /** @brief Gets raycast hit result for ground contact detection */
         SmartPtr<physics::IRaycastHit> getHit() const;
         /** @brief Sets raycast hit result for ground contact detection */
-        void setHit( SmartPtr<physics::IRaycastHit> hit );
+        void setHit(SmartPtr<physics::IRaycastHit> hit);
 
         /** @brief Gets wheel rotational inertia in kg⋅m² */
         physics_Num getInertia() const;
         /** @brief Sets wheel rotational inertia in kg⋅m² */
-        void setInertia( physics_Num inertia );
+        void setInertia(physics_Num inertia);
 
         /** @brief Gets tire grip multiplier (scales all tire forces) */
         physics_Num getGrip() const;
         /** @brief Sets tire grip multiplier (scales all tire forces) */
-        void setGrip( physics_Num grip ) override;
+        void setGrip(physics_Num grip) override;
 
         /** @brief Gets maximum brake torque in Newton-meters */
         physics_Num getBrakeFrictionTorque() const;
         /** @brief Sets maximum brake torque in Newton-meters */
-        void setBrakeFrictionTorque( physics_Num brakeFrictionTorque );
+        void setBrakeFrictionTorque(physics_Num brakeFrictionTorque);
 
         /** @brief Gets maximum handbrake torque in Newton-meters */
         physics_Num getHandbrakeFrictionTorque() const;
         /** @brief Sets maximum handbrake torque in Newton-meters */
-        void setHandbrakeFrictionTorque( physics_Num handbrakeFrictionTorque );
+        void setHandbrakeFrictionTorque(physics_Num handbrakeFrictionTorque);
 
         /** @brief Gets base rolling resistance torque in Newton-meters */
         physics_Num getFrictionTorque() const;
         /** @brief Sets base rolling resistance torque in Newton-meters */
-        void setFrictionTorque( physics_Num frictionTorque );
+        void setFrictionTorque(physics_Num frictionTorque);
 
         /** @brief Gets maximum steering angle in degrees */
         physics_Num getMaxSteeringAngle() const;
         /** @brief Sets maximum steering angle in degrees */
-        void setMaxSteeringAngle( physics_Num maxSteeringAngle );
+        void setMaxSteeringAngle(physics_Num maxSteeringAngle);
 
         /** @brief Gets fraction of vehicle mass supported by this wheel */
         physics_Num getMassFraction() const;
         /** @brief Sets fraction of vehicle mass supported by this wheel */
-        void setMassFraction( physics_Num massFraction );
+        void setMassFraction(physics_Num massFraction);
 
         /** @brief Gets engine torque applied to this wheel in Newton-meters */
         physics_Num getDriveTorque() const;
         /** @brief Sets engine torque applied to this wheel in Newton-meters */
-        void setDriveTorque( physics_Num driveTorque );
+        void setDriveTorque(physics_Num driveTorque);
 
         /** @brief Gets drivetrain friction torque in Newton-meters */
         physics_Num getDriveFrictionTorque() const;
         /** @brief Sets drivetrain friction torque in Newton-meters */
-        void setDriveFrictionTorque( physics_Num driveFrictionTorque );
+        void setDriveFrictionTorque(physics_Num driveFrictionTorque);
 
         /** @brief Gets brake input (0.0 to 1.0) */
         physics_Num getBrake() const override;
         /** @brief Sets brake input (0.0 to 1.0) */
-        void setBrake( physics_Num brake ) override;
+        void setBrake(physics_Num brake) override;
 
         /** @brief Gets handbrake input (0.0 to 1.0) */
         physics_Num getHandbrake() const;
         /** @brief Sets handbrake input (0.0 to 1.0) */
-        void setHandbrake( physics_Num handbrake );
+        void setHandbrake(physics_Num handbrake);
 
         /** @brief Gets drivetrain inertia as seen by this wheel in kg⋅m² */
         physics_Num getDrivetrainInertia() const;
         /** @brief Sets drivetrain inertia as seen by this wheel in kg⋅m² */
-        void setDrivetrainInertia( physics_Num drivetrainInertia );
+        void setDrivetrainInertia(physics_Num drivetrainInertia);
 
         /** @brief Gets external suspension force (e.g., from anti-roll bars) in Newtons */
         physics_Num getSuspensionForceInput() const;
         /** @brief Sets external suspension force (e.g., from anti-roll bars) in Newtons */
-        void setSuspensionForceInput( physics_Num suspensionForceInput );
+        void setSuspensionForceInput(physics_Num suspensionForceInput);
 
         /** @brief Gets current wheel angular velocity in radians per second */
         physics_Num getAngularVelocity() const override;
         /** @brief Sets current wheel angular velocity in radians per second */
-        void setAngularVelocity( physics_Num angularVelocity ) override;
+        void setAngularVelocity(physics_Num angularVelocity) override;
 
         /** @brief Gets current slip ratio (dimensionless) */
         physics_Num getSlipRatio() const;
         /** @brief Sets current slip ratio (dimensionless) */
-        void setSlipRatio( physics_Num slipRatio );
+        void setSlipRatio(physics_Num slipRatio);
 
         /** @brief Gets current slip velocity magnitude in m/s */
         physics_Num getSlipVelo() const;
         /** @brief Sets current slip velocity magnitude in m/s */
-        void setSlipVelo( physics_Num slipVelo );
+        void setSlipVelo(physics_Num slipVelo);
 
         /** @brief Gets current suspension compression (0.0 = uncompressed, 1.0 = fully compressed) */
-        physics_Num getCompression() const;
+        physics_Num getCompression() const override;
         /** @brief Sets current suspension compression (0.0 = uncompressed, 1.0 = fully compressed) */
-        void setCompression( physics_Num compression );
+        void setCompression(physics_Num compression);
 
         /** @brief Gets spring force at full compression in Newtons */
         physics_Num getFullCompressionSpringForce() const;
         /** @brief Sets spring force at full compression in Newtons */
-        void setFullCompressionSpringForce( physics_Num fullCompressionSpringForce );
+        void setFullCompressionSpringForce(physics_Num fullCompressionSpringForce);
 
         /** @brief Gets current wheel rotation angle in radians */
         physics_Num getRotation() const;
         /** @brief Sets current wheel rotation angle in radians */
-        void setRotation( physics_Num rotation );
+        void setRotation(physics_Num rotation);
 
         /** @brief Gets current normal force from ground in Newtons */
         physics_Num getNormalForce() const;
         /** @brief Sets current normal force from ground in Newtons */
-        void setNormalForce( physics_Num normalForce );
+        void setNormalForce(physics_Num normalForce);
 
         /** @brief Gets current slip angle in radians */
         physics_Num getSlipAngle() const;
         /** @brief Sets current slip angle in radians */
-        void setSlipAngle( physics_Num slipAngle );
+        void setSlipAngle(physics_Num slipAngle);
 
         /** @brief Gets maximum slip ratio for force normalization */
         physics_Num getMaxSlip() const;
         /** @brief Sets maximum slip ratio for force normalization */
-        void setMaxSlip( physics_Num maxSlip );
+        void setMaxSlip(physics_Num maxSlip);
 
         /** @brief Gets maximum slip angle for force normalization */
         physics_Num getMaxAngle() const;
         /** @brief Sets maximum slip angle for force normalization */
-        void setMaxAngle( physics_Num maxAngle );
+        void setMaxAngle(physics_Num maxAngle);
 
         /** @brief Gets previous steering angle for interpolation */
         physics_Num getOldAngle() const;
 
         /** @brief Sets previous steering angle for interpolation */
-        void setOldAngle( physics_Num oldAngle );
+        void setOldAngle(physics_Num oldAngle);
 
         /** @brief Gets total vehicle mass in kilograms */
         physics_Num getChassisMass() const;
 
         /** @brief Sets total vehicle mass in kilograms */
-        void setChassisMass( physics_Num chassisMass );
+        void setChassisMass(physics_Num chassisMass);
 
         /** @brief Gets last skid state for audio/visual effects */
         int getLastSkid() const;
 
         /** @brief Sets last skid state for audio/visual effects */
-        void setLastSkid( int lastSkid );
+        void setLastSkid(int lastSkid);
 
         /** @brief Gets true if wheel is currently in contact with ground */
         bool isOnGround() const;
 
         /** @brief Sets true if wheel is currently in contact with ground */
-        void setOnGround( bool onGround );
+        void setOnGround(bool onGround);
 
         /** @brief Gets Pacejka lateral force coefficients (A parameters) */
         const Array<physics_Num> &getPacejkaA() const;
 
         /** @brief Sets Pacejka lateral force coefficients (A parameters) */
-        void setPacejkaA( const Array<physics_Num> &pacejkaA );
+        void setPacejkaA(const Array<physics_Num> &pacejkaA);
 
         /** @brief Gets Pacejka longitudinal force coefficients (B parameters) */
         const Array<physics_Num> &getPacejkaB() const;
 
         /** @brief Sets Pacejka longitudinal force coefficients (B parameters) */
-        void setPacejkaB( const Array<physics_Num> &pacejkaB );
+        void setPacejkaB(const Array<physics_Num> &pacejkaB);
 
         TireModel getTireModel() const override;
 
-        void setTireModel( TireModel tireModel ) override;
+        void setTireModel(TireModel tireModel) override;
 
         SmartPtr<Properties> getProperties() const override;
-        void                 setProperties( SmartPtr<Properties> properties ) override;
+        void setProperties(SmartPtr<Properties> properties) override;
 
         WP_CLASS_REGISTER_DECL;
 
@@ -597,105 +597,105 @@ namespace workphone
         // Wheel physical specifications
 
         /** @brief Wheel radius in meters */
-        physics_Num m_radius = static_cast<physics_Num>( 0.0 );
+        physics_Num m_radius = 0.0;
 
         /** @brief Maximum suspension travel distance in meters */
-        physics_Num m_suspensionTravel = static_cast<physics_Num>( 0.0 );
+        physics_Num m_suspensionTravel = 0.0;
 
         /** @brief Suspension damping coefficient in kg/s */
-        physics_Num m_damping = static_cast<physics_Num>( 0.0 );
+        physics_Num m_damping = 0.0;
 
         /** @brief Wheel rotational inertia in kg⋅m² */
-        physics_Num m_inertia = static_cast<physics_Num>( 0.0 );
+        physics_Num m_inertia = 0.0;
 
         /** @brief Tire grip multiplier (scales all tire forces) */
-        physics_Num m_grip = static_cast<physics_Num>( 1.0 );
+        physics_Num m_grip = 1.0;
 
         /** @brief Maximum brake torque in Newton-meters */
-        physics_Num m_brakeFrictionTorque = static_cast<physics_Num>( 0.0 );
+        physics_Num m_brakeFrictionTorque = 0.0;
 
         /** @brief Maximum handbrake torque in Newton-meters */
-        physics_Num m_handbrakeFrictionTorque = static_cast<physics_Num>( 0.0 );
+        physics_Num m_handbrakeFrictionTorque = 0.0;
 
         /** @brief Base rolling resistance torque in Newton-meters */
-        physics_Num m_frictionTorque = static_cast<physics_Num>( 0.0 );
+        physics_Num m_frictionTorque = 0.0;
 
         /** @brief Maximum steering angle in degrees */
-        physics_Num m_maxSteeringAngle = static_cast<physics_Num>( 90.0 );
+        physics_Num m_maxSteeringAngle = 90.0;
 
         /** @brief Fraction of vehicle mass supported by this wheel */
-        physics_Num m_massFraction = static_cast<physics_Num>( 0.25 );
+        physics_Num m_massFraction = 0.25;
 
         // Input values from vehicle systems
 
         /** @brief Engine torque applied to this wheel in Newton-meters */
-        physics_Num m_driveTorque = static_cast<physics_Num>( 0.0 );
+        physics_Num m_driveTorque = 0.0;
 
         /** @brief Drivetrain friction torque in Newton-meters */
-        physics_Num m_driveFrictionTorque = static_cast<physics_Num>( 0.0 );
+        physics_Num m_driveFrictionTorque = 0.0;
 
         /** @brief Brake input (0.0 to 1.0) */
-        physics_Num m_brake = static_cast<physics_Num>( 0.0 );
+        physics_Num m_brake = 0.0;
 
         /** @brief Handbrake input (0.0 to 1.0) */
-        physics_Num m_handbrake = static_cast<physics_Num>( 0.0 );
+        physics_Num m_handbrake = 0.0;
 
         /** @brief Current steering angle input in degrees */
-        physics_Num m_steeringAngle = static_cast<physics_Num>( 0.0 );
+        physics_Num m_steeringAngle = 0.0;
 
         /** @brief Drivetrain inertia as seen by this wheel in kg⋅m² */
-        physics_Num m_drivetrainInertia = static_cast<physics_Num>( 0.0 );
+        physics_Num m_drivetrainInertia = 0.0;
 
         /** @brief External suspension force (e.g., from anti-roll bars) in Newtons */
-        physics_Num m_suspensionForceInput = static_cast<physics_Num>( 0.0 );
+        physics_Num m_suspensionForceInput = 0.0;
 
         // Output/state values
 
         /** @brief Current wheel angular velocity in radians per second */
-        physics_Num m_angularVelocity = static_cast<physics_Num>( 0.0 );
+        physics_Num m_angularVelocity = 0.0;
 
         /** @brief Current slip ratio (dimensionless) */
-        physics_Num m_slipRatio = static_cast<physics_Num>( 0.0 );
+        physics_Num m_slipRatio = 0.0;
 
         /** @brief Current slip velocity magnitude in m/s */
-        physics_Num m_slipVelo = static_cast<physics_Num>( 0.0 );
+        physics_Num m_slipVelo = 0.0;
 
         /** @brief Current suspension compression (0.0 = uncompressed, 1.0 = fully compressed) */
-        physics_Num m_compression = static_cast<physics_Num>( 0.0 );
+        physics_Num m_compression = 0.0;
 
         // Internal state variables
 
         /** @brief Spring force at full compression in Newtons */
-        physics_Num m_fullCompressionSpringForce = static_cast<physics_Num>( 0.0 );
+        physics_Num m_fullCompressionSpringForce = 0.0;
 
         /** @brief Current wheel rotation angle in radians */
-        physics_Num m_rotation = static_cast<physics_Num>( 0.0 );
+        physics_Num m_rotation = 0.0;
 
         /** @brief Current normal force from ground in Newtons */
-        physics_Num m_normalForce = static_cast<physics_Num>( 0.0 );
+        physics_Num m_normalForce = 0.0;
 
         /** @brief Current slip angle in radians */
-        physics_Num m_slipAngle = static_cast<physics_Num>( 0.0 );
+        physics_Num m_slipAngle = 0.0;
 
         // Cached Pacejka calculation values
 
         /** @brief Maximum slip ratio for force normalization */
-        physics_Num m_maxSlip = static_cast<physics_Num>( 0.0 );
+        physics_Num m_maxSlip = 0.0;
 
         /** @brief Maximum slip angle for force normalization */
-        physics_Num m_maxAngle = static_cast<physics_Num>( 0.0 );
+        physics_Num m_maxAngle = 0.0;
 
         /** @brief Previous steering angle for interpolation */
-        physics_Num m_oldAngle = static_cast<physics_Num>( 0.0 );
+        physics_Num m_oldAngle = 0.0;
 
         /** @brief Total vehicle mass in kilograms */
-        physics_Num m_chassisMass = static_cast<physics_Num>( 0.0 );
+        physics_Num m_chassisMass = 0.0;
 
         /** @brief Suspension spring rate in N/m */
-        physics_Num m_springRate = static_cast<physics_Num>( 1.0 );
+        physics_Num m_springRate = 1.0;
 
         /** @brief Current suspension distance in meters */
-        physics_Num m_suspensionDistance = static_cast<physics_Num>( 1.0 );
+        physics_Num m_suspensionDistance = 1.0;
 
         /** @brief Last skid state for audio/visual effects */
         int m_lastSkid = 0;

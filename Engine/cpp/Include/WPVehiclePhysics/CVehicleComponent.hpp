@@ -62,7 +62,7 @@ namespace workphone
          *
          * @param data Shared pointer to data object containing initialization parameters
          */
-        void load( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
 
         /**
          * @brief Unloads the component and cleans up resources.
@@ -72,7 +72,7 @@ namespace workphone
          *
          * @param data Shared pointer to data object (currently unused)
          */
-        void unload( SmartPtr<ISharedObject> data ) override;
+        void unload(SmartPtr<ISharedObject> data) override;
 
         /**
          * @brief Gets a raw pointer to the vehicle owner.
@@ -82,21 +82,21 @@ namespace workphone
          * @warning The returned pointer should not be stored long-term as it may become invalid.
          * Use getOwner() for safe smart pointer access.
          */
-        virtual vehicle::IVehicle *getOwnerPtr() const;
+        virtual IVehicle *getOwnerPtr() const;
 
         /**
          * @brief Gets a smart pointer to the vehicle owner.
          *
          * @return Smart pointer to the IVehicle owner, thread-safe access
          */
-        virtual SmartPtr<vehicle::IVehicle> getOwner() const;
+        virtual SmartPtr<IVehicle> getOwner() const;
 
         /**
          * @brief Sets the vehicle owner for this component.
          *
          * @param vehicle Smart pointer to the IVehicle that owns this component
          */
-        virtual void setOwner( SmartPtr<vehicle::IVehicle> vehicle );
+        virtual void setOwner(SmartPtr<IVehicle> vehicle);
 
         /**
          * @brief Updates the world transform of the component.
@@ -146,7 +146,7 @@ namespace workphone
          *
          * @param worldTransform The new world transform to apply
          */
-        virtual void setWorldTransform( Transform3<physics_Num> worldTransform ) override;
+        virtual void setWorldTransform(Transform3<physics_Num> worldTransform) override;
 
         /**
          * @brief Gets the local space transform relative to the parent vehicle.
@@ -160,21 +160,21 @@ namespace workphone
          *
          * @param localTransform The new local transform to apply
          */
-        virtual void setLocalTransform( Transform3<physics_Num> localTransform ) override;
+        virtual void setLocalTransform(Transform3<physics_Num> localTransform) override;
 
         /**
          * @copydoc IVehicleComponent::setState
          *
          * @param state The new state to set for this component
          */
-        virtual void setState( vehicle::IVehicleComponent::State state );
+        virtual void setState(IVehicleComponent::State state);
 
         /**
          * @copydoc IVehicleComponent::getState
          *
          * @return The current state of this component
          */
-        virtual vehicle::IVehicleComponent::State getState() const;
+        virtual IVehicleComponent::State getState() const;
 
         /**
          * @brief Gets the generic data pointer associated with this component.
@@ -192,7 +192,7 @@ namespace workphone
          *
          * @warning The component does not take ownership of the pointed-to data
          */
-        void setData( void *data );
+        void setData(void *data);
 
         /**
          * @brief Gets a debug identifier for this component.
@@ -203,7 +203,7 @@ namespace workphone
          * @param i Index of the debug ID to retrieve (0-99)
          * @return The hash value of the debug ID, or 0 if index is out of range
          */
-        s32 getDebugId( s32 i ) const;
+        s32 getDebugId(s32 i) const;
 
         /**
          * @brief Resets the component to its default state.
@@ -213,17 +213,17 @@ namespace workphone
         void reset() override;
 
         SmartPtr<Properties> getProperties() const override;
-        void                 setProperties( SmartPtr<Properties> properties ) override;
+        void setProperties(SmartPtr<Properties> properties) override;
 
         /// RTTI class registration declaration
-        WP_CLASS_REGISTER_TEMPLATE_DECL( CVehicleComponent, T );
+        WP_CLASS_REGISTER_TEMPLATE_DECL(CVehicleComponent, T);
 
     protected:
         /// Current state of the component (AWAKE, DESTROYED, EDIT, PLAY, RESET)
-        vehicle::IVehicleComponent::State m_state = vehicle::IVehicleComponent::State::AWAKE;
+        IVehicleComponent::State m_state = IVehicleComponent::State::AWAKE;
 
         /// Thread-safe reference to the owning vehicle
-        AtomicSmartPtr<vehicle::IVehicle> m_owner;
+        AtomicSmartPtr<IVehicle> m_owner;
 
         /// Local transform relative to the parent vehicle
         Transform3<physics_Num> m_localTransform;
@@ -239,18 +239,18 @@ namespace workphone
     };
 
     /// RTTI class registration for template instantiations
-    WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, CVehicleComponent, T, T );
+    WP_CLASS_REGISTER_DERIVED_TEMPLATE(workphone, CVehicleComponent, T, T);
 
     template <class T>
     CVehicleComponent<T>::CVehicleComponent()
     {
         // Generate unique debug identifiers
         auto uuid = StringUtil::getUUID();
-        m_ids.resize( 100 );
+        m_ids.resize(100);
 
-        for( size_t i = 0; i < m_ids.size(); ++i )
+        for(size_t i = 0; i < m_ids.size(); ++i)
         {
-            m_ids[i] = StringUtil::getHash( uuid + "_" + StringUtil::toString( static_cast<s32>( i ) ) );
+            m_ids[i] = StringUtil::getHash(uuid + "_" + StringUtil::toString(static_cast<s32>(i)));
         }
     }
 
@@ -261,31 +261,31 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleComponent<T>::load( SmartPtr<ISharedObject> data )
+    void CVehicleComponent<T>::load(SmartPtr<ISharedObject> data)
     {
         // Override in derived classes to implement specific loading logic
     }
 
     template <class T>
-    void CVehicleComponent<T>::unload( SmartPtr<ISharedObject> data )
+    void CVehicleComponent<T>::unload(SmartPtr<ISharedObject> data)
     {
         m_owner = nullptr;
     }
 
     template <class T>
-    vehicle::IVehicle *CVehicleComponent<T>::getOwnerPtr() const
+    IVehicle *CVehicleComponent<T>::getOwnerPtr() const
     {
         return m_owner.get();
     }
 
     template <class T>
-    SmartPtr<vehicle::IVehicle> CVehicleComponent<T>::getOwner() const
+    SmartPtr<IVehicle> CVehicleComponent<T>::getOwner() const
     {
         return m_owner;
     }
 
     template <class T>
-    void CVehicleComponent<T>::setOwner( SmartPtr<vehicle::IVehicle> vehicle )
+    void CVehicleComponent<T>::setOwner(SmartPtr<IVehicle> vehicle)
     {
         m_owner = vehicle;
     }
@@ -293,38 +293,38 @@ namespace workphone
     template <class T>
     void CVehicleComponent<T>::updateTransform()
     {
-        if( auto owner = getOwner() )
+        if(auto owner = getOwner())
         {
             auto parentTransform = owner->getWorldTransform();
 
-            WP_ASSERT( parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon() );
-            WP_ASSERT( getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon() );
+            WP_ASSERT(parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon());
+            WP_ASSERT(getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon());
 
             auto localTransform = getLocalTransform();
             auto worldTransform = getWorldTransform();
 
-            worldTransform.transformFromParent( parentTransform, localTransform );
-            WP_ASSERT( worldTransform.getScale().length() > std::numeric_limits<f32>::epsilon() );
+            worldTransform.transformFromParent(parentTransform, localTransform);
+            WP_ASSERT(worldTransform.getScale().length() > std::numeric_limits<f32>::epsilon());
 
-            setWorldTransform( worldTransform );
+            setWorldTransform(worldTransform);
         }
     }
 
     template <class T>
     void CVehicleComponent<T>::updateBodyTransform()
     {
-        if( auto owner = getOwner() )
+        if(auto owner = getOwner())
         {
             auto parentTransform = owner->getWorldTransform();
 
-            WP_ASSERT( parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon() );
-            WP_ASSERT( getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon() );
+            WP_ASSERT(parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon());
+            WP_ASSERT(getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon());
 
             auto localTransform = getLocalTransform();
             auto worldTransform = getWorldTransform();
 
-            worldTransform.transformFromParent( parentTransform, localTransform );
-            WP_ASSERT( worldTransform.getScale().length() > std::numeric_limits<f32>::epsilon() );
+            worldTransform.transformFromParent(parentTransform, localTransform);
+            WP_ASSERT(worldTransform.getScale().length() > std::numeric_limits<f32>::epsilon());
         }
     }
 
@@ -348,7 +348,7 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleComponent<T>::setWorldTransform( Transform3<physics_Num> worldTransform )
+    void CVehicleComponent<T>::setWorldTransform(Transform3<physics_Num> worldTransform)
     {
         m_worldTransform = worldTransform;
     }
@@ -360,19 +360,19 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleComponent<T>::setLocalTransform( Transform3<physics_Num> localTransform )
+    void CVehicleComponent<T>::setLocalTransform(Transform3<physics_Num> localTransform)
     {
         m_localTransform = localTransform;
     }
 
     template <class T>
-    void CVehicleComponent<T>::setState( vehicle::IVehicleComponent::State state )
+    void CVehicleComponent<T>::setState(IVehicleComponent::State state)
     {
         m_state = state;
     }
 
     template <class T>
-    vehicle::IVehicleComponent::State CVehicleComponent<T>::getState() const
+    IVehicleComponent::State CVehicleComponent<T>::getState() const
     {
         return m_state;
     }
@@ -384,17 +384,17 @@ namespace workphone
     }
 
     template <class T>
-    void CVehicleComponent<T>::setData( void *data )
+    void CVehicleComponent<T>::setData(void *data)
     {
         m_data = data;
     }
 
     template <class T>
-    s32 CVehicleComponent<T>::getDebugId( s32 i ) const
+    s32 CVehicleComponent<T>::getDebugId(s32 i) const
     {
-        if( i < static_cast<s32>( m_ids.size() ) )
+        if(i < static_cast<s32>(m_ids.size()))
         {
-            return static_cast<s32>( m_ids[(size_t)i] );
+            return static_cast<s32>(m_ids[static_cast<size_t>(i)]);
         }
 
         return 0;
@@ -410,38 +410,38 @@ namespace workphone
     SmartPtr<Properties> CVehicleComponent<T>::getProperties() const
     {
         auto properties = T::getProperties();
-        WP_ASSERT( properties );
+        WP_ASSERT(properties);
 
-        properties->setProperty( "Local Transform", getLocalTransform() );
-        properties->setProperty( "World Transform", getWorldTransform() );
-        properties->setProperty( "State", static_cast<s32>( getState() ) );
+        properties->setProperty("Local Transform", getLocalTransform());
+        properties->setProperty("World Transform", getWorldTransform());
+        properties->setProperty("State", static_cast<s32>(getState()));
 
         return properties;
     }
 
     template <class T>
-    void CVehicleComponent<T>::setProperties( SmartPtr<Properties> properties )
+    void CVehicleComponent<T>::setProperties(SmartPtr<Properties> properties)
     {
-        WP_ASSERT( properties );
-        if( !properties )
+        WP_ASSERT(properties);
+        if(!properties)
         {
-            WP_LOG_ERROR( "CVehicleComponent::setProperties received null properties." );
+            WP_LOG_ERROR("CVehicleComponent::setProperties received null properties.");
             return;
         }
 
-        T::setProperties( properties );
+        T::setProperties(properties);
 
         auto localTransform = getLocalTransform();
         auto worldTransform = getWorldTransform();
-        auto state = static_cast<s32>( getState() );
+        auto state = static_cast<s32>(getState());
 
-        properties->getPropertyValue( "Local Transform", localTransform );
-        properties->getPropertyValue( "World Transform", worldTransform );
-        properties->getPropertyValue( "State", state );
+        properties->getPropertyValue("Local Transform", localTransform);
+        properties->getPropertyValue("World Transform", worldTransform);
+        properties->getPropertyValue("State", state);
 
-        setLocalTransform( localTransform );
-        setWorldTransform( worldTransform );
-        setState( static_cast<vehicle::IVehicleComponent::State>( state ) );
+        setLocalTransform(localTransform);
+        setWorldTransform(worldTransform);
+        setState(static_cast<IVehicleComponent::State>(state));
     }
 } // namespace workphone
 

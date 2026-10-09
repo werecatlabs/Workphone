@@ -6,7 +6,6 @@
 
 namespace workphone::physics
 {
-
     /**
      * @class WPPhysicsMeshShape3
      * @brief Implementation of a mesh-based physics collider.
@@ -21,7 +20,7 @@ namespace workphone::physics
         WPPhysicsMeshShape3();
 
         /** @brief Loads the shape data from a shared object. */
-        void load( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
 
         /** @brief Gets the mesh used for the physics shape. */
         SmartPtr<IMesh> getMesh() const override;
@@ -30,19 +29,19 @@ namespace workphone::physics
         SmartPtr<IMeshResource> getMeshResource() const override;
 
         /** @brief Sets the mesh resource for this shape. */
-        void setMeshResource( SmartPtr<IMeshResource> meshResource ) override;
+        void setMeshResource(SmartPtr<IMeshResource> meshResource) override;
 
         /** @brief Gets the original, unmodified mesh. */
         SmartPtr<IMesh> getCleanMesh() const override;
 
         /** @brief Sets the original unmodified mesh. */
-        void setCleanMesh( SmartPtr<IMesh> cleanMesh ) override;
+        void setCleanMesh(SmartPtr<IMesh> cleanMesh) override;
 
         /** @brief Returns true if the mesh is treated as a convex hull. */
         bool isConvex() const override;
 
         /** @brief Sets whether the mesh should be treated as convex. */
-        void setConvex( bool convex ) override;
+        void setConvex(bool convex) override;
 
         /** @brief Creates a deep copy of the mesh shape. */
         SmartPtr<IPhysicsShape3> clone() override;
@@ -51,12 +50,12 @@ namespace workphone::physics
         /** @brief Internal method to rebuild the internal vertex and index buffers. */
         void rebuildMeshData();
 
-        AtomicSmartPtr<IMeshResource> m_meshResource;  ///< Resource providing the mesh data.
-        AtomicSmartPtr<IMesh> m_cleanMesh;             ///< The original mesh before any processing.
-        Array<wp_f32> m_vertices;                      ///< Vertex buffer used by the physics engine.
-        Array<wp_u32> m_indices;                       ///< Index buffer used by the physics engine.
-        atomic_bool m_convex = false;                  ///< Flag indicating if the shape is convex.
+        AtomicSmartPtr<IMeshResource> m_meshResource; ///< Resource providing the mesh data.
+        AtomicSmartPtr<IMesh> m_cleanMesh; ///< The original mesh before any processing.
+        Array<wp_f32> m_vertices; ///< Vertex buffer used by the physics engine.
+        Array<wp_u32> m_indices; ///< Index buffer used by the physics engine.
+        atomic_bool m_convex = false; ///< Flag indicating if the shape is convex.
     };
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 #endif

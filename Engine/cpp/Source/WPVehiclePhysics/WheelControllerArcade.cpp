@@ -47,15 +47,15 @@
 
 namespace workphone
 {
-    WP_CLASS_REGISTER_DERIVED( workphone, WheelControllerArcade, CVehicleComponent<IWheelComponent> );
+    WP_CLASS_REGISTER_DERIVED(workphone, WheelControllerArcade, CVehicleComponent<IWheelComponent>);
 
-    static const physics_Num MaxAngularVelocity = static_cast<physics_Num>( 1.0e3 );
+    static constexpr physics_Num MaxAngularVelocity = 1.0e3;
 
     WheelControllerArcade::WheelControllerArcade()
     {
         m_hit = workphone::make_ptr<physics::RaycastHit>();
-        m_hit->setCheckDynamic( false );
-        m_hit->setCheckStatic( true );
+        m_hit->setCheckDynamic(false);
+        m_hit->setCheckStatic(true);
     }
 
     WheelControllerArcade::~WheelControllerArcade() = default;
@@ -65,13 +65,13 @@ namespace workphone
     // -------------------------------------------------------------------------
     void WheelControllerArcade::update()
     {
-        if( Thread::getCurrentTask() != TaskId::Physics )
+        if(Thread::getCurrentTask() != TaskId::Physics)
             return;
 
         // AWAKE, EDIT and PLAY all require the same work; avoid repeating the body
         // three times by falling through after a single state guard.
         const auto state = getState();
-        if( state == State::AWAKE || state == State::EDIT || state == State::PLAY )
+        if(state == State::AWAKE || state == State::EDIT || state == State::PLAY)
         {
             updateTransform();
             updateWheel();
@@ -84,15 +84,15 @@ namespace workphone
     void WheelControllerArcade::updateWheel()
     {
         auto vehicle = getOwner();
-        if( !vehicle )
+        if(!vehicle)
             return;
 
         const auto vehicleWorldTransform = vehicle->getWorldTransform();
-        auto       body = vehicle->getBody();
-        WP_ASSERT( body );
-        if( !body )
+        auto body = vehicle->getBody();
+        WP_ASSERT(body);
+        if(!body)
         {
-            WP_LOG_ERROR( "WheelControllerArcade::updateWheel missing vehicle body." );
+            WP_LOG_ERROR("WheelControllerArcade::updateWheel missing vehicle body.");
             return;
         }
 
@@ -102,50 +102,50 @@ namespace workphone
 
         // ---- Ground detection -----------------------------------------------
         m_isGrounded = false;
-        const auto ray = Ray3( pos, -up );
+        const auto ray = Ray3(pos, -up);
 
-        if( body->castWorldRay( ray, m_hit ) )
+        if(body->castWorldRay(ray, m_hit))
         {
             const auto hitDistance = m_hit->getDistance();
-            if( hitDistance > std::numeric_limits<physics_Num>::epsilon() &&
-                hitDistance < m_suspensionDistance + m_radius )
+            if(hitDistance > std::numeric_limits<physics_Num>::epsilon() &&
+               hitDistance < m_suspensionDistance + m_radius)
             {
                 m_isGrounded = true;
             }
         }
 
-        if( !m_isGrounded )
+        if(!m_isGrounded)
         {
             // No contact forces; reset stored contact velocity so suspension
             // damping starts cleanly when the wheel lands again.
             m_wheelVelocity = Vector3<physics_Num>::zero();
-            m_angularVelocity = static_cast<physics_Num>( 0.0 );
+            m_angularVelocity = static_cast<physics_Num>(0.0);
             return;
         }
 
         const auto vehicleMass = body->getMass();
-        WP_ASSERT( vehicleMass > static_cast<physics_Num>( 0.0 ) );
+        WP_ASSERT(vehicleMass > static_cast<physics_Num>( 0.0 ));
 
         // ---- 1. Suspension: spring + damper ---------------------------------
         {
-            constexpr physics_Num kGravity = static_cast<physics_Num>( 9.81 );
+            constexpr physics_Num kGravity = 9.81;
 
             // The full-compression spring force is sized so that at maximum
             // suspension travel the spring alone carries 2× the wheel's share
             // of the vehicle weight, giving some headroom for bumps.
             const auto fullCompressionForce =
-                vehicleMass * m_massFraction * static_cast<physics_Num>( 2.0 ) * kGravity;
+                vehicleMass * m_massFraction * static_cast<physics_Num>(2.0) * kGravity;
 
-            const auto compression = m_suspensionDistance - ( m_hit->getDistance() - m_radius );
-            const auto springForce = compression * ( m_springForce + fullCompressionForce );
+            const auto compression = m_suspensionDistance - (m_hit->getDistance() - m_radius);
+            const auto springForce = compression * (m_springForce + fullCompressionForce);
 
             // m_wheelVelocity.y is the contact-point velocity along the vehicle's
             // up axis from the previous frame, used as the damper input.
             const auto dampingForce = -m_damping * m_wheelVelocity.y;
             const auto suspensionForce = springForce + dampingForce;
 
-            body->addLocalForceAtLocalPosition( suspensionForce * Vector3<physics_Num>::unitY(),
-                                                localPos );
+            body->addLocalForceAtLocalPosition(suspensionForce * Vector3<physics_Num>::unitY(),
+                                               localPos);
         }
 
         // ---- 2. Contact velocity in wheel-local space -----------------------
@@ -155,9 +155,9 @@ namespace workphone
         //   Y  = vertical (used for suspension damping next frame)
         //   Z  = longitudinal (forward / backward)
         const auto steeringAngle = getSteeringAngle();
-        auto       contactVelocity = body->getPointVelocity( pos );
-        contactVelocity = Quaternion<physics_Num>::eulerDegrees( 0.0, steeringAngle, 0.0 ) *
-                          vehicleWorldTransform.inverseTransformVector( contactVelocity );
+        auto contactVelocity = body->getPointVelocity(pos);
+        contactVelocity = Quaternion<physics_Num>::eulerDegrees(0.0, steeringAngle, 0.0) *
+                          vehicleWorldTransform.inverseTransformVector(contactVelocity);
 
         // Cache for the suspension damper on the next frame.
         m_wheelVelocity = contactVelocity;
@@ -166,16 +166,16 @@ namespace workphone
         // CDriveTrain::update() receives a real angular velocity when it calls
         // getAngularVelocity().  CDriveTrain uses averageAngularVelo * ratio to
         // compute m_engineAngularVelo and therefore RPM.
-        if( m_radius > static_cast<physics_Num>( 0.0 ) )
+        if(m_radius > static_cast<physics_Num>(0.0))
         {
             m_angularVelocity = contactVelocity.Z() / m_radius;
         }
 
         // cap the angular velocity to prevent numerical instability in extreme cases (e.g. very high
         // speed with a very small radius)
-        if( Math<physics_Num>::Abs( m_angularVelocity ) > MaxAngularVelocity )
+        if(Math<physics_Num>::Abs(m_angularVelocity) > MaxAngularVelocity)
         {
-            m_angularVelocity = Math<physics_Num>::Sign( m_angularVelocity ) * MaxAngularVelocity;
+            m_angularVelocity = Math<physics_Num>::Sign(m_angularVelocity) * MaxAngularVelocity;
         }
 
         // ---- 3. Drive force -------------------------------------------------
@@ -190,11 +190,11 @@ namespace workphone
         // Sign convention: positive torque → forward (+Z in vehicle-local space).
         // Reverse gear produces a negative ratio in CDriveTrain, so
         // wheelDriveTorque < 0 → force in -Z (backward).  No special casing needed.
-        if( m_isPoweredWheel && m_radius > static_cast<physics_Num>( 0.0 ) )
+        if(m_isPoweredWheel && m_radius > static_cast<physics_Num>(0.0))
         {
             const auto driveForceMagnitude = m_driveTorque / m_radius;
-            body->addLocalForceAtLocalPosition( Vector3<physics_Num>( 0.0, 0.0, -driveForceMagnitude ),
-                                                localPos );
+            body->addLocalForceAtLocalPosition(Vector3<physics_Num>(0.0, 0.0, -driveForceMagnitude),
+                                               localPos);
         }
 
         // ---- 4. Tire friction -----------------------------------------------
@@ -214,7 +214,7 @@ namespace workphone
             -contactVelocity.Z() * vehicleMass * m_rollingResistanceCoefficient;
 
         body->addLocalForceAtLocalPosition(
-            Vector3<physics_Num>( lateralFriction, 0.0, rollingResistance ), localPos );
+            Vector3<physics_Num>(lateralFriction, 0.0, rollingResistance), localPos);
     }
 
     // =========================================================================
@@ -224,14 +224,14 @@ namespace workphone
     // addTorque / setTorque / getTorque now operate on m_driveTorque, which is
     // the torque delivered by the drivetrain each physics tick.  This is entirely
     // separate from m_angularVelocity, which is the wheel's actual spin rate.
-    void WheelControllerArcade::addTorque( physics_Num torque )
+    void WheelControllerArcade::addTorque(physics_Num torque)
     {
-        m_driveTorque += torque * (physics_Num)0.25;
+        m_driveTorque += torque * static_cast<physics_Num>(0.25);
     }
 
-    void WheelControllerArcade::setTorque( physics_Num torque )
+    void WheelControllerArcade::setTorque(physics_Num torque)
     {
-        m_driveTorque = torque * (physics_Num)0.25;
+        m_driveTorque = torque * static_cast<physics_Num>(0.25);
     }
 
     physics_Num WheelControllerArcade::getTorque() const
@@ -245,24 +245,24 @@ namespace workphone
 
     physics_Num WheelControllerArcade::getMass() const
     {
-        if( auto vehicle = getOwner() )
+        if(auto vehicle = getOwner())
         {
             return vehicle->getMass() * m_massFraction;
         }
 
-        return static_cast<physics_Num>( 0.0 );
+        return 0.0;
     }
 
-    void WheelControllerArcade::setMass( physics_Num mass )
+    void WheelControllerArcade::setMass(physics_Num mass)
     {
-        WP_ASSERT( mass >= static_cast<physics_Num>( 0.0 ) );
-        if( auto vehicle = getOwner() )
+        WP_ASSERT(mass >= static_cast<physics_Num>( 0.0 ));
+        if(auto vehicle = getOwner())
         {
             const auto vehicleMass = vehicle->getMass();
-            WP_ASSERT( vehicleMass > static_cast<physics_Num>( 0.0 ) );
-            if( vehicleMass > static_cast<physics_Num>( 0.0 ) )
+            WP_ASSERT(vehicleMass > static_cast<physics_Num>( 0.0 ));
+            if(vehicleMass > static_cast<physics_Num>(0.0))
             {
-                setMassFraction( mass / vehicleMass );
+                setMassFraction(mass / vehicleMass);
             }
         }
     }
@@ -276,9 +276,9 @@ namespace workphone
         return m_springForce;
     }
 
-    void WheelControllerArcade::setSpringRate( physics_Num springRate )
+    void WheelControllerArcade::setSpringRate(physics_Num springRate)
     {
-        setSpringForce( springRate );
+        setSpringForce(springRate);
     }
 
     physics_Num WheelControllerArcade::getRadius() const
@@ -286,12 +286,12 @@ namespace workphone
         return m_radius;
     }
 
-    void WheelControllerArcade::setRadius( physics_Num radius )
+    void WheelControllerArcade::setRadius(physics_Num radius)
     {
-        WP_ASSERT( radius > static_cast<physics_Num>( 0.0 ) );
-        if( radius <= static_cast<physics_Num>( 0.0 ) )
+        WP_ASSERT(radius > static_cast<physics_Num>( 0.0 ));
+        if(radius <= static_cast<physics_Num>(0.0))
         {
-            WP_LOG_ERROR( "WheelControllerArcade::setRadius rejected non-positive radius." );
+            WP_LOG_ERROR("WheelControllerArcade::setRadius rejected non-positive radius.");
             return;
         }
 
@@ -303,9 +303,9 @@ namespace workphone
         return m_suspensionDistance;
     }
 
-    void WheelControllerArcade::setSuspensionTravel( physics_Num suspensionTravel )
+    void WheelControllerArcade::setSuspensionTravel(physics_Num suspensionTravel)
     {
-        setSuspensionDistance( suspensionTravel );
+        setSuspensionDistance(suspensionTravel);
     }
 
     physics_Num WheelControllerArcade::getDamping() const
@@ -313,9 +313,9 @@ namespace workphone
         return m_damping;
     }
 
-    void WheelControllerArcade::setDamping( physics_Num damping )
+    void WheelControllerArcade::setDamping(physics_Num damping)
     {
-        WP_ASSERT( damping >= static_cast<physics_Num>( 0.0 ) );
+        WP_ASSERT(damping >= static_cast<physics_Num>( 0.0 ));
         m_damping = damping;
     }
 
@@ -324,9 +324,9 @@ namespace workphone
         return m_suspensionDistance;
     }
 
-    void WheelControllerArcade::setSuspensionDistance( physics_Num suspensionDistance )
+    void WheelControllerArcade::setSuspensionDistance(physics_Num suspensionDistance)
     {
-        WP_ASSERT( suspensionDistance >= static_cast<physics_Num>( 0.0 ) );
+        WP_ASSERT(suspensionDistance >= static_cast<physics_Num>( 0.0 ));
         m_suspensionDistance = suspensionDistance;
     }
 
@@ -339,7 +339,7 @@ namespace workphone
         return m_steeringAngle;
     }
 
-    void WheelControllerArcade::setSteeringAngle( physics_Num steeringAngle )
+    void WheelControllerArcade::setSteeringAngle(physics_Num steeringAngle)
     {
         m_steeringAngle = steeringAngle;
     }
@@ -349,7 +349,7 @@ namespace workphone
         return m_isSteeringWheel;
     }
 
-    void WheelControllerArcade::setSteeringWheel( bool steeringWheel )
+    void WheelControllerArcade::setSteeringWheel(bool steeringWheel)
     {
         m_isSteeringWheel = steeringWheel;
     }
@@ -363,7 +363,7 @@ namespace workphone
         return m_isPoweredWheel;
     }
 
-    void WheelControllerArcade::setPoweredWheel( bool poweredWheel )
+    void WheelControllerArcade::setPoweredWheel(bool poweredWheel)
     {
         m_isPoweredWheel = poweredWheel;
     }
@@ -379,7 +379,7 @@ namespace workphone
         return m_angularVelocity;
     }
 
-    void WheelControllerArcade::setAngularVelocity( physics_Num angularVelocity )
+    void WheelControllerArcade::setAngularVelocity(physics_Num angularVelocity)
     {
         m_angularVelocity = angularVelocity;
     }
@@ -390,10 +390,10 @@ namespace workphone
 
     physics_Num WheelControllerArcade::getBrake() const
     {
-        return static_cast<physics_Num>( 0.0 );
+        return 0.0;
     }
 
-    void WheelControllerArcade::setBrake( physics_Num /*brake*/ )
+    void WheelControllerArcade::setBrake(physics_Num /*brake*/)
     {
         // TODO: apply a braking torque opposing m_angularVelocity and add
         // a corresponding longitudinal friction force in updateWheel().
@@ -408,7 +408,7 @@ namespace workphone
         return TireModel::Simple;
     }
 
-    void WheelControllerArcade::setTireModel( TireModel tireModel )
+    void WheelControllerArcade::setTireModel(TireModel tireModel)
     {
         // WP_ASSERT( tireModel == TireModel::Simple );
         // if( tireModel != TireModel::Simple )
@@ -426,11 +426,12 @@ namespace workphone
         return m_springForce;
     }
 
-    void WheelControllerArcade::setSpringForce( physics_Num springForce )
+    void WheelControllerArcade::setSpringForce(physics_Num springForce)
     {
-        WP_ASSERT( springForce >= static_cast<physics_Num>( 0.0 ) );
-        m_springForce = springForce >= static_cast<physics_Num>( 0.0 ) ? springForce
-                                                                       : static_cast<physics_Num>( 0.0 );
+        WP_ASSERT(springForce >= static_cast<physics_Num>( 0.0 ));
+        m_springForce = springForce >= static_cast<physics_Num>(0.0)
+                            ? springForce
+                            : static_cast<physics_Num>(0.0);
     }
 
     // =========================================================================
@@ -442,12 +443,12 @@ namespace workphone
         return m_massFraction;
     }
 
-    void WheelControllerArcade::setMassFraction( physics_Num massFraction )
+    void WheelControllerArcade::setMassFraction(physics_Num massFraction)
     {
-        WP_ASSERT( massFraction >= static_cast<physics_Num>( 0.0 ) );
-        m_massFraction = massFraction >= static_cast<physics_Num>( 0.0 )
-                           ? massFraction
-                           : static_cast<physics_Num>( 0.0 );
+        WP_ASSERT(massFraction >= static_cast<physics_Num>( 0.0 ));
+        m_massFraction = massFraction >= static_cast<physics_Num>(0.0)
+                             ? massFraction
+                             : static_cast<physics_Num>(0.0);
     }
 
     // =========================================================================
@@ -459,7 +460,7 @@ namespace workphone
         return m_wheelVelocity;
     }
 
-    void WheelControllerArcade::setWheelVelocity( const Vector3<physics_Num> &wheelVelocity )
+    void WheelControllerArcade::setWheelVelocity(const Vector3<physics_Num> &wheelVelocity)
     {
         m_wheelVelocity = wheelVelocity;
     }
@@ -473,12 +474,12 @@ namespace workphone
         return m_lateralFrictionCoefficient;
     }
 
-    void WheelControllerArcade::setLateralFrictionCoefficient( physics_Num coefficient )
+    void WheelControllerArcade::setLateralFrictionCoefficient(physics_Num coefficient)
     {
-        WP_ASSERT( coefficient >= static_cast<physics_Num>( 0.0 ) );
-        m_lateralFrictionCoefficient = coefficient >= static_cast<physics_Num>( 0.0 )
-                                         ? coefficient
-                                         : static_cast<physics_Num>( 0.0 );
+        WP_ASSERT(coefficient >= static_cast<physics_Num>( 0.0 ));
+        m_lateralFrictionCoefficient = coefficient >= static_cast<physics_Num>(0.0)
+                                           ? coefficient
+                                           : static_cast<physics_Num>(0.0);
     }
 
     physics_Num WheelControllerArcade::getRollingResistanceCoefficient() const
@@ -486,12 +487,12 @@ namespace workphone
         return m_rollingResistanceCoefficient;
     }
 
-    void WheelControllerArcade::setRollingResistanceCoefficient( physics_Num coefficient )
+    void WheelControllerArcade::setRollingResistanceCoefficient(physics_Num coefficient)
     {
-        WP_ASSERT( coefficient >= static_cast<physics_Num>( 0.0 ) );
-        m_rollingResistanceCoefficient = coefficient >= static_cast<physics_Num>( 0.0 )
-                                           ? coefficient
-                                           : static_cast<physics_Num>( 0.0 );
+        WP_ASSERT(coefficient >= static_cast<physics_Num>( 0.0 ));
+        m_rollingResistanceCoefficient = coefficient >= static_cast<physics_Num>(0.0)
+                                             ? coefficient
+                                             : static_cast<physics_Num>(0.0);
     }
 
     // =========================================================================
@@ -510,37 +511,37 @@ namespace workphone
     SmartPtr<Properties> WheelControllerArcade::getProperties() const
     {
         auto properties = CVehicleComponent<IWheelComponent>::getProperties();
-        WP_ASSERT( properties );
+        WP_ASSERT(properties);
 
-        properties->setProperty( "Radius", getRadius() );
-        properties->setProperty( "Suspension Distance", getSuspensionDistance() );
-        properties->setProperty( "Spring Force", getSpringForce() );
-        properties->setProperty( "Damping", getDamping() );
-        properties->setProperty( "Mass Fraction", getMassFraction() );
-        properties->setProperty( "Angular Velocity", getAngularVelocity() );
-        properties->setProperty( "Steering Angle", getSteeringAngle() );
-        properties->setProperty( "Steering Wheel", isSteeringWheel() );
-        properties->setProperty( "Powered Wheel", isPoweredWheel() );
-        properties->setProperty( "Lateral Friction Coefficient", getLateralFrictionCoefficient() );
-        properties->setProperty( "Rolling Resistance Coefficient", getRollingResistanceCoefficient() );
+        properties->setProperty("Radius", getRadius());
+        properties->setProperty("Suspension Distance", getSuspensionDistance());
+        properties->setProperty("Spring Force", getSpringForce());
+        properties->setProperty("Damping", getDamping());
+        properties->setProperty("Mass Fraction", getMassFraction());
+        properties->setProperty("Angular Velocity", getAngularVelocity());
+        properties->setProperty("Steering Angle", getSteeringAngle());
+        properties->setProperty("Steering Wheel", isSteeringWheel());
+        properties->setProperty("Powered Wheel", isPoweredWheel());
+        properties->setProperty("Lateral Friction Coefficient", getLateralFrictionCoefficient());
+        properties->setProperty("Rolling Resistance Coefficient", getRollingResistanceCoefficient());
         // Read-only runtime values:
-        properties->setProperty( "Drive Torque", m_driveTorque, true );
-        properties->setProperty( "Is Grounded", m_isGrounded, true );
-        properties->setProperty( "Wheel Velocity", getWheelVelocity(), true );
+        properties->setProperty("Drive Torque", m_driveTorque, true);
+        properties->setProperty("Is Grounded", m_isGrounded, true);
+        properties->setProperty("Wheel Velocity", getWheelVelocity(), true);
 
         return properties;
     }
 
-    void WheelControllerArcade::setProperties( SmartPtr<Properties> properties )
+    void WheelControllerArcade::setProperties(SmartPtr<Properties> properties)
     {
-        WP_ASSERT( properties );
-        if( !properties )
+        WP_ASSERT(properties);
+        if(!properties)
         {
-            WP_LOG_ERROR( "WheelControllerArcade::setProperties received null properties." );
+            WP_LOG_ERROR("WheelControllerArcade::setProperties received null properties.");
             return;
         }
 
-        CVehicleComponent<IWheelComponent>::setProperties( properties );
+        CVehicleComponent<IWheelComponent>::setProperties(properties);
 
         auto radius = getRadius();
         auto suspensionDistance = getSuspensionDistance();
@@ -554,29 +555,28 @@ namespace workphone
         auto lateralFrictionCoeff = getLateralFrictionCoefficient();
         auto rollingResistanceCoeff = getRollingResistanceCoefficient();
 
-        properties->getPropertyValue( "Radius", radius );
-        properties->getPropertyValue( "Suspension Distance", suspensionDistance );
-        properties->getPropertyValue( "Spring Force", springForce );
-        properties->getPropertyValue( "Damping", damping );
-        properties->getPropertyValue( "Mass Fraction", massFraction );
-        properties->getPropertyValue( "Angular Velocity", angularVelocity );
-        properties->getPropertyValue( "Steering Angle", steeringAngle );
-        properties->getPropertyValue( "Steering Wheel", steeringWheel );
-        properties->getPropertyValue( "Powered Wheel", poweredWheel );
-        properties->getPropertyValue( "Lateral Friction Coefficient", lateralFrictionCoeff );
-        properties->getPropertyValue( "Rolling Resistance Coefficient", rollingResistanceCoeff );
+        properties->getPropertyValue("Radius", radius);
+        properties->getPropertyValue("Suspension Distance", suspensionDistance);
+        properties->getPropertyValue("Spring Force", springForce);
+        properties->getPropertyValue("Damping", damping);
+        properties->getPropertyValue("Mass Fraction", massFraction);
+        properties->getPropertyValue("Angular Velocity", angularVelocity);
+        properties->getPropertyValue("Steering Angle", steeringAngle);
+        properties->getPropertyValue("Steering Wheel", steeringWheel);
+        properties->getPropertyValue("Powered Wheel", poweredWheel);
+        properties->getPropertyValue("Lateral Friction Coefficient", lateralFrictionCoeff);
+        properties->getPropertyValue("Rolling Resistance Coefficient", rollingResistanceCoeff);
 
-        setRadius( radius );
-        setSuspensionDistance( suspensionDistance );
-        setSpringForce( springForce );
-        setDamping( damping );
-        setMassFraction( massFraction );
-        setAngularVelocity( angularVelocity );
-        setSteeringAngle( steeringAngle );
-        setSteeringWheel( steeringWheel );
-        setPoweredWheel( poweredWheel );
-        setLateralFrictionCoefficient( lateralFrictionCoeff );
-        setRollingResistanceCoefficient( rollingResistanceCoeff );
+        setRadius(radius);
+        setSuspensionDistance(suspensionDistance);
+        setSpringForce(springForce);
+        setDamping(damping);
+        setMassFraction(massFraction);
+        setAngularVelocity(angularVelocity);
+        setSteeringAngle(steeringAngle);
+        setSteeringWheel(steeringWheel);
+        setPoweredWheel(poweredWheel);
+        setLateralFrictionCoefficient(lateralFrictionCoeff);
+        setRollingResistanceCoefficient(rollingResistanceCoeff);
     }
-
 } // namespace workphone

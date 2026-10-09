@@ -3,14 +3,11 @@
 
 #include "Workphone/Interface/Memory/ISharedObject.hpp"
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class WPVehiclePhysics_API DroneController : public ISharedObject
     {
-        class WPVehiclePhysics_API DroneController : public ISharedObject
-        {
-        public:
-            /*
+        /*
             DroneController();
             ~DroneController();
 
@@ -64,8 +61,7 @@ namespace workphone
             RawPtr<MultiRotorCtrl> m_controller;
             RawPtr<data::drone_stab_settings> m_stabSettings;
             */
-        };
-    } // namespace vehicle
-} // namespace workphone
+    };
+}
 
 #endif // DroneController_h__

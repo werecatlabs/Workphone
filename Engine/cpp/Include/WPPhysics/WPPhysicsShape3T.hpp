@@ -17,7 +17,7 @@ namespace workphone::physics
     public:
         virtual ~WPPhysicsShape3Backend() = default;
         virtual AABB3<real_Num> getAABB() const = 0;
-        virtual void setAABB( const AABB3<real_Num> &bounds ) = 0;
+        virtual void setAABB(const AABB3<real_Num> &bounds) = 0;
     };
 
     /** Shares native collision-shape behavior across the concrete shape bases. */
@@ -27,31 +27,31 @@ namespace workphone::physics
     public:
         WPPhysicsShape3T();
 
-        WPPhysicsShape3T( u32 type );
+        WPPhysicsShape3T(u32 type);
 
         ~WPPhysicsShape3T() override;
 
-        void load( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
 
-        void unload( SmartPtr<ISharedObject> data ) override;
+        void unload(SmartPtr<ISharedObject> data) override;
 
         SmartPtr<IPhysicsMaterial3> getMaterial() const;
 
-        void setMaterial( SmartPtr<IPhysicsMaterial3> material );
+        void setMaterial(SmartPtr<IPhysicsMaterial3> material);
 
-        void setLocalPose( const Transform3<real_Num> &pose );
+        void setLocalPose(const Transform3<real_Num> &pose);
 
         Transform3<real_Num> getLocalPose() const;
 
-        void setSimulationFilterData( const FilterData &data );
+        void setSimulationFilterData(const FilterData &data);
 
         FilterData getSimulationFilterData() const;
 
-        void setActor( SmartPtr<IPhysicsBody3> body );
+        void setActor(SmartPtr<IPhysicsBody3> body);
 
         SmartPtr<IPhysicsBody3> getActor() const;
 
-        void _getObject( void **ppObject ) const;
+        void _getObject(void **ppObject) const;
 
         bool hasShapeData() const;
         bool isValid() const override;
@@ -60,13 +60,13 @@ namespace workphone::physics
 
         Vector3<real_Num> getExtents() const;
 
-        void setExtents( const Vector3<real_Num> &extents );
+        void setExtents(const Vector3<real_Num> &extents);
 
-        AABB3<real_Num> getAABB() const;
+        AABB3<real_Num> getAABB() const override;
 
-        void setAABB( const AABB3<real_Num> &box );
+        void setAABB(const AABB3<real_Num> &box) override;
 
-        void setRadius( real_Num radius );
+        void setRadius(real_Num radius);
 
         real_Num getRadius() const;
 
@@ -74,27 +74,27 @@ namespace workphone::physics
 
         bool isAttached() const;
 
-        void setEnabled( bool enabled );
+        void setEnabled(bool enabled);
 
         bool isEnabled() const;
 
-        void setTrigger( bool trigger );
+        void setTrigger(bool trigger);
 
         bool isTrigger() const;
 
-        void setStateContext( SmartPtr<IStateContext> stateContext );
+        void setStateContext(SmartPtr<IStateContext> stateContext);
 
         SmartPtr<IStateContext> getStateContext() const;
 
-        void setStateListener( SmartPtr<IStateListener> stateListener );
+        void setStateListener(SmartPtr<IStateListener> stateListener);
 
         SmartPtr<IStateListener> getStateListener() const;
 
-        void setCollisionType( u32 mask );
+        void setCollisionType(u32 mask);
 
         u32 getCollisionType() const;
 
-        void setCollisionMask( u32 mask );
+        void setCollisionMask(u32 mask);
 
         u32 getCollisionMask() const;
 
@@ -106,25 +106,26 @@ namespace workphone::physics
 
         u32 getType() const;
 
-        void setType( u32 type );
+        void setType(u32 type);
 
     protected:
-        u32 m_type = 0;  ///< The type of the shape, as defined by the physics engine.
+        u32 m_type = 0; ///< The type of the shape, as defined by the physics engine.
         wp_collision_shape *m_shape =
-            nullptr;  ///< Internal pointer to the physics engine's collision shape.
-        SmartPtr<IPhysicsMaterial3> m_material;  ///< The material assigned to this shape.
-        WeakPtr<IPhysicsBody3> m_actor;  ///< Weak reference to the physics body owning this shape.
-        SmartPtr<IStateContext> m_stateContext;    ///< Context for state management.
-        SmartPtr<IStateListener> m_stateListener;  ///< Listener for state change notifications.
-        AABB3<real_Num> m_aabb;                    ///< Cached axis-aligned bounding box.
+            nullptr; ///< Internal pointer to the physics engine's collision shape.
+        SmartPtr<IPhysicsMaterial3> m_material; ///< The material assigned to this shape.
+        WeakPtr<IPhysicsBody3> m_actor; ///< Weak reference to the physics body owning this shape.
+        SmartPtr<IStateContext> m_stateContext; ///< Context for state management.
+        SmartPtr<IStateListener> m_stateListener; ///< Listener for state change notifications.
+        AABB3<real_Num> m_aabb; ///< Cached axis-aligned bounding box.
         Vector3<real_Num> m_boxExtents = Vector3<real_Num>::unit();
         Vector3<real_Num> m_boxScale = Vector3<real_Num>::unit();
     };
+
     extern template class WPPhysicsShape3T<BoxShape3>;
     extern template class WPPhysicsShape3T<SphereShape>;
     extern template class WPPhysicsShape3T<PlaneShape>;
     extern template class WPPhysicsShape3T<MeshShape>;
     extern template class WPPhysicsShape3T<TerrainShape>;
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 #endif

@@ -8,25 +8,25 @@ namespace workphone::physics
 {
     u32 WPPhysicsParticle2::m_nextId = 0;
 
-    WPPhysicsParticle2::WPPhysicsParticle2( IPhysicsManager2D *creator ) :
-        m_creator( creator ),
-        m_position( Vector2<real_Num>::ZERO ),
-        m_velocity( Vector2<real_Num>::ZERO ),
-        m_maxVelocity( Vector2<real_Num>( 1e10, 1e10 ) ),
-        m_targetPosition( Vector2<real_Num>::ZERO ),
-        m_force( Vector2<real_Num>::ZERO ),
-        m_gravity( Vector2<real_Num>( 0, -9.81 ) ),
+    WPPhysicsParticle2::WPPhysicsParticle2(IPhysicsManager2D *creator) :
+        m_creator(creator),
+        m_position(Vector2<real_Num>::ZERO),
+        m_velocity(Vector2<real_Num>::ZERO),
+        m_maxVelocity(Vector2<real_Num>(1e10, 1e10)),
+        m_targetPosition(Vector2<real_Num>::ZERO),
+        m_force(Vector2<real_Num>::ZERO),
+        m_gravity(Vector2<real_Num>(0, -9.81)),
 
-        m_userData( nullptr ),
-        m_restitution( 0.0f ),
-        m_flags( FPF_ENABLE | FPF_ENABLECOLLISION ),
-        m_id( 0 ),
-        m_objectType( 0 ),
-        m_worldId( 0 ),
-        m_collisionType( 0xFFFFFFFFu ),
-        m_mask( 0xFFFFFFFFu ),
+        m_userData(nullptr),
+        m_restitution(0.0f),
+        m_flags(FPF_ENABLE | FPF_ENABLECOLLISION),
+        m_id(0),
+        m_objectType(0),
+        m_worldId(0),
+        m_collisionType(0xFFFFFFFFu),
+        m_mask(0xFFFFFFFFu),
 
-        m_kinematicMode( false )
+        m_kinematicMode(false)
     {
         m_id = m_nextId++;
 
@@ -46,66 +46,66 @@ namespace workphone::physics
 
     u32 WPPhysicsParticle2::getComponentTypeId() const
     {
-        return static_cast<u32>( StringUtil::getHash( getComponentType() ) );
+        return static_cast<u32>(StringUtil::getHash(getComponentType()));
     }
 
-    void WPPhysicsParticle2::update( const s32 &task, const time_interval &t, const time_interval &dt )
+    void WPPhysicsParticle2::update(const s32 &task, const time_interval &t, const time_interval &dt)
     {
-        const auto elapsedTime = static_cast<real_Num>( dt );
-        if( !isEnabled() || m_sleeping || !Math<real_Num>::isFinite( elapsedTime ) ||
-            elapsedTime <= static_cast<real_Num>( 0 ) )
+        const auto elapsedTime = static_cast<real_Num>(dt);
+        if(!isEnabled() || m_sleeping || !Math<real_Num>::isFinite(elapsedTime) ||
+           elapsedTime <= static_cast<real_Num>(0))
         {
             return;
         }
 
-        if( m_kinematicMode )
+        if(m_kinematicMode)
         {
             m_position = m_targetPosition;
             m_force = Vector2<real_Num>::ZERO;
-            m_torque = static_cast<real_Num>( 0 );
+            m_torque = static_cast<real_Num>(0);
             return;
         }
 
         auto acceleration =
             m_mass > Math<real_Num>::epsilon() ? m_force / m_mass : Vector2<real_Num>::ZERO;
-        if( getEnableGravity() )
+        if(getEnableGravity())
         {
             acceleration += m_gravity;
         }
         m_velocity += acceleration * elapsedTime;
 
         const auto linearDamping =
-            static_cast<real_Num>( 1 ) /
-            ( static_cast<real_Num>( 1 ) + ( m_linearDamping + m_airResistance ) * elapsedTime );
+            static_cast<real_Num>(1) /
+            (static_cast<real_Num>(1) + (m_linearDamping + m_airResistance) * elapsedTime);
         m_velocity *= linearDamping;
-        m_velocity.X() = std::clamp( m_velocity.X(), -m_maxVelocity.X(), m_maxVelocity.X() );
-        m_velocity.Y() = std::clamp( m_velocity.Y(), -m_maxVelocity.Y(), m_maxVelocity.Y() );
+        m_velocity.X() = std::clamp(m_velocity.X(), -m_maxVelocity.X(), m_maxVelocity.X());
+        m_velocity.Y() = std::clamp(m_velocity.Y(), -m_maxVelocity.Y(), m_maxVelocity.Y());
         m_position += m_velocity * elapsedTime;
 
-        if( m_mass > Math<real_Num>::epsilon() )
+        if(m_mass > Math<real_Num>::epsilon())
         {
-            m_angularVelocity += ( m_torque / m_mass ) * elapsedTime;
+            m_angularVelocity += (m_torque / m_mass) * elapsedTime;
         }
-        m_angularVelocity /= static_cast<real_Num>( 1 ) + m_angularDamping * elapsedTime;
+        m_angularVelocity /= static_cast<real_Num>(1) + m_angularDamping * elapsedTime;
         m_orientation += m_angularVelocity * elapsedTime;
 
-        if( m_constraintAABB.isValid() )
+        if(m_constraintAABB.isValid())
         {
             const auto worldBounds = getWorldAABB();
-            auto       correction = Vector2<real_Num>::ZERO;
-            if( worldBounds.getMin().X() < m_constraintAABB.getMin().X() )
+            auto correction = Vector2<real_Num>::ZERO;
+            if(worldBounds.getMin().X() < m_constraintAABB.getMin().X())
             {
                 correction.X() = m_constraintAABB.getMin().X() - worldBounds.getMin().X();
             }
-            else if( worldBounds.getMax().X() > m_constraintAABB.getMax().X() )
+            else if(worldBounds.getMax().X() > m_constraintAABB.getMax().X())
             {
                 correction.X() = m_constraintAABB.getMax().X() - worldBounds.getMax().X();
             }
-            if( worldBounds.getMin().Y() < m_constraintAABB.getMin().Y() )
+            if(worldBounds.getMin().Y() < m_constraintAABB.getMin().Y())
             {
                 correction.Y() = m_constraintAABB.getMin().Y() - worldBounds.getMin().Y();
             }
-            else if( worldBounds.getMax().Y() > m_constraintAABB.getMax().Y() )
+            else if(worldBounds.getMax().Y() > m_constraintAABB.getMax().Y())
             {
                 correction.Y() = m_constraintAABB.getMax().Y() - worldBounds.getMax().Y();
             }
@@ -113,7 +113,7 @@ namespace workphone::physics
         }
 
         m_force = Vector2<real_Num>::ZERO;
-        m_torque = static_cast<real_Num>( 0 );
+        m_torque = static_cast<real_Num>(0);
 
         // StatePhysicsPosition2Ptr message( new StatePhysicsPosition2( m_position ) );
         // m_stateContext->addMessage(Thread::TASK_ID_APPLICATION_LOGIC, message);
@@ -124,24 +124,25 @@ namespace workphone::physics
         return m_id;
     }
 
-    void WPPhysicsParticle2::addVelocity( const Vector2<real_Num> &velocity, const Vector2<real_Num> &relPos )
+    void WPPhysicsParticle2::addVelocity(const Vector2<real_Num> &velocity,
+                                         const Vector2<real_Num> &relPos)
     {
         m_velocity += velocity;
         const auto radiusSquared = relPos.lengthSquared();
-        if( radiusSquared > Math<real_Num>::epsilon() )
+        if(radiusSquared > Math<real_Num>::epsilon())
         {
             m_angularVelocity +=
-                ( relPos.X() * velocity.Y() - relPos.Y() * velocity.X() ) / radiusSquared;
+                (relPos.X() * velocity.Y() - relPos.Y() * velocity.X()) / radiusSquared;
         }
         m_sleeping = false;
     }
 
-    void WPPhysicsParticle2::_addVector( const Vector2<real_Num> &vector )
+    void WPPhysicsParticle2::_addVector(const Vector2<real_Num> &vector)
     {
         m_position = m_position + vector;
     }
 
-    void WPPhysicsParticle2::setPosition( const Vector2<real_Num> &position )
+    void WPPhysicsParticle2::setPosition(const Vector2<real_Num> &position)
     {
         // m_state = BodyState2(position, m_velocity, 0.0f);
         m_position = position;
@@ -152,7 +153,7 @@ namespace workphone::physics
         return m_position;
     }
 
-    void WPPhysicsParticle2::setRelativePosition( const Vector2<real_Num> &position )
+    void WPPhysicsParticle2::setRelativePosition(const Vector2<real_Num> &position)
     {
         m_position = position;
     }
@@ -162,7 +163,7 @@ namespace workphone::physics
         return m_position;
     }
 
-    void WPPhysicsParticle2::setVelocity( const Vector2<real_Num> &velocity )
+    void WPPhysicsParticle2::setVelocity(const Vector2<real_Num> &velocity)
     {
         m_velocity = velocity;
         m_sleeping = false;
@@ -173,16 +174,16 @@ namespace workphone::physics
         return m_velocity;
     }
 
-    void WPPhysicsParticle2::_setVelocity( const Vector2<real_Num> &velocity )
+    void WPPhysicsParticle2::_setVelocity(const Vector2<real_Num> &velocity)
     {
         m_velocity = velocity;
         m_sleeping = false;
     }
 
-    void WPPhysicsParticle2::setMaxVelocity( const Vector2<real_Num> &velocity )
+    void WPPhysicsParticle2::setMaxVelocity(const Vector2<real_Num> &velocity)
     {
-        m_maxVelocity = Vector2<real_Num>( Math<real_Num>::Abs( velocity.X() ),
-                                           Math<real_Num>::Abs( velocity.Y() ) );
+        m_maxVelocity = Vector2<real_Num>(Math<real_Num>::Abs(velocity.X()),
+                                          Math<real_Num>::Abs(velocity.Y()));
     }
 
     Vector2<real_Num> WPPhysicsParticle2::getMaxVelocity() const
@@ -190,9 +191,9 @@ namespace workphone::physics
         return m_maxVelocity;
     }
 
-    void WPPhysicsParticle2::setLinearDampValue( real_Num linearDampValue )
+    void WPPhysicsParticle2::setLinearDampValue(real_Num linearDampValue)
     {
-        m_linearDamping = Math<real_Num>::max( linearDampValue, static_cast<real_Num>( 0 ) );
+        m_linearDamping = Math<real_Num>::max(linearDampValue, static_cast<real_Num>(0));
     }
 
     real_Num WPPhysicsParticle2::getLinearDampValue() const
@@ -200,9 +201,9 @@ namespace workphone::physics
         return m_linearDamping;
     }
 
-    void WPPhysicsParticle2::setAngularDampValue( real_Num angularDampValue )
+    void WPPhysicsParticle2::setAngularDampValue(real_Num angularDampValue)
     {
-        m_angularDamping = Math<real_Num>::max( angularDampValue, static_cast<real_Num>( 0 ) );
+        m_angularDamping = Math<real_Num>::max(angularDampValue, static_cast<real_Num>(0));
     }
 
     real_Num WPPhysicsParticle2::getAngularDampValue() const
@@ -210,7 +211,7 @@ namespace workphone::physics
         return m_angularDamping;
     }
 
-    void WPPhysicsParticle2::setCollisionShape( SmartPtr<IPhysicsShape2> shape )
+    void WPPhysicsParticle2::setCollisionShape(SmartPtr<IPhysicsShape2> shape)
     {
         m_shape = shape;
     }
@@ -222,22 +223,22 @@ namespace workphone::physics
 
     Transform2<real_Num> WPPhysicsParticle2::_getTransformState() const
     {
-        return Transform2<real_Num>( m_position, 0.0 );
+        return Transform2<real_Num>(m_position, 0.0);
     }
 
-    void WPPhysicsParticle2::setFlag( u32 flag, bool value )
+    void WPPhysicsParticle2::setFlag(u32 flag, bool value)
     {
         u32 flags = m_flags;
-        if( value )
+        if(value)
             flags |= flag;
         else
             flags &= ~flag;
 
         m_flags = flags;
 
-        if( flag == FPF_ENABLE && m_creator )
+        if(flag == FPF_ENABLE && m_creator)
         {
-            m_creator->OnChangeFlags( this );
+            m_creator->OnChangeFlags(this);
         }
     }
 
@@ -246,7 +247,7 @@ namespace workphone::physics
         return 0;
     }
 
-    void WPPhysicsParticle2::setObjectType( hash_type type )
+    void WPPhysicsParticle2::setObjectType(hash_type type)
     {
         m_objectType = type;
     }
@@ -256,7 +257,7 @@ namespace workphone::physics
         return m_objectType;
     }
 
-    void WPPhysicsParticle2::setWorldId( hash_type worldId )
+    void WPPhysicsParticle2::setWorldId(hash_type worldId)
     {
         m_worldId = worldId;
     }
@@ -266,14 +267,14 @@ namespace workphone::physics
         return m_worldId;
     }
 
-    void WPPhysicsParticle2::setEnabled( bool enabled )
+    void WPPhysicsParticle2::setEnabled(bool enabled)
     {
-        setFlag( FPF_ENABLE, enabled );
+        setFlag(FPF_ENABLE, enabled);
     }
 
     bool WPPhysicsParticle2::isEnabled() const
     {
-        return getFlag( FPF_ENABLE );
+        return getFlag(FPF_ENABLE);
     }
 
     AABB2<real_Num> WPPhysicsParticle2::getLocalAABB() const
@@ -286,7 +287,7 @@ namespace workphone::physics
         return getLocalAABB() + m_position;
     }
 
-    void WPPhysicsParticle2::setMaterialId( hash_type materialId )
+    void WPPhysicsParticle2::setMaterialId(hash_type materialId)
     {
         m_materialId = materialId;
     }
@@ -296,7 +297,7 @@ namespace workphone::physics
         return m_materialId;
     }
 
-    void WPPhysicsParticle2::setUserData( void *userData )
+    void WPPhysicsParticle2::setUserData(void *userData)
     {
         m_userData = userData;
     }
@@ -306,7 +307,7 @@ namespace workphone::physics
         return m_userData;
     }
 
-    void WPPhysicsParticle2::setTargetPosition( const Vector2<real_Num> &position )
+    void WPPhysicsParticle2::setTargetPosition(const Vector2<real_Num> &position)
     {
         m_targetPosition = position;
     }
@@ -316,10 +317,10 @@ namespace workphone::physics
         return m_targetPosition;
     }
 
-    void WPPhysicsParticle2::setRestitution( real_Num restitution )
+    void WPPhysicsParticle2::setRestitution(real_Num restitution)
     {
         m_restitution =
-            std::clamp( restitution, static_cast<real_Num>( 0 ), static_cast<real_Num>( 1 ) );
+            std::clamp(restitution, static_cast<real_Num>(0), static_cast<real_Num>(1));
     }
 
     real_Num WPPhysicsParticle2::getRestitution() const
@@ -327,7 +328,7 @@ namespace workphone::physics
         return m_restitution;
     }
 
-    void WPPhysicsParticle2::setGravity( const Vector2<real_Num> &gravity )
+    void WPPhysicsParticle2::setGravity(const Vector2<real_Num> &gravity)
     {
         m_gravity = gravity;
     }
@@ -342,12 +343,12 @@ namespace workphone::physics
         return WPPhysicsBody2<IPhysicsParticle2>::getEnableGravity();
     }
 
-    void WPPhysicsParticle2::setEnableGravity( bool enableGravity )
+    void WPPhysicsParticle2::setEnableGravity(bool enableGravity)
     {
-        WPPhysicsBody2<IPhysicsParticle2>::setEnableGravity( enableGravity );
+        WPPhysicsBody2<IPhysicsParticle2>::setEnableGravity(enableGravity);
     }
 
-    void WPPhysicsParticle2::setKinematicMode( bool kinematicMode )
+    void WPPhysicsParticle2::setKinematicMode(bool kinematicMode)
     {
         m_kinematicMode = kinematicMode;
     }
@@ -357,12 +358,12 @@ namespace workphone::physics
         return m_kinematicMode;
     }
 
-    const workphone::SmartPtr<workphone::IStateContext> &WPPhysicsParticle2::getStateContext() const
+    const SmartPtr<IStateContext> &WPPhysicsParticle2::getStateContext() const
     {
         return m_stateContext;
     }
 
-    workphone::SmartPtr<workphone::IStateContext> &WPPhysicsParticle2::getStateContext()
+    SmartPtr<IStateContext> &WPPhysicsParticle2::getStateContext()
     {
         return m_stateContext;
     }
@@ -372,24 +373,24 @@ namespace workphone::physics
         return m_sleeping;
     }
 
-    void WPPhysicsParticle2::setSleep( bool sleep )
+    void WPPhysicsParticle2::setSleep(bool sleep)
     {
         m_sleeping = sleep;
-        if( sleep )
+        if(sleep)
         {
             m_velocity = Vector2<real_Num>::ZERO;
-            m_angularVelocity = static_cast<real_Num>( 0 );
+            m_angularVelocity = static_cast<real_Num>(0);
             m_force = Vector2<real_Num>::ZERO;
-            m_torque = static_cast<real_Num>( 0 );
+            m_torque = static_cast<real_Num>(0);
         }
     }
 
-    workphone::AABB2<workphone::real_Num> WPPhysicsParticle2::getContraintAABB() const
+    AABB2<real_Num> WPPhysicsParticle2::getContraintAABB() const
     {
         return m_constraintAABB;
     }
 
-    void WPPhysicsParticle2::setContraintAABB( const AABB2<real_Num> &contraintRect )
+    void WPPhysicsParticle2::setContraintAABB(const AABB2<real_Num> &contraintRect)
     {
         m_constraintAABB = contraintRect;
         m_constraintAABB.repair();
@@ -400,89 +401,89 @@ namespace workphone::physics
         return m_collisionType;
     }
 
-    void WPPhysicsParticle2::setCollisionType( u32 mask )
+    void WPPhysicsParticle2::setCollisionType(u32 mask)
     {
         m_collisionType = mask;
     }
 
-    workphone::real_Num WPPhysicsParticle2::getMassInv() const
+    real_Num WPPhysicsParticle2::getMassInv() const
     {
-        return m_mass > Math<real_Num>::epsilon() ? static_cast<real_Num>( 1 ) / m_mass
-                                                  : static_cast<real_Num>( 0 );
+        return m_mass > Math<real_Num>::epsilon()
+                   ? static_cast<real_Num>(1) / m_mass
+                   : static_cast<real_Num>(0);
     }
 
-    workphone::real_Num WPPhysicsParticle2::getMass() const
+    real_Num WPPhysicsParticle2::getMass() const
     {
         return m_mass;
     }
 
-    void WPPhysicsParticle2::setMass( real_Num mass )
+    void WPPhysicsParticle2::setMass(real_Num mass)
     {
-        m_mass = Math<real_Num>::max( mass, static_cast<real_Num>( 0 ) );
+        m_mass = Math<real_Num>::max(mass, static_cast<real_Num>(0));
     }
 
-    bool WPPhysicsParticle2::getFlag( u32 flag ) const
+    bool WPPhysicsParticle2::getFlag(u32 flag) const
     {
-        return ( m_flags & flag ) != 0;
+        return (m_flags & flag) != 0;
     }
 
-    workphone::real_Num WPPhysicsParticle2::getAirResistance() const
+    real_Num WPPhysicsParticle2::getAirResistance() const
     {
         return m_airResistance;
     }
 
-    void WPPhysicsParticle2::setAirResistance( real_Num airResistance )
+    void WPPhysicsParticle2::setAirResistance(real_Num airResistance)
     {
-        m_airResistance = Math<real_Num>::max( airResistance, static_cast<real_Num>( 0 ) );
+        m_airResistance = Math<real_Num>::max(airResistance, static_cast<real_Num>(0));
     }
 
-    workphone::real_Num WPPhysicsParticle2::getTorque() const
+    real_Num WPPhysicsParticle2::getTorque() const
     {
         return m_torque;
     }
 
-    void WPPhysicsParticle2::setTorque( real_Num torque )
+    void WPPhysicsParticle2::setTorque(real_Num torque)
     {
         m_torque = torque;
         m_sleeping = false;
     }
 
-    void WPPhysicsParticle2::addTorque( real_Num torque )
+    void WPPhysicsParticle2::addTorque(real_Num torque)
     {
         m_torque += torque;
         m_sleeping = false;
     }
 
-    workphone::Vector2<workphone::real_Num> WPPhysicsParticle2::getForce() const
+    Vector2<real_Num> WPPhysicsParticle2::getForce() const
     {
         return m_force;
     }
 
-    void WPPhysicsParticle2::setForce( const Vector2<real_Num> &force )
+    void WPPhysicsParticle2::setForce(const Vector2<real_Num> &force)
     {
         m_force = force;
         m_sleeping = false;
     }
 
-    void WPPhysicsParticle2::addForce( const Vector2<real_Num> &force )
+    void WPPhysicsParticle2::addForce(const Vector2<real_Num> &force)
     {
         m_force += force;
         m_sleeping = false;
     }
 
-    workphone::real_Num WPPhysicsParticle2::getAngularVelocity() const
+    real_Num WPPhysicsParticle2::getAngularVelocity() const
     {
         return m_angularVelocity;
     }
 
-    workphone::real_Num WPPhysicsParticle2::getOrientation() const
+    real_Num WPPhysicsParticle2::getOrientation() const
     {
         return m_orientation;
     }
 
-    void WPPhysicsParticle2::setOrientation( real_Num orientation )
+    void WPPhysicsParticle2::setOrientation(real_Num orientation)
     {
         m_orientation = orientation;
     }
-
 } // namespace workphone::physics

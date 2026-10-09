@@ -3,20 +3,17 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class ClimbTransitionData
     {
-        class ClimbTransitionData
-        {
-        public:
-            ClimbTransitionData();
+    public:
+        ClimbTransitionData();
 
-            // Used as file format to hold climb lookup data.
-            physics_Num m_rate = static_cast<physics_Num>( 0.0 );
-            physics_Num m_factor = static_cast<physics_Num>( 0.0 );
-        };
-    } // namespace vehicle
-} // namespace workphone
+        // Used as file format to hold climb lookup data.
+        physics_Num m_rate = 0.0;
+        physics_Num m_factor = 0.0;
+    };
+}
 
 #endif // ClimbTransitionData_h__

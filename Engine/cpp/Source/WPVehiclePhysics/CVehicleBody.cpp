@@ -8,10 +8,10 @@ namespace workphone
 
     CVehicleBody::~CVehicleBody()
     {
-        unload( nullptr );
+        unload(nullptr);
     }
 
-    void CVehicleBody::unload( SmartPtr<ISharedObject> data )
+    void CVehicleBody::unload(SmartPtr<ISharedObject> data)
     {
         m_parentVehicle = nullptr;
     }
@@ -21,7 +21,7 @@ namespace workphone
         return m_velocity;
     }
 
-    void CVehicleBody::setVelocity( const Vector3<physics_Num> &velocity )
+    void CVehicleBody::setVelocity(const Vector3<physics_Num> &velocity)
     {
         m_velocity = velocity;
     }
@@ -31,7 +31,7 @@ namespace workphone
         return m_angularVelocity;
     }
 
-    void CVehicleBody::setAngularVelocity( const Vector3<physics_Num> &angularVelocity )
+    void CVehicleBody::setAngularVelocity(const Vector3<physics_Num> &angularVelocity)
     {
         m_angularVelocity = angularVelocity;
     }
@@ -41,60 +41,60 @@ namespace workphone
         return m_worldCenterOfMass;
     }
 
-    void CVehicleBody::setWorldCenterOfMass( const Vector3<physics_Num> &worldCenterOfMass )
+    void CVehicleBody::setWorldCenterOfMass(const Vector3<physics_Num> &worldCenterOfMass)
     {
         m_worldCenterOfMass = worldCenterOfMass;
     }
 
-    void CVehicleBody::addLocalForceAtPosition( const Vector3<physics_Num> &force,
-                                                const Vector3<physics_Num> &pos,
-                                                physics::ForceModeEnum      forceMode )
+    void CVehicleBody::addLocalForceAtPosition(const Vector3<physics_Num> &force,
+                                               const Vector3<physics_Num> &pos,
+                                               physics::ForceModeEnum forceMode)
     {
-        m_parentVehicle->addLocalForce( 0, force, pos );
+        m_parentVehicle->addLocalForce(0, force, pos);
     }
 
-    void CVehicleBody::addLocalForceAtLocalPosition( const Vector3<physics_Num> &force,
-                                                     const Vector3<physics_Num> &pos )
+    void CVehicleBody::addLocalForceAtLocalPosition(const Vector3<physics_Num> &force,
+                                                    const Vector3<physics_Num> &pos)
     {
-        m_parentVehicle->addLocalForce( 0, force, pos );
+        m_parentVehicle->addLocalForce(0, force, pos);
     }
 
-    void CVehicleBody::addForceAtPosition( const Vector3<physics_Num> &force,
-                                           const Vector3<physics_Num> &pos,
-                                           physics::ForceModeEnum      forceMode )
+    void CVehicleBody::addForceAtPosition(const Vector3<physics_Num> &force,
+                                          const Vector3<physics_Num> &pos,
+                                          physics::ForceModeEnum forceMode)
     {
-        m_parentVehicle->addForce( 0, force, pos );
+        m_parentVehicle->addForce(0, force, pos);
     }
 
-    void CVehicleBody::addForceAtPosition( const Vector3<physics_Num> &force,
-                                           const Vector3<physics_Num> &pos )
+    void CVehicleBody::addForceAtPosition(const Vector3<physics_Num> &force,
+                                          const Vector3<physics_Num> &pos)
     {
-        m_parentVehicle->addForce( 0, force, pos );
+        m_parentVehicle->addForce(0, force, pos);
     }
 
-    bool CVehicleBody::castLocalRay( const Ray3<physics_Num> &ray, SmartPtr<physics::IRaycastHit> &data )
+    bool CVehicleBody::castLocalRay(const Ray3<physics_Num> &ray, SmartPtr<physics::IRaycastHit> &data)
     {
-        WP_ASSERT( ray.isValid() );
-        WP_ASSERT( data );
+        WP_ASSERT(ray.isValid());
+        WP_ASSERT(data);
 
         auto callback = m_parentVehicle->getVehicleCallback();
-        if( callback )
+        if(callback)
         {
-            return callback->castLocalRay( ray, data );
+            return callback->castLocalRay(ray, data);
         }
 
         return false;
     }
 
-    bool CVehicleBody::castWorldRay( const Ray3<physics_Num> &ray, SmartPtr<physics::IRaycastHit> &data )
+    bool CVehicleBody::castWorldRay(const Ray3<physics_Num> &ray, SmartPtr<physics::IRaycastHit> &data)
     {
-        WP_ASSERT( ray.isValid() );
-        WP_ASSERT( data );
+        WP_ASSERT(ray.isValid());
+        WP_ASSERT(data);
 
         auto callback = m_parentVehicle->getVehicleCallback();
-        if( callback )
+        if(callback)
         {
-            return callback->castWorldRay( ray, data );
+            return callback->castWorldRay(ray, data);
         }
 
         return false;
@@ -102,20 +102,20 @@ namespace workphone
 
     physics_Num CVehicleBody::getMass() const
     {
-        WP_ASSERT( m_mass > 0 );
-        WP_ASSERT( m_mass < static_cast<physics_Num>( 1e10 ) );
+        WP_ASSERT(m_mass > 0);
+        WP_ASSERT(m_mass < static_cast<physics_Num>( 1e10 ));
         return m_mass;
     }
 
-    void CVehicleBody::setMass( physics_Num mass )
+    void CVehicleBody::setMass(physics_Num mass)
     {
-        WP_ASSERT( mass > 0 );
-        WP_ASSERT( mass < static_cast<physics_Num>( 1e10 ) );
+        WP_ASSERT(mass > 0);
+        WP_ASSERT(mass < static_cast<physics_Num>( 1e10 ));
 
         m_mass = mass;
 
-        WP_ASSERT( m_mass > 0 );
-        WP_ASSERT( m_mass < static_cast<physics_Num>( 1e10 ) );
+        WP_ASSERT(m_mass > 0);
+        WP_ASSERT(m_mass < static_cast<physics_Num>( 1e10 ));
     }
 
     Vector3<physics_Num> CVehicleBody::getLocalVelocity() const
@@ -123,7 +123,7 @@ namespace workphone
         return m_localVelocity;
     }
 
-    void CVehicleBody::setLocalVelocity( const Vector3<physics_Num> &localVelocity )
+    void CVehicleBody::setLocalVelocity(const Vector3<physics_Num> &localVelocity)
     {
         m_localVelocity = localVelocity;
     }
@@ -133,19 +133,19 @@ namespace workphone
         return m_localAngularVelocity;
     }
 
-    void CVehicleBody::setLocalAngularVelocity( const Vector3<physics_Num> &localAngularVelocity )
+    void CVehicleBody::setLocalAngularVelocity(const Vector3<physics_Num> &localAngularVelocity)
     {
         m_localAngularVelocity = localAngularVelocity;
     }
 
-    void CVehicleBody::addTorque( const Vector3<physics_Num> &torque )
+    void CVehicleBody::addTorque(const Vector3<physics_Num> &torque)
     {
-        m_parentVehicle->addTorque( 0, torque );
+        m_parentVehicle->addTorque(0, torque);
     }
 
-    void CVehicleBody::addLocalTorque( const Vector3<physics_Num> &torque )
+    void CVehicleBody::addLocalTorque(const Vector3<physics_Num> &torque)
     {
-        m_parentVehicle->addLocalTorque( 0, torque );
+        m_parentVehicle->addLocalTorque(0, torque);
     }
 
     SmartPtr<IVehicle> &CVehicleBody::getParentVehicle()
@@ -158,7 +158,7 @@ namespace workphone
         return m_parentVehicle;
     }
 
-    void CVehicleBody::setParentVehicle( SmartPtr<IVehicle> parentVehicle )
+    void CVehicleBody::setParentVehicle(SmartPtr<IVehicle> parentVehicle)
     {
         m_parentVehicle = parentVehicle;
     }
@@ -178,17 +178,17 @@ namespace workphone
         m_localVelocity = m_parentVehicle->getLocalLinearVelocity();
         m_localAngularVelocity = m_parentVehicle->getLocalAngularVelocity();
 
-        WP_ASSERT( m_velocity.length() < 1e4 );
-        WP_ASSERT( m_angularVelocity.length() < 1e4 );
+        WP_ASSERT(m_velocity.length() < 1e4);
+        WP_ASSERT(m_angularVelocity.length() < 1e4);
 
         auto aircraftWorldTransform = m_parentVehicle->getWorldTransform();
-        auto worldCenterOfMass = aircraftWorldTransform.transformPoint( m_parentVehicle->getCG() );
-        setWorldCenterOfMass( worldCenterOfMass );
+        auto worldCenterOfMass = aircraftWorldTransform.transformPoint(m_parentVehicle->getCG());
+        setWorldCenterOfMass(worldCenterOfMass);
     }
 
-    Vector3<physics_Num> CVehicleBody::getPointVelocity( const Vector3<physics_Num> &p )
+    Vector3<physics_Num> CVehicleBody::getPointVelocity(const Vector3<physics_Num> &p)
     {
-        return m_parentVehicle->getPointVelocity( p );
+        return m_parentVehicle->getPointVelocity(p);
     }
 
     bool CVehicleBody::isValid() const

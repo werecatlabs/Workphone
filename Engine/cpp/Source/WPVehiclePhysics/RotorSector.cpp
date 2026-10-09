@@ -2,16 +2,13 @@
 #include "WPVehiclePhysics/RotorSector.hpp"
 #include "WPVehiclePhysics/Surface.hpp"
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    TRotorSector::TRotorSector() : m_secPower(0.0)
     {
-        TRotorSector::TRotorSector() : m_secPower( 0.0 )
+        for(auto &surface : m_arc)
         {
-            for( auto &surface : m_arc )
-            {
-                surface = TSurface();
-            }
+            surface = TSurface();
         }
-    } // namespace vehicle
-} // namespace workphone
+    }
+}

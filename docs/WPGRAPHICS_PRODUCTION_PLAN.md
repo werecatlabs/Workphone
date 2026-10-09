@@ -1,11 +1,11 @@
 # WPGraphics production readiness and feature implementation plan
 
-Review updated: 9 October 2026, source audit at `38e012a5b`. Terrain and procedural scope is expanded in the [detailed review and delivery plan](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md).
+Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).
 Recorded implementation baseline: the 8 October identity/adapter increment starts from `22553f942`; prior verification was committed as `f531e9140` after the rebuild at `22e542cca`.
 Historical implementation evidence: initial graphics review at `8a767dda5`; catalog follow-up starting from `d5c859612`, Visual Studio 2026/MSVC 19.51 and CMake 4.4.4, RelWithDebInfo.
 Status: Implementation in progress. The recorded 8 October Debug and RelWithDebInfo validation each reports 13 passed and one external-media test unavailable. That evidence covers schema-v2 identity/lifecycle, ResourceSystem adapter and texture-publication contracts, including actual symlink containment and Windows 8.3 root aliases. The 9 October review is source inspection and planning only; builds, GPU captures and benchmarks were not rerun. Remote CI and release coverage remain incomplete. Neither R1 nor R2 is certified.
 Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, AssetDatabaseManager and the existing resource pipeline, engine terrain/query/collision/vegetation systems, WPProcedural services and generators, and their engine/editor/Lua integration.
-User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration in the feature roadmap.
+User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration; make foliage LOD, batch-count reduction and fewer actual draw calls essential release work. Foliage includes its procedural placement and plant-authoring tools.
 
 ## 1. Intended outcome
 
@@ -13,8 +13,8 @@ Deliver a renderer that can ship a Workphone game and reliably drive the editor:
 
 Use two release gates:
 
-- **R1 — production core:** Windows x64/DX11, cooked assets, static and skeletal meshes, basic animation graphs and IK integration, CPU particle simulation with batched GPU rendering, essential lighting/shadows, GPU HDR presentation, coherent terrain rendering/queries/collision, layer painting and sculpt undo, reproducible procedural mesh/material baking, UI, diagnostics, and release packaging.
-- **R2 — comprehensive feature release:** R1 plus richer animation, particle authoring and effects, water for lakes/pools/rivers, reflection probes, scalable lighting, temporal effects, tiled terrain streaming/vegetation, procedural modelling and texture graphs, roads/cities/biomes/erosion, and the broader feature set below.
+- **R1 — production core:** Windows x64/DX11, cooked assets, static and skeletal meshes, basic animation graphs and IK integration, CPU particle simulation with batched GPU rendering, essential lighting/shadows, GPU HDR presentation, coherent terrain rendering/queries/collision, layer painting and sculpt undo, reproducible procedural mesh/material baking, paged tree/grass rendering with LOD and measured draw-call reduction, basic foliage scatter/paint/persistence, UI, diagnostics, and release packaging.
+- **R2 — comprehensive feature release:** R1 plus richer animation, particle authoring and effects, water for lakes/pools/rivers, reflection probes, scalable lighting, temporal effects, large-world terrain/foliage streaming, richer plant/biome tools and impostor baking, procedural modelling and texture graphs, roads/cities/erosion, and the broader feature set below.
 
 DX12 and additional platforms receive their own certification gates. They do not inherit production status from DX11. Advanced ocean simulation, ray tracing, and virtualized geometry are subsequent optional work.
 
@@ -45,6 +45,8 @@ Paths below are relative to the repository root. Observations are limited to the
 | Terrain correctness | [ClawTerrain](../Engine/cpp/Source/WPGraphics/ClawTerrain.cpp) builds a capped 257×257 render mesh, delegates raw height queries to Terrain, and returns null for ray hits/blend maps/CPU mesh; material update is empty | Resolve scale/transform/interpolation and authoritative-data contracts; connect picking, collision and material layers before claiming production terrain |
 | Terrain rendering | [DX11 terrain draw](../Engine/cpp/Source/WPGraphics/ClawRendererDX11.cpp) uses texture 0 and a fixed material; [ClawScene](../Engine/cpp/Source/WPGraphics/ClawScene.cpp) submits terrain in directional shadow and colour passes | Preserve existing shadows; implement PBR splat layers, bounded tiles/LOD and foliage, with dedicated GPU evidence |
 | Procedural tools | [MeshGeneratorDefault](../Engine/cpp/Source/WPProcedural/MeshGeneratorDefault.cpp) has empty generation/settings paths; [boolean binding](../Tools/cpp/Editor/src/procedural/ProceduralBindings.cpp) returns its input unchanged; terrain Lua actions often write recipe metadata | Reuse working concrete services and Lua editors; implement native operations, complete bake/export, and expose unsupported operations honestly. See the detailed companion review |
+| Foliage paging/batching | Retained [native paged geometry](../Engine/c/Source/WorkphoneGraphics/workphone_graphics_paged_geometry.c) has no active renderer callback bridge in inspected callers; HEAD removes the C++ wrapper. The racing scene already merges pine patches and uses LOD/impostors; native DX11 mesh drawing is DrawIndexed | Reuse/test native paging and existing patch/LOD reference; add species instances, real indexed instancing, material grouping and per-pass draw budgets. See the foliage plan |
+| Foliage authoring | Terrain layers store prefab/density settings, terrain tree generation creates actors at the origin, optional ngPlant geometry integration is incomplete, and foliage texture baking is not plant generation | Implement deterministic placement and dirty-page edits, species/plant assets, real brush/undo/cook paths and measured runtime preview; preserve authored actors during migration |
 | Resources | [ResourceSystem.md](../Engine/cpp/Project/Workphone/ResourceSystem.md) supplies compilation/dependency/container contracts; [CatalogResourceAdapter](../Engine/cpp/Include/Workphone/Database/CatalogResourceAdapter.hpp) now resolves UUID snapshots and delegates typed compile/load requests with root/identity/version checks | Add graphics compilers and render-thread publication. Pre/post snapshot checks reject stale returns but cannot prevent an old compile output being persisted; compilation metadata remains separate |
 | Asset catalog | [AssetDatabaseManager.hpp](../Engine/cpp/Include/Workphone/Database/AssetDatabaseManager.hpp) and [implementation](../Engine/cpp/Source/Workphone/Database/AssetDatabaseManager.cpp) retain bound CRUD and detached results; schema v2 adds canonical root-relative paths, explicit file/scene kinds and instance/generation snapshots | Finish subassets, reference remapping, broader lifecycle/failure/race policy and coordinated catalog-to-GPU publication |
 | Database coverage | [AssetCatalogTests](../Tests/cpp/AssetCatalogTests.cpp) requires SQLite; canonical-path/kind/relocation/lifecycle/migration and [adapter contracts](../Tests/cpp/CatalogResourceAdapterContracts.hpp) pass in Debug and RelWithDebInfo. Older [ResourceDatabaseTests](../Tests/cpp/UnitTests/ResourceDatabaseTests.cpp) still contain plugin/headless early returns | Add graphics-resource-to-render integration and broader mutation/unload races; early returns do not count as coverage |
@@ -65,6 +67,7 @@ Paths below are relative to the repository root. Observations are limited to the
 | M1A asset catalog | Schema-v2 canonical paths/file-scene kinds, lifecycle snapshots and ResourceSystem adapter validated in Debug and RelWithDebInfo | Subassets, broader concurrency/lifecycle/durability, graphics compilers and coordinated GPU publication; remote CI |
 | M4/M5/M6 | Materials/static geometry/UI/CPU effects plus directional shadow maps, DX11 fog, semantic mips, LOD detail bounds and texture publication fixes; prior UI/camera evidence retained | Cook graphics assets, implement GPU HDR/post-processing, extend shadows, streaming and mixed-scene validation |
 | M6A–M6D terrain/procedural | Source review identifies query/render discrepancies, missing Claw picking/layers/CPU mesh, incomplete generic mesh generation and recipe-only actions; some procedural service/component paths already work | Deliver GT0/GT1/GP0/GP1 in the companion plan; existing graphics results do not certify these paths |
+| M6E/M6F foliage | Native pager, merged sample pine patches, LOD math and CPU impostor reference exist; general instanced tree/grass runtime, procedural placement and dedicated performance evidence remain open | GF0 is required for R1: LOD and actual batch/draw reduction; GF1 adds comprehensive plant/biome authoring and scale |
 | M7 water | Unavailable; interface only | Implement WATER-01 through WATER-06 after frame/depth/reflection prerequisites |
 | M8/M9 | Not certified | Packaging, clean CI, performance/soak/recovery evidence; DX12 independently |
 
@@ -98,7 +101,7 @@ P0 is required for R1. P1 is required for the documented R2 feature tier. P2 is 
 | Feature family | P0: production core | P1: comprehensive release | P2: extensions |
 |---|---|---|---|
 | Device/window | Adapter selection, resize/minimize, offscreen targets, vsync, recovery | Multiple windows/views, frame pacing, optional MSAA | HDR display output and specialist presentation |
-| Geometry | Indexed static/dynamic meshes, submeshes, robust attributes, bounds | Instancing, LOD, occlusion, indirect draws where justified | GPU-driven submission, virtualized geometry |
+| Geometry | Indexed static/dynamic meshes, submeshes, robust attributes, bounds; foliage instancing/LOD through GF0 | Broader instancing, material/mesh LOD, occlusion, indirect draws where justified | GPU-driven submission, virtualized geometry |
 | Animation | Import, pose evaluation, CPU reference/GPU skinning, clips, transitions, root motion, events, basic IK | Blend spaces, additive layers/masks, animation LOD, sockets, morphs, retargeting | Advanced warping and crowd systems |
 | Materials | Unlit and metallic/roughness PBR, normals, packed channels, alpha modes, instances | Clearcoat, detail maps, anisotropy, decals, material quality variants | Subsurface/transmission models |
 | Textures/shaders | Mips, sRGB/linear correctness, samplers, offline shader compilation, fallback shaders | Compression, arrays/cubemaps, streaming, safe hot reload | Virtual texturing and specialist codecs |
@@ -106,7 +109,8 @@ P0 is required for R1. P1 is required for the documented R2 feature tier. P2 is 
 | Image pipeline | GPU HDR intermediates, tone mapping, basic AA, optional bloom/exposure | TAA, GTAO, SSR, contact shadows, DOF, motion blur, dynamic resolution | Vendor upscalers, advanced temporal reconstruction |
 | Particles | Deterministic CPU simulation, emitter lifecycle, curves, pooling, batched billboards, alpha/additive | Soft particles, flipbooks, trails/ribbons, mesh particles, collisions, subemitters, lighting | GPU simulation and very large effects |
 | Water | Architectural hooks and required buffers | Lakes/pools/rivers, waves, depth/absorption, Fresnel, foam, reflection/refraction | Ocean spectrum, underwater volumes, caustics, wakes |
-| Terrain/vegetation | Shared height/transform/query/collision contract, PBR layer blending, picking, sculpt/paint undo, stable tile bounds and baseline LOD | Crack-free chunk streaming, biome scatter, foliage instancing/wind/impostors, holes and erosion | Virtual terrain materials, voxel/cave terrain |
+| Terrain | Shared height/transform/query/collision contract, PBR layer blending, picking, sculpt/paint undo, stable tile bounds and baseline LOD | Crack-free chunk streaming, biome masks, holes and erosion | Virtual terrain materials, voxel/cave terrain |
+| Foliage | Shared species assets, compact instances, paged tree/grass rendering, near/mid/far LOD, instanced/material-grouped draws, basic wind/cutout/shadows, deterministic scatter/paint/undo and draw-budget evidence | Textured multi-view impostor baking, plant generation, biome/exclusion tools, interaction, rich wind and multi-view large-world streaming | GPU-driven culling/indirect draws after profiling |
 | Procedural generation | Versioned deterministic recipes, validated mesh attributes/bounds, road/vehicle outputs, generated PBR maps reaching materials, collision/LOD baking, real export and cooked loading | Modelling operations/CSG/UV tools, texture graphs, roads/intersections/terrain grading, buildings/cities, scatter and streaming | Runtime destruction, specialist generators and distributed baking |
 | Sky/environment | Existing sky/cubemap path, cached IBL | Atmosphere, time of day, fog, environment transitions | Volumetric clouds/weather |
 | UI/text | Claw UI and ImGui, clipping, text/glyph lifecycle, DPI | Localization/complex text integration, multi-viewport behavior | Specialist text rendering |
@@ -159,14 +163,16 @@ Effort ranges below are provisional **engineer-weeks**, including implementation
 | M5 | GPU pass graph, shadows and image pipeline | M1, M4; temporal deformation uses M2 | 7–12 | G5/R1 |
 | M6 | Shared scene scale, streaming, UI and tool integration | M1–M5 as relevant | Re-estimate shared work | G6 |
 | M6A | Terrain data/query/render/collision and basic authoring | M0, M1/M1A; M4 material contracts | 4–7 | GT0 / R1 |
-| M6B | Terrain tile streaming, foliage, biomes and erosion | M6A; shared M6 streaming, M4/M5 rendering | 5–9 | GT1 / R2 |
+| M6B | Terrain tile streaming, biome masks and erosion; foliage now M6E/M6F | M6A; shared M6 streaming, M4/M5 rendering | Re-estimate after foliage split | GT1 / R2 |
 | M6C | Procedural service correctness, generated assets and bake pipeline | M0, M1/M1A, M4; terrain adapter uses M6A | 4–7 | GP0 / R1 |
 | M6D | Modelling/texture graphs, roads/cities and procedural world tools | M6C; terrain/streaming portions use M6A/M6B | 8–14 | GP1 / R2 |
+| M6E | Essential foliage paging, instance batching/LOD, grass and basic procedural tools | M0, M1/M1A, M4; terrain sampling M6A | 5–8 | GF0 / R1 |
+| M6F | Comprehensive foliage plant/biome/impostor tools, interaction and streaming scale | M6E; shared streaming, M6B/M6D as relevant | 4–7 | GF1 / R2 |
 | M7 | Water and richer effects/animation feature tier | M2, M3, M5; streaming integration M6 | 5–8 | GW/R2 |
 | M8 | Final certification, documentation and distribution | Applicable release packages | 3–5 | GR |
 | M9 | DX12 certification; other backends separately scoped | Stable R1 contracts | 6–12 per DX12 track | GB |
 
-R1 uses P0 subsets of these work packages and an initial M8 certification. R2 completes P1 subsets and repeats certification for newly enabled features. The historical 47–77 engineer-week estimate predates the expanded terrain/procedural review and is superseded as a total. M6A–M6D provisionally account for 21–37 engineer-weeks of subsystem work, excluding shared renderer/device/catalog/frame/streaming infrastructure and final certification. They replace the old terrain/tools allowance; do not add them blindly to the historical total. M0 must credit completed work, remove overlapping responsibilities, assign owners and re-estimate the full remaining programme. Track DX12/platform expansion separately. Water design/fixtures can proceed now; rendering depends on completing depth/color/reflection frame contracts.
+R1 uses P0 subsets of these work packages and an initial M8 certification. R2 completes P1 subsets and repeats certification for newly enabled features. The historical 47–77 engineer-week total and subsequent 21–37 terrain/procedural allowance are not current programme estimates. Dedicated M6E/M6F foliage allowances are 9–15 engineer-weeks, excluding shared renderer/device/catalog/general instancing/streaming infrastructure and final certification. They extract and expand the old TERR-07/M6B vegetation allowance; re-estimate M6B and remove overlaps with GEO-01/PROC/TERR work before any roll-up. M0 must credit completed work, assign owners and estimate the full remaining programme. Track DX12/platform expansion separately. Water design/fixtures can proceed now; rendering depends on depth/color/reflection frame contracts. Essential foliage batching/LOD must not wait for water or TAA.
 
 ### M0 — establish an honest baseline
 
@@ -305,7 +311,7 @@ Required tests:
 - **ASSET-02:** Compile shaders offline with reflection and bounded variant keys; validate bindings, vertex layouts and constant-buffer alignment; retain last good shader on failed development reload.
 - **MAT-01:** Complete consistent metallic/roughness PBR, correct linear/sRGB treatment, normal/tangent conventions, packed-channel mapping, alpha-test/blend and material instances. Test against material sphere/texture fixtures.
 - **TEX-01:** Audit mips, sampler states, row pitches, cubemap faces, compression and missing-texture fallback. Integrate incremental background decode and bounded render-thread upload.
-- **GEO-01:** Complete topology/index-size/submesh/dynamic-buffer paths; validate cache invalidation after vertex/index changes; add instancing and material/mesh LOD in the P1 tier.
+- **GEO-01:** Complete topology/index-size/submesh/dynamic-buffer paths and cache invalidation. Supply shared buffer/layout support for essential R1 foliage instancing/LOD in FOL-03/04; broader object instancing and material/mesh LOD remain P1. Estimate shared geometry work once across these packages.
 - **LIGHT-01:** Connect scene directional/point/spot lights to shading with documented limits, attenuation and unit conventions; complete IBL cache invalidation and environment transitions.
 - **LIGHT-02:** Implement scalable Forward+ light lists, overflow handling, reflection probes and lightmap consumption for P1. Audit the existing lightmapper before promising baking; implement or explicitly defer unsupported authoring/bake paths.
 
@@ -327,6 +333,7 @@ Required tests:
 - **SCENE-01:** Audit per-camera visibility jobs and snapshot completeness; introduce frame completion barriers or immutable visibility results. Measure frustum culling, sorting and scene traversal with representative content.
 - **WORLD-01:** Deliver terrain through M6A/GT0 and M6B/GT1, with the concrete TERR work packages in the [terrain/procedural companion plan](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md). Shared streaming owns request prioritization, budgets and cancellation; terrain supplies tile data and residency policies.
 - **WORLD-02:** Deliver procedural assets/tools through M6C/GP0 and M6D/GP1 in that plan. Reuse WPProcedural services and existing Lua editors; one bake/publication pipeline handles generated meshes, material maps, collision, LODs and catalog dependencies.
+- **WORLD-03:** Deliver foliage through M6E/GF0 and M6F/GF1 in the [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md). Reuse native C paging, current patch batching and LOD math; add shared species/instances, DX11 indexed instancing, per-view LOD, batched impostors and dedicated grass. Actual batch/draw reduction and basic procedural foliage tools are R1 requirements.
 - **STREAM-01:** Budget CPU/GPU memory, uploads and concurrent work; prioritize visible assets, retain safe placeholders, cancel requests on unload and evict only unused resources.
 - **UI-01:** Retain the recent long-text/serialization, empty-label, visibility and editor-camera-during-Play fixes and tests. Validate clipping, state restoration, font/glyph lifetimes, DPI, render textures, multiple views, Play/Stop snapshot restoration and device recovery through rebuilt binaries.
 - **TOOL-01:** Extend existing Lua editors; expose skeleton/palette/bounds diagnostics, particle pool/overdraw views, material reload errors, pass timing and texture residency.
@@ -335,6 +342,8 @@ Required tests:
 **G6:** Representative multi-view scenes, animated characters, particles, terrain and UI remain correct during streaming, reload and camera changes. Editor preview uses the runtime path rather than an unrelated renderer.
 
 M6A/M6C are required for R1 even though advanced streaming and authoring are R2. GT0 requires render/query/pick/collision agreement and persistent sculpt/paint edits. GP0 requires a deterministic recipe to bake, publish, render and reload outside the editor. GT1/GP1 add the comprehensive terrain and procedural tool tiers; recipe metadata and successful no-ops cannot satisfy them.
+
+M6E/GF0 is also required for R1. Count foliage draws by pass/view and compatibility/capacity splits; pages, job batches, fewer actors or lower triangle counts alone do not prove fewer draw calls. M6F/GF1 expands plant generation/biome tools and scale after the core tree/grass LOD and batching path is measured.
 
 ### M7 — water and the comprehensive feature tier
 
@@ -398,9 +407,9 @@ Proposed budgets, to calibrate in M0:
 - At least 1,000 repeated scene-load/unload and target-resize cycles; injected creation/upload/decode failures preserve valid state. Device recovery tests restore a usable scene or produce the specified bounded failure outcome.
 - Certification covers selected AMD/NVIDIA/Intel adapters where available, with recorded drivers. The initial supported set is the machines actually validated, then broadened deliberately.
 
-**R1 checklist:** G0, G1, GD, GA, GP, GT0, GP0, P0 portions of G4/G5/G6, initial GR; catalog-to-cooked-asset-to-screen evidence; terrain render/query/collision and persisted edits; procedural recipe-to-cooked-render evidence; licensed cooked sample; no unresolved crash/data corruption/resource leak; no mandatory feature tests skipped; documented performance and capabilities. GP is the particle gate; GP0/GP1 are procedural gates.
+**R1 checklist:** G0, G1, GD, GA, GP, GT0, GP0, GF0, P0 portions of G4/G5/G6, initial GR; catalog-to-cooked-asset-to-screen evidence; terrain render/query/collision and persisted edits; procedural recipe-to-cooked-render evidence; foliage tree/grass LOD, measured actual draw reduction and basic scatter/paint persistence; licensed cooked sample; no unresolved crash/data corruption/resource leak; no mandatory feature tests skipped; documented performance and capabilities. GP is the particle gate; GP0/GP1 are procedural gates; GF0/GF1 are foliage gates.
 
-**R2 checklist:** R1 plus every advertised P1 feature gate, GT1, GP1, GW, expanded performance/visual/soak suite and renewed GR. If a P1 feature is deferred, adjust the published scope and retain its explicit backlog entry.
+**R2 checklist:** R1 plus every advertised P1 feature gate, GT1, GP1, GF1, GW, expanded performance/visual/soak suite and renewed GR. If a P1 feature is deferred, adjust the published scope and retain its explicit backlog entry.
 
 ## 8. Risks and decisions to resolve in M0
 
@@ -418,11 +427,13 @@ Proposed budgets, to calibrate in M0:
 | Transparent particles, water and temporal effects interact | Specify pass order and history policy; maintain dedicated mixed-effect test scenes |
 | Terrain rendering, height queries, picking and collision disagree | Establish one versioned terrain source and test scale/transform/triangulation across every consumer before streaming |
 | Procedural editors expose operations without working runtime implementations | Capability-audit each action; implement or explicitly disable it; prove outputs change and survive bake/reopen |
-| Expanded terrain/procedural scope exceeds the old M6 estimate | Replace the terrain/tools allowance with M6A–M6D, estimate shared work once and staff terrain/physics/tools explicitly |
+| Expanded terrain/procedural/foliage scope exceeds the old M6 estimate | Re-estimate M6A–M6F after the foliage split, count shared work once and staff terrain/foliage/physics/tools explicitly |
+| Foliage pages/LOD are mistaken for draw-call reduction | Measure real calls per pass/view; implement instancing and compatible material groups; compare actor and existing merged-patch baselines with matching content |
+| Existing pager marks asynchronous candidates ready or shared camera LOD leaks between views | Add tested readiness/generation contracts and separate residency from immutable per-view visibility/draw bins |
 | Legacy dependency paths and missing GPU CI | Resolve clean build/packaging and hardware access before expanding the feature promise |
 | Feature breadth outgrows staffing | Ship R1 first; complete R2 work in bounded packages; estimate P2 independently |
 
-Owners to assign: graphics lead (contracts/gates), asset/resource engineer (catalog/schema/compiler bridge), native rendering engineer (device/passes), animation engineer (pose/deformation), effects engineer (particles/water), terrain engineer (heightfields/materials/tiles), physics engineer (terrain/road collision and navigation handoff), procedural/tools engineer (generators/baking/Lua tools), technical artist (fixtures/reference scenes), and QA/build engineer (CI/certification). One person may hold several roles; staffing changes elapsed time and parallelism, not acceptance criteria.
+Owners to assign: graphics lead (contracts/gates), asset/resource engineer (catalog/schema/compiler bridge), native rendering engineer (device/passes), animation engineer (pose/deformation), effects engineer (particles/water), terrain engineer (heightfields/materials/tiles), foliage/rendering owner (species/paging/instancing/LOD and GF0/GF1), physics engineer (terrain/road/foliage collision and navigation handoff), procedural/tools engineer (generators/baking/Lua tools), technical artist (fixtures/reference scenes), and QA/build engineer (CI/certification). One person may hold several roles; staffing changes elapsed time and parallelism, not acceptance criteria.
 
 ## 9. Next implementation increments from the current baseline
 
@@ -436,9 +447,10 @@ Each increment should be independently reviewable and preserve the baseline test
 6. **Complete baseline (`BASE-02/03/05`, `DB-09/10`):** clean Debug/RelWithDebInfo builds, remote native/database CI, GPU runner, versioned fixtures and budgets. Local tests remain mandatory regressions.
 7. **GPU frame (`PIPE-01/02`, `SHADOW-01`):** HDR, depth/normals/velocity, per-view resources, shadows and animated/particle composition. Define water input contracts here.
 8. **Terrain/procedural vertical slices:** start TERR-01/02/03/04 and PROC-01/02/03/05 beside batches B/C once their shared contracts exist. Close render/query/collision agreement, PBR layer painting and recipe-to-cooked-render output; complete M6A/M6C and certify GT0/GP0 before R1.
-9. **R1 completion:** cooked assets, material/light/UI/terrain correctness, reload/recovery and packaging; certify G0/G1/GD/GA/GP/GT0/GP0/G4/G5/G6/GR for P0.
-10. **R2 water/terrain/tools/richer features:** WATER-01 through WATER-06, M6B/M6D and remaining P1 work; validate lake/pool/river, streamed terrain/foliage, procedural worlds and mixed particle/water sequences before R2 certification.
-11. **Backend expansion:** DX12 remains experimental until its own presentation/material/UI/resource/performance gates pass.
+9. **Essential foliage slices:** start FOL-00/01/03 controlled draw evidence beside shared asset work, then FOL-02/04/05/06/07/08/09 initial tiers. Preserve the merged-pine baseline; deliver paged trees/grass, LOD, actual batch/draw reduction and basic procedural tools through M6E/GF0 before R1.
+10. **R1 completion:** cooked assets, material/light/UI/terrain/foliage correctness, reload/recovery and packaging; certify G0/G1/GD/GA/GP/GT0/GP0/GF0/G4/G5/G6/GR for P0.
+11. **R2 water/terrain/tools/richer features:** WATER-01 through WATER-06, M6B/M6D/M6F and remaining P1 work; validate lake/pool/river, streamed terrain/foliage, rich plant/biome tools, procedural worlds and mixed particle/water sequences before R2 certification.
+12. **Backend expansion:** DX12 remains experimental until its own presentation/material/UI/resource/performance gates pass.
 
 Completion records include changed files, actual tests/skips/unavailable results, reference captures, measured costs and limitations. The next executable task is a cooked material/texture reaching DX11 through the catalog adapter with coordinated last-good publication. Canonical identity and pre/post snapshot checks advance batch B but do not satisfy its complete graphics-asset exit condition or GD. CPU skinning, basic particles and catalog migrations remain the implementation foundation. Use the implementation status for commands and current/historical evidence limits. Remote CI confirmation and external-media release coverage remain outstanding.
 
@@ -453,3 +465,5 @@ Completion records include changed files, actual tests/skips/unavailable results
 After these batches, prioritize GPU pass resources, HDR/shadows and recovery for R1. Add lake/pool/river water, soft particles and richer animation against those same frame/asset contracts for R2. Do not estimate the remaining calendar schedule from historical effort ranges until A–C establish representative content, hardware and staffing.
 
 The expanded terrain/procedural work has its own first four reviewable batches, source findings, feature matrix, dependencies and measurable acceptance scenarios in [WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md). Its first correctness and generated-asset slices can proceed alongside B/C; they must not wait until final certification.
+
+Foliage has four separate batches F-A through F-D in [WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md). F-A proves actual instance draw reduction against actor and existing patch baselines; F-B delivers tree LOD/paging/impostors; F-C adds grass and basic foliage authoring for R1; F-D delivers comprehensive plant/biome tools and scale for R2.

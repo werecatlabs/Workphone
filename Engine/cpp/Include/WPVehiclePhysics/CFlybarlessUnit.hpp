@@ -38,57 +38,52 @@ PID loop
 We have need to consider the control loop to deal with servo delays and heli inertia.
 */
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class WPVehiclePhysics_API CFlybarlessUnit
     {
-        class WPVehiclePhysics_API CFlybarlessUnit
-        {
-        public:
-            CFlybarlessUnit();
-            CFlybarlessUnit( const CFlybarlessUnit &vbar ) = delete;
+    public:
+        CFlybarlessUnit();
+        CFlybarlessUnit(const CFlybarlessUnit &vbar) = delete;
 
-            FrameOfRef  m_frame;
-            physics_Vec m_errorVector = physics_Vec::zero();
-            physics_Num m_errorMag = static_cast<physics_Num>( 0.0 );
-            physics_Num m_rollErrorAngle = static_cast<physics_Num>( 0.0 );
-            physics_Num m_pitchErrorAngle = static_cast<physics_Num>( 0.0 );
-            physics_Num m_stickDeadBand = static_cast<physics_Num>( 0.0 );
-            physics_Num m_stickSensitivity = static_cast<physics_Num>( 0.0 );
-            // Multiply by normalized aileron and elevator signal to get desired precession rate in
-            // Radians/s
-            physics_Num m_stickExpo = static_cast<physics_Num>( 0.0 );
-            physics_Num m_rollGain = static_cast<physics_Num>( 0.0 );
-            // The roll servo gain i.e. servo normalized deflection per radian of the roll error between
-            // shaft and vbar vector
-            physics_Num m_pitchGain = static_cast<physics_Num>( 0.0 );
-            // The pitch servo gain i.e. servo normalized deflection per radian of the pitch error
-            // between shaft and vbar vector
-            physics_Num m_angleLimit = static_cast<physics_Num>( 0.0 );
-            // Sets a limit to the angle between VBar Yaxis and shaft Yaxis in Radians
-            physics_Num m_decay = static_cast<physics_Num>(
-                0.0 ); // The time constant for the decay of the VBar-to-Shaft angle
-            physics_Num m_stabGain = static_cast<physics_Num>( 0.0 );
-            physics_Num m_directMix = static_cast<physics_Num>( 0.0 );
-            physics_Num m_ailCommand = static_cast<physics_Num>( 0.0 );
-            // The exposed and filtered aileron command value derived from the aileron channel value
-            // passed into the vbar unit
-            physics_Num m_eleCommand = static_cast<physics_Num>( 0.0 );
-            // The exposed and filtered elevator command value derived from the elevator channel value
-            // passed into the vbar unit
-            physics_Num m_ailDemand = static_cast<physics_Num>(
-                0.0 ); // This is the requested aileron rate (roll rate) in Radians/s
-            physics_Num m_eleDemand = static_cast<physics_Num>( 0.0 );
-            // This is the requested elevator rate (pitching rate) in Radians/s
-            physics_Num m_ailFilter = static_cast<physics_Num>( 0.0 );
-            // This is the slew time in seconds for the aileron signal to go from 0 to 1
-            physics_Num m_eleFilter = static_cast<physics_Num>( 0.0 );
-            physics_Num m_bailGain = static_cast<physics_Num>( 0.0 );
-            physics_Num m_bailCollective = static_cast<physics_Num>( 0.0 );
-            s32         m_bailValue = 0;
-            bool        m_stabilize = false;
-        }; // CFlybarlessUnit
-    } // namespace vehicle
-} // namespace workphone
+        FrameOfRef m_frame;
+        physics_Vec m_errorVector = physics_Vec::zero();
+        physics_Num m_errorMag = 0.0;
+        physics_Num m_rollErrorAngle = 0.0;
+        physics_Num m_pitchErrorAngle = 0.0;
+        physics_Num m_stickDeadBand = 0.0;
+        physics_Num m_stickSensitivity = 0.0;
+        // Multiply by normalized aileron and elevator signal to get desired precession rate in
+        // Radians/s
+        physics_Num m_stickExpo = 0.0;
+        physics_Num m_rollGain = 0.0;
+        // The roll servo gain i.e. servo normalized deflection per radian of the roll error between
+        // shaft and vbar vector
+        physics_Num m_pitchGain = 0.0;
+        // The pitch servo gain i.e. servo normalized deflection per radian of the pitch error
+        // between shaft and vbar vector
+        physics_Num m_angleLimit = 0.0;
+        // Sets a limit to the angle between VBar Yaxis and shaft Yaxis in Radians
+        physics_Num m_decay = 0.0; // The time constant for the decay of the VBar-to-Shaft angle
+        physics_Num m_stabGain = 0.0;
+        physics_Num m_directMix = 0.0;
+        physics_Num m_ailCommand = 0.0;
+        // The exposed and filtered aileron command value derived from the aileron channel value
+        // passed into the vbar unit
+        physics_Num m_eleCommand = 0.0;
+        // The exposed and filtered elevator command value derived from the elevator channel value
+        // passed into the vbar unit
+        physics_Num m_ailDemand = 0.0; // This is the requested aileron rate (roll rate) in Radians/s
+        physics_Num m_eleDemand = 0.0;
+        // This is the requested elevator rate (pitching rate) in Radians/s
+        physics_Num m_ailFilter = 0.0;
+        // This is the slew time in seconds for the aileron signal to go from 0 to 1
+        physics_Num m_eleFilter = 0.0;
+        physics_Num m_bailGain = 0.0;
+        physics_Num m_bailCollective = 0.0;
+        s32 m_bailValue = 0;
+        bool m_stabilize = false;
+    }; // CFlybarlessUnit
+}
 
 #endif //  Flybarless1H

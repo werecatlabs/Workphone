@@ -34,8 +34,8 @@ struct wp_collision_shape;
 
 namespace workphone
 {
-    static const u32 FPF_ENABLE = ( 1 << 0 );          /* 0x00 */
-    static const u32 FPF_ENABLECOLLISION = ( 1 << 1 ); /* 0x01 */
+    static constexpr u32 FPF_ENABLE = (1 << 0); /* 0x00 */
+    static constexpr u32 FPF_ENABLECOLLISION = (1 << 1); /* 0x01 */
 
     enum PhysicsBodyTypes
     {
@@ -90,7 +90,7 @@ namespace workphone
 
         class WPPhysicsBoxShape2;
         class WPPhysicsVehicleWheel;
-    }  // namespace physics
-}  // namespace workphone
+    } // namespace physics
+} // namespace workphone
 
 #endif

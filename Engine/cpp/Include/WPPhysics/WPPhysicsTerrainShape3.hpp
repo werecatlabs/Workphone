@@ -6,13 +6,12 @@
 
 namespace workphone::physics
 {
-
     class WPPhysicsTerrainShape3 : public WPPhysicsShape3T<TerrainShape>
     {
     public:
         WPPhysicsTerrainShape3();
 
-        void load( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
         SmartPtr<IPhysicsShape3> clone() override;
 
     private:
@@ -23,7 +22,6 @@ namespace workphone::physics
         Array<wp_f32> m_vertices;
         Array<wp_u32> m_indices;
     };
-
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 #endif

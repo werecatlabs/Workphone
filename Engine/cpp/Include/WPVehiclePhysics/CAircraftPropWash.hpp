@@ -11,48 +11,45 @@
 #include <WPVehiclePhysics/InputController.hpp>
 #include <Workphone/Math/LinearSpline1.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class WPVehiclePhysics_API CAircraftPropWash : public CAircraftAttachment<IAircraftPropWash>
     {
-        class WPVehiclePhysics_API CAircraftPropWash : public CAircraftAttachment<IAircraftPropWash>
-        {
-        public:
-            CAircraftPropWash();
-            ~CAircraftPropWash() override;
+    public:
+        CAircraftPropWash();
+        ~CAircraftPropWash() override;
 
-            void load( SmartPtr<ISharedObject> data ) override;
-            void loadFromData( void *pData );
-            void unload( SmartPtr<ISharedObject> data ) override;
+        void load(SmartPtr<ISharedObject> data) override;
+        void loadFromData(void *pData);
+        void unload(SmartPtr<ISharedObject> data) override;
 
-            Vector3<real_Num> getPropWash() override;
-            Vector3<real_Num> getPropWash( s32 section ) override;
+        Vector3<real_Num> getPropWash() override;
+        Vector3<real_Num> getPropWash(s32 section) override;
 
-            SmartPtr<IAircraftPropellerUnit> getPropellerUnit() const override;
-            void setPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit ) override;
+        SmartPtr<IAircraftPropellerUnit> getPropellerUnit() const override;
+        void setPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit) override;
 
-            real_Num getStrength() const override;
-            void     setStrength( real_Num strength ) override;
+        real_Num getStrength() const override;
+        void setStrength(real_Num strength) override;
 
-            Array<bool>       &getAffectedSections() override;
-            const Array<bool> &getAffectedSections() const override;
-            void               setAffectedSections( const Array<bool> &affectedSections ) override;
+        Array<bool> &getAffectedSections() override;
+        const Array<bool> &getAffectedSections() const override;
+        void setAffectedSections(const Array<bool> &affectedSections) override;
 
-            Array<float>       &getSectionMultipliers() override;
-            const Array<float> &getSectionMultipliers() const override;
-            void                setSectionMultipliers( const Array<float> &sectionMultipliers ) override;
+        Array<float> &getSectionMultipliers() override;
+        const Array<float> &getSectionMultipliers() const override;
+        void setSectionMultipliers(const Array<float> &sectionMultipliers) override;
 
-        private:
-            SmartPtr<IAircraftPropellerUnit> m_propellerUnit;
+    private:
+        SmartPtr<IAircraftPropellerUnit> m_propellerUnit;
 
-            LinearSpline1<f32> m_curve;
-            real_Num           m_strength = static_cast<real_Num>( 0.0 );
-            real_Num           m_maxSpeed = static_cast<real_Num>( 1e10 );
+        LinearSpline1<f32> m_curve;
+        real_Num m_strength = 0.0;
+        real_Num m_maxSpeed = 1e10;
 
-            Array<bool>     m_affectedSections;
-            Array<real_Num> m_sectionMultipliers;
-        };
-    } // namespace vehicle
-} // namespace workphone
+        Array<bool> m_affectedSections;
+        Array<real_Num> m_sectionMultipliers;
+    };
+}
 
 #endif // PropWash_h__

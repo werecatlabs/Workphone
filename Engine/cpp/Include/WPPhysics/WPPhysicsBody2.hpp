@@ -25,12 +25,12 @@ namespace workphone::physics
             return m_enableGravity;
         }
 
-        virtual void setEnableGravity( bool enableGravity )
+        virtual void setEnableGravity(bool enableGravity)
         {
             m_enableGravity = enableGravity;
         }
 
-        void setCollisionMask( u32 mask )
+        void setCollisionMask(u32 mask)
         {
             m_collisionMask = mask;
         }
@@ -50,18 +50,18 @@ namespace workphone::physics
             m_constraints.clear();
         }
 
-        virtual void removeConstraint( SmartPtr<IPhysicsConstraint2> constraint )
+        virtual void removeConstraint(SmartPtr<IPhysicsConstraint2> constraint)
         {
-            m_constraints.erase( std::remove( m_constraints.begin(), m_constraints.end(), constraint ),
-                                 m_constraints.end() );
+            m_constraints.erase(std::remove(m_constraints.begin(), m_constraints.end(), constraint),
+                                m_constraints.end());
         }
 
-        virtual void addConstraint( SmartPtr<IPhysicsConstraint2> constraint )
+        virtual void addConstraint(SmartPtr<IPhysicsConstraint2> constraint)
         {
-            if( constraint && std::find( m_constraints.begin(), m_constraints.end(), constraint ) ==
-                                  m_constraints.end() )
+            if(constraint && std::find(m_constraints.begin(), m_constraints.end(), constraint) ==
+               m_constraints.end())
             {
-                m_constraints.push_back( constraint );
+                m_constraints.push_back(constraint);
             }
         }
 
@@ -70,6 +70,6 @@ namespace workphone::physics
         bool m_enableGravity = true;
         Array<SmartPtr<IPhysicsConstraint2>> m_constraints;
     };
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 #endif  // WPPHYSICSBODY2_HPP

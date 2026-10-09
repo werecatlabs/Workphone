@@ -1,16 +1,13 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include "WPVehiclePhysics/RotorHead.hpp"
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    TRotorHead::TRotorHead()
     {
-        TRotorHead::TRotorHead()
-        {
-        }
+    }
 
-        TRotorHead::~TRotorHead()
-        {
-        }
-    } // namespace vehicle
-} // namespace workphone
+    TRotorHead::~TRotorHead()
+    {
+    }
+}

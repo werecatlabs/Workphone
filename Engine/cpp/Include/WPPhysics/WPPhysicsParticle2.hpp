@@ -23,11 +23,11 @@ namespace workphone::physics
     class WPPhysicsParticle2 : public WPPhysicsBody2<IPhysicsParticle2>
     {
     public:
-        WPPhysicsParticle2( IPhysicsManager2D *creator );
+        WPPhysicsParticle2(IPhysicsManager2D *creator);
 
         ~WPPhysicsParticle2() override;
 
-        void update( const s32 &task, const time_interval &t, const time_interval &dt );
+        void update(const s32 &task, const time_interval &t, const time_interval &dt);
 
         const String &getComponentType() const;
 
@@ -38,74 +38,74 @@ namespace workphone::physics
         //
         // IPhysicsBody2 functions
         //
-        void setPosition( const Vector2<real_Num> &position ) override;
+        void setPosition(const Vector2<real_Num> &position) override;
 
         Vector2<real_Num> getPosition() const override;
 
-        void setRelativePosition( const Vector2<real_Num> &position );
+        void setRelativePosition(const Vector2<real_Num> &position);
 
         Vector2<real_Num> getRelativePosition() const;
 
-        void setTargetPosition( const Vector2<real_Num> &position ) override;
+        void setTargetPosition(const Vector2<real_Num> &position) override;
 
         Vector2<real_Num> getTargetPosition() const override;
 
-        void setOrientation( real_Num orientation ) override;
+        void setOrientation(real_Num orientation) override;
 
         real_Num getOrientation() const override;
 
         real_Num getAngularVelocity() const override;
 
-        void addForce( const Vector2<real_Num> &force ) override;
+        void addForce(const Vector2<real_Num> &force) override;
 
-        void setForce( const Vector2<real_Num> &force ) override;
+        void setForce(const Vector2<real_Num> &force) override;
 
         Vector2<real_Num> getForce() const override;
 
-        void addTorque( real_Num torque ) override;
+        void addTorque(real_Num torque) override;
 
-        void setTorque( real_Num torque ) override;
+        void setTorque(real_Num torque) override;
 
         real_Num getTorque() const override;
 
-        void addVelocity( const Vector2<real_Num> &velocity,
-                          const Vector2<real_Num> &relPos = Vector2<real_Num>::ZERO ) override;
+        void addVelocity(const Vector2<real_Num> &velocity,
+                         const Vector2<real_Num> &relPos = Vector2<real_Num>::ZERO) override;
 
-        void setVelocity( const Vector2<real_Num> &velocity ) override;
+        void setVelocity(const Vector2<real_Num> &velocity) override;
 
         Vector2<real_Num> getVelocity() const override;
 
-        void setMaxVelocity( const Vector2<real_Num> &velocity ) override;
+        void setMaxVelocity(const Vector2<real_Num> &velocity) override;
 
         Vector2<real_Num> getMaxVelocity() const override;
 
-        void setLinearDampValue( real_Num linearDampValue ) override;
+        void setLinearDampValue(real_Num linearDampValue) override;
 
         real_Num getLinearDampValue() const override;
 
-        void setAngularDampValue( real_Num angularDampValue ) override;
+        void setAngularDampValue(real_Num angularDampValue) override;
 
         real_Num getAngularDampValue() const override;
 
-        void setAirResistance( real_Num airResistance ) override;
+        void setAirResistance(real_Num airResistance) override;
 
         real_Num getAirResistance() const override;
 
-        void setFlag( u32 flag, bool value ) override;
+        void setFlag(u32 flag, bool value) override;
 
-        bool getFlag( u32 flag ) const override;
+        bool getFlag(u32 flag) const override;
 
         u32 getBodyType() const override;
 
-        void setObjectType( hash_type type ) override;
+        void setObjectType(hash_type type) override;
 
         hash_type getObjectType() const override;
 
-        void setWorldId( hash_type worldId ) override;
+        void setWorldId(hash_type worldId) override;
 
         hash_type getWorldId() const override;
 
-        void setEnabled( bool enabled ) override;
+        void setEnabled(bool enabled) override;
 
         bool isEnabled() const override;
 
@@ -113,30 +113,30 @@ namespace workphone::physics
 
         AABB2<real_Num> getWorldAABB() const override;
 
-        void setMaterialId( hash_type materialId ) override;
+        void setMaterialId(hash_type materialId) override;
 
         hash_type getMaterialId() const override;
 
-        void setUserData( void *userData ) override;
+        void setUserData(void *userData) override;
 
         void *getUserData() const override;
 
-        void setRestitution( real_Num restitution ) override;
+        void setRestitution(real_Num restitution) override;
 
         real_Num getRestitution() const override;
 
-        void setMass( real_Num mass ) override;
+        void setMass(real_Num mass) override;
 
         real_Num getMass() const override;
 
         real_Num getMassInv() const override;
 
-        void setCollisionType( u32 mask ) override;
+        void setCollisionType(u32 mask) override;
 
         u32 getCollisionType() const override;
 
         /** */
-        void setContraintAABB( const AABB2<real_Num> &contraintRect ) override;
+        void setContraintAABB(const AABB2<real_Num> &contraintRect) override;
 
         /** */
         AABB2<real_Num> getContraintAABB() const override;
@@ -149,18 +149,18 @@ namespace workphone::physics
         // FluidParticle2d functions
         //
 
-        void setCollisionShape( SmartPtr<IPhysicsShape2> shape ) override;
+        void setCollisionShape(SmartPtr<IPhysicsShape2> shape) override;
 
         const SmartPtr<IPhysicsShape2> &getCollisionShape() const override;
 
         // these are called on the physics engine
-        void _addVector( const Vector2<real_Num> &vector );
+        void _addVector(const Vector2<real_Num> &vector);
 
-        void _setVelocity( const Vector2<real_Num> &velocity );
+        void _setVelocity(const Vector2<real_Num> &velocity);
 
         Transform2<real_Num> _getTransformState() const;
 
-        void setSleep( bool sleep ) override;
+        void setSleep(bool sleep) override;
 
         bool isSleeping() const override;
 
@@ -170,15 +170,15 @@ namespace workphone::physics
 
         bool getKinematicMode() const override;
 
-        void setKinematicMode( bool kinematicMode ) override;
+        void setKinematicMode(bool kinematicMode) override;
 
         Vector2<real_Num> getGravity() const override;
 
-        void setGravity( const Vector2<real_Num> &gravity ) override;
+        void setGravity(const Vector2<real_Num> &gravity) override;
 
         bool getEnableGravity() const override;
 
-        void setEnableGravity( bool enableGravity ) override;
+        void setEnableGravity(bool enableGravity) override;
 
     protected:
         /// @brief State context for the particle.
@@ -213,19 +213,19 @@ namespace workphone::physics
         /// @brief The coefficient of restitution for bounces.
         real_Num m_restitution;
         /// @brief The mass of the particle.
-        real_Num m_mass = static_cast<real_Num>( 1 );
+        real_Num m_mass = static_cast<real_Num>(1);
         /// @brief The current orientation of the particle.
-        real_Num m_orientation = static_cast<real_Num>( 0 );
+        real_Num m_orientation = static_cast<real_Num>(0);
         /// @brief The current angular velocity.
-        real_Num m_angularVelocity = static_cast<real_Num>( 0 );
+        real_Num m_angularVelocity = static_cast<real_Num>(0);
         /// @brief The current torque applied to the particle.
-        real_Num m_torque = static_cast<real_Num>( 0 );
+        real_Num m_torque = static_cast<real_Num>(0);
         /// @brief Linear damping factor to simulate drag.
-        real_Num m_linearDamping = static_cast<real_Num>( 0 );
+        real_Num m_linearDamping = static_cast<real_Num>(0);
         /// @brief Angular damping factor.
-        real_Num m_angularDamping = static_cast<real_Num>( 0 );
+        real_Num m_angularDamping = static_cast<real_Num>(0);
         /// @brief Resistance factor from air.
-        real_Num m_airResistance = static_cast<real_Num>( 0 );
+        real_Num m_airResistance = static_cast<real_Num>(0);
 
         /// @brief Bitmask of flags representing the particle's state.
         atomic_u32 m_flags;
@@ -255,8 +255,7 @@ namespace workphone::physics
         /// @brief Static counter for generating unique particle IDs.
         static u32 m_nextId;
     };
-
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 // end namespace
 

@@ -13,86 +13,82 @@ namespace workphone
     class CVehicleManager;
 } // namespace workphone
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class DroneProp;
+
+    class CAerofoil;
+    class CAircraft;
+
+    template <class T>
+    class CAircraftAttachment;
+
+    class Curve;
+    class CAircraftBody;
+    class CAircraftControlSurface;
+    class EngineSimple;
+    class CAircraftPropWash;
+    class GroundEffect;
+    class CAircraftWing;
+    class EngineSimple;
+    class InputController;
+
+    class CEMotor;
+    class CBatteryPackStandard;
+    class CESController;
+    class CGovernorUnit;
+    class CFlybarlessUnit;
+    class CGyroUnit;
+
+    // Type declarations
+
+    class HelicopterBody;
+    class ClimbTransitionData;
+    class TFlyBar;
+    class TFoilData;
+    class TFoilLookup;
+    class GearTrain;
+    class TLinkage;
+    class Lookup;
+    class VehicleParam;
+    class TRotor;
+    class TRotorHead;
+    class TRotorSector;
+    class Servo;
+    class TSurface;
+    class TailLinkage;
+
+    class FrameOfRef;
+    using physics_Vec = Vector3<physics_Num>;
+
+    // constants and Types for XMLPar unit
+    extern const int ABool;
+    extern const int AInt;
+    extern const int ASingle;
+    extern const int AVec;
+
+    class VehicleParam
     {
-        class DroneProp;
+    public:
+        VehicleParam();
 
-        class CAerofoil;
-        class CAircraft;
+        String m_name;
 
-        template <class T>
-        class CAircraftAttachment;
+        // used to specify the variable type (Float, int, bool etc)
+        int m_vType;
 
-        class Curve;
-        class CAircraftBody;
-        class CAircraftControlSurface;
-        class EngineSimple;
-        class CAircraftPropWash;
-        class GroundEffect;
-        class CAircraftWing;
-        class EngineSimple;
-        class InputController;
-
-        class CEMotor;
-        class CBatteryPackStandard;
-        class CESController;
-        class CGovernorUnit;
-        class CFlybarlessUnit;
-        class CGyroUnit;
-
-        // Type declarations
-
-        class HelicopterBody;
-        class ClimbTransitionData;
-        class TFlyBar;
-        class TFoilData;
-        class TFoilLookup;
-        class GearTrain;
-        class TLinkage;
-        class Lookup;
-        class VehicleParam;
-        class TRotor;
-        class TRotorHead;
-        class TRotorSector;
-        class Servo;
-        class TSurface;
-        class TailLinkage;
-
-        class FrameOfRef;
-        using physics_Vec = Vector3<physics_Num>;
-
-        // constants and Types for XMLPar unit
-        extern const int ABool;
-        extern const int AInt;
-        extern const int ASingle;
-        extern const int AVec;
-
-        class VehicleParam
+        union
         {
-        public:
-            VehicleParam();
+            bool m_bVal;
+            int m_iVal;
+            float m_sVal;
+        };
 
-            String m_name;
+        physics_Vec m_vVal = physics_Vec::zero();
 
-            // used to specify the variable type (Float, int, bool etc)
-            int m_vType;
-
-            union
-            {
-                bool  m_bVal;
-                int   m_iVal;
-                float m_sVal;
-            };
-
-            physics_Vec m_vVal = physics_Vec::zero();
-
-            String toString() const;
-        }; // TParam
-
-    } // namespace vehicle
-} // namespace workphone
+        String toString() const;
+    }; // TParam
+}
 
 using namespace workphone::vehicle; // hack
 

@@ -5,24 +5,21 @@
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Math/Vector3.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class WPVehiclePhysics_API GroundEffect : public ISharedObject
     {
-        class WPVehiclePhysics_API GroundEffect : public ISharedObject
-        {
-        public:
-            GroundEffect();
-            ~GroundEffect() override;
+    public:
+        GroundEffect();
+        ~GroundEffect() override;
 
-            void getGroundEffectCoefficients( Vector3<real_Num> PointA, Vector3<real_Num> PointB,
-                                              Vector3<real_Num> PointC, Vector3<real_Num> PointD,
-                                              real_Num &clMultiplier, real_Num &cdMultiplier );
+        void getGroundEffectCoefficients(Vector3<real_Num> PointA, Vector3<real_Num> PointB,
+                                         Vector3<real_Num> PointC, Vector3<real_Num> PointD,
+                                         real_Num &clMultiplier, real_Num &cdMultiplier);
 
-            Vector3<real_Num> m_rayCastAxis;
-            real_Num          m_wingspan;
-        };
-    } // namespace vehicle
-} // namespace workphone
+        Vector3<real_Num> m_rayCastAxis;
+        real_Num m_wingspan;
+    };
+}
 
 #endif // GroundEffect_h__

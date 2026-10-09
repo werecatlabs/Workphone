@@ -5,14 +5,9 @@
 #include <Workphone/Math/Quaternion.hpp>
 #include <cmath>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
-    {
+    HelicopterBody::HelicopterBody() = default;
 
-        HelicopterBody::HelicopterBody() = default;
-
-        HelicopterBody::~HelicopterBody() = default;
-
-    } // namespace vehicle
-} // namespace workphone
+    HelicopterBody::~HelicopterBody() = default;
+}

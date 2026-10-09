@@ -13,10 +13,10 @@ namespace workphone
         CGearBox();
         ~CGearBox() override;
 
-        void       setRatios( const Array<f32> &ratios ) override;
+        void setRatios(const Array<f32> &ratios) override;
         Array<f32> getRatios() const override;
 
-        f32 getRatio( u32 gear ) const override;
+        f32 getRatio(u32 gear) const override;
 
         u32 getNumGears() const override;
 
@@ -25,14 +25,14 @@ namespace workphone
 
         u32 getCurrentGear() const override;
 
-        void setCurrentGear( u32 currentGear );
+        void setCurrentGear(u32 currentGear);
 
         SmartPtr<Properties> getProperties() const override;
-        void                 setProperties( SmartPtr<Properties> properties ) override;
+        void setProperties(SmartPtr<Properties> properties) override;
 
     protected:
         Array<f32> m_ratios;
-        u32        m_currentGear = 0;
+        u32 m_currentGear = 0;
     };
 } // namespace workphone
 

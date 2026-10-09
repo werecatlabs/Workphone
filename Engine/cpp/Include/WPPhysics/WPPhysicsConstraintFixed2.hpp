@@ -3,21 +3,18 @@
 
 #include <Workphone/Interface/Physics/IConstraintFixed2.hpp>
 
-namespace workphone
+namespace workphone::physics
 {
-    namespace physics
+    class WPPhysicsConstraintFixed2 : public IConstraintFixed2
     {
-        class WPPhysicsConstraintFixed2 : public IConstraintFixed2
-        {
-        public:
-            WPPhysicsConstraintFixed2();
-            virtual ~WPPhysicsConstraintFixed2() override;
+    public:
+        WPPhysicsConstraintFixed2();
+        ~WPPhysicsConstraintFixed2() override;
 
-            virtual void *getUserData() const override;
-            virtual void setUserData( void *userData ) override;
+        void *getUserData() const override;
+        void setUserData(void *userData) override;
 
-            WP_CLASS_REGISTER_DECL;
-        };
-    }  // namespace physics
-}  // namespace workphone
+        WP_CLASS_REGISTER_DECL;
+    };
+}
 #endif

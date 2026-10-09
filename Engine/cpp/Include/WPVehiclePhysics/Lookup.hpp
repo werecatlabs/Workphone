@@ -4,23 +4,20 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 #include <array>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class Lookup
     {
-        class Lookup
-        {
-        public:
-            Lookup() = default;
-            ~Lookup() = default;
+    public:
+        Lookup() = default;
+        ~Lookup() = default;
 
-            physics_Num m_rate = static_cast<physics_Num>( 0.0 );
-            physics_Num m_factor = static_cast<physics_Num>( 0.0 );
-            physics_Num m_dFacByRate = static_cast<physics_Num>( 0.0 );
-        };
+        physics_Num m_rate = 0.0;
+        physics_Num m_factor = 0.0;
+        physics_Num m_dFacByRate = 0.0;
+    };
 
-        using LookupArray = std::array<Lookup, 201>;
-    } // namespace vehicle
-} // namespace workphone
+    using LookupArray = std::array<Lookup, 201>;
+}
 
 #endif // Lookup_h__

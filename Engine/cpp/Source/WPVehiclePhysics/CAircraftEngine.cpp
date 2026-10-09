@@ -9,13 +9,13 @@ namespace workphone::vehicle
 {
     CAircraftEngine::CAircraftEngine()
     {
-        setRunning( true );
-        setMaxPower( 700 );
+        setRunning(true);
+        setMaxPower(700);
         m_peakPowerRevs = 0;
         m_peakPowerW = 0;
         m_enginePower = 0;
         m_engineTorque = 0;
-        setThrottle( 0 );
+        setThrottle(0);
 
         m_peakPowerRevs = 12000;
     }
@@ -24,28 +24,28 @@ namespace workphone::vehicle
     {
     }
 
-    void CAircraftEngine::load( SmartPtr<ISharedObject> data )
+    void CAircraftEngine::load(SmartPtr<ISharedObject> data)
     {
-        auto properties = workphone::dynamic_pointer_cast<Properties>( data );
-        if( properties )
+        auto properties = workphone::dynamic_pointer_cast<Properties>(data);
+        if(properties)
         {
             // properties->getPropertyValue("FlEqPeakPowerRevs", PeakPowerRevs);
             // properties->getPropertyValue("FlEqPeakPowerW", PeakPowerW);
             // properties->getPropertyValue("FlEqEnginePower", EnginePower);
             // properties->getPropertyValue("FlEqEngineTorque", EngineTorque);
 
-            properties->getPropertyValue( "FlEqEngineMaxRPM", m_maxRPM );
-            properties->getPropertyValue( "FlEqEnginePeakRPM", m_peakPowerRevs );
-            properties->getPropertyValue( "FlEqPeakPowerW", m_peakPowerW );
-            properties->getPropertyValue( "FlEqEnginePower", m_maxPower );
-            properties->getPropertyValue( "FlEqEngineTorque", m_engineTorque );
-            properties->getPropertyValue( "FlEqEngineMoI", m_moi );
+            properties->getPropertyValue("FlEqEngineMaxRPM", m_maxRPM);
+            properties->getPropertyValue("FlEqEnginePeakRPM", m_peakPowerRevs);
+            properties->getPropertyValue("FlEqPeakPowerW", m_peakPowerW);
+            properties->getPropertyValue("FlEqEnginePower", m_maxPower);
+            properties->getPropertyValue("FlEqEngineTorque", m_engineTorque);
+            properties->getPropertyValue("FlEqEngineMoI", m_moi);
         }
 
-        setRunning( true );
+        setRunning(true);
     }
 
-    void CAircraftEngine::load( void *pData )
+    void CAircraftEngine::load(void *pData)
     {
         // auto data = static_cast<data::aircraft_engine_data *>(pData);
         // m_torqueMultiplier = data->torqueMultiplier;
@@ -66,55 +66,55 @@ namespace workphone::vehicle
         // m_localTransform.setOrientation( qRot );
     }
 
-    void CAircraftEngine::update( const double &time, const double &deltaTime )
+    void CAircraftEngine::update(const double &time, const double &deltaTime)
     {
         auto throttlePos =
-            static_cast<real_Num>( 0.8 ) - m_parentAircraft->getChannel( CAircraft::m_thrChannel );
-        setThrottle( throttlePos );
+            static_cast<real_Num>(0.8) - m_parentAircraft->getChannel(CAircraft::m_thrChannel);
+        setThrottle(throttlePos);
 
         auto idleRPM = m_peakPowerRevs * 0.01;
-        auto throttle = throttlePos / ( 0.8 * 2.0 );
-        auto rpm = idleRPM + ( ( m_peakPowerRevs - idleRPM ) * throttle );
+        auto throttle = throttlePos / (0.8 * 2.0);
+        auto rpm = idleRPM + ((m_peakPowerRevs - idleRPM) * throttle);
         // setRPM(rpm);
 
-        auto peakPowerW = getPeakPowerRevs() * ( Math<real_Num>::pi() / static_cast<real_Num>( 30.0 ) );
-        setPeakPowerW( peakPowerW );
+        auto peakPowerW = getPeakPowerRevs() * (Math<real_Num>::pi() / static_cast<real_Num>(30.0));
+        setPeakPowerW(peakPowerW);
 
         // auto maxPower = m_maxRPM * (Math<real_Num>::pi() / real_Num(30.0));
         // setMaxPower(m_maxPower);
 
         SmartPtr<CAircraftPropeller> pPropeller =
-            workphone::static_pointer_cast<CAircraftPropeller>( m_propeller );
+            workphone::static_pointer_cast<CAircraftPropeller>(m_propeller);
         CAircraftPropeller &thisProp = *pPropeller;
 
-        auto enginePower = static_cast<real_Num>( 1.53 ) *
-                           ( static_cast<real_Num>( 1.25 ) * getThrottle() -
-                             static_cast<real_Num>( 0.6 ) * thisProp.m_wProp / getPeakPowerW() ) *
+        auto enginePower = static_cast<real_Num>(1.53) *
+                           (static_cast<real_Num>(1.25) * getThrottle() -
+                            static_cast<real_Num>(0.6) * thisProp.m_wProp / getPeakPowerW()) *
                            getMaxPower() * thisProp.m_wProp / getPeakPowerW();
 
         // setEnginePower(enginePower);
-        setEnginePower( getMaxPower() * throttle );
+        setEnginePower(getMaxPower() * throttle);
 
         /*   If WProp<=PeakPowerW Then
             EnginePower:=(1.5*Throttle-0.8*(WProp-100)/PeakPowerW)*MaxEngPower*WProp/PeakPowerW
            Else EnginePower:=Throttle*MaxEngPower*(1-2*(WProp-PeakPowerW)/PeakPowerW);*/
-        if( getEnginePower() > getMaxPower() )
+        if(getEnginePower() > getMaxPower())
         {
-            setEnginePower( getMaxPower() );
+            setEnginePower(getMaxPower());
             // limit the engine power to the Max quoted value
         }
 
-        if( getEnginePower() < static_cast<real_Num>( -0.3 ) * getMaxPower() )
+        if(getEnginePower() < static_cast<real_Num>(-0.3) * getMaxPower())
         {
             // limit the engine braking to 30% of the max output
-            setEnginePower( static_cast<real_Num>( -0.3 ) * getMaxPower() );
+            setEnginePower(static_cast<real_Num>(-0.3) * getMaxPower());
         }
 
-        if( m_parentAircraft->getDisplayDebugData() )
+        if(m_parentAircraft->getDisplayDebugData())
         {
             auto localTransform = getLocalTransform();
             auto localPosition = localTransform.getPosition();
-            m_parentAircraft->drawPoint( 0, 1665165123, localPosition, 0xFF0000 );
+            m_parentAircraft->drawPoint(0, 1665165123, localPosition, 0xFF0000);
         }
 
         // static auto nextUpdate = 0.0;
@@ -136,7 +136,7 @@ namespace workphone::vehicle
         return m_propeller;
     }
 
-    void CAircraftEngine::setPropeller( SmartPtr<IAircraftPropeller> propeller )
+    void CAircraftEngine::setPropeller(SmartPtr<IAircraftPropeller> propeller)
     {
         m_propeller = propeller;
     }
@@ -146,17 +146,17 @@ namespace workphone::vehicle
         return m_rpm;
     }
 
-    void CAircraftEngine::setRPM( real_Num rpm )
+    void CAircraftEngine::setRPM(real_Num rpm)
     {
         m_rpm = rpm;
     }
 
     bool CAircraftEngine::isValid() const
     {
-        return Math<real_Num>::isFinite( getMaxPower() ) &&
-               Math<real_Num>::isFinite( m_peakPowerRevs ) && Math<real_Num>::isFinite( m_peakPowerW ) &&
-               Math<real_Num>::isFinite( m_enginePower ) && Math<real_Num>::isFinite( m_engineTorque ) &&
-               Math<real_Num>::isFinite( getThrottle() );
+        return Math<real_Num>::isFinite(getMaxPower()) &&
+               Math<real_Num>::isFinite(m_peakPowerRevs) && Math<real_Num>::isFinite(m_peakPowerW) &&
+               Math<real_Num>::isFinite(m_enginePower) && Math<real_Num>::isFinite(m_engineTorque) &&
+               Math<real_Num>::isFinite(getThrottle());
     }
 
     bool CAircraftEngine::isRunning() const
@@ -164,7 +164,7 @@ namespace workphone::vehicle
         return m_running;
     }
 
-    void CAircraftEngine::setRunning( bool running )
+    void CAircraftEngine::setRunning(bool running)
     {
         m_running = running;
     }
@@ -174,7 +174,7 @@ namespace workphone::vehicle
         return m_maxPower;
     }
 
-    void CAircraftEngine::setMaxPower( real_Num maxPower )
+    void CAircraftEngine::setMaxPower(real_Num maxPower)
     {
         m_maxPower = maxPower;
     }
@@ -184,12 +184,12 @@ namespace workphone::vehicle
         return 0.0f;
     }
 
-    void CAircraftEngine::setTorque( real_Num torque )
+    void CAircraftEngine::setTorque(real_Num torque)
     {
         m_engineTorque = torque;
     }
 
-    f32 CAircraftEngine::getTorque( f32 throttlePosition ) const
+    f32 CAircraftEngine::getTorque(f32 throttlePosition) const
     {
         return 0.0f;
     }
@@ -199,12 +199,12 @@ namespace workphone::vehicle
         return m_engineTorque;
     }
 
-    f32 CAircraftEngine::getMaxTorque( u32 rpm ) const
+    f32 CAircraftEngine::getMaxTorque(u32 rpm) const
     {
         return 0.0f;
     }
 
-    f32 CAircraftEngine::getMinTorque( u32 rpm ) const
+    f32 CAircraftEngine::getMinTorque(u32 rpm) const
     {
         return 0.0f;
     }
@@ -214,7 +214,7 @@ namespace workphone::vehicle
         return m_throttle;
     }
 
-    void CAircraftEngine::setThrottle( real_Num throttle )
+    void CAircraftEngine::setThrottle(real_Num throttle)
     {
         m_throttle = throttle;
     }
@@ -224,7 +224,7 @@ namespace workphone::vehicle
         return m_peakPowerRevs;
     }
 
-    void CAircraftEngine::setPeakPowerRevs( real_Num peakPowerRevs )
+    void CAircraftEngine::setPeakPowerRevs(real_Num peakPowerRevs)
     {
         m_peakPowerRevs = peakPowerRevs;
     }
@@ -234,7 +234,7 @@ namespace workphone::vehicle
         return m_peakPowerW;
     }
 
-    void CAircraftEngine::setPeakPowerW( real_Num peakPowerW )
+    void CAircraftEngine::setPeakPowerW(real_Num peakPowerW)
     {
         m_peakPowerW = peakPowerW;
     }
@@ -244,7 +244,7 @@ namespace workphone::vehicle
         return m_enginePower;
     }
 
-    void CAircraftEngine::setEnginePower( real_Num enginePower )
+    void CAircraftEngine::setEnginePower(real_Num enginePower)
     {
         m_enginePower = enginePower;
     }
@@ -254,7 +254,7 @@ namespace workphone::vehicle
         return m_thrustMultiplier;
     }
 
-    void CAircraftEngine::setThrustMultiplier( real_Num thrustMultiplier )
+    void CAircraftEngine::setThrustMultiplier(real_Num thrustMultiplier)
     {
         m_thrustMultiplier = thrustMultiplier;
     }
@@ -264,7 +264,7 @@ namespace workphone::vehicle
         return m_torqueMultiplier;
     }
 
-    void CAircraftEngine::setTorqueMultiplier( real_Num torqueMultiplier )
+    void CAircraftEngine::setTorqueMultiplier(real_Num torqueMultiplier)
     {
         m_torqueMultiplier = torqueMultiplier;
     }
@@ -274,7 +274,7 @@ namespace workphone::vehicle
         return m_moi;
     }
 
-    void CAircraftEngine::setMoi( real_Num moi )
+    void CAircraftEngine::setMoi(real_Num moi)
     {
         m_moi = moi;
     }
@@ -284,7 +284,7 @@ namespace workphone::vehicle
         return false;
     }
 
-    void CAircraftEngine::setElectric( bool electric )
+    void CAircraftEngine::setElectric(bool electric)
     {
     }
 } // namespace workphone::vehicle

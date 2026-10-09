@@ -3,22 +3,19 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class Servo
     {
-        class Servo
-        {
-        public:
-            Servo() = default;
+    public:
+        Servo() = default;
 
-            physics_Num m_input = static_cast<physics_Num>( 0.0 );
-            physics_Num m_output = static_cast<physics_Num>( 0.0 );
-            physics_Num m_slewRate = static_cast<physics_Num>( 0.0 );
-            physics_Num m_accelerationTime = static_cast<physics_Num>( 0.0 );
-            physics_Num m_speed = static_cast<physics_Num>( 0.0 );
-        };
-    } // namespace vehicle
-} // namespace workphone
+        physics_Num m_input = 0.0;
+        physics_Num m_output = 0.0;
+        physics_Num m_slewRate = 0.0;
+        physics_Num m_accelerationTime = 0.0;
+        physics_Num m_speed = 0.0;
+    };
+}
 
 #endif // Servo_h__

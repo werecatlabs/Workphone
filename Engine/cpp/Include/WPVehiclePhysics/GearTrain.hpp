@@ -3,38 +3,35 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
+    class GearTrain
     {
-        class GearTrain
-        {
-        public:
-            GearTrain() = default;
+    public:
+        GearTrain() = default;
 
-            physics_Num getEngineMainRatio() const;
-            void        setEngineMainRatio( physics_Num engineMainRatio );
+        physics_Num getEngineMainRatio() const;
+        void setEngineMainRatio(physics_Num engineMainRatio);
 
-            physics_Num m_mainTailRatio = static_cast<physics_Num>( 0.0 );
-            physics_Num m_engineTailRatio = static_cast<physics_Num>( 0.0 );
-            physics_Num m_tailDriveLoss = static_cast<physics_Num>( 0.0 );
-            physics_Num m_headFriction = static_cast<physics_Num>( 0.0 );
-            bool        m_drivenTail = false;
+        physics_Num m_mainTailRatio = 0.0;
+        physics_Num m_engineTailRatio = 0.0;
+        physics_Num m_tailDriveLoss = 0.0;
+        physics_Num m_headFriction = 0.0;
+        bool m_drivenTail = false;
 
-        private:
-            physics_Num m_engineMainRatio = 0.0;
-        };
+    private:
+        physics_Num m_engineMainRatio = 0.0;
+    };
 
-        inline physics_Num GearTrain::getEngineMainRatio() const
-        {
-            return m_engineMainRatio;
-        }
+    inline physics_Num GearTrain::getEngineMainRatio() const
+    {
+        return m_engineMainRatio;
+    }
 
-        inline void GearTrain::setEngineMainRatio( physics_Num engineMainRatio )
-        {
-            m_engineMainRatio = engineMainRatio;
-        }
-    } // namespace vehicle
-} // namespace workphone
+    inline void GearTrain::setEngineMainRatio(physics_Num engineMainRatio)
+    {
+        m_engineMainRatio = engineMainRatio;
+    }
+}
 
 #endif // GearTrain_h__

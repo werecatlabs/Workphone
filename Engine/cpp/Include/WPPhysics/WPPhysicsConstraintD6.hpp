@@ -8,64 +8,61 @@ extern "C" {
 #include <WorkphonePhysics/workphone_physics_constraint.h>
 }
 
-namespace workphone
+namespace workphone::physics
 {
-    namespace physics
+    class WPPhysicsConstraintD6 : public IConstraintD6
     {
-        class WPPhysicsConstraintD6 : public IConstraintD6
-        {
-        public:
-            WPPhysicsConstraintD6();
-            virtual ~WPPhysicsConstraintD6() override;
+    public:
+        WPPhysicsConstraintD6();
+        ~WPPhysicsConstraintD6() override;
 
-            virtual void setDrivePosition( const Transform3<real_Num> &pose ) override;
-            virtual Transform3<real_Num> getDrivePosition() const override;
-            virtual void setDrive( D6DriveEnum index, SmartPtr<IConstraintDrive> drive ) override;
-            virtual SmartPtr<IConstraintDrive> getDrive( D6DriveEnum index ) const override;
-            virtual void setLinearLimit( SmartPtr<IConstraintLinearLimit> limit ) override;
-            virtual SmartPtr<IConstraintLinearLimit> getLinearLimit() const override;
-            virtual void setMotion( D6AxisEnum axis, D6MotionEnum type ) override;
-            virtual D6MotionEnum getMotion( D6AxisEnum axis ) const override;
+        void setDrivePosition(const Transform3<real_Num> &pose) override;
+        Transform3<real_Num> getDrivePosition() const override;
+        void setDrive(D6DriveEnum index, SmartPtr<IConstraintDrive> drive) override;
+        SmartPtr<IConstraintDrive> getDrive(D6DriveEnum index) const override;
+        void setLinearLimit(SmartPtr<IConstraintLinearLimit> limit) override;
+        SmartPtr<IConstraintLinearLimit> getLinearLimit() const override;
+        void setMotion(D6AxisEnum axis, D6MotionEnum type) override;
+        D6MotionEnum getMotion(D6AxisEnum axis) const override;
 
-            virtual SmartPtr<IPhysicsBody3> getBodyA() const override;
-            virtual void setBodyA( SmartPtr<IPhysicsBody3> bodyA ) override;
-            virtual SmartPtr<IPhysicsBody3> getBodyB() const override;
-            virtual void setBodyB( SmartPtr<IPhysicsBody3> bodyB ) override;
-            virtual void setLocalPose( JointActorIndexEnum actor,
-                                       const Transform3<real_Num> &localPose ) override;
-            virtual Transform3<real_Num> getLocalPose( JointActorIndexEnum actor ) const override;
-            virtual void setConstraintFlag( ConstraintFlagEnum flag, bool value ) override;
-            virtual ConstraintFlagEnum getConstraintFlags() const override;
-            virtual void setBreakForce( real_Num force, real_Num torque ) override;
-            virtual void getBreakForce( real_Num &force, real_Num &torque ) const override;
-            virtual void setProjectionLinearTolerance( real_Num tolerance ) override;
-            virtual real_Num getProjectionLinearTolerance() const override;
-            virtual void setProjectionAngularTolerance( real_Num tolerance ) override;
-            virtual real_Num getProjectionAngularTolerance() const override;
+        SmartPtr<IPhysicsBody3> getBodyA() const override;
+        void setBodyA(SmartPtr<IPhysicsBody3> bodyA) override;
+        SmartPtr<IPhysicsBody3> getBodyB() const override;
+        void setBodyB(SmartPtr<IPhysicsBody3> bodyB) override;
+        void setLocalPose(JointActorIndexEnum actor,
+                          const Transform3<real_Num> &localPose) override;
+        Transform3<real_Num> getLocalPose(JointActorIndexEnum actor) const override;
+        void setConstraintFlag(ConstraintFlagEnum flag, bool value) override;
+        ConstraintFlagEnum getConstraintFlags() const override;
+        void setBreakForce(real_Num force, real_Num torque) override;
+        void getBreakForce(real_Num &force, real_Num &torque) const override;
+        void setProjectionLinearTolerance(real_Num tolerance) override;
+        real_Num getProjectionLinearTolerance() const override;
+        void setProjectionAngularTolerance(real_Num tolerance) override;
+        real_Num getProjectionAngularTolerance() const override;
 
-            virtual void *getUserData() const override;
-            virtual void setUserData( void *userData ) override;
+        void *getUserData() const override;
+        void setUserData(void *userData) override;
 
-            /**
+        /**
              * @brief Returns the underlying C89 WorkphonePhysics constraint handle.
              * @return Pointer to the internal wp_constraint.
              */
-            wp_constraint *getConstraint() const;
+        wp_constraint *getConstraint() const;
 
-            WP_CLASS_REGISTER_DECL;
+        WP_CLASS_REGISTER_DECL;
 
-        private:
-            wp_constraint *m_constraint = nullptr;  ///< Underlying C89 constraint (D6 joint)
+    private:
+        wp_constraint *m_constraint = nullptr; ///< Underlying C89 constraint (D6 joint)
 
-            SmartPtr<IPhysicsBody3> m_bodyA;  ///< First body involved in the constraint
-            SmartPtr<IPhysicsBody3> m_bodyB;  ///< Second body involved in the constraint
+        SmartPtr<IPhysicsBody3> m_bodyA; ///< First body involved in the constraint
+        SmartPtr<IPhysicsBody3> m_bodyB; ///< Second body involved in the constraint
 
-            // Cached drive/limit objects so getters can return the last value set.
-            SmartPtr<IConstraintDrive> m_drives[WORKPHONE_D6_DRIVE_COUNT];
-            SmartPtr<IConstraintLinearLimit> m_linearLimit;
+        // Cached drive/limit objects so getters can return the last value set.
+        SmartPtr<IConstraintDrive> m_drives[WORKPHONE_D6_DRIVE_COUNT];
+        SmartPtr<IConstraintLinearLimit> m_linearLimit;
 
-            void *m_userData = nullptr;  ///< Opaque user data
-        };
-    }  // namespace physics
-}  // namespace workphone
+        void *m_userData = nullptr; ///< Opaque user data
+    };
+}
 #endif

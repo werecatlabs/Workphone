@@ -28,7 +28,7 @@ namespace workphone
          * @brief Sets the ratio of the differential.
          * @param ratio The ratio to set.
          */
-        void setRatio( f32 ratio ) override;
+        void setRatio(f32 ratio) override;
 
         /**
          * @brief Gets the ratio of the differential.
@@ -41,20 +41,20 @@ namespace workphone
          * @param idx The index of the wheel.
          * @param wheel The wheel controller to set.
          */
-        void setWheel( u32 idx, SmartPtr<IWheelComponent> wheel ) override;
+        void setWheel(u32 idx, SmartPtr<IWheelComponent> wheel) override;
 
         /**
          * @brief Gets the wheel controller for the specified wheel index.
          * @param idx The index of the wheel.
          * @return The wheel controller for the specified wheel index.
          */
-        SmartPtr<IWheelComponent> getWheel( u32 idx ) const override;
+        SmartPtr<IWheelComponent> getWheel(u32 idx) const override;
 
         /**
          * @brief Sets the torque to be applied to the wheels of the differential.
          * @param wheelForce The torque to be applied to the wheels.
          */
-        void setWheelTorque( f32 wheelForce ) override;
+        void setWheelTorque(f32 wheelForce) override;
 
         /**
          * @brief Gets the lock coefficient of the differential.
@@ -66,17 +66,17 @@ namespace workphone
          * @brief Sets the lock coefficient of the differential.
          * @param lockCoefficient The lock coefficient to set.
          */
-        void setLockCoefficient( f32 lockCoefficient ) override;
+        void setLockCoefficient(f32 lockCoefficient) override;
 
         SmartPtr<Properties> getProperties() const override;
-        void                 setProperties( SmartPtr<Properties> properties ) override;
+        void setProperties(SmartPtr<Properties> properties) override;
 
         f32 getWheelTorque() const;
 
     protected:
-        f32                                      m_ratio = 1.0f;
-        f32                                      m_lockCoefficient = 0.0f;
-        f32                                      m_wheelTorque = 0.0f;
+        f32 m_ratio = 1.0f;
+        f32 m_lockCoefficient = 0.0f;
+        f32 m_wheelTorque = 0.0f;
         FixedArray<SmartPtr<IWheelComponent>, 2> m_wheels;
     };
 } // namespace workphone

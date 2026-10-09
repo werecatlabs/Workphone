@@ -3,26 +3,23 @@
 
 #include <Workphone/Interface/Physics/IPhysicsSpring.hpp>
 
-namespace workphone
+namespace workphone::physics
 {
-    namespace physics
+    class WPPhysicsSpring : public IPhysicsSpring
     {
-        class WPPhysicsSpring : public IPhysicsSpring
-        {
-        public:
-            WPPhysicsSpring();
-            virtual ~WPPhysicsSpring() override;
+    public:
+        WPPhysicsSpring();
+        ~WPPhysicsSpring() override;
 
-            virtual real_Num getStiffness() const override;
-            virtual void setStiffness( real_Num stiffness ) override;
-            virtual real_Num getDamping() const override;
-            virtual void setDamping( real_Num damping ) override;
+        real_Num getStiffness() const override;
+        void setStiffness(real_Num stiffness) override;
+        real_Num getDamping() const override;
+        void setDamping(real_Num damping) override;
 
-            virtual void *getUserData() const override;
-            virtual void setUserData( void *userData ) override;
+        void *getUserData() const override;
+        void setUserData(void *userData) override;
 
-            WP_CLASS_REGISTER_DECL;
-        };
-    }  // namespace physics
-}  // namespace workphone
+        WP_CLASS_REGISTER_DECL;
+    };
+}
 #endif

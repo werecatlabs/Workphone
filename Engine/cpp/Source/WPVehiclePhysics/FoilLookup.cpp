@@ -1,9 +1,6 @@
 #include <WPVehiclePhysics/WPVehiclePhysicsPCH.hpp>
 #include "WPVehiclePhysics/FoilLookup.hpp"
 
-namespace workphone
+namespace workphone::vehicle
 {
-    namespace vehicle
-    {
-    } // namespace vehicle
-} // namespace workphone
+}

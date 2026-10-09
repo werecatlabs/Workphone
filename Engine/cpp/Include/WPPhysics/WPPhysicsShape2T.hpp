@@ -18,30 +18,30 @@ namespace workphone::physics
     class WPPhysicsShape2T : public T
     {
     public:
-        explicit WPPhysicsShape2T( wp_collision_shape_type type );
-        explicit WPPhysicsShape2T( wp_collision_shape *shape );
+        explicit WPPhysicsShape2T(wp_collision_shape_type type);
+        explicit WPPhysicsShape2T(wp_collision_shape *shape);
         ~WPPhysicsShape2T() override;
 
         void *getNativeObject() const;
         wp_collision_shape *getShape() const;
 
         bool isAttached() const;
-        void _getObject( void **ppObject ) const;
+        void _getObject(void **ppObject) const;
         u8 getType() const;
         bool isEnabled() const;
-        void setEnabled( bool enabled );
+        void setEnabled(bool enabled);
         bool isTrigger() const;
-        void setTrigger( bool trigger );
-        void setCollisionType( u32 mask );
+        void setTrigger(bool trigger);
+        void setCollisionType(u32 mask);
         u32 getCollisionType() const;
-        void setCollisionMask( u32 mask );
+        void setCollisionMask(u32 mask);
         u32 getCollisionMask() const;
         SmartPtr<IStateContext> getStateContext() const;
-        void setStateContext( SmartPtr<IStateContext> stateContext );
+        void setStateContext(SmartPtr<IStateContext> stateContext);
         SmartPtr<IStateListener> getStateListener() const;
-        void setStateListener( SmartPtr<IStateListener> stateListener );
+        void setStateListener(SmartPtr<IStateListener> stateListener);
         SmartPtr<Properties> getProperties() const;
-        void setProperties( SmartPtr<Properties> properties );
+        void setProperties(SmartPtr<Properties> properties);
 
     private:
         wp_collision_shape *m_shape = nullptr;
@@ -49,8 +49,9 @@ namespace workphone::physics
         SmartPtr<IStateListener> m_stateListener;
         SmartPtr<Properties> m_properties;
     };
+
     extern template class WPPhysicsShape2T<BoxShape2>;
     extern template class WPPhysicsShape2T<SphereShape2>;
-}  // namespace workphone::physics
+} // namespace workphone::physics
 
 #endif
