@@ -707,17 +707,20 @@ namespace workphone
                             return 1;
                         },
                         dx11Renderer );
+
                     // Particle simulation is updated by GraphicsScene::update, once per
                     // simulation cycle. Each camera consumes its own immutable draw snapshot.
-                    for( auto &object : m_particleSystems.snapshot() )
+                    for( auto &object : m_particleSystems )
                     {
                         auto particles = dynamic_pointer_cast<CParticleSystem>( object );
                         if( !particles || !particles->isVisible() || !particles->isLoaded() )
                             continue;
+
                         auto viewport = rawRenderer->getViewport();
                         if( viewport &&
                             !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) )
                             continue;
+
                         auto owner = particles->getOwner();
                         Matrix4F world =
                             owner

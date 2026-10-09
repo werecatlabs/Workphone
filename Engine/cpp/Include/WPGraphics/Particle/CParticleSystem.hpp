@@ -24,11 +24,6 @@ namespace workphone
             CParticleSystem();
             ~CParticleSystem() override;
 
-            void initialise( SmartPtr<IBuildDirector> objectTemplate,
-                             SmartPtr<Properties> instanceProperties );
-
-            void createComponent( SmartPtr<IParticleNode> particleComponent );
-
             void update() override;
             void load( SmartPtr<ISharedObject> data ) override;
             void unload( SmartPtr<ISharedObject> data ) override;

@@ -1,8 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include "WPGraphics/Particle/CParticleTechnique.hpp"
-#include "WPGraphics/Particle/Jobs/UpdateAffectorsJob.hpp"
-#include "WPGraphics/Particle/Jobs/UpdateEmittersJob.hpp"
-#include "WPGraphics/Particle/Jobs/ParticleUpdateJob.hpp"
 #include <Workphone/Workphone.hpp>
 
 namespace workphone

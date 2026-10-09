@@ -1,6 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
-
-#include "WPGraphics/Particle/Emitters/CParticleEmitter.hpp"
+#include "WPGraphics/Particle/CParticleEmitter.hpp"
 #include <Workphone/Workphone.hpp>
 
 namespace workphone
