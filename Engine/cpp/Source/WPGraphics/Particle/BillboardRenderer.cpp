@@ -1,5 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
-#include <WPGraphics/Particle/Renderers/BillboardRenderer.hpp>
+#include <WPGraphics/Particle/BillboardRenderer.hpp>
 #include <WPGraphics/Particle/ParticleData.hpp>
 #include <WPGraphics/Particle/ParticleState.hpp>
 #include <WPGraphics/Particle/CParticle.hpp>
