@@ -15,6 +15,7 @@ extern "C" {
 
 typedef struct wp_triangle_mesh wp_triangle_mesh;
 
+/* Borrows the vertex/index arrays; they must outlive the mesh. */
 wp_triangle_mesh *wp_triangle_mesh_create( const wp_f32 *vertices, wp_u32 vertex_count,
                                            const wp_u32 *indices, wp_u32 triangle_count );
 void wp_triangle_mesh_destroy( wp_triangle_mesh *mesh );
@@ -26,6 +27,8 @@ const wp_u32 *wp_triangle_mesh_get_indices( const wp_triangle_mesh *mesh );
 
 wp_vec3f wp_triangle_mesh_get_aabb_min( const wp_triangle_mesh *mesh );
 wp_vec3f wp_triangle_mesh_get_aabb_max( const wp_triangle_mesh *mesh );
+/* Call after editing borrowed geometry. Rebuilds acceleration data and
+ * invalidates the owning shape's body bounds when attached to a shape. */
 void wp_triangle_mesh_refit_aabb( wp_triangle_mesh *mesh );
 
 /*

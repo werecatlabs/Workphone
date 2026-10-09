@@ -8,6 +8,7 @@
 #include "workphone_physics_material_registry.h"
 #include "workphone_physics_rigidbody.h"
 #include "workphone_physics_triangle_mesh.h"
+#include "workphone_physics_internal.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -54,6 +55,12 @@ typedef struct wp_collision_shape
     void *native;
     void *user_data;
 } wp_collision_shape;
+
+static void invalidate_shape_bounds( void *context )
+{
+    wp_collision_shape *shape = (wp_collision_shape *)context;
+    wp_rigidbody_invalidate_bounds( shape->body );
+}
 
 static wp_f32 wp_shape_absf( wp_f32 value )
 {
@@ -170,6 +177,7 @@ void wp_collision_shape_set_box_half_extents( wp_collision_shape *shape, wp_vec3
     shape->half_extents.x = wp_shape_absf( half_extents.x );
     shape->half_extents.y = wp_shape_absf( half_extents.y );
     shape->half_extents.z = wp_shape_absf( half_extents.z );
+    invalidate_shape_bounds( shape );
 }
 
 wp_vec3f wp_collision_shape_get_box_half_extents( const wp_collision_shape *shape )
@@ -197,6 +205,7 @@ void wp_collision_shape_set_sphere_radius( wp_collision_shape *shape, wp_f32 rad
     }
 
     shape->radius = wp_shape_absf( radius );
+    invalidate_shape_bounds( shape );
 }
 
 wp_f32 wp_collision_shape_get_sphere_radius( const wp_collision_shape *shape )
@@ -222,6 +231,7 @@ void wp_collision_shape_set_capsule( wp_collision_shape *shape, wp_f32 radius, w
 
     shape->radius = wp_shape_absf( radius );
     shape->half_height = wp_shape_absf( half_height );
+    invalidate_shape_bounds( shape );
 }
 
 wp_f32 wp_collision_shape_get_capsule_radius( const wp_collision_shape *shape )
@@ -267,6 +277,7 @@ void wp_collision_shape_set_plane( wp_collision_shape *shape, wp_vec3f normal, w
     shape->plane_normal.y = normal.y / length;
     shape->plane_normal.z = normal.z / length;
     shape->plane_offset = offset;
+    invalidate_shape_bounds( shape );
 }
 
 wp_vec3f wp_collision_shape_get_plane_normal( const wp_collision_shape *shape )
@@ -303,6 +314,7 @@ void wp_collision_shape_set_mesh_data( wp_collision_shape *shape, const wp_colli
         return;
     }
 
+    invalidate_shape_bounds( shape );
     wp_triangle_mesh_destroy( shape->triangle_mesh );
     shape->triangle_mesh = NULL;
 
@@ -317,6 +329,7 @@ void wp_collision_shape_set_mesh_data( wp_collision_shape *shape, const wp_colli
     {
         shape->triangle_mesh = wp_triangle_mesh_create( data->vertices, data->vertex_count,
                                                         data->indices, data->triangle_count );
+        wp_triangle_mesh_set_refit_callback( shape->triangle_mesh, invalidate_shape_bounds, shape );
     }
 }
 
@@ -351,6 +364,7 @@ void wp_collision_shape_set_local_position( wp_collision_shape *shape, wp_vec3f 
     }
 
     shape->local_position = position;
+    invalidate_shape_bounds( shape );
 }
 
 wp_vec3f wp_collision_shape_get_local_position( const wp_collision_shape *shape )
@@ -374,6 +388,7 @@ void wp_collision_shape_set_local_orientation( wp_collision_shape *shape, wp_qua
     }
 
     shape->local_orientation = wp_shape_normalize_quat( orientation );
+    invalidate_shape_bounds( shape );
 }
 
 wp_quatf wp_collision_shape_get_local_orientation( const wp_collision_shape *shape )
@@ -401,6 +416,10 @@ void wp_collision_shape_set_enabled( wp_collision_shape *shape, wp_s32 enabled )
         return;
     }
 
+    if( wp_collision_shape_is_enabled( shape ) != ( enabled != 0 ) )
+    {
+        invalidate_shape_bounds( shape );
+    }
     if( enabled )
     {
         shape->flags |= WORKPHONE_COLLISION_SHAPE_FLAG_ENABLED;

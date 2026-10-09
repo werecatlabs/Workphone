@@ -6,6 +6,7 @@
 #include "workphone_physics_rigidbody.h"
 #include "workphone_physics_material.h"
 #include "workphone_physics_constraint.h"
+#include "workphone_physics_internal.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@ typedef struct wp_rigidbody
     /* Transform */
     wp_vec3f position;
     wp_quatf orientation;
+    uint64_t bounds_revision;
 
     /* Mass / inertia */
     wp_f32 mass;
@@ -91,6 +93,7 @@ wp_rigidbody *wp_rigidbody_create( wp_rigidbody_type type )
     memset( body, 0, sizeof( wp_rigidbody ) );
 
     body->body_type = type;
+    body->bounds_revision = 1;
     body->flags = WORKPHONE_RIGIDBODY_FLAG_ENABLED | WORKPHONE_RIGIDBODY_FLAG_GRAVITY;
     body->orientation.w = 1.0f;
     body->mass = 1.0f;
@@ -208,7 +211,12 @@ void wp_rigidbody_set_position( wp_rigidbody *body, wp_vec3f position )
     {
         return;
     }
-    body->position = position;
+    if( body->position.x != position.x || body->position.y != position.y ||
+        body->position.z != position.z )
+    {
+        body->position = position;
+        wp_rigidbody_invalidate_bounds( body );
+    }
 }
 
 wp_quatf wp_rigidbody_get_orientation( const wp_rigidbody *body )
@@ -229,7 +237,26 @@ void wp_rigidbody_set_orientation( wp_rigidbody *body, wp_quatf orientation )
     {
         return;
     }
-    body->orientation = wp_quatf_normalize_rb( orientation );
+    orientation = wp_quatf_normalize_rb( orientation );
+    if( body->orientation.x != orientation.x || body->orientation.y != orientation.y ||
+        body->orientation.z != orientation.z || body->orientation.w != orientation.w )
+    {
+        body->orientation = orientation;
+        wp_rigidbody_invalidate_bounds( body );
+    }
+}
+
+uint64_t wp_rigidbody_get_bounds_revision( const wp_rigidbody *body )
+{
+    return body ? body->bounds_revision : 0;
+}
+
+void wp_rigidbody_invalidate_bounds( wp_rigidbody *body )
+{
+    if( body )
+    {
+        ++body->bounds_revision;
+    }
 }
 
 /* =========================================================================
@@ -663,6 +690,7 @@ wp_s32 wp_rigidbody_add_shape( wp_rigidbody *body, wp_collision_shape *shape )
 
     body->shapes[body->shape_count] = shape;
     wp_collision_shape_set_body( shape, body );
+    wp_rigidbody_invalidate_bounds( body );
     return body->shape_count++;
 }
 
@@ -680,6 +708,7 @@ void wp_rigidbody_remove_shape( wp_rigidbody *body, wp_s32 index )
         body->shapes[i] = body->shapes[i + 1];
     }
     body->shapes[--body->shape_count] = NULL;
+    wp_rigidbody_invalidate_bounds( body );
 }
 
 wp_collision_shape *wp_rigidbody_get_shape( const wp_rigidbody *body, wp_s32 index )

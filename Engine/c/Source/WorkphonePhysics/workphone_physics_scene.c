@@ -29,6 +29,12 @@ typedef struct wp_contact_cache_entry {
     wp_s32 active;
 } wp_contact_cache_entry;
 
+typedef struct wp_actor_bounds_cache {
+    uint64_t revision;
+    wp_s32 valid;
+    wp_s32 borrowed_vertices;
+} wp_actor_bounds_cache;
+
 /* Forward declarations for internal functions */
 static wp_contact_cache_entry *find_manifold( wp_physics_scene *scene, wp_rigidbody *a, wp_rigidbody *b );
 static wp_s32 should_update_manifold( wp_physics_scene *scene, wp_contact_cache_entry *entry, wp_rigidbody *a, wp_rigidbody *b );
@@ -44,6 +50,8 @@ typedef struct wp_physics_scene
     wp_s32 actor_count, actor_capacity;
     wp_f32 *sleep_time;
     wp_s32 *actor_proxies;
+    wp_actor_bounds_cache *bounds_cache;
+    wp_scene_broadphase_stats broadphase_stats;
 
     wp_vec3f size;
     wp_vec3f gravity;
@@ -378,7 +386,8 @@ static wp_s32 shape_world_aabb( const wp_rigidbody *body, const wp_collision_sha
     return 0;
 }
 
-static wp_s32 body_world_aabb( const wp_rigidbody *body, wp_scene_aabb *bounds )
+static wp_s32 body_world_aabb( const wp_rigidbody *body, wp_scene_aabb *bounds,
+                                wp_s32 *borrowed_vertices )
 {
     wp_s32 shape_index;
     if( !body || !bounds )
@@ -387,10 +396,18 @@ static wp_s32 body_world_aabb( const wp_rigidbody *body, wp_scene_aabb *bounds )
     }
 
     memset( bounds, 0, sizeof( *bounds ) );
+    *borrowed_vertices = 0;
     for( shape_index = 0; shape_index < wp_rigidbody_get_shape_count( body ); ++shape_index )
     {
         wp_scene_aabb shape_bounds;
-        if( shape_world_aabb( body, wp_rigidbody_get_shape( body, shape_index ), &shape_bounds ) )
+        const wp_collision_shape *shape = wp_rigidbody_get_shape( body, shape_index );
+        if( wp_collision_shape_is_enabled( shape ) &&
+            wp_collision_shape_get_type( shape ) == WORKPHONE_COLLISION_SHAPE_MESH &&
+            !wp_collision_shape_get_triangle_mesh( shape ) )
+        {
+            *borrowed_vertices = 1;
+        }
+        if( shape_world_aabb( body, shape, &shape_bounds ) )
         {
             scene_aabb_include( bounds, &shape_bounds );
         }
@@ -598,6 +615,7 @@ static wp_s32 reserve_scene_actors( wp_physics_scene *scene, wp_s32 required )
     wp_rigidbody **actors;
     wp_f32 *sleep_time;
     wp_s32 *proxies;
+    wp_actor_bounds_cache *cache;
     if( required <= scene->actor_capacity ) return 1;
     if( capacity < 8 ) capacity = 8;
     while( capacity < required ) {
@@ -607,19 +625,23 @@ static wp_s32 reserve_scene_actors( wp_physics_scene *scene, wp_s32 required )
     actors = (wp_rigidbody **)calloc( capacity, sizeof(*actors) );
     sleep_time = (wp_f32 *)calloc( capacity, sizeof(*sleep_time) );
     proxies = (wp_s32 *)malloc( (size_t)capacity * sizeof(*proxies) );
-    if( !actors || !sleep_time || !proxies ) {
-        free(actors); free(sleep_time); free(proxies);
+    cache = (wp_actor_bounds_cache *)calloc( capacity, sizeof(*cache) );
+    if( !actors || !sleep_time || !proxies || !cache ) {
+        free(actors); free(sleep_time); free(proxies); free(cache);
         return 0;
     }
     if( scene->actor_count ) {
         memcpy(actors, scene->actors, scene->actor_count * sizeof(*actors));
         memcpy(sleep_time, scene->sleep_time, scene->actor_count * sizeof(*sleep_time));
         memcpy(proxies, scene->actor_proxies, scene->actor_count * sizeof(*proxies));
+        memcpy(cache, scene->bounds_cache, scene->actor_count * sizeof(*cache));
     }
     free(scene->actors); free(scene->sleep_time); free(scene->actor_proxies);
+    free(scene->bounds_cache);
     scene->actors = actors;
     scene->sleep_time = sleep_time;
     scene->actor_proxies = proxies;
+    scene->bounds_cache = cache;
     scene->actor_capacity = capacity;
     return 1;
 }
@@ -660,6 +682,7 @@ wp_physics_scene *wp_physics_scene_create( void )
         wp_broadphase_destroy( scene->broadphase );
         wp_narrowphase_destroy( scene->narrowphase );
         free(scene->actors); free(scene->sleep_time); free(scene->actor_proxies);
+        free(scene->bounds_cache);
         free( scene );
         return NULL;
     }
@@ -700,6 +723,7 @@ void wp_physics_scene_destroy( wp_physics_scene *scene )
     }
 
     free(scene->actors); free(scene->sleep_time); free(scene->actor_proxies);
+    free(scene->bounds_cache);
     free( scene );
 }
 
@@ -712,6 +736,8 @@ void wp_physics_scene_clear( wp_physics_scene *scene )
 
     memset( scene->actors, 0, scene->actor_capacity * sizeof(*scene->actors) );
     memset( scene->sleep_time, 0, scene->actor_capacity * sizeof(*scene->sleep_time) );
+    memset( scene->bounds_cache, 0, scene->actor_capacity * sizeof(*scene->bounds_cache) );
+    memset( &scene->broadphase_stats, 0, sizeof(scene->broadphase_stats) );
     wp_broadphase_clear( scene->broadphase );
     if( scene->contact_cache )
         memset( scene->contact_cache, 0, scene->contact_cache_capacity * sizeof(*scene->contact_cache) );
@@ -748,6 +774,7 @@ wp_s32 wp_physics_scene_add_actor( wp_physics_scene *scene, wp_rigidbody *body )
     if( proxy == WP_BROADPHASE_INVALID_PROXY ) return 0;
     wp_broadphase_configure_proxy( scene->broadphase, proxy, 0, 0, (wp_u32)scene->actor_count );
     scene->actor_proxies[scene->actor_count] = proxy;
+    memset( &scene->bounds_cache[scene->actor_count], 0, sizeof(*scene->bounds_cache) );
     scene->actors[scene->actor_count] = body;
     scene->sleep_time[scene->actor_count] = 0.0f;
     ++scene->actor_count;
@@ -777,9 +804,11 @@ void wp_physics_scene_remove_actor( wp_physics_scene *scene, wp_rigidbody *body 
             scene->actors[i] = scene->actors[last];
             scene->sleep_time[i] = scene->sleep_time[last];
             scene->actor_proxies[i] = scene->actor_proxies[last];
+            scene->bounds_cache[i] = scene->bounds_cache[last];
             scene->actors[last] = NULL;
             scene->sleep_time[last] = 0.0f;
             scene->actor_proxies[last] = WP_BROADPHASE_INVALID_PROXY;
+            memset( &scene->bounds_cache[last], 0, sizeof(*scene->bounds_cache) );
             --scene->actor_count;
             return;
         }
@@ -1711,6 +1740,7 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
     wp_rigidbody *body_a = pair->body_a;
     wp_rigidbody *body_b = pair->body_b;
     wp_s32 sa, sb;
+    ++scene->broadphase_stats.candidate_pairs;
     for( sa = 0; sa < wp_rigidbody_get_shape_count( body_a ); ++sa ) {
         wp_collision_shape *shape_a = wp_rigidbody_get_shape( body_a, sa );
         for( sb = 0; sb < wp_rigidbody_get_shape_count( body_b ); ++sb ) {
@@ -1741,17 +1771,26 @@ static void solve_scene_contacts( wp_physics_scene *scene )
 {
     wp_s32 i;
     if( !scene ) return;
-    /* Refresh every actor, including sleeping and static actors: callers may
-     * edit transforms, enable flags, local shapes, or mesh data between steps.
-     * Fat bounds avoid tree reinsertion for small motion. Exact bounds retain
-     * the previous all-pairs snapshot semantics during positional correction. */
+    /* Body/shape mutations and cooked-mesh refits invalidate revisions even on
+     * sleeping/statics. Uncooked borrowed arrays retain per-substep refresh.
+     * Capture revisions before solving: positional corrections must invalidate
+     * the next substep, not bless the snapshot currently stored in the tree. */
     for( i = 0; i < scene->actor_count; ++i ) {
         wp_rigidbody *body = scene->actors[i];
-        wp_scene_aabb bounds;
-        wp_s32 enabled = wp_rigidbody_has_flag( body, WORKPHONE_RIGIDBODY_FLAG_ENABLED ) &&
-                         body_world_aabb( body, &bounds );
-        if( enabled )
-            wp_broadphase_move_proxy( scene->broadphase, scene->actor_proxies[i], bounds.min, bounds.max );
+        wp_actor_bounds_cache *cache = &scene->bounds_cache[i];
+        uint64_t revision = wp_rigidbody_get_bounds_revision( body );
+        wp_s32 enabled = wp_rigidbody_has_flag( body, WORKPHONE_RIGIDBODY_FLAG_ENABLED );
+        if( enabled ) {
+            if( cache->revision != revision || cache->borrowed_vertices ) {
+                wp_scene_aabb bounds;
+                cache->valid = body_world_aabb( body, &bounds, &cache->borrowed_vertices );
+                cache->revision = revision;
+                ++scene->broadphase_stats.bounds_rebuilds;
+                if( cache->valid )
+                    wp_broadphase_move_proxy( scene->broadphase, scene->actor_proxies[i], bounds.min, bounds.max );
+            } else ++scene->broadphase_stats.bounds_reuses;
+            enabled = cache->valid;
+        }
         wp_broadphase_configure_proxy( scene->broadphase, scene->actor_proxies[i], enabled,
                                       body_inverse_mass( body ) > 0.0f, (wp_u32)i );
     }
@@ -1937,7 +1976,9 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
     }
 
     dt = clampf_scene( dt, 0.0f, 0.25f );
+    memset( &scene->broadphase_stats, 0, sizeof(scene->broadphase_stats) );
     substeps = calculate_motion_substeps( scene, dt );
+    scene->broadphase_stats.collision_substeps = (wp_u32)substeps;
     substep_dt = dt / (wp_f32)substeps;
 
     for( step = 0; step < substeps; ++step )
@@ -1955,6 +1996,17 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
 
     finish_simulation_step( scene, dt );
     scene->frame_count++;
+}
+
+wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physics_scene *scene )
+{
+    wp_scene_broadphase_stats stats = {0};
+    return scene ? scene->broadphase_stats : stats;
+}
+
+wp_s32 wp_physics_scene_set_broadphase_simd_enabled( wp_physics_scene *scene, wp_s32 enabled )
+{
+    return scene ? wp_broadphase_set_simd_enabled( scene->broadphase, enabled ) : 0;
 }
 
 wp_s32 wp_physics_scene_fetch_results( wp_physics_scene *scene, wp_s32 block )

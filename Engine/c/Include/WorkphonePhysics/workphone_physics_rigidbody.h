@@ -67,6 +67,9 @@ wp_vec3f wp_rigidbody_get_position( const wp_rigidbody *body );
 void wp_rigidbody_set_position( wp_rigidbody *body, wp_vec3f position );
 wp_quatf wp_rigidbody_get_orientation( const wp_rigidbody *body );
 void wp_rigidbody_set_orientation( wp_rigidbody *body, wp_quatf orientation );
+/* Changes when the body's transform, shape membership, or child bounds change.
+ * Material/filter/mass state is checked independently of this bounds revision. */
+uint64_t wp_rigidbody_get_bounds_revision( const wp_rigidbody *body );
 
 /* Mass and inertia */
 wp_f32 wp_rigidbody_get_mass( const wp_rigidbody *body );

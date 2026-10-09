@@ -5,6 +5,13 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#if !defined( WP_PHYSICS_DISABLE_SIMD ) && \
+    ( defined( _M_X64 ) || defined( __SSE2__ ) || ( defined( _M_IX86_FP ) && _M_IX86_FP >= 2 ) )
+#    define WP_BP_SSE2 1
+#    include <xmmintrin.h>
+#else
+#    define WP_BP_SSE2 0
+#endif
 
 typedef struct wp_bp_box
 {
@@ -30,6 +37,7 @@ struct wp_broadphase
     wp_bp_order *ordered, *hits;
     wp_s32 *stack;
     wp_s32 capacity, used, free_node, root, proxy_count;
+    wp_s32 ordered_count, order_dirty, simd_enabled;
     wp_broadphase_pair *pairs;
     wp_s32 pair_count, pair_capacity, pair_failed;
     wp_u32 next_order;
@@ -310,6 +318,7 @@ wp_broadphase *wp_broadphase_create( wp_broadphase_type type )
     if( !bp )
         return NULL;
     bp->type = type;
+    bp->order_dirty = 1;
     bp->root = bp->free_node = -1;
     bp->world_min.x = bp->world_min.y = bp->world_min.z = -1000.0f;
     bp->world_max.x = bp->world_max.y = bp->world_max.z = 1000.0f;
@@ -333,6 +342,8 @@ void wp_broadphase_clear( wp_broadphase *bp )
     bp->used = bp->proxy_count = bp->pair_count = 0;
     bp->root = bp->free_node = -1;
     bp->next_order = 0;
+    bp->ordered_count = 0;
+    bp->order_dirty = 1;
 }
 wp_s32 wp_broadphase_create_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f min, wp_vec3f max )
 {
@@ -351,6 +362,7 @@ wp_s32 wp_broadphase_create_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec
     bp->nodes[id].order = bp->next_order++;
     insert_leaf( bp, id );
     ++bp->proxy_count;
+    bp->order_dirty = 1;
     bp->pair_count = 0;
     return id;
 }
@@ -361,6 +373,7 @@ void wp_broadphase_destroy_proxy( wp_broadphase *bp, wp_s32 id )
     remove_leaf( bp, id );
     free_node( bp, id );
     --bp->proxy_count;
+    bp->order_dirty = 1;
     bp->pair_count = 0;
 }
 void wp_broadphase_move_proxy( wp_broadphase *bp, wp_s32 id, wp_vec3f min, wp_vec3f max )
@@ -387,6 +400,8 @@ void wp_broadphase_configure_proxy( wp_broadphase *bp, wp_s32 id, wp_s32 enabled
     if( !is_proxy( bp, id ) )
         return;
     changed = bp->nodes[id].enabled != ( enabled != 0 ) || bp->nodes[id].movable != ( movable != 0 );
+    if( bp->nodes[id].enabled != ( enabled != 0 ) || bp->nodes[id].order != order )
+        bp->order_dirty = 1;
     bp->nodes[id].enabled = enabled != 0;
     bp->nodes[id].movable = movable != 0;
     bp->nodes[id].order = order;
@@ -414,44 +429,165 @@ void wp_broadphase_update_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f
     wp_broadphase_move_proxy( bp, find_proxy( bp, body ), min, max );
 }
 
+wp_s32 wp_broadphase_set_simd_enabled( wp_broadphase *bp, wp_s32 enabled )
+{
+    if( !bp )
+        return 0;
+    bp->simd_enabled = WP_BP_SSE2 && enabled != 0;
+    return bp->simd_enabled;
+}
+wp_s32 wp_broadphase_get_simd_enabled( const wp_broadphase *bp )
+{
+    return bp ? bp->simd_enabled : 0;
+}
+
+/* Internal nodes reuse rank for the maximum descendant rank. This allows a
+ * query to prune whole subtrees whose pairs have already been emitted. */
+static wp_s32 update_rank_bounds( wp_broadphase *bp, wp_s32 id )
+{
+    wp_bp_node *node = &bp->nodes[id];
+    if( !node->enabled )
+        return node->rank = -1;
+    if( node->left != -1 )
+    {
+        wp_s32 left = update_rank_bounds( bp, node->left );
+        wp_s32 right = update_rank_bounds( bp, node->right );
+        node->rank = left > right ? left : right;
+    }
+    return node->rank;
+}
+
+#if WP_BP_SSE2
+/* Four independent boxes per vector. _mm_set_ps gathers only valid scalar
+ * components; it never issues an oversized load from a public wp_vec3f. */
+static unsigned overlap_mask4( wp_bp_box query, const wp_bp_node *nodes, const wp_s32 *ids )
+{
+    const wp_bp_box *a = &nodes[ids[0]].box, *b = &nodes[ids[1]].box;
+    const wp_bp_box *c = &nodes[ids[2]].box, *d = &nodes[ids[3]].box;
+    __m128 separated =
+        _mm_cmpgt_ps( _mm_set_ps( d->min.x, c->min.x, b->min.x, a->min.x ), _mm_set1_ps( query.max.x ) );
+    separated = _mm_or_ps( separated, _mm_cmplt_ps( _mm_set_ps( d->max.x, c->max.x, b->max.x, a->max.x ),
+                                                    _mm_set1_ps( query.min.x ) ) );
+    separated = _mm_or_ps( separated, _mm_cmpgt_ps( _mm_set_ps( d->min.y, c->min.y, b->min.y, a->min.y ),
+                                                    _mm_set1_ps( query.max.y ) ) );
+    separated = _mm_or_ps( separated, _mm_cmplt_ps( _mm_set_ps( d->max.y, c->max.y, b->max.y, a->max.y ),
+                                                    _mm_set1_ps( query.min.y ) ) );
+    separated = _mm_or_ps( separated, _mm_cmpgt_ps( _mm_set_ps( d->min.z, c->min.z, b->min.z, a->min.z ),
+                                                    _mm_set1_ps( query.max.z ) ) );
+    separated = _mm_or_ps( separated, _mm_cmplt_ps( _mm_set_ps( d->max.z, c->max.z, b->max.z, a->max.z ),
+                                                    _mm_set1_ps( query.min.z ) ) );
+    return ( ~(unsigned)_mm_movemask_ps( separated ) ) & 15u;
+}
+#endif
+
+static inline void collect_node( wp_broadphase *bp, const wp_bp_node *a, wp_s32 id, wp_s32 *top,
+                                 wp_s32 *found )
+{
+    wp_bp_node *b = &bp->nodes[id];
+    if( b->left != -1 )
+    {
+        bp->stack[( *top )++] = b->left;
+        bp->stack[( *top )++] = b->right;
+    }
+    else if( overlaps( a->exact, b->exact ) )
+    {
+        bp->hits[*found].proxy = id;
+        bp->hits[( *found )++].order = (wp_u32)b->rank;
+    }
+}
+
+static inline void collect_scalar_step( wp_broadphase *bp, const wp_bp_node *a, wp_s32 rank, wp_s32 *top,
+                                        wp_s32 *found )
+{
+    wp_s32 id = bp->stack[--( *top )];
+    const wp_bp_node *b = &bp->nodes[id];
+    if( b->enabled && b->rank > rank && ( a->movable || b->movable ) && overlaps( a->exact, b->box ) )
+        collect_node( bp, a, id, top, found );
+}
+
+static wp_s32 collect_scalar_query( wp_broadphase *bp, const wp_bp_node *a, wp_s32 rank )
+{
+    wp_s32 top = 1, found = 0;
+    bp->stack[0] = bp->root;
+    while( top )
+        collect_scalar_step( bp, a, rank, &top, &found );
+    return found;
+}
+
+#if WP_BP_SSE2
+static wp_s32 collect_simd_query( wp_broadphase *bp, const wp_bp_node *a, wp_s32 rank )
+{
+    wp_s32 top = 1, found = 0;
+    bp->stack[0] = bp->root;
+    while( top )
+    {
+        if( top >= 4 )
+        {
+            wp_s32 ids[4], lane;
+            unsigned mask = 0;
+            for( lane = 0; lane < 4; ++lane )
+            {
+                const wp_bp_node *node;
+                ids[lane] = bp->stack[--top];
+                node = &bp->nodes[ids[lane]];
+                if( node->enabled && node->rank > rank && ( a->movable || node->movable ) )
+                    mask |= 1u << lane;
+            }
+            if( mask )
+                mask &= overlap_mask4( a->exact, bp->nodes, ids );
+            for( lane = 0; lane < 4; ++lane )
+                if( mask & ( 1u << lane ) )
+                    collect_node( bp, a, ids[lane], &top, &found );
+        }
+        else
+            collect_scalar_step( bp, a, rank, &top, &found );
+    }
+    return found;
+}
+#endif
+
 void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback callback, void *context )
 {
     wp_s32 i, count = 0;
+#if WP_BP_SSE2
+    wp_s32 previous_hits = 0;
+#endif
     if( !bp || !callback || bp->root == -1 )
         return;
-    for( i = 0; i < bp->used; ++i )
-        if( bp->nodes[i].body && bp->nodes[i].enabled )
-        {
-            bp->ordered[count].proxy = i;
-            bp->ordered[count++].order = bp->nodes[i].order;
-        }
-    qsort( bp->ordered, count, sizeof( *bp->ordered ), compare_order );
-    for( i = 0; i < count; ++i )
-        bp->nodes[bp->ordered[i].proxy].rank = i;
+    if( bp->order_dirty )
+    {
+        for( i = 0; i < bp->used; ++i )
+            if( bp->nodes[i].body && bp->nodes[i].enabled )
+            {
+                bp->ordered[count].proxy = i;
+                bp->ordered[count++].order = bp->nodes[i].order;
+            }
+        qsort( bp->ordered, count, sizeof( *bp->ordered ), compare_order );
+        for( i = 0; i < count; ++i )
+            bp->nodes[bp->ordered[i].proxy].rank = i;
+        bp->ordered_count = count;
+        bp->order_dirty = 0;
+    }
+    count = bp->ordered_count;
+    /* Tree rotations can change ancestor rank bounds even without a reorder. */
+    update_rank_bounds( bp, bp->root );
     for( i = 0; i < count; ++i )
     {
         wp_bp_node *a = &bp->nodes[bp->ordered[i].proxy];
-        wp_s32 top = 0, found = 0, h;
-        bp->stack[top++] = bp->root;
-        while( top )
-        {
-            wp_s32 id = bp->stack[--top];
-            wp_bp_node *b = &bp->nodes[id];
-            if( !b->enabled || ( !a->movable && !b->movable ) || !overlaps( a->exact, b->box ) )
-                continue;
-            if( b->left != -1 )
-            {
-                bp->stack[top++] = b->left;
-                bp->stack[top++] = b->right;
-            }
-            else if( b->enabled && b->rank > i && ( a->movable || b->movable ) &&
-                     overlaps( a->exact, b->exact ) )
-            {
-                bp->hits[found].proxy = id;
-                bp->hits[found++].order = (wp_u32)b->rank;
-            }
-        }
-        qsort( bp->hits, found, sizeof( *bp->hits ), compare_order );
+        wp_s32 found, h;
+#if WP_BP_SSE2
+        /* Dense neighbors favor scalar traversal. Decide once per query so
+         * scalar traversal pays no SIMD dispatch cost at each visited node. */
+        if( bp->simd_enabled && previous_hits < 8 )
+            found = collect_simd_query( bp, a, i );
+        else
+#endif
+            found = collect_scalar_query( bp, a, i );
+#if WP_BP_SSE2
+        previous_hits = found;
+#endif
+        if( found > 1 )
+            qsort( bp->hits, found, sizeof( *bp->hits ), compare_order );
         for( h = 0; h < found; ++h )
         {
             wp_broadphase_pair pair;

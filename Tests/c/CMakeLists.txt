@@ -19,6 +19,12 @@ target_link_libraries(WorkphonePhysicsBroadphaseTests PRIVATE WorkphonePhysics)
 set_target_properties(WorkphonePhysicsBroadphaseTests PROPERTIES FOLDER Tests/C)
 add_test(NAME WorkphonePhysics.broadphase COMMAND WorkphonePhysicsBroadphaseTests)
 
+add_executable(WorkphonePhysicsBroadphaseBenchmarks WorkphonePhysicsBroadphaseBenchmarks.c)
+target_include_directories(WorkphonePhysicsBroadphaseBenchmarks PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+target_link_libraries(WorkphonePhysicsBroadphaseBenchmarks PRIVATE WorkphonePhysics)
+set_target_properties(WorkphonePhysicsBroadphaseBenchmarks PROPERTIES FOLDER Tests/C)
+
 add_executable(
     WorkphoneGraphicsMeshTests
     WorkphoneGraphicsMeshTests.c

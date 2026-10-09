@@ -107,6 +107,18 @@ wp_spatial_partitioning_method wp_physics_scene_get_spatial_partitioning( const 
 void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt );
 wp_s32 wp_physics_scene_fetch_results( wp_physics_scene *scene, wp_s32 block );
 
+/* Counts from the most recent successful simulate call, summed over substeps. */
+typedef struct wp_scene_broadphase_stats {
+    uint64_t bounds_rebuilds;
+    uint64_t bounds_reuses;
+    uint64_t candidate_pairs;
+    wp_u32 collision_substeps;
+} wp_scene_broadphase_stats;
+wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physics_scene *scene );
+/* Optional batched SSE2 traversal; returns 0 on targets without SSE2 support.
+ * Scalar traversal is the default and is also used for dense query regions. */
+wp_s32 wp_physics_scene_set_broadphase_simd_enabled( wp_physics_scene *scene, wp_s32 enabled );
+
 /* =========================================================================
  * Threading
  * ====================================================================== */

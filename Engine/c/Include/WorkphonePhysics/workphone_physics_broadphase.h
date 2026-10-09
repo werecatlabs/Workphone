@@ -56,6 +56,11 @@ typedef struct wp_broadphase_pair
 wp_broadphase *wp_broadphase_create( wp_broadphase_type type );
 void wp_broadphase_destroy( wp_broadphase *bp );
 void wp_broadphase_clear( wp_broadphase *bp );
+/* Scalar traversal is the default. Select batched SSE2 traversal when compiled
+ * for an SSE2 target. Returns the
+ * actual enabled state; unsupported targets retain the scalar implementation. */
+wp_s32 wp_broadphase_set_simd_enabled( wp_broadphase *bp, wp_s32 enabled );
+wp_s32 wp_broadphase_get_simd_enabled( const wp_broadphase *bp );
 
 /* =========================================================================
  * Configuration

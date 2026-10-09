@@ -5,6 +5,7 @@
 
 #include "workphone_physics_triangle_mesh.h"
 #include "workphone_collision_aabbtree.h"
+#include "workphone_physics_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -36,6 +37,8 @@ typedef struct wp_triangle_mesh
     wp_u32 bvh_node_capacity;
     WpCollisionAABBTree *aabb_tree;
     void *user_data;
+    void ( *refit_callback )( void * );
+    void *refit_context;
 } wp_triangle_mesh;
 
 static wp_vec3f zero3( void )
@@ -429,6 +432,10 @@ wp_vec3f wp_triangle_mesh_get_aabb_max( const wp_triangle_mesh *mesh )
 void wp_triangle_mesh_refit_aabb( wp_triangle_mesh *mesh )
 {
     wp_u32 i;
+    if( mesh && mesh->refit_callback )
+    {
+        mesh->refit_callback( mesh->refit_context );
+    }
     if( !mesh || !mesh->vertices || mesh->vertex_count == 0u )
     {
         destroy_bvh( mesh );
@@ -455,6 +462,17 @@ void wp_triangle_mesh_refit_aabb( wp_triangle_mesh *mesh )
     }
     rebuild_bvh( mesh );
     rebuild_aabb_tree( mesh );
+}
+
+void wp_triangle_mesh_set_refit_callback( wp_triangle_mesh *mesh,
+                                         void ( *callback )( void * ), void *context )
+{
+    if( !mesh )
+    {
+        return;
+    }
+    mesh->refit_callback = callback;
+    mesh->refit_context = context;
 }
 
 wp_u32 wp_triangle_mesh_query_sphere( const wp_triangle_mesh *mesh, wp_vec3f center, wp_f32 radius,

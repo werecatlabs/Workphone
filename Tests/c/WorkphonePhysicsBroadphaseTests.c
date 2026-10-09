@@ -4,11 +4,12 @@
 #include <workphone_physics_scene.h>
 #include <workphone_physics_rigidbody.h>
 #include <workphone_physics_collisionshape.h>
+#include <workphone_physics_triangle_mesh.h>
 #include <float.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #define CHECK( x )                                                    \
     do                                                                \
@@ -26,6 +27,14 @@ typedef struct test_box
 } test_box;
 /* The broadphase treats body pointers as opaque identities. */
 static int identities[8192];
+static int simd_mode;
+static wp_broadphase *create_test_broadphase( void )
+{
+    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_DBVT );
+    CHECK( bp );
+    CHECK( wp_broadphase_set_simd_enabled( bp, simd_mode ) == wp_broadphase_get_simd_enabled( bp ) );
+    return bp;
+}
 static wp_rigidbody *identity( int i )
 {
     return (wp_rigidbody *)&identities[i];
@@ -96,7 +105,7 @@ static void test_random_updates( void )
     };
     test_box boxes[count];
     int i, frame;
-    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_DBVT );
+    wp_broadphase *bp = create_test_broadphase();
     CHECK( bp );
     memset( boxes, 0, sizeof( boxes ) );
     for( i = 0; i < count; ++i )
@@ -162,7 +171,7 @@ static void test_dense_and_extreme_bounds( void )
 {
     int i;
     wp_rigidbody *out[80];
-    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_DBVT );
+    wp_broadphase *bp = create_test_broadphase();
     wp_vec3f zero = { 0, 0, 0 }, one = { 1, 1, 1 };
     CHECK( bp );
     for( i = 0; i < 80; ++i )
@@ -193,7 +202,7 @@ static void test_dense_and_extreme_bounds( void )
 }
 static void test_small_motion_and_order( void )
 {
-    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_DBVT );
+    wp_broadphase *bp = create_test_broadphase();
     wp_s32 a, b;
     const wp_broadphase_pair *pair;
     CHECK( bp );
@@ -228,6 +237,7 @@ static void test_scene_selections( void )
         wp_collision_shape *sb = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
         wp_vec3f p;
         CHECK( scene && a && b && sa && sb );
+        wp_physics_scene_set_broadphase_simd_enabled( scene, simd_mode );
         wp_physics_scene_set_spatial_partitioning( scene, (wp_spatial_partitioning_method)method );
         wp_physics_scene_set_gravity( scene, (wp_vec3f){ 0, 0, 0 } );
         wp_collision_shape_set_box_half_extents( sa, (wp_vec3f){ .5f, .5f, .5f } );
@@ -286,82 +296,171 @@ static void test_scene_selections( void )
         wp_collision_shape_destroy( sa );
     }
 }
-static void count_pair( const wp_broadphase_pair *pair, void *context )
+static void check_cache_counts( wp_physics_scene *scene, uint64_t rebuilt, uint64_t reused )
 {
-    (void)pair;
-    ++*(int *)context;
+    wp_scene_broadphase_stats stats;
+    wp_physics_scene_simulate( scene, 1.0f / 60.0f );
+    stats = wp_physics_scene_get_broadphase_stats( scene );
+    CHECK( stats.collision_substeps == 1 );
+    CHECK( stats.bounds_rebuilds == rebuilt && stats.bounds_reuses == reused );
 }
-static void benchmark( void )
+
+static void test_bounds_cache( void )
 {
-    enum
-    {
-        count = 4096,
-        rounds = 40
-    };
-    test_box *boxes = (test_box *)calloc( count, sizeof( *boxes ) );
-    wp_broadphase *bp = wp_broadphase_create( WORKPHONE_BROADPHASE_DBVT );
-    int i, j, r, hits = 0;
-    volatile int brute_hits = 0;
-    clock_t start, tree_end, moving_end, brute_end;
-    CHECK( bp && boxes );
-    for( i = 0; i < count; ++i )
-    {
-        boxes[i].min = (wp_vec3f){ (float)( i % 64 ) * 3, (float)( i / 64 ) * 3, 0 };
-        boxes[i].max = boxes[i].min;
-        boxes[i].max.x += 1;
-        boxes[i].max.y += 1;
-        boxes[i].max.z += 1;
-        boxes[i].handle = wp_broadphase_create_proxy( bp, identity( i ), boxes[i].min, boxes[i].max );
-        CHECK( boxes[i].handle >= 0 );
-    }
-    start = clock();
-    for( r = 0; r < rounds; ++r )
-        wp_broadphase_visit_pairs( bp, count_pair, &hits );
-    tree_end = clock();
-    for( r = 0; r < rounds; ++r )
-    {
-        for( i = 0; i < count; ++i )
-        {
-            boxes[i].min.x += .03f;
-            boxes[i].max.x += .03f;
-            wp_broadphase_move_proxy( bp, boxes[i].handle, boxes[i].min, boxes[i].max );
-        }
-        wp_broadphase_visit_pairs( bp, count_pair, &hits );
-    }
-    moving_end = clock();
-    for( r = 0; r < rounds; ++r )
-    {
-        for( i = 0; i < count; ++i )
-        {
-            boxes[i].min.x += .03f;
-            boxes[i].max.x += .03f;
-        }
-        for( i = 0; i < count; ++i )
-            for( j = i + 1; j < count; ++j )
-                if( box_overlap( &boxes[i], &boxes[j] ) )
-                    ++brute_hits;
-    }
-    brute_end = clock();
-    CHECK( hits == 0 && brute_hits == 0 );
-    printf(
-        "Synthetic sparse scene, %d bodies x %d rounds: stationary tree %.2f ms, moving tree %.2f ms, "
-        "all-pairs %.2f ms\n",
-        count, rounds, 1000.0 * ( tree_end - start ) / CLOCKS_PER_SEC,
-        1000.0 * ( moving_end - tree_end ) / CLOCKS_PER_SEC,
-        1000.0 * ( brute_end - moving_end ) / CLOCKS_PER_SEC );
-    wp_broadphase_destroy( bp );
-    free( boxes );
+    wp_physics_scene *scene = wp_physics_scene_create();
+    wp_rigidbody *body = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
+    wp_collision_shape *shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_f32 vertices[] = { 0, 0, 0, 1, 0, 0, 0, 0, 1 };
+    wp_u32 indices[] = { 0, 1, 2 };
+    wp_collision_mesh_data mesh = { vertices, 3, indices, 1 };
+    wp_collision_shape *mesh_shape;
+    uint64_t revision;
+    CHECK( scene && body && shape );
+    wp_physics_scene_set_broadphase_simd_enabled( scene, simd_mode );
+    CHECK( wp_rigidbody_add_shape( body, shape ) >= 0 );
+    CHECK( wp_physics_scene_add_actor( scene, body ) );
+    check_cache_counts( scene, 1, 0 );
+    check_cache_counts( scene, 0, 1 );
+    revision = wp_rigidbody_get_bounds_revision( body );
+    wp_rigidbody_set_position( body, wp_rigidbody_get_position( body ) );
+    wp_rigidbody_set_orientation( body, (wp_quatf){ 1, 0, 0, 0 } );
+    CHECK( wp_rigidbody_get_bounds_revision( body ) == revision );
+    check_cache_counts( scene, 0, 1 );
+    wp_rigidbody_set_position( body, (wp_vec3f){ 10, 0, 0 } );
+    check_cache_counts( scene, 1, 0 );
+    wp_rigidbody_set_orientation( body, (wp_quatf){ .70710678f, 0, 0, .70710678f } );
+    check_cache_counts( scene, 1, 0 );
+    wp_collision_shape_set_box_half_extents( shape, (wp_vec3f){ 2, .1f, .1f } );
+    check_cache_counts( scene, 1, 0 );
+    wp_collision_shape_set_local_position( shape, (wp_vec3f){ 1, 0, 0 } );
+    check_cache_counts( scene, 1, 0 );
+    wp_collision_shape_set_local_orientation( shape, (wp_quatf){ .70710678f, 0, 0, .70710678f } );
+    check_cache_counts( scene, 1, 0 );
+    wp_collision_shape_set_enabled( shape, 0 );
+    check_cache_counts( scene, 1, 0 );
+    check_cache_counts( scene, 0, 1 );
+    wp_collision_shape_set_enabled( shape, 1 );
+    check_cache_counts( scene, 1, 0 );
+    wp_rigidbody_set_flag( body, WORKPHONE_RIGIDBODY_FLAG_ENABLED, 0 );
+    check_cache_counts( scene, 0, 0 );
+    wp_collision_shape_set_box_half_extents( shape, (wp_vec3f){ 1, 1, 1 } );
+    wp_rigidbody_set_flag( body, WORKPHONE_RIGIDBODY_FLAG_ENABLED, 1 );
+    check_cache_counts( scene, 1, 0 );
+    wp_collision_shape_set_trigger( shape, 1 );
+    wp_rigidbody_set_collision_mask( body, 0 );
+    check_cache_counts( scene, 0, 1 ); /* live filter state does not rebuild geometry */
+    wp_collision_shape_destroy( shape );
+    check_cache_counts( scene, 1, 0 );
+    mesh_shape = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_MESH );
+    CHECK( mesh_shape );
+    wp_collision_shape_set_mesh_data( mesh_shape, &mesh );
+    CHECK( wp_collision_shape_get_triangle_mesh( mesh_shape ) );
+    CHECK( wp_rigidbody_add_shape( body, mesh_shape ) >= 0 );
+    check_cache_counts( scene, 1, 0 );
+    check_cache_counts( scene, 0, 1 );
+    vertices[0] = -4;
+    wp_triangle_mesh_refit_aabb(
+        (wp_triangle_mesh *)wp_collision_shape_get_triangle_mesh( mesh_shape ) );
+    check_cache_counts( scene, 1, 0 );
+    check_cache_counts( scene, 0, 1 );
+    /* Missing triangle indices selects the legacy uncooked/borrowed fallback. */
+    mesh.indices = NULL;
+    mesh.triangle_count = 0;
+    wp_collision_shape_set_mesh_data( mesh_shape, &mesh );
+    CHECK( !wp_collision_shape_get_triangle_mesh( mesh_shape ) );
+    check_cache_counts( scene, 1, 0 );
+    vertices[0] = -8;
+    check_cache_counts( scene, 1, 0 );
+    wp_collision_shape_destroy( mesh_shape );
+    check_cache_counts( scene, 1, 0 );
+    check_cache_counts( scene, 0, 1 );
+    wp_physics_scene_destroy( scene );
+    wp_rigidbody_destroy( body );
 }
-int main( int argc, char **argv )
+
+static void test_rotation_and_mass_updates( void )
 {
-    test_random_updates();
-    test_dense_and_extreme_bounds();
-    test_small_motion_and_order();
-    test_scene_selections();
+    wp_physics_scene *scene = wp_physics_scene_create();
+    wp_rigidbody *a = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_rigidbody *b = wp_rigidbody_create( WORKPHONE_RIGIDBODY_STATIC );
+    wp_collision_shape *sa = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_collision_shape *sb = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_scene_broadphase_stats stats;
+    wp_vec3f position;
+    CHECK( scene && a && b && sa && sb );
+    wp_physics_scene_set_broadphase_simd_enabled( scene, simd_mode );
+    wp_physics_scene_set_gravity( scene, (wp_vec3f){ 0, 0, 0 } );
+    wp_collision_shape_set_box_half_extents( sa, (wp_vec3f){ .2f, 2, .2f } );
+    wp_rigidbody_add_shape( a, sa );
+    wp_rigidbody_add_shape( b, sb );
+    wp_rigidbody_set_position( b, (wp_vec3f){ 1.5f, 0, 0 } );
+    CHECK( wp_physics_scene_add_actor( scene, a ) && wp_physics_scene_add_actor( scene, b ) );
+    check_cache_counts( scene, 2, 0 );
+    check_cache_counts( scene, 0, 2 );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs == 0 );
+    wp_rigidbody_put_to_sleep( a );
+    wp_rigidbody_set_orientation( a, (wp_quatf){ .70710678f, 0, 0, .70710678f } );
+    check_cache_counts( scene, 1, 1 );
+    stats = wp_physics_scene_get_broadphase_stats( scene );
+    CHECK( stats.candidate_pairs == 1 );
+    position = wp_rigidbody_get_position( a );
+    CHECK( fabsf( position.x ) + fabsf( position.y ) + fabsf( position.z ) > .01f );
+    wp_rigidbody_set_position( a, (wp_vec3f){ 0, 0, 0 } );
+    wp_rigidbody_set_mass( a, 0 );
+    check_cache_counts( scene, 1, 1 );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs == 0 );
+    wp_rigidbody_set_mass( a, 1 );
+    check_cache_counts( scene, 0, 2 );
+    CHECK( wp_physics_scene_get_broadphase_stats( scene ).candidate_pairs == 1 );
+    wp_physics_scene_destroy( scene );
+    wp_rigidbody_destroy( a );
+    wp_rigidbody_destroy( b );
+    wp_collision_shape_destroy( sa );
+    wp_collision_shape_destroy( sb );
+}
+
+static void test_solver_corrections_invalidate_bounds( void )
+{
+    wp_physics_scene *scene = wp_physics_scene_create();
+    wp_rigidbody *a = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_rigidbody *b = wp_rigidbody_create( WORKPHONE_RIGIDBODY_DYNAMIC );
+    wp_collision_shape *sa = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_collision_shape *sb = wp_collision_shape_create( WORKPHONE_COLLISION_SHAPE_BOX );
+    wp_scene_broadphase_stats stats;
+    CHECK( scene && a && b && sa && sb );
+    wp_physics_scene_set_broadphase_simd_enabled( scene, simd_mode );
+    wp_physics_scene_set_gravity( scene, (wp_vec3f){ 0, 0, 0 } );
+    wp_rigidbody_add_shape( a, sa );
+    wp_rigidbody_add_shape( b, sb );
+    wp_rigidbody_set_position( b, (wp_vec3f){ .5f, 0, 0 } );
+    CHECK( wp_physics_scene_add_actor( scene, a ) && wp_physics_scene_add_actor( scene, b ) );
+    wp_physics_scene_simulate( scene, 1.0f / 30.0f );
+    stats = wp_physics_scene_get_broadphase_stats( scene );
+    CHECK( stats.collision_substeps == 2 && stats.bounds_rebuilds == 4 && stats.bounds_reuses == 0 );
+    CHECK( stats.candidate_pairs == 2 && wp_rigidbody_get_position( a ).x < -.2f );
+    wp_physics_scene_destroy( scene );
+    wp_rigidbody_destroy( a );
+    wp_rigidbody_destroy( b );
+    wp_collision_shape_destroy( sa );
+    wp_collision_shape_destroy( sb );
+}
+
+int main( void )
+{
+    for( simd_mode = 0; simd_mode < 2; ++simd_mode )
+    {
+        random_state = 12673;
+        test_random_updates();
+        test_dense_and_extreme_bounds();
+        test_small_motion_and_order();
+        test_scene_selections();
+        test_bounds_cache();
+        test_rotation_and_mass_updates();
+        test_solver_corrections_invalidate_bounds();
+    }
+    simd_mode = 0;
     puts(
-        "Broadphase oracle, growth, dense pairs, touching, plane bounds, moves, removal, reuse and "
-        "scene selections: passed." );
-    if( argc > 1 && strcmp( argv[1], "--benchmark" ) == 0 )
-        benchmark();
+        "Broadphase scalar/SIMD oracle, growth, dense pairs, touching, plane bounds, removal, "
+        "scene selections, bounds caching and solver corrections: passed." );
     return 0;
 }
