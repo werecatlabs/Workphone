@@ -228,14 +228,6 @@ namespace workphone::render
         }
     }
 
-    void ClawLight::_getObject( void **ppObject ) const
-    {
-        if( ppObject )
-        {
-            *ppObject = m_light;
-        }
-    }
-
     void ClawLight::setPosition( const Vector3<real_Num> &position )
     {
         if( m_light )

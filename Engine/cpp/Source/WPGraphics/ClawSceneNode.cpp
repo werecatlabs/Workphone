@@ -188,7 +188,9 @@ namespace workphone
             }
             else if( auto light = dynamic_pointer_cast<ClawLight>( object ) )
             {
-                wp_light_attach_to_node( light->getNativeLight(), m_node );
+                wp_light *nativeLight = nullptr;
+                light->_getObject( (void **)&nativeLight );
+                wp_light_attach_to_node( nativeLight, m_node );
             }
             else if( auto mesh = dynamic_pointer_cast<ClawMesh>( object ) )
             {
@@ -224,7 +226,9 @@ namespace workphone
             }
             else if( auto light = dynamic_pointer_cast<ClawLight>( object ) )
             {
-                wp_light_detach_from_node( light->getNativeLight(), m_node );
+                wp_light *nativeLight = nullptr;
+                light->_getObject( (void **)&nativeLight );
+                wp_light_detach_from_node( nativeLight, m_node );
             }
             else if( auto mesh = dynamic_pointer_cast<ClawMesh>( object ) )
             {

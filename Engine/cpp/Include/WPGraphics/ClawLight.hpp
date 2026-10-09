@@ -126,9 +126,6 @@ namespace workphone
              */
             bool handleStateChanged( SmartPtr<IState> &state );
 
-
-            void _getObject(void** ppObject) const override;
-
             WP_CLASS_REGISTER_DECL;
 
         private:
