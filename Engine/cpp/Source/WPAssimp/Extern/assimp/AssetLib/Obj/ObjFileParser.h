@@ -55,18 +55,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 namespace Assimp {
 
+// Forward declarations
 class ObjFileImporter;
 class IOSystem;
 class ProgressHandler;
 
+// ------------------------------------------------------------------------------------------------
 /// \class  ObjFileParser
 /// \brief  Parser for a obj waveform file
+// ------------------------------------------------------------------------------------------------
 class ASSIMP_API ObjFileParser {
 public:
-    static const size_t Buffersize = 4096;
-    typedef std::vector<char> DataArray;
-    typedef std::vector<char>::iterator DataArrayIt;
-    typedef std::vector<char>::const_iterator ConstDataArrayIt;
+    static constexpr size_t Buffersize = 4096;
+    using DataArray = std::vector<char>;
+    using DataArrayIt = std::vector<char>::iterator;
+    using ConstDataArrayIt = std::vector<char>::const_iterator;
 
     /// @brief  The default constructor.
     ObjFileParser();
@@ -86,9 +89,7 @@ protected:
     /// Parse the loaded file
     void parseFile(IOStreamBuffer<char> &streamBuffer);
     /// Method to copy the new delimited word in the current line.
-    void copyNextWord(char *pBuffer, size_t length);
-    /// Method to copy the new line.
-    //    void copyNextLine(char *pBuffer, size_t length);
+    void copyNextWord();
     /// Get the number of components in a line.
     size_t getNumComponentsInDataDefinition();
     /// Stores the vector
@@ -105,8 +106,8 @@ protected:
     void getFace(aiPrimitiveType type);
     /// Reads the material description.
     void getMaterialDesc();
-    /// Gets a comment.
-    void getComment();
+    /// Skip a comment.
+    void skipComment();
     /// Gets a a material library.
     void getMaterialLib();
     /// Creates a new material.
@@ -114,9 +115,11 @@ protected:
     /// Gets the group name from file.
     void getGroupName();
     /// Gets the group number from file.
-    void getGroupNumber();
+    void skipGroupNumber();
     /// Gets the group number and resolution from file.
-    void getGroupNumberAndResolution();
+    void skipGroupNumberAndResolution();
+    /// Reselect an existing group (Wavefront `group` keyword) for late material assignment.
+    void reselectGroup();
     /// Returns the index of the material. Is -1 if not material was found.
     int getMaterialIndex(const std::string &strMaterialName);
     /// Parse object name
@@ -130,26 +133,31 @@ protected:
     /// Error report in token
     void reportErrorTokenInFace();
 
-private:
+protected:
     /// Default material name
     static constexpr const char DEFAULT_MATERIAL[] = AI_DEFAULT_MATERIAL_NAME;
     //! Iterator to current position in buffer
-    DataArrayIt m_DataIt;
+    DataArrayIt mDataIt{};
     //! Iterator to end position of buffer
-    DataArrayIt m_DataItEnd;
+    DataArrayIt mDataItEnd{};
     //! Pointer to model instance
-    std::unique_ptr<ObjFile::Model> m_pModel;
+    std::unique_ptr<ObjFile::Model> mModel{};
+    //! When true, trailing `group`/`usemtl` assigns materials to already-built meshes (Viewpoint OBJs).
+    bool mReselectMode{ false };
     //! Current line (for debugging)
-    unsigned int m_uiLine;
-    //! Helper buffer
-    char m_buffer[Buffersize];
-    const char *mEnd; 
+    unsigned int mLine{ 0 };
+    //! Helper buffer (safe)
+    std::string mBuffer;
+	/// End of buffer
+    const char *mEnd{ nullptr };
     /// Pointer to IO system instance.
-    IOSystem *m_pIO;
+    IOSystem *mIO{ nullptr };
     //! Pointer to progress handler
-    ProgressHandler *m_progress;
+    ProgressHandler *mProgress{ nullptr };
     /// Path to the current model, name of the obj file where the buffer comes from
-    const std::string m_originalObjFileName;
+    const std::string mOriginalObjFileName{};
+
+private:
 };
 
 } // Namespace Assimp

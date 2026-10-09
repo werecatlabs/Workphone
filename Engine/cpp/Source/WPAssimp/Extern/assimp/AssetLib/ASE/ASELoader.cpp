@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -189,6 +189,8 @@ void ASEImporter::InternReadFile(const std::string &pFile,
         aiMesh **pp = pScene->mMeshes = new aiMesh *[pScene->mNumMeshes];
         for (std::vector<aiMesh *>::const_iterator i = avOutMeshes.begin(); i != avOutMeshes.end(); ++i) {
             if (!(*i)->mNumFaces) {
+                (*i)->mColors[2] = nullptr;
+                delete *i;
                 continue;
             }
             *pp++ = *i;
@@ -573,8 +575,8 @@ void ASEImporter::AddNodes(const std::vector<BaseNode *> &nodes, aiNode *pcParen
             nd->mParent = node;
 
             // The .Target node is always the first child node
-            for (unsigned int m = 0; m < node->mNumChildren; ++m)
-                node->mChildren[m + 1] = node->mChildren[m];
+            for (unsigned int m = node->mNumChildren; m > 0; --m)
+                node->mChildren[m] = node->mChildren[m - 1];
 
             node->mChildren[0] = nd;
             node->mNumChildren++;
@@ -731,16 +733,28 @@ void ASEImporter::BuildUniqueRepresentation(ASE::Mesh &mesh) {
     unsigned int iCurrent = 0, fi = 0;
     for (std::vector<ASE::Face>::iterator i = mesh.mFaces.begin(); i != mesh.mFaces.end(); ++i, ++fi) {
         for (unsigned int n = 0; n < 3; ++n, ++iCurrent) {
+            const uint32_t curIndex = (*i).mIndices[n];
+            if (curIndex >= mesh.mPositions.size()) {
+                throw DeadlyImportError("ASE: Invalid vertex index in face ", fi, ".");
+            }
             mPositions[iCurrent] = mesh.mPositions[(*i).mIndices[n]];
 
             // add texture coordinates
             for (unsigned int c = 0; c < AI_MAX_NUMBER_OF_TEXTURECOORDS; ++c) {
                 if (mesh.amTexCoords[c].empty()) break;
-                amTexCoords[c][iCurrent] = mesh.amTexCoords[c][(*i).amUVIndices[c][n]];
+                const uint32_t uvIndex = (*i).amUVIndices[c][n];
+                if (uvIndex >= mesh.amTexCoords[c].size()) {
+                    throw DeadlyImportError("ASE: Invalid UV index in face ", fi, ".");
+                }
+                amTexCoords[c][iCurrent] = mesh.amTexCoords[c][uvIndex];
             }
             // add vertex colors
             if (!mesh.mVertexColors.empty()) {
-                mVertexColors[iCurrent] = mesh.mVertexColors[(*i).mColorIndices[n]];
+                const uint32_t colorIndex = (*i).mColorIndices[n];
+                if (colorIndex >= mesh.mVertexColors.size()) {
+                    throw DeadlyImportError("ASE: Invalid vertex color index in face ", fi, ".");
+                }
+                mVertexColors[iCurrent] = mesh.mVertexColors[colorIndex];
             }
             // add normal vectors
             if (!mesh.mNormals.empty()) {
@@ -1266,5 +1280,4 @@ bool ASEImporter::GenerateNormals(ASE::Mesh &mesh) {
 }
 
 #endif // ASSIMP_BUILD_NO_3DS_IMPORTER
-
-#endif // !! ASSIMP_BUILD_NO_BASE_IMPORTER
+#endif // ASSIMP_BUILD_NO_ASE_IMPORTER

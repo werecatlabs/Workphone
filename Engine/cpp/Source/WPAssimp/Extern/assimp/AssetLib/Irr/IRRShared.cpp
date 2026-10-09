@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -139,21 +139,21 @@ void IrrlichtBase::ReadVectorProperty(VectorProperty &out, pugi::xml_node& vecto
             const char *end = ptr + len;
 
             SkipSpaces(&ptr, end);
-            ptr = fast_atoreal_move<float>(ptr, (float &)out.value.x);
+            ptr = fast_atoreal_move(ptr, out.value.x);
             SkipSpaces(&ptr, end);
             if (',' != *ptr) {
                 ASSIMP_LOG_ERROR("IRR(MESH): Expected comma in vector definition");
             } else {
                 SkipSpaces(ptr + 1, &ptr, end);
             }
-            ptr = fast_atoreal_move<float>(ptr, (float &)out.value.y);
+            ptr = fast_atoreal_move(ptr, out.value.y);
             SkipSpaces(&ptr, end);
             if (',' != *ptr) {
                 ASSIMP_LOG_ERROR("IRR(MESH): Expected comma in vector definition");
             } else {
                 SkipSpaces(ptr + 1, &ptr, end);
             }
-            ptr = fast_atoreal_move<float>(ptr, (float &)out.value.z);
+            ptr = fast_atoreal_move(ptr, out.value.z);
         }
     }
 }
@@ -172,8 +172,8 @@ int ConvertMappingMode(const std::string &mode) {
 
 // ------------------------------------------------------------------------------------------------
 // Parse a material from the XML file
-aiMaterial *IrrlichtBase::ParseMaterial(pugi::xml_node& materialNode, unsigned int &matFlags) {
-    aiMaterial *mat = new aiMaterial();
+std::unique_ptr<aiMaterial> IrrlichtBase::ParseMaterial(pugi::xml_node& materialNode, unsigned int &matFlags) {
+    auto mat = std::make_unique<aiMaterial>();
     aiColor4D clr;
     aiString s;
 

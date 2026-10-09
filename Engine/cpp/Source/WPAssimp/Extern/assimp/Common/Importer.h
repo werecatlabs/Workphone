@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 struct aiScene;
 
-namespace Assimp    {
+namespace Assimp {
     class ProgressHandler;
     class IOSystem;
     class BaseImporter;
@@ -232,7 +232,8 @@ public:
      *
      *  @param which LRWC returned by AddLoadRequest().
      *  @return nullptr if there is no scene with this file name
-     *  in the queue of the scene hasn't been loaded yet. */
+     *  in the queue or the scene hasn't been loaded yet. The caller assumes
+     *  ownership of a non-null scene and must delete shared scenes only once. */
     aiScene* GetImport(
         unsigned int which
         );

@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -68,6 +68,7 @@ protected:
     bool readData(const std::string &rMapName);
     bool parseFile();
     bool validateFormat();
+    bool validateLumps() const;
     void getLumps();
     void countLumps();
     void getVertices();

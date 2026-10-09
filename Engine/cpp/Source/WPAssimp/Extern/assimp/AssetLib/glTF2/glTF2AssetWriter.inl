@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -53,6 +53,11 @@ namespace glTF2 {
     using rapidjson::StringRef;
 
     namespace {
+
+        inline bool IsBasisUniversalMimeType(const std::string &mime_type)
+        {
+            return mime_type == "image/ktx2";
+        }
 
         template<typename T, size_t N>
         inline Value& MakeValue(Value& val, T(&r)[N], MemoryPoolAllocator<>& al) {
@@ -268,6 +273,9 @@ namespace glTF2 {
             }
 
             obj.AddMember("uri", Value(uri, w.mAl).Move(), w.mAl);
+            if (!img.mimeType.empty()) {
+                obj.AddMember("mimeType", Value(img.mimeType, w.mAl).Move(), w.mAl);
+            }
         }
     }
 
@@ -546,6 +554,26 @@ namespace glTF2 {
             }
         }
 
+        if (m.materialAnisotropy.isPresent) {
+            Value materialAnisotropy(rapidjson::Type::kObjectType);
+
+            MaterialAnisotropy &anisotropy = m.materialAnisotropy.value;
+
+            if (anisotropy.anisotropyStrength != 0.f) {
+                WriteFloat(materialAnisotropy, anisotropy.anisotropyStrength, "anisotropyStrength", w.mAl);
+            }
+
+            if (anisotropy.anisotropyRotation != 0.f) {
+                WriteFloat(materialAnisotropy, anisotropy.anisotropyRotation, "anisotropyRotation", w.mAl);
+            }
+
+            WriteTex(materialAnisotropy, anisotropy.anisotropyTexture, "anisotropyTexture", w.mAl);
+
+            if (!materialAnisotropy.ObjectEmpty()) {
+                exts.AddMember("KHR_materials_anisotropy", materialAnisotropy, w.mAl);
+            }
+        }
+
         if (!exts.ObjectEmpty()) {
             obj.AddMember("extensions", exts, w.mAl);
         }
@@ -608,6 +636,7 @@ namespace glTF2 {
                 {
                     WriteAttrs(w, attrs, p.attributes.position, "POSITION");
                     WriteAttrs(w, attrs, p.attributes.normal, "NORMAL");
+                    WriteAttrs(w, attrs, p.attributes.tangent, "TANGENT");
                     WriteAttrs(w, attrs, p.attributes.texcoord, "TEXCOORD", true);
                     WriteAttrs(w, attrs, p.attributes.color, "COLOR", true);
                     WriteAttrs(w, attrs, p.attributes.joint, "JOINTS", true);
@@ -689,7 +718,7 @@ namespace glTF2 {
         for (auto const &value : extras.mValues) {
             WriteExtrasValue(extrasNode, value, w);
         }
-        
+
         obj.AddMember("extras", extrasNode, w.mAl);
     }
 
@@ -796,7 +825,18 @@ namespace glTF2 {
     inline void Write(Value& obj, Texture& tex, AssetWriter& w)
     {
         if (tex.source) {
-            obj.AddMember("source", tex.source->index, w.mAl);
+            if (IsBasisUniversalMimeType(tex.source->mimeType)) {
+                Value basisu;
+                basisu.SetObject();
+                basisu.AddMember("source", tex.source->index, w.mAl);
+
+                Value extensions;
+                extensions.SetObject();
+                extensions.AddMember("KHR_texture_basisu", basisu, w.mAl);
+                obj.AddMember("extensions", extensions, w.mAl);
+            } else {
+                obj.AddMember("source", tex.source->index, w.mAl);
+            }
         }
         if (tex.sampler) {
             obj.AddMember("sampler", tex.sampler->index, w.mAl);
@@ -1015,6 +1055,10 @@ namespace glTF2 {
 
             if (this->mAsset.extensionsUsed.KHR_materials_emissive_strength) {
                 exts.PushBack(StringRef("KHR_materials_emissive_strength"), mAl);
+            }
+
+            if (this->mAsset.extensionsUsed.KHR_materials_anisotropy) {
+                exts.PushBack(StringRef("KHR_materials_anisotropy"), mAl);
             }
 
             if (this->mAsset.extensionsUsed.FB_ngon_encoding) {

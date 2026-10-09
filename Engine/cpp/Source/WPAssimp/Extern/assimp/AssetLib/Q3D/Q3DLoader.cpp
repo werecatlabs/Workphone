@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -54,6 +54,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assimp/scene.h>
 #include <assimp/DefaultLogger.hpp>
 #include <assimp/IOSystem.hpp>
+
+#include <limits>
 
 namespace Assimp {
 
@@ -309,6 +311,11 @@ void Q3DImporter::InternReadFile(const std::string &pFile,
                     throw DeadlyImportError("Quick3D: Invalid texture. Width or height is zero");
                 }
 
+                const unsigned int uint_max = std::numeric_limits<unsigned int>::max();
+                if (tex->mWidth > (uint_max / tex->mHeight)) {
+                    throw DeadlyImportError("Quick3D: Texture dimensions are too large, resulting in overflow.");
+                }
+
                 unsigned int mul = tex->mWidth * tex->mHeight;
                 aiTexel *begin = tex->pcData = new aiTexel[mul];
                 aiTexel *const end = &begin[mul - 1] + 1;
@@ -372,7 +379,12 @@ void Q3DImporter::InternReadFile(const std::string &pFile,
             light->mColorSpecular = light->mColorDiffuse;
 
             // We don't need the rest, but we need to know where this chunk ends.
-            unsigned int temp = (unsigned int)(stream.GetI4() * stream.GetI4());
+            const auto t1 = stream.GetI4();
+            const auto t2 = stream.GetI4();
+            if (t1 < 0 || t2 < 0) {
+                throw DeadlyImportError("Quick3D: Overflow detected.");
+            }
+            const unsigned int temp = static_cast<unsigned int>(t1*t2);
 
             // skip the background file name
             while (stream.GetI1())
@@ -498,25 +510,34 @@ outer:
             aiVector3D faceNormal;
             bool fnOK = false;
 
-            for (unsigned int n = 0; n < faces->mNumIndices; ++n, ++cnt, ++norms, ++verts) {
+            // clamp every vertex index up front: the face-normal fallback
+            // below reads sibling indices (0, 1, size - 1), not just the one
+            // for the current iteration
+            for (unsigned int n = 0; n < faces->mNumIndices; ++n) {
                 if (face.indices[n] >= curMesh.verts.size()) {
                     ASSIMP_LOG_WARN("Quick3D: Vertex index overflow");
                     face.indices[n] = 0;
                 }
+            }
 
+            for (unsigned int n = 0; n < faces->mNumIndices; ++n, ++cnt, ++norms, ++verts) {
                 // copy vertices
                 *verts = curMesh.verts[face.indices[n]];
 
-                if (face.indices[n] >= curMesh.normals.size() && faces->mNumIndices >= 3) {
-                    // we have no normal here - assign the face normal
-                    if (!fnOK) {
-                        const aiVector3D &pV1 = curMesh.verts[face.indices[0]];
-                        const aiVector3D &pV2 = curMesh.verts[face.indices[1]];
-                        const aiVector3D &pV3 = curMesh.verts[face.indices.size() - 1];
-                        faceNormal = (pV2 - pV1) ^ (pV3 - pV1).Normalize();
-                        fnOK = true;
+                if (face.indices[n] >= curMesh.normals.size()) {
+                    // no stored normal for this vertex
+                    if (faces->mNumIndices >= 3) {
+                        // assign the face normal instead
+                        if (!fnOK) {
+                            const aiVector3D &pV1 = curMesh.verts[face.indices[0]];
+                            const aiVector3D &pV2 = curMesh.verts[face.indices[1]];
+                            const aiVector3D &pV3 = curMesh.verts[face.indices.size() - 1];
+                            faceNormal = ((pV2 - pV1) ^ (pV3 - pV1)).Normalize();
+                            fnOK = true;
+                        }
+                        *norms = faceNormal;
                     }
-                    *norms = faceNormal;
+                    // otherwise leave the zero-initialised normal in place
                 } else {
                     *norms = curMesh.normals[face.indices[n]];
                 }

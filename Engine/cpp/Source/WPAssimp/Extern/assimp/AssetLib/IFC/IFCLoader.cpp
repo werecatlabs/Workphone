@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -194,8 +194,7 @@ void IFCImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
                     }
                     free(buffer);
                 } while (read > 0);
-                size_t filesize = fileInfo.uncompressed_size;
-                if (total == 0 || size_t(total) != filesize) {
+                if (total == 0 || size_t(total) != fileInfo.uncompressed_size) {
                     delete[] buff;
                     ThrowException("Failed to decompress IFC ZIP file");
                 }
@@ -245,11 +244,11 @@ void IFCImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
 
     // tell the reader for which types we need to simulate STEPs reverse indices
     static const char *const inverse_indices_to_track[] = {
-        "ifcrelcontainedinspatialstructure", 
-        "ifcrelaggregates", 
-        "ifcrelvoidselement", 
-        "ifcreldefinesbyproperties", 
-        "ifcpropertyset", 
+        "ifcrelcontainedinspatialstructure",
+        "ifcrelaggregates",
+        "ifcrelvoidselement",
+        "ifcreldefinesbyproperties",
+        "ifcpropertyset",
         "ifcstyleditem"
     };
 
@@ -259,8 +258,6 @@ void IFCImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
     if (!proj) {
         ThrowException("missing IfcProject entity");
     }
-
-    
 
     ConversionData conv(*db, proj->To<Schema_2x3::IfcProject>(), pScene, settings);
     SetUnits(conv);
@@ -354,7 +351,7 @@ void ConvertUnit(const ::Assimp::STEP::EXPRESS::DataType &dt, ConversionData &co
 
 // ------------------------------------------------------------------------------------------------
 void SetUnits(ConversionData &conv) {
-    if (conv.proj.UnitsInContext == nullptr) {
+    if (!conv.proj.UnitsInContext) {
         IFCImporter::LogError("Skipping conversion data, nullptr.");
         return;
     }
@@ -463,8 +460,11 @@ bool ProcessMappedItem(const Schema_2x3::IfcMappedItem &mapped, aiNode *nd_src, 
 // ------------------------------------------------------------------------------------------------
 struct RateRepresentationPredicate {
     int Rate(const Schema_2x3::IfcRepresentation *r) const {
-        // the smaller, the better
-
+        if (r == nullptr) {
+            return -1;
+        }
+        
+      // the smaller, the better
         if (!r->RepresentationIdentifier) {
             // neutral choice if no extra information is specified
             return 0;
@@ -541,10 +541,15 @@ void ProcessProductRepresentation(const Schema_2x3::IfcProduct &el, aiNode *nd, 
     std::copy(src.begin(), src.end(), repr_ordered.begin());
     std::sort(repr_ordered.begin(), repr_ordered.end(), RateRepresentationPredicate());
     for (const Schema_2x3::IfcRepresentation *repr : repr_ordered) {
+        if (repr == nullptr) {
+            continue;
+        }
         bool res = false;
         for (const Schema_2x3::IfcRepresentationItem &item : repr->Items) {
             if (const Schema_2x3::IfcMappedItem *const geo = item.ToPtr<Schema_2x3::IfcMappedItem>()) {
-                res = ProcessMappedItem(*geo, nd, subnodes, matid, conv) || res;
+                if (geo != nullptr) {
+                    res = ProcessMappedItem(*geo, nd, subnodes, matid, conv) || res;
+                }
             } else {
                 res = ProcessRepresentationItem(item, matid, meshes, conv) || res;
             }
@@ -557,7 +562,7 @@ void ProcessProductRepresentation(const Schema_2x3::IfcProduct &el, aiNode *nd, 
     AssignAddedMeshes(meshes, nd, conv);
 }
 
-typedef std::map<std::string, std::string> Metadata;
+using Metadata = std::map<std::string, std::string> ;
 
 // ------------------------------------------------------------------------------------------------
 void ProcessMetadata(const Schema_2x3::ListOf<Schema_2x3::Lazy<Schema_2x3::IfcProperty>, 1, 0> &set, ConversionData &conv, Metadata &properties,

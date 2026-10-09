@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -97,10 +97,10 @@ namespace Assimp {
 ///            new - <texmap> and children <utex1>, <utex2>, <utex3>, <vtex1>, <vtex2>, <vtex3>
 ///            old - <map> and children <u1>, <u2>, <u3>, <v1>, <v2>, <v3>
 ///
-class AMFImporter : public BaseImporter {
+class AMFImporter final : public BaseImporter {
     using AMFMetaDataArray = std::vector<AMFMetadata *>;
-    using MeshArray = std::vector<aiMesh *>;
-    using NodeArray = std::vector<aiNode *>;
+    using MeshArray = std::vector<std::unique_ptr<aiMesh> >;
+    using NodeArray = std::vector<std::unique_ptr<aiNode> >;
 
 public:
     struct SPP_Material;

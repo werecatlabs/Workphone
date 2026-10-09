@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -170,10 +170,11 @@ ASSIMP_API const C_STRUCT aiScene *aiImportFileExWithProperties(
 // --------------------------------------------------------------------------------
 /** Reads the given file from a given memory buffer,
  *
- * If the call succeeds, the contents of the file are returned as a pointer to an
- * aiScene object. The returned data is intended to be read-only, the importer keeps
- * ownership of the data and will destroy it upon destruction. If the import fails,
- * NULL is returned.
+ * If the call succeeds, the imported data is returned in an aiScene structure.
+ * The data is intended to be read-only, it stays property of the ASSIMP
+ * library and will be stable until aiReleaseImport() is called. After you're
+ * done with it, call aiReleaseImport() to free the resources associated with
+ * this file. If the import fails, NULL is returned.
  * A human-readable error description can be retrieved by calling aiGetErrorString().
  * @param pBuffer Pointer to the file data
  * @param pLength Length of pBuffer, in bytes
@@ -714,7 +715,6 @@ ASSIMP_API int aiVector3AreEqualEpsilon(
 /** Check if vector \p a is less than vector \p b.
  *  @param a First vector to compare
  *  @param b Second vector to compare
- *  @param epsilon Epsilon
  *  @return 1 if \p a is less than \p b
  *  @return 0 if \p a is equal or greater than \p b
  */
@@ -997,7 +997,7 @@ ASSIMP_API int aiMatrix4AreEqualEpsilon(
 
 // --------------------------------------------------------------------------------
 /** Invert a 4x4 matrix.
- *  @param result Matrix to invert
+ *  @param mat Matrix to invert
  */
 ASSIMP_API void aiMatrix4Inverse(
         C_STRUCT aiMatrix4x4 *mat);
@@ -1040,7 +1040,7 @@ ASSIMP_API void aiMatrix4DecomposeIntoScalingEulerAnglesPosition(
  *  and it's translational components.
  *
  * @param mat Matrix to decompose
- * @param rotation Receives the rotational component
+ * @param scaling Receives the output scaling for the x,y,z axes
  * @param axis Receives the output rotation axis
  * @param angle Receives the output rotation angle
  * @param position Receives the output position for the x,y,z axes.

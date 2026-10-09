@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -49,11 +49,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "OFFLoader.h"
 #include <assimp/ParsingUtils.h>
 #include <assimp/fast_atof.h>
-#include <memory>
 #include <assimp/IOSystem.hpp>
 #include <assimp/scene.h>
 #include <assimp/DefaultLogger.hpp>
 #include <assimp/importerdesc.h>
+#include <cstdint>
+#include <memory>
 
 namespace Assimp {
 
@@ -166,11 +167,44 @@ void OFFImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
     strtoul10(car, &car); // skip edge count
     NextToken(&car, end);
 
+    // Reject header counts large enough to drive the allocations below into
+    // out-of-memory territory (OSS-Fuzz 476180586).
+    constexpr auto OFF_MAX_VERTICES = 10000000u; // 10 million
+    constexpr auto OFF_MAX_FACES = 10000000u;    // 10 million
+
     if (!numVertices) {
         throw DeadlyImportError("OFF: There are no valid vertices");
     }
     if (!numFaces) {
         throw DeadlyImportError("OFF: There are no valid faces");
+    }
+    if (numVertices > OFF_MAX_VERTICES) {
+        throw DeadlyImportError("OFF: File has ", numVertices, " vertices, exceeds limit of ", OFF_MAX_VERTICES);
+    }
+    if (numFaces > OFF_MAX_FACES) {
+        throw DeadlyImportError("OFF: File has ", numFaces, " faces, exceeds limit of ", OFF_MAX_FACES);
+    }
+    const uint64_t requiredVertices = static_cast<uint64_t>(numVertices);
+    const uint64_t requiredFaces = static_cast<uint64_t>(numFaces);
+    if (requiredVertices > SIZE_MAX / sizeof(aiVector3D)) {
+        throw DeadlyImportError("OFF: Vertex count would cause size_t overflow");
+    }
+    if (requiredFaces > SIZE_MAX / sizeof(aiFace)) {
+        throw DeadlyImportError("OFF: Face count would cause size_t overflow");
+    }
+    // Each vertex line holds at least `dimensions` single-character values,
+    // each followed by a separator or newline, so any shorter remainder cannot
+    // contain the declared vertex count.
+    const uint64_t minimumVertexTextBytes = requiredVertices * 2u * dimensions;  
+    if (static_cast<uint64_t>(end - car) < minimumVertexTextBytes) {
+        throw DeadlyImportError("OFF: File size inconsistent with vertex count");
+    }
+    // Each face line needs at least a face vertex count and one vertex index,
+    // separated by whitespace. Reject impossible declarations before allocating
+    // the face array.
+    if (const uint64_t minimumFaceTextBytes = requiredFaces * 3u;
+            static_cast<uint64_t>(end - car) < minimumVertexTextBytes + minimumFaceTextBytes) {
+        throw DeadlyImportError("OFF: File size inconsistent with face count");
     }
 
     pScene->mNumMeshes = 1;
@@ -212,14 +246,14 @@ void OFFImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
         // stop at dimensions: this allows loading 1D or 2D coordinate vertices
         for (unsigned int dim = 0; dim < dimensions; ++dim) {
             SkipSpaces(&sz, lineEnd);
-            sz = fast_atoreal_move<ai_real>(sz, *vec[dim]);
+            sz = fast_atoreal_move(sz, *vec[dim]);
         }
 
         // if has homogeneous coordinate, divide others by this one
         if (hasHomogenous) {
             SkipSpaces(&sz, lineEnd);
             ai_real w = 1.;
-            sz = fast_atoreal_move<ai_real>(sz, w);
+            sz = fast_atoreal_move(sz, w);
             for (unsigned int dim = 0; dim < dimensions; ++dim) {
                 *(vec[dim]) /= w;
             }
@@ -229,11 +263,11 @@ void OFFImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
         if (hasNormals) {
             aiVector3D &n = mesh->mNormals[i];
             SkipSpaces(&sz, lineEnd);
-            sz = fast_atoreal_move<ai_real>(sz, (ai_real &)n.x);
+            sz = fast_atoreal_move(sz, n.x);
             SkipSpaces(&sz, lineEnd);
-            sz = fast_atoreal_move<ai_real>(sz, (ai_real &)n.y);
+            sz = fast_atoreal_move(sz, n.y);
             SkipSpaces(&sz, lineEnd);
-            fast_atoreal_move<ai_real>(sz, (ai_real &)n.z);
+            fast_atoreal_move(sz, n.z);
         }
 
         // reading colors is a pain because the specification says it can be
@@ -243,22 +277,22 @@ void OFFImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
         if (hasColors) {
             aiColor4D &c = mesh->mColors[0][i];
             SkipSpaces(&sz, lineEnd);
-            sz = fast_atoreal_move<ai_real>(sz, (ai_real &)c.r);
+            sz = fast_atoreal_move(sz, c.r);
             if (*sz != '#' && *sz != '\n' && *sz != '\r') {
                 SkipSpaces(&sz, lineEnd);
-                sz = fast_atoreal_move<ai_real>(sz, (ai_real &)c.g);
+                sz = fast_atoreal_move(sz, c.g);
             } else {
                 c.g = 0.;
             }
             if (*sz != '#' && *sz != '\n' && *sz != '\r') {
                 SkipSpaces(&sz, lineEnd);
-                sz = fast_atoreal_move<ai_real>(sz, (ai_real &)c.b);
+                sz = fast_atoreal_move(sz, c.b);
             } else {
                 c.b = 0.;
             }
             if (*sz != '#' && *sz != '\n' && *sz != '\r') {
                 SkipSpaces(&sz, lineEnd);
-                sz = fast_atoreal_move<ai_real>(sz, (ai_real &)c.a);
+                sz = fast_atoreal_move(sz, c.a);
             } else {
                 c.a = 1.;
             }
@@ -266,9 +300,9 @@ void OFFImporter::InternReadFile(const std::string &pFile, aiScene *pScene, IOSy
         if (hasTexCoord) {
             aiVector3D &t = mesh->mTextureCoords[0][i];
             SkipSpaces(&sz, lineEnd);
-            sz = fast_atoreal_move<ai_real>(sz, (ai_real &)t.x);
+            sz = fast_atoreal_move(sz, t.x);
             SkipSpaces(&sz, lineEnd);
-            fast_atoreal_move<ai_real>(sz, (ai_real &)t.y);
+            fast_atoreal_move(sz, t.y);
         }
     }
 

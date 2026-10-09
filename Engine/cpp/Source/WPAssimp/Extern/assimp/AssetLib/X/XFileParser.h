@@ -2,8 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
-
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -85,6 +84,7 @@ protected:
     void ParseDataObjectSkinMeshHeader( XFile::Mesh* pMesh);
     void ParseDataObjectMeshNormals( XFile::Mesh* pMesh);
     void ParseDataObjectMeshTextureCoords( XFile::Mesh* pMesh);
+    void ParseDataObjectMeshFVFData(XFile::Mesh *pMesh);
     void ParseDataObjectMeshVertexColors( XFile::Mesh* pMesh);
     void ParseDataObjectMeshMaterialList( XFile::Mesh* pMesh);
     void ParseDataObjectMaterial( XFile::Material* pMaterial);

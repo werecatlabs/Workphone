@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assimp/mesh.h>
 #include <vector>
 #include <map>
+#include <string>
 
 struct aiNode;
 struct aiMesh;
@@ -59,14 +60,17 @@ class Texture2DGroup;
 class EmbeddedTexture;
 class ColorGroup;
 
-class XmlSerializer {
+/// @brief his class implements ther 3mf serialization.
+class XmlSerializer final {
 public:
-    XmlSerializer(XmlParser *xmlParser);
+    XmlSerializer(XmlParser &xmlParser, D3MFOpcPackage *package);
     ~XmlSerializer();
     void ImportXml(aiScene *scene);
 
 private:
-    void addObjectToNode(aiNode *parent, Object *obj, aiMatrix4x4 nodeTransform);
+    void ReadModel(XmlNode &modelNode, const std::string &fileKey);
+    void LoadModelFile(const std::string &path);
+    void addObjectToNode(aiNode *parent, Object *obj, const aiMatrix4x4 &nodeTransform, const std::string &fileKey);
     void ReadObject(XmlNode &node);
     aiMesh *ReadMesh(XmlNode &node);
     void ReadMetadata(XmlNode &node);
@@ -90,9 +94,14 @@ private:
     std::vector<MetaEntry> mMetaData;
     std::vector<EmbeddedTexture *> mEmbeddedTextures;
     std::vector<aiMaterial *> mMaterials;
-    std::map<unsigned int, Resource *> mResourcesDictionnary;
+    // Resources are scoped per model file: object ids are only unique within a single
+    // .model part (the production extension splits a model across multiple parts).
+    using ResourceMap = std::map<unsigned int, Resource *>;
+    std::map<std::string, ResourceMap> mResourcesByFile;
+    ResourceMap *mCurrentResources;
     unsigned int mMeshCount;
-    XmlParser *mXmlParser;
+    XmlParser &mXmlParser;
+    D3MFOpcPackage *mPackage;
 };
 
 } // namespace D3MF

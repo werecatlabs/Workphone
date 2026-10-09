@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2020, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -43,6 +43,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <assimp/defs.h>
 #include <string>
 #include <vector>
+
 #include "Common/Maybe.h"
 
 struct aiColor3D;
@@ -61,7 +62,7 @@ struct Material;
  */
 class ObjFileMtlImporter {
 public:
-    static const size_t BUFFERSIZE = 2048;
+    static constexpr size_t BUFFERSIZE = 2048;
     using DataArray = std::vector<char>;
     using DataArrayIt = std::vector<char>::iterator;
     using ConstDataArrayIt = std::vector<char>::const_iterator;
@@ -71,27 +72,33 @@ public:
             ObjFile::Model *pModel);
 
     //! \brief  The class destructor
-    ~ObjFileMtlImporter();
+    ~ObjFileMtlImporter() = default;
 
     ObjFileMtlImporter(const ObjFileMtlImporter &rOther) = delete;
     ObjFileMtlImporter &operator=(const ObjFileMtlImporter &rOther) = delete;
 
 private:
-    /// Copy constructor, empty.
     /// Load the whole material description
     void load();
     /// Get color data.
     void getColorRGBA(aiColor3D *pColor);
+    /// Get color data, if exists.
     void getColorRGBA(Maybe<aiColor3D> &value);
     /// Get illumination model from loaded data
     void getIlluminationModel(int &illum_model);
     /// Gets a float value from data.
     void getFloatValue(ai_real &value);
+    /// Gets a float value from data, if exists.
     void getFloatValue(Maybe<ai_real> &value);
+    /// Gets a float for a valid material member.
+    void getFloatIfMaterialValid(ai_real ObjFile::Material::*member);
+    /// Gets a float if exists for a valid material member.
+    void getFloatIfMaterialValid(Maybe<ai_real> ObjFile::Material::*member);
     /// Creates a new material from loaded data.
     void createMaterial();
     /// Get texture name from loaded data.
     void getTexture();
+    /// Get texture option clamp.  
     void getTextureOption(bool &clamp, int &clampIndex, aiString *&out);
 
 private:
@@ -108,8 +115,6 @@ private:
     //! Helper buffer
     std::vector<char> m_buffer;
 };
-
-// ------------------------------------------------------------------------------------------------
 
 } // Namespace Assimp
 

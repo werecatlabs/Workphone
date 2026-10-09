@@ -2,8 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
-
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -43,6 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef ASSIMP_BUILD_NO_GLTF_EXPORTER
 
 #include "AssetLib/glTF/glTFExporter.h"
+#include "AssetLib/glTF/glTFAsset.h"
 #include "AssetLib/glTF/glTFAssetWriter.h"
 #include "PostProcessing/SplitLargeMeshes.h"
 
@@ -62,6 +62,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <memory>
 #include <limits>
 #include <inttypes.h>
+
+#include <rapidjson/rapidjson.h>
+#include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
 
 #ifdef ASSIMP_IMPORTER_GLTF_USE_OPEN3DGC
 	// Header files, Open3DGC.
@@ -1016,7 +1020,10 @@ void glTFExporter::ExportAnimations()
             Ref<Animation> animRef = mAsset->animations.Create(name);
 
             /******************* Parameters ********************/
-            ExtractAnimationData(*mAsset, name, animRef, bufferRef, nodeChannel, static_cast<float>(anim->mTicksPerSecond));
+            // A zero ticks-per-second rate means "not specified" - treat
+            // key times as seconds instead of dividing by zero.
+            const float ticksPerSecond = anim->mTicksPerSecond != 0.0 ? static_cast<float>(anim->mTicksPerSecond) : 1.0f;
+            ExtractAnimationData(*mAsset, name, animRef, bufferRef, nodeChannel, ticksPerSecond);
 
             for (unsigned int j = 0; j < 3; ++j) {
                 std::string channelType;
@@ -1064,7 +1071,6 @@ void glTFExporter::ExportAnimations()
 
     } // End: for-loop mNumAnimations
 }
-
 
 #endif // ASSIMP_BUILD_NO_GLTF_EXPORTER
 #endif // ASSIMP_BUILD_NO_EXPORT

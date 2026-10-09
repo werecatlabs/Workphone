@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -546,7 +546,9 @@ void WriteLogOpening(const std::string& file) {
            << "ppc32"
 #elif defined(__powerpc64__)
            << "ppc64"
-#elif defined(__arm__)
+#elif defined(_M_ARM64) || defined(__aarch64__)
+           << "arm64"
+#elif defined(_M_ARM) || defined(__arm__)
            << "arm"
 #else
            << "<unknown architecture>"
@@ -733,7 +735,7 @@ const aiScene* Importer::ReadFile( const char* _pFile, unsigned int pFlags) {
                     return nullptr;
                 }
             }
-#endif // no validation
+#endif // ASSIMP_BUILD_NO_VALIDATEDS_PROCESS
 
             // Preprocess the scene and prepare it for post-processing
             if (profiler) {

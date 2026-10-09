@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -45,6 +45,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+
+#include <limits>
 
 namespace Assimp {
 
@@ -90,11 +92,12 @@ void GenBoundingBoxesProcess::Execute(aiScene* pScene) {
 
     for (unsigned int i = 0; i < pScene->mNumMeshes; ++i) {
         aiMesh* mesh = pScene->mMeshes[i];
-        if (nullptr == mesh) {
+        if (nullptr == mesh || 0 == mesh->mNumVertices) {
             continue;
         }
 
-        aiVector3D min(999999, 999999, 999999), max(-999999, -999999, -999999);
+        constexpr ai_real kMaxVal = std::numeric_limits<ai_real>::max();
+        aiVector3D min(kMaxVal, kMaxVal, kMaxVal), max(-kMaxVal, -kMaxVal, -kMaxVal);
         checkMesh(mesh, min, max);
         mesh->mAABB.mMin = min;
         mesh->mAABB.mMax = max;

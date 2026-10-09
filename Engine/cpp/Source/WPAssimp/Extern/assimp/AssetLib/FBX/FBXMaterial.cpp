@@ -2,7 +2,7 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -60,6 +60,14 @@ namespace Assimp {
 namespace FBX {
 
 using namespace Util;
+
+static float ParseTextureUVComponent(const Token &token) {
+    // Metashape can store these coordinates as binary int32 rather than float/double.
+    if (token.IsBinary() && token.begin() != token.end() && *token.begin() == 'I') {
+        return static_cast<float>(ParseTokenAsInt(token));
+    }
+    return ParseTokenAsFloat(token);
+}
 
 // ------------------------------------------------------------------------------------------------
 Material::Material(uint64_t id, const Element& element, const Document& doc, const std::string& name) :
@@ -134,10 +142,6 @@ Material::Material(uint64_t id, const Element& element, const Document& doc, con
     }
 }
 
-
-// ------------------------------------------------------------------------------------------------
-Material::~Material() = default;
-
 // ------------------------------------------------------------------------------------------------
 Texture::Texture(uint64_t id, const Element& element, const Document& doc, const std::string& name) :
         Object(id,element,name),
@@ -173,15 +177,13 @@ Texture::Texture(uint64_t id, const Element& element, const Document& doc, const
     }
 
     if(ModelUVTranslation) {
-        uvTrans = aiVector2D(ParseTokenAsFloat(GetRequiredToken(*ModelUVTranslation,0)),
-            ParseTokenAsFloat(GetRequiredToken(*ModelUVTranslation,1))
-        );
+        uvTrans = aiVector2D(ParseTextureUVComponent(GetRequiredToken(*ModelUVTranslation, 0)),
+                ParseTextureUVComponent(GetRequiredToken(*ModelUVTranslation, 1)));
     }
 
     if(ModelUVScaling) {
-        uvScaling = aiVector2D(ParseTokenAsFloat(GetRequiredToken(*ModelUVScaling,0)),
-            ParseTokenAsFloat(GetRequiredToken(*ModelUVScaling,1))
-        );
+        uvScaling = aiVector2D(ParseTextureUVComponent(GetRequiredToken(*ModelUVScaling, 0)),
+                ParseTextureUVComponent(GetRequiredToken(*ModelUVScaling, 1)));
     }
 
     if(Cropping) {

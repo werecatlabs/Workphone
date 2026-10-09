@@ -3,7 +3,7 @@
 Open Asset Import Library (assimp)
 ---------------------------------------------------------------------------
 
-Copyright (c) 2006-2024, assimp team
+Copyright (c) 2006-2026, assimp team
 
 All rights reserved.
 
@@ -87,12 +87,6 @@ const aiImporterDesc *IRRMeshImporter::GetInfo() const {
     return &desc;
 }
 
-static void releaseMaterial(aiMaterial **mat) {
-    if (*mat != nullptr) {
-        delete *mat;
-        *mat = nullptr;
-    }
-}
 
 static void releaseMesh(aiMesh **mesh) {
     if (*mesh != nullptr) {
@@ -120,14 +114,14 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
     XmlNode root = parser.getRootNode();
 
     // final data
-    std::vector<aiMaterial *> materials;
+    std::vector<std::unique_ptr<aiMaterial> > materials;
     std::vector<aiMesh *> meshes;
     materials.reserve(5);
     meshes.reserve(5);
 
     // temporary data - current mesh buffer
     // TODO move all these to inside loop
-    aiMaterial *curMat = nullptr;
+    std::unique_ptr<aiMaterial> curMat;
     aiMesh *curMesh = nullptr;
     unsigned int curMatFlags = 0;
 
@@ -191,7 +185,7 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
             if (vertexCount == 0) {
                 // This is possible ... remove the mesh from the list and skip further reading
                 ASSIMP_LOG_WARN("IRRMESH: Found mesh with zero vertices");
-                releaseMaterial(&curMat);
+                curMat.reset();
                 continue; // Bail out early
             };
 
@@ -214,7 +208,7 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
                     // map (normal_..., parallax_...)
                     // *********************************************************
                     int idx = 1;
-                    aiMaterial *mat = (aiMaterial *)curMat;
+                    aiMaterial *mat = curMat.get();
 
                     if (curMatFlags & AI_IRRMESH_MAT_lightmap) {
                         mat->AddProperty(&idx, 1, AI_MATKEY_UVWSRC_LIGHTMAP(0));
@@ -234,7 +228,7 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
                 // Unsupported format, discard whole buffer/mesh
                 // Assuming we have a correct material, then release it
                 // We don't have a correct mesh for sure here
-                releaseMaterial(&curMat);
+                curMat.reset();
                 ASSIMP_LOG_ERROR("IRRMESH: Unknown vertex format");
                 continue; // Skip rest of buffer
             };
@@ -266,8 +260,7 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
                 // mesh - away
                 releaseMesh(&curMesh);
 
-                // material - away
-                releaseMaterial(&curMat);
+                curMat.reset();
                 continue; // Go to next buffer
             }
 
@@ -322,7 +315,7 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
             // NOTE this might explode for UTF-16 and wchars
             const char *sz = indicesNode.text().get();
             const char *end = sz + std::strlen(sz);
-            
+
             // For each index loop over aiMesh faces
             while (SkipSpacesAndLineEnd(&sz, end)) {
                 if (curFace >= faceEnd) {
@@ -377,17 +370,16 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
         if (curMatFlags & AI_IRRMESH_MAT_trans_vertex_alpha && !useColors) {
             // Take the opacity value of the current material
             // from the common vertex color alpha
-            aiMaterial *mat = (aiMaterial *)curMat;
-            mat->AddProperty(&curColors[0].a, 1, AI_MATKEY_OPACITY);
+            curMat.get()->AddProperty(&curColors[0].a, 1, AI_MATKEY_OPACITY);
         }
-        
+
         // end of previous buffer. A material and a mesh should be there
         if (!curMat || !curMesh) {
             ASSIMP_LOG_ERROR("IRRMESH: A buffer must contain a mesh and a material");
-            releaseMaterial(&curMat);
+            curMat.reset();
             releaseMesh(&curMesh);
         } else {
-            materials.push_back(curMat);
+            materials.emplace_back(std::move(curMat));
             meshes.push_back(curMesh);
         }
     }
@@ -409,7 +401,9 @@ void IRRMeshImporter::InternReadFile(const std::string &pFile,
 
     pScene->mNumMaterials = (unsigned int)materials.size();
     pScene->mMaterials = new aiMaterial *[pScene->mNumMaterials];
-    ::memcpy(pScene->mMaterials, &materials[0], sizeof(void *) * pScene->mNumMaterials);
+    for (unsigned int i = 0; i < materials.size(); i++) {
+        pScene->mMaterials[i] = materials[i].release();
+    }
 
     pScene->mRootNode = new aiNode();
     pScene->mRootNode->mName.Set("<IRRMesh>");
@@ -433,24 +427,24 @@ void IRRMeshImporter::ParseBufferVertices(const char *sz, const char *end, Verte
         aiColor4D c;
 
         // Read the vertex position
-        sz = fast_atoreal_move<float>(sz, (float &)temp.x);
+        sz = fast_atoreal_move(sz, temp.x);
         SkipSpaces(&sz, end);
 
-        sz = fast_atoreal_move<float>(sz, (float &)temp.y);
+        sz = fast_atoreal_move(sz, temp.y);
         SkipSpaces(&sz, end);
 
-        sz = fast_atoreal_move<float>(sz, (float &)temp.z);
+        sz = fast_atoreal_move(sz, temp.z);
         SkipSpaces(&sz, end);
         vertices.push_back(temp);
 
         // Read the vertex normals
-        sz = fast_atoreal_move<float>(sz, (float &)temp.x);
+        sz = fast_atoreal_move(sz, temp.x);
         SkipSpaces(&sz, end);
 
-        sz = fast_atoreal_move<float>(sz, (float &)temp.y);
+        sz = fast_atoreal_move(sz, temp.y);
         SkipSpaces(&sz, end);
 
-        sz = fast_atoreal_move<float>(sz, (float &)temp.z);
+        sz = fast_atoreal_move(sz, temp.z);
         SkipSpaces(&sz, end);
         normals.push_back(temp);
 
@@ -466,10 +460,10 @@ void IRRMeshImporter::ParseBufferVertices(const char *sz, const char *end, Verte
         SkipSpaces(&sz, end);
 
         // read the first UV coordinate set
-        sz = fast_atoreal_move<float>(sz, (float &)temp.x);
+        sz = fast_atoreal_move(sz, temp.x);
         SkipSpaces(&sz, end);
 
-        sz = fast_atoreal_move<float>(sz, (float &)temp.y);
+        sz = fast_atoreal_move(sz, temp.y);
         SkipSpaces(&sz, end);
         temp.z = 0.f;
         temp.y = 1.f - temp.y; // DX to OGL
@@ -479,35 +473,35 @@ void IRRMeshImporter::ParseBufferVertices(const char *sz, const char *end, Verte
         // So by definition, all buffers have either UV2 or tangents or neither
         // read the (optional) second UV coordinate set
         if (vertexFormat == VertexFormat::t2coord) {
-            sz = fast_atoreal_move<float>(sz, (float &)temp.x);
+            sz = fast_atoreal_move(sz, temp.x);
             SkipSpaces(&sz, end);
 
-            sz = fast_atoreal_move<float>(sz, (float &)temp.y);
+            sz = fast_atoreal_move(sz, temp.y);
             temp.y = 1.f - temp.y; // DX to OGL
             UV2s.push_back(temp);
         }
         // read optional tangent and bitangent vectors
         else if (vertexFormat == VertexFormat::tangent) {
             // tangents
-            sz = fast_atoreal_move<float>(sz, (float &)temp.x);
+            sz = fast_atoreal_move(sz, temp.x);
             SkipSpaces(&sz, end);
 
-            sz = fast_atoreal_move<float>(sz, (float &)temp.z);
+            sz = fast_atoreal_move(sz, temp.z);
             SkipSpaces(&sz, end);
 
-            sz = fast_atoreal_move<float>(sz, (float &)temp.y);
+            sz = fast_atoreal_move(sz, temp.y);
             SkipSpaces(&sz, end);
             temp.y *= -1.0f;
             tangents.push_back(temp);
 
             // bitangents
-            sz = fast_atoreal_move<float>(sz, (float &)temp.x);
+            sz = fast_atoreal_move(sz, temp.x);
             SkipSpaces(&sz, end);
 
-            sz = fast_atoreal_move<float>(sz, (float &)temp.z);
+            sz = fast_atoreal_move(sz, temp.z);
             SkipSpaces(&sz, end);
 
-            sz = fast_atoreal_move<float>(sz, (float &)temp.y);
+            sz = fast_atoreal_move(sz, temp.y);
             SkipSpaces(&sz, end);
             temp.y *= -1.0f;
             bitangents.push_back(temp);
