@@ -1,6 +1,6 @@
 # WorkphonePhysics broadphase review and implementation plan
 
-Date: 9 October 2026. Target: Windows x64/MSVC. The shared AABB tree, revision-based bounds caching, traversal pruning, and optional SSE2 path are implemented. Remaining work is listed below.
+Date: 9 October 2026. Target: Windows x64/MSVC. The shared AABB tree, revision-based bounds caching, traversal pruning, optional SSE2 path, and selective OBB body-pair filter are implemented. Remaining work is listed below.
 
 ## Review findings
 
@@ -35,13 +35,29 @@ The canonical enum values are SAP=0, DBVT=1, MBP=2, ABP=3. This retains the form
 - Scalar traversal remains the default because SIMD measurements vary by workload. Enable the optional path with `wp_physics_scene_set_broadphase_simd_enabled(scene, 1)` or `wp_broadphase_set_simd_enabled(bp, 1)`. Each returns the actual enabled state; unsupported targets return zero. Defining `WP_PHYSICS_DISABLE_SIMD` when compiling the native library excludes the SSE2 implementation.
 - `wp_physics_scene_get_broadphase_stats` reports bounds rebuilds/reuses, emitted candidate pairs, and collision substeps from the latest successful simulation call. These counters establish whether caching is effective without timing assertions in correctness tests.
 
-## Sphere and SIMD decisions
+## Implemented continuation: tighter oriented body bounds
+
+The aim of this stage is a tighter fit for rotated bodies. The scene retains the inexpensive dynamic AABB tree and applies an OBB rejection filter to surviving body pairs before shape enumeration, contact-cache reuse, and narrowphase dispatch. Public broadphase pair caches and AABB queries retain their original AABB semantics, and scalar/SSE2 traversal shares the same scene filter.
+
+- Each opaque rigid body owns a cached local OBB and a current world OBB. Geometry and pose revisions are separate: moving or rotating a body updates the center/basis without refitting its local geometry. Unchanged static bounds are reused. Shape dimensions, local transforms, enable changes, attachment/removal/destruction, mesh replacement and cooked-mesh refits invalidate the local fit.
+- Single enabled shapes use the child's local basis, including local offsets and orientation. Boxes use their actual half extents; capsules include the segment and radius; spheres are conservatively enclosed. Cooked meshes use their conservative local mesh AABB in the shape's basis. Compounds fit a union in body-local space, including every enabled child. This fits geometry independently of the enclosing world AABB.
+- Planes, uncooked borrowed meshes, unsupported geometry and invalid/nonfinite bounds bypass OBB rejection. Any body containing an enabled unbounded child bypasses the filter as a whole. Borrowed-array edits retain the existing per-substep AABB refresh behavior.
+- Filtering is selective: test only if at least one OBB's enclosing world AABB has more than 10% additional volume. Both well-aligned bounds skip the test. The filter checks six face axes using cached bases and a relative rotation matrix, with contact tolerance and a scale-aware roundoff allowance. It intentionally leaves edge/edge separating axes to the exact narrowphase's 15-axis box test. This avoids duplicating that entire test for every surviving box pair and may retain extra candidates.
+- The filter fetches current poses immediately inside the contact consumer. Earlier solver corrections can move a body into a later candidate during the same visitor; a previously captured OBB must not reject that candidate. The AABB tree remains a snapshot during traversal, consistent with the existing pipeline. Rejected pairs invalidate cached manifolds, including when fixed-frequency contact reuse is selected.
+- The filter is enabled by default. Use `wp_physics_scene_set_broadphase_obb_enabled(scene, 0)` for an AABB-only comparison. Scene statistics keep `candidate_pairs` as the original AABB count and additionally report `obb_tests`, `obb_rejections`, `obb_local_rebuilds`, `obb_world_updates`, and actual `narrowphase_tests`. The extended statistics struct requires clients to rebuild.
+
+A full dynamic OBB tree would make internal-node merging, balancing/refitting, storage and SIMD traversal more expensive. Leaf filtering improves the final candidate fit while retaining the current tree's cheap operations; it does not tighten internal AABB branches or reduce tree-node visits. OBB metadata lives on bodies rather than bloating every internal tree node. The original [OBBTree paper](https://gamma.cs.unc.edu/SSV/obb.pdf) concerns precomputed polygon-model hierarchies under rigid motion; it is not evidence that a full scene tree of independently moving OBBs will be faster here.
+
+One compound bound can still be loose for curved track sections, L/U shapes or separated child clusters. Spatial chunks or multiple child/cluster bounds are the next fit improvements if real scenes justify them; that requires canonical body-pair deduplication. Offline mesh fitting in an independent basis and tighter mesh-triangle queries also remain separate work. Current-pose OBBs do not provide swept CCD bounds; future swept candidate generation must retain its complete motion envelope.
+
+## Sphere, OBB and SIMD decisions
 
 | Option | Assessment for this implementation |
 |---|---|
 | Sphere tests instead of AABBs | Potentially useful for compact, nearly spherical objects. Long vehicles, barriers, terrain, and compound bodies generally have loose bounding spheres. Squared-distance testing avoids a square root per pair, but still has arithmetic and data-loading costs. |
 | Sphere tree | Can reduce pair enumeration, but needs the same insertion, refitting, balancing, and motion handling as an AABB tree. It is not the preferred first hierarchy for this mixture of shapes. Benchmark a representative sphere-heavy workload before maintaining a second implementation. |
 | Sphere then AABB | A sphere enclosing an existing AABB cannot reject any pair whose AABBs overlap, so it adds no candidate-quality improvement. It might reject distant pairs before the AABB test, but the AABB test already exits cheaply on a separating axis. An independently computed tight shape sphere can reject some AABB false positives; reserve that experiment for expensive narrowphase candidates. |
+| AABB then selective OBB | Implemented for scene body pairs. Tighter rotated-body bounds reject false positives before shape-pair work. Cached local fits, live-pose refresh, six conservative face axes and an alignment/volume gate limit the added cost. |
 | SIMD/SSE | An optional four-box SSE2 implementation is now available and checked against the scalar/all-pairs oracle. Synthetic results show gains for some sparse and mixed-size workloads, but small regressions elsewhere. Keep scalar as the default until representative scenes justify enabling it. |
 | AVX2 | Optional later path, compiled separately and selected only when CPU/OS support is available. Do not require AVX2 globally just because the default build is x64. |
 
@@ -58,6 +74,26 @@ Sphere bounds must enclose every enabled child shape, including local offsets, m
 These stages complement the broader [WPPhysics production plan](WPPHYSICS_PRODUCTION_PLAN.md). Contact-cache shape identity, full solver settings integration, CCD, and trigger-event delivery remain separate work.
 
 ## Validation and measurement
+
+### OBB implementation validation
+
+Fresh x64 RelWithDebInfo builds and all five focused CTests passed: `WorkphonePhysics.oriented_bounds`, `WorkphonePhysics.broadphase`, `WorkphonePhysics.collision`, `WorkphonePhysics.material`, and `WPPhysics.scene_capacity`. The C++ `WPPhysics` DLL also rebuilt and linked against the updated native library. Tests cover rotated/offset primitives, compound containment, geometry/pose cache separation, enable/destruction edits, cooked mesh refits, plane/raw-mesh fallbacks, touching, near-parallel axes, nonfinite poses and large coordinates, including cancellation between large body positions and local offsets. An independent exact narrowphase oracle checks that none of its contacts are rejected across 5,400 randomized primitive pairs. Scene fixtures run with scalar and SSE2 traversal; an AABB-only comparison verifies that immediate solver corrections still create and resolve the later contact. A fixed-frequency-cache fixture verifies leave/reentry after OBB rejection.
+
+X64 AddressSanitizer builds instrumenting all native WorkphonePhysics and WorkphoneCollision sources passed the oriented-bounds tests with no reported errors, both with SSE2 available and with `WP_PHYSICS_DISABLE_SIMD`. Full engine tests and interactive Editor validation were not run for this stage.
+
+The optional benchmark now also compares complete scene simulation with OBB filtering on/off, alternating order across five fresh runs. Each fixture has one dynamic and 127 static bodies; triggers keep the geometry fixed while still performing contact generation. Times below are median milliseconds per step after warmup, including AABB updates/traversal and shape contact generation, but excluding initial cooking/local-fit cost.
+
+| OBB scene workload | AABB only | AABB + OBB | AABB body pairs | OBB rejected | Narrowphase calls before/after |
+|---|---:|---:|---:|---:|---:|
+| Parallel 20-by-2 bars at 45 degrees, spacing 3 | 0.0304 | 0.0205 | 14 | 14 | 14 / 0 |
+| Same bars, spacing 1.5 with real overlaps | 0.0513 | 0.0343 | 28 | 26 | 28 / 2 |
+| Rotated compounds, two children per body | 0.0972 | 0.0205 | 14 | 14 | 56 / 0 |
+| Aligned dense contacts | 0.1778 | 0.1814 | 127 | 0 | 127 / 127 |
+| Rotated thin mesh bounds against a box | 0.0352 | 0.0209 | 14 | 14 | 14 / 0 |
+
+These measurements demonstrate fit/candidate benefits on controlled fixtures, not an Editor/vehicle-track speedup guarantee. The aligned case was about 2% slower in the final run, with no OBB rejections; cache/eligibility checks still have a cost when the SAT gate skips testing. Profile real contact-heavy, moving/rotating and compound-track scenes before extending the OBB hierarchy or selecting additional defaults.
+
+### Earlier AABB caching/SSE2 validation
 
 The x64 RelWithDebInfo build passed for native physics and the new test executable. The C++ `WPPhysics` target also compiled and linked against the updated native library; that target was built with project-reference rebuilding disabled after building the focused native dependencies.
 
@@ -84,8 +120,8 @@ The separate full-scene benchmark includes simulation, bounds synchronization, i
 Reproduce correctness with:
 
 ```powershell
-cmake --build project_x64 --target WorkphonePhysicsBroadphaseTests WorkphonePhysicsCollisionTests WorkphonePhysicsMaterialTests PhysicsSceneCapacityTests --config RelWithDebInfo --parallel 2
-ctest --test-dir project_x64 -C RelWithDebInfo -R 'WorkphonePhysics\.(broadphase|collision|material)|WPPhysics.scene_capacity' --output-on-failure
+cmake --build project_x64 --target WorkphonePhysicsOrientedBoundsTests WorkphonePhysicsBroadphaseTests WorkphonePhysicsCollisionTests WorkphonePhysicsMaterialTests PhysicsSceneCapacityTests --config RelWithDebInfo --parallel 2
+ctest --test-dir project_x64 -C RelWithDebInfo -R 'WorkphonePhysics\.(oriented_bounds|broadphase|collision|material)|WPPhysics.scene_capacity' --output-on-failure
 ```
 
 Run the optional synthetic timing comparison with:

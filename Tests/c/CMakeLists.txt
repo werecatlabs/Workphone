@@ -19,6 +19,14 @@ target_link_libraries(WorkphonePhysicsBroadphaseTests PRIVATE WorkphonePhysics)
 set_target_properties(WorkphonePhysicsBroadphaseTests PROPERTIES FOLDER Tests/C)
 add_test(NAME WorkphonePhysics.broadphase COMMAND WorkphonePhysicsBroadphaseTests)
 
+add_executable(WorkphonePhysicsOrientedBoundsTests WorkphonePhysicsOrientedBoundsTests.c)
+target_include_directories(WorkphonePhysicsOrientedBoundsTests PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+    ${WP_ROOT}/Engine/c/Source/WorkphonePhysics)
+target_link_libraries(WorkphonePhysicsOrientedBoundsTests PRIVATE WorkphonePhysics)
+set_target_properties(WorkphonePhysicsOrientedBoundsTests PROPERTIES FOLDER Tests/C)
+add_test(NAME WorkphonePhysics.oriented_bounds COMMAND WorkphonePhysicsOrientedBoundsTests)
+
 add_executable(WorkphonePhysicsBroadphaseBenchmarks WorkphonePhysicsBroadphaseBenchmarks.c)
 target_include_directories(WorkphonePhysicsBroadphaseBenchmarks PRIVATE
     ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <math.h>
 #include <time.h>
 #ifdef _WIN32
 #    define WIN32_LEAN_AND_MEAN
@@ -142,6 +143,58 @@ static int compare_double( const void *a, const void *b )
     double x = *(const double *)a, y = *(const double *)b;
     return ( x > y ) - ( x < y );
 }
+#ifndef WP_BENCHMARK_BASELINE
+static double oriented_scene_case( int enabled, int pattern, wp_scene_broadphase_stats *stats )
+{
+    enum { count = 128, rounds = 160 };
+    wp_physics_scene *scene = wp_physics_scene_create();
+    wp_rigidbody *bodies[count];
+    wp_f32 vertices[] = {-10,-1,0, 10,-1,0, 10,1,0, -10,1,0};
+    wp_u32 indices[] = {0,1,2, 0,2,3};
+    wp_collision_mesh_data mesh = {vertices, 4, indices, 2};
+    double start, end;
+    CHECK(scene);
+    wp_physics_scene_set_gravity(scene, (wp_vec3f){0,0,0});
+    wp_physics_scene_set_broadphase_obb_enabled(scene, enabled);
+    for(int i = 0; i < count; ++i)
+    {
+        float spacing = pattern == 1 ? 1.5f : 3;
+        int children = pattern == 2 ? 2 : 1;
+        bodies[i] = wp_rigidbody_create(i == 64 ? WORKPHONE_RIGIDBODY_DYNAMIC : WORKPHONE_RIGIDBODY_STATIC);
+        CHECK(bodies[i]);
+        for(int child = 0; child < children; ++child)
+        {
+            int is_mesh = pattern == 4 && i != 64;
+            wp_collision_shape *shape = wp_collision_shape_create(is_mesh ? WORKPHONE_COLLISION_SHAPE_MESH : WORKPHONE_COLLISION_SHAPE_BOX);
+            CHECK(shape);
+            if(is_mesh) wp_collision_shape_set_mesh_data(shape, &mesh);
+            else wp_collision_shape_set_box_half_extents(shape, (wp_vec3f){pattern == 2 ? 1.0f : 10.0f,1,1});
+            if(pattern == 2) wp_collision_shape_set_local_position(shape, (wp_vec3f){child ? 9.0f : -9.0f,0,0});
+            wp_collision_shape_set_trigger(shape, 1);
+            CHECK(wp_rigidbody_add_shape(bodies[i], shape) >= 0);
+        }
+        if(pattern != 3)
+        {
+            wp_rigidbody_set_orientation(bodies[i], (wp_quatf){.92387953f,0,0,.38268343f});
+            wp_rigidbody_set_position(bodies[i], (wp_vec3f){-(i-64)*spacing*.70710678f,(i-64)*spacing*.70710678f,0});
+        }
+        CHECK(wp_physics_scene_add_actor(scene, bodies[i]));
+    }
+    wp_physics_scene_simulate(scene, 1.0f/60);
+    start = now();
+    for(int r = 0; r < rounds; ++r) wp_physics_scene_simulate(scene, 1.0f/60);
+    end = now();
+    *stats = wp_physics_scene_get_broadphase_stats(scene);
+    wp_physics_scene_destroy(scene);
+    for(int i = 0; i < count; ++i)
+    {
+        while(wp_rigidbody_get_shape_count(bodies[i]))
+            wp_collision_shape_destroy(wp_rigidbody_get_shape(bodies[i], 0));
+        wp_rigidbody_destroy(bodies[i]);
+    }
+    return (end-start)*1000.0/rounds;
+}
+#endif
 int main( void )
 {
     const char *names[] = { "small",        "sparse",     "dense",    "mixed-sizes",
@@ -188,5 +241,30 @@ int main( void )
         qsort( values, 5, sizeof( *values ), compare_double );
         printf( "Full scene %-12s n=4096 %.4f ms/step\n", mode ? "1% moving" : "all static", values[2] );
     }
+#ifndef WP_BENCHMARK_BASELINE
+    puts("OBB full scene, 1 dynamic/127 static, trigger shapes keep fixtures fixed; five-run median ms/step.");
+    for(int pattern = 0; pattern < 5; ++pattern)
+    {
+        const char *labels[] = {"rotated bars", "rotated contacts", "rotated compounds", "aligned dense", "rotated mesh"};
+        double values[2][5];
+        wp_scene_broadphase_stats stats[2];
+        for(int repeat = 0; repeat < 5; ++repeat)
+            for(int pass = 0; pass < 2; ++pass)
+            {
+                int enabled = (repeat+pass)%2;
+                values[enabled][repeat] = oriented_scene_case(enabled, pattern, &stats[enabled]);
+            }
+        CHECK(stats[0].candidate_pairs == stats[1].candidate_pairs);
+        printf("%-18s", labels[pattern]);
+        for(int enabled = 0; enabled < 2; ++enabled)
+        {
+            qsort(values[enabled], 5, sizeof(double), compare_double);
+            printf(" %s=%.4f", enabled ? "OBB" : "AABB", values[enabled][2]);
+        }
+        printf(" pairs=%llu rejected=%llu narrowphase=%llu->%llu\n",
+               (unsigned long long)stats[1].candidate_pairs, (unsigned long long)stats[1].obb_rejections,
+               (unsigned long long)stats[0].narrowphase_tests, (unsigned long long)stats[1].narrowphase_tests);
+    }
+#endif
     return 0;
 }

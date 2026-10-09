@@ -7,6 +7,7 @@
 #include "workphone_physics_material.h"
 #include "workphone_physics_constraint.h"
 #include "workphone_physics_internal.h"
+#include "workphone_physics_bounds.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,8 @@ typedef struct wp_rigidbody
     wp_vec3f position;
     wp_quatf orientation;
     uint64_t bounds_revision;
+    uint64_t geometry_revision;
+    wp_body_obb_cache obb_cache;
 
     /* Mass / inertia */
     wp_f32 mass;
@@ -94,6 +97,7 @@ wp_rigidbody *wp_rigidbody_create( wp_rigidbody_type type )
 
     body->body_type = type;
     body->bounds_revision = 1;
+    body->geometry_revision = 1;
     body->flags = WORKPHONE_RIGIDBODY_FLAG_ENABLED | WORKPHONE_RIGIDBODY_FLAG_GRAVITY;
     body->orientation.w = 1.0f;
     body->mass = 1.0f;
@@ -215,7 +219,7 @@ void wp_rigidbody_set_position( wp_rigidbody *body, wp_vec3f position )
         body->position.z != position.z )
     {
         body->position = position;
-        wp_rigidbody_invalidate_bounds( body );
+        ++body->bounds_revision;
     }
 }
 
@@ -242,7 +246,7 @@ void wp_rigidbody_set_orientation( wp_rigidbody *body, wp_quatf orientation )
         body->orientation.z != orientation.z || body->orientation.w != orientation.w )
     {
         body->orientation = orientation;
-        wp_rigidbody_invalidate_bounds( body );
+        ++body->bounds_revision;
     }
 }
 
@@ -251,11 +255,22 @@ uint64_t wp_rigidbody_get_bounds_revision( const wp_rigidbody *body )
     return body ? body->bounds_revision : 0;
 }
 
+uint64_t wp_rigidbody_get_geometry_revision( const wp_rigidbody *body )
+{
+    return body ? body->geometry_revision : 0;
+}
+
+wp_body_obb_cache *wp_rigidbody_get_obb_cache( wp_rigidbody *body )
+{
+    return body ? &body->obb_cache : NULL;
+}
+
 void wp_rigidbody_invalidate_bounds( wp_rigidbody *body )
 {
     if( body )
     {
         ++body->bounds_revision;
+        ++body->geometry_revision;
     }
 }
 

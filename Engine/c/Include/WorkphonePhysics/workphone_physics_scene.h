@@ -113,11 +113,25 @@ typedef struct wp_scene_broadphase_stats {
     uint64_t bounds_reuses;
     uint64_t candidate_pairs;
     wp_u32 collision_substeps;
+    /* candidate_pairs counts AABB pairs before the optional OBB filter.
+     * narrowphase_tests counts actual shape-pair dispatches, excluding reuse. */
+    uint64_t obb_tests;
+    uint64_t obb_rejections;
+    uint64_t obb_local_rebuilds;
+    uint64_t obb_world_updates;
+    uint64_t narrowphase_tests;
 } wp_scene_broadphase_stats;
 wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physics_scene *scene );
 /* Optional batched SSE2 traversal; returns 0 on targets without SSE2 support.
  * Scalar traversal is the default and is also used for dense query regions. */
 wp_s32 wp_physics_scene_set_broadphase_simd_enabled( wp_physics_scene *scene, wp_s32 enabled );
+/* Enabled by default: selectively reject AABB body pairs using cached local
+ * oriented bounds and the current pose. Six face axes conservatively retain
+ * edge/edge false positives for exact narrowphase. Planes and uncooked meshes
+ * retain AABB behavior. Disable for profiling/comparison. AABB query semantics
+ * and pair order are unchanged. Rebuild clients after stats layout changes. */
+void wp_physics_scene_set_broadphase_obb_enabled( wp_physics_scene *scene, wp_s32 enabled );
+wp_s32 wp_physics_scene_get_broadphase_obb_enabled( const wp_physics_scene *scene );
 
 /* =========================================================================
  * Threading

@@ -10,6 +10,7 @@
 #include "workphone_physics_constraint.h"
 #include "workphone_physics_narrowphase.h"
 #include "workphone_physics_triangle_mesh.h"
+#include "workphone_physics_bounds.h"
 #include <float.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,6 +53,7 @@ typedef struct wp_physics_scene
     wp_s32 *actor_proxies;
     wp_actor_bounds_cache *bounds_cache;
     wp_scene_broadphase_stats broadphase_stats;
+    wp_s32 obb_enabled;
 
     wp_vec3f size;
     wp_vec3f gravity;
@@ -689,6 +691,7 @@ wp_physics_scene *wp_physics_scene_create( void )
 
     /* Default contact options */
     scene->contact_options.strategy = WP_CONTACT_STRATEGY_ALWAYS;
+    scene->obb_enabled = 1;
     scene->contact_options.separation_threshold = 0.01f;
     scene->contact_options.fixed_update_frequency = 1;
     scene->contact_options.distance_frequency_scale = 1.0f;
@@ -1741,6 +1744,31 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
     wp_rigidbody *body_b = pair->body_b;
     wp_s32 sa, sb;
     ++scene->broadphase_stats.candidate_pairs;
+    if( scene->obb_enabled )
+    {
+        wp_s32 local_rebuilt, world_updated;
+        const wp_body_obb *a = wp_body_get_obb( body_a, &local_rebuilt, &world_updated );
+        const wp_body_obb *b;
+        scene->broadphase_stats.obb_local_rebuilds += local_rebuilt;
+        scene->broadphase_stats.obb_world_updates += world_updated;
+        b = wp_body_get_obb( body_b, &local_rebuilt, &world_updated );
+        scene->broadphase_stats.obb_local_rebuilds += local_rebuilt;
+        scene->broadphase_stats.obb_world_updates += world_updated;
+        /* The solver can move bodies during this visitor. Bounds are refreshed
+         * against live revisions here, without modifying the AABB tree snapshot. */
+        if( a && b && a->valid && b->valid && ( a->useful || b->useful ) )
+        {
+            ++scene->broadphase_stats.obb_tests;
+            if( !wp_body_obb_may_overlap( a, b,
+                    wp_narrowphase_get_contact_tolerance( scene->narrowphase ) ) )
+            {
+                wp_contact_cache_entry *entry = find_manifold( scene, body_a, body_b );
+                if( entry ) entry->active = 0;
+                ++scene->broadphase_stats.obb_rejections;
+                return;
+            }
+        }
+    }
     for( sa = 0; sa < wp_rigidbody_get_shape_count( body_a ); ++sa ) {
         wp_collision_shape *shape_a = wp_rigidbody_get_shape( body_a, sa );
         for( sb = 0; sb < wp_rigidbody_get_shape_count( body_b ); ++sb ) {
@@ -1753,6 +1781,7 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
             if( entry && !should_update_manifold( scene, entry, body_a, body_b ) ) {
                 manifold = entry->manifold;
             } else {
+                ++scene->broadphase_stats.narrowphase_tests;
                 if( !wp_narrowphase_test_pair( scene->narrowphase, body_a, shape_a, body_b, shape_b, &manifold ) ) {
                     if( entry ) entry->active = 0;
                     continue;
@@ -2007,6 +2036,16 @@ wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physic
 wp_s32 wp_physics_scene_set_broadphase_simd_enabled( wp_physics_scene *scene, wp_s32 enabled )
 {
     return scene ? wp_broadphase_set_simd_enabled( scene->broadphase, enabled ) : 0;
+}
+
+void wp_physics_scene_set_broadphase_obb_enabled( wp_physics_scene *scene, wp_s32 enabled )
+{
+    if( scene ) scene->obb_enabled = enabled != 0;
+}
+
+wp_s32 wp_physics_scene_get_broadphase_obb_enabled( const wp_physics_scene *scene )
+{
+    return scene ? scene->obb_enabled : 0;
 }
 
 wp_s32 wp_physics_scene_fetch_results( wp_physics_scene *scene, wp_s32 block )
