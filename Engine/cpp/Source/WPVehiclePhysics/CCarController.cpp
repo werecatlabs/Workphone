@@ -81,7 +81,7 @@ namespace workphone
             WP_ASSERT( isValidDriveTypeValue( controller.getDriveType() ) );
         }
 
-        void assertWheelConfig( const SmartPtr<IWheelComponent> &wheel, u32 index )
+        void assertWheelConfig( SmartPtr<IWheelComponent> wheel, u32 index )
         {
             WP_ASSERT( index < 4 );
             WP_ASSERT( wheel );
@@ -89,6 +89,13 @@ namespace workphone
             {
                 return;
             }
+
+            // Recover stale or malformed brake state before the wheel's own
+            // validation and update. Only write when correction is necessary.
+            const auto requestedBrake = wheel->getBrake();
+            const auto safeBrake = static_cast<physics_Num>( handling::brakeInput( requestedBrake ) );
+            if( requestedBrake != safeBrake )
+                wheel->setBrake( safeBrake );
 
             const auto localTransform = wheel->getLocalTransform();
             const auto worldTransform = wheel->getWorldTransform();
@@ -323,7 +330,7 @@ namespace workphone
             assertControllerRuntimeState( *this );
 
             const auto throttleValue = static_cast<physics_Num>( getChannel( 0 ) );
-            const auto brakeValue = static_cast<physics_Num>( getChannel( 1 ) );
+            const auto brakeValue = static_cast<physics_Num>( handling::brakeInput( getChannel( 1 ) ) );
             const auto steeringChannel = static_cast<physics_Num>( getChannel( 2 ) );
             const auto steeringValue = steeringChannel * getEditSteeringScale();
             assertControlInputs( throttleValue, brakeValue, steeringChannel, getEditSteeringScale(),
@@ -382,7 +389,7 @@ namespace workphone
             assertControllerRuntimeState( *this );
 
             auto throttleValue = static_cast<physics_Num>( getChannel( 0 ) );
-            auto brakeValue = static_cast<physics_Num>( getChannel( 1 ) );
+            auto brakeValue = static_cast<physics_Num>( handling::brakeInput( getChannel( 1 ) ) );
             auto steeringChannel = static_cast<physics_Num>( getChannel( 2 ) );
             auto steeringValue = steeringChannel * getPlaySteeringScale();
 

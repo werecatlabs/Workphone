@@ -1,6 +1,7 @@
 #include <WPVehiclePhysics/VehicleHandling.hpp>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 
 namespace
 {
@@ -17,6 +18,14 @@ namespace
 int main()
 {
     using namespace workphone::handling;
+    check( brakeInput( -.01 ) == 0 && brakeInput( 1.01 ) == 1,
+           "Out-of-range brake input reaches the wheel" );
+    for( const auto value : { 0.0, .25, .7, 1.0 } )
+        check( brakeInput( value ) == value, "Defensive clamping changes valid braking" );
+    for( const auto value : { std::numeric_limits<double>::quiet_NaN(),
+                             std::numeric_limits<double>::infinity(),
+                             -std::numeric_limits<double>::infinity() } )
+        check( brakeInput( value ) == 0, "Non-finite brake input reaches the wheel" );
     // A key held for 0.1 s produces the same angle at 30, 60 and 120 Hz.
     for( const int hz : { 30, 60, 120 } )
     {

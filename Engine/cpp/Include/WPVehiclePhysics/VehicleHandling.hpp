@@ -5,6 +5,13 @@
 
 namespace workphone::handling
 {
+    // Invalid analogue input must not poison the tyre solver. Test finiteness
+    // explicitly: std::clamp alone leaves NaN unchanged.
+    inline double brakeInput( double value )
+    {
+        return std::isfinite( value ) ? std::clamp( value, 0.0, 1.0 ) : 0.0;
+    }
+
     // Limit digital/analogue steering in road-wheel degrees, with a lateral
     // acceleration ceiling. Zero rate leaves existing controllers unchanged.
     inline double steering( double requested, double previous, double speed, double wheelbase,

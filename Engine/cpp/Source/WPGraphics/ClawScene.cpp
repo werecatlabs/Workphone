@@ -348,7 +348,8 @@ namespace workphone
 
         bool ClawScene::removeGraphicsObject( SmartPtr<ISharedObject> object )
         {
-            if( !GraphicsScene::removeGraphicsObject( object ) ) return false;
+            if( !GraphicsScene::removeGraphicsObject( object ) )
+                return false;
             if( auto light = dynamic_pointer_cast<IGraphicsLight>( object ) )
                 m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
             return true;
@@ -634,30 +635,42 @@ namespace workphone
                     dx11Renderer->setSceneLighting( getAmbientLight(), lightDirection, lightColour,
                                                     lightIntensity );
                     dx11Renderer->setSceneFog( static_cast<u32>( m_scene->fog_mode ),
-                        ColourF( m_scene->fog_colour.r, m_scene->fog_colour.g, m_scene->fog_colour.b, 1 ),
-                        m_scene->fog_density, m_scene->fog_start, m_scene->fog_end );
+                                               ColourF( m_scene->fog_colour.r, m_scene->fog_colour.g,
+                                                        m_scene->fog_colour.b, 1 ),
+                                               m_scene->fog_density, m_scene->fog_start,
+                                               m_scene->fog_end );
                     dx11Renderer->disableShadows();
                     const auto viewport = rawRenderer->getViewport();
                     SmartPtr<IGraphicsPipeline> pipeline;
                     if( auto manager = core::IApplicationManager::instancePtr() )
-                        if( auto graphics = manager->getGraphicsSystem() ) pipeline = graphics->getGraphicsPipeline();
-                    const bool shadows = ( !pipeline || pipeline->isCSMEnabled() ) && getEnableShadows() && lightCastsShadows && lightIntensity > 0.0f &&
+                        if( auto graphics = manager->getGraphicsSystem() )
+                            pipeline = graphics->getGraphicsPipeline();
+                    const bool shadows = ( !pipeline || pipeline->isCSMEnabled() ) &&
+                                         getEnableShadows() && lightCastsShadows &&
+                                         lightIntensity > 0.0f &&
                                          ( !viewport || viewport->getShadowsEnabled() );
-                    if( shadows && dx11Renderer->beginShadowMap( pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 ) )
+                    if( shadows && dx11Renderer->beginShadowMap(
+                                       pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 ) )
                     {
                         // Camera culling cannot exclude casters: offscreen objects can shadow visible receivers.
-                        const auto mask = m_scene->visibility_mask &
-                            ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() ) : ~u32( 0 ) ) &
+                        const auto mask =
+                            m_scene->visibility_mask &
+                            ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() )
+                                     : ~u32( 0 ) ) &
                             ( viewport ? viewport->getVisibilityMask() : ~u32( 0 ) );
                         for( s32 i = 0; i < m_scene->object_count; ++i )
                         {
                             auto object = m_scene->objects[i];
                             if( !object || !wp_graphics_object_is_visible( object ) ||
-                                !( wp_graphics_object_get_visibility_flags( object ) & mask ) ) continue;
-                            auto mesh = static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
-                            if( !mesh || !mesh->getCastShadows() ) continue;
+                                !( wp_graphics_object_get_visibility_flags( object ) & mask ) )
+                                continue;
+                            auto mesh =
+                                static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
+                            if( !mesh || !mesh->getCastShadows() )
+                                continue;
                             wp_mat4f world;
-                            wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &world );
+                            wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
+                                                           &world );
                             dx11Renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
                         }
                         for( auto &object : m_terrains.snapshot() )
@@ -683,8 +696,10 @@ namespace workphone
                         m_scene, nativeRenderer,
                         []( wp_graphics_object *object, wp_renderer *, void *data ) -> wp_s32 {
                             auto renderer = static_cast<ClawRendererDX11 *>( data );
-                            auto mesh = static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
-                            if( !mesh ) return 0;
+                            auto mesh =
+                                static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
+                            if( !mesh )
+                                return 0;
                             wp_mat4f world;
                             wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
                                                            &world );
@@ -697,12 +712,17 @@ namespace workphone
                     for( auto &object : m_particleSystems.snapshot() )
                     {
                         auto particles = dynamic_pointer_cast<CParticleSystem>( object );
-                        if( !particles || !particles->isVisible() || !particles->isLoaded() ) continue;
+                        if( !particles || !particles->isVisible() || !particles->isLoaded() )
+                            continue;
                         auto viewport = rawRenderer->getViewport();
-                        if( viewport && !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) ) continue;
+                        if( viewport &&
+                            !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) )
+                            continue;
                         auto owner = particles->getOwner();
-                        Matrix4F world = owner ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
-                                               : Matrix4F::identity();
+                        Matrix4F world =
+                            owner
+                                ? Matrix4F( owner->getWorldTransform().getTransformationMatrix().ptr() )
+                                : Matrix4F::identity();
                         if( auto clawOwner = dynamic_pointer_cast<ClawSceneNode>( owner ) )
                         {
                             wp_mat4f nativeWorld{};
@@ -710,15 +730,23 @@ namespace workphone
                             world = Matrix4F( nativeWorld.m[0] );
                         }
 
+                        auto manager = core::IApplicationManager::instancePtr();
+                        auto graphics = manager->getGraphicsSystem();
+                        auto materials = graphics->getMaterialManager();
+                        auto paticlesMaterialName = particles->getMaterialName();
+
                         SmartPtr<IMaterial> material;
-                        if( auto manager = core::IApplicationManager::instancePtr() )
-                            if( auto graphics = manager->getGraphicsSystem() )
-                                if( auto materials = graphics->getMaterialManager() )
-                                    material = dynamic_pointer_cast<IMaterial>(
-                                        materials->getByName( particles->getMaterialName() ) );
+
+                        if( !StringUtil::isNullOrEmpty( paticlesMaterialName ) )
+                        {
+                            material = dynamic_pointer_cast<IMaterial>(
+                                materials->getByName( particles->getMaterialName() ) );
+                        }
+
                         const auto scale = particles->getScale();
                         dx11Renderer->renderParticles( particles->getRenderSnapshot(), world,
-                            Vector3F( scale.X(), scale.Y(), scale.Z() ), material );
+                                                       Vector3F( scale.X(), scale.Y(), scale.Z() ),
+                                                       material );
                     }
                 }
                 else
