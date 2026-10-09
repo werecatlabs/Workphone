@@ -1,6 +1,6 @@
 |// Low-level VM code for ARM CPUs.
 |// Bytecode interpreter, fast functions and helper functions.
-|// Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
+|// Copyright (C) 2005-2026 Mike Pall. See Copyright Notice in luajit.h
 |
 |.arch arm
 |.section code_op, code_sub
@@ -848,6 +848,26 @@ static void build_subroutines(BuildCtx *ctx)
 #else
   |  b ->vmeta_binop			// Binop call for compatibility.
 #endif
+  |
+  |//-- Bit operator metamethods -------------------------------------------
+  |
+  |->vmeta_bnot:
+  |  add CARG3, BASE, RC
+  |  mov CARG4, CARG3
+  |  b >1
+  |
+  |->vmeta_bitop:
+  |  add CARG3, BASE, RB
+  |   add CARG4, BASE, RC
+  |1:
+  |  decode_OP OP, INS
+  |   add CARG2, BASE, RA
+  |    str BASE, L->base
+  |   mov CARG1, L
+  |    str PC, SAVE_PC
+  |  str OP, ARG5
+  |  bl extern lj_meta_bitop  // (lua_State *L, TValue *ra,*rb,*rc, BCReg op)
+  |  b ->cont_nop
   |
   |//-- Call metamethod ----------------------------------------------------
   |
@@ -3125,13 +3145,16 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  bhi ->vmeta_unm
     |  eorne CARG2, CARG2, #0x80000000
     |  bne >5
-    |  rsbseq CARG1, CARG1, #0
+    |  rsbs CARG1, CARG1, #0
+    |  ldrdeq CARG12, >8
     |  ldrdvs CARG12, >9
     |5:
     |  strd CARG12, [BASE, RA]
     |   ins_next3
     |
     |.align 8
+    |8:
+    |  .long 0x00000000, 0x80000000	// -0.
     |9:
     |  .long 0x00000000, 0x41e00000	// 2^31.
     break;
@@ -3371,6 +3394,61 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |   ins_next2
     |  strd CARG34, [BASE, RA]		// Copy result to RA.
     |   ins_next3
+    break;
+
+  /* -- Bit ops ----------------------------------------------------------- */
+
+  case BC_BNOT:
+    |  // RA = dst, RC = src
+    |  lsl RC, RC, #3
+    |  ldrd CARG12, [BASE, RC]
+    |  checktp CARG1, LJ_TISNUM
+    |  bne ->vmeta_bnot
+    |  mvn CARG1, CARG1
+    |  mvn CARG2, #~LJ_TISNUM
+    |   ins_next1
+    |   ins_next2
+    |  strd CARG12, [BASE, RA]
+    |   ins_next3
+    break;
+
+    |.macro ins_bitop, ins, shop
+    |  decode_RB8 RB, INS
+    |   decode_RC8 RC, INS
+    |  // RA = dst*8, RB = src1*8, RC = src2*8
+    |  ldrd CARG12, [BASE, RB]
+    |   ldrd CARG34, [BASE, RC]
+    |  checktp CARG2, LJ_TISNUM
+    |   checktpeq CARG4, LJ_TISNUM
+    |  bne ->vmeta_bitop
+    |.if shop == 1
+    |  and CARG3, CARG3, #31
+    |.endif
+    |  ins CARG1, CARG1, CARG3
+    |  mvn CARG2, #~LJ_TISNUM
+    |   ins_next1
+    |   ins_next2
+    |  strd CARG12, [BASE, RA]
+    |   ins_next3
+    |.endmacro
+
+  case BC_BAND:
+    |  ins_bitop and, 0
+    break;
+  case BC_BOR:
+    |  ins_bitop orr, 0
+    break;
+  case BC_BXOR:
+    |  ins_bitop eor, 0
+    break;
+  case BC_BSHL:
+    |  ins_bitop lsl, 1
+    break;
+  case BC_BSHR:
+    |  ins_bitop lsr, 1
+    break;
+  case BC_BSAR:
+    |  ins_bitop asr, 1
     break;
 
   /* -- Constant ops ------------------------------------------------------ */

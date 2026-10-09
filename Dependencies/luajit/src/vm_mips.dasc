@@ -1,6 +1,6 @@
 |// Low-level VM code for MIPS CPUs.
 |// Bytecode interpreter, fast functions and helper functions.
-|// Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
+|// Copyright (C) 2005-2026 Mike Pall. See Copyright Notice in luajit.h
 |//
 |// MIPS soft-float support contributed by Djordje Kovacevic and
 |// Stefan Pejic from RT-RK.com, sponsored by Cisco Systems, Inc.
@@ -981,6 +981,25 @@ static void build_subroutines(BuildCtx *ctx)
   |  b ->vmeta_binop			// Binop call for compatibility.
   |.  nop
 #endif
+  |
+  |//-- Bit operator metamethods -------------------------------------------
+  |
+  |->vmeta_bnot:
+  |  move RC, RB
+  |
+  |->vmeta_bitop:
+  |  load_got lj_meta_bitop
+  |  decode_OP1 TMP0, INS
+  |   sw BASE, L->base
+  |  move CARG2, RA
+  |   sw PC, SAVE_PC
+  |  move CARG3, RB
+  |  move CARG4, RC
+  |  sw TMP0, ARG5
+  |  call_intern lj_meta_bitop  // (lua_State *L, TValue *ra,*rb,*rc, BCReg op)
+  |.  move CARG1, L
+  |  b ->cont_nop
+  |.  nop
   |
   |//-- Call metamethod ----------------------------------------------------
   |
@@ -3566,7 +3585,8 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |   addu RA, BASE, RA
     |  bne SFARG1HI, TISNUM, >2
     |.  lw SFARG1LO, LO(RB)
-    |  lui TMP1, 0x8000
+    |  beqz SFARG1LO, >3
+    |.  lui TMP1, 0x8000
     |  beq SFARG1LO, TMP1, ->vmeta_unm	// Meta handler deals with -2^31.
     |.  negu SFARG1LO, SFARG1LO
     |1:
@@ -3580,6 +3600,9 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |.  lui TMP1, 0x8000
     |  b <1
     |.  xor SFARG1HI, SFARG1HI, TMP1
+    |3:
+    |  b <1
+    |.  lui SFARG1HI, 0x8000	// -0.
     break;
   case BC_LEN:
     |  // RA = dst*8, RD = src*8
@@ -3880,6 +3903,62 @@ static void build_ins(BuildCtx *ctx, BCOp op, int defop)
     |  sw SFRETHI, HI(RA)
     |   sw SFRETLO, LO(RA)
     |  ins_next2
+    break;
+
+  /* -- Bit ops ----------------------------------------------------------- */
+
+  case BC_BNOT:
+    |  // RA = dst*8, RD = src*8
+    |  addu RB, BASE, RD
+    |  lw TMP0, HI(RB)
+    |   lw CRET1, LO(RB)
+    |  bne TMP0, TISNUM, ->vmeta_bnot
+    |.  addu RA, BASE, RA
+    |  not CRET1, CRET1
+    |  ins_next1
+    |  sw TISNUM, HI(RA)
+    |   sw CRET1, LO(RA)
+    |  ins_next2
+    break;
+
+    |.macro ins_bitop, ins
+    |  // RA = dst*8, RB = src1*8, RC = src2*8
+    |  decode_RB8a RB, INS
+    |  decode_RB8b RB
+    |   decode_RDtoRC8 RC, RD
+    |  addu RB, BASE, RB
+    |   addu RC, BASE, RC
+    |  lw TMP0, HI(RB)
+    |   lw TMP1, HI(RC)
+    |    lw CRET1, LO(RB)
+    |  bne TMP0, TISNUM, ->vmeta_bitop
+    |.  addu RA, BASE, RA
+    |    lw CRET2, LO(RC)
+    |   bne TMP1, TISNUM, ->vmeta_bitop
+    |.   ins CRET1, CRET1, CRET2
+    |  ins_next1
+    |  sw TISNUM, HI(RA)
+    |   sw CRET1, LO(RA)
+    |  ins_next2
+    |.endmacro
+
+  case BC_BAND:
+    |  ins_bitop and
+    break;
+  case BC_BOR:
+    |  ins_bitop or
+    break;
+  case BC_BXOR:
+    |  ins_bitop xor
+    break;
+  case BC_BSHL:
+    |  ins_bitop sllv
+    break;
+  case BC_BSHR:
+    |  ins_bitop srlv
+    break;
+  case BC_BSAR:
+    |  ins_bitop srav
     break;
 
   /* -- Constant ops ------------------------------------------------------ */
