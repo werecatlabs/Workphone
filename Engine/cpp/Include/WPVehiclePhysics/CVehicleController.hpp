@@ -3,6 +3,7 @@
 
 #include <WPVehiclePhysics/WPVehiclePhysicsPrerequisites.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Atomics/AtomicFloat.hpp>
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
@@ -313,7 +314,7 @@ namespace workphone
         atomic_bool m_displayDebugData = false;
 
         /** @brief Control channels (small fixed-size array, e.g. throttle/steer/...) */
-        FixedArray<f32, 8> m_channels;
+        FixedArray<atomic_f32, 8> m_channels;
     };
 
     WP_CLASS_REGISTER_DERIVED_TEMPLATE( workphone, CVehicleController, T, T );
