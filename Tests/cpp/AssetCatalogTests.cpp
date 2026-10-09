@@ -251,6 +251,15 @@ namespace
         const String databasePath = ( folder / "identity.db" ).generic_u8string().c_str();
         auto catalog = make_ptr<AssetDatabaseManager>();
         catalog->loadFromFile( databasePath );
+        const auto firstGeneration = catalog->getCatalogGeneration();
+        app->setProjectPath( relocated.generic_u8string().c_str() );
+        catalog->loadFromFile( databasePath );
+        require( catalog->getCatalogGeneration() != firstGeneration &&
+                     std::filesystem::equivalent(
+                         std::filesystem::u8path( catalog->getProjectRoot().c_str() ), relocated ),
+                 "Loading the same database after a project switch must rebind and invalidate" );
+        app->setProjectPath( project.generic_u8string().c_str() );
+        catalog->loadFromFile( databasePath );
         require( std::filesystem::equivalent(
                      std::filesystem::u8path( catalog->getProjectRoot().c_str() ), project ),
                  "Opening must capture the application's project root" );
@@ -582,6 +591,11 @@ namespace
         auto bound = dynamic_cast<IParameterizedDatabase *>( db.get() );
         require( bound != nullptr, "SQLite parameterized backend is mandatory; cannot skip" );
         catalog.create();
+        const auto generation = catalog.getCatalogGeneration();
+        for( int i = 0; i < 10; ++i )
+            catalog.loadFromFile( String( ( folder / "catalog.db" ).string().c_str() ) );
+        require( catalog.getDatabase() == db && catalog.getCatalogGeneration() == generation,
+                 "Repeated resource lookups must reuse the open catalog and its generation" );
         require( !catalog.getResourceEntryFromPath( "missing.mesh" ),
                  "Missing lookup must return null" );
         require( !catalog.getResourceEntry( "missing-id" ), "Missing UUID must return null" );

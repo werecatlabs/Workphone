@@ -390,8 +390,16 @@ namespace workphone
     void AssetDatabaseManager::loadFromFile( const String &path )
     {
         ScopedLock lock( this );
-        // Reopen even the same relative database name: the application's project
-        // may have changed since the previous connection was established.
+        // Resource lookups repeatedly request this connection. Reopening and
+        // validating the catalog per mesh/material makes procedural startup slow.
+        // The same relative name can still refer to a different project.
+        if( m_catalogReady && path == getDatabasePath() )
+            if( auto database = getDatabase(); database && database->isLoaded() )
+            {
+                const auto previousRoot = m_projectRoot;
+                if( captureProjectRoot() && m_projectRoot == previousRoot )
+                    return;
+            }
         close();
         m_projectRoot.clear();
         DatabaseManager::loadFromFile( path );

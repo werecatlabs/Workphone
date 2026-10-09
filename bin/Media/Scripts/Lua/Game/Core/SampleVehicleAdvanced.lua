@@ -110,13 +110,13 @@ function SampleVehicleAdvanced:generate()
     assert(owner and self.gameManager and self.timer,
         "SampleVehicleAdvanced requires an owner actor, game manager and timer")
     local wasPlaying = self.application:isPlaying()
-    self.application:setPlaying(false)
 
     local ok, failure = pcall(function()
         self.generatedRoot = self.gameManager:createActor()
         assert(self.generatedRoot, "Cannot create the generated scene root")
         self.generatedRoot:setName("SampleVehicleAdvanced.Generated")
         owner:addChild(self.generatedRoot)
+        self.generatedRoot:setState(ActorState.Edit, true)
         self.vehicleActor = self:createActor("Procedural Grand Prix")
         self.vehicleActor:setPosition(Vector3F(0, SPAWN_HEIGHT, 0))
         self.raceScene = self.vehicleActor:addComponent("ProceduralRaceScene")
@@ -155,15 +155,14 @@ function SampleVehicleAdvanced:generate()
         self:drawText(DEBUG_TEXT_ID + 3, 0.02, "W/S: throttle/brake  A/D: steer  R: reset")
         self:drawText(DEBUG_TEXT_ID + 4, 0.06, "Arrows: drive  Mouse wheel: zoom  Esc: quit")
     end)
-    self.application:setPlaying(wasPlaying)
     if not ok then
         self:shutdown()
         self.startFailed = true
         error("SampleVehicleAdvanced: " .. tostring(failure))
     end
-    -- Generation occurs after the Editor's initial play transition. Queue the
-    -- newly created actors for play as well, including the collision plane.
-    if wasPlaying then self.gameManager:play() end
+    -- Changing the application flag would make the Editor restore its snapshot
+    -- midway through generation. Transition only the new subtree after building.
+    if wasPlaying then self.generatedRoot:setState(ActorState.Play, true) end
     return true
 end
 

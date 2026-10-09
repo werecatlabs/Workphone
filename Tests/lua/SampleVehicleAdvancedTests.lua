@@ -26,6 +26,7 @@ function vector:normalise()
 end
 function vector.__sub(a, b) return Vector3F(a.x-b.x, a.y-b.y, a.z-b.z) end
 KeyCode = {}
+ActorState = {Edit=2, Play=3}
 for i, name in ipairs({"W", "Up", "S", "Down", "A", "Left", "D", "Right", "R", "Escape"}) do KeyCode[name] = i end
 
 dofile("bin/Media/Scripts/Lua/Game/Core/BaseComponent.lua")
@@ -71,6 +72,7 @@ local function fixture()
     local function actor()
         local a = {position=Vector3F(0, 0.3, 0), children={}}
         function a:setName(name) self.name = name end
+        function a:setState(state, cascade) assert(cascade); self.state = state end
         function a:setSmoothMotion(value, cascade)
             assert(type(cascade) == "boolean", "Lua binding requires the cascade argument")
             self.smoothMotion = value
@@ -115,7 +117,10 @@ local function fixture()
         drawText=function(_, id, _, text) drawn[id] = text end
     } end} end
     function app:isPlaying() return self.playing end
-    function app:setPlaying(value) self.playing = value end
+    function app:setPlaying(value)
+        self.playFlagChanges = (self.playFlagChanges or 0) + 1
+        self.playing = value
+    end
     function app:isPaused() return self.paused end
     function app:setQuit(value) self.quit = value end
     function app:getProfiler() return nil end
@@ -134,7 +139,9 @@ assert(race.audioEnabled and race.effectsEnabled, "Presentation defaults must re
 sample:setPresentationOptions(false, false)
 assert(not race.audioEnabled and not race.effectsEnabled, "Presentation switches must update the existing component")
 sample:setPresentationOptions(true, true)
-assert(app.playTransitions == 1, "Actors generated during play must enter play state")
+assert(not app.playTransitions, "Generation must not restart the whole scene")
+assert(not app.playFlagChanges, "Generation must not request Editor Stop")
+assert(sample.generatedRoot.state == ActorState.Play, "Generated subtree must enter Play")
 assert(sample.vehicleActor.position.y == 0.42 and sample.cameraActor.position.z == 8)
 assert(sample.cameraActor.smoothMotion, "Follow camera must use the render smoothing path")
 assert(drawn[0x56454803] and drawn[0x56454804], "Driving instructions must be displayed")

@@ -4,6 +4,8 @@
 #include <Workphone/Physics/RaycastHit.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
+#include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cmath>
@@ -41,6 +43,11 @@ namespace workphone::scene
 
     bool ProceduralRaceScene::regenerate()
     {
+        auto tasks = core::IApplicationManager::instance()->getTaskManager();
+        // Lua can generate during Play. Synchronize resource/body replacement
+        // without changing the Editor's global play flag (which requests Stop).
+        auto renderLock = tasks ? tasks->lockTask(TaskId::Render) : TaskLock();
+        auto physicsLock = tasks ? tasks->lockTask(TaskId::Physics) : TaskLock();
         std::lock_guard<std::recursive_mutex> presentationLock(m_presentationMutex);
         auto actor = getActor();
         if(!actor)
@@ -48,7 +55,7 @@ namespace workphone::scene
             m_generationError = "Attach ProceduralRaceScene to a vehicle actor before generating.";
             return false;
         }
-        // Callers generate while stopped, so replacing the hierarchy cannot race a physics step.
+        // Rendering and physics are stopped while replacing the hierarchy.
         clearGeneratedScene();
         try
         {
