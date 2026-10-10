@@ -4,6 +4,8 @@ Reviewed: 10 October 2026 in `G:\Workphone`, source baseline `7107f0a393a889db82
 
 Status: review and proposed implementation plan. The current scripting system has useful, working foundations, but is not production ready across runtime safety, reload, debugging, Editor authoring and distribution. This document does not implement those changes or certify an interactive debugging session.
 
+Implementation has started since this baseline review. See [current implementation status and usage](WPLUA_IMPLEMENTATION_STATUS.md) for completed foundations, configuration, validation and remaining gates. The source findings below describe the reviewed baseline rather than claiming every issue still exists unchanged.
+
 Scope: `WPLua`, `WPLuaBind`, Script components and invokers, application/project loading, Lua Editor windows, script authoring and assets, `Tools/csharp/LuaDebuggerVsix`, the separate C `WorkphoneScript` host, testing and packaged applications. Shared identity, cooking and asset publication use the [resource and asset plan](WPRESOURCE_ASSET_PRODUCTION_PLAN.md). Integrate with the [animation](WPANIMATION_PRODUCTION_PLAN.md), [physics](WPPHYSICS_PRODUCTION_PLAN.md) and [graphics](WPGRAPHICS_PRODUCTION_PLAN.md) plans rather than creating alternative engine systems.
 
 ## 1. Production outcome and release scope

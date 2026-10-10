@@ -2,6 +2,7 @@
 #define WPLuaAssetContracts_h__
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
+#include <Workphone/Script/ScriptGenerator.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <WPLua/LuaScriptCompiler.hpp>
@@ -48,6 +49,25 @@ inline void runLuaAssetContracts( workphone::LuaManager &manager )
             core::IApplicationManager::setInstance( nullptr );
         }
     } application;
+    struct ManagerFixture
+    {
+        LuaManager &manager;
+        ~ManagerFixture()
+        {
+            // Release catalog/plugin references before the application fixture,
+            // including assertion and exception paths.
+            manager.unload( nullptr );
+            manager.configureScriptResources( nullptr, nullptr );
+        }
+    } managerFixture{ manager };
+    ScriptGenerator generator;
+    for( const char *name : { "end.lua", "123-player.lua", "actor-name.lua" } )
+    {
+        const auto path = ( source / name ).string();
+        generator.createScript( LanguageType::LUA, path.c_str() );
+        check( manager.executeSource( application.app->getFileSystem()->readAllText( path.c_str() ),
+                                      ( "@" + path ).c_str() ), "generated Lua class syntax" );
+    }
     auto catalog = make_ptr<AssetDatabaseManager>();
     check( catalog->setProjectRoot( source.string().c_str() ), "asset source root" );
     catalog->loadFromFile( ( folder / "catalog.db" ).string().c_str() );
@@ -65,6 +85,25 @@ inline void runLuaAssetContracts( workphone::LuaManager &manager )
     write( "logic/Actor.lua", "assetLoads=(assetLoads or 0)+1; assert(require('logic.Helper').value==41); assetVersion=1" );
     auto asset = make_ptr<ScriptAsset>();
     const auto uuid = StringUtil::getUUID();
+    auto component = make_ptr<scene::Script>();
+    auto authored = make_ptr<Properties>();
+    authored->setProperty( "className", "AssetActor" );
+    authored->setProperty( "scriptAssetUuid", uuid );
+    authored->setProperty( "updateInEditMode", true );
+    component->setProperties( authored );
+    check( component->getClassName() == "AssetActor" && component->getScriptAssetUuid() == uuid &&
+           component->getUpdateInEditMode(), "unattached script component lost authored fields" );
+    component->setProperties( make_ptr<Properties>() );
+    check( component->getClassName() == "AssetActor" && component->getScriptAssetUuid() == uuid,
+           "partial script properties cleared asset identity" );
+    auto copy = make_ptr<scene::Script>();
+    copy->setProperties( component->getProperties() );
+    check( copy->getClassName() == "AssetActor" && copy->getScriptAssetUuid() == uuid,
+           "script component property round trip" );
+    authored->setProperty( "className", "" );
+    authored->setProperty( "scriptAssetUuid", "" );
+    copy->setProperties( authored );
+    check( copy->getClassName().empty() && copy->getScriptAssetUuid().empty(), "explicit script identity clear" );
     asset->getHandle()->setUUID( uuid );
     asset->loadFromFile( ( source / "logic/Actor.lua" ).string().c_str() );
     catalog->addResourceEntry( asset );

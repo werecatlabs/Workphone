@@ -22,17 +22,12 @@ namespace workphone::editor
 
         // The queue resumes coroutines on Primary. Yield while Application builds
         // the replacement VM so Render, Physics and the Editor can keep progressing.
-        queue->startCoroutine( [scriptManager]( ICoroutineData::PullType &yield ) {
+        queue->startCoroutine( [scriptManager]( ICoroutineData::PullType &yield ) mutable {
             scriptManager->reloadScripts();
             while( scriptManager->reloadPending() ) yield();
             auto app = core::IApplicationManager::instancePtr();
             if( !app || app->getQuit() || app->getScriptManager() != scriptManager ||
                 !scriptManager->isLoaded() ) return;
-            if( scriptManager->getError() )
-            {
-                WP_LOG_ERROR( "Script reload failed; the previous Lua state remains active" );
-                return;
-            }
             auto editor = EditorManager::getSingletonPtr();
             auto ui = editor ? editor->getUI() : nullptr;
             if( !ui ) return;

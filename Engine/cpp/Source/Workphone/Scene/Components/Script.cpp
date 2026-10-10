@@ -232,42 +232,30 @@ namespace workphone::scene
 
         try
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            if( !applicationManager || !applicationManager->isValid() )
-            {
-                WP_LOG_ERROR( "ApplicationManager is null or invalid in UserComponent::setProperties" );
-                return;
-            }
-
-            auto sceneManager = applicationManager->getGameManager();
-            if( !sceneManager )
-            {
-                WP_LOG_ERROR( "SceneManager is null in UserComponent::setProperties" );
-                return;
-            }
-
-            auto actor = getActor();
-            if( !actor )
-            {
-                WP_LOG_ERROR( "Actor is null in UserComponent::setProperties" );
-                return;
-            }
-
+            // Authored fields must survive deserialization before attachment to an
+            // actor or initialization of runtime services.
             auto className = getClassName();
             auto scriptAssetUuid = getScriptAssetUuid();
             auto updateInEditMode = getUpdateInEditMode();
             auto updateInPlayMode = getUpdateInPlayMode();
-
             properties->getPropertyValue( classNameStr, className );
             properties->getPropertyValue( "scriptAssetUuid", scriptAssetUuid );
             properties->getPropertyValue( updateInEditModeStr, updateInEditMode );
             properties->getPropertyValue( updateInPlayModeStr, updateInPlayMode );
-
             if( className != getClassName() || scriptAssetUuid != getScriptAssetUuid() )
             {
                 destroyScriptData();
                 setClassName( className );
                 setScriptAssetUuid( scriptAssetUuid );
+            }
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            auto sceneManager = applicationManager ? applicationManager->getGameManager() : nullptr;
+            auto actor = getActor();
+            if( !applicationManager || !applicationManager->isValid() || !sceneManager || !actor )
+            {
+                m_updateInEditMode = updateInEditMode;
+                m_updateInPlayMode = updateInPlayMode;
+                return;
             }
 
             createScriptData();
@@ -492,12 +480,11 @@ namespace workphone::scene
 
     void Script::destroyScriptData()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-
-        if( auto scriptManager = applicationManager->getScriptManager() )
-        {
-            scriptManager->destroyObject( this );
-        }
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
+        if( scriptManager ) scriptManager->destroyObject( this );
+        setScriptData( nullptr );
+        m_scriptClass = nullptr;
     }
 
     void Script::updateEditModeState()
