@@ -4,6 +4,7 @@
 #include <Workphone/Interface/System/ICommandManager.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Thread/RecursiveMutex.hpp>
+#include <utility>
 
 namespace workphone
 {
@@ -164,10 +165,12 @@ namespace workphone
         void unlock() override;
 
     private:
+        void invalidatePending( SmartPtr<ICommand> command );
+
         /** Internal recursive mutex used to ensure thread safety for all operations. */
         RecursiveMutex m_mutex;
 
-        /** Index of the current command in `m_commands`. A negative value indicates none. */
+        /** Number of applied commands; [0,size] separates undo and redo history. */
         s32 m_currentCommand;
 
         /** Index of the last undoable command. */
@@ -176,11 +179,18 @@ namespace workphone
         /** Index of the last redoable command. */
         s32 m_lastRedoCommand;
 
-        /** Number of commands currently stored in `m_commands`. Kept for quick access. */
+        /** Maximum retained history length. */
         u32 m_numStoredCommands;
 
         /** Container holding the sequence of commands managed by this object. */
         Array<SmartPtr<ICommand>> m_commands;
+
+        /** Queued job identities; removing an entry cancels its future execution. */
+        Array<std::pair<SmartPtr<ICommand>, SmartPtr<IJob>>> m_pendingJobs;
+
+        /** Started work finishes outside the manager lock; unload is deferred for it. */
+        Array<SmartPtr<ICommand>> m_executingCommands;
+        Array<SmartPtr<ICommand>> m_deferredUnloads;
 
         /** The type of the last command executed. Defaults to none. */
         CommandType m_lastCommand = CommandType::COMMAND_MANAGER_NONE;

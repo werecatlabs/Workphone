@@ -1,5 +1,96 @@
 # WPGraphics implementation status
 
+## Terrain data and Editor workflow increment — 10 October 2026
+
+Starts from `brodex` at `ccb890ed6`. The merge preserves the cooked-material
+increment and adds Lua runtime, reload, debugger and tooling changes. The remote
+`brodex` SHA was verified over HTTPS after the machine's SSH authentication failed.
+
+This implements the first connected terrain increment from
+[the terrain plan](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md): TERR-01 foundations,
+the query/picking/CPU mesh portion of TERR-02, and basic TERR-04 authoring.
+It does **not** complete GT0, R1, or the whole terrain/procedural programme.
+
+- Immutable rectangular `TerrainData` snapshots carry dimensions, spacing, explicit
+  sample-zero origin, height scale and row-major samples. Revisions reject stale
+  commits; validation bounds allocations and rejects invalid/nonfinite or collapsed
+  geometry. Maximum source size is 4,194,304 samples, with at most 8,193 per axis.
+  Zero and negative height scales are supported. Object transforms support finite
+  translation, positive nonuniform scale and normalized yaw rotation; pitch/roll
+  and singular transforms are rejected without replacing the valid placement.
+- Queries, exact triangle rays, CPU meshes and Claw native geometry share the same
+  cell diagonal and height units. Queries retain snapshots without copying all
+  samples. Legacy setters preserve the old `-dimensions/2` sample-zero anchor;
+  newly generated assets use `-(dimensions-1)/2`. Origin is saved explicitly.
+  Claw renders the full rectangular grid without the old 257-sample decimation.
+  Native mesh construction retains the previous mesh if preparation fails.
+- `TerrainSystem` owns actual samples independently of renderer lifetime.
+  Version-one `workphone.terrain` JSON saves dimensions, spacing, origin, scale and
+  all samples; malformed files leave the current revision intact. Scene `toData`
+  carries this payload while normal inspector properties remain editable.
+  Sample files use terrain-local coordinates; actor placement belongs to the scene.
+  Legacy scenes without samples migrate to a flat grid with their original anchor.
+  Renderer attachment/recreation restores an actor's existing placement; invalid
+  actor placement rejects attachment before changing the retained runtime.
+- Existing Lua TerrainEditor exposes local X/Z brush centres and real raise,
+  lower, smooth and flatten actions. Each action makes one native undo command.
+  A patch is limited to 65,536 changed samples and the existing managers retain
+  at most 100 commands; their cursor/eviction/redo-branch handling is repaired.
+  MT history blocks undo/redo while commands are pending or running. Explicit
+  removal, clear and unload cancel unstarted jobs; history eviction preserves
+  requested operations. Running commands release the history lock, and unload
+  defers their cleanup until completion. Undo/redo validates metadata and
+  affected sample values, preserving unrelated edits and rejecting conflicts.
+  Under the existing command API, a rejected undo
+  still advances the history cursor and logs the failure.
+- Save, Reload and height-data export operate on actual versioned sample files,
+  with same-directory temporary-file replacement. Export JSON also writes actual
+  samples, so it cannot overwrite a terrain file with settings-only recipes.
+  The separate Export Recipe Settings action appends `.recipe.json` to that path.
+  Unimplemented terrain operations report unavailable.
+
+Editor use: select a TerrainSystem, generate a height preset or import a saved
+sample file, set **Brush Centre X/Z**, radius and strength, then use a supported
+brush action. Raise/lower strength is a terrain-local height delta; smooth/flatten
+strength is a 0–1 blend. Use the existing Edit undo/redo commands, set an output
+file, and Save/Reload. Viewport drag strokes, tablet/mirror modifiers, image/raw
+height import, mesh export, stamp/layer paint, erosion and collision/navigation
+builds remain unavailable in this increment.
+
+Validation on 10 October used CMake/CTest 4.4.4, Visual Studio Community 2026,
+MSVC 19.51.36260, Windows SDK 10.0.26100 and NVIDIA RTX 3090 DX11 hardware.
+The full graphics/catalog/resource baseline passed in both Debug and
+RelWithDebInfo: **16 passed, 1 unavailable** in each configuration. The sole
+unavailable test remains `WorkphoneGraphics.mesh_import_assets`, whose six
+external Ogre/OgreNext mesh fixtures are absent.
+
+The added mandatory targets are `WPGraphics.terrain_contracts` and
+`WPGraphics.terrain_lua_workflow`; the existing DX11 production target also checks
+terrain edits and full-resolution geometry. Native coverage includes actor
+reattachment, JSON/scene round trips, invalid/stale edits and queued history
+completion/cancellation/unload. The Lua target loads the real Editor script and
+exercises sculpt, undo/redo, save/reload and unsupported-operation errors.
+
+JUnit reports and source/binary/device evidence are in
+`cmake-build-debug-vs2026-readiness/claw-graphics-{Debug,RelWithDebInfo}-results.xml`
+and the corresponding `-evidence.json` files. `git diff --check` passed. These
+local runs do not constitute an interactive Editor acceptance run, packaging
+validation or release certification.
+
+Remaining release work includes physics publication/contact evidence, tiled LOD,
+four-layer cooked PBR, worker cancellation and shared render/physics revision
+publication, streaming, package reload, and an interactive Editor acceptance run.
+GPU buffer creation remains lazy in the existing renderer: native mesh staging
+does not yet guarantee atomic source/native/GPU replacement after a DX11 allocation
+failure. This increment supplies no new large-map performance certification.
+
+The DX11 fixture also exposed a pre-existing rotated-camera issue in
+`Engine/c/Source/WorkphoneCore/workphone_matrix.c`: `wp_mat4f_look_at` places its
+rotation basis in columns while its translation uses row dot products. The
+terrain pixel check explicitly validates the resulting eye-space depths and
+does not certify camera placement. Correcting that shared camera path and its
+other renderer consumers remains separate work.
+
 ## Cooked material/texture consumer increment — 10 October 2026
 
 Implementation starts from `brodex` at `7107f0a39`. The prior catalog/path/adapter

@@ -23,6 +23,7 @@
 #include "DX11TestEvidence.hpp"
 #include "ClawSceneNodeTransformContracts.hpp"
 #include "ClawMaterialPassLifetimeContracts.hpp"
+#include "ClawTerrainContracts.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -342,6 +343,7 @@ int main()
                          "DX11 device evidence must be available" );
             ok &= testRenderedFeatures(renderer);
             ok &= testMeshShadows(renderer);
+            ok &= claw_terrain_contracts::run(renderer);
         }
         renderer.unload(nullptr);
         DestroyWindow(window->handle);

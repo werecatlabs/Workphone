@@ -21,9 +21,13 @@
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/StringTypes.hpp>
+#include <Workphone/Graphics/Terrain.hpp>
+#include <cJSON.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
+#include <stdexcept>
 
 namespace workphone::scene
 {
@@ -362,7 +366,18 @@ namespace workphone::scene
 
     const Array<String> TerrainSystem::terrainTypes = { "island", "mountains", "gradient" };
 
-    TerrainSystem::TerrainSystem() = default;
+    TerrainSystem::TerrainSystem()
+    {
+        auto data = std::make_shared<render::TerrainData>();
+        data->dimensions = m_heightMapSize;
+        data->origin = Vector2F( -128, -128 );  // Preserve the legacy sample-zero placement.
+        data->heightScale = m_heightScale;
+        data->heights.assign( 256 * 256, 0.0f );
+        data->revision = 1;
+        m_terrainData = data;
+        m_textures.resize( static_cast<size_t>( render::IGraphicsTerrain::TextureTypes::COUNT ) );
+        m_metalnessValues.resize( 4, m_defaultMetalnessValue );
+    }
 
     TerrainSystem::~TerrainSystem() = default;
 
@@ -410,7 +425,7 @@ namespace workphone::scene
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
 
-                m_textures.clear();
+                // Authoring references, like height samples, survive runtime recreation.
 
                 if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
                 {
@@ -491,14 +506,6 @@ namespace workphone::scene
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto factoryManager = applicationManager->getFactoryManagerPtr();
-        auto sceneManager = applicationManager->getGameManagerPtr();
-        auto scene = sceneManager->getCurrentScenePtr();
-
-        auto actor = getActorPtr();
-        if( !actor )
-        {
-            return nullptr;
-        }
 
         Array<String> terrainTypes = { "island", "mountains", "gradient" };
 
@@ -643,6 +650,30 @@ namespace workphone::scene
             return;
         }
 
+        String serialized;
+        const bool hasSerializedData = properties->hasProperty( "terrainDataV1" );
+        properties->getPropertyValue( "terrainDataV1", serialized );
+        if( hasSerializedData )
+        {
+            String error;
+            if( !importTerrainData( serialized, error ) )
+            {
+                WP_LOG_WARNING( "TerrainSystem: rejected saved terrain: " + error );
+                return;
+            }
+        }
+        else
+        {
+            // Legacy scenes contain only dimensions and scale. Preserve their
+            // render-space anchor and initialize flat samples until generated.
+            auto size = getHeightMapSize();
+            auto scale = getHeightScale();
+            properties->getPropertyValue( HeightMapSizeStr, size );
+            properties->getPropertyValue( HeightScaleStr, scale );
+            setHeightMapSize( size );
+            setHeightScale( scale );
+        }
+
         Component::setProperties( properties );
 
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -668,8 +699,11 @@ namespace workphone::scene
         auto heightMapSize = getHeightMapSize();
         auto heightScale = getHeightScale();
         auto showWireframe = getShowWireframe();
-        properties->getPropertyValue( HeightMapSizeStr, heightMapSize );
-        properties->getPropertyValue( HeightScaleStr, heightScale );
+        if( !hasSerializedData )
+        {
+            properties->getPropertyValue( HeightMapSizeStr, heightMapSize );
+            properties->getPropertyValue( HeightScaleStr, heightScale );
+        }
         properties->getPropertyValue( ShowWireframeStr, showWireframe );
         setHeightMapSize( heightMapSize );
         setHeightScale( heightScale );
@@ -980,7 +1014,10 @@ namespace workphone::scene
         terrainListener->setOwner( this );
         m_terrainListener = terrainListener;
 
-        m_terrain = smgr->addGraphicsObjectByType<render::IGraphicsTerrain>();
+        auto candidate = smgr->addGraphicsObjectByType<render::IGraphicsTerrain>();
+        setTerrain( candidate );
+        if( candidate && m_terrain != candidate )
+            smgr->removeGraphicsObject( candidate );
         if( !m_terrain )
         {
             m_terrainListener = nullptr;
@@ -1109,17 +1146,7 @@ namespace workphone::scene
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            if( !applicationManager )
-            {
-                return;
-            }
-
             auto terrain = getTerrain();
-            if( !terrain )
-            {
-                return;
-            }
 
             const auto width = clampHeightMapDimension( getGeneratedHeightMapWidth() );
             const auto height = clampHeightMapDimension( getGeneratedHeightMapHeight() );
@@ -1127,7 +1154,8 @@ namespace workphone::scene
             const auto heightMapType = getGeneratedHeightMapType();
 
             size_t heightDataSize = 0;
-            if( !getHeightDataElementCount( width, height, heightDataSize ) )
+            if( !getHeightDataElementCount( width, height, heightDataSize ) ||
+                heightDataSize > render::terrainMaximumSamples || !std::isfinite( valueScale ) )
             {
                 WP_LOG_WARNING( "TerrainSystem::generateHeightMap: invalid generated height map size." );
                 return;
@@ -1172,15 +1200,23 @@ namespace workphone::scene
                 }
             }
 
-            const auto heightMapSize = Vector2I( static_cast<s32>( width ), static_cast<s32>( height ) );
-            setHeightMapSize( heightMapSize );
-
-            terrain->setHeightScale( getHeightScale() );
-            terrain->setHeightMapSize( heightMapSize );
-            terrain->setHeightData( heightData );
-
-            ensureDefaultTerrainTextures( m_textures, true );
-            applyTerrainTextures( terrain, m_textures );
+            render::TerrainData data;
+            data.dimensions = Vector2I( static_cast<s32>( width ), static_cast<s32>( height ) );
+            data.origin = Vector2F( -static_cast<f32>( width - 1 ) * 0.5f,
+                                    -static_cast<f32>( height - 1 ) * 0.5f );
+            data.heightScale = getHeightScale();
+            data.heights = std::move( heightData );
+            String error;
+            if( !applyTerrainData( data, error ) )
+            {
+                WP_LOG_WARNING( "TerrainSystem::generateHeightMap: " + error );
+                return;
+            }
+            if( terrain )
+            {
+                ensureDefaultTerrainTextures( m_textures, true );
+                applyTerrainTextures( terrain, m_textures );
+            }
         }
         catch( std::exception &e )
         {
@@ -1277,6 +1313,32 @@ namespace workphone::scene
 
     void TerrainSystem::setTerrain( SmartPtr<render::IGraphicsTerrain> terrain )
     {
+        if( terrain )
+        {
+            auto concrete = dynamic_cast<render::Terrain *>( terrain.get() );
+            String error;
+            if( !concrete )
+            {
+                WP_LOG_WARNING( "TerrainSystem: renderer cannot accept authoritative height data." );
+                return;
+            }
+            const auto snapshot = getTerrainSnapshot();
+            auto placement = concrete->getWorldTransform();
+            if( auto actor = getActor() )
+                if( auto transform = actor->getTransform() )
+                    placement = transform->getWorldTransform();
+            // A recreated renderer must receive the actor's existing placement even
+            // when no new transform event follows attachment. Validate both source
+            // and placement before touching the candidate or retiring a valid runtime.
+            if( !render::validateTerrainPlacement( *snapshot, placement, error ) ||
+                !concrete->applyTerrainData( *snapshot, error ) )
+            {
+                WP_LOG_WARNING( "TerrainSystem: renderer cannot accept authoritative height data: " +
+                                error );
+                return;
+            }
+            concrete->setWorldTransform( placement );
+        }
         m_terrain = terrain;
     }
 
@@ -1285,13 +1347,210 @@ namespace workphone::scene
         return m_terrain;
     }
 
+    render::TerrainSnapshot TerrainSystem::getTerrainSnapshot() const
+    {
+        std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+        return m_terrainData;
+    }
+
+    SmartPtr<ISharedObject> TerrainSystem::toData() const
+    {
+        auto data = Component::toData();
+        if( auto properties = dynamic_cast<Properties *>( data.get() ) )
+        {
+            const auto samples = exportTerrainData();
+            if( samples.empty() )
+                throw std::runtime_error( "Unable to serialize terrain height samples." );
+            properties->setProperty( "terrainDataV1", samples );
+        }
+        return data;
+    }
+
+    u64 TerrainSystem::getTerrainRevision() const
+    {
+        return getTerrainSnapshot()->revision;
+    }
+
+    bool TerrainSystem::applyTerrainData( const render::TerrainData &data, String &error,
+                                          u64 expectedRevision )
+    {
+        if( !render::validateTerrainData( data, error ) )
+            return false;
+        try
+        {
+            auto candidate = std::make_shared<render::TerrainData>( data );
+            std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+            if( expectedRevision && expectedRevision != m_terrainData->revision )
+            {
+                error = "Terrain changed while the edit was being prepared.";
+                return false;
+            }
+            if( candidate->dimensions == m_terrainData->dimensions &&
+                candidate->spacing == m_terrainData->spacing &&
+                candidate->origin == m_terrainData->origin &&
+                candidate->heightScale == m_terrainData->heightScale &&
+                candidate->heights == m_terrainData->heights )
+            {
+                error.clear();
+                return true;
+            }
+            if( m_terrainData->revision == std::numeric_limits<u64>::max() )
+            {
+                error = "Terrain revision exhausted.";
+                return false;
+            }
+            candidate->revision = m_terrainData->revision + 1;
+            if( m_terrain )
+            {
+                auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() );
+                if( !concrete )
+                {
+                    error = "This renderer does not support authoritative terrain data.";
+                    return false;
+                }
+                if( !concrete->applyTerrainData( *candidate, error ) )
+                    return false;
+            }
+            m_terrainData = candidate;
+            m_heightMapSize = candidate->dimensions;
+            m_heightScale = candidate->heightScale;
+            error.clear();
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = String( "Unable to prepare terrain: " ) + exception.what();
+            return false;
+        }
+    }
+
+    String TerrainSystem::exportTerrainData() const
+    {
+        const auto data = getTerrainSnapshot();
+        using Json = std::unique_ptr<cJSON, decltype( &cJSON_Delete )>;
+        Json root( cJSON_CreateObject(), cJSON_Delete );
+        const float spacing[] = { data->spacing.x, data->spacing.y };
+        const float origin[] = { data->origin.x, data->origin.y };
+        if( !root || !cJSON_AddStringToObject( root.get(), "format", "workphone.terrain" ) ||
+            !cJSON_AddNumberToObject( root.get(), "version", render::terrainDataFormatVersion ) ||
+            !cJSON_AddNumberToObject( root.get(), "width", data->dimensions.x ) ||
+            !cJSON_AddNumberToObject( root.get(), "depth", data->dimensions.y ) ||
+            !cJSON_AddNumberToObject( root.get(), "heightScale", data->heightScale ) )
+            return {};
+        const auto addArray = [&]( const char *name, const float *values, int count ) {
+            Json array( cJSON_CreateFloatArray( values, count ), cJSON_Delete );
+            if( !array || !cJSON_AddItemToObject( root.get(), name, array.get() ) )
+                return false;
+            array.release();
+            return true;
+        };
+        if( !addArray( "spacing", spacing, 2 ) || !addArray( "origin", origin, 2 ) ||
+            !addArray( "heights", data->heights.data(), static_cast<int>( data->heights.size() ) ) )
+            return {};
+        std::unique_ptr<char, decltype( &cJSON_free )> json( cJSON_PrintUnformatted( root.get() ),
+                                                             cJSON_free );
+        return json ? String( json.get() ) : String();
+    }
+
+    bool TerrainSystem::importTerrainData( const String &json, String &error )
+    {
+        // Bound input before the parser allocates its object tree. No partial changes.
+        if( json.empty() || json.size() > 128ull * 1024ull * 1024ull )
+        {
+            error = "Terrain JSON is empty or exceeds the 128 MiB limit.";
+            return false;
+        }
+        const auto expectedRevision = getTerrainRevision();
+        try
+        {
+            using Json = std::unique_ptr<cJSON, decltype( &cJSON_Delete )>;
+            const char *end = nullptr;
+            Json root( cJSON_ParseWithLengthOpts( json.c_str(), json.size() + 1, &end, 1 ),
+                       cJSON_Delete );
+            if( !root || !cJSON_IsObject( root.get() ) || end != json.c_str() + json.size() )
+            {
+                error = "Invalid terrain JSON.";
+                return false;
+            }
+            const auto field = [&]( const char *name ) {
+                return cJSON_GetObjectItemCaseSensitive( root.get(), name );
+            };
+            const auto number = []( const cJSON *value ) {
+                return cJSON_IsNumber( value ) && std::isfinite( value->valuedouble ) &&
+                       std::abs( value->valuedouble ) <= std::numeric_limits<float>::max();
+            };
+            const auto format = field( "format" );
+            const auto version = field( "version" );
+            const auto width = field( "width" );
+            const auto depth = field( "depth" );
+            const auto scale = field( "heightScale" );
+            const auto spacing = field( "spacing" );
+            const auto origin = field( "origin" );
+            const auto heights = field( "heights" );
+            if( !cJSON_IsString( format ) || String( format->valuestring ) != "workphone.terrain" ||
+                !number( version ) || version->valuedouble != render::terrainDataFormatVersion ||
+                !number( width ) || !number( depth ) || width->valuedouble < 2 ||
+                depth->valuedouble < 2 || width->valuedouble > render::terrainMaximumDimension ||
+                depth->valuedouble > render::terrainMaximumDimension ||
+                std::floor( width->valuedouble ) != width->valuedouble ||
+                std::floor( depth->valuedouble ) != depth->valuedouble ||
+                width->valuedouble * depth->valuedouble > render::terrainMaximumSamples ||
+                !number( scale ) || !cJSON_IsArray( spacing ) || cJSON_GetArraySize( spacing ) != 2 ||
+                !cJSON_IsArray( origin ) || cJSON_GetArraySize( origin ) != 2 ||
+                !cJSON_IsArray( heights ) )
+            {
+                error = "Unsupported terrain schema, dimensions or metadata.";
+                return false;
+            }
+            render::TerrainData data;
+            data.dimensions = Vector2I( static_cast<s32>( width->valuedouble ),
+                                        static_cast<s32>( depth->valuedouble ) );
+            const auto count = static_cast<size_t>( data.dimensions.x ) * data.dimensions.y;
+            if( static_cast<size_t>( cJSON_GetArraySize( heights ) ) != count ||
+                !number( cJSON_GetArrayItem( spacing, 0 ) ) ||
+                !number( cJSON_GetArrayItem( spacing, 1 ) ) ||
+                !number( cJSON_GetArrayItem( origin, 0 ) ) ||
+                !number( cJSON_GetArrayItem( origin, 1 ) ) )
+            {
+                error = "Terrain arrays have invalid sizes or numbers.";
+                return false;
+            }
+            data.spacing = Vector2F( static_cast<f32>( cJSON_GetArrayItem( spacing, 0 )->valuedouble ),
+                                     static_cast<f32>( cJSON_GetArrayItem( spacing, 1 )->valuedouble ) );
+            data.origin = Vector2F( static_cast<f32>( cJSON_GetArrayItem( origin, 0 )->valuedouble ),
+                                    static_cast<f32>( cJSON_GetArrayItem( origin, 1 )->valuedouble ) );
+            data.heightScale = static_cast<f32>( scale->valuedouble );
+            data.heights.clear();
+            data.heights.reserve( count );
+            for( auto value = heights->child; value; value = value->next )
+            {
+                if( !number( value ) )
+                {
+                    error = "Terrain contains a nonfinite or invalid sample.";
+                    return false;
+                }
+                data.heights.push_back( static_cast<f32>( value->valuedouble ) );
+            }
+            return applyTerrainData( data, error, expectedRevision );
+        }
+        catch( const std::exception &exception )
+        {
+            error = String( "Unable to read terrain: " ) + exception.what();
+            return false;
+        }
+    }
+
     void TerrainSystem::setHeightScale( f32 heightScale )
     {
-        m_heightScale = heightScale;
-
-        if( m_terrain )
+        auto before = getTerrainSnapshot();
+        if( before->heightScale == heightScale )
+            return;
+        auto candidate = *before;
+        candidate.heightScale = heightScale;
+        String error;
+        if( !applyTerrainData( candidate, error, before->revision ) )
         {
-            m_terrain->setHeightScale( m_heightScale );
+            WP_LOG_WARNING( "TerrainSystem: " + error );
         }
     }
 
@@ -1307,12 +1566,26 @@ namespace workphone::scene
 
     void TerrainSystem::setHeightMapSize( const Vector2I &heightMapSize )
     {
-        m_heightMapSize.x = Math<s32>::max( 2, heightMapSize.x );
-        m_heightMapSize.y = Math<s32>::max( 2, heightMapSize.y );
-
-        if( m_terrain )
+        auto before = getTerrainSnapshot();
+        if( before->dimensions == heightMapSize )
+            return;
+        if( heightMapSize.x < 2 || heightMapSize.y < 2 ||
+            heightMapSize.x > static_cast<s32>( render::terrainMaximumDimension ) ||
+            heightMapSize.y > static_cast<s32>( render::terrainMaximumDimension ) ||
+            static_cast<u64>( heightMapSize.x ) * heightMapSize.y > render::terrainMaximumSamples )
         {
-            m_terrain->setHeightMapSize( m_heightMapSize );
+            WP_LOG_WARNING( "TerrainSystem: invalid height-map dimensions." );
+            return;
+        }
+        auto candidate = *before;
+        candidate.dimensions = heightMapSize;
+        candidate.origin = Vector2F( -heightMapSize.x * candidate.spacing.x * 0.5f,
+                                     -heightMapSize.y * candidate.spacing.y * 0.5f );
+        candidate.heights.assign( static_cast<size_t>( heightMapSize.x ) * heightMapSize.y, 0.0f );
+        String error;
+        if( !applyTerrainData( candidate, error, before->revision ) )
+        {
+            WP_LOG_WARNING( "TerrainSystem: " + error );
         }
     }
 

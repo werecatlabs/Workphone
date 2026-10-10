@@ -4,7 +4,7 @@ Reviewed 9 October 2026 against `38e012a5b` in `C:\dev\Workphone`. This extends 
 
 Foliage follow-up at `2a37b63ea`: the [dedicated foliage plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md) now owns tree/grass/species paging, instancing, LOD/impostors and procedural foliage tools. **Actual batch-count/draw-call reduction and foliage LOD are mandatory R1/GF0 requirements.** Rich plant/biome tools and streaming scale use R2/GF1. The follow-up credits existing merged pine patches and the retained native C pager; its C++ wrapper has been removed.
 
-This is a source audit and proposed implementation programme. No runtime code changed and no new compile, test, benchmark or visual evidence was produced. The [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) records earlier selected graphics validation; it does not certify the expanded terrain/procedural scope. The working tree was clean when this review began.
+This was a source audit and proposed implementation programme; the original review changed no runtime code. The [10 October terrain implementation increment](WPGRAPHICS_IMPLEMENTATION_STATUS.md#terrain-data-and-editor-workflow-increment--10-october-2026) now records shared height data, queries/picking/meshes, sample persistence and basic Lua sculpt/undo work. The findings below remain the original audit baseline; that increment does not certify the expanded terrain/procedural scope or complete GT0.
 
 ## Outcome and release scope
 
@@ -137,7 +137,7 @@ T/P-D is a sequence of smaller PRs grouped by feature; never merge an entire mod
 
 ## Validation and measurable acceptance
 
-Extend existing harnesses before introducing new frameworks. Proposed new focused CTest targets are **not yet implemented**: terrain data/query contracts, terrain scene/collision integration, DX11 terrain material output, procedural operation/export contracts, and procedural recipe-to-cooked-render integration. Reuse ProceduralServiceTests, native C contracts, Claw production/DX11 pixel fixtures and the editor Lua lifecycle harness. Required configurations are the parent plan's Debug and RelWithDebInfo; static/shared/package variants remain shipping checks.
+Extend existing harnesses before introducing new frameworks. The 10 October increment adds terrain data/query/editor contracts and a real Lua workflow target, and extends Claw production/DX11 pixel fixtures for geometry edits. Terrain scene/collision integration, DX11 terrain material output, procedural operation/export contracts, and procedural recipe-to-cooked-render integration remain proposed coverage. Reuse ProceduralServiceTests, native C contracts and the editor Lua lifecycle harness. Required configurations are the parent plan's Debug and RelWithDebInfo; static/shared/package variants remain shipping checks.
 
 | Evidence type | Mandatory scenarios |
 |---|---|

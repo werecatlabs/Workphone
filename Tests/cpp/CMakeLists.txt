@@ -33,6 +33,14 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
 endif()
 
 if (WP_BUILD_TESTS)
+    add_executable(WPTerrainContractsTests TerrainContractsTests.cpp)
+    target_compile_definitions(WPTerrainContractsTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(WPTerrainContractsTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(WPTerrainContractsTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
+    add_dependencies(WPTerrainContractsTests Workphone)
+    set_target_properties(WPTerrainContractsTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.terrain_contracts COMMAND WPTerrainContractsTests)
+    set_tests_properties(WPGraphics.terrain_contracts PROPERTIES LABELS "terrain;editor;headless" TIMEOUT 60)
     if(TARGET WPSQLite)
         add_executable(WPAssetCatalogTests AssetCatalogTests.cpp)
         if(WP_BUILD_RESOURCE_SYSTEM)
@@ -228,6 +236,23 @@ if(TARGET Workphone)
 endif()
 
 if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
+    add_executable(TerrainLuaBindingTests TerrainLuaBindingTests.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaScriptCompiler.cpp)
+    target_compile_definitions(TerrainLuaBindingTests PRIVATE BOOST_ALL_NO_LIB BOOST_BIND_GLOBAL_PLACEHOLDERS
+        WP_PROFILE_LUA_CALLS=0 WPLua_EXPORTS WP_TEST_SOURCE_ROOT="${WP_ROOT}")
+    target_include_directories(TerrainLuaBindingTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+        ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+        ${WP_ROOT}/Dependencies/luabind/inc/luabind)
+    target_link_libraries(TerrainLuaBindingTests PRIVATE
+        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind)
+    add_dependencies(TerrainLuaBindingTests WPLuaBind Workphone)
+    set_target_properties(TerrainLuaBindingTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.terrain_lua_workflow COMMAND TerrainLuaBindingTests)
+    set_tests_properties(WPGraphics.terrain_lua_workflow PROPERTIES LABELS "terrain;editor;lua" TIMEOUT 60)
     # Scene bindings call concrete Lua classes which are not DLL-exported.
     # Compile the production host sources into this focused binding executable.
     add_executable(VehicleLuaBindingTests VehicleLuaBindingTests.cpp

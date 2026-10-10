@@ -150,6 +150,14 @@ else ()
     add_library(Workphone SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+# Terrain persistence uses the already vendored cJSON parser. Keep it internal
+# to the core library and available even when optional Lua/tools are disabled.
+target_sources(Workphone PRIVATE ${WP_ROOT}/Dependencies/cJSON/cJSON.c)
+set_source_files_properties(${WP_ROOT}/Dependencies/cJSON/cJSON.c
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS CJSON_HIDE_SYMBOLS)
+set_property(SOURCE ${WP_ROOT}/Engine/cpp/Source/Workphone/Scene/Components/Terrain/TerrainSystem.cpp
+    APPEND PROPERTY COMPILE_DEFINITIONS CJSON_HIDE_SYMBOLS)
+
 target_include_directories(Workphone PUBLIC
     ${WP_ROOT}/Engine/cpp/Include
     ${CMAKE_SOURCE_DIR}/Dependencies/boost
