@@ -8,6 +8,43 @@
 #include <stdatomic.h>
 #endif
 
+#ifdef _MSC_VER
+typedef volatile __int64 audio_counter;
+static void counter_add(audio_counter *counter, int64_t value) { _InterlockedExchangeAdd64(counter, value); }
+static uint64_t counter_load(audio_counter *counter) { return (uint64_t)_InterlockedCompareExchange64(counter, 0, 0); }
+#else
+typedef atomic_uint_fast64_t audio_counter;
+static void counter_add(audio_counter *counter, int64_t value) { atomic_fetch_add(counter, (uint64_t)value); }
+static uint64_t counter_load(audio_counter *counter) { return atomic_load(counter); }
+#endif
+static audio_counter allocations = 0, deallocations = 0, resident_bytes = 0;
+/* Enough alignment for every allocated core type (pointers, doubles, floats);
+ * MSVC's C11 headers do not provide max_align_t in all supported toolchains. */
+typedef union audio_allocation_header { size_t bytes; long double alignment; void *pointer; } audio_allocation_header;
+static void *audio_allocate(size_t bytes) {
+    audio_allocation_header *header;
+    if (bytes > SIZE_MAX - sizeof(*header) || bytes > INT64_MAX) return NULL;
+    header = (audio_allocation_header *)calloc(1, sizeof(*header) + bytes);
+    if (!header) return NULL;
+    header->bytes = bytes;
+    counter_add(&allocations, 1); counter_add(&resident_bytes, (int64_t)bytes);
+    return header + 1;
+}
+static void audio_free(void *memory) {
+    if (memory) {
+        audio_allocation_header *header = (audio_allocation_header *)memory - 1;
+        counter_add(&deallocations, 1); counter_add(&resident_bytes, -(int64_t)header->bytes);
+        free(header);
+    }
+}
+wp_audio_result wp_audio_memory_snapshot(wp_audio_memory_stats *stats) {
+    if (!stats || stats->size != sizeof(*stats)) return WP_AUDIO_INVALID_ARGUMENT;
+    stats->allocations = counter_load(&allocations);
+    stats->deallocations = counter_load(&deallocations);
+    stats->resident_bytes = counter_load(&resident_bytes);
+    return WP_AUDIO_OK;
+}
+
 #define AUDIO_BYTES_LIMIT (64u * 1024u * 1024u)
 static uint16_t le16(const unsigned char *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t le32(const unsigned char *p) {
@@ -72,11 +109,17 @@ wp_audio_result wp_audio_wav_inspect(const void *bytes, size_t length, wp_audio_
 
 #ifdef _MSC_VER
 typedef volatile long audio_ref;
+static void atom_init(audio_ref *ref, uint32_t value) { *ref = (long)value; }
+static uint32_t atom_load(audio_ref *ref) { return (uint32_t)_InterlockedCompareExchange(ref, 0, 0); }
+static void atom_store(audio_ref *ref, uint32_t value) { _InterlockedExchange(ref, (long)value); }
 static void ref_init(audio_ref *ref) { *ref = 1; }
 static void ref_retain(audio_ref *ref) { _InterlockedIncrement(ref); }
 static int ref_release(audio_ref *ref) { return _InterlockedDecrement(ref) == 0; }
 #else
 typedef atomic_uint audio_ref;
+static void atom_init(audio_ref *ref, uint32_t value) { atomic_init(ref, value); }
+static uint32_t atom_load(audio_ref *ref) { return atomic_load_explicit(ref, memory_order_acquire); }
+static void atom_store(audio_ref *ref, uint32_t value) { atomic_store_explicit(ref, value, memory_order_release); }
 static void ref_init(audio_ref *ref) { atomic_init(ref, 1); }
 static void ref_retain(audio_ref *ref) { atomic_fetch_add(ref, 1); }
 static int ref_release(audio_ref *ref) { return atomic_fetch_sub(ref, 1) == 1; }
@@ -94,11 +137,11 @@ wp_audio_result wp_audio_clip_decode(const void *bytes, size_t length, wp_audio_
     if (result != WP_AUDIO_OK) return result;
     stride = info.bits_per_sample / 8; count = info.data_bytes / stride;
     if (count > AUDIO_BYTES_LIMIT / sizeof(float)) return WP_AUDIO_LIMIT;
-    c = (wp_audio_clip *)calloc(1, sizeof(*c));
+    c = (wp_audio_clip *)audio_allocate(sizeof(*c));
     if (!c) return WP_AUDIO_OUT_OF_MEMORY;
     ref_init(&c->references);
-    c->samples = (float *)malloc(count * sizeof(float));
-    if (!c->samples) { free(c); return WP_AUDIO_OUT_OF_MEMORY; }
+    c->samples = (float *)audio_allocate(count * sizeof(float));
+    if (!c->samples) { audio_free(c); return WP_AUDIO_OUT_OF_MEMORY; }
     c->frames = info.data_bytes / info.block_align; c->rate = info.sample_rate; c->channels = info.channels;
     p = (const unsigned char *)bytes + info.data_offset;
     for (i = 0; i < count; ++i, p += stride) {
@@ -119,7 +162,7 @@ wp_audio_result wp_audio_clip_decode(const void *bytes, size_t length, wp_audio_
     }
     *clip = c; return WP_AUDIO_OK;
 }
-void wp_audio_clip_destroy(wp_audio_clip *c) { if (c && ref_release(&c->references)) { free(c->samples); free(c); } }
+void wp_audio_clip_destroy(wp_audio_clip *c) { if (c && ref_release(&c->references)) { audio_free(c->samples); audio_free(c); } }
 uint64_t wp_audio_clip_frames(const wp_audio_clip *c) { return c ? c->frames : 0; }
 
 typedef struct audio_voice {
@@ -138,6 +181,10 @@ struct wp_audio_context {
     float gain;
     int mute;
     audio_voice *voices;
+    wp_audio_command commands[128];
+    wp_audio_acknowledgement acknowledgements[128];
+    wp_audio_clip *retired[128];
+    audio_ref command_write, command_read, ack_write, ack_read;
 };
 #ifdef _MSC_VER
 static volatile __int64 next_context = 0;
@@ -153,20 +200,33 @@ wp_audio_result wp_audio_context_create(const wp_audio_context_desc *d, wp_audio
     if (!d || d->size != sizeof(*d) || d->sample_rate < 8000 || d->sample_rate > 192000 ||
         !d->voice_capacity || d->voice_capacity > 1024 || !d->max_block_frames || d->max_block_frames > 8192)
         return WP_AUDIO_INVALID_ARGUMENT;
-    c = (wp_audio_context *)calloc(1, sizeof(*c));
+    c = (wp_audio_context *)audio_allocate(sizeof(*c));
     if (!c) return WP_AUDIO_OUT_OF_MEMORY;
-    c->voices = (audio_voice *)calloc(d->voice_capacity, sizeof(audio_voice));
-    if (!c->voices) { free(c); return WP_AUDIO_OUT_OF_MEMORY; }
+    c->voices = (audio_voice *)audio_allocate(d->voice_capacity * sizeof(audio_voice));
+    if (!c->voices) { audio_free(c); return WP_AUDIO_OUT_OF_MEMORY; }
     c->identity = context_identity(); c->rate = d->sample_rate;
     c->capacity = d->voice_capacity; c->max_block = d->max_block_frames; c->gain = 1;
+    atom_init(&c->command_write, 0); atom_init(&c->command_read, 0);
+    atom_init(&c->ack_write, 0); atom_init(&c->ack_read, 0);
     *context = c; return WP_AUDIO_OK;
 }
 void wp_audio_context_destroy(wp_audio_context *c) {
     if (c) {
         uint32_t i;
+        uint32_t read = atom_load(&c->command_read), end = atom_load(&c->command_write);
+        // Cancel queued starts and drain unconsumed deferred references only
+        // after both producer and renderer have been joined/quiesced.
+        while (read != end) {
+            const wp_audio_command *command = c->commands + (read & 127u);
+            if (command->type == WP_AUDIO_COMMAND_START)
+                wp_audio_clip_destroy((wp_audio_clip *)command->start.clip);
+            ++read;
+        }
+        read = atom_load(&c->ack_read); end = atom_load(&c->ack_write);
+        while (read != end) { wp_audio_clip_destroy(c->retired[read & 127u]); ++read; }
         for (i = 0; i < c->capacity; ++i)
             if (c->voices[i].used) wp_audio_clip_destroy((wp_audio_clip *)c->voices[i].clip);
-        free(c->voices); free(c);
+        audio_free(c->voices); audio_free(c);
     }
 }
 uint64_t wp_audio_context_clock(const wp_audio_context *c) { return c ? c->clock : 0; }
@@ -245,9 +305,91 @@ wp_audio_result wp_audio_voice_poll(wp_audio_context *c, wp_audio_voice_handle h
     if (!reason) return WP_AUDIO_INVALID_ARGUMENT;
     *reason = v->completion; v->completion = WP_AUDIO_COMPLETION_NONE; return WP_AUDIO_OK;
 }
+wp_audio_result wp_audio_command_submit(wp_audio_context *c, const wp_audio_command *command) {
+    uint32_t write, consumed, limit;
+    if (!c || !command || command->size != sizeof(*command) ||
+        command->type < WP_AUDIO_COMMAND_GAIN || command->type > WP_AUDIO_COMMAND_RELEASE)
+        return WP_AUDIO_INVALID_ARGUMENT;
+    if (command->type == WP_AUDIO_COMMAND_GAIN && !finite_range(command->value, 0, 1))
+        return WP_AUDIO_INVALID_ARGUMENT;
+    if (command->type == WP_AUDIO_COMMAND_LOOP && !finite_range(command->value, 0, 1))
+        return WP_AUDIO_INVALID_ARGUMENT;
+    if (command->type == WP_AUDIO_COMMAND_START &&
+        (command->start.size != sizeof(command->start) || !command->start.clip ||
+         !finite_range(command->start.gain, 0, 1) || !finite_range(command->start.pan, -1, 1) ||
+         !finite_range(command->start.pitch, 0.125f, 8))) return WP_AUDIO_INVALID_ARGUMENT;
+    write = atom_load(&c->command_write); consumed = atom_load(&c->ack_read);
+    limit = command->type == WP_AUDIO_COMMAND_STOP || command->type == WP_AUDIO_COMMAND_STOP_ALL ||
+            command->type == WP_AUDIO_COMMAND_RELEASE ? 128u : 120u;
+    if (write - consumed >= limit) return WP_AUDIO_LIMIT;
+    if (command->type == WP_AUDIO_COMMAND_START)
+        ref_retain(&((wp_audio_clip *)command->start.clip)->references);
+    c->commands[write & 127u] = *command;
+    atom_store(&c->command_write, write + 1);
+    return WP_AUDIO_OK;
+}
+wp_audio_result wp_audio_command_poll(wp_audio_context *c, wp_audio_acknowledgement *ack) {
+    uint32_t read, write;
+    if (!c || !ack) return WP_AUDIO_INVALID_ARGUMENT;
+    read = atom_load(&c->ack_read); write = atom_load(&c->ack_write);
+    if (read == write) return WP_AUDIO_EMPTY;
+    *ack = c->acknowledgements[read & 127u];
+    wp_audio_clip_destroy(c->retired[read & 127u]);
+    c->retired[read & 127u] = NULL;
+    atom_store(&c->ack_read, read + 1);
+    return WP_AUDIO_OK;
+}
+static void apply_commands(wp_audio_context *c) {
+    uint32_t read = atom_load(&c->command_read);
+    const uint32_t end = atom_load(&c->command_write);
+    while (read != end) {
+        const wp_audio_command command = c->commands[read & 127u];
+        wp_audio_result result = WP_AUDIO_INVALID_ARGUMENT;
+        wp_audio_voice_handle handle = command.voice;
+        wp_audio_clip *retired = NULL;
+        switch (command.type) {
+        case WP_AUDIO_COMMAND_GAIN: result = wp_audio_voice_gain(c, command.voice, command.value); break;
+        case WP_AUDIO_COMMAND_LOOP: result = wp_audio_voice_loop(c, command.voice, command.value != 0); break;
+        case WP_AUDIO_COMMAND_PAUSE: result = wp_audio_voice_pause(c, command.voice, 1); break;
+        case WP_AUDIO_COMMAND_RESUME: result = wp_audio_voice_pause(c, command.voice, 0); break;
+        case WP_AUDIO_COMMAND_SEEK: result = wp_audio_voice_seek(c, command.voice, command.frame); break;
+        case WP_AUDIO_COMMAND_RESTART: result = wp_audio_voice_restart(c, command.voice); break;
+        case WP_AUDIO_COMMAND_STOP: result = wp_audio_voice_stop(c, command.voice); break;
+        case WP_AUDIO_COMMAND_STOP_ALL: {
+            uint32_t i;
+            for (i = 0; i < c->capacity; ++i) if (c->voices[i].used) {
+                wp_audio_voice_handle h = {c->identity, i, c->voices[i].generation};
+                wp_audio_voice_stop(c, h);
+            }
+            result = WP_AUDIO_OK; break;
+        }
+        case WP_AUDIO_COMMAND_START:
+            result = wp_audio_voice_create(c, &command.start, &handle);
+            retired = (wp_audio_clip *)command.start.clip; // transfer admission pin to control owner
+            break;
+        case WP_AUDIO_COMMAND_RELEASE: {
+            audio_voice *v = voice(c, command.voice);
+            if (v) {
+                retired = (wp_audio_clip *)v->clip;
+                v->used = 0; v->clip = NULL; result = WP_AUDIO_OK;
+            } else result = WP_AUDIO_STALE_HANDLE;
+            break;
+        }
+        }
+        // Outstanding-credit admission guarantees this result slot is available.
+        c->acknowledgements[read & 127u].request_id = command.request_id;
+        c->acknowledgements[read & 127u].result = result;
+        c->acknowledgements[read & 127u].voice = handle;
+        c->retired[read & 127u] = retired;
+        ++read;
+        atom_store(&c->command_read, read);
+        atom_store(&c->ack_write, read);
+    }
+}
 wp_audio_result wp_audio_render(wp_audio_context *c, float *out, uint32_t frames) {
     uint32_t i, f;
     if (!c || !out || frames > c->max_block || UINT64_MAX - c->clock < frames) return WP_AUDIO_INVALID_ARGUMENT;
+    apply_commands(c);
     memset(out, 0, (size_t)frames * 2 * sizeof(float));
     for (i = 0; i < c->capacity; ++i) {
         audio_voice *v = c->voices + i;

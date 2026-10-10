@@ -180,6 +180,7 @@ function SoundEditor:__init(window)
 end
 
 function SoundEditor:__finalize()
+	self:_releasePreviews();
 	print("SoundEditor __finalize called");
 
 	self.window = nil;
@@ -520,41 +521,42 @@ function SoundEditor:_getCurrentParameterName()
 	return self:_getOptionLabel(SoundEditorOptions.parameters, self._settings and self._settings.parameter or 0, "Intensity");
 end
 
+function SoundEditor:_releasePreviews()
+    for path, sound in pairs(self._soundCache or {}) do
+        self:_safeCall(sound, "stop");
+        local manager = self._previewOwners and self._previewOwners[path] or nil;
+        if manager ~= nil then self:_safeCall(manager, "destroySound", sound); end
+    end
+    self._soundCache = {};
+    self._previewOwners = {};
+    self._currentSound = nil;
+    self._isPlaying = false;
+    self._isPaused = false;
+end
+
 function SoundEditor:_loadSound(path)
-	if path == nil or path == "" then
-		return nil, "No sound path selected.";
-	end
-
-	self._soundCache = self._soundCache or {};
-	if self._soundCache[path] ~= nil then
-		return self._soundCache[path], "Loaded cached sound: " .. tostring(path);
-	end
-
-	local soundManager = self:_getSoundManager();
-	if soundManager ~= nil then
-		local ok, sound = self:_safeCall(soundManager, "addSound2", path, self._settings.loopRegion == true);
-		if ok and sound ~= nil then
-			self._soundCache[path] = sound;
-			return sound, "Loaded sound through SoundManager: " .. tostring(path);
-		end
-
-		ok, sound = self:_safeCall(soundManager, "addSound3", path);
-		if ok and sound ~= nil then
-			self._soundCache[path] = sound;
-			return sound, "Loaded sound through SoundManager: " .. tostring(path);
-		end
-	end
-
-	local resourceDatabase = self:_getResourceDatabase();
-	if resourceDatabase ~= nil then
-		local ok, resource = self:_safeCall(resourceDatabase, "loadResource", path);
-		if ok and resource ~= nil then
-			self._soundCache[path] = resource;
-			return resource, "Loaded resource: " .. tostring(path);
-		end
-	end
-
-	return nil, "Could not load sound resource: " .. tostring(path);
+    if path == nil or path == "" then return nil, "No sound path selected."; end
+    self._soundCache = self._soundCache or {};
+    self._previewOwners = self._previewOwners or {};
+    local cached = self._soundCache[path];
+    if cached ~= nil then
+        local ok, loaded = self:_safeCall(cached, "isLoaded");
+        if ok and loaded == true then return cached, "Loaded cached preview: " .. tostring(path); end
+        self:_releasePreviews();
+    end
+    local manager = self:_getSoundManager();
+    if manager == nil then return nil, "Sound manager is unavailable."; end
+    local ok, sound = self:_safeCall(manager, "createSound", path, self._settings.loopRegion == true);
+    if ok and sound ~= nil then
+        local valid, loaded = self:_safeCall(sound, "isLoaded");
+        if valid and loaded == true then
+            self._soundCache[path] = sound;
+            self._previewOwners[path] = manager;
+            return sound, "Loaded independent preview: " .. tostring(path);
+        end
+        self:_safeCall(manager, "destroySound", sound);
+    end
+    return nil, "Could not create audio preview: " .. tostring(path);
 end
 
 function SoundEditor:_ensureCurrentSound(results)
@@ -586,6 +588,10 @@ function SoundEditor:_applyCurrentSoundSettings(sound)
 end
 
 function SoundEditor:_applyManagerSettings()
+	-- Only the master bus has an engine service today.
+	if self._settings.bus ~= nil and self._settings.bus ~= 0 then
+		return false;
+	end
 	local soundManager = self:_getSoundManager();
 	if soundManager == nil then
 		return false;
@@ -608,11 +614,11 @@ function SoundEditor:_applyLiveSetting(key, value, results)
 		if self.eventPathEntry then
 			self.eventPathEntry:setText(self._settings.eventPath);
 		end
-		self._currentSound = nil;
+		self:_releasePreviews();
 		self:_setStatus("Selected event: " .. tostring(self._settings.eventPath), results);
 	elseif key == "eventPath" then
 		self._selectedEventPath = value;
-		self._currentSound = nil;
+		self:_releasePreviews();
 		self:_setStatus("Event path set: " .. tostring(value), results);
 	elseif key == "volume" or key == "loopRegion" or key == "oneShot" then
 		if self._currentSound ~= nil then
@@ -621,6 +627,9 @@ function SoundEditor:_applyLiveSetting(key, value, results)
 	elseif key == "busVolume" or key == "busMute" then
 		if self:_applyManagerSettings() then
 			self:_setStatus("Applied mixer setting: " .. tostring(key), results);
+		else
+			self:_setResult(results, "success", false);
+			self:_setStatus("Selected mixer bus service is unavailable", results);
 		end
 	elseif key == "bank" then
 		self._selectedBank = self:_getCurrentBankName();
@@ -998,10 +1007,11 @@ function SoundEditor:load()
 end
 
 function SoundEditor:unload()
+    self:_releasePreviews();
 	print("SoundEditor unload called");
 
-	local applicationManager = IApplicationManager.instance();
-	local ui = applicationManager:getUI();
+	local applicationManager = self:_getApplicationManager();
+	local ui = applicationManager and applicationManager:getUI() or nil;
 
 	if self._currentSound ~= nil then
 		self:_safeCall(self._currentSound, "stop");
@@ -1018,7 +1028,7 @@ function SoundEditor:unload()
 			editorParent:removeChild(self.editorWindow);			
 		end	
 		
-		ui:removeElement(self.editorWindow);
+		if ui ~= nil then ui:removeElement(self.editorWindow); end
 		
 		self.editorWindow = nil;
 	end	
@@ -1114,13 +1124,14 @@ function SoundEditor:_performAction(actionName, results)
 		if sound ~= nil then
 			self:_applyCurrentSoundSettings(sound);
 			local ok = self:_safeCall(sound, "play");
-			self._isPlaying = ok == true;
+            local statusOk, playing = self:_safeCall(sound, "isPlaying");
+			self._isPlaying = ok == true and statusOk and playing == true;
 			self._isPaused = false;
 			self:_setResult(results, "playing", self._isPlaying);
-			if ok then
+			if self._isPlaying then
 				self:_setStatus("Playing " .. tostring(self:_getCurrentEventPath()), results);
 			else
-				self:_setStatus("Sound resource does not expose play().", results);
+				self:_setStatus("Playback did not start or has already finished.", results);
 			end
 		end
 	elseif actionName == "pauseEvent" then
@@ -1139,9 +1150,14 @@ function SoundEditor:_performAction(actionName, results)
 		local sound = self:_ensureCurrentSound(results);
 		if sound ~= nil then
 			local ok = self:_safeCall(sound, "play");
-			self._isPlaying = ok == true;
+            local statusOk, playing = self:_safeCall(sound, "isPlaying");
+			self._isPlaying = ok == true and statusOk and playing == true;
 			self._isPaused = false;
-			self:_setStatus("Resumed " .. tostring(self:_getCurrentEventPath()), results);
+            if self._isPlaying then
+                self:_setStatus("Resumed " .. tostring(self:_getCurrentEventPath()), results);
+            else
+                self:_setStatus("Playback did not resume or has already finished.", results);
+            end
 		end
 	elseif actionName == "stopEvent" or actionName == "stopEventImmediate" or actionName == "stopEventAllowFadeout" then
 		if self._currentSound ~= nil then
@@ -1182,27 +1198,10 @@ function SoundEditor:_performAction(actionName, results)
 		local slot = self._settings.effectSlot or 0;
 		self._effects[slot] = nil;
 		self:_setStatus("Effect slot " .. tostring(slot + 1) .. " cleared.", results);
-	elseif actionName == "loadBank" then
-		local bankPath = self:_getCurrentBankPath();
-		local resourceDatabase = self:_getResourceDatabase();
-		local loaded = false;
-		if resourceDatabase ~= nil then
-			local ok, resource = self:_safeCall(resourceDatabase, "loadResource", bankPath);
-			loaded = ok and resource ~= nil;
-			self:_setResult(results, "bankResource", resource);
-		end
-		self._loadedBanks[bankPath] = true;
-		if loaded then
-			self:_setStatus("Loaded bank resource: " .. tostring(bankPath), results);
-		else
-			self:_setStatus("Bank tracked as loaded: " .. tostring(bankPath), results);
-		end
-	elseif actionName == "unloadBank" then
-		local bankPath = self:_getCurrentBankPath();
-		self._loadedBanks[bankPath] = nil;
-		self:_setStatus("Unloaded bank from editor state: " .. tostring(bankPath), results);
-	elseif actionName == "buildBanks" then
-		self:_setStatus("Bank build requested for " .. tostring(self:_getCurrentBankName()), results);
+    elseif actionName == "loadBank" or actionName == "unloadBank" or actionName == "buildBanks" then
+        self:_setResult(results, "success", false);
+        self:_setResult(results, "bankLoaded", false);
+        self:_setStatus("Audio bank services are unavailable in this backend.", results);
 	elseif actionName == "startSnapshot" then
 		self._activeSnapshot =
 		{
@@ -1312,7 +1311,7 @@ function SoundEditor:_handleDrop(sender, args, results)
 			self.eventPathEntry:setText(filePath);
 		end
 		self._settings.eventPath = filePath;
-		self._currentSound = nil;
+		self:_releasePreviews();
 		self:_setStatus("Event path set from drop: " .. tostring(filePath), results);
 	end
 end

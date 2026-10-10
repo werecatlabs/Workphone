@@ -27,6 +27,8 @@ namespace workphone
 
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;
+        void reload( SmartPtr<ISharedObject> data ) override;
+        bool hasReloadError() const;
 
         void play() override;
         void pause() override;
@@ -61,6 +63,7 @@ namespace workphone
 
         // Platform SDK types and owned audio data live entirely in the .cpp.
         PlatformSoundState *m_platformSoundState = nullptr;
+        bool m_reloadFailed = false;
     };
 }  // namespace workphone
 

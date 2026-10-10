@@ -13,7 +13,7 @@ extern "C" {
 typedef enum wp_audio_result {
     WP_AUDIO_OK, WP_AUDIO_INVALID_ARGUMENT, WP_AUDIO_INVALID_FORMAT,
     WP_AUDIO_UNSUPPORTED, WP_AUDIO_LIMIT, WP_AUDIO_OUT_OF_MEMORY,
-    WP_AUDIO_STALE_HANDLE
+    WP_AUDIO_STALE_HANDLE, WP_AUDIO_EMPTY
 } wp_audio_result;
 typedef struct wp_audio_wav_info {
     uint32_t size; /* sizeof(wp_audio_wav_info) */
@@ -65,6 +65,45 @@ wp_audio_result wp_audio_voice_poll(wp_audio_context *context, wp_audio_voice_ha
                                    wp_audio_completion *reason);
 /* Writes interleaved stereo float, no limiter. Rejected calls do not advance clock. */
 wp_audio_result wp_audio_render(wp_audio_context *context, float *output, uint32_t frames);
+
+/* Optional bounded SPSC command publication: exactly one producer/poller and
+ * one render owner. These two functions may run concurrently with render.
+ * All other APIs still require exclusive access to the context. Queued start
+ * returns a handle in its acknowledgement; queued release retires clip data on
+ * the polling/control thread. Direct creation/release require quiescent render.
+ * 128 requests may be outstanding, with eight slots reserved for stop commands.
+ * Every accepted request produces one acknowledgement at a block boundary.
+ * Poll acknowledgements to replenish capacity. No callbacks or reclamation run
+ * in render. There is no implicit growth, blocking or silent command drop. */
+typedef enum wp_audio_command_type {
+    WP_AUDIO_COMMAND_GAIN, WP_AUDIO_COMMAND_LOOP, WP_AUDIO_COMMAND_PAUSE,
+    WP_AUDIO_COMMAND_RESUME, WP_AUDIO_COMMAND_SEEK, WP_AUDIO_COMMAND_RESTART,
+    WP_AUDIO_COMMAND_STOP, WP_AUDIO_COMMAND_STOP_ALL,
+    WP_AUDIO_COMMAND_START, WP_AUDIO_COMMAND_RELEASE
+} wp_audio_command_type;
+typedef struct wp_audio_command {
+    uint32_t size;
+    wp_audio_command_type type;
+    wp_audio_voice_handle voice;
+    uint64_t request_id, frame;
+    float value;
+    wp_audio_voice_desc start; /* used only for START; clip pinned on admission */
+} wp_audio_command;
+typedef struct wp_audio_acknowledgement {
+    uint64_t request_id;
+    wp_audio_result result;
+    wp_audio_voice_handle voice; /* created handle for START, original otherwise */
+} wp_audio_acknowledgement;
+wp_audio_result wp_audio_command_submit(wp_audio_context *context, const wp_audio_command *command);
+wp_audio_result wp_audio_command_poll(wp_audio_context *context, wp_audio_acknowledgement *acknowledgement);
+/* Process-wide native-core allocator instrumentation. Excludes platform,
+ * adapter and C++ cache allocations. Read while owners are quiescent for an
+ * exact leak balance; concurrent fields are independently sampled counters. */
+typedef struct wp_audio_memory_stats {
+    uint32_t size;
+    uint64_t allocations, deallocations, resident_bytes;
+} wp_audio_memory_stats;
+wp_audio_result wp_audio_memory_snapshot(wp_audio_memory_stats *stats);
 #ifdef __cplusplus
 }
 #endif

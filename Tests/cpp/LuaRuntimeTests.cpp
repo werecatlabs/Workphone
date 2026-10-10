@@ -5,6 +5,7 @@
 #include <luabind/luabind.hpp>
 #include <cstdio>
 #include <stdexcept>
+#include "LuaAudioContracts.hpp"
 #ifdef WP_LUA_ASSET_TESTS
 #include "LuaAssetContracts.hpp"
 #endif
@@ -165,6 +166,7 @@ int main()
             retained = nullptr;
             manager.load( nullptr );
             require( manager.executeSource( "assert(calls == nil)", "=fresh" ), "fresh VM" );
+            runLuaAudioContracts( manager );
 #ifdef WP_LUA_ASSET_TESTS
             runLuaAssetContracts( manager );
 #endif

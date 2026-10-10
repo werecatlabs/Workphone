@@ -7,6 +7,28 @@
 
 namespace workphone
 {
+    namespace
+    {
+        SmartPtr<ISound> createSoundInstance( ISoundManager *manager, const String &path, bool loop )
+        {
+            if( !manager ) return nullptr;
+            auto resource = manager->create( path );
+            auto sound = workphone::dynamic_pointer_cast<ISound>( resource );
+            if( !sound || !sound->isLoaded() )
+            {
+                if( resource ) manager->destroyResource( resource );
+                return nullptr;
+            }
+            sound->setLoop( loop );
+            return sound;
+        }
+
+        void destroySoundInstance( ISoundManager *manager, SmartPtr<ISound> sound )
+        {
+            if( manager && sound ) manager->destroyResource( sound );
+        }
+    }
+
     void bindSound( lua_State *L )
     {
         using namespace luabind;
@@ -34,6 +56,8 @@ namespace workphone
                         .scope[def( "typeInfo", ISound::typeInfo )]];
 
         module( L )[class_<ISoundManager, IResourceManager, SmartPtr<ISoundManager>>( "ISoundManager" )
+                        .def( "createSound", &createSoundInstance )
+                        .def( "destroySound", &destroySoundInstance )
                         .def( "addListener3", &ISoundManager::addListener3 )
                         .def( "findListener3", &ISoundManager::findListener3 )
                         .def( "setVolume", &ISoundManager::setVolume )

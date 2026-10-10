@@ -10,6 +10,8 @@
 #include <cmath>
 #include <limits>
 #include <chrono>
+#include <thread>
+#include <atomic>
 #define CHECK(x) do { if (!(x)) throw std::runtime_error(#x); } while (0)
 static wp_vec3f vector(float x, float y, float z) { return {x,y,z}; }
 using Bytes = std::vector<unsigned char>;
@@ -32,6 +34,10 @@ static Bytes wav(unsigned bits = 16, unsigned channels = 1, unsigned frames = 8,
     return b;
 }
 static wp_audio_result inspect(const Bytes &b) { wp_audio_wav_info i{}; i.size=sizeof(i); return wp_audio_wav_inspect(b.data(),b.size(),&i); }
+static wp_audio_memory_stats memory() {
+    wp_audio_memory_stats stats{}; stats.size=sizeof(stats);
+    CHECK(wp_audio_memory_snapshot(&stats)==WP_AUDIO_OK); return stats;
+}
 static void decode() {
     for (auto bits : {8u,16u,24u,32u}) for (auto channels : {1u,2u}) {
         auto b=wav(bits,channels,7); wp_audio_clip *clip=nullptr;
@@ -111,6 +117,104 @@ static void contracts() {
     wp_audio_listener_set_orientation(l,vector(0,0,0),vector(0,0,0));
     CHECK(wp_audio_listener_get_forward(l).x==1); wp_audio_listener_destroy(l);
 }
+static void commands() {
+    {
+        Fixture asynchronous;
+        wp_audio_command start{}; start.size=sizeof(start); start.type=WP_AUDIO_COMMAND_START;
+        start.start={sizeof(start.start),asynchronous.clip,0,1,0,1,1}; start.request_id=1;
+        CHECK(wp_audio_command_submit(asynchronous.context,&start)==WP_AUDIO_OK);
+        // Admission pins clip data before the producer relinquishes ownership.
+        wp_audio_clip_destroy(asynchronous.clip); asynchronous.clip=nullptr;
+        const auto beforeStart=memory();
+        auto samples=asynchronous.render(1); CHECK(samples[0]==0.5f);
+        CHECK(memory().allocations==beforeStart.allocations && memory().deallocations==beforeStart.deallocations);
+        wp_audio_acknowledgement ack{};
+        CHECK(wp_audio_command_poll(asynchronous.context,&ack)==WP_AUDIO_OK && ack.result==WP_AUDIO_OK);
+        CHECK(ack.voice.generation!=0);
+        wp_audio_command release{}; release.size=sizeof(release); release.type=WP_AUDIO_COMMAND_RELEASE;
+        release.voice=ack.voice; release.request_id=2;
+        CHECK(wp_audio_command_submit(asynchronous.context,&release)==WP_AUDIO_OK);
+        const auto beforeRelease=memory();
+        asynchronous.render(1); // detaches; memory is retired until control poll
+        CHECK(memory().deallocations==beforeRelease.deallocations);
+        CHECK(wp_audio_command_poll(asynchronous.context,&ack)==WP_AUDIO_OK && ack.result==WP_AUDIO_OK);
+        CHECK(memory().deallocations==beforeRelease.deallocations+2); // clip + samples, on control owner
+        CHECK(wp_audio_voice_stop(asynchronous.context,release.voice)==WP_AUDIO_STALE_HANDLE);
+    }
+    {
+        Fixture cycles(8,1);
+        wp_audio_command command{}; command.size=sizeof(command); command.type=WP_AUDIO_COMMAND_START;
+        command.start={sizeof(command.start),cycles.clip,0,1,0,1,1};
+        wp_audio_acknowledgement ack{};
+        wp_audio_voice_handle previous{};
+        for(unsigned i=0;i<1000;++i) {
+            command.type=WP_AUDIO_COMMAND_START;
+            CHECK(wp_audio_command_submit(cycles.context,&command)==WP_AUDIO_OK);
+            cycles.render(1);
+            CHECK(wp_audio_command_poll(cycles.context,&ack)==WP_AUDIO_OK && ack.result==WP_AUDIO_OK);
+            CHECK(previous.generation!=ack.voice.generation); previous=ack.voice;
+            command.voice=ack.voice; command.type=WP_AUDIO_COMMAND_RELEASE;
+            CHECK(wp_audio_command_submit(cycles.context,&command)==WP_AUDIO_OK);
+            cycles.render(1);
+            CHECK(wp_audio_command_poll(cycles.context,&ack)==WP_AUDIO_OK && ack.result==WP_AUDIO_OK);
+        }
+        command.type=WP_AUDIO_COMMAND_START;
+        CHECK(wp_audio_command_submit(cycles.context,&command)==WP_AUDIO_OK);
+        wp_audio_clip_destroy(cycles.clip); cycles.clip=nullptr;
+        // Destructor cancels a queued start whose producer reference is gone.
+    }
+    Fixture f; auto handle=f.start(1,0,true);
+    wp_audio_command command{}; command.size=sizeof(command); command.type=WP_AUDIO_COMMAND_GAIN;
+    command.voice=handle; command.value=0.25f;
+    for(unsigned i=0;i<120;++i) {
+        command.request_id=i; CHECK(wp_audio_command_submit(f.context,&command)==WP_AUDIO_OK);
+    }
+    CHECK(wp_audio_command_submit(f.context,&command)==WP_AUDIO_LIMIT);
+    command.type=WP_AUDIO_COMMAND_STOP; command.request_id=120;
+    CHECK(wp_audio_command_submit(f.context,&command)==WP_AUDIO_OK); // reserved admission
+    auto out=f.render(1); CHECK(out[0]==0 && out[1]==0);
+    wp_audio_acknowledgement ack{};
+    for(unsigned i=0;i<121;++i) {
+        CHECK(wp_audio_command_poll(f.context,&ack)==WP_AUDIO_OK);
+        CHECK(ack.request_id==i && ack.result==WP_AUDIO_OK);
+    }
+    CHECK(wp_audio_command_poll(f.context,&ack)==WP_AUDIO_EMPTY);
+    CHECK(wp_audio_voice_release(f.context,handle)==WP_AUDIO_OK);
+    command.request_id=999; CHECK(wp_audio_command_submit(f.context,&command)==WP_AUDIO_OK);
+    f.render(1); CHECK(wp_audio_command_poll(f.context,&ack)==WP_AUDIO_OK);
+    CHECK(ack.request_id==999 && ack.result==WP_AUDIO_STALE_HANDLE);
+
+    Fixture threaded; handle=threaded.start(1,0,true);
+    std::atomic_bool run{true}, renderFailed{false};
+    std::thread renderer([&] {
+        float block[128];
+        while(run.load()) {
+            if(wp_audio_render(threaded.context,block,64)!=WP_AUDIO_OK) renderFailed=true;
+            std::this_thread::yield();
+        }
+    });
+    unsigned sent=0, received=0;
+    bool valid=true;
+    while(received<10001) {
+        if(sent<10001) {
+            command.voice=handle; command.request_id=sent;
+            command.type=sent==10000?WP_AUDIO_COMMAND_STOP_ALL:WP_AUDIO_COMMAND_GAIN;
+            auto result=wp_audio_command_submit(threaded.context,&command);
+            if(result==WP_AUDIO_OK) ++sent;
+            else if(result!=WP_AUDIO_LIMIT) { valid=false; break; }
+        }
+        auto result=wp_audio_command_poll(threaded.context,&ack);
+        if(result==WP_AUDIO_OK) {
+            if(ack.request_id!=received || ack.result!=WP_AUDIO_OK) { valid=false; break; }
+            ++received;
+        } else if(result!=WP_AUDIO_EMPTY) { valid=false; break; }
+        std::this_thread::yield();
+    }
+    run=false; renderer.join(); CHECK(valid && !renderFailed);
+    wp_audio_voice_state state; uint64_t cursor;
+    CHECK(wp_audio_voice_status(threaded.context,handle,&state,&cursor)==WP_AUDIO_OK);
+    CHECK(state==WP_AUDIO_STOPPED && cursor==0);
+}
 static void render() {
     // Stereo ramp verifies channel mapping and fractional resampling, rather
     // than relying only on constant signals which hide cursor errors.
@@ -155,8 +259,10 @@ static void render() {
     auto expected=whole.render(256); auto first=split.render(63), second=split.render(193);
     first.insert(first.end(),second.begin(),second.end()); CHECK(first==expected);
     Fixture stress(512,128); for (unsigned i=0;i<128;++i) stress.start(0.001f,0,true);
+    const auto beforeRender=memory();
     auto start=std::chrono::steady_clock::now();
     float block[512]; for(unsigned i=0;i<1000;++i) CHECK(wp_audio_render(stress.context,block,256)==WP_AUDIO_OK);
+    CHECK(memory().allocations==beforeRender.allocations && memory().deallocations==beforeRender.deallocations);
     auto ms=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
     std::cout<<"128 voices, 1000 x 256-frame blocks: "<<ms<<" ms, average "<<ms/1000<<" ms/block\n";
 }
@@ -165,7 +271,10 @@ int main(int argc,char **argv) {
         const std::string suite=argc>1?argv[1]:"all";
         if(suite=="decode"||suite=="all") decode();
         if(suite=="contracts"||suite=="all") contracts();
+        if(suite=="commands"||suite=="all") commands();
         if(suite=="render"||suite=="all") render();
+        const auto balance=memory();
+        CHECK(balance.resident_bytes==0 && balance.allocations==balance.deallocations);
         std::cout<<suite<<" passed\n"; return 0;
     } catch(const std::exception &e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

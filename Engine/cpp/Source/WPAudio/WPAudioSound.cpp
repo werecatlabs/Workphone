@@ -1,5 +1,6 @@
 #include <WPAudio/WPAudioPCH.hpp>
 #include <WPAudio/WPAudioSound.hpp>
+#include <WPAudio/SharedClipCache.hpp>
 #include <Workphone/Workphone.hpp>
 
 #include <algorithm>
@@ -33,6 +34,8 @@ namespace workphone
             u32 sampleRate = 0;
             u16 blockAlign = 0, bitsPerSample = 0;
         };
+
+        audio::SharedClipCache<WavData> clipCache;
 
         bool readWav( IStream *stream, WavData &wav )
         {
@@ -87,7 +90,7 @@ namespace workphone
 
     struct WPAudioSound::PlatformSoundState
     {
-        WavData wav;
+        std::shared_ptr<const WavData> wav;
         std::atomic_bool playing{ false };
         std::atomic_bool loop{ false };
         bool paused = false;
@@ -150,8 +153,8 @@ namespace workphone
             auto state = static_cast<PlatformSoundState *>( context );
             if( state->loop && state->playing )
             {
-                ( *queue )->Enqueue( queue, state->wav.samples.data(),
-                                     static_cast<SLuint32>( state->wav.samples.size() ) );
+                ( *queue )->Enqueue( queue, state->wav->samples.data(),
+                                     static_cast<SLuint32>( state->wav->samples.size() ) );
             }
             else
             {
@@ -230,6 +233,24 @@ namespace workphone
         setLoadingState( loadPlatformSound( filePath ) ? LoadingState::Loaded : LoadingState::Error );
     }
 
+    void WPAudioSound::reload( SmartPtr<ISharedObject> data )
+    {
+        const auto hadGoodData = m_platformSoundState != nullptr;
+        setLoadingState( LoadingState::Unloaded );
+        load( data );
+        m_reloadFailed = !isLoaded();
+        if( m_reloadFailed && hadGoodData )
+        {
+            setLoadingState( LoadingState::Loaded );
+            WP_LOG_WARNING( "WPAudio: reload failed; previous clip retained." );
+        }
+    }
+
+    bool WPAudioSound::hasReloadError() const
+    {
+        return m_reloadFailed;
+    }
+
     void WPAudioSound::unload( SmartPtr<ISharedObject> data )
     {
         (void)data;
@@ -241,8 +262,6 @@ namespace workphone
 
     bool WPAudioSound::loadPlatformSound( const String &filename )
     {
-        unloadPlatformSound();
-
         auto state = new( std::nothrow ) PlatformSoundState();
         if( !state )
         {
@@ -253,8 +272,20 @@ namespace workphone
         try
         {
             auto stream = openAudioStream( filename );
-            if( !readWav( stream.get(), state->wav ) )
+            auto candidate = std::make_shared<WavData>();
+            if( !readWav( stream.get(), *candidate ) )
             {
+                delete state;
+                return false;
+            }
+            const auto bytes = candidate->samples.size() + candidate->format.size();
+            const auto result = clipCache.intern( candidate, bytes,
+                []( const WavData &a, const WavData &b ) {
+                    return a.format == b.format && a.samples == b.samples;
+                }, state->wav );
+            if( result != audio::SharedClipCache<WavData>::Result::Ready )
+            {
+                WP_LOG_WARNING( "WPAudio: resident clip budget exceeded." );
                 delete state;
                 return false;
             }
@@ -274,42 +305,42 @@ namespace workphone
         auto xAudio2 = static_cast<IXAudio2 *>( audioObject );
         if( !xAudio2 ||
             FAILED( xAudio2->CreateSourceVoice(
-                &state->sourceVoice, reinterpret_cast<const WAVEFORMATEX *>( state->wav.format.data() ),
+                &state->sourceVoice, reinterpret_cast<const WAVEFORMATEX *>( state->wav->format.data() ),
                 0, XAUDIO2_DEFAULT_FREQ_RATIO, &state->callback ) ) )
         {
             delete state;
             return false;
         }
 
-        state->buffer.AudioBytes = static_cast<UINT32>( state->wav.samples.size() );
-        state->buffer.pAudioData = state->wav.samples.data();
+        state->buffer.AudioBytes = static_cast<UINT32>( state->wav->samples.size() );
+        state->buffer.pAudioData = state->wav->samples.data();
         state->buffer.Flags = XAUDIO2_END_OF_STREAM;
         state->buffer.LoopCount = state->loop ? XAUDIO2_LOOP_INFINITE : 0;
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
-        if( state->wav.formatTag != WavFormatPcm )
+        if( state->wav->formatTag != WavFormatPcm )
         {
             delete state;
             return false;
         }
 
         AudioStreamBasicDescription format = {};
-        format.mSampleRate = state->wav.sampleRate;
+        format.mSampleRate = state->wav->sampleRate;
         format.mFormatID = kAudioFormatLinearPCM;
         format.mFormatFlags = kLinearPCMFormatFlagIsPacked | kLinearPCMFormatFlagIsSignedInteger;
-        if( state->wav.bitsPerSample == 8 )
+        if( state->wav->bitsPerSample == 8 )
         {
             format.mFormatFlags = kLinearPCMFormatFlagIsPacked;
         }
-        format.mBytesPerPacket = state->wav.blockAlign;
+        format.mBytesPerPacket = state->wav->blockAlign;
         format.mFramesPerPacket = 1;
-        format.mBytesPerFrame = state->wav.blockAlign;
-        format.mChannelsPerFrame = state->wav.channels;
-        format.mBitsPerChannel = state->wav.bitsPerSample;
+        format.mBytesPerFrame = state->wav->blockAlign;
+        format.mChannelsPerFrame = state->wav->channels;
+        format.mBitsPerChannel = state->wav->bitsPerSample;
 
         if( AudioQueueNewOutput( &format, &PlatformSoundState::outputCallback, state, nullptr, nullptr,
                                  0, &state->queue ) != noErr ||
             !state->queue ||
-            AudioQueueAllocateBuffer( state->queue, static_cast<UInt32>( state->wav.samples.size() ),
+            AudioQueueAllocateBuffer( state->queue, static_cast<UInt32>( state->wav->samples.size() ),
                                       &state->buffer ) != noErr )
         {
             if( state->queue )
@@ -319,11 +350,11 @@ namespace workphone
             delete state;
             return false;
         }
-        std::memcpy( state->buffer->mAudioData, state->wav.samples.data(), state->wav.samples.size() );
-        state->buffer->mAudioDataByteSize = static_cast<UInt32>( state->wav.samples.size() );
+        std::memcpy( state->buffer->mAudioData, state->wav->samples.data(), state->wav->samples.size() );
+        state->buffer->mAudioDataByteSize = static_cast<UInt32>( state->wav->samples.size() );
 #elif defined WP_PLATFORM_ANDROID
-        if( state->wav.formatTag != WavFormatPcm || state->wav.channels > 2 ||
-            ( state->wav.bitsPerSample != 8 && state->wav.bitsPerSample != 16 ) )
+        if( state->wav->formatTag != WavFormatPcm || state->wav->channels > 2 ||
+            ( state->wav->bitsPerSample != 8 && state->wav->bitsPerSample != 16 ) )
         {
             delete state;
             return false;
@@ -343,12 +374,12 @@ namespace workphone
 
         SLDataLocator_AndroidSimpleBufferQueue inputLocator = { SL_DATALOCATOR_ANDROIDSIMPLEBUFFERQUEUE,
                                                                 1 };
-        const SLuint32 speakerMask = state->wav.channels == 1
+        const SLuint32 speakerMask = state->wav->channels == 1
                                          ? SL_SPEAKER_FRONT_CENTER
                                          : SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT;
         SLDataFormat_PCM pcm = {
-            SL_DATAFORMAT_PCM,        state->wav.channels,      state->wav.sampleRate * 1000,
-            state->wav.bitsPerSample, state->wav.bitsPerSample, speakerMask,
+            SL_DATAFORMAT_PCM,        state->wav->channels,      state->wav->sampleRate * 1000,
+            state->wav->bitsPerSample, state->wav->bitsPerSample, speakerMask,
             SL_BYTEORDER_LITTLEENDIAN
         };
         SLDataSource source = { &inputLocator, &pcm };
@@ -412,6 +443,9 @@ namespace workphone
         return false;
 #endif
 
+        // Publish only after parsing, budget admission and native voice creation
+        // succeed. Existing clones keep the previous immutable generation pinned.
+        unloadPlatformSound();
         m_platformSoundState = state;
         setVolume( getVolume() );
         return true;
@@ -492,8 +526,8 @@ namespace workphone
         if( !state->paused )
             ( *state->bufferQueue )->Clear( state->bufferQueue );
         if( ( !state->paused && ( *state->bufferQueue )
-                    ->Enqueue( state->bufferQueue, state->wav.samples.data(),
-                               static_cast<SLuint32>( state->wav.samples.size() ) ) !=
+                    ->Enqueue( state->bufferQueue, state->wav->samples.data(),
+                               static_cast<SLuint32>( state->wav->samples.size() ) ) !=
                 SL_RESULT_SUCCESS ) ||
             ( *state->player )->SetPlayState( state->player, SL_PLAYSTATE_PLAYING ) !=
                 SL_RESULT_SUCCESS )
