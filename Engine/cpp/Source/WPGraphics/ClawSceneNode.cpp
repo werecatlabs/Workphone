@@ -149,9 +149,11 @@ namespace workphone
                             stateData->localTransform = transform;
                         }
                     }
-
-                    applyNativeTransform( m_node, transform );
                 }
+
+                // Equal authored state can still be waiting for render-thread dispatch.
+                // Always synchronize the native node when its owner applies the transform.
+                applyNativeTransform( m_node, transform );
             }
             else
             {

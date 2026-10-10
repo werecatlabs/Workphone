@@ -131,7 +131,36 @@ namespace workphone::render
         // so persist the context in our own atomic storage. This keeps the
         // state-context get/set round-trip working for standalone MaterialPass
         // instances (used in unit tests and editor scenarios).
-        m_localStateContext.store( stateContext );
+        if( m_localStateContext.load() != stateContext )
+        {
+            releaseLocalStateContext();
+            m_localStateContext.store( stateContext );
+        }
+    }
+
+    void MaterialPass::releaseLocalStateContext()
+    {
+        // SmartPtr's rvalue constructor retains its source; clear ownership
+        // explicitly before cleanup or a later shared context could inherit it.
+        auto context = m_createdStateContext;
+        auto state = m_createdState;
+        auto manager = m_createdContextManager;
+        m_createdStateContext = nullptr;
+        m_createdState = nullptr;
+        m_createdContextManager = nullptr;
+        m_localStateContext.store( nullptr );
+        if( state )
+        {
+            if( context )
+                context->removeState( state );
+            state->setOwner( nullptr );
+            state->setStateContext( nullptr );
+            state->unload( nullptr );
+        }
+        // A supplied context can be shared by other passes. Only its creator
+        // removes the context itself; this pass removes only its own record.
+        if( manager && context )
+            manager->removeStateContext( context );
     }
 
     SmartPtr<IStateContext> MaterialPass::getStateContext() const
@@ -177,7 +206,9 @@ namespace workphone::render
                         if( stateManager && factoryManager )
                         {
                             auto stateContext = stateManager->addStateContext();
-                            setStateContext( stateContext );
+                            m_createdContextManager = applicationManager->getStateManager();
+                            m_createdStateContext = stateContext;
+                            m_localStateContext.store( stateContext );
                         }
                     }
                 }
@@ -214,6 +245,8 @@ namespace workphone::render
                             state->setOwner( this );
                             state->setData( stateData );
                             stateContext->addState( state );
+                            m_createdStateContext = stateContext;
+                            m_createdState = state;
                         }
                     }
                 }
@@ -611,6 +644,7 @@ namespace workphone::render
     {
         try
         {
+            releaseLocalStateContext();
             const auto &loadingState = getLoadingState();
             if( loadingState != LoadingState::Unloaded )
             {

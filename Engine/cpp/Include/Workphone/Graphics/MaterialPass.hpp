@@ -537,6 +537,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            /** Retire only the state/context created by this pass. */
+            void releaseLocalStateContext();
+
             /**
              * @brief Create texture slots for this pass.
              *
@@ -582,6 +585,9 @@ namespace workphone
              *  AtomicSmartPtr<IStateContext> for the lifetime of the pass.
              */
             AtomicSmartPtr<IStateContext> m_localStateContext;
+            SmartPtr<IStateContext> m_createdStateContext;
+            SmartPtr<IState> m_createdState;
+            SmartPtr<IStateManager> m_createdContextManager;
             //@}
         };
     }  // end namespace render

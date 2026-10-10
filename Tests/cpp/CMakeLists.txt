@@ -83,6 +83,22 @@ if (WP_BUILD_TESTS)
             set_target_properties(WPGraphicsClawProductionTests PROPERTIES FOLDER Tests/Cpp)
             add_test(NAME WPGraphics.claw_production_render COMMAND WPGraphicsClawProductionTests)
             set_tests_properties(WPGraphics.claw_production_render PROPERTIES LABELS "graphics;gpu;production" TIMEOUT 60)
+            if(WP_BUILD_RESOURCE_SYSTEM AND TARGET WPSQLite)
+                add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
+                target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB)
+                target_include_directories(WPGraphicsCookedResourceTests PRIVATE
+                    ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+                    ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+                    ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+                    ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
+                target_link_libraries(WPGraphicsCookedResourceTests PRIVATE
+                    WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
+                target_link_directories(WPGraphicsCookedResourceTests PRIVATE
+                    ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+                set_target_properties(WPGraphicsCookedResourceTests PROPERTIES FOLDER Tests/Cpp)
+                add_test(NAME WPGraphics.cooked_material_resource COMMAND WPGraphicsCookedResourceTests)
+                set_tests_properties(WPGraphics.cooked_material_resource PROPERTIES LABELS "graphics;gpu;assets" TIMEOUT 90)
+            endif()
         endif()
 		add_executable(WPGraphicsClawRendererTests ClawRendererContractTests.cpp)
 		target_include_directories(
