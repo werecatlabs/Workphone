@@ -78,6 +78,11 @@ namespace workphone
         void apply( const SmartPtr<IAnimationTimeIndex> &timeIndex, f32 weight = 1.0,
                     f32 scale = 1.0f ) override;
 
+        /** Apply to this evaluation's bone without storing an instance in the shared clip. */
+        void applyToBone( const SmartPtr<IBone> &bone,
+                          const SmartPtr<IAnimationTimeIndex> &timeIndex,
+                          f32 weight = 1.0f, f32 scale = 1.0f ) const;
+
         /**
          * @brief Creates a new keyframe at the specified time position.
          * @param timePos The time position in seconds.

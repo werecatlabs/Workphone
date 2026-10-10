@@ -1,3 +1,4 @@
+#include "../ResourceRuntimeContracts.hpp"
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
@@ -216,7 +217,8 @@ int main()
         system.shutdown();
         std::error_code ignored;
         fs::remove_all( root, ignored );
-        std::cout << "WPResource smoke tests passed" << std::endl;
+        resource_runtime_contracts::run();
+        std::cout << "WPResource authoring and cooked-only runtime contracts passed" << std::endl;
         return 0;
     }
     catch( const std::exception &exception )

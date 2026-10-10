@@ -6,6 +6,7 @@
 #include <WPGraphics/ClawTerrain.hpp>
 #include <WPGraphics/ClawWindow.hpp>
 #include <WPGraphics/ClawUtil.hpp>
+#include "ClawMeshMaterial.hpp"
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
 #include <workphone_graphics_renderer_dx11.h>
@@ -940,10 +941,38 @@ namespace workphone::render
 
     void ClawRendererDX11::renderMesh( ClawMesh *mesh, const Matrix4F &transform )
     {
+        renderMeshBatch( mesh, transform, nullptr, 0 );
+    }
+
+    u64 ClawRendererDX11::renderMeshInstances( ClawMesh *mesh,
+                                              const wp_instance_pntc_dx11 *instances, u32 count )
+    {
+        if( !mesh || !count || count > 65536 ||
+            !wp_renderer_dx11_validate_instances_pntc( instances, static_cast<wp_s32>( count ) ) )
+            return 0;
+        const auto native = mesh->getNativeMesh();
+        if( !native || wp_graphics_mesh_get_primitive_type( native ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ||
+            !wp_graphics_mesh_get_index_count( native ) )
+            return 0;
+        // Transparent instances need per-view sorting. This first tier supports
+        // opaque and alpha-tested species through the existing material path.
+        const auto sections = std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) );
+        for( s32 section = 0; section < sections; ++section )
+        {
+            auto material = resolveMeshMaterial( mesh, section );
+            if( !isSupportedFoliageMaterial( material ) )
+                return 0;
+        }
+        return renderMeshBatch( mesh, Matrix4F::identity(), instances, count );
+    }
+
+    u64 ClawRendererDX11::renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
+                                          const wp_instance_pntc_dx11 *instances, u32 instanceCount )
+    {
         auto nativeMesh = mesh ? mesh->getNativeMesh() : nullptr;
         if( !m_renderer || !mesh || !mesh->isVisible() || !nativeMesh )
         {
-            return;
+            return 0;
         }
 
         const auto vertexCount = wp_graphics_mesh_get_vertex_count( nativeMesh );
@@ -951,9 +980,10 @@ namespace workphone::render
         const auto elementCount = indexCount > 0 ? indexCount : vertexCount;
         if( vertexCount == 0 || elementCount == 0 )
         {
-            return;
+            return 0;
         }
 
+        u64 submitted = 0;
         setTransforms( transform );
         const auto topology = wp_graphics_mesh_get_primitive_type( nativeMesh );
         const auto submeshCount = wp_graphics_mesh_get_submesh_count( nativeMesh );
@@ -962,7 +992,7 @@ namespace workphone::render
         if( meshVertices.empty() ||
             meshVertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
         {
-            return;
+            return 0;
         }
 
         const auto oldBlend = wp_renderer_get_blend_mode( m_renderer );
@@ -989,30 +1019,7 @@ namespace workphone::render
                 }
             }
 
-            auto material = mesh->getMaterial( submeshIndex );
-            if( !material )
-            {
-                material = mesh->getMaterial();
-            }
-            if( !material )
-            {
-                auto materialName = mesh->getMaterialName( submeshIndex );
-                if( StringUtil::isNullOrEmpty( materialName ) )
-                    materialName = mesh->getMaterialName();
-                if( !StringUtil::isNullOrEmpty( materialName ) )
-                {
-                    auto applicationManager = core::IApplicationManager::instancePtr();
-                    auto graphicsSystem =
-                        applicationManager ? applicationManager->getGraphicsSystem() : nullptr;
-                    auto materialManager =
-                        graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
-                    if( materialManager )
-                    {
-                        material = dynamic_pointer_cast<IMaterial>(
-                            materialManager->getByName( materialName ) );
-                    }
-                }
-            }
+            auto material = resolveMeshMaterial( mesh, submeshIndex );
 
             void *nativeTexture = nullptr;
             if( material )
@@ -1106,7 +1113,24 @@ namespace workphone::render
                                                        : material ? ClawUtil::toCCullMode( material->getCullMode() )
                                                                   : WORKPHONE_CULL_MODE_BACK );
 
-            if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP && count >= 3 )
+            if( instances )
+            {
+                if( geometry && count > 0 && count % 3u == 0 )
+                {
+                    const auto drawn = wp_renderer_dx11_draw_geometry_pntc_instanced(
+                        dx11, geometry, static_cast<wp_s32>( start ),
+                        static_cast<wp_s32>( count ), 0, instances,
+                        static_cast<wp_s32>( instanceCount ) );
+                    if( drawn > 0 )
+                    {
+                        submitted += drawn;
+                        m_primitiveCount = static_cast<u32>( std::min<u64>(
+                            std::numeric_limits<u32>::max(),
+                            u64( m_primitiveCount ) + u64( count / 3u ) * drawn ) );
+                    }
+                }
+            }
+            else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP && count >= 3 )
             {
                 Array<wp_vertex_pntc> vertices;
                 vertices.reserve( static_cast<size_t>( count - 2u ) * 3u );
@@ -1169,6 +1193,7 @@ namespace workphone::render
         wp_renderer_set_depth_test_enabled( m_renderer, oldDepthTest );
         wp_renderer_set_depth_func( m_renderer, oldDepthFunc );
         wp_renderer_set_fill_mode( m_renderer, oldFill );
+        return submitted;
     }
 
     void ClawRendererDX11::renderTerrain( const SmartPtr<ClawTerrain> &terrain )

@@ -7,6 +7,60 @@ This expands `ANIM-01` through `ANIM-08` and gate GA in the [WPGraphics producti
 
 The [resource and asset production plan](WPRESOURCE_ASSET_PRODUCTION_PLAN.md) owns shared catalog/identity, build generations, runtime loading, Editor file operations and source-free packaging. Implement those services once and use them for animation assets.
 
+
+## Implementation follow-up - 10 October 2026
+
+A first correctness increment is implemented against `brodex` at `eead5c43d`.
+The findings below describe the historical source audit. The actual-import
+fixture, all 10 graph/IK cases and Claw clone DX11 contract pass in Debug and
+RelWithDebInfo. The full required baseline reports 18 passed and one unavailable
+external-mesh test per configuration; see [execution evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md).
+
+Both actual Assimp animation routes now validate all channels before replacing
+tracks, evaluate independent key grids at merged sample times, preserve missing
+channels from the node bind transform, and normalize shortest-path quaternion
+interpolation. A valid replacement removes obsolete owned tracks. Unsupported
+STEP/CUBICSPLINE, repeat/extrapolation and default-pose discontinuities fail
+explicitly, as do malformed/ambiguous channels, nonfinite or negative times,
+duplicate or legacy-epsilon-close samples and more than 65,535 merged keys.
+Zero-duration sources produce one reference/key sample and retain the legacy
+minimum clip duration; missing source tick rate uses the existing 25 ticks/second fallback. Skeletal non-unit scale is rejected because the current
+IBone path cannot represent it; scene transform tracks retain scale.
+
+Runtime actor tracks now interpolate rotations between keys and honour their
+blend weight. Creating an existing transform key returns the retained editable
+key, including the initial time-zero key. Each track resolves time against its
+own key grid. Skeleton
+application resolves a target bone for that call, including legacy bone-bound
+tracks, and affects only the requested skeleton. Imported legacy tracks still
+retain their original target for direct-apply compatibility. This remains
+sequential legacy blending; normalized pose-buffer evaluation is still open.
+
+Imported source samples are node-local TRS. The existing actor track path writes
+through world-transform setters, so this fixture uses unparented actor targets.
+Parented scene playback still needs an explicit persisted local/world track-space
+contract and transform-ownership tests; the skeletal local-pose tests do not close
+that scene integration gap.
+
+Claw mesh clones share immutable bind vertices and own their deformation output
+and native geometry independently, retaining topology and material sections.
+Successful procedural geometry replacement invalidates the old skin binding. The focused DX11
+contract samples different source/clone palettes and continues drawing the clone
+after source unload.
+
+`WPAnimation.import_contracts` exercises both real import routes using the authored
+`Tests/Fixtures/Animation/analytic_channels.gltf`, plus malformed import retention,
+bind defaults, sparse grids and independent skeleton playback. The glTF contains
+two animated nodes and an unskinned triangle; it does not certify mesh-skin import.
+`WPAnimation.core_contracts` registers the existing graph and IK suites in the
+required graphics/resource baseline.
+
+AN-005 and the sampling/instance-ownership parts of AN-007/AN-008 advance here. Typed
+skeleton/clip/skin cooking, cooked-only animated characters, automatic Animator to
+Claw palettes, normalized pose blending, scheduling/clock certification, GPU
+skinning, root motion, bounds and Editor authoring remain open. This increment
+does not complete A0/GA/R1 or the full implementation plan.
+
 ## 1. Outcome and release scope
 
 A user must be able to import a character, inspect and repair its rig/import settings, author clips and a controller, preview the actual runtime result, save/reopen it, instantiate several characters, and ship the same cooked assets in an application. Animation must remain correct across cameras, scene changes, Play/Stop, resource replacement, culling, LOD and failure.

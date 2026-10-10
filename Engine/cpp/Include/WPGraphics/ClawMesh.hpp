@@ -7,6 +7,7 @@
 #include <Workphone/Core/FixedString.hpp>
 #include <Workphone/Atomics/AtomicFixedString.hpp>
 #include "workphone_graphics_mesh.h"
+#include <memory>
 
 struct wp_graphics_object;
 
@@ -114,7 +115,7 @@ namespace workphone
             bool updateGeometry( const Array<wp_graphics_mesh_vertex_pntc> &vertices,
                                  const Array<u32> &indices );
 
-            /** Creates a deep copy of the mesh object. */
+            /** Copies geometry and deformation output; immutable skin bind data is shared. */
             SmartPtr<IGraphicsObject> clone(
                 const String &name = StringUtil::EmptyString ) const override;
 
@@ -124,7 +125,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            Array<wp_skin_vertex> m_skinVertices;
+            std::shared_ptr<const Array<wp_skin_vertex>> m_skinVertices;
             Array<wp_skin_result> m_skinOutput;
             wp_graphics_mesh *m_mesh = nullptr;  ///< Pointer to the native Claw mesh structure.
             wp_graphics_object *m_renderObject =

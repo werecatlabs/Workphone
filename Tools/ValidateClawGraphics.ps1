@@ -13,8 +13,9 @@ if (-not $CTestExecutable) {
     $CTestExecutable = if (Test-Path -LiteralPath $installedCTest) { $installedCTest } else { (Get-Command ctest -ErrorAction Stop).Source }
 }
 $CTestExecutable = (Get-Command $CTestExecutable -ErrorAction Stop).Source
-$selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets)\.|^WPResourceTests$'
+$selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation)\.|^WPResourceTests$'
 $requiredTests = @(
+    'WPAnimation.core_contracts', 'WPAnimation.import_contracts',
     'WPGraphics.terrain_contracts', 'WPGraphics.terrain_lua_workflow',
     'WPGraphics.production_Skinning', 'WPGraphics.production_ParticleSimulation',
     'WorkphoneGraphics.mesh_serializer', 'WorkphoneGraphics.mesh_import_assets',
@@ -53,6 +54,31 @@ $testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/Gr
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter '*Contracts.hpp') +
     @(Get-Item -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp/AssetCatalogTests.cpp'), (Join-Path $repositoryRoot 'Tests/cpp/ResourceSystem/ResourceSystemSmoke.cpp'))
 $verificationPaths = @(
+    'Engine/cpp/Project/WPAssimp/CMakeLists.txt',
+    'Engine/cpp/Source/WPGraphics/ClawMeshMaterial.hpp',
+    'Tests/cpp/AnimationCoreTests.cpp',
+    'Tests/cpp/AnimationImportTests.cpp',
+    'Tests/cpp/UnitTests/AnimationGraphTests.cpp',
+    'Tests/cpp/UnitTests/AnimationIKTests.cpp',
+    'Tests/Fixtures/Animation/analytic_channels.gltf',
+    'Engine/c/Include/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h',
+    'Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.c',
+    'Engine/cpp/Include/WPAssimp/AnimationImport.hpp',
+    'Engine/cpp/Include/WPAssimp/AssimpLoader.hpp',
+    'Engine/cpp/Source/WPAssimp/AssimpLoader.cpp',
+    'Engine/cpp/Include/WPGraphics/ClawFoliageBatch.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawFoliageBatch.cpp',
+    'Engine/cpp/Include/WPGraphics/ClawScene.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawScene.cpp',
+    'Engine/cpp/Include/WPGraphics/ClawMesh.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawMesh.cpp',
+    'Engine/cpp/Include/WPGraphics/ClawRendererDX11.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawRendererDX11.cpp',
+    'Engine/cpp/Include/Workphone/Animation/ActorAnimationTrack.hpp',
+    'Engine/cpp/Source/Workphone/Animation/ActorAnimationTrack.cpp',
+    'Engine/cpp/Source/Workphone/Animation/Animation.cpp',
+    'Engine/cpp/Include/Workphone/System/ResourceSystem.hpp',
+    'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp',
     'Tests/cpp/TerrainContractsTests.cpp', 'Tests/cpp/TerrainLuaBindingTests.cpp',
     'Engine/cpp/Include/Workphone/Graphics/TerrainData.hpp',
     'Engine/cpp/Include/Workphone/Graphics/Terrain.hpp',

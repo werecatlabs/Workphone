@@ -9,10 +9,12 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <set>
 #include <shared_mutex>
+#include <sstream>
 
 #if defined WP_PLATFORM_WIN32
 #    include <process.h>
@@ -26,6 +28,171 @@ namespace workphone::resource
     {
         namespace fs = std::filesystem;
         std::atomic<u64> payloadTemporaryCounter{ 0 };
+        constexpr u64 maximumManifestBytes = 16ull * 1024ull * 1024ull;
+        constexpr u32 maximumManifestResources = 65536;
+        constexpr u32 maximumManifestDependencies = 4096;
+        constexpr u32 maximumManifestDepth = 256;
+        const ResourceID manifestResourceId( "data://runtime.wprm" );
+
+        struct RuntimeManifest
+        {
+            String target;
+            Array<ResourceID> roots;
+            std::map<String, CompiledResourceHeader> resources;
+        };
+
+        void writeManifestNumber( std::ostream &stream, u64 value )
+        {
+            for( size_t index = 0; index < sizeof( value ); ++index )
+            {
+                stream.put( static_cast<char>( value & 0xffu ) );
+                value >>= 8;
+            }
+        }
+
+        bool readManifestNumber( std::istream &stream, u64 &value )
+        {
+            value = 0;
+            for( size_t index = 0; index < sizeof( value ); ++index )
+            {
+                const auto byte = stream.get();
+                if( byte == std::char_traits<char>::eof() )
+                    return false;
+                value |= static_cast<u64>( static_cast<unsigned char>( byte ) ) << ( index * 8 );
+            }
+            return true;
+        }
+
+        bool writeManifestString( std::ostream &stream, const String &value )
+        {
+            if( value.empty() || value.size() > 4096 )
+                return false;
+            writeManifestNumber( stream, value.size() );
+            stream.write( value.data(), static_cast<std::streamsize>( value.size() ) );
+            return stream.good();
+        }
+
+        bool readManifestString( std::istream &stream, String &value )
+        {
+            u64 size = 0;
+            if( !readManifestNumber( stream, size ) || size == 0 || size > 4096 )
+                return false;
+            std::string bytes( static_cast<size_t>( size ), '\0' );
+            stream.read( &bytes[0], static_cast<std::streamsize>( size ) );
+            if( !stream || bytes.find( '\0' ) != std::string::npos )
+                return false;
+            value = bytes.c_str();
+            return true;
+        }
+
+        bool sameRuntimeHeader( const CompiledResourceHeader &left,
+                                const CompiledResourceHeader &right )
+        {
+            return left.resourceId == right.resourceId && left.resourceType == right.resourceType &&
+                   left.compilerVersion == right.compilerVersion && left.sourceHash == right.sourceHash &&
+                   left.payloadHash == right.payloadHash && left.payloadSize == right.payloadSize &&
+                   left.installDependencies == right.installDependencies;
+        }
+
+        bool readManifest( const String &path, RuntimeManifest &manifest, String &error )
+        {
+            RuntimeResource container;
+            if( !CompiledResourceIO::read( path, container, error, maximumManifestBytes ) )
+                return false;
+            if( container.header.resourceId != manifestResourceId ||
+                container.header.compilerVersion != 1 || !container.header.installDependencies.empty() )
+            {
+                error = "Unsupported runtime manifest container";
+                return false;
+            }
+            std::string bytes( container.payload.begin(), container.payload.end() );
+            std::istringstream input( bytes, std::ios::binary );
+            u64 version = 0;
+            u64 rootCount = 0;
+            u64 resourceCount = 0;
+            auto malformed = [&]() {
+                error = "Runtime manifest is malformed or exceeds its format limits";
+                return false;
+            };
+            if( !readManifestNumber( input, version ) || version != 1 ||
+                !readManifestString( input, manifest.target ) ||
+                !readManifestNumber( input, rootCount ) || rootCount == 0 ||
+                rootCount > maximumManifestResources )
+                return malformed();
+            std::set<String> rootIds;
+            for( u64 index = 0; index < rootCount; ++index )
+            {
+                String id;
+                if( !readManifestString( input, id ) || !ResourceID::isValidString( id ) ||
+                    !rootIds.insert( id ).second )
+                    return malformed();
+                manifest.roots.emplace_back( id );
+            }
+            if( !readManifestNumber( input, resourceCount ) || resourceCount == 0 ||
+                resourceCount > maximumManifestResources )
+                return malformed();
+            for( u64 index = 0; index < resourceCount; ++index )
+            {
+                CompiledResourceHeader header;
+                String id;
+                u64 dependencyCount = 0;
+                if( !readManifestString( input, id ) || !header.resourceId.set( id ) ||
+                    !readManifestNumber( input, header.compilerVersion ) ||
+                    !readManifestNumber( input, header.sourceHash ) ||
+                    !readManifestNumber( input, header.payloadHash ) ||
+                    !readManifestNumber( input, header.payloadSize ) ||
+                    !readManifestNumber( input, dependencyCount ) ||
+                    dependencyCount > maximumManifestDependencies )
+                    return malformed();
+                header.resourceType = header.resourceId.type();
+                std::set<String> uniqueDependencies;
+                for( u64 dependencyIndex = 0; dependencyIndex < dependencyCount; ++dependencyIndex )
+                {
+                    String dependency;
+                    if( !readManifestString( input, dependency ) ||
+                        !ResourceID::isValidString( dependency ) ||
+                        !uniqueDependencies.insert( ResourceID( dependency ).str() ).second )
+                        return malformed();
+                    header.installDependencies.emplace_back( dependency );
+                }
+                if( !header.isValid() ||
+                    !manifest.resources.emplace( header.resourceId.str(), std::move( header ) ).second )
+                    return malformed();
+            }
+            if( input.peek() != std::char_traits<char>::eof() )
+                return malformed();
+
+            std::set<String> visiting;
+            std::set<String> visited;
+            std::map<String, u32> subtreeDepths;
+            std::function<bool( const ResourceID &, u32 )> visit = [&]( const ResourceID &id, u32 depth ) {
+                if( depth > maximumManifestDepth || visiting.count( id.str() ) )
+                    return false;
+                if( visited.count( id.str() ) )
+                    return depth + subtreeDepths[id.str()] - 1 <= maximumManifestDepth;
+                const auto entry = manifest.resources.find( id.str() );
+                if( entry == manifest.resources.end() )
+                    return false;
+                visiting.insert( id.str() );
+                u32 subtreeDepth = 1;
+                for( const auto &dependency : entry->second.installDependencies )
+                {
+                    if( !visit( dependency, depth + 1 ) )
+                        return false;
+                    subtreeDepth = std::max( subtreeDepth, subtreeDepths[dependency.str()] + 1 );
+                }
+                visiting.erase( id.str() );
+                visited.insert( id.str() );
+                subtreeDepths[id.str()] = subtreeDepth;
+                return true;
+            };
+            for( const auto &root : manifest.roots )
+                if( !visit( root, 1 ) )
+                    return malformed();
+            if( visited.size() != manifest.resources.size() )
+                return malformed();
+            return true;
+        }
 
         String pathString( const fs::path &path )
         {
@@ -183,6 +350,26 @@ namespace workphone::resource
             registry( std::move( registryValue ) ),
             database( std::move( databaseValue ) )
         {
+        }
+
+        void invalidateBuildEvidence( const ResourceID &changed )
+        {
+            std::set<String> visited{ changed.str() };
+            Array<String> pending{ changed.str() };
+            for( size_t index = 0; index < pending.size(); ++index )
+            {
+                verifiedBuilds.erase( pending[index] );
+                Array<String> dependents;
+                if( !database->getDependents( pending[index], dependents ) )
+                {
+                    // A diagnostic-query failure must never leave stale publication evidence.
+                    verifiedBuilds.clear();
+                    return;
+                }
+                for( const auto &dependent : dependents )
+                    if( visited.insert( dependent ).second )
+                        pending.push_back( dependent );
+            }
         }
 
         CompilationReport compileNode( const ResourceID &resourceId, const CompilationOptions &options,
@@ -473,8 +660,11 @@ namespace workphone::resource
 
             {
                 std::unique_lock<std::shared_mutex> cacheLock( cacheMutex );
-                runtimeCache.erase( resourceId.str() );
+                // A cached parent owns its prior install dependency snapshot. Invalidating
+                // only the child would let the next parent load silently reuse that snapshot.
+                runtimeCache.clear();
             }
+            invalidateBuildEvidence( resourceId );
 
             CompilationReport report;
             report.status = status;
@@ -490,24 +680,58 @@ namespace workphone::resource
             return report;
         }
 
-        std::shared_ptr<const RuntimeResource> loadNode( const ResourceID &resourceId,
-                                                         std::set<String> &stack, String &error )
+        struct LoadRequest
         {
-            {
-                std::shared_lock<std::shared_mutex> lock( cacheMutex );
-                const auto iterator = runtimeCache.find( resourceId.str() );
-                if( iterator != runtimeCache.end() )
-                {
-                    if( auto existing = iterator->second.lock() )
-                        return existing;
-                }
-            }
+            std::set<String> stack;
+            std::map<String, std::shared_ptr<const RuntimeResource>> completed;
+            std::map<String, u32> subtreeDepth;
+            u64 payloadBytes = 0;
+        };
 
-            if( !stack.insert( resourceId.str() ).second )
+        std::shared_ptr<const RuntimeResource> loadNode( const ResourceID &resourceId,
+                                                        LoadRequest &request, String &error )
+        {
+            if( request.stack.size() >= runtimeConfig.maxDependencyDepth )
+            {
+                error = "Runtime install dependency depth exceeds the configured limit";
+                return nullptr;
+            }
+            if( request.stack.count( resourceId.str() ) )
             {
                 error = String( "Runtime install dependency cycle at " ) + resourceId.str();
                 return nullptr;
             }
+            const auto complete = request.completed.find( resourceId.str() );
+            if( complete != request.completed.end() )
+            {
+                if( request.stack.size() + request.subtreeDepth[resourceId.str()] >
+                    runtimeConfig.maxDependencyDepth )
+                {
+                    error = "Runtime install dependency depth exceeds the configured limit";
+                    return nullptr;
+                }
+                return complete->second;
+            }
+            if( request.completed.size() + request.stack.size() >= runtimeConfig.maxClosureResources )
+            {
+                error = "Runtime install closure resource count exceeds the configured limit";
+                return nullptr;
+            }
+            const auto pinned = runtimeManifest.resources.find( resourceId.str() );
+            if( runtimeOnly && pinned == runtimeManifest.resources.end() )
+            {
+                error = String( "Resource is not present in the runtime manifest: " ) + resourceId.str();
+                return nullptr;
+            }
+
+            std::shared_ptr<const RuntimeResource> cached;
+            {
+                std::shared_lock<std::shared_mutex> lock( cacheMutex );
+                const auto iterator = runtimeCache.find( resourceId.str() );
+                if( iterator != runtimeCache.end() )
+                    cached = iterator->second.lock();
+            }
+            request.stack.insert( resourceId.str() );
             struct StackGuard
             {
                 std::set<String> &stack;
@@ -516,54 +740,74 @@ namespace workphone::resource
                 {
                     stack.erase( id );
                 }
-            } stackGuard{ stack, resourceId.str() };
+            } stackGuard{ request.stack, resourceId.str() };
 
-            fs::path outputPath;
-            if( !resolveUnderRoot( compiledRoot, String( "data://" ) + resourceId.compiledRelativePath(),
-                                   true, outputPath, error ) )
-                return nullptr;
-
-            auto loaded = std::make_shared<RuntimeResource>();
-            if( !CompiledResourceIO::read( pathString( outputPath ), *loaded, error,
-                                           config.maxRuntimePayloadBytes ) )
-                return nullptr;
-            if( loaded->header.resourceId != resourceId ||
-                loaded->header.resourceType != resourceId.type() )
+            std::shared_ptr<RuntimeResource> loaded;
+            if( !cached )
+            {
+                fs::path outputPath;
+                if( !resolveUnderRoot( compiledRoot, String( "data://" ) + resourceId.compiledRelativePath(),
+                                       true, outputPath, error ) )
+                    return nullptr;
+                loaded = std::make_shared<RuntimeResource>();
+                const auto remaining = runtimeConfig.maxClosurePayloadBytes - request.payloadBytes;
+                if( !CompiledResourceIO::read( pathString( outputPath ), *loaded, error,
+                                               std::min( runtimeConfig.maxPayloadBytes, remaining ) ) )
+                    return nullptr;
+            }
+            const auto &header = cached ? cached->header : loaded->header;
+            if( header.resourceId != resourceId || header.resourceType != resourceId.type() )
             {
                 error = String( "Compiled resource identity mismatch for " ) + resourceId.str();
                 return nullptr;
             }
-
-            loaded->dependencies.reserve( loaded->header.installDependencies.size() );
-            for( const auto &dependencyId : loaded->header.installDependencies )
+            if( runtimeOnly && !sameRuntimeHeader( header, pinned->second ) )
             {
-                auto dependency = loadNode( dependencyId, stack, error );
+                error = String( "Compiled resource does not match the pinned runtime manifest: " ) +
+                        resourceId.str();
+                return nullptr;
+            }
+            if( header.payloadSize > runtimeConfig.maxPayloadBytes ||
+                header.payloadSize > runtimeConfig.maxClosurePayloadBytes - request.payloadBytes )
+            {
+                error = "Runtime install closure payload exceeds the configured limit";
+                return nullptr;
+            }
+            request.payloadBytes += header.payloadSize;
+
+            if( loaded )
+                loaded->dependencies.reserve( header.installDependencies.size() );
+            u32 subtreeDepth = 1;
+            for( const auto &dependencyId : header.installDependencies )
+            {
+                auto dependency = loadNode( dependencyId, request, error );
                 if( !dependency )
                     return nullptr;
-                loaded->dependencies.push_back( std::move( dependency ) );
+                subtreeDepth = std::max( subtreeDepth, request.subtreeDepth[dependencyId.str()] + 1 );
+                if( loaded )
+                    loaded->dependencies.push_back( std::move( dependency ) );
             }
-
-            std::unique_lock<std::shared_mutex> lock( cacheMutex );
-            const auto iterator = runtimeCache.find( resourceId.str() );
-            if( iterator != runtimeCache.end() )
-            {
-                if( auto existing = iterator->second.lock() )
-                    return existing;
-            }
-            runtimeCache[resourceId.str()] = loaded;
-            return loaded;
+            std::shared_ptr<const RuntimeResource> result = cached ? cached : loaded;
+            request.completed.emplace( resourceId.str(), result );
+            request.subtreeDepth[resourceId.str()] = subtreeDepth;
+            return result;
         }
 
         std::shared_ptr<IResourceCompilerRegistry> registry;
         std::shared_ptr<IResourceCompilationDatabase> database;
         ResourceSystemConfig config;
+        RuntimeResourceConfig runtimeConfig;
+        RuntimeManifest runtimeManifest;
+        std::map<String, CompilationReport> verifiedBuilds;
         fs::path sourceRoot;
         fs::path compiledRoot;
         mutable std::mutex stateMutex;
         mutable std::shared_mutex operationMutex;
         mutable std::shared_mutex cacheMutex;
+        mutable std::mutex runtimeLoadMutex;
         std::map<String, std::weak_ptr<const RuntimeResource>> runtimeCache;
         bool initialized = false;
+        bool runtimeOnly = false;
     };
 
     ResourceSystem::ResourceSystem( std::shared_ptr<IResourceCompilerRegistry> registry,
@@ -581,6 +825,7 @@ namespace workphone::resource
 
     bool ResourceSystem::initialize( const ResourceSystemConfig &config, String &error )
     {
+        error.clear();
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
         if( m_impl->initialized )
@@ -640,8 +885,203 @@ namespace workphone::resource
         m_impl->config.databasePath = databasePath;
         m_impl->sourceRoot = std::move( source );
         m_impl->compiledRoot = std::move( compiled );
+        m_impl->runtimeConfig = RuntimeResourceConfig();
+        m_impl->runtimeConfig.maxPayloadBytes = config.maxRuntimePayloadBytes;
+        m_impl->runtimeConfig.maxClosurePayloadBytes = config.maxRuntimePayloadBytes;
+        m_impl->runtimeManifest = RuntimeManifest();
+        m_impl->verifiedBuilds.clear();
+        m_impl->runtimeOnly = false;
         m_impl->initialized = true;
         return true;
+    }
+
+    bool ResourceSystem::initializeRuntime( const RuntimeResourceConfig &config, String &error )
+    {
+        error.clear();
+        std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
+        if( m_impl->initialized )
+        {
+            error = "Resource system is already initialized";
+            return false;
+        }
+        if( config.compiledRoot.empty() || config.manifestPath.empty() || config.target.empty() ||
+            config.maxPayloadBytes == 0 || config.maxClosurePayloadBytes == 0 ||
+            config.maxClosureResources == 0 || config.maxClosureResources > maximumManifestResources ||
+            config.maxDependencyDepth == 0 || config.maxDependencyDepth > maximumManifestDepth )
+        {
+            error = "Runtime resource configuration is incomplete or exceeds its limits";
+            return false;
+        }
+        std::error_code filesystemError;
+        auto compiled = fs::canonical( fs::u8path( config.compiledRoot.c_str() ), filesystemError );
+        if( filesystemError || !fs::is_directory( compiled, filesystemError ) )
+        {
+            error = "Runtime compiled root must be an existing accessible directory";
+            return false;
+        }
+        RuntimeManifest manifest;
+        if( !readManifest( config.manifestPath, manifest, error ) )
+            return false;
+        if( manifest.target != config.target )
+        {
+            error = "Runtime manifest target does not match the requested target";
+            return false;
+        }
+        m_impl->runtimeConfig = config;
+        m_impl->runtimeManifest = std::move( manifest );
+        m_impl->compiledRoot = std::move( compiled );
+        m_impl->sourceRoot.clear();
+        m_impl->runtimeOnly = true;
+        m_impl->initialized = true;
+        return true;
+    }
+
+    bool ResourceSystem::writeRuntimeManifest( const String &path, const Array<ResourceID> &roots,
+                                               String &error )
+    {
+        error.clear();
+        std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        if( !m_impl->initialized || m_impl->runtimeOnly )
+        {
+            error = "Runtime manifests can only be exported by an initialized authoring resource system";
+            return false;
+        }
+        if( path.empty() || roots.empty() || roots.size() > maximumManifestResources )
+        {
+            error = "A runtime manifest requires a destination and at least one valid root";
+            return false;
+        }
+        std::error_code filesystemError;
+        const auto destination = fs::weakly_canonical( fs::u8path( path.c_str() ), filesystemError );
+        if( filesystemError )
+        {
+            error = "Failed to resolve the runtime manifest destination";
+            return false;
+        }
+        RuntimeManifest manifest;
+        manifest.target = m_impl->config.target;
+        std::set<String> visiting;
+        std::map<String, u32> subtreeDepths;
+        std::function<bool( const ResourceID & )> visit = [&]( const ResourceID &id ) {
+            if( !id.isValid() || visiting.count( id.str() ) || visiting.size() >= maximumManifestDepth )
+            {
+                error = "Invalid or cyclic runtime manifest dependency graph";
+                return false;
+            }
+            if( manifest.resources.count( id.str() ) )
+            {
+                if( visiting.size() + subtreeDepths[id.str()] > maximumManifestDepth )
+                {
+                    error = "Runtime manifest dependency depth exceeds its format limit";
+                    return false;
+                }
+                return true;
+            }
+            if( manifest.resources.size() + visiting.size() >= maximumManifestResources )
+            {
+                error = "Runtime manifest resource count exceeds its format limit";
+                return false;
+            }
+            fs::path output;
+            if( !resolveUnderRoot( m_impl->compiledRoot, String( "data://" ) + id.compiledRelativePath(),
+                                   true, output, error ) )
+                return false;
+            if( pathComponentEquals( destination, output ) )
+            {
+                error = "A runtime manifest cannot replace one of its resource containers";
+                return false;
+            }
+            CompiledResourceHeader header;
+            if( !CompiledResourceIO::validate( pathString( output ), header, error ) )
+                return false;
+            CompiledResourceRecord record;
+            const auto verified = m_impl->verifiedBuilds.find( id.str() );
+            if( !m_impl->database->getRecord( id.str(), record ) || !record.isValid() ||
+                header.resourceId != id || header.compilerVersion != record.compilerVersion ||
+                header.sourceHash != record.sourceHash || header.payloadHash != record.outputHash ||
+                record.outputPath != id.compiledRelativePath() ||
+                verified == m_impl->verifiedBuilds.end() ||
+                verified->second.sourceHash != header.sourceHash ||
+                verified->second.outputHash != header.payloadHash )
+            {
+                error = String( "Runtime manifest resource must be compiled or checked up to date "
+                                "for this target in the current authoring session: " ) + id.str();
+                return false;
+            }
+            visiting.insert( id.str() );
+            u32 subtreeDepth = 1;
+            for( const auto &dependency : header.installDependencies )
+            {
+                if( !visit( dependency ) )
+                    return false;
+                subtreeDepth = std::max( subtreeDepth, subtreeDepths[dependency.str()] + 1 );
+            }
+            visiting.erase( id.str() );
+            manifest.resources.emplace( id.str(), std::move( header ) );
+            subtreeDepths[id.str()] = subtreeDepth;
+            return true;
+        };
+        std::map<String, ResourceID> sortedRoots;
+        for( const auto &root : roots )
+        {
+            if( !visit( root ) )
+                return false;
+            sortedRoots[root.str()] = root;
+        }
+
+        std::ostringstream encoded( std::ios::binary );
+        writeManifestNumber( encoded, 1 );
+        bool stringsValid = writeManifestString( encoded, manifest.target );
+        writeManifestNumber( encoded, sortedRoots.size() );
+        for( const auto &root : sortedRoots )
+            stringsValid = writeManifestString( encoded, root.first ) && stringsValid;
+        writeManifestNumber( encoded, manifest.resources.size() );
+        for( const auto &entry : manifest.resources )
+        {
+            const auto &header = entry.second;
+            stringsValid = writeManifestString( encoded, entry.first ) && stringsValid;
+            writeManifestNumber( encoded, header.compilerVersion );
+            writeManifestNumber( encoded, header.sourceHash );
+            writeManifestNumber( encoded, header.payloadHash );
+            writeManifestNumber( encoded, header.payloadSize );
+            writeManifestNumber( encoded, header.installDependencies.size() );
+            for( const auto &dependency : header.installDependencies )
+                stringsValid = writeManifestString( encoded, dependency.str() ) && stringsValid;
+            if( encoded.tellp() > static_cast<std::streamoff>( maximumManifestBytes ) )
+                break;
+        }
+        const auto payload = encoded.str();
+        if( !stringsValid || !encoded || payload.size() > maximumManifestBytes )
+        {
+            error = "Runtime manifest exceeds its format limits";
+            return false;
+        }
+        fs::create_directories( destination.parent_path(), filesystemError );
+        if( filesystemError )
+        {
+            error = "Failed to create runtime manifest destination directory";
+            return false;
+        }
+        TemporaryFile temporary{ makePayloadTemporaryPath( pathString( destination ) ) };
+        std::ofstream output( temporary.path.c_str(), std::ios::binary | std::ios::trunc );
+        output.write( payload.data(), static_cast<std::streamsize>( payload.size() ) );
+        output.flush();
+        const bool written = output.good();
+        output.close();
+        if( !written || output.fail() )
+        {
+            error = "Failed to write runtime manifest staging payload";
+            return false;
+        }
+        CompiledResourceHeader header;
+        header.resourceId = manifestResourceId;
+        header.resourceType = manifestResourceId.type();
+        header.compilerVersion = 1;
+        header.sourceHash = hashBytes( payload.data(), payload.size() );
+        header.payloadHash = header.sourceHash;
+        header.payloadSize = payload.size();
+        return CompiledResourceIO::writeAtomic( pathString( destination ), header, temporary.path, error );
     }
 
     void ResourceSystem::shutdown()
@@ -652,11 +1092,18 @@ namespace workphone::resource
         std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
         if( !m_impl->initialized )
             return;
-        clearRuntimeCache();
-        m_impl->database->disconnect();
+        {
+            std::unique_lock<std::shared_mutex> cacheLock( m_impl->cacheMutex );
+            m_impl->runtimeCache.clear();
+        }
+        if( !m_impl->runtimeOnly )
+            m_impl->database->disconnect();
+        m_impl->runtimeManifest = RuntimeManifest();
+        m_impl->verifiedBuilds.clear();
         m_impl->sourceRoot.clear();
         m_impl->compiledRoot.clear();
         m_impl->initialized = false;
+        m_impl->runtimeOnly = false;
     }
 
     bool ResourceSystem::isInitialized() const
@@ -675,10 +1122,16 @@ namespace workphone::resource
             std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
             if( !m_impl->initialized )
                 return failureReport( resourceId, "Resource system is not initialized" );
+            if( m_impl->runtimeOnly )
+                return failureReport( resourceId, "Cooking is unavailable in a read-only runtime mount" );
         }
         std::map<String, CompilationReport> completed;
         Array<String> stack;
-        return m_impl->compileNode( resourceId, options, completed, stack );
+        auto report = m_impl->compileNode( resourceId, options, completed, stack );
+        for( const auto &entry : completed )
+            if( entry.second.succeeded() )
+                m_impl->verifiedBuilds[entry.first] = entry.second;
+        return report;
     }
 
     Array<CompilationReport> ResourceSystem::compileAffected( const String &changedPath,
@@ -691,6 +1144,11 @@ namespace workphone::resource
             if( !m_impl->initialized )
             {
                 reports.push_back( failureReport( ResourceID(), "Resource system is not initialized" ) );
+                return reports;
+            }
+            if( m_impl->runtimeOnly )
+            {
+                reports.push_back( failureReport( ResourceID(), "Cooking is unavailable in a read-only runtime mount" ) );
                 return reports;
             }
         }
@@ -730,12 +1188,16 @@ namespace workphone::resource
         Array<String> stack;
         for( const auto &id : affected )
             reports.push_back( m_impl->compileNode( ResourceID( id ), options, completed, stack ) );
+        for( const auto &entry : completed )
+            if( entry.second.succeeded() )
+                m_impl->verifiedBuilds[entry.first] = entry.second;
         return reports;
     }
 
     std::shared_ptr<const RuntimeResource> ResourceSystem::load( const ResourceID &resourceId,
                                                                  String &error )
     {
+        error.clear();
         if( !resourceId.isValid() )
         {
             error = "Cannot load an invalid resource ID";
@@ -750,18 +1212,30 @@ namespace workphone::resource
                 return nullptr;
             }
         }
-        std::set<String> stack;
-        return m_impl->loadNode( resourceId, stack, error );
+        // Synchronous requests share one retained identity even when separate roots
+        // are loaded concurrently. Async scheduling and residency budgets remain separate work.
+        std::lock_guard<std::mutex> loadLock( m_impl->runtimeLoadMutex );
+        Impl::LoadRequest request;
+        auto loaded = m_impl->loadNode( resourceId, request, error );
+        if( !loaded )
+            return nullptr;
+        std::unique_lock<std::shared_mutex> cacheLock( m_impl->cacheMutex );
+        for( const auto &entry : request.completed )
+            m_impl->runtimeCache[entry.first] = entry.second;
+        return loaded;
     }
 
     void ResourceSystem::unload( const ResourceID &resourceId )
     {
+        (void)resourceId;
+        std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         std::unique_lock<std::shared_mutex> lock( m_impl->cacheMutex );
-        m_impl->runtimeCache.erase( resourceId.str() );
+        m_impl->runtimeCache.clear();
     }
 
     void ResourceSystem::clearRuntimeCache()
     {
+        std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
         std::unique_lock<std::shared_mutex> lock( m_impl->cacheMutex );
         m_impl->runtimeCache.clear();
     }

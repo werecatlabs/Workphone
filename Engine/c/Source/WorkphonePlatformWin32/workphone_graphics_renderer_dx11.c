@@ -255,6 +255,37 @@ static const wp_c8 s_ps_pntc_src[] =
     " color = pow(color, 1.0 / 2.2);\n"
     " return float4(controls.w > 0.5 ? color * alpha : color, alpha); }\n";
 
+/* The pixel interface is identical to scalar PNTC, including alpha/shadows.
+ * Instance normal rows are inverse-transpose, so nonuniform scale is safe. */
+static const wp_c8 s_vs_pntc_instanced_src[] =
+    "cbuffer Transform : register(b0) { row_major float4x4 mvp; row_major float4x4 world;\n"
+    " row_major float4x4 normal_matrix; };\n"
+    "struct VS_IN { float3 pos : POSITION; float3 normal : NORMAL;\n"
+    " float2 uv : TEXCOORD0; uint color : COLOR;\n"
+    " float4 row0 : INSTANCE0; float4 row1 : INSTANCE1; float4 row2 : INSTANCE2;\n"
+    " float4 normal0 : INSTANCE3; float4 normal1 : INSTANCE4; float4 normal2 : INSTANCE5;\n"
+    " float4 tint : INSTANCE6; };\n"
+    "struct VS_OUT { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
+    " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
+    " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; };\n"
+    "VS_OUT vs_main(VS_IN i) { VS_OUT o; float4 p = float4(i.pos, 1.0);\n"
+    " float3 instance_pos = float3(dot(i.row0,p), dot(i.row1,p), dot(i.row2,p));\n"
+    " float3 instance_normal = float3(dot(i.normal0.xyz,i.normal),\n"
+    "  dot(i.normal1.xyz,i.normal), dot(i.normal2.xyz,i.normal));\n"
+    " o.pos = mul(mvp, float4(instance_pos,1.0)); o.pos.z = 0.5*(o.pos.z+o.pos.w);\n"
+    " o.world_pos = mul(world, float4(instance_pos,1.0)).xyz;\n"
+    " o.normal = normalize(mul((float3x3)normal_matrix, instance_normal));\n"
+    " o.uv=i.uv; o.object_pos=i.pos; o.object_normal=i.normal; o.clip_pos=o.pos;\n"
+    " o.color=float4(float((i.color>>24u)&255u),float((i.color>>16u)&255u),\n"
+    " float((i.color>>8u)&255u),float(i.color&255u))/255.0*i.tint; return o; }\n";
+
+typedef struct wp_instance_gpu_dx11
+{
+    wp_f32 transform[3][4];
+    wp_f32 normal[3][4];
+    wp_vec4f tint;
+} wp_instance_gpu_dx11;
+
 typedef struct wp_shadow_constants_dx11
 {
     wp_mat4f light_matrix;
@@ -327,6 +358,9 @@ struct wp_renderer_dx11
     ID3D11VertexShader *vs_pntc;
     ID3D11PixelShader *ps_pntc;
     ID3D11InputLayout *layout_pntc;
+    ID3D11VertexShader *vs_pntc_instanced;
+    ID3D11InputLayout *layout_pntc_instanced;
+    ID3D11Buffer *instance_buffer;
     ID3D11SamplerState *pntc_sampler_state;
     ID3D11SamplerState *environment_sampler_state;
     ID3D11ShaderResourceView *environment_view; /* borrowed */
@@ -454,6 +488,8 @@ struct wp_geometry_dx11
     wp_s32 vertex_count;
     wp_s32 index_count;
     DXGI_FORMAT index_format;
+    wp_s32 vertex_stride;
+    ID3D11Device *device; /* borrowed identity; the buffers retain their device */
 };
 
 /* =========================================================================
@@ -1299,6 +1335,111 @@ static wp_s32 wp_renderer_dx11_upload_mvp( wp_renderer_dx11 *r )
     return 1;
 }
 
+/* Validate before the first draw, then populate directly into bounded mapped
+ * upload storage. Double intermediates avoid overflow for finite float input. */
+static wp_s32 wp_renderer_dx11_pack_instance( const wp_instance_pntc_dx11 *source,
+                                             wp_instance_gpu_dx11 *destination )
+{
+    double cofactors[3][3], determinant, value;
+    double a, b, c, d, e, f, g, h, i;
+    wp_s32 row, column;
+    const wp_mat4f *m = &source->transform;
+    const wp_f32 tint[4] = { source->tint.x, source->tint.y, source->tint.z, source->tint.w };
+    for( row = 0; row < 4; ++row )
+    {
+        if( !( tint[row] >= -FLT_MAX && tint[row] <= FLT_MAX ) ) return 0;
+        for( column = 0; column < 4; ++column )
+            if( !( m->m[row][column] >= -FLT_MAX && m->m[row][column] <= FLT_MAX ) ) return 0;
+    }
+    if( m->m[3][0] != 0 || m->m[3][1] != 0 || m->m[3][2] != 0 || m->m[3][3] != 1 ) return 0;
+    a=m->m[0][0]; b=m->m[0][1]; c=m->m[0][2];
+    d=m->m[1][0]; e=m->m[1][1]; f=m->m[1][2];
+    g=m->m[2][0]; h=m->m[2][1]; i=m->m[2][2];
+    cofactors[0][0]=e*i-f*h; cofactors[0][1]=f*g-d*i; cofactors[0][2]=d*h-e*g;
+    cofactors[1][0]=c*h-b*i; cofactors[1][1]=a*i-c*g; cofactors[1][2]=b*g-a*h;
+    cofactors[2][0]=b*f-c*e; cofactors[2][1]=c*d-a*f; cofactors[2][2]=a*e-b*d;
+    determinant=a*cofactors[0][0]+b*cofactors[0][1]+c*cofactors[0][2];
+    if( !( determinant > 0 ) ) return 0;
+    for( row = 0; row < 3; ++row )
+    {
+        for( column = 0; column < 3; ++column )
+        {
+            value = cofactors[row][column] / determinant;
+            if( !( value >= -FLT_MAX && value <= FLT_MAX ) ) return 0;
+            if( destination ) destination->normal[row][column] = (wp_f32)value;
+        }
+        if( destination ) destination->normal[row][3] = 0;
+    }
+    if( destination )
+    {
+        memcpy( destination->transform, m->m, sizeof( destination->transform ) );
+        destination->tint = source->tint;
+    }
+    return 1;
+}
+
+wp_s32 wp_renderer_dx11_validate_instances_pntc(
+    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count )
+{
+    wp_s32 i;
+    if( instance_count < 0 || ( instance_count > 0 && !instances ) ) return 0;
+    for( i = 0; i < instance_count; ++i )
+        if( !wp_renderer_dx11_pack_instance( instances+i, NULL ) ) return 0;
+    return 1;
+}
+
+static wp_s32 wp_renderer_dx11_ensure_instances( wp_renderer_dx11 *r )
+{
+    ID3DBlob *blob = NULL;
+    ID3D11VertexShader *shader = NULL;
+    ID3D11InputLayout *layout = NULL;
+    ID3D11Buffer *buffer = NULL;
+    D3D11_INPUT_ELEMENT_DESC elements[11];
+    D3D11_BUFFER_DESC desc;
+    HRESULT hr;
+    wp_s32 i;
+    if( r->instance_buffer ) return 1;
+    hr = wp_renderer_dx11_compile_shader( s_vs_pntc_instanced_src, "vs_main", "vs_4_0", &blob );
+    if( FAILED( hr ) ) return 0;
+    hr = ID3D11Device_CreateVertexShader( r->device, ID3D10Blob_GetBufferPointer( blob ),
+                                         ID3D10Blob_GetBufferSize( blob ), NULL, &shader );
+    memset( elements, 0, sizeof( elements ) );
+    elements[0].SemanticName="POSITION"; elements[0].Format=DXGI_FORMAT_R32G32B32_FLOAT;
+    elements[1].SemanticName="NORMAL"; elements[1].Format=DXGI_FORMAT_R32G32B32_FLOAT;
+    elements[1].AlignedByteOffset=12;
+    elements[2].SemanticName="TEXCOORD"; elements[2].Format=DXGI_FORMAT_R32G32_FLOAT;
+    elements[2].AlignedByteOffset=24;
+    elements[3].SemanticName="COLOR"; elements[3].Format=DXGI_FORMAT_R32_UINT;
+    elements[3].AlignedByteOffset=32;
+    for( i = 4; i < 11; ++i )
+    {
+        elements[i].SemanticName="INSTANCE"; elements[i].SemanticIndex=(UINT)(i-4);
+        elements[i].Format=DXGI_FORMAT_R32G32B32A32_FLOAT; elements[i].InputSlot=1;
+        elements[i].AlignedByteOffset=(UINT)((i-4)*16);
+        elements[i].InputSlotClass=D3D11_INPUT_PER_INSTANCE_DATA;
+        elements[i].InstanceDataStepRate=1;
+    }
+    if( SUCCEEDED( hr ) )
+        hr = ID3D11Device_CreateInputLayout( r->device, elements, 11,
+                    ID3D10Blob_GetBufferPointer( blob ), ID3D10Blob_GetBufferSize( blob ), &layout );
+    ID3D10Blob_Release( blob );
+    memset( &desc, 0, sizeof( desc ) );
+    desc.ByteWidth = WP_DX11_INSTANCE_CAPACITY * (UINT)sizeof( wp_instance_gpu_dx11 );
+    desc.Usage = D3D11_USAGE_DYNAMIC; desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if( SUCCEEDED( hr ) ) hr = ID3D11Device_CreateBuffer( r->device, &desc, NULL, &buffer );
+    if( FAILED( hr ) )
+    {
+        if( buffer ) ID3D11Buffer_Release( buffer );
+        if( layout ) ID3D11InputLayout_Release( layout );
+        if( shader ) ID3D11VertexShader_Release( shader );
+        return 0;
+    }
+    r->vs_pntc_instanced=shader; r->layout_pntc_instanced=layout; r->instance_buffer=buffer;
+    ++r->statistics.instance_buffer_creations;
+    return 1;
+}
+
 /* =========================================================================
  * Lifecycle
  * ====================================================================== */
@@ -1614,6 +1755,9 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
 
     if( r->layout_pntc )
         ID3D11InputLayout_Release( r->layout_pntc );
+    if( r->layout_pntc_instanced ) ID3D11InputLayout_Release( r->layout_pntc_instanced );
+    if( r->vs_pntc_instanced ) ID3D11VertexShader_Release( r->vs_pntc_instanced );
+    if( r->instance_buffer ) ID3D11Buffer_Release( r->instance_buffer );
     if( r->vs_pntc )
         ID3D11VertexShader_Release( r->vs_pntc );
     if( r->ps_pntc )
@@ -2681,6 +2825,8 @@ wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_ptc(
         return NULL;
     }
 
+    geometry->vertex_stride = sizeof( wp_vertex_ptc );
+    geometry->device = r->device;
     geometry->vertex_count = vertex_count;
     geometry->index_count = index_count;
     geometry->index_format = indices_are_u32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
@@ -2733,6 +2879,8 @@ wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_pntc(
         return NULL;
     }
 
+    geometry->vertex_stride = sizeof( wp_vertex_pntc );
+    geometry->device = r->device;
     geometry->vertex_count = vertex_count;
     geometry->index_count = index_count;
     geometry->index_format = indices_are_u32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
@@ -2791,7 +2939,7 @@ void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *r,
                                      (INT)base_vertex );
 }
 
-void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
+static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
                                           const wp_geometry_dx11 *geometry,
                                           wp_s32 index_start, wp_s32 index_count,
                                           wp_s32 base_vertex )
@@ -2803,21 +2951,21 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
     if( !r || !geometry || index_start < 0 || index_count <= 0 ||
         index_start > geometry->index_count ||
         index_count > geometry->index_count - index_start )
-        return;
+        return 0;
 
     wp_renderer_dx11_apply_state( r );
     if( !wp_renderer_dx11_upload_mvp( r ) )
-        return;
+        return 0;
     if( r->material_dirty )
     {
         if( !wp_renderer_dx11_upload_constants( r, r->cb_material, &r->material, sizeof( r->material ) ) )
-            return;
+            return 0;
         r->material_dirty = 0;
         ++r->statistics.material_uploads;
     }
     if( r->shadow_dirty )
     {
-        if( !wp_renderer_dx11_upload_constants( r, r->cb_shadow, &r->shadow, sizeof( r->shadow ) ) ) return;
+        if( !wp_renderer_dx11_upload_constants( r, r->cb_shadow, &r->shadow, sizeof( r->shadow ) ) ) return 0;
         r->shadow_dirty = 0;
     }
     // ptc_texture_view is the ImGui atlas. It is a valid fallback for UI draws,
@@ -2878,10 +3026,67 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
         r->statistics.state_bindings += 2;
     }
     r->pntc_bindings_valid = 1;
+    return 1;
+}
+
+void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *r,
+                                        const wp_geometry_dx11 *geometry,
+                                        wp_s32 index_start, wp_s32 index_count,
+                                        wp_s32 base_vertex )
+{
+    if( !wp_renderer_dx11_bind_geometry_pntc( r, geometry, index_start, index_count, base_vertex ) ) return;
     ++r->statistics.draws;
     r->statistics.triangles += (uint64_t)index_count / 3;
     ID3D11DeviceContext_DrawIndexed( r->context, (UINT)index_count, (UINT)index_start,
                                      (INT)base_vertex );
+}
+
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
+    wp_renderer_dx11 *r, const wp_geometry_dx11 *geometry,
+    wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
+    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count )
+{
+    wp_s32 i, count, submitted = 0;
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    wp_instance_gpu_dx11 *destination;
+    UINT stride = (UINT)sizeof( wp_instance_gpu_dx11 ), offset = 0;
+    ID3D11Buffer *empty_buffer = NULL;
+    if( !r || !geometry || geometry->device != r->device ||
+        geometry->vertex_stride != sizeof( wp_vertex_pntc ) ||
+        !instances || instance_count <= 0 || index_start < 0 || index_count <= 0 ||
+        index_start > geometry->index_count || index_count > geometry->index_count-index_start ) return 0;
+    if( !wp_renderer_dx11_validate_instances_pntc( instances, instance_count ) ) return 0;
+    if( !wp_renderer_dx11_ensure_instances( r ) ) return 0;
+    if( !wp_renderer_dx11_bind_geometry_pntc( r, geometry, index_start, index_count, base_vertex ) ) return 0;
+    ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_pntc_instanced );
+    ID3D11DeviceContext_VSSetShader( r->context, r->vs_pntc_instanced, NULL, 0 );
+    ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &r->instance_buffer, &stride, &offset );
+    r->statistics.state_bindings += 3;
+    r->pntc_bindings_valid = 0;
+    while( submitted < instance_count )
+    {
+        count = instance_count-submitted;
+        if( count > WP_DX11_INSTANCE_CAPACITY ) count = WP_DX11_INSTANCE_CAPACITY;
+        if( FAILED( ID3D11DeviceContext_Map( r->context, (ID3D11Resource *)r->instance_buffer,
+                                            0, D3D11_MAP_WRITE_DISCARD, 0, &mapped ) ) ) break;
+        destination = (wp_instance_gpu_dx11 *)mapped.pData;
+        for( i = 0; i < count; ++i )
+            wp_renderer_dx11_pack_instance( instances+submitted+i, destination+i );
+        ID3D11DeviceContext_Unmap( r->context, (ID3D11Resource *)r->instance_buffer, 0 );
+        ID3D11DeviceContext_DrawIndexedInstanced( r->context, (UINT)index_count, (UINT)count,
+                                                 (UINT)index_start, (INT)base_vertex, 0 );
+        ++r->statistics.draws; ++r->statistics.instanced_draws;
+        ++r->statistics.instance_uploads;
+        r->statistics.instance_upload_bytes += (uint64_t)count*sizeof( wp_instance_gpu_dx11 );
+        r->statistics.instances += (uint64_t)count;
+        r->statistics.triangles += (uint64_t)(index_count/3)*(uint64_t)count;
+        submitted += count;
+    }
+    /* Ordinary mesh/UI draws restore their own shader/layout. Release the
+     * instance stream binding as well, including after a failed upload. */
+    ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &empty_buffer, &stride, &offset );
+    ++r->statistics.state_bindings;
+    return submitted;
 }
 
 /* Reuse a directional depth map across scene/viewport passes. */

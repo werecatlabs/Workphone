@@ -4,6 +4,8 @@
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/GraphicsScene.hpp>
 #include "workphone_graphics_scene.h"
+#include <memory>
+#include <mutex>
 
 namespace workphone
 {
@@ -14,6 +16,7 @@ namespace workphone
         // lives in <WPGraphics/Jobs/SceneNodeCullJob.hpp> and is pulled in by ClawScene.cpp.
         class SceneNodeCullJob;
         class CameraVisibilitySet;
+        class ClawFoliageBatch;
 
         /**
          * @class ClawScene
@@ -83,6 +86,16 @@ namespace workphone
             /** Submits Claw-backed skies and meshes for the current camera pass. */
             void render( void *renderer );
 
+            using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;
+            /** Fixed-LOD batches; mutation/retirement uses the render owner thread.
+             * A null previous adds; a null replacement removes. Invalid updates
+             * preserve the current immutable population. */
+            bool replaceFoliageBatch( std::shared_ptr<const ClawFoliageBatch> previous,
+                                      std::shared_ptr<const ClawFoliageBatch> replacement,
+                                      String &error );
+            std::shared_ptr<const FoliageBatches> getFoliageBatches() const;
+            void clearFoliageBatches();
+
             bool handleStateMessage( const SmartPtr<IStateMessage> &message );
 
             bool handleStateChanged( SmartPtr<IState> &state );
@@ -144,6 +157,8 @@ namespace workphone
              *        SceneNodeCullJob::isCulled.
              */
             SmartPtr<SceneNodeCullJob> m_cullJob;
+            std::shared_ptr<const FoliageBatches> m_foliageBatches;
+            mutable std::mutex m_foliageMutex;
         };
     }  // namespace render
 }  // namespace workphone

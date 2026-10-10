@@ -6,6 +6,18 @@
 
 namespace workphone::resource
 {
+    /** Read-only cooked mount. Limits apply to each unique install dependency closure. */
+    struct WPCore_API RuntimeResourceConfig
+    {
+        String compiledRoot;
+        String manifestPath;
+        String target = "pc";
+        u64 maxPayloadBytes = 1024ull * 1024ull * 1024ull;
+        u64 maxClosurePayloadBytes = 1024ull * 1024ull * 1024ull;
+        u32 maxClosureResources = 4096;
+        u32 maxDependencyDepth = 64;
+    };
+
     /**
      * Dependency-aware build and runtime resource service.
      *
@@ -24,6 +36,15 @@ namespace workphone::resource
         ResourceSystem &operator=( const ResourceSystem & ) = delete;
 
         bool initialize( const ResourceSystemConfig &config, String &error ) override;
+        /** Requires no source tree, compiler registry or compilation database. Never writes. */
+        bool initializeRuntime( const RuntimeResourceConfig &config, String &error );
+
+        /** Export the committed cooked install closure, pinning hashes, versions and target.
+         * Roots must first pass compile() (including UpToDate) in this authoring session.
+         * The manifest is a portable WPRS container; it does not copy resource payloads.
+         * Callers publish an immutable copy of the matching cooked files alongside it.
+         */
+        bool writeRuntimeManifest( const String &path, const Array<ResourceID> &roots, String &error );
         void shutdown() override;
         bool isInitialized() const override;
 

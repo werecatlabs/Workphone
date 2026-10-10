@@ -126,6 +126,8 @@ typedef struct wp_render_statistics_dx11
 {
     uint64_t frames, interval_samples, gpu_samples, draws, triangles;
     uint64_t material_uploads, transform_uploads, geometry_creations, state_bindings;
+    uint64_t instanced_draws, instances, instance_uploads, instance_upload_bytes;
+    uint64_t instance_buffer_creations;
     double interval_ms, interval_p95_ms, cpu_frame_ms, present_ms, gpu_frame_ms;
     wp_s32 flip_model;
 } wp_render_statistics_dx11;
@@ -303,6 +305,32 @@ void wp_renderer_dx11_draw_geometry_pntc( wp_renderer_dx11 *renderer,
                                           const wp_geometry_dx11 *geometry,
                                           wp_s32 index_start, wp_s32 index_count,
                                           wp_s32 base_vertex );
+
+/** Instance transforms compose beneath the currently bound world matrix.
+ * Positive-determinant affine transforms, including nonuniform scale, are
+ * supported. Singular/reflected/nonfinite transforms or nonfinite tints reject
+ * the whole request before drawing. Geometry/material resources remain shared. */
+typedef struct wp_instance_pntc_dx11
+{
+    wp_mat4f transform;
+    wp_vec4f tint;
+} wp_instance_pntc_dx11;
+
+#    define WP_DX11_INSTANCE_CAPACITY 4096
+/** CPU-only preflight using precisely the draw path's transform/tint rules.
+ * An empty population is valid, including a NULL pointer with count zero. */
+wp_s32 wp_renderer_dx11_validate_instances_pntc(
+    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
+/** Issues indexed instanced draws through the same PBR/cutout/shadow pipeline.
+ * Upload storage is renderer-owned and bounded to WP_DX11_INSTANCE_CAPACITY.
+ * A compatible group may span pages; callers separate mesh/material/pass/LOD
+ * groups, while this function splits only at upload capacity. Returns the
+ * number actually submitted (possibly partial on GPU upload failure). Zero
+ * instances issue no draw. Statistics count successful native submissions. */
+wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
+    wp_renderer_dx11 *renderer, const wp_geometry_dx11 *geometry,
+    wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
+    const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
 
 /* =========================================================================
  * Dimension queries

@@ -234,7 +234,7 @@ namespace workphone
 
         void ClawMesh::reload( SmartPtr<ISharedObject> data )
         {
-            m_skinVertices.clear();
+            m_skinVertices.reset();
             m_skinOutput.clear();
             // Keep the scene's native render object attached while replacing its mesh.
             if( m_renderObject )
@@ -250,7 +250,7 @@ namespace workphone
 
         void ClawMesh::unload( SmartPtr<ISharedObject> data )
         {
-            m_skinVertices.clear();
+            m_skinVertices.reset();
             m_skinOutput.clear();
             setLoadingState( LoadingState::Unloading );
 
@@ -472,18 +472,18 @@ namespace workphone
             Array<wp_skin_result> validated( vertices.size() );
             if( !wp_skin_vertices( vertices.data(), static_cast<wp_u32>( vertices.size() ),
                 identity.data(), static_cast<wp_u32>( identity.size() ), validated.data() ) ) return false;
-            m_skinVertices = vertices;
+            m_skinVertices = std::make_shared<const Array<wp_skin_vertex>>( vertices );
             m_skinOutput = std::move( validated );
             return true;
         }
 
-        bool ClawMesh::hasSkinningData() const { return !m_skinVertices.empty(); }
+        bool ClawMesh::hasSkinningData() const { return m_skinVertices && !m_skinVertices->empty(); }
 
         bool ClawMesh::applySkinningPalette( const Array<wp_mat4f> &palette )
         {
-            if( !m_mesh || m_skinVertices.empty() || m_skinVertices.size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
+            if( !m_mesh || !m_skinVertices || m_skinVertices->empty() || m_skinVertices->size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
                 palette.empty() || palette.size() > WP_SKIN_MAX_JOINTS ) return false;
-            if( !wp_skin_vertices( m_skinVertices.data(), static_cast<wp_u32>( m_skinVertices.size() ),
+            if( !wp_skin_vertices( m_skinVertices->data(), static_cast<wp_u32>( m_skinVertices->size() ),
                 palette.data(), static_cast<wp_u32>( palette.size() ), m_skinOutput.data() ) ) return false;
             const auto count = wp_graphics_mesh_get_vertex_count( m_mesh );
             const auto stride = wp_graphics_mesh_get_vertex_stride( m_mesh );
@@ -518,6 +518,10 @@ namespace workphone
             wp_graphics_mesh_clear_submeshes( m_mesh );
             if( wp_graphics_mesh_add_submesh( m_mesh, 0, static_cast<u32>( indices.size() ), 0 ) < 0 )
                 return false;
+            // New authored geometry needs an explicit new binding; equal vertex
+            // counts alone do not make the old skin indices/positions compatible.
+            m_skinVertices.reset();
+            m_skinOutput.clear();
             wp_graphics_mesh_compute_aabb( m_mesh );
             ClawRendererDX11::forgetMesh( m_mesh );
             if( m_renderObject )
@@ -532,11 +536,48 @@ namespace workphone
             mesh->setProgressiveMeshOptions( getProgressiveMeshOptions() );
             mesh->setMaterialName( getMaterialName() );
             mesh->setMaterial( getMaterial() );
+            for( size_t i = 0; i < m_subMaterialNames.size(); ++i )
+                mesh->setMaterialName( m_subMaterialNames[i], static_cast<s32>( i ) );
+            for( size_t i = 0; i < m_subMaterials.size(); ++i )
+                mesh->setMaterial( m_subMaterials[i], static_cast<s32>( i ) );
+            mesh->setHardwareAnimationEnabled( m_hardwareAnimationEnabled );
             mesh->setSkeleton( getSkeleton() );
             mesh->setVisible( isVisible() );
             mesh->setCastShadows( getCastShadows() );
             mesh->setReceiveShadows( getReceiveShadows() );
             mesh->setVisibilityFlags( getVisibilityFlags() );
+            if( m_mesh )
+            {
+                std::unique_ptr<wp_graphics_mesh, decltype( &wp_graphics_mesh_destroy )> candidate(
+                    wp_graphics_mesh_create(), &wp_graphics_mesh_destroy );
+                const auto vertices = wp_graphics_mesh_get_vertex_count( m_mesh );
+                const auto indices = wp_graphics_mesh_get_index_count( m_mesh );
+                if( !candidate ||
+                    ( vertices && !wp_graphics_mesh_set_vertices(
+                        candidate.get(), wp_graphics_mesh_get_vertex_format( m_mesh ),
+                        wp_graphics_mesh_get_vertices( m_mesh ), vertices ) ) ) return nullptr;
+                if( indices )
+                {
+                    const auto copied = wp_graphics_mesh_get_index_format( m_mesh ) == WORKPHONE_INDEX_FORMAT_UINT16
+                        ? wp_graphics_mesh_set_indices_u16( candidate.get(),
+                            static_cast<const uint16_t *>( wp_graphics_mesh_get_indices( m_mesh ) ), indices )
+                        : wp_graphics_mesh_set_indices_u32( candidate.get(),
+                            static_cast<const wp_u32 *>( wp_graphics_mesh_get_indices( m_mesh ) ), indices );
+                    if( !copied ) return nullptr;
+                }
+                wp_graphics_mesh_set_primitive_type( candidate.get(), wp_graphics_mesh_get_primitive_type( m_mesh ) );
+                for( wp_s32 i = 0; i < wp_graphics_mesh_get_submesh_count( m_mesh ); ++i )
+                {
+                    const auto section = wp_graphics_mesh_get_submesh( m_mesh, i );
+                    if( !section || wp_graphics_mesh_add_submesh( candidate.get(), section->index_start,
+                          section->index_count, section->material_id ) < 0 ) return nullptr;
+                }
+                wp_graphics_mesh_compute_aabb( candidate.get() );
+                mesh->m_mesh = candidate.release();
+                mesh->m_skinVertices = m_skinVertices;
+                mesh->m_skinOutput = m_skinOutput;
+                mesh->setLoadingState( getLoadingState() );
+            }
             return mesh;
         }
 
