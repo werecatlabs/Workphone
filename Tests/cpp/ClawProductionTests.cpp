@@ -21,6 +21,8 @@
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include "DX11TestEvidence.hpp"
+#include "ClawSceneNodeTransformContracts.hpp"
+#include "ClawMaterialPassLifetimeContracts.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -322,6 +324,8 @@ int main()
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance(application);
     bool ok = testParticleLifecycle();
+    ok &= claw_scene_node_transform_contracts::run();
+    ok &= claw_material_pass_lifetime_contracts::run();
     ok &= testLightDirection();
     auto window = make_ptr<TestWindow>();
     window->handle = CreateWindowExW(0,L"STATIC",L"Claw production regression",WS_OVERLAPPEDWINDOW,

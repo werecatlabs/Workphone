@@ -19,7 +19,7 @@ $requiredTests = @(
     'WorkphoneGraphics.mesh_serializer', 'WorkphoneGraphics.mesh_import_assets',
     'WorkphoneGraphics.renderer_contract', 'WorkphoneGraphics.shader_contract',
     'WorkphoneGraphics.aaa_pipeline', 'WPGraphics.cubemap_pbr',
-    'WorkphoneAssets.catalog_contracts', 'WPGraphics.claw_production_render',
+    'WorkphoneAssets.catalog_contracts', 'WPGraphics.claw_production_render', 'WPGraphics.cooked_material_resource',
     'WPGraphics.claw_text_contract', 'WPGraphics.claw_dx11_targets',
     'WPGraphics.claw_ui_destruction', 'WPResourceTests'
 )
@@ -54,13 +54,15 @@ $testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/Gr
 $verificationPaths = @(
     'Tests/cpp/DX11TestEvidence.hpp', 'Tools/ValidateClawGraphics.ps1',
     'Tools/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
-    'Engine/cpp/Project/WPGraphics/CMakeLists.txt', '.github/workflows/graphics-contracts.yml',
+    'Engine/cpp/Project/WPGraphics/CMakeLists.txt', 'Tests/cpp/CMakeLists.txt',
     'Engine/cpp/Include/Workphone/Database/AssetCatalogPath.hpp',
     'Engine/cpp/Source/Workphone/Database/AssetCatalogPath.cpp',
     'Engine/cpp/Include/Workphone/Database/CatalogResourceAdapter.hpp',
     'Engine/cpp/Source/Workphone/Database/CatalogResourceAdapter.cpp'
 )
 $testSources += @($verificationPaths | ForEach-Object { Get-Item -LiteralPath (Join-Path $repositoryRoot $_) })
+$testSources += @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Engine/cpp/Include/WPGraphics/Resources') -Filter '*.hpp') +
+    @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Engine/cpp/Source/WPGraphics/Resources') -Filter '*.cpp')
 $hashes = @($testSources | ForEach-Object { [ordered]@{ path = [System.IO.Path]::GetRelativePath($repositoryRoot, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
 $fixtures = @($fixturePaths | ForEach-Object {
     $path = Join-Path $repositoryRoot $_
@@ -117,6 +119,7 @@ $evidence = [ordered]@{
     coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0)
     validationPassed = ($testExit -eq 0 -and $unexpectedSkips.Count -eq 0 -and $missingResults.Count -eq 0)
     releaseCertified = $false
+    ciWorkflowAvailable = (Test-Path -LiteralPath (Join-Path $repositoryRoot '.github/workflows/graphics-contracts.yml'))
 }
 $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $evidencePath -Encoding utf8
 if ($testExit -ne 0 -or $unexpectedSkips.Count -gt 0 -or $missingResults.Count -gt 0) { throw "Graphics validation failed, mandatory tests were skipped, or required results are absent. See $reportPath and $evidencePath" }
