@@ -124,7 +124,8 @@
         "WP_BUILD_ENGINE": "ON",
         "WP_BUILD_DEPENDENCIES": "OFF"
       }
-    }
+    },
+    {"name": "network-contracts", "displayName": "Networking native and codec contracts", "generator": "Visual Studio 18 2026", "architecture": "x64", "binaryDir": "${sourceDir}/project_network_contracts", "cacheVariables": {"WP_BUILD_NETWORK_CONTRACTS_ONLY": "ON"}}
   ],
   "buildPresets": [
     { "name": "wpgraphics-baseline-debug", "configurePreset": "wpgraphics-baseline", "configuration": "Debug", "jobs": 4, "targets": ["WPAssetCatalogTests", "WPTerrainContractsTests", "TerrainLuaBindingTests", "WPResourceTests", "WPGraphicsCookedResourceTests", "WPGraphicsClawProductionTests", "WPGraphicsClawDX11TargetTests", "WPGraphicsClawRendererTests", "WPGraphicsClawUIDestructionTests", "ClawCubemapTests", "WPGraphicsSkinningTests", "WPGraphicsParticleSimulationTests", "WorkphoneGraphicsRendererTests", "WorkphoneGraphicsShaderTests", "WorkphoneGraphicsPipelineTests", "WorkphoneGraphicsMeshTests"] },
@@ -149,13 +150,17 @@
       "name": "ios-simulator",
       "configurePreset": "ios-simulator",
       "configuration": "RelWithDebInfo"
-    }
+    },
+    {"name": "network-contracts-debug", "configurePreset": "network-contracts", "configuration": "Debug", "jobs": 4, "targets": ["WorkphoneNetworkTests", "WPNetworkCodecTests"]},
+    {"name": "network-contracts", "configurePreset": "network-contracts", "configuration": "RelWithDebInfo", "jobs": 4, "targets": ["WorkphoneNetworkTests", "WPNetworkCodecTests"]}
   ],
   "testPresets": [
     { "name": "wpgraphics-baseline-debug", "configurePreset": "wpgraphics-baseline", "configuration": "Debug", "filter": { "include": { "name": "^(WPGraphics|WorkphoneGraphics|WorkphoneAssets)\\.|^WPResourceTests$" } }, "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "wpgraphics-baseline", "configurePreset": "wpgraphics-baseline", "configuration": "RelWithDebInfo", "filter": { "include": { "name": "^(WPGraphics|WorkphoneGraphics|WorkphoneAssets)\\.|^WPResourceTests$" } }, "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "asset-catalog", "configurePreset": "asset-catalog", "configuration": "RelWithDebInfo", "filter": { "include": { "name": "^WorkphoneAssets\\.catalog_contracts$" } }, "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
     { "name": "claw-contracts", "configurePreset": "claw-contracts", "configuration": "RelWithDebInfo", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
-    { "name": "claw-windows", "configurePreset": "claw-windows", "configuration": "RelWithDebInfo", "filter": { "include": { "name": "^(WPGraphics|WorkphoneGraphics)\\." } }, "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } }
+    { "name": "claw-windows", "configurePreset": "claw-windows", "configuration": "RelWithDebInfo", "filter": { "include": { "name": "^(WPGraphics|WorkphoneGraphics)\\." } }, "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    {"name": "network-contracts-debug", "configurePreset": "network-contracts", "configuration": "Debug", "filter": {"include": {"name": "^(WorkphoneNetwork|WPNetwork)\\."}}, "output": {"outputOnFailure": true}, "execution": {"noTestsAction": "error"}},
+    {"name": "network-contracts", "configurePreset": "network-contracts", "configuration": "RelWithDebInfo", "filter": {"include": {"name": "^(WorkphoneNetwork|WPNetwork)\\."}}, "output": {"outputOnFailure": true}, "execution": {"noTestsAction": "error"}}
   ]
 }

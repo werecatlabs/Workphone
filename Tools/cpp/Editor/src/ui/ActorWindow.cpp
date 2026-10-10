@@ -20,6 +20,8 @@
 #include <ui/TagDialog.hpp>
 #include <ui/TagManager.hpp>
 #include <commands/RemoveSelectionCmd.hpp>
+#include <commands/AddComponentCmd.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <Workphone/Workphone.hpp>
 #include <string>
 
@@ -1632,10 +1634,19 @@ namespace workphone::editor
                     auto networkView = actor->getComponent<scene::NetworkView>();
                     if( !networkView )
                     {
-                        networkView = actor->addComponent<scene::NetworkView>();
-                        if( networkView )
+                        auto factoryManager = applicationManager->getFactoryManager();
+                        auto commandManager = applicationManager->getCommandManager();
+                        auto types = TypeManager::instance();
+                        auto factory = factoryManager && types ? factoryManager->getFactoryByHash(
+                            types->getHash( scene::NetworkView::typeInfo() ) ) : nullptr;
+                        if( factory && commandManager )
                         {
-                            networkView->setState( scene::IComponent::State::Edit );
+                            selectionManager->clearSelection();
+                            selectionManager->addSelectedObject( actor );
+                            auto command = factoryManager->make_ptr<AddComponentCmd>();
+                            command->setFactory( factory );
+                            commandManager->addCommand( command );
+                            networkView = actor->getComponent<scene::NetworkView>();
                         }
                     }
 

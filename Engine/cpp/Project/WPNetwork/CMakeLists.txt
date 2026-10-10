@@ -23,33 +23,23 @@ include_directories( ../../Include )
 include_directories( ${WP_ROOT}/Engine/c/Include )
 include_directories( ${WP_ROOT}/Engine/c/Include/WorkphoneNetwork )
 
-if (NOT WP_STATIC_LIB)
-    if (WIN32)
-        link_directories(WPPhysics ${CMAKE_SOURCE_DIR}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})
-
-        if (WP_BUILD_PHYSICS_DEBUG)
-            link_directories(WPPhysics ${CMAKE_SOURCE_DIR}/Dependencies/lib/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/${CMAKE_BUILD_TYPE})
-        endif()
-    endif()
-endif()
-
 if (WP_STATIC_LIB)
     add_library(WPNetwork STATIC ${HEADER_FILES} ${SOURCE_FILES})
 else ()
     add_library(WPNetwork SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
-if (NOT WP_STATIC_LIB)
-    if (WIN32)
-        target_link_libraries(WPNetwork Workphone)
-        target_link_libraries(WPNetwork WorkphoneCore.lib)
-        target_link_libraries(WPNetwork WorkphoneNetwork.lib)
-    endif()
-endif()
-
 target_compile_definitions(WPNetwork PRIVATE WPNetwork_EXPORTS)
+target_include_directories(WPNetwork PRIVATE "${WP_ROOT}/Dependencies/rapidjson/include")
 
-target_link_libraries(WPNetwork WorkphoneNetwork)
-add_dependencies(WPNetwork Workphone WorkphoneNetwork)
+target_link_libraries(WPNetwork PUBLIC Workphone WorkphoneNetwork)
+# Workphone still exports some third-party dependencies as bare library names.
+# Publish their configuration-specific search path to network consumers too.
+if(WIN32)
+    target_link_directories(WPNetwork PUBLIC
+        "${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>")
+else()
+    target_link_directories(WPNetwork PUBLIC $<TARGET_PROPERTY:Workphone,LINK_DIRECTORIES>)
+endif()
 
 set_target_properties (WPNetwork PROPERTIES FOLDER Engine/Cpp/Network)

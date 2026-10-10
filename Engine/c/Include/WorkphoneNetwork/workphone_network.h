@@ -8,7 +8,8 @@ extern "C" {
 #include <stddef.h>
 
 /*
-    C89 RakNet-style replacement layer.
+    C99 development UDP transport. Unencrypted and unreliable; not a RakNet
+    delivery or security replacement. Unsupported reliable sends fail explicitly.
 
     Intended usage:
 
@@ -37,15 +38,30 @@ extern "C" {
 #define NET_MAX_PACKET_SIZE 1200
 #define NET_MAX_EVENTS 256
 #define NET_MAX_PEERS 64
-#define NET_PROTOCOL_ID 0x57475031UL /* "WGP1" style id */
+#define NET_PROTOCOL_ID 0x57475032UL /* WGP2: attempt-bound handshake/player IDs */
+#define NET_HEADER_SIZE 13
+#define NET_MAX_DATAGRAMS_PER_UPDATE 128
+#define NET_CONTROL_EVENT_RESERVE ( NET_MAX_PEERS + 4 )
 #define NET_INVALID_PEER ( -1 )
+/* 0 is the server; 0xffff is the C++ facade's disconnected sentinel. */
+#define NET_MAX_PLAYER_ID 65534
+
+#if defined( _WIN32 )
+typedef size_t NetSocketHandle;
+#else
+typedef int NetSocketHandle;
+#endif
 
 typedef int NetPeerId;
 
 typedef enum NetResult
 {
     NET_RESULT_OK = 0,
-    NET_RESULT_ERROR = -1
+    NET_RESULT_ERROR = -1,
+    NET_RESULT_NOT_READY = -2,
+    NET_RESULT_TOO_LARGE = -3,
+    NET_RESULT_BACKPRESSURE = -4,
+    NET_RESULT_UNSUPPORTED = -5
 } NetResult;
 
 typedef enum NetMode
@@ -102,6 +118,7 @@ typedef struct NetPeer
 
     unsigned short next_send_sequence;
     unsigned short last_recv_sequence;
+    unsigned char attempt_nonce[8];
 } NetPeer;
 
 typedef struct NetPacketHeader
@@ -117,7 +134,7 @@ typedef struct NetContext
 {
     NetMode mode;
 
-    int socket_handle;
+    NetSocketHandle socket_handle;
     int running;
 
     NetPeer peers[NET_MAX_PEERS];
@@ -131,6 +148,18 @@ typedef struct NetContext
     int event_tail;
 
     unsigned short next_sequence;
+    NetPeerId local_player_id;
+    NetPeerId next_peer_id;
+    int connecting;
+    unsigned char attempt_nonce[8];
+    unsigned int connect_started_ms;
+    unsigned int last_connect_send_ms;
+    unsigned int connect_timeout_ms;
+    unsigned int peer_timeout_ms;
+    unsigned int receive_budget;
+    unsigned int events_dropped;
+    unsigned int datagrams_received;
+    unsigned int malformed_datagrams;
 } NetContext;
 
 /* Global socket startup/shutdown. Required on Windows. */
@@ -157,6 +186,12 @@ int net_send( NetContext *ctx, NetPeerId peer_id, const void *data, unsigned int
 int net_send_to_server( NetContext *ctx, const void *data, unsigned int size );
 void net_disconnect_peer( NetContext *ctx, NetPeerId peer_id );
 void net_disconnect( NetContext *ctx );
+
+/* Native UDP is a development-only, unencrypted, unreliable transport. */
+int net_send_reliable( NetContext *ctx, NetPeerId peer_id, const void *data, unsigned int size );
+unsigned short net_get_bound_port( const NetContext *ctx );
+/* Injectable monotonic time for scheduling tests; real sockets are still used. */
+void net_update_at( NetContext *ctx, unsigned int now_ms );
 
 /* Address helpers. */
 NetAddress net_make_address( unsigned int host, unsigned short port );
