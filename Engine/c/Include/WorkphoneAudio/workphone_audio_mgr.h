@@ -6,7 +6,9 @@
  * It owns sounds and listeners, controls master volume and mute state,
  * and drives the per-frame audio update.
  *
- * Supported platforms: Windows, macOS, iOS, Android
+ * Legacy device dispatch is currently unsupported: load/platform_init return 0.
+ * Use workphone_audio_core.h for offline processing and WPAudio for device output.
+ * No platform playback certification is implied by platform detection below.
  */
 
 #ifndef WORKPHONE_AUDIO_MGR_H

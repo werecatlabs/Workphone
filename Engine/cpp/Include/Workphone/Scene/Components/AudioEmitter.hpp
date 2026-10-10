@@ -65,6 +65,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void releaseInstance();
+            SmartPtr<ISound> m_instance;
             /** The sound object. */
             SmartPtr<ISound> m_sound;
         };

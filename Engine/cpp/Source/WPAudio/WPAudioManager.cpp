@@ -5,6 +5,8 @@
 #include <WPAudio/WPAudio.hpp>
 #include <Workphone/WorkphoneInterface.hpp>
 #include <new>
+#include <cmath>
+#include <algorithm>
 
 #if defined WP_PLATFORM_WIN32
 #    if WP_USE_XAUDIO2
@@ -241,6 +243,7 @@ namespace workphone
         return false;
 #endif
 
+        setVolume( m_volume );
         return true;
     }
 
@@ -317,7 +320,7 @@ namespace workphone
         SoundManager::update();
 
         // Update all active sounds (e.g., check playback state, handle streaming, etc.)
-        for( auto &sound : m_sounds )
+        for( auto &sound : m_sounds.snapshot() )
         {
             if( sound && sound->isLoaded() )
             {
@@ -354,7 +357,6 @@ namespace workphone
             return nullptr;
         }
 
-        sound->setVolume( m_mute ? 0.0f : m_volume );
 
         m_sounds.push_back( sound );
         return sound;
@@ -373,52 +375,29 @@ namespace workphone
             sound->unload( nullptr );
         }
 
-        auto it = std::find( m_sounds.begin(), m_sounds.end(), sound );
-        if( it != m_sounds.end() )
-        {
-            m_sounds.erase( it );
-        }
+        SoundManager::destroyResource( sound );
+        sound->setOwner( nullptr );
     }
 
     void WPAudioManager::removeAll()
     {
-        // Unload and remove all sounds
-        for( auto &sound : m_sounds )
-        {
-            if( sound && sound->isLoaded() )
-            {
-                sound->unload( nullptr );
-            }
-        }
-
-        m_sounds.clear();
-        m_listeners.clear();
+        SoundManager::destroyAll();
     }
 
     SmartPtr<ISoundListener3> WPAudioManager::addListener3( const String &name,
-                                                            const Vector3F &position )
+                                                          const Vector3F &position )
     {
-        auto listener = make_ptr<WPAudioSoundListener>();
-        listener->setName( name );
-        listener->setPosition( position );
-        m_listeners[name] = listener;
-        return listener;
+        return SoundManager::addListener3( name, position );
     }
 
     SmartPtr<ISoundListener3> WPAudioManager::findListener3( const String &name )
     {
-        auto it = m_listeners.find( name );
-        if( it != m_listeners.end() )
-        {
-            return it->second;
-        }
-
-        return nullptr;
+        return SoundManager::findListener3( name );
     }
 
     bool WPAudioManager::isRealtime() const
     {
-        return false;
+        return isLoaded() && m_platformAudioState != nullptr;
     }
 
     bool WPAudioManager::isMute() const
@@ -435,47 +414,28 @@ namespace workphone
 
         m_mute = mute;
 
-        // Propagate mute state to all sounds
-        for( auto &sound : m_sounds )
-        {
-            if( sound )
-            {
-                sound->setVolume( mute ? 0.0f : m_volume );
-            }
-        }
-
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         if( m_platformAudioState && m_platformAudioState->masterVoice )
         {
             m_platformAudioState->masterVoice->SetVolume( mute ? 0.0f : m_volume );
         }
+#else
+        for( auto &sound : m_sounds.snapshot() )
+            if( sound ) sound->setVolume( sound->getVolume() );
 #endif
     }
 
     void WPAudioManager::setVolume( f32 fVolume )
     {
-        m_volume = fVolume;
-
-        // Don't propagate if muted
-        if( m_mute )
-        {
-            return;
-        }
-
-        // Propagate volume to all sounds
-        for( auto &sound : m_sounds )
-        {
-            if( sound )
-            {
-                sound->setVolume( fVolume );
-            }
-        }
-
+        m_volume = std::isfinite( fVolume ) ? std::clamp( fVolume, 0.0f, 1.0f ) : 0.0f;
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         if( m_platformAudioState && m_platformAudioState->masterVoice )
         {
-            m_platformAudioState->masterVoice->SetVolume( fVolume );
+            m_platformAudioState->masterVoice->SetVolume( m_mute ? 0.0f : m_volume );
         }
+#else
+        for( auto &sound : m_sounds.snapshot() )
+            if( sound ) sound->setVolume( sound->getVolume() );
 #endif
     }
 
@@ -486,8 +446,7 @@ namespace workphone
 
     void WPAudioManager::startRecording()
     {
-        // TODO: Implement audio recording
-        // This would involve creating a capture device and buffers
+        WP_LOG_WARNING( "WPAudio: recording is unsupported by this backend." );
     }
 
     void WPAudioManager::stopRecording()
@@ -503,7 +462,7 @@ namespace workphone
 
     void WPAudioManager::copyContentsToMemory( void *buffer, u32 size )
     {
-        // TODO: Copy recorded audio data to provided buffer
+        WP_LOG_WARNING( "WPAudio: no capture buffer is available." );
     }
 
     void WPAudioManager::_getObject( void **ppObject ) const

@@ -27,7 +27,7 @@ namespace workphone
      * @note The listener uses a right-handed coordinate system by default, but automatically
      *       converts to the platform's native system (e.g., left-handed for XAudio2).
      */
-    class WPAudioSoundListener : public ISoundListener3
+    class WPAudio_API WPAudioSoundListener : public ISoundListener3
     {
     public:
         /**

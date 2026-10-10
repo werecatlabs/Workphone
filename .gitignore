@@ -141,3 +141,5 @@ steam_appid.txt
 /project_network_contracts/Tests/NetworkProduction/WorkphoneNetworkTests.dir/RelWithDebInfo/WorkphoneNetworkTests.ilk
 /project_network_contracts/Tests/NetworkProduction/WPNetworkCodecTests.dir/RelWithDebInfo/vc145.pdb
 /project_network_contracts/Tests/NetworkProduction/WPNetworkCodecTests.dir/RelWithDebInfo/WPNetworkCodecTests.ilk
+
+/project_audio_contracts/

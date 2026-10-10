@@ -1,6 +1,6 @@
 /**
  * @file workphone_audio_sound.h
- * @brief C API for an individual audio sound instance.
+ * @brief Legacy C API for an individual audio sound instance.
  *
  * A sound represents a single loadable audio resource.  It tracks its file
  * path, playback state, volume and loop mode.  Platform-specific handles
@@ -70,7 +70,8 @@ void wp_audio_sound_destroy( wp_audio_sound *sound );
  * ====================================================================== */
 
 /**
- * @brief Load audio data from a file path.
+ * @brief Legacy loading is unsupported and returns 0 without setting loaded.
+ * Use workphone_audio_core.h for validated clip decoding.
  * @param sound    Pointer to the sound.
  * @param filepath Null-terminated path to the audio file.
  * @param loop     Non-zero to loop the sound.

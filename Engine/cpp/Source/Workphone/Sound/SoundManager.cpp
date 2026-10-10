@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Sound/SoundManager.hpp>
+#include <Workphone/Sound/Sound.hpp>
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Interface/Sound/ISound.hpp>
@@ -16,7 +17,10 @@ namespace workphone
 
     SoundManager::SoundManager() = default;
 
-    SoundManager::~SoundManager() = default;
+    SoundManager::~SoundManager()
+    {
+        destroyAll();
+    }
 
     void SoundManager::load( SmartPtr<ISharedObject> data )
     {
@@ -35,7 +39,9 @@ namespace workphone
             SmartPtr<ISharedObject> sound;
             while( m_loadQueue.try_pop( sound ) )
             {
-                sound->load( nullptr );
+                auto instance = workphone::dynamic_pointer_cast<ISound>( sound );
+                if( !instance || instance->getOwner().get() == this )
+                    sound->load( nullptr );
             }
         }
 
@@ -51,17 +57,29 @@ namespace workphone
 
     void SoundManager::destroyResource( SmartPtr<IResource> resource )
     {
-        m_sounds.erase( std::remove( m_sounds.begin(), m_sounds.end(), resource ), m_sounds.end() );
+        if( auto sound = workphone::dynamic_pointer_cast<ISound>( resource ) )
+        {
+            const auto registered = m_sounds.snapshot();
+            if( std::find( registered.begin(), registered.end(), sound ) == registered.end() )
+                return;
+            sound->unload( nullptr );
+            sound->setOwner( nullptr );
+            m_sounds.erase( std::remove( m_sounds.begin(), m_sounds.end(), sound ), m_sounds.end() );
+        }
     }
 
     void SoundManager::destroyAll()
     {
+        SmartPtr<ISharedObject> pending;
+        while( m_loadQueue.try_pop( pending ) ) pending->unload( nullptr );
+        while( m_unloadQueue.try_pop( pending ) ) pending->unload( nullptr );
         auto sounds = m_sounds.snapshot();
         for( auto &sound : sounds )
         {
             if( sound )
             {
                 sound->unload( nullptr );
+                sound->setOwner( nullptr );
             }
         }
 
@@ -221,6 +239,12 @@ namespace workphone
                 sound->setOwner( this );
                 sound->setFilePath( name );
                 loadObject( sound );
+                if( !sound->isLoaded() )
+                {
+                    sound->unload( nullptr );
+                    sound->setOwner( nullptr );
+                    return nullptr;
+                }
                 m_sounds.push_back( sound );
                 return sound;
             }
@@ -243,6 +267,12 @@ namespace workphone
                 sound->setOwner( this );
                 sound->setFilePath( name );
                 sound->load( nullptr );
+                if( !sound->isLoaded() )
+                {
+                    sound->unload( nullptr );
+                    sound->setOwner( nullptr );
+                    return nullptr;
+                }
                 m_sounds.push_back( sound );
                 return sound;
             }
@@ -366,13 +396,29 @@ namespace workphone
     SmartPtr<IResource> SoundManager::cloneResource( SmartPtr<IResource> resource,
                                                      const String &clonedResourceName )
     {
-        return nullptr;
+        auto source = workphone::dynamic_pointer_cast<ISound>( resource );
+        if( !source ) return nullptr;
+        // A clone is an independent transport, never createOrRetrieve(path).
+        auto copy = workphone::dynamic_pointer_cast<ISound>( create( source->getFilePath() ) );
+        if( copy )
+        {
+            copy->setVolume( source->getVolume() );
+            copy->setLoop( source->getLoop() );
+            if( auto concrete = workphone::dynamic_pointer_cast<Sound>( source ) )
+                copy->setPan( concrete->getPan() );
+            f32 minimum = 0.0f, maximum = 0.0f;
+            source->getMinMaxDistance( minimum, maximum );
+            copy->setMinMaxDistance( minimum, maximum );
+            copy->setPosition( source->getPosition() );
+            copy->setFlags( source->getFlags() );
+        }
+        return copy;
     }
 
     SmartPtr<IResource> SoundManager::cloneResource( const String &name,
                                                      const String &clonedResourceName )
     {
-        return nullptr;
+        return cloneResource( getByName( name ), clonedResourceName );
     }
 
     void SoundManager::lock()

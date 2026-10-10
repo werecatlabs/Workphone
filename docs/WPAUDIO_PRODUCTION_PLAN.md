@@ -2,6 +2,10 @@
 
 Date: 10 October 2026. Reviewed checkout: `ccb890ed6`. Status: proposed implementation plan; no runtime implementation or production certification is included in this document change.
 
+Implementation has started. See [the implementation ledger](WPAUDIO_IMPLEMENTATION_STATUS.md)
+for delivered foundation changes, current validation and open milestone gates.
+The review below describes the original baseline; it is not a current-source audit.
+
 ## 1. Objective and delivery scope
 
 Make WPAudio a complete, dependable audio system for shipped Workphone games, with usable scene components and an end-to-end Editor authoring workflow. Production readiness includes correct audible output, safe lifetime and concurrency, resource cooking and packaging, predictable budgets, accessible user settings, diagnostics, documentation, and reproducible release evidence.

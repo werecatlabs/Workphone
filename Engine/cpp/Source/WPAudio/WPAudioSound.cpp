@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <new>
 #include <vector>
+#include <workphone_audio_core.h>
 
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
 #    include <xaudio2.h>
@@ -23,138 +24,47 @@ namespace workphone
 {
     namespace
     {
-        constexpr size_Num WavChunkHeaderSize = 8;
         constexpr u16 WavFormatPcm = 1;
-
         struct WavData
         {
             std::vector<u8> format;
             std::vector<u8> samples;
-            u16 formatTag = 0;
-            u16 channels = 0;
+            u16 formatTag = 0, channels = 0;
             u32 sampleRate = 0;
-            u16 blockAlign = 0;
-            u16 bitsPerSample = 0;
+            u16 blockAlign = 0, bitsPerSample = 0;
         };
-
-        bool readExact( IStream *stream, void *buffer, size_Num bytes )
-        {
-            return stream && stream->read( buffer, bytes ) == bytes;
-        }
-
-        bool readFourCC( IStream *stream, char ( &fourCC )[4] )
-        {
-            return readExact( stream, fourCC, sizeof( fourCC ) );
-        }
-
-        bool readUInt32( IStream *stream, u32 &value )
-        {
-            return readExact( stream, &value, sizeof( value ) );
-        }
-
-        bool fourCCEquals( const char ( &fourCC )[4], const char *value )
-        {
-            return std::memcmp( fourCC, value, 4 ) == 0;
-        }
-
-        bool skipBytes( IStream *stream, size_Num bytesToSkip )
-        {
-            if( !stream )
-            {
-                return false;
-            }
-
-            const auto position = stream->tell();
-            return bytesToSkip <= stream->size() - std::min( position, stream->size() ) &&
-                   stream->seek( position + bytesToSkip );
-        }
-
-        template <class T>
-        T readWavField( const std::vector<u8> &format, size_Num offset )
-        {
-            T value = {};
-            if( offset + sizeof( value ) <= format.size() )
-            {
-                std::memcpy( &value, format.data() + offset, sizeof( value ) );
-            }
-            return value;
-        }
 
         bool readWav( IStream *stream, WavData &wav )
         {
-            if( !stream || !stream->isOpen() )
-            {
+            if( !stream || !stream->isOpen() || stream->size() > 64u * 1024u * 1024u ||
+                stream->size() < 12 || !stream->seek( 0 ) )
                 return false;
-            }
-
-            char riff[4] = {};
-            u32 riffSize = 0;
-            char wave[4] = {};
-            if( !readFourCC( stream, riff ) || !readUInt32( stream, riffSize ) ||
-                !readFourCC( stream, wave ) || !fourCCEquals( riff, "RIFF" ) ||
-                !fourCCEquals( wave, "WAVE" ) )
-            {
+            std::vector<u8> bytes( stream->size() );
+            if( stream->read( bytes.data(), bytes.size() ) != bytes.size() )
                 return false;
-            }
-            (void)riffSize;
-
-            while( stream->tell() + WavChunkHeaderSize <= stream->size() &&
-                   ( wav.format.empty() || wav.samples.empty() ) )
-            {
-                char chunkId[4] = {};
-                u32 chunkSize = 0;
-                if( !readFourCC( stream, chunkId ) || !readUInt32( stream, chunkSize ) ||
-                    chunkSize > stream->size() - stream->tell() )
-                {
-                    return false;
-                }
-
-                if( fourCCEquals( chunkId, "fmt " ) )
-                {
-                    if( chunkSize < 16 )
-                    {
-                        return false;
-                    }
-                    wav.format.resize( chunkSize );
-                    if( !readExact( stream, wav.format.data(), chunkSize ) )
-                    {
-                        return false;
-                    }
-                }
-                else if( fourCCEquals( chunkId, "data" ) )
-                {
-                    if( chunkSize == 0 )
-                    {
-                        return false;
-                    }
-                    wav.samples.resize( chunkSize );
-                    if( !readExact( stream, wav.samples.data(), chunkSize ) )
-                    {
-                        return false;
-                    }
-                }
-                else if( !skipBytes( stream, chunkSize ) )
-                {
-                    return false;
-                }
-
-                if( ( chunkSize & 1U ) != 0 && !skipBytes( stream, 1 ) )
-                {
-                    return false;
-                }
-            }
-
-            if( wav.format.empty() || wav.samples.empty() )
-            {
+            wp_audio_wav_info info{};
+            info.size = sizeof( info );
+            if( wp_audio_wav_inspect( bytes.data(), bytes.size(), &info ) != WP_AUDIO_OK )
                 return false;
-            }
-
-            wav.formatTag = readWavField<u16>( wav.format, 0 );
-            wav.channels = readWavField<u16>( wav.format, 2 );
-            wav.sampleRate = readWavField<u32>( wav.format, 4 );
-            wav.blockAlign = readWavField<u16>( wav.format, 12 );
-            wav.bitsPerSample = readWavField<u16>( wav.format, 14 );
-            return wav.channels > 0 && wav.sampleRate > 0 && wav.blockAlign > 0 && wav.bitsPerSample > 0;
+            // Native WAVEFORMATEX is 18 bytes even for a 16-byte PCM fmt chunk.
+            wav.format.assign( 18, 0 );
+            auto field16 = [&]( size_t offset, u16 value ) {
+                wav.format[offset] = static_cast<u8>( value );
+                wav.format[offset + 1] = static_cast<u8>( value >> 8 );
+            };
+            auto field32 = [&]( size_t offset, u32 value ) {
+                for( size_t i = 0; i < 4; ++i )
+                    wav.format[offset + i] = static_cast<u8>( value >> ( i * 8 ) );
+            };
+            field16( 0, info.format_tag ); field16( 2, info.channels );
+            field32( 4, info.sample_rate ); field32( 8, info.sample_rate * info.block_align );
+            field16( 12, info.block_align ); field16( 14, info.bits_per_sample );
+            wav.samples.assign( bytes.begin() + info.data_offset,
+                                bytes.begin() + info.data_offset + info.data_bytes );
+            wav.formatTag = info.format_tag; wav.channels = info.channels;
+            wav.sampleRate = info.sample_rate; wav.blockAlign = info.block_align;
+            wav.bitsPerSample = info.bits_per_sample;
+            return true;
         }
 
         SmartPtr<IStream> openAudioStream( const String &filename )
@@ -180,6 +90,7 @@ namespace workphone
         WavData wav;
         std::atomic_bool playing{ false };
         std::atomic_bool loop{ false };
+        bool paused = false;
 
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         struct VoiceCallback final : IXAudio2VoiceCallback
@@ -203,10 +114,6 @@ namespace workphone
             }
             void STDMETHODCALLTYPE OnBufferEnd( void * ) override
             {
-                if( !owner->loop )
-                {
-                    owner->playing = false;
-                }
             }
             void STDMETHODCALLTYPE OnLoopEnd( void * ) override
             {
@@ -282,7 +189,7 @@ namespace workphone
         const auto originalFilePath = filePath;
         if( StringUtil::isNullOrEmpty( filePath ) )
         {
-            setLoadingState( LoadingState::Unloaded );
+            setLoadingState( LoadingState::Error );
             return;
         }
 
@@ -320,7 +227,7 @@ namespace workphone
             }
         }
 
-        setLoadingState( loadPlatformSound( filePath ) ? LoadingState::Loaded : LoadingState::Unloaded );
+        setLoadingState( loadPlatformSound( filePath ) ? LoadingState::Loaded : LoadingState::Error );
     }
 
     void WPAudioSound::unload( SmartPtr<ISharedObject> data )
@@ -343,8 +250,16 @@ namespace workphone
         }
         state->loop = getLoop();
 
-        auto stream = openAudioStream( filename );
-        if( !readWav( stream.get(), state->wav ) )
+        try
+        {
+            auto stream = openAudioStream( filename );
+            if( !readWav( stream.get(), state->wav ) )
+            {
+                delete state;
+                return false;
+            }
+        }
+        catch( const std::bad_alloc & )
         {
             delete state;
             return false;
@@ -565,19 +480,21 @@ namespace workphone
             return;
         }
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
-        AudioQueueReset( state->queue );
-        if( AudioQueueEnqueueBuffer( state->queue, state->buffer, 0, nullptr ) != noErr ||
+        if( !state->paused )
+            AudioQueueReset( state->queue );
+        if( ( !state->paused && AudioQueueEnqueueBuffer( state->queue, state->buffer, 0, nullptr ) != noErr ) ||
             AudioQueueStart( state->queue, nullptr ) != noErr )
         {
             state->playing = false;
             return;
         }
 #elif defined WP_PLATFORM_ANDROID
-        ( *state->bufferQueue )->Clear( state->bufferQueue );
-        if( ( *state->bufferQueue )
+        if( !state->paused )
+            ( *state->bufferQueue )->Clear( state->bufferQueue );
+        if( ( !state->paused && ( *state->bufferQueue )
                     ->Enqueue( state->bufferQueue, state->wav.samples.data(),
                                static_cast<SLuint32>( state->wav.samples.size() ) ) !=
-                SL_RESULT_SUCCESS ||
+                SL_RESULT_SUCCESS ) ||
             ( *state->player )->SetPlayState( state->player, SL_PLAYSTATE_PLAYING ) !=
                 SL_RESULT_SUCCESS )
         {
@@ -588,16 +505,18 @@ namespace workphone
         state->playing = false;
         return;
 #endif
+        state->paused = false;
         Sound::play();
     }
 
     void WPAudioSound::pause()
     {
         auto state = m_platformSoundState;
-        if( !state )
+        if( !state || !state->playing )
         {
             return;
         }
+        state->paused = true;
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         state->sourceVoice->Stop( 0 );
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
@@ -615,6 +534,7 @@ namespace workphone
         if( state )
         {
             state->playing = false;
+            state->paused = false;
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
             state->sourceVoice->Stop( 0 );
             state->sourceVoice->FlushSourceBuffers();
@@ -635,20 +555,25 @@ namespace workphone
 
     void WPAudioSound::setVolume( f32 volume )
     {
-        Sound::setVolume( volume );
+        Sound::setVolume( std::isfinite( volume ) ? volume : 0.0f );
         auto state = m_platformSoundState;
         if( !state )
         {
             return;
         }
+        auto effectiveGain = getVolume();
+#if !defined WP_PLATFORM_WIN32
+        if( auto owner = getOwner() )
+            effectiveGain *= owner->isMute() ? 0.0f : owner->getVolume();
+#endif
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
-        state->sourceVoice->SetVolume( getVolume() );
+        state->sourceVoice->SetVolume( effectiveGain );
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
-        AudioQueueSetParameter( state->queue, kAudioQueueParam_Volume, getVolume() );
+        AudioQueueSetParameter( state->queue, kAudioQueueParam_Volume, effectiveGain );
 #elif defined WP_PLATFORM_ANDROID
-        const auto gain = getVolume() <= 0.0f
+        const auto gain = effectiveGain <= 0.0f
                               ? SL_MILLIBEL_MIN
-                              : static_cast<SLmillibel>( 2000.0f * std::log10( getVolume() ) );
+                              : static_cast<SLmillibel>( 2000.0f * std::log10( effectiveGain ) );
         ( *state->volume )->SetVolumeLevel( state->volume, gain );
 #endif
     }
@@ -662,6 +587,10 @@ namespace workphone
             state->loop = loop;
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
             state->buffer.LoopCount = loop ? XAUDIO2_LOOP_INFINITE : 0;
+            // ExitLoop affects the submitted buffer; changing the descriptor alone does not.
+            // Enabling looping after submission takes effect on the next play/restart.
+            if( !loop && state->sourceVoice )
+                state->sourceVoice->ExitLoop();
 #endif
         }
     }

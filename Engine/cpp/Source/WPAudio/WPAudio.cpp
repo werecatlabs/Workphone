@@ -3,6 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <WPAudio/WPAudioSound.hpp>
 #include <WPAudio/WPAudioManager.hpp>
+#include <WPAudio/WPAudioSoundListener.hpp>
 
 #if defined WP_PLATFORM_WIN32
 #    include <windows.h>
@@ -34,6 +35,7 @@ namespace workphone
 
         FactoryUtil::addFactory<WPAudioManager>();
         FactoryUtil::addFactory<WPAudioSound>( factoryManager );
+        FactoryUtil::addFactory<WPAudioSoundListener>( factoryManager );
     }
 
     void WPAudio::unload( SmartPtr<ISharedObject> data )
@@ -42,6 +44,7 @@ namespace workphone
         {
             FactoryUtil::removeFactory<WPAudioManager>();
             FactoryUtil::removeFactory<WPAudioSound>( factoryManager );
+            FactoryUtil::removeFactory<WPAudioSoundListener>( factoryManager );
             factoryManager->unload( nullptr );
             setFactoryManager( nullptr );
         }

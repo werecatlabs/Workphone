@@ -1,6 +1,7 @@
 #ifndef __WP_Sound_h__
 #define __WP_Sound_h__
 
+#include <Workphone/Memory/WeakPtr.hpp>
 #include <Workphone/Interface/Sound/ISound.hpp>
 #include <Workphone/System/Resource.hpp>
 
@@ -106,7 +107,7 @@ namespace workphone
 
     protected:
         /** The sound manager that owns this sound. */
-        SmartPtr<ISoundManager> m_owner;
+        WeakPtr<ISoundManager> m_owner;
 
         /** The 3D position of the sound. */
         Vector3<real_Num> m_position = Vector3<real_Num>::zero();

@@ -12,21 +12,6 @@
  * Internal helpers
  * ====================================================================== */
 
-static wp_c8 *wp_audio_sound_strdup( const wp_c8 *s )
-{
-    wp_c8 *copy;
-    wp_size len;
-
-    if( !s )
-        return NULL;
-
-    len = strlen( s ) + 1;
-    copy = (wp_c8 *)malloc( len );
-    if( copy )
-        memcpy( copy, s, len );
-    return copy;
-}
-
 /* =========================================================================
  * Lifecycle
  * ====================================================================== */
@@ -62,19 +47,11 @@ wp_s32 wp_audio_sound_load( wp_audio_sound *sound, const wp_c8 *filepath, wp_s32
     if( !sound || !filepath )
         return 0;
 
-    /* Unload any previously loaded data. */
+    /* The legacy path has no dispatch/decoder. Never advertise silent playback.
+     * New clients use workphone_audio_core.h; WPAudio owns device output for now. */
+    (void)loop;
     wp_audio_sound_unload( sound );
-
-    sound->filepath = wp_audio_sound_strdup( filepath );
-    if( !sound->filepath )
-        return 0;
-
-    sound->loop = loop ? 1 : 0;
-    sound->loaded = 1;
-
-    /* Platform-specific audio resource loading would go here. */
-
-    return 1;
+    return 0;
 }
 
 void wp_audio_sound_unload( wp_audio_sound *sound )

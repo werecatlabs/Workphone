@@ -24,7 +24,7 @@ namespace workphone
      * Individual sound loading, playback, and per-sound resources are encapsulated
      * within WPAudioSound instances to maintain proper separation of concerns.
      */
-    class WPAudioManager : public SoundManager
+    class WPAudio_API WPAudioManager : public SoundManager
     {
     public:
         /**
@@ -201,13 +201,6 @@ namespace workphone
 
         /// Opaque native state. Platform SDK types are intentionally kept out of this header.
         PlatformAudioState *m_platformAudioState = nullptr;
-
-        /// Collection of all active sounds
-        ConcurrentArray<SmartPtr<ISound>> m_sounds;
-
-        /// Map of named 3D audio listeners
-        using SoundListenerMap = std::map<String, SmartPtr<ISoundListener3>>;
-        SoundListenerMap m_listeners;
 
         /// Map of sound names to file paths
         using SoundMap = std::map<String, String>;

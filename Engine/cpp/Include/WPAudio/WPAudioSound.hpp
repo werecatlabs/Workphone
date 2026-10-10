@@ -19,7 +19,7 @@ namespace workphone
      * headers. The implementation selects XAudio2 on Windows, Audio Queue on
      * macOS/iOS, and OpenSL ES on Android.
      */
-    class WPAudioSound : public Sound
+    class WPAudio_API WPAudioSound : public Sound
     {
     public:
         WPAudioSound();

@@ -13,13 +13,9 @@ namespace workphone
         WP_ASSERT( m_input );
         WP_ASSERT( m_output );
 
-        if( m_bypass == false )
+        for( size_t i = 0; i < m_numSamples; ++i )
         {
-            for( size_t i = 0; i < m_numSamples; ++i )
-            {
-                f32 value = m_input[i] * m_volume;
-                m_output[i] = value;
-            }
+            m_output[i] = m_input[i] * ( m_bypass ? 1.0f : m_volume );
         }
     }
 

@@ -20,21 +20,8 @@ static wp_s32 g_platform_initialised = 0;
  * Platform backend include and dispatch
  * ---------------------------------------------------------------------- */
 
-#if WP_AUDIO_PLATFORM_WINDOWS
 static const wp_audio_mgr_backend *g_platform_backend = NULL;
-#    include "workphone_audio_mgr_win32.c"
-#elif WP_AUDIO_PLATFORM_MACOS
-static const wp_audio_mgr_backend *g_platform_backend = NULL;
-#    include "workphone_audio_mgr_macos.c"
-#elif WP_AUDIO_PLATFORM_IOS
-static const wp_audio_mgr_backend *g_platform_backend = NULL;
-#    include "workphone_audio_mgr_ios.m"
-#elif WP_AUDIO_PLATFORM_ANDROID
-static const wp_audio_mgr_backend *g_platform_backend = NULL;
-#    include "workphone_audio_mgr_android.c"
-#else
-static const wp_audio_mgr_backend *g_platform_backend = NULL;
-#endif
+const wp_audio_mgr_backend *wp_audio_mgr_get_backend( void ) { return NULL; }
 
 static void wp_audio_mgr_init_backend( void )
 {
@@ -183,6 +170,7 @@ wp_s32 wp_audio_mgr_load( wp_audio_mgr *mgr )
     if( !g_platform_initialised )
     {
         wp_audio_mgr_init_backend();
+        if( !g_platform_backend ) return 0; /* Legacy output unavailable. */
         if( g_platform_backend && g_platform_backend->init )
         {
             if( !g_platform_backend->init() )
@@ -329,7 +317,7 @@ wp_s32 wp_audio_mgr_add_listener( wp_audio_mgr *mgr, const wp_c8 *name, wp_f32 x
         return -1;
 
     wp_audio_listener_set_name( listener, name );
-    wp_audio_listener_set_position( listener, wp_vec3f_make( x, y, z ) );
+    { wp_vec3f position = { x, y, z }; wp_audio_listener_set_position( listener, position ); }
 
     mgr->listeners[mgr->listener_count] = listener;
     return mgr->listener_count++;
@@ -344,7 +332,7 @@ wp_audio_listener *wp_audio_mgr_find_listener( const wp_audio_mgr *mgr, const wp
 
     for( i = 0; i < mgr->listener_count; ++i )
     {
-        if( mgr->listeners[i] && strcmp( mgr->listeners[i]->name, name ) == 0 )
+        if( mgr->listeners[i] && strcmp( (const char *)mgr->listeners[i]->name, (const char *)name ) == 0 )
             return mgr->listeners[i];
     }
 
@@ -484,6 +472,7 @@ wp_s32 wp_audio_mgr_platform_init( void )
         return 1;
 
     wp_audio_mgr_init_backend();
+    if( !g_platform_backend ) return 0;
 
     if( g_platform_backend && g_platform_backend->init )
     {

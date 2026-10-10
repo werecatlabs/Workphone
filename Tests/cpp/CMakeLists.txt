@@ -1,3 +1,7 @@
+if(WP_BUILD_TESTS AND TARGET WorkphoneAudio)
+    add_subdirectory(../AudioProduction AudioProduction)
+endif()
+
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)

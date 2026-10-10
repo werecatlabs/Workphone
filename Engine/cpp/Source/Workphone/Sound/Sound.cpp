@@ -103,7 +103,7 @@ namespace workphone
 
     SmartPtr<ISoundManager> Sound::getOwner() const
     {
-        return m_owner;
+        return m_owner.lock();
     }
 
     void Sound::setOwner( SmartPtr<ISoundManager> owner )

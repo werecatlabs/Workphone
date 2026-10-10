@@ -39,7 +39,7 @@
 #    endif
 
 #    if WP_BUILD_AUDIO
-#        include <FBAudio/FBAudio.hpp>
+#        include <WPAudio/WPAudio.hpp>
 #    endif
 
 #    if WP_BUILD_PHYSX
@@ -1298,7 +1298,7 @@ namespace workphone::editor
         applicationManager->addPlugin( imguiPlugin );
 
 #    if WP_BUILD_AUDIO
-        auto audioPlugin = workphone::make_ptr<FBAudio>();
+        auto audioPlugin = workphone::make_ptr<WPAudio>();
         applicationManager->addPlugin( audioPlugin );
 #    endif
 

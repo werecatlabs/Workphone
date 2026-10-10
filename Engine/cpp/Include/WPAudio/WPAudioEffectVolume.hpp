@@ -1,5 +1,4 @@
 #pragma once
-
 #include <WPAudio/WPAudioPrerequisites.hpp>
 #include <Workphone/Interface/Sound/IAudioEffectVolume.hpp>
 

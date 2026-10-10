@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/AudioEmitter.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/Sound/ISound.hpp>
+#include <Workphone/Interface/Sound/ISoundManager.hpp>
 #include <Workphone/Core/LogManager.hpp>
 
 namespace workphone::scene
@@ -17,7 +18,21 @@ namespace workphone::scene
 
     AudioEmitter::AudioEmitter() = default;
 
-    AudioEmitter::~AudioEmitter() = default;
+    AudioEmitter::~AudioEmitter()
+    {
+        releaseInstance();
+    }
+
+    void AudioEmitter::releaseInstance()
+    {
+        if( auto instance = m_instance )
+        {
+            m_instance = nullptr;
+            instance->stop();
+            if( auto owner = instance->getOwner() ) owner->destroyResource( instance );
+            else instance->unload( nullptr );
+        }
+    }
 
     void AudioEmitter::load( SmartPtr<ISharedObject> data )
     {
@@ -42,6 +57,7 @@ namespace workphone::scene
     void AudioEmitter::unload( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Unloading );
+        releaseInstance();
 
         if( data )
         {
@@ -132,54 +148,34 @@ namespace workphone::scene
 
     void AudioEmitter::setSound( SmartPtr<ISound> sound )
     {
+        if( m_sound != sound ) releaseInstance();
         m_sound = sound;
     }
 
     void AudioEmitter::play()
     {
-        if( auto sound = getSound() )
+        if( !m_instance && m_sound )
         {
-            sound->play();
+            if( auto owner = m_sound->getOwner() )
+                m_instance = workphone::dynamic_pointer_cast<ISound>( owner->cloneResource( m_sound, String() ) );
+            if( !m_instance )
+                WP_LOG_WARNING( "AudioEmitter: could not create an independent playback instance." );
         }
-        else
-        {
-            WP_LOG_WARNING( String( "AudioEmitter::play() called but no sound is assigned." ) );
-        }
+        if( m_instance ) m_instance->play();
     }
 
     void AudioEmitter::stop()
     {
-        if( auto sound = getSound() )
-        {
-            sound->stop();
-        }
-        else
-        {
-            WP_LOG_WARNING( String( "AudioEmitter::stop() called but no sound is assigned." ) );
-        }
+        if( m_instance ) m_instance->stop();
     }
 
     void AudioEmitter::pause()
     {
-        if( auto sound = getSound() )
-        {
-            sound->pause();
-        }
-        else
-        {
-            WP_LOG_WARNING( String( "AudioEmitter::pause() called but no sound is assigned." ) );
-        }
+        if( m_instance ) m_instance->pause();
     }
 
     void AudioEmitter::unpause()
     {
-        if( auto sound = getSound() )
-        {
-            sound->play();
-        }
-        else
-        {
-            WP_LOG_WARNING( String( "AudioEmitter::unpause() called but no sound is assigned." ) );
-        }
+        if( m_instance ) m_instance->play();
     }
 }  // namespace workphone::scene

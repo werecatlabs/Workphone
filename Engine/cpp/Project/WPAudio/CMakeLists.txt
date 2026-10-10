@@ -35,6 +35,8 @@ else ()
     add_library(WPAudio SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+target_link_libraries(WPAudio WorkphoneAudio)
+
 if (WP_USE_PRECOMPILED_HEADERS)
     wp_use_precompiled_header(WPAudio "WPAudio/WPAudioPCH.hpp"
         "${WP_ROOT}/Engine/cpp/Source/WPAudio/WPAudioPCH.cpp"
@@ -257,7 +259,7 @@ endif()
 set_target_properties (WPAudio PROPERTIES FOLDER Engine/Cpp/Sound)
 
 if (NOT WP_STATIC_LIB)
-	target_compile_definitions(WPAudio PUBLIC WPAudio_EXPORTS)
+	target_compile_definitions(WPAudio PRIVATE WPAudio_EXPORTS)
 endif()
 
 if (NOT WP_STATIC_LIB)

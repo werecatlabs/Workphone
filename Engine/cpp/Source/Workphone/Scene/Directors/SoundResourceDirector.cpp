@@ -16,7 +16,10 @@ namespace workphone::scene
 
     SoundResourceDirector::SoundResourceDirector() = default;
 
-    SoundResourceDirector::~SoundResourceDirector() = default;
+    SoundResourceDirector::~SoundResourceDirector()
+    {
+        setSound( nullptr );
+    }
 
     void SoundResourceDirector::load( SmartPtr<ISharedObject> data )
     {
@@ -29,16 +32,7 @@ namespace workphone::scene
     {
         setLoadingState( LoadingState::Unloading );
 
-        auto applicationManager = core::IApplicationManager::instance();
-        auto soundManager = applicationManager->getSoundManager();
-        if( soundManager )
-        {
-            if( auto sound = getSound() )
-            {
-                soundManager->destroyResource( sound );
-            }
-        }
-
+        setSound( nullptr );
         ResourceDirector::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
@@ -77,11 +71,12 @@ namespace workphone::scene
         if( !sound )
         {
             auto applicationManager = core::IApplicationManager::instance();
-            auto soundManager = applicationManager->getSoundManager();
+            auto soundManager = applicationManager ? applicationManager->getSoundManager() : nullptr;
             if( soundManager )
             {
                 auto resourcePath = getResourcePath();
-                sound = soundManager->loadResourceByType<ISound>( resourcePath );
+                // Preview transport has its own cursor and lifetime.
+                sound = workphone::dynamic_pointer_cast<ISound>( soundManager->create( resourcePath ) );
 
                 setSound( sound );
             }
@@ -107,7 +102,15 @@ namespace workphone::scene
 
     void SoundResourceDirector::setSound( SmartPtr<ISound> sound )
     {
+        if( m_sound == sound ) return;
+        auto previous = m_sound;
         m_sound = sound;
+        if( previous )
+        {
+            previous->stop();
+            if( auto owner = previous->getOwner() ) owner->destroyResource( previous );
+            else previous->unload( nullptr );
+        }
     }
 
     SmartPtr<ISound> SoundResourceDirector::getSound() const
