@@ -22,6 +22,52 @@ not closed: these compilers reject subresources, typed readers reject mismatched
 targets, and callers must isolate variant output roots, but the shared storage,
 input snapshot, crash recovery and source-free runtime work is still required.
 
+Implementation follow-up, 10 October 2026, starting at `eead5c43d`: a first
+**RES-018** load-only mount now exists on the concrete `ResourceSystem`, without
+changing `IResourceSystem` virtual methods. `writeRuntimeManifest(path, roots,
+error)` exports a deterministic version-1 WPRS manifest containing target,
+root IDs, exact compiler/source/payload hashes, payload sizes and install edges.
+Every resource must first pass `compile()` (including `UpToDate`) in the current
+authoring session. A committed recook invalidates evidence for that resource and
+its transitive dependents, so an independently changed child cannot be packaged
+with an unchecked parent; evidence for independent roots remains reusable.
+Export validates cooked files against committed compilation records before
+atomically replacing the manifest; failed export retains the previous manifest.
+
+Copy that manifest and its matching cooked containers to a separate immutable
+directory, then construct `ResourceSystem(nullptr, nullptr)` and call
+`initializeRuntime(RuntimeResourceConfig, error)` with `compiledRoot`,
+`manifestPath` and the expected `target`. Ordinary `load(ResourceID, error)`
+then validates and retains the declared install closure. The mount requires no
+source tree, compiler registry, catalog or writable compilation database, and
+rejects cooking/export operations. Manifest mismatches, missing/corrupt files,
+cycles and configured limits fail without publishing a partial cache entry.
+Default request limits are 1 GiB of unique payload bytes, 4,096 resources and
+64 dependency levels; `maxPayloadBytes`, `maxClosurePayloadBytes`,
+`maxClosureResources` and `maxDependencyDepth` configure those bounds. Manifest
+parsing additionally caps bytes, identifier lengths, entry counts and edges.
+Synchronous requests share retained resource identities. Recook/unload
+conservatively clears the weak lookup cache, including parents holding prior
+dependency snapshots; caller-owned immutable resources survive that operation
+and shutdown.
+
+Validation **passed in Debug and RelWithDebInfo** through `WPResourceTests`;
+the complete required baseline reports 18 passed and one unavailable external-mesh
+test in each configuration. See [execution evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md).
+`ResourceRuntimeContracts.hpp`,
+called by the existing `WPResourceTests` smoke executable, covers real SQLite
+cook/restart, deterministic and failed export, current-target provenance,
+relocation with source and authoring DB removed, read-only file preservation,
+shared diamond dependencies, byte/count/depth limits, concurrent retained loads,
+corrupt/missing/stale artifacts, malformed manifests and last-good lifetimes.
+This is a synchronous container mount and portable manifest foundation, **not
+resource R1 certification**. UUID resolution, typed decode/install registration,
+PackageEditor integration, source-free domain-consumer execution, asynchronous
+residency/global memory budgets, immutable build generations, crash recovery and
+cross-process ownership remain open. Target names and pinned hashes here do not
+repair the shared build-variant output namespace or authenticate packages. The
+historical findings and gates below remain the programme baseline.
+
 ## 1. Intended outcome and release tiers
 
 Deliver a single dependable asset workflow: discover/import source → preserve identity/settings → cook the exact dependency graph → load/install typed runtime resources → publish a coherent replacement → author/preview/save in the Editor → package and run without source files or authoring databases. Errors, cancellation, disk/process failure, rename, duplicate, delete, project switching and incompatible data must have predictable outcomes without losing authored content or the last working runtime asset.

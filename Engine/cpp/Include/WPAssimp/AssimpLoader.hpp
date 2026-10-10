@@ -27,7 +27,7 @@ namespace workphone
      * including materials, skeletons, and animations. It supports loading from file paths
      * or mesh resources, and provides options for single-mesh import, scaling, and more.
      */
-    class AssimpLoader : public IMeshLoader
+    class WPAssimp_API AssimpLoader : public IMeshLoader
     {
     public:
         struct MaterialImportOptions

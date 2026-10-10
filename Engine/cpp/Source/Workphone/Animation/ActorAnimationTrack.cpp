@@ -12,10 +12,42 @@
 
 namespace workphone
 {
+    namespace
+    {
+        Quaternion<real_Num> blendRotation( Quaternion<real_Num> a, Quaternion<real_Num> b,
+                                            real_Num weight )
+        {
+            a.normalise();
+            b.normalise();
+            auto cosine = a.dotProduct( b );
+            if( cosine < 0 )
+            {
+                b = -b;
+                cosine = -cosine;
+            }
+            cosine = std::clamp( cosine, real_Num( 0 ), real_Num( 1 ) );
+            Quaternion<real_Num> result;
+            if( cosine > real_Num( 0.9995 ) )
+                result = a * ( real_Num( 1 ) - weight ) + b * weight;
+            else
+            {
+                const auto angle = std::acos( cosine );
+                result = a * ( std::sin( ( real_Num( 1 ) - weight ) * angle ) / std::sin( angle ) ) +
+                         b * ( std::sin( weight * angle ) / std::sin( angle ) );
+            }
+            result.normalise();
+            return result;
+        }
+    }
+
     WP_CLASS_REGISTER_DERIVED( workphone, ActorAnimationTrack, IActorAnimationTrack );
 
     ActorAnimationTrack::ActorAnimationTrack( IAnimation *parent ) : AnimationTrack( parent )
     {
+        // The template base inserts an untyped AnimationKeyFrame. A transform
+        // track must expose an editable transform key at time zero instead.
+        removeAllKeyFrames();
+        createKeyFrame( 0 );
     }
 
     ActorAnimationTrack::~ActorAnimationTrack() = default;
@@ -96,7 +128,8 @@ namespace workphone
                 const auto currentPosition = m_bone->getPosition();
                 m_bone->setPosition( currentPosition +
                                      ( targetPosition - currentPosition ) * clampedWeight );
-                m_bone->setOrientation( transformKeyFrame->getOrientation() );
+                    m_bone->setOrientation( blendRotation( m_bone->getOrientation(),
+                                                          transformKeyFrame->getOrientation(), clampedWeight ) );
                 break;
             }
 
@@ -116,7 +149,8 @@ namespace workphone
                 if( m_propertyName.empty() || m_propertyName == "orientation" ||
                     m_propertyName == "rotation" )
                 {
-                    transform->setOrientation( transformKeyFrame->getOrientation() );
+                    transform->setOrientation( blendRotation( transform->getOrientation(),
+                                                               transformKeyFrame->getOrientation(), clampedWeight ) );
                 }
 
                 if( m_propertyName.empty() || m_propertyName == "scale" )
@@ -146,14 +180,46 @@ namespace workphone
         AnimationTrack::apply( timeIndex, weight, scale );
     }
 
+    void ActorAnimationTrack::applyToBone( const SmartPtr<IBone> &bone,
+                                           const SmartPtr<IAnimationTimeIndex> &timeIndex,
+                                           f32 weight, f32 scale ) const
+    {
+        if( !bone || !timeIndex || weight <= 0 || m_trackType != TrackType::Transform ) return;
+        SmartPtr<IAnimationKeyFrame> sampled;
+        getInterpolatedKeyFrame( timeIndex, sampled );
+        const auto key = workphone::dynamic_pointer_cast<KeyFrameTransform3>( sampled );
+        if( !key ) return;
+        const auto blend = std::clamp( weight, 0.0f, 1.0f );
+        auto target = bone; // SmartPtr intentionally propagates constness to its pointee.
+        const auto current = target->getPosition();
+        target->setPosition( current + ( key->getPosition() * scale - current ) * blend );
+        target->setOrientation( blendRotation( target->getOrientation(), key->getOrientation(), blend ) );
+    }
+
     SmartPtr<IAnimationKeyFrame> ActorAnimationTrack::createKeyFrame( f32 timePos )
     {
         timePos = std::max( 0.0f, timePos );
 
+        auto keyFrames = getKeyFrames();
+        for( auto &existing : keyFrames )
+        {
+            if( existing && std::abs( existing->getTime() - timePos ) <= std::numeric_limits<f32>::epsilon() )
+            {
+                if( workphone::dynamic_pointer_cast<KeyFrameTransform3>( existing ) )
+                    return existing;
+                // Repair an untyped legacy key without returning an object that
+                // optimise() would remove as a duplicate of the old key.
+                auto replacement = workphone::make_ptr<KeyFrameTransform3>();
+                replacement->setTime( existing->getTime() );
+                existing = replacement;
+                setKeyFrames( keyFrames );
+                return replacement;
+            }
+        }
+
         auto keyFrame = workphone::make_ptr<KeyFrameTransform3>();
         keyFrame->setTime( timePos );
 
-        auto keyFrames = getKeyFrames();
         keyFrames.push_back( keyFrame );
         setKeyFrames( keyFrames );
 
@@ -194,7 +260,8 @@ namespace workphone
                                    ( transform2->getPosition() - transform1->getPosition() ) * t );
         interpolated->setScale( transform1->getScale() +
                                 ( transform2->getScale() - transform1->getScale() ) * t );
-        interpolated->setOrientation( transform2->getOrientation() );
+        interpolated->setOrientation( blendRotation( transform1->getOrientation(),
+                                                     transform2->getOrientation(), t ) );
         kf = interpolated;
     }
 

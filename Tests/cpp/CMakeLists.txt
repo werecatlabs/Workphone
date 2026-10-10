@@ -210,6 +210,35 @@ if(TARGET WorkphonePhysics)
 endif()
 
 if(TARGET Workphone)
+    add_executable(WPAnimationCoreTests AnimationCoreTests.cpp
+        ${WP_ROOT}/Tests/cpp/UnitTests/AnimationGraphTests.cpp ${WP_ROOT}/Tests/cpp/UnitTests/AnimationIKTests.cpp)
+    target_compile_definitions(WPAnimationCoreTests PRIVATE BOOST_ALL_NO_LIB WIN32_LEAN_AND_MEAN)
+    target_include_directories(WPAnimationCoreTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost ${WP_ROOT}/Tests/cpp/UnitTests)
+    target_link_libraries(WPAnimationCoreTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
+    add_dependencies(WPAnimationCoreTests Workphone)
+    set_target_properties(WPAnimationCoreTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPAnimation.core_contracts COMMAND WPAnimationCoreTests)
+    if(TARGET WPAssimp)
+        add_executable(WPAnimationImportTests AnimationImportTests.cpp)
+        target_compile_definitions(WPAnimationImportTests PRIVATE BOOST_ALL_NO_LIB WIN32_LEAN_AND_MEAN WP_TEST_SOURCE_ROOT="${WP_ROOT}")
+        target_include_directories(WPAnimationImportTests PRIVATE
+            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+            ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp)
+        target_link_libraries(WPAnimationImportTests PRIVATE
+            $<TARGET_LINKER_FILE:WPAssimp> $<TARGET_LINKER_FILE:Workphone>)
+        if(WIN32)
+            target_include_directories(WPAnimationImportTests PRIVATE ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/vc142)
+        elseif(APPLE)
+            target_include_directories(WPAnimationImportTests PRIVATE ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/xcode)
+        else()
+            target_include_directories(WPAnimationImportTests PRIVATE ${WP_ROOT}/Engine/cpp/Include/WPAssimp/Extern/assimp/linux)
+        endif()
+        add_dependencies(WPAnimationImportTests WPAssimp Workphone)
+        set_target_properties(WPAnimationImportTests PROPERTIES FOLDER Tests/Cpp)
+        add_test(NAME WPAnimation.import_contracts COMMAND WPAnimationImportTests)
+    endif()
+
     add_executable(StateContextListenerTests StateContextListenerTests.cpp)
     target_compile_definitions(StateContextListenerTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(StateContextListenerTests PRIVATE ${WP_ROOT}/Engine/cpp/Include)

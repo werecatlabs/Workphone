@@ -3,6 +3,7 @@
 #include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/ClawLight.hpp>
 #include <WPGraphics/ClawMesh.hpp>
+#include <WPGraphics/ClawFoliageBatch.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRendererSoftware.hpp>
 #include <WPGraphics/ClawTerrain.hpp>
@@ -76,6 +77,7 @@ namespace workphone
 
         ClawScene::~ClawScene()
         {
+            clearFoliageBatches();
             unbindNativeRenderObjects();
             if( m_scene && m_ownsScene )
             {
@@ -146,6 +148,7 @@ namespace workphone
 
         void ClawScene::unload( SmartPtr<ISharedObject> data )
         {
+            clearFoliageBatches();
             if( getLoadingState() == LoadingState::Unloaded )
             {
                 return;
@@ -163,6 +166,7 @@ namespace workphone
 
         wp_graphics_scene *ClawScene::releaseNativeScene()
         {
+            clearFoliageBatches();
             unbindNativeRenderObjects();
             auto scene = m_scene;
             m_scene = nullptr;
@@ -172,6 +176,7 @@ namespace workphone
 
         void ClawScene::clear()
         {
+            clearFoliageBatches();
             unbindNativeRenderObjects();
             m_lights.clear();
 
@@ -180,6 +185,68 @@ namespace workphone
             if( m_scene )
             {
                 wp_graphics_scene_clear( m_scene );
+            }
+        }
+
+        bool ClawScene::replaceFoliageBatch( std::shared_ptr<const ClawFoliageBatch> previous,
+                                             std::shared_ptr<const ClawFoliageBatch> replacement,
+                                             String &error )
+        {
+            error.clear();
+            try
+            {
+                std::lock_guard<std::mutex> lock( m_foliageMutex );
+                const auto retained = std::atomic_load( &m_foliageBatches );
+                auto candidate = std::make_shared<FoliageBatches>( retained ? *retained : FoliageBatches{} );
+                if( previous )
+                {
+                    const auto found = std::find( candidate->begin(), candidate->end(), previous );
+                    if( found == candidate->end() )
+                    {
+                        error = "Foliage batch was removed or replaced before this update.";
+                        return false;
+                    }
+                    candidate->erase( found );
+                }
+                if( replacement )
+                {
+                    if( std::find( candidate->begin(), candidate->end(), replacement ) != candidate->end() )
+                    {
+                        error = "Foliage batch is already attached.";
+                        return false;
+                    }
+                    candidate->push_back( replacement );
+                }
+                u64 count = 0;
+                for( const auto &batch : *candidate )
+                    count += batch->instanceCount();
+                if( candidate->size() > 1024 || count > 1048576 )
+                {
+                    error = "Scene foliage exceeds 1024 batches or 1048576 instances.";
+                    return false;
+                }
+                std::shared_ptr<const FoliageBatches> published = candidate;
+                std::atomic_store( &m_foliageBatches, published );
+                return true;
+            }
+            catch( const std::exception &exception )
+            {
+                error = exception.what();
+                return false;
+            }
+        }
+
+        std::shared_ptr<const ClawScene::FoliageBatches> ClawScene::getFoliageBatches() const
+        {
+            return std::atomic_load( &m_foliageBatches );
+        }
+
+        void ClawScene::clearFoliageBatches()
+        {
+            std::shared_ptr<const FoliageBatches> retired;
+            {
+                std::lock_guard<std::mutex> lock( m_foliageMutex );
+                retired = std::atomic_exchange( &m_foliageBatches, std::shared_ptr<const FoliageBatches>{} );
             }
         }
 
@@ -610,6 +677,10 @@ namespace workphone
                 // scene's object list. Submit them explicitly before the native mesh scene pass.
                 if( dx11Renderer )
                 {
+                    const auto foliage = getFoliageBatches();
+                    const auto foliageMask = m_scene->visibility_mask &
+                        ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() ) : ~u32( 0 ) ) &
+                        ( rawRenderer->getViewport() ? rawRenderer->getViewport()->getVisibilityMask() : ~u32( 0 ) );
                     const auto objects = m_lights.snapshot();
                     // The forward shader supports one directional light. Configure it once
                     // for both terrain and meshes, rather than using the renderer's preview sun.
@@ -676,6 +747,10 @@ namespace workphone
                         for( auto &object : m_terrains.snapshot() )
                             if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
                                 dx11Renderer->renderTerrain( terrain );
+                        if( foliage )
+                            for( const auto &batch : *foliage )
+                                if( batch->castsShadows() && ( batch->visibilityMask() & foliageMask ) )
+                                    batch->render( *dx11Renderer );
                         dx11Renderer->endShadowMap();
                     }
                     for( auto &sky : m_skies.snapshot() )
@@ -690,6 +765,11 @@ namespace workphone
                             dx11Renderer->renderTerrain( terrain );
                         }
                     }
+                    // Render one retained population snapshot in both passes.
+                    if( foliage )
+                        for( const auto &batch : *foliage )
+                            if( batch->visibilityMask() & foliageMask )
+                                batch->render( *dx11Renderer );
                     // Use the material-aware C++ draw path for native mesh objects while
                     // retaining the native scene's visibility filtering and queue ordering.
                     wp_graphics_scene_render_with_submit(

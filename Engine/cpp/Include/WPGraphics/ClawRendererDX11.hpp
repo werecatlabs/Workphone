@@ -12,6 +12,7 @@ struct wp_renderer;
 struct wp_mat4f;
 struct wp_graphics_mesh;
 struct wp_material_dx11;
+struct wp_instance_pntc_dx11;
 
 namespace workphone
 {
@@ -152,6 +153,10 @@ namespace workphone
              * @param transform World transform applied to the mesh.
              */
             void renderMesh( ClawMesh *mesh, const Matrix4F &transform );
+            /** Draw fixed-LOD instances through the same material/submesh path.
+             * Returns submitted instance-sections; zero means no output. */
+            u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances,
+                                     u32 count );
             /** Draw an immutable particle snapshot; does not advance simulation. */
             void renderParticles( const Array<wp_particle_sample> &particles,
                                   const Matrix4F &world, const Vector3F &scale,
@@ -188,6 +193,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
+            u64 renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
+                                 const wp_instance_pntc_dx11 *instances, u32 instanceCount );
             void applySceneLighting( wp_material_dx11 &material ) const;
 
             /**

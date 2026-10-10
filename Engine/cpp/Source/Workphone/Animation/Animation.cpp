@@ -406,44 +406,10 @@ namespace workphone
 
     SmartPtr<IAnimationTimeIndex> Animation::_getTimeIndex( f32 timePos ) const
     {
-        const auto clampedTime = normaliseTime( timePos, m_length );
-
-        Array<f32> keyFrameTimes;
-        for( const auto &track : m_ownedNodeTracks )
-        {
-            if( track )
-            {
-                const_cast<IActorAnimationTrack *>( track.get() )
-                    ->_collectKeyFrameTimes( keyFrameTimes );
-            }
-        }
-
-        for( const auto &track : m_ownedVertexTracks )
-        {
-            if( track )
-            {
-                const_cast<IAnimationVertexTrack *>( track.get() )
-                    ->_collectKeyFrameTimes( keyFrameTimes );
-            }
-        }
-
-        if( keyFrameTimes.empty() )
-        {
-            return workphone::make_ptr<AnimationTimeIndex>( clampedTime );
-        }
-
-        std::sort( keyFrameTimes.begin(), keyFrameTimes.end() );
-        keyFrameTimes.erase( std::unique( keyFrameTimes.begin(), keyFrameTimes.end() ),
-                             keyFrameTimes.end() );
-
-        auto upper = std::upper_bound( keyFrameTimes.begin(), keyFrameTimes.end(), clampedTime );
-        if( upper == keyFrameTimes.begin() )
-        {
-            return workphone::make_ptr<AnimationTimeIndex>( clampedTime, 0 );
-        }
-
-        const auto index = static_cast<u32>( std::distance( keyFrameTimes.begin(), upper ) - 1 );
-        return workphone::make_ptr<AnimationTimeIndex>( clampedTime, index );
+        // Tracks have independent key grids. A merged clip-wide index is not a
+        // valid index into a sparse track (and gathering it allocates every tick).
+        // Each track resolves the common time against its own sorted key times.
+        return workphone::make_ptr<AnimationTimeIndex>( normaliseTime( timePos, m_length ) );
     }
 
     void Animation::setUseBaseKeyFrame( bool useBaseKeyFrame, f32 keyframeTime /*= 0.0f*/,
@@ -537,13 +503,18 @@ namespace workphone
                 if( skeleton )
                 {
                     auto actorTrack = dynamic_cast<ActorAnimationTrack *>( pair.second );
-                    if( actorTrack && !actorTrack->getBone() )
+                    if( actorTrack )
                     {
-                        const auto boneName = actorTrack->getPropertyName();
+                        auto boneName = actorTrack->getPropertyName();
+                        if( StringUtil::isNullOrEmpty( boneName ) )
+                            if( const auto importedBone = actorTrack->getBone() )
+                                boneName = importedBone->getName();
                         if( !StringUtil::isNullOrEmpty( boneName ) )
                         {
-                            actorTrack->setBone( skeleton->getBone( boneName ) );
+                            actorTrack->applyToBone( skeleton->getBone( boneName ), timeIndex, weight, scale );
                         }
+                        // A missing binding must not animate the original imported skeleton.
+                        continue;
                     }
                 }
 

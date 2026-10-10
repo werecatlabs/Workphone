@@ -10,6 +10,7 @@
 #elif WP_USE_ASSET_IMPORT
 #    include <assimp/DefaultLogger.hpp>
 #    include <assimp/config.h>
+#    include <WPAssimp/AnimationImport.hpp>
 #endif
 
 #include <Workphone/Animation/KeyFrameTransform3.hpp>
@@ -26,6 +27,74 @@ namespace workphone
 
     namespace
     {
+#if WP_USE_ASSET_IMPORT && !WP_USE_FBXSDK
+        using ImportedChannelSamples = std::vector<std::vector<animation_import::TransformSample>>;
+
+        // Validate and stage every channel before creating/replacing a legacy animation.
+        // Names are the existing track identity; ambiguous names must never silently alias.
+        bool prepareAnimation( const aiScene *scene, const aiAnimation &animation,
+                               const Vector3F &meshScale, ImportedChannelSamples &samples,
+                               std::string &error )
+        {
+            if( !std::isfinite( animation.mDuration ) || animation.mDuration < 0 ||
+                !std::isfinite( animation.mTicksPerSecond ) || animation.mTicksPerSecond < 0 ||
+                animation.mDuration / ( animation.mTicksPerSecond > 0 ? animation.mTicksPerSecond : 25 ) >
+                    std::numeric_limits<float>::max() )
+            {
+                error = "invalid animation duration or tick rate";
+                return false;
+            }
+            if( !scene->mRootNode || animation.mNumChannels > 65535 ||
+                ( animation.mNumChannels && !animation.mChannels ) )
+            {
+                error = "missing scene hierarchy or invalid animation channel count";
+                return false;
+            }
+            std::map<std::string, std::vector<const aiNode *>> nodes;
+            std::vector<const aiNode *> pending{ scene->mRootNode };
+            while( !pending.empty() )
+            {
+                const auto node = pending.back();
+                pending.pop_back();
+                nodes[node->mName.C_Str()].push_back( node );
+                for( unsigned i = 0; node->mChildren && i < node->mNumChildren; ++i )
+                    if( node->mChildren[i] ) pending.push_back( node->mChildren[i] );
+            }
+            std::set<std::string> channelNames;
+            ImportedChannelSamples candidate( animation.mNumChannels );
+            for( unsigned i = 0; i < animation.mNumChannels; ++i )
+            {
+                const auto channel = animation.mChannels[i];
+                if( !channel || !channelNames.insert( channel->mNodeName.C_Str() ).second )
+                {
+                    error = "null or duplicate animation channel";
+                    return false;
+                }
+                const auto found = nodes.find( channel->mNodeName.C_Str() );
+                if( found == nodes.end() || found->second.size() != 1 )
+                {
+                    error = "animation node is missing or ambiguous: " + std::string( channel->mNodeName.C_Str() );
+                    return false;
+                }
+                if( !animation_import::sampleChannel( *channel, found->second.front()->mTransformation,
+                                                       animation.mDuration, animation.mTicksPerSecond,
+                                                       candidate[i], error ) )
+                    return false;
+                for( const auto &sample : candidate[i] )
+                {
+                    if( !std::isfinite( sample.position.x * meshScale.X() ) ||
+                        !std::isfinite( sample.position.y * meshScale.Y() ) ||
+                        !std::isfinite( sample.position.z * meshScale.Z() ) )
+                    {
+                        error = "import scale produces a non-finite animation position";
+                        return false;
+                    }
+                }
+            }
+            samples.swap( candidate );
+            return true;
+        }
+#endif
         TiXmlElement *appendElement( TiXmlNode *parent, const char *name )
         {
             auto element = new TiXmlElement( name );
@@ -2688,6 +2757,15 @@ namespace workphone
                 continue;
             }
 
+            ImportedChannelSamples channelSamples;
+            std::string importError;
+            if( !prepareAnimation( scene, *assimpAnim, getMeshScale(), channelSamples, importError ) )
+            {
+                WP_LOG_ERROR( "Animation import rejected '" + String( assimpAnim->mName.C_Str() ) +
+                              "': " + String( importError ) );
+                continue;
+            }
+
             const double ticksPerSecond =
                 assimpAnim->mTicksPerSecond > 0.0 ? assimpAnim->mTicksPerSecond : 25.0;
             const auto length = static_cast<f32>( assimpAnim->mDuration / ticksPerSecond );
@@ -2736,63 +2814,17 @@ namespace workphone
                 track->setPropertyName( StringUtil::EmptyString );
                 track->setTrackType( IActorAnimationTrack::TrackType::Transform );
 
-                std::set<f32> keyTimes;
-                for( u32 i = 0; i < channel->mNumPositionKeys; ++i )
-                {
-                    keyTimes.insert(
-                        static_cast<f32>( channel->mPositionKeys[i].mTime / ticksPerSecond ) );
-                }
-                for( u32 i = 0; i < channel->mNumRotationKeys; ++i )
-                {
-                    keyTimes.insert(
-                        static_cast<f32>( channel->mRotationKeys[i].mTime / ticksPerSecond ) );
-                }
-                for( u32 i = 0; i < channel->mNumScalingKeys; ++i )
-                {
-                    keyTimes.insert(
-                        static_cast<f32>( channel->mScalingKeys[i].mTime / ticksPerSecond ) );
-                }
-
-                for( auto time : keyTimes )
+                for( const auto &sample : channelSamples[channelIdx] )
                 {
                     auto keyFrame = workphone::dynamic_pointer_cast<KeyFrameTransform3>(
-                        track->createKeyFrame( time ) );
+                        track->createKeyFrame( sample.time ) );
                     if( !keyFrame )
                     {
                         continue;
                     }
-
-                    aiVector3D position = channel->mNumPositionKeys > 0
-                                              ? channel->mPositionKeys[0].mValue
-                                              : aiVector3D( 0.0f, 0.0f, 0.0f );
-                    for( u32 i = 0; i < channel->mNumPositionKeys; ++i )
-                    {
-                        if( channel->mPositionKeys[i].mTime / ticksPerSecond <= time )
-                        {
-                            position = channel->mPositionKeys[i].mValue;
-                        }
-                    }
-
-                    aiQuaternion rotation = channel->mNumRotationKeys > 0
-                                                ? channel->mRotationKeys[0].mValue
-                                                : aiQuaternion();
-                    for( u32 i = 0; i < channel->mNumRotationKeys; ++i )
-                    {
-                        if( channel->mRotationKeys[i].mTime / ticksPerSecond <= time )
-                        {
-                            rotation = channel->mRotationKeys[i].mValue;
-                        }
-                    }
-
-                    aiVector3D scale = channel->mNumScalingKeys > 0 ? channel->mScalingKeys[0].mValue
-                                                                    : aiVector3D( 1.0f, 1.0f, 1.0f );
-                    for( u32 i = 0; i < channel->mNumScalingKeys; ++i )
-                    {
-                        if( channel->mScalingKeys[i].mTime / ticksPerSecond <= time )
-                        {
-                            scale = channel->mScalingKeys[i].mValue;
-                        }
-                    }
+                    const auto &position = sample.position;
+                    const auto &rotation = sample.rotation;
+                    const auto &scale = sample.scale;
 
                     keyFrame->setPosition( Vector3<real_Num>( position.x, position.y, position.z ) *
                                            getMeshScale() );
@@ -2947,6 +2979,26 @@ namespace workphone
                 continue;
             }
 
+            ImportedChannelSamples channelSamples;
+            std::string importError;
+            if( !prepareAnimation( scene, *assimpAnim, getMeshScale(), channelSamples, importError ) )
+            {
+                WP_LOG_ERROR( "Animation import rejected '" + String( assimpAnim->mName.C_Str() ) +
+                              "': " + String( importError ) );
+                continue;
+            }
+
+            bool unsupportedScale = false;
+            for( const auto &samples : channelSamples )
+                for( const auto &sample : samples )
+                    if( !animation_import::equivalent( sample.scale, aiVector3D( 1, 1, 1 ) ) )
+                        unsupportedScale = true;
+            if( unsupportedScale )
+            {
+                WP_LOG_ERROR( "Skeletal animation import rejected: the legacy IBone runtime cannot apply scale channels" );
+                continue;
+            }
+
             const double ticksPerSecond =
                 assimpAnim->mTicksPerSecond > 0.0 ? assimpAnim->mTicksPerSecond : 25.0;
             const auto length = static_cast<f32>( assimpAnim->mDuration / ticksPerSecond );
@@ -2960,6 +3012,12 @@ namespace workphone
                 continue;
             }
 
+            // createAnimation may return the previous object for a compatible
+            // reimport. All channel validation above precedes this replacement.
+            // Retire removed tracks and their target references instead of appending
+            // another owned track for every reimport of the same handle.
+            animation->destroyAllNodeTracks();
+            animation->setLength( std::max( length, 0.0001f ) );
             animation->setInterpolationMode( InterpolationMode::LINEAR );
             animation->setRotationInterpolationMode( RotationInterpolationMode::LINEAR );
 
@@ -2991,63 +3049,17 @@ namespace workphone
                 track->setPropertyName( boneName );
                 track->setTrackType( IActorAnimationTrack::TrackType::Transform );
 
-                std::set<f32> keyTimes;
-                for( u32 i = 0; i < channel->mNumPositionKeys; ++i )
-                {
-                    keyTimes.insert(
-                        static_cast<f32>( channel->mPositionKeys[i].mTime / ticksPerSecond ) );
-                }
-                for( u32 i = 0; i < channel->mNumRotationKeys; ++i )
-                {
-                    keyTimes.insert(
-                        static_cast<f32>( channel->mRotationKeys[i].mTime / ticksPerSecond ) );
-                }
-                for( u32 i = 0; i < channel->mNumScalingKeys; ++i )
-                {
-                    keyTimes.insert(
-                        static_cast<f32>( channel->mScalingKeys[i].mTime / ticksPerSecond ) );
-                }
-
-                for( auto time : keyTimes )
+                for( const auto &sample : channelSamples[channelIdx] )
                 {
                     auto keyFrame = workphone::dynamic_pointer_cast<KeyFrameTransform3>(
-                        track->createKeyFrame( time ) );
+                        track->createKeyFrame( sample.time ) );
                     if( !keyFrame )
                     {
                         continue;
                     }
-
-                    aiVector3D position = channel->mNumPositionKeys > 0
-                                              ? channel->mPositionKeys[0].mValue
-                                              : aiVector3D( 0.0f, 0.0f, 0.0f );
-                    for( u32 i = 0; i < channel->mNumPositionKeys; ++i )
-                    {
-                        if( channel->mPositionKeys[i].mTime / ticksPerSecond <= time )
-                        {
-                            position = channel->mPositionKeys[i].mValue;
-                        }
-                    }
-
-                    aiQuaternion rotation = channel->mNumRotationKeys > 0
-                                                ? channel->mRotationKeys[0].mValue
-                                                : aiQuaternion();
-                    for( u32 i = 0; i < channel->mNumRotationKeys; ++i )
-                    {
-                        if( channel->mRotationKeys[i].mTime / ticksPerSecond <= time )
-                        {
-                            rotation = channel->mRotationKeys[i].mValue;
-                        }
-                    }
-
-                    aiVector3D scale = channel->mNumScalingKeys > 0 ? channel->mScalingKeys[0].mValue
-                                                                    : aiVector3D( 1.0f, 1.0f, 1.0f );
-                    for( u32 i = 0; i < channel->mNumScalingKeys; ++i )
-                    {
-                        if( channel->mScalingKeys[i].mTime / ticksPerSecond <= time )
-                        {
-                            scale = channel->mScalingKeys[i].mValue;
-                        }
-                    }
+                    const auto &position = sample.position;
+                    const auto &rotation = sample.rotation;
+                    const auto &scale = sample.scale;
 
                     keyFrame->setPosition( Vector3<real_Num>( position.x, position.y, position.z ) *
                                            getMeshScale() );

@@ -1,5 +1,71 @@
 # WPGraphics implementation status
 
+
+## Foliage, animation and shared-resource foundations - 10 October 2026
+
+Continues on `brodex` at `eead5c43d`, matching the remote branch when checked.
+The previous terrain/Editor increment is preserved in `2a7413752`. Intervening
+changes migrate audio to WorkphoneAudio, harden networking and its tests, add
+implementation plans and remove generated build artifacts.
+
+This delivery implements the first connected portions of the three production
+plans, not their complete R1 release outcomes:
+
+- **Foliage:** real DX11 indexed instancing, retained scene batches sharing one
+  fixed-LOD mesh, explicit matrices/tints, section materials, cutout/shadow state
+  and scene/camera/viewport masks. A reusable 4,096-instance GPU buffer bounds
+  upload storage; populations split into actual draws. Replacement rejects stale
+  ownership and retains snapshots through both passes. The synthetic two-section
+  10,000-tree contract compares scalar, instanced and ideal merged coverage and
+  counts (20,000, 6 and 2). This proves draw reduction; the recorded single-sample
+  CPU submission timings do not establish a frame-time speedup or a full forest benchmark.
+- **Animation:** both actual Assimp routes interpolate independent channels and
+  preserve bind defaults, with transactional rejection of unsupported/malformed
+  curves. Runtime rotations interpolate correctly and sparse tracks use their
+  own time indices. Shared clips resolve the requested skeleton per application; editing the initial
+  time-zero key now modifies the retained key.
+  Claw clones share immutable bind vertices while owning native deformation output.
+  New fixtures exercise the real glTF routes, independent skeletons and DX11 clone
+  survival; existing graph and IK tests are now required baseline tests.
+- **Resources:** a versioned WPRS manifest pins target and the exact install
+  dependency closure. `ResourceSystem::initializeRuntime` mounts an existing
+  cooked tree without source files, compiler registry, SQLite or writes. Requests
+  validate identity, versions, hashes and bounded closure size/depth before cache
+  publication; shared dependencies retain one live identity. Authoring recooks
+  invalidate stale lookup generations while callers may retain older immutable
+  objects. This is synchronous loading of immutable packages, not asynchronous
+  residency or multi-process package publication.
+
+Validation on 10 October 2026 passed the full required baseline in both Debug
+and RelWithDebInfo: **18 passed, 1 unavailable** in each configuration, using
+CMake/CTest 4.4.4, Visual Studio Community 2026, MSVC 19.51.36260, Windows SDK
+10.0.26100 and NVIDIA RTX 3090 DX11 hardware (driver 32.0.16.1692). The sole
+unavailable test is `WorkphoneGraphics.mesh_import_assets`; its six external
+Ogre/OgreNext fixtures remain absent. This is not full release certification.
+The new required baseline tests are
+`WPAnimation.core_contracts` and `WPAnimation.import_contracts`; the existing
+Claw production and resource smoke executables include the new GPU/runtime
+contracts. Source hashes in the evidence report include the new fixtures and
+production files. Focused importer builds now have proper CMake dependency edges
+for their bundled libraries, including tinyusdz, instead of relying on prebuilt
+`.lib` files. The importer export definition is now private to its DLL producer.
+
+Reproduce with `Tools/BuildWPGraphicsBaseline.ps1 -Configuration Debug,RelWithDebInfo`.
+The current run used `cmake-build-debug-vs2026-readiness`; per-configuration
+`claw-graphics-*-results.xml` and `claw-graphics-*-evidence.json` record test results,
+GPU/driver details and source/binary hashes. Interactive Editor authoring was not
+exercised for this increment.
+
+Remaining work is explicit in the individual plans: foliage paging/culling,
+near/mid/far LOD, grass/scatter/persistence and cooked species; typed animation
+cooking and the automatic Animator-to-Claw bridge, normalized pose blending,
+parented scene local/world ownership and Editor authoring; durable resource
+identity, typed runtime installers, generation publication, async residency and
+package tooling. The existing Lua Editor tools remain the authoring integration
+point. See [foliage](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md),
+[animation](WPANIMATION_PRODUCTION_PLAN.md) and
+[resources](WPRESOURCE_ASSET_PRODUCTION_PLAN.md) for the precise contracts.
+
 ## Terrain data and Editor workflow increment — 10 October 2026
 
 Starts from `brodex` at `ccb890ed6`. The merge preserves the cooked-material

@@ -1,3 +1,6 @@
+#include "ClawFoliageContracts.hpp"
+#include "ClawFoliageSceneContracts.hpp"
+#include "ClawAnimationContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
@@ -344,6 +347,9 @@ int main()
             ok &= testRenderedFeatures(renderer);
             ok &= testMeshShadows(renderer);
             ok &= claw_terrain_contracts::run(renderer);
+            ok &= claw_foliage_contracts::run(renderer);
+            ok &= claw_foliage_scene_contracts::run(renderer);
+            ok &= claw_animation_contracts::run(renderer);
         }
         renderer.unload(nullptr);
         DestroyWindow(window->handle);

@@ -1,6 +1,52 @@
 # WPGraphics foliage production review and implementation plan
 
-Source review: 9 October 2026 at `2a37b63ea`. Extends the [graphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md) and [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md). User priority: **foliage LOD, lower batch count and fewer actual draw calls**. This is a review and implementation plan; no renderer implementation, new benchmark, build or GPU capture is claimed here.
+Source review: 9 October 2026 at `2a37b63ea`. Extends the [graphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md) and [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md). User priority: **foliage LOD, lower batch count and fewer actual draw calls**. The original review did not include renderer implementation, a new benchmark, build or GPU capture; the implementation follow-up below records later work.
+
+
+## Implementation follow-up — 10 October 2026
+
+The first F-A increment is implemented against `brodex` at `eead5c43d`; the
+source review below remains the historical baseline. The native and real-scene
+GPU contracts pass in Debug and RelWithDebInfo on NVIDIA RTX 3090 DX11 hardware.
+The complete required baseline reports 18 passed and one unavailable external-mesh
+test in each configuration; see [execution evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md).
+
+- DX11 now has an indexed PNTC instanced submission path with per-instance affine
+  transform, inverse-transpose normal transform and tint. Input validation rejects
+  nonfinite, singular or reflected transforms before submitting any instance.
+  Existing material, alpha-test, depth and shadow state is reused. The renderer
+  retains one 4,096-instance dynamic buffer (458,752 bytes), splitting larger
+  populations into actual capacity-limited draws. Counters record actual draws,
+  submitted instances, triangles, upload bytes and buffer creations.
+- `ClawFoliageBatch::create` copies a bounded immutable population and retains one
+  shared indexed triangle mesh. `ClawScene::replaceFoliageBatch` atomically replaces
+  its retained population snapshot and rejects stale or duplicate replacements.
+  Scene rendering uses the same snapshot for colour and shadow passes with scene,
+  camera, viewport and batch masks. Batch mutation and last-reference retirement
+  belong on the render owner thread; the mesh/material asset must not be edited
+  concurrently. Limits are 65,536 instances per batch, 1,024 batches and 1,048,576
+  instances per scene. No plant actors or geometry copies are created per instance.
+- This tier supports opaque/cutout sections. Transparent materials are rejected
+  before batch publication and guarded again during rendering because per-view transparency sorting is absent.
+  Instances use explicit matrices/tints; authored transforms support positive
+  nonuniform scale. There is no automatic wind in this increment.
+- `ClawFoliageContracts.hpp` compares a deterministic two-section synthetic tree
+  population of 10,000 against scalar and ideal statically merged versions, using
+  the same coverage/material policy. Measured draw counts are 20,000 / 6 / 2.
+  It checks actual pixels, cutout colour/shadow depth, normal lighting and upload
+  bounds. CPU submission timings are single samples, not GPU/frame-time measurements;
+  the current runs do not establish a consistent CPU speedup. The instanced path
+  shares 288 bytes of source geometry versus 2,880,000 bytes for the ideal merge,
+  but uploads 2,240,000 bytes of instance data for the two-section view. `ClawFoliageSceneContracts.hpp` covers the real scene adapter, masks,
+  shadow policy, replacement and retained-resource lifetime.
+
+F-A remains a fixed-LOD foundation. Conservative full-batch submission does not
+provide frustum/occlusion culling, page residency, automatic near/mid/far LOD,
+far impostors, grass, terrain scatter/painting, cooked species or Editor
+persistence. Batches are not combined across assets/pages. The synthetic draw
+contract is not a full pine forest benchmark or GF0/R1 certification. Continue
+with F-B and its cooked-resource dependency rather than marking the whole plan
+complete.
 
 ## Recommendation and release outcome
 
