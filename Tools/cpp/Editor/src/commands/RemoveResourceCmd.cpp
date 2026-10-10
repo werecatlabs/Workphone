@@ -13,60 +13,25 @@ namespace workphone::editor
 
     void RemoveResourceCmd::undo()
     {
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        auto resourceDatabase = applicationManager->getResourceDatabase();
-        auto fileSystem = applicationManager->getFileSystem();
-
-        auto path = getFilePath();
-        auto folder = Path::isFolder( path );
-
-        if ( folder )
+        if( !m_operationCatalog || m_operationId.empty() )
+            return;
+        auto app = core::IApplicationManager::instancePtr();
+        auto resources = app ? app->getResourceDatabase() : nullptr;
+        auto active = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        if( active != m_operationCatalog || m_operationCatalog->getProjectRoot() != m_operationRoot )
         {
-            // Restore folder and its contents
-            Path::createDirectories( path );
-
-            for( const auto &fileData : m_removedFileData )
-            {
-                auto filePath = fileData.first;
-                auto folderPath = Path::getFilePath( filePath );
-                if( !StringUtil::isNullOrEmpty( folderPath ) )
-                {
-                    Path::createDirectories( folderPath );
-                }
-
-                fileSystem->writeAllText( filePath, fileData.second );
-            }
-
-            for( const auto &resource : m_removedResources )
-            {
-                if( resource )
-                {
-                    resourceDatabase->addResource( resource );
-                }
-            }
+            WP_LOG_ERROR( "Cannot undo asset deletion in a different project." );
+            return;
         }
-        else
+        const auto result = m_operationCatalog->undoFileOperation( m_operationId );
+        if( !result.succeeded )
         {
-            // Restore single file
-            if( !m_removedFileData.empty() )
-            {
-                auto fileData = m_removedFileData.front();
-                auto folderPath = Path::getFilePath( fileData.first );
-                if( !StringUtil::isNullOrEmpty( folderPath ) )
-                {
-                    Path::createDirectories( folderPath );
-                }
-
-                fileSystem->writeAllText( fileData.first, fileData.second );
-            }
-
-            if( m_resource )
-            {
-                resourceDatabase->addResource( m_resource );
-            }
+            WP_LOG_ERROR( "Cannot undo asset deletion: " + result.error );
+            m_operationCatalog->recoverFileOperations();
+            return;
         }
-
-        fileSystem->refreshPath( Path::getFilePath( path ), true );
+        if( app && app->getFileSystem() )
+            app->getFileSystem()->refreshPath( Path::getFilePath( m_filePath ), true );
     }
 
     void RemoveResourceCmd::redo()
@@ -76,57 +41,37 @@ namespace workphone::editor
 
     void RemoveResourceCmd::execute()
     {
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        auto resourceDatabase = applicationManager->getResourceDatabase();
-        auto fileSystem = applicationManager->getFileSystem();
-
-        m_removedResources.clear();
-        m_removedFileData.clear();
-
-        auto path = getFilePath();
-        auto folder = Path::isFolder( path );
-        if( folder )
+        auto app = core::IApplicationManager::instancePtr();
+        if( !app )
+            return;
+        auto resources = app->getResourceDatabase();
+        auto database = resources ? resources->getDatabaseManager() : nullptr;
+        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database );
+        if( !catalog )
         {
-            auto files = fileSystem->getFiles( path );
-            for( auto file : files )
-            {
-                if( fileSystem->isExistingFile( file ) )
-                {
-                    m_removedFileData.push_back(
-                        Pair<String, String>( file, fileSystem->readAllText( file ) ) );
-                }
-
-                auto resource = resourceDatabase->loadResource( file );
-                if( resource )
-                {
-                    m_removedResources.push_back( resource );
-                    resourceDatabase->removeResource( resource );
-                }
-            }
-
-            Path::deleteFolder( path );
+            WP_LOG_ERROR( "Asset deletion requires an open project catalog." );
+            return;
         }
-        else
+        if( m_operationCatalog && ( catalog != m_operationCatalog ||
+                                   catalog->getProjectRoot() != m_operationRoot ) )
         {
-            if( fileSystem->isExistingFile( path ) )
-            {
-                m_removedFileData.push_back(
-                    Pair<String, String>( path, fileSystem->readAllText( path ) ) );
-            }
-
-            auto resource = resourceDatabase->loadResource( path );
-            setResource( resource );
-            if( resource )
-            {
-                resourceDatabase->removeResource( resource );
-            }
-
-            fileSystem->deleteFile( m_filePath );
+            WP_LOG_ERROR( "Cannot redo asset deletion in a different project." );
+            return;
         }
-
-        fileSystem->refreshPath( Path::getFilePath( path ), true );
+        const auto result = catalog->performFileOperation(
+            AssetDatabaseManager::FileOperation::Delete, m_filePath );
+        if( !result.succeeded )
+        {
+            WP_LOG_ERROR( "Cannot delete asset: " + result.error );
+            catalog->recoverFileOperations();
+            return;
+        }
+        m_operationCatalog = catalog;
+        m_operationId = result.operationId;
+        m_operationRoot = catalog->getProjectRoot();
+        if( auto fileSystem = app->getFileSystem() )
+            fileSystem->refreshPath( Path::getFilePath( m_filePath ), true );
     }
-
     String RemoveResourceCmd::getFilePath() const
     {
         return m_filePath;

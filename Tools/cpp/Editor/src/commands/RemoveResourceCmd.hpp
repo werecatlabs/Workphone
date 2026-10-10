@@ -6,6 +6,7 @@
 #include <Workphone/Interface/System/ICommand.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <commands/Command.hpp>
+#include <Workphone/Database/AssetDatabaseManager.hpp>
 
 namespace workphone
 {
@@ -52,9 +53,9 @@ namespace workphone
         private:
             String m_filePath;
             SmartPtr<IResource> m_resource;
-            Array<SmartPtr<IResource>>
-                m_removedResources;  // Stores resources removed during the command
-            Array<Pair<String, String>> m_removedFileData;
+            SmartPtr<AssetDatabaseManager> m_operationCatalog;
+            String m_operationId;
+            String m_operationRoot;
         };
     }  // namespace editor
 }  // namespace workphone

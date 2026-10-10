@@ -52,7 +52,7 @@ namespace resource_runtime_contracts
         bool getDependencies( const CompileContext &context, DependencySet &dependencies,
                               String &error ) const override
         {
-            std::ifstream input( context.sourcePath.c_str() );
+            std::ifstream input( fs::u8path(context.sourcePath.c_str()) );
             if( !input )
             {
                 error = "Missing runtime fixture descriptor";
@@ -69,7 +69,7 @@ namespace resource_runtime_contracts
         CompilationStatus compile( const CompileContext &context, std::ostream &output,
                                    Array<String> & ) const override
         {
-            std::ifstream input( context.sourcePath.c_str(), std::ios::binary );
+            std::ifstream input( fs::u8path(context.sourcePath.c_str()), std::ios::binary );
             output << input.rdbuf();
             return input && output ? CompilationStatus::Success : CompilationStatus::Failure;
         }
@@ -81,7 +81,7 @@ namespace resource_runtime_contracts
         Fixture()
         {
             root = fs::temp_directory_path() /
-                   ( "workphone_runtime_contract_" + std::to_string(
+                   fs::u8path( std::string(u8"workphone_runtime_contract_资产_é_") + std::to_string(
                        std::chrono::high_resolution_clock::now().time_since_epoch().count() ) );
             fs::create_directories( root / "source" );
         }

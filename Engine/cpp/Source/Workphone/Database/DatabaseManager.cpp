@@ -2,6 +2,7 @@
 #include <Workphone/Database/DatabaseManager.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IDatabaseQuery.hpp>
+#include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
@@ -287,6 +288,7 @@ namespace workphone
 
     SmartPtr<IDatabaseQuery> DatabaseManager::executeQuery( const String &queryStr )
     {
+        ScopedLock lock( this );
         try
         {
             if( auto db = getDatabase() )
@@ -331,7 +333,13 @@ namespace workphone
             WP_LOG( "SQL: " + dml );
             if( auto database = getDatabase() )
             {
-                database->queryDML( dml );
+                auto bound = dynamic_cast<IParameterizedDatabase *>( database.get() );
+                DatabaseConnectionLock connection( dynamic_cast<ISerializedDatabase *>(database.get()) );
+                if( bound && bound->queryBound( dml, {} ) )
+                {
+                    auto changes = bound->queryBound( "SELECT changes() AS affected", {} );
+                    return changes ? changes->getFieldValueAsInt( "affected" ) : -1;
+                }
             }
         }
         catch( Exception &e )
@@ -339,26 +347,12 @@ namespace workphone
             WP_LOG_EXCEPTION( e );
         }
 
-        return 0;
+        return -1;
     }
 
     int DatabaseManager::executeDML( const StringW &dml )
     {
-        try
-        {
-            ScopedLock lock( this );
-            WP_LOG( "SQL: " + StringUtil::toStringC( dml ) );
-            if( auto database = getDatabase() )
-            {
-                database->queryDML( dml );
-            }
-        }
-        catch( Exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
-
-        return 0;
+        return executeDML( StringUtilW::toUTF16to8( dml ) );
     }
 
     int DatabaseManager::executeAsyncDML( const String &tag, const String &statement )
@@ -610,10 +604,16 @@ namespace workphone
 
         executeQuery( "PRAGMA foreign_keys = ON;" );
         executeQuery( "PRAGMA count_changes = OFF;" );
-        executeQuery( "PRAGMA synchronous=OFF;" );
+        // This manager also owns authored data and DB-only asset identities.
+        // Maintenance must preserve crash durability. Derived compilation stores
+        // configure their own policy through their separate database service.
+        executeQuery( "PRAGMA synchronous=FULL;" );
         // executeQuery("PRAGMA page_size = 8192;");
         executeQuery( "PRAGMA cache_size = 10000;" );
-        executeQuery( "PRAGMA journal_mode=memory;" );
+        auto journal = executeQuery( "PRAGMA journal_mode;" );
+        if( journal && ( journal->getFieldValue( "journal_mode" ) == "memory" ||
+                        journal->getFieldValue( "journal_mode" ) == "off" ) )
+            executeQuery( "PRAGMA journal_mode=DELETE;" );
         // executeQuery("PRAGMA locking_mode=EXCLUSIVE;");
         executeQuery( "PRAGMA temp_store=MEMORY;" );
         // executeQuery("PRAGMA threads = 4;");

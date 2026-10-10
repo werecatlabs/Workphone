@@ -14,6 +14,10 @@
 #include <thread>
 #include <atomic>
 #include <stdexcept>
+#include <future>
+#include <chrono>
+#include <fstream>
+#include <Workphone/Database/ResourceDatabase.hpp>
 
 namespace workphone
 {
@@ -585,6 +589,170 @@ namespace
         }
     }
 
+    void fileOperationContracts( const std::filesystem::path &folder )
+    {
+        namespace fs = std::filesystem;
+        const auto root = folder / "operations";
+        fs::create_directories(root / "source" / "empty");
+        std::string bytes;
+        for(int i=0;i<256;++i) bytes.push_back(static_cast<char>(i));
+        auto write = [&](const fs::path &path, const std::string &value) {
+            std::ofstream output(path,std::ios::binary); output.write(value.data(),value.size());
+            require(static_cast<bool>(output), "Write binary fixture");
+        };
+        auto read = [](const fs::path &path) {
+            std::ifstream input(path,std::ios::binary);
+            return std::string(std::istreambuf_iterator<char>(input),{});
+        };
+        write(root / "source" / "data.bin",bytes);
+        auto catalog = make_ptr<AssetDatabaseManager>();
+        require(catalog->setProjectRoot(root.u8string().c_str()), "Operation project root");
+        const auto databasePath=(root / "catalog.db").u8string();
+        catalog->loadFromFile(databasePath.c_str());
+        auto resource=asset("source/data.bin");
+        catalog->addResourceEntry(resource);
+        const auto uuid=resource->getHandle()->getUUIDAsString();
+        using Operation=AssetDatabaseManager::FileOperation;
+        auto moved=catalog->performFileOperation(Operation::Move,"source","moved");
+        require(moved.succeeded, moved.error.c_str());
+        AssetDatabaseManager::EntrySnapshot entry;
+        require(catalog->tryGetEntry(uuid,entry) && entry.path=="moved/data.bin" &&
+                fs::is_directory(root / "moved" / "empty") && read(root / "moved" / "data.bin")==bytes,
+                "Folder move must preserve identities, binary bytes and empty folders");
+        auto copied=catalog->performFileOperation(Operation::Copy,"moved","copied");
+        require(copied.succeeded,copied.error.c_str());
+        const auto copyId=entryId(catalog->getResourceEntryFromPath("copied/data.bin"));
+        require(copyId!=uuid && read(root / "copied" / "data.bin")==bytes,
+                "Copy requires new catalog identity and exact binary bytes");
+        require(catalog->undoFileOperation(copied.operationId).succeeded &&
+                !fs::exists(root / "copied") && !catalog->hasResourceById(copyId), "Copy undo");
+        auto deleted=catalog->performFileOperation(Operation::Delete,"moved");
+        require(deleted.succeeded && !fs::exists(root / "moved") && !catalog->hasResourceById(uuid),
+                "Delete quarantines bytes and removes identities together");
+        fs::create_directories(root / "moved");
+        write(root / "moved" / "external.bin","external");
+        require(!catalog->undoFileOperation(deleted.operationId).succeeded &&
+                read(root / "moved" / "external.bin")=="external", "Undo must preserve external conflicts");
+        fs::remove(root / "moved" / "external.bin");
+        fs::remove(root / "moved");
+        require(catalog->undoFileOperation(deleted.operationId).succeeded &&
+                read(root / "moved" / "data.bin")==bytes && catalog->hasResourceById(uuid), "Binary delete undo");
+        require(sql(catalog->getDatabase(),
+            "CREATE TRIGGER fail_operation BEFORE UPDATE OF path ON resources BEGIN SELECT RAISE(ABORT,'injected'); END")!=nullptr,
+            "Install catalog failure injection");
+        auto interrupted=catalog->performFileOperation(Operation::Move,"moved","interrupted");
+        require(!interrupted.succeeded && fs::exists(root / "interrupted"), "Inject failure after filesystem publication");
+        catalog->unload(nullptr);
+        catalog->loadFromFile(databasePath.c_str());
+        require(fs::exists(root / "moved") && !fs::exists(root / "interrupted") &&
+                catalog->tryGetEntry(uuid,entry) && entry.path=="moved/data.bin" &&
+                read(root / "moved" / "data.bin")==bytes, "Reopen must recover interrupted move without losing identity or bytes");
+        require(sql(catalog->getDatabase(),"DROP TRIGGER fail_operation")!=nullptr,"Remove failure injection");
+        write(root / "unsafe.fbscene","scene identities");
+        require(!catalog->performFileOperation(Operation::Copy,"unsafe.fbscene","duplicate.fbscene").succeeded &&
+                !fs::exists(root / "duplicate.fbscene"), "Reject authored copies until identity remapper is available");
+        require(!catalog->performFileOperation(Operation::Delete,"../outside.bin").succeeded,
+                "Reject operations outside project root");
+        require(catalog->undoFileOperation(moved.operationId).succeeded &&
+                read(root / "source" / "data.bin")==bytes, "Move undo preserves original identity");
+        auto undoInterrupted=catalog->performFileOperation(Operation::Delete,"source");
+        require(undoInterrupted.succeeded,"Prepare interrupted undo fixture");
+        auto bound=dynamic_cast<IParameterizedDatabase *>(catalog->getDatabase().get());
+        require(bound && bound->queryBound("UPDATE wp_asset_operations SET state='undoing' WHERE id=?",
+                    {undoInterrupted.operationId}),"Persist interrupted undo state");
+        fs::rename(root / ".workphone" / "asset-operations" /
+            fs::u8path(undoInterrupted.operationId.c_str()) / "payload",root / "source");
+        catalog->unload(nullptr);
+        catalog->loadFromFile(databasePath.c_str());
+        require(!fs::exists(root / "source") && !catalog->hasResourceById(uuid),
+                "Interrupted undo must recover to the last committed deletion");
+        require(catalog->undoFileOperation(undoInterrupted.operationId).succeeded &&
+                read(root / "source" / "data.bin")==bytes && catalog->hasResourceById(uuid),
+                "Recovered deletion must remain undoable without losing bytes");
+        catalog->unload(nullptr);
+    }
+
+    void maintenanceContracts( const std::filesystem::path &folder )
+    {
+        auto catalog = make_ptr<AssetDatabaseManager>();
+        catalog->loadFromFile( (folder / "durable.db").u8string().c_str() );
+        auto database = catalog->getDatabase();
+        auto resource = asset("quoted's_%/same.resource");
+        catalog->addResourceEntry(resource);
+        const auto uuid = resource->getHandle()->getUUIDAsString();
+        AssetDatabaseManager::EntrySnapshot before;
+        require(catalog->tryGetEntry(uuid, before), "Durability fixture identity");
+        auto resources = make_ptr<ResourceDatabase>();
+        resources->setDatabaseManager(catalog);
+        const auto countBefore = scalar(database,"SELECT count(*) AS n FROM resources");
+        require(!resources->loadResource(String("same.resource")) &&
+                !resources->loadResource(String("missing'_%/file.resource")) &&
+                scalar(database,"SELECT count(*) AS n FROM resources")==countBefore,
+                "Missing and substring-only legacy loads must not import or mutate catalog");
+        resources->setDatabaseManager(nullptr);
+        catalog->optimise();
+        auto pragma = sql(database, "PRAGMA synchronous");
+        require(pragma && pragma->getFieldValueAsInt("synchronous") >= 2,
+                "Editor maintenance must retain full authored-store synchronization");
+        pragma = sql(database, "PRAGMA journal_mode");
+        require(pragma && pragma->getFieldValue("journal_mode") != "memory" &&
+                         pragma->getFieldValue("journal_mode") != "off",
+                "Editor maintenance must retain durable journaling");
+        require(catalog->isEntryCurrent(before), "Read-only maintenance must not change identity");
+        require(catalog->executeDML("UPDATE resources SET type=type") == 1,
+                "Legacy DML must report affected rows");
+        require(!catalog->isEntryCurrent(before), "Raw same-identity mutation must stale a snapshot");
+        require(catalog->executeDML("UPDATE missing_table SET type='bad'") == -1,
+                "Failed DML must be distinguishable from zero changed rows");
+        require(catalog->executeDML("CREATE TABLE script_fixture(value INTEGER); INSERT INTO script_fixture VALUES(7);")==1 &&
+                scalar(database,"SELECT value AS n FROM script_fixture")==7,
+                "Legacy DML batches must execute every statement and report the final affected count");
+        require(catalog->tryGetEntry(uuid, before), "Capture pre-rollback revision");
+        auto serialized = dynamic_cast<ISerializedDatabase *>(database.get());
+        require(serialized != nullptr, "SQLite requires a shared connection transaction guard");
+        {
+            DatabaseConnectionLock lock(serialized);
+            require(sql(database,"BEGIN IMMEDIATE") != nullptr, "Start rollback fixture");
+            require(sql(database,"UPDATE resources SET type=type") != nullptr, "Stage mutation");
+            require(sql(database,"ROLLBACK") != nullptr, "Rollback fixture");
+        }
+        require(catalog->isEntryCurrent(before), "Rolled-back revision must not invalidate committed identity");
+        std::future<SmartPtr<IDatabaseQuery>> writer;
+        bool excluded = false;
+        {
+            DatabaseConnectionLock lock(serialized);
+            std::promise<void> started;
+            auto ready = started.get_future();
+            writer = std::async(std::launch::async, [database, &started]() mutable {
+                started.set_value();
+                return database->query("UPDATE resources SET type=type");
+            });
+            ready.wait();
+            excluded = writer.wait_for(std::chrono::milliseconds(50)) == std::future_status::timeout;
+        }
+        require(writer.get() != nullptr && excluded, "Raw writer must obey the transaction guard");
+        require(!catalog->isEntryCurrent(before), "Raw backend mutation must update persisted revision");
+        require(catalog->tryGetEntry(uuid, before), "Capture independent-writer revision");
+        auto independent = openDatabase(folder / "durable.db");
+        require(sql(independent,"UPDATE resources SET type=type") != nullptr, "Independent writer");
+        independent->close();
+        require(!catalog->isEntryCurrent(before), "Independent committed writes must stale snapshots");
+        String error;
+        const String backup = (folder / "snapshot.db").u8string().c_str();
+        auto wal = sql(database,"PRAGMA journal_mode=WAL");
+        require(wal && wal->getFieldValue("journal_mode")=="wal", "Enable WAL backup fixture");
+        require(sql(database,"UPDATE resources SET type=type")!=nullptr,"Commit WAL content before backup");
+        require(catalog->backupTo(backup,error), error.c_str());
+        require(!catalog->backupTo(backup,error), "Backup must never overwrite a previous snapshot");
+        catalog->clearDatabase();
+        auto restored = make_ptr<AssetDatabaseManager>();
+        require(restored->setProjectRoot(folder.u8string().c_str()), "Restored project root");
+        restored->loadFromFile(backup);
+        require(restored->hasResourceById(uuid), "Independent snapshot must restore authored identity");
+        restored->unload(nullptr);
+        catalog->unload(nullptr);
+    }
+
     void contracts( AssetDatabaseManager &catalog, const std::filesystem::path &folder )
     {
         auto db = catalog.getDatabase();
@@ -734,6 +902,10 @@ int main()
             require( catalog->getDatabase() && catalog->getDatabase()->isLoaded(),
                      "Real SQLite backend must open" );
             contracts( *catalog, folder );
+            maintenanceContracts(folder);
+            fileOperationContracts(folder);
+            std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "
+                         "binary-safe asset operations, conflict-aware undo and interrupted-operation recovery\n";
             std::cout << "PASS: catalog identity, parameter binding, scoped deletion, rollback, "
                          "detached lookups, concurrency and persistence\n";
             migrationContracts( folder );

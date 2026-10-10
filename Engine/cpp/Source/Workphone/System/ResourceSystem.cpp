@@ -330,7 +330,7 @@ namespace workphone::resource
                 if( !path.empty() )
                 {
                     std::error_code ignored;
-                    fs::remove( path.c_str(), ignored );
+                    fs::remove( fs::u8path( path.c_str() ), ignored );
                 }
             }
         };
@@ -584,7 +584,7 @@ namespace workphone::resource
                              filesystemError.message().c_str() );
 
             TemporaryFile payloadFile{ makePayloadTemporaryPath( context.outputPath ) };
-            std::ofstream payload( payloadFile.path.c_str(), std::ios::binary | std::ios::trunc );
+            std::ofstream payload( fs::u8path( payloadFile.path.c_str() ), std::ios::binary | std::ios::trunc );
             if( !payload )
                 return fail( "Failed to create temporary compiled payload" );
 
@@ -1064,7 +1064,7 @@ namespace workphone::resource
             return false;
         }
         TemporaryFile temporary{ makePayloadTemporaryPath( pathString( destination ) ) };
-        std::ofstream output( temporary.path.c_str(), std::ios::binary | std::ios::trunc );
+        std::ofstream output( fs::u8path( temporary.path.c_str() ), std::ios::binary | std::ios::trunc );
         output.write( payload.data(), static_cast<std::streamsize>( payload.size() ) );
         output.flush();
         const bool written = output.good();

@@ -44,6 +44,24 @@ namespace workphone
         u64 getCatalogGeneration();
         bool tryGetEntry( const String &uuid, EntrySnapshot &output );
         bool isEntryCurrent( const EntrySnapshot &snapshot );
+        /** Independent consistent SQLite snapshot; fails without overwriting an existing file. */
+        bool backupTo( const String &path, String &error );
+        enum class FileOperation { Move, Copy, Delete };
+        struct FileOperationResult
+        {
+            String operationId;
+            String error;
+            bool succeeded = false;
+        };
+        /** Journaled project-relative operation. Move preserves catalog UUIDs;
+         * copy allocates new UUIDs and rejects formats requiring a reference remapper.
+         * Delete quarantines exact bytes. Destinations are never overwritten. */
+        FileOperationResult performFileOperation( FileOperation kind, const String &source,
+                                                  const String &destination = {} );
+        FileOperationResult undoFileOperation( const String &operationId );
+        /** Recover interrupted operations to their last committed state. Conflicts
+         * retain both content and the journal for explicit repair. */
+        Array<FileOperationResult> recoverFileOperations();
         void open() override;
         void close() override;
 
@@ -173,12 +191,14 @@ namespace workphone
         void clearResourceEntryCache();
         void invalidateCatalog();
         bool captureProjectRoot();
+        bool refreshDatabaseRevision();
 
         String m_projectRoot;
         String m_projectRootOverride;
         u64 m_catalogGeneration = 0;
         u64 m_catalogInstance = 0;
         bool m_catalogReady = false;
+        String m_databaseRevision;
 
         AtomicObject<FixedString<128>>
             m_resourcesTableName;  ///< Name of the resources table in the database

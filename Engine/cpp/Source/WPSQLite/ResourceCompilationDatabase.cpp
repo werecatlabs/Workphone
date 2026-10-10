@@ -198,7 +198,7 @@ namespace workphone::resource
         }
 
         std::error_code error;
-        const std::filesystem::path path( databasePath.c_str() );
+        const auto path = std::filesystem::u8path( databasePath.c_str() );
         if( path.has_parent_path() )
         {
             std::filesystem::create_directories( path.parent_path(), error );

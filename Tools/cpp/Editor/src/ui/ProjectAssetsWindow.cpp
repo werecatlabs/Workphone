@@ -1087,15 +1087,18 @@ namespace workphone::editor
             return false;
         }
 
-        if( isFolder )
+        auto resources = applicationManager->getResourceDatabase();
+        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        if( !catalog )
+            return false;
+        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Copy, source, destination );
+        if( !result.succeeded )
         {
-            fileSystem->copyFolder( source, destination );
+            WP_LOG_ERROR( "Cannot copy asset: " + result.error );
+            catalog->recoverFileOperations();
+            refreshFolders( { target } );
+            return false;
         }
-        else
-        {
-            fileSystem->copyFile( source, destination );
-        }
-
         refreshFolders( { target } );
         return true;
     }
@@ -1174,7 +1177,18 @@ namespace workphone::editor
         }
 
         auto sourceFolder = Path::getFilePath( source );
-        Path::rename( source, destination );
+        auto resources = applicationManager->getResourceDatabase();
+        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        if( !catalog )
+            return false;
+        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Move, source, destination );
+        if( !result.succeeded )
+        {
+            WP_LOG_ERROR( "Cannot move asset: " + result.error );
+            catalog->recoverFileOperations();
+            refreshFolders( { sourceFolder, target } );
+            return false;
+        }
         refreshFolders( { sourceFolder, target } );
         return true;
     }

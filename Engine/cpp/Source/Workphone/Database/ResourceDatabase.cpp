@@ -13,6 +13,7 @@
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IDatabaseManager.hpp>
 #include <Workphone/Interface/Database/IDatabaseQuery.hpp>
+#include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/IFont.hpp>
@@ -50,6 +51,17 @@ namespace workphone
 {
     namespace
     {
+        SmartPtr<IDatabaseQuery> queryResourceValues( SmartPtr<IDatabaseManager> manager,
+                                                     const String &sql,
+                                                     const Array<String> &values )
+        {
+            if( !manager )
+                return nullptr;
+            ScopedLock lock( manager.get() );
+            auto database = manager->getDatabase();
+            auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
+            return bound ? bound->queryBound( sql, values ) : nullptr;
+        }
         const String ReferenceObjectType = "ResourceReference";
         const String ReferenceRootUUID = "reference-root";
         const String ReferenceRootPath = "reference";
@@ -450,7 +462,7 @@ namespace workphone
             {
                 if( graphicsSystem )
                 {
-                    auto materialManager = graphicsSystem->getMaterialManager();
+                    auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
 
                     for( auto &file : materialFiles )
                     {
@@ -478,7 +490,7 @@ namespace workphone
                 {
                     if( graphicsSystem )
                     {
-                        auto textureManager = graphicsSystem->getTextureManager();
+                        auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
 
                         for( auto &file : textureFiles )
                         {
@@ -707,14 +719,14 @@ namespace workphone
         if( type == MATERIAL_TYPE )
         {
             auto graphicsSystem = applicationManager->getGraphicsSystem();
-            auto materialManager = graphicsSystem->getMaterialManager();
+            auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
 
             return materialManager->getByName( path );
         }
         else if( type == TEXTURE_TYPE )
         {
             auto graphicsSystem = applicationManager->getGraphicsSystem();
-            auto textureManager = graphicsSystem->getTextureManager();
+            auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
 
             return textureManager->getByName( path );
         }
@@ -734,7 +746,7 @@ namespace workphone
         auto graphicsSystem = applicationManager->getGraphicsSystem();
         WP_ASSERT( graphicsSystem );
 
-        auto materialManager = graphicsSystem->getMaterialManager();
+        auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
         WP_ASSERT( materialManager );
 
         auto soundManager = applicationManager->getSoundManager();
@@ -756,7 +768,7 @@ namespace workphone
         }
         else if( type == TEXTURE_TYPE )
         {
-            auto textureManager = graphicsSystem->getTextureManager();
+            auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
             WP_ASSERT( textureManager );
 
             if( textureManager )
@@ -1254,7 +1266,7 @@ namespace workphone
                 if( type == "Material" )
                 {
                     auto graphicsSystem = applicationManager->getGraphicsSystem();
-                    auto materialManager = graphicsSystem->getMaterialManager();
+                    auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
 
                     auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
                     if( materialResult.first )
@@ -1265,7 +1277,7 @@ namespace workphone
                 else if( type == "Texture" )
                 {
                     auto graphicsSystem = applicationManager->getGraphicsSystem();
-                    auto textureManager = graphicsSystem->getTextureManager();
+                    auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
 
                     auto textureResult = textureManager->createOrRetrieve( uuid, path, type );
                     if( textureResult.first )
@@ -1312,8 +1324,10 @@ namespace workphone
         {
             AssetDatabaseManager::EntrySnapshot entry;
             if( catalog->tryGetEntry( StringUtil::toString( id ), entry ) &&
-                entry.kind == AssetDatabaseManager::EntryKind::File && entry.type == "script" )
+                entry.kind == AssetDatabaseManager::EntryKind::File )
             {
+                if( entry.type != "script" )
+                    return loadResourceById( id );
                 auto script = make_ptr<ScriptAsset>();
                 script->getHandle()->setUUID( entry.uuid );
                 script->loadFromFile( catalog->getProjectRoot() + "/" + entry.path );
@@ -1337,8 +1351,8 @@ namespace workphone
 
         auto prefabManager = applicationManager->getPrefabManager();
 
-        auto materialManager = graphicsSystem->getMaterialManager();
-        auto textureManager = graphicsSystem->getTextureManager();
+        auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
+        auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
         if( !materialManager || !textureManager )
         {
             return nullptr;
@@ -1439,183 +1453,26 @@ namespace workphone
 
     auto ResourceDatabase::loadResource( const String &path ) -> SmartPtr<IResource>
     {
-        if( StringUtil::isNullOrEmpty( path ) )
-        {
+        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
+        if( !catalog || path.empty() )
             return nullptr;
-        }
-
-        if( StringUtil::make_lower( Path::getFileExtension( path ) ) == ".lua" )
-        {
-            auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-            auto entry = catalog ? dynamic_pointer_cast<scene::ResourceDirector>(
-                                       catalog->getResourceEntryFromPath( path ) ) : nullptr;
-            return entry ? loadResource( StringUtil::parseUUID( entry->getResourceUUID() ) ) : nullptr;
-        }
-
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        WP_ASSERT( applicationManager );
-
-        auto databaseManager = getDatabaseManager();
-        WP_ASSERT( databaseManager );
-
-        auto assetDatabaseManager =
-            workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-        WP_ASSERT( assetDatabaseManager );
-
-        auto fileSystem = applicationManager->getFileSystem();
-        WP_ASSERT( fileSystem );
-
-        auto graphicsSystem = applicationManager->getGraphicsSystem();
-        if( !graphicsSystem )
-        {
+        auto director = dynamic_pointer_cast<scene::ResourceDirector>(
+            catalog->getResourceEntryFromPath( path ) );
+        if( !director )
+            return nullptr; // Loading never imports or invents persistent identity.
+        const auto uuid = director->getResourceUUID();
+        AssetDatabaseManager::EntrySnapshot snapshot;
+        if( !catalog->tryGetEntry( uuid, snapshot ) ||
+            snapshot.kind != AssetDatabaseManager::EntryKind::File )
             return nullptr;
-        }
-
-        auto materialManager = graphicsSystem->getMaterialManager();
-        auto meshManager = applicationManager->getMeshManager();
-        auto textureManager = graphicsSystem->getTextureManager();
-        auto soundManager = applicationManager->getSoundManager();
-
-        if( !materialManager || !textureManager )
-        {
+        if( snapshot.type == "script" )
+            return loadResource( StringUtil::parseUUID( uuid ) );
+        auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {uuid} );
+        if( !query || query->eof() )
             return nullptr;
-        }
-
-        auto filePathLower = StringUtil::make_lower( path );
-        auto fileName = Path::getFileName( path );
-        auto fileNameLower = StringUtil::make_lower( fileName );
-
-        auto id = StringUtil::getHash( path );
-        auto idLowerCase = StringUtil::getHash( filePathLower );
-        auto idFileName = StringUtil::getHash( fileName );
-        auto idLowerCaseFileName = StringUtil::getHash( fileNameLower );
-
-        auto cachePath = applicationManager->getCachePath();
-        if( !StringUtil::isNullOrEmpty( cachePath ) )
-        {
-            auto dbFilePath = getFilePath();
-            assetDatabaseManager->loadFromFile( Path::lexically_normal( cachePath, dbFilePath ) );
-
-            auto sql = "select * from 'resources' where path='" + path + "'";
-            auto query = assetDatabaseManager->executeQuery( sql );
-            if( query )
-            {
-                while( !query->eof() )
-                {
-                    return createOrRetrieveResource( query, true );
-                }
-            }
-
-            sql = "SELECT * FROM 'resources' WHERE path LIKE '%' || '" + path + "' || '%'";
-            query = assetDatabaseManager->executeQuery( sql );
-            if( query )
-            {
-                while( !query->eof() )
-                {
-                    return createOrRetrieveResource( query, true );
-                }
-            }
-        }
-
-        auto ext = Path::getFileExtension( path );
-        if( ext == ".mat" )
-        {
-            auto materialResult = materialManager->createOrRetrieve( path );
-            assetDatabaseManager->addResourceEntry( materialResult.first );
-            return materialResult.first;
-        }
-        if( ApplicationUtil::isSupportedMesh( path ) )
-        {
-            if( meshManager )
-            {
-                auto meshResult = meshManager->loadFromFile( path );
-                assetDatabaseManager->addResourceEntry( meshResult );
-                return meshResult;
-            }
-        }
-        if( ApplicationUtil::isSupportedTexture( path ) )
-        {
-            auto textureResult = textureManager->createOrRetrieve( path );
-            assetDatabaseManager->addResourceEntry( textureResult.first );
-            return textureResult.first;
-        }
-        if( ApplicationUtil::isSupportedSound( path ) )
-        {
-            auto soundResult = soundManager->createOrRetrieve( path );
-            assetDatabaseManager->addResourceEntry( soundResult.first );
-            return soundResult.first;
-        }
-        if( ext == ".resource" )
-        {
-            auto resourceStr = fileSystem->readAllText( path );
-
-            auto properties = workphone::make_ptr<Properties>();
-            DataUtil::parse( resourceStr, properties.get() );
-
-            auto objectType = properties->getProperty( "objectType" );
-
-            auto director = SmartPtr<Director>();
-            auto factoryManager = applicationManager->getFactoryManager();
-            auto factory = factoryManager->getFactoryByName( objectType );
-            if( factory )
-            {
-                director = factory->make_ptr<IBuildDirector>();
-            }
-
-            if( !director )
-            {
-                director = factoryManager->make_object<IBuildDirector>();
-            }
-
-            if( director )
-            {
-                auto entry = assetDatabaseManager->getResourceEntryFromPath( path );
-                if( !entry )
-                {
-                    WP_LOG_ERROR( "Resource director requires a persisted catalog entry: " + path );
-                    return nullptr;
-                }
-                auto properties = entry->getProperties();
-                if( !properties )
-                    return nullptr;
-
-                auto id = String();
-                auto uuid = String();
-                auto filePath = String();
-                auto type = String();
-
-                properties->getPropertyValue( "id", id );
-                properties->getPropertyValue( "uuid", uuid );
-                properties->getPropertyValue( "path", filePath );
-                properties->getPropertyValue( "type", type );
-
-                director->setName( filePath );
-
-                auto handle = director->getHandle();
-                if( handle )
-                {
-                    if( StringUtil::isNullOrEmpty( uuid ) )
-                    {
-                        uuid = StringUtil::getUUID();
-                    }
-
-                    handle->setUUID( uuid );
-                }
-
-                director->setFilePath( path );
-
-                if( !assetDatabaseManager->hasResourceEntry( director ) )
-                {
-                    assetDatabaseManager->addResourceEntry( director );
-                }
-
-                return director;
-            }
-        }
-
-        return nullptr;
+        auto resource = createOrRetrieveResource( query, true );
+        return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
     }
-
     auto ResourceDatabase::loadDirector( const String &path ) -> SmartPtr<IBuildDirector>
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -1763,43 +1620,18 @@ namespace workphone
 
     auto ResourceDatabase::loadResourceById( const UUID &uuid ) -> SmartPtr<IResource>
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto databaseManager = getDatabaseManager();
-        WP_ASSERT( databaseManager );
-
-        auto assetDatabaseManager =
-            workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-        WP_ASSERT( assetDatabaseManager );
-
-        auto fileSystem = applicationManager->getFileSystem();
-        WP_ASSERT( fileSystem );
-
-        auto graphicsSystem = applicationManager->getGraphicsSystem();
-        auto materialManager = graphicsSystem->getMaterialManager();
-
-        auto textureManager = graphicsSystem->getTextureManager();
-
-        auto cachePath = applicationManager->getCachePath();
-
-        auto dbFilePath = getFilePath();
-        assetDatabaseManager->loadFromFile( Path::lexically_normal( cachePath, dbFilePath ) );
-
-        auto sql = static_cast<String>( "select * from 'resources' where uuid='" +
-                                        StringUtil::toString( uuid ) + "'" );
-        auto query = assetDatabaseManager->executeQuery( sql );
-        if( query )
-        {
-            while( !query->eof() )
-            {
-                return createOrRetrieveResource( query, true );
-            }
-        }
-
-        return nullptr;
+        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
+        AssetDatabaseManager::EntrySnapshot snapshot;
+        if( !catalog || !catalog->tryGetEntry( StringUtil::toString( uuid ), snapshot ) ||
+            snapshot.kind != AssetDatabaseManager::EntryKind::File )
+            return nullptr;
+        if( snapshot.type == "script" )
+            return loadResource( uuid );
+        auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?",
+                                          {snapshot.uuid} );
+        auto resource = query && !query->eof() ? createOrRetrieveResource( query, true ) : nullptr;
+        return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
     }
-
     void ResourceDatabase::unloadUnusedResources()
     {
         RecursiveMutex::ScopedLock lock( m_mutex );
@@ -1898,9 +1730,9 @@ namespace workphone
         WP_ASSERT( fileSystem );
 
         auto graphicsSystem = applicationManager->getGraphicsSystem();
-        auto materialManager = graphicsSystem->getMaterialManager();
+        auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
 
-        auto textureManager = graphicsSystem->getTextureManager();
+        auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
 
         auto id = query->getFieldValue( "id" );
         auto uuid = query->getFieldValue( "uuid" );
@@ -1909,6 +1741,8 @@ namespace workphone
 
         if( type == "Material" )
         {
+            if( !materialManager )
+                return nullptr;
             auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
 
             auto resource = materialResult.first;
@@ -1922,6 +1756,8 @@ namespace workphone
         if( StringUtil::contains( type, "MeshResource" ) )
         {
             auto meshManager = applicationManager->getMeshManager();
+            if( !meshManager || ( bLoadResource && !graphicsSystem ) )
+                return nullptr;
             auto meshResult = meshManager->createOrRetrieve( uuid, path, type );
 
             auto resource = meshResult.first;
@@ -1934,6 +1770,8 @@ namespace workphone
         }
         if( type == "Texture" )
         {
+            if( !textureManager )
+                return nullptr;
             auto textureResult = textureManager->createOrRetrieve( uuid, path, type );
 
             auto resource = textureResult.first;
@@ -1946,6 +1784,8 @@ namespace workphone
         }
         if( StringUtil::contains( type, "Sound" ) )
         {
+            if( !soundManager )
+                return nullptr;
             auto soundResult = soundManager->createOrRetrieve( uuid, path, type );
 
             auto resource = soundResult.first;
@@ -2003,7 +1843,7 @@ namespace workphone
 
             if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
             {
-                auto materialManager = graphicsSystem->getMaterialManager();
+                auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
                 auto meshManager = applicationManager->getMeshManager();
                 auto fontManager = graphicsSystem->getFontManager();
 
@@ -2243,9 +2083,8 @@ namespace workphone
             auto dbFilePath = getFilePath();
             assetDatabaseManager->loadFromFile( Path::lexically_normal( cachePath, dbFilePath ) );
 
-            auto sUUID = StringUtil::toString( id );
-            auto sql = static_cast<String>( "select * from 'resources' where uuid='" + sUUID + "'" );
-            auto query = assetDatabaseManager->executeQuery( sql );
+            auto query = queryResourceValues( assetDatabaseManager,
+                "SELECT * FROM resources WHERE uuid=?", {StringUtil::toString( id )} );
             if( query )
             {
                 while( !query->eof() )
@@ -2257,11 +2096,15 @@ namespace workphone
 
                     if( type == "Material" )
                     {
+                        if( !materialManager )
+                            return nullptr;
                         auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
                         return materialResult.first;
                     }
                     else if( type == "Texture" )
                     {
+                        if( !textureManager )
+                            return nullptr;
                         auto textureResult = textureManager->createOrRetrieve( uuid, path, type );
                         return textureResult.first;
                     }
@@ -2366,7 +2209,7 @@ namespace workphone
 
         if( auto query = databaseManager->executeQuery( sql ) )
         {
-            while( query->eof() )
+            while( !query->eof() )
             {
                 auto name = query->getFieldValue( "title" );
                 auto value = query->getFieldValue( "value" );
@@ -2414,13 +2257,12 @@ namespace workphone
         auto databaseManager = getDatabaseManager();
         WP_ASSERT( databaseManager );
 
-        auto assetDatabaseManager =
-            workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-        WP_ASSERT( assetDatabaseManager );
-
-        auto cachePath = applicationManager->getMediaPath();
-
-        auto databasePath = cachePath + "/AssetDatabase.db";
+        // Domain reference reads never rebind the project's live catalog.
+        auto assetDatabaseManager = workphone::make_ptr<DatabaseManager>();
+        auto databasePath = applicationManager->getMediaPath() + "/AssetDatabase.db";
+        auto fileSystem = applicationManager->getFileSystem();
+        if( !fileSystem || !fileSystem->isExistingFile( databasePath ) )
+            return objects;
         assetDatabaseManager->loadFromFile( databasePath );
 
         Array<String> referenceTables;
@@ -2733,7 +2575,7 @@ namespace workphone
             {
                 if( graphicsSystem )
                 {
-                    auto materialManager = graphicsSystem->getMaterialManager();
+                    auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
                     auto material = materialManager->loadFromFile( filePath );
                     if( material )
                     {
@@ -2763,7 +2605,7 @@ namespace workphone
             {
                 if( graphicsSystem )
                 {
-                    auto textureManager = graphicsSystem->getTextureManager();
+                    auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
                     auto texture = textureManager->loadFromFile( filePath );
                     if( texture )
                     {

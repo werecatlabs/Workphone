@@ -15,6 +15,15 @@
 #include <atomic>
 #include <filesystem>
 #include <set>
+#include <map>
+#include <fstream>
+#include <stdexcept>
+#if defined WP_PLATFORM_WIN32
+#    ifndef NOMINMAX
+#        define NOMINMAX
+#    endif
+#    include <Windows.h>
+#endif
 
 namespace workphone
 {
@@ -50,12 +59,20 @@ namespace workphone
         public:
             explicit CatalogTransaction( AssetDatabaseManager &manager ) : m_manager( manager )
             {
+                m_database = manager.getDatabase();
+                m_serialized = m_database ? dynamic_cast<ISerializedDatabase *>( m_database.get() )
+                                          : nullptr;
+                if( !m_serialized )
+                    return;
+                m_serialized->lockConnection();
                 m_active = queryCatalog( manager, "BEGIN IMMEDIATE" ) != nullptr;
             }
             ~CatalogTransaction()
             {
                 if( m_active )
                     queryCatalog( m_manager, "ROLLBACK" );
+                if( m_serialized )
+                    m_serialized->unlockConnection();
             }
             bool active() const
             {
@@ -71,6 +88,8 @@ namespace workphone
 
         private:
             AssetDatabaseManager &m_manager;
+            SmartPtr<IDatabase> m_database;
+            ISerializedDatabase *m_serialized = nullptr;
             bool m_active = false;
         };
         String resourcePath( SmartPtr<ISharedObject> object )
@@ -249,6 +268,34 @@ namespace workphone
             invalid += "))";
             return invalid;
         }
+        bool installChangeTracking( AssetDatabaseManager &manager )
+        {
+            if( !queryCatalog( manager,
+                    "CREATE TABLE IF NOT EXISTS wp_asset_catalog_changes("
+                    "id INTEGER PRIMARY KEY CHECK(id=1),revision INTEGER NOT NULL "
+                    "CHECK(typeof(revision)='integer' AND revision>=0))" ) ||
+                !queryCatalog( manager,
+                    "INSERT OR IGNORE INTO wp_asset_catalog_changes(id,revision) VALUES(1,0)" ) )
+                return false;
+            auto revision = queryCatalog( manager,
+                "SELECT revision FROM wp_asset_catalog_changes WHERE id=1 AND "
+                "typeof(revision)='integer' AND revision>=0" );
+            if( !revision || revision->eof() )
+                return false;
+            for( const auto &event : { String("INSERT"), String("UPDATE"), String("DELETE") } )
+            {
+                const auto name = "wp_catalog_revision_" + event;
+                auto owner = queryCatalog( manager,
+                    "SELECT tbl_name FROM sqlite_master WHERE type='trigger' AND name=?", {name} );
+                if( !owner || ( !owner->eof() && owner->getFieldValue("tbl_name") != "resources" ) ||
+                    !queryCatalog( manager, "DROP TRIGGER IF EXISTS " + name ) ||
+                    !queryCatalog( manager, "CREATE TRIGGER " + name + " AFTER " + event +
+                        " ON resources BEGIN UPDATE wp_asset_catalog_changes "
+                        "SET revision=revision+1 WHERE id=1; END" ) )
+                    return false;
+            }
+            return true;
+        }
         bool guardIdentity( AssetDatabaseManager &manager )
         {
             const auto invalid = invalidIdentityFields();
@@ -289,7 +336,8 @@ namespace workphone
                                  "CREATE TRIGGER IF NOT EXISTS resources_values_update BEFORE UPDATE OF "
                                  "uuid,path,type,kind,path_key ON resources WHEN " +
                                      invalid +
-                                     " BEGIN SELECT RAISE(ABORT,'Invalid catalog identity'); END" );
+                                     " BEGIN SELECT RAISE(ABORT,'Invalid catalog identity'); END" ) &&
+                   installChangeTracking( manager );
         }
     }  // namespace
     AssetDatabaseManager::AssetDatabaseManager()
@@ -327,7 +375,26 @@ namespace workphone
     u64 AssetDatabaseManager::getCatalogGeneration()
     {
         ScopedLock lock( this );
+        if( m_catalogReady )
+            refreshDatabaseRevision();
         return m_catalogGeneration;
+    }
+    bool AssetDatabaseManager::refreshDatabaseRevision()
+    {
+        auto row = queryCatalog( *this,
+            "SELECT revision FROM wp_asset_catalog_changes WHERE id=1" );
+        if( !row || row->eof() )
+        {
+            invalidateCatalog();
+            return false;
+        }
+        const auto revision = row->getFieldValue( "revision" );
+        if( revision != m_databaseRevision )
+        {
+            m_databaseRevision = revision;
+            invalidateCatalog();
+        }
+        return true;
     }
     bool AssetDatabaseManager::captureProjectRoot()
     {
@@ -416,6 +483,20 @@ namespace workphone
         ScopedLock lock( this );
         if( m_catalogReady && getDatabase() && getDatabase()->isLoaded() )
             return;
+        // Configure authored-store durability before BEGIN; SQLite ignores
+        // foreign_keys changes and rejects synchronous changes inside a transaction.
+        if( !queryCatalog( *this, "PRAGMA foreign_keys=ON" ) ||
+            !queryCatalog( *this, "PRAGMA synchronous=FULL" ) )
+        {
+            close();
+            return;
+        }
+        auto durability = queryCatalog( *this, "PRAGMA synchronous" );
+        if( !durability || durability->getFieldValueAsInt( "synchronous" ) < 2 )
+        {
+            close();
+            return;
+        }
         bool ready = false;
         {
             CatalogTransaction transaction( *this );
@@ -556,7 +637,15 @@ namespace workphone
             ready = initialize();
         }  // Roll back schema work before closing an unusable catalog.
         m_catalogReady = ready;
+        m_databaseRevision.clear();
         invalidateCatalog();
+        if( ready )
+        {
+            refreshDatabaseRevision();
+            for( const auto &recovery : recoverFileOperations() )
+                if( !recovery.succeeded )
+                    WP_LOG_ERROR( "Asset operation recovery requires attention: " + recovery.error );
+        }
         if( !ready )
         {
             WP_LOG_ERROR( "Catalog schema initialization failed; catalog changes rolled back." );
@@ -567,6 +656,19 @@ namespace workphone
     void AssetDatabaseManager::destroy()
     {
         unload( nullptr );
+    }
+    bool AssetDatabaseManager::backupTo( const String &path, String &error )
+    {
+        ScopedLock lock( this );
+        error.clear();
+        auto database = getDatabase();
+        auto backup = database ? dynamic_cast<IBackupDatabase *>(database.get()) : nullptr;
+        if( !m_catalogReady || !backup )
+        {
+            error = "Catalog backup requires an open snapshot-capable backend";
+            return false;
+        }
+        return backup->backupTo( path, error );
     }
     void AssetDatabaseManager::clearDatabase()
     {
@@ -709,7 +811,7 @@ namespace workphone
     bool AssetDatabaseManager::hasResourceById( const String &uuid )
     {
         ScopedLock lock( this );
-        if( !m_catalogReady || !validValue( uuid, 256 ) )
+        if( !m_catalogReady || !validValue( uuid, 256 ) || !refreshDatabaseRevision() )
             return false;
         // Membership and UUID-scoped deletion must remain available even when
         // the source has become inaccessible or no longer resolves safely.
@@ -748,7 +850,7 @@ namespace workphone
     {
         ScopedLock lock( this );
         output = EntrySnapshot();
-        if( !m_catalogReady || !validValue( uuid, 256 ) )
+        if( !m_catalogReady || !validValue( uuid, 256 ) || !refreshDatabaseRevision() )
             return false;
         auto row = queryCatalog(
             *this, "SELECT uuid,path,type,kind,path_key FROM resources WHERE uuid=? LIMIT 2", { uuid } );
@@ -785,12 +887,366 @@ namespace workphone
     bool AssetDatabaseManager::isEntryCurrent( const EntrySnapshot &snapshot )
     {
         ScopedLock lock( this );
+        if( !m_catalogReady || !refreshDatabaseRevision() )
+            return false;
         if( snapshot.catalogInstance != m_catalogInstance || snapshot.generation != m_catalogGeneration )
             return false;
         EntrySnapshot current;
-        return tryGetEntry( snapshot.uuid, current ) && current.path == snapshot.path &&
+        return tryGetEntry( snapshot.uuid, current ) && current.generation == snapshot.generation &&
+               current.path == snapshot.path &&
                current.type == snapshot.type && current.kind == snapshot.kind;
     }
+    namespace
+    {
+        namespace assetfs = std::filesystem;
+        bool operationSchema( AssetDatabaseManager &manager )
+        {
+            return queryCatalog(manager,
+                "CREATE TABLE IF NOT EXISTS wp_asset_operations("
+                "id TEXT PRIMARY KEY,kind TEXT NOT NULL,source TEXT NOT NULL,"
+                "destination TEXT NOT NULL,root TEXT NOT NULL,state TEXT NOT NULL,"
+                "digest TEXT NOT NULL)") &&
+                queryCatalog(manager,
+                "CREATE TABLE IF NOT EXISTS wp_asset_operation_entries("
+                "operation_id TEXT NOT NULL,uuid TEXT NOT NULL,path TEXT NOT NULL,"
+                "type TEXT NOT NULL,path_key TEXT NOT NULL,new_uuid TEXT NOT NULL,"
+                "new_path TEXT NOT NULL,new_key TEXT NOT NULL,PRIMARY KEY(operation_id,uuid))");
+        }
+        bool pathWithin( const String &parent, const String &path )
+        {
+            return path == parent || (path.size()>parent.size() &&
+                path.compare(0,parent.size(),parent)==0 && path[parent.size()]=='/');
+        }
+        bool reparsePath( const assetfs::path &path )
+        {
+#if defined WP_PLATFORM_WIN32
+            const auto attributes = GetFileAttributesW(path.c_str());
+            if(attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT))
+                return true;
+#endif
+            return assetfs::is_symlink(assetfs::symlink_status(path));
+        }
+        String treeDigest( const assetfs::path &path )
+        {
+            std::map<std::string,assetfs::path> entries;
+            auto add = [&](const assetfs::path &entry, const std::string &relative) {
+                if(reparsePath(entry) || (!assetfs::is_directory(entry) && !assetfs::is_regular_file(entry)))
+                    throw std::runtime_error("Asset operations reject links and special files");
+                if(entries.size()>=100000)
+                    throw std::runtime_error("Asset operation exceeds the tree entry limit");
+                entries.emplace(relative,entry);
+            };
+            add(path,".");
+            if(assetfs::is_directory(path))
+                for(const auto &entry:assetfs::recursive_directory_iterator(path))
+                    add(entry.path(),entry.path().lexically_relative(path).generic_u8string());
+            u64 hash = 14695981039346656037ull;
+            auto feed = [&](const char *bytes, size_t size) {
+                for(size_t i=0;i<size;++i) { hash ^= static_cast<unsigned char>(bytes[i]); hash *= 1099511628211ull; }
+            };
+            for(const auto &entry:entries)
+            {
+                feed(entry.first.data(),entry.first.size());
+                const char kind=assetfs::is_directory(entry.second)?'D':'F';
+                feed(&kind,1);
+                if(kind=='F')
+                {
+                    std::ifstream input(entry.second,std::ios::binary);
+                    if(!input) throw std::runtime_error("Cannot snapshot asset bytes");
+                    char bytes[65536];
+                    while(input) { input.read(bytes,sizeof(bytes)); feed(bytes,static_cast<size_t>(input.gcount())); }
+                    if(!input.eof()) throw std::runtime_error("Cannot finish asset snapshot");
+                }
+                const char separator=0;
+                feed(&separator,1);
+            }
+            return std::to_string(hash).c_str();
+        }
+        bool renameExclusive( const assetfs::path &source, const assetfs::path &destination, String &error )
+        {
+#if defined WP_PLATFORM_WIN32
+            if(!MoveFileExW(source.c_str(),destination.c_str(),MOVEFILE_WRITE_THROUGH))
+            {
+                error=("Asset rename failed (Windows error " + std::to_string(GetLastError()) + ")").c_str();
+                return false;
+            }
+#else
+            std::error_code ec;
+            if(assetfs::exists(destination,ec) || ec) { error="Asset destination exists or is inaccessible"; return false; }
+            assetfs::rename(source,destination,ec);
+            if(ec) { error=ec.message().c_str(); return false; }
+#endif
+            return true;
+        }
+        assetfs::path operationPath( const String &root, const String &relative )
+        {
+            AssetCatalogPath canonical;
+            String error;
+            if(!canonicalAssetCatalogPath(root,relative,canonical,error))
+                throw std::runtime_error(error.c_str());
+            return assetfs::u8path(root.c_str()) / assetfs::u8path(canonical.path.c_str());
+        }
+        struct OperationEntry
+        {
+            String uuid,path,type,key,newUuid,newPath,newKey;
+        };
+        Array<OperationEntry> operationEntries( AssetDatabaseManager &manager, const String &id )
+        {
+            auto rows=queryCatalog(manager,"SELECT * FROM wp_asset_operation_entries WHERE operation_id=?",{id});
+            if(!rows) throw std::runtime_error("Cannot read asset operation identities");
+            Array<OperationEntry> entries;
+            while(!rows->eof())
+            {
+                entries.push_back({rows->getFieldValue("uuid"),rows->getFieldValue("path"),
+                    rows->getFieldValue("type"),rows->getFieldValue("path_key"),
+                    rows->getFieldValue("new_uuid"),rows->getFieldValue("new_path"),rows->getFieldValue("new_key")});
+                rows->nextRow();
+            }
+            return entries;
+        }
+        bool applyOperationEntries( AssetDatabaseManager &manager, const Array<OperationEntry> &entries,
+                                     const String &kind, bool undo )
+        {
+            for(const auto &entry:entries)
+            {
+                const auto &lookup = undo && kind=="copy" ? entry.newUuid : entry.uuid;
+                auto current=queryCatalog(manager,"SELECT path,path_key,type FROM resources WHERE uuid=?",{lookup});
+                if(!current) return false;
+                if(undo && kind=="delete")
+                {
+                    if(!current->eof()) return false;
+                }
+                else
+                {
+                    const auto expected = undo ? entry.newPath : entry.path;
+                    const auto expectedKey = undo ? entry.newKey : entry.key;
+                    if(current->eof() || current->getFieldValue("path")!=expected ||
+                        current->getFieldValue("path_key")!=expectedKey || current->getFieldValue("type")!=entry.type)
+                        return false;
+                }
+                if((kind=="delete" && !undo) || (kind=="copy" && undo))
+                {
+                    if(!queryCatalog(manager,"DELETE FROM resources WHERE uuid=?",{lookup})) return false;
+                }
+                else if((kind=="copy" && !undo) || (kind=="delete" && undo))
+                {
+                    if(!queryCatalog(manager,"INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,'file',?)",
+                        {undo?entry.uuid:entry.newUuid,undo?entry.path:entry.newPath,entry.type,undo?entry.key:entry.newKey}))
+                        return false;
+                }
+                else if(!queryCatalog(manager,"UPDATE resources SET path=?,path_key=? WHERE uuid=?",
+                    {undo?entry.path:entry.newPath,undo?entry.key:entry.newKey,lookup})) return false;
+            }
+            return true;
+        }
+    }
+
+    AssetDatabaseManager::FileOperationResult AssetDatabaseManager::performFileOperation(
+        FileOperation operation, const String &sourceInput, const String &destinationInput )
+    {
+        ScopedLock lock(this);
+        FileOperationResult result;
+        try
+        {
+            if(!m_catalogReady || !refreshDatabaseRevision()) throw std::runtime_error("Catalog is not open");
+            for(const auto &recovery : recoverFileOperations())
+                if(!recovery.succeeded)
+                    throw std::runtime_error("Resolve pending asset operation recovery before changing files");
+            AssetCatalogPath source,destination;
+            if(!canonicalAssetCatalogPath(m_projectRoot,sourceInput,source,result.error)) return result;
+            if(pathWithin(".workphone",source.key)) throw std::runtime_error("Asset operation storage is reserved");
+            result.operationId=StringUtil::getUUID();
+            const String storage=".workphone/asset-operations/"+result.operationId+"/payload";
+            const String kind=operation==FileOperation::Delete?"delete":operation==FileOperation::Copy?"copy":"move";
+            if(!canonicalAssetCatalogPath(m_projectRoot,operation==FileOperation::Delete?storage:destinationInput,
+                                           destination,result.error)) return result;
+            if(operation!=FileOperation::Delete && pathWithin(".workphone",destination.key))
+                throw std::runtime_error("Asset operation storage is reserved");
+            if(pathWithin(source.key,destination.key)) throw std::runtime_error("Cannot place an asset inside itself");
+            const auto from=operationPath(m_projectRoot,source.path);
+            const auto to=operationPath(m_projectRoot,destination.path);
+            const auto stage=operationPath(m_projectRoot,storage);
+            if(!assetfs::exists(from)) throw std::runtime_error("Asset source does not exist");
+            if(assetfs::exists(to)) throw std::runtime_error("Asset destination already exists");
+            if(operation!=FileOperation::Delete && !assetfs::is_directory(to.parent_path()))
+                throw std::runtime_error("Destination folder does not exist");
+            const auto digest=treeDigest(from);
+            const auto expectedRevision=m_databaseRevision;
+            Array<OperationEntry> entries;
+            auto rows=queryCatalog(*this,"SELECT uuid,path,type,path_key FROM resources WHERE kind='file'");
+            if(!rows) throw std::runtime_error("Cannot plan catalog mutation");
+            while(!rows->eof())
+            {
+                const auto key=rows->getFieldValue("path_key");
+                if(pathWithin(source.key,key))
+                {
+                    const auto path=rows->getFieldValue("path");
+                    AssetCatalogPath target;
+                    const auto newPath=destination.path+path.substr(source.path.size());
+                    if(!canonicalAssetCatalogPath(m_projectRoot,newPath,target,result.error)) return result;
+                    entries.push_back({rows->getFieldValue("uuid"),path,rows->getFieldValue("type"),key,
+                        operation==FileOperation::Copy?StringUtil::getUUID():rows->getFieldValue("uuid"),target.path,target.key});
+                }
+                rows->nextRow();
+            }
+            if(operation==FileOperation::Copy)
+            {
+                auto checkFormat=[](const assetfs::path &file) {
+                    const auto extension=StringUtil::make_lower(file.extension().u8string().c_str());
+                    if(extension==".fbscene" || extension==".fbscenebin" || extension==".fbscenexml" ||
+                       extension==".prefab" || extension==".fbprefab" || extension==".resource")
+                        throw std::runtime_error("Copying scenes/prefabs/resources requires a registered identity remapper");
+                };
+                checkFormat(from);
+                if(assetfs::is_directory(from)) for(const auto &entry:assetfs::recursive_directory_iterator(from))
+                    if(assetfs::is_regular_file(entry.path())) checkFormat(entry.path());
+            }
+            assetfs::create_directories(stage.parent_path());
+            // Re-audit after creating the reserved storage prefix.
+            operationPath(m_projectRoot,storage);
+            {
+                CatalogTransaction transaction(*this);
+                if(!transaction.active() || !operationSchema(*this) || !queryCatalog(*this,
+                    "INSERT INTO wp_asset_operations VALUES(?,?,?,?,?,'prepared',?)",
+                    {result.operationId,kind,source.path,destination.path,m_projectRoot,digest}))
+                    throw std::runtime_error("Cannot persist asset operation journal");
+                for(const auto &entry:entries)
+                    if(!queryCatalog(*this,"INSERT INTO wp_asset_operation_entries VALUES(?,?,?,?,?,?,?,?)",
+                        {result.operationId,entry.uuid,entry.path,entry.type,entry.key,entry.newUuid,entry.newPath,entry.newKey}))
+                        throw std::runtime_error("Cannot persist operation identity snapshot");
+                if(!transaction.commit()) throw std::runtime_error("Cannot commit operation preflight");
+            }
+            if(operation==FileOperation::Copy)
+                assetfs::copy(from,stage,assetfs::copy_options::recursive);
+            else if(!renameExclusive(from,stage,result.error)) return result;
+            if(treeDigest(stage)!=digest) throw std::runtime_error("Asset changed while staging; recovery required");
+            if(operation!=FileOperation::Delete && !renameExclusive(stage,to,result.error)) return result;
+            {
+                CatalogTransaction transaction(*this);
+                if(!transaction.active() || !refreshDatabaseRevision() || m_databaseRevision!=expectedRevision ||
+                    !applyOperationEntries(*this,entries,kind,false) || !queryCatalog(*this,
+                    "UPDATE wp_asset_operations SET state='committed' WHERE id=?",{result.operationId}) ||
+                    !transaction.commit())
+                    throw std::runtime_error("Asset catalog commit failed; journal recovery required");
+            }
+            invalidateCatalog();
+            result.succeeded=true;
+        }
+        catch(const std::exception &error) { result.error=error.what(); }
+        return result;
+    }
+
+    AssetDatabaseManager::FileOperationResult AssetDatabaseManager::undoFileOperation(const String &id)
+    {
+        ScopedLock lock(this);
+        FileOperationResult result;
+        result.operationId=id;
+        try
+        {
+            if(!m_catalogReady) throw std::runtime_error("Original project catalog is closed");
+            auto row=queryCatalog(*this,"SELECT * FROM wp_asset_operations WHERE id=?",{id});
+            if(!row || row->eof() || row->getFieldValue("state")!="committed" || row->getFieldValue("root")!=m_projectRoot)
+                throw std::runtime_error("Asset operation is not committed in this project");
+            const auto kind=row->getFieldValue("kind");
+            const auto from=operationPath(m_projectRoot,row->getFieldValue("destination"));
+            const auto to=operationPath(m_projectRoot,kind=="copy"?
+                ".workphone/asset-operations/"+id+"/payload":row->getFieldValue("source"));
+            if(assetfs::exists(to) || treeDigest(from)!=row->getFieldValue("digest"))
+                throw std::runtime_error("Undo conflicts with external files or changed asset bytes");
+            const auto entries=operationEntries(*this,id);
+            {
+                CatalogTransaction transaction(*this);
+                // Preflight catalog conflicts without committing the reverse mutation.
+                if(!transaction.active() || !applyOperationEntries(*this,entries,kind,true))
+                    throw std::runtime_error("Undo conflicts with current asset identities");
+            }
+            if(!queryCatalog(*this,"UPDATE wp_asset_operations SET state='undoing' WHERE id=?",{id}))
+                throw std::runtime_error("Cannot journal undo");
+            if(!renameExclusive(from,to,result.error)) return result;
+            {
+                CatalogTransaction transaction(*this);
+                if(!transaction.active() || !applyOperationEntries(*this,entries,kind,true) ||
+                    !queryCatalog(*this,"UPDATE wp_asset_operations SET state='undone' WHERE id=?",{id}) ||
+                    !transaction.commit()) throw std::runtime_error("Undo catalog commit failed; recovery required");
+            }
+            invalidateCatalog();
+            result.succeeded=true;
+        }
+        catch(const std::exception &error) { result.error=error.what(); }
+        return result;
+    }
+
+    Array<AssetDatabaseManager::FileOperationResult> AssetDatabaseManager::recoverFileOperations()
+    {
+        ScopedLock lock(this);
+        Array<FileOperationResult> results;
+        if(!m_catalogReady) return results;
+        auto table=queryCatalog(*this,"SELECT name FROM sqlite_master WHERE type='table' AND name='wp_asset_operations'");
+        if(!table || table->eof()) return results;
+        auto rows=queryCatalog(*this,"SELECT * FROM wp_asset_operations WHERE state IN ('prepared','undoing') ORDER BY id");
+        if(!rows) return results;
+        while(!rows->eof())
+        {
+            FileOperationResult result;
+            result.operationId=rows->getFieldValue("id");
+            try
+            {
+                if(rows->getFieldValue("root")!=m_projectRoot) throw std::runtime_error("Recovery root differs from journal root");
+                const auto source=operationPath(m_projectRoot,rows->getFieldValue("source"));
+                const auto destination=operationPath(m_projectRoot,rows->getFieldValue("destination"));
+                const auto stage=operationPath(m_projectRoot,".workphone/asset-operations/"+result.operationId+"/payload");
+                const auto kind=rows->getFieldValue("kind");
+                const auto state=rows->getFieldValue("state");
+                const auto digest=rows->getFieldValue("digest");
+                String next;
+                if(state=="undoing")
+                {
+                    const auto reversed=kind=="copy"?stage:source;
+                    if(assetfs::exists(destination))
+                    {
+                        if(treeDigest(destination)!=digest || assetfs::exists(reversed))
+                            throw std::runtime_error("Ambiguous interrupted undo; content retained");
+                    }
+                    else if(!assetfs::exists(reversed) || treeDigest(reversed)!=digest ||
+                            !renameExclusive(reversed,destination,result.error))
+                        throw std::runtime_error("Interrupted undo recovery conflicts; content retained");
+                    next="committed";
+                }
+                else if(kind=="copy")
+                {
+                    // The source survives copy. Retain any staged/published copy in
+                    // quarantine; never recursively delete authored data during recovery.
+                    if(assetfs::exists(destination))
+                    {
+                        if(assetfs::exists(stage) || treeDigest(destination)!=digest ||
+                           !renameExclusive(destination,stage,result.error))
+                            throw std::runtime_error("Copy recovery conflicts; content retained");
+                    }
+                    next="rolled-back";
+                }
+                else
+                {
+                    const bool atSource=assetfs::exists(source);
+                    const bool atStage=assetfs::exists(stage);
+                    const bool atDestination=kind!="delete" && assetfs::exists(destination);
+                    if(static_cast<int>(atSource)+static_cast<int>(atStage)+static_cast<int>(atDestination)!=1)
+                        throw std::runtime_error("Ambiguous asset recovery; content retained");
+                    const auto location=atSource?source:atStage?stage:destination;
+                    if(treeDigest(location)!=digest || (!atSource && !renameExclusive(location,source,result.error)))
+                        throw std::runtime_error("Recovery conflicts with external bytes; content retained");
+                    next="rolled-back";
+                }
+                result.succeeded=queryCatalog(*this,"UPDATE wp_asset_operations SET state=? WHERE id=?",{next,result.operationId})!=nullptr;
+                if(!result.succeeded) result.error="Could not finish journal recovery";
+            }
+            catch(const std::exception &error) { result.error=error.what(); }
+            results.push_back(result);
+            rows->nextRow();
+        }
+        invalidateCatalog();
+        return results;
+    }
+
     String AssetDatabaseManager::getResourcesTableName() const
     {
         return m_resourcesTableName.load();

@@ -18,7 +18,8 @@ namespace workphone
      * the IDatabase interface. It handles database connections, queries, and DML operations
      * for SQLite databases.
      */
-    class SQLiteDatabase : public IDatabase, public IParameterizedDatabase
+    class SQLiteDatabase : public IDatabase, public IParameterizedDatabase, public ISerializedDatabase,
+                           public IBackupDatabase
     {
     public:
         /**
@@ -67,6 +68,10 @@ namespace workphone
         SmartPtr<IDatabaseQuery> queryBound( const String &sql,
                                             const Array<String> &values ) override;
 
+        void lockConnection() override;
+        void unlockConnection() override;
+        bool backupTo( const String &path, String &error ) override;
+
         /**
          * @brief Executes a wide-character query and returns a query result object
          * @param queryStr The SQL query string in wide-character format
@@ -97,7 +102,7 @@ namespace workphone
     protected:
         /// Internal SQLite database handle
         SharedPtr<CppSQLite3DB> m_database;
-        std::mutex m_boundQueryMutex;
+        std::recursive_mutex m_boundQueryMutex;
     };
 }  // namespace workphone
 

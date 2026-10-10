@@ -2,6 +2,8 @@
 #include <WPSQLite/extern/CppSQLite3.hpp>
 #include <WPSQLite/SQLiteQuery.hpp>
 #include <Workphone/Workphone.hpp>
+#include <filesystem>
+#include <memory>
 
 namespace workphone
 {
@@ -24,6 +26,7 @@ namespace workphone
 
     void SQLiteDatabase::unload( SmartPtr<ISharedObject> data )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
         try
         {
             setLoadingState( LoadingState::Unloading );
@@ -41,6 +44,7 @@ namespace workphone
 
     void SQLiteDatabase::loadFromFile( const String &filePath )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -87,6 +91,7 @@ namespace workphone
 
     void SQLiteDatabase::loadFromFile( const String &filePath, const String &key )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -99,6 +104,8 @@ namespace workphone
             auto fileSystem = applicationManager->getFileSystem();
             WP_ASSERT( fileSystem );
 
+            if( !m_database )
+                m_database = workphone::make_shared<CppSQLite3DB>();
             m_database->open( filePath.c_str() );
 
             if( !StringUtil::isNullOrEmpty( key ) )
@@ -121,7 +128,8 @@ namespace workphone
 
     void SQLiteDatabase::setKey( const String &key )
     {
-        if( !StringUtil::isNullOrEmpty( key ) )
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        if( m_database && isLoaded() && !StringUtil::isNullOrEmpty( key ) )
         {
             sqlite3_rekey( m_database->mpDB, key.c_str(), (int)key.size() );
         }
@@ -129,6 +137,9 @@ namespace workphone
 
     SmartPtr<IDatabaseQuery> SQLiteDatabase::query( const String &queryStr )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        if( !m_database || !isLoaded() )
+            return nullptr;
         try
         {
             if( !StringUtil::isNullOrEmpty( queryStr ) )
@@ -154,8 +165,27 @@ namespace workphone
     {
         try
         {
-            std::lock_guard<std::mutex> lock( m_boundQueryMutex );
+            std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
             if( !m_database || !isLoaded() || sql.empty() ) return nullptr;
+            if( values.empty() )
+            {
+                // Legacy runScript can submit several mutation statements at
+                // once. Preparing just the first would silently drop the rest.
+                sqlite3_stmt *probe = nullptr;
+                const auto prepared = sqlite3_prepare_v2(m_database->mpDB, sql.c_str(), -1, &probe, nullptr);
+                const bool mutation = prepared == SQLITE_OK && probe && sqlite3_column_count(probe) == 0;
+                sqlite3_finalize(probe);
+                if( mutation )
+                {
+                    const auto executed = sqlite3_exec(m_database->mpDB, sql.c_str(), nullptr, nullptr, nullptr);
+                    if( executed != SQLITE_OK )
+                    {
+                        WP_LOG_ERROR(sqlite3_errmsg(m_database->mpDB));
+                        return nullptr;
+                    }
+                    return workphone::make_ptr<SQLiteQuery>();
+                }
+            }
             auto statement = m_database->compileStatement( sql.c_str() );
             for( size_t i = 0; i < values.size(); ++i )
             {
@@ -180,6 +210,9 @@ namespace workphone
 
     SmartPtr<IDatabaseQuery> SQLiteDatabase::query( const StringW &queryStr )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        if( !m_database || !isLoaded() )
+            return nullptr;
         try
         {
             if( !StringUtilW::isNullOrEmpty( queryStr ) )
@@ -203,6 +236,9 @@ namespace workphone
 
     void SQLiteDatabase::queryDML( const StringW &queryStr )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        if( !m_database || !isLoaded() )
+            return;
         try
         {
             m_database->execDML( queryStr.c_str() );
@@ -215,6 +251,9 @@ namespace workphone
 
     void SQLiteDatabase::queryDML( const String &queryStr )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        if( !m_database || !isLoaded() )
+            return;
         try
         {
             m_database->execDML( queryStr.c_str() );
@@ -227,11 +266,81 @@ namespace workphone
 
     void SQLiteDatabase::close()
     {
-        std::lock_guard<std::mutex> lock( m_boundQueryMutex );
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
         if( m_database )
         {
             m_database->close();
         }
         setLoadingState( LoadingState::Unloaded );
+    }
+
+    void SQLiteDatabase::lockConnection()
+    {
+        m_boundQueryMutex.lock();
+    }
+
+    void SQLiteDatabase::unlockConnection()
+    {
+        m_boundQueryMutex.unlock();
+    }
+
+    bool SQLiteDatabase::backupTo( const String &path, String &error )
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        error.clear();
+        try
+        {
+        if( !m_database || !isLoaded() || path.empty() || path.find('\0') != String::npos )
+        {
+            error = "Backup requires an open database and a valid destination";
+            return false;
+        }
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        auto destination = fs::absolute( fs::u8path(path.c_str()), ec );
+        if( ec || fs::exists(destination, ec) || ec )
+        {
+            error = "Backup destination already exists or cannot be inspected";
+            return false;
+        }
+        fs::create_directories(destination.parent_path(), ec);
+        if( ec ) { error = ec.message().c_str(); return false; }
+        auto temporary = destination;
+        temporary += std::string(".") + StringUtil::getUUID().c_str() + ".tmp";
+        struct Cleanup
+        {
+            fs::path path;
+            ~Cleanup() { std::error_code ignored; fs::remove(path, ignored); }
+        } cleanup{temporary};
+        sqlite3 *handle = nullptr;
+        const auto temporaryText = temporary.u8string();
+        const auto opened = sqlite3_open_v2(temporaryText.c_str(), &handle,
+                                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nullptr);
+        std::unique_ptr<sqlite3, decltype(&sqlite3_close)> output(handle, &sqlite3_close);
+        if( opened != SQLITE_OK )
+        {
+            error = handle ? sqlite3_errmsg(handle) : "Cannot open backup destination";
+            return false;
+        }
+        auto backup = sqlite3_backup_init(handle, "main", m_database->mpDB, "main");
+        if( !backup ) { error = sqlite3_errmsg(handle); return false; }
+        const auto step = sqlite3_backup_step(backup, -1);
+        const auto finished = sqlite3_backup_finish(backup);
+        if( step != SQLITE_DONE || finished != SQLITE_OK )
+        {
+            error = sqlite3_errmsg(handle);
+            return false;
+        }
+        output.reset();
+        // A snapshot is published only after SQLite has completed and closed it.
+        fs::create_hard_link(temporary, destination, ec);
+        if( ec ) { error = ec.message().c_str(); return false; }
+        return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
     }
 }  // namespace workphone

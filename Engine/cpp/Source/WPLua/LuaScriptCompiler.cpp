@@ -21,7 +21,7 @@ namespace workphone
                                              resource::DependencySet &dependencies,
                                              String &error ) const
     {
-        std::filesystem::path path( std::string( context.sourcePath.data(), context.sourcePath.size() ) );
+        auto path = std::filesystem::u8path( context.sourcePath.c_str() );
         path += ".deps";
         std::error_code status;
         if( !std::filesystem::exists( path, status ) )
@@ -60,8 +60,7 @@ namespace workphone
         const resource::CompileContext &context, std::ostream &output, Array<String> &messages ) const
     {
         using resource::CompilationStatus;
-        std::ifstream input( std::filesystem::path( std::string( context.sourcePath.data(),
-                                                                 context.sourcePath.size() ) ),
+        std::ifstream input( std::filesystem::u8path( context.sourcePath.c_str() ),
                              std::ios::binary | std::ios::ate );
         if( !input ) { messages.push_back( "Cannot open Lua source" ); return CompilationStatus::Failure; }
         const auto length = input.tellg();
