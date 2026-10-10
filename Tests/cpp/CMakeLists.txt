@@ -2,6 +2,17 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+if(TARGET WPNetwork)
+    add_executable(WPNetworkIntegrationTests NetworkProductionTests.cpp)
+    target_compile_definitions(WPNetworkIntegrationTests PRIVATE BOOST_ALL_NO_LIB)
+    target_include_directories(WPNetworkIntegrationTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost)
+    target_link_libraries(WPNetworkIntegrationTests PRIVATE WPNetwork Workphone)
+    set_target_properties(WPNetworkIntegrationTests PROPERTIES FOLDER Tests/Network)
+    add_test(NAME WPNetwork.integration COMMAND WPNetworkIntegrationTests)
+    set_tests_properties(WPNetwork.integration PROPERTIES LABELS "network;headless;scene" TIMEOUT 30)
+endif()
+
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
     add_executable(ClawCubemapTests ClawCubemapTests.cpp)
     target_compile_definitions(ClawCubemapTests PRIVATE BOOST_ALL_NO_LIB)

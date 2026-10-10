@@ -129,4 +129,5 @@ steam_appid.txt
 # Generated shared copy of the vehicle sample audio asset pack.
 /bin/Media/Audio/VehicleAdvanced/
 /project_graphics_effects_tests
+/project_network_contracts/
 /.github

@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Application.hpp>
+#include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <Workphone/Scene/Directors/GraphicsSettingsDirector.hpp>
 #include <Workphone/AI/AiManager.hpp>
@@ -454,6 +455,14 @@ namespace workphone::core
         auto soundManager = applicationManager->getSoundManager();
         auto inputManager = applicationManager->getInputDeviceManager();
         auto cameraManager = applicationManager->getCameraManager();
+
+        // Exactly one application-task owner; keep heartbeat polling active
+        // while local presentation is paused and before scene state is applied.
+        if( Thread::getCurrentTask() == TaskId::Application )
+        {
+            if( auto network = applicationManager->getNetworkManager() )
+                network->poll();
+        }
 
         stateManager->preUpdate();
 

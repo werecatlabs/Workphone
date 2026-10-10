@@ -30,6 +30,8 @@ namespace workphone
 
     void WPNetworkPacket::initialise( const NetEvent &event )
     {
+        if( event.size > sizeof( event.data ) )
+            throw std::length_error( "WPNetwork: invalid native event size" );
         setData( event.data, event.size );
     }
 
@@ -240,8 +242,6 @@ namespace workphone
         network::assignBytes( m_buffer, data, size );
         m_readPosition = 0;
     }
-    }
-
     void WPNetworkPacket::setSystemAddress( SmartPtr<ISystemAddress> systemAddress )
     {
         m_systemAddress = systemAddress;

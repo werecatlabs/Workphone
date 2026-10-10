@@ -55,7 +55,8 @@ namespace workphone
     {
         if( !packet || !m_started )
             return -1;
-        auto address = dynamic_cast<WPNetworkSystemAddress *>( packet->getSystemAddress().get() );
+        auto packetAddress = packet->getSystemAddress();
+        auto address = dynamic_cast<WPNetworkSystemAddress *>( packetAddress.get() );
         if( !address )
             return -1;
         for( int i = 0; i < m_context.max_peers; ++i )
@@ -91,6 +92,8 @@ namespace workphone
         {
             m_started = net_start_client( &m_context ) == NET_RESULT_OK;
         }
+        if( !m_started )
+            throw std::runtime_error( "WPNetwork: socket startup or bind failed" );
     }
 
     bool WPNetworkManager::isServer() const
@@ -130,7 +133,7 @@ namespace workphone
 
         auto wpPacket = packet ? dynamic_cast<WPNetworkPacket *>( packet.get() ) : nullptr;
         if( !wpPacket )
-            return nullptr;
+            throw std::invalid_argument( "WPNetwork: incompatible or null packet" );
 
         size = wpPacket->getDataLength();
         return wpPacket->getData();
@@ -144,6 +147,8 @@ namespace workphone
 
     void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket )
     {
+        if( !m_started )
+            throw std::logic_error( "WPNetwork: session is not started" );
         u32 size = 0;
         const auto *data = getPacketData( outpacket, size );
         if( !data || size == 0 )
@@ -214,9 +219,9 @@ namespace workphone
     void WPNetworkManager::sendPacket( SmartPtr<IPacket> &outpacket,
                                        SmartPtr<ISystemAddress> systemAddress )
     {
-        auto peer = findPeerByAddress( systemAddress );
-        if( peer )
-            sendPacket( outpacket, static_cast<u16>( peer->id ) );
+        (void)outpacket;
+        (void)systemAddress;
+        throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
     }
 
     void WPNetworkManager::sendPacketToAllExcept( SmartPtr<IPacket> &outpacket,
@@ -258,7 +263,7 @@ namespace workphone
 
     String WPNetworkManager::getLocalRakNetGUID()
     {
-        return String();
+        throw std::logic_error( "WPNetwork: RakNet GUID is unsupported by native UDP" );
     }
 
     void WPNetworkManager::kickClient( u16 playerId, bool hardKick )
@@ -287,12 +292,12 @@ namespace workphone
             setServer( false );
 
         if( net_connect( &m_context, address.c_str(), port ) != NET_RESULT_OK )
-            m_connected = false;
+            throw std::runtime_error( "WPNetwork: connection request failed" );
     }
 
     const u32 WPNetworkManager::getPing()
     {
-        return 0;
+        throw std::logic_error( "WPNetwork: native UDP has no measured RTT" );
     }
 
     void WPNetworkManager::setNetIterations( u16 iterations )

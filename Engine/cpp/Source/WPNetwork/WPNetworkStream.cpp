@@ -250,6 +250,4 @@ namespace workphone
         m_position = 0;
     }
 
-        m_position = 0;
-    }
 }  // namespace workphone

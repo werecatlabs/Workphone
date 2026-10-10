@@ -154,6 +154,18 @@ int main(void)
     net_context_shutdown(&probe); net_context_shutdown(&server);
     CHECK(net_get_bound_port(&server)==0 && server.local_player_id==NET_INVALID_PEER);
     CHECK(net_start_server(&server,port,3)==NET_RESULT_OK);
+    server.next_peer_id=NET_MAX_PLAYER_ID;
+    net_context_init(&clients[0]);
+    CHECK(net_start_client(&clients[0])==NET_RESULT_OK);
+    CHECK(net_connect(&clients[0],"127.0.0.1",port)==NET_RESULT_OK);
+    for(i=0;i<20;++i) pump();
+    CHECK(clients[0].local_player_id==NET_MAX_PLAYER_ID);
+    net_disconnect(&clients[0]);
+    for(i=0;i<10;++i) pump();
+    CHECK(net_connect(&clients[0],"127.0.0.1",port)==NET_RESULT_OK);
+    for(i=0;i<10;++i) pump();
+    CHECK(clients[0].local_player_id==NET_INVALID_PEER && server.next_peer_id==NET_MAX_PLAYER_ID+1);
+    net_context_shutdown(&clients[0]);
     net_context_shutdown(&server); net_shutdown();
     puts("PASS: native sockets, distinct identities, handshake binding, budgets, bounds, timeout and teardown");
     return 0;

@@ -31,6 +31,17 @@ namespace workphone::network
         if( buffer.size() > MaxMessageBytes || count > MaxMessageBytes - buffer.size() )
             throw std::length_error( "Network codec: message capacity exceeded" );
         const auto *bytes = static_cast<const unsigned char *>( data );
+        const auto inputAddress = reinterpret_cast<std::uintptr_t>( data );
+        const auto bufferAddress = reinterpret_cast<std::uintptr_t>( buffer.data() );
+        if( !buffer.empty() && inputAddress >= bufferAddress &&
+            inputAddress - bufferAddress < buffer.size() )
+        {
+            requireBytes( inputAddress - bufferAddress, count, buffer.size() );
+            Buffer staged;
+            staged.insert( staged.end(), bytes, bytes + count );
+            buffer.insert( buffer.end(), staged.begin(), staged.end() );
+            return;
+        }
         buffer.insert( buffer.end(), bytes, bytes + count );
     }
 
@@ -81,8 +92,8 @@ namespace workphone::network
         if constexpr( std::is_signed_v<T> )
         {
             const auto max = static_cast<U>( std::numeric_limits<T>::max() );
-            value = bits <= max ? static_cast<T>( bits ) :
-                                 static_cast<T>( -1 - static_cast<T>( static_cast<U>( ~bits ) ) );
+            value = bits <= max ? static_cast<T>( bits )
+                                : static_cast<T>( -1 - static_cast<T>( static_cast<U>( ~bits ) ) );
         }
         else
             value = bits;
@@ -134,5 +145,5 @@ namespace workphone::network
         value = std::move( decoded );
         position = cursor + length;
     }
-}
+}  // namespace workphone::network
 #endif

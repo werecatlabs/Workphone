@@ -4,6 +4,7 @@
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Interface/Net/INetworkListener.hpp>
 #include <Workphone/Interface/Net/INetworkView.hpp>
+#include <mutex>
 
 namespace workphone
 {
@@ -107,7 +108,7 @@ namespace workphone
              * @class Listener
              * @brief Internal INetworkListener that routes packets to this NetworkView.
              */
-            class Listener : public INetworkListener
+            class WPCore_API Listener : public INetworkListener
             {
             public:
                 explicit Listener( NetworkView *owner );
@@ -116,10 +117,12 @@ namespace workphone
                 void handlePacket( SmartPtr<IPacket> packet ) override;
                 void connect( u32 playerId ) override;
                 void disconnect( u32 playerId ) override;
+                void detach();
 
                 WP_CLASS_REGISTER_DECL;
 
             private:
+                std::recursive_mutex m_mutex;
                 NetworkView *m_owner = nullptr;
             };
 

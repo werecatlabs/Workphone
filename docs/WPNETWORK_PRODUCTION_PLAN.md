@@ -2,7 +2,7 @@
 
 Date: 10 October 2026. Reviewed checkout: `4593215cd`; the working tree was clean at the start of this review.
 
-Status: proposed implementation plan based on targeted source inspection. WPNetwork is not production certified. This change adds documentation only; it does not implement the features below.
+Status: implementation in progress. WPNetwork is not production certified. See [implementation status](WPNETWORK_IMPLEMENTATION_STATUS.md) for completed repairs, validation evidence and outstanding packages; the feature catalogue below is the target scope.
 
 Scope: native `WorkphoneNetwork`, C++ `WPNetwork`, engine networking interfaces, game scene components, Lua bindings, Editor authoring and multiplayer testing, dedicated server packaging, and online-service integration boundaries.
 

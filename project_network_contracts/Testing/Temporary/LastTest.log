@@ -1,18 +1,18 @@
-Start testing: Oct 10 13:53 GMT Daylight Time
+Start testing: Oct 10 14:09 GMT Daylight Time
 ----------------------------------------------------------
 1/2 Testing: WorkphoneNetwork.native
 1/2 Test: WorkphoneNetwork.native
 Command: "G:/Workphone/project_network_contracts/Tests/NetworkProduction/RelWithDebInfo/WorkphoneNetworkTests.exe"
 Directory: G:/Workphone/project_network_contracts/Tests/NetworkProduction
-"WorkphoneNetwork.native" start time: Oct 10 13:53 GMT Daylight Time
+"WorkphoneNetwork.native" start time: Oct 10 14:09 GMT Daylight Time
 Output:
 ----------------------------------------------------------
 PASS: native sockets, distinct identities, handshake binding, budgets, bounds, timeout and teardown
 <end of output>
-Test time =   1.27 sec
+Test time =   1.16 sec
 ----------------------------------------------------------
 Test Passed.
-"WorkphoneNetwork.native" end time: Oct 10 13:53 GMT Daylight Time
+"WorkphoneNetwork.native" end time: Oct 10 14:09 GMT Daylight Time
 "WorkphoneNetwork.native" time elapsed: 00:00:01
 ----------------------------------------------------------
 
@@ -20,21 +20,21 @@ Test Passed.
 2/2 Test: WPNetwork.codec
 Command: "G:/Workphone/project_network_contracts/Tests/NetworkProduction/RelWithDebInfo/WPNetworkCodecTests.exe"
 Directory: G:/Workphone/project_network_contracts/Tests/NetworkProduction
-"WPNetwork.codec" start time: Oct 10 13:53 GMT Daylight Time
+"WPNetwork.codec" start time: Oct 10 14:09 GMT Daylight Time
 Output:
 ----------------------------------------------------------
 PASS: portable codec golden bytes, numeric values, atomic failures and capacity bounds
 <end of output>
-Test time =   0.01 sec
+Test time =   0.04 sec
 ----------------------------------------------------------
 Test Passed.
-"WPNetwork.codec" end time: Oct 10 13:53 GMT Daylight Time
+"WPNetwork.codec" end time: Oct 10 14:09 GMT Daylight Time
 "WPNetwork.codec" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Oct 10 13:53 GMT Daylight Time
+End testing: Oct 10 14:09 GMT Daylight Time
 
-headless =   1.29 sec*proc
+headless =   1.20 sec*proc
 
-network =   1.29 sec*proc
+network =   1.20 sec*proc
 

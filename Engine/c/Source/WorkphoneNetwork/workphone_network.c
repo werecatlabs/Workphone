@@ -191,14 +191,15 @@ static NetSocketHandle net_create_udp_socket( unsigned short port )
 {
     NetSocket s;
     struct sockaddr_in addr;
-    int yes;
+#if defined( _WIN32 )
+    int yes = 1;
+#endif
 
     s = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
 
     if( s == NET_SOCKET_INVALID )
         return NET_SOCKET_INVALID;
 
-    yes = 1;
 #if defined( _WIN32 )
     if( setsockopt( s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char *)&yes, sizeof( yes ) ) != 0 )
     {
@@ -360,7 +361,7 @@ static NetPeer *net_add_peer( NetContext *ctx, const NetAddress *address )
         {
             memset( &ctx->peers[i], 0, sizeof( NetPeer ) );
 
-            if( ctx->next_peer_id <= 0 || ctx->next_peer_id > 65535 )
+            if( ctx->next_peer_id <= 0 || ctx->next_peer_id > NET_MAX_PLAYER_ID )
                 return NULL;
             ctx->peers[i].active = 1;
             ctx->peers[i].id = ctx->next_peer_id++;
@@ -446,7 +447,7 @@ static void net_handle_connect_accept( NetContext *ctx, const NetAddress *from,
 
     memcpy( &assigned_id, payload + 8, 4 );
     assigned_id = ntohl( assigned_id );
-    if( assigned_id == 0 || assigned_id > 65535 )
+    if( assigned_id == 0 || assigned_id > NET_MAX_PLAYER_ID )
         return;
 
     peer = net_find_peer_by_address( ctx, from );

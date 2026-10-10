@@ -42,6 +42,8 @@ extern "C" {
 #define NET_MAX_DATAGRAMS_PER_UPDATE 128
 #define NET_CONTROL_EVENT_RESERVE ( NET_MAX_PEERS + 4 )
 #define NET_INVALID_PEER ( -1 )
+/* 0 is the server; 0xffff is the C++ facade's disconnected sentinel. */
+#define NET_MAX_PLAYER_ID 65534
 
 #if defined( _WIN32 )
 typedef size_t NetSocketHandle;

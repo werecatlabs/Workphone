@@ -55,35 +55,35 @@ namespace workphone::scene
 
     void NetworkListener::connect( u32 playerId )
     {
-        try
+        auto listeners = m_listeners.snapshot();
+        for( auto &listener : listeners )
         {
-            auto listeners = m_listeners.snapshot();
-            for( auto &listener : listeners )
+            try
             {
                 if( listener )
                     listener->connect( playerId );
             }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
+            catch( std::exception &e )
+            {
+                WP_LOG_EXCEPTION( e );
+            }
         }
     }
 
     void NetworkListener::disconnect( u32 playerId )
     {
-        try
+        auto listeners = m_listeners.snapshot();
+        for( auto &listener : listeners )
         {
-            auto listeners = m_listeners.snapshot();
-            for( auto &listener : listeners )
+            try
             {
                 if( listener )
                     listener->disconnect( playerId );
             }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
+            catch( std::exception &e )
+            {
+                WP_LOG_EXCEPTION( e );
+            }
         }
     }
 

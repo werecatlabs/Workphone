@@ -4,6 +4,7 @@
 #include <Workphone/Interface/Net/INetworkStream.hpp>
 #include <Workphone/Interface/Net/IPacket.hpp>
 #include <Workphone/Interface/Net/NetworkMessage.hpp>
+#include <Workphone/Interface/Net/NetworkActorSnapshot.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Interface/Scene/ITransform.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
@@ -37,8 +38,15 @@ namespace workphone::scene
 
     void NetworkView::Listener::handlePacket( SmartPtr<IPacket> packet )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_mutex );
         if( m_owner && packet )
             m_owner->handlePacket( packet );
+    }
+
+    void NetworkView::Listener::detach()
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_mutex );
+        m_owner = nullptr;
     }
 
     void NetworkView::Listener::connect( u32 /*playerId*/ )
@@ -83,6 +91,12 @@ namespace workphone::scene
         {
             setLoadingState( LoadingState::Loading );
 
+            if( m_listener )
+                m_listener->detach();
+            if( m_networkManager && m_listener )
+                m_networkManager->removeListener( m_listener );
+            m_listener = nullptr;
+
             Component::load( data );
 
             auto applicationManager = core::IApplicationManager::instance();
@@ -114,6 +128,9 @@ namespace workphone::scene
         {
             setLoadingState( LoadingState::Unloading );
 
+            if( m_listener )
+                m_listener->detach();
+
             if( m_networkManager )
             {
                 m_networkManager->removeListener( m_listener );
@@ -121,6 +138,9 @@ namespace workphone::scene
             }
 
             m_listener = nullptr;
+            m_sendAccumulator = 0.0f;
+            m_hasReceivedSnapshot = false;
+            m_outgoingSequence = m_lastReceivedSequence = 0;
 
             Component::unload( data );
 
@@ -134,6 +154,9 @@ namespace workphone::scene
 
     void NetworkView::update()
     {
+        auto application = core::IApplicationManager::instancePtr();
+        if( !application || !application->isPlaying() )
+            return;
         if( !isEnabled() || !m_replicationEnabled || m_viewId < 0 || !m_networkManager ||
             !hasSendAuthority() ||
             m_networkManager->getConnectionStatus() !=
@@ -196,7 +219,7 @@ namespace workphone::scene
                            "Selects which peer is allowed to publish actor state." );
         setEditorMetadata(
             deliveryModeStr, "Delivery", "Replication",
-            "Unreliable is preferred for frequent snapshots; Reliable guarantees delivery." );
+            "Select a mode supported by the active backend; unsupported modes fail explicitly." );
         setEditorMetadata( sendRateStr, "Send Rate (Hz)", "Replication",
                            "Maximum number of actor snapshots sent per second." );
         setEditorMetadata( syncPositionStr, "Position", "Transform Channels",
@@ -250,8 +273,9 @@ namespace workphone::scene
             std::max( 0, std::min( deliveryMode, static_cast<s32>( DeliveryMode::Count ) - 1 ) );
         m_deliveryMode = static_cast<DeliveryMode>( deliveryMode );
 
-        properties->getPropertyValue( sendRateStr, m_sendRate );
-        m_sendRate = std::max( 1.0f, std::min( m_sendRate, 120.0f ) );
+        auto sendRate = m_sendRate;
+        properties->getPropertyValue( sendRateStr, sendRate );
+        setSendRate( sendRate );
         properties->getPropertyValue( syncPositionStr, m_syncPosition );
         properties->getPropertyValue( syncRotationStr, m_syncRotation );
         properties->getPropertyValue( syncScaleStr, m_syncScale );
@@ -332,55 +356,58 @@ namespace workphone::scene
         if( !transform )
             return;
 
-        u32 sequence = 0;
-        u8 channels = 0;
-        packet->read( sequence );
-        packet->read( channels );
-
-        if( m_hasReceivedSnapshot && static_cast<s32>( sequence - m_lastReceivedSequence ) <= 0 )
+        const auto state = network::readActorSnapshot( *packet );
+        if( m_hasReceivedSnapshot && !network::isNewerSequence( state.sequence, m_lastReceivedSequence ) )
         {
             return;
         }
 
-        if( ( channels & SyncPositionFlag ) != 0 )
+        if( ( state.channels & SyncPositionFlag ) != 0 )
         {
-            auto position = Vector3<real_Num>();
-            packet->read( position );
-            transform->setPosition( position );
+            transform->setPosition( Vector3<real_Num>( state.position[0], state.position[1], state.position[2] ) );
         }
-        if( ( channels & SyncRotationFlag ) != 0 )
+        if( ( state.channels & SyncRotationFlag ) != 0 )
         {
-            auto rotation = Vector3<real_Num>();
-            packet->read( rotation );
-            transform->setRotation( rotation );
+            transform->setRotation( Vector3<real_Num>( state.rotation[0], state.rotation[1], state.rotation[2] ) );
         }
-        if( ( channels & SyncScaleFlag ) != 0 )
+        if( ( state.channels & SyncScaleFlag ) != 0 )
         {
-            auto scale = Vector3<real_Num>();
-            packet->read( scale );
-            transform->setScale( scale );
+            transform->setScale( Vector3<real_Num>( state.scale[0], state.scale[1], state.scale[2] ) );
         }
 
-        m_lastReceivedSequence = sequence;
+        m_lastReceivedSequence = state.sequence;
         m_hasReceivedSnapshot = true;
     }
 
     void NetworkView::handlePacket( SmartPtr<IPacket> packet )
     {
-        if( !packet )
+        auto application = core::IApplicationManager::instancePtr();
+        if( !packet || !m_networkManager || !isEnabled() || !m_replicationEnabled ||
+            !application || !application->isPlaying() )
             return;
 
         NetworkMessageHeader header;
         if( !NetworkMessageHeader::read( packet, header ) || header.objectId != m_viewId )
             return;
 
+        const auto sender = m_networkManager->getPacketSenderId( packet );
+        if( sender < 0 )
+            return;
+
         switch( header.type )
         {
         case NetworkMessageType::ActorState:
-            deserializeView( packet );
+            // Clients accept only server-published state. Server receives owner
+            // state only under the authored Owner policy; AnyPeer is not authority.
+            if( !m_networkManager->isServer() ? sender == 0 :
+                ( m_authorityMode == AuthorityMode::Owner && static_cast<u32>( sender ) == m_ownerId ) )
+                deserializeView( packet );
             break;
         case NetworkMessageType::OwnershipTransfer:
         {
+            if( m_networkManager->isServer() || sender != 0 ||
+                packet->getDataLength() != NetworkMessageHeader::SerializedSize + sizeof( u32 ) )
+                break;
             u32 newOwnerId = 0;
             packet->read( newOwnerId );
             setOwnerId( newOwnerId );
@@ -388,9 +415,12 @@ namespace workphone::scene
         break;
         case NetworkMessageType::OwnershipRequest:
         {
+            if( !m_networkManager->isServer() ||
+                packet->getDataLength() != NetworkMessageHeader::SerializedSize + sizeof( u32 ) )
+                break;
             u32 requestingPlayerId = 0;
             packet->read( requestingPlayerId );
-            if( m_allowOwnershipRequests && hasSendAuthority() )
+            if( m_allowOwnershipRequests && requestingPlayerId == static_cast<u32>( sender ) )
             {
                 transferOwnership( requestingPlayerId );
             }
@@ -408,6 +438,8 @@ namespace workphone::scene
 
     void NetworkView::setViewId( s32 viewId )
     {
+        if( m_viewId != viewId )
+            m_hasReceivedSnapshot = false;
         m_viewId = viewId;
     }
 
@@ -418,6 +450,8 @@ namespace workphone::scene
 
     void NetworkView::setOwnerId( u32 ownerId )
     {
+        if( m_ownerId != ownerId )
+            m_hasReceivedSnapshot = false;
         m_ownerId = ownerId;
     }
 
@@ -465,7 +499,7 @@ namespace workphone::scene
 
     void NetworkView::transferOwnership( u32 newOwnerId )
     {
-        if( !m_networkManager )
+        if( !m_networkManager || !m_networkManager->isServer() )
             return;
 
         auto packet = m_networkManager->createPacket();
@@ -478,8 +512,9 @@ namespace workphone::scene
         header.write( packet );
         packet->write( newOwnerId );
 
-        m_ownerId = newOwnerId;
         m_networkManager->sendPacket( packet );
+        m_ownerId = newOwnerId;
+        m_hasReceivedSnapshot = false;
     }
 
     void NetworkView::requestOwnership()
@@ -555,6 +590,8 @@ namespace workphone::scene
 
     void NetworkView::setSendRate( f32 sendRate )
     {
+        if( !network::isFiniteFloat( sendRate ) )
+            throw std::invalid_argument( "NetworkView send rate must be finite" );
         m_sendRate = std::max( 1.0f, std::min( sendRate, 120.0f ) );
     }
 
