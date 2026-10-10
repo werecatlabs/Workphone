@@ -219,6 +219,7 @@ namespace graphics_compiler_contracts
         auto materialContext = context;
         materialContext.resourceId = ResourceID( "data://surface.matres" );
         materialContext.sourcePath = ( source / "surface.matres" ).u8string().c_str();
+        materialContext.dependencyArtifacts["data://image.texres"]=(compiled / "image.texres").u8string().c_str();
         require( compiler.getDependencies( materialContext, dependencies, error ) &&
                      dependencies.compileDependencies.size() == 1 &&
                      dependencies.compileDependencies.front().isResource &&

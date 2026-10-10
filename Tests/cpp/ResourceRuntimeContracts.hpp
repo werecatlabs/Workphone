@@ -117,7 +117,8 @@ namespace resource_runtime_contracts
     // Write an otherwise valid container around intentionally invalid graph metadata.
     // This reaches graph/schema validation rather than only the outer payload hash check.
     inline void writeManifestFixture( const fs::path &path, const String &target,
-                                      const Array<CompiledResourceHeader> &headers, u64 version = 1 )
+                                      const Array<CompiledResourceHeader> &headers, u64 version = 1,
+                                      const std::map<String,String> &artifacts = {} )
     {
         std::ostringstream bytes( std::ios::binary );
         auto number = [&]( u64 value ) {
@@ -141,6 +142,7 @@ namespace resource_runtime_contracts
             number( header.payloadHash );
             number( header.payloadSize );
             number( header.installDependencies.size() );
+            if(version==2) string(artifacts.at(header.resourceId.str()));
             for( const auto &dependency : header.installDependencies )
                 string( dependency.str() );
         }
@@ -217,9 +219,10 @@ namespace resource_runtime_contracts
         require( !authoring.writeRuntimeManifest( pathText( manifest ), { ResourceID( "data://missing.rtres" ) }, error ),
                  "Missing runtime manifest root was accepted" );
         require( read( manifest ) == manifestBytes, "Failed manifest export replaced the last-good manifest" );
-        const auto rootBytes = read( cooked / "root.rtres" );
-        require( !authoring.writeRuntimeManifest( pathText( cooked / "root.rtres" ), { rootId }, error ) &&
-                 read( cooked / "root.rtres" ) == rootBytes,
+        const auto rootArtifact=fs::u8path(authoring.compile(rootId).outputPath.c_str());
+        const auto rootBytes = read( rootArtifact );
+        require( !authoring.writeRuntimeManifest( pathText( rootArtifact ), { rootId }, error ) &&
+                 read( rootArtifact ) == rootBytes,
                  "Manifest export overwrote a resource payload" );
         authoring.shutdown();
         require( authoring.initialize( authoringConfig, error ), error );
@@ -228,15 +231,24 @@ namespace resource_runtime_contracts
         require( authoring.compile( rootId ).status == CompilationStatus::UpToDate,
                  "Restart lost persistent compilation metadata" );
         require( authoring.writeRuntimeManifest( pathText( manifest ), { rootId }, error ), error );
+        std::map<std::string,fs::path> artifactPaths;
+        for(const auto &entry:descriptors)
+        {
+            CompiledResourceRecord record;
+            require(database->getRecord(("data://"+entry.first).c_str(),record) && record.isValid(),"Committed artifact path");
+            artifactPaths[entry.first]=fs::u8path(record.outputPath.c_str());
+        }
         authoring.shutdown();
 
         fs::create_directories( relocated );
         u64 totalPayload = 0;
         for( const auto &entry : descriptors )
         {
-            fs::copy_file( cooked / entry.first, relocated / entry.first );
+            const auto relative=artifactPaths.at(entry.first);
+            fs::create_directories((relocated / relative).parent_path());
+            fs::copy_file( cooked / relative, relocated / relative );
             RuntimeResource payload;
-            require( CompiledResourceIO::read( pathText( relocated / entry.first ), payload, error ), error );
+            require( CompiledResourceIO::read( pathText( relocated / relative ), payload, error ), error );
             totalPayload += payload.header.payloadSize;
         }
         fs::copy_file( manifest, relocated / "runtime.wprm" );
@@ -308,7 +320,7 @@ namespace resource_runtime_contracts
 
         for( const auto &entry : fs::directory_iterator( relocated ) )
             fs::permissions( entry.path(), fs::perms::owner_all, fs::perm_options::add );
-        const auto leafPath = relocated / "leaf.rtres";
+        const auto leafPath = relocated / artifactPaths.at("leaf.rtres");
         const auto goodLeafBytes = read( leafPath );
         auto corruptLeafBytes = goodLeafBytes;
         corruptLeafBytes.back() ^= 1;
@@ -365,7 +377,7 @@ namespace resource_runtime_contracts
         graphRoot.installDependencies.clear();
         writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot, graphRoot } );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted duplicate manifest identities" );
-        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot }, 2 );
+        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot }, 3 );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted a newer manifest schema" );
         // The shared subtree is visited first along the short branch. Memoization
         // must still count its depth when the long branch reaches it afterwards.
@@ -393,6 +405,28 @@ namespace resource_runtime_contracts
                  "Runtime manifest rejected the exact supported shared-DAG depth boundary" );
         runtime.shutdown();
         write( relocated / "runtime.wprm", manifestBytes );
+        const auto legacy=fixture.root / "legacy-package";
+        fs::create_directories(legacy);
+        Array<CompiledResourceHeader> legacyHeaders;
+        std::map<String,String> pinnedPaths;
+        for(const auto &entry:descriptors)
+        {
+            fs::copy_file(relocated / artifactPaths.at(entry.first),legacy / entry.first);
+            CompiledResourceHeader header;
+            require(CompiledResourceIO::validate(pathText(legacy / entry.first),header,error),error);
+            pinnedPaths[header.resourceId.str()]=pathText(artifactPaths.at(entry.first));
+            legacyHeaders.push_back(header);
+        }
+        auto legacyConfig=runtimeConfig;
+        legacyConfig.compiledRoot=pathText(legacy);
+        legacyConfig.manifestPath=pathText(legacy / "runtime.wprm");
+        writeManifestFixture(legacy / "runtime.wprm",runtimeConfig.target,legacyHeaders);
+        require(runtime.initializeRuntime(legacyConfig,error) && runtime.load(rootId,error)!=nullptr,
+                "Version-one packages must remain loadable from their legacy layout");
+        runtime.shutdown();
+        pinnedPaths[rootId.str()]="../escape.wprs";
+        writeManifestFixture(legacy / "runtime.wprm",runtimeConfig.target,legacyHeaders,2,pinnedPaths);
+        require(!runtime.initializeRuntime(legacyConfig,error),"Version-two manifest accepted a traversal artifact path");
         require( snapshot( relocated ) == packageBefore, "Runtime fixture failed to restore package bytes" );
     }
 }

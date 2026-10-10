@@ -405,6 +405,61 @@ These extend RES-001–041 without renumbering existing references. They belong 
 
 Completion ledger at this review: RES-010/018/019/021/022 have implemented foundations; none is closed for complete R1 scope. RES-042–049 are newly explicit repairs, with no implementation claimed by this documentation update. Remaining packages are open or have only the foundations stated above; owners must attach actual evidence before marking them complete.
 
+Subsequent implementation is tracked in the [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md).
+The integrity increment and immutable artifact/manifest-v2 increment advance
+RES-004/006–008/013–017/042/048; they do not close those packages or the full R1 gates.
+
+### Platform texture artifacts — requested extension (RES-050–054)
+
+Textures retain one authored UUID and logical texture identity across targets.
+Platform formats are derived build variants, not independent copies of the asset
+database entry. Preserve original PNG/TGA/JPEG/EXR/DDS inputs and versioned import
+settings. A `.dds` suffix describes a container; the artifact descriptor must also
+identify the GPU format, color space, dimensions, topology and mip layout.
+
+**Windows R1:** cook native `.dds` artifacts for DX11/DX12 profiles, with the DDS
+DX10 header when required by the selected DXGI format. Define the DDS bytes as the
+typed texture payload inside WPRS; optional loose `.dds` export uses those same
+bytes. WPRS retains identity/version/dependency validation. Avoid parallel
+untracked DDS files or source-image decoding in the shipping upload path. The
+existing custom cooked texture payload requires a versioned migration/decoder
+policy; changing extensions alone does not implement this feature.
+
+| Texture semantic | Proposed Windows profile policy, subject to declared device capabilities and quality gates |
+|---|---|
+| Color/albedo/emissive LDR | BC7 sRGB where appropriate; BC1 for opaque lower-memory profiles or BC3 where the chosen alpha/compatibility policy requires it; linear variants for linear data |
+| Tangent-space normals | BC5 linear with documented channel/sign convention, normal reconstruction and renormalized mips |
+| Single-channel masks | BC4 linear; explicitly selected uncompressed R8 for exact data or unsupported compression |
+| Packed material masks | Linear BC7 or a measured compatible alternative; preserve channel meaning and precision requirements |
+| HDR environment/light data | BC6H where signedness, alpha and error constraints permit; floating-point uncompressed fallback where required |
+| UI, lookup tables and precision-sensitive textures | Explicit uncompressed format or quality-approved compression; preserve alpha mode, sampling and exact-data requirements |
+
+Profiles must declare a minimum renderer/device capability, not assume format
+support from the Windows OS name. Reject unsupported combinations during cooking
+or package validation, or select an explicitly cooked compatible fallback. Runtime
+must not silently decompress/recompress or fetch authoring files to repair a package.
+
+| Package / milestone | Implementation and acceptance |
+|---|---|
+| **RES-050 / RS0–RS3: platform texture profile contract** | Extend shared BuildKey/metadata schemas with platform, graphics API/capability tier, GPU format/container, color space, alpha mode, mip policy, resize/quality settings and encoder identity/version. Include source/importer settings and deterministic encoder options in fingerprints. Windows DDS is the first certified profile; additional platform container/compression profiles are explicitly unsupported until their own cooker/loader gates pass. Keep ASTC/ETC2 or other future format choices capability-driven and separate from container selection. |
+| **RES-051 / RS2–RS3: Windows DDS cooker** | Extend the existing GraphicsResourceCompiler/typed texture format instead of adding another asset database. Evaluate and pin the encoder/tool dependency and license; support semantic preprocessing, deterministic mip generation, compression, arrays/cubes/volumes where declared, and explicit passthrough validation for authored DDS. Validate headers, computed block pitches, all subresources, limits and payload sizes with overflow-safe arithmetic. Two targets/profiles/modes must coexist without output/index collisions. |
+| **RES-052 / RS4: native compressed texture installation** | Version the typed payload, validate DDS/DXGI metadata against the manifest/profile and device capabilities, and upload compressed mip/subresource bytes through the renderer. Handle SRGB views, alpha modes, cube/array topology, row/slice pitches, owner-thread creation/retirement and last-good replacement. Prove visible rendering from source-free DDS payloads; retain explicit support policy for prior cooked payloads. |
+| **RES-053 / RS5: Editor texture import and platform preview** | Texture inspector exposes semantic, color space, alpha, channel packing, mip/resize/compression/quality and per-target overrides. Show inherited versus overridden settings, selected GPU format, dimensions/mips, encoded bytes and estimated resident bytes. Preview selected target/mip/channel/face with compression-error comparison; bounded asynchronous builds reject stale settings/session results. Save/reopen and bulk reimport preserve UUIDs and overrides. |
+| **RES-054 / RS6: package and texture certification** | Package profile selects exact texture variants and validates closure/capability compatibility. Test malformed/truncated/oversized DDS, odd/small dimensions and mip tails, alpha/color-space/normal semantics, arrays/cubes/volumes, encoder failure, interrupted publication and stale replacement. Compare image error, encoded/resident sizes and upload/load times on representative hardware; run a relocated read-only Windows package with original images/importers/encoder absent. |
+
+Dependencies: RES-050 extends RES-002/005/010/013; RES-051 requires immutable
+generation publication (RES-014–017); RES-052 extends RES-019/021/022/049;
+RES-053 extends RES-023–031/046; RES-054 extends RES-047 and RG6. Sequence profile
+and DDS cooker work with backlog step 7, native installation with step 8, and
+Editor/package acceptance with steps 10–11. Include Windows DDS in the R1 texture
+family acceptance matrix. These packages are planned; no DDS cooker, compressed
+GPU upload or platform preview implementation is claimed by this amendment.
+
+Format references: Microsoft's [DDS programming guide](https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide)
+defines DDS headers/subresources and pitch validation; [Direct3D 11 block compression](https://learn.microsoft.com/en-us/windows/win32/direct3d11/texture-block-compression-in-direct3d-11)
+describes BC formats. The choices above are proposed engine policies to validate,
+not defaults mandated by those references.
+
 ## 6. Mutation, build and publication protocols
 
 ### 6.1 Filesystem operations cannot rely on a DB transaction alone

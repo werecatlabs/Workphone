@@ -314,7 +314,10 @@ namespace workphone::render
             auto data = readMaterialRecipe( context );
             AssetCatalogPath compiledPath;
             String error;
-            if( !canonicalAssetCatalogPath( context.compiledRoot, data.textureId.compiledRelativePath(),
+            const auto pinned=context.dependencyArtifacts.find(data.textureId.str());
+            if(pinned==context.dependencyArtifacts.end())
+                throw std::runtime_error("Material compiler requires a pinned texture artifact");
+            if( !canonicalAssetCatalogPath( context.compiledRoot, pinned->second,
                                             compiledPath, error ) )
                 throw std::runtime_error( error.c_str() );
             const auto path =

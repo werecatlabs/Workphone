@@ -5,6 +5,7 @@
 #include <Workphone/Core/Array.hpp>
 
 #include <ostream>
+#include <map>
 
 namespace workphone::resource
 {
@@ -46,6 +47,8 @@ namespace workphone::resource
         String compiledRoot;
         String target;
         bool packagedBuild = false;
+        /** Pinned absolute artifacts of successfully compiled dependencies. */
+        std::map<String, String> dependencyArtifacts;
     };
 
     /** Base interface implemented by format-specific resource compilers. */

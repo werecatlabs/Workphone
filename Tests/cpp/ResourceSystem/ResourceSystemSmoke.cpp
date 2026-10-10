@@ -17,6 +17,25 @@ namespace
     using namespace workphone;
     using namespace workphone::resource;
 
+    class FaultDatabase final : public IResourceCompilationDatabase
+    {
+    public:
+        ResourceCompilationDatabase inner;
+        bool rejectCommit=false;
+        bool connect(const String &path) override { return inner.connect(path); }
+        void disconnect() override { inner.disconnect(); }
+        bool isConnected() const override { return inner.isConnected(); }
+        String getLastError() const override { return rejectCommit?"Injected index commit failure":inner.getLastError(); }
+        bool reset() override { return inner.reset(); }
+        bool getRecord(const String &id,CompiledResourceRecord &record) const override { return inner.getRecord(id,record); }
+        bool commitCompilation(const CompiledResourceRecord &record,const Array<CompileDependencyRecord> &edges) override
+        { return !rejectCommit && inner.commitCompilation(record,edges); }
+        bool removeRecord(const String &id) override { return inner.removeRecord(id); }
+        bool getDependencies(const String &id,Array<CompileDependencyRecord> &edges) const override
+        { return inner.getDependencies(id,edges); }
+        bool getDependents(const String &path,Array<String> &ids) const override { return inner.getDependents(path,ids); }
+    };
+
     void require( bool condition, const std::string &message )
     {
         if( !condition )
@@ -100,6 +119,9 @@ namespace
             if( !input )
                 return CompilationStatus::Failure;
             output << input.rdbuf();
+            input.close();
+            if(context.resourceId.str()=="data://mutating.txtres")
+                writeFile(fs::u8path(context.sourcePath.c_str()),"changed-during-compile\n");
             return output ? CompilationStatus::Success : CompilationStatus::Failure;
         }
     };
@@ -144,7 +166,7 @@ int main()
         require( !registry->registerCompiler( std::make_shared<TextCompiler>(), &error ),
                  "Duplicate compiler registration was accepted" );
 
-        auto database = std::make_shared<ResourceCompilationDatabase>();
+        auto database = std::make_shared<FaultDatabase>();
         ResourceSystem system( registry, database );
         ResourceSystemConfig config;
         config.sourceRoot = source.u8string().c_str();
@@ -157,9 +179,9 @@ int main()
         const auto first = system.compile( rootId );
         require( first.status == CompilationStatus::Success,
                  std::string( "Initial compilation failed: " ) + reportMessage( first ) );
-        require( fs::is_regular_file( compiled / "dependency.txtres" ),
+        require( fs::is_regular_file( fs::u8path(system.compile(ResourceID("data://dependency.txtres")).outputPath.c_str()) ),
                  "Resource dependency was not compiled" );
-        require( fs::is_regular_file( compiled / "root.txtres" ), "Root resource was not compiled" );
+        require( fs::is_regular_file( fs::u8path(first.outputPath.c_str()) ), "Root resource was not compiled" );
 
         const auto second = system.compile( rootId );
         require( second.status == CompilationStatus::UpToDate,
@@ -183,7 +205,7 @@ int main()
                  "Changed transitive dependency did not alter the root source hash" );
 
         system.unload( rootId );
-        std::fstream corrupt( compiled / "root.txtres",
+        std::fstream corrupt( fs::u8path(rootRebuild->outputPath.c_str()),
                               std::ios::binary | std::ios::in | std::ios::out );
         require( static_cast<bool>( corrupt ), "Failed to open output for corruption test" );
         corrupt.seekp( -1, std::ios::end );
@@ -207,6 +229,70 @@ int main()
         writeFile( source / "quote's.txtres", "quoted resource payload\n" );
         require( system.compile( ResourceID( "data://quote's.txtres" ) ).succeeded(),
                  "Prepared database statements did not handle a quoted resource ID" );
+
+        fs::create_directories(source / "models");
+        writeFile(source / "models" / "car.mesh","subasset payload\n");
+        writeFile(source / "models" / "car_lod0.txtres","independent payload\n");
+        const auto subasset=system.compile(ResourceID("data://models/car.mesh:lod0.txtres"));
+        const auto alias=system.compile(ResourceID("data://models/car_lod0.txtres"));
+        require(subasset.succeeded(),"Subasset: "+reportMessage(subasset));
+        require(alias.succeeded(),"Alias: "+reportMessage(alias));
+        require(subasset.succeeded() && alias.succeeded() && subasset.outputPath!=alias.outputPath &&
+                fs::is_regular_file(fs::u8path(subasset.outputPath.c_str())),"Flattened subasset aliases must retain independent artifacts");
+        writeFile(source / "case.txtres","case fixture\n");
+        writeFile(source / "CASE.txtres","case fixture\n");
+        const auto lower=system.compile(ResourceID("data://case.txtres"));
+        const auto upper=system.compile(ResourceID("data://CASE.txtres"));
+        require(lower.succeeded() && upper.succeeded() &&
+                !fs::equivalent(fs::u8path(lower.outputPath.c_str()),fs::u8path(upper.outputPath.c_str())),
+                "Case-distinct logical IDs must not alias on Windows artifact storage");
+        writeFile(source / "generation.txtres","last-good\n");
+        const ResourceID generationId("data://generation.txtres");
+        const auto good=system.compile(generationId);
+        require(good.succeeded(),"Generation baseline");
+        const auto pinnedManifest=compiled / "pinned.wprm";
+        require(system.writeRuntimeManifest(pinnedManifest.u8string().c_str(),{generationId},error),error.c_str());
+        writeFile(source / "generation.txtres","replacement\n");
+        database->rejectCommit=true;
+        require(!system.compile(generationId).succeeded(),"Injected database failure must fail build");
+        database->rejectCommit=false;
+        system.clearRuntimeCache();
+        auto preserved=system.load(generationId,error);
+        require(preserved && std::string(preserved->payload.begin(),preserved->payload.end())=="last-good\n",
+                "Index commit failure must retain last-good disk generation after cache eviction");
+        const auto replacement=system.compile(generationId);
+        require(replacement.succeeded() && replacement.outputPath!=good.outputPath &&
+                fs::is_regular_file(fs::u8path(good.outputPath.c_str())),"Successful replacement must not overwrite prior generation");
+        CompilationOptions packaged;
+        packaged.packagedBuild=true;
+        const auto packageVariant=system.compile(generationId,packaged);
+        require(packageVariant.succeeded() && packageVariant.outputPath!=replacement.outputPath,
+                "Packaged and Editor variants must coexist on disk");
+        auto targetDatabase=std::make_shared<ResourceCompilationDatabase>();
+        ResourceSystem otherTarget(registry,targetDatabase);
+        auto otherConfig=config;
+        otherConfig.target="another-target";
+        require(otherTarget.initialize(otherConfig,error),error.c_str());
+        const auto targetVariant=otherTarget.compile(generationId);
+        require(targetVariant.succeeded() && targetVariant.outputPath!=replacement.outputPath,
+                "Targets sharing a cooked root must retain independent artifacts");
+        otherTarget.shutdown();
+        ResourceSystem pinnedRuntime(nullptr,nullptr);
+        RuntimeResourceConfig runtimeConfig;
+        runtimeConfig.compiledRoot=config.compiledRoot;
+        runtimeConfig.manifestPath=pinnedManifest.u8string().c_str();
+        runtimeConfig.target=config.target;
+        require(pinnedRuntime.initializeRuntime(runtimeConfig,error),error.c_str());
+        auto pinned=pinnedRuntime.load(generationId,error);
+        require(pinned && std::string(pinned->payload.begin(),pinned->payload.end())=="last-good\n",
+                "An existing manifest must retain its exact generation across builds, modes and targets");
+        pinnedRuntime.shutdown();
+        writeFile(source / "mutating.txtres","original\n");
+        require(!system.compile(ResourceID("data://mutating.txtres")).succeeded(),
+                "Compiler-time source changes must reject publication");
+        CompiledResourceRecord uncommitted;
+        require(database->getRecord("data://mutating.txtres",uncommitted) && !uncommitted.isValid(),
+                "Changed-input compilation must not create a committed index record");
 
         system.shutdown();
         error.clear();

@@ -158,7 +158,10 @@ namespace catalog_adapter_contracts
         require( adapter.resolve( uuid, request, error ), error.c_str() );
         require( request.resourceId == ResourceID( "data://root.ctest" ),
                  "Catalog UUID must resolve to its exact canonical ResourceID" );
-        require( adapter.compile( request ).succeeded(), "Catalog request must compile its resource" );
+        const auto initialCompilation=adapter.compile(request);
+        if(!initialCompilation.succeeded())
+            for(const auto &message:initialCompilation.messages) std::cerr << message << '\n';
+        require( initialCompilation.succeeded(), "Catalog request must compile its resource" );
         auto loaded = adapter.load( request, error );
         require( loaded && loaded->dependencies.size() == 1,
                  "Catalog load must use ResourceSystem install dependency loading" );

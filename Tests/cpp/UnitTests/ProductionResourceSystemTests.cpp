@@ -170,8 +170,8 @@ BOOST_FIXTURE_TEST_CASE( production_resource_system_compiles_caches_and_loads, R
     auto first = system->compile( rootId );
     BOOST_REQUIRE( first.succeeded() );
     BOOST_CHECK( first.status == CompilationStatus::Success );
-    BOOST_CHECK( fs::is_regular_file( compiled / "root.txtres" ) );
-    BOOST_CHECK( fs::is_regular_file( compiled / "dependency.txtres" ) );
+    BOOST_CHECK( fs::is_regular_file( fs::u8path(first.outputPath.c_str()) ) );
+    BOOST_CHECK( fs::is_regular_file( fs::u8path(system->compile(ResourceID("data://dependency.txtres")).outputPath.c_str()) ) );
 
     String loadError;
     auto loaded = system->load( rootId, loadError );
@@ -208,9 +208,10 @@ BOOST_FIXTURE_TEST_CASE( production_resource_system_rebuilds_transitive_changes,
 BOOST_FIXTURE_TEST_CASE( production_resource_system_rejects_corrupt_payloads, ResourceSystemFixture )
 {
     ResourceID rootId( "data://root.txtres" );
-    BOOST_REQUIRE( system->compile( rootId ).succeeded() );
+    const auto cooked=system->compile(rootId);
+    BOOST_REQUIRE( cooked.succeeded() );
 
-    auto outputPath = compiled / "root.txtres";
+    auto outputPath = fs::u8path(cooked.outputPath.c_str());
     std::fstream output( outputPath, std::ios::binary | std::ios::in | std::ios::out );
     BOOST_REQUIRE( output );
     output.seekp( -1, std::ios::end );

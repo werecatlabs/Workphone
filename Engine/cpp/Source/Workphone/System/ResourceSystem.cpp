@@ -39,7 +39,38 @@ namespace workphone::resource
             String target;
             Array<ResourceID> roots;
             std::map<String, CompiledResourceHeader> resources;
+            std::map<String, String> artifacts;
         };
+
+        String encodedArtifactKey( const String &value )
+        {
+            static const char digits[] = "0123456789abcdef";
+            String encoded;
+            for( unsigned char byte : value )
+            {
+                if((byte>='a' && byte<='z') || (byte>='0' && byte<='9') || byte=='_' || byte=='-')
+                    encoded += static_cast<char>(byte);
+                else
+                {
+                    encoded += '~';
+                    encoded += digits[byte>>4];
+                    encoded += digits[byte&15];
+                }
+            }
+            String result;
+            for(size_t offset=0; offset<encoded.size(); offset+=80)
+            {
+                if(offset) result += "/";
+                // Avoid Windows device names, trailing dots, and case-folding aliases.
+                result += "r" + encoded.substr(offset,80);
+            }
+            return result;
+        }
+
+        String artifactNamespace( const String &target )
+        {
+            return "artifacts/v2/" + encodedArtifactKey(target) + "/";
+        }
 
         void writeManifestNumber( std::ostream &stream, u64 value )
         {
@@ -114,7 +145,7 @@ namespace workphone::resource
                 error = "Runtime manifest is malformed or exceeds its format limits";
                 return false;
             };
-            if( !readManifestNumber( input, version ) || version != 1 ||
+            if( !readManifestNumber( input, version ) || (version != 1 && version != 2) ||
                 !readManifestString( input, manifest.target ) ||
                 !readManifestNumber( input, rootCount ) || rootCount == 0 ||
                 rootCount > maximumManifestResources )
@@ -145,6 +176,17 @@ namespace workphone::resource
                     dependencyCount > maximumManifestDependencies )
                     return malformed();
                 header.resourceType = header.resourceId.type();
+                String artifact=header.resourceId.compiledRelativePath();
+                if( version==2 )
+                {
+                    ResourceID pathId;
+                    if( !readManifestString(input,artifact) ||
+                        artifact.find(':')!=String::npos || artifact.find('\\')!=String::npos ||
+                        !pathId.set("data://"+artifact) || pathId.sourceRelativePath()!=artifact ||
+                        artifact.find(artifactNamespace(manifest.target))!=0 )
+                        return malformed();
+                }
+                manifest.artifacts[header.resourceId.str()]=artifact;
                 std::set<String> uniqueDependencies;
                 for( u64 dependencyIndex = 0; dependencyIndex < dependencyCount; ++dependencyIndex )
                 {
@@ -424,7 +466,8 @@ namespace workphone::resource
                 return fail( error );
 
             fs::path outputPath;
-            if( !resolveUnderRoot( compiledRoot, String( "data://" ) + resourceId.compiledRelativePath(),
+            if( !resolveUnderRoot( compiledRoot, String( "data://.staging/" ) +
+                                   std::to_string(resourceId.pathHash()).c_str() + ".wprs",
                                    false, outputPath, error ) )
                 return fail( error );
 
@@ -436,6 +479,12 @@ namespace workphone::resource
             context.compiledRoot = pathString( compiledRoot );
             context.target = config.target;
             context.packagedBuild = options.packagedBuild;
+            if( resourceId.str().size()>1024 || config.target.size()>128 )
+                return fail("Resource identity or target exceeds artifact namespace limits");
+
+            u64 sourceFileHash=0, sourceFileSize=0;
+            if(!CompiledResourceIO::hashFile(context.sourcePath,sourceFileHash,sourceFileSize,error))
+                return fail(error);
 
             DependencySet dependencies;
             try
@@ -481,6 +530,7 @@ namespace workphone::resource
                     }
                     canonicalPath = dependencyId.str();
                     dependencyHash = combineHash( childReport.sourceHash, childReport.outputHash );
+                    context.dependencyArtifacts[dependencyId.str()]=childReport.outputPath;
                 }
                 else
                 {
@@ -524,16 +574,11 @@ namespace workphone::resource
                     return report;
                 }
                 installDependencies[dependencyId.str()] = dependencyId;
+                context.dependencyArtifacts[dependencyId.str()]=childReport.outputPath;
                 canonicalDependencies[dependencyId.str()] = true;
                 dependencyHashes[dependencyId.str()] =
                     combineHash( childReport.sourceHash, childReport.outputHash );
             }
-
-            u64 sourceFileHash = 0;
-            u64 sourceFileSize = 0;
-            if( !CompiledResourceIO::hashFile( context.sourcePath, sourceFileHash, sourceFileSize,
-                                               error ) )
-                return fail( error );
 
             u64 sourceHash = hashString( resourceId.str() );
             sourceHash = combineHash( sourceHash, compilerVersion );
@@ -548,6 +593,10 @@ namespace workphone::resource
             }
 
             CompiledResourceRecord previousRecord;
+            u64 scannedHash=0,scannedSize=0;
+            if(!CompiledResourceIO::hashFile(context.sourcePath,scannedHash,scannedSize,error) ||
+               scannedHash!=sourceFileHash || scannedSize!=sourceFileSize)
+                return fail("Source changed during dependency scanning");
             if( !database->getRecord( resourceId.str(), previousRecord ) )
                 return fail( String( "Failed to query compilation database: " ) +
                              database->getLastError() );
@@ -555,8 +604,13 @@ namespace workphone::resource
             if( !options.force && previousRecord.isValid() &&
                 previousRecord.compilerVersion == compilerVersion &&
                 previousRecord.sourceHash == sourceHash &&
-                previousRecord.outputPath == resourceId.compiledRelativePath() )
+                previousRecord.outputPath.find(artifactNamespace(config.target))==0 )
             {
+                if(!resolveUnderRoot(compiledRoot,"data://"+previousRecord.outputPath,true,outputPath,error))
+                    error.clear();
+                else
+                {
+                context.outputPath=pathString(outputPath);
                 CompiledResourceHeader existingHeader;
                 if( fs::is_regular_file( outputPath ) &&
                     CompiledResourceIO::validate( context.outputPath, existingHeader, error ) &&
@@ -575,9 +629,13 @@ namespace workphone::resource
                     return report;
                 }
                 error.clear();
+                }
             }
 
             std::error_code filesystemError;
+            if(!resolveUnderRoot(compiledRoot,"data://.staging/" +
+                String(std::to_string(resourceId.pathHash()).c_str()) + ".wprs",false,outputPath,error)) return fail(error);
+            context.outputPath=pathString(outputPath);
             fs::create_directories( outputPath.parent_path(), filesystemError );
             if( filesystemError )
                 return fail( String( "Failed to create compiled resource directory: " ) +
@@ -622,6 +680,31 @@ namespace workphone::resource
             if( !payloadWriteSucceeded )
                 return fail( "Resource compiler failed while writing its payload" );
 
+            u64 checkedHash=0, checkedSize=0;
+            if(!CompiledResourceIO::hashFile(context.sourcePath,checkedHash,checkedSize,error) ||
+               checkedHash!=sourceFileHash || checkedSize!=sourceFileSize ||
+               compiler->versionFor(resourceId.type())!=compilerVersion)
+                return fail("Source or compiler changed during compilation; artifact was not committed");
+            for(const auto &dependency:canonicalDependencies)
+            {
+                if(dependency.second)
+                {
+                    CompiledResourceHeader pinnedHeader;
+                    if(!CompiledResourceIO::validate(context.dependencyArtifacts.at(dependency.first),pinnedHeader,error) ||
+                       pinnedHeader.resourceId.str()!=dependency.first ||
+                       combineHash(pinnedHeader.sourceHash,pinnedHeader.payloadHash)!=dependencyHashes.at(dependency.first))
+                        return fail("Compiled dependency changed during compilation");
+                }
+                else
+                {
+                    fs::path checkedPath;
+                    if(!resolveUnderRoot(sourceRoot,dependency.first,true,checkedPath,error) ||
+                       !CompiledResourceIO::hashFile(pathString(checkedPath),checkedHash,checkedSize,error) ||
+                       combineHash(checkedHash,checkedSize)!=dependencyHashes.at(dependency.first))
+                        return fail("Raw dependency changed during compilation");
+                }
+            }
+
             u64 payloadHash = 0;
             u64 payloadSize = 0;
             if( !CompiledResourceIO::hashFile( payloadFile.path, payloadHash, payloadSize, error ) )
@@ -637,13 +720,45 @@ namespace workphone::resource
             for( const auto &dependency : installDependencies )
                 header.installDependencies.push_back( dependency.second );
 
-            if( !CompiledResourceIO::writeAtomic( context.outputPath, header, payloadFile.path, error ) )
-                return fail( error );
+            String relativeArtifact=artifactNamespace(config.target) +
+                (options.packagedBuild?"package/":"editor/") + encodedArtifactKey(resourceId.str()) + "/" +
+                std::to_string(sourceHash).c_str() + "-" + std::to_string(payloadHash).c_str() + ".wprs";
+            if(!resolveUnderRoot(compiledRoot,"data://"+relativeArtifact,false,outputPath,error)) return fail(error);
+            CompiledResourceHeader existing;
+            if(fs::exists(outputPath) && !CompiledResourceIO::validate(pathString(outputPath),existing,error))
+            {
+                // Never overwrite a damaged generation that an existing package may pin.
+                const auto base=relativeArtifact.substr(0,relativeArtifact.size()-5);
+                do
+                {
+                    relativeArtifact=base + "-repair-" +
+                        std::to_string(payloadTemporaryCounter.fetch_add(1)).c_str() + ".wprs";
+                    if(!resolveUnderRoot(compiledRoot,"data://"+relativeArtifact,false,outputPath,error)) return fail(error);
+                } while(fs::exists(outputPath));
+            }
+            context.outputPath=pathString(outputPath);
+            fs::create_directories(outputPath.parent_path(),filesystemError);
+            if(filesystemError) return fail(filesystemError.message().c_str());
+            if(fs::exists(outputPath))
+            {
+                if(!CompiledResourceIO::validate(context.outputPath,existing,error) || !sameRuntimeHeader(existing,header))
+                    return fail("Artifact ownership/hash collision; existing generation retained");
+            }
+            else
+            {
+                TemporaryFile stagedContainer{payloadFile.path + ".container"};
+                if(!CompiledResourceIO::writeAtomic(stagedContainer.path,header,payloadFile.path,error)) return fail(error);
+                // Exclusive publication prevents another process's artifact from being replaced.
+                fs::create_hard_link(fs::u8path(stagedContainer.path.c_str()),outputPath,filesystemError);
+                if(filesystemError && (!fs::exists(outputPath) ||
+                   !CompiledResourceIO::validate(context.outputPath,existing,error) || !sameRuntimeHeader(existing,header)))
+                    return fail("Exclusive artifact publication failed; existing files retained");
+            }
 
             CompiledResourceRecord newRecord;
             newRecord.resourceId = resourceId.str();
             newRecord.resourceType = resourceId.type().str();
-            newRecord.outputPath = resourceId.compiledRelativePath();
+            newRecord.outputPath = relativeArtifact;
             newRecord.compilerVersion = compilerVersion;
             newRecord.sourceHash = sourceHash;
             newRecord.outputHash = payloadHash;
@@ -654,8 +769,7 @@ namespace workphone::resource
                 databaseDependencies.push_back( { dependency.first, dependency.second } );
             if( !database->commitCompilation( newRecord, databaseDependencies ) )
                 return fail(
-                    String( "Compiled output was written but the compilation database could not "
-                            "be updated: " ) +
+                    String( "Artifact staged but compilation index commit failed; previous generation retained: " ) +
                     database->getLastError() );
 
             {
@@ -746,7 +860,21 @@ namespace workphone::resource
             if( !cached )
             {
                 fs::path outputPath;
-                if( !resolveUnderRoot( compiledRoot, String( "data://" ) + resourceId.compiledRelativePath(),
+                String artifact;
+                if(runtimeOnly)
+                    artifact=runtimeManifest.artifacts.at(resourceId.str());
+                else
+                {
+                    CompiledResourceRecord record;
+                    if(!database->getRecord(resourceId.str(),record) || !record.isValid() ||
+                        record.outputPath.find(artifactNamespace(config.target))!=0)
+                    {
+                        error="No committed artifact for this resource and target";
+                        return nullptr;
+                    }
+                    artifact=record.outputPath;
+                }
+                if( !resolveUnderRoot( compiledRoot, String( "data://" ) + artifact,
                                        true, outputPath, error ) )
                     return nullptr;
                 loaded = std::make_shared<RuntimeResource>();
@@ -834,7 +962,7 @@ namespace workphone::resource
             return false;
         }
         if( !m_impl->registry || !m_impl->database || config.sourceRoot.empty() ||
-            config.compiledRoot.empty() || config.target.empty() || config.maxRuntimePayloadBytes == 0 )
+            config.compiledRoot.empty() || config.target.empty() || config.target.size()>128 || config.maxRuntimePayloadBytes == 0 )
         {
             error = "Resource system configuration is incomplete";
             return false;
@@ -905,7 +1033,7 @@ namespace workphone::resource
             error = "Resource system is already initialized";
             return false;
         }
-        if( config.compiledRoot.empty() || config.manifestPath.empty() || config.target.empty() ||
+        if( config.compiledRoot.empty() || config.manifestPath.empty() || config.target.empty() || config.target.size()>128 ||
             config.maxPayloadBytes == 0 || config.maxClosurePayloadBytes == 0 ||
             config.maxClosureResources == 0 || config.maxClosureResources > maximumManifestResources ||
             config.maxDependencyDepth == 0 || config.maxDependencyDepth > maximumManifestDepth )
@@ -959,6 +1087,12 @@ namespace workphone::resource
             error = "Failed to resolve the runtime manifest destination";
             return false;
         }
+        if(isUnderRoot(m_impl->compiledRoot / "artifacts",destination) ||
+           isUnderRoot(m_impl->compiledRoot / ".staging",destination))
+        {
+            error="Runtime manifests cannot replace files in reserved artifact or staging storage";
+            return false;
+        }
         RuntimeManifest manifest;
         manifest.target = m_impl->config.target;
         std::set<String> visiting;
@@ -984,7 +1118,14 @@ namespace workphone::resource
                 return false;
             }
             fs::path output;
-            if( !resolveUnderRoot( m_impl->compiledRoot, String( "data://" ) + id.compiledRelativePath(),
+            CompiledResourceRecord record;
+            if(!m_impl->database->getRecord(id.str(),record) || !record.isValid() ||
+               record.outputPath.find(artifactNamespace(m_impl->config.target))!=0)
+            {
+                error="No committed artifact for runtime manifest resource";
+                return false;
+            }
+            if( !resolveUnderRoot( m_impl->compiledRoot, String( "data://" ) + record.outputPath,
                                    true, output, error ) )
                 return false;
             if( pathComponentEquals( destination, output ) )
@@ -995,12 +1136,10 @@ namespace workphone::resource
             CompiledResourceHeader header;
             if( !CompiledResourceIO::validate( pathString( output ), header, error ) )
                 return false;
-            CompiledResourceRecord record;
             const auto verified = m_impl->verifiedBuilds.find( id.str() );
             if( !m_impl->database->getRecord( id.str(), record ) || !record.isValid() ||
                 header.resourceId != id || header.compilerVersion != record.compilerVersion ||
                 header.sourceHash != record.sourceHash || header.payloadHash != record.outputHash ||
-                record.outputPath != id.compiledRelativePath() ||
                 verified == m_impl->verifiedBuilds.end() ||
                 verified->second.sourceHash != header.sourceHash ||
                 verified->second.outputHash != header.payloadHash )
@@ -1018,6 +1157,7 @@ namespace workphone::resource
                 subtreeDepth = std::max( subtreeDepth, subtreeDepths[dependency.str()] + 1 );
             }
             visiting.erase( id.str() );
+            manifest.artifacts[id.str()]=record.outputPath;
             manifest.resources.emplace( id.str(), std::move( header ) );
             subtreeDepths[id.str()] = subtreeDepth;
             return true;
@@ -1031,7 +1171,7 @@ namespace workphone::resource
         }
 
         std::ostringstream encoded( std::ios::binary );
-        writeManifestNumber( encoded, 1 );
+        writeManifestNumber( encoded, 2 );
         bool stringsValid = writeManifestString( encoded, manifest.target );
         writeManifestNumber( encoded, sortedRoots.size() );
         for( const auto &root : sortedRoots )
@@ -1046,6 +1186,7 @@ namespace workphone::resource
             writeManifestNumber( encoded, header.payloadHash );
             writeManifestNumber( encoded, header.payloadSize );
             writeManifestNumber( encoded, header.installDependencies.size() );
+            stringsValid=writeManifestString(encoded,manifest.artifacts.at(entry.first)) && stringsValid;
             for( const auto &dependency : header.installDependencies )
                 stringsValid = writeManifestString( encoded, dependency.str() ) && stringsValid;
             if( encoded.tellp() > static_cast<std::streamoff>( maximumManifestBytes ) )

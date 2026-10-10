@@ -2,8 +2,8 @@
 
 Scope: implementation started on 2026-10-10 against the production plan in
 [WPRESOURCE_ASSET_PRODUCTION_PLAN.md](WPRESOURCE_ASSET_PRODUCTION_PLAN.md).
-This ledger records an initial integrity increment. The full plan and production
-release gates remain open.
+This ledger records the integrity and cooking increments. The full plan and
+production release gates remain open.
 
 ## Implemented in this increment
 
@@ -84,12 +84,94 @@ refresh in snapshot capture. Both were corrected before the passing runs.
 No Debug build, interactive Editor walkthrough, standalone asset database Editor,
 process-kill/power-loss run, real package launch or performance benchmark was run.
 
+## Increment 2: immutable cooked artifact publication
+
+Implemented and validated after the initial integrity increment, against source
+baseline `dd298fe59114c5cb94142f797a8ca35ffd23ffcb` plus the working-tree changes.
+
+- Cooker artifacts now live under `artifacts/v2/<encoded-target>/<editor-or-package>/<encoded-resource>/<input-output-fingerprints>.wprs`.
+  The reversible byte encoding distinguishes case on Windows, escapes separators,
+  avoids reserved device names/trailing dots and bounds each directory component.
+  It distinguishes parent/subresource IDs that formerly flattened to one filename.
+- Files publish exclusively from a staged container. A compilation-index commit
+  failure leaves the previous record and its artifact intact; the new artifact is
+  an unreferenced candidate. Existing generations are retained, including damaged
+  files when a repair is published at a fresh path. GC/retention is not implemented.
+- Runtime manifest payload v2 records each artifact's relative path as well as
+  identity, version and hashes. Runtime v1 reading remains supported for existing
+  source-free packages. New manifests pin exact immutable generations, so recooking
+  or changing target/mode does not change an already-exported package's inputs.
+  Manifest exports cannot overwrite reserved artifact/staging files.
+- Authoring loads use committed artifact paths. Material compilation consumes
+  pinned dependency artifacts supplied in CompileContext rather than reconstructing
+  flattened texture filenames. CompileContext.outputPath is provisional staging
+  information; compilers write the supplied stream, and CompilationReport.outputPath
+  is the final published artifact.
+- Source content is checked before dependency scanning and again before publication;
+  compiler version, raw dependencies and pinned resource artifacts are rechecked
+  after compilation. Detected changes fail without committing the candidate.
+
+Compatibility: recook legacy authoring caches to populate the new artifact paths;
+old loose files are retained. Consumers/exporters must use report/index paths or
+manifest v2 mappings. ResourceID.compiledRelativePath remains the legacy-layout
+helper used by v1 runtime mounts, not the current cooker output location. The WPRS
+outer container format is unchanged; the manifest's inner payload is now version 2.
+The DDS extension (RES-050–054) remains planned; future native DDS texture bytes fit
+inside the same target-specific immutable WPRS artifacts.
+
+Limitations: the compilation index still keeps one active record per logical ID,
+so switching target/mode may require rechecking/rebuilding its active record.
+All variant artifacts and already-exported manifests coexist, but multi-variant
+index queries/BuildKey schemas remain open. Artifact fingerprints retain the
+existing FNV-64 scheme and are not authenticated digests. Final input rechecks do
+not replace immutable source snapshots against arbitrary external writes.
+Whole dependency-closure commit, owner-thread compatible-set installation,
+cross-process scheduling, long-path certification, GC and power-loss durability
+remain release gates. This increment establishes per-artifact/index failure safety,
+not complete production certification.
+
+New regression coverage includes flattened subasset aliases, Windows case-distinct
+artifact files, injected index-commit
+failure followed by cache eviction/load, retained earlier artifacts, Editor/package
+and target coexistence, loading an old pinned manifest after those builds, and
+compiler-time source mutation. The relocated Unicode read-only runtime fixture
+copies committed paths and tests the v2 manifest. Existing graphics and unit fixtures
+now use report paths/pinned dependencies.
+
+The first rebuilt catalog/runtime run failed with temporary container names nested
+alongside deep artifact paths. Keeping payloads and container assembly in the short
+`.staging` directory resolved those failures. General long-path certification remains
+open. Final `RelWithDebInfo` builds succeeded for `WPResourceTests`,
+`WPAssetCatalogTests`, `WPGraphicsCookedResourceTests`, `LuaRuntimeTests` and `Editor`,
+including their required dependencies. A final incremental rebuild included all
+regression fixture edits. The consolidated CTest run passed **4/4**:
+
+| Suite | Time |
+|---|---|
+| WorkphoneAssets.catalog_contracts | 3.14 s |
+| WPGraphics.cooked_material_resource | 1.36 s |
+| WPLua.runtime_contracts | 0.59 s |
+| WPResourceTests | 0.61 s |
+
+Build logs: `project_x64/resource-generations-build.log` and
+`project_x64/resource-generations-final-build.log`. `git diff --check` passed.
+The Boost unit fixture was adapted to the new report paths but its separate
+monolithic unit target was not built/run. No interactive Editor acceptance,
+independent shipping package launch, representative hardware benchmark, Debug
+build or process-kill/power-loss certification was performed in this increment.
+
 ## Next implementation gates
+
+User-requested scope extension: production-plan packages **RES-050–054** add
+platform texture profiles, Windows DDS cooking, native compressed uploads,
+Editor target previews and package certification. These are planned, not yet
+implemented. Keep their identity/settings/BuildKey decisions integrated with the
+existing texture compiler and the next cooking consistency milestone.
 
 1. Finish the first integrity slice: authored numeric-ID lookup/traversal, immutable
    metadata migration, reference-aware operations, retention and recovery UI.
-2. Fix cooked output ownership: collision-free BuildKey namespaces and immutable
-   build generations with atomic index publication and last-good recovery.
+2. Complete variant-aware BuildKey indexing, whole-closure generation publication,
+   source snapshots, recovery and retention on top of the immutable artifacts.
 3. Persist typed dependency/reference edges and implement reverse queries,
    dependency invalidation and required-missing/cycle diagnostics.
 4. Integrate typed runtime consumers and owner-thread publication throughout the
