@@ -7,6 +7,8 @@ Status: Implementation in progress. The recorded 8 October Debug and RelWithDebI
 Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, AssetDatabaseManager and the existing resource pipeline, engine terrain/query/collision/vegetation systems, WPProcedural services and generators, and their engine/editor/Lua integration.
 User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration; make foliage LOD, batch-count reduction and fewer actual draw calls essential release work. Foliage includes its procedural placement and plant-authoring tools.
 
+Detailed follow-ups reviewed on 10 October 2026: [animation production implementation plan](WPANIMATION_PRODUCTION_PLAN.md) and [resource/asset production plan and review](WPRESOURCE_ASSET_PRODUCTION_PLAN.md). These expand the animation, catalog/resource and Editor workstreams with current source findings, implementation packages and independent release gates. Their evidence limits are recorded in each document.
+
 ## 1. Intended outcome
 
 Deliver a renderer that can ship a Workphone game and reliably drive the editor: static and animated geometry, production materials and lighting, particles, terrain, UI, and a documented water feature tier. Each advertised feature must have a complete asset-to-screen path, predictable failure behavior, automated coverage, and measured performance.
@@ -198,6 +200,8 @@ R1 uses P0 subsets of these work packages and an initial M8 certification. R2 co
 
 ### M1A — AssetDatabaseManager and graphics asset integration
 
+The [resource and asset production review/plan](WPRESOURCE_ASSET_PRODUCTION_PLAN.md) expands DB-01–10 across legacy ResourceDatabase callers, durable metadata, safe Editor file operations, dependencies/cooking, runtime loading, typed consumer publication and source-free packaging. It preserves the catalog-v2 repairs described below and separately audits remaining legacy paths.
+
 Include [AssetDatabaseManager.hpp](../Engine/cpp/Include/Workphone/Database/AssetDatabaseManager.hpp) and its implementation in the production scope, together with DatabaseManager, ResourceDatabase, ResourceDirector and the WPSQLite implementation of IResourceCompilationDatabase. Preserve shared interfaces; use internal/additive adapters and explicitly version schema changes.
 
 Retain the existing resource table, UUID/path indexes, CRUD, ResourceDirector lookup/caches and cache clearing on mutations/unload. The narrow-string database-switch handling is also a useful starting point. These do not yet constitute a complete graphics asset pipeline.
@@ -254,6 +258,8 @@ The additive `CatalogResourceAdapter` requires a caller-supplied `sourceRoot` th
 **GD:** Stable identities, correct transactional CRUD and cache/lifecycle semantics; a catalog-resolved cooked material and texture reach a DX11 draw, and failure preserves the last good asset. R1 also requires this path for imported mesh/skeleton/clip and particle assets. Water assets join the same pipeline for R2.
 
 ### M2 — animation: close the entire deformation path
+
+The [dedicated animation production plan](WPANIMATION_PRODUCTION_PLAN.md) expands ANIM-01–08 into runtime, import/resource, Claw renderer and Editor packages, with R1/R2 feature coverage, dependencies, fixtures and acceptance gates.
 
 Animation is an early blocking workstream. Existing graph samples and IK solver results must reach a correctly deformed mesh. Maintain a CPU reference implementation to diagnose GPU/import errors.
 

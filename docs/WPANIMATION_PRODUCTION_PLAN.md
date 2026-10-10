@@ -5,6 +5,8 @@ Status: implementation plan based on current source inspection. No builds, tests
 
 This expands `ANIM-01` through `ANIM-08` and gate GA in the [WPGraphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md). It covers animation runtime, Editor authoring and preview, WPGraphics/Claw deformation, asset import/cooking/catalog integration, physics handoff, performance and shipping. Shared renderer/resource work remains coordinated with the graphics plan; animation does not create a second resource pipeline.
 
+The [resource and asset production plan](WPRESOURCE_ASSET_PRODUCTION_PLAN.md) owns shared catalog/identity, build generations, runtime loading, Editor file operations and source-free packaging. Implement those services once and use them for animation assets.
+
 ## 1. Outcome and release scope
 
 A user must be able to import a character, inspect and repair its rig/import settings, author clips and a controller, preview the actual runtime result, save/reopen it, instantiate several characters, and ship the same cooked assets in an application. Animation must remain correct across cameras, scene changes, Play/Stop, resource replacement, culling, LOD and failure.
