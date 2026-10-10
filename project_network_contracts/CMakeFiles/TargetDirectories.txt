@@ -1,9 +1,0 @@
-G:/Workphone/project_network_contracts/CMakeFiles/RUN_TESTS.dir
-G:/Workphone/project_network_contracts/CMakeFiles/ALL_BUILD.dir
-G:/Workphone/project_network_contracts/CMakeFiles/ZERO_CHECK.dir
-G:/Workphone/project_network_contracts/Engine/c/Project/WorkphoneNetwork/CMakeFiles/WorkphoneNetwork.dir
-G:/Workphone/project_network_contracts/Engine/c/Project/WorkphoneNetwork/CMakeFiles/RUN_TESTS.dir
-G:/Workphone/project_network_contracts/Engine/c/Project/WorkphoneNetwork/CMakeFiles/ALL_BUILD.dir
-G:/Workphone/project_network_contracts/Tests/NetworkProduction/CMakeFiles/WorkphoneNetworkTests.dir
-G:/Workphone/project_network_contracts/Tests/NetworkProduction/CMakeFiles/WPNetworkCodecTests.dir
-G:/Workphone/project_network_contracts/Tests/NetworkProduction/CMakeFiles/RUN_TESTS.dir

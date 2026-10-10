@@ -1,9 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"G:/Workphone/project_network_contracts/cmake_install.cmake",
-		"G:/Workphone/project_network_contracts/Engine/c/Project/WorkphoneNetwork/cmake_install.cmake",
-		"G:/Workphone/project_network_contracts/Tests/NetworkProduction/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
