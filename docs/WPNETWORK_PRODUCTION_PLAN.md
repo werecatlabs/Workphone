@@ -6,6 +6,8 @@ Status: implementation in progress. WPNetwork is not production certified. See [
 
 Scope: native `WorkphoneNetwork`, C++ `WPNetwork`, engine networking interfaces, game scene components, Lua bindings, Editor authoring and multiplayer testing, dedicated server packaging, and online-service integration boundaries.
 
+Online-services direction selected by the user: self-hosted services with local development providers. NET-11 must deliver runnable local providers and deployable self-hosted adapters; Steamworks and PlayFab are not required providers for this implementation.
+
 Related work: [physics production](WPPHYSICS_PRODUCTION_PLAN.md), [resource and asset production](WPRESOURCE_ASSET_PRODUCTION_PLAN.md), [animation production](WPANIMATION_PRODUCTION_PLAN.md), [Lua production](WPLUA_PRODUCTION_PLAN.md), and [graphics production](WPGRAPHICS_PRODUCTION_PLAN.md). Reuse those systems and their lifecycle contracts.
 
 ## 1. Intended outcome and release scope

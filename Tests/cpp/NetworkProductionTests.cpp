@@ -145,8 +145,7 @@ bool profiles()
         fixture.write( prefix + suffix );
         CHECK( throws<std::invalid_argument>( [&] { WPNetworkConfig::load( path ); } ) );
     }
-    fixture.write(
-        R"({"version":1,"backend":"native_udp_development","environment":"production"})" );
+    fixture.write( R"({"version":1,"backend":"native_udp_development","environment":"production"})" );
     CHECK( throws<std::invalid_argument>( [&] { WPNetworkConfig::load( path ); } ) );
     fixture.write( "{}" );
     CHECK( throws<std::invalid_argument>( [&] { WPNetworkConfig::load( path ); } ) );

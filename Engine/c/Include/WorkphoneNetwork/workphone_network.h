@@ -8,7 +8,8 @@ extern "C" {
 #include <stddef.h>
 
 /*
-    C89 RakNet-style replacement layer.
+    C99 development UDP transport. Unencrypted and unreliable; not a RakNet
+    delivery or security replacement. Unsupported reliable sends fail explicitly.
 
     Intended usage:
 
