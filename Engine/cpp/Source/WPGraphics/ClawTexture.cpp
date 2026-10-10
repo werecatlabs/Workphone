@@ -280,6 +280,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loading );
+            
             Texture::load( data );
 
             if( !( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) &&
@@ -287,6 +288,7 @@ namespace workphone
             {
                 WP_LOG_WARNING( "ClawTexture::load: could not decode texture: " + getFilePath() );
             }
+
             setLoadingState( LoadingState::Loaded );
         }
 
@@ -310,18 +312,9 @@ namespace workphone
                     found->second.mipSettings = settings;
                 }
             }
+
             Texture::unload( data );
             setLoadingState( LoadingState::Unloaded );
-        }
-
-        SmartPtr<IRenderTarget> ClawTexture::getRenderTarget() const
-        {
-            return Texture::getRenderTarget();
-        }
-
-        void ClawTexture::setRenderTarget( SmartPtr<IRenderTarget> rt )
-        {
-            Texture::setRenderTarget( rt );
         }
 
         void ClawTexture::copyToTexture( SmartPtr<ITexture> &target )

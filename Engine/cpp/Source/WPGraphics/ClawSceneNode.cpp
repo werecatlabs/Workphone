@@ -137,10 +137,28 @@ namespace workphone
         {
             // Keep state authoritative so a later dirty-state update cannot restore
             // an old transform, and retain updates made before native-node creation.
-            GraphicsSceneNode::setTransform( transform );
             if( m_node && isThreadSafe() )
             {
-                applyNativeTransform( m_node, transform );
+                if( getTransform() != transform )
+                {
+                    if( auto stateContext = getStateContext() )
+                    {
+                        if( auto stateData = stateContext->invalidateStateDataById<TransformStateData>(
+                                getId(), false ) )
+                        {
+                            stateData->localTransform = transform;
+                        }
+                    }
+
+                    applyNativeTransform( m_node, transform );
+                }
+            }
+            else
+            {
+                if( getTransform() != transform )
+                {
+                    GraphicsSceneNode::setTransform( transform );
+                }
             }
         }
 

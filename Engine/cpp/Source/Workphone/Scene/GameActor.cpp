@@ -531,19 +531,14 @@ namespace workphone::scene
 
     void GameActor::preUpdate()
     {
-        for( auto &component : getComponents() )
+        if( m_componentsHead )
         {
-            if( component )
+            ScopedLock lock( &m_componentsMutex, false );
+
+            for( auto component = m_componentsHead; component != nullptr;
+                 component = component->m_next.load() )
             {
                 component->preUpdate();
-            }
-        }
-
-        for( auto &child : getChildren() )
-        {
-            if( child )
-            {
-                child->preUpdate();
             }
         }
     }
@@ -583,9 +578,12 @@ namespace workphone::scene
 
     void GameActor::update()
     {
-        for( auto &component : getComponents() )
+        if( m_componentsHead )
         {
-            if( component )
+            ScopedLock lock( &m_componentsMutex, false );
+
+            for( auto component = m_componentsHead; component != nullptr;
+                 component = component->m_next.load() )
             {
                 component->update();
             }
@@ -594,9 +592,12 @@ namespace workphone::scene
 
     void GameActor::postUpdate()
     {
-        for( auto &component : getComponents() )
+        if( m_componentsHead )
         {
-            if( component )
+            ScopedLock lock( &m_componentsMutex, false );
+
+            for( auto component = m_componentsHead; component != nullptr;
+                 component = component->m_next.load() )
             {
                 component->postUpdate();
             }
