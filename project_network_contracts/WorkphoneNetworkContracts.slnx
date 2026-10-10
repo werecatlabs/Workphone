@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Folder Name="/CMakePredefinedTargets/">
+		<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="c1fbfb79-75a8-376e-aa17-0c4e8a4317ab" DefaultStartup="true">
+			<BuildDependency Project="Tests/NetworkProduction/WPNetworkCodecTests.vcxproj"/>
+			<BuildDependency Project="Engine/c/Project/WorkphoneNetwork/WorkphoneNetwork.vcxproj"/>
+			<BuildDependency Project="Tests/NetworkProduction/WorkphoneNetworkTests.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="RUN_TESTS.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="d3f2cc1f-099c-3da5-bb38-1d36c6805982">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="bf84d408-aca8-3c10-b1f2-9770f6c7afe6"/>
+	</Folder>
+	<Folder Name="/Engine/"/>
+	<Folder Name="/Engine/C/">
+		<Project Path="Engine/c/Project/WorkphoneNetwork/WorkphoneNetwork.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="ca0892b9-2ed2-3766-ace5-26a02db905a8">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+	</Folder>
+	<Folder Name="/Tests/"/>
+	<Folder Name="/Tests/Network/">
+		<Project Path="Tests/NetworkProduction/WPNetworkCodecTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="9bcbb48b-ad8c-38e3-9714-8a139102a023">
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+		<Project Path="Tests/NetworkProduction/WorkphoneNetworkTests.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="5aa9ff85-6a61-380d-8617-75dbd60e3e5a">
+			<BuildDependency Project="Engine/c/Project/WorkphoneNetwork/WorkphoneNetwork.vcxproj"/>
+			<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		</Project>
+	</Folder>
+</Solution>

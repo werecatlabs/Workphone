@@ -1,5 +1,6 @@
 #include <WPNetwork/WPNetworkStream.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Interface/Net/NetworkCodec.hpp>
 #include <cstring>
 #include <stdexcept>
 
@@ -25,37 +26,28 @@ namespace workphone
 
     void WPNetworkStream::appendBytes( const void *data, size_t size )
     {
-        if( !data || size == 0 )
-            return;
-
-        const auto *bytes = static_cast<const u8 *>( data );
-        m_buffer.insert( m_buffer.end(), bytes, bytes + size );
-        m_position += size;
+        network::appendBytes( m_buffer, data, size );
+        m_position = m_buffer.size();
     }
 
     void WPNetworkStream::extractBytes( void *data, size_t size )
     {
+        network::requireBytes( m_position, size, m_buffer.size() );
         if( size == 0 )
             return;
-
-        if( !data || m_position + size > m_buffer.size() )
-            throw std::out_of_range( "WPNetworkStream: read past end of stream" );
-
+        if( !data )
+            throw std::invalid_argument( "Network codec: null output" );
         std::memcpy( data, m_buffer.data() + m_position, size );
         m_position += size;
     }
 
     size_t WPNetworkStream::read( void *buffer, size_t size )
     {
-        const auto available = m_position < m_buffer.size() ? m_buffer.size() - m_position : 0;
-        const auto toRead = size < available ? size : available;
-
-        if( toRead == 0 )
-            return 0;
-
-        std::memcpy( buffer, m_buffer.data() + m_position, toRead );
-        m_position += toRead;
-        return toRead;
+        network::requireBytes( m_position, 0, m_buffer.size() );
+        const auto available = m_buffer.size() - m_position;
+        const auto count = std::min( size, available );
+        extractBytes( buffer, count );
+        return count;
     }
 
     size_t WPNetworkStream::write( const void *buffer, size_t size )
@@ -66,134 +58,158 @@ namespace workphone
 
     void WPNetworkStream::read( s8 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
     void WPNetworkStream::read( u8 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
     void WPNetworkStream::read( s16 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
     void WPNetworkStream::read( u16 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
     void WPNetworkStream::read( s32 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
     void WPNetworkStream::read( u32 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
     void WPNetworkStream::read( f32 &value )
     {
-        extractBytes( &value, sizeof( value ) );
+        network::read( m_buffer, m_position, value );
     }
 
     void WPNetworkStream::read( bool &value )
     {
-        u8 raw = 0;
-        read( raw );
-        value = raw != 0;
+        network::readBool( m_buffer, m_position, value );
     }
 
     void WPNetworkStream::read( String &value )
     {
-        u32 length = 0;
-        read( length );
-
-        if( m_position + length > m_buffer.size() )
-            throw std::out_of_range( "WPNetworkStream: string read past end of stream" );
-
-        value.assign( reinterpret_cast<const char *>( m_buffer.data() + m_position ), length );
-        m_position += length;
+        network::readString( m_buffer, m_position, value );
     }
 
     void WPNetworkStream::read( Vector2I &value )
     {
-        read( value.x );
-        read( value.y );
+        network::requireBytes( m_position, 8, m_buffer.size() );
+        auto decoded = Vector2I();
+        read( decoded.x );
+        read( decoded.y );
+        value = decoded;
     }
 
     void WPNetworkStream::read( Vector2<real_Num> &value )
     {
-        read( value.x );
-        read( value.y );
+        network::requireBytes( m_position, 8, m_buffer.size() );
+        auto decoded = Vector2<real_Num>();
+        f32 x = 0;
+        read( x );
+        decoded.x = static_cast<real_Num>( x );
+        f32 y = 0;
+        read( y );
+        decoded.y = static_cast<real_Num>( y );
+        value = decoded;
     }
 
     void WPNetworkStream::read( Vector3I &value )
     {
-        read( value.x );
-        read( value.y );
-        read( value.z );
+        network::requireBytes( m_position, 12, m_buffer.size() );
+        auto decoded = Vector3I();
+        read( decoded.x );
+        read( decoded.y );
+        read( decoded.z );
+        value = decoded;
     }
 
     void WPNetworkStream::read( Vector3<real_Num> &value )
     {
-        read( value.x );
-        read( value.y );
-        read( value.z );
+        network::requireBytes( m_position, 12, m_buffer.size() );
+        auto decoded = Vector3<real_Num>();
+        f32 x = 0;
+        read( x );
+        decoded.x = static_cast<real_Num>( x );
+        f32 y = 0;
+        read( y );
+        decoded.y = static_cast<real_Num>( y );
+        f32 z = 0;
+        read( z );
+        decoded.z = static_cast<real_Num>( z );
+        value = decoded;
     }
 
     void WPNetworkStream::write( s8 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
     void WPNetworkStream::write( u8 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
     void WPNetworkStream::write( s16 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
     void WPNetworkStream::write( u16 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
     void WPNetworkStream::write( s32 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
     void WPNetworkStream::write( u32 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
     void WPNetworkStream::write( f32 value )
     {
-        appendBytes( &value, sizeof( value ) );
+        network::write( m_buffer, value );
+        m_position = m_buffer.size();
     }
 
     void WPNetworkStream::write( bool value )
     {
-        const u8 raw = value ? 1 : 0;
-        write( raw );
+        write( static_cast<u8>( value ? 1 : 0 ) );
     }
 
     void WPNetworkStream::write( const String &value )
     {
-        const auto length = static_cast<u32>( value.size() );
-        write( length );
-        appendBytes( value.data(), length );
+        network::writeString( m_buffer, value );
+        m_position = m_buffer.size();
     }
 
     void WPNetworkStream::write( const Vector2I &value )
     {
+        if( m_buffer.size() > network::MaxMessageBytes - 8 )
+            throw std::length_error( "Network vector exceeds message capacity" );
         write( value.x );
         write( value.y );
     }
 
     void WPNetworkStream::write( const Vector2<real_Num> &value )
     {
-        write( value.x );
-        write( value.y );
+        if( m_buffer.size() > network::MaxMessageBytes - 8 )
+            throw std::length_error( "Network vector exceeds message capacity" );
+        write( static_cast<f32>( value.x ) );
+        write( static_cast<f32>( value.y ) );
     }
 
     void WPNetworkStream::write( const Vector3I &value )
     {
+        if( m_buffer.size() > network::MaxMessageBytes - 12 )
+            throw std::length_error( "Network vector exceeds message capacity" );
         write( value.x );
         write( value.y );
         write( value.z );
@@ -201,9 +217,11 @@ namespace workphone
 
     void WPNetworkStream::write( const Vector3<real_Num> &value )
     {
-        write( value.x );
-        write( value.y );
-        write( value.z );
+        if( m_buffer.size() > network::MaxMessageBytes - 12 )
+            throw std::length_error( "Network vector exceeds message capacity" );
+        write( static_cast<f32>( value.x ) );
+        write( static_cast<f32>( value.y ) );
+        write( static_cast<f32>( value.z ) );
     }
 
     size_t WPNetworkStream::getSize() const
@@ -228,12 +246,9 @@ namespace workphone
 
     void WPNetworkStream::setData( const void *data, size_t size )
     {
-        m_buffer.clear();
-        if( data && size > 0 )
-        {
-            const auto *bytes = static_cast<const u8 *>( data );
-            //m_buffer.assign( bytes, bytes + size );
-        }
+        network::assignBytes( m_buffer, data, size );
+        m_position = 0;
+    }
 
         m_position = 0;
     }

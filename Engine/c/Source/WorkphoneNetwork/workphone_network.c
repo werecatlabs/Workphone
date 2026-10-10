@@ -10,8 +10,11 @@
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #    include <winsock2.h>
 #    include <ws2tcpip.h>
+#    include <windows.h>
+#    include <bcrypt.h>
 
 typedef SOCKET NetSocket;
+typedef int NetSockLen;
 
 #    define NET_SOCKET_INVALID INVALID_SOCKET
 #    define net_close_socket closesocket
@@ -28,6 +31,7 @@ typedef SOCKET NetSocket;
 #    include <errno.h>
 
 typedef int NetSocket;
+typedef socklen_t NetSockLen;
 
 #    define NET_SOCKET_INVALID ( -1 )
 #    define net_close_socket close
@@ -37,13 +41,18 @@ typedef int NetSocket;
 #    define MSG_NOSIGNAL 0
 #endif
 
-static int net_socket_is_valid( int socket_handle )
+static int net_socket_is_valid( NetSocketHandle socket_handle )
 {
 #if defined( _WIN32 )
-    return socket_handle != (int)INVALID_SOCKET;
+    return socket_handle != INVALID_SOCKET;
 #else
     return socket_handle >= 0;
 #endif
+}
+
+static int net_event_count( const NetContext *ctx )
+{
+    return ( ctx->event_tail + NET_MAX_EVENTS - ctx->event_head ) % NET_MAX_EVENTS;
 }
 
 static void net_push_event( NetContext *ctx, const NetEvent *event )
@@ -55,12 +64,11 @@ static void net_push_event( NetContext *ctx, const NetEvent *event )
 
     next_tail = ( ctx->event_tail + 1 ) % NET_MAX_EVENTS;
 
-    if( next_tail == ctx->event_head )
+    if( next_tail == ctx->event_head ||
+        ( event->type == NET_EVENT_PACKET &&
+          net_event_count( ctx ) >= NET_MAX_EVENTS - NET_CONTROL_EVENT_RESERVE - 1 ) )
     {
-        /*
-            Queue full. Drop event.
-            In production, you may want to count this as a warning.
-        */
+        ++ctx->events_dropped;
         return;
     }
 
@@ -155,7 +163,7 @@ static int net_read_header( const unsigned char *buffer, unsigned int size, NetP
     return NET_RESULT_OK;
 }
 
-static int net_set_nonblocking( int socket_handle )
+static int net_set_nonblocking( NetSocketHandle socket_handle )
 {
 #if defined( _WIN32 )
     u_long nonblocking;
@@ -179,7 +187,7 @@ static int net_set_nonblocking( int socket_handle )
 #endif
 }
 
-static int net_create_udp_socket( unsigned short port )
+static NetSocketHandle net_create_udp_socket( unsigned short port )
 {
     NetSocket s;
     struct sockaddr_in addr;
@@ -188,29 +196,35 @@ static int net_create_udp_socket( unsigned short port )
     s = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
 
     if( s == NET_SOCKET_INVALID )
-        return (int)NET_SOCKET_INVALID;
+        return NET_SOCKET_INVALID;
 
     yes = 1;
-    setsockopt( (int)s, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof( yes ) );
+#if defined( _WIN32 )
+    if( setsockopt( s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char *)&yes, sizeof( yes ) ) != 0 )
+    {
+        net_close_socket( s );
+        return NET_SOCKET_INVALID;
+    }
+#endif
 
     memset( &addr, 0, sizeof( addr ) );
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl( INADDR_ANY );
     addr.sin_port = htons( port );
 
-    if( bind( (int)s, (struct sockaddr *)&addr, sizeof( addr ) ) < 0 )
+    if( bind( s, (struct sockaddr *)&addr, sizeof( addr ) ) < 0 )
     {
-        net_close_socket( (int)s );
-        return (int)NET_SOCKET_INVALID;
+        net_close_socket( s );
+        return NET_SOCKET_INVALID;
     }
 
-    if( net_set_nonblocking( (int)s ) != NET_RESULT_OK )
+    if( net_set_nonblocking( s ) != NET_RESULT_OK )
     {
-        net_close_socket( (int)s );
-        return (int)NET_SOCKET_INVALID;
+        net_close_socket( s );
+        return NET_SOCKET_INVALID;
     }
 
-    return (int)s;
+    return s;
 }
 
 static NetAddress net_address_from_sockaddr( const struct sockaddr_in *addr )
@@ -234,25 +248,23 @@ static void net_sockaddr_from_address( const NetAddress *address, struct sockadd
 
 static int net_resolve_address( const char *host, unsigned short port, NetAddress *out_address )
 {
-    struct hostent *entry;
-    struct in_addr addr;
+    struct addrinfo hints;
+    struct addrinfo *entry;
+    const struct sockaddr_in *addr;
 
-    if( !host || !out_address )
+    if( !host || !*host || !out_address || port == 0 )
         return NET_RESULT_ERROR;
 
-    addr.s_addr = inet_addr( host );
-
-    if( addr.s_addr == INADDR_NONE )
-    {
-        entry = gethostbyname( host );
-        if( !entry )
-            return NET_RESULT_ERROR;
-
-        memcpy( &addr, entry->h_addr_list[0], sizeof( struct in_addr ) );
-    }
-
-    out_address->host = ntohl( addr.s_addr );
+    memset( &hints, 0, sizeof( hints ) );
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    entry = NULL;
+    if( getaddrinfo( host, NULL, &hints, &entry ) != 0 || !entry )
+        return NET_RESULT_ERROR;
+    addr = (const struct sockaddr_in *)entry->ai_addr;
+    out_address->host = ntohl( addr->sin_addr.s_addr );
     out_address->port = port;
+    freeaddrinfo( entry );
 
     return NET_RESULT_OK;
 }
@@ -265,14 +277,14 @@ static int net_send_raw( NetContext *ctx, const NetAddress *address, NetInternal
     int sent;
     unsigned int total_size;
 
-    if( !ctx || !address )
+    if( !ctx || !address || ( size != 0 && !data ) )
         return NET_RESULT_ERROR;
 
     if( !net_socket_is_valid( ctx->socket_handle ) )
         return NET_RESULT_ERROR;
 
     if( size > NET_MAX_PACKET_SIZE )
-        return NET_RESULT_ERROR;
+        return NET_RESULT_TOO_LARGE;
 
     net_write_header( packet, message_type, ctx->next_sequence++, 0, 0 );
 
@@ -287,6 +299,17 @@ static int net_send_raw( NetContext *ctx, const NetAddress *address, NetInternal
                    (struct sockaddr *)&to_addr, sizeof( to_addr ) );
 
     if( sent < 0 )
+    {
+#if defined( _WIN32 )
+        if( WSAGetLastError() == WSAEWOULDBLOCK )
+#else
+        if( errno == EAGAIN || errno == EWOULDBLOCK )
+#endif
+            return NET_RESULT_BACKPRESSURE;
+        return NET_RESULT_ERROR;
+    }
+
+    if( (unsigned int)sent != total_size )
         return NET_RESULT_ERROR;
 
     return NET_RESULT_OK;
@@ -337,8 +360,10 @@ static NetPeer *net_add_peer( NetContext *ctx, const NetAddress *address )
         {
             memset( &ctx->peers[i], 0, sizeof( NetPeer ) );
 
+            if( ctx->next_peer_id <= 0 || ctx->next_peer_id > 65535 )
+                return NULL;
             ctx->peers[i].active = 1;
-            ctx->peers[i].id = i + 1;
+            ctx->peers[i].id = ctx->next_peer_id++;
             ctx->peers[i].address = *address;
             ctx->peers[i].last_receive_time_ms = net_time_ms();
             ctx->peers[i].next_send_sequence = 1;
@@ -359,18 +384,26 @@ static void net_remove_peer( NetContext *ctx, NetPeerId peer_id )
         memset( peer, 0, sizeof( NetPeer ) );
 }
 
-static void net_handle_connect_request( NetContext *ctx, const NetAddress *from )
+static void net_handle_connect_request( NetContext *ctx, const NetAddress *from,
+                                        const unsigned char *payload, unsigned int size,
+                                        unsigned int now_ms )
 {
     NetPeer *peer;
     NetEvent event;
+    unsigned char reply[12];
+    unsigned int assigned_id;
 
     if( !ctx || !from )
         return;
 
-    if( ctx->mode != NET_MODE_SERVER )
+    if( ctx->mode != NET_MODE_SERVER || size != 8 )
         return;
 
     peer = net_find_peer_by_address( ctx, from );
+
+    /* Repeated attempts from an occupied endpoint must not take its identity. */
+    if( peer && memcmp( peer->attempt_nonce, payload, 8 ) != 0 )
+        return;
 
     if( !peer )
     {
@@ -378,7 +411,6 @@ static void net_handle_connect_request( NetContext *ctx, const NetAddress *from 
 
         if( !peer )
         {
-            net_push_error( ctx, "Server peer table full" );
             return;
         }
 
@@ -386,20 +418,35 @@ static void net_handle_connect_request( NetContext *ctx, const NetAddress *from 
         event.type = NET_EVENT_CONNECTED;
         event.peer_id = peer->id;
         net_push_event( ctx, &event );
+        memcpy( peer->attempt_nonce, payload, 8 );
     }
 
-    net_send_raw( ctx, from, NET_MSG_CONNECT_ACCEPT, NULL, 0 );
+    peer->last_receive_time_ms = now_ms;
+    memcpy( reply, payload, 8 );
+    assigned_id = htonl( (unsigned int)peer->id );
+    memcpy( reply + 8, &assigned_id, 4 );
+    net_send_raw( ctx, from, NET_MSG_CONNECT_ACCEPT, reply, sizeof( reply ) );
 }
 
-static void net_handle_connect_accept( NetContext *ctx, const NetAddress *from )
+static void net_handle_connect_accept( NetContext *ctx, const NetAddress *from,
+                                       const unsigned char *payload, unsigned int size,
+                                       unsigned int now_ms )
 {
     NetPeer *peer;
     NetEvent event;
+    unsigned int assigned_id;
 
     if( !ctx || !from )
         return;
 
-    if( ctx->mode != NET_MODE_CLIENT )
+    if( ctx->mode != NET_MODE_CLIENT || !ctx->connecting || size != 12 ||
+        !net_address_equal( from, &ctx->server_address ) ||
+        memcmp( payload, ctx->attempt_nonce, 8 ) != 0 )
+        return;
+
+    memcpy( &assigned_id, payload + 8, 4 );
+    assigned_id = ntohl( assigned_id );
+    if( assigned_id == 0 || assigned_id > 65535 )
         return;
 
     peer = net_find_peer_by_address( ctx, from );
@@ -415,6 +462,9 @@ static void net_handle_connect_accept( NetContext *ctx, const NetAddress *from )
         }
 
         ctx->server_peer_id = peer->id;
+        ctx->local_player_id = (NetPeerId)assigned_id;
+        ctx->connecting = 0;
+        peer->last_receive_time_ms = now_ms;
 
         memset( &event, 0, sizeof( event ) );
         event.type = NET_EVENT_CONNECTED;
@@ -442,10 +492,17 @@ static void net_handle_disconnect( NetContext *ctx, const NetAddress *from )
     net_push_event( ctx, &event );
 
     net_remove_peer( ctx, peer->id );
+    if( ctx->mode == NET_MODE_CLIENT )
+    {
+        ctx->server_peer_id = NET_INVALID_PEER;
+        ctx->local_player_id = NET_INVALID_PEER;
+        ctx->connecting = 0;
+    }
 }
 
 static void net_handle_user_packet( NetContext *ctx, const NetAddress *from,
-                                    const unsigned char *payload, unsigned int payload_size )
+                                    const unsigned char *payload, unsigned int payload_size,
+                                    unsigned int now_ms )
 {
     NetPeer *peer;
     NetEvent event;
@@ -465,7 +522,7 @@ static void net_handle_user_packet( NetContext *ctx, const NetAddress *from,
         return;
     }
 
-    peer->last_receive_time_ms = net_time_ms();
+    peer->last_receive_time_ms = now_ms;
 
     memset( &event, 0, sizeof( event ) );
     event.type = NET_EVENT_PACKET;
@@ -510,13 +567,18 @@ void net_context_init( NetContext *ctx )
     memset( ctx, 0, sizeof( NetContext ) );
 
     ctx->mode = NET_MODE_NONE;
-    ctx->socket_handle = (int)NET_SOCKET_INVALID;
+    ctx->socket_handle = NET_SOCKET_INVALID;
     ctx->running = 0;
     ctx->max_peers = NET_MAX_PEERS;
     ctx->server_peer_id = NET_INVALID_PEER;
     ctx->event_head = 0;
     ctx->event_tail = 0;
     ctx->next_sequence = 1;
+    ctx->next_peer_id = 1;
+    ctx->local_player_id = NET_INVALID_PEER;
+    ctx->connect_timeout_ms = 10000;
+    ctx->peer_timeout_ms = 15000;
+    ctx->receive_budget = NET_MAX_DATAGRAMS_PER_UPDATE;
 }
 
 void net_context_shutdown( NetContext *ctx )
@@ -527,16 +589,21 @@ void net_context_shutdown( NetContext *ctx )
     if( net_socket_is_valid( ctx->socket_handle ) )
     {
         net_close_socket( ctx->socket_handle );
-        ctx->socket_handle = (int)NET_SOCKET_INVALID;
+        ctx->socket_handle = NET_SOCKET_INVALID;
     }
 
     ctx->running = 0;
     ctx->mode = NET_MODE_NONE;
+    ctx->connecting = 0;
+    ctx->server_peer_id = NET_INVALID_PEER;
+    ctx->local_player_id = NET_INVALID_PEER;
+    memset( ctx->peers, 0, sizeof( ctx->peers ) );
+    ctx->event_head = ctx->event_tail = 0;
 }
 
 int net_start_server( NetContext *ctx, unsigned short port, int max_peers )
 {
-    if( !ctx )
+    if( !ctx || ctx->running )
         return NET_RESULT_ERROR;
 
     if( max_peers <= 0 )
@@ -556,13 +623,14 @@ int net_start_server( NetContext *ctx, unsigned short port, int max_peers )
     ctx->mode = NET_MODE_SERVER;
     ctx->running = 1;
     ctx->max_peers = max_peers;
+    ctx->local_player_id = 0;
 
     return NET_RESULT_OK;
 }
 
 int net_start_client( NetContext *ctx )
 {
-    if( !ctx )
+    if( !ctx || ctx->running )
         return NET_RESULT_ERROR;
 
     /*
@@ -589,7 +657,8 @@ int net_connect( NetContext *ctx, const char *host, unsigned short port )
     if( !ctx )
         return NET_RESULT_ERROR;
 
-    if( ctx->mode != NET_MODE_CLIENT )
+    if( ctx->mode != NET_MODE_CLIENT || !ctx->running || ctx->connecting ||
+        ctx->server_peer_id != NET_INVALID_PEER )
         return NET_RESULT_ERROR;
 
     if( net_resolve_address( host, port, &ctx->server_address ) != NET_RESULT_OK )
@@ -598,13 +667,30 @@ int net_connect( NetContext *ctx, const char *host, unsigned short port )
         return NET_RESULT_ERROR;
     }
 
-    /*
-        Basic connection request.
-        Production version should resend until accepted or timed out.
-    */
-    if( net_send_raw( ctx, &ctx->server_address, NET_MSG_CONNECT_REQUEST, NULL, 0 ) != NET_RESULT_OK )
+#if defined( _WIN32 )
+    if( BCryptGenRandom( NULL, ctx->attempt_nonce, sizeof( ctx->attempt_nonce ),
+                        BCRYPT_USE_SYSTEM_PREFERRED_RNG ) != 0 )
+        return NET_RESULT_ERROR;
+#else
+    {
+        FILE *random_file;
+        size_t count;
+        random_file = fopen( "/dev/urandom", "rb" );
+        if( !random_file )
+            return NET_RESULT_ERROR;
+        count = fread( ctx->attempt_nonce, 1, sizeof( ctx->attempt_nonce ), random_file );
+        fclose( random_file );
+        if( count != sizeof( ctx->attempt_nonce ) )
+            return NET_RESULT_ERROR;
+    }
+#endif
+    ctx->connect_started_ms = ctx->last_connect_send_ms = net_time_ms();
+    ctx->connecting = 1;
+    if( net_send_raw( ctx, &ctx->server_address, NET_MSG_CONNECT_REQUEST,
+                      ctx->attempt_nonce, sizeof( ctx->attempt_nonce ) ) != NET_RESULT_OK )
     {
         net_push_error( ctx, "Failed to send connection request" );
+        ctx->connecting = 0;
         return NET_RESULT_ERROR;
     }
 
@@ -613,35 +699,71 @@ int net_connect( NetContext *ctx, const char *host, unsigned short port )
 
 void net_update( NetContext *ctx )
 {
-    unsigned char buffer[NET_MAX_PACKET_SIZE + 13];
+    net_update_at( ctx, net_time_ms() );
+}
+
+void net_update_at( NetContext *ctx, unsigned int now_ms )
+{
+    unsigned char buffer[NET_MAX_PACKET_SIZE + NET_HEADER_SIZE + 1];
     struct sockaddr_in from_addr;
     NetAddress from;
-    socklen_t from_len;
+    NetSockLen from_len;
     int received;
     NetPacketHeader header;
     unsigned int payload_size;
     unsigned char *payload;
+    unsigned int processed;
+    unsigned int budget;
+    int i;
+    NetPeer *peer;
 
     if( !ctx || !ctx->running )
         return;
 
-    for( ;; )
+    budget = ctx->receive_budget;
+    if( budget == 0 || budget > NET_MAX_DATAGRAMS_PER_UPDATE )
+        budget = NET_MAX_DATAGRAMS_PER_UPDATE;
+    for( processed = 0; processed < budget &&
+         net_event_count( ctx ) < NET_MAX_EVENTS - NET_CONTROL_EVENT_RESERVE - 1; ++processed )
     {
         memset( &from_addr, 0, sizeof( from_addr ) );
-        from_len = (socklen_t)sizeof( from_addr );
+        from_len = (NetSockLen)sizeof( from_addr );
 
         received = recvfrom( ctx->socket_handle, (char *)buffer, sizeof( buffer ), 0,
                              (struct sockaddr *)&from_addr, &from_len );
 
-        if( received <= 0 )
+        if( received < 0 )
         {
+#if defined( _WIN32 )
+            int error_code;
+            error_code = WSAGetLastError();
+            if( error_code == WSAEMSGSIZE )
+            {
+                ++ctx->malformed_datagrams;
+                continue;
+            }
+            if( error_code != WSAEWOULDBLOCK && error_code != WSAECONNRESET )
+#else
+            if( errno == EINTR )
+                continue;
+            if( errno != EAGAIN && errno != EWOULDBLOCK )
+#endif
+                net_push_error( ctx, "UDP receive failed" );
             break;
+        }
+
+        ++ctx->datagrams_received;
+        if( received > NET_MAX_PACKET_SIZE + NET_HEADER_SIZE )
+        {
+            ++ctx->malformed_datagrams;
+            continue;
         }
 
         from = net_address_from_sockaddr( &from_addr );
 
         if( net_read_header( buffer, (unsigned int)received, &header ) != NET_RESULT_OK )
         {
+            ++ctx->malformed_datagrams;
             continue;
         }
 
@@ -651,30 +773,69 @@ void net_update( NetContext *ctx )
         switch( (NetInternalMessage)header.message_type )
         {
         case NET_MSG_CONNECT_REQUEST:
-            net_handle_connect_request( ctx, &from );
+            net_handle_connect_request( ctx, &from, payload, payload_size, now_ms );
             break;
 
         case NET_MSG_CONNECT_ACCEPT:
-            net_handle_connect_accept( ctx, &from );
+            net_handle_connect_accept( ctx, &from, payload, payload_size, now_ms );
             break;
 
         case NET_MSG_DISCONNECT:
-            net_handle_disconnect( ctx, &from );
+            if( payload_size == 0 )
+                net_handle_disconnect( ctx, &from );
             break;
 
         case NET_MSG_USER:
-            net_handle_user_packet( ctx, &from, payload, payload_size );
+            net_handle_user_packet( ctx, &from, payload, payload_size, now_ms );
             break;
 
         case NET_MSG_PING:
-            net_send_raw( ctx, &from, NET_MSG_PONG, NULL, 0 );
+            peer = net_find_peer_by_address( ctx, &from );
+            if( peer && payload_size == 0 )
+            {
+                peer->last_receive_time_ms = now_ms;
+                net_send_raw( ctx, &from, NET_MSG_PONG, NULL, 0 );
+            }
             break;
 
         case NET_MSG_PONG:
+            peer = net_find_peer_by_address( ctx, &from );
+            if( peer && payload_size == 0 )
+                peer->last_receive_time_ms = now_ms;
             break;
 
         default:
             break;
+        }
+    }
+
+    if( ctx->connecting )
+    {
+        if( (unsigned int)( now_ms - ctx->connect_started_ms ) >= ctx->connect_timeout_ms )
+        {
+            ctx->connecting = 0;
+            net_push_error( ctx, "Connection timed out" );
+        }
+        else if( (unsigned int)( now_ms - ctx->last_connect_send_ms ) >= 500 )
+        {
+            net_send_raw( ctx, &ctx->server_address, NET_MSG_CONNECT_REQUEST,
+                          ctx->attempt_nonce, sizeof( ctx->attempt_nonce ) );
+            ctx->last_connect_send_ms = now_ms;
+        }
+    }
+    for( i = 0; i < ctx->max_peers; ++i )
+    {
+        peer = &ctx->peers[i];
+        if( !peer->active )
+            continue;
+        if( (unsigned int)( now_ms - peer->last_receive_time_ms ) >= ctx->peer_timeout_ms )
+        {
+            net_handle_disconnect( ctx, &peer->address );
+        }
+        else if( (unsigned int)( now_ms - peer->last_send_time_ms ) >= 1000 )
+        {
+            net_send_raw( ctx, &peer->address, NET_MSG_PING, NULL, 0 );
+            peer->last_send_time_ms = now_ms;
         }
     }
 }
@@ -697,13 +858,16 @@ int net_send( NetContext *ctx, NetPeerId peer_id, const void *data, unsigned int
 {
     NetPeer *peer;
 
-    if( !ctx )
+    if( !ctx || !ctx->running || ( size != 0 && !data ) )
         return NET_RESULT_ERROR;
+
+    if( size > NET_MAX_PACKET_SIZE )
+        return NET_RESULT_TOO_LARGE;
 
     peer = net_find_peer_by_id( ctx, peer_id );
 
     if( !peer )
-        return NET_RESULT_ERROR;
+        return NET_RESULT_NOT_READY;
 
     return net_send_raw( ctx, &peer->address, NET_MSG_USER, data, size );
 }
@@ -735,7 +899,7 @@ void net_disconnect_peer( NetContext *ctx, NetPeerId peer_id )
         return;
 
     net_send_raw( ctx, &peer->address, NET_MSG_DISCONNECT, NULL, 0 );
-    net_remove_peer( ctx, peer_id );
+    net_handle_disconnect( ctx, &peer->address );
 }
 
 void net_disconnect( NetContext *ctx )
@@ -743,6 +907,11 @@ void net_disconnect( NetContext *ctx )
     if( !ctx )
         return;
 
+    if( ctx->mode == NET_MODE_CLIENT && ctx->connecting )
+    {
+        ctx->connecting = 0;
+        net_push_error( ctx, "Connection cancelled" );
+    }
     if( ctx->mode == NET_MODE_CLIENT && ctx->server_peer_id != NET_INVALID_PEER )
     {
         net_disconnect_peer( ctx, ctx->server_peer_id );
@@ -783,12 +952,43 @@ const char *net_address_to_string( NetAddress address, char *buffer, unsigned in
     c = ( address.host >> 8 ) & 0xff;
     d = address.host & 0xff;
 
-    sprintf( buffer, "%u.%u.%u.%u:%u", a, b, c, d, address.port );
+    if( snprintf( buffer, buffer_size, "%u.%u.%u.%u:%u", a, b, c, d, address.port ) < 0 )
+        buffer[0] = '\0';
+    buffer[buffer_size - 1] = '\0';
 
     return buffer;
 }
 
 unsigned int net_time_ms( void )
 {
-    return (unsigned int)( ( clock() * 1000 ) / CLOCKS_PER_SEC );
+#if defined( _WIN32 )
+    return (unsigned int)GetTickCount64();
+#else
+    struct timespec now;
+    if( clock_gettime( CLOCK_MONOTONIC, &now ) != 0 )
+        return 0;
+    return (unsigned int)( (unsigned long long)now.tv_sec * 1000 + now.tv_nsec / 1000000 );
+#endif
+}
+
+int net_send_reliable( NetContext *ctx, NetPeerId peer_id, const void *data, unsigned int size )
+{
+    (void)ctx;
+    (void)peer_id;
+    (void)data;
+    (void)size;
+    return NET_RESULT_UNSUPPORTED;
+}
+
+unsigned short net_get_bound_port( const NetContext *ctx )
+{
+    struct sockaddr_in address;
+    NetSockLen size;
+    if( !ctx || !net_socket_is_valid( ctx->socket_handle ) )
+        return 0;
+    memset( &address, 0, sizeof( address ) );
+    size = (NetSockLen)sizeof( address );
+    if( getsockname( ctx->socket_handle, (struct sockaddr *)&address, &size ) != 0 )
+        return 0;
+    return ntohs( address.sin_port );
 }

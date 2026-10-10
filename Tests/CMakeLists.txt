@@ -1,4 +1,7 @@
 if (WP_BUILD_TESTS)
+    if(TARGET WorkphoneNetwork)
+        add_subdirectory(NetworkProduction)
+    endif()
     add_subdirectory(GraphicsProduction)
 	if (WP_BUILD_C)
 		add_subdirectory(./c)

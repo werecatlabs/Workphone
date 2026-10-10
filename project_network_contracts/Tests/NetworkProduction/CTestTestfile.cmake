@@ -1,0 +1,36 @@
+# CMake generated Testfile for 
+# Source directory: G:/Workphone/Tests/NetworkProduction
+# Build directory: G:/Workphone/project_network_contracts/Tests/NetworkProduction
+# 
+# This file includes the relevant testing commands required for 
+# testing this directory and lists subdirectories to be tested as well.
+if(CTEST_CONFIGURATION_TYPE MATCHES "^([Dd][Ee][Bb][Uu][Gg])$")
+  add_test(WorkphoneNetwork.native "G:/Workphone/project_network_contracts/Tests/NetworkProduction/Debug/WorkphoneNetworkTests.exe")
+  set_tests_properties(WorkphoneNetwork.native PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;5;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+elseif(CTEST_CONFIGURATION_TYPE MATCHES "^([Rr][Ee][Ll][Ee][Aa][Ss][Ee])$")
+  add_test(WorkphoneNetwork.native "G:/Workphone/project_network_contracts/Tests/NetworkProduction/Release/WorkphoneNetworkTests.exe")
+  set_tests_properties(WorkphoneNetwork.native PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;5;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+elseif(CTEST_CONFIGURATION_TYPE MATCHES "^([Mm][Ii][Nn][Ss][Ii][Zz][Ee][Rr][Ee][Ll])$")
+  add_test(WorkphoneNetwork.native "G:/Workphone/project_network_contracts/Tests/NetworkProduction/MinSizeRel/WorkphoneNetworkTests.exe")
+  set_tests_properties(WorkphoneNetwork.native PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;5;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+elseif(CTEST_CONFIGURATION_TYPE MATCHES "^([Rr][Ee][Ll][Ww][Ii][Tt][Hh][Dd][Ee][Bb][Ii][Nn][Ff][Oo])$")
+  add_test(WorkphoneNetwork.native "G:/Workphone/project_network_contracts/Tests/NetworkProduction/RelWithDebInfo/WorkphoneNetworkTests.exe")
+  set_tests_properties(WorkphoneNetwork.native PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;5;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+else()
+  add_test(WorkphoneNetwork.native NOT_AVAILABLE)
+endif()
+if(CTEST_CONFIGURATION_TYPE MATCHES "^([Dd][Ee][Bb][Uu][Gg])$")
+  add_test(WPNetwork.codec "G:/Workphone/project_network_contracts/Tests/NetworkProduction/Debug/WPNetworkCodecTests.exe")
+  set_tests_properties(WPNetwork.codec PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;11;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+elseif(CTEST_CONFIGURATION_TYPE MATCHES "^([Rr][Ee][Ll][Ee][Aa][Ss][Ee])$")
+  add_test(WPNetwork.codec "G:/Workphone/project_network_contracts/Tests/NetworkProduction/Release/WPNetworkCodecTests.exe")
+  set_tests_properties(WPNetwork.codec PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;11;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+elseif(CTEST_CONFIGURATION_TYPE MATCHES "^([Mm][Ii][Nn][Ss][Ii][Zz][Ee][Rr][Ee][Ll])$")
+  add_test(WPNetwork.codec "G:/Workphone/project_network_contracts/Tests/NetworkProduction/MinSizeRel/WPNetworkCodecTests.exe")
+  set_tests_properties(WPNetwork.codec PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;11;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+elseif(CTEST_CONFIGURATION_TYPE MATCHES "^([Rr][Ee][Ll][Ww][Ii][Tt][Hh][Dd][Ee][Bb][Ii][Nn][Ff][Oo])$")
+  add_test(WPNetwork.codec "G:/Workphone/project_network_contracts/Tests/NetworkProduction/RelWithDebInfo/WPNetworkCodecTests.exe")
+  set_tests_properties(WPNetwork.codec PROPERTIES  LABELS "network;headless" TIMEOUT "30" _BACKTRACE_TRIPLES "G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;11;add_test;G:/Workphone/Tests/NetworkProduction/CMakeLists.txt;0;")
+else()
+  add_test(WPNetwork.codec NOT_AVAILABLE)
+endif()
