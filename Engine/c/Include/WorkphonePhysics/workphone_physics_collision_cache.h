@@ -1,6 +1,6 @@
 /**
  * @file workphone_physics_collision_cache.h
- * @brief Fixed-size cache for persistent collision pairs.
+ * @brief Checked growable hash cache for canonical body/shape pairs.
  */
 
 #ifndef WORKPHONE_PHYSICS_COLLISION_CACHE_H
@@ -34,6 +34,8 @@ void wp_collision_cache_clear( wp_collision_cache *cache );
 wp_s32 wp_collision_cache_add( wp_collision_cache *cache, wp_rigidbody *body_a,
                                wp_collision_shape *shape_a, wp_rigidbody *body_b,
                                wp_collision_shape *shape_b );
+/* add returns -1 on allocation failure. Adding can invalidate entries pointers.
+ * remove_at swaps the last entry into index. Keys accept either pair direction. */
 wp_s32 wp_collision_cache_find( const wp_collision_cache *cache, wp_rigidbody *body_a,
                                 wp_collision_shape *shape_a, wp_rigidbody *body_b,
                                 wp_collision_shape *shape_b );

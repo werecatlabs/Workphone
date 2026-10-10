@@ -9,6 +9,7 @@
 #include "workphone_physics_rigidbody.h"
 #include "workphone_physics_triangle_mesh.h"
 #include "workphone_physics_internal.h"
+#include "workphone_physics_geometry.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +49,8 @@ typedef struct wp_collision_shape
 
     /* Parent body */
     wp_rigidbody *body;
+    uint64_t revision, lifetime_id;
+    wp_prepared_shape prepared;
     wp_physics_material *material;
     wp_c8 material_name[WP_PHYSICS_MATERIAL_MAX_NAME];
 
@@ -59,6 +62,7 @@ typedef struct wp_collision_shape
 static void invalidate_shape_bounds( void *context )
 {
     wp_collision_shape *shape = (wp_collision_shape *)context;
+    ++shape->revision;
     wp_rigidbody_invalidate_bounds( shape->body );
 }
 
@@ -99,6 +103,8 @@ wp_collision_shape *wp_collision_shape_create( wp_collision_shape_type type )
     memset( shape, 0, sizeof( wp_collision_shape ) );
 
     shape->type = type;
+    shape->revision = 1;
+    shape->lifetime_id = wp_physics_next_lifetime_id();
     shape->flags = WORKPHONE_COLLISION_SHAPE_FLAG_ENABLED;
 
     /* Default dimensions */
@@ -120,6 +126,19 @@ wp_collision_shape *wp_collision_shape_create( wp_collision_shape_type type )
     shape->filter_data.word1 = 0xFFFFFFFFu;
 
     return shape;
+}
+
+wp_prepared_shape *wp_collision_shape_get_prepared_storage( const wp_collision_shape *shape )
+{
+    return shape ? &((wp_collision_shape *)shape)->prepared : NULL;
+}
+uint64_t wp_collision_shape_get_revision( const wp_collision_shape *shape )
+{
+    return shape ? shape->revision : 0;
+}
+uint64_t wp_collision_shape_get_lifetime_id( const wp_collision_shape *shape )
+{
+    return shape ? shape->lifetime_id : 0;
 }
 
 void wp_collision_shape_destroy( wp_collision_shape *shape )

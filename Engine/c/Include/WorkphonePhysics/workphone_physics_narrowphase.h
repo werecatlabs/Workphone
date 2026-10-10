@@ -79,9 +79,10 @@ typedef struct wp_contact_manifold
 
 typedef enum wp_narrowphase_algorithm
 {
-    WORKPHONE_NARROWPHASE_GJK_EPA = 0, /**< GJK + EPA for convex shapes (default). */
-    WORKPHONE_NARROWPHASE_SAT = 1,     /**< Separating-axis theorem.               */
-    WORKPHONE_NARROWPHASE_HYBRID = 2   /**< SAT for primitives, GJK/EPA otherwise. */
+    /* Compatibility selectors: supported pairs currently use dedicated kernels. */
+    WORKPHONE_NARROWPHASE_GJK_EPA = 0,
+    WORKPHONE_NARROWPHASE_SAT = 1,
+    WORKPHONE_NARROWPHASE_HYBRID = 2
 } wp_narrowphase_algorithm;
 
 /* =========================================================================
@@ -97,7 +98,7 @@ void wp_narrowphase_destroy( wp_narrowphase *np );
 
 wp_narrowphase_algorithm wp_narrowphase_get_algorithm( const wp_narrowphase *np );
 
-/** Maximum GJK/EPA iterations before the solver gives up on a pair. */
+/** Compatibility setting; dedicated primitive kernels do not use this limit. */
 wp_s32 wp_narrowphase_get_max_iterations( const wp_narrowphase *np );
 void wp_narrowphase_set_max_iterations( wp_narrowphase *np, wp_s32 iterations );
 
@@ -115,6 +116,10 @@ void wp_narrowphase_set_contact_tolerance( wp_narrowphase *np, wp_f32 tolerance 
 
 void wp_narrowphase_process_pairs( wp_narrowphase *np, const wp_broadphase_pair *pairs,
                                    wp_s32 pair_count );
+/* Complete checked batch; allocation failure clears the batch and returns 0.
+ * Empty input resets counts. The legacy void wrapper calls this implementation. */
+wp_s32 wp_narrowphase_process_pairs_checked( wp_narrowphase *np, const wp_broadphase_pair *pairs,
+                                            wp_s32 pair_count );
 
 /* =========================================================================
  * Single-pair test
@@ -142,6 +147,24 @@ wp_s32 wp_narrowphase_get_manifold_count( const wp_narrowphase *np );
  * ====================================================================== */
 
 wp_s32 wp_narrowphase_get_touching_pair_count( const wp_narrowphase *np );
+typedef struct wp_narrowphase_stats
+{
+    uint64_t pair_calls[5][5], pair_nanoseconds[5][5];
+    uint64_t prepared_rebuilds, prepared_reuses;
+    uint64_t mesh_nodes, mesh_candidates, tested_triangles, full_scan_fallbacks;
+    uint64_t simd_batches, oriented_tests, oriented_rejections;
+    uint64_t contacts_generated, contacts_retained;
+} wp_narrowphase_stats;
+wp_narrowphase_stats wp_narrowphase_get_stats( const wp_narrowphase *np );
+void wp_narrowphase_reset_stats( wp_narrowphase *np );
+/* Timing and SIMD are optional and disabled by default. */
+void wp_narrowphase_set_timing_enabled( wp_narrowphase *np, wp_s32 enabled );
+wp_s32 wp_narrowphase_set_simd_enabled( wp_narrowphase *np, wp_s32 enabled );
+/* Reference/profiling controls: exact contact kernels are shared. */
+void wp_narrowphase_set_mesh_acceleration_enabled( wp_narrowphase *np, wp_s32 enabled );
+/* Enabled by default; applies face-axis rejection only to boxes whose local
+ * AABB volume exceeds their OBB volume by 1.5x. */
+void wp_narrowphase_set_mesh_obb_enabled( wp_narrowphase *np, wp_s32 enabled );
 
 /* =========================================================================
  * Native / user data

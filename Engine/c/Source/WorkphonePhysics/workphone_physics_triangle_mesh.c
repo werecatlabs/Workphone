@@ -4,13 +4,26 @@
  */
 
 #include "workphone_physics_triangle_mesh.h"
-#include "workphone_collision_aabbtree.h"
+
 #include "workphone_physics_internal.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
 #define WP_TRIANGLE_MESH_BVH_LEAF_SIZE 8u
+#if !defined( WP_PHYSICS_DISABLE_SIMD ) &&                                                         \
+    ( defined( _M_X64 ) || defined( __SSE2__ ) || ( defined( _M_IX86_FP ) && _M_IX86_FP >= 2 ) )
+#define WP_MESH_SSE2 1
+#include <emmintrin.h>
+#else
+#define WP_MESH_SSE2 0
+#endif
+typedef struct wp_cooked_triangle_bounds
+{
+    wp_vec3f minimum, maximum;
+    wp_u32 indices[3];
+    wp_s32 valid;
+} wp_cooked_triangle_bounds;
 
 typedef struct wp_triangle_mesh_bvh_node
 {
@@ -35,7 +48,7 @@ typedef struct wp_triangle_mesh
     wp_u32 bvh_triangle_count;
     wp_u32 bvh_node_count;
     wp_u32 bvh_node_capacity;
-    WpCollisionAABBTree *aabb_tree;
+    wp_cooked_triangle_bounds *triangle_bounds;
     void *user_data;
     void ( *refit_callback )( void * );
     void *refit_context;
@@ -314,67 +327,6 @@ static void rebuild_bvh( wp_triangle_mesh *mesh )
     }
 }
 
-static void destroy_aabb_tree( wp_triangle_mesh *mesh )
-{
-    if( !mesh )
-    {
-        return;
-    }
-    wp_collision_aabbtree_destroy( mesh->aabb_tree );
-    mesh->aabb_tree = NULL;
-}
-
-static WpCollisionVector3 collision_vector( wp_vec3f vector )
-{
-    WpCollisionVector3 result;
-    result.x = vector.x;
-    result.y = vector.y;
-    result.z = vector.z;
-    return result;
-}
-
-static void rebuild_aabb_tree( wp_triangle_mesh *mesh )
-{
-    WpCollisionTriangle *triangles;
-    wp_u32 valid_count = 0u;
-    wp_u32 triangle;
-
-    destroy_aabb_tree( mesh );
-    if( !mesh || !mesh->vertices || !mesh->indices || mesh->triangle_count == 0u )
-    {
-        return;
-    }
-
-    triangles = (WpCollisionTriangle *)malloc( sizeof( WpCollisionTriangle ) * mesh->triangle_count );
-    if( !triangles )
-    {
-        return;
-    }
-
-    for( triangle = 0u; triangle < mesh->triangle_count; ++triangle )
-    {
-        wp_vec3f a;
-        wp_vec3f b;
-        wp_vec3f c;
-        if( !triangle_vertices( mesh, triangle, &a, &b, &c ) )
-        {
-            continue;
-        }
-
-        triangles[valid_count].vertices[0] = collision_vector( a );
-        triangles[valid_count].vertices[1] = collision_vector( b );
-        triangles[valid_count].vertices[2] = collision_vector( c );
-        triangles[valid_count].index = triangle;
-        ++valid_count;
-    }
-
-    if( valid_count > 0u )
-    {
-        mesh->aabb_tree = wp_collision_aabbtree_create( triangles, valid_count );
-    }
-    free( triangles );
-}
-
 wp_triangle_mesh *wp_triangle_mesh_create( const wp_f32 *vertices, wp_u32 vertex_count,
                                            const wp_u32 *indices, wp_u32 triangle_count )
 {
@@ -394,8 +346,10 @@ wp_triangle_mesh *wp_triangle_mesh_create( const wp_f32 *vertices, wp_u32 vertex
 
 void wp_triangle_mesh_destroy( wp_triangle_mesh *mesh )
 {
+    if ( !mesh )
+        return;
     destroy_bvh( mesh );
-    destroy_aabb_tree( mesh );
+    free( mesh->triangle_bounds );
     free( mesh );
 }
 
@@ -429,39 +383,88 @@ wp_vec3f wp_triangle_mesh_get_aabb_max( const wp_triangle_mesh *mesh )
     return mesh ? mesh->aabb_max : zero3();
 }
 
+static void refit_bvh_node( wp_triangle_mesh *mesh, wp_u32 index )
+{
+    wp_triangle_mesh_bvh_node *node = &mesh->bvh_nodes[index];
+    if ( node->triangle_count )
+    {
+        const wp_cooked_triangle_bounds *b =
+            &mesh->triangle_bounds[mesh->bvh_triangles[node->first_triangle]];
+        node->aabb_min = b->minimum;
+        node->aabb_max = b->maximum;
+        for ( wp_u32 i = 1; i < node->triangle_count; ++i )
+        {
+            b = &mesh->triangle_bounds[mesh->bvh_triangles[node->first_triangle + i]];
+            bounds_include_point( &node->aabb_min, &node->aabb_max, b->minimum );
+            bounds_include_point( &node->aabb_min, &node->aabb_max, b->maximum );
+        }
+    }
+    else
+    {
+        const wp_triangle_mesh_bvh_node *left, *right;
+        refit_bvh_node( mesh, node->left_child );
+        refit_bvh_node( mesh, node->right_child );
+        left = &mesh->bvh_nodes[node->left_child];
+        right = &mesh->bvh_nodes[node->right_child];
+        node->aabb_min = left->aabb_min;
+        node->aabb_max = left->aabb_max;
+        bounds_include_point( &node->aabb_min, &node->aabb_max, right->aabb_min );
+        bounds_include_point( &node->aabb_min, &node->aabb_max, right->aabb_max );
+    }
+}
 void wp_triangle_mesh_refit_aabb( wp_triangle_mesh *mesh )
 {
-    wp_u32 i;
-    if( mesh && mesh->refit_callback )
-    {
+    wp_s32 same_topology;
+    if ( mesh && mesh->refit_callback )
         mesh->refit_callback( mesh->refit_context );
-    }
-    if( !mesh || !mesh->vertices || mesh->vertex_count == 0u )
+    if ( !mesh )
+        return;
+    if ( !mesh->vertices || !mesh->vertex_count )
     {
         destroy_bvh( mesh );
-        destroy_aabb_tree( mesh );
+        free( mesh->triangle_bounds );
+        mesh->triangle_bounds = NULL;
+        mesh->aabb_min = mesh->aabb_max = zero3();
         return;
     }
-    mesh->aabb_min = v3( mesh->vertices, 0u );
-    mesh->aabb_max = mesh->aabb_min;
-    for( i = 1u; i < mesh->vertex_count; ++i )
+    mesh->aabb_min = mesh->aabb_max = v3( mesh->vertices, 0 );
+    for ( wp_u32 i = 1; i < mesh->vertex_count; ++i )
+        bounds_include_point( &mesh->aabb_min, &mesh->aabb_max, v3( mesh->vertices, i ) );
+    same_topology = mesh->triangle_bounds && mesh->bvh_nodes;
+    if ( !mesh->triangle_bounds && mesh->triangle_count &&
+         (size_t)mesh->triangle_count <= SIZE_MAX / sizeof( *mesh->triangle_bounds ) )
+        mesh->triangle_bounds = (wp_cooked_triangle_bounds *)calloc(
+            mesh->triangle_count, sizeof( *mesh->triangle_bounds ) );
+    if ( !mesh->triangle_bounds )
     {
-        wp_vec3f p = v3( mesh->vertices, i );
-        if( p.x < mesh->aabb_min.x )
-            mesh->aabb_min.x = p.x;
-        if( p.y < mesh->aabb_min.y )
-            mesh->aabb_min.y = p.y;
-        if( p.z < mesh->aabb_min.z )
-            mesh->aabb_min.z = p.z;
-        if( p.x > mesh->aabb_max.x )
-            mesh->aabb_max.x = p.x;
-        if( p.y > mesh->aabb_max.y )
-            mesh->aabb_max.y = p.y;
-        if( p.z > mesh->aabb_max.z )
-            mesh->aabb_max.z = p.z;
+        destroy_bvh( mesh );
+        return;
     }
-    rebuild_bvh( mesh );
-    rebuild_aabb_tree( mesh );
+    for ( wp_u32 i = 0; i < mesh->triangle_count; ++i )
+    {
+        wp_cooked_triangle_bounds *bounds = &mesh->triangle_bounds[i];
+        wp_vec3f a, b, c;
+        wp_s32 valid = triangle_vertices( mesh, i, &a, &b, &c );
+        if ( bounds->valid != valid )
+            same_topology = 0;
+        if ( valid )
+        {
+            for ( wp_u32 j = 0; j < 3; ++j )
+            {
+                if ( bounds->indices[j] != mesh->indices[i * 3 + j] )
+                    same_topology = 0;
+                bounds->indices[j] = mesh->indices[i * 3 + j];
+            }
+            bounds->minimum = bounds->maximum = a;
+            bounds_include_point( &bounds->minimum, &bounds->maximum, b );
+            bounds_include_point( &bounds->minimum, &bounds->maximum, c );
+        }
+        bounds->valid = valid;
+    }
+    if ( same_topology )
+        refit_bvh_node( mesh, 0 );
+    else
+        rebuild_bvh( mesh );
 }
 
 void wp_triangle_mesh_set_refit_callback( wp_triangle_mesh *mesh,
@@ -475,17 +478,198 @@ void wp_triangle_mesh_set_refit_callback( wp_triangle_mesh *mesh,
     mesh->refit_context = context;
 }
 
-wp_u32 wp_triangle_mesh_query_sphere( const wp_triangle_mesh *mesh, wp_vec3f center, wp_f32 radius,
-                                      wp_u32 *out_triangle_indices, wp_u32 capacity )
+static wp_s32 query_box( const wp_triangle_mesh_query *q, wp_vec3f lo, wp_vec3f hi,
+                         wp_triangle_mesh_query_stats *stats )
 {
-    if( !mesh || !mesh->aabb_tree )
+    if ( q->sphere )
     {
-        return UINT32_MAX;
+        wp_f32 dx = fmaxf( lo.x - q->center.x, fmaxf( q->center.x - hi.x, 0 ) );
+        wp_f32 dy = fmaxf( lo.y - q->center.y, fmaxf( q->center.y - hi.y, 0 ) );
+        wp_f32 dz = fmaxf( lo.z - q->center.z, fmaxf( q->center.z - hi.z, 0 ) );
+        return dx * dx + dy * dy + dz * dz <= q->radius * q->radius;
     }
-
-    wp_collision_aabbtree_set_radius( mesh->aabb_tree, radius );
-    return wp_collision_aabbtree_sphere_query( mesh->aabb_tree, collision_vector( center ),
-                                               (uint32_t *)out_triangle_indices, (uint32_t)capacity );
+    if ( lo.x > q->maximum.x || hi.x < q->minimum.x || lo.y > q->maximum.y || hi.y < q->minimum.y ||
+         lo.z > q->maximum.z || hi.z < q->minimum.z )
+        return 0;
+    if ( q->oriented )
+    {
+        wp_vec3f center = { ( lo.x + hi.x ) * .5f - q->center.x,
+                            ( lo.y + hi.y ) * .5f - q->center.y,
+                            ( lo.z + hi.z ) * .5f - q->center.z };
+        wp_vec3f half = { ( hi.x - lo.x ) * .5f, ( hi.y - lo.y ) * .5f, ( hi.z - lo.z ) * .5f };
+        wp_f32 h[3] = { q->half.x, q->half.y, q->half.z };
+        if ( stats )
+            ++stats->oriented_tests;
+        for ( wp_s32 i = 0; i < 3; ++i )
+        {
+            wp_vec3f axis = q->axes[i];
+            wp_f32 radius =
+                fabsf( axis.x ) * half.x + fabsf( axis.y ) * half.y + fabsf( axis.z ) * half.z;
+            if ( fabsf( dot3( center, axis ) ) > radius + h[i] )
+            {
+                if ( stats )
+                    ++stats->oriented_rejections;
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+#if WP_MESH_SSE2
+static unsigned query_four( const wp_triangle_mesh_query *q,
+                            const wp_cooked_triangle_bounds *const b[4] )
+{
+#define GATHER( member, axis )                                                                     \
+    _mm_set_ps( b[3]->member.axis, b[2]->member.axis, b[1]->member.axis, b[0]->member.axis )
+    __m128 mask = _mm_castsi128_ps( _mm_set1_epi32( -1 ) );
+    if ( q->sphere )
+    {
+        __m128 distance = _mm_setzero_ps(), zero = _mm_setzero_ps();
+#define SPHERE_AXIS( axis )                                                                        \
+    {                                                                                              \
+        __m128 c = _mm_set1_ps( q->center.axis );                                                  \
+        __m128 d = _mm_max_ps( zero, _mm_max_ps( _mm_sub_ps( GATHER( minimum, axis ), c ),         \
+                                                 _mm_sub_ps( c, GATHER( maximum, axis ) ) ) );     \
+        distance = _mm_add_ps( distance, _mm_mul_ps( d, d ) );                                     \
+    }
+        SPHERE_AXIS( x )
+        SPHERE_AXIS( y ) SPHERE_AXIS( z )
+#undef SPHERE_AXIS
+            mask = _mm_cmple_ps( distance, _mm_set1_ps( q->radius * q->radius ) );
+    }
+    else
+    {
+#define BOX_AXIS( axis )                                                                           \
+    mask = _mm_and_ps(                                                                             \
+        mask,                                                                                      \
+        _mm_and_ps( _mm_cmple_ps( GATHER( minimum, axis ), _mm_set1_ps( q->maximum.axis ) ),       \
+                    _mm_cmpge_ps( GATHER( maximum, axis ), _mm_set1_ps( q->minimum.axis ) ) ) );
+        BOX_AXIS( x ) BOX_AXIS( y ) BOX_AXIS( z )
+#undef BOX_AXIS
+    }
+#undef GATHER
+    return (unsigned)_mm_movemask_ps( mask );
+}
+#endif
+static void visit_bvh( const wp_triangle_mesh *mesh, wp_u32 index,
+                       const wp_triangle_mesh_query *query,
+                       wp_triangle_mesh_triangle_callback callback, void *context,
+                       wp_triangle_mesh_query_stats *stats )
+{
+    const wp_triangle_mesh_bvh_node *node = &mesh->bvh_nodes[index];
+    if ( stats )
+        ++stats->nodes;
+    if ( !query_box( query, node->aabb_min, node->aabb_max, stats ) )
+        return;
+    if ( !node->triangle_count )
+    {
+        visit_bvh( mesh, node->left_child, query, callback, context, stats );
+        visit_bvh( mesh, node->right_child, query, callback, context, stats );
+        return;
+    }
+    for ( wp_u32 i = 0; i < node->triangle_count; )
+    {
+        unsigned mask = 1, lanes = 1;
+#if WP_MESH_SSE2
+        if ( query->simd_enabled && !query->oriented && node->triangle_count - i >= 4 )
+        {
+            const wp_cooked_triangle_bounds *boxes[4];
+            for ( wp_u32 j = 0; j < 4; ++j )
+                boxes[j] =
+                    &mesh->triangle_bounds[mesh->bvh_triangles[node->first_triangle + i + j]];
+            mask = query_four( query, boxes );
+            lanes = 4;
+            if ( stats )
+                ++stats->simd_batches;
+        }
+        else
+#endif
+        {
+            const wp_cooked_triangle_bounds *b =
+                &mesh->triangle_bounds[mesh->bvh_triangles[node->first_triangle + i]];
+            mask = query_box( query, b->minimum, b->maximum, stats ) ? 1u : 0u;
+        }
+        for ( wp_u32 j = 0; j < lanes; ++j )
+            if ( mask & ( 1u << j ) )
+            {
+                wp_u32 triangle = mesh->bvh_triangles[node->first_triangle + i + j];
+                wp_vec3f a, b, c;
+                if ( triangle_vertices( mesh, triangle, &a, &b, &c ) )
+                {
+                    if ( stats )
+                        ++stats->candidates;
+                    callback( triangle, a, b, c, context );
+                }
+            }
+        i += lanes;
+    }
+}
+void wp_triangle_mesh_visit( const wp_triangle_mesh *mesh, const wp_triangle_mesh_query *query,
+                             wp_triangle_mesh_triangle_callback callback, void *context,
+                             wp_triangle_mesh_query_stats *stats )
+{
+    if ( !mesh || !query || !callback )
+        return;
+    if ( mesh->bvh_node_count )
+        visit_bvh( mesh, 0, query, callback, context, stats );
+    else
+    {
+        if ( stats )
+            ++stats->full_scan_fallbacks;
+        for ( wp_u32 i = 0; i < mesh->triangle_count; ++i )
+        {
+            wp_vec3f a, b, c;
+            if ( triangle_vertices( mesh, i, &a, &b, &c ) )
+            {
+                if ( stats )
+                    ++stats->candidates;
+                callback( i, a, b, c, context );
+            }
+        }
+    }
+}
+wp_s32 wp_triangle_mesh_simd_available( void )
+{
+    return WP_MESH_SSE2;
+}
+typedef struct mesh_query_output
+{
+    wp_u32 *indices, capacity, count;
+} mesh_query_output;
+static void collect_triangle( wp_u32 triangle, wp_vec3f a, wp_vec3f b, wp_vec3f c, void *context )
+{
+    mesh_query_output *out = (mesh_query_output *)context;
+    (void)a;
+    (void)b;
+    (void)c;
+    if ( out->indices && out->count < out->capacity )
+        out->indices[out->count] = triangle;
+    ++out->count;
+}
+wp_u32 wp_triangle_mesh_query_sphere( const wp_triangle_mesh *mesh, wp_vec3f center, wp_f32 radius,
+                                      wp_u32 *indices, wp_u32 capacity )
+{
+    wp_triangle_mesh_query query = { 0 };
+    mesh_query_output out = { indices, capacity, 0 };
+    if ( !mesh || !mesh->bvh_node_count )
+        return UINT32_MAX;
+    query.sphere = 1;
+    query.center = center;
+    query.radius = fmaxf( radius, 0 );
+    wp_triangle_mesh_visit( mesh, &query, collect_triangle, &out, NULL );
+    return out.count;
+}
+wp_u32 wp_triangle_mesh_query_aabb( const wp_triangle_mesh *mesh, wp_vec3f minimum,
+                                    wp_vec3f maximum, wp_u32 *indices, wp_u32 capacity )
+{
+    wp_triangle_mesh_query query = { 0 };
+    mesh_query_output out = { indices, capacity, 0 };
+    if ( !mesh || !mesh->bvh_node_count )
+        return UINT32_MAX;
+    query.minimum = minimum;
+    query.maximum = maximum;
+    wp_triangle_mesh_visit( mesh, &query, collect_triangle, &out, NULL );
+    return out.count;
 }
 
 static wp_s32 ray_aabb( wp_vec3f origin, wp_vec3f direction, wp_f32 max_distance, wp_vec3f minimum,

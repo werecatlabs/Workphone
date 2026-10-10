@@ -8,6 +8,7 @@
 #include "workphone_physics_constraint.h"
 #include "workphone_physics_internal.h"
 #include "workphone_physics_bounds.h"
+#include "workphone_physics_geometry.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,7 @@ typedef struct wp_rigidbody
     wp_quatf orientation;
     uint64_t bounds_revision;
     uint64_t geometry_revision;
+    uint64_t lifetime_id;
     wp_body_obb_cache obb_cache;
 
     /* Mass / inertia */
@@ -98,6 +100,7 @@ wp_rigidbody *wp_rigidbody_create( wp_rigidbody_type type )
     body->body_type = type;
     body->bounds_revision = 1;
     body->geometry_revision = 1;
+    body->lifetime_id = wp_physics_next_lifetime_id();
     body->flags = WORKPHONE_RIGIDBODY_FLAG_ENABLED | WORKPHONE_RIGIDBODY_FLAG_GRAVITY;
     body->orientation.w = 1.0f;
     body->mass = 1.0f;
@@ -258,6 +261,11 @@ uint64_t wp_rigidbody_get_bounds_revision( const wp_rigidbody *body )
 uint64_t wp_rigidbody_get_geometry_revision( const wp_rigidbody *body )
 {
     return body ? body->geometry_revision : 0;
+}
+
+uint64_t wp_rigidbody_get_lifetime_id( const wp_rigidbody *body )
+{
+    return body ? body->lifetime_id : 0;
 }
 
 wp_body_obb_cache *wp_rigidbody_get_obb_cache( wp_rigidbody *body )

@@ -1,6 +1,6 @@
 # WorkphonePhysics narrowphase optimization review
 
-9 October 2026. Review of native C collision generation, scene contact consumption, mesh acceleration, and static-body integration. No production code was changed for this review.
+9 October 2026. Review of native C collision generation, scene contact consumption, mesh acceleration, and static-body integration. The original review did not change production code. The approved implementation is recorded in the [10 October follow-up](#implemented-follow-up-10-october-2026) below.
 
 Reviewed source: `a6494f69b3295b7726e8aeec1bf71f3cdfdedb95`. Existing local changes to `ProceduralRaceSceneBuilder.cpp` were inspected and preserved. Its generated-collider findings describe the current working copy, rather than an audited running Editor scene.
 
@@ -95,7 +95,7 @@ Steps 2 and 3 address the most urgent structural problems. Prepared transforms a
 
 ## Oriented bounding boxes
 
-Implementation follow-up: the scene now uses cached local body OBBs as a selective six-face-axis rejection filter after AABB traversal. Geometry/pose invalidation, live solver poses, conservative fallbacks and measured results are documented in the [broadphase plan](WPPHYSICS_BROADPHASE_PLAN.md#implemented-continuation-tighter-oriented-body-bounds). The mesh triangle-query and exact narrowphase optimizations reviewed below remain proposed work.
+Implementation follow-up: the scene now uses cached local body OBBs as a selective six-face-axis rejection filter after AABB traversal. Geometry/pose invalidation, live solver poses, conservative fallbacks and measured results are documented in the [broadphase plan](WPPHYSICS_BROADPHASE_PLAN.md#implemented-continuation-tighter-oriented-body-bounds). The mesh triangle-query and exact narrowphase changes are now implemented as described in the follow-up below.
 
 OBBs provide a tighter bound for long objects rotated away from the coordinate axes. As a geometric illustration, a 20-by-2 rectangle rotated 45 degrees has an approximately 15.56-by-15.56 enclosing AABB: 242 square units of footprint versus 40 for the OBB. This is a fit comparison, not a measured collision speedup. Spheres should retain sphere queries; a box is not a tighter representation of a spherical object.
 
@@ -128,3 +128,80 @@ Algorithm references for implementation evaluation: [Geometric Tools segment/can
 Fresh native dependency/target build checks completed for `WorkphonePhysicsCollisionTests`, `WorkphonePhysicsMaterialTests`, `WorkphonePhysicsBroadphaseTests`, and `PhysicsSceneCapacityTests`. All four focused CTests passed: collision, material, broadphase, and scene capacity. The temporary review harness additionally reproduced the mesh overflow cliff, optional compound-cache error, public manifold truncation, and empty-batch stale count.
 
 The broader C++ UnitTests suite, full engine suite, sanitizer run, and interactive Editor validation were not executed for the original narrowphase review. Existing tests do not cover all reviewed cache/capacity failures, so their passing result does not certify those paths. Narrowphase kernel/cache changes remain proposals; the subsequent scene OBB-filter implementation has its separate validation and synthetic timing evidence in the broadphase plan linked above.
+
+## Implemented follow-up, 10 October 2026
+
+The seven implementation stages are integrated into the native scene path and the standalone narrowphase API. The original review and baseline above describe the previous implementation; source line links above refer to that reviewed version.
+
+| Stage | Implemented behavior |
+|---|---|
+| Tests and counters | Dedicated `WorkphonePhysicsNarrowphaseTests` and `WorkphonePhysicsNarrowphaseBenchmarks` CMake targets. Shape-pair calls and optional nanosecond timing, preparation reuse, BVH traversal/candidates/exact triangles, full-scan fallbacks, generated/retained contacts, scene cache activity, compound rejection, actor types and dirty-static counters. |
+| Contact cache | Scene and public utility share one checked growable hash implementation. Keys include both bodies and both shapes and accept either direction. Scene payloads check lifetime IDs and body/shape revisions, reverse anchors/normals when needed, refresh materials, and retire unseen contacts every collision substep. `ALWAYS` bypasses lookup, insertion and allocation. |
+| Mesh queries | One flat BVH serves raycasts and stateless sphere/AABB/optional oriented visitor queries. The duplicate pointer collision tree and 1,024-candidate scratch arrays are removed. Original triangle IDs are retained. Missing acceleration scans valid triangles completely; malformed indices are skipped. Unchanged index topology refits in place; changed indices/validity rebuild. |
+| Prepared geometry | Shapes cache normalized world poses, inverse rotation, axes, dimensions, capsule endpoints and world child bounds, checking revisions at consumption. Compound child bounds reject separated children before cache lookup/exact testing, with contact tolerance and roundoff allowance. Sphere/capsule mesh kernels run in mesh space; boxes transform directly from mesh to box space. Only accepted contacts are transformed to world coordinates. Materials combine once per contacting pair. |
+| Scalar algorithms | Capsule/box uses a bounded piecewise quadratic segment/AABB minimum. Box/box uses relative-matrix SAT; triangle/box uses direct face bounds and unnormalized separating axes with scaled tolerance. Degenerate triangles use segment/point closest-distance fallbacks. Mesh-contact merging uses the mesh anchor consistently in both pair directions. |
+| Static overhead | All-immovable roots return before rank/traversal setup. Static integration calls and unnecessary force/sleep calculations are skipped while accumulators still clear. Transform publication copies only non-static actors under the actor-array lock, releases that lock before callbacks, and checks scene membership/native state before publication. |
+| SIMD prototype | Optional SSE2 batches four cached triangle bounds at mesh leaves, with safe component gathers, scalar tails, preserved visit order, and a compile-time scalar fallback. SIMD remains disabled by default because measured contact-pair savings were negligible or negative. |
+
+See [prepared geometry](../Engine/c/Source/WorkphonePhysics/workphone_physics_geometry.c), [shared cache](../Engine/c/Source/WorkphonePhysics/workphone_physics_collision_cache.c), [mesh traversal](../Engine/c/Source/WorkphonePhysics/workphone_physics_triangle_mesh.c), and [contact kernels](../Engine/c/Source/WorkphonePhysics/workphone_physics_narrowphase.c).
+
+### Reuse and depenetration rules
+
+Optional `FIXED` and `DISTANCE` reuse is deliberately conservative: world-space contacts are reused only while both poses and geometries are unchanged. Any revision/lifetime change regenerates exact contacts regardless of the requested interval. Uncooked borrowed mesh arrays never reuse scene manifolds. Material values refresh even on cache hits. This fixes stale contacts without pretending to provide a full persistent-contact-manifold system; local-anchor feature tracking across moving poses remains future work.
+
+An embedded capsule now chooses the smallest of six box-face translations that eject the **whole capsule**, including both segment endpoints and radius. The old closest-point rule could select an interior segment point and underestimate the correction. A centered radius-0.25 capsule with half-height 2 inside a unit-half-extent box gets a 1.25 lateral correction, rather than an arbitrary axial correction.
+
+Selective mesh OBB rejection is enabled by default for boxes whose mesh-local AABB volume exceeds the oriented box volume by 1.5x. It adds the three box face-axis tests after the mesh AABB test; it conservatively retains edge-axis false positives. Spheres keep sphere traversal and capsules use endpoint-expanded AABBs. The shared body AABB tree and its existing selective body OBB filter remain in place.
+
+### Measurements
+
+Windows x64 MSVC RelWithDebInfo, same CPU and fixed-pose fixture definitions as the review. A fresh baseline was measured before these changes; optimized values below are medians of five samples from the committed benchmark. Setup is excluded from pair timings. Absolute timings vary with host load; these are fixture measurements, not Editor frame-rate claims.
+
+| Fixture | Fresh baseline, us/pair | Optimized, us/pair | Approximate gain |
+|---|---:|---:|---:|
+| Sphere/sphere hit | 0.2658 | 0.1206 | 2.2x |
+| Sphere/box hit | 0.4633 | 0.2924 | 1.6x |
+| Rotated box/box hit | 1.2489 | 0.3176 | 3.9x |
+| Rotated capsule/box hit | 3.3176 | 0.6726 | 4.9x |
+| Capsule/box miss | 3.0813 | 0.4227 | 7.3x |
+| Small box / 32,768-triangle mesh | 13.7533 | 8.6052 | 1.6x |
+| Long box / mesh, previously 968 sphere candidates | 802.2420 | 91.7530 | 8.7x |
+| Slightly longer box, previously 1,032 sphere candidates | 22,257.9590 | 99.9090 | 223x |
+
+The two threshold fixtures now test 96 and 104 triangles with no overflow/full-scan fallback. A separate wide-box regression streams over 1,024 actual candidates without falling back. Cooking 32,768 triangles fell from 76.382 ms to 37.221 ms after removing the duplicate tree.
+
+For the rotated long box, local AABB traversal tested 648 triangles in 257.944 us; the selective OBB filter tested 104 in 84.419 us, approximately 3.1x faster. Scalar and SSE2 AABB traversal measured 257.944/257.136 us for this pair, and 7,787/7,924 us for the dense 7,688-candidate case. Those SIMD differences do not justify enabling it by default.
+
+Static measurements use 4,096 isolated box actors, 200 steps/sample, after warm-up. The baseline was rebuilt from the prior source with the same optimized compiler options. No collision contacts occur in these fixtures.
+
+A final repeat after rebuilding gave 0.305 us for box/box, 0.647 us for capsule/box, 95.955 us for the former overflow fixture, and 238.770/77.579 us for the rotated long box with AABB/OBB traversal. SSE2 varied from a slight regression to a 3.4% dense-pair gain across runs; it remains opt-in.
+
+| Scene fixture | Baseline us/step | Optimized us/step |
+|---|---:|---:|
+| All static | 260.412 | 178.753 |
+| One dynamic plus 4,095 static | 391.303 | 320.517 |
+| 256 sleeping dynamic plus 3,840 static | 470.942 | 359.406 |
+
+These scenes still poll actor revisions/eligibility. Active/dirty membership lists and separate static/moving trees remain conditional follow-ups requiring a mutation-notification contract and representative track profiling. Immutable shared cooked mesh data, compound child hierarchies, a dispatch table, wider SIMD and cross-pair batching likewise remain evaluation items, as proposed in the review; they are not required for the implemented structural fixes.
+
+### Validation and reproduction
+
+- Fresh x64 native build plus the `WPPhysics` C++ DLL and `UnitTests` executable build/link succeeded.
+- Seven focused CTests passed: narrowphase, collision, broadphase, oriented bounds, material, scene capacity and rotated vehicle inertia.
+- The new narrowphase suite covers 6,000 hash entries and payload compaction; 1,035 batch manifolds and scene cache entries; empty/invalid batches; compound identity/culling; reverse cache orientation with live restitution; rotation/local-shape/dimension edits, removal/recreation, disable, mass/type transitions, stale retirement and mode changes.
+- 12,000 seeded cases compare matrix SAT, triangle SAT and segment/box distance to retained pre-change scalar kernels. Independent dense segment samples and analytic endpoint, parallel, zero-length, tolerance and embedded fixtures supplement those comparisons.
+- Mesh tests compare original-triangle bounds to independent scalar queries, nested/reentrant traversal, scalar/SSE2 contact ordering, accelerated/full-scan contact existence and maximum depth for sphere/capsule/box pairs with local transforms, both pair directions, OBB filtering, more than 1,024 candidates, vertex/index refits, invalid/degenerate triangles and ray identity/normal.
+- MSVC AddressSanitizer native runs passed with SSE2 available and with `WP_PHYSICS_DISABLE_SIMD`. This is memory-access validation, not a leak-certification run.
+- Focused wrapper tests `physics_dynamic_body_steps_and_publishes_transform` and `physics_transform_publication_preserves_callback_removal` passed all 22 assertions, including skipped static publication and listener-driven removal.
+
+Build/run from the repository root:
+
+```powershell
+cmake --build project_x64 --target WorkphonePhysicsNarrowphaseTests WorkphonePhysicsNarrowphaseBenchmarks --config RelWithDebInfo --parallel 2
+ctest --test-dir project_x64 -C RelWithDebInfo --output-on-failure -R 'WorkphonePhysics\.(narrowphase|collision|broadphase|oriented_bounds|material)|WPPhysics\.(scene_capacity|rotated_vehicle_inertia)'
+.\bin\windows\v145\x64\MD\RelWithDebInfo\WorkphonePhysicsNarrowphaseBenchmarks.exe
+```
+
+Scene counters are available through `wp_physics_scene_get_broadphase_stats` and `wp_physics_scene_get_narrowphase_stats`; expensive per-pair timing is opt-in through `wp_physics_scene_set_narrowphase_timing_enabled`. Standalone narrowphase exposes corresponding controls for timing, forced full scans, SSE2 and selective mesh OBB filtering. Scene SSE2/mesh-OBB controls support profiling without changing solver order.
+
+Public statistics layouts grew: rebuild native clients and plugins together. Existing ray/sphere query wrappers and the void batch API remain available; checked batch allocation failure clears the result and returns failure. The complete engine test suite, leak certification, non-x64 execution and manual Editor/vehicle-track validation were not run.

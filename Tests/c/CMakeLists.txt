@@ -1,5 +1,20 @@
 project(WorkphonePhysicsCollisionTests C)
 
+add_executable(WorkphonePhysicsNarrowphaseTests
+    WorkphonePhysicsNarrowphaseTests.c WorkphonePhysicsNarrowphaseReference.c)
+target_include_directories(WorkphonePhysicsNarrowphaseTests PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+    ${WP_ROOT}/Engine/c/Source/WorkphonePhysics)
+target_link_libraries(WorkphonePhysicsNarrowphaseTests PRIVATE WorkphonePhysics)
+set_target_properties(WorkphonePhysicsNarrowphaseTests PROPERTIES FOLDER Tests/C)
+add_test(NAME WorkphonePhysics.narrowphase COMMAND WorkphonePhysicsNarrowphaseTests)
+
+add_executable(WorkphonePhysicsNarrowphaseBenchmarks WorkphonePhysicsNarrowphaseBenchmarks.c)
+target_include_directories(WorkphonePhysicsNarrowphaseBenchmarks PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphonePhysics ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+target_link_libraries(WorkphonePhysicsNarrowphaseBenchmarks PRIVATE WorkphonePhysics)
+set_target_properties(WorkphonePhysicsNarrowphaseBenchmarks PROPERTIES FOLDER Tests/C)
+
 add_executable(WorkphonePhysicsCollisionTests WorkphonePhysicsCollisionTests.c)
 target_include_directories(
     WorkphonePhysicsCollisionTests

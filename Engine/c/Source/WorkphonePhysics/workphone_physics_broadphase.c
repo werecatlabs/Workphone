@@ -552,7 +552,7 @@ void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback c
 #if WP_BP_SSE2
     wp_s32 previous_hits = 0;
 #endif
-    if( !bp || !callback || bp->root == -1 )
+    if( !bp || !callback || bp->root == -1 || !bp->nodes[bp->root].movable )
         return;
     if( bp->order_dirty )
     {

@@ -5,6 +5,7 @@
 #include <boost/test/unit_test.hpp>
 #include <chrono>
 #include <thread>
+#include <functional>
 
 using namespace workphone;
 
@@ -58,6 +59,22 @@ namespace
         Vector3<real_Num> position = Vector3<real_Num>::zero();
         Quaternion<real_Num> orientation = Quaternion<real_Num>::identity();
         u32 eventCount = 0;
+    };
+
+    class PhysicsRemovalCapture final : public IEventListener
+    {
+    public:
+        Parameter handleEvent( EventType, hash_type eventValue, const Array<Parameter> &,
+                               SmartPtr<ISharedObject>, SmartPtr<ISharedObject>, SmartPtr<IEvent> ) override
+        {
+            if( eventValue == IEvent::transform && onTransform )
+            {
+                auto callback = std::move( onTransform );
+                callback();
+            }
+            return {};
+        }
+        std::function<void()> onTransform;
     };
 
     bool hasLiveActors( const Array<SmartPtr<scene::IGameActor>> &actors )
@@ -248,6 +265,47 @@ BOOST_AUTO_TEST_CASE( physics_dynamic_body_steps_and_publishes_transform )
     body->removeObjectListener( capture );
     physicsManager->removePhysicsBody( body );
     physicsManager->removeCollisionShape( shape );
+}
+
+BOOST_AUTO_TEST_CASE( physics_transform_publication_preserves_callback_removal )
+{
+    if( skipWhenPhysicsUnavailable() )
+        return;
+    auto manager = core::IApplicationManager::instance()->getPhysicsManager();
+    auto scene = manager->getPhysicsScene();
+    BOOST_REQUIRE( scene );
+    scene->clear();
+    auto first = manager->addRigidDynamic( Transform3<real_Num>::identity() );
+    auto second = manager->addRigidDynamic( Transform3<real_Num>::identity() );
+    auto fixed = manager->addRigidStatic( Transform3<real_Num>::identity() );
+    BOOST_REQUIRE( first && second && fixed );
+    auto removal = workphone::make_ptr<PhysicsRemovalCapture>();
+    auto secondCapture = workphone::make_ptr<PhysicsTransformCapture>();
+    auto staticCapture = workphone::make_ptr<PhysicsTransformCapture>();
+    bool removed = false;
+    removal->onTransform = [&] {
+        scene->removeActor( second );
+        removed = manager->removePhysicsBody( second );
+    };
+    first->addObjectListener( removal );
+    second->addObjectListener( secondCapture );
+    fixed->addObjectListener( staticCapture );
+    scene->addActor( first );
+    scene->addActor( second );
+    scene->addActor( fixed );
+    scene->simulate( static_cast<real_Num>( 1.0 / 60.0 ), nullptr, 0, true );
+    BOOST_REQUIRE( scene->fetchResults( true, nullptr ) );
+    BOOST_CHECK( removed );
+    BOOST_CHECK( !scene->hasActor( second ) );
+    BOOST_CHECK_EQUAL( secondCapture->eventCount, 0u );
+    BOOST_CHECK_EQUAL( staticCapture->eventCount, 0u );
+    first->removeObjectListener( removal );
+    second->removeObjectListener( secondCapture );
+    fixed->removeObjectListener( staticCapture );
+    scene->removeActor( first );
+    scene->removeActor( fixed );
+    manager->removePhysicsBody( first );
+    manager->removePhysicsBody( fixed );
 }
 
 BOOST_AUTO_TEST_CASE( physics_sustained_small_force_wakes_heavy_body )

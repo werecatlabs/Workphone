@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include "workphone_vector.h"
+#include "workphone_physics_narrowphase.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -79,6 +80,9 @@ typedef struct wp_contact_options {
     wp_u32 fixed_update_frequency;
     wp_f32 distance_frequency_scale;
 } wp_contact_options;
+/* Reuse is conservative: pose/geometry changes regenerate contacts, regardless
+ * of the requested interval. This never replays stale world-space contacts. */
+void wp_physics_scene_set_contact_options( wp_physics_scene *scene, const wp_contact_options *options );
 
 typedef struct wp_spatial_partitioning_options {
     wp_f32 update_rate_multiplier;
@@ -120,6 +124,10 @@ typedef struct wp_scene_broadphase_stats {
     uint64_t obb_local_rebuilds;
     uint64_t obb_world_updates;
     uint64_t narrowphase_tests;
+    uint64_t cache_hits, cache_misses, cache_probes, cache_failures, cache_retired;
+    uint64_t child_pair_rejections;
+    wp_u32 static_actors, dynamic_actors, kinematic_actors;
+    uint64_t dirty_static_updates;
 } wp_scene_broadphase_stats;
 wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physics_scene *scene );
 /* Optional batched SSE2 traversal; returns 0 on targets without SSE2 support.
@@ -132,6 +140,10 @@ wp_s32 wp_physics_scene_set_broadphase_simd_enabled( wp_physics_scene *scene, wp
  * and pair order are unchanged. Rebuild clients after stats layout changes. */
 void wp_physics_scene_set_broadphase_obb_enabled( wp_physics_scene *scene, wp_s32 enabled );
 wp_s32 wp_physics_scene_get_broadphase_obb_enabled( const wp_physics_scene *scene );
+wp_narrowphase_stats wp_physics_scene_get_narrowphase_stats( const wp_physics_scene *scene );
+void wp_physics_scene_set_narrowphase_timing_enabled( wp_physics_scene *scene, wp_s32 enabled );
+wp_s32 wp_physics_scene_set_narrowphase_simd_enabled( wp_physics_scene *scene, wp_s32 enabled );
+void wp_physics_scene_set_narrowphase_mesh_obb_enabled( wp_physics_scene *scene, wp_s32 enabled );
 
 /* =========================================================================
  * Threading

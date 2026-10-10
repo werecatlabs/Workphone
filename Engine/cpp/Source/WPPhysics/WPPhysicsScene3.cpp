@@ -407,10 +407,23 @@ namespace workphone::physics
          * Listeners are user code and may remove actors. Iterate a snapshot
          * so those callbacks cannot invalidate the traversal.
          */
-        const auto actors = m_actors;
+        Array<SmartPtr<IPhysicsBody3>> actors;
+        {
+            ScopedLock<decltype(m_actors)> actorLock(&m_actors);
+            for(const auto &actor : m_actors)
+            {
+                if(!actor)
+                    continue;
+                void *nativeActor = nullptr;
+                actor->_getObject(&nativeActor);
+                if(nativeActor && wp_rigidbody_get_type(static_cast<const wp_rigidbody *>(nativeActor)) !=
+                                      WORKPHONE_RIGIDBODY_STATIC)
+                    actors.push_back(actor);
+            }
+        }
         for(const auto &actor : actors)
         {
-            if(!actor)
+            if(!actor || actor->getScene().get() != this)
             {
                 continue;
             }
