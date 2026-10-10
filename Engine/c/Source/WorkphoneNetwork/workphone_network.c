@@ -86,7 +86,7 @@ static void net_push_error( NetContext *ctx, const char *message )
 
     if( message )
     {
-        strncpy( event.message, message, sizeof( event.message ) - 1 );
+        snprintf( event.message, sizeof( event.message ), "%s", message );
         event.message[sizeof( event.message ) - 1] = '\0';
     }
 

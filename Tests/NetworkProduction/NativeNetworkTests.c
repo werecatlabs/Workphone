@@ -139,6 +139,7 @@ int main(void)
     for(i=0;i<20;++i) pump(); CHECK(clients[0].local_player_id>j);
 
     /* Retry/timeout scheduling is deterministic, including uint32 wrap. */
+    drain(&probe);
     CHECK(net_connect(&probe,"127.0.0.1",net_get_bound_port(&clients[1]))==NET_RESULT_OK);
     probe.connect_started_ms=0xfffffff0u; probe.last_connect_send_ms=0xfffffff0u;
     net_update_at(&probe,0x200u); CHECK(probe.connecting && probe.last_connect_send_ms==0x200u);

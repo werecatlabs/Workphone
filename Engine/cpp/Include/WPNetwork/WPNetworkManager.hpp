@@ -31,6 +31,10 @@ namespace workphone
         /** @brief Constructor that initializes the manager as either a client or server. @param isClient True if this instance should act as a client. */
         explicit WPNetworkManager( bool isClient );
         ~WPNetworkManager() override;
+        void unload( SmartPtr<ISharedObject> data ) override;
+        void poll() override;
+        u32 getCapabilities() const override;
+        s32 getPacketSenderId( SmartPtr<IPacket> packet ) const override;
 
         /** @brief Sets whether this instance acts as a server. @param isServer True to enable server mode. */
         void setServer( bool isServer ) override;
@@ -151,6 +155,7 @@ namespace workphone
         bool m_connected = false;          ///< Flag indicating if the client is connected to a server
         bool m_verbose = false;            ///< Flag for verbose logging
         bool m_globalRelay = false;        ///< Flag for global packet relay
+        bool m_socketRuntimeInitialized = false;
         u32 m_port = 15822;                ///< The network port used for listening/connecting
         u32 m_maxClients = NET_MAX_PEERS;  ///< Maximum number of clients allowed on the server
         u16 m_netIterations =

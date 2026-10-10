@@ -6,6 +6,7 @@
 #include <Workphone/Workphone.hpp>
 #include <algorithm>
 #include <cstdio>
+#include <stdexcept>
 
 namespace workphone
 {
@@ -14,7 +15,6 @@ namespace workphone
     WPNetworkManager::WPNetworkManager()
     {
         m_listener = SmartPtr<scene::NetworkListener>( new scene::NetworkListener() );
-        net_init();
         net_context_init( &m_context );
     }
 
@@ -25,12 +25,56 @@ namespace workphone
 
     WPNetworkManager::~WPNetworkManager()
     {
+        unload( nullptr );
+    }
+
+    void WPNetworkManager::unload( SmartPtr<ISharedObject> data )
+    {
         net_context_shutdown( &m_context );
-        net_shutdown();
+        m_started = m_connected = false;
+        m_listener->clearListeners();
+        if( m_socketRuntimeInitialized )
+        {
+            net_shutdown();
+            m_socketRuntimeInitialized = false;
+        }
+        INetworkManager::unload( data );
+    }
+
+    void WPNetworkManager::poll()
+    {
+        update();
+    }
+
+    u32 WPNetworkManager::getCapabilities() const
+    {
+        return UnreliableDelivery;
+    }
+
+    s32 WPNetworkManager::getPacketSenderId( SmartPtr<IPacket> packet ) const
+    {
+        if( !packet || !m_started )
+            return -1;
+        auto address = dynamic_cast<WPNetworkSystemAddress *>( packet->getSystemAddress().get() );
+        if( !address )
+            return -1;
+        for( int i = 0; i < m_context.max_peers; ++i )
+        {
+            const auto &peer = m_context.peers[i];
+            if( peer.active && net_address_equal( &peer.address, &address->getNetAddress() ) )
+                return m_context.mode == NET_MODE_CLIENT ? 0 : peer.id;
+        }
+        return -1;
     }
 
     void WPNetworkManager::setServer( bool isServer )
     {
+        if( !m_socketRuntimeInitialized )
+        {
+            if( net_init() != NET_RESULT_OK )
+                throw std::runtime_error( "WPNetwork: socket runtime startup failed" );
+            m_socketRuntimeInitialized = true;
+        }
         net_context_shutdown( &m_context );
         net_context_init( &m_context );
 
@@ -56,8 +100,7 @@ namespace workphone
 
     void WPNetworkManager::setPeer()
     {
-        setServer( true );
-        m_isServer = false;
+        throw std::logic_error( "WPNetwork: peer-to-peer mode is unsupported by native UDP" );
     }
 
     void WPNetworkManager::setVerbose( bool isverbose )
@@ -95,6 +138,12 @@ namespace workphone
 
     void WPNetworkManager::sendPacket( SmartPtr<IPacket> &outpacket )
     {
+        (void)outpacket;
+        throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
+    }
+
+    void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket )
+    {
         u32 size = 0;
         const auto *data = getPacketData( outpacket, size );
         if( !data || size == 0 )
@@ -102,23 +151,39 @@ namespace workphone
 
         if( m_context.mode == NET_MODE_CLIENT )
         {
-            net_send_to_server( &m_context, data, size );
+            if( net_send_to_server( &m_context, data, size ) != NET_RESULT_OK )
+                throw std::runtime_error( "WPNetwork: unreliable send to server failed" );
             return;
         }
 
         for( int i = 0; i < m_context.max_peers; ++i )
         {
             if( m_context.peers[i].active )
-                net_send( &m_context, m_context.peers[i].id, data, size );
+            {
+                if( net_send( &m_context, m_context.peers[i].id, data, size ) != NET_RESULT_OK )
+                    throw std::runtime_error( "WPNetwork: unreliable broadcast failed" );
+            }
         }
     }
 
     void WPNetworkManager::sendPacket( SmartPtr<IPacket> &outpacket, u16 playerId )
     {
+        (void)outpacket;
+        (void)playerId;
+        throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
+    }
+
+    void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket, u16 playerId )
+    {
         u32 size = 0;
         const auto *data = getPacketData( outpacket, size );
         if( data && size > 0 )
-            net_send( &m_context, static_cast<NetPeerId>( playerId ), data, size );
+        {
+            const auto peer = m_context.mode == NET_MODE_CLIENT && playerId == 0 ?
+                                  m_context.server_peer_id : static_cast<NetPeerId>( playerId );
+            if( net_send( &m_context, peer, data, size ) != NET_RESULT_OK )
+                throw std::runtime_error( "WPNetwork: unreliable send to player failed" );
+        }
     }
 
     NetPeer *WPNetworkManager::findPeerByAddress( SmartPtr<ISystemAddress> systemAddress )
@@ -157,28 +222,9 @@ namespace workphone
     void WPNetworkManager::sendPacketToAllExcept( SmartPtr<IPacket> &outpacket,
                                                   SmartPtr<ISystemAddress> systemAddress )
     {
-        auto excluded = findPeerByAddress( systemAddress );
-        u32 size = 0;
-        const auto *data = getPacketData( outpacket, size );
-        if( !data || size == 0 )
-            return;
-
-        for( int i = 0; i < m_context.max_peers; ++i )
-        {
-            const auto &peer = m_context.peers[i];
-            if( peer.active && ( !excluded || peer.id != excluded->id ) )
-                net_send( &m_context, peer.id, data, size );
-        }
-    }
-
-    void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket )
-    {
-        sendPacket( outpacket );
-    }
-
-    void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket, u16 playerId )
-    {
-        sendPacket( outpacket, playerId );
+        (void)outpacket;
+        (void)systemAddress;
+        throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
     }
 
     const u32 WPNetworkManager::getPeerCount()
@@ -195,7 +241,7 @@ namespace workphone
 
     u16 WPNetworkManager::getPlayerNumber() const
     {
-        return static_cast<u16>( m_context.server_peer_id );
+        return m_context.local_player_id < 0 ? 0xffffu : static_cast<u16>( m_context.local_player_id );
     }
 
     const u32 WPNetworkManager::getClientAddress( u16 playerId )
@@ -226,15 +272,16 @@ namespace workphone
         if( !m_started )
             return ConnectionStatus::NCS_FAILED;
 
-        if( m_isServer || m_connected || m_context.server_peer_id != NET_INVALID_PEER )
+        if( m_isServer || m_context.server_peer_id != NET_INVALID_PEER )
             return ConnectionStatus::NCS_ESTABLISHED;
 
-        return ConnectionStatus::NCS_PENDING;
+        return m_context.connecting ? ConnectionStatus::NCS_PENDING : ConnectionStatus::NCS_FAILED;
     }
 
     void WPNetworkManager::connect( const String &address, unsigned short port, const String &password )
     {
-        (void)password;
+        if( !password.empty() )
+            throw std::logic_error( "WPNetwork: native UDP cannot authenticate a password" );
 
         if( !m_started || m_context.mode != NET_MODE_CLIENT )
             setServer( false );
@@ -255,7 +302,9 @@ namespace workphone
 
     void WPNetworkManager::setGlobalPacketRelay( bool relay )
     {
-        m_globalRelay = relay;
+        if( relay )
+            throw std::logic_error( "WPNetwork: blind packet relay is unsupported" );
+        m_globalRelay = false;
     }
 
     SmartPtr<IPacket> WPNetworkManager::createPacket()
@@ -265,6 +314,8 @@ namespace workphone
 
     time_interval WPNetworkManager::getServerTime() const
     {
+        if( !m_isServer )
+            throw std::logic_error( "WPNetwork: native UDP has no synchronized server clock" );
         return static_cast<time_interval>( net_time_ms() ) * 0.001;
     }
 
@@ -353,7 +404,9 @@ namespace workphone
 
     void WPNetworkManager::setPort( u32 port )
     {
-        m_port = std::min<u32>( port, 65535u );
+        if( port > 65535u || m_started )
+            throw std::invalid_argument( "WPNetwork: invalid port or session already started" );
+        m_port = port;
     }
 
     u32 WPNetworkManager::getMaxClients() const
@@ -363,7 +416,9 @@ namespace workphone
 
     void WPNetworkManager::setMaxClients( u32 maxClients )
     {
-        m_maxClients = std::max<u32>( 1u, std::min<u32>( maxClients, NET_MAX_PEERS ) );
+        if( maxClients == 0 || maxClients > NET_MAX_PEERS || m_started )
+            throw std::invalid_argument( "WPNetwork: invalid capacity or session already started" );
+        m_maxClients = maxClients;
     }
 
     NetContext *WPNetworkManager::getContext()
