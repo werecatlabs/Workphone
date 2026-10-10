@@ -18,8 +18,8 @@ namespace workphone
          * @class ClawTerrain
          * @brief Implementation of IGraphicsTerrain using the Claw graphics engine.
          *
-         * This class wraps the underlying wp_graphics_terrain object and provides
-         * an interface for managing terrain height, textures, and world transformations.
+         * Uses Terrain's immutable rectangular heightfield for queries and geometry,
+         * and retains a native mesh for the renderer's current snapshot.
          */
         class WPGraphics_API ClawTerrain : public Terrain
         {
@@ -27,21 +27,23 @@ namespace workphone
             ClawTerrain();
             ~ClawTerrain() override;
 
+            void unload( SmartPtr<ISharedObject> data ) override;
+
             /** @brief Gets the world transformation of the terrain. */
             Transform3<real_Num> getWorldTransform() const override;
-            
+
             /** @brief Sets the world transformation of the terrain. */
             void setWorldTransform( const Transform3<real_Num> &worldTransform ) override;
-            
+
             /** @brief Gets the world position of the terrain. */
             Vector3<real_Num> getPosition() const override;
-            
+
             /** @brief Sets the world position of the terrain. */
             void setPosition( const Vector3<real_Num> &position ) override;
-            
+
             /** @brief Returns the height value at a given world position. */
             f32 getHeightAtWorldPosition( const Vector3<real_Num> &position ) const override;
-            
+
             /** @brief Returns the size of the terrain. */
             u16 getSize() const override;
             /** @brief Converts a world space position to terrain local space. */
@@ -85,41 +87,38 @@ namespace workphone
             u16 getLayerBlendMapSize() const override;
             /** @brief Performs a ray-terrain intersection test. */
             SmartPtr<ITerrainRayResult> intersects( const Ray3F &ray ) const override;
-            
+
             /** @brief Gets the mesh representation of the terrain. */
             SmartPtr<IMesh> getMesh() const override;
-            
+
             /** @brief Gets the dimensions of the height map. */
             Vector2I getHeightMapSize() const override;
-            
+
             /** @brief Sets the dimensions of the height map. */
             void setHeightMapSize( const Vector2I &heightMapSize ) override;
-            
+
             /** @brief Updates the internal material properties. */
             void updateMaterial() override;
 
-            /** Returns the lazily generated C89 render mesh for this heightfield. */
+            /** Returns the full-resolution native mesh on the render owner thread.
+             * Failed replacements retain the last successfully built mesh.
+             */
             wp_graphics_mesh *getNativeRenderMesh() const;
 
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            void rebuildRenderMesh() const;
+            void rebuildRenderMesh( const TerrainSnapshot &snapshot ) const;
+            void releaseRenderMesh() const;
 
             wp_graphics_terrain *m_terrain;           ///< Underlying Claw terrain object.
-            Transform3<real_Num> m_worldTransform;    ///< World transform of the terrain.
-            Vector3<real_Num> m_position;             ///< World position of the terrain.
-            Array<f32> m_heightData;                  ///< Array containing height values.
-            u16 m_size = 0;                           ///< Size of the terrain.
-            f32 m_heightScale = 1.0f;                 ///< Scale factor for height values.
             SmartPtr<IGraphicsScene> m_sceneManager;  ///< Reference to the scene manager.
             SmartPtr<ITexture> m_heightMap;           ///< Height map texture.
             Array<SmartPtr<ITexture>> m_textures;     ///< Collection of terrain layer textures.
             String m_materialName;                    ///< Name of the material assigned to the terrain.
-            Vector2I m_heightMapSize;                 ///< Dimensions of the height map.
             u16 m_layerBlendMapSize = 0;              ///< Size of the blend maps.
             mutable wp_graphics_mesh *m_renderMesh = nullptr;
-            mutable bool m_renderMeshDirty = true;
+            mutable TerrainSnapshot m_renderSnapshot;
         };
 
     }  // namespace render

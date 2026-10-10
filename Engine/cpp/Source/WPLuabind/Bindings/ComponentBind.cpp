@@ -51,6 +51,7 @@
 #include <Workphone/Scene/Components/Terrain/TerrainBlendMap.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/TerrainEditing.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Scene/Components/VehicleController.hpp>
@@ -61,6 +62,46 @@
 
 namespace workphone
 {
+    namespace
+    {
+        String terrainBrush( scene::TerrainSystem *terrain, const String &mode, f32 x, f32 z,
+                             f32 radius, f32 strength, f32 target )
+        {
+            scene::TerrainBrush brush;
+            if( mode == "raise" ) brush.mode = scene::TerrainBrushMode::Raise;
+            else if( mode == "lower" ) brush.mode = scene::TerrainBrushMode::Lower;
+            else if( mode == "smooth" ) brush.mode = scene::TerrainBrushMode::Smooth;
+            else if( mode == "flatten" ) brush.mode = scene::TerrainBrushMode::Flatten;
+            else return "This terrain brush is unavailable.";
+            brush.centre = Vector2F( x, z );
+            brush.radius = radius;
+            brush.strength = strength;
+            brush.targetHeight = target;
+            auto application = core::IApplicationManager::instancePtr();
+            String error;
+            scene::applyTerrainBrush( terrain, brush, application ? application->getCommandManager() : nullptr, error );
+            return error;
+        }
+        String terrainSave( scene::TerrainSystem *terrain, const String &path )
+        {
+            String error;
+            scene::saveTerrainDataFile( terrain, path, error );
+            return error;
+        }
+        String terrainLoad( scene::TerrainSystem *terrain, const String &path )
+        {
+            String error;
+            scene::loadTerrainDataFile( terrain, path, error );
+            return error;
+        }
+        String terrainImport( scene::TerrainSystem *terrain, const String &data )
+        {
+            String error;
+            if( terrain ) terrain->importTerrainData( data, error );
+            else error = "No terrain selected.";
+            return error;
+        }
+    }
     Parameter Component_handleEvent( scene::IComponent *component, lua_Integer eventType,
                                      lua_Integer eventValue, const Array<Parameter> &arguments,
                                      SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
@@ -392,6 +433,12 @@ namespace workphone
                     .def( "setHeightMap", &TerrainSystem::setHeightMap )
                     .def( "rebuild", &TerrainSystem::rebuild )
                     .def( "generateHeightMap", &TerrainSystem::generateHeightMap )
+                    .def( "applyHeightBrush", &terrainBrush )
+                    .def( "saveTerrainDataFile", &terrainSave )
+                    .def( "loadTerrainDataFile", &terrainLoad )
+                    .def( "exportTerrainData", &TerrainSystem::exportTerrainData )
+                    .def( "importTerrainData", &terrainImport )
+                    .def( "getTerrainRevision", &TerrainSystem::getTerrainRevision )
                     .def( "getHeightScale", &TerrainSystem::getHeightScale )
                     .def( "setHeightScale", &TerrainSystem::setHeightScale )
                     .def( "getHeightMapSize", &TerrainSystem::getHeightMapSize )

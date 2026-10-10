@@ -15,6 +15,7 @@ if (-not $CTestExecutable) {
 $CTestExecutable = (Get-Command $CTestExecutable -ErrorAction Stop).Source
 $selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets)\.|^WPResourceTests$'
 $requiredTests = @(
+    'WPGraphics.terrain_contracts', 'WPGraphics.terrain_lua_workflow',
     'WPGraphics.production_Skinning', 'WPGraphics.production_ParticleSimulation',
     'WorkphoneGraphics.mesh_serializer', 'WorkphoneGraphics.mesh_import_assets',
     'WorkphoneGraphics.renderer_contract', 'WorkphoneGraphics.shader_contract',
@@ -52,6 +53,24 @@ $testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/Gr
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter '*Contracts.hpp') +
     @(Get-Item -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp/AssetCatalogTests.cpp'), (Join-Path $repositoryRoot 'Tests/cpp/ResourceSystem/ResourceSystemSmoke.cpp'))
 $verificationPaths = @(
+    'Tests/cpp/TerrainContractsTests.cpp', 'Tests/cpp/TerrainLuaBindingTests.cpp',
+    'Engine/cpp/Include/Workphone/Graphics/TerrainData.hpp',
+    'Engine/cpp/Include/Workphone/Graphics/Terrain.hpp',
+    'Engine/cpp/Include/WPGraphics/ClawTerrain.hpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/Terrain/TerrainSystem.hpp',
+    'Engine/cpp/Include/Workphone/Scene/TerrainEditing.hpp',
+    'Engine/cpp/Include/Workphone/System/CommandManager.hpp',
+    'Engine/cpp/Include/Workphone/System/CommandManagerMT.hpp',
+    'Engine/cpp/Source/Workphone/Graphics/TerrainData.cpp',
+    'Engine/cpp/Source/Workphone/Graphics/Terrain.cpp',
+    'Engine/cpp/Source/Workphone/Scene/TerrainEditing.cpp',
+    'Engine/cpp/Source/Workphone/System/CommandManager.cpp',
+    'Engine/cpp/Source/Workphone/System/CommandManagerMT.cpp',
+    'Engine/cpp/Project/Workphone/CMakeLists.txt', 'Dependencies/cJSON/cJSON.c',
+    'Engine/cpp/Source/Workphone/Scene/Components/Terrain/TerrainSystem.cpp',
+    'Engine/cpp/Source/WPGraphics/ClawTerrain.cpp',
+    'Engine/cpp/Source/WPLuabind/Bindings/ComponentBind.cpp',
+    'bin/Media/Scripts/Lua/Editor/TerrainEditor.lua',
     'Tests/cpp/DX11TestEvidence.hpp', 'Tools/ValidateClawGraphics.ps1',
     'Tools/BuildWPGraphicsBaseline.ps1', 'CMakePresets.json',
     'Engine/cpp/Project/WPGraphics/CMakeLists.txt', 'Tests/cpp/CMakeLists.txt',

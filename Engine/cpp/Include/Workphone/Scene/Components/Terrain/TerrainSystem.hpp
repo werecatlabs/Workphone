@@ -4,6 +4,8 @@
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
+#include <Workphone/Graphics/TerrainData.hpp>
+#include <mutex>
 
 namespace workphone
 {
@@ -291,6 +293,17 @@ namespace workphone
              */
             SmartPtr<render::IGraphicsTerrain> getTerrain() const;
 
+            /** Authoritative samples survive renderer recreation and scene serialization.
+             * Mutations are owner-thread commits; retained snapshots are safe to read.
+             */
+            render::TerrainSnapshot getTerrainSnapshot() const;
+            u64 getTerrainRevision() const;
+            bool applyTerrainData( const render::TerrainData &data, String &error,
+                                   u64 expectedRevision = 0 );
+            String exportTerrainData() const;
+            bool importTerrainData( const String &json, String &error );
+            SmartPtr<ISharedObject> toData() const override;
+
             /**
              * @brief Attach a graphics terrain instance to this component.
              *
@@ -430,6 +443,9 @@ namespace workphone
              * geometry and materials.
              */
             SmartPtr<render::IGraphicsTerrain> m_terrain;
+
+            mutable std::mutex m_terrainDataMutex;
+            render::TerrainSnapshot m_terrainData;
 
             /** Scene node the terrain is attached to. */
             SmartPtr<render::IGraphicsSceneNode> m_node;

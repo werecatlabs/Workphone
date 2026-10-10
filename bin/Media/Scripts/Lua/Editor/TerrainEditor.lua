@@ -68,6 +68,8 @@ TerrainEditorTypes =
 	SculptApplyNoise = 366,
 	SculptApplyStamp = 367,
 	SculptClear = 368,
+	BrushCentreX = 9001,
+	BrushCentreZ = 9002,
 
 	-- Layer paint / material
 	LayerBlendMode = 370,
@@ -230,6 +232,7 @@ TerrainEditorTypes =
 	ImportTerrainJson = 1005,
 	ExportTerrainJson = 1006,
 	TerrainOutputPath = 1007,
+	ExportTerrainRecipe = 1008,
 	ShowBounds = 1010,
 	ShowChunks = 1011,
 	ShowNormals = 1012,
@@ -255,6 +258,8 @@ local TerrainEditorDefaults =
 
 	brushMode = 0,
 	brushSize = 20.0,
+	brushCentreX = 0.0,
+	brushCentreZ = 0.0,
 	brushStrength = 0.35,
 	brushFalloff = 0.5,
 	brushOpacity = 1.0,
@@ -880,7 +885,6 @@ function TerrainEditor:setProperties(parameters)
 	end
 
 	self:syncToControls();
-	self:applyTerrainShapeSettings();
 	if self._currentStatus ~= nil and self._currentStatus ~= "" then
 		self:setStatus(self._currentStatus);
 	else
@@ -968,7 +972,7 @@ function TerrainEditor:load()
 	terrainTab:addChild(terrainActionsHeader);
 	self:bindRef("rebuildTerrainButton", addButton(ui, terrainActionsHeader, "Rebuild Terrain", TerrainEditorTypes.RebuildTerrain, false));
 	self:bindRef("importHeightmapButton", addButton(ui, terrainActionsHeader, "Import Heightmap", TerrainEditorTypes.ImportHeightmap, true));
-	self:bindRef("exportHeightmapButton", addButton(ui, terrainActionsHeader, "Export Heightmap", TerrainEditorTypes.ExportHeightmap, true));
+	self:bindRef("exportHeightmapButton", addButton(ui, terrainActionsHeader, "Export Height Samples (JSON)", TerrainEditorTypes.ExportHeightmap, true));
 	self:bindRef("bakeNormalsButton", addButton(ui, terrainActionsHeader, "Bake Normals", TerrainEditorTypes.BakeNormals, false));
 	self:bindRef("bakeHolesButton", addButton(ui, terrainActionsHeader, "Bake Holes", TerrainEditorTypes.BakeHoles, true));
 	self:bindRef("fitTerrainButton", addButton(ui, terrainActionsHeader, "Fit To Selection", TerrainEditorTypes.FitTerrainToSelection, true));
@@ -980,8 +984,12 @@ function TerrainEditor:load()
 	self:bindRef("brushModeDropdown", addDropdown(ui, brushHeader, "Mode", TerrainEditorTypes.BrushMode,
 		{ "Raise/Lower", "Smooth", "Flatten", "Set Height", "Noise", "Terrace", "Erode", "Stamp" }, self.settings.brushMode), "brushMode", "selected");
 	self:bindRef("brushSizeSlider", addSlider(ui, brushHeader, "Brush Size", TerrainEditorTypes.BrushSize, 0.1, 512.0, self.settings.brushSize), "brushSize");
+	self:bindRef("brushCentreXSlider", addSlider(ui, brushHeader, "Brush Centre X (local metres)", TerrainEditorTypes.BrushCentreX, -8192.0, 8192.0, self.settings.brushCentreX), "brushCentreX");
+	self:bindRef("brushCentreZSlider", addSlider(ui, brushHeader, "Brush Centre Z (local metres)", TerrainEditorTypes.BrushCentreZ, -8192.0, 8192.0, self.settings.brushCentreZ), "brushCentreZ");
+	addText(ui, brushHeader, "Raise, lower, smooth and flatten apply one undoable action at this centre. Brush Size is the radius. Smooth/flatten strength is 0–1; falloff is smooth. Viewport strokes, tablet and mirror modifiers are unavailable.", false);
 	self:bindRef("brushStrengthSlider", addSlider(ui, brushHeader, "Strength", TerrainEditorTypes.BrushStrength, 0.0, 2.0, self.settings.brushStrength), "brushStrength");
-	self:bindRef("brushFalloffSlider", addSlider(ui, brushHeader, "Falloff", TerrainEditorTypes.BrushFalloff, 0.0, 1.0, self.settings.brushFalloff), "brushFalloff");
+	self:bindRef("brushFalloffSlider", addSlider(ui, brushHeader, "Falloff (fixed smooth)", TerrainEditorTypes.BrushFalloff, 0.0, 1.0, self.settings.brushFalloff), "brushFalloff");
+	safeCall(self.brushFalloffSlider, "setEnabled", false, true);
 	self:bindRef("brushOpacitySlider", addSlider(ui, brushHeader, "Opacity", TerrainEditorTypes.BrushOpacity, 0.0, 1.0, self.settings.brushOpacity), "brushOpacity");
 	self:bindRef("brushSpacingSlider", addSlider(ui, brushHeader, "Spacing", TerrainEditorTypes.BrushSpacing, 0.0, 1.0, self.settings.brushSpacing), "brushSpacing");
 	self:bindRef("targetHeightSlider", addSlider(ui, brushHeader, "Target Height", TerrainEditorTypes.TargetHeight, -1024.0, 1024.0, self.settings.targetHeight), "targetHeight");
@@ -1242,6 +1250,7 @@ function TerrainEditor:load()
 	self:bindRef("exportHeightDataButton", addButton(ui, toolsHeader, "Export Height Data", TerrainEditorTypes.ExportHeightData, true));
 	self:bindRef("importJsonButton", addButton(ui, toolsHeader, "Import JSON", TerrainEditorTypes.ImportTerrainJson, false));
 	self:bindRef("exportJsonButton", addButton(ui, toolsHeader, "Export JSON", TerrainEditorTypes.ExportTerrainJson, true));
+	self:bindRef("exportRecipeButton", addButton(ui, toolsHeader, "Export Recipe Settings", TerrainEditorTypes.ExportTerrainRecipe, false));
 
 	local debugHeader = ui:addElement(collapsingHeaderTypeInfo);
 	debugHeader:setLabel("Debug Visualisation");
@@ -1406,11 +1415,10 @@ function TerrainEditor:getFoliageLayers(kind)
 	end
 
 	local typeInfo = self:getFoliageTypeInfo(kind);
-	local subComponents = self.terrain:getSubComponents();
-	local size = subComponents:size();
+	local size = self.terrain:getNumSubComponents();
 
 	for i = 0, size - 1 do
-		local subComponent = subComponents:at(i);
+		local subComponent = self.terrain:getSubComponentByIndex(i);
 		if subComponent and subComponent:derived(typeInfo) then
 			table.insert(layers, subComponent);
 		end
@@ -1535,7 +1543,8 @@ function TerrainEditor:updateSelection()
 	end
 
 	if self.terrain then
-		self:setStatus("Editing selected terrain. Production settings are stored locally unless matching C++ bindings exist.");
+		self:syncTerrainDataSettings();
+		self:setStatus("Editing selected terrain. Height brush actions support Undo/Redo; Save and Reload use versioned sample data. Other tools report availability when selected.");
 		setResourcePreview(self.heightMap, self.terrain:getHeightMap());
 	else
 		self:setStatus("Select a TerrainSystem to edit.");
@@ -1801,27 +1810,25 @@ function TerrainEditor:applyGeneratedTerrainSettings()
 	safeCall(self.terrain, "setGeneratedHeightMapWidth", resolution);
 	safeCall(self.terrain, "setGeneratedHeightMapHeight", resolution);
 	safeCall(self.terrain, "setGeneratedHeightMapType", self:getGeneratorType());
-	safeCall(self.terrain, "setHeightMapSize", Vector2I(resolution, resolution));
-	safeCall(self.terrain, "setHeightScale", tonumber(self.settings.heightScale) or TerrainEditorDefaults.heightScale);
 	return true;
 end
 
-function TerrainEditor:applyTerrainShapeSettings()
-	if self.terrain == nil then
-		return;
+function TerrainEditor:syncTerrainDataSettings()
+	if self.terrain == nil then return; end
+	local sizeOk, size = safeCall(self.terrain, "getHeightMapSize");
+	if sizeOk and size then
+		self._terrainWidth, self._terrainDepth = size:X(), size:Y();
+		-- The generator dropdown cannot describe arbitrary or rectangular authored grids.
+		-- Only replace its setting when the current grid matches an offered option.
+		if self._terrainWidth == self._terrainDepth then
+			for _, resolution in ipairs(TerrainHeightmapResolutions) do
+				if resolution == self._terrainWidth then self.settings.heightmapResolution = resolution; break; end
+			end
+		end
 	end
-
-	local resolution = self:getHeightmapResolution();
-	local size = safeVector3(self.settings.terrainSizeX, self.settings.terrainSizeY, self.settings.terrainSizeZ);
-	local origin = safeVector3(self.settings.worldOriginX, self.settings.worldOriginY, self.settings.worldOriginZ);
-	if size then safeCall(self.terrain, "setSize", size); end
-	if origin then safeCall(self.terrain, "setWorldOrigin", origin); end
-	safeCall(self.terrain, "setHeightScale", tonumber(self.settings.heightScale) or TerrainEditorDefaults.heightScale);
-	safeCall(self.terrain, "setHeightMapSize", Vector2I(resolution, resolution));
-	safeCall(self.terrain, "setGeneratedHeightMapWidth", resolution);
-	safeCall(self.terrain, "setGeneratedHeightMapHeight", resolution);
-	safeCall(self.terrain, "setGeneratedHeightMapType", self:getGeneratorType());
-	safeCall(self.terrain, "setChunkSize", self:getChunkSize());
+	local scaleOk, scale = safeCall(self.terrain, "getHeightScale");
+	if scaleOk then self.settings.heightScale = scale; end
+	self:syncToControls();
 end
 
 function TerrainEditor:getOutputPath(extension)
@@ -1990,13 +1997,16 @@ function TerrainEditor:buildRecipeText(kind)
 	return table.concat(lines, "\n");
 end
 
-function TerrainEditor:writeRecipe(kind, extension, exportedKey)
-	local path = self:getOutputPath(extension or ".terrain.json");
+function TerrainEditor:writeRecipe(kind, exportedKey)
+	-- Append a distinct suffix and retain the sample path used by Save/Reload.
+	local samplePath = tostring(self.settings.outputFile or "");
+	if samplePath == "" or samplePath == "None" then samplePath = "terrain"; end
+	local path = samplePath .. ".recipe.json";
 	local ok, err = self:writeTextFile(path, self:buildRecipeText(kind));
 	if ok then
 		self._exportedFiles = self._exportedFiles or {};
 		self._exportedFiles[exportedKey or "terrain"] = path;
-		self:setStatus("Wrote terrain data: " .. path);
+		self:setStatus("Wrote terrain recipe settings: " .. path);
 		return true;
 	end
 
@@ -2024,6 +2034,9 @@ function TerrainEditor:importRecipe(path)
 		self:setStatus("Failed to decode terrain JSON.");
 		return false;
 	end
+	if decoded.format == "workphone.terrain" then
+		return self:runTerrainOperation("importTerrainData", "Imported terrain samples: " .. path, contentsOrErr);
+	end
 
 	if decoded.settings ~= nil then
 		self.settings = self.settings or copyDefaults();
@@ -2033,8 +2046,7 @@ function TerrainEditor:importRecipe(path)
 			end
 		end
 		self:syncToControls();
-		self:applyTerrainShapeSettings();
-		self:setStatus("Imported terrain JSON: " .. path);
+		self:setStatus("Imported terrain recipe settings: " .. path .. ". Current samples are unchanged.");
 		return true;
 	end
 
@@ -2074,6 +2086,25 @@ function TerrainEditor:validateTerrain()
 	self._lastValidation = table.concat(issues, "; ");
 	self:setStatus("Terrain validation failed: " .. self._lastValidation);
 	return false;
+end
+
+function TerrainEditor:runTerrainOperation(method, successMessage, ...)
+	if self.terrain == nil then
+		self:setStatus("Select a TerrainSystem first.");
+		return false;
+	end
+	local ok, error = safeCall(self.terrain, method, ...);
+	if not ok or type(error) ~= "string" then
+		self:setStatus("Terrain operation unavailable or failed: " .. method .. ".");
+		return false;
+	end
+	if error ~= "" then
+		self:setStatus("Terrain operation failed: " .. error);
+		return false;
+	end
+	if method == "loadTerrainDataFile" or method == "importTerrainData" then self:syncTerrainDataSettings(); end
+	self:setStatus(successMessage);
+	return true;
 end
 
 function TerrainEditor:performAction(elementId)
@@ -2124,6 +2155,7 @@ function TerrainEditor:performAction(elementId)
 		[TerrainEditorTypes.ExportHeightData] = "export height data",
 		[TerrainEditorTypes.ImportTerrainJson] = "import terrain JSON",
 		[TerrainEditorTypes.ExportTerrainJson] = "export terrain JSON",
+		[TerrainEditorTypes.ExportTerrainRecipe] = "export terrain recipe settings",
 	};
 
 	if elementId == TerrainEditorTypes.RandomizeSeed then
@@ -2141,65 +2173,62 @@ function TerrainEditor:performAction(elementId)
 	self:syncFromControls();
 	self.lastAction = { id = elementId, name = actionName, settings = copyTable(self.settings) };
 
-	if self.terrain then
-		if elementId == TerrainEditorTypes.RebuildTerrain then
-			self:applyTerrainShapeSettings();
-			local rebuilt = safeCall(self.terrain, "rebuild");
-			if not rebuilt then
-				safeCall(self.terrain, "resizeLayermap");
-				safeCall(self.terrain, "updateLayers");
-				safeCall(self.terrain, "updateTransform");
-			end
-			self:setStatus("Terrain rebuilt.");
-			return true;
-		elseif elementId == TerrainEditorTypes.GenerateHeight then
-			self:applyGeneratedTerrainSettings();
-			local generated = safeCall(self.terrain, "generateHeightMap");
-			if generated then
-				safeCall(self.terrain, "updateLayers");
-				self:setStatus("Generated terrain height data.");
-				return true;
-			end
-		elseif elementId == TerrainEditorTypes.ReloadTerrain then
-			self:updateSelection();
-			self:setStatus("Terrain editor selection reloaded.");
-			return true;
+	local brushModes = {
+		[TerrainEditorTypes.SculptApplyRaise] = "raise",
+		[TerrainEditorTypes.SculptApplyLower] = "lower",
+		[TerrainEditorTypes.SculptApplySmooth] = "smooth",
+		[TerrainEditorTypes.SculptApplyFlatten] = "flatten",
+	};
+	local brushMode = brushModes[elementId];
+	if brushMode then
+		if self.settings.sculptUseTablet or self.settings.sculptMirrorX or self.settings.sculptMirrorZ then
+			self:setStatus("Tablet and mirror brush modifiers are unavailable.");
+			return false;
 		end
-	end
-
-	if elementId == TerrainEditorTypes.ValidateTerrain then
-		return self:validateTerrain();
-	elseif elementId == TerrainEditorTypes.SaveTerrain or elementId == TerrainEditorTypes.ExportTerrainJson then
-		return self:writeRecipe("TerrainRecipe", ".terrain.json", "terrain");
-	elseif elementId == TerrainEditorTypes.ExportHeightData or elementId == TerrainEditorTypes.ExportHeightmap then
-		return self:writeRecipe("TerrainHeightData", ".height.json", "height");
-	elseif elementId == TerrainEditorTypes.ExportMesh then
-		return self:writeRecipe("TerrainMeshExport", ".mesh.json", "mesh");
+		return self:runTerrainOperation("applyHeightBrush", "Applied " .. brushMode .. " brush. Use Edit > Undo/Redo.",
+			brushMode, tonumber(self.settings.brushCentreX) or 0, tonumber(self.settings.brushCentreZ) or 0,
+			tonumber(self.settings.brushSize) or 0,
+			(tonumber(self.settings.brushStrength) or 0) * (tonumber(self.settings.brushOpacity) or 1),
+			tonumber(self.settings.targetHeight) or 0);
+	elseif elementId == TerrainEditorTypes.SaveTerrain or elementId == TerrainEditorTypes.ExportTerrainJson or elementId == TerrainEditorTypes.ExportHeightData or
+		elementId == TerrainEditorTypes.ExportHeightmap then
+		local extension = (elementId == TerrainEditorTypes.SaveTerrain or elementId == TerrainEditorTypes.ExportTerrainJson) and ".terrain.json" or ".height.json";
+		local path = self:getOutputPath(extension);
+		local saved = self:runTerrainOperation("saveTerrainDataFile", "Saved versioned terrain samples: " .. path, path);
+		if saved then self._exportedFiles.terrain = path; end
+		return saved;
+	elseif elementId == TerrainEditorTypes.ReloadTerrain then
+		local path = tostring(self.settings.outputFile or "");
+		if path == "" then self:setStatus("Set the path of a saved terrain sample file first."); return false; end
+		return self:runTerrainOperation("loadTerrainDataFile", "Reloaded terrain samples: " .. path, path);
 	elseif elementId == TerrainEditorTypes.ImportTerrainJson then
-		return self:importRecipe(self:getOutputPath(".terrain.json"));
-	elseif elementId == TerrainEditorTypes.GenerateMasks or elementId == TerrainEditorTypes.GenerateBiome or
-		elementId == TerrainEditorTypes.RunHydraulicErosion or elementId == TerrainEditorTypes.RunThermalErosion or
-		elementId == TerrainEditorTypes.BakeErosionMasks or elementId == TerrainEditorTypes.GenerateWaterPlane or
-		elementId == TerrainEditorTypes.GenerateRoad or elementId == TerrainEditorTypes.ClearRoads or
-		elementId == TerrainEditorTypes.RebuildLod or elementId == TerrainEditorTypes.BakeImpostors or
-		elementId == TerrainEditorTypes.BuildCollision or elementId == TerrainEditorTypes.BuildNavMesh or
-		elementId == TerrainEditorTypes.BakeLightmapUVs or elementId == TerrainEditorTypes.BakeAmbientOcclusion or
-		elementId == TerrainEditorTypes.BakeNormals or elementId == TerrainEditorTypes.BakeHoles or
-		elementId == TerrainEditorTypes.FitTerrainToSelection or elementId == TerrainEditorTypes.SculptApplyRaise or
-		elementId == TerrainEditorTypes.SculptApplyLower or elementId == TerrainEditorTypes.SculptApplySmooth or
-		elementId == TerrainEditorTypes.SculptApplyFlatten or elementId == TerrainEditorTypes.SculptApplyTerrace or
-		elementId == TerrainEditorTypes.SculptApplyNoise or elementId == TerrainEditorTypes.SculptApplyStamp or
-		elementId == TerrainEditorTypes.SculptClear or elementId == TerrainEditorTypes.AutoPaintLayer or
-		elementId == TerrainEditorTypes.ClearLayerPaint or elementId == TerrainEditorTypes.NormalizeLayerWeights or
-		elementId == TerrainEditorTypes.BakeLayerMaps or elementId == TerrainEditorTypes.ClearLayerMask or
-		elementId == TerrainEditorTypes.ImportHeightmap or elementId == TerrainEditorTypes.DuplicateLayer or
-		elementId == TerrainEditorTypes.MoveLayerUp or elementId == TerrainEditorTypes.MoveLayerDown then
-		self:writeRecipe("TerrainAction", ".terrain.json", "terrain");
+		local path = tostring(self.settings.outputFile or "");
+		if path == "" then self:setStatus("Set the JSON file path first."); return false; end
+		return self:importRecipe(path);
+	elseif elementId == TerrainEditorTypes.ExportTerrainRecipe then
+		return self:writeRecipe("TerrainRecipe", "recipe");
+	elseif elementId == TerrainEditorTypes.ValidateTerrain then
+		return self:validateTerrain();
+	elseif elementId == TerrainEditorTypes.RandomizeSeed then
+		self:setStatus("Updated recipe seed; current native height presets do not consume this setting.");
+		return true;
+	elseif self.terrain and elementId == TerrainEditorTypes.RebuildTerrain then
+		local ok, failure = safeCall(self.terrain, "rebuild");
+		if ok then self:setStatus("Terrain rebuilt from retained height samples."); return true; end
+		self:setStatus("Terrain rebuild failed: " .. tostring(failure)); return false;
+	elseif self.terrain and elementId == TerrainEditorTypes.GenerateHeight then
+		self:applyGeneratedTerrainSettings();
+		local beforeOk, before = safeCall(self.terrain, "getTerrainRevision");
+		local generated = safeCall(self.terrain, "generateHeightMap");
+		local afterOk, after = safeCall(self.terrain, "getTerrainRevision");
+		if generated and beforeOk and afterOk and after ~= before then
+			self:syncTerrainDataSettings();
+			self:setStatus("Generated terrain height data."); return true;
+		end
+		self:setStatus("Terrain generation did not publish new height data."); return false;
 	end
-
-	self:setStatus("Terrain action recorded: " .. actionName .. ".");
-	print("TerrainEditor action: " .. actionName);
-	return true;
+	self:setStatus("Unavailable: " .. actionName .. ". No terrain data was changed.");
+	return false;
 end
 
 function TerrainEditor:updateBoundSetting(elementId, sender)
@@ -2211,13 +2240,25 @@ function TerrainEditor:updateBoundSetting(elementId, sender)
 	local value = self:getControlValue(sender, binding.valueType);
 	self.settings[binding.key] = self:normalizeControlValue(binding.key, value, binding.valueType);
 
-	if elementId == TerrainEditorTypes.TerrainSizeX or elementId == TerrainEditorTypes.TerrainSizeY or
-		elementId == TerrainEditorTypes.TerrainSizeZ or elementId == TerrainEditorTypes.HeightScale or
-		elementId == TerrainEditorTypes.HeightmapResolution or elementId == TerrainEditorTypes.TerrainResolution or
-		elementId == TerrainEditorTypes.ChunkSize or elementId == TerrainEditorTypes.GeneratorPreset or
-		elementId == TerrainEditorTypes.WorldOriginX or elementId == TerrainEditorTypes.WorldOriginY or
-		elementId == TerrainEditorTypes.WorldOriginZ then
-		self:applyTerrainShapeSettings();
+	if self.terrain and elementId == TerrainEditorTypes.HeightScale then
+		local requestedScale = tonumber(self.settings.heightScale);
+		local applied = safeCall(self.terrain, "setHeightScale", requestedScale);
+		self:syncTerrainDataSettings();
+		if not applied or self.settings.heightScale ~= requestedScale then
+			self:setStatus("Terrain height scale was rejected; existing samples are retained."); return false;
+		end
+		self:setStatus("Updated terrain height scale; authored grid dimensions are unchanged.");
+	elseif self.terrain and elementId == TerrainEditorTypes.HeightmapResolution then
+		local resolution = self:getHeightmapResolution();
+		local applied = safeCall(self.terrain, "setHeightMapSize", Vector2I(resolution, resolution));
+		self:syncTerrainDataSettings();
+		if not applied or self._terrainWidth ~= resolution or self._terrainDepth ~= resolution then
+			self:setStatus("Terrain grid resize was rejected; existing samples are retained."); return false;
+		end
+		self:setStatus("Applied explicit terrain grid resize.");
+	elseif elementId == TerrainEditorTypes.GeneratorPreset then
+		self:applyGeneratedTerrainSettings();
+		self:setStatus("Updated generator settings; use Generate to replace height samples.");
 	elseif elementId >= TerrainEditorTypes.LayerBlendMode and elementId <= TerrainEditorTypes.LayerHeightMax then
 		self:applySelectedLayerMaterialSettings(true);
 	else

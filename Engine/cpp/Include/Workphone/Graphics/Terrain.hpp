@@ -8,6 +8,8 @@
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
+#include <Workphone/Graphics/TerrainData.hpp>
+#include <mutex>
 
 namespace workphone
 {
@@ -16,18 +18,10 @@ namespace workphone
         /**
          * @brief Renderer-agnostic implementation of IGraphicsTerrain.
          *
-         * Terrain is a square heightfield-based renderable object. It owns the shared
-         * state (heightmap data, world transform, textures, material and visibility)
-         * through the Workphone state system and exposes a CPU-side query surface that
-         * works for any renderer plugin. Concrete renderer backends (such as ClawTerrain
-         * or CTerrainOgre) derive from this class and only need to override the methods
-         * that actually touch GPU resources: _getObject(), updateMaterial(),
-         * getBlendMap()/getLayerBlendMapSize() and getMesh() when a native mesh exists.
-         *
-         * The base class deliberately implements the renderer-independent behaviour
-         * (height sampling, terrain/world space conversion, ray intersection against
-         * the heightfield, editor serialisation and state registration) so that writing
-         * a new renderer plugin requires the minimum possible amount of code.
+         * Terrain owns a retained immutable rectangular heightfield. CPU sampling,
+         * picking and mesh extraction use the same triangles as renderer backends,
+         * including in headless tools. Legacy state entries mirror the source for
+         * existing listeners; renderer backends own their native GPU resources.
          */
         class WPCore_API Terrain : public SharedGraphicsObject<IGraphicsTerrain>
         {
@@ -56,10 +50,18 @@ namespace workphone
             /**
              * @brief Destructor.
              *
-             * Unloads the object (releasing state) before the derived vtable is torn
-             * down so native resources can be cleaned up safely.
+             * Releases base state. Derived renderers release their native resources
+             * in their own destructor/unload implementation.
              */
             ~Terrain() override;
+
+            /** Retained immutable CPU data; safe to keep while a later revision is published. */
+            TerrainSnapshot getTerrainSnapshot() const;
+            u64 getTerrainRevision() const;
+            /** Validate/copy before publication. Zero expectedRevision means unconditional;
+             * a nonzero token rejects stale edits. Failed edits retain the current snapshot.
+             */
+            bool applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision = 0 );
 
             /**
              * @brief Register the terrain state data in the state context.
@@ -93,13 +95,11 @@ namespace workphone
             /**
              * @brief Sample the terrain height at an arbitrary world position.
              *
-             * Maps the world-space (x,z) into heightmap texel coordinates, performs a
-             * bilinear blend of the four surrounding samples and multiplies the result
-             * by getHeightScale() so the returned value is in world units, consistent
-             * with the mesh produced by renderer backends.
+             * Maps world-space (x,z) to the heightfield and interpolates the rendered
+             * triangle. Applies sample height scale and the supported world transform.
              *
              * @param position World-space 3D position to sample.
-             * @return f32 Interpolated world-space height (0 when no height data).
+             * @return f32 Interpolated world-space height (0 outside the footprint).
              */
             f32 getHeightAtWorldPosition( const Vector3<real_Num> &position ) const override;
 
@@ -122,10 +122,9 @@ namespace workphone
              * @brief Replace the terrain's internal height data.
              *
              * The supplied array must contain width*depth samples (as defined by
-             * getHeightMapSize()); otherwise the call is ignored. The data is pushed
-             * into the state system and any cached CPU-side query structures are
-             * invalidated. Override _onHeightDataChanged() in a backend to trigger a
-             * GPU mesh rebuild.
+             * getHeightMapSize()); otherwise the call is ignored. Valid data publishes
+             * a new snapshot and invalidates cached meshes. Override
+             * _onHeightDataChanged() in a backend to trigger a GPU mesh rebuild.
              */
             void setHeightData( const Array<f32> &heightData ) override;
 
@@ -171,11 +170,8 @@ namespace workphone
             /**
              * @brief Ray/terrain intersection test.
              *
-             * The base implementation performs a renderer-agnostic ray march against the
-             * CPU heightfield: it steps the ray through terrain space, samples the height
-             * at each step and reports the first point where the ray crosses the surface.
-             * This is suitable for editor picking and gameplay queries; renderer plugins
-             * may override it with a GPU-accelerated version.
+             * Traverses intersected grid cells and tests their actual triangles. The
+             * first nonnegative hit supports vertical, upward and non-unit rays.
              *
              * @param ray World-space ray to test.
              * @return SmartPtr<ITerrainRayResult> with the hit (or hasIntersected()==false).
@@ -183,11 +179,10 @@ namespace workphone
             SmartPtr<ITerrainRayResult> intersects( const Ray3F &ray ) const override;
 
             /**
-             * @brief Return a mesh representation of the terrain if available.
+             * @brief Return the full-resolution CPU collision/export mesh.
              *
-             * The base class returns nullptr (no CPU mesh is built by default). Renderer
-             * plugins which can produce an IMesh from the heightfield should override
-             * this (see ClawTerrain::getMesh).
+             * Lazily builds and retains a mesh for the current source revision. Returns
+             * nullptr if mesh validation or allocation fails.
              */
             SmartPtr<IMesh> getMesh() const override;
 
@@ -201,7 +196,8 @@ namespace workphone
              *
              * Both axes are clamped to a minimum of 2. When the size changes the cached
              * height data is resized to width*depth (preserving existing samples where
-             * possible) and the state is invalidated.
+             * possible) and the state is invalidated. An unchanged size is a true no-op
+             * that preserves explicit spacing, origin and samples.
              */
             void setHeightMapSize( const Vector2I &heightMapSize ) override;
 
@@ -293,6 +289,12 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            mutable std::mutex m_terrainDataMutex;
+            TerrainSnapshot m_terrainSnapshot;
+            Transform3<real_Num> m_terrainWorldTransform;
+            bool m_terrainVisible = true;
+            mutable SmartPtr<IMesh> m_cpuTerrainMesh;
+            mutable u64 m_cpuTerrainMeshRevision = 0;
             /** Maximum number of material layers/texture slots expected by the interface. */
             static constexpr u32 MaxTextureLayers =
                 static_cast<u32>( IGraphicsTerrain::TextureTypes::COUNT );

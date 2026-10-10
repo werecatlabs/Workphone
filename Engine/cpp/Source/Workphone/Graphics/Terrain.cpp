@@ -5,6 +5,7 @@
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Math/Math.hpp>
+#include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Interface/Memory/IObject.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
@@ -25,6 +26,7 @@
 
 #include <cmath>
 #include <limits>
+#include <atomic>
 
 namespace workphone::render
 {
@@ -48,11 +50,97 @@ namespace workphone::render
         setId( id );
 
         setEventTaskFlags( Thread::Render_Flag );
+
+        auto initial = std::make_shared<TerrainData>();
+        initial->dimensions = m_heightMapSize;
+        initial->origin = Vector2F( -m_heightMapSize.x * 0.5f, -m_heightMapSize.y * 0.5f );
+        initial->heightScale = m_heightScale;
+        initial->heights.resize( size_t( m_heightMapSize.x ) * m_heightMapSize.y, 0.0f );
+        initial->revision = 1;
+        m_terrainSnapshot = std::move( initial );
     }
 
     Terrain::~Terrain()
     {
         unload( nullptr );
+    }
+
+    TerrainSnapshot Terrain::getTerrainSnapshot() const
+    {
+        return std::atomic_load( &m_terrainSnapshot );
+    }
+
+    u64 Terrain::getTerrainRevision() const
+    {
+        return getTerrainSnapshot()->revision;
+    }
+
+    bool Terrain::applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision )
+    {
+        if( !validateTerrainData( data, error ) )
+            return false;
+        try
+        {
+            auto candidate = std::make_shared<TerrainData>( data );
+            {
+                std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+                const auto current = getTerrainSnapshot();
+                if( expectedRevision && expectedRevision != current->revision )
+                {
+                    error = "Terrain changed before the edit could be applied";
+                    return false;
+                }
+                if( !validateTerrainPlacement( *candidate, m_terrainWorldTransform, error ) )
+                    return false;
+                if( current->dimensions == candidate->dimensions &&
+                    current->spacing == candidate->spacing && current->origin == candidate->origin &&
+                    current->heightScale == candidate->heightScale &&
+                    current->heights == candidate->heights )
+                    return true;
+                if( current->revision == std::numeric_limits<u64>::max() )
+                {
+                    error = "Terrain revision exhausted";
+                    return false;
+                }
+                candidate->revision = current->revision + 1;
+                m_heightMapSize = candidate->dimensions;
+                m_heightScale = candidate->heightScale;
+                std::atomic_store( &m_terrainSnapshot, TerrainSnapshot( candidate ) );
+                m_cpuTerrainMesh = nullptr;
+                m_cpuTerrainMeshRevision = 0;
+            }
+            // The retained snapshot is authoritative. Mirror legacy state for existing
+            // property/renderer listeners without making queries depend on a StateManager.
+            try
+            {
+                if( auto context = getStateContext() )
+                    if( auto state = context->invalidateStateDataById<TerrainStateData>( getId() ) )
+                    {
+                        state->heightMapSize = candidate->dimensions;
+                        state->heightScale = candidate->heightScale;
+                        state->heightData = candidate->heights;
+                    }
+            }
+            catch( const std::exception &exception )
+            {
+                WP_LOG_EXCEPTION( exception );
+            }
+            try
+            {
+                _onHeightDataChanged();
+                _onHeightScaleChanged();
+            }
+            catch( const std::exception &exception )
+            {
+                WP_LOG_EXCEPTION( exception );
+            }
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
     }
 
     void Terrain::load( SmartPtr<ISharedObject> data )
@@ -148,13 +236,12 @@ namespace workphone::render
                 auto stateData = factoryManager->make_ptr<TerrainStateData>();
                 if( stateData )
                 {
-                    stateData->heightMapSize = m_heightMapSize;
-                    stateData->heightScale = m_heightScale;
+                    const auto snapshot = getTerrainSnapshot();
+                    stateData->heightMapSize = snapshot->dimensions;
+                    stateData->heightScale = snapshot->heightScale;
                     stateData->materialName = m_materialName;
                     stateData->showWireframe = m_showWireframe;
-                    stateData->heightData.resize( static_cast<size_t>( m_heightMapSize.x ) *
-                                                      static_cast<size_t>( m_heightMapSize.y ),
-                                                  0.0f );
+                    stateData->heightData = snapshot->heights;
                 }
                 return stateData;
             } );
@@ -164,7 +251,10 @@ namespace workphone::render
                 return ctx->getStateDataById<TransformStateData>( id ).get() != nullptr;
             },
             [&]() -> SmartPtr<ISharedObject> {
-                return factoryManager->make_ptr<TransformStateData>();
+                auto state = factoryManager->make_ptr<TransformStateData>();
+                if( state )
+                    state->worldTransform = getWorldTransform();
+                return state;
             } );
 
         ensureState(
@@ -172,115 +262,73 @@ namespace workphone::render
                 return ctx->getStateDataById<GraphicsObjectData>( id ).get() != nullptr;
             },
             [&]() -> SmartPtr<ISharedObject> {
-                return factoryManager->make_ptr<GraphicsObjectData>();
+                auto state = factoryManager->make_ptr<GraphicsObjectData>();
+                if( state )
+                    state->flags = BitUtil::setFlagValue( state->flags, IGraphicsObject::visibleFlag,
+                                                          m_terrainVisible );
+                return state;
             } );
     }
 
     Transform3<real_Num> Terrain::getWorldTransform() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto stateData = stateContext->getStateDataById<TransformStateData>( getId() ) )
-            {
-                return stateData->worldTransform;
-            }
-        }
-
-        return {};
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        return m_terrainWorldTransform;
     }
 
     void Terrain::setWorldTransform( const Transform3<real_Num> &worldTransform )
     {
-        if( auto stateContext = getStateContext() )
+        String error;
+        if( !validateTerrainTransform( worldTransform, error ) )
         {
-            if( auto stateData = stateContext->invalidateStateDataById<TransformStateData>( getId() ) )
-            {
-                stateData->worldTransform = worldTransform;
-            }
+            WP_LOG_WARNING( error );
+            return;
         }
+        {
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            if( m_terrainWorldTransform == worldTransform )
+                return;
+            if( !validateTerrainPlacement( *getTerrainSnapshot(), worldTransform, error ) )
+            {
+                WP_LOG_WARNING( error );
+                return;
+            }
+            m_terrainWorldTransform = worldTransform;
+        }
+        if( auto context = getStateContext() )
+            if( auto state = context->invalidateStateDataById<TransformStateData>( getId() ) )
+                state->worldTransform = worldTransform;
     }
 
     Vector3<real_Num> Terrain::getPosition() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto stateData = stateContext->getStateDataById<TransformStateData>( getId() ) )
-            {
-                return stateData->worldTransform.getPosition();
-            }
-        }
-
-        return Vector3<real_Num>::zero();
+        return getWorldTransform().getPosition();
     }
 
     void Terrain::setPosition( const Vector3<real_Num> &position )
     {
-        if( auto stateContext = getStateContext() )
+        if( !position.isFinite() )
         {
-            if( auto stateData = stateContext->invalidateStateDataById<TransformStateData>( getId() ) )
-            {
-                stateData->worldTransform.setPosition( position );
-            }
+            WP_LOG_WARNING( "Terrain position must be finite" );
+            return;
         }
+        auto transform = getWorldTransform();
+        transform.setPosition( position );
+        setWorldTransform( transform );
     }
+
     f32 Terrain::getHeightAtWorldPosition( const Vector3<real_Num> &position ) const
     {
-        const auto heightMapSize = getHeightMapSize();
-        const auto width = heightMapSize.x;
-        const auto depth = heightMapSize.y;
-
-        const auto heightData = getHeightData();
-
-        if( heightData.empty() || width < 2 || depth < 2 )
+        TerrainSnapshot snapshot;
+        Transform3<real_Num> transform;
         {
-            return 0.0f;
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            snapshot = getTerrainSnapshot();
+            transform = m_terrainWorldTransform;
         }
-
-        if( static_cast<s64>( heightData.size() ) !=
-            static_cast<s64>( width ) * static_cast<s64>( depth ) )
-        {
-            return 0.0f;
-        }
-
-        // Terrain is centred at getPosition(); its world extent is width x depth (1 unit per
-        // texel). Map world (x, z) into continuous texel coordinates.
-        const auto center = getPosition();
-        const auto halfW = static_cast<real_Num>( width ) * static_cast<real_Num>( 0.5 );
-        const auto halfD = static_cast<real_Num>( depth ) * static_cast<real_Num>( 0.5 );
-
-        const real_Num tx = ( position.x - center.x + halfW );
-        const real_Num tz = ( position.z - center.z + halfD );
-
-        const real_Num maxX = static_cast<real_Num>( width - 1 );
-        const real_Num maxZ = static_cast<real_Num>( depth - 1 );
-        const real_Num cx = Math<real_Num>::clamp( tx, static_cast<real_Num>( 0 ), maxX );
-        const real_Num cz = Math<real_Num>::clamp( tz, static_cast<real_Num>( 0 ), maxZ );
-
-        const s32 x0 = static_cast<s32>( cx );
-        const s32 z0 = static_cast<s32>( cz );
-        const s32 x1 = Math<s32>::min( x0 + 1, width - 1 );
-        const s32 z1 = Math<s32>::min( z0 + 1, depth - 1 );
-
-        const real_Num fx = cx - static_cast<real_Num>( x0 );
-        const real_Num fz = cz - static_cast<real_Num>( z0 );
-
-        // Sample the four surrounding heights (row-major: index = z * width + x).
-        const f32 h00 = heightData[static_cast<size_t>( z0 ) * width + x0];
-        const f32 h10 = heightData[static_cast<size_t>( z0 ) * width + x1];
-        const f32 h01 = heightData[static_cast<size_t>( z1 ) * width + x0];
-        const f32 h11 = heightData[static_cast<size_t>( z1 ) * width + x1];
-
-        // Bilinear interpolation of the raw height samples. The stored heightData array
-        // already contains the world-space heights; heightScale is a separate property
-        // applied by renderer backends when generating the mesh, so it is not applied
-        // here. Returning raw values keeps this query consistent with getHeightData().
-        const real_Num h0 =
-            Math<real_Num>::lerp( static_cast<real_Num>( h00 ), static_cast<real_Num>( h10 ), fx );
-        const real_Num h1 =
-            Math<real_Num>::lerp( static_cast<real_Num>( h01 ), static_cast<real_Num>( h11 ), fx );
-        const real_Num sample = Math<real_Num>::lerp( h0, h1, fz );
-
-        return static_cast<f32>( sample );
+        f32 height = 0;
+        sampleTerrainHeight( *snapshot, transform, position, height );
+        return height;
     }
 
     u16 Terrain::getSize() const
@@ -295,66 +343,32 @@ namespace workphone::render
 
     Vector3<real_Num> Terrain::getTerrainSpacePosition( const Vector3<real_Num> &worldSpace ) const
     {
-        const auto heightMapSize = getHeightMapSize();
-        const auto width = heightMapSize.x;
-        const auto depth = heightMapSize.y;
-
-        if( width < 2 || depth < 2 )
-        {
+        const auto snapshot = getTerrainSnapshot();
+        const auto local = getWorldTransform().inverseTransformPoint( worldSpace );
+        if( !std::isfinite( local.x ) || !std::isfinite( local.y ) || !std::isfinite( local.z ) )
             return Vector3<real_Num>::zero();
-        }
-
-        const auto localSpace = getWorldTransform().inverseTransformPoint( worldSpace );
-        const auto halfW = static_cast<real_Num>( width ) * static_cast<real_Num>( 0.5 );
-        const auto halfD = static_cast<real_Num>( depth ) * static_cast<real_Num>( 0.5 );
-
-        const auto maxX = static_cast<real_Num>( width - 1 );
-        const auto maxZ = static_cast<real_Num>( depth - 1 );
-        const auto terrainX =
-            Math<real_Num>::clamp( localSpace.x + halfW, static_cast<real_Num>( 0 ), maxX );
-        const auto terrainZ =
-            Math<real_Num>::clamp( localSpace.z + halfD, static_cast<real_Num>( 0 ), maxZ );
-
-        return Vector3<real_Num>( terrainX, localSpace.y, terrainZ );
+        return { std::clamp( ( local.x - snapshot->origin.x ) / snapshot->spacing.x, real_Num( 0 ),
+                             real_Num( snapshot->dimensions.x - 1 ) ),
+                 local.y,
+                 std::clamp( ( local.z - snapshot->origin.y ) / snapshot->spacing.y, real_Num( 0 ),
+                             real_Num( snapshot->dimensions.y - 1 ) ) };
     }
 
     Array<f32> Terrain::getHeightData() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto stateData = stateContext->getStateDataById<TerrainStateData>( getId() ) )
-            {
-                return stateData->heightData;
-            }
-        }
-
-        return {};
+        return getTerrainSnapshot()->heights;
     }
 
     void Terrain::setHeightData( const Array<f32> &heightData )
     {
-        const auto heightMapSize = getHeightMapSize();
-        const s64 expected = static_cast<s64>( heightMapSize.x ) * static_cast<s64>( heightMapSize.y );
-
-        if( static_cast<s64>( heightData.size() ) != expected )
-        {
-            WP_LOG_WARNING( "Terrain::setHeightData: size mismatch (got " +
-                            StringUtil::toString( static_cast<u64>( heightData.size() ) ) +
-                            ", expected " + StringUtil::toString( static_cast<u64>( expected ) ) +
-                            "). Ignored." );
-            return;
-        }
-
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto stateData = stateContext->invalidateStateDataById<TerrainStateData>( getId() ) )
-            {
-                stateData->heightData = heightData;
-            }
-        }
-
-        _onHeightDataChanged();
+        const auto snapshot = getTerrainSnapshot();
+        auto candidate = *snapshot;
+        candidate.heights = heightData;
+        String error;
+        if( !applyTerrainData( candidate, error, snapshot->revision ) )
+            WP_LOG_WARNING( error );
     }
+
     bool Terrain::isVisible() const
     {
         if( auto stateContext = getStateContext() )
@@ -365,11 +379,12 @@ namespace workphone::render
             }
         }
 
-        return false;
+        return m_terrainVisible;
     }
 
     void Terrain::setVisible( bool visible )
     {
+        m_terrainVisible = visible;
         if( auto stateContext = getStateContext() )
         {
             if( auto state = stateContext->invalidateStateDataById<GraphicsObjectData>( getId() ) )
@@ -493,128 +508,18 @@ namespace workphone::render
 
     SmartPtr<ITerrainRayResult> Terrain::intersects( const Ray3F &ray ) const
     {
-        // Without a graphics system the terrain is "unconfigured" in the sense that there
-        // is no GPU mesh to validate the ray against, so report no intersection. The test
-        // suite checks for a null return when optional graphics queries are unavailable.
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        if( !applicationManager || !applicationManager->getGraphicsSystemPtr() )
+        TerrainSnapshot snapshot;
+        Transform3<real_Num> transform;
         {
-            return nullptr;
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            snapshot = getTerrainSnapshot();
+            transform = m_terrainWorldTransform;
         }
-
-        const auto heightMapSize = getHeightMapSize();
-        const auto width = heightMapSize.x;
-        const auto depth = heightMapSize.y;
-
-        const auto heightData = getHeightData();
-
-        const bool noData = heightData.empty() || width < 2 || depth < 2 ||
-                            static_cast<s64>( heightData.size() ) !=
-                                static_cast<s64>( width ) * static_cast<s64>( depth );
-
-        if( noData )
-        {
-            return _makeRayResult( false, Vector3<real_Num>::zero() );
-        }
-
-        // Work in f32 throughout: the ray is Ray3F (f32) and mixing f32 with real_Num (which
-        // may be double) would require explicit component-wise conversion at every step.
-        const f32 heightScale = getHeightScale();
-        const auto centerRN = getPosition();
-        const Vector3F center( static_cast<f32>( centerRN.x ), static_cast<f32>( centerRN.y ),
-                               static_cast<f32>( centerRN.z ) );
-        const f32 halfW = static_cast<f32>( width ) * 0.5f;
-        const f32 halfD = static_cast<f32>( depth ) * 0.5f;
-
-        const Vector3F origin = ray.getOrigin();
-        const Vector3F direction = ray.getDirection();
-
-        const f32 dirLenSq = direction.dotProduct( direction );
-        if( dirLenSq <= 0.0f )
-        {
-            return _makeRayResult( false, Vector3<real_Num>::zero() );
-        }
-
-        const Vector3F dir = direction * ( 1.0f / Math<f32>::Sqrt( dirLenSq ) );
-
-        // March the ray through world space. The step is a fraction of one texel so the march
-        // resolves surface crossings to sub-texel precision. Suitable for editor picking and
-        // gameplay queries; GPU backends may override with an exact version.
-        const f32 maxRayDist = 10000.0f;
-        const f32 step = 0.25f;
-
-        auto sampleTerrainHeight = [&]( const Vector3F &worldPos ) -> f32 {
-            const f32 tx = ( worldPos.x - center.x + halfW );
-            const f32 tz = ( worldPos.z - center.z + halfD );
-
-            const f32 maxX = static_cast<f32>( width - 1 );
-            const f32 maxZ = static_cast<f32>( depth - 1 );
-
-            // Outside the terrain footprint: return -inf so no false hit on flat surrounds.
-            if( tx < 0.0f || tx > maxX || tz < 0.0f || tz > maxZ )
-            {
-                return -std::numeric_limits<f32>::infinity();
-            }
-
-            const f32 cx = Math<f32>::clamp( tx, 0.0f, maxX );
-            const f32 cz = Math<f32>::clamp( tz, 0.0f, maxZ );
-
-            const s32 x0 = static_cast<s32>( cx );
-            const s32 z0 = static_cast<s32>( cz );
-            const s32 x1 = Math<s32>::min( x0 + 1, width - 1 );
-            const s32 z1 = Math<s32>::min( z0 + 1, depth - 1 );
-
-            const f32 fx = cx - static_cast<f32>( x0 );
-            const f32 fz = cz - static_cast<f32>( z0 );
-
-            const f32 h00 = heightData[static_cast<size_t>( z0 ) * width + x0];
-            const f32 h10 = heightData[static_cast<size_t>( z0 ) * width + x1];
-            const f32 h01 = heightData[static_cast<size_t>( z1 ) * width + x0];
-            const f32 h11 = heightData[static_cast<size_t>( z1 ) * width + x1];
-
-            const f32 h0 = Math<f32>::lerp( h00, h10, fx );
-            const f32 h1 = Math<f32>::lerp( h01, h11, fx );
-            const f32 sample = Math<f32>::lerp( h0, h1, fz );
-
-            // heightData already holds world-space heights; the renderer's mesh applies
-            // heightScale separately. Mirror getHeightAtWorldPosition so the surface
-            // sampled here matches the value callers retrieve via query.
-            return sample + center.y;
-        };
-
-        f32 prevAbove = origin.y - sampleTerrainHeight( origin );
-        Vector3F hitPos = Vector3F::zero();
-        bool hit = false;
-
-        for( f32 t = 0.0f; t <= maxRayDist; t += step )
-        {
-            const Vector3F p = origin + dir * t;
-            const f32 surface = sampleTerrainHeight( p );
-            const f32 above = p.y - surface;
-
-            if( ( prevAbove < 0.0f ) != ( above < 0.0f ) && std::isfinite( surface ) )
-            {
-                // Linearly interpolate the crossing distance for a smoother hit point.
-                const f32 denom = prevAbove - above;
-                f32 tcross = t;
-                if( std::fabs( denom ) > std::numeric_limits<f32>::epsilon() )
-                {
-                    tcross = t - step + ( step * above ) / denom;
-                }
-                hitPos = origin + dir * tcross;
-                hit = true;
-                break;
-            }
-
-            prevAbove = above;
-        }
-
-        // Convert the f32 hit back to the interface's real_Num result type.
-        const Vector3<real_Num> hitPosRN( static_cast<real_Num>( hitPos.x ),
-                                          static_cast<real_Num>( hitPos.y ),
-                                          static_cast<real_Num>( hitPos.z ) );
-        return _makeRayResult( hit, hitPosRN );
+        Vector3<real_Num> hit;
+        const auto intersects = intersectTerrain( *snapshot, transform, ray, hit );
+        return _makeRayResult( intersects, hit );
     }
+
     SmartPtr<ITerrainRayResult> Terrain::_makeRayResult( bool hit, const Vector3<real_Num> &pos ) const
     {
         auto result = SmartPtr<ITerrainRayResult>( new TerrainRayResult() );
@@ -629,74 +534,103 @@ namespace workphone::render
 
     SmartPtr<IMesh> Terrain::getMesh() const
     {
-        // Base does not build a CPU mesh; renderer plugins override (see ClawTerrain::getMesh).
-        return nullptr;
+        // Mesh's existing synchronization is owned by the engine mesh manager.
+        // Renderer-free callers can always use buildTerrainMeshData directly.
+        auto application = core::IApplicationManager::instancePtr();
+        if( !application || !application->getMeshManager() )
+        {
+            WP_LOG_WARNING( "Terrain CPU mesh requires the engine mesh manager" );
+            return nullptr;
+        }
+        const auto snapshot = getTerrainSnapshot();
+        {
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            if( m_cpuTerrainMesh && m_cpuTerrainMeshRevision == snapshot->revision )
+                return m_cpuTerrainMesh;
+        }
+        TerrainMeshData geometry;
+        String error;
+        if( !buildTerrainMeshData( *snapshot, geometry, error ) )
+        {
+            WP_LOG_WARNING( error );
+            return nullptr;
+        }
+        try
+        {
+            Array<Vector3<real_Num>> positions, normals;
+            Array<Vector2<real_Num>> uvs;
+            positions.reserve( geometry.positions.size() );
+            normals.reserve( geometry.normals.size() );
+            uvs.reserve( geometry.uvs.size() );
+            for( const auto &p : geometry.positions )
+                positions.push_back( { p.x, p.y, p.z } );
+            for( const auto &n : geometry.normals )
+                normals.push_back( { n.x, n.y, n.z } );
+            for( const auto &uv : geometry.uvs )
+                uvs.push_back( { uv.x, uv.y } );
+            auto mesh = MeshUtil::createMesh( positions, normals, uvs, geometry.indices );
+            if( mesh )
+                mesh->updateAABB();
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            if( getTerrainRevision() == snapshot->revision )
+            {
+                m_cpuTerrainMesh = mesh;
+                m_cpuTerrainMeshRevision = snapshot->revision;
+            }
+            return mesh;
+        }
+        catch( const std::exception &exception )
+        {
+            WP_LOG_EXCEPTION( exception );
+            return nullptr;
+        }
     }
+
     void Terrain::setHeightMapSize( const Vector2I &heightMapSize )
     {
-        m_heightMapSize.x = Math<s32>::max( 2, heightMapSize.x );
-        m_heightMapSize.y = Math<s32>::max( 2, heightMapSize.y );
-
-        if( auto stateContext = getStateContext() )
+        const Vector2I dimensions( std::max( heightMapSize.x, 2 ), std::max( heightMapSize.y, 2 ) );
+        if( dimensions.x > terrainMaximumDimension || dimensions.y > terrainMaximumDimension ||
+            u64( dimensions.x ) * dimensions.y > terrainMaximumSamples )
         {
-            if( auto state = stateContext->invalidateStateDataById<TerrainStateData>( getId() ) )
-            {
-                state->heightMapSize = m_heightMapSize;
-
-                // Keep the height data array consistent with the new dimensions, zero-filling.
-                const size_t newSize =
-                    static_cast<size_t>( m_heightMapSize.x ) * static_cast<size_t>( m_heightMapSize.y );
-                if( state->heightData.size() != newSize )
-                {
-                    Array<f32> resized;
-                    resized.resize( newSize, 0.0f );
-                    state->heightData.swap( resized );
-                }
-            }
+            WP_LOG_WARNING( "Terrain dimensions exceed the supported allocation limit" );
+            return;
         }
-
-        _onHeightDataChanged();
+        const auto previous = getTerrainSnapshot();
+        if( previous->dimensions == dimensions )
+            return;
+        auto candidate = *previous;
+        candidate.dimensions = dimensions;
+        // Preserve the actual legacy Claw convention for existing separate size/data setters.
+        candidate.origin = { -dimensions.x * candidate.spacing.x * 0.5f,
+                             -dimensions.y * candidate.spacing.y * 0.5f };
+        candidate.heights.assign( size_t( dimensions.x ) * dimensions.y, 0.0f );
+        for( s32 z = 0; z < std::min( dimensions.y, previous->dimensions.y ); ++z )
+            for( s32 x = 0; x < std::min( dimensions.x, previous->dimensions.x ); ++x )
+                candidate.heights[size_t( z ) * dimensions.x + x] =
+                    previous->heights[size_t( z ) * previous->dimensions.x + x];
+        String error;
+        if( !applyTerrainData( candidate, error, previous->revision ) )
+            WP_LOG_WARNING( error );
     }
 
     Vector2I Terrain::getHeightMapSize() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->getStateDataById<TerrainStateData>( getId() ) )
-            {
-                return state->heightMapSize;
-            }
-        }
-
-        return m_heightMapSize;
+        return getTerrainSnapshot()->dimensions;
     }
 
     f32 Terrain::getHeightScale() const
     {
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->getStateDataById<TerrainStateData>( getId() ) )
-            {
-                return state->heightScale;
-            }
-        }
-
-        return m_heightScale;
+        return getTerrainSnapshot()->heightScale;
     }
 
     void Terrain::setHeightScale( f32 heightScale )
     {
-        m_heightScale = heightScale;
-
-        if( auto stateContext = getStateContext() )
-        {
-            if( auto state = stateContext->invalidateStateDataById<TerrainStateData>( getId() ) )
-            {
-                state->heightScale = m_heightScale;
-            }
-        }
-
-        _onHeightScaleChanged();
+        const auto previous = getTerrainSnapshot();
+        auto candidate = *previous;
+        candidate.heightScale = heightScale;
+        String error;
+        if( !applyTerrainData( candidate, error, previous->revision ) )
+            WP_LOG_WARNING( error );
     }
 
     SmartPtr<IGraphicsScene> Terrain::getSceneManager() const
@@ -901,14 +835,25 @@ namespace workphone::render
         // consistent without repeatedly touching the state system.
         if( stateData->isDerived<TerrainStateData>() )
         {
-            auto terrainState = SafeReadPtr<TerrainStateData>( stateData );
-            if( terrainState )
+            const auto previous = getTerrainSnapshot();
+            auto candidate = *previous;
             {
-                m_heightMapSize = terrainState->heightMapSize;
-                m_heightScale = terrainState->heightScale;
-                m_materialName = terrainState->materialName;
-                m_showWireframe = terrainState->showWireframe;
+                auto terrainState = SafeReadPtr<TerrainStateData>( stateData );
+                if( terrainState )
+                {
+                    candidate.dimensions = terrainState->heightMapSize;
+                    candidate.heightScale = terrainState->heightScale;
+                    candidate.heights = terrainState->heightData;
+                    m_materialName = terrainState->materialName;
+                    m_showWireframe = terrainState->showWireframe;
+                }
             }
+            if( candidate.dimensions != previous->dimensions )
+                candidate.origin = { -candidate.dimensions.x * candidate.spacing.x * 0.5f,
+                                     -candidate.dimensions.y * candidate.spacing.y * 0.5f };
+            String error;
+            if( !applyTerrainData( candidate, error, previous->revision ) )
+                WP_LOG_WARNING( error );
             return true;
         }
 

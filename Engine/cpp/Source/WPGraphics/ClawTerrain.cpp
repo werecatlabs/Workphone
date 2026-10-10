@@ -4,9 +4,8 @@
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_terrain.h"
 #include "workphone_graphics_mesh.h"
-#include <algorithm>
-#include <cmath>
 #include <limits>
+#include <memory>
 
 namespace workphone
 {
@@ -16,9 +15,17 @@ namespace workphone
 
         ClawTerrain::ClawTerrain() : m_terrain( nullptr )
         {
+            // Preserve Claw's existing unit-scale default; explicit TerrainData
+            // carries its own scale when a source asset is published.
+            Terrain::setHeightScale( 1.0f );
         }
 
         ClawTerrain::~ClawTerrain()
+        {
+            unload( nullptr );
+        }
+
+        void ClawTerrain::releaseRenderMesh() const
         {
             if( m_renderMesh )
             {
@@ -26,33 +33,38 @@ namespace workphone
                 wp_graphics_mesh_destroy( m_renderMesh );
                 m_renderMesh = nullptr;
             }
+            m_renderSnapshot.reset();
+        }
+
+        void ClawTerrain::unload( SmartPtr<ISharedObject> data )
+        {
+            releaseRenderMesh();
             if( m_terrain )
             {
                 wp_graphics_terrain_destroy( m_terrain );
                 m_terrain = nullptr;
             }
+            Terrain::unload( data );
         }
 
         Transform3<real_Num> ClawTerrain::getWorldTransform() const
         {
-            return m_worldTransform;
+            return Terrain::getWorldTransform();
         }
 
         void ClawTerrain::setWorldTransform( const Transform3<real_Num> &worldTransform )
         {
-            m_worldTransform = worldTransform;
-            m_position = worldTransform.getPosition();
+            Terrain::setWorldTransform( worldTransform );
         }
 
         Vector3<real_Num> ClawTerrain::getPosition() const
         {
-            return m_position;
+            return Terrain::getPosition();
         }
 
         void ClawTerrain::setPosition( const Vector3<real_Num> &position )
         {
-            m_position = position;
-            m_worldTransform.setPosition( position );
+            Terrain::setPosition( position );
         }
 
         f32 ClawTerrain::getHeightAtWorldPosition( const Vector3<real_Num> &position ) const
@@ -73,24 +85,22 @@ namespace workphone
 
         Array<f32> ClawTerrain::getHeightData() const
         {
-            return m_heightData;
+            return Terrain::getHeightData();
         }
 
         void ClawTerrain::setHeightData( const Array<f32> &heightData )
         {
-            m_heightData = heightData;
-            m_renderMeshDirty = true;
+            Terrain::setHeightData( heightData );
         }
 
         f32 ClawTerrain::getHeightScale() const
         {
-            return m_heightScale;
+            return Terrain::getHeightScale();
         }
 
         void ClawTerrain::setHeightScale( f32 heightScale )
         {
-            m_heightScale = heightScale;
-            m_renderMeshDirty = true;
+            Terrain::setHeightScale( heightScale );
         }
 
         SmartPtr<IGraphicsScene> ClawTerrain::getSceneManager() const
@@ -167,36 +177,22 @@ namespace workphone
 
         SmartPtr<ITerrainRayResult> ClawTerrain::intersects( const Ray3F &ray ) const
         {
-            return nullptr;
+            return Terrain::intersects( ray );
         }
 
         SmartPtr<IMesh> ClawTerrain::getMesh() const
         {
-            return nullptr;
+            return Terrain::getMesh();
         }
 
         Vector2I ClawTerrain::getHeightMapSize() const
         {
-            return m_heightMapSize;
+            return Terrain::getHeightMapSize();
         }
 
         void ClawTerrain::setHeightMapSize( const Vector2I &heightMapSize )
         {
-            m_heightMapSize.x = std::max( heightMapSize.x, 2 );
-            m_heightMapSize.y = std::max( heightMapSize.y, 2 );
-            m_size =
-                static_cast<u16>( std::min<s32>( std::min( m_heightMapSize.x, m_heightMapSize.y ),
-                                                 static_cast<s32>( std::numeric_limits<u16>::max() ) ) );
-
-            // A newly created TerrainSystem supplies dimensions before it has optional height-map
-            // data. Keep a valid flat heightfield so the renderer can still build visible geometry.
-            const auto requiredHeightCount =
-                static_cast<size_t>( m_heightMapSize.x ) * m_heightMapSize.y;
-            if( m_heightData.size() != requiredHeightCount )
-            {
-                m_heightData.resize( requiredHeightCount, 0.0f );
-            }
-            m_renderMeshDirty = true;
+            Terrain::setHeightMapSize( heightMapSize );
         }
 
         void ClawTerrain::updateMaterial()
@@ -205,102 +201,73 @@ namespace workphone
 
         wp_graphics_mesh *ClawTerrain::getNativeRenderMesh() const
         {
-            if( m_renderMeshDirty )
-                rebuildRenderMesh();
+            const auto snapshot = getTerrainSnapshot();
+            if( snapshot && ( !m_renderMesh || snapshot != m_renderSnapshot ) )
+                rebuildRenderMesh( snapshot );
             return m_renderMesh;
         }
 
-        void ClawTerrain::rebuildRenderMesh() const
+        void ClawTerrain::rebuildRenderMesh( const TerrainSnapshot &snapshot ) const
         {
-            const s32 sourceWidth = m_heightMapSize.x;
-            const s32 sourceHeight = m_heightMapSize.y;
-            if( sourceWidth < 2 || sourceHeight < 2 ||
-                m_heightData.size() < static_cast<size_t>( sourceWidth ) * sourceHeight )
-            {
-                m_renderMeshDirty = false;
+            if( !snapshot )
                 return;
-            }
 
-            constexpr s32 maxRenderSide = 257;
-            const s32 width = std::min( sourceWidth, maxRenderSide );
-            const s32 height = std::min( sourceHeight, maxRenderSide );
-            Array<wp_graphics_mesh_vertex_pntc> vertices;
-            Array<u32> indices;
-            vertices.resize( static_cast<size_t>( width ) * height );
-            indices.reserve( static_cast<size_t>( width - 1 ) * ( height - 1 ) * 6 );
-
-            const float heightScale = std::abs( m_heightScale ) > 1.0e-6f ? m_heightScale : 1.0f;
-            const float sourceStepX = static_cast<float>( sourceWidth - 1 ) / ( width - 1 );
-            const float sourceStepZ = static_cast<float>( sourceHeight - 1 ) / ( height - 1 );
-            const float halfWidth = static_cast<float>( sourceWidth ) * 0.5f;
-            const float halfHeight = static_cast<float>( sourceHeight ) * 0.5f;
-            const auto sampleHeight = [&]( s32 x, s32 z ) {
-                x = std::max( 0, std::min( x, sourceWidth - 1 ) );
-                z = std::max( 0, std::min( z, sourceHeight - 1 ) );
-                return m_heightData[static_cast<size_t>( z ) * sourceWidth + x] * heightScale;
-            };
-
-            for( s32 z = 0; z < height; ++z )
+            try
             {
-                const s32 sourceZ = static_cast<s32>( std::lround( z * sourceStepZ ) );
-                for( s32 x = 0; x < width; ++x )
+                TerrainMeshData meshData;
+                String error;
+                if( !buildTerrainMeshData( *snapshot, meshData, error ) )
+                    return;
+
+                // The C mesh allocator uses 32-bit byte counts. Keep this boundary
+                // checked even if the shared terrain limits change in the future.
+                if( meshData.positions.empty() || meshData.indices.empty() ||
+                    meshData.positions.size() >
+                        std::numeric_limits<u32>::max() / sizeof( wp_graphics_mesh_vertex_pntc ) ||
+                    meshData.indices.size() > std::numeric_limits<u32>::max() / sizeof( u32 ) )
+                    return;
+
+                Array<wp_graphics_mesh_vertex_pntc> vertices( meshData.positions.size() );
+                for( size_t i = 0; i < vertices.size(); ++i )
                 {
-                    const s32 sourceX = static_cast<s32>( std::lround( x * sourceStepX ) );
-                    const float left = sampleHeight( sourceX - 1, sourceZ );
-                    const float right = sampleHeight( sourceX + 1, sourceZ );
-                    const float down = sampleHeight( sourceX, sourceZ - 1 );
-                    const float up = sampleHeight( sourceX, sourceZ + 1 );
-                    float nx = left - right;
-                    float ny = 2.0f;
-                    float nz = down - up;
-                    const float length = std::sqrt( nx * nx + ny * ny + nz * nz );
-                    nx /= length;
-                    ny /= length;
-                    nz /= length;
-                    vertices[static_cast<size_t>( z ) * width + x] = {
-                        { static_cast<float>( sourceX ) - halfWidth, sampleHeight( sourceX, sourceZ ),
-                          static_cast<float>( sourceZ ) - halfHeight },
-                        { nx, ny, nz },
-                        { static_cast<float>( sourceX ) / ( sourceWidth - 1 ),
-                          static_cast<float>( sourceZ ) / ( sourceHeight - 1 ) },
-                        0xFFFFFFFFu
-                    };
+                    const auto &position = meshData.positions[i];
+                    const auto &normal = meshData.normals[i];
+                    const auto &uv = meshData.uvs[i];
+                    vertices[i] = { { position.x, position.y, position.z },
+                                    { normal.x, normal.y, normal.z },
+                                    { uv.x, uv.y },
+                                    0xFFFFFFFFu };
                 }
-            }
 
-            for( s32 z = 0; z < height - 1; ++z )
-            {
-                for( s32 x = 0; x < width - 1; ++x )
-                {
-                    const u32 topLeft = static_cast<u32>( z * width + x );
-                    const u32 topRight = topLeft + 1;
-                    const u32 bottomLeft = topLeft + static_cast<u32>( width );
-                    const u32 bottomRight = bottomLeft + 1;
-                    indices.push_back( topLeft );
-                    indices.push_back( bottomLeft );
-                    indices.push_back( topRight );
-                    indices.push_back( topRight );
-                    indices.push_back( bottomLeft );
-                    indices.push_back( bottomRight );
-                }
-            }
+                const auto destroyMesh = []( wp_graphics_mesh *mesh ) {
+                    wp_graphics_mesh_destroy( mesh );
+                };
+                std::unique_ptr<wp_graphics_mesh, decltype( destroyMesh )> candidate(
+                    wp_graphics_mesh_create(), destroyMesh );
+                if( !candidate ||
+                    !wp_graphics_mesh_set_vertices( candidate.get(), WORKPHONE_VERTEX_FORMAT_PNTC,
+                                                    vertices.data(),
+                                                    static_cast<u32>( vertices.size() ) ) ||
+                    !wp_graphics_mesh_set_indices_u32( candidate.get(), meshData.indices.data(),
+                                                       static_cast<u32>( meshData.indices.size() ) ) ||
+                    wp_graphics_mesh_add_submesh( candidate.get(), 0,
+                                                  static_cast<u32>( meshData.indices.size() ), 0 ) < 0 )
+                    return;
+                wp_graphics_mesh_set_primitive_type( candidate.get(),
+                                                     WORKPHONE_PRIMITIVE_TRIANGLE_LIST );
 
-            if( m_renderMesh )
-            {
-                ClawRendererDX11::forgetMesh( m_renderMesh );
-                wp_graphics_mesh_destroy( m_renderMesh );
+                // The source can change while CPU geometry is being prepared. Retry
+                // next draw instead of replacing the current mesh with stale work.
+                if( getTerrainSnapshot() != snapshot )
+                    return;
+                releaseRenderMesh();
+                m_renderMesh = candidate.release();
+                m_renderSnapshot = snapshot;
             }
-            m_renderMesh = wp_graphics_mesh_create();
-            if( m_renderMesh &&
-                wp_graphics_mesh_set_vertices( m_renderMesh, WORKPHONE_VERTEX_FORMAT_PNTC,
-                                               vertices.data(), static_cast<u32>( vertices.size() ) ) &&
-                wp_graphics_mesh_set_indices_u32( m_renderMesh, indices.data(),
-                                                  static_cast<u32>( indices.size() ) ) )
+            catch( const std::bad_alloc & )
             {
-                wp_graphics_mesh_set_primitive_type( m_renderMesh, WORKPHONE_PRIMITIVE_TRIANGLE_LIST );
-                wp_graphics_mesh_add_submesh( m_renderMesh, 0, static_cast<u32>( indices.size() ), 0 );
+                // Retain the previous mesh and retry from the current snapshot later.
             }
-            m_renderMeshDirty = false;
         }
     }  // namespace render
 }  // namespace workphone

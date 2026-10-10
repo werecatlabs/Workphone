@@ -41,7 +41,7 @@ namespace workphone
         void clearAll() override;
 
     private:
-        /** The index of the current command. */
+        /** Number of applied commands; [0,size] separates undo and redo history. */
         s32 m_currentCommand;
 
         /** The index of the last undo command. */
