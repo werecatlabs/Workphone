@@ -6,6 +6,22 @@ Status: substantial catalog and generic resource infrastructure exists, but the 
 
 Related plans: [WPGraphics production](WPGRAPHICS_PRODUCTION_PLAN.md), [animation production](WPANIMATION_PRODUCTION_PLAN.md), [foliage production](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md) and [physics production](WPPHYSICS_PRODUCTION_PLAN.md). This document owns shared identity, dependency, import/cook, runtime residency, publication and packaging contracts. Feature plans own the contents and quality of their typed assets.
 
+Implementation follow-up, 10 October, starting at `7107f0a39`: the first typed
+material/texture consumer now exists in WPGraphics. `GraphicsResourceCompiler`
+registers `matres`/`texres` descriptors with bounded portable payloads, offline
+semantic mips, explicit compile/install edges and pinned texture hashes/versions.
+`ClawMaterialResource` stages a complete DX11 bundle and coordinates its final
+catalog snapshot check with the pointer swap, rejecting obsolete requests and
+device generations. It also checks the loaded root against its compilation
+report. This addresses the narrow graphics portion of **RV-08/RV-15** and
+**RES-010/019/021/022**; the review findings below retain their original baseline
+context and the broader repairs remain open. See [implementation status and
+execution evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md) and [format/ownership
+guide](WPGRAPHICS_COOKED_RESOURCES.md). In particular, **RV-04/05/06/07/11** are
+not closed: these compilers reject subresources, typed readers reject mismatched
+targets, and callers must isolate variant output roots, but the shared storage,
+input snapshot, crash recovery and source-free runtime work is still required.
+
 ## 1. Intended outcome and release tiers
 
 Deliver a single dependable asset workflow: discover/import source → preserve identity/settings → cook the exact dependency graph → load/install typed runtime resources → publish a coherent replacement → author/preview/save in the Editor → package and run without source files or authoring databases. Errors, cancellation, disk/process failure, rename, duplicate, delete, project switching and incompatible data must have predictable outcomes without losing authored content or the last working runtime asset.

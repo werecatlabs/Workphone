@@ -1,5 +1,81 @@
 # WPGraphics implementation status
 
+## Cooked material/texture consumer increment — 10 October 2026
+
+Implementation starts from `brodex` at `7107f0a39`. The prior catalog/path/adapter
+increment is retained in `7809b208c`. Subsequent branch updates add scene/texture/
+actor scheduling changes, state-driven lights, tyre effects, importer/dependency
+updates and physics narrowphase/BVH/collision-cache work. The docs add shared
+resource and animation plans and expand terrain, procedural and foliage scope.
+This increment follows the graphics plan's next executable cooked-asset task;
+the complete physics, vehicle and Editor suites remain outside its validation.
+
+Implemented:
+
+- Registered `GraphicsResourceCompiler` supplies versioned `texres` and `matres`
+  JSON descriptors through the existing compiler registry. Textures cook bounded
+  top-down BGRA mip chains with the existing semantic filters. Materials declare
+  one texture as compile/install dependency and pin its identity, source/payload
+  hashes and compiler version. Typed readers validate lengths, versions, finite
+  values, mip layout, integrity, dependency coherence and target/build mode.
+- `ClawMaterialResource` resolves a catalog UUID through the existing adapter,
+  stages an entire material/texture bundle on its render owner thread and swaps
+  it only after validation. The final catalog token check and pointer swap share
+  the catalog lock. Compile/decode/upload, compiler callbacks and retired-handle
+  destruction stay outside that lock. Publisher identity, monotonically ordered
+  requests and a pinned DX11 device reject stale or foreign candidates. Failed
+  replacement preserves the last working bundle; explicit consumer unload
+  invalidates outstanding candidates. Device changes suppress `current()` until
+  a compatible replacement is installed.
+- `ClawTexture::uploadCookedMips` stages exact authored mip bytes, retains them
+  through unload/reload and device recreation, and rejects invalid or failed
+  uploads while preserving the old compatible view. Legacy pixel/property edits
+  deliberately leave cooked mode. Cached views now compare actual device identity
+  as well as the native renderer wrapper.
+- Repaired two regressions from the recent changes: the render owner must apply
+  an equal authored transform when that transform is still queued for the native
+  scene node; particle traversal must retain a ConcurrentArray snapshot.
+- Material passes now retire their own state records and managed contexts when
+  rebinding or unloading, releasing textures retained by that state. Supplied
+  contexts and pre-existing records remain owned by their caller. Lifecycle
+  contracts check texture destruction and managed-context counts.
+- Added `WPGraphics.cooked_material_resource` with generated image/descriptors,
+  real SQLite/catalog/cook/load, exact GPU mip readback and visible `renderMesh`
+  output. Format failures, reload ordering, catalog lifecycle, owner-thread and
+  device recreation have dedicated contracts. The existing production test adds
+  queued-transform and cooked-texture regressions.
+- The baseline now requires 15 tests and hashes the typed compiler/consumer
+  sources. The deliberately deleted CI workflow remains absent; the local runner
+  records its availability instead of failing to hash a nonexistent file.
+
+Validation: **Debug: 14 passed, 1 unavailable. RelWithDebInfo: 14 passed,
+1 unavailable.** The sole unavailable test is `WorkphoneGraphics.mesh_import_assets`,
+which still requires the six absent external Ogre/OgreNext mesh fixtures. All
+mandatory contracts execute, including actual catalog symlink containment. The
+new cooked-resource test uses generated fixtures and has no unavailable cases.
+
+Both configurations used Visual Studio Community 2026, MSVC **19.51**, Windows
+SDK **10.0.26100.0**, CMake/CTest **4.4.4**, and DX11 on **NVIDIA GeForce RTX 3090**,
+feature level **11.0**, driver **32.0.16.1692**. Configuration-specific JUnit and
+JSON evidence is in `cmake-build-debug-vs2026-readiness/claw-graphics-<configuration>-results.xml`
+and `claw-graphics-<configuration>-evidence.json`. The JSON records the source
+revision/diff, compiler, device, test sources and executable hashes, and the
+absent CI workflow. To rebuild and validate both configurations:
+
+```powershell
+./Tools/BuildWPGraphicsBaseline.ps1 -BuildDirectory cmake-build-debug-vs2026-readiness
+```
+
+See [cooked resource authoring and ownership](WPGRAPHICS_COOKED_RESOURCES.md) for
+formats, service setup, exact limits and lifecycle requirements. This advances
+DB-07/08/10, GD and shared RES-010/019/021/022 for one synchronous graphics family;
+it does not complete those broad gates. Source-free packaged loading, immutable
+cook generations/metadata commit, isolated variants, cross-process writers,
+input snapshots, asynchronous jobs/watchers and Editor preview adoption remain
+open. In particular, ResourceSystem's existing output-before-metadata-commit
+failure window can change disk output even while this consumer retains its old
+GPU bundle. No R1/R2 or release certification is claimed.
+
 ## Catalog identity and resource adapter increment — 8 October 2026
 
 Implementation starts from `brodex` at `22553f942`, following the verification increment committed as `f531e9140`. **Debug: 13 passed, 1 unavailable. RelWithDebInfo: 13 passed, 1 unavailable.** The unavailable test requires the six missing external Ogre/OgreNext mesh fixtures. Catalog coverage includes actual symlink containment and Windows 8.3 root aliases in both configurations, with no internal unavailable cases. Neither R1 nor R2 is certified.

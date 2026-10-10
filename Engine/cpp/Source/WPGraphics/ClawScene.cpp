@@ -710,7 +710,7 @@ namespace workphone
 
                     // Particle simulation is updated by GraphicsScene::update, once per
                     // simulation cycle. Each camera consumes its own immutable draw snapshot.
-                    for( auto &object : m_particleSystems )
+                    for( auto &object : m_particleSystems.snapshot() )
                     {
                         auto particles = dynamic_pointer_cast<CParticleSystem>( object );
                         if( !particles || !particles->isVisible() || !particles->isLoaded() )

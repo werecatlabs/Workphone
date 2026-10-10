@@ -3,6 +3,7 @@
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/LogManager.hpp>
@@ -24,14 +25,17 @@ namespace
     struct ClawTextureData
     {
         workphone::Array<workphone::u8> pixels;
+        workphone::Array<workphone::render::TextureMipLevel> cookedLevels;
         workphone::String sourcePath;
         bool decodeAttempted = false;
         void *textureView = nullptr;
         wp_renderer_dx11 *renderer = nullptr;
+        void *device = nullptr;
         workphone::render::TextureMipSettings mipSettings;
         workphone::Vector2I pixelSize{ 0, 0 };
         bool uploadPending = true;
         wp_renderer_dx11 *attemptedRenderer = nullptr;
+        void *attemptedDevice = nullptr;
     };
 
     std::mutex g_textureMutex;
@@ -56,6 +60,67 @@ namespace
             data.textureView = nullptr;
         }
         data.renderer = nullptr;
+        data.device = nullptr;
+    }
+
+    bool validateCookedMips( const workphone::Array<workphone::render::TextureMipLevel> &levels,
+                             const workphone::render::TextureMipSettings &settings,
+                             workphone::String &error )
+    {
+        using namespace workphone::render;
+        const auto filter = static_cast<int>( settings.filter );
+        if( levels.empty() || levels.size() > 15 || filter < 0 ||
+            filter > static_cast<int>( TextureMipFilter::Roughness ) || !settings.atlasColumns ||
+            !std::isfinite( settings.alphaCutoff ) || settings.alphaCutoff <= 0 ||
+            settings.alphaCutoff >= 1 )
+        {
+            error = "Invalid cooked texture mip settings or level count";
+            return false;
+        }
+        auto width = levels.front().width;
+        auto height = levels.front().height;
+        if( !width || !height || width > 16384 || height > 16384 || width % settings.atlasColumns != 0 )
+        {
+            error = "Invalid cooked texture dimensions or atlas columns";
+            return false;
+        }
+        workphone::u64 totalBytes = 0;
+        for( size_t index = 0; index < levels.size(); ++index )
+        {
+            const auto &level = levels[index];
+            const auto bytes = static_cast<workphone::u64>( width ) * height * 4u;
+            if( level.width != width || level.height != height || level.bgra.size() != bytes ||
+                bytes > graphicsTextureByteLimit - totalBytes )
+            {
+                error = "Cooked texture mip dimensions, byte length or memory budget is invalid";
+                return false;
+            }
+            totalBytes += bytes;
+            const auto nextWidth = std::max( width / 2, 1u );
+            const auto nextHeight = std::max( height / 2, 1u );
+            const bool last = settings.filter == TextureMipFilter::None ||
+                              ( width == 1 && height == 1 ) || nextWidth < settings.atlasColumns ||
+                              nextWidth % settings.atlasColumns != 0;
+            if( last != ( index + 1 == levels.size() ) )
+            {
+                error = "Cooked texture must contain its exact complete or atlas-limited mip chain";
+                return false;
+            }
+            width = nextWidth;
+            height = nextHeight;
+        }
+        return true;
+    }
+
+    template <class Levels>
+    void *uploadMipLevels( wp_renderer_dx11 *renderer, const Levels &levels )
+    {
+        std::vector<wp_texture_mip_dx11> nativeLevels;
+        nativeLevels.reserve( levels.size() );
+        for( const auto &level : levels )
+            nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
+        return wp_renderer_dx11_create_texture_mips_native( renderer, nativeLevels.data(),
+                                                            static_cast<wp_u32>( nativeLevels.size() ) );
     }
 
     bool decodeTexture( workphone::render::ClawTexture *texture )
@@ -87,6 +152,7 @@ namespace
                 return !data.pixels.empty();
             }
             data.pixels.clear();
+            data.cookedLevels.clear();
             data.pixelSize = { 0, 0 };
             data.sourcePath = filePath;
             data.decodeAttempted = true;
@@ -173,6 +239,7 @@ namespace
         std::scoped_lock lock( g_textureMutex );
         auto &data = g_textureData[texture];
         data.pixels = std::move( pixels );
+        data.cookedLevels.clear();
         data.pixelSize = { static_cast<s32>( width ), static_cast<s32>( height ) };
         data.uploadPending = true;
         return true;
@@ -183,7 +250,8 @@ namespace
         {
             std::scoped_lock lock( g_textureMutex );
             auto found = g_textureData.find( texture );
-            if( found != g_textureData.end() && !found->second.pixels.empty() )
+            if( found != g_textureData.end() &&
+                ( !found->second.pixels.empty() || !found->second.cookedLevels.empty() ) )
             {
                 return true;
             }
@@ -203,17 +271,19 @@ namespace
                             ? dynamic_pointer_cast<ClawRendererDX11>( graphicsSystem->getRenderer() )
                             : nullptr;
         auto dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
+        auto device = dx11 ? wp_renderer_dx11_get_device( dx11 ) : nullptr;
 
         std::scoped_lock lock( g_textureMutex );
         auto found = g_textureData.find( texture );
-        if( found == g_textureData.end() || !dx11 )
+        if( found == g_textureData.end() || !device )
         {
             return nullptr;
         }
 
         auto &data = found->second;
-        const auto previousView = data.renderer == dx11 ? data.textureView : nullptr;
-        if( data.pixels.empty() || ( !data.uploadPending && data.attemptedRenderer == dx11 ) )
+        const auto previousView = data.device == device ? data.textureView : nullptr;
+        if( ( data.pixels.empty() && data.cookedLevels.empty() ) ||
+            ( !data.uploadPending && data.attemptedRenderer == dx11 && data.attemptedDevice == device ) )
         {
             return previousView;
         }
@@ -221,15 +291,18 @@ namespace
         // Retry a failed candidate only when its pixels/settings or device change.
         data.uploadPending = false;
         data.attemptedRenderer = dx11;
+        data.attemptedDevice = device;
         try
         {
-            const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
-                                                     data.pixelSize.y, data.mipSettings );
-            std::vector<wp_texture_mip_dx11> nativeLevels;
-            for( const auto &level : levels )
-                nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
-            auto *candidate = wp_renderer_dx11_create_texture_mips_native(
-                dx11, nativeLevels.data(), static_cast<wp_u32>( nativeLevels.size() ) );
+            void *candidate = nullptr;
+            if( !data.cookedLevels.empty() )
+                candidate = uploadMipLevels( dx11, data.cookedLevels );
+            else
+            {
+                const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
+                                                         data.pixelSize.y, data.mipSettings );
+                candidate = uploadMipLevels( dx11, levels );
+            }
             if( !candidate )
             {
                 WP_LOG_WARNING(
@@ -239,6 +312,7 @@ namespace
             destroyTextureView( data );
             data.textureView = candidate;
             data.renderer = dx11;
+            data.device = device;
             return candidate;
         }
         catch( const std::exception &e )
@@ -280,7 +354,7 @@ namespace workphone
             }
 
             setLoadingState( LoadingState::Loading );
-            
+
             Texture::load( data );
 
             if( !( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) &&
@@ -308,8 +382,15 @@ namespace workphone
                     destroyTextureView( found->second );
                     // Authored properties outlive decoded pixels and GPU residency.
                     const auto settings = found->second.mipSettings;
+                    auto cookedLevels = std::move( found->second.cookedLevels );
                     found->second = ClawTextureData{};
                     found->second.mipSettings = settings;
+                    found->second.cookedLevels = std::move( cookedLevels );
+                    if( !found->second.cookedLevels.empty() )
+                        found->second.pixelSize = {
+                            static_cast<s32>( found->second.cookedLevels.front().width ),
+                            static_cast<s32>( found->second.cookedLevels.front().height )
+                        };
                 }
             }
 
@@ -334,6 +415,7 @@ namespace workphone
                 Array<u8> pixels( byteCount );
                 std::memcpy( pixels.data(), data, byteCount );
                 textureData.pixels = std::move( pixels );
+                textureData.cookedLevels.clear();
                 textureData.pixelSize = size;
                 textureData.uploadPending = true;
             }
@@ -341,6 +423,59 @@ namespace workphone
             if( auto renderTarget = getRenderTarget() )
             {
                 renderTarget->setSize( size );
+            }
+        }
+
+        bool ClawTexture::uploadCookedMips( const Array<TextureMipLevel> &levels,
+                                            const TextureMipSettings &settings,
+                                            wp_renderer_dx11 *renderer, String &error )
+        {
+            error.clear();
+            auto *device = renderer ? wp_renderer_dx11_get_device( renderer ) : nullptr;
+            if( !device || getRenderTarget() ||
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                error = "Cooked mip upload requires a DX11 device and a sampled texture";
+                return false;
+            }
+            if( !validateCookedMips( levels, settings, error ) )
+                return false;
+            try
+            {
+                auto retainedLevels = levels;
+                {
+                    std::scoped_lock lock( g_textureMutex );
+                    auto &data = g_textureData[this];
+                    auto *candidate = uploadMipLevels( renderer, retainedLevels );
+                    if( !candidate )
+                    {
+                        error = "DX11 rejected the cooked texture mip upload";
+                        return false;
+                    }
+                    // All allocating work has succeeded; publish the complete replacement.
+                    destroyTextureView( data );
+                    data.cookedLevels.swap( retainedLevels );
+                    data.pixels.clear();
+                    data.sourcePath.clear();
+                    data.decodeAttempted = true;
+                    data.mipSettings = settings;
+                    data.pixelSize = { static_cast<s32>( levels.front().width ),
+                                       static_cast<s32>( levels.front().height ) };
+                    data.textureView = candidate;
+                    data.renderer = renderer;
+                    data.device = device;
+                    data.attemptedRenderer = renderer;
+                    data.attemptedDevice = device;
+                    data.uploadPending = false;
+                    m_size = data.pixelSize;
+                }
+                setLoadingState( LoadingState::Loaded );
+                return true;
+            }
+            catch( const std::exception &exception )
+            {
+                error = String( "Cooked texture upload failed: " ) + exception.what();
+                return false;
             }
         }
 
@@ -464,7 +599,17 @@ namespace workphone
             if( settings.filter != data.mipSettings.filter ||
                 settings.atlasColumns != data.mipSettings.atlasColumns ||
                 settings.alphaCutoff != data.mipSettings.alphaCutoff )
+            {
+                // An explicit authoring edit opts back into legacy mip generation.
+                if( !data.cookedLevels.empty() )
+                {
+                    const auto &base = data.cookedLevels.front().bgra;
+                    Array<u8> pixels( base.begin(), base.end() );
+                    data.pixels = std::move( pixels );
+                    data.cookedLevels.clear();
+                }
                 data.uploadPending = true;
+            }
             data.mipSettings = settings;
         }
     }  // namespace render

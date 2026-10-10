@@ -24,6 +24,12 @@ add_compile_definitions (WORKPHONE_INCLUDE_STANDARD_IO)
 file(GLOB_RECURSE HEADER_FILES "../../Include/WPGraphics/*.h" "../../Include/WPGraphics/*.hpp" "../../Include/WPGraphics/*.inl")
 file(GLOB_RECURSE SOURCE_FILES "../../Source/WPGraphics/*.cpp")
 
+if(NOT WP_BUILD_RESOURCE_SYSTEM)
+    list(FILTER SOURCE_FILES EXCLUDE REGEX "/Resources/.*\\.cpp$")
+elseif(NOT WIN32 OR NOT WP_BUILD_RENDERER_DX11)
+    list(FILTER SOURCE_FILES EXCLUDE REGEX "/Resources/ClawMaterialResource\\.cpp$")
+endif()
+
 set(WP_HEADER_REL_PATH "${WP_ROOT}/Engine/cpp/Project/WPGraphics/../../Include/WPGraphics")
 set(WP_SOURCE_REL_PATH "${WP_ROOT}/Engine/cpp/Project/WPGraphics/../../Source/WPGraphics")
 
