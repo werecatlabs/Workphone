@@ -35,7 +35,7 @@ P0 means a data-integrity or shipping blocker in the relevant supported workflow
 
 | ID / priority | Evidence and concrete consequence | Required repair / proof |
 |---|---|---|
-| **RV-01 / P0: legacy lookups bypass catalog contracts** | [ResourceDatabase.cpp](../Engine/cpp/Source/Workphone/Database/ResourceDatabase.cpp#L1426), `loadResource(path)`, constructs exact and `LIKE '%' || path || '%'` SQL with unbound input, then may load/create/register source resources. `getObject` also builds UUID SQL. Quotes can break queries; basename/substring collisions can resolve the wrong asset; read and create semantics remain mixed outside the repaired catalog | Route through exact canonical UUID/path services and structured outcomes. Restrict fuzzy matching to explicit user-assisted legacy repair; test apostrophes, `%`, `_`, duplicate basenames, missing paths and failed DB access |
+| **RV-01 / P0: legacy lookups bypass catalog contracts** | [ResourceDatabase.cpp](../Engine/cpp/Source/Workphone/Database/ResourceDatabase.cpp#L1426), `loadResource(path)`, constructs exact-match and substring `LIKE` SQL with unbound input, then may load/create/register source resources. `getObject` also builds UUID SQL. Quotes can break queries; basename/substring collisions can resolve the wrong asset; read and create semantics remain mixed outside the repaired catalog | Route through exact canonical UUID/path services and structured outcomes. Restrict fuzzy matching to explicit user-assisted legacy repair; test apostrophes, `%`, `_`, duplicate basenames, missing paths and failed DB access |
 | **RV-02 / P0: Editor moves/copies are filesystem-only** | [ProjectAssetsWindow.cpp](../Tools/cpp/Editor/src/ui/ProjectAssetsWindow.cpp#L1005), `copyAsset`/`moveAsset`, copy or rename files and refresh folders without a catalog/dependency/reference transaction. `moveAsset` returns true after `Path::rename` without checking its result here. Containment is lexical lowercase-prefix comparison, unlike catalog path auditing | One operation service for filesystem, identity, metadata and references; actual filesystem success, canonical containment, rollback/recovery and undo. Move preserves UUID; duplicate generates new IDs/remaps internal references |
 | **RV-03 / P0: delete undo is not a general binary restoration path** | [RemoveResourceCmd.cpp](../Tools/cpp/Editor/src/commands/RemoveResourceCmd.cpp#L15) captures files through `readAllText` and restores with `writeAllText`; folder undo reconstructs paths/resources ad hoc. This cannot guarantee byte-identical restoration for textures, audio or binary meshes, and does not preserve the complete filesystem/metadata/reference transaction | Quarantine/trash or byte-safe disk snapshots, exact manifests including empty folders and identities, conflict-aware undo/redo and crash recovery. Test binary hashes, large trees, metadata and external edits |
 | **RV-04 / P0: cooked output precedes metadata commit** | [ResourceSystem.cpp](../Engine/cpp/Source/Workphone/System/ResourceSystem.cpp#L443), `compileNode`, replaces the output before `commitCompilation`; on metadata failure it returns failure before erasing the runtime cache. Disk can contain new bytes with old index/cache state, even though the operation reports failure | Stage immutable generations and commit/publish a generation manifest, or a tested journal/compensation protocol. Inject failures between write, metadata commit, cache publication and consumer swap |
@@ -66,6 +66,8 @@ ctest --test-dir project_x64 -C RelWithDebInfo -R '^(WPResourceTests|WorkphoneAs
 ```
 
 Result: **2/2 passed**, approximately 4.03 seconds total. The catalog suite took 2.85 seconds and resource smoke suite 0.16 seconds. Debug `WPAssetCatalogTests.exe` and `WPResourceTests.exe` were unavailable. No rebuild was done; the available optimized executables were last written on 9 October, so this run proves their retained contracts execute locally, not that every current source path was rebuilt or covered. The JUnit report is a local build artifact; binary/source hashes and provenance should accompany future release runs.
+
+Local ignored evidence: `project_x64/resource-asset-review-results.xml` and `project_x64/resource-asset-review-evidence.json`. The evidence JSON records binary/source/JUnit hashes and the no-rebuild/coverage limitations for this run.
 
 These suites do not close the findings above: they do not establish real Editor move/delete undo, crash consistency, cross-process publication, production typed decoders, graphics output, streaming or source-free packages. Dedicated failure, lifecycle, Editor and package tests are mandatory.
 
@@ -127,6 +129,26 @@ Runtime handles pin immutable generations and expose readiness/errors. Erasing a
 | Observability | Per-operation diagnostics/timings, rebuild reasons, memory/IO/install counters, dependency chains and test/evidence reporting | Trace/cost views by asset family/project, cache metrics, streaming pressure and package size/change reports |
 
 R1 asset-family acceptance includes texture/material/shader, static mesh, skeleton/clip/graph, scene/prefab and audio/script/UI resources required by the shipping fixture. Each needs declared compile/decode/install/reference/version policies; a pass-through text test is not their substitute. Terrain, foliage, procedural recipes, particles, water, morph/rig/retarget and other domain assets join according to their feature-release gates through the same pipeline. Some scripts stay interpreted source by design, but must be included in the manifest with explicit validation and dependency rules rather than loaded from arbitrary authoring paths.
+
+### 4.1 Typed asset-family integration checklist
+
+Each family below uses the common build/load/install services. Its owner supplies semantic validation, dependency discovery, preview and a source-free packaged fixture before it is advertised as supported.
+
+| Family | Required semantic and consumer contracts |
+|---|---|
+| Textures, atlases and environments | Explicit colour/data/normal/alpha usage, mip/filter/compression/target format settings, atlas gutters and dependencies, dimensions/limits, GPU upload and last-good view; R2 partial mip residency and array/cube variants |
+| Materials and shaders | Texture/sampler dependencies, validated parameter layout/types, shader includes/permutation/toolchain/target fingerprints, shader/material ABI compatibility, staged pipeline/resource installation and preview parity |
+| Static/skinned meshes | Topology/indices/submesh/material references, units/bounds/LOD, skin binding and skeleton compatibility, backend vertex layout/version and safe GPU-buffer ownership; avoid silent source-manager fallback |
+| Animation and rigs | Skeleton/clip/graph/mask/rig/retarget/morph signatures, stable derived identities and compatible character-set generations; follow the animation plan for pose/deformation and authoring quality |
+| Scenes and prefabs | Typed external asset references, scene/prefab instance identity, nested composition/override policy, migration and cycle diagnostics; duplication/remap and asynchronous instantiation preserve references |
+| Audio | Codec/target profile, channels/rate/loop/cue metadata, duration/seek validation, bus/effect/resource references and audio-thread installation; R2 streaming chunks and pressure behavior |
+| Scripts and data schemas | Explicit module/data dependencies, permitted interpreted or compiled representation, target/version validation, schema migrations and safe live-state replacement; package scripts intentionally without requiring the authoring tree |
+| Fonts, sprites, UI and localization | Font/atlas/style/layout dependencies, glyph/texture limits, sprite metadata, locale selection and fallback closure; generated preview/glyph caches stay derived and missing fallback content is reported |
+| Physics resources | Collider/convex/triangle-mesh source/settings, cook implementation/target ABI fingerprint, bounds/size validation, scene/material references and physics-owner install/retirement |
+| Terrain, foliage and procedural assets | Recipe/input/seed/algorithm-version hashes, tile/species/LOD/impostor/material dependencies and reproducible bakes; streaming/paging uses shared residency contracts while domain tools retain their authoring data |
+| Particles and water | Effect/template/material/curve/mesh/texture dependencies, bounded settings and target capability validation; typed runtime lifecycle and Editor previews follow their feature gates |
+
+Importing external files either brings the required sources/settings into the controlled project source tree or uses an explicitly registered read-only library mount. Preserve provenance and dependency ownership; do not relax root containment or retain accidental absolute workstation paths in cooked artifacts.
 
 ## 5. Implementation milestones
 

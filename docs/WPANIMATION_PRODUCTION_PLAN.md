@@ -1,7 +1,7 @@
 # Workphone animation production implementation plan
 
 Reviewed: 10 October 2026 against `cb1463b7a` in `G:\Workphone`.
-Status: implementation plan based on current source inspection. No builds, tests, Editor sessions, GPU captures or benchmarks were run for this review. Existing test sources and historical graphics results are foundations, not current animation certification.
+Status: implementation plan based on current source inspection. No animation builds/tests, Editor sessions, GPU captures or benchmarks were run for this review. Existing test sources and historical graphics results are foundations, not current animation certification. The separate resource review records its limited catalog/resource regression run.
 
 This expands `ANIM-01` through `ANIM-08` and gate GA in the [WPGraphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md). It covers animation runtime, Editor authoring and preview, WPGraphics/Claw deformation, asset import/cooking/catalog integration, physics handoff, performance and shipping. Shared renderer/resource work remains coordinated with the graphics plan; animation does not create a second resource pipeline.
 
