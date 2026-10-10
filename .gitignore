@@ -131,3 +131,12 @@ steam_appid.txt
 /project_graphics_effects_tests
 /project_network_contracts/
 /.github
+/project_network_contracts/Engine/c/Project/WorkphoneNetwork/RelWithDebInfo/WorkphoneNetwork.pdb
+/project_network_contracts/Testing/Temporary/CTestCostData.txt
+/project_network_contracts/Testing/Temporary/LastTest.log
+/project_network_contracts/Tests/NetworkProduction/RelWithDebInfo/WorkphoneNetworkTests.pdb
+/project_network_contracts/Tests/NetworkProduction/RelWithDebInfo/WPNetworkCodecTests.pdb
+/project_network_contracts/Tests/NetworkProduction/WorkphoneNetworkTests.dir/RelWithDebInfo/vc145.pdb
+/project_network_contracts/Tests/NetworkProduction/WorkphoneNetworkTests.dir/RelWithDebInfo/Workphon.5AA9FF85.tlog/link.read.1.tlog
+/project_network_contracts/Tests/NetworkProduction/WorkphoneNetworkTests.dir/RelWithDebInfo/WorkphoneNetworkTests.ilk
+/project_network_contracts/Tests/NetworkProduction/WPNetworkCodecTests.dir/RelWithDebInfo/vc145.pdb

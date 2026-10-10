@@ -1,3 +1,0 @@
-WorkphoneNetwork.native 4 0.29038
-WPNetwork.codec 5 0.00864758
----
