@@ -143,6 +143,37 @@ BOOST_AUTO_TEST_CASE( editor_script_window_owner_binding_test )
     scriptManager->destroyObject( owner );
 }
 
+BOOST_AUTO_TEST_CASE( editor_script_window_properties_bridge_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto manager = core::IApplicationManager::instance()->getScriptManager();
+    BOOST_REQUIRE( manager );
+    manager->loadScriptFromString( R"(
+        class 'EditorPropertiesBridgeProbe'
+        function EditorPropertiesBridgeProbe:__init(window) self.window = window end
+        function EditorPropertiesBridgeProbe:getProperties(p)
+            local properties = p:at(0)
+            properties:setProperty('bridgeProbe', 'typed object reached Lua')
+        end
+        function EditorPropertiesBridgeProbe:setProperties(p)
+            local properties = p:at(0)
+            self.window:setName(properties:getProperty('bridgeProbe'))
+        end
+    )" );
+    auto window = make_ptr<ScriptWindow>();
+    window->setClassName( "EditorPropertiesBridgeProbe" );
+    window->load( nullptr );
+    window->setWindowVisible( true );
+    auto properties = window->getProperties();
+    BOOST_REQUIRE( properties );
+    BOOST_CHECK_EQUAL( properties->getProperty( "bridgeProbe" ), "typed object reached Lua" );
+    properties->setProperty( "bridgeProbe", "setter reached Lua" );
+    window->setProperties( properties );
+    BOOST_CHECK_EQUAL( window->getName(), "setter reached Lua" );
+    window->unload( nullptr );
+}
+
 BOOST_AUTO_TEST_CASE( editor_input_window_live_values_test )
 {
     EditorApplicationGuard app;

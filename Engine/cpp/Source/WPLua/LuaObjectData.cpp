@@ -33,6 +33,11 @@ namespace workphone
         }
 
         m_owner = nullptr;
+        // Release registry references while their state is still alive, even if
+        // external callers retain this ScriptData past manager shutdown.
+        m_object = luabind::object();
+        m_classData = nullptr;
+        m_luaState = nullptr;
 
         setLoadingState( LoadingState::Unloaded );
     }
@@ -132,10 +137,7 @@ namespace workphone
     {
         using namespace luabind;
 
-        auto applicationManager = core::IApplicationManager::instance();
-        auto factoryManager = applicationManager->getFactoryManager();
-
-        auto classData = factoryManager->make_ptr<ScriptClass>();
+        auto classData = make_ptr<ScriptClass>();
         classData->load( nullptr );
         classData->setClassName( getClassName() );
 
@@ -184,7 +186,7 @@ namespace workphone
                     auto key = i.key();
                     auto functionName = object_cast<std::string>( key );
 
-                    auto scriptFunction = factoryManager->make_ptr<ScriptFunction>();
+                    auto scriptFunction = make_ptr<ScriptFunction>();
                     scriptFunction->setFunctionName( functionName.c_str() );
                     scriptFunction->setClassName( getClassName() );
 

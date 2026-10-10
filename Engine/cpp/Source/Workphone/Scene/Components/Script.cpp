@@ -195,6 +195,7 @@ namespace workphone::scene
         }
 
         properties->setProperty( classNameStr, m_className );
+        properties->setProperty( "scriptAssetUuid", m_scriptAssetUuid );
         properties->setProperty( updateInEditModeStr, m_updateInEditMode );
         properties->setProperty( updateInPlayModeStr, m_updateInPlayMode );
 
@@ -253,17 +254,20 @@ namespace workphone::scene
             }
 
             auto className = getClassName();
+            auto scriptAssetUuid = getScriptAssetUuid();
             auto updateInEditMode = getUpdateInEditMode();
             auto updateInPlayMode = getUpdateInPlayMode();
 
             properties->getPropertyValue( classNameStr, className );
+            properties->getPropertyValue( "scriptAssetUuid", scriptAssetUuid );
             properties->getPropertyValue( updateInEditModeStr, updateInEditMode );
             properties->getPropertyValue( updateInPlayModeStr, updateInPlayMode );
 
-            if( className != getClassName() )
+            if( className != getClassName() || scriptAssetUuid != getScriptAssetUuid() )
             {
                 destroyScriptData();
                 setClassName( className );
+                setScriptAssetUuid( scriptAssetUuid );
             }
 
             createScriptData();
@@ -354,6 +358,16 @@ namespace workphone::scene
     void Script::setClassName( const String &className )
     {
         m_className = className;
+    }
+
+    String Script::getScriptAssetUuid() const
+    {
+        return m_scriptAssetUuid;
+    }
+
+    void Script::setScriptAssetUuid( const String &uuid )
+    {
+        m_scriptAssetUuid = uuid;
     }
 
     auto Script::handleComponentEvent( u32 state, FSMEvent eventType ) -> FSMReturnType
@@ -465,7 +479,12 @@ namespace workphone::scene
                 auto className = getClassName();
                 if( !StringUtil::isNullOrEmpty( className ) )
                 {
-                    scriptManager->createObject( className, this );
+                    if( !m_scriptAssetUuid.empty() && !scriptManager->loadScriptAsset( m_scriptAssetUuid ) )
+                    {
+                        WP_LOG_ERROR( "Cannot load Lua script asset: " + m_scriptAssetUuid );
+                        return;
+                    }
+                    m_scriptClass = scriptManager->createObject( className, this );
                 }
             }
         }

@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Script/ScriptAsset.hpp>
 #include <Workphone/Database/ResourceReference.hpp>
 #include <Workphone/System/Director.hpp>
 #include <Workphone/Scene/Directors/MaterialResourceDirector.hpp>
@@ -2621,7 +2622,18 @@ namespace workphone
                 settingsCachePath + StringUtil::toString( filePathHash ) + resourcedataExt;
             auto relativeFileDataPath = Path::getRelativePath( projectPath, fileDataPath );
 
-            if( fileExt == builtinMeshExt )
+            if( fileExt == ".lua" )
+            {
+                // Reimport retains the catalog UUID; it never runs source code.
+                if( !assetDatabaseManager->getResourceEntryFromPath( filePath ) )
+                {
+                    auto script = make_ptr<ScriptAsset>();
+                    script->getHandle()->setUUID( StringUtil::getUUID() );
+                    script->loadFromFile( filePath );
+                    assetDatabaseManager->addResourceEntry( script );
+                }
+            }
+            else if( fileExt == builtinMeshExt )
             {
                 auto meshManager = applicationManager->getMeshManager();
                 auto mesh = meshManager->loadFromFile( filePath );

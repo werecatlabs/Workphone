@@ -15,6 +15,7 @@
 #include <Workphone/Memory/RawPtr.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 #include <luabind/object.hpp>
+#include <Workphone/Database/CatalogResourceAdapter.hpp>
 
 namespace workphone
 {
@@ -319,6 +320,18 @@ namespace workphone
          * @param script Lua code to execute.
          */
         void executeScript( const String &script );
+
+        /// Execute text with a stable source identifier; @path identifies a file asset.
+        /// Restores the value stack on success and failure; errors include a traceback.
+        bool executeSource( const String &source, const String &sourceName );
+        String getLastDiagnostic() const;
+
+        /// In compiledOnly mode execution never falls back to a loose source file.
+        void configureScriptResources( SmartPtr<AssetDatabaseManager> catalog,
+                                       std::shared_ptr<resource::IResourceSystem> resources,
+                                       bool compiledOnly = false );
+        bool loadScriptAsset( const String &uuid ) override;
+        bool loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource );
 
         /**
          * @brief Get whether the manager is running in full debug mode.
@@ -708,6 +721,19 @@ namespace workphone
         using ScriptProfiles =
             ConcurrentMap<u32, ScriptProfile>;  ///< Map keyed by hash to profiling entries.
         ScriptProfiles m_scriptProfiles;        ///< Aggregated profiling data for scripts.
+
+        String m_lastDiagnostic;
+        SmartPtr<AssetDatabaseManager> m_scriptCatalog;
+        std::shared_ptr<resource::IResourceSystem> m_scriptResources;
+        bool m_compiledScriptsOnly = false;
+        Map<String, u64> m_loadedScriptAssets;
+        bool constructLua( const String &className, SmartPtr<ISharedObject> *owner,
+                           luabind::object &result );
+        bool invokeLua( luabind::object *receiver, const String &globalName,
+                        const String &functionName, const Parameters *parameters,
+                        Parameters *results, bool optional = false );
+        s32 invokeObject( SmartPtr<ISharedObject> object, const String &functionName,
+                          const Parameters *parameters, Parameters *results );
 
         mutable RecursiveSpinMutex m_mutex;  ///< Mutex for thread-safe access to the manager.
     };

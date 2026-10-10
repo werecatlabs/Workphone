@@ -13,6 +13,7 @@
 #include <sstream>
 #include <iostream>
 #include <cctype>
+#include <filesystem>
 
 using std::endl;
 using std::ofstream;
@@ -101,7 +102,11 @@ namespace workphone
         {
             auto sourceStr = String();
 
-            auto className = String( "NewScript" );
+            auto className = std::filesystem::u8path( path ).stem().u8string();
+            for( auto &character : className )
+                if( !std::isalnum( static_cast<unsigned char>( character ) ) && character != '_' ) character = '_';
+            if( className.empty() ) className = "NewScript";
+            if( std::isdigit( static_cast<unsigned char>( className[0] ) ) ) className.insert( 0, "Script_" );
 
             sourceStr = "class '" + className +
                         "'\n"

@@ -213,4 +213,24 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     add_dependencies(VehicleLuaBindingTests WPLuaBind Workphone)
     set_target_properties(VehicleLuaBindingTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPVehicle.lua_presentation_bindings COMMAND VehicleLuaBindingTests)
+
+    add_executable(LuaRuntimeTests LuaRuntimeTests.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaManager.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaObjectData.cpp
+        ${WP_ROOT}/Engine/cpp/Source/WPLua/NullScriptObject.cpp)
+    target_compile_definitions(LuaRuntimeTests PRIVATE BOOST_ALL_NO_LIB BOOST_BIND_GLOBAL_PLACEHOLDERS WP_PROFILE_LUA_CALLS=0)
+    target_include_directories(LuaRuntimeTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+        ${WP_ROOT}/Dependencies/lua/inc ${WP_ROOT}/Dependencies/luabind/inc
+        ${WP_ROOT}/Dependencies/luabind/inc/luabind)
+    target_link_libraries(LuaRuntimeTests PRIVATE
+        $<TARGET_LINKER_FILE:WPLuaBind> $<TARGET_LINKER_FILE:Workphone> lua lua_cjson luabind)
+    add_dependencies(LuaRuntimeTests WPLuaBind Workphone)
+    set_target_properties(LuaRuntimeTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPLua.runtime_contracts COMMAND LuaRuntimeTests)
+    foreach(lua_host_target VehicleLuaBindingTests LuaRuntimeTests)
+        target_sources(${lua_host_target} PRIVATE
+            ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaScriptCompiler.cpp)
+        target_compile_definitions(${lua_host_target} PRIVATE WPLua_EXPORTS)
+    endforeach()
 endif()

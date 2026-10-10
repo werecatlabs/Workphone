@@ -256,6 +256,9 @@ namespace workphone
          */
         virtual void unloadObject( SmartPtr<ISharedObject> scriptObject, bool forceQueue = false ) = 0;
 
+        /// Load a script by durable catalog UUID. Legacy managers may not support assets.
+        virtual bool loadScriptAsset( const String &uuid ) { return false; }
+
         WP_CLASS_REGISTER_DECL;
     };
 }  // namespace workphone

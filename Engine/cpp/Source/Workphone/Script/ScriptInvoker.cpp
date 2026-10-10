@@ -42,7 +42,8 @@ namespace workphone
     void ScriptInvoker::callObjectMember( const String &functionName )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager->getScriptManagerPtr();
+        auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
+        if( !scriptManager ) return;
 
         if( auto object = getOwnerPtr() )
         {
@@ -56,7 +57,8 @@ namespace workphone
     void ScriptInvoker::callObjectMember( const String &functionName, const Parameters &params )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager->getScriptManagerPtr();
+        auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
+        if( !scriptManager ) return;
 
         if( auto object = getOwnerPtr() )
         {
@@ -71,7 +73,8 @@ namespace workphone
                                           Parameters &results )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = applicationManager->getScriptManagerPtr();
+        auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
+        if( !scriptManager ) return;
 
         if( auto object = getOwnerPtr() )
         {
@@ -90,12 +93,13 @@ namespace workphone
             const auto &event = it->second;
 
             auto applicationManager = core::IApplicationManager::instance();
-            auto scriptManager = applicationManager->getScriptManager();
+            auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
             if( !scriptManager )
             {
                 auto message = String( "No script manager found. When on event class: " ) +
                                event->getClassName() + String( " function: " ) + event->getFunction();
                 WP_LOG_ERROR( message );
+                return;
             }
 
             if( auto owner = getOwner() )
@@ -120,13 +124,14 @@ namespace workphone
             const auto &event = it->second;
 
             auto applicationManager = core::IApplicationManager::instance();
-            auto scriptManager = applicationManager->getScriptManager();
+            auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
             if( !scriptManager )
             {
                 auto message = String( "No script manager found. When on event class: " ) +
                                event->getClassName() + String( " function: " ) + event->getFunction();
 
                 WP_LOG_ERROR( message );
+                return;
             }
 
             if( auto owner = getOwner() )
@@ -151,12 +156,13 @@ namespace workphone
             const auto &event = it->second;
 
             auto applicationManager = core::IApplicationManager::instance();
-            auto scriptManager = applicationManager->getScriptManager();
+            auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
             if( !scriptManager )
             {
                 auto message = String( "No script manager found. When on event class: " ) +
                                event->getClassName() + String( " function: " ) + event->getFunction();
                 WP_LOG_ERROR( message );
+                return;
             }
 
             if( auto object = getOwner() )
@@ -209,10 +215,11 @@ namespace workphone
             const auto &event = it->second;
 
             auto engine = core::IApplicationManager::instance();
-            auto scriptMgr = engine->getScriptManager();
+            auto scriptMgr = engine ? engine->getScriptManager() : nullptr;
             if( !scriptMgr )
             {
                 WP_LOG( "No script manager found." );
+                return;
             }
 
             auto owner = getOwner();
@@ -244,7 +251,7 @@ namespace workphone
             const auto &event = it->second;
 
             auto engine = core::IApplicationManager::instance();
-            auto scriptMgr = engine->getScriptManager();
+            auto scriptMgr = engine ? engine->getScriptManager() : nullptr;
             if( !scriptMgr )
             {
                 WP_LOG( "No script manager found." );
@@ -253,7 +260,7 @@ namespace workphone
 
             auto owner = getOwner();
 
-            Parameters params;
+            Parameters params( 1 );
             params[0].setPtr( owner );
 
             Parameters results;

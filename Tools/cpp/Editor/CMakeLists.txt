@@ -1040,6 +1040,7 @@ if (WP_EDITOR_TESTS)
         script_window_class_name_test
         editor_script_manager_lua_support_test
         editor_script_window_owner_binding_test
+        editor_script_window_properties_bridge_test
         editor_input_window_live_values_test
         editor_window_callbacks_disconnect_test
         editor_material_selection_visibility_test

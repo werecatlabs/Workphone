@@ -11,6 +11,7 @@
 #include <Workphone/Interface/Scene/IComponent.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/Core/FileInfo.hpp>
+#include <Workphone/Script/ScriptAsset.hpp>
 #include <atomic>
 #include <filesystem>
 #include <set>
@@ -616,6 +617,8 @@ namespace workphone
             type = "Material";
         else if( object->isDerived<render::ITexture>() )
             type = "Texture";
+        else if( object->isDerived<ScriptAsset>() )
+            type = "script";
         if( !validValue( type, 256 ) )
             return;
         CatalogTransaction transaction( *this );

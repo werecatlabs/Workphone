@@ -2,6 +2,7 @@
 #include <WPLuabind/ParamConverter.hpp>
 #include <WPLua/NullScriptObject.hpp>
 #include <WPLua/LuaObjectData.hpp>
+#include <WPLua/LuaScriptCompiler.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/System/IPlugin.hpp>
 #include <Workphone/Interface/System/IPluginManager.hpp>
@@ -9,6 +10,7 @@
 #include <sstream>
 #include <stdarg.h>
 #include <iostream>
+#include <stdexcept>
 
 extern "C" {
 #include <lua.h>
@@ -35,6 +37,79 @@ int luaopen_cjson( lua_State *l );
 
 namespace workphone
 {
+    namespace
+    {
+        int scriptTraceback( lua_State *state )
+        {
+            // Do not invoke an arbitrary error object's __tostring in the handler.
+            const char *message = lua_tostring( state, 1 );
+            if( !message ) message = "Lua raised a non-string error";
+            luaL_traceback( state, state, message, 1 );
+            return 1;
+        }
+
+        struct ScriptInvocation
+        {
+            luabind::object *receiver;
+            const char *globalName;
+            const char *functionName;
+            const Parameters *parameters;
+            Parameters *results;
+            bool optional;
+        };
+
+        struct ScriptConstruction
+        {
+            const char *className;
+            SmartPtr<ISharedObject> *owner;
+        };
+
+        int constructScript( lua_State *state )
+        {
+            auto *call = static_cast<ScriptConstruction *>( lua_touserdata( state, 1 ) );
+            lua_getglobal( state, call->className );
+            if( lua_isnil( state, -1 ) )
+                return luaL_error( state, "Lua class '%s' was not found", call->className );
+            if( call->owner ) luabind::detail::convert_to_lua( state, *call->owner );
+            lua_call( state, call->owner ? 1 : 0, 1 );
+            if( lua_isnil( state, -1 ) )
+                return luaL_error( state, "Lua class '%s' returned nil", call->className );
+            return 1;
+        }
+
+        int invokeScript( lua_State *state )
+        {
+            auto *call = static_cast<ScriptInvocation *>( lua_touserdata( state, 1 ) );
+            int arguments = 0;
+            if( call->receiver || call->globalName )
+            {
+                if( call->receiver ) call->receiver->push( state );
+                else lua_getglobal( state, call->globalName );
+                lua_getfield( state, -1, call->functionName );
+                lua_insert( state, -2 ); // function, self
+                ++arguments;
+            }
+            else lua_getglobal( state, call->functionName );
+
+            if( call->optional && lua_isnil( state, -( arguments + 1 ) ) ) return 0;
+            if( !lua_isfunction( state, -( arguments + 1 ) ) )
+                return luaL_error( state, "Lua function '%s' was not found", call->functionName );
+
+            // Keep the established Parameters and mutable results-container ABI.
+            if( call->parameters )
+            {
+                luabind::detail::convert_to_lua( state, *call->parameters );
+                ++arguments;
+            }
+            if( call->results )
+            {
+                luabind::detail::convert_to_lua( state, boost::ref( *call->results ) );
+                ++arguments;
+            }
+            lua_call( state, arguments, 0 );
+            return 0;
+        }
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone, LuaManager, IScriptManager );
 
@@ -42,10 +117,14 @@ namespace workphone
 
     LuaManager::LuaManager() = default;
 
-    LuaManager::~LuaManager() = default;
+    LuaManager::~LuaManager()
+    {
+        unload( nullptr );
+    }
 
     void LuaManager::load( SmartPtr<ISharedObject> data )
     {
+        if( isLoaded() ) return;
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -57,11 +136,18 @@ namespace workphone
 
             m_timeTaken = 0.0f;
             m_callCounter = 0;
+            m_bError = false;
+            m_lastDiagnostic.clear();
 
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
         {
+            if( auto state = getLuaState() ) lua_close( state );
+            m_luaState = nullptr;
+            m_bError = true;
+            m_lastDiagnostic = e.what();
+            setLoadingState( LoadingState::Unloaded );
             WP_LOG_EXCEPTION( e );
         }
     }
@@ -96,6 +182,14 @@ namespace workphone
             }
 
             m_instances.clear();
+            m_loadQueue.clear();
+            m_unloadQueue.clear();
+            m_scripts.clear();
+            m_loadedScriptAssets.clear();
+            m_classNames.clear();
+            m_bindingClassNames.clear();
+            m_scriptData.clear();
+            m_bReload = false;
 
             lua_gc( m_luaState, LUA_GCCOLLECT, 0 );
 
@@ -105,6 +199,7 @@ namespace workphone
 
             auto nullScriptObject = m_nullScriptObject.load();
             WP_SAFE_DELETE( nullScriptObject );
+            m_nullScriptObject = nullptr;
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -117,24 +212,11 @@ namespace workphone
 
     void LuaManager::handleLuaError( lua_State *luaState )
     {
-        auto errorStr = String( lua_tostring( luaState, -1 ) );
-        auto message = String( "Error: " ) + errorStr + String( "\n" );
-
-        String debugStr;
-
+        const auto text = lua_tostring( luaState, -1 );
+        auto manager = *static_cast<LuaManager **>( lua_getextraspace( luaState ) );
+        if( manager ) manager->setError( true );
+        WP_LOG_ERROR( text ? text : "Lua raised a non-string error" );
         lua_pop( luaState, 1 );
-
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        auto pScriptManager = applicationManager->getScriptManager();
-        auto scriptMgr = workphone::static_pointer_cast<LuaManager>( pScriptManager );
-        if( scriptMgr )
-        {
-            debugStr = scriptMgr->getDebugInfo();
-            scriptMgr->setError( true );
-        }
-
-        auto logStr = message + debugStr;
-        WP_LOG_ERROR( logStr );
     }
 
     void LuaManager::lock()
@@ -164,172 +246,53 @@ namespace workphone
 
     s32 handleLuaPCallError( lua_State *luaState )
     {
-        String debugStr;
-
-        lua_Debug d;
-
-        int level = LUA_MINSTACK;
-        int success;
-
-        while( level >= 0 )
-        {
-            success = lua_getstack( luaState, level, &d );
-            if( success != 0 )
-            {
-                lua_getinfo( luaState, "Sln", &d );
-
-                std::stringstream msg;
-                msg << d.short_src << ":" << d.currentline;
-
-                if( d.name != nullptr )
-                {
-                    msg << "(" << d.namewhat << " " << d.name << ")";
-                }
-
-                static const auto newline = std::string( "\n" );
-                debugStr += msg.str() + newline;
-
-                auto outputStr = XmlUtil::createErrorXML( d.currentline, d.short_src );
-                WP_LOG_ERROR( outputStr );
-            }
-
-            --level;
-        }
-
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = static_cast<LuaManager *>( applicationManager->getScriptManagerPtr() );
-        scriptManager->setError( true );
-
-        return 1;
+        auto manager = *static_cast<LuaManager **>( lua_getextraspace( luaState ) );
+        if( manager ) manager->setError( true );
+        return scriptTraceback( luaState );
     }
 
     void handleCastFailed( lua_State *luaState, const luabind::type_id &id )
     {
-        String debugStr;
-
-        lua_Debug d;
-
-        int level = LUA_MINSTACK;
-        int success;
-
-        while( level >= 0 )
-        {
-            success = lua_getstack( luaState, level, &d );
-            if( success != 0 )
-            {
-                lua_getinfo( luaState, "Sln", &d );
-
-                std::stringstream msg;
-                msg << d.short_src << ":" << d.currentline;
-
-                if( d.name != nullptr )
-                {
-                    msg << "(" << d.namewhat << " " << d.name << ")";
-                }
-
-                debugStr += String( msg.str().c_str() ) + String( "\n" );
-            }
-
-            --level;
-        }
-
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        auto scriptManager = (LuaManager *)applicationManager->getScriptManagerPtr();
-        scriptManager->setError( true );
-
-        WP_LOG_ERROR( debugStr );
+        auto manager = *static_cast<LuaManager **>( lua_getextraspace( luaState ) );
+        if( manager ) manager->setError( true );
+        WP_LOG_ERROR( "Lua native value conversion failed" );
     }
 
     void LuaManager::loadScript( const String &filename )
     {
-        try
+        ScopedLock lock( this );
+        if( !isLoaded() ) return;
+        if( std::find( m_scripts.begin(), m_scripts.end(), filename ) != m_scripts.end() ) return;
+        auto app = core::IApplicationManager::instancePtr();
+        auto fs = app ? app->getFileSystemPtr() : nullptr;
+        if( !fs )
         {
-            if( isLoaded() )
-            {
-                ScopedLock lock( this );
-
-                auto it = std::find( m_scripts.begin(), m_scripts.end(), filename );
-                if( it != m_scripts.end() )
-                {
-                    return;
-                }
-
-                auto applicationManager = core::IApplicationManager::instancePtr();
-                WP_ASSERT( applicationManager );
-
-                auto fileSystem = applicationManager->getFileSystemPtr();
-                WP_ASSERT( fileSystem );
-
-                auto stream = fileSystem->open( filename, true, false, false, false, false );
-                if( !stream )
-                {
-                    stream = fileSystem->open( filename, true, false, false, true, true );
-                }
-
-                if( stream )
-                {
-                    auto script = stream->getAsString();
-
-                    auto luaState = getLuaState();
-                    auto error = luaL_dostring( luaState, script.c_str() );
-                    if( error )
-                    {
-                        auto message = String( "ScriptMgr::loadScript - error - couldn't open " ) +
-                                       filename + String( " errorcode = " ) +
-                                       String( lua_tostring( luaState, -1 ) );
-                        WP_LOG_ERROR( message );
-                    }
-                    else
-                    {
-                        auto message = String( "Loaded: " ) + filename;
-                        WP_LOG_INFO( message );
-                    }
-
-                    // add filename
-                    m_scripts.push_back( filename );
-                }
-
-                //updateClassNames();
-            }
+            m_lastDiagnostic = "No filesystem available for Lua source: " + filename;
+            setError( true );
+            return;
         }
-        catch( std::exception &e )
+        auto stream = fs->open( filename, true, false, false, false, false );
+        if( !stream ) stream = fs->open( filename, true, false, false, true, true );
+        if( !stream )
         {
-            WP_LOG_EXCEPTION( e );
+            m_lastDiagnostic = "Lua source not found: " + filename;
+            setError( true );
+            WP_LOG_ERROR( m_lastDiagnostic );
+            return;
         }
+        if( executeSource( stream->getAsString(), "@" + filename ) )
+            m_scripts.push_back( filename );
     }
 
     void LuaManager::loadScriptFromString( const String &str )
     {
-        try
-        {
-            ScopedLock lock( this );
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto luaState = getLuaState();
-            auto error = luaL_dostring( luaState, str.c_str() );
-            if( error )
-            {
-                auto message = String( "ScriptMgr::loadScript - error - couldn't open " ) + str +
-                               String( " errorcode = " ) + String( lua_tostring( luaState, -1 ) );
-                WP_LOG_ERROR( message );
-            }
-            else
-            {
-                auto message = String( "Loaded: " ) + str;
-                WP_LOG_INFO( message );
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        executeSource( str, "=inline" );
     }
 
     void LuaManager::print_lua_stack()
     {
         auto L = getLuaState();
+        if( !L ) return;
         print_lua_stack( L );
     }
 
@@ -410,6 +373,7 @@ namespace workphone
 
             lua_pop( L, 1 );
         }
+        lua_pop( L, 1 ); // global environment
     }
 
     void LuaManager::updateBindClassNames()
@@ -576,314 +540,204 @@ namespace workphone
 
     void LuaManager::executeScript( const String &script )
     {
-        auto error = luaL_loadbuffer( m_luaState, script.c_str(), script.length(), "script" ) ||
-                     lua_pcall( m_luaState, 0, 0, 0 );
+        executeSource( script, "=script" );
+    }
 
-        if( error )
+    String LuaManager::getLastDiagnostic() const
+    {
+        ScopedLock lock( const_cast<LuaManager *>( this ) );
+        return m_lastDiagnostic;
+    }
+
+    void LuaManager::configureScriptResources( SmartPtr<AssetDatabaseManager> catalog,
+                                               std::shared_ptr<resource::IResourceSystem> resources,
+                                               bool compiledOnly )
+    {
+        ScopedLock lock( this );
+        m_scriptCatalog = catalog;
+        m_scriptResources = resources;
+        m_compiledScriptsOnly = compiledOnly;
+    }
+
+    bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource )
+    {
+        ScopedLock lock( this );
+        LuaScriptCompiler compiler;
+        if( !resource || resource->header.resourceType != resource::ResourceTypeID( "lua" ) ||
+            resource->header.compilerVersion != compiler.versionFor( resource::ResourceTypeID( "lua" ) ) ||
+            resource->payload.size() > LuaScriptCompiler::maxSourceBytes ||
+            resource->header.payloadSize != resource->payload.size() ||
+            resource->header.payloadHash != resource::hashBytes( resource->payload.data(), resource->payload.size() ) )
         {
-            String message = String( "Error: " ) + String( lua_tostring( m_luaState, -1 ) );
-            WP_LOG_INFO( message );
-            lua_pop( m_luaState, 1 );
+            m_lastDiagnostic = "Invalid or incompatible compiled Lua resource";
+            setError( true );
+            return false;
         }
+        const String source( reinterpret_cast<const char *>( resource->payload.data() ), resource->payload.size() );
+        return executeSource( source, "@" + resource->header.resourceId.sourceRelativePath() );
+    }
+
+    bool LuaManager::loadScriptAsset( const String &uuid )
+    {
+        ScopedLock lock( this );
+        auto fail = [&]( const String &message ) {
+            m_lastDiagnostic = message;
+            setError( true );
+            return false;
+        };
+        auto catalog = m_scriptCatalog;
+        if( !catalog )
+        {
+            auto app = core::IApplicationManager::instancePtr();
+            auto database = app ? app->getResourceDatabase() : nullptr;
+            if( database ) catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+        }
+        if( !catalog ) return fail( "No script asset catalog is configured" );
+        AssetDatabaseManager::EntrySnapshot entry;
+        if( !catalog->tryGetEntry( uuid, entry ) || entry.kind != AssetDatabaseManager::EntryKind::File ||
+            entry.type != "script" ) return fail( "Script asset UUID is missing or has the wrong type: " + uuid );
+        const auto loaded = m_loadedScriptAssets.find( uuid );
+        if( loaded != m_loadedScriptAssets.end() ) return true;
+        if( m_scriptResources )
+        {
+            CatalogResourceAdapter adapter( catalog, m_scriptResources, catalog->getProjectRoot(),
+                                            { { "script", resource::ResourceTypeID( "lua" ) } } );
+            CatalogResourceAdapter::Request request;
+            String error;
+            if( !adapter.resolve( uuid, request, error ) ) return fail( error );
+            if( !m_compiledScriptsOnly )
+            {
+                auto report = adapter.compile( request );
+                if( !report.succeeded() ) return fail( report.messages.empty() ? "Lua compilation failed" : report.messages[0] );
+            }
+            auto compiled = adapter.load( request, error );
+            if( !compiled || !adapter.isCurrent( request, error ) ) return fail( error );
+            if( !loadScriptResource( compiled ) ) return false;
+            m_loadedScriptAssets[uuid] = compiled->header.sourceHash;
+            return true;
+        }
+        if( m_compiledScriptsOnly ) return fail( "Compiled Lua resource service is required" );
+        auto app = core::IApplicationManager::instancePtr();
+        auto fs = app ? app->getFileSystemPtr() : nullptr;
+        if( !fs ) return fail( "No filesystem available for script asset" );
+        const String path = catalog->getProjectRoot() + "/" + entry.path;
+        auto stream = fs->open( path, true, false, false, false, false );
+        if( !stream || !catalog->isEntryCurrent( entry ) ) return fail( "Script asset source is missing or stale" );
+        auto source = stream->getAsString();
+        if( !executeSource( source, "@" + entry.path ) ) return false;
+        m_loadedScriptAssets[uuid] = resource::hashString( source );
+        return true;
+    }
+
+    bool LuaManager::executeSource( const String &source, const String &sourceName )
+    {
+        ScopedLock lock( this );
+        auto state = getLuaState();
+        m_lastDiagnostic.clear();
+        setError( false );
+        if( !state )
+        {
+            m_lastDiagnostic = "Lua state is not loaded";
+            setError( true );
+            return false;
+        }
+        const int top = lua_gettop( state );
+        lua_pushcfunction( state, scriptTraceback );
+        const int handler = top + 1;
+        int status = luaL_loadbufferx( state, source.data(), source.size(),
+                                      sourceName.c_str(), "t" );
+        if( status == LUA_OK ) status = lua_pcall( state, 0, 0, handler );
+        if( status != LUA_OK )
+        {
+            const auto message = lua_tostring( state, -1 );
+            m_lastDiagnostic = message ? message : "Lua raised a non-string error";
+            setError( true );
+            WP_LOG_ERROR( m_lastDiagnostic );
+        }
+        lua_settop( state, top );
+        return status == LUA_OK;
+    }
+
+    bool LuaManager::invokeLua( luabind::object *receiver, const String &globalName,
+                                const String &functionName, const Parameters *parameters,
+                                Parameters *results, bool optional )
+    {
+        ScopedLock lock( this );
+        auto state = getLuaState();
+        setError( false );
+        m_lastDiagnostic.clear();
+        if( !state )
+        {
+            m_lastDiagnostic = "Lua state is not loaded";
+            setError( true );
+            return false;
+        }
+        const int top = lua_gettop( state );
+        ScriptInvocation call{ receiver, globalName.empty() ? nullptr : globalName.c_str(),
+                               functionName.c_str(), parameters, results, optional };
+        lua_pushcfunction( state, scriptTraceback );
+        lua_pushcfunction( state, invokeScript );
+        lua_pushlightuserdata( state, &call );
+        int status = lua_pcall( state, 1, 0, top + 1 );
+        if( status != LUA_OK )
+        {
+            const auto message = lua_tostring( state, -1 );
+            m_lastDiagnostic = message ? message : "Lua invocation failed";
+            setError( true );
+            WP_LOG_ERROR( m_lastDiagnostic );
+        }
+        lua_settop( state, top );
+        return status == LUA_OK;
     }
 
     void LuaManager::callFunction( const String &functionName )
     {
-        if( isLoaded() )
-        {
-            ScopedLock lock( this );
-
-            Parameters parameters;
-            Parameters results;
-            callFunction( functionName, parameters, results );
-        }
+        invokeLua( nullptr, "", functionName, nullptr, nullptr );
     }
 
     void LuaManager::callFunction( const String &functionName, const Parameters &parameters )
     {
-        ScopedLock lock( this );
-
-        Parameters results;
-        callFunction( functionName, parameters, results );
+        invokeLua( nullptr, "", functionName, &parameters, nullptr );
     }
 
     void LuaManager::callFunction( const String &functionNameStr, const Parameters &parameters,
                                    Parameters &results )
     {
-        try
-        {
-            ScopedLock lock( this );
-        }
-        catch( std::exception &e )
-        {
-            String msg = String( "lua exception: " ) + String( e.what() );
-            WP_LOG_INFO( msg.c_str() );
-        }
+        invokeLua( nullptr, "", functionNameStr, &parameters, &results );
     }
 
     s32 LuaManager::callMember( const String &className, const String &functionName )
     {
-        try
-        {
-            ScopedLock lock( this );
-
-            auto returnValue = 0;  //default value
-
-            auto object = luabind::globals( m_luaState )[className.c_str()];
-            if( object )
-            {
-                if( m_enableFullDebug )
-                {
-                    m_curClass = className;
-                    m_curFunction = functionName;
-                }
-
-                luabind::call_member<void>( object, functionName.c_str() );
-            }
-            else
-            {
-                auto msg = String( "Object not found: " ) + className;
-                WP_LOG_INFO( msg );
-            }
-
-            return returnValue;
-        }
-        catch( std::exception &e )
-        {
-            auto msg = String( "Error calling function: " ) + className + String( ":" ) + functionName +
-                       String( " lua exception: " ) + String( e.what() );
-            WP_LOG_INFO( msg );
-        }
-
-        return 0;
+        return invokeLua( nullptr, className, functionName, nullptr, nullptr ) ? 0 : -1;
     }
 
     s32 LuaManager::callMember( const String &className, const String &functionName,
-                                const Parameters &parameters )
+                               const Parameters &parameters )
     {
-        try
-        {
-            ScopedLock lock( this );
-
-            auto returnValue = 0;  //default value
-
-            auto object = luabind::globals( m_luaState )[className.c_str()];
-            if( object )
-            {
-                if( m_enableFullDebug )
-                {
-                    m_curClass = className;
-                    m_curFunction = functionName;
-                }
-
-                luabind::call_member<void>( object, functionName.c_str(), parameters );
-            }
-            else
-            {
-                auto msg = String( "Object not found: " ) + className;
-                WP_LOG_INFO( msg );
-            }
-
-            return returnValue;
-        }
-        catch( std::exception &e )
-        {
-            auto msg = String( "Error calling function: " ) + className + String( ":" ) + functionName +
-                       String( " lua exception: " ) + String( e.what() );
-            WP_LOG_INFO( msg );
-
-            throw;
-        }
-
-        return 0;
+        return invokeLua( nullptr, className, functionName, &parameters, nullptr ) ? 0 : -1;
     }
 
     s32 LuaManager::callMember( const String &className, const String &functionName,
-                                const Parameters &parameters, Parameters &results )
+                               const Parameters &parameters, Parameters &results )
     {
-        try
-        {
-            ScopedLock lock( this );
-
-            auto returnValue = 0;  //default value
-
-            auto object = luabind::globals( m_luaState )[className.c_str()];
-            if( object )
-            {
-                if( m_enableFullDebug )
-                {
-                    m_curClass = className;
-                    m_curFunction = functionName;
-                }
-
-                luabind::call_member<void>( object, functionName.c_str(), parameters,
-                                            boost::ref( results ) );
-            }
-            else
-            {
-                auto msg = String( "Object not found: " ) + className;
-                WP_LOG_INFO( msg );
-            }
-
-            return returnValue;
-        }
-        catch( std::exception &e )
-        {
-            auto msg = String( "Error calling function: " ) + className + String( ":" ) + functionName +
-                       String( " lua exception: " ) + String( e.what() );
-            WP_LOG_INFO( msg );
-
-            throw;
-        }
-
-        return 0;
+        return invokeLua( nullptr, className, functionName, &parameters, &results ) ? 0 : -1;
     }
 
     void LuaManager::callObjectMember( SmartPtr<ISharedObject> object, const String &functionName )
     {
-        if( isLoaded() )
-        {
-            try
-            {
-                ScopedLock lock( this, true );
-                _callObjectMember( object, functionName );
-            }
-            catch( ScriptException &e )
-            {
-                auto msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                           functionName + String( " lua exception: " ) + String( e.what() ) +
-                           String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-                WP_LOG_INFO( e.what() );
-
-                throw;
-            }
-            catch( std::exception &e )
-            {
-                String msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                             functionName + String( " lua exception: " ) + String( e.what() ) +
-                             String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-
-                std::stringstream strStream;
-
-                strStream << DebugUtil::getStackTraceForException( e );
-                WP_LOG_INFO( strStream.str().c_str() );
-
-                throw;
-            }
-            catch( ... )
-            {
-                String msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                             functionName + String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-
-                throw;
-            }
-        }
+        _callObjectMember( object, functionName );
     }
 
     void LuaManager::callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                       const Parameters &parameters )
+                                     const Parameters &parameters )
     {
-        if( isLoaded() )
-        {
-            m_callCounter++;
-
-            try
-            {
-                ScopedLock lock( this, true );
-                _callObjectMember( object, functionName, parameters );
-            }
-            catch( Exception &e )
-            {
-                auto msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                           functionName + String( " lua exception: " ) + String( e.what() ) +
-                           String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-                WP_LOG_INFO( e.what() );
-
-                throw;
-            }
-            catch( std::exception &e )
-            {
-                String msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                             functionName + String( " lua exception: " ) + String( e.what() ) +
-                             String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-
-                std::stringstream strStream;
-
-                strStream << DebugUtil::getStackTraceForException( e );
-                WP_LOG_INFO( strStream.str().c_str() );
-
-                throw;
-            }
-            catch( ... )
-            {
-                String msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                             functionName + String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-
-                throw;
-            }
-
-            --m_callCounter;
-        }
+        _callObjectMember( object, functionName, parameters );
     }
 
     void LuaManager::callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                       const Parameters &parameters, Parameters &results )
+                                     const Parameters &parameters, Parameters &results )
     {
-        if( isLoaded() )
-        {
-            try
-            {
-                ScopedLock lock( this, true );
-                _callObjectMember( object, functionName, parameters, results );
-            }
-            catch( Exception &e )
-            {
-                auto msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                           functionName + String( " lua exception: " ) + String( e.what() ) +
-                           String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-                WP_LOG_INFO( e.what() );
-
-                throw;
-            }
-            catch( std::exception &e )
-            {
-                String msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                             functionName + String( " lua exception: " ) + String( e.what() ) +
-                             String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-
-                std::stringstream strStream;
-
-                strStream << DebugUtil::getStackTraceForException( e );
-                WP_LOG_INFO( strStream.str().c_str() );
-
-                throw;
-            }
-            catch( ... )
-            {
-                String msg = String( "Error calling function: " ) + m_curClass + String( ":" ) +
-                             functionName + String( " Lua Debug: " ) + getDebugInfo();
-
-                WP_LOG_INFO( msg.c_str() );
-
-                throw;
-            }
-        }
+        _callObjectMember( object, functionName, parameters, results );
     }
 
     void LuaManager::reloadScripts()
@@ -898,19 +752,19 @@ namespace workphone
 
     void LuaManager::clearStack()
     {
+        ScopedLock lock( this );
         auto luaState = getLuaState();
-        lua_settop( luaState, 0 );
+        if( luaState ) lua_settop( luaState, 0 );
     }
 
     void LuaManager::createLuaState()
     {
         // create the lua state
 
-#ifdef _FINAL_
-        auto luaState = lua_open();
-#else
         auto luaState = luaL_newstate();
-#endif
+        if( !luaState ) throw std::runtime_error( "Could not allocate Lua state" );
+        setLuaState( luaState );
+        *static_cast<LuaManager **>( lua_getextraspace( luaState ) ) = this;
 
         luaL_openlibs( luaState );
 
@@ -1003,86 +857,52 @@ namespace workphone
 
     String LuaManager::getDebugInfo()
     {
-        auto debugStr = String( "Class: " ) + m_curClass + String( " Function: " ) + m_curFunction;
-
-        lua_Debug d;
-
-        auto luaState = getLuaState();
-
-        auto top = lua_gettop( luaState );
-        auto level = top;  //LUA_MINSTACK;
-        auto success = lua_getstack( luaState, top, &d );
-
-        while( level >= 0 )
+        ScopedLock lock( this );
+        String result;
+        auto state = getLuaState();
+        if( !state ) return result;
+        lua_Debug frame{};
+        for( int level = 0; lua_getstack( state, level, &frame ); ++level )
         {
-            success = lua_getstack( luaState, level, &d );
-            if( success != 0 )
-            {
-                lua_getinfo( luaState, "Sln", &d );
-
-                std::stringstream msg;
-                msg << d.short_src << ":" << d.currentline;
-
-                if( d.name != nullptr )
-                {
-                    msg << "(" << d.namewhat << " " << d.name << ")";
-                }
-
-                debugStr += String( msg.str().c_str() ) + String( "\n" );
-            }
-
-            --level;
+            lua_getinfo( state, "Sln", &frame );
+            std::stringstream text;
+            text << frame.short_src << ":" << frame.currentline;
+            if( frame.name ) text << " (" << frame.name << ")";
+            result += text.str() + "\n";
         }
-
-        return debugStr;
+        return result;
     }
 
     SmartPtr<IScriptClass> LuaManager::createObject( const String &className,
-                                                     SmartPtr<ISharedObject> object )
+                                                    SmartPtr<ISharedObject> object )
     {
         ScopedLock lock( this );
-
+        if( !object || !isLoaded() ) return nullptr;
+        auto existing = dynamic_pointer_cast<LuaObjectData>( object->getScriptData() );
+        if( existing && existing->getLuaState() == getLuaState() &&
+            existing->getClassName() == className && existing->getObject() )
+            return existing->getClassData();
         try
         {
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-            WP_ASSERT( applicationManager->isValid() );
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
-            WP_ASSERT( factoryManager->isValid() );
-
-            auto scriptData = object->getScriptData();
-            auto luaScriptData = workphone::static_pointer_cast<LuaObjectData>( scriptData );
-            if( !luaScriptData )
-            {
-                luaScriptData = factoryManager->make_ptr<LuaObjectData>();
-                luaScriptData->setClassName( className );
-                luaScriptData->setLuaState( m_luaState );
-                luaScriptData->setOwner( object );
-                object->setScriptData( luaScriptData );
-
-                m_objectData.push_back( luaScriptData );
-
-                createLuaInstance( luaScriptData );
-                luaScriptData->load( nullptr );
-
-                object->setScriptData( luaScriptData );
-            }
-            else
-            {
-                m_objectData.push_back( luaScriptData );
-
-                createLuaInstance( luaScriptData );
-                object->setScriptData( luaScriptData );
-            }
+            auto data = make_ptr<LuaObjectData>();
+            data->setClassName( className );
+            data->setLuaState( getLuaState() );
+            data->setOwner( object );
+            if( !createLuaInstance( data ) ) return nullptr;
+            data->load( nullptr );
+            // Publish only a fully constructed and inspected instance.
+            if( existing ) destroyObject( object );
+            object->setScriptData( data );
+            m_objectData.push_back( data );
+            return data->getClassData();
         }
-        catch( std::exception &e )
+        catch( const std::exception &error )
         {
-            WP_LOG_EXCEPTION( e );
+            m_lastDiagnostic = error.what();
+            setError( true );
+            WP_LOG_EXCEPTION( error );
+            return nullptr;
         }
-
-        return nullptr;
     }
 
     void LuaManager::destroyObject( SmartPtr<ISharedObject> object )
@@ -1090,11 +910,6 @@ namespace workphone
         if( isLoaded() )
         {
             ScopedLock lock( this );
-
-            if( auto luaState = getLuaState() )
-            {
-                lua_gc( luaState, LUA_GCCOLLECT, 0 );
-            }
 
             if( object )
             {
@@ -1110,10 +925,6 @@ namespace workphone
                 }
             }
 
-            if( auto luaState = getLuaState() )
-            {
-                lua_gc( luaState, LUA_GCCOLLECT, 0 );
-            }
         }
     }
 
@@ -1137,389 +948,189 @@ namespace workphone
         return { array.begin(), array.end() };
     }
 
+    s32 LuaManager::invokeObject( SmartPtr<ISharedObject> object, const String &functionName,
+                                 const Parameters *parameters, Parameters *results )
+    {
+        ScopedLock lock( this );
+        auto data = object ? dynamic_pointer_cast<LuaObjectData>( object->getScriptData() ) : nullptr;
+        if( !isLoaded() || !data || data->getLuaState() != getLuaState() || !data->getObject() )
+        {
+            m_lastDiagnostic = "Lua callback has no live instance: " + functionName;
+            setError( true );
+            return -1;
+        }
+        // Resolve dynamically so inherited callbacks and reloaded methods work.
+        // An absent lifecycle callback is optional; an invalid present value is an error.
+        return invokeLua( &data->getObject(), "", functionName, parameters, results, true ) ? 0 : -1;
+    }
+
     s32 LuaManager::_callObjectMember( SmartPtr<ISharedObject> object, const String &functionName )
     {
-        auto returnValue = 0;  //default value
-
-        try
-        {
-            ScopedLock lock( this );
-
-            setError( false );
-
-            auto pScriptData = object->getScriptData();
-            auto data = workphone::static_pointer_cast<LuaObjectData>( pScriptData );
-            if( data )
-            {
-                if( data->hasMemberFunction( functionName ) )
-                {
-                    if( m_enableFullDebug )
-                    {
-                        m_curClass = data->getClassName();
-                        m_curFunction = functionName;
-                    }
-
-                    auto &luaObject = data->getObject();
-                    if( !luaObject )
-                    {
-                        if( !createLuaInstance( data ) )
-                        {
-                            errorObjectNotFound();
-
-                            returnValue = 0;
-                        }
-                    }
-
-                    if( luaObject )
-                    {
-                        luabind::call_member<void>( luaObject, functionName.c_str() );
-                    }
-                }
-            }
-            else
-            {
-                errorObjectNotFound();
-
-                returnValue = 0;
-            }
-
-            if( getError() )
-            {
-                returnValue = 0;
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
-
-        return returnValue;
+        return invokeObject( object, functionName, nullptr, nullptr );
     }
 
     s32 LuaManager::_callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                       const Parameters &parameters )
+                                     const Parameters &parameters )
     {
-        auto returnValue = 0;  //default value
-
-        try
-        {
-            ScopedLock lock( this );
-
-            setError( false );
-
-            auto pScriptData = object->getScriptData();
-            auto data = workphone::static_pointer_cast<LuaObjectData>( pScriptData );
-            if( data )
-            {
-                if( data->hasMemberFunction( functionName ) )
-                {
-                    if( m_enableFullDebug )
-                    {
-                        m_curClass = data->getClassName();
-                        m_curFunction = functionName;
-                    }
-
-                    luabind::object &luaObject = data->getObject();
-                    if( !luaObject )
-                    {
-                        if( !createLuaInstance( data ) )
-                        {
-                            errorObjectNotFound();
-
-                            returnValue = 0;
-
-                            auto msg = String( "Object not found: " );
-                            WP_EXCEPTION( msg.c_str() );
-                        }
-                    }
-
-                    if( luaObject )
-                    {
-#if WP_PROFILE_LUA_CALLS
-                        auto engine = core::ApplicationManager::instance();
-                        auto profiler = engine->getProfiler();
-
-                        String profileClass = data->getClassName();
-                        String profileFunction = functionName;
-
-                        if( m_callCounter == 1 && profiler )
-                        {
-                            WP_PROFILE_START( profileClass + String( ":" ) + profileFunction );
-                        }
-#endif
-
-                        luabind::call_member<void>( luaObject, functionName.c_str(), parameters );
-
-#if WP_PROFILE_LUA_CALLS
-                        if( m_callCounter == 1 && profiler )
-                        {
-                            WP_PROFILE_END( profileClass + String( ":" ) + profileFunction );
-                        }
-#endif
-                    }
-                }
-            }
-            else
-            {
-                errorObjectNotFound();
-
-                returnValue = 0;
-
-                auto msg = String( "Object not found: " );
-                WP_EXCEPTION( msg.c_str() );
-            }
-
-            if( getError() )
-            {
-                returnValue = 0;
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
-
-        return returnValue;
+        return invokeObject( object, functionName, &parameters, nullptr );
     }
 
     s32 LuaManager::_callObjectMember( SmartPtr<ISharedObject> object, const String &functionName,
-                                       const Parameters &parameters, Parameters &results )
+                                     const Parameters &parameters, Parameters &results )
     {
-        auto returnValue = 0;  //default value
-
-        try
-        {
-            ScopedLock lock( this );
-
-            setError( false );
-
-            auto pScriptData = object->getScriptData();
-            auto data = workphone::static_pointer_cast<LuaObjectData>( pScriptData );
-            if( data )
-            {
-                if( data->hasMemberFunction( functionName ) )
-                {
-                    if( m_enableFullDebug )
-                    {
-                        m_curClass = data->getClassName();
-                        m_curFunction = functionName;
-                    }
-
-                    auto &luaObject = data->getObject();
-                    if( !luaObject )
-                    {
-                        if( !createLuaInstance( data ) )
-                        {
-                            errorObjectNotFound();
-
-                            returnValue = 0;
-
-                            auto msg = String( "Object not found: " );
-                            WP_LOG_INFO( msg.c_str() );
-                        }
-                    }
-
-                    if( luaObject )
-                    {
-                        luabind::call_member<void>( luaObject, functionName.c_str(), parameters,
-                                                    boost::ref( results ) );
-                    }
-                }
-            }
-            else
-            {
-                auto msg = String( "Object not found: " );
-                WP_LOG_INFO( msg.c_str() );
-
-                errorObjectNotFound();
-
-                returnValue = 0;
-            }
-
-            if( getError() )
-            {
-                returnValue = 0;
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
-
-        return returnValue;
+        return invokeObject( object, functionName, &parameters, &results );
     }
 
     void LuaManager::update()
     {
-        if( isLoaded() )
+        if( !isLoaded() || Thread::getCurrentTask() != TaskId::Application ) return;
+        ScopedLock lock( this );
+        // Drain a snapshot, so a callback that enqueues work cannot starve the frame.
+        SmartPtr<ISharedObject> object;
+        auto unloadCount = m_unloadQueue.size();
+        while( unloadCount-- && m_unloadQueue.try_pop( object ) )
+            if( object ) object->unload( nullptr );
+        auto loadCount = m_loadQueue.size();
+        while( loadCount-- && m_loadQueue.try_pop( object ) )
+            if( object ) object->load( nullptr );
+        if( m_bReload )
         {
-            auto task = Thread::getCurrentTask();
-
-            switch( task )
-            {
-            case TaskId::Application:
-            {
-                auto applicationManager = core::IApplicationManager::instancePtr();
-                auto timer = applicationManager->getTimerPtr();
-
-                auto t = timer->getTime();
-
-                if( m_nextGcUpdate < t )
-                {
-                    ScopedLock lock( this );
-
-                    if( m_bReload )
-                    {
-                        _reloadScripts();
-                        m_bReload = false;
-                    }
-
-                    for( u32 i = 0; i < m_creationList.size(); ++i )
-                    {
-                        auto &objectData = m_creationList[i];
-                        createLuaInstance( objectData );
-                    }
-
-                    m_creationList.clear();
-
-                    if( auto luaState = getLuaState() )
-                    {
-                        lua_gc( luaState, LUA_GCCOLLECT, 0 );
-                        lua_gc( luaState, LUA_GCSTOP, 0 );
-                    }
-
-                    m_nextGcUpdate = t + time_interval( 3.0 );
-                }
-            }
-            break;
-            }
+            _reloadScripts();
+            m_bReload = false;
         }
+        for( auto &data : m_creationList )
+            if( data && createLuaInstance( data ) ) data->load( nullptr );
+        m_creationList.clear();
+        // Leave the collector running; avoid periodic full-heap pauses.
+        if( auto state = getLuaState() ) lua_gc( state, LUA_GCSTEP, 32 );
     }
 
     void LuaManager::_reloadScripts()
     {
-        try
+        ScopedLock lock( this );
+        // Legacy raw pointers cannot be rebound without invalidating their callers.
+        if( !m_instances.empty() )
         {
-            ScopedLock lock( this );
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto fileSystem = applicationManager->getFileSystem();
-
-            for( auto &data : m_objectData )
+            m_lastDiagnostic = "Reload requires releasing legacy raw Lua instances first";
+            setError( true );
+            return;
+        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto fs = app ? app->getFileSystemPtr() : nullptr;
+        if( !m_scripts.empty() && !fs )
+        {
+            m_lastDiagnostic = "Reload has no source filesystem";
+            setError( true );
+            return;
+        }
+        // Stage on this executor. Luabind is not safe for concurrent state execution.
+        // Native side effects in module bodies/constructors cannot be rolled back;
+        // modules must keep initialization declarative until promotion.
+        LuaManager candidate;
+        candidate.configureScriptResources( m_scriptCatalog, m_scriptResources, m_compiledScriptsOnly );
+        candidate.load( nullptr );
+        if( !candidate.isLoaded() )
+        {
+            m_lastDiagnostic = candidate.getLastDiagnostic();
+            setError( true );
+            return;
+        }
+        Array<luabind::object> instances;
+        for( const auto &asset : m_loadedScriptAssets )
+        {
+            if( !candidate.loadScriptAsset( asset.first ) )
             {
-                if( data )
-                {
-                    auto nilValue = luabind::object();
-                    data->setObject( nilValue );
-                }
-            }
-
-            if( auto luaState = getLuaState() )
-            {
-                lua_gc( luaState, LUA_GCCOLLECT, 0 );
-                lua_gc( luaState, LUA_GCSTOP, 0 );
-
-                lua_close( luaState );
-                setLuaState( nullptr );
-            }
-
-            createLuaState();
-
-            auto luaState = getLuaState();
-            WP_ASSERT( luaState );
-
-            for( u32 i = 0; i < m_scripts.size(); ++i )
-            {
-                auto filename = m_scripts[i];
-                if( filename.empty() )
-                    continue;
-
-                auto stream = fileSystem->open( filename, true, false, false, false, false );
-                if( !stream )
-                {
-                    stream = fileSystem->open( filename, true, false, false, true, true );
-                }
-
-                if( stream )
-                {
-                    auto script = stream->getAsString();
-                    auto error = luaL_dostring( luaState, script.c_str() );
-                    if( error )
-                    {
-                        auto message = String( "LuaScriptMgr::loadScript - error - couldn't open " ) +
-                                       filename.str() + String( " errorcode = " ) +
-                                       String( lua_tostring( luaState, -1 ) );
-                        WP_LOG_INFO( message );
-                    }
-                    else
-                    {
-                        auto message = String( "LuaScriptMgr loaded script: " ) + filename.str();
-                        WP_LOG_INFO( message );
-                    }
-                }
-            }
-
-            for( u32 i = 0; i < m_objectData.size(); ++i )
-            {
-                auto objectData = m_objectData[i];
-                if( objectData )
-                {
-                    auto className = objectData->getClassName();
-                    if( !className.empty() )
-                    {
-                        luabind::object _LuaObject = luabind::globals( luaState )[className.c_str()];
-                        if( _LuaObject )
-                        {
-                            auto pObject = objectData->getOwner();
-                            objectData->getObject() = _LuaObject( pObject );
-                        }
-                        else
-                        {
-                            auto msg = String( "Error : " ) + getDebugInfo();
-                            WP_LOG_ERROR( msg );
-                        }
-                    }
-                }
+                m_lastDiagnostic = candidate.getLastDiagnostic();
+                setError( true );
+                return;
             }
         }
-        catch( std::exception &e )
+        for( const auto &filename : m_scripts )
         {
-            auto msg = String( "Error : " ) + String( e.what() );
-            WP_LOG_ERROR( msg );
+            auto stream = fs->open( filename.str(), true, false, false, false, false );
+            if( !stream ) stream = fs->open( filename.str(), true, false, false, true, true );
+            if( !stream || !candidate.executeSource( stream->getAsString(), "@" + filename.str() ) )
+            {
+                m_lastDiagnostic = stream ? candidate.getLastDiagnostic() : "Reload source missing: " + filename.str();
+                setError( true );
+                return;
+            }
         }
+        for( auto &data : m_objectData )
+        {
+            luabind::object value;
+            auto owner = data->getOwner();
+            if( owner && !candidate.constructLua( data->getClassName(), &owner, value ) )
+            {
+                m_lastDiagnostic = candidate.getLastDiagnostic();
+                setError( true );
+                return;
+            }
+            instances.push_back( value );
+        }
+        auto previous = getLuaState();
+        auto replacement = candidate.getLuaState();
+        for( auto &data : m_objectData ) data->getObject() = luabind::object();
+        setLuaState( replacement );
+        *static_cast<LuaManager **>( lua_getextraspace( replacement ) ) = this;
+        candidate.setLuaState( nullptr );
+        candidate.setLoadingState( LoadingState::Unloaded );
+        m_bindingClassNames = candidate.m_bindingClassNames;
+        m_loadedScriptAssets = candidate.m_loadedScriptAssets;
+        for( size_t i = 0; i < m_objectData.size(); ++i )
+        {
+            auto &data = m_objectData[i];
+            data->setLuaState( replacement );
+            data->setObject( instances[i] );
+            data->load( nullptr ); // Refresh callback metadata against the new class.
+        }
+        instances.clear();
+        if( previous ) lua_close( previous );
+        updateClassNames();
+        m_lastDiagnostic.clear();
+        setError( false );
     }
 
-    bool LuaManager::createLuaInstance( SmartPtr<LuaObjectData> objectData )
+    bool LuaManager::constructLua( const String &className, SmartPtr<ISharedObject> *owner,
+                                   luabind::object &result )
     {
         ScopedLock lock( this );
-
-        if( objectData )
+        auto state = getLuaState();
+        if( !state ) return false;
+        const int top = lua_gettop( state );
+        ScriptConstruction call{ className.c_str(), owner };
+        lua_pushcfunction( state, scriptTraceback );
+        lua_pushcfunction( state, constructScript );
+        lua_pushlightuserdata( state, &call );
+        int status = lua_pcall( state, 1, 1, top + 1 );
+        if( status == LUA_OK )
         {
-            auto className = objectData->getClassName();
-
-            auto luaState = getLuaState();
-            auto globalObject = luabind::globals( luaState );
-
-            auto classObject = globalObject[className.c_str()];
-            if( classObject )
-            {
-                // SmartPtr conversion exposes the host's bound interface (for example IEditor).
-                // getOwner() returns a raw pointer, which only exposes ISharedObject to Lua.
-                SmartPtr<ISharedObject> owner = objectData->getOwner();
-                luabind::object instance = classObject( owner );
-                objectData->setObject( instance );
-
-                return true;
-            }
+            result = luabind::object( luabind::from_stack( state, -1 ) );
+            m_lastDiagnostic.clear();
+            setError( false );
         }
         else
         {
-            WP_EXCEPTION( "No object data." );
+            const auto text = lua_tostring( state, -1 );
+            m_lastDiagnostic = text ? text : "Lua construction failed";
+            setError( true );
+            WP_LOG_ERROR( m_lastDiagnostic );
         }
+        lua_settop( state, top );
+        return status == LUA_OK;
+    }
 
-        return false;
+    bool LuaManager::createLuaInstance( SmartPtr<LuaObjectData> data )
+    {
+        ScopedLock lock( this );
+        if( !data ) return false;
+        SmartPtr<ISharedObject> owner = data->getOwner();
+        if( !owner ) return false;
+        luabind::object instance;
+        if( !constructLua( data->getClassName(), &owner, instance ) ) return false;
+        data->setLuaState( getLuaState() );
+        data->setObject( instance );
+        return true;
     }
 
     void LuaManager::errorObjectNotFound()
@@ -1615,19 +1226,11 @@ namespace workphone
     void *LuaManager::createInstance( const String &className )
     {
         ScopedLock lock( this );
-
-        auto luaState = getLuaState();
-        auto globalObject = luabind::globals( luaState );
-
-        auto luaClass = globalObject[className.c_str()];
-        if( luaClass )
-        {
-            auto instance = new luabind::object( luaClass() );
-            m_instances.push_back( instance );
-            return instance;
-        }
-
-        return nullptr;
+        luabind::object value;
+        if( !constructLua( className, nullptr, value ) ) return nullptr;
+        auto instance = new luabind::object( value );
+        m_instances.push_back( instance );
+        return instance;
     }
 
     void LuaManager::destroyInstance( void *instance )
@@ -1635,6 +1238,8 @@ namespace workphone
         ScopedLock lock( this );
 
         auto object = static_cast<luabind::object *>( instance );
+        if( std::find( m_instances.begin(), m_instances.end(), object ) == m_instances.end() )
+            return;
         m_instances.erase( std::remove( m_instances.begin(), m_instances.end(), object ),
                            m_instances.end() );
         WP_SAFE_DELETE( object );

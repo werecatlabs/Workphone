@@ -165,8 +165,7 @@ namespace workphone::editor
                 auto params = Parameters();
 
                 Parameter param;
-                param.setPtr( properties.get() );
-                param.object = properties;
+                param.setObject( properties );
 
                 params.push_back( param );
                 invoker->callObjectMember( setPropertiesStr, params );
@@ -185,8 +184,7 @@ namespace workphone::editor
                 auto params = Parameters();
 
                 Parameter param;
-                param.setPtr( properties.get() );
-                param.object = properties;
+                param.setObject( properties );
 
                 params.push_back( param );
                 invoker->callObjectMember( getPropertiesStr, params );
