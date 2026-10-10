@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable">
+  <Extern href="stdidcmd.h" /><Extern href="vsshlids.h" />
+  <Commands package="guidLuaDebuggerPackage">
+    <Groups><Group guid="guidLuaDebuggerCommands" id="LuaDebuggerGroup" priority="0x0600"><Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" /></Group></Groups>
+    <Buttons><Button guid="guidLuaDebuggerCommands" id="OpenLuaDebugger" priority="0x0100" type="Button"><Parent guid="guidLuaDebuggerCommands" id="LuaDebuggerGroup" /><Strings><ButtonText>Workphone Lua Debugger</ButtonText></Strings></Button></Buttons>
+  </Commands>
+  <Symbols>
+    <GuidSymbol name="guidLuaDebuggerPackage" value="{7C9E5E2A-0F9E-45FA-9B8B-61D0717049B2}" />
+    <GuidSymbol name="guidLuaDebuggerCommands" value="{2EBFD2BD-111F-4E2D-A607-4E6D8474D40C}"><IDSymbol name="LuaDebuggerGroup" value="0x1020" /><IDSymbol name="OpenLuaDebugger" value="0x0100" /></GuidSymbol>
+  </Symbols>
+</CommandTable>

@@ -1,12 +1,13 @@
 #include <WPLua/LuaManager.hpp>
 #include <WPLua/LuaObjectData.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
-#include <Workphone/Core/Properties.hpp>
-#include <Workphone/Memory/TypeManager.hpp>
-#include <Workphone/Thread/Thread.hpp>
+#include <Workphone/Workphone.hpp>
 #include <luabind/luabind.hpp>
 #include <cstdio>
 #include <stdexcept>
+#ifdef WP_LUA_ASSET_TESTS
+#include "LuaAssetContracts.hpp"
+#endif
 extern "C" {
 #include <lauxlib.h>
 }
@@ -164,6 +165,9 @@ int main()
             retained = nullptr;
             manager.load( nullptr );
             require( manager.executeSource( "assert(calls == nil)", "=fresh" ), "fresh VM" );
+#ifdef WP_LUA_ASSET_TESTS
+            runLuaAssetContracts( manager );
+#endif
             manager.unload( nullptr );
             std::puts( "Lua production runtime tests: PASS" );
         }

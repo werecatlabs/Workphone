@@ -15,43 +15,29 @@ namespace workphone::editor
 
     void ReloadScriptsJob::execute()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
+        auto queue = applicationManager ? applicationManager->getJobQueue() : nullptr;
+        if( !scriptManager || !scriptManager->isLoaded() || !queue ) return;
 
-        auto taskManager = applicationManager->getTaskManager();
-        WP_ASSERT( taskManager );
-
-        auto threadPool = applicationManager->getThreadPool();
-
-        auto renderLock = taskManager->lockTask( TaskId::Render );
-        //auto applicationLock = taskManager->lockTask( TaskId::Application );
-        auto physicsLock = taskManager->lockTask( TaskId::Physics );
-
-        auto scriptManager = applicationManager->getScriptManager();
-        if( scriptManager )
-        {
+        // The queue resumes coroutines on Primary. Yield while Application builds
+        // the replacement VM so Render, Physics and the Editor can keep progressing.
+        queue->startCoroutine( [scriptManager]( ICoroutineData::PullType &yield ) {
             scriptManager->reloadScripts();
-
-            if( threadPool->getNumThreads() > 0 )
+            while( scriptManager->reloadPending() ) yield();
+            auto app = core::IApplicationManager::instancePtr();
+            if( !app || app->getQuit() || app->getScriptManager() != scriptManager ||
+                !scriptManager->isLoaded() ) return;
+            if( scriptManager->getError() )
             {
-                while( scriptManager->reloadPending() )
-                {
-                    Thread::sleep( 3.0 );
-                }
+                WP_LOG_ERROR( "Script reload failed; the previous Lua state remains active" );
+                return;
             }
-        }
-
-        // hack
-        auto editorManager = EditorManager::getSingletonPtr();
-        auto ui = editorManager->getUI();
-        if( auto materialWindow = ui->getObjectWindow() )
-        {
-            materialWindow->reload( nullptr );
-        }
-
-        if( auto terrainWindow = ui->getTerrainWindow() )
-        {
-            terrainWindow->reload( nullptr );
-        }
+            auto editor = EditorManager::getSingletonPtr();
+            auto ui = editor ? editor->getUI() : nullptr;
+            if( !ui ) return;
+            if( auto objectWindow = ui->getObjectWindow() ) objectWindow->reload( nullptr );
+            if( auto terrainWindow = ui->getTerrainWindow() ) terrainWindow->reload( nullptr );
+        } );
     }
 }  // namespace workphone::editor

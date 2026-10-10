@@ -1307,6 +1307,19 @@ namespace workphone
 
     auto ResourceDatabase::loadResource( const UUID &id ) -> SmartPtr<IResource>
     {
+        // Source metadata must also be usable by headless tools and packaged applications.
+        if( auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() ) )
+        {
+            AssetDatabaseManager::EntrySnapshot entry;
+            if( catalog->tryGetEntry( StringUtil::toString( id ), entry ) &&
+                entry.kind == AssetDatabaseManager::EntryKind::File && entry.type == "script" )
+            {
+                auto script = make_ptr<ScriptAsset>();
+                script->getHandle()->setUUID( entry.uuid );
+                script->loadFromFile( catalog->getProjectRoot() + "/" + entry.path );
+                return catalog->isEntryCurrent( entry ) ? script : nullptr;
+            }
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
@@ -1429,6 +1442,14 @@ namespace workphone
         if( StringUtil::isNullOrEmpty( path ) )
         {
             return nullptr;
+        }
+
+        if( StringUtil::make_lower( Path::getFileExtension( path ) ) == ".lua" )
+        {
+            auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
+            auto entry = catalog ? dynamic_pointer_cast<scene::ResourceDirector>(
+                                       catalog->getResourceEntryFromPath( path ) ) : nullptr;
+            return entry ? loadResource( StringUtil::parseUUID( entry->getResourceUUID() ) ) : nullptr;
         }
 
         auto applicationManager = core::IApplicationManager::instancePtr();

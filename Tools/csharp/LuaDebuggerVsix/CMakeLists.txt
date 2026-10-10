@@ -1,60 +1,12 @@
-
-project(LuaDebuggerVsix VERSION 0.1.0 LANGUAGES CSharp)
-
-include(CSharpUtilities)
-
-# define header and source files for the library
-file(GLOB_RECURSE SOURCE_FILES "*.config" "*.cs" "*.xaml" "*.resx" "*.settings")
-
-set(WP_HEADER_REL_PATH "${CMAKE_SOURCE_DIR}/Tools/LuaDebuggerVsix")
-set(WP_SOURCE_REL_PATH "${CMAKE_SOURCE_DIR}/Tools/LuaDebuggerVsix")
-
-foreach(_source IN ITEMS ${HEADER_FILES})
-    get_filename_component(_source_file_path "${_source}" DIRECTORY)
-    string(REPLACE "${WP_HEADER_REL_PATH}" "" _group_file_path "${_source_file_path}")
-    string(REPLACE "/" "\\" _group_file_path "${_group_file_path}")
-    source_group("Header Files\\${_group_file_path}" FILES "${_source}")
-endforeach()
-
-foreach(_source IN ITEMS ${SOURCE_FILES})
-    get_filename_component(_source_file_path "${_source}" DIRECTORY)
-    string(REPLACE "${WP_SOURCE_REL_PATH}" "" _group_file_path "${_source_file_path}")
-    string(REPLACE "/" "\\" _group_file_path "${_group_file_path}")
-    source_group("Source Files\\${_group_file_path}" FILES "${_source}")
-endforeach()
-
-add_executable(LuaDebuggerVsix ${SOURCE_FILES})
-
-csharp_set_designer_cs_properties(
-	Properties/AssemblyInfo.cs
-	Properties/Resources.Designer.cs
-	Properties/Resources.resx
-	Properties/Settings.Designer.cs
-	Properties/Settings.settings)
-
-csharp_set_xaml_cs_properties(
-	LuaDebuggerControl.xaml
-	LuaDebuggerControl.xaml.cs )
-
-set_property(SOURCE LuaDebuggerControl.xaml PROPERTY VS_XAML_TYPE "ApplicationDefinition")
-
-set_property(TARGET LuaDebuggerVsix PROPERTY VS_DOTNET_TARGET_FRAMEWORK_VERSION "v4.6.1")
-set_property(TARGET LuaDebuggerVsix PROPERTY WIN32_EXECUTABLE TRUE)
-
-set_property(TARGET LuaDebuggerVsix PROPERTY VS_DOTNET_REFERENCES
-	"Microsoft.CSharp"
-	"PresentationCore"
-	"PresentationFramework"
-	"System"
-	"System.Core"
-	"System.Data"
-	"System.Data.DataSetExtensions"
-	"System.Net.Http"
-	"System.Xaml"
-	"System.Xml"
-	"System.Xml.Linq"
-	"System.Web.Extensions"
-	"System.Windows.Forms"
-	"WindowsBase")
-
-set_target_properties (LuaDebuggerVsix PROPERTIES FOLDER Tools/csharp)
+# VSIX packaging is owned by the SDK project, not a C# executable target.
+if(NOT WIN32 OR NOT CMAKE_GENERATOR MATCHES "Visual Studio")
+    return()
+endif()
+add_custom_target(LuaDebuggerVsix
+    COMMAND "${CMAKE_VS_MSBUILD_COMMAND}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/LuaDebuggerVsix.csproj" /restore /m
+        "/p:Configuration=$<CONFIG>"
+        "/p:BaseIntermediateOutputPath=${CMAKE_CURRENT_BINARY_DIR}/obj/"
+        "/p:OutputPath=${CMAKE_CURRENT_BINARY_DIR}/bin/$<CONFIG>/"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" VERBATIM)
+set_target_properties(LuaDebuggerVsix PROPERTIES FOLDER Tools/csharp)

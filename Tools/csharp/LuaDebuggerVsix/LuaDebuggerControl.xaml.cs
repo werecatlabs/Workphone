@@ -5,7 +5,7 @@ using System.Windows.Controls;
 
 namespace LuaDebuggerVsix
 {
-    public partial class LuaDebuggerControl : UserControl
+    public partial class LuaDebuggerControl : UserControl, IDisposable
     {
         private readonly LuaDebugClient _client = new LuaDebugClient();
 
@@ -16,6 +16,7 @@ namespace LuaDebuggerVsix
             _client.LogReceived += AppendLog;
             _client.Disconnected += () => AppendLog("Disconnected.");
             _client.MessageReceived += OnLuaMessageReceived;
+            Unloaded += (sender, args) => _client.Disconnect();
         }
 
         private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -80,7 +81,7 @@ namespace LuaDebuggerVsix
 
         private void OnLuaMessageReceived(LuaDebugMessage message)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 switch (message.Type)
                 {
@@ -97,16 +98,20 @@ namespace LuaDebuggerVsix
                         AppendLog($"Message: {message.Type}");
                         break;
                 }
-            });
+            }));
         }
 
         private void AppendLog(string text)
         {
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 LogTextBox.AppendText(text + Environment.NewLine);
+                if (LogTextBox.Text.Length > 128 * 1024)
+                    LogTextBox.Text = LogTextBox.Text.Substring(LogTextBox.Text.Length - 64 * 1024);
                 LogTextBox.ScrollToEnd();
-            });
+            }));
         }
+
+        public void Dispose() => _client.Dispose();
     }
 }

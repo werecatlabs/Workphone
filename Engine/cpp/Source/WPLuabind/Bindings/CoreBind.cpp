@@ -145,6 +145,7 @@ namespace workphone
                                                                           const String &, bool )>(
                                           &Properties::addProperty ) )
                  .def( "setPropertyAsString", setPropertyAsString )
+                 .def( "setProperty", setPropertyAsString )
                  .def( "setPropertyAsInt", setPropertyAsInt )
                  .def( "setPropertyAsBool", setPropertyAsBool )
                  .def( "setPropertyAsFloat", setPropertyAsFloat )
@@ -166,6 +167,7 @@ namespace workphone
                  .def( "getProperty", static_cast<String ( Properties::* )( const String &, String )
                                                       const>( &Properties::getProperty ) )
                  .def( "getPropertyAsString", getPropertyAsString )
+                 .def( "getProperty", getPropertyAsString )
                  .def( "getPropertyAsBool", &Properties::getPropertyAsBool )
                  .def( "getPropertyAsBool", &getPropertyAsBool )
                  .def( "getPropertyAsInt", &Properties::getPropertyAsInt )

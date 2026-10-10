@@ -11,12 +11,13 @@
 #include <stdarg.h>
 #include <iostream>
 #include <stdexcept>
+#include <set>
+#include <functional>
 
 extern "C" {
 #include <lua.h>
 #include <lualib.h>
 #include <lauxlib.h>
-#include <lobject.h>
 }
 
 #include <luabind/luabind.hpp>
@@ -39,6 +40,24 @@ namespace workphone
 {
     namespace
     {
+        char managerRegistryKey;
+
+        LuaManager *stateManager( lua_State *state )
+        {
+            lua_pushlightuserdata( state, &managerRegistryKey );
+            lua_rawget( state, LUA_REGISTRYINDEX );
+            auto manager = static_cast<LuaManager *>( lua_touserdata( state, -1 ) );
+            lua_pop( state, 1 );
+            return manager;
+        }
+
+        void bindStateManager( lua_State *state, LuaManager *manager )
+        {
+            // Registry storage is shared with coroutines and works with Lua 5.1/LuaJIT.
+            lua_pushlightuserdata( state, &managerRegistryKey );
+            lua_pushlightuserdata( state, manager );
+            lua_rawset( state, LUA_REGISTRYINDEX );
+        }
         int scriptTraceback( lua_State *state )
         {
             // Do not invoke an arbitrary error object's __tostring in the handler.
@@ -63,6 +82,40 @@ namespace workphone
             const char *className;
             SmartPtr<ISharedObject> *owner;
         };
+
+        struct ScriptPreload
+        {
+            String slashName;
+            String dottedName;
+            String sourceName;
+            String source;
+        };
+
+        int installPreloads( lua_State *state )
+        {
+            auto entries = static_cast<Array<ScriptPreload> *>( lua_touserdata( state, 1 ) );
+            lua_getglobal( state, "package" );
+            lua_getfield( state, -1, "preload" );
+            // Compile every loader before modifying the live preload table.
+            // Keep its identity: Lua searchers can retain it through the registry.
+            lua_newtable( state );
+            for( const auto &entry : *entries )
+            {
+                if( luaL_loadbufferx( state, entry.source.data(), entry.source.size(),
+                                     entry.sourceName.c_str(), "t" ) != LUA_OK ) return lua_error( state );
+                lua_pushvalue( state, -1 );
+                lua_setfield( state, -3, entry.slashName.c_str() );
+                lua_setfield( state, -2, entry.dottedName.c_str() );
+            }
+            for( const auto &entry : *entries )
+            {
+                lua_getfield( state, 4, entry.slashName.c_str() );
+                lua_setfield( state, 3, entry.slashName.c_str() );
+                lua_getfield( state, 4, entry.dottedName.c_str() );
+                lua_setfield( state, 3, entry.dottedName.c_str() );
+            }
+            return 0;
+        }
 
         int constructScript( lua_State *state )
         {
@@ -113,7 +166,6 @@ namespace workphone
 
     WP_CLASS_REGISTER_DERIVED( workphone, LuaManager, IScriptManager );
 
-    TValue *index2value( lua_State *L, int idx );
 
     LuaManager::LuaManager() = default;
 
@@ -132,6 +184,7 @@ namespace workphone
             ScopedLock lock( this );
 
             createLuaState();
+            configureScriptResources( m_scriptCatalog, m_scriptResources, m_compiledScriptsOnly );
             m_bReload = false;
 
             m_timeTaken = 0.0f;
@@ -213,7 +266,7 @@ namespace workphone
     void LuaManager::handleLuaError( lua_State *luaState )
     {
         const auto text = lua_tostring( luaState, -1 );
-        auto manager = *static_cast<LuaManager **>( lua_getextraspace( luaState ) );
+        auto manager = stateManager( luaState );
         if( manager ) manager->setError( true );
         WP_LOG_ERROR( text ? text : "Lua raised a non-string error" );
         lua_pop( luaState, 1 );
@@ -246,14 +299,14 @@ namespace workphone
 
     s32 handleLuaPCallError( lua_State *luaState )
     {
-        auto manager = *static_cast<LuaManager **>( lua_getextraspace( luaState ) );
+        auto manager = stateManager( luaState );
         if( manager ) manager->setError( true );
         return scriptTraceback( luaState );
     }
 
     void handleCastFailed( lua_State *luaState, const luabind::type_id &id )
     {
-        auto manager = *static_cast<LuaManager **>( lua_getextraspace( luaState ) );
+        auto manager = stateManager( luaState );
         if( manager ) manager->setError( true );
         WP_LOG_ERROR( "Lua native value conversion failed" );
     }
@@ -557,24 +610,69 @@ namespace workphone
         m_scriptCatalog = catalog;
         m_scriptResources = resources;
         m_compiledScriptsOnly = compiledOnly;
+        if( compiledOnly && getLuaState() )
+            executeSource( "package.path=''; package.cpath=''; local loaders=package.searchers or package.loaders; "
+                           "package.searchers={loaders[1]}; package.loaders=package.searchers",
+                           "=compiled-module-policy" );
     }
 
     bool LuaManager::loadScriptResource( std::shared_ptr<const resource::RuntimeResource> resource )
     {
         ScopedLock lock( this );
         LuaScriptCompiler compiler;
-        if( !resource || resource->header.resourceType != resource::ResourceTypeID( "lua" ) ||
-            resource->header.compilerVersion != compiler.versionFor( resource::ResourceTypeID( "lua" ) ) ||
-            resource->payload.size() > LuaScriptCompiler::maxSourceBytes ||
-            resource->header.payloadSize != resource->payload.size() ||
-            resource->header.payloadHash != resource::hashBytes( resource->payload.data(), resource->payload.size() ) )
+        Array<ScriptPreload> entries;
+        std::set<String> visited;
+        std::set<String> moduleNames;
+        size_t totalBytes = 0;
+        std::function<bool( const resource::RuntimeResource * )> collect;
+        collect = [&]( const resource::RuntimeResource *item ) {
+            if( !item || !item->header.isValid() || item->header.resourceId.isSubResource() ||
+                item->header.resourceType != resource::ResourceTypeID( "lua" ) ||
+                item->header.compilerVersion != compiler.versionFor( resource::ResourceTypeID( "lua" ) ) ||
+                item->payload.size() > LuaScriptCompiler::maxSourceBytes ||
+                item->header.payloadSize != item->payload.size() ||
+                item->header.payloadHash != resource::hashBytes( item->payload.data(), item->payload.size() ) ) return false;
+            if( !visited.insert( item->header.resourceId.str() ).second ) return true;
+            totalBytes += item->payload.size();
+            if( visited.size() > 256 || totalBytes > 64 * 1024 * 1024 ) return false;
+            for( const auto &dependency : item->dependencies )
+                if( dependency && dependency->header.resourceType == resource::ResourceTypeID( "lua" ) &&
+                    !collect( dependency.get() ) ) return false;
+            ScriptPreload entry;
+            entry.slashName = item->header.resourceId.sourceRelativePath();
+            entry.sourceName = "@" + entry.slashName;
+            entry.slashName.resize( entry.slashName.size() - 4 ); // .lua
+            entry.dottedName = entry.slashName;
+            std::replace( entry.dottedName.begin(), entry.dottedName.end(), '/', '.' );
+            if( !moduleNames.insert( entry.slashName ).second ||
+                ( entry.dottedName != entry.slashName && !moduleNames.insert( entry.dottedName ).second ) ) return false;
+            if( !item->payload.empty() ) entry.source.assign(
+                reinterpret_cast<const char *>( item->payload.data() ), item->payload.size() );
+            entries.push_back( std::move( entry ) );
+            return true;
+        };
+        if( !collect( resource.get() ) )
         {
             m_lastDiagnostic = "Invalid or incompatible compiled Lua resource";
             setError( true );
             return false;
         }
-        const String source( reinterpret_cast<const char *>( resource->payload.data() ), resource->payload.size() );
-        return executeSource( source, "@" + resource->header.resourceId.sourceRelativePath() );
+        auto state = getLuaState();
+        if( !state ) { m_lastDiagnostic = "Lua state is not loaded"; setError( true ); return false; }
+        const int top = lua_gettop( state );
+        lua_pushcfunction( state, scriptTraceback );
+        lua_pushcfunction( state, installPreloads );
+        lua_pushlightuserdata( state, &entries );
+        const int status = lua_pcall( state, 1, 0, top + 1 );
+        if( status != LUA_OK )
+        {
+            const auto text = lua_tostring( state, -1 );
+            m_lastDiagnostic = text ? text : "Compiled Lua module installation failed";
+            setError( true );
+        }
+        lua_settop( state, top );
+        if( status != LUA_OK ) return false;
+        return executeSource( entries.back().source, entries.back().sourceName );
     }
 
     bool LuaManager::loadScriptAsset( const String &uuid )
@@ -764,7 +862,7 @@ namespace workphone
         auto luaState = luaL_newstate();
         if( !luaState ) throw std::runtime_error( "Could not allocate Lua state" );
         setLuaState( luaState );
-        *static_cast<LuaManager **>( lua_getextraspace( luaState ) ) = this;
+        bindStateManager( luaState, this );
 
         luaL_openlibs( luaState );
 
@@ -1072,7 +1170,7 @@ namespace workphone
         auto replacement = candidate.getLuaState();
         for( auto &data : m_objectData ) data->getObject() = luabind::object();
         setLuaState( replacement );
-        *static_cast<LuaManager **>( lua_getextraspace( replacement ) ) = this;
+        bindStateManager( replacement, this );
         candidate.setLuaState( nullptr );
         candidate.setLoadingState( LoadingState::Unloaded );
         m_bindingClassNames = candidate.m_bindingClassNames;

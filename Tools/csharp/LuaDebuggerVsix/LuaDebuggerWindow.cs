@@ -11,5 +11,11 @@ namespace LuaDebuggerVsix
             Caption = "Lua Debugger";
             Content = new LuaDebuggerControl();
         }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && Content is System.IDisposable disposable) disposable.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }

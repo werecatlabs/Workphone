@@ -11,6 +11,12 @@ namespace workphone
         setLoadingState( LoadingState::Loaded );
     }
 
+    void ScriptAsset::unload( SmartPtr<ISharedObject> data )
+    {
+        Resource<IResource>::unload( data );
+        setLoadingState( LoadingState::Unloaded );
+    }
+
     SmartPtr<Properties> ScriptAsset::getProperties() const
     {
         auto properties = Resource<IResource>::getProperties();
