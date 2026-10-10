@@ -30,6 +30,7 @@ namespace workphone
 
     void WPNetworkManager::unload( SmartPtr<ISharedObject> data )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         net_context_shutdown( &m_context );
         m_started = m_connected = false;
         m_listener->clearListeners();
@@ -43,6 +44,7 @@ namespace workphone
 
     void WPNetworkManager::poll()
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         update();
     }
 
@@ -53,6 +55,7 @@ namespace workphone
 
     s32 WPNetworkManager::getPacketSenderId( SmartPtr<IPacket> packet ) const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( !packet || !m_started )
             return -1;
         auto packetAddress = packet->getSystemAddress();
@@ -70,6 +73,7 @@ namespace workphone
 
     void WPNetworkManager::setServer( bool isServer )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( !m_socketRuntimeInitialized )
         {
             if( net_init() != NET_RESULT_OK )
@@ -98,6 +102,7 @@ namespace workphone
 
     bool WPNetworkManager::isServer() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         return m_isServer;
     }
 
@@ -108,22 +113,26 @@ namespace workphone
 
     void WPNetworkManager::setVerbose( bool isverbose )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         m_verbose = isverbose;
     }
 
     void WPNetworkManager::setListener( SmartPtr<INetworkListener> netCallback )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         m_listener->clearListeners();
         m_listener->addListener( netCallback );
     }
 
     void WPNetworkManager::addListener( SmartPtr<INetworkListener> netCallback )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         m_listener->addListener( netCallback );
     }
 
     void WPNetworkManager::removeListener( SmartPtr<INetworkListener> netCallback )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         m_listener->removeListener( netCallback );
     }
 
@@ -141,12 +150,14 @@ namespace workphone
 
     void WPNetworkManager::sendPacket( SmartPtr<IPacket> &outpacket )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         (void)outpacket;
         throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
     }
 
     void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( !m_started )
             throw std::logic_error( "WPNetwork: session is not started" );
         u32 size = 0;
@@ -173,6 +184,7 @@ namespace workphone
 
     void WPNetworkManager::sendPacket( SmartPtr<IPacket> &outpacket, u16 playerId )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         (void)outpacket;
         (void)playerId;
         throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
@@ -180,6 +192,7 @@ namespace workphone
 
     void WPNetworkManager::sendPacketUnreliable( SmartPtr<IPacket> &outpacket, u16 playerId )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         u32 size = 0;
         const auto *data = getPacketData( outpacket, size );
         if( data && size > 0 )
@@ -219,6 +232,7 @@ namespace workphone
     void WPNetworkManager::sendPacket( SmartPtr<IPacket> &outpacket,
                                        SmartPtr<ISystemAddress> systemAddress )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         (void)outpacket;
         (void)systemAddress;
         throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
@@ -227,6 +241,7 @@ namespace workphone
     void WPNetworkManager::sendPacketToAllExcept( SmartPtr<IPacket> &outpacket,
                                                   SmartPtr<ISystemAddress> systemAddress )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         (void)outpacket;
         (void)systemAddress;
         throw std::logic_error( "WPNetwork: reliable delivery requires a certified transport backend" );
@@ -234,6 +249,7 @@ namespace workphone
 
     const u32 WPNetworkManager::getPeerCount()
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         u32 count = 0;
         for( int i = 0; i < m_context.max_peers; ++i )
         {
@@ -246,11 +262,13 @@ namespace workphone
 
     u16 WPNetworkManager::getPlayerNumber() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         return m_context.local_player_id < 0 ? 0xffffu : static_cast<u16>( m_context.local_player_id );
     }
 
     const u32 WPNetworkManager::getClientAddress( u16 playerId )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         for( int i = 0; i < m_context.max_peers; ++i )
         {
             if( m_context.peers[i].active &&
@@ -268,12 +286,14 @@ namespace workphone
 
     void WPNetworkManager::kickClient( u16 playerId, bool hardKick )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         (void)hardKick;
         net_disconnect_peer( &m_context, static_cast<NetPeerId>( playerId ) );
     }
 
     WPNetworkManager::ConnectionStatus WPNetworkManager::getConnectionStatus()
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( !m_started )
             return ConnectionStatus::NCS_FAILED;
 
@@ -285,6 +305,7 @@ namespace workphone
 
     void WPNetworkManager::connect( const String &address, unsigned short port, const String &password )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( !password.empty() )
             throw std::logic_error( "WPNetwork: native UDP cannot authenticate a password" );
 
@@ -302,11 +323,13 @@ namespace workphone
 
     void WPNetworkManager::setNetIterations( u16 iterations )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         m_netIterations = iterations == 0 ? 1 : iterations;
     }
 
     void WPNetworkManager::setGlobalPacketRelay( bool relay )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( relay )
             throw std::logic_error( "WPNetwork: blind packet relay is unsupported" );
         m_globalRelay = false;
@@ -319,6 +342,7 @@ namespace workphone
 
     time_interval WPNetworkManager::getServerTime() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( !m_isServer )
             throw std::logic_error( "WPNetwork: native UDP has no synchronized server clock" );
         return static_cast<time_interval>( net_time_ms() ) * 0.001;
@@ -326,8 +350,15 @@ namespace workphone
 
     void WPNetworkManager::update()
     {
-        if( !m_started )
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
+        if( !m_started || m_polling )
             return;
+        m_polling = true;
+        struct PollScope
+        {
+            bool &polling;
+            ~PollScope() { polling = false; }
+        } scope{ m_polling };
 
         net_update( &m_context );
 
@@ -404,11 +435,13 @@ namespace workphone
 
     u32 WPNetworkManager::getPort() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         return m_port;
     }
 
     void WPNetworkManager::setPort( u32 port )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( port > 65535u || m_started )
             throw std::invalid_argument( "WPNetwork: invalid port or session already started" );
         m_port = port;
@@ -416,11 +449,13 @@ namespace workphone
 
     u32 WPNetworkManager::getMaxClients() const
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         return m_maxClients;
     }
 
     void WPNetworkManager::setMaxClients( u32 maxClients )
     {
+        std::lock_guard<std::recursive_mutex> lock( m_contextMutex );
         if( maxClients == 0 || maxClients > NET_MAX_PEERS || m_started )
             throw std::invalid_argument( "WPNetwork: invalid capacity or session already started" );
         m_maxClients = maxClients;

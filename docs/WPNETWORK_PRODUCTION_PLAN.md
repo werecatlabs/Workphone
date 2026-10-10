@@ -536,7 +536,7 @@ Tests, security review, documentation and diagnostics accompany each package. Th
 
 ## 10. Validation strategy
 
-Proposed test target names below do not exist yet. NET-00/01 must add and register them; CI must fail when a required suite selects zero tests or lacks its executable/fixture.
+The suite catalogue below is the target release scope. The foundation increment registers native, codec and production integration tests as recorded in the implementation status; the remaining proposed suites still need implementation. CI must fail when a required suite selects zero tests or lacks its executable/fixture.
 
 | Suite | Required coverage | Evidence |
 |---|---|---|

@@ -3,6 +3,7 @@
 
 #include <WPNetwork/WPNetworkPrerequisites.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
+#include <mutex>
 
 extern "C" {
 #include <WorkphoneNetwork/workphone_network.h>
@@ -127,7 +128,9 @@ namespace workphone
         /** @brief Sets the maximum number of allowed clients. @param maxClients The maximum limit. */
         void setMaxClients( u32 maxClients );
 
-        /** @brief Gets the internal network context. @return Pointer to NetContext. */
+        /** Development inspection only. Raw context access requires exclusive
+         * application-task ownership; do not retain across unload or poll.
+         * @return Pointer to NetContext. */
         NetContext *getContext();
 
         /** @brief Gets the internal network context (const). @return Const pointer to NetContext. */
@@ -149,6 +152,7 @@ namespace workphone
         const NetPeer *findPeerByAddress( SmartPtr<ISystemAddress> systemAddress ) const;
 
         NetContext m_context;                   ///< Internal network context
+        mutable std::recursive_mutex m_contextMutex;
         SmartPtr<scene::NetworkListener> m_listener;  ///< Multiplexed network event listeners
         bool m_isServer = false;                ///< Flag indicating if the manager is acting as a server
         bool m_started = false;                 ///< Flag indicating if the network has been started
@@ -156,6 +160,7 @@ namespace workphone
         bool m_verbose = false;            ///< Flag for verbose logging
         bool m_globalRelay = false;        ///< Flag for global packet relay
         bool m_socketRuntimeInitialized = false;
+        bool m_polling = false;
         u32 m_port = 15822;                ///< The network port used for listening/connecting
         u32 m_maxClients = NET_MAX_PEERS;  ///< Maximum number of clients allowed on the server
         u16 m_netIterations =

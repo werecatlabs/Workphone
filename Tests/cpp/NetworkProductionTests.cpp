@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
+#include <atomic>
 
 using namespace workphone;
 #define CHECK( condition )                                                      \
@@ -98,6 +99,30 @@ public:
     {
         throw std::runtime_error( "intentional callback failure" );
     }
+};
+
+class ReentrantListener : public INetworkListener
+{
+public:
+    explicit ReentrantListener( WPNetworkManager *manager ) : manager( manager )
+    {
+    }
+    void connect( u32 ) override
+    {
+        ++depth;
+        maxDepth = std::max( maxDepth, depth );
+        manager->poll();
+        --depth;
+        ++joined;
+    }
+    void disconnect( u32 ) override
+    {
+    }
+    void handlePacket( SmartPtr<IPacket> ) override
+    {
+    }
+    WPNetworkManager *manager;
+    int depth = 0, maxDepth = 0, joined = 0;
 };
 
 bool profiles()
@@ -244,6 +269,8 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     server->setServer( true );
     auto record = make_ptr<Recorder>();
     server->addListener( record );
+    auto reentrant = make_ptr<ReentrantListener>( server.get() );
+    server->addListener( reentrant );
     const auto port = net_get_bound_port( server->getContext() );
     CHECK( port != 0 );
     a->connect( "127.0.0.1", port, "" );
@@ -260,6 +287,7 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     }
     CHECK( a->getPlayerNumber() != b->getPlayerNumber() );
     CHECK( record->joined == 2 );
+    CHECK( reentrant->joined == 2 && reentrant->maxDepth == 1 );
     CHECK( server->getPlayerNumber() == 0 && a->getPlayerNumber() != 0xffffu &&
            b->getPlayerNumber() != 0xffffu );
     auto packet = a->createPacket();
@@ -368,6 +396,21 @@ bool sessions( SmartPtr<core::ApplicationManager> application )
     server->setServer( true );
     CHECK( server->getContext()->running );
     server->unload( nullptr );
+    for( int cycle = 0; cycle < 8; ++cycle )
+    {
+        server->setServer( true );
+        std::atomic<bool> entered{ false };
+        std::thread polling( [&] {
+            entered.store( true );
+            for( int i = 0; i < 1000; ++i )
+                server->poll();
+        } );
+        while( !entered.load() )
+            std::this_thread::yield();
+        server->unload( nullptr );
+        polling.join();
+        CHECK( !server->getContext()->running );
+    }
     a->unload( nullptr );
     b->unload( nullptr );
     return true;
