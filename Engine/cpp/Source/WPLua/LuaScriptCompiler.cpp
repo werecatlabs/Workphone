@@ -3,6 +3,7 @@
 #include <fstream>
 #include <memory>
 #include <set>
+#include <string>
 extern "C" {
 #include <lauxlib.h>
 }
@@ -20,7 +21,7 @@ namespace workphone
                                              resource::DependencySet &dependencies,
                                              String &error ) const
     {
-        std::filesystem::path path = std::filesystem::path( context.sourcePath );
+        std::filesystem::path path( std::string( context.sourcePath.data(), context.sourcePath.size() ) );
         path += ".deps";
         std::error_code status;
         if( !std::filesystem::exists( path, status ) )
@@ -33,7 +34,7 @@ namespace workphone
         dependencies.compileDependencies.push_back(
             resource::CompileDependency::data( context.resourceId.str() + ".deps" ) );
         std::set<String> seen;
-        String line;
+        std::string line;
         size_t count = 0;
         while( std::getline( input, line ) )
         {
@@ -44,7 +45,7 @@ namespace workphone
             if( first == String::npos ) continue;
             line = line.substr( first, line.find_last_not_of( " \t\r" ) - first + 1 );
             resource::ResourceID id;
-            if( !id.set( line, &error ) ) return false;
+            if( !id.set( String( line.c_str() ), &error ) ) return false;
             if( seen.insert( id.str() ).second )
             {
                 dependencies.compileDependencies.push_back( resource::CompileDependency::resource( id ) );
@@ -59,7 +60,9 @@ namespace workphone
         const resource::CompileContext &context, std::ostream &output, Array<String> &messages ) const
     {
         using resource::CompilationStatus;
-        std::ifstream input( std::filesystem::path( context.sourcePath ), std::ios::binary | std::ios::ate );
+        std::ifstream input( std::filesystem::path( std::string( context.sourcePath.data(),
+                                                                 context.sourcePath.size() ) ),
+                             std::ios::binary | std::ios::ate );
         if( !input ) { messages.push_back( "Cannot open Lua source" ); return CompilationStatus::Failure; }
         const auto length = input.tellg();
         if( length < 0 || static_cast<u64>( length ) > maxSourceBytes )

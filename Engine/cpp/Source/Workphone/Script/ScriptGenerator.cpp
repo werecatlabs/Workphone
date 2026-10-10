@@ -102,7 +102,10 @@ namespace workphone
         {
             auto sourceStr = String();
 
-            auto className = std::filesystem::u8path( path ).stem().u8string();
+            const auto classNamePath = std::filesystem::path( std::string( path.data(), path.size() ) )
+                                           .stem()
+                                           .string();
+            String className( classNamePath.data(), classNamePath.size() );
             for( auto &character : className )
                 if( !std::isalnum( static_cast<unsigned char>( character ) ) && character != '_' ) character = '_';
             if( className.empty() ) className = "NewScript";

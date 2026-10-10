@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/Database/IDatabaseManager.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
+#include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
 #include <Workphone/Thread/RecursiveSpinMutex.hpp>
 #include <Workphone/System/Job.hpp>
