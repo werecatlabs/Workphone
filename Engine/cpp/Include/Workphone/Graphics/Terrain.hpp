@@ -9,6 +9,7 @@
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
+#include <Workphone/Graphics/FoliageData.hpp>
 #include <mutex>
 #include <functional>
 
@@ -59,6 +60,32 @@ namespace workphone
             /** Retained immutable CPU data; safe to keep while a later revision is published. */
             TerrainSnapshot getTerrainSnapshot() const;
             u64 getTerrainRevision() const;
+            /** Complete foliage authoring generations; renderer consumers retain
+             * snapshots across page preparation and both colour/shadow passes. */
+            bool setFoliageSnapshot( FoliageSnapshot snapshot, String &error );
+            FoliageSnapshot getFoliageSnapshot() const;
+            struct ActiveFoliage { FoliageSnapshot snapshot; Transform3<real_Num> placement; };
+            using FoliagePublicationGate = std::function<bool(FoliageSnapshot,
+                const Transform3<real_Num> &, const std::function<void()> &, String &)>;
+            void setFoliagePublicationGate( FoliagePublicationGate );
+            bool publishFoliageSnapshot( FoliageSnapshot, const Transform3<real_Num> &,
+                const std::function<void()> &commitRenderer, String &error );
+            ActiveFoliage getActiveFoliage() const;
+            struct FoliageDiagnostics
+            {
+                bool currentGenerationReady = false;
+                u64 sourceRevision = 0, viewKey = 0;
+                u32 residentPages = 0, pendingPages = 0, failedPages = 0;
+                u64 residentInstances = 0, testedInstances = 0, culledInstances = 0;
+                std::array<u64, 3> lodInstances{};
+                u64 groups = 0, predictedDraws = 0, actualDraws = 0, submittedInstances = 0;
+                u64 geometryBytes = 0, uploadBytes = 0;
+                String error;
+            };
+            void setFoliageDiagnostics( const FoliageDiagnostics &diagnostics );
+            FoliageDiagnostics getFoliageDiagnostics() const;
+            bool setFoliageForcedLod( s32 level, String &error );
+            s32 getFoliageForcedLod() const;
             /** Validate/copy before publication. Zero expectedRevision means unconditional;
              * a nonzero token rejects stale edits. Failed edits retain the current snapshot.
              */
@@ -308,6 +335,13 @@ namespace workphone
             /** Renderer lifecycle: no query surface exists until its first complete publication. */
             void resetActiveTerrainPublication();
             mutable std::mutex m_terrainDataMutex;
+            mutable std::recursive_mutex m_foliagePublicationMutex;
+            FoliageSnapshot m_foliageSnapshot;
+            ActiveFoliage m_activeFoliage;
+            FoliagePublicationGate m_foliagePublicationGate;
+            mutable std::mutex m_foliageDiagnosticsMutex;
+            FoliageDiagnostics m_foliageDiagnostics;
+            s32 m_foliageForcedLod = -1;
             TerrainSnapshot m_terrainSnapshot;
             TerrainSnapshot m_activeTerrainSnapshot;
             Transform3<real_Num> m_terrainWorldTransform;

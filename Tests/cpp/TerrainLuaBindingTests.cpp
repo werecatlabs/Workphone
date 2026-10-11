@@ -38,6 +38,7 @@ int main()
         try
         {
             fs::create_directories( folder );
+            application->setProjectPath( folder.u8string().c_str() );
             manager.load( nullptr );
             auto state = manager.getLuaState();
             if( !state )
@@ -60,8 +61,17 @@ int main()
                 if( luaL_dofile( state, ( scripts / file ).string().c_str() ) != LUA_OK )
                     throw std::runtime_error( lua_tostring( state, -1 ) );
             const auto run = [&]( const char *script ) {
-                if( luaL_dostring( state, script ) != LUA_OK )
-                    throw std::runtime_error( lua_tostring( state, -1 ) );
+                const auto top = lua_gettop( state );
+                lua_pushcfunction( state, []( lua_State *s ) {
+                    luaL_traceback( s, s, lua_tostring( s, 1 ), 1 ); return 1;
+                } );
+                const auto handler = lua_gettop( state );
+                if( luaL_loadstring( state, script ) != LUA_OK || lua_pcall( state, 0, 0, handler ) != LUA_OK )
+                {
+                    const std::string message = lua_tostring( state, -1 );
+                    lua_settop( state, top ); throw std::runtime_error( message );
+                }
+                lua_settop( state, top );
             };
             run( R"(
                 editor = TerrainEditor(nil)
@@ -282,6 +292,65 @@ int main()
                 assert(not editor:performAction(TerrainEditorTypes.SculptApplyRaise))
                 assert(string.find(editor._currentStatus, 'failed', 1, true))
                 assert(restoredTerrainFixture:importTerrainData('{invalid') ~= '')
+                -- Real foliage authoring dispatch through the established Lua editor.
+                editor.settings.foliageSpecies=0
+                editor.settings.foliageId='lua/grass'
+                editor.settings.foliageKind=2
+                editor.settings.foliageHeight=.7
+                editor.settings.foliageRadius=.3
+                editor.settings.foliageBranches=12
+                editor.settings.foliageAlbedo='fixture/grass-cutout'
+                assert(editor:performAction(TerrainEditorTypes.FoliagePlant), editor._currentStatus)
+                assert(string.find(editor._currentStatus, 'Preview pending', 1, true), 'Headless fixture must report the unavailable render preview explicitly')
+                local status={}
+                assert(restoredTerrainFixture:editTerrain('foliageStatus',status) == '')
+                assert(status.speciesCount == 1 and status.rules[1].kind == 2)
+                local authoredWind=status.rules[1].windAmplitude
+                assert(editor:foliageOperation('foliageRule',{rule=0,density=.3,candidateSpacing=2,minimumSpacing=0}))
+                status={}; assert(restoredTerrainFixture:editTerrain('foliageStatus',status) == '')
+                assert(status.rules[1].windAmplitude == authoredWind, 'Changing density must preserve the authored continuous wind amplitude')
+                local scattered=status.instanceCount
+                assert(scattered > 0, 'Density controls must create real compact instances')
+                editor.settings.brushMode=14
+                editor.settings.layerPaintSize=.2
+                editor.settings.foliageCount=3
+                editor.settings.viewportBrushEnabled=true
+                assert(editor:handleViewportBrush('begin',0,30,0,0,-1,0),editor._currentStatus)
+                assert(editor:handleViewportBrush('commit',0,30,0,0,-1,0),editor._currentStatus)
+                status={}; assert(restoredTerrainFixture:editTerrain('foliageStatus',status) == '')
+                assert(status.instanceCount == scattered+3 and not status.strokeActive)
+                assert(editor:performAction(TerrainEditorTypes.FoliageUndo))
+                status={}; assert(restoredTerrainFixture:editTerrain('foliageStatus',status) == '')
+                assert(status.instanceCount == scattered)
+                assert(editor:performAction(TerrainEditorTypes.FoliageRedo))
+                assert(editor:handleViewportBrush('begin',0,30,0,0,-1,0),editor._currentStatus)
+                assert(editor:handleViewportBrush('cancel',0,0,0,0,0,0),editor._currentStatus)
+                status={}; assert(restoredTerrainFixture:editTerrain('foliageStatus',status) == '')
+                assert(status.instanceCount == scattered+3 and not status.strokeActive)
+                local exported={}; assert(restoredTerrainFixture:editTerrain('foliageExport',exported) == '')
+                assert(terrainFixture:editTerrain('foliageImport',{source=exported.source}) == '')
+                local reopened={}; assert(terrainFixture:editTerrain('foliageStatus',reopened) == '')
+                assert(reopened.instanceCount == status.instanceCount and reopened.rules[1].density == status.rules[1].density)
+                assert(editor:performAction(TerrainEditorTypes.FoliageSave),editor._currentStatus)
+                assert(editor:performAction(TerrainEditorTypes.FoliageLoad),editor._currentStatus)
+                editor.controlBindings[TerrainEditorTypes.GrassWind]={key='grassWind',valueType='toggle'}
+                assert(editor:updateBoundSetting(TerrainEditorTypes.GrassWind,{getValue=function() return false end}))
+                assert(editor:performAction(TerrainEditorTypes.FoliageUndo))
+                assert(editor:applyFoliageRule('grass','density',.2))
+                status={}; assert(restoredTerrainFixture:editTerrain('foliageStatus',status) == '')
+                assert(status.rules[1].wind, 'Changing density after undo must preserve the restored wind field')
+                assert(restoredTerrainFixture:editTerrain('foliagePlant',{id='lua/tree',kind=0,branches=3}) == '')
+                local beforeBake={}; assert(restoredTerrainFixture:editTerrain('foliageExport',beforeBake) == '')
+                local rejectedBake=restoredTerrainFixture:editTerrain('foliageBakeImpostors',{species=1,resourcePrefix='data://baked/tree',directory=terrainFixturePath,tileSize=32,views=2})
+                assert(string.find(rejectedBake,'must match',1,true),rejectedBake)
+                local afterBake={}; assert(restoredTerrainFixture:editTerrain('foliageExport',afterBake) == '')
+                assert(afterBake.source == beforeBake.source,'Invalid bake path must preserve complete authoring state')
+                local baked={species=1,resourcePrefix='data://baked/tree',directory='',tileSize=32,views=2}
+                assert(restoredTerrainFixture:editTerrain('foliageBakeImpostors',baked) == '')
+                assert(baked.pending and baked.speciesPath and baked.directory,'Real source bake reports the renderer handoff and derived directory')
+                local bakedSource={}; assert(restoredTerrainFixture:editTerrain('foliageExport',bakedSource) == '')
+                assert(string.find(bakedSource.source,'data://baked/tree_albedo.texres',1,true),'Baked authoring stores stable typed resource IDs')
+                assert(terrainFixture:editTerrain('foliageImport',{source=bakedSource.source}) == '')
                 editor.terrain = nil
                 assert(not editor:performAction(TerrainEditorTypes.SculptApplyLower))
                 editor = nil
@@ -289,6 +358,9 @@ int main()
                 restoredTerrainFixture = nil
                 collectgarbage('collect')
             )" );
+            if( !fs::exists( folder / "baked/tree_albedo.tga" ) || !fs::exists( folder / "baked/tree_orm.texres" ) ||
+                !fs::exists( folder / "baked/species.folspec" ) )
+                throw std::runtime_error( "Real Lua bake must export a complete reopenable typed atlas under the project root" );
             if( restored->getTerrainSnapshot()->heights != terrain->getTerrainSnapshot()->heights )
                 throw std::runtime_error(
                     "Lua Save/Reload must preserve actual samples across components" );

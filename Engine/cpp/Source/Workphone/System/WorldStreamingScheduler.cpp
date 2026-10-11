@@ -402,6 +402,12 @@ namespace workphone
         }
         result = std::move( ready.result ); p.budget->wake.notify_all(); return true;
     }
+    std::function<StreamBudget(StreamMemoryClass,u64,String &)> WorldStreamProducer::budgetAllocator() const
+    {
+        return [scheduler=m_scheduler](StreamMemoryClass category,u64 bytes,String &error) {
+            return scheduler->reserve(category,bytes,error);
+        };
+    }
     StreamBudget WorldStreamProducer::reserve( StreamMemoryClass category, u64 bytes, String &error )
     {
         return m_scheduler->reserve( category, bytes, error );

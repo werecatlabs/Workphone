@@ -3,6 +3,12 @@
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/TerrainEditing.hpp>
 #include <Workphone/Scene/TerrainIntegration.hpp>
+#include <Workphone/Scene/FoliageAuthoring.hpp>
+#include <Workphone/Scene/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/FoliagePhysics.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
+#include <Workphone/Interface/System/ITaskManager.hpp>
+#include <Workphone/System/TaskLock.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainGrassLayer.hpp>
@@ -57,7 +63,13 @@ namespace workphone::scene
             u64 serial = 0;
             bool ready = false, detached = false;
             ~TerrainIntegrationNotice()
-            { if( ready ) notifyTerrainIntegration( owner, source, placement, serial, detached ); }
+            {
+                if( ready )
+                {
+                    notifyTerrainIntegration( owner, source, placement, serial, detached );
+                    if( !detached ) { String ignored; owner->refreshFoliage( ignored ); }
+                }
+            }
         };
         // Scene operations in the default backend share the manager's recursive
         // mutex. Acquire it without waiting before preparing any collision shape:
@@ -501,6 +513,10 @@ namespace workphone::scene
 
             createTerrain();
 
+            if( auto app = core::IApplicationManager::instancePtr() )
+                if( auto manager = app->getGameManager() )
+                    manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::Update, this );
+
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -511,6 +527,12 @@ namespace workphone::scene
 
     void TerrainSystem::unload( SmartPtr<ISharedObject> data )
     {
+        const auto app = core::IApplicationManager::instancePtr();
+        auto tasks = app ? app->getTaskManager() : nullptr;
+        auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
+        if( app ) if( auto manager = app->getGameManager() ) manager->unregisterAllComponent( this );
+        std::lock_guard<std::recursive_mutex> foliageGuard(m_foliagePhysicsMutex);
+        m_foliagePhysics.reset(); m_foliagePhysicsManager = nullptr; m_foliagePhysicsScene = nullptr;
         TerrainIntegrationNotice notice{ this };
         notice.ready = notice.detached = true;
         try
@@ -566,6 +588,54 @@ namespace workphone::scene
             m_integrationDetached = true;
             notice.serial = ++m_integrationSerial;
         }
+    }
+
+    void TerrainSystem::update()
+    {
+        if( Thread::getCurrentTask() != TaskId::Physics ) return;
+        String foliagePending; refreshFoliage( foliagePending );
+        std::unique_lock<std::recursive_mutex> guard(m_foliagePhysicsMutex,std::try_to_lock);
+        if(!guard.owns_lock()) return;
+        const auto terrain=dynamic_pointer_cast<render::Terrain>(getTerrain());
+        const auto active=terrain ? terrain->getActiveFoliage() : render::Terrain::ActiveFoliage{};
+        String error;
+        if(!prepareFoliagePhysics(active.snapshot,active.placement,error) && error!=m_foliagePhysicsError)
+            WP_LOG_WARNING("Terrain foliage: "+error);
+        m_foliagePhysicsError=std::move(error);
+    }
+
+    bool TerrainSystem::prepareFoliagePhysics( render::FoliageSnapshot snapshot,
+        const Transform3<real_Num> &placement, String &error, const std::function<void()> &commit )
+    {
+        std::unique_lock<std::recursive_mutex> guard(m_foliagePhysicsMutex,std::try_to_lock);
+        if(!guard.owns_lock()) { error="Foliage publication is waiting for its lifecycle boundary."; return false; }
+        const auto app = core::IApplicationManager::instancePtr();
+        auto manager = app ? app->getPhysicsManager() : nullptr;
+        auto scene = manager ? manager->getPhysicsScene() : nullptr;
+        const auto actor = getActor();
+        if( !manager || !scene )
+        { m_foliagePhysics.reset(); m_foliagePhysicsManager = nullptr; m_foliagePhysicsScene = nullptr; error.clear(); if(commit)commit(); return true; }
+        std::unique_lock<ISharedObject> physicsBoundary(*manager,std::try_to_lock);
+        if(!physicsBoundary.owns_lock()) { error="Foliage publication is waiting for the physics scene boundary."; return false; }
+        // The native simulation locks the scene directly. Keep that same recursive
+        // boundary through collision admission and renderer publication.
+        std::unique_lock<ISharedObject> sceneBoundary(*scene,std::try_to_lock);
+        if(!sceneBoundary.owns_lock()) { error="Foliage publication is waiting for the physics scene boundary."; return false; }
+        if( !isEnabled() || (actor && !actor->isEnabledInScene()) )
+        { m_foliagePhysics.reset(); m_foliagePhysicsManager = nullptr; m_foliagePhysicsScene = nullptr; error.clear(); if(commit)commit(); return true; }
+        if( manager != m_foliagePhysicsManager || scene != m_foliagePhysicsScene )
+        {
+            m_foliagePhysics = std::make_unique<FoliagePhysics>( manager, scene );
+            m_foliagePhysicsManager = manager; m_foliagePhysicsScene = scene;
+        }
+        Array<Vector3F> observers;
+        if( auto graphics = app->getGraphicsSystem() )
+            if( auto graphicsScene = graphics->getGraphicsScene() )
+                if( auto camera = graphicsScene->getActiveCamera() )
+                { const auto p = camera->getRay(.5f,.5f).getOrigin(); observers.push_back({f32(p.x),f32(p.y),f32(p.z)}); }
+        if(!m_foliagePhysics->setSource(snapshot,placement,error) || !m_foliagePhysics->update(observers,error)) return false;
+        if(commit)commit();
+        return true;
     }
 
     void TerrainSystem::updateFlags( u32 flags, u32 oldFlags )
@@ -779,6 +849,11 @@ namespace workphone::scene
             setHeightScale( scale );
         }
 
+        if( properties->hasProperty( "foliageDataV1" ) )
+        {
+            String foliage, error; properties->getPropertyValue( "foliageDataV1", foliage );
+            if( !importFoliageData( foliage, error ) ) WP_LOG_WARNING( "Terrain foliage: " + error );
+        }
         Component::setProperties( properties );
 
         auto applicationManager = core::IApplicationManager::instancePtr();
@@ -944,17 +1019,9 @@ namespace workphone::scene
         {
             generateHeightMap();
 
-            auto treePrefab = getTreePrefab( 0 );
-
-            for( size_t i = 0; treePrefab && i < getPreviewTreeCount(); ++i )
-            {
-                auto treeInstance = treePrefab->createActor();
-
-                auto treePosition = Vector3<real_Num>( 0, 0, 0 );
-                treeInstance->setPosition( treePosition );
-
-                actor->addChild( treeInstance );
-            }
+            String foliageError;
+            bool hasFoliage; { std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex ); hasFoliage = bool( m_foliageAuthoring ); }
+            if( hasFoliage && !generateFoliage( foliageError ) ) WP_LOG_WARNING( "Terrain foliage: " + foliageError );
 
             applicationManager->triggerEvent( EventType::Object, IEvent::sceneChanged,
                                               Array<Parameter>(), this, this, nullptr );
@@ -964,20 +1031,8 @@ namespace workphone::scene
         {
             if( treeLayerProperties->isButtonPressed( GenerateTreesStr ) )
             {
-                auto treePrefab = getTreePrefab( 0 );
-
-                for( size_t i = 0; treePrefab && i < getGeneratedTreeCount(); ++i )
-                {
-                    auto treeInstance = treePrefab->createActor();
-
-                    auto treePosition = Vector3<real_Num>( 0, 0, 0 );
-                    treeInstance->setPosition( treePosition );
-
-                    if( scene )
-                    {
-                        scene->addActor( treeInstance );
-                    }
-                }
+                String error;
+                if( !generateFoliage( error ) ) WP_LOG_WARNING( "Terrain foliage: " + error );
             }
             else if( properties->isButtonPressed( AddTreesStr ) ||
                      treeLayerProperties->isButtonPressed( AddTreesStr ) )
@@ -1471,6 +1526,7 @@ namespace workphone::scene
     {
         if( terrainIntegrationIsNotifying( this ) ) return;
         TerrainIntegrationNotice notice{ this };
+        std::lock_guard<std::recursive_mutex> foliageGuard( m_foliagePhysicsMutex );
         std::lock_guard<std::mutex> guard( m_terrainDataMutex );
         if( m_terrain == terrain ) return;
         if( terrain )
@@ -1502,6 +1558,18 @@ namespace workphone::scene
             if( notice.source != m_activeTerrainData ) notice.source.reset();
             notice.placement = concrete->getWorldTransform();
             AtomicWeakPtr<TerrainSystem> owner( this );
+            concrete->setFoliagePublicationGate(
+                [owner,concrete](render::FoliageSnapshot requested, const Transform3<real_Num> &pose,
+                                const std::function<void()> &commit, String &failure) {
+                    if(auto source=owner.load().lock())
+                    {
+                        std::unique_lock<std::recursive_mutex> guard(source->m_foliagePhysicsMutex,std::try_to_lock);
+                        if(!guard.owns_lock()) { failure="Foliage runtime is changing."; return false; }
+                        if(source->getTerrain().get()!=concrete) { failure="Foliage runtime was retired."; return false; }
+                        return source->prepareFoliagePhysics(requested,pose,failure,commit);
+                    }
+                    failure="Foliage source no longer exists."; return false;
+                });
             concrete->setTerrainPublicationGate(
                 [owner, concrete]( render::TerrainSnapshot requested,
                     const render::Terrain::TerrainPublication &publish, String &failure ) {
@@ -1517,8 +1585,9 @@ namespace workphone::scene
         }
         if( m_terrain && m_terrain != terrain )
             if( auto previous = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
-                previous->setTerrainPublicationGate( {} );
+            { previous->setTerrainPublicationGate( {} ); previous->setFoliagePublicationGate({}); }
         m_terrain = terrain;
+        { std::lock_guard<std::mutex> authored( m_foliageAuthoringMutex ); m_publishedFoliage.reset(); m_foliageGround.reset(); }
         notice.ready = true;
         m_integrationPlacement = notice.placement;
         m_integrationAvailable = notice.source != nullptr;
@@ -1643,6 +1712,14 @@ namespace workphone::scene
             if( samples.empty() )
                 throw std::runtime_error( "Unable to serialize terrain height samples." );
             properties->setProperty( "terrainDataV1", samples );
+            SmartPtr<FoliageAuthoring> authoring;
+            { std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex ); authoring = m_foliageAuthoring; }
+            if( authoring )
+            {
+                String foliage, error;
+                if( !authoring->serialize( foliage, error ) ) throw std::runtime_error( error.c_str() );
+                properties->setProperty( "foliageDataV1", foliage );
+            }
         }
         return data;
     }
@@ -1774,6 +1851,102 @@ namespace workphone::scene
     String TerrainSystem::exportTerrainData() const
     {
         return render::serializeTerrainData( *getTerrainSnapshot() );
+    }
+
+    SmartPtr<FoliageAuthoring> TerrainSystem::getFoliageAuthoring()
+    {
+        std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
+        if( !m_foliageAuthoring ) m_foliageAuthoring = make_ptr<FoliageAuthoring>();
+        return m_foliageAuthoring;
+    }
+    bool TerrainSystem::generateFoliage( String &error )
+    {
+        auto authoring = getFoliageAuthoring();
+        if( authoring->getSnapshot()->species.empty() )
+        {
+            Array<std::shared_ptr<const render::FoliageSpecies>> species;
+            for( u32 kind = 0; kind < 2; ++kind )
+            {
+                FoliagePlantRecipe recipe; recipe.speciesId = kind ? "terrain-grass" : "terrain-tree";
+                recipe.kind = kind ? render::FoliageKind::Grass : render::FoliageKind::Tree;
+                if( kind ) { recipe.height = .7f; recipe.radius = .4f; recipe.trunkRadius = .02f; }
+                recipe.bark.tint = { .3f, .18f, .07f, 1 }; recipe.leaves.tint = { .18f, .4f, .12f, 1 };
+                render::FoliageSpecies data; if( !generateFoliagePlant( recipe, data, error ) ) return false;
+                species.push_back( std::make_shared<const render::FoliageSpecies>( std::move( data ) ) );
+            }
+            if( !authoring->setSpecies( std::move( species ), error ) ) return false;
+            auto recipe = authoring->getRecipe();
+            FoliagePlacementRule trees; trees.species = 0; trees.enabled = m_treesEnabled; trees.density = m_treeDensity;
+            FoliagePlacementRule grass; grass.species = 1; grass.enabled = m_grassEnabled; grass.density = m_grassDensity; grass.minimumSpacing = .2f;
+            recipe.rules = { trees, grass }; if( !authoring->configure( recipe, error ) ) return false;
+        }
+        if( !authoring->regenerateAll( getTerrainSnapshot(), error ) ) return false;
+        return refreshFoliage( error );
+    }
+    bool TerrainSystem::refreshFoliage( String &error )
+    {
+        std::unique_lock<std::mutex> refresh( m_foliageRefreshMutex, std::try_to_lock );
+        if( !refresh.owns_lock() ) { error = "Foliage grounding is already preparing a generation."; return false; }
+        SmartPtr<FoliageAuthoring> authoring;
+        render::FoliageSnapshot published;
+        render::TerrainSnapshot previousGround, active;
+        SmartPtr<render::Terrain> renderer;
+        {
+            std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
+            authoring = m_foliageAuthoring; published = m_publishedFoliage; previousGround = m_foliageGround;
+        }
+        if( !authoring ) { error.clear(); return true; }
+        {
+            std::unique_lock<std::recursive_mutex> lifecycle( m_foliagePhysicsMutex, std::try_to_lock );
+            if( !lifecycle.owns_lock() ) { error = "Foliage is waiting for its lifecycle boundary."; return false; }
+            std::lock_guard<std::mutex> terrain( m_terrainDataMutex );
+            renderer = dynamic_pointer_cast<render::Terrain>( m_terrain ); active = m_activeTerrainData;
+            if( active != m_terrainData ) { error = "Foliage is waiting for coherent active terrain publication."; return false; }
+        }
+        if( !renderer ) { error = "Foliage source is saved; a concrete terrain render backend is required for preview."; return false; }
+        // Authoring work never waits for its State mutex while holding a component
+        // or renderer publication lock. Each grounded result uses one complete State.
+        const auto authored = authoring->getSnapshot();
+        if( authored == published && active == previousGround && renderer->getFoliageSnapshot() ) { error.clear(); return true; }
+        const auto snapshot = authoring->getGroundedSnapshot( active, error );
+        if( !snapshot ) return false;
+        if( snapshot->revision != authored->revision || authoring->getSnapshot() != authored )
+        { error = "Foliage authoring changed during grounding; the next update will retry."; return false; }
+        std::unique_lock<std::recursive_mutex> lifecycle( m_foliagePhysicsMutex, std::try_to_lock );
+        if( !lifecycle.owns_lock() ) { error = "Foliage is waiting for its lifecycle boundary."; return false; }
+        {
+            std::lock_guard<std::mutex> terrain( m_terrainDataMutex );
+            if( m_terrain.get() != renderer.get() || m_activeTerrainData != active || m_terrainData != active )
+            { error = "Foliage terrain changed during grounding; the next update will retry."; return false; }
+        }
+        {
+            std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
+            if( m_foliageAuthoring != authoring ) { error = "Foliage source was replaced during grounding."; return false; }
+        }
+        if( !renderer->setFoliageSnapshot( snapshot, error ) ) return false;
+        {
+            std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
+            if( m_foliageAuthoring == authoring ) { m_publishedFoliage = authored; m_foliageGround = active; }
+        }
+        error.clear(); return true;
+    }
+    String TerrainSystem::exportFoliageData() const
+    {
+        SmartPtr<FoliageAuthoring> authoring;
+        { std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex ); authoring = m_foliageAuthoring; }
+        String output, error; if( authoring ) authoring->serialize( output, error ); return output;
+    }
+    bool TerrainSystem::importFoliageData( const String &json, String &error )
+    {
+        auto candidate = make_ptr<FoliageAuthoring>();
+        if( !candidate->deserialize( json, error ) ) return false;
+        {
+            std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
+            m_foliageAuthoring = candidate; m_publishedFoliage.reset(); m_foliageGround.reset();
+        }
+        // Scene restoration may precede creation of the graphics object. Publication
+        // is retried at the next coherent terrain boundary or physics update.
+        String pending; refreshFoliage( pending ); error.clear(); return true;
     }
 
     bool TerrainSystem::importTerrainData( const String &json, String &error )

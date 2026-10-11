@@ -718,6 +718,7 @@ namespace
 }  // namespace
 
 #include "CookedTerrainContracts.hpp"
+#include "CookedFoliageContracts.hpp"
 
 int main()
 {
@@ -727,6 +728,7 @@ int main()
         fixture.initialize();
         contracts( fixture );
         cooked_terrain_contracts::run( *fixture.graphics.renderer, fixture.folder );
+        cooked_foliage_contracts::run( *fixture.graphics.renderer, fixture.folder );
         return 0;
     }
     catch( const std::exception &error )

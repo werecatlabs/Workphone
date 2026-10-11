@@ -5,6 +5,14 @@ Scope: implementation started on 2026-10-10 against the production plan in
 This ledger records the integrity and cooking increments. The full plan and
 production release gates remain open.
 
+Foliage integration on 11 October adds compact target/resource cache directory
+keys to keep Windows artifact paths bounded for long logical IDs and generated
+species. Full identities and generation hashes remain validated in each header.
+The earlier reversible directory encoding remains accepted for existing indexes
+and installed manifests; package/container formats are unchanged. The resource
+smoke fixture covers long subresource IDs, case distinctions, alias separation,
+and pre-compact cache paths in authoring reuse and installed runtime manifests.
+
 ## Implemented in this increment
 
 | Area | Result | Remaining scope |

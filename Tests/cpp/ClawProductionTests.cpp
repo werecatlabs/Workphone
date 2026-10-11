@@ -1,5 +1,6 @@
 #include "ClawFoliageContracts.hpp"
 #include "ClawFoliageSceneContracts.hpp"
+#include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
@@ -355,6 +356,7 @@ int main()
             ok &= claw_terrain_motion_contracts::run(renderer);
             ok &= claw_foliage_contracts::run(renderer);
             ok &= claw_foliage_scene_contracts::run(renderer);
+            ok &= claw_foliage_world_contracts::run(renderer);
             ok &= claw_animation_contracts::run(renderer);
         }
         renderer.unload(nullptr);

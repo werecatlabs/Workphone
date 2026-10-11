@@ -3,7 +3,7 @@
 Source review: 9 October 2026 at `2a37b63ea`. Extends the [graphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md) and [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md). User priority: **foliage LOD, lower batch count and fewer actual draw calls**. The original review did not include renderer implementation, a new benchmark, build or GPU capture; the implementation follow-up below records later work.
 
 
-## Implementation follow-up — 10 October 2026
+## Implementation follow-up â€” 10 October 2026
 
 The first F-A increment is implemented against `brodex` at `eead5c43d`; the
 source review below remains the historical baseline. The native and real-scene
@@ -47,6 +47,32 @@ persistence. Batches are not combined across assets/pages. The synthetic draw
 contract is not a full pine forest benchmark or GF0/R1 certification. Continue
 with F-B and its cooked-resource dependency rather than marking the whole plan
 complete.
+
+## Paged foliage and authoring implementation - 11 October 2026
+
+Started from `brodex` at `d393187aa`, then incorporated the remote updates through
+`d9c5e4842`. The 10 October fixed-LOD description above
+is historical. The connected implementation now uses `FoliageAuthoring`,
+`FoliagePageStream` and `ClawFoliageWorld`; the original `ClawFoliageBatch` remains
+compatible. See [Foliage workflow](FOLIAGE_WORKFLOW.md) for APIs and limits.
+
+| Plan area | Implemented path | Evidence and boundary |
+| --- | --- | --- |
+| FOL-01 | Versioned species/world/page formats, exact stable IDs, strict geometry/material/placement validation, cooked pinned dependencies | Core and cooked-resource contracts; `.folspec`, `.folpage`, `.folworld` source export |
+| FOL-02/12 | Native deferred page tokens, signed sparse cells, immutable worker results, multi-view demand, cancellation and shared memory reservations | Native callback tests, teleport/cancellation/retry and 1,000 load/unload cycles; bounded CPU-driven residency |
+| FOL-03/04 | Shared meshes/materials, cross-cell draw groups, per-view frustum culling and projected LOD with hysteresis, forced LOD and independent shadow policy | Real DX11 pixels and actual draw/triangle/upload counters; hard-switch transitions |
+| FOL-05 | Multi-angle textured CPU bake with albedo, capture-tangent normals, ORM and depth; mip-isolated gutters and shared runtime billboards | Textured alpha, cancellation, atlas selection and relighting contracts; exported depth has no parallax reconstruction |
+| FOL-06/07 | Grass/clump density subsets, cutout/two-sided maps, analytic wind and bounded interaction spheres using the same colour/shadow deformation | DX11 wind, alpha, normal and shadow contracts; full forest overdraw/timing acceptance remains separate |
+| FOL-08/09 | Deterministic scatter, terrain/layer/moisture/biome masks, exclusions, manual deltas, paint/erase/selection/transform, undo/redo and persisted Editor controls | Authoring and Lua command contracts; terrain holes and manual height offsets survive resampling |
+| FOL-10 | Native tree/bush/grass recipes with three independent meshes and a validated CPU mesh adapter | Topology, LOD and seed contracts; optional ngPlant is not a dependency |
+| FOL-11 | Nearby trunk collision, transactional replacement, gameplay actor promotion/demotion/removal and persistent flags | Native physics/budget/capacity-failure contracts; standalone disk-paged collision requires an application-supplied authoritative snapshot |
+| FOL-00/13 | Required baseline registration, source/binary evidence hashes, CPU/physics, GPU, cooked-resource and Lua fixtures | Synthetic batching evidence is retained; representative forest frame percentiles, interactive Editor visual acceptance and eight-hour soak remain release evidence |
+
+This implements the connected bounded tier, but does not declare GF0/GF1 release
+certification. GPU-driven indirect culling, additional backends, optional ngPlant
+repair and future weather/transmission/velocity integration are outside this tier.
+Current execution results are recorded in
+[implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md).
 
 ## Recommendation and release outcome
 

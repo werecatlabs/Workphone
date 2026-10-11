@@ -1,5 +1,71 @@
 # WPGraphics implementation status
 
+## Paged foliage, authoring and cooked resources - 11 October 2026
+
+Started on `brodex` at `d393187aa` and incorporates the subsequent remote commits
+through `d9c5e4842` (tile-demand/matrix changes and typed material texture loading).
+The previous terrain delivery is retained in `d525603fa`. Intervening work adds DDS profiles,
+safer asset saves and reference handling, project reindexing, and bundled media
+catalog mounting. This increment preserves those changes and restores disabled
+graphics/terrain test registrations while retaining the new asset test sources.
+
+The connected foliage path now includes:
+
+- Validated species, signed cells and stable instance identities; asynchronous
+  native paging through the shared scheduler, cancellation, multi-view demand and
+  bounded source/result/work/GPU reservations.
+- DX11 cross-cell instance groups, per-view culling and projected near/middle/far
+  LOD with hysteresis, grass density subsets, textured billboards, wind,
+  interaction bending and matching cutout/shadow deformation. The existing
+  fixed-LOD instancing ABI remains compatible.
+- Deterministic native plant/scatter recipes, terrain/biome/moisture masks and
+  exclusions, manual edits and persistent IDs, paint/erase, selection and transforms,
+  bounded undo/redo, source import/export, Lua controls and live diagnostics.
+- Textured multi-view impostor baking with alpha, normal/ORM/depth output, gutters,
+  cancellation and explicit CPU texture availability.
+- Cooked `.folspec`, `.folpage` and `.folworld` resources with pinned dependencies,
+  demand-loaded pages and source-independent installed runtime loading.
+- Conservative extent metadata keeps off-centre, scaled and wind-deformed plants
+  resident across page boundaries. Native transform validation precedes render and
+  collision publication; invalid candidates preserve the previous generation.
+- Compact resource cache keys and immutable foliage export paths avoid Windows
+  path-length failures while existing cache entries remain readable.
+- Nearby tree/bush collision and gameplay promotion/demotion/removal. Candidate
+  collision bodies stage before publication; failures retain the previous source,
+  pose and native bodies. Terrain render/physics publication shares the scene lock.
+
+Validation completed on 11 October 2026 for the modified working tree based on
+`d9c5e4842`, using CMake 4.4.4, Visual Studio 2026 / MSVC 19.51, Windows SDK
+10.0.26100 and NVIDIA RTX 3090 DX11 hardware (driver 32.0.16.1692).
+**Debug: 20 passed, 1 unavailable. RelWithDebInfo: 20 passed, 1 unavailable.**
+The Editor builds in both configurations. The unavailable test is
+`WorkphoneGraphics.mesh_import_assets`, whose six external Ogre/OgreNext mesh
+fixtures are absent; it is not counted as a pass.
+
+The foliage contracts exercise deterministic authoring, concurrent reads/edits,
+1,000 paging cycles, cancellation and retained budgets, native collision rollback,
+DX11 wind/alpha/shadow and extent-aware paging, invalid-transform publication
+rejection, cooked offline loading and actual Lua paint/undo/save/load/bake actions.
+Resource contracts also cover long logical IDs and pre-compact cache paths in
+authoring and installed manifests. All 175 recorded source hashes match the final
+tested code in each configuration. Local XML/JSON evidence is retained under
+`cmake-build-debug-vs2026-readiness/claw-graphics-{configuration}-*` and records the
+base revision, modified-file status, source/binary hashes and GPU device evidence.
+This is a selected-target local build, not a clean-machine package certification.
+
+Additional incoming-change checks pass in both configurations:
+`WPLua.runtime_contracts` (including typed texture loading) and
+`Tests/lua/MaterialEditorTextureDropTests.lua`. Their logs and Lua runtime XML
+reports are retained under `cmake-build-debug-vs2026-readiness/foliage-extra-lua-*`.
+These two checks are additional to the 20 passing baseline tests above.
+
+See [Foliage workflow](FOLIAGE_WORKFLOW.md) and the
+[plan implementation matrix](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md#paged-foliage-and-authoring-implementation---11-october-2026)
+for supported tiers and bounds. GF0/GF1 certification still requires representative
+forest frame-time/overdraw measurements, interactive Editor visual acceptance and
+the eight-hour soak. Standalone cooked page consumers supply an authoritative
+instance snapshot for collision; disk-paged collision is not automatic.
+
 ## Terrain runtime and expanded authoring — 11 October 2026
 
 Continues on `brodex` at `ce2aecf5b`, matching the remote branch when checked.
@@ -157,7 +223,7 @@ The current run used `cmake-build-debug-vs2026-readiness`; per-configuration
 GPU/driver details and source/binary hashes. Interactive Editor authoring was not
 exercised for this increment.
 
-Remaining work is explicit in the individual plans: foliage paging/culling,
+At that 10 October checkpoint, remaining work included foliage paging/culling,
 near/mid/far LOD, grass/scatter/persistence and cooked species; typed animation
 cooking and the automatic Animator-to-Claw bridge, normalized pose blending,
 parented scene local/world ownership and Editor authoring; durable resource

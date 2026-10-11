@@ -112,6 +112,9 @@ namespace workphone
         // or an isolated application supply a scheduler other than shared().
         StreamBudget reserve( StreamMemoryClass memoryClass, u64 bytes, String &error );
         bool take( WorldStreamResult &result );
+        // A retained loader can reserve against this service after its submitting
+        // producer is destroyed. The callable owns the scheduler, not the producer.
+        std::function<StreamBudget(StreamMemoryClass,u64,String &)> budgetAllocator() const;
         void cancel();
         void drain();  // Owner thread only; cancels, then waits for executing callbacks.
         WorldStreamProducerStats stats() const;

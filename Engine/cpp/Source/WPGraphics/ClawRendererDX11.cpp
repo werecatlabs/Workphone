@@ -7,6 +7,8 @@
 #include <WPGraphics/ClawTerrainMaterial.hpp>
 #include <WPGraphics/ClawWindow.hpp>
 #include <WPGraphics/ClawUtil.hpp>
+#include <Workphone/Graphics/FoliageData.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include "ClawMeshMaterial.hpp"
 #include <Workphone/Workphone.hpp>
 #include "workphone_graphics_renderer.h"
@@ -464,6 +466,7 @@ namespace workphone::render
             wp_renderer_destroy( m_renderer );
             m_renderer = nullptr;
         }
+        m_foliageStreamBudget.reset();
     }
 
     void ClawRendererDX11::beginRender()
@@ -948,6 +951,67 @@ namespace workphone::render
     void ClawRendererDX11::renderMesh( ClawMesh *mesh, const Matrix4F &transform )
     {
         renderMeshBatch( mesh, transform, nullptr, 0 );
+    }
+
+    Matrix4F ClawRendererDX11::foliageViewProjection( bool shadow ) const
+    {
+        if( shadow && m_shadowPass ) return m_shadowMatrix;
+        const auto camera = getCamera();
+        return camera ? Matrix4F( camera->getProjectionMatrix().ptr() ) *
+                        Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
+    }
+
+    u32 ClawRendererDX11::renderFoliageGeometry( const wp_geometry_dx11 *geometry,
+        u32 first, u32 indices, const wp_foliage_instance_dx11 *instances, u32 count,
+        const wp_foliage_parameters_dx11 &parameters, const FoliageMaterial &source,
+        void *const *views, bool unlit, bool atlas )
+    {
+        auto native = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
+        if( !native || !geometry || !count || count > foliageMaximumInstances || !views ||
+            !wp_renderer_dx11_validate_foliage_instances( instances, s32(count), &parameters ) ) return 0;
+        if( !m_foliageStreamBudget )
+        {
+            String error;
+            m_foliageStreamBudget = WorldStreamingScheduler::shared()->reserve(
+                StreamMemoryClass::Gpu, WP_DX11_INSTANCE_CAPACITY * 160ull + sizeof(parameters), error );
+            if( !m_foliageStreamBudget ) return 0;
+        }
+        setTransforms( Matrix4F::identity() );
+        wp_renderer_dx11_set_terrain_material( native, nullptr, nullptr );
+        wp_renderer_set_texture_native( m_renderer, views[0] );
+        void *maps[6] = { views[1], views[2], views[2], nullptr, views[2], nullptr };
+        wp_renderer_dx11_set_material_textures( native, maps );
+        wp_renderer_dx11_set_material_sampler( native, atlas ? 1 : 0, atlas ? 1 : 0, 2, 1 );
+        wp_material_dx11 material{};
+        material.base_color = { source.tint.r,source.tint.g,source.tint.b,source.tint.a };
+        material.specular_color = { .04f,.04f,.04f,0 };
+        material.surface = { source.metalness,source.roughness,1,1 };
+        material.uv_transform = { 0,0,unlit ? 0.0f : 1.0f,0 };
+        material.controls = { 1,1,source.alphaCutoff,0 };
+        material.map_flags = { views[1] ? 1.0f : 0.0f,views[2] ? 1.0f : 0.0f,views[2] ? 1.0f : 0.0f,0 };
+        material.extra_map_flags = { views[2] ? 1.0f : 0.0f,0,0,0 };
+        material.texture_sources = { 4,3,0,0 };
+        applySceneLighting( material );
+        wp_renderer_dx11_set_material( native,&material );
+        wp_renderer_dx11_enable_shadow_receiving( native,m_shadowsEnabled );
+        wp_renderer_set_blend_mode( m_renderer,WORKPHONE_BLEND_MODE_NONE );
+        wp_renderer_set_depth_write_enabled( m_renderer,1 );
+        wp_renderer_set_depth_test_enabled( m_renderer,1 );
+        wp_renderer_set_depth_func( m_renderer,m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS : WORKPHONE_DEPTH_FUNC_LEQUAL );
+        wp_renderer_set_cull_mode( m_renderer,source.twoSided ? WORKPHONE_CULL_MODE_NONE : WORKPHONE_CULL_MODE_BACK );
+        wp_renderer_set_fill_mode( m_renderer,WORKPHONE_FILL_MODE_SOLID );
+        const auto submitted = wp_renderer_dx11_draw_foliage_instances( native,geometry,s32(first),s32(indices),
+            instances,s32(count),&parameters );
+        m_primitiveCount = u32(std::min<u64>(std::numeric_limits<u32>::max(),u64(m_primitiveCount)+u64(indices/3)*submitted));
+        wp_renderer_set_texture_native( m_renderer,nullptr );
+        wp_renderer_dx11_set_material_textures( native,nullptr );
+        auto context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(native));
+        ID3D11Buffer *empty = nullptr; UINT stride=0,offset=0;
+        ID3D11ShaderResourceView *emptyView = nullptr;
+        context->PSSetShaderResources(0,1,&emptyView);
+        context->IASetVertexBuffers(0,1,&empty,&stride,&offset);
+        context->IASetIndexBuffer(nullptr,DXGI_FORMAT_R32_UINT,0);
+        return u32(submitted);
     }
 
     u64 ClawRendererDX11::renderMeshInstances( ClawMesh *mesh,

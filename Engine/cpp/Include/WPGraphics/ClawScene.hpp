@@ -17,6 +17,8 @@ namespace workphone
         class SceneNodeCullJob;
         class CameraVisibilitySet;
         class ClawFoliageBatch;
+        class ClawFoliageWorld;
+        struct ClawFoliageInteraction;
 
         /**
          * @class ClawScene
@@ -95,6 +97,12 @@ namespace workphone
                                       String &error );
             std::shared_ptr<const FoliageBatches> getFoliageBatches() const;
             void clearFoliageBatches();
+            /** Render-owner standalone cooked worlds; terrain worlds attach automatically. */
+            bool addFoliageWorld( std::shared_ptr<ClawFoliageWorld>, String &error );
+            bool removeFoliageWorld( const std::shared_ptr<ClawFoliageWorld> & );
+            void clearFoliageWorlds();
+            bool setFoliageInteractions( const Array<ClawFoliageInteraction> &, String &error );
+            String getFoliageError() const;
 
             bool handleStateMessage( const SmartPtr<IStateMessage> &message );
 
@@ -159,6 +167,8 @@ namespace workphone
             SmartPtr<SceneNodeCullJob> m_cullJob;
             std::shared_ptr<const FoliageBatches> m_foliageBatches;
             mutable std::mutex m_foliageMutex;
+            struct FoliageWorldState;
+            std::unique_ptr<FoliageWorldState> m_foliageWorlds;
         };
     }  // namespace render
 }  // namespace workphone

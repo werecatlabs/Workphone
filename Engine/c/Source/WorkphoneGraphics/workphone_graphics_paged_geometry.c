@@ -11,6 +11,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <float.h>
+#include <limits.h>
 
 #define WP_PAGED_EPSILON 0.00001f
 #define WP_PAGED_ROOT_TWO 1.41421356f
@@ -33,6 +35,10 @@ struct wp_geometry_page
     wp_paged_geometry_aabb true_bounds;
     void *user_data;
     wp_u32 query_flag;
+    uint64_t generation;
+    wp_s32 load_state;
+    wp_s32 in_load_callback;
+    wp_s32 deferred;
 };
 
 struct wp_geometry_page_manager
@@ -40,6 +46,7 @@ struct wp_geometry_page_manager
     wp_paged_geometry *geometry;
     wp_geometry_page **grid;
     wp_geometry_page **scroll_buffer;
+    wp_geometry_page **scroll_grid;
     wp_s32 grid_x;
     wp_s32 grid_z;
     wp_paged_geometry_bounds grid_bounds;
@@ -84,13 +91,24 @@ static wp_vec3f wp_paged_zero_vec3( void )
     return value;
 }
 
+static wp_s32 wp_paged_finite( wp_f32 value )
+{
+    return value == value && value <= FLT_MAX && value >= -FLT_MAX;
+}
+
 static wp_s32 wp_paged_floor_to_s32( wp_f32 value )
 {
+    if( value != value ) return 0;
+    if( value <= -1000000000.0f ) return -1000000000;
+    if( value >= 1000000000.0f ) return 1000000000;
     return (wp_s32)floor( (double)value );
 }
 
 static wp_s32 wp_paged_ceil_to_s32( wp_f32 value )
 {
+    if( value != value ) return 0;
+    if( value <= -1000000000.0f ) return -1000000000;
+    if( value >= 1000000000.0f ) return 1000000000;
     return (wp_s32)ceil( (double)value );
 }
 
@@ -177,6 +195,9 @@ static void wp_paged_unload_page( wp_geometry_page *page )
     page->loaded = 0;
     page->pending = 0;
     page->fade_enabled = 0;
+    page->load_state = WORKPHONE_PAGE_UNLOADED;
+    page->deferred = 0;
+    if( page->generation != (uint64_t)-1 ) ++page->generation;
 }
 
 static void wp_paged_load_page( wp_geometry_page *page )
@@ -185,6 +206,13 @@ static void wp_paged_load_page( wp_geometry_page *page )
     wp_geometry_page_info info;
 
     geometry = page->manager->geometry;
+    if( page->load_state == WORKPHONE_PAGE_LOADING || page->load_state == WORKPHONE_PAGE_FAILED )
+        return;
+    if( page->generation == (uint64_t)-1 )
+    {
+        page->load_state = WORKPHONE_PAGE_FAILED;
+        return;
+    }
     wp_paged_page_info( page, &info );
     if( page->needs_unload )
     {
@@ -199,24 +227,18 @@ static void wp_paged_load_page( wp_geometry_page *page )
     if( page->manager->callbacks.set_region != NULL )
         page->manager->callbacks.set_region( page->page_data, info.bounds.left, info.bounds.top,
                                              info.bounds.right, info.bounds.bottom );
+    ++page->generation;
+    page->load_state = WORKPHONE_PAGE_LOADING;
+    page->deferred = 0;
+    page->pending = 0;
+    page->in_load_callback = 1;
     if( geometry->loader_callbacks.load_page != NULL )
         geometry->loader_callbacks.load_page( geometry->loader_data, page, &info );
+    page->in_load_callback = 0;
     page->user_data = info.user_data;
-    if( page->manager->callbacks.build != NULL )
-        page->manager->callbacks.build( page->page_data );
-    if( page->manager->callbacks.set_visible != NULL )
-        page->manager->callbacks.set_visible( page->page_data, page->visible );
     page->inactive_time = 0U;
-    page->loaded = 1;
-    page->pending = 0;
-    page->fade_enabled = 0;
-}
-
-static void wp_paged_unload_page_delayed( wp_geometry_page *page )
-{
-    page->needs_unload = 1;
-    page->loaded = 0;
-    page->pending = 0;
+    if( !page->deferred )
+        wp_geometry_page_complete_load( page, page->generation, 1 );
 }
 
 static void wp_paged_destroy_manager( wp_geometry_page_manager *manager )
@@ -228,12 +250,12 @@ static void wp_paged_destroy_manager( wp_geometry_page_manager *manager )
     if( manager == NULL )
         return;
     count = manager->grid_x * manager->grid_z;
-    for( index = 0; index < count; ++index )
+    for( index = 0; manager->grid != NULL && index < count; ++index )
     {
         page = manager->grid[index];
         if( page == NULL )
             continue;
-        if( page->loaded || page->needs_unload )
+        if( page->loaded || page->needs_unload || page->load_state >= WORKPHONE_PAGE_LOADING )
             wp_paged_unload_page( page );
         if( manager->callbacks.destroy_page != NULL )
             manager->callbacks.destroy_page( page->page_data );
@@ -241,6 +263,7 @@ static void wp_paged_destroy_manager( wp_geometry_page_manager *manager )
     }
     free( manager->grid );
     free( manager->scroll_buffer );
+    free( manager->scroll_grid );
     free( manager );
 }
 
@@ -275,6 +298,8 @@ static wp_s32 wp_paged_init_manager_grid( wp_geometry_page_manager *manager, wp_
     bounds = geometry->bounds;
     if( wp_paged_bounds_width( bounds ) < WP_PAGED_EPSILON )
     {
+        if( 2.0 * (double)manager->far_transition_distance / geometry->page_size > 252.0 )
+            return 0;
         manager->grid_x = (wp_s32)( 2.0f * manager->far_transition_distance / geometry->page_size ) + 4;
         if( manager->grid_x < 4 )
             manager->grid_x = 4;
@@ -282,17 +307,20 @@ static wp_s32 wp_paged_init_manager_grid( wp_geometry_page_manager *manager, wp_
         manager->grid_bounds.top = 0.0f;
         manager->grid_bounds.right = (wp_f32)manager->grid_x * geometry->page_size;
         manager->grid_bounds.bottom = manager->grid_bounds.right;
-        manager->scroll_buffer =
-            (wp_geometry_page **)calloc( (size_t)manager->grid_x, sizeof( wp_geometry_page * ) );
-        if( manager->scroll_buffer == NULL )
-            return 0;
     }
     else
     {
         manager->grid_bounds = bounds;
         manager->grid_x = wp_paged_ceil_to_s32( wp_paged_bounds_width( bounds ) / geometry->page_size );
     }
+    if( manager->grid_x <= 0 || manager->grid_x > 256 ) return 0;
     manager->grid_z = manager->grid_x;
+    if( wp_paged_bounds_width( bounds ) < WP_PAGED_EPSILON )
+    {
+        manager->scroll_buffer = (wp_geometry_page **)calloc( (size_t)manager->grid_x * manager->grid_z, sizeof( wp_geometry_page * ) );
+        manager->scroll_grid = (wp_geometry_page **)calloc( (size_t)manager->grid_x * manager->grid_z, sizeof( wp_geometry_page * ) );
+        if( manager->scroll_buffer == NULL || manager->scroll_grid == NULL ) return 0;
+    }
     manager->grid = (wp_geometry_page **)calloc( (size_t)manager->grid_x * (size_t)manager->grid_z,
                                                  sizeof( wp_geometry_page * ) );
     if( manager->grid == NULL )
@@ -349,16 +377,10 @@ static wp_s32 wp_paged_scroll_grid( wp_geometry_page_manager *manager, wp_s32 sh
     wp_geometry_page *page;
     wp_f32 page_size;
 
-    new_grid = (wp_geometry_page **)calloc( (size_t)manager->grid_x * (size_t)manager->grid_z,
-                                            sizeof( wp_geometry_page * ) );
-    spares = (wp_geometry_page **)malloc( (size_t)manager->grid_x * (size_t)manager->grid_z *
-                                          sizeof( wp_geometry_page * ) );
-    if( new_grid == NULL || spares == NULL )
-    {
-        free( new_grid );
-        free( spares );
-        return 0;
-    }
+    new_grid = manager->scroll_grid;
+    spares = manager->scroll_buffer;
+    if( new_grid == NULL || spares == NULL ) return 0;
+    memset( new_grid, 0, (size_t)manager->grid_x * manager->grid_z * sizeof( *new_grid ) );
     spare_count = 0;
     for( z = 0; z < manager->grid_z; ++z )
     {
@@ -375,12 +397,9 @@ static wp_s32 wp_paged_scroll_grid( wp_geometry_page_manager *manager, wp_s32 sh
     for( index = 0; index < manager->grid_x * manager->grid_z; ++index )
     {
         page = manager->grid[index];
-        for( spare_index = 0; spare_index < manager->grid_x * manager->grid_z; ++spare_index )
-        {
-            if( new_grid[spare_index] == page )
-                break;
-        }
-        if( spare_index == manager->grid_x * manager->grid_z )
+        old_x = index % manager->grid_x - shift_x;
+        old_z = index / manager->grid_x - shift_z;
+        if( old_x < 0 || old_z < 0 || old_x >= manager->grid_x || old_z >= manager->grid_z )
             spares[spare_count++] = page;
     }
     spare_index = 0;
@@ -393,8 +412,8 @@ static wp_s32 wp_paged_scroll_grid( wp_geometry_page_manager *manager, wp_s32 sh
             if( new_grid[index] != NULL )
                 continue;
             page = spares[spare_index++];
-            if( page->loaded )
-                wp_paged_unload_page_delayed( page );
+            if( page->loaded || page->needs_unload || page->load_state >= WORKPHONE_PAGE_LOADING )
+                wp_paged_unload_page( page ); /* Retire the OLD cell before changing its identity. */
             else
                 page->pending = 0;
             page->keep_loaded = 0;
@@ -407,9 +426,8 @@ static wp_s32 wp_paged_scroll_grid( wp_geometry_page_manager *manager, wp_s32 sh
             new_grid[index] = page;
         }
     }
-    free( manager->grid );
+    manager->scroll_grid = manager->grid;
     manager->grid = new_grid;
-    free( spares );
     return 1;
 }
 
@@ -533,13 +551,14 @@ static void wp_paged_update_manager( wp_geometry_page_manager *manager, wp_u32 d
             distance_sq = dx * dx + dz * dz;
             if( distance_sq <= cache_distance_sq )
             {
-                if( !page->loaded )
+                if( !page->loaded && page->load_state != WORKPHONE_PAGE_LOADING &&
+                    page->load_state != WORKPHONE_PAGE_FAILED )
                 {
                     if( distance_sq >= manager->near_distance_sq &&
                         distance_sq < manager->far_transition_distance_sq )
                         wp_paged_load_page( page );
                     else
-                        page->pending = 1;
+                    { page->pending = 1; page->load_state = WORKPHONE_PAGE_QUEUED; }
                 }
                 else
                     page->inactive_time = 0U;
@@ -589,6 +608,13 @@ static void wp_paged_update_manager( wp_geometry_page_manager *manager, wp_u32 d
     for( index = 0; index < count; ++index )
     {
         page = manager->grid[index];
+        if( page->load_state == WORKPHONE_PAGE_LOADING || page->load_state == WORKPHONE_PAGE_FAILED )
+        {
+            if( page->inactive_time >= manager->inactive_page_life && !page->keep_loaded )
+                wp_paged_unload_page( page );
+            else if( (wp_u32)(~0U) - page->inactive_time >= delta_time ) page->inactive_time += delta_time;
+            continue;
+        }
         if( !page->loaded )
             continue;
         if( page->inactive_time >= manager->inactive_page_life )
@@ -653,7 +679,7 @@ static void wp_paged_update_manager( wp_geometry_page_manager *manager, wp_u32 d
 wp_paged_geometry *wp_paged_geometry_create( wp_camera *camera, wp_f32 page_size )
 {
     wp_paged_geometry *geometry;
-    if( page_size <= 0.0f )
+    if( !wp_paged_finite( page_size ) || page_size <= 0.0f )
         return NULL;
     geometry = (wp_paged_geometry *)calloc( 1, sizeof( *geometry ) );
     if( geometry == NULL )
@@ -679,7 +705,7 @@ void wp_paged_geometry_destroy( wp_paged_geometry *geometry )
 
 wp_s32 wp_paged_geometry_set_page_size( wp_paged_geometry *geometry, wp_f32 page_size )
 {
-    if( geometry == NULL || page_size <= 0.0f || geometry->manager_count != 0U )
+    if( geometry == NULL || !wp_paged_finite( page_size ) || page_size <= 0.0f || geometry->manager_count != 0U )
         return 0;
     geometry->page_size = page_size;
     return 1;
@@ -694,12 +720,14 @@ wp_s32 wp_paged_geometry_set_bounds( wp_paged_geometry *geometry, wp_paged_geome
 {
     wp_f32 width;
     wp_f32 height;
-    if( geometry == NULL || geometry->manager_count != 0U )
+    if( geometry == NULL || geometry->manager_count != 0U ||
+        !wp_paged_finite( bounds.left ) || !wp_paged_finite( bounds.right ) ||
+        !wp_paged_finite( bounds.top ) || !wp_paged_finite( bounds.bottom ) )
         return 0;
     wp_paged_normalize_bounds( &bounds );
     width = wp_paged_bounds_width( bounds );
     height = wp_paged_bounds_height( bounds );
-    if( width <= 0.0f || height <= 0.0f || (wp_f32)fabs( (double)( width - height ) ) > 0.01f )
+    if( !wp_paged_finite( width ) || !wp_paged_finite( height ) || width <= 0.0f || height <= 0.0f || (wp_f32)fabs( (double)( width - height ) ) > 0.01f )
         return 0;
     geometry->bounds = bounds;
     return 1;
@@ -756,6 +784,7 @@ void wp_paged_geometry_set_page_loader( wp_paged_geometry *geometry,
 {
     if( geometry == NULL )
         return;
+    wp_paged_geometry_reload( geometry );
     memset( &geometry->loader_callbacks, 0, sizeof( geometry->loader_callbacks ) );
     if( callbacks != NULL )
         geometry->loader_callbacks = *callbacks;
@@ -778,7 +807,9 @@ wp_geometry_page_manager *wp_paged_geometry_add_detail_level(
     minimum_range = 0.0f;
     if( geometry->manager_count != 0U )
         minimum_range = geometry->managers[geometry->manager_count - 1U]->far_distance;
-    if( max_range <= minimum_range )
+    if( !wp_paged_finite( max_range ) || !wp_paged_finite( transition_length ) ||
+        !wp_paged_finite( max_range + transition_length ) || max_range <= minimum_range ||
+        max_range > 1000000000.0f || transition_length < 0.0f || geometry->manager_count >= 16U )
         return NULL;
     manager = (wp_geometry_page_manager *)calloc( 1, sizeof( *manager ) );
     if( manager == NULL )
@@ -842,6 +873,8 @@ void wp_paged_geometry_update( wp_paged_geometry *geometry, wp_u32 delta_millise
     if( geometry == NULL || geometry->camera == NULL )
         return;
     camera_position = wp_camera_get_position( geometry->camera );
+    if( !wp_paged_finite( camera_position.x ) || !wp_paged_finite( camera_position.y ) ||
+        !wp_paged_finite( camera_position.z ) ) return;
     if( delta_milliseconds == 0U )
         camera_speed = wp_paged_zero_vec3();
     else
@@ -880,9 +913,10 @@ void wp_paged_geometry_reload( wp_paged_geometry *geometry )
         for( page_index = 0; page_index < manager->grid_x * manager->grid_z; ++page_index )
         {
             page = manager->grid[page_index];
-            if( page->loaded || page->needs_unload )
+            if( page->loaded || page->needs_unload || page->load_state >= WORKPHONE_PAGE_LOADING )
                 wp_paged_unload_page( page );
             page->pending = 0;
+            if( page->load_state == WORKPHONE_PAGE_QUEUED ) page->load_state = WORKPHONE_PAGE_UNLOADED;
         }
     }
 }
@@ -913,9 +947,10 @@ void wp_paged_geometry_reload_page( wp_paged_geometry *geometry, wp_vec3f point 
         if( x < 0 || z < 0 || x >= manager->grid_x || z >= manager->grid_z )
             continue;
         page = wp_paged_grid_page( manager, x, z );
-        if( page->loaded || page->needs_unload )
+        if( page->loaded || page->needs_unload || page->load_state >= WORKPHONE_PAGE_LOADING )
             wp_paged_unload_page( page );
         page->pending = 0;
+        if( page->load_state == WORKPHONE_PAGE_QUEUED ) page->load_state = WORKPHONE_PAGE_UNLOADED;
     }
 }
 
@@ -956,9 +991,10 @@ static void wp_paged_reload_manager_area( wp_geometry_page_manager *manager,
                 if( dx * dx + dz * dz > radius_sq )
                     continue;
             }
-            if( page->loaded || page->needs_unload )
+            if( page->loaded || page->needs_unload || page->load_state >= WORKPHONE_PAGE_LOADING )
                 wp_paged_unload_page( page );
             page->pending = 0;
+            if( page->load_state == WORKPHONE_PAGE_QUEUED ) page->load_state = WORKPHONE_PAGE_UNLOADED;
         }
     }
 }
@@ -1155,6 +1191,44 @@ wp_s32 wp_geometry_page_is_loaded( const wp_geometry_page *page )
     return page != NULL ? page->loaded : 0;
 }
 
+wp_s32 wp_geometry_page_get_load_state( const wp_geometry_page *page )
+{
+    return page != NULL ? page->load_state : WORKPHONE_PAGE_UNLOADED;
+}
+uint64_t wp_geometry_page_get_load_generation( const wp_geometry_page *page )
+{
+    return page != NULL ? page->generation : 0;
+}
+wp_s32 wp_geometry_page_defer_load( wp_geometry_page *page )
+{
+    if( page == NULL || !page->in_load_callback || page->load_state != WORKPHONE_PAGE_LOADING ) return 0;
+    page->deferred = 1;
+    return 1;
+}
+wp_s32 wp_geometry_page_complete_load( wp_geometry_page *page, uint64_t generation, wp_s32 success )
+{
+    if( page == NULL || page->generation != generation || page->in_load_callback ||
+        page->load_state != WORKPHONE_PAGE_LOADING ) return 0;
+    page->pending = 0;
+    page->deferred = 0;
+    if( !success )
+    {
+        page->loaded = 0;
+        page->load_state = WORKPHONE_PAGE_FAILED;
+        if( page->manager->callbacks.set_visible != NULL )
+            page->manager->callbacks.set_visible( page->page_data, 0 );
+        return 1;
+    }
+    if( page->manager->callbacks.build != NULL ) page->manager->callbacks.build( page->page_data );
+    page->loaded = 1;
+    page->load_state = WORKPHONE_PAGE_READY;
+    page->inactive_time = 0U;
+    page->fade_enabled = 0;
+    if( page->manager->callbacks.set_visible != NULL )
+        page->manager->callbacks.set_visible( page->page_data, page->visible );
+    return 1;
+}
+
 wp_s32 wp_geometry_page_is_visible( const wp_geometry_page *page )
 {
     return page != NULL && page->loaded && page->visible;
@@ -1220,7 +1294,7 @@ wp_u32 wp_geometry_page_manager_get_pending_count( const wp_geometry_page_manage
         return 0U;
     count = 0U;
     for( index = 0; index < manager->grid_x * manager->grid_z; ++index )
-        if( manager->grid[index]->pending )
+        if( manager->grid[index]->pending || manager->grid[index]->load_state == WORKPHONE_PAGE_LOADING )
             ++count;
     return count;
 }

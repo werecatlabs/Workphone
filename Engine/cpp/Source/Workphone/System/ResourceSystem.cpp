@@ -15,6 +15,7 @@
 #include <set>
 #include <shared_mutex>
 #include <sstream>
+#include <iomanip>
 
 #if defined WP_PLATFORM_WIN32
 #    include <process.h>
@@ -73,9 +74,25 @@ namespace workphone::resource
             return result;
         }
 
-        String artifactNamespace( const String &target )
+        String legacyArtifactNamespace( const String &target )
         {
             return "artifacts/v2/" + encodedArtifactKey(target) + "/";
+        }
+
+        String artifactNamespace( const String &target )
+        {
+            std::ostringstream key;key << std::hex << std::setfill('0') << std::setw(16) << hashString(target);
+            return "artifacts/v2/t" + String(key.str().c_str()) + "/";
+        }
+
+        String compactResourceKey( const String &id )
+        {
+            // Logical IDs can be long; keep generation paths bounded on Windows.
+            // Full resource identity and hashes are still verified in the header.
+            std::ostringstream key;
+            key << 'h' << std::hex << std::setfill('0') << std::setw(16) << hashString(id)
+                << std::setw(16) << hashString(id, 7809847782465536322ull);
+            return key.str().c_str();
         }
 
         void writeManifestNumber( std::ostream &stream, u64 value )
@@ -191,7 +208,8 @@ namespace workphone::resource
                     if( !readManifestString(input,artifact) ||
                         artifact.find(':')!=String::npos || artifact.find('\\')!=String::npos ||
                         !pathId.set("data://"+artifact) || pathId.sourceRelativePath()!=artifact ||
-                        artifact.find(artifactNamespace(manifest.target))!=0 )
+                        (artifact.find(artifactNamespace(manifest.target))!=0 &&
+                         artifact.find(legacyArtifactNamespace(manifest.target))!=0) )
                         return malformed();
                 }
                 manifest.artifacts[header.resourceId.str()]=artifact;
@@ -598,6 +616,9 @@ namespace workphone::resource
         CompilationVariant variant(bool packaged) const { return {config.target,packaged}; }
         String variantArtifactNamespace(bool packaged) const
         { return artifactNamespace(config.target) + (packaged ? "package/" : "editor/"); }
+        bool matchesVariantArtifact(const String &path,bool packaged) const
+        {return path.find(variantArtifactNamespace(packaged))==0 ||
+            path.find(legacyArtifactNamespace(config.target)+(packaged?"package/":"editor/"))==0;}
         static String variantResourceKey(const String &id, bool packaged)
         { return String(packaged ? "package:" : "editor:") + id; }
 
@@ -827,7 +848,7 @@ namespace workphone::resource
                 const auto &child = completed.at(dependency.first);
                 const auto relative = fs::u8path(child.outputPath.c_str()).lexically_relative(compiledRoot);
                 const String artifact = relative.generic_u8string().c_str();
-                if(artifact.find(variantArtifactNamespace(options.packagedBuild)) != 0)
+                if(!matchesVariantArtifact(artifact,options.packagedBuild))
                     return fail("Install dependency artifact is outside the selected variant");
                 installArtifacts.push_back({artifact, child.sourceHash, child.outputHash});
                 installIds.push_back(dependency.second);
@@ -846,7 +867,7 @@ namespace workphone::resource
             if( !options.force && previousRecord.isValid() &&
                 previousRecord.compilerVersion == compilerVersion &&
                 previousRecord.sourceHash == sourceHash &&
-                previousRecord.outputPath.find(variantArtifactNamespace(options.packagedBuild))==0 )
+                matchesVariantArtifact(previousRecord.outputPath,options.packagedBuild) )
             {
                 if(!resolveUnderRoot(compiledRoot,"data://"+previousRecord.outputPath,true,outputPath,error))
                     error.clear();
@@ -961,7 +982,7 @@ namespace workphone::resource
             header.installArtifacts = std::move(installArtifacts);
 
             String relativeArtifact=artifactNamespace(config.target) +
-                (options.packagedBuild?"package/":"editor/") + encodedArtifactKey(resourceId.str()) + "/" +
+                (options.packagedBuild?"package/":"editor/") + compactResourceKey(resourceId.str()) + "/" +
                 std::to_string(sourceHash).c_str() + "-" + std::to_string(payloadHash).c_str() + ".wprs";
             if(!resolveUnderRoot(compiledRoot,"data://"+relativeArtifact,false,outputPath,error)) return fail(error);
             CompiledResourceHeader existing;
@@ -1064,7 +1085,8 @@ namespace workphone::resource
 
         std::shared_ptr<const RuntimeResource> loadNode( const ResourceID &resourceId,
                                                         LoadRequest &request, String &error,
-                                                        const InstallDependencyArtifact *parentPin = nullptr )
+                                                        const InstallDependencyArtifact *parentPin = nullptr,
+                                                        bool shallow = false, u64 payloadLimit = 1024ull << 20 )
         {
             CompiledResourceRecord committedRecord;
             String artifact;
@@ -1095,7 +1117,7 @@ namespace workphone::resource
                 }
                 artifact = committedRecord.outputPath;
             }
-            if(!runtimeOnly && artifact.find(variantArtifactNamespace(request.packagedBuild)) != 0)
+            if(!runtimeOnly && !matchesVariantArtifact(artifact,request.packagedBuild))
             {
                 error = "Dependency artifact is outside the selected target and build mode";
                 return nullptr;
@@ -1149,7 +1171,7 @@ namespace workphone::resource
             {
                 std::shared_lock<std::shared_mutex> lock( cacheMutex );
                 const auto iterator = runtimeCache.find( artifact );
-                if( iterator != runtimeCache.end() )
+                if( !shallow && iterator != runtimeCache.end() )
                     cached = iterator->second.lock();
             }
             request.stack.insert( resourceId.str() );
@@ -1173,7 +1195,7 @@ namespace workphone::resource
                 loaded = std::make_shared<RuntimeResource>();
                 const auto remaining = runtimeConfig.maxClosurePayloadBytes - request.payloadBytes;
                 if( !CompiledResourceIO::read( pathString( outputPath ), *loaded, error,
-                                               std::min( runtimeConfig.maxPayloadBytes, remaining ) ) )
+                                               std::min( payloadLimit, std::min( runtimeConfig.maxPayloadBytes, remaining ) ) ) )
                     return nullptr;
             }
             const auto &header = cached ? cached->header : loaded->header;
@@ -1211,6 +1233,36 @@ namespace workphone::resource
                 return nullptr;
             }
             request.payloadBytes += header.payloadSize;
+
+            if( shallow )
+            {
+                // Runtime manifest metadata already describes the complete graph.
+                // Check each container pin against it without opening page files.
+                for( size_t index = 0; index < header.installDependencies.size(); ++index )
+                {
+                    const auto &id = header.installDependencies[index];
+                    if( runtimeOnly )
+                    {
+                        const auto child = runtimeManifest.resources.find( id.str() );
+                        const auto path = runtimeManifest.artifacts.find( id.str() );
+                        if( child == runtimeManifest.resources.end() || path == runtimeManifest.artifacts.end() ||
+                            ( header.formatVersion >= 2 &&
+                              ( header.installArtifacts[index].path != path->second ||
+                                header.installArtifacts[index].sourceHash != child->second.sourceHash ||
+                                header.installArtifacts[index].payloadHash != child->second.payloadHash ) ) )
+                        { error = "Shallow resource dependency pin conflicts with runtime manifest"; return nullptr; }
+                    }
+                    else if( header.formatVersion >= 2 )
+                    {
+                        fs::path child;
+                        if( !matchesVariantArtifact(header.installArtifacts[index].path,request.packagedBuild) ||
+                            !resolveUnderRoot( compiledRoot, String( "data://" ) + header.installArtifacts[index].path,
+                                               true, child, error ) )
+                        { if( error.empty() ) error = "Shallow dependency is outside the selected target and build mode"; return nullptr; }
+                    }
+                }
+                return loaded;
+            }
 
             if( loaded )
                 loaded->dependencies.reserve( header.installDependencies.size() );
@@ -1456,7 +1508,7 @@ namespace workphone::resource
             fs::path output;
             CompiledResourceRecord record;
             if(!m_impl->database->getRecord(id.str(),m_impl->variant(m_impl->activePackagedBuild),record) || !record.isValid() ||
-               record.outputPath.find(m_impl->variantArtifactNamespace(m_impl->activePackagedBuild))!=0)
+               !m_impl->matchesVariantArtifact(record.outputPath,m_impl->activePackagedBuild))
             {
                 error="No committed artifact for runtime manifest resource";
                 return false;
@@ -1729,6 +1781,21 @@ namespace workphone::resource
         for( const auto &entry : request.completed )
             m_impl->runtimeCache[request.artifacts.at(entry.first)] = entry.second;
         return loaded;
+    }
+
+    std::shared_ptr<const RuntimeResource> ResourceSystem::loadPayload( const ResourceID &id, String &error, u64 maximumPayloadBytes )
+    {
+        error.clear();
+        if( !id.isValid() ) { error = "Cannot load an invalid resource ID"; return nullptr; }
+        std::shared_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        {
+            std::lock_guard<std::mutex> stateLock( m_impl->stateMutex );
+            if( !m_impl->initialized ) { error = "Resource system is not initialized"; return nullptr; }
+        }
+        std::lock_guard<std::mutex> loadLock( m_impl->runtimeLoadMutex );
+        Impl::LoadRequest request;
+        request.packagedBuild = m_impl->activePackagedBuild;
+        return m_impl->loadNode( id, request, error, nullptr, true, maximumPayloadBytes );
     }
 
     void ResourceSystem::unload( const ResourceID &resourceId )

@@ -361,6 +361,34 @@ typedef struct wp_instance_gpu_dx11
     wp_vec4f tint;
 } wp_instance_gpu_dx11;
 
+static const wp_c8 s_vs_foliage_src[] =
+    "cbuffer Transform : register(b0) { row_major float4x4 mvp; row_major float4x4 world; row_major float4x4 normal_matrix; };\n"
+    "cbuffer Foliage : register(b4) { float4 foliage_time; float4 foliage_height; };\n"
+    "struct VS_IN { float3 pos:POSITION; float3 normal:NORMAL; float2 uv:TEXCOORD0; uint color:COLOR;\n"
+    " float4 row0:INSTANCE0; float4 row1:INSTANCE1; float4 row2:INSTANCE2;\n"
+    " float4 normal0:INSTANCE3; float4 normal1:INSTANCE4; float4 normal2:INSTANCE5; float4 tint:INSTANCE6;\n"
+    " float4 atlas:INSTANCE7; float4 wind:INSTANCE8; float4 interaction:INSTANCE9; };\n"
+    "struct VS_OUT { float4 pos:SV_POSITION; float3 world_pos:TEXCOORD0; float3 normal:TEXCOORD1;\n"
+    " float2 uv:TEXCOORD2; float4 color:COLOR; float3 object_pos:TEXCOORD3; float3 object_normal:TEXCOORD4; float4 clip_pos:TEXCOORD5; };\n"
+    "VS_OUT vs_main(VS_IN i) { VS_OUT o; float inverseHeight=rcp(foliage_height.y-foliage_height.x);\n"
+    " float weight=saturate((i.pos.y-foliage_height.x)*inverseHeight);\n"
+    " float phase=foliage_time.x*foliage_time.y+i.wind.z;\n"
+    " float2 bend=i.wind.xy*sin(phase)+i.interaction.xy+float2(sin(phase*2.0),cos(phase*3.0))*i.wind.w;\n"
+    " float3 p=i.pos; p.xz+=bend*weight*weight; float3 n=i.normal;\n"
+    " float derivative=(i.pos.y>=foliage_height.x && i.pos.y<=foliage_height.y)?2.0*weight*inverseHeight:0.0;\n"
+    " n.y-=dot(n.xz,bend)*derivative; float4 local=float4(p,1);\n"
+    " float3 ip=float3(dot(i.row0,local),dot(i.row1,local),dot(i.row2,local));\n"
+    " float3 normal=float3(dot(i.normal0.xyz,n),dot(i.normal1.xyz,n),dot(i.normal2.xyz,n));\n"
+    " o.pos=mul(mvp,float4(ip,1)); o.pos.z=0.5*(o.pos.z+o.pos.w); o.clip_pos=o.pos;\n"
+    " o.world_pos=mul(world,float4(ip,1)).xyz; o.normal=normalize(mul((float3x3)normal_matrix,normal));\n"
+    " o.uv=i.uv*i.atlas.zw+i.atlas.xy; o.object_pos=p; o.object_normal=normalize(n);\n"
+    " o.color=float4(float((i.color>>24u)&255u),float((i.color>>16u)&255u),float((i.color>>8u)&255u),float(i.color&255u))/255.0*i.tint; return o; }\n";
+typedef struct wp_foliage_gpu_dx11
+{
+    wp_instance_gpu_dx11 instance;
+    wp_vec4f uv_rect, wind, interaction;
+} wp_foliage_gpu_dx11;
+
 typedef struct wp_shadow_constants_dx11
 {
     wp_mat4f light_matrix;
@@ -436,6 +464,9 @@ struct wp_renderer_dx11
     ID3D11VertexShader *vs_pntc_instanced;
     ID3D11InputLayout *layout_pntc_instanced;
     ID3D11Buffer *instance_buffer;
+    ID3D11VertexShader *vs_foliage;
+    ID3D11InputLayout *layout_foliage;
+    ID3D11Buffer *foliage_buffer, *cb_foliage;
     ID3D11SamplerState *pntc_sampler_state;
     ID3D11SamplerState *environment_sampler_state;
     ID3D11ShaderResourceView *environment_view; /* borrowed */
@@ -1520,6 +1551,61 @@ static wp_s32 wp_renderer_dx11_ensure_instances( wp_renderer_dx11 *r )
     return 1;
 }
 
+static wp_s32 wp_renderer_dx11_ensure_foliage( wp_renderer_dx11 *r )
+{
+    ID3DBlob *blob = NULL;
+    ID3D11VertexShader *shader = NULL;
+    ID3D11InputLayout *layout = NULL;
+    ID3D11Buffer *buffer = NULL, *constants = NULL;
+    D3D11_INPUT_ELEMENT_DESC elements[14];
+    D3D11_BUFFER_DESC desc;
+    HRESULT hr;
+    wp_s32 i;
+    if( r->foliage_buffer ) return 1;
+    hr = wp_renderer_dx11_compile_shader( s_vs_foliage_src, "vs_main", "vs_4_0", &blob );
+    if( FAILED( hr ) ) return 0;
+    hr = ID3D11Device_CreateVertexShader( r->device, ID3D10Blob_GetBufferPointer( blob ),
+                                         ID3D10Blob_GetBufferSize( blob ), NULL, &shader );
+    memset( elements, 0, sizeof( elements ) );
+    elements[0].SemanticName="POSITION"; elements[0].Format=DXGI_FORMAT_R32G32B32_FLOAT;
+    elements[1].SemanticName="NORMAL"; elements[1].Format=DXGI_FORMAT_R32G32B32_FLOAT;
+    elements[1].AlignedByteOffset=12;
+    elements[2].SemanticName="TEXCOORD"; elements[2].Format=DXGI_FORMAT_R32G32_FLOAT;
+    elements[2].AlignedByteOffset=24;
+    elements[3].SemanticName="COLOR"; elements[3].Format=DXGI_FORMAT_R32_UINT;
+    elements[3].AlignedByteOffset=32;
+    for( i = 4; i < 14; ++i )
+    {
+        elements[i].SemanticName="INSTANCE"; elements[i].SemanticIndex=(UINT)(i-4);
+        elements[i].Format=DXGI_FORMAT_R32G32B32A32_FLOAT; elements[i].InputSlot=1;
+        elements[i].AlignedByteOffset=(UINT)((i-4)*16);
+        elements[i].InputSlotClass=D3D11_INPUT_PER_INSTANCE_DATA;
+        elements[i].InstanceDataStepRate=1;
+    }
+    if( SUCCEEDED( hr ) )
+        hr = ID3D11Device_CreateInputLayout( r->device, elements, 14,
+                    ID3D10Blob_GetBufferPointer( blob ), ID3D10Blob_GetBufferSize( blob ), &layout );
+    ID3D10Blob_Release( blob );
+    memset( &desc, 0, sizeof( desc ) );
+    desc.ByteWidth = WP_DX11_INSTANCE_CAPACITY * (UINT)sizeof( wp_foliage_gpu_dx11 );
+    desc.Usage = D3D11_USAGE_DYNAMIC; desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+    if( SUCCEEDED( hr ) ) hr = ID3D11Device_CreateBuffer( r->device, &desc, NULL, &buffer );
+    desc.ByteWidth = sizeof( wp_foliage_parameters_dx11 );
+    desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    if( SUCCEEDED( hr ) ) hr = ID3D11Device_CreateBuffer( r->device, &desc, NULL, &constants );
+    if( FAILED( hr ) )
+    {
+        if( buffer ) ID3D11Buffer_Release( buffer ); if( constants ) ID3D11Buffer_Release( constants );
+        if( layout ) ID3D11InputLayout_Release( layout );
+        if( shader ) ID3D11VertexShader_Release( shader );
+        return 0;
+    }
+    r->vs_foliage=shader; r->layout_foliage=layout; r->foliage_buffer=buffer; r->cb_foliage=constants;
+    ++r->statistics.instance_buffer_creations;
+    return 1;
+}
+
 /* =========================================================================
  * Lifecycle
  * ====================================================================== */
@@ -1854,6 +1940,10 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
     if( r->layout_pntc_instanced ) ID3D11InputLayout_Release( r->layout_pntc_instanced );
     if( r->vs_pntc_instanced ) ID3D11VertexShader_Release( r->vs_pntc_instanced );
     if( r->instance_buffer ) ID3D11Buffer_Release( r->instance_buffer );
+    if( r->layout_foliage ) ID3D11InputLayout_Release( r->layout_foliage );
+    if( r->vs_foliage ) ID3D11VertexShader_Release( r->vs_foliage );
+    if( r->foliage_buffer ) ID3D11Buffer_Release( r->foliage_buffer );
+    if( r->cb_foliage ) ID3D11Buffer_Release( r->cb_foliage );
     if( r->vs_pntc )
         ID3D11VertexShader_Release( r->vs_pntc );
     if( r->ps_pntc )
@@ -3311,6 +3401,74 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
      * instance stream binding as well, including after a failed upload. */
     ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &empty_buffer, &stride, &offset );
     ++r->statistics.state_bindings;
+    return submitted;
+}
+
+wp_s32 wp_renderer_dx11_validate_foliage_instances(
+    const wp_foliage_instance_dx11 *instances, wp_s32 count, const wp_foliage_parameters_dx11 *parameters )
+{
+    wp_s32 i, j;
+    const wp_f32 *p;
+    if( count < 0 || (count && !instances) || !parameters ) return 0;
+    p = (const wp_f32 *)parameters;
+    for( j = 0; j < 8; ++j ) if( !(p[j] >= -1000000.0f && p[j] <= 1000000.0f) ) return 0;
+    if( parameters->time.y < 0 || parameters->time.y > 100 || parameters->height.y - parameters->height.x < 0.0001f ) return 0;
+    for( i = 0; i < count; ++i )
+    {
+        if( !wp_renderer_dx11_pack_instance( &instances[i].instance, NULL ) ) return 0;
+        p = (const wp_f32 *)&instances[i].uv_rect;
+        for( j = 0; j < 12; ++j ) if( !(p[j] >= -1000000.0f && p[j] <= 1000000.0f) ) return 0;
+        if( p[0] < 0 || p[1] < 0 || p[2] <= 0 || p[3] <= 0 || p[0]+p[2] > 1.000001f || p[1]+p[3] > 1.000001f ) return 0;
+    }
+    return 1;
+}
+wp_s32 wp_renderer_dx11_draw_foliage_instances(
+    wp_renderer_dx11 *r, const wp_geometry_dx11 *geometry, wp_s32 start, wp_s32 indices,
+    const wp_foliage_instance_dx11 *instances, wp_s32 total, const wp_foliage_parameters_dx11 *parameters )
+{
+    wp_s32 i, count, submitted = 0;
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    wp_foliage_gpu_dx11 *destination;
+    UINT stride = sizeof( wp_foliage_gpu_dx11 ), offset = 0;
+    ID3D11Buffer *empty = NULL;
+    if( !r || !geometry || geometry->device != r->device || total <= 0 ||
+        geometry->vertex_stride != sizeof( wp_vertex_pntc ) || start < 0 || indices <= 0 ||
+        start > geometry->index_count || indices > geometry->index_count-start ||
+        !wp_renderer_dx11_validate_foliage_instances( instances, total, parameters ) ) return 0;
+    if( !wp_renderer_dx11_ensure_foliage( r ) ||
+        !wp_renderer_dx11_upload_constants( r, r->cb_foliage, parameters, sizeof(*parameters) ) ||
+        !wp_renderer_dx11_bind_geometry_pntc( r, geometry, start, indices, 0 ) ) return 0;
+    ID3D11DeviceContext_VSSetConstantBuffers( r->context, 4, 1, &r->cb_foliage );
+    ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_foliage );
+    ID3D11DeviceContext_VSSetShader( r->context, r->vs_foliage, NULL, 0 );
+    ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &r->foliage_buffer, &stride, &offset );
+    r->pntc_bindings_valid = 0; r->statistics.state_bindings += 4;
+    while( submitted < total )
+    {
+        count = total-submitted;
+        if( count > WP_DX11_INSTANCE_CAPACITY ) count = WP_DX11_INSTANCE_CAPACITY;
+        if( FAILED( ID3D11DeviceContext_Map( r->context, (ID3D11Resource *)r->foliage_buffer,
+                    0, D3D11_MAP_WRITE_DISCARD, 0, &mapped ) ) ) break;
+        destination = (wp_foliage_gpu_dx11 *)mapped.pData;
+        for( i = 0; i < count; ++i )
+        {
+            const wp_foliage_instance_dx11 *source = instances+submitted+i;
+            wp_renderer_dx11_pack_instance( &source->instance, &destination[i].instance );
+            destination[i].uv_rect = source->uv_rect;
+            destination[i].wind = source->wind;
+            destination[i].interaction = source->interaction;
+        }
+        ID3D11DeviceContext_Unmap( r->context, (ID3D11Resource *)r->foliage_buffer, 0 );
+        ID3D11DeviceContext_DrawIndexedInstanced( r->context, (UINT)indices, (UINT)count, (UINT)start, 0, 0 );
+        ++r->statistics.draws; ++r->statistics.instanced_draws; ++r->statistics.instance_uploads;
+        r->statistics.instances += count;
+        r->statistics.instance_upload_bytes += (uint64_t)count*sizeof( wp_foliage_gpu_dx11 );
+        r->statistics.triangles += (uint64_t)(indices/3)*count;
+        submitted += count;
+    }
+    ID3D11DeviceContext_IASetVertexBuffers( r->context, 1, 1, &empty, &stride, &offset );
+    ID3D11DeviceContext_VSSetConstantBuffers( r->context, 4, 1, &empty );
+    r->statistics.state_bindings += 2;
     return submitted;
 }
 

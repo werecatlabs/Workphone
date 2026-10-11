@@ -373,6 +373,29 @@ wp_s32 wp_renderer_dx11_draw_geometry_pntc_instanced(
     wp_s32 index_start, wp_s32 index_count, wp_s32 base_vertex,
     const wp_instance_pntc_dx11 *instances, wp_s32 instance_count );
 
+/** Foliage stream extends ordinary instances without changing their ABI. Wind
+ * and interaction are local horizontal displacements in metres; phase is radians.
+ * Atlas rectangles transform all material UVs together. Both passes run the same
+ * deformation and inverse-Jacobian normal correction. */
+typedef struct wp_foliage_instance_dx11
+{
+    wp_instance_pntc_dx11 instance;
+    wp_vec4f uv_rect;
+    wp_vec4f wind;        /* local x/z amplitude, phase, flutter amplitude */
+    wp_vec4f interaction; /* local x/z bend; reserved z/w */
+} wp_foliage_instance_dx11;
+typedef struct wp_foliage_parameters_dx11
+{
+    wp_vec4f time;   /* seconds, frequency, reserved z/w */
+    wp_vec4f height; /* bend start, bend end, reserved z/w */
+} wp_foliage_parameters_dx11;
+wp_s32 wp_renderer_dx11_validate_foliage_instances(
+    const wp_foliage_instance_dx11 *, wp_s32 count, const wp_foliage_parameters_dx11 * );
+wp_s32 wp_renderer_dx11_draw_foliage_instances(
+    wp_renderer_dx11 *, const wp_geometry_dx11 *, wp_s32 index_start,
+    wp_s32 index_count, const wp_foliage_instance_dx11 *, wp_s32 count,
+    const wp_foliage_parameters_dx11 * );
+
 /* =========================================================================
  * Dimension queries
  * ====================================================================== */
