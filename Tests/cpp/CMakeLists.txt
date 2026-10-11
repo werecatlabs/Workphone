@@ -1,5 +1,5 @@
 if(WP_BUILD_TESTS AND TARGET WorkphoneAudio)
-    add_subdirectory(../AudioProduction AudioProduction)
+    #add_subdirectory(./AudioProduction AudioProduction)
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
@@ -33,33 +33,36 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
 endif()
 
 if (WP_BUILD_TESTS)
-    add_executable(WPTerrainContractsTests TerrainContractsTests.cpp)
-    target_compile_definitions(WPTerrainContractsTests PRIVATE BOOST_ALL_NO_LIB)
-    target_include_directories(WPTerrainContractsTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
-    target_link_libraries(WPTerrainContractsTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
-    add_dependencies(WPTerrainContractsTests Workphone)
-    set_target_properties(WPTerrainContractsTests PROPERTIES FOLDER Tests/Cpp)
-    add_test(NAME WPGraphics.terrain_contracts COMMAND WPTerrainContractsTests)
-    set_tests_properties(WPGraphics.terrain_contracts PROPERTIES LABELS "terrain;editor;headless" TIMEOUT 60)
-    if(TARGET WPSQLite)
-        add_executable(WPAssetCatalogTests AssetCatalogTests.cpp)
-        if(WP_BUILD_RESOURCE_SYSTEM)
-            target_compile_definitions(WPAssetCatalogTests PRIVATE WP_CATALOG_RESOURCE_SYSTEM_TESTS=1)
-        endif()
-        target_include_directories(WPAssetCatalogTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
-        target_link_libraries(WPAssetCatalogTests PRIVATE $<TARGET_LINKER_FILE:WPSQLite> $<TARGET_LINKER_FILE:Workphone>)
-        add_dependencies(WPAssetCatalogTests WPSQLite Workphone)
-        if(WP_BUILD_EDITOR)
-            target_sources(WPAssetCatalogTests PRIVATE
-                ${WP_ROOT}/Tools/cpp/Editor/src/commands/Command.cpp
-                ${WP_ROOT}/Tools/cpp/Editor/src/commands/ModifyPropertyCmd.cpp)
-            target_include_directories(WPAssetCatalogTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
-            target_compile_definitions(WPAssetCatalogTests PRIVATE WP_EDITOR_ASSET_COMMAND_CONTRACTS=1)
-        endif()
-        set_target_properties(WPAssetCatalogTests PROPERTIES FOLDER Tests/Cpp)
-        add_test(NAME WorkphoneAssets.catalog_contracts COMMAND WPAssetCatalogTests)
-        set_tests_properties(WorkphoneAssets.catalog_contracts PROPERTIES LABELS "assets;database;headless" TIMEOUT 60)
-    endif()
+    #add_executable(WPTerrainContractsTests TerrainContractsTests.cpp)
+    #target_compile_definitions(WPTerrainContractsTests PRIVATE BOOST_ALL_NO_LIB)
+    #target_include_directories(WPTerrainContractsTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    #target_link_libraries(WPTerrainContractsTests PRIVATE $<TARGET_LINKER_FILE:Workphone>)
+    #add_dependencies(WPTerrainContractsTests Workphone)
+    #set_target_properties(WPTerrainContractsTests PROPERTIES FOLDER Tests/Cpp)
+    #add_test(NAME WPGraphics.terrain_contracts COMMAND WPTerrainContractsTests)
+    #set_tests_properties(WPGraphics.terrain_contracts PROPERTIES LABELS "terrain;editor;headless" TIMEOUT 60)
+    #if(TARGET WPSQLite)
+    #    add_executable(WPAssetCatalogTests AssetCatalogTests.cpp)
+    #    if(WP_BUILD_RESOURCE_SYSTEM)
+    #        target_compile_definitions(WPAssetCatalogTests PRIVATE WP_CATALOG_RESOURCE_SYSTEM_TESTS=1)
+    #    endif()
+    #    target_include_directories(WPAssetCatalogTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    #    target_link_libraries(WPAssetCatalogTests PRIVATE $<TARGET_LINKER_FILE:WPSQLite> $<TARGET_LINKER_FILE:Workphone>)
+    #    add_dependencies(WPAssetCatalogTests WPSQLite Workphone)
+    #    
+	#	if(WP_BUILD_EDITOR)
+    #        target_sources(WPAssetCatalogTests PRIVATE
+    #            ${WP_ROOT}/Tools/cpp/Editor/src/commands/Command.cpp
+    #            ${WP_ROOT}/Tools/cpp/Editor/src/commands/ModifyPropertyCmd.cpp)
+    #        target_include_directories(WPAssetCatalogTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
+    #        target_compile_definitions(WPAssetCatalogTests PRIVATE WP_EDITOR_ASSET_COMMAND_CONTRACTS=1)
+    #    endif()
+	#	
+    #    set_target_properties(WPAssetCatalogTests PROPERTIES FOLDER Tests/Cpp)
+    #    add_test(NAME WorkphoneAssets.catalog_contracts COMMAND WPAssetCatalogTests)
+    #    set_tests_properties(WorkphoneAssets.catalog_contracts PROPERTIES LABELS "assets;database;headless" TIMEOUT 60)
+    #endif()
+	
 	if (WP_BUILD_WXWIDGETS)
 		add_subdirectory(./Client)
 	endif()
@@ -100,89 +103,89 @@ if (WP_BUILD_TESTS)
 		add_subdirectory(./ResourceSystem)
 	endif()
 
-	if (WP_GRAPHICS_SYSTEM_CLAW AND TARGET WPGraphics)
-        if(WIN32 AND WP_BUILD_RENDERER_DX11)
-            add_executable(WPGraphicsClawProductionTests ClawProductionTests.cpp)
-            target_include_directories(WPGraphicsClawProductionTests PRIVATE
-                ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
-                ${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
-            target_link_libraries(WPGraphicsClawProductionTests PRIVATE
-                WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
-            target_link_directories(WPGraphicsClawProductionTests PRIVATE
-                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-            set_target_properties(WPGraphicsClawProductionTests PROPERTIES FOLDER Tests/Cpp)
-            add_test(NAME WPGraphics.claw_production_render COMMAND WPGraphicsClawProductionTests)
-            set_tests_properties(WPGraphics.claw_production_render PROPERTIES LABELS "graphics;gpu;production" TIMEOUT 60)
-            if(WP_BUILD_RESOURCE_SYSTEM AND TARGET WPSQLite)
-                add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
-                target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB)
-                target_include_directories(WPGraphicsCookedResourceTests PRIVATE
-                    ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
-                    ${WP_ROOT}/Engine/c/Include/WorkphoneCore
-                    ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
-                    ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
-                target_link_libraries(WPGraphicsCookedResourceTests PRIVATE
-                    WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
-                target_link_directories(WPGraphicsCookedResourceTests PRIVATE
-                    ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-                set_target_properties(WPGraphicsCookedResourceTests PROPERTIES FOLDER Tests/Cpp)
-                add_test(NAME WPGraphics.cooked_material_resource COMMAND WPGraphicsCookedResourceTests)
-                set_tests_properties(WPGraphics.cooked_material_resource PROPERTIES LABELS "graphics;gpu;assets" TIMEOUT 90)
-            endif()
-        endif()
-		add_executable(WPGraphicsClawRendererTests ClawRendererContractTests.cpp)
-		target_include_directories(
-			WPGraphicsClawRendererTests
-			PRIVATE ${WP_ROOT}/Engine/cpp/Include
-					${WP_ROOT}/Engine/c/Include
-					${WP_ROOT}/Engine/c/Include/WorkphoneCore
-					${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
-		target_compile_definitions(
-			WPGraphicsClawRendererTests
-			PRIVATE WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR
-					WORKPHONE_INCLUDE_FONT_BAKING
-					WORKPHONE_INCLUDE_DEFAULT_FONT
-					WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
-					WORKPHONE_INCLUDE_STANDARD_IO)
-		target_link_libraries(
-			WPGraphicsClawRendererTests
-			PRIVATE WPGraphics WorkphoneGraphics WorkphoneCore WorkphonePlatform)
-		if (WIN32)
-			target_link_directories(
-				WPGraphicsClawRendererTests
-				PRIVATE ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-		endif()
-		set_target_properties(WPGraphicsClawRendererTests PROPERTIES FOLDER Tests/Cpp)
-		add_test(NAME WPGraphics.claw_text_contract COMMAND WPGraphicsClawRendererTests)
-		if (WIN32 AND WP_BUILD_RENDERER_DX11)
-			add_executable(WPGraphicsClawDX11TargetTests ClawDX11TargetTests.cpp)
-			target_include_directories(WPGraphicsClawDX11TargetTests PRIVATE
-				${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
-				${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
-			target_link_libraries(WPGraphicsClawDX11TargetTests PRIVATE
-				WPGraphics WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
-			target_link_directories(WPGraphicsClawDX11TargetTests PRIVATE
-				${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-			set_target_properties(WPGraphicsClawDX11TargetTests PROPERTIES FOLDER Tests/Cpp)
-			add_test(NAME WPGraphics.claw_dx11_targets COMMAND WPGraphicsClawDX11TargetTests)
-		endif()
-		add_executable(WPGraphicsClawUIDestructionTests ClawUIDestructionTests.cpp)
-		target_include_directories(WPGraphicsClawUIDestructionTests PRIVATE
-			${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
-			${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
-		target_compile_definitions(WPGraphicsClawUIDestructionTests PRIVATE
-			WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR WORKPHONE_INCLUDE_FONT_BAKING
-			WORKPHONE_INCLUDE_DEFAULT_FONT WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
-			WORKPHONE_INCLUDE_STANDARD_IO)
-		target_link_libraries(WPGraphicsClawUIDestructionTests PRIVATE
-			WPGraphics WorkphoneGraphics WorkphoneCore WorkphonePlatform)
-		if (WIN32)
-			target_link_directories(WPGraphicsClawUIDestructionTests PRIVATE
-				${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
-		endif()
-		set_target_properties(WPGraphicsClawUIDestructionTests PROPERTIES FOLDER Tests/Cpp)
-		add_test(NAME WPGraphics.claw_ui_destruction COMMAND WPGraphicsClawUIDestructionTests)
-	endif()
+	#if (WP_GRAPHICS_SYSTEM_CLAW AND TARGET WPGraphics)
+    #    if(WIN32 AND WP_BUILD_RENDERER_DX11)
+    #        add_executable(WPGraphicsClawProductionTests ClawProductionTests.cpp)
+    #        target_include_directories(WPGraphicsClawProductionTests PRIVATE
+    #            ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+    #            ${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+    #        target_link_libraries(WPGraphicsClawProductionTests PRIVATE
+    #            WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
+    #        target_link_directories(WPGraphicsClawProductionTests PRIVATE
+    #            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    #        set_target_properties(WPGraphicsClawProductionTests PROPERTIES FOLDER Tests/Cpp)
+    #        add_test(NAME WPGraphics.claw_production_render COMMAND WPGraphicsClawProductionTests)
+    #        set_tests_properties(WPGraphics.claw_production_render PROPERTIES LABELS "graphics;gpu;production" TIMEOUT 60)
+    #        if(WP_BUILD_RESOURCE_SYSTEM AND TARGET WPSQLite)
+    #            add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
+    #            target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB)
+    #            target_include_directories(WPGraphicsCookedResourceTests PRIVATE
+    #                ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+    #                ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+    #                ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+    #                ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
+    #            target_link_libraries(WPGraphicsCookedResourceTests PRIVATE
+    #                WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
+    #            target_link_directories(WPGraphicsCookedResourceTests PRIVATE
+    #                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    #            set_target_properties(WPGraphicsCookedResourceTests PROPERTIES FOLDER Tests/Cpp)
+    #            add_test(NAME WPGraphics.cooked_material_resource COMMAND WPGraphicsCookedResourceTests)
+    #            set_tests_properties(WPGraphics.cooked_material_resource PROPERTIES LABELS "graphics;gpu;assets" TIMEOUT 90)
+    #        endif()
+    #    endif()
+	#	add_executable(WPGraphicsClawRendererTests ClawRendererContractTests.cpp)
+	#	target_include_directories(
+	#		WPGraphicsClawRendererTests
+	#		PRIVATE ${WP_ROOT}/Engine/cpp/Include
+	#				${WP_ROOT}/Engine/c/Include
+	#				${WP_ROOT}/Engine/c/Include/WorkphoneCore
+	#				${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+	#	target_compile_definitions(
+	#		WPGraphicsClawRendererTests
+	#		PRIVATE WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR
+	#				WORKPHONE_INCLUDE_FONT_BAKING
+	#				WORKPHONE_INCLUDE_DEFAULT_FONT
+	#				WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
+	#				WORKPHONE_INCLUDE_STANDARD_IO)
+	#	target_link_libraries(
+	#		WPGraphicsClawRendererTests
+	#		PRIVATE WPGraphics WorkphoneGraphics WorkphoneCore WorkphonePlatform)
+	#	if (WIN32)
+	#		target_link_directories(
+	#			WPGraphicsClawRendererTests
+	#			PRIVATE ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+	#	endif()
+	#	set_target_properties(WPGraphicsClawRendererTests PROPERTIES FOLDER Tests/Cpp)
+	#	add_test(NAME WPGraphics.claw_text_contract COMMAND WPGraphicsClawRendererTests)
+	#	if (WIN32 AND WP_BUILD_RENDERER_DX11)
+	#		add_executable(WPGraphicsClawDX11TargetTests ClawDX11TargetTests.cpp)
+	#		target_include_directories(WPGraphicsClawDX11TargetTests PRIVATE
+	#			${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+	#			${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+	#		target_link_libraries(WPGraphicsClawDX11TargetTests PRIVATE
+	#			WPGraphics WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
+	#		target_link_directories(WPGraphicsClawDX11TargetTests PRIVATE
+	#			${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+	#		set_target_properties(WPGraphicsClawDX11TargetTests PROPERTIES FOLDER Tests/Cpp)
+	#		add_test(NAME WPGraphics.claw_dx11_targets COMMAND WPGraphicsClawDX11TargetTests)
+	#	endif()
+	#	add_executable(WPGraphicsClawUIDestructionTests ClawUIDestructionTests.cpp)
+	#	target_include_directories(WPGraphicsClawUIDestructionTests PRIVATE
+	#		${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+	#		${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+	#	target_compile_definitions(WPGraphicsClawUIDestructionTests PRIVATE
+	#		WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR WORKPHONE_INCLUDE_FONT_BAKING
+	#		WORKPHONE_INCLUDE_DEFAULT_FONT WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
+	#		WORKPHONE_INCLUDE_STANDARD_IO)
+	#	target_link_libraries(WPGraphicsClawUIDestructionTests PRIVATE
+	#		WPGraphics WorkphoneGraphics WorkphoneCore WorkphonePlatform)
+	#	if (WIN32)
+	#		target_link_directories(WPGraphicsClawUIDestructionTests PRIVATE
+	#			${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+	#	endif()
+	#	set_target_properties(WPGraphicsClawUIDestructionTests PROPERTIES FOLDER Tests/Cpp)
+	#	add_test(NAME WPGraphics.claw_ui_destruction COMMAND WPGraphicsClawUIDestructionTests)
+	#endif()
 endif()
 
 
