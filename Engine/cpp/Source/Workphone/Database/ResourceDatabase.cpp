@@ -2171,6 +2171,7 @@ namespace workphone
 
             auto assetDatabaseManager =
                 workphone::static_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
+            
             auto director = assetDatabaseManager->getResourceEntryFromPath( path );
 
             auto result = createOrRetrieveFromDirector( type, path, director );

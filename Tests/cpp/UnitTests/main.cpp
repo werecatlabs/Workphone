@@ -191,6 +191,35 @@ namespace
 
             utf::framework::finalize_setup_phase();
 
+            // Match Boost.Test's runner: discovery must not start the engine or
+            // execute tests with the discovery-only observer configuration.
+            const auto listContent = utf::runtime_config::get<utf::output_format>(
+                utf::runtime_config::btrt_list_content );
+            if( listContent != utf::OF_INVALID )
+            {
+                if( listContent == utf::OF_DOT )
+                {
+                    utf::ut_detail::dot_content_reporter reporter( utf::results_reporter::get_stream() );
+                    utf::traverse_test_tree( utf::framework::master_test_suite().p_id, reporter, true );
+                }
+                else
+                {
+                    utf::ut_detail::hrf_content_reporter reporter( utf::results_reporter::get_stream() );
+                    utf::traverse_test_tree( utf::framework::master_test_suite().p_id, reporter, true );
+                }
+                utf::framework::shutdown();
+                return boost::exit_success;
+            }
+            if( utf::runtime_config::get<bool>( utf::runtime_config::btrt_list_labels ) )
+            {
+                utf::ut_detail::labels_collector collector;
+                utf::traverse_test_tree( utf::framework::master_test_suite().p_id, collector, true );
+                for( const auto &label : collector.labels() )
+                    utf::results_reporter::get_stream() << label << '\n';
+                utf::framework::shutdown();
+                return boost::exit_success;
+            }
+
             ensureUnitTestTypeManager();
             testFixture = std::make_unique<UnitTestsFixture>();
 

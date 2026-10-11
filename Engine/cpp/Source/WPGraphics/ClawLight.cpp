@@ -14,10 +14,13 @@ namespace workphone::render
 
     ClawLight::~ClawLight()
     {
+        unload( nullptr );
     }
 
     void ClawLight::load( SmartPtr<ISharedObject> data )
     {
+        if( m_light )
+            return;
         setLoadingState( LoadingState::Loading );
         m_light = wp_light_create();
         setLoadingState( LoadingState::Loaded );

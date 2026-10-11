@@ -10,7 +10,7 @@
 #include <chrono>
 #include <thread>
 #include <cctype>
-#if defined(_WIN32)
+#if defined( _WIN32 )
 #    include <windows.h>
 #else
 #    include <spawn.h>
@@ -32,9 +32,11 @@ namespace workphone::editor
         {
             auto result = workphone::make_ptr<Properties>();
             result->setName( source.getName() );
-            for( const auto &property : source.getPropertiesAsArray() ) result->addProperty( property );
+            for( const auto &property : source.getPropertiesAsArray() )
+                result->addProperty( property );
             for( auto child : source.getChildren() )
-                if( child ) result->addChild( copyProperties( *child ) );
+                if( child )
+                    result->addChild( copyProperties( *child ) );
             return result;
         }
 
@@ -90,7 +92,8 @@ namespace workphone::editor
                 for( auto entry : group->getChildren() )
                 {
                     String path;
-                    if( entry && entry->getPropertyValue( "pathValue", path ) ) paths.push_back( path );
+                    if( entry && entry->getPropertyValue( "pathValue", path ) )
+                        paths.push_back( path );
                 }
             }
             else if( properties.hasProperty( key ) )
@@ -113,10 +116,11 @@ namespace workphone::editor
                 stream.write( text.data(), static_cast<std::streamsize>( text.size() ) );
                 stream.flush();
                 stream.close();
-#if defined(_WIN32)
+#if defined( _WIN32 )
                 if( !MoveFileExW( temporary.c_str(), destination.c_str(),
                                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
-                    throw std::runtime_error( "Unable to replace project file: " + destination.u8string() );
+                    throw std::runtime_error( "Unable to replace project file: " +
+                                              destination.u8string() );
 #else
                 fs::rename( temporary, destination );
 #endif
@@ -134,11 +138,15 @@ namespace workphone::editor
         void runCMake( const Array<String> &args, const fs::path &logPath )
         {
             fs::create_directories( logPath.parent_path() );
-#if defined(_WIN32)
+#if defined( _WIN32 )
             struct Handle
             {
                 HANDLE value;
-                ~Handle() { if( value && value != INVALID_HANDLE_VALUE ) CloseHandle( value ); }
+                ~Handle()
+                {
+                    if( value && value != INVALID_HANDLE_VALUE )
+                        CloseHandle( value );
+                }
             };
             SECURITY_ATTRIBUTES security = { sizeof( SECURITY_ATTRIBUTES ), nullptr, TRUE };
             Handle output{ CreateFileW( logPath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security,
@@ -161,10 +169,15 @@ namespace workphone::editor
                 size_t slashes = 0;
                 for( auto c : wide )
                 {
-                    if( c == L'\\' ) { ++slashes; continue; }
+                    if( c == L'\\' )
+                    {
+                        ++slashes;
+                        continue;
+                    }
                     command.append( slashes * ( c == L'\"' ? 2 : 1 ), L'\\' );
                     slashes = 0;
-                    if( c == L'\"' ) command += L'\\';
+                    if( c == L'\"' )
+                        command += L'\\';
                     command += c;
                 }
                 command.append( slashes * 2, L'\\' );
@@ -178,7 +191,8 @@ namespace workphone::editor
             startup.hStdInput = input.value;
             PROCESS_INFORMATION process = {};
             if( !CreateProcessW( nullptr, command.data(), nullptr, nullptr, TRUE,
-                                 CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr, &startup, &process ) )
+                                 CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr, &startup,
+                                 &process ) )
                 throw std::runtime_error( "Unable to start CMake. Ensure it is installed and on PATH." );
             if( !AssignProcessToJobObject( job.value, process.hProcess ) )
             {
@@ -191,7 +205,8 @@ namespace workphone::editor
             CloseHandle( process.hThread );
             const auto wait = WaitForSingleObject( process.hProcess, 10 * 60 * 1000 );
             DWORD code = 1;
-            const bool completed = wait == WAIT_OBJECT_0 && GetExitCodeProcess( process.hProcess, &code );
+            const bool completed =
+                wait == WAIT_OBJECT_0 && GetExitCodeProcess( process.hProcess, &code );
             if( !completed )
             {
                 TerminateJobObject( job.value, 1 );
@@ -203,9 +218,11 @@ namespace workphone::editor
                                           "). See " + logPath.u8string() );
 #else
             std::vector<String> strings = { "cmake" };
-            for( const auto &arg : args ) strings.push_back( arg );
+            for( const auto &arg : args )
+                strings.push_back( arg );
             std::vector<char *> argv;
-            for( auto &arg : strings ) argv.push_back( arg.data() );
+            for( auto &arg : strings )
+                argv.push_back( arg.data() );
             argv.push_back( nullptr );
             posix_spawn_file_actions_t actions;
             posix_spawnattr_t attributes;
@@ -218,11 +235,15 @@ namespace workphone::editor
             }
             int error = posix_spawn_file_actions_addopen( &actions, STDOUT_FILENO, logPath.c_str(),
                                                           O_WRONLY | O_CREAT | O_TRUNC, 0600 );
-            if( !error ) error = posix_spawn_file_actions_adddup2( &actions, STDOUT_FILENO, STDERR_FILENO );
-            if( !error ) error = posix_spawnattr_setflags( &attributes, POSIX_SPAWN_SETPGROUP );
-            if( !error ) error = posix_spawnattr_setpgroup( &attributes, 0 );
+            if( !error )
+                error = posix_spawn_file_actions_adddup2( &actions, STDOUT_FILENO, STDERR_FILENO );
+            if( !error )
+                error = posix_spawnattr_setflags( &attributes, POSIX_SPAWN_SETPGROUP );
+            if( !error )
+                error = posix_spawnattr_setpgroup( &attributes, 0 );
             pid_t pid;
-            if( !error ) error = posix_spawnp( &pid, "cmake", &actions, &attributes, argv.data(), environ );
+            if( !error )
+                error = posix_spawnp( &pid, "cmake", &actions, &attributes, argv.data(), environ );
             posix_spawn_file_actions_destroy( &actions );
             posix_spawnattr_destroy( &attributes );
             if( error )
@@ -232,13 +253,16 @@ namespace workphone::editor
             for( ;; )
             {
                 const auto result = waitpid( pid, &status, WNOHANG );
-                if( result == pid ) break;
+                if( result == pid )
+                    break;
                 if( result < 0 && errno != EINTR )
                     throw std::runtime_error( "Unable to wait for CMake" );
                 if( std::chrono::steady_clock::now() >= deadline )
                 {
                     kill( -pid, SIGKILL );
-                    while( waitpid( pid, &status, 0 ) < 0 && errno == EINTR ) {}
+                    while( waitpid( pid, &status, 0 ) < 0 && errno == EINTR )
+                    {
+                    }
                     throw std::runtime_error( "CMake timed out. See " + logPath.u8string() );
                 }
                 std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
@@ -247,7 +271,7 @@ namespace workphone::editor
                 throw std::runtime_error( "CMake failed. See " + logPath.u8string() );
 #endif
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::editor, Project, Resource<IProject> );
 
@@ -283,11 +307,13 @@ namespace workphone::editor
 
     void Project::load( SmartPtr<ISharedObject> data )
     {
-        if( isLoaded() ) return;
+        if( isLoaded() )
+            return;
         setLoadingState( LoadingState::Loading );
         try
         {
-            if( !m_properties ) applyDefaults();
+            if( !m_properties )
+                applyDefaults();
             Resource<IProject>::load( data );
             setLoadingState( LoadingState::Loaded );
         }
@@ -336,17 +362,20 @@ namespace workphone::editor
         applyDefaults();
         saveToFile( destination.u8string() );
         if( auto editor = EditorManager::getSingletonPtr() )
-            if( auto ui = editor->getUI() ) ui->rebuildResourceTree();
+            if( auto ui = editor->getUI() )
+                ui->rebuildResourceTree();
     }
 
     void Project::loadFromFile( const String &filePath )
     {
         const auto destination = checkedPath( filePath );
         std::ifstream stream( destination, std::ios::binary );
-        if( !stream ) throw std::runtime_error( "Unable to open project: " + filePath );
+        if( !stream )
+            throw std::runtime_error( "Unable to open project: " + filePath );
         std::ostringstream buffer;
         buffer << stream.rdbuf();
-        if( stream.bad() ) throw std::runtime_error( "Unable to read project: " + filePath );
+        if( stream.bad() )
+            throw std::runtime_error( "Unable to read project: " + filePath );
         auto properties = workphone::make_ptr<Properties>();
         DataUtil::parse( buffer.str(), properties.get() );
         // DataUtil can log malformed JSON without throwing. Reject incomplete documents.
@@ -379,7 +408,8 @@ namespace workphone::editor
             app->setCachePath( cacheDirectoryPath( cacheDirectory ) );
             app->setSettingsPath( cacheDirectoryPath( settingsDirectory ) );
             auto fileSystem = app->getFileSystem();
-            if( fileSystem ) fileSystem->addFolder( m_projectDirectory, true );
+            if( fileSystem )
+                fileSystem->addFolder( m_projectDirectory, true );
             if( fileSystem )
             {
                 auto folders = m_resourceFolders;
@@ -389,14 +419,17 @@ namespace workphone::editor
                 {
                     const auto resolved =
                         ( destination.parent_path() / fs::u8path( folder.c_str() ) ).lexically_normal();
-                    if( fs::is_directory( resolved ) ) fileSystem->addFolder( resolved.u8string(), true );
+                    if( fs::is_directory( resolved ) )
+                        fileSystem->addFolder( resolved.u8string(), true );
                 }
             }
             if( auto scripts = app->getScriptManager() )
             {
                 auto files = m_scriptFilePaths;
                 for( auto &file : files )
-                    file = ( destination.parent_path() / fs::u8path( file.c_str() ) ).lexically_normal().u8string();
+                    file = ( destination.parent_path() / fs::u8path( file.c_str() ) )
+                               .lexically_normal()
+                               .u8string();
                 if( files.empty() && fileSystem )
                 {
 #if WP_ENABLE_LUA
@@ -405,7 +438,8 @@ namespace workphone::editor
                     files = fileSystem->getFileNamesWithExtension( ".py" );
 #endif
                 }
-                if( !files.empty() ) scripts->loadScripts( files );
+                if( !files.empty() )
+                    scripts->loadScripts( files );
             }
             app->setProjectLibraryName( "Plugin" );
             const auto library = app->getProjectLibraryPath();
@@ -416,9 +450,26 @@ namespace workphone::editor
                 job->execute();
                 setPlugin( job->getPlugin() );
             }
+
+            // open project catalog
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            WP_ASSERT( applicationManager );
+
+            auto resourceDatabase = applicationManager->getResourceDatabasePtr();
+            WP_ASSERT( resourceDatabase );
+
+            auto dbFilePath = resourceDatabase->getFilePath();
+            auto databasePath = applicationManager->getCachePath() + "/" + dbFilePath;
+            databasePath = StringUtil::cleanupPath( databasePath );
+
+            auto projectCatolog = resourceDatabase->getDatabaseManager();
+            projectCatolog->setDatabasePath( databasePath );
+            projectCatolog->open();
+
             if( auto scenes = app->getGameManager() )
             {
-                if( !m_currentScenePath.empty() ) scenes->loadScene( m_currentScenePath );
+                if( !m_currentScenePath.empty() )
+                    scenes->loadScene( m_currentScenePath );
                 scenes->edit();
             }
         }
@@ -426,12 +477,14 @@ namespace workphone::editor
 
     void Project::saveToFile( const String &filePath )
     {
-        if( m_archive ) throw std::runtime_error( "Extract the archived project before saving" );
+        if( m_archive )
+            throw std::runtime_error( "Extract the archived project before saving" );
         const auto destination = checkedPath( filePath );
         auto properties = workphone::static_pointer_cast<Properties>( toData() );
         writeProjectFile( destination, DataUtil::toString( properties.get(), true ) );
-        writeProjectFile( destination.parent_path() / "GameGraphics.settings",
-                          DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ) );
+        writeProjectFile(
+            destination.parent_path() / "GameGraphics.settings",
+            DataUtil::toString( m_graphicsSettingsDirector->getProperties().get(), true ) );
         m_projectDirectory = destination.parent_path().u8string();
         m_projectPath = destination.u8string();
         m_selectedProjectPath = m_projectPath;
@@ -531,7 +584,8 @@ namespace workphone::editor
 
     void Project::setProperties( SmartPtr<Properties> properties )
     {
-        if( !properties ) throw std::invalid_argument( "Project properties cannot be null" );
+        if( !properties )
+            throw std::invalid_argument( "Project properties cannot be null" );
         auto copy = copyProperties( *properties );
         // Keep resource metadata handling, but commit our copy after lifecycle callbacks.
         Resource<IProject>::setProperties( copy );
@@ -563,8 +617,10 @@ namespace workphone::editor
         readPaths( *copy, "mediaPaths", m_mediaPaths );
         readPaths( *copy, "scriptFilePaths", m_scriptFilePaths );
         readPaths( *copy, "resourceFolders", m_resourceFolders );
-        if( m_uuid.empty() ) m_uuid = StringUtil::getUUID();
-        if( m_version.empty() ) m_version = DEFAULT_VERSION;
+        if( m_uuid.empty() )
+            m_uuid = StringUtil::getUUID();
+        if( m_version.empty() )
+            m_version = DEFAULT_VERSION;
         m_paths = cleanPaths( m_paths );
         m_mediaPaths = cleanPaths( m_mediaPaths );
         m_scriptFilePaths = cleanPaths( m_scriptFilePaths );
@@ -704,7 +760,8 @@ namespace workphone::editor
     void Project::fromData( SmartPtr<ISharedObject> data )
     {
         auto properties = workphone::dynamic_pointer_cast<Properties>( data );
-        if( !properties ) throw std::invalid_argument( "Project data must contain Properties" );
+        if( !properties )
+            throw std::invalid_argument( "Project data must contain Properties" );
         // Reset absent legacy fields to defaults, never to values from a previous project.
         applyDefaults();
         setProperties( properties );
@@ -713,11 +770,13 @@ namespace workphone::editor
 
     void Project::compile()
     {
-        if( m_archive ) throw std::runtime_error( "Extract the archived project before compiling" );
+        if( m_archive )
+            throw std::runtime_error( "Extract the archived project before compiling" );
         const auto directory = checkedPath( m_projectDirectory );
         const auto buildDirectory = directory / "Cache/project";
         auto app = core::IApplicationManager::instancePtr();
-        if( !app ) throw std::runtime_error( "Compilation requires the application manager" );
+        if( !app )
+            throw std::runtime_error( "Compilation requires the application manager" );
         if( !fs::exists( directory / "CMakeLists.txt" ) )
         {
             if( !app->getFileSystem() )
@@ -725,8 +784,10 @@ namespace workphone::editor
             if( checkedPath( app->getProjectPath() ) != directory )
                 throw std::runtime_error( "The application project path does not match this project" );
             SmartPtr<ProjectManager> manager;
-            if( auto editor = EditorManager::getSingletonPtr() ) manager = editor->getProjectManager();
-            if( !manager ) manager = workphone::make_ptr<ProjectManager>();
+            if( auto editor = EditorManager::getSingletonPtr() )
+                manager = editor->getProjectManager();
+            if( !manager )
+                manager = workphone::make_ptr<ProjectManager>();
             manager->generateProject();
         }
         const auto configuration = app->getBuildConfig();
@@ -752,20 +813,24 @@ namespace workphone::editor
         }
         try
         {
-            runCMake( { "--build", buildDirectory.u8string(), "--config", configuration,
-                        "--target", "Plugin" }, buildDirectory / "build.log" );
+            runCMake( { "--build", buildDirectory.u8string(), "--config", configuration, "--target",
+                        "Plugin" },
+                      buildDirectory / "build.log" );
             if( library.empty() || !fs::is_regular_file( fs::u8path( library.c_str() ) ) )
                 throw std::runtime_error( "Build completed but the project plugin was not found" );
             auto job = workphone::make_ptr<LoadPluginJob>();
             job->setPluginPath( library );
             job->execute();
             m_plugin = job->getPlugin();
-            if( !m_plugin ) throw std::runtime_error( "Built plugin could not be loaded" );
-            if( auto scripts = app->getScriptManager() ) scripts->reload( nullptr );
+            if( !m_plugin )
+                throw std::runtime_error( "Built plugin could not be loaded" );
+            if( auto scripts = app->getScriptManager() )
+                scripts->reload( nullptr );
         }
         catch( ... )
         {
-            if( !m_plugin && oldPlugin && !library.empty() && fs::is_regular_file( fs::u8path( library.c_str() ) ) )
+            if( !m_plugin && oldPlugin && !library.empty() &&
+                fs::is_regular_file( fs::u8path( library.c_str() ) ) )
             {
                 auto job = workphone::make_ptr<LoadPluginJob>();
                 job->setPluginPath( library );
@@ -916,4 +981,3 @@ void PROJECT_CALL unloadPlugin(workphone::core::IApplicationManager *manager)
         return m_mediaPaths;
     }
 }  // namespace workphone::editor
-
