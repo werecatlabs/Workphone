@@ -1,7 +1,7 @@
 #ifndef WP_ASSET_REFERENCE_CHANGE_HPP
 #define WP_ASSET_REFERENCE_CHANGE_HPP
 #include <Workphone/Database/AssetDatabaseManager.hpp>
-#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
@@ -45,7 +45,7 @@ namespace workphone
         static bool typeMatches( const String &storedType, hash_type requested )
         {
             auto types = TypeManager::instance();
-            if( !types || requested == 0 )
+            if( !types || requested == 0 || requested >= types->getTotalNumTypes() )
                 return false;
             const auto actual = referenceType( storedType );
             return actual != 0 && types->isDerived( actual, requested );
@@ -134,10 +134,15 @@ namespace workphone
         {
             auto object = m_target.lock();
             auto properties = object ? object->getProperties() : nullptr;
+            const auto declared = properties && properties->hasProperty( m_property ) ?
+                properties->getPropertyObject( m_property ).getAttribute( "resourceType" ) : String();
+            const auto family = referenceType( m_declaredType );
+            const bool sameType = declared == m_declaredType ||
+                ( family != 0 && referenceType( declared ) == family );
             if( !properties || !properties->hasProperty( m_property ) ||
                 properties->getPropertyObject( m_property ).isReadOnly() ||
                 properties->getProperty( m_property ) != expected ||
-                properties->getPropertyObject( m_property ).getAttribute( "resourceType" ) != m_declaredType )
+                !sameType )
                 return fail( "Reference property was removed, locked or independently changed." );
             m_error.clear();
             return true;
@@ -147,6 +152,7 @@ namespace workphone
             if( !propertyCurrent( expected ) )
                 return false;
             auto object = m_target.lock();
+            if( !object ) return fail( "Reference target was destroyed." );
             auto properties = object->getProperties();
             auto replacement = make_ptr<Properties>( *properties );
             replacement->getPropertyObject( m_property ).setValue( value );
@@ -168,8 +174,8 @@ namespace workphone
             m_error.clear();
             return true;
         }
-        WeakPtr<AssetDatabaseManager> m_catalog;
-        WeakPtr<ISharedObject> m_target;
+        ObjectObserver<AssetDatabaseManager> m_catalog;
+        ObjectObserver<ISharedObject> m_target;
         AssetDatabaseManager::EntrySnapshot m_entry;
         String m_property;
         String m_declaredType;

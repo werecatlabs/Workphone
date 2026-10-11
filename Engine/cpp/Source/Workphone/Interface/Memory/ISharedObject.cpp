@@ -1,5 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <limits>
+#include <Workphone/Memory/ObjectObserver.hpp>
+#include <mutex>
+#include <unordered_map>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 #include <Workphone/Interface/Memory/ISharedObjectListener.hpp>
 #include <Workphone/Interface/System/IEditorManager.hpp>
@@ -28,6 +31,35 @@
 
 namespace workphone
 {
+    namespace
+    {
+        struct ObservedLifetimes
+        {
+            std::mutex mutex;
+            std::unordered_map<const ISharedObject *, std::shared_ptr<const void>> tokens;
+        };
+        ObservedLifetimes &observedLifetimes()
+        {
+            // Survive static shutdown: factories can destroy objects very late.
+            static auto registry = new ObservedLifetimes;
+            return *registry;
+        }
+    }
+    std::weak_ptr<const void> observeObjectLifetime( ISharedObject *object )
+    {
+        if( !object || !object->isAlive() || object->getReferences() <= 0 ) return {};
+        auto &registry = observedLifetimes();
+        std::lock_guard<std::mutex> lock( registry.mutex );
+        auto &token = registry.tokens[object];
+        if( !token ) token = std::make_shared<const int>( 0 );
+        return token;
+    }
+    void expireObjectLifetime( const ISharedObject *object )
+    {
+        auto &registry = observedLifetimes();
+        std::lock_guard<std::mutex> lock( registry.mutex );
+        registry.tokens.erase( object );
+    }
     namespace
     {
         constexpr s32 destroyingReferenceCount = std::numeric_limits<s32>::min();
@@ -167,6 +199,7 @@ namespace workphone
 
     ISharedObject::~ISharedObject()
     {
+        expireObjectLifetime( this );
         //WP_ASSERT( m_references == 0 );
         //WP_ASSERT( m_weakReferences == 0 );
 
@@ -264,6 +297,7 @@ namespace workphone
 
     void ISharedObject::destroySharedObject()
     {
+        expireObjectLifetime( this );
         WP_ASSERT( m_references <= 0 );
         //WP_ASSERT( m_weakReferences <= 0 );
 

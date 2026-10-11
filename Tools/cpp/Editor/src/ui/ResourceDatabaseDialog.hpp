@@ -22,7 +22,7 @@ namespace workphone::editor
             void unload( SmartPtr<ISharedObject> data ) override;
             WP_CLASS_REGISTER_DECL;
         private:
-            AtomicWeakPtr<ResourceDatabaseDialog> m_owner;
+            ObjectObserver<ResourceDatabaseDialog> m_owner;
         };
         class DragSource : public ui::IUIDragSource
         {
@@ -36,7 +36,7 @@ namespace workphone::editor
             void unload( SmartPtr<ISharedObject> data ) override;
             WP_CLASS_REGISTER_DECL;
         private:
-            AtomicWeakPtr<ResourceDatabaseDialog> m_owner;
+            ObjectObserver<ResourceDatabaseDialog> m_owner;
         };
 
         ResourceDatabaseDialog() = default;
@@ -61,17 +61,19 @@ namespace workphone::editor
         WP_CLASS_REGISTER_DECL;
     private:
         SmartPtr<AssetDatabaseManager> catalog() const;
+        SmartPtr<AssetDatabaseManager> projectCatalog() const;
         bool entryForNode( SmartPtr<ui::IUITreeNode> node, AssetDatabaseManager::EntrySnapshot &entry );
         void renderPage();
         void captureTargets();
         void assign( const Array<SmartPtr<ISharedObject>> &targets,
                      const AssetDatabaseManager::EntrySnapshot &entry );
         hash_type m_resourceType = 0;
-        WeakPtr<ISharedObject> m_currentObject;
-        Array<WeakPtr<ISharedObject>> m_targets;
+        ObjectObserver<ISharedObject> m_currentObject;
+        Array<ObjectObserver<ISharedObject>> m_targets;
         String m_propertyName;
         String m_selectedObject;
         AssetCatalogBrowser m_browser;
+        AssetCatalogSession m_targetSession;
         SmartPtr<ui::IUITreeCtrl> m_tree;
         SmartPtr<ui::IUITextEntry> m_search;
         SmartPtr<ui::IUIText> m_status;

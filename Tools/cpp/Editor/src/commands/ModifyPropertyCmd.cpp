@@ -23,10 +23,8 @@ namespace workphone::editor
         auto resources = app ? app->getResourceDatabase() : nullptr;
         auto project = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
         if( !project ) { m_error = "No active project catalog."; return false; }
-        auto page = project->queryEntries( {} );
-        if( !page.succeeded ) { m_error = page.error; return false; }
-        m_projectCatalog = project;
-        m_projectInstance = page.next.catalogInstance;
+        if( !m_projectSession.capture( project ) )
+        { m_error = "Cannot capture the active project catalog session."; return false; }
         m_referenceCatalog = catalog;
         if( activeCatalog() != catalog )
         { m_error = "The selected catalog is not mounted in the active project session."; return false; }
@@ -57,14 +55,10 @@ namespace workphone::editor
         auto project = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
                                  : nullptr;
         String root, error;
-        if( !project || project != m_projectCatalog.lock() || app->getProjectPath().empty() ||
+        if( !project || !m_projectSession.isCurrent( project ) || app->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) ||
             root != project->getProjectRoot() )
             return nullptr;
-        AssetDatabaseManager::EntryQuery query;
-        query.pageSize = 1;
-        auto page = project->queryEntries( query );
-        if( !page.succeeded || page.next.catalogInstance != m_projectInstance ) return nullptr;
         auto selected = m_referenceCatalog.lock();
         if( selected == project ) return project;
         auto concrete = dynamic_pointer_cast<ResourceDatabase>( resources );

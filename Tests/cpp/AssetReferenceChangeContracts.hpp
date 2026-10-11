@@ -22,9 +22,14 @@ namespace workphone
         {
             if( reject && replacement->getProperty( "texture" ) != "old-value" ) return;
             data = make_ptr<Properties>( *replacement );
+            if( regenerateType )
+                data->getPropertyObject( "texture" ).setAttribute( "resourceType",
+                    data->getProperty( "texture" ) == "old-value" ? String( "Texture" ) :
+                    String( TypeManager::instance()->getName( render::ITexture::typeInfo() ) ) );
         }
         SmartPtr<Properties> data;
         bool reject = false;
+        bool regenerateType = false;
         WP_CLASS_REGISTER_DECL;
     };
     WP_CLASS_REGISTER_DERIVED( workphone, ReferenceContractTarget, ISharedObject );
@@ -62,11 +67,15 @@ namespace
         AssetDatabaseManager::EntrySnapshot entry;
         check( catalog->tryGetEntry( id, entry ), "Reference fixture must capture a detached identity" );
         auto target = make_ptr<ReferenceContractTarget>();
+        target->regenerateType = true;
         check( AssetReferenceChange::referenceType( "Texture" ) == render::ITexture::typeInfo() &&
                AssetReferenceChange::referenceType( TypeManager::instance()->getName( render::ITexture::typeInfo() ) ) == render::ITexture::typeInfo() &&
                AssetReferenceChange::referenceType( "unknown-reference-family" ) == 0,
                "Reference family labels and registered names must resolve without inventing types" );
         AssetReferenceChange wrong;
+        check( !AssetReferenceChange::typeMatches( "Texture", 0 ) &&
+               !AssetReferenceChange::typeMatches( "Texture", TypeManager::instance()->getTotalNumTypes() + 100 ),
+               "Invalid requested type IDs must reject without entering the type registry" );
         check( !wrong.prepare( catalog, entry, target, "texture", render::IMaterial::typeInfo() ),
                "Reference preparation must reject incompatible asset types" );
         AssetReferenceChange missing;

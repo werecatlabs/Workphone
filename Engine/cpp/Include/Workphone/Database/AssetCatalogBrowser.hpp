@@ -1,10 +1,41 @@
 #ifndef WP_ASSET_CATALOG_BROWSER_HPP
 #define WP_ASSET_CATALOG_BROWSER_HPP
 #include <Workphone/Database/AssetDatabaseManager.hpp>
-#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/Memory/ObjectObserver.hpp>
 
 namespace workphone
 {
+    /** A captured project lifetime, independent of ordinary catalog revisions.
+     * Use it to bind picker targets and undo commands to the session in which
+     * they were selected, even after refreshing the displayed query. */
+    class AssetCatalogSession
+    {
+    public:
+        bool capture( SmartPtr<AssetDatabaseManager> catalog )
+        {
+            clear();
+            if( !catalog ) return false;
+            AssetDatabaseManager::EntryQuery query;
+            query.pageSize = 1;
+            auto page = catalog->queryEntries( query );
+            if( !page.succeeded ) return false;
+            m_catalog = catalog;
+            m_instance = page.next.catalogInstance;
+            return true;
+        }
+        bool isCurrent( SmartPtr<AssetDatabaseManager> catalog ) const
+        {
+            if( !catalog || catalog != m_catalog.lock() || m_instance == 0 ) return false;
+            AssetDatabaseManager::EntryQuery query;
+            query.pageSize = 1;
+            auto page = catalog->queryEntries( query );
+            return page.succeeded && page.next.catalogInstance == m_instance;
+        }
+        void clear() { m_catalog = nullptr; m_instance = 0; }
+    private:
+        ObjectObserver<AssetDatabaseManager> m_catalog;
+        u64 m_instance = 0;
+    };
     /** UI-independent catalog navigation. Call only from its owning UI thread.
      * Does not construct assets or retain an old project/catalog owner. */
     class AssetCatalogBrowser
@@ -88,7 +119,7 @@ namespace workphone
                 m_cursors.clear();
             return m_page.succeeded;
         }
-        WeakPtr<AssetDatabaseManager> m_catalog;
+        ObjectObserver<AssetDatabaseManager> m_catalog;
         Query m_query;
         Page m_page;
         Array<AssetDatabaseManager::EntryCursor> m_cursors;

@@ -5,6 +5,7 @@
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/System/FileSelection.hpp>
+#include <filesystem>
 
 namespace workphone::editor
 {
@@ -102,11 +103,12 @@ namespace workphone::editor
         m_dragSource = nullptr;
         m_currentObject = nullptr;
         m_targets.clear();
+        m_targetSession.clear();
         m_browser.clear();
         EditorWindow::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
-    SmartPtr<AssetDatabaseManager> ResourceDatabaseDialog::catalog() const
+    SmartPtr<AssetDatabaseManager> ResourceDatabaseDialog::projectCatalog() const
     {
         auto app = core::IApplicationManager::instancePtr();
         auto resources = app ? app->getResourceDatabase() : nullptr;
@@ -116,16 +118,25 @@ namespace workphone::editor
         if( !result || app->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) || root != result->getProjectRoot() )
             return nullptr;
+        return result;
+    }
+    SmartPtr<AssetDatabaseManager> ResourceDatabaseDialog::catalog() const
+    {
+        auto project = projectCatalog();
+        if( !project ) return nullptr;
         if( m_showMedia )
         {
+            auto app = core::IApplicationManager::instancePtr();
+            auto resources = app ? app->getResourceDatabase() : nullptr;
             auto concrete = dynamic_pointer_cast<ResourceDatabase>( resources );
             return concrete ? concrete->getMediaCatalog() : nullptr;
         }
-        return result;
+        return project;
     }
     void ResourceDatabaseDialog::captureTargets()
     {
         m_targets.clear();
+        if( !m_targetSession.capture( projectCatalog() ) ) return;
         if( auto target = getCurrentObject() )
             m_targets.push_back( target );
         else
@@ -155,6 +166,7 @@ namespace workphone::editor
         else
         {
             m_targets.clear();
+            m_targetSession.clear();
             m_currentObject = nullptr;
             m_browser.clear();
         }
@@ -261,6 +273,11 @@ namespace workphone::editor
         auto commands = app ? app->getCommandManager() : nullptr;
         auto resources = app ? app->getResourceDatabase() : nullptr;
         auto active = catalog();
+        if( !m_targetSession.isCurrent( projectCatalog() ) )
+        {
+            m_status->setText( "The project session changed. Reopen the picker to capture its current targets." );
+            return;
+        }
         if( !commands || !resources || !active || targets.empty() ||
             !AssetReferenceChange::typeMatches( entry.type, m_resourceType ) || !active->isEntryCurrent( entry ) )
         {
@@ -269,6 +286,14 @@ namespace workphone::editor
         }
         try
         {
+            std::error_code fileError;
+            const auto source = std::filesystem::u8path( ( active->getProjectRoot() + "/" + entry.path ).c_str() );
+            if( entry.kind != AssetDatabaseManager::EntryKind::File ||
+                !std::filesystem::is_regular_file( source, fileError ) || fileError )
+            {
+                m_status->setText( "The selected source file is missing or inaccessible. Refresh the catalog." );
+                return;
+            }
             // Resolve only the chosen resource. Properties' typed UUID readers
             // then reuse the production resource managers.
             auto object = resources->getObject( StringUtil::parseUUID( entry.uuid ) );
@@ -348,7 +373,7 @@ namespace workphone::editor
     }
     SmartPtr<ResourceDatabaseDialog> ResourceDatabaseDialog::UIElementListener::getOwner() const
     {
-        auto weak = m_owner.load();
+        auto weak = m_owner;
         return weak.lock();
     }
     void ResourceDatabaseDialog::UIElementListener::setOwner( SmartPtr<ResourceDatabaseDialog> owner ) { m_owner = owner; }
@@ -376,7 +401,7 @@ namespace workphone::editor
     }
     SmartPtr<ResourceDatabaseDialog> ResourceDatabaseDialog::DragSource::getOwner() const
     {
-        auto weak = m_owner.load();
+        auto weak = m_owner;
         return weak.lock();
     }
     void ResourceDatabaseDialog::DragSource::setOwner( SmartPtr<ResourceDatabaseDialog> owner ) { m_owner = owner; }
