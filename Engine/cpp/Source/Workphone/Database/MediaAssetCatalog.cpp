@@ -5,6 +5,7 @@
 #include <boost/uuid/name_generator_sha1.hpp>
 #include <filesystem>
 #include <set>
+#include <algorithm>
 
 namespace workphone
 {
@@ -68,7 +69,9 @@ namespace workphone
             Array<Row> entries;
             std::set<std::string> keys, ids;
             const auto namespaceId = StringUtil::parseUUID( "8daa280e-45e1-4a75-9b22-84a3cc2e5991" );
-            boost::uuids::name_generator_sha1 uuid( namespaceId );
+            boost::uuids::uuid namespaceUuid;
+            std::copy( namespaceId.data(), namespaceId.data() + namespaceId.size(), namespaceUuid.begin() );
+            boost::uuids::name_generator_sha1 uuid( namespaceUuid );
             for( fs::recursive_directory_iterator it( fs::u8path( root.c_str() ) ), end; it != end; ++it )
             {
                 auto status = it->symlink_status();
@@ -86,7 +89,9 @@ namespace workphone
                 AssetCatalogPath path;
                 if( !canonicalAssetCatalogPath( root, it->path().u8string().c_str(), path, error ) )
                     throw std::runtime_error( error.c_str() );
-                auto id = StringUtil::toString( uuid( std::string( ( mediaNamespace + ":" + path.key ).c_str() ) ) );
+                auto id = boost::uuids::to_string( uuid( std::string( ( mediaNamespace + ":" + path.key ).c_str() ) ) );
+                // Convert std::string to workphone::String implicitly (std::string alias) if needed by StringUtil APIs later; boost::uuids::to_string returns std::string, which is compatible with workphone::String in this project configuration.
+
                 if( !keys.insert( path.key.c_str() ).second || !ids.insert( id.c_str() ).second )
                     throw std::runtime_error( "Bundled media has colliding canonical paths or identities." );
                 // Runtime eligibility is opt-in by a dedicated bundled Runtime tree.
