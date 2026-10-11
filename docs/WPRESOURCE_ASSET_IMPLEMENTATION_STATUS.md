@@ -337,8 +337,25 @@ missing-pinned-child recovery; incompatible diamond rejection and retry; pin pat
 and fingerprint mismatch against a manifest; malformed/truncated pin records;
 and genuine version-one container/package compatibility.
 
-Validation: Windows RelWithDebInfo rebuild and focused CTest suites pending.
-Build log: `project_x64/resource-pinning-build.log`.
+The rebuilt Windows `RelWithDebInfo` contracts passed in targeted CTest runs:
+
+| Suite | Time |
+|---|---|
+| WPResourceTests | 1.47 s |
+| WPResource.writer_lease | 3.33 s |
+| WPResource.index_migration | 0.49 s |
+| WorkphoneAssets.catalog_contracts | 3.29 s |
+| WPGraphics.cooked_material_resource | 1.62 s |
+| WPLua.runtime_contracts | 0.75 s |
+
+The new legacy authoring fixture initially failed because its manually specified
+path omitted target-key encoding. It now derives its path from a committed
+artifact; the rebuilt resource suite passed. The first two Python-backed suites
+passed before that fixture-only correction and were not unnecessarily repeated.
+The resource, catalog, cooked graphics and Lua test targets and `Editor` rebuilt
+successfully, including required dependencies. `git diff --check` passed.
+Logs: `project_x64/resource-pinning-build.log` and
+`project_x64/resource-pinning-fixture-build.log`.
 
 This closes the per-parent pinning gap recorded under increment 4. It does not
 automatically rebuild reverse dependents after `compile(child)`, certify typed
