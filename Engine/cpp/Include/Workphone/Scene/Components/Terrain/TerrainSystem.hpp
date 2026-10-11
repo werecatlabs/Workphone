@@ -13,6 +13,8 @@ namespace workphone
     namespace scene
     {
         class TerrainEditStroke;
+        class FoliageAuthoring;
+        class FoliagePhysics;
         struct TerrainBrush;
 
         /**
@@ -28,6 +30,12 @@ namespace workphone
         class WPCore_API TerrainSystem : public Component
         {
         public:
+            SmartPtr<FoliageAuthoring> getFoliageAuthoring();
+            bool generateFoliage( String &error );
+            bool refreshFoliage( String &error );
+            String exportFoliageData() const;
+            bool importFoliageData( const String &json, String &error );
+
             // Property key strings
             static const String UpdateMaterialStr;
             static const String LayersStr;
@@ -121,6 +129,9 @@ namespace workphone
              * @param data Optional shared object containing unload context.
              */
             void unload( SmartPtr<ISharedObject> data ) override;
+
+            /** Refresh the nearby foliage solids at the physics scene boundary. */
+            void update() override;
 
             /**
              * @brief Called when component flags change.
@@ -467,6 +478,19 @@ namespace workphone
                 const render::Terrain::TerrainPublication &publish, String &error,
                 render::Terrain *renderer );
             std::unique_ptr<TerrainEditStroke> m_editStroke;
+            mutable std::mutex m_foliageAuthoringMutex;
+            std::mutex m_foliageRefreshMutex;
+            SmartPtr<FoliageAuthoring> m_foliageAuthoring;
+            render::FoliageSnapshot m_publishedFoliage;
+            render::TerrainSnapshot m_foliageGround;
+            std::unique_ptr<FoliagePhysics> m_foliagePhysics;
+            SmartPtr<physics::IPhysicsManager> m_foliagePhysicsManager;
+            SmartPtr<physics::IPhysicsScene3> m_foliagePhysicsScene;
+            String m_foliagePhysicsError;
+            std::recursive_mutex m_foliagePhysicsMutex;
+            bool prepareFoliagePhysics( render::FoliageSnapshot,
+                const Transform3<real_Num> &, String &error,
+                const std::function<void()> &commit = {} );
 
             /** Scene node the terrain is attached to. */
             SmartPtr<render::IGraphicsSceneNode> m_node;

@@ -63,6 +63,13 @@ namespace workphone::resource
 
         std::shared_ptr<const RuntimeResource> load( const ResourceID &resourceId,
                                                      String &error ) override;
+        /** Read one pinned payload without reading or retaining child payloads.
+         * The returned dependencies array is empty; install dependencies and pins
+         * remain in its validated header. Intended for runtime page manifests.
+         * A shallow result never enters the complete-closure identity cache.
+         */
+        std::shared_ptr<const RuntimeResource> loadPayload( const ResourceID &, String &error,
+                                                          u64 maximumPayloadBytes = 1024ull << 20 );
         void unload( const ResourceID &resourceId ) override;
         void clearRuntimeCache() override;
 

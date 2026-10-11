@@ -681,6 +681,12 @@ int main(int argc, char **argv)
         require(alias.succeeded(),"Alias: "+reportMessage(alias));
         require(subasset.succeeded() && alias.succeeded() && subasset.outputPath!=alias.outputPath &&
                 fs::is_regular_file(fs::u8path(subasset.outputPath.c_str())),"Flattened subasset aliases must retain independent artifacts");
+        const ResourceID longId((std::string("data://models/car.mesh:")+std::string(180,'s')+".txtres").c_str());
+        const auto longArtifact=system.compile(longId);
+        require(longArtifact.succeeded(),"Long logical resource identity: "+reportMessage(longArtifact));
+        const auto longLoaded=system.load(longId,error);
+        require(longArtifact.outputPath.size()<260 && longLoaded && longLoaded->header.resourceId==longId,
+            "Long logical IDs retain exact identity without expanding Windows artifact paths");
         writeFile(source / "case.txtres","case fixture\n");
         writeFile(source / "CASE.txtres","case fixture\n");
         const auto lower=system.compile(ResourceID("data://case.txtres"));
@@ -688,6 +694,38 @@ int main(int argc, char **argv)
         require(lower.succeeded() && upper.succeeded() &&
                 !fs::equivalent(fs::u8path(lower.outputPath.c_str()),fs::u8path(upper.outputPath.c_str())),
                 "Case-distinct logical IDs must not alias on Windows artifact storage");
+        {
+            writeFile(source / "legacy-cache.txtres","retained legacy cache\n");
+            const ResourceID id("data://legacy-cache.txtres");
+            const auto cooked=system.compile(id);
+            require(cooked.succeeded(),"Build cache-layout migration fixture");
+            CompiledResourceRecord record;
+            require(database->getRecord(id.str(),atomicVariant,record),"Read cache-layout migration record");
+            // Freeze the pre-compact layout, independently of the current path builder.
+            record.outputPath="artifacts/v2/rsmoke/editor/rdata~3a~2f~2flegacy-cache~2etxtres/" +
+                String(fs::u8path(cooked.outputPath.c_str()).filename().u8string().c_str());
+            const auto oldPath=compiled / fs::u8path(record.outputPath.c_str());
+            fs::create_directories(oldPath.parent_path());
+            fs::copy_file(fs::u8path(cooked.outputPath.c_str()),oldPath);
+            require(database->commitCompilation(record,atomicVariant,{}),"Retain the pre-compact index entry");
+            system.clearRuntimeCache();
+            require(bool(system.load(id,error)),error.c_str());
+            const auto reused=system.compile(id);
+            require(reused.status==CompilationStatus::UpToDate && fs::equivalent(fs::u8path(reused.outputPath.c_str()),oldPath),
+                "Existing encoded cache paths must load and remain incremental");
+            const auto manifest=compiled / "legacy-cache.wprm";
+            require(system.writeRuntimeManifest(manifest.u8string().c_str(),{id},error),error.c_str());
+            ResourceSystem runtime(nullptr,nullptr);
+            RuntimeResourceConfig configuration;
+            configuration.compiledRoot=config.compiledRoot;
+            configuration.manifestPath=manifest.u8string().c_str();
+            configuration.target=config.target;
+            require(runtime.initializeRuntime(configuration,error),error.c_str());
+            const auto loaded=runtime.load(id,error);
+            require(loaded && loaded->header.resourceId==id &&
+                std::string(loaded->payload.begin(),loaded->payload.end())=="retained legacy cache\n",
+                "Installed manifests must preserve pre-compact artifact paths");
+        }
         writeFile(source / "generation.txtres","last-good\n");
         const ResourceID generationId("data://generation.txtres");
         const auto good=system.compile(generationId);

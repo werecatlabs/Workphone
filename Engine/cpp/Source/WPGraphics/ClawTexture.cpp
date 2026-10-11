@@ -12,6 +12,7 @@
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/IO/IStream.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
 #include <FreeImage.h>
@@ -272,7 +273,8 @@ namespace
         return decodeTexture( texture );
     }
 
-    void *ensureTextureView( const workphone::render::ClawTexture *texture )
+    void *ensureTextureView( const workphone::render::ClawTexture *texture,
+                             wp_renderer_dx11 *explicitRenderer = nullptr )
     {
         using namespace workphone;
         using namespace render;
@@ -282,7 +284,8 @@ namespace
         auto renderer = graphicsSystem
                             ? dynamic_pointer_cast<ClawRendererDX11>( graphicsSystem->getRenderer() )
                             : nullptr;
-        auto dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
+        auto dx11 = explicitRenderer ? explicitRenderer :
+            (renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr);
         auto device = dx11 ? wp_renderer_dx11_get_device( dx11 ) : nullptr;
 
         std::scoped_lock lock( g_textureMutex );
@@ -448,6 +451,39 @@ namespace workphone
             }
         }
 
+        std::shared_ptr<const TextureMipLevel> ClawTexture::getCpuBaseMip( String &error )
+        {
+            error.clear();
+            if(getRenderTarget()||(getUsageFlags()&static_cast<u32>(TextureUsage::TU_RENDERTARGET)))
+            {error="Foliage baking cannot read render-target textures; retained CPU pixels are required.";return {};}
+            try
+            {
+                if(!ensureTextureDecoded(this))
+                {error="Foliage baking could not decode texture source: "+getFilePath();return {};}
+                std::scoped_lock lock(g_textureMutex);
+                const auto found=g_textureData.find(this);
+                if(found==g_textureData.end()){error="Texture has no retained CPU data.";return {};}
+                const auto &data=found->second;
+                if(!data.ddsBytes.empty())
+                {error="Foliage baking requires decoded BGRA source pixels; compressed DDS-only textures are unavailable.";return {};}
+                const auto width=data.cookedLevels.empty()?u32(data.pixelSize.x):data.cookedLevels.front().width;
+                const auto height=data.cookedLevels.empty()?u32(data.pixelSize.y):data.cookedLevels.front().height;
+                const auto bytes=u64(width)*height*4;
+                if(!width||!height||bytes>graphicsTextureByteLimit||
+                    (data.cookedLevels.empty()?data.pixels.size():data.cookedLevels.front().bgra.size())!=bytes)
+                {error="Retained texture base mip has invalid dimensions or byte count.";return {};}
+                struct Snapshot {StreamBudget budget;TextureMipLevel mip;};
+                auto budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,bytes+sizeof(Snapshot)+256,error);
+                if(!budget)return {};
+                auto snapshot=std::make_shared<Snapshot>();snapshot->budget=std::move(budget);
+                snapshot->mip.width=width;snapshot->mip.height=height;
+                if(data.cookedLevels.empty())snapshot->mip.bgra.assign(data.pixels.begin(),data.pixels.end());
+                else snapshot->mip.bgra=data.cookedLevels.front().bgra;
+                return std::shared_ptr<const TextureMipLevel>(snapshot,&snapshot->mip);
+            }
+            catch(const std::exception &exception){error=exception.what();return {};}
+        }
+
         bool ClawTexture::uploadCookedMips( const Array<TextureMipLevel> &levels,
                                             const TextureMipSettings &settings,
                                             wp_renderer_dx11 *renderer, String &error )
@@ -588,6 +624,14 @@ namespace workphone
                     *ppTexture = ensureTextureView( this );
                 }
             }
+        }
+
+        void *ClawTexture::getNativeTextureView( wp_renderer_dx11 *renderer ) const
+        {
+            if(!renderer || getRenderTarget() ||
+                (getUsageFlags() & static_cast<u32>(TextureUsage::TU_RENDERTARGET)))return nullptr;
+            if(!ensureTextureDecoded(const_cast<ClawTexture *>(this)))return nullptr;
+            return ensureTextureView(this,renderer);
         }
 
         size_t ClawTexture::getTextureHandle() const

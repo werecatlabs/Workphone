@@ -10,6 +10,9 @@
 #include <WPGraphics/ClawTexture.hpp>
 #include <WPGraphics/ClawTextureManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/FoliageImpostorBaker.hpp>
+#include <WPGraphics/Resources/FoliageSourceTexture.hpp>
+#include <Workphone/Interface/Database/IResourceDatabase.hpp>
 
 namespace workphone
 {
@@ -38,10 +41,28 @@ namespace workphone
             FactoryUtil::addFactory<ClawMaterialTexture>();
             FactoryUtil::addFactory<ClawTexture>();
             FactoryUtil::addFactory<ClawTextureManager>();
+            setFoliageImpostorTextureResolver([](const String &id,String &error)->std::shared_ptr<const TextureMipLevel>
+            {
+                auto application=core::IApplicationManager::instancePtr();
+                if(id.size()>=7&&id.substr(id.size()-7)==".texres")
+                {
+#if WP_FOLIAGE_SOURCE_RESOURCES
+                    return readFoliageSourceTexture(application?application->getProjectPath():String(),id,error);
+#else
+                    error="Authored foliage texture descriptors require the resource system.";return {};
+#endif
+                }
+                auto database=application?application->getResourceDatabase():nullptr;
+                auto texture=database?database->loadResourceByType<ITexture>(id):nullptr;
+                auto claw=dynamic_pointer_cast<ClawTexture>(texture);
+                if(!claw){error="Foliage CPU texture resolver requires an available Claw texture: "+id;return {};}
+                return claw->getCpuBaseMip(error);
+            });
         }
 
         void ClawHammer::unload( SmartPtr<ISharedObject> data )
         {
+            setFoliageImpostorTextureResolver({});
         }
 
         SmartPtr<ClawHammer> ClawHammer::instance()

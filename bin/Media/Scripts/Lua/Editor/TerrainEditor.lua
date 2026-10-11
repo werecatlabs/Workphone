@@ -141,6 +141,18 @@ TerrainEditorTypes =
 	ClearLayerPaint = 394,
 	NormalizeLayerWeights = 395,
 
+    FoliageRegenerate=7500, FoliagePlant=7501, FoliageSave=7502, FoliageLoad=7503,
+    FoliageUndo=7504, FoliageRedo=7505, FoliagePaint=7506, FoliageErase=7507,
+    FoliageSpecies=7508, FoliageKind=7509, FoliageId=7510, FoliageHeight=7511,
+    FoliageRadius=7512, FoliageBranches=7513, FoliageAlbedo=7514, FoliageSpacing=7515,
+    FoliageSelect=7516, FoliagePoints=7517, FoliageTransform=7518, FoliageDx=7519,
+    FoliageDz=7520, FoliageYaw=7521, FoliageScale=7522, FoliageReplace=7523,
+    FoliageLock=7524, FoliageUnlock=7525, FoliageRemove=7526, FoliageExclusion=7527,
+    FoliageClearExclusions=7528, FoliageExclusionRadius=7529, FoliageMasks=7530,
+    FoliageMaskPath=7531, FoliageCount=7532, FoliageMinSpacing=7533,
+    FoliageImportMesh=7534, FoliageMeshPath=7535, FoliageMinMoisture=7536,
+    FoliageMaxMoisture=7537, FoliageAllowedLayers=7538, FoliageLayerWeight=7539,
+    FoliageRuleWeight=7540, FoliageDy=7541, FoliageBakeDirectory=7542, FoliageBakePrefix=7543, FoliageBakeSize=7544, FoliageBakeViews=7545, FoliageForceLod=7546,
 	-- Foliage - trees
 	TreeEnabled = 401,
 	TreeDensity = 402,
@@ -287,6 +299,13 @@ TerrainEditorTypes =
 
 local TerrainEditorDefaults =
 {
+    foliageSpecies=0, foliageKind=0, foliageId="generated-tree", foliageHeight=5,
+    foliageRadius=1.5, foliageBranches=12, foliageAlbedo="", foliageSpacing=2,
+    foliagePoints="[[-10,-10],[10,-10],[10,10],[-10,10]]", foliageDx=0, foliageDy=0,
+    foliageDz=0, foliageYaw=0, foliageScale=1, foliageExclusionRadius=0,
+    foliageMaskPath="", foliageCount=4, foliageMinSpacing=1, foliageMeshPath="",
+    foliageMinMoisture=0, foliageMaxMoisture=1, foliageAllowedLayers=15,
+    foliageLayerWeight=0, foliageRuleWeight=1, foliageBakeDirectory="", foliageBakePrefix="data://foliage/impostor", foliageBakeSize=128, foliageBakeViews=8, foliageForceLod=0,
 	terrainSizeX = 512.0,
 	terrainSizeY = 128.0,
 	terrainSizeZ = 512.0,
@@ -1105,7 +1124,7 @@ function TerrainEditor:load()
 	brushHeader:setLabel("Brush");
 	sculptTab:addChild(brushHeader);
 	self:bindRef("brushModeDropdown", addDropdown(ui, brushHeader, "Mode", TerrainEditorTypes.BrushMode,
-		{ "Raise", "Lower", "Smooth", "Flatten", "Noise", "Terrace", "Paint", "Stamp", "Hole", "Fill Hole", "Paint Wetness Mask", "Erase Wetness Mask", "Paint Snow Mask", "Erase Snow Mask" }, self.settings.brushMode), "brushMode", "selected");
+		{ "Raise", "Lower", "Smooth", "Flatten", "Noise", "Terrace", "Paint", "Stamp", "Hole", "Fill Hole", "Paint Wetness Mask", "Erase Wetness Mask", "Paint Snow Mask", "Erase Snow Mask", "Paint Foliage", "Erase Foliage" }, self.settings.brushMode), "brushMode", "selected");
     self:bindRef("viewportBrushToggle", addToggle(ui, brushHeader, "Paint in Scene Viewport", TerrainEditorTypes.ViewportBrushEnabled, self.settings.viewportBrushEnabled), "viewportBrushEnabled", "toggle");
 
 	self:bindRef("brushSizeSlider", addSlider(ui, brushHeader, "Brush Size", TerrainEditorTypes.BrushSize, 0.1, 512.0, self.settings.brushSize), "brushSize");
@@ -1269,17 +1288,17 @@ function TerrainEditor:load()
 	treeHeader:setLabel("Trees");
 	foliageTab:addChild(treeHeader);
 	self:bindRef("treeEnabledToggle", addToggle(ui, treeHeader, "Enable Trees", TerrainEditorTypes.TreeEnabled, false));
-	self:bindRef("treeDensitySlider", addSlider(ui, treeHeader, "Tree Density", TerrainEditorTypes.TreeDensity, 0.0, 1000.0, 0.0));
-	self:bindRef("treePreviewCountSlider", addSlider(ui, treeHeader, "Preview Tree Count", TerrainEditorTypes.TreePreviewCount, 0.0, 5000.0, 10.0));
-	self:bindRef("treeGeneratedCountSlider", addSlider(ui, treeHeader, "Generated Tree Count", TerrainEditorTypes.TreeGeneratedCount, 0.0, 50000.0, 1000.0));
-	self:bindRef("treePrefabInput", addTextInput(ui, treeHeader, "Default Tree Prefab", TerrainEditorTypes.TreePrefab, ""));
+	self:bindRef("treeDensitySlider", addSlider(ui, treeHeader, "Tree Density / m2", TerrainEditorTypes.TreeDensity, 0.0, 4.0, 0.0));
+	self:bindRef("treePreviewCountSlider", addSlider(ui, treeHeader, "Legacy Preview Count (unavailable)", TerrainEditorTypes.TreePreviewCount, 0.0, 5000.0, 10.0));
+	self:bindRef("treeGeneratedCountSlider", addSlider(ui, treeHeader, "Legacy Fixed Count (unavailable)", TerrainEditorTypes.TreeGeneratedCount, 0.0, 50000.0, 1000.0));
+	self:bindRef("treePrefabInput", addTextInput(ui, treeHeader, "Import Tree Mesh Resource", TerrainEditorTypes.TreePrefab, ""));
 	self:bindRef("addTreeLayerButton", addButton(ui, treeHeader, "Add Tree Layer", TerrainEditorTypes.AddTreeLayer, false));
 	self:bindRef("removeTreeLayerButton", addButton(ui, treeHeader, "Remove Tree Layer", TerrainEditorTypes.RemoveTreeLayer, true));
 	self:bindRef("selectedTreeLayerDropdown", addDropdown(ui, treeHeader, "Selected Tree Layer", TerrainEditorTypes.SelectedTreeLayer));
 	self:ref("treeInfoText", addText(ui, treeHeader, "No terrain selected.", false));
 	self:addResourceSlot("treeLayerTexture", treeHeader, TerrainEditorTypes.TreeLayerTexture, "Tree Layer Texture/Mask");
 	self:bindRef("treeLayerDensitySlider", addSlider(ui, treeHeader, "Tree Layer Density", TerrainEditorTypes.TreeLayerDensity, 0.0, 10000.0, 100.0));
-	self:bindRef("treeLayerPrefabInput", addTextInput(ui, treeHeader, "Tree Layer Prefab", TerrainEditorTypes.TreeLayerPrefab, ""));
+	self:bindRef("treeLayerPrefabInput", addTextInput(ui, treeHeader, "Import Tree Mesh Resource", TerrainEditorTypes.TreeLayerPrefab, ""));
 	self:bindRef("treeSlopeMinSlider", addSlider(ui, treeHeader, "Slope Min", TerrainEditorTypes.TreeSlopeMin, 0.0, 90.0, self.settings.treeSlopeMin), "treeSlopeMin");
 	self:bindRef("treeSlopeMaxSlider", addSlider(ui, treeHeader, "Slope Max", TerrainEditorTypes.TreeSlopeMax, 0.0, 90.0, self.settings.treeSlopeMax), "treeSlopeMax");
 	self:bindRef("treeHeightMinSlider", addSlider(ui, treeHeader, "Height Min", TerrainEditorTypes.TreeHeightMin, -4096.0, 4096.0, self.settings.treeHeightMin), "treeHeightMin");
@@ -1297,14 +1316,14 @@ function TerrainEditor:load()
 	grassHeader:setLabel("Grass / Detail Meshes");
 	foliageTab:addChild(grassHeader);
 	self:bindRef("grassEnabledToggle", addToggle(ui, grassHeader, "Enable Grass", TerrainEditorTypes.GrassEnabled, false));
-	self:bindRef("grassDensitySlider", addSlider(ui, grassHeader, "Grass Density", TerrainEditorTypes.GrassDensity, 0.0, 10000.0, 0.0));
+	self:bindRef("grassDensitySlider", addSlider(ui, grassHeader, "Grass Density / m2", TerrainEditorTypes.GrassDensity, 0.0, 100.0, 0.0));
 	self:bindRef("addGrassLayerButton", addButton(ui, grassHeader, "Add Grass Layer", TerrainEditorTypes.AddGrassLayer, false));
 	self:bindRef("removeGrassLayerButton", addButton(ui, grassHeader, "Remove Grass Layer", TerrainEditorTypes.RemoveGrassLayer, true));
 	self:bindRef("selectedGrassLayerDropdown", addDropdown(ui, grassHeader, "Selected Grass Layer", TerrainEditorTypes.SelectedGrassLayer));
 	self:ref("grassInfoText", addText(ui, grassHeader, "No terrain selected.", false));
 	self:addResourceSlot("grassLayerTexture", grassHeader, TerrainEditorTypes.GrassLayerTexture, "Grass Layer Texture/Mask");
 	self:bindRef("grassLayerDensitySlider", addSlider(ui, grassHeader, "Grass Layer Density", TerrainEditorTypes.GrassLayerDensity, 0.0, 10000.0, 100.0));
-	self:bindRef("grassLayerPrefabInput", addTextInput(ui, grassHeader, "Grass Layer Prefab", TerrainEditorTypes.GrassLayerPrefab, ""));
+	self:bindRef("grassLayerPrefabInput", addTextInput(ui, grassHeader, "Import Grass Mesh Resource", TerrainEditorTypes.GrassLayerPrefab, ""));
 	self:bindRef("grassSlopeMinSlider", addSlider(ui, grassHeader, "Slope Min", TerrainEditorTypes.GrassSlopeMin, 0.0, 90.0, self.settings.grassSlopeMin), "grassSlopeMin");
 	self:bindRef("grassSlopeMaxSlider", addSlider(ui, grassHeader, "Slope Max", TerrainEditorTypes.GrassSlopeMax, 0.0, 90.0, self.settings.grassSlopeMax), "grassSlopeMax");
 	self:bindRef("grassHeightMinSlider", addSlider(ui, grassHeader, "Height Min", TerrainEditorTypes.GrassHeightMin, -4096.0, 4096.0, self.settings.grassHeightMin), "grassHeightMin");
@@ -1317,6 +1336,45 @@ function TerrainEditor:load()
 	self:bindRef("grassGpuInstancingToggle", addToggle(ui, grassHeader, "GPU Instancing", TerrainEditorTypes.GrassGpuInstancing, self.settings.grassGpuInstancing), "grassGpuInstancing", "toggle");
 	self:bindRef("grassCastShadowsToggle", addToggle(ui, grassHeader, "Cast Shadows", TerrainEditorTypes.GrassCastShadows, self.settings.grassCastShadows), "grassCastShadows", "toggle");
 	self:addResourceSlot("biomeMaskTexture", foliageTab, TerrainEditorTypes.BiomeMaskTexture, "Biome Mask");
+
+    local authoringHeader=ui:addElement(collapsingHeaderTypeInfo); authoringHeader:setLabel("Owned Foliage Authoring"); foliageTab:addChild(authoringHeader);
+    addText(ui, authoringHeader, "Stable native populations; Generate/Import adds a species, placement rules regenerate owned instances. Eight foliage undo entries; manual edits survive regeneration.", true);
+    self:bindRef("foliageSpeciesControl", addSlider(ui, authoringHeader, "Species slot / placement rule", TerrainEditorTypes.FoliageSpecies, 0, 63, self.settings.foliageSpecies), "foliageSpecies", "int");
+    self:bindRef("foliageKindControl", addDropdown(ui, authoringHeader, "Plant kind", TerrainEditorTypes.FoliageKind, {"Tree", "Bush", "Grass", "Ground cover"}, self.settings.foliageKind), "foliageKind", "selected");
+    self:bindRef("foliageIdControl", addTextInput(ui, authoringHeader, "Stable species ID", TerrainEditorTypes.FoliageId, self.settings.foliageId), "foliageId", "text");
+    self:bindRef("foliageAlbedoControl", addTextInput(ui, authoringHeader, "Leaf / grass cutout texture resource", TerrainEditorTypes.FoliageAlbedo, self.settings.foliageAlbedo), "foliageAlbedo", "text");
+    self:bindRef("foliageHeightControl", addSlider(ui, authoringHeader, "Plant height metres", TerrainEditorTypes.FoliageHeight, .05, 100, self.settings.foliageHeight), "foliageHeight");
+    self:bindRef("foliageRadiusControl", addSlider(ui, authoringHeader, "Canopy / clump radius metres", TerrainEditorTypes.FoliageRadius, .05, 50, self.settings.foliageRadius), "foliageRadius");
+    self:bindRef("foliageBranchesControl", addSlider(ui, authoringHeader, "Branches / grass cards", TerrainEditorTypes.FoliageBranches, 1, 128, self.settings.foliageBranches), "foliageBranches", "int");
+    self:bindRef("foliagePlantButton", addButton(ui, authoringHeader, "Generate / Replace Species (3 LODs)", TerrainEditorTypes.FoliagePlant, false));
+    self:bindRef("foliageMeshPathControl", addTextInput(ui, authoringHeader, "Imported mesh resource path", TerrainEditorTypes.FoliageMeshPath, self.settings.foliageMeshPath), "foliageMeshPath", "text");
+    self:bindRef("foliageImportButton", addButton(ui, authoringHeader, "Import CPU Mesh Species", TerrainEditorTypes.FoliageImportMesh, false));
+    self:bindRef("foliageSpacingControl", addSlider(ui, authoringHeader, "Candidate spacing metres", TerrainEditorTypes.FoliageSpacing, .05, 256, self.settings.foliageSpacing), "foliageSpacing");
+    self:bindRef("foliageMinSpacingControl", addSlider(ui, authoringHeader, "Minimum neighbour spacing metres", TerrainEditorTypes.FoliageMinSpacing, 0, 64, self.settings.foliageMinSpacing), "foliageMinSpacing");
+    self:bindRef("foliageRuleWeightControl", addSlider(ui, authoringHeader, "Species mixture weight", TerrainEditorTypes.FoliageRuleWeight, .01, 100, self.settings.foliageRuleWeight), "foliageRuleWeight");
+    self:bindRef("foliageMinMoistureControl", addSlider(ui, authoringHeader, "Minimum terrain wetness mask", TerrainEditorTypes.FoliageMinMoisture, 0, 1, self.settings.foliageMinMoisture), "foliageMinMoisture");
+    self:bindRef("foliageMaxMoistureControl", addSlider(ui, authoringHeader, "Maximum terrain wetness mask", TerrainEditorTypes.FoliageMaxMoisture, 0, 1, self.settings.foliageMaxMoisture), "foliageMaxMoisture");
+    self:bindRef("foliageLayersControl", addSlider(ui, authoringHeader, "Allowed terrain layer bit mask", TerrainEditorTypes.FoliageAllowedLayers, 0, 15, self.settings.foliageAllowedLayers), "foliageAllowedLayers", "int");
+    self:bindRef("foliageLayerWeightControl", addSlider(ui, authoringHeader, "Minimum allowed layer weight", TerrainEditorTypes.FoliageLayerWeight, 0, 1, self.settings.foliageLayerWeight), "foliageLayerWeight");
+    for _, item in ipairs({{"Regenerate Cells", TerrainEditorTypes.FoliageRegenerate}, {"Undo Foliage", TerrainEditorTypes.FoliageUndo}, {"Redo Foliage", TerrainEditorTypes.FoliageRedo}, {"Save Foliage", TerrainEditorTypes.FoliageSave}, {"Load Foliage", TerrainEditorTypes.FoliageLoad}, {"Viewport Paint", TerrainEditorTypes.FoliagePaint}, {"Viewport Erase", TerrainEditorTypes.FoliageErase}}) do addButton(ui, authoringHeader, item[1], item[2], false); end
+    self:bindRef("foliageCountControl", addSlider(ui, authoringHeader, "Paint candidates per dab", TerrainEditorTypes.FoliageCount, 1, 4096, self.settings.foliageCount), "foliageCount", "int");
+    self:bindRef("foliagePointsControl", addTextInput(ui, authoringHeader, "Local XZ lasso / exclusion points JSON", TerrainEditorTypes.FoliagePoints, self.settings.foliagePoints), "foliagePoints", "text");
+    self:bindRef("foliageExclusionRadiusControl", addSlider(ui, authoringHeader, "Road / river corridor radius (0 = polygon)", TerrainEditorTypes.FoliageExclusionRadius, 0, 256, self.settings.foliageExclusionRadius), "foliageExclusionRadius");
+    for _, item in ipairs({{"Select Rectangle / Lasso", TerrainEditorTypes.FoliageSelect}, {"Add Exclusion", TerrainEditorTypes.FoliageExclusion}, {"Clear Exclusions", TerrainEditorTypes.FoliageClearExclusions}}) do addButton(ui, authoringHeader, item[1], item[2], false); end
+    for _, item in ipairs({{"Move X", TerrainEditorTypes.FoliageDx, "foliageDx"}, {"Move Y", TerrainEditorTypes.FoliageDy, "foliageDy"}, {"Move Z", TerrainEditorTypes.FoliageDz, "foliageDz"}, {"Yaw degrees", TerrainEditorTypes.FoliageYaw, "foliageYaw"}}) do self:bindRef(item[3] .. "Control", addSlider(ui, authoringHeader, item[1], item[2], -1000, 1000, self.settings[item[3]]), item[3]); end
+    self:bindRef("foliageScaleControl", addSlider(ui, authoringHeader, "Selection scale multiplier", TerrainEditorTypes.FoliageScale, .01, 10, self.settings.foliageScale), "foliageScale");
+    for _, item in ipairs({{"Transform Selection", TerrainEditorTypes.FoliageTransform}, {"Replace Selected Species", TerrainEditorTypes.FoliageReplace}, {"Lock Selection", TerrainEditorTypes.FoliageLock}, {"Unlock Selection", TerrainEditorTypes.FoliageUnlock}, {"Remove Selection", TerrainEditorTypes.FoliageRemove}}) do addButton(ui, authoringHeader, item[1], item[2], false); end
+    self:bindRef("foliageMaskPathControl", addTextInput(ui, authoringHeader, "Density / biome mask JSON path", TerrainEditorTypes.FoliageMaskPath, self.settings.foliageMaskPath), "foliageMaskPath", "text");
+    addButton(ui, authoringHeader, "Import Density / Biome Masks", TerrainEditorTypes.FoliageMasks, false);
+
+    addText(ui, authoringHeader, "Impostor export: choose a fresh data:// prefix directory under the project root. Leave the directory empty to derive it from the prefix. Source textures preview in the editor; compile the exported species and texture descriptors for runtime installation.", true);
+    self:bindRef("foliageBakeDirectoryControl", addTextInput(ui, authoringHeader, "Fresh directory (empty = derive)", TerrainEditorTypes.FoliageBakeDirectory, self.settings.foliageBakeDirectory), "foliageBakeDirectory", "text");
+    self:bindRef("foliageBakePrefixControl", addTextInput(ui, authoringHeader, "Matching catalog resource prefix", TerrainEditorTypes.FoliageBakePrefix, self.settings.foliageBakePrefix), "foliageBakePrefix", "text");
+    self:bindRef("foliageBakeSizeControl", addSlider(ui, authoringHeader, "Capture tile power of two", TerrainEditorTypes.FoliageBakeSize, 16, 512, self.settings.foliageBakeSize), "foliageBakeSize", "int");
+    self:bindRef("foliageBakeViewsControl", addSlider(ui, authoringHeader, "Azimuth capture views", TerrainEditorTypes.FoliageBakeViews, 1, 32, self.settings.foliageBakeViews), "foliageBakeViews", "int");
+    addButton(ui, authoringHeader, "Bake Textured Relightable Impostors", TerrainEditorTypes.BakeImpostors, false);
+    self:bindRef("foliageForceLodControl", addDropdown(ui, authoringHeader, "Force runtime LOD", TerrainEditorTypes.FoliageForceLod, {"Automatic", "Near", "Mid", "Far"}, self.settings.foliageForceLod), "foliageForceLod", "selected");
+    self:ref("foliageDiagnosticsText", addText(ui, authoringHeader, "Native foliage diagnostics will appear after rendering.", true));
 
 	-- Water and roads tab
 	local waterHeader = ui:addElement(collapsingHeaderTypeInfo);
@@ -1492,6 +1550,7 @@ function TerrainEditor:hide()
 end
 
 function TerrainEditor:update()
+    if self.terrain then self:updateFoliageControls(); end
     if self.terrain then
         local ok, revision=safeCall(self.terrain, "getTerrainRevision");
         if ok and revision ~= self._materialSettingsRevision then self:syncMaterialControls(); end
@@ -1664,52 +1723,60 @@ function TerrainEditor:updateFoliageDropdown(dropdown, layers, selectedIndex, em
 end
 
 function TerrainEditor:updateFoliageControls()
-	if self.terrain == nil then
-		if self.treeInfoText then self.treeInfoText:setText("No terrain selected."); end
-		if self.grassInfoText then self.grassInfoText:setText("No terrain selected."); end
-		setResourcePreview(self.treeLayerTexture, nil);
-		setResourcePreview(self.grassLayerTexture, nil);
-		return;
-	end
+    if not self.terrain then return; end
+    local status={}; local ok, err=safeCall(self.terrain, "editTerrain", "foliageStatus", status);
+    if not ok or err ~= "" then return; end
+    self._foliageStatus=status; self._foliageRules=status.rules or {};
+    local summary=status.rendererAvailable and ("Actual draws " .. tostring(status.actualDraws or 0) .. " / predicted " .. tostring(status.predictedDraws or 0) .. "; groups " .. tostring(status.groups or 0) .. "; near/mid/far " .. tostring(status.nearInstances or 0) .. "/" .. tostring(status.midInstances or 0) .. "/" .. tostring(status.farInstances or 0) .. "; resident/pending/failed pages " .. tostring(status.residentPages or 0) .. "/" .. tostring(status.pendingPages or 0) .. "/" .. tostring(status.failedPages or 0) .. "; geometry/upload bytes " .. tostring(status.geometryBytes or 0) .. "/" .. tostring(status.uploadBytes or 0) .. (status.ready and "; ready" or "; preparing")) or "Native foliage renderer unavailable.";
+    if status.error and status.error ~= "" then summary=summary .. " " .. status.error; end
+    safeCall(self.foliageDiagnosticsText,"setText",summary);
+    local controlKey=tostring(status.revision) .. ":" .. tostring(self.selectedTreeLayerIndex) .. ":" .. tostring(self.selectedGrassLayerIndex) .. ":" .. tostring(self.settings.foliageSpecies);
+    if rawequal(self._foliageControlOwner, self.terrain) and self._foliageControlKey == controlKey then return; end
+    self._foliageControlOwner=self.terrain; self._foliageControlKey=controlKey;
+    self.settings.foliageSpacing=status.candidateSpacing;
+    safeCall(self.foliageSpacingControl,"setValue",status.candidateSpacing);
+    if status.forcedLod ~= nil then self.settings.foliageForceLod=status.forcedLod+1; safeCall(self.foliageForceLodControl,"setSelectedOption",self.settings.foliageForceLod); end
+    local selected=(status.rules or {})[(tonumber(self.settings.foliageSpecies) or 0)+1];
+    if selected then
+        for key, field in pairs({foliageMinSpacing="minimumSpacing", foliageMinMoisture="minimumMoisture", foliageMaxMoisture="maximumMoisture", foliageAllowedLayers="allowedLayers", foliageLayerWeight="minimumLayerWeight", foliageRuleWeight="weight"}) do self.settings[key]=selected[field]; safeCall(self[key .. "Control"],"setValue",selected[field]); end
+    end
+    local trees, grass={}, {};
+    for index, rule in ipairs(self._foliageRules) do rule.nativeIndex=index-1; if rule.kind == 2 or rule.kind == 3 then grass[#grass+1]=rule else trees[#trees+1]=rule end end
+    self._treeRules=trees; self._grassRules=grass;
+    self.selectedTreeLayerIndex=self:updateFoliageDropdown(self.selectedTreeLayerDropdown, trees, self.selectedTreeLayerIndex or 0, "No native tree species");
+    self.selectedGrassLayerIndex=self:updateFoliageDropdown(self.selectedGrassLayerDropdown, grass, self.selectedGrassLayerIndex or 0, "No native grass species");
+    for _, pair in ipairs({{"tree", trees[(self.selectedTreeLayerIndex or 0)+1]}, {"grass", grass[(self.selectedGrassLayerIndex or 0)+1]}}) do
+        local kind, rule=pair[1], pair[2];
+        if rule then
+            for key, field in pairs({SlopeMin="minimumSlope", SlopeMax="maximumSlope", HeightMin="minimumHeight", HeightMax="maximumHeight", MinScale="minimumScale", MaxScale="maximumScale", RandomYaw="randomYaw", AlignToNormal="alignToNormal", CastShadows="castShadows", Wind="wind", Collision="collision"}) do self.settings[kind .. key]=rule[field];
+                safeCall(self[kind .. key .. "Slider"] or self[kind .. key .. "Toggle"], "setValue", rule[field]);
+            end
+            safeCall(self[kind .. "EnabledToggle"], "setValue", rule.enabled); safeCall(self[kind .. "DensitySlider"], "setValue", rule.density); safeCall(self[kind .. "LayerDensitySlider"], "setValue", rule.density);
+        end
+        safeCall(self[kind .. "InfoText"], "setText", tostring(status.instanceCount or 0) .. " owned instances; " .. (rule and rule.id or "generate or import a species"));
+    end
+end
 
-	if self.treeEnabledToggle then self.treeEnabledToggle:setValue(self.terrain:getTreesEnabled()); end
-	if self.treeDensitySlider then self.treeDensitySlider:setValue(self.terrain:getTreeDensity()); end
-	if self.treePreviewCountSlider then self.treePreviewCountSlider:setValue(self.terrain:getPreviewTreeCount()); end
-	if self.treeGeneratedCountSlider then self.treeGeneratedCountSlider:setValue(self.terrain:getGeneratedTreeCount()); end
-	if self.treePrefabInput then self.treePrefabInput:setValue(self.terrain:getTreePrefabName()); end
-	if self.grassEnabledToggle then self.grassEnabledToggle:setValue(self.terrain:getGrassEnabled()); end
-	if self.grassDensitySlider then self.grassDensitySlider:setValue(self.terrain:getGrassDensity()); end
+function TerrainEditor:foliageOperation(action, options)
+    options=options or {}; if not self.terrain then self:setStatus("Select a terrain first."); return false; end
+    local ok, err=safeCall(self.terrain, "editTerrain", action, options);
+    if not ok or err ~= "" then self:setStatus("Foliage operation failed: " .. tostring(err)); return false; end
+    self:updateFoliageControls();
+    self:setStatus("Foliage: " .. action .. (options.pending and (". Preview pending: " .. tostring(options.error)) or "."));
+    return true;
+end
 
-	local treeLayers = self:getFoliageLayers("tree");
-	self.selectedTreeLayerIndex = self:updateFoliageDropdown(self.selectedTreeLayerDropdown, treeLayers, self.selectedTreeLayerIndex, "No tree layers");
-	local treeLayer = self:getSelectedFoliageLayer("tree");
-	if self.treeInfoText then self.treeInfoText:setText("Tree layers: " .. #treeLayers .. "    Selected: " .. self.selectedTreeLayerIndex); end
-	if treeLayer then
-		setResourcePreview(self.treeLayerTexture, treeLayer:getBaseTexture());
-		if self.treeLayerDensitySlider then self.treeLayerDensitySlider:setValue(treeLayer:getDensity()); end
-		if self.treeLayerPrefabInput then self.treeLayerPrefabInput:setValue(treeLayer:getPrefabPath()); end
-	else
-		setResourcePreview(self.treeLayerTexture, nil);
-		if self.treeLayerDensitySlider then self.treeLayerDensitySlider:setValue(0); end
-		if self.treeLayerPrefabInput then self.treeLayerPrefabInput:setValue(""); end
-	end
-
-	local grassLayers = self:getFoliageLayers("grass");
-	self.selectedGrassLayerIndex = self:updateFoliageDropdown(self.selectedGrassLayerDropdown, grassLayers, self.selectedGrassLayerIndex, "No grass layers");
-	local grassLayer = self:getSelectedFoliageLayer("grass");
-	if self.grassInfoText then self.grassInfoText:setText("Grass layers: " .. #grassLayers .. "    Selected: " .. self.selectedGrassLayerIndex); end
-	if grassLayer then
-		setResourcePreview(self.grassLayerTexture, grassLayer:getBaseTexture());
-		if self.grassLayerDensitySlider then self.grassLayerDensitySlider:setValue(grassLayer:getDensity()); end
-		if self.grassLayerPrefabInput then self.grassLayerPrefabInput:setValue(grassLayer:getPrefabPath()); end
-	else
-		setResourcePreview(self.grassLayerTexture, nil);
-		if self.grassLayerDensitySlider then self.grassLayerDensitySlider:setValue(0); end
-		if self.grassLayerPrefabInput then self.grassLayerPrefabInput:setValue(""); end
-	end
+function TerrainEditor:applyFoliageRule(kind, field, value)
+    self:updateFoliageControls(); local list=kind == "grass" and self._grassRules or self._treeRules;
+    local index=kind == "grass" and self.selectedGrassLayerIndex or self.selectedTreeLayerIndex;
+    local rule=list and list[(index or 0)+1];
+    if not rule then self:setStatus("Generate or import a native " .. kind .. " species first."); return false; end
+    local options={rule=rule.nativeIndex}; options[field]=value;
+    return self:foliageOperation("foliageRule", options);
 end
 
 function TerrainEditor:updateSelection()
+    self._foliageSelection=nil;
     if self.recipe and self.terrain then safeCall(self.terrain, "editTerrain", "recipeCancel", {recipe=self.recipe}); end
     self.recipe=nil; self._recipePending=false;
     if self._strokeTerrain then self:handleViewportBrush("cancel", 0, 0, 0, 0, 0, 0); end
@@ -1745,7 +1812,7 @@ function TerrainEditor:updateSelection()
 	end
 
 	self:updateLayerControls();
-	--self:updateFoliageControls();
+	self:updateFoliageControls();
 end
 
 function TerrainEditor:addLayer()
@@ -1821,58 +1888,15 @@ function TerrainEditor:applyAppearanceSettings(changedKey)
 end
 
 function TerrainEditor:addTreeLayer()
-	if self.terrain == nil then
-		return;
-	end
-
-	local layer = self.terrain:addTreeLayer();
-	if layer then
-		local layers = self:getFoliageLayers("tree");
-		self.selectedTreeLayerIndex = #layers - 1;
-		self:updateFoliageLayerIndices("tree");
-	end
-
-	self:updateFoliageControls();
-	self:setStatus("Added tree layer.");
+    self.settings.foliageKind=0; self.settings.foliageId="tree-" .. tostring((self._foliageStatus or {}).speciesCount or 0); self.settings.foliageSpecies=(self._foliageStatus or {}).speciesCount or 0; return self:performFoliageAction(TerrainEditorTypes.FoliagePlant);
 end
 
 function TerrainEditor:addGrassLayer()
-	if self.terrain == nil then
-		return;
-	end
-
-	local layer = self.terrain:addGrassLayer();
-	if layer then
-		local layers = self:getFoliageLayers("grass");
-		self.selectedGrassLayerIndex = #layers - 1;
-		self:updateFoliageLayerIndices("grass");
-	end
-
-	self:updateFoliageControls();
-	self:setStatus("Added grass layer.");
+    self.settings.foliageKind=2; self.settings.foliageHeight=.7; self.settings.foliageRadius=.4; self.settings.foliageId="grass-" .. tostring((self._foliageStatus or {}).speciesCount or 0); self.settings.foliageSpecies=(self._foliageStatus or {}).speciesCount or 0; return self:performFoliageAction(TerrainEditorTypes.FoliagePlant);
 end
 
 function TerrainEditor:removeSelectedFoliageLayer(kind)
-	if self.terrain == nil then
-		return;
-	end
-
-	local layer = self:getSelectedFoliageLayer(kind);
-	if layer == nil then
-		return;
-	end
-
-	self.terrain:removeSubComponent(layer);
-
-	if kind == "tree" then
-		if self.selectedTreeLayerIndex > 0 then self.selectedTreeLayerIndex = self.selectedTreeLayerIndex - 1; end
-	else
-		if self.selectedGrassLayerIndex > 0 then self.selectedGrassLayerIndex = self.selectedGrassLayerIndex - 1; end
-	end
-
-	self:updateFoliageLayerIndices(kind);
-	self:updateFoliageControls();
-	self:setStatus("Removed " .. kind .. " layer.");
+    return self:applyFoliageRule(kind, "enabled", false);
 end
 
 function TerrainEditor:setSelectedFoliageTexture(kind, texture)
@@ -1895,17 +1919,12 @@ function TerrainEditor:setSelectedFoliageTexture(kind, texture)
 end
 
 function TerrainEditor:setSelectedFoliageDensity(kind, density)
-	local layer = self:getSelectedFoliageLayer(kind);
-	if layer then
-		layer:setDensity(density);
-	end
+    return self:applyFoliageRule(kind, "density", tonumber(density) or 0);
 end
 
-function TerrainEditor:setSelectedFoliagePrefab(kind, prefabPath)
-	local layer = self:getSelectedFoliageLayer(kind);
-	if layer then
-		layer:setPrefabPath(prefabPath);
-	end
+function TerrainEditor:setSelectedFoliagePrefab(kind, path)
+    self.settings.foliageMeshPath=path; self.settings.foliageId=path; self.settings.foliageKind=kind == "grass" and 2 or 0;
+    return self:performFoliageAction(TerrainEditorTypes.FoliageImportMesh);
 end
 
 function TerrainEditor:getHeightmapResolution()
@@ -2279,20 +2298,20 @@ function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dir
         local terrain = self._strokeTerrain or self.terrain;
         self.brushPreview = nil;
         if terrain then
-            local ok, err = safeCall(terrain, "editTerrain", "cancel", {});
+            local ok, err = safeCall(terrain, "editTerrain", self._foliageStroke and "foliageCancel" or "cancel", {});
             if not ok or err ~= "" then
                 self._cancelStrokePending = self._strokeTerrain ~= nil;
                 self:setStatus("Stroke cancellation pending: " .. tostring(err)); return false;
             end
         end
-        self._strokeTerrain = nil;
+        self._strokeTerrain = nil; self._foliageStroke=false;
         self._cancelStrokePending = false;
         return true;
     end
     if phase == "commit" then
         if not self._strokeTerrain then return false; end
-        local ok, err = safeCall(self._strokeTerrain, "editTerrain", "commit", {});
-        if ok and err == "" then self._strokeTerrain = nil; self:setStatus("Committed terrain stroke. Use Edit > Undo/Redo."); return true; end
+        local ok, err = safeCall(self._strokeTerrain, "editTerrain", self._foliageStroke and "foliageCommit" or "commit", {});
+        if ok and err == "" then local foliage=self._foliageStroke; self._strokeTerrain = nil; self._foliageStroke=false; self:setStatus(foliage and "Committed foliage stroke. Use foliage Undo/Redo." or "Committed terrain stroke. Use Edit > Undo/Redo."); return true; end
         self:setStatus("Stroke commit failed: " .. tostring(err)); return false;
     end
     if not self:getViewportBrushEnabled() then return false; end
@@ -2305,11 +2324,21 @@ function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dir
     if phase == "hover" then return true; end
     if phase == "begin" then
         if self._strokeTerrain then return false; end
-        ok, err = safeCall(self.terrain, "editTerrain", "begin", {});
+        self._foliageStroke=(tonumber(self.settings.brushMode) or 0) >= 14;
+        ok, err = safeCall(self.terrain, "editTerrain", self._foliageStroke and "foliageBegin" or "begin", {});
         if not ok or err ~= "" then self:setStatus(tostring(err)); return false; end
         self._strokeTerrain = self.terrain;
     end
     if self._strokeTerrain ~= self.terrain then return false; end
+    if self._foliageStroke then
+        options.radius=tonumber(self.settings.layerPaintSize) or 1;
+        options.species=self.settings.foliageSpecies; options.count=self.settings.foliageCount; options.seed=tonumber(self.settings.generatorSeed) or 1;
+        local action=self.settings.brushMode == 15 and "foliageErase" or "foliagePaint";
+        ok,err=safeCall(self.terrain,"editTerrain",action,options);
+        if not ok or err ~= "" then self:setStatus("Foliage stroke failed: " .. tostring(err)); return false; end
+        if options.pending then self:setStatus("Foliage preview pending: " .. tostring(options.error)); end
+        return true;
+    end
     options.mode=({"raise", "lower", "smooth", "flatten", "noise", "terrace", "paint", "stamp", "hole", "fillHole", "paintWetness", "clearWetness", "paintSnow", "clearSnow"})[(tonumber(self.settings.brushMode) or 0)+1] or "raise";
     if (tonumber(self.settings.brushMode) or 0) >= 10 or self.settings.brushMode == 6 then options.radius=self.settings.layerPaintSize; options.strength=self.settings.layerPaintStrength; end
     ok, err = safeCall(self.terrain, "editTerrain", "update", options);
@@ -2317,7 +2346,45 @@ function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dir
     return true;
 end
 
+function TerrainEditor:performFoliageAction(elementId)
+    local options={species=self.settings.foliageSpecies, seed=tonumber(self.settings.generatorSeed) or 1};
+    local action=nil;
+    if elementId == TerrainEditorTypes.BakeImpostors then
+        action="foliageBakeImpostors"; options.directory=self.settings.foliageBakeDirectory; options.resourcePrefix=self.settings.foliageBakePrefix; options.tileSize=self.settings.foliageBakeSize; options.views=self.settings.foliageBakeViews;
+    elseif elementId == TerrainEditorTypes.FoliagePlant or elementId == TerrainEditorTypes.FoliageImportMesh then
+        action=elementId == TerrainEditorTypes.FoliagePlant and "foliagePlant" or "foliageImportMesh";
+        options.id=self.settings.foliageId; options.kind=self.settings.foliageKind; options.height=self.settings.foliageHeight; options.radius=self.settings.foliageRadius; options.branches=self.settings.foliageBranches; options.albedo=self.settings.foliageAlbedo; options.path=self.settings.foliageMeshPath;
+    elseif elementId == TerrainEditorTypes.FoliageRegenerate then action="foliageRegenerate";
+    elseif elementId == TerrainEditorTypes.FoliageUndo then action="foliageUndo";
+    elseif elementId == TerrainEditorTypes.FoliageRedo then action="foliageRedo";
+    elseif elementId == TerrainEditorTypes.FoliageSave then action="foliageSave"; options.path=self:getOutputPath(".foliage.json");
+    elseif elementId == TerrainEditorTypes.FoliageLoad then action="foliageLoad"; options.path=tostring(self.settings.outputFile or "");
+    elseif elementId == TerrainEditorTypes.FoliagePaint or elementId == TerrainEditorTypes.FoliageErase then
+        self.settings.brushMode=elementId == TerrainEditorTypes.FoliagePaint and 14 or 15; self.settings.viewportBrushEnabled=true; self:syncToControls(); self:setStatus("Drag the scene viewport to paint foliage. Use foliage Undo/Redo."); return true;
+    elseif elementId == TerrainEditorTypes.FoliageSelect or elementId == TerrainEditorTypes.FoliageExclusion then
+        local ok, json=pcall(require,"cjson"); local decoded, points=false,nil; if ok then decoded,points=pcall(json.decode,self.settings.foliagePoints or ""); end
+        if not decoded or type(points) ~= "table" then self:setStatus("Enter local XZ points as a JSON array."); return false; end
+        options.points=points; options.radius=self.settings.foliageExclusionRadius;
+        action=elementId == TerrainEditorTypes.FoliageSelect and "foliageSelect" or "foliageExclusion";
+    elseif elementId == TerrainEditorTypes.FoliageClearExclusions then action="foliageExclusion"; options.clear=true;
+    elseif elementId == TerrainEditorTypes.FoliageMasks then
+        local ok, data=self:readTextFile(self.settings.foliageMaskPath); local loaded,json=pcall(require,"cjson"); local decoded=false;
+        if ok and loaded then decoded,options=pcall(json.decode,data); end
+        if not decoded or type(options) ~= "table" then self:setStatus("Mask JSON requires width, height and density/biome arrays."); return false; end
+        action="foliageMasks";
+    elseif elementId == TerrainEditorTypes.FoliageTransform then action="foliageTransform"; options.ids=self._foliageSelection or {}; options.dx=self.settings.foliageDx; options.dy=self.settings.foliageDy; options.dz=self.settings.foliageDz; options.yaw=self.settings.foliageYaw; options.scale=self.settings.foliageScale;
+    elseif elementId == TerrainEditorTypes.FoliageReplace then action="foliageReplace"; options.ids=self._foliageSelection or {};
+    elseif elementId == TerrainEditorTypes.FoliageLock or elementId == TerrainEditorTypes.FoliageUnlock or elementId == TerrainEditorTypes.FoliageRemove then
+        action="foliageFlags"; options.ids=self._foliageSelection or {}; options.flags=elementId == TerrainEditorTypes.FoliageRemove and 4 or 2; options.enabled=elementId ~= TerrainEditorTypes.FoliageUnlock;
+    else return false; end
+    local success=self:foliageOperation(action,options);
+    if success and action == "foliageSelect" then self._foliageSelection=options.ids; self:setStatus("Selected " .. tostring(#(options.ids or {})) .. " foliage instances."); end
+    return success;
+end
+
 function TerrainEditor:performAction(elementId)
+    if elementId == TerrainEditorTypes.GenerateBiome then return self:performFoliageAction(TerrainEditorTypes.FoliageMasks); end
+    if elementId == TerrainEditorTypes.BakeImpostors or (elementId >= 7500 and elementId <= 7545) then return self:performFoliageAction(elementId); end
 	local actionNames =
 	{
 		[TerrainEditorTypes.DuplicateLayer] = "duplicate selected layer",
@@ -2507,6 +2574,17 @@ function TerrainEditor:updateBoundSetting(elementId, sender)
 		return false;
 	end
 
+    if elementId == TerrainEditorTypes.FoliageForceLod then self.settings.foliageForceLod=tonumber(self:getControlValue(sender,binding.valueType)) or 0; return self:foliageOperation("foliageForceLod",{level=self.settings.foliageForceLod-1}); end
+    if elementId == TerrainEditorTypes.TreeGpuInstancing or elementId == TerrainEditorTypes.GrassGpuInstancing or elementId == TerrainEditorTypes.GpuFoliage then self:setStatus("Foliage uses the native instanced renderer; disabling instancing is unavailable."); return false; end
+    local foliageFields={SlopeMin="minimumSlope", SlopeMax="maximumSlope", HeightMin="minimumHeight", HeightMax="maximumHeight", MinScale="minimumScale", MaxScale="maximumScale", RandomYaw="randomYaw", AlignToNormal="alignToNormal", CastShadows="castShadows", Wind="wind", Collision="collision"};
+    for suffix, field in pairs(foliageFields) do
+        for _, kind in ipairs({"tree", "grass"}) do
+            local id=TerrainEditorTypes[(kind == "tree" and "Tree" or "Grass") .. suffix];
+            if id == elementId then return self:applyFoliageRule(kind, field, self:getControlValue(sender, binding.valueType)); end
+        end
+    end
+    local nativeFoliageFields={[TerrainEditorTypes.FoliageSpacing]="candidateSpacing", [TerrainEditorTypes.FoliageMinSpacing]="minimumSpacing", [TerrainEditorTypes.FoliageMinMoisture]="minimumMoisture", [TerrainEditorTypes.FoliageMaxMoisture]="maximumMoisture", [TerrainEditorTypes.FoliageAllowedLayers]="allowedLayers", [TerrainEditorTypes.FoliageLayerWeight]="minimumLayerWeight", [TerrainEditorTypes.FoliageRuleWeight]="weight"};
+    if nativeFoliageFields[elementId] then local options={rule=self.settings.foliageSpecies}; options[nativeFoliageFields[elementId]]=self:getControlValue(sender,binding.valueType); return self:foliageOperation("foliageRule",options); end
     local unavailable = TerrainUnavailableLayerControls[elementId];
     if unavailable then
         self:setStatus("Unavailable: " .. unavailable);
@@ -2633,9 +2711,11 @@ function TerrainEditor:handleDrop(sender, args)
 		elementId == TerrainEditorTypes.LayerAOTexture or elementId == TerrainEditorTypes.LayerSplatTexture then
 		self:setOptionalLayerTexture(elementId, texture);
 	elseif elementId == TerrainEditorTypes.TreeLayerTexture then
-		self:setSelectedFoliageTexture("tree", texture);
+		self:applyFoliageRule("tree", "albedo", path);
 	elseif elementId == TerrainEditorTypes.GrassLayerTexture then
-		self:setSelectedFoliageTexture("grass", texture);
+		self:applyFoliageRule("grass", "albedo", path);
+    elseif elementId == TerrainEditorTypes.BiomeMaskTexture then
+        self:setStatus("Import explicit density/biome mask JSON in Owned Foliage Authoring; texture-only biome assignment is unavailable.");
 	else
 		local slotInfo = self.resourceSlots and self.resourceSlots[elementId] or nil;
 		if slotInfo and slotInfo.slot then
@@ -2721,11 +2801,9 @@ function TerrainEditor:handleEvent(parameters, results)
             self.resourcePaths=self.resourcePaths or {}; self.resourcePaths[TerrainEditorTypes.LayerBaseTexture]="";
             self:applySelectedLayerMaterialSettings(true, "albedo"); self:updateLayerControls();
 		elseif self.treeLayerTexture and elementId == self.treeLayerTexture.deleteHash then
-			local layer = self:getSelectedFoliageLayer("tree");
-			if layer then layer:setBaseTexture(nil); self:updateFoliageControls(); end
+			self:applyFoliageRule("tree", "albedo", "");
 		elseif self.grassLayerTexture and elementId == self.grassLayerTexture.deleteHash then
-			local layer = self:getSelectedFoliageLayer("grass");
-			if layer then layer:setBaseTexture(nil); self:updateFoliageControls(); end
+			self:applyFoliageRule("grass", "albedo", "");
 		elseif self.heightMap and elementId == self.heightMap.deleteHash then
 			if self.terrain then self.terrain:setHeightMap(nil); setResourcePreview(self.heightMap, nil); end
 		else
@@ -2738,19 +2816,19 @@ function TerrainEditor:handleEvent(parameters, results)
 			self:updateLayerControls();
 		elseif elementId == TerrainEditorTypes.TreeEnabled then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setTreesEnabled(value); end
+			if self.terrain and okValue then self:applyFoliageRule("tree", "enabled", value); end
 		elseif elementId == TerrainEditorTypes.TreeDensity then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setTreeDensity(value); end
+			if self.terrain and okValue then self:applyFoliageRule("tree", "density", value); end
 		elseif elementId == TerrainEditorTypes.TreePreviewCount then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setPreviewTreeCount(value); end
+			if self.terrain and okValue then self:setStatus("Instance count follows density and masks; preview count is unavailable."); end
 		elseif elementId == TerrainEditorTypes.TreeGeneratedCount then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setGeneratedTreeCount(value); end
+			if self.terrain and okValue then self:setStatus("Instance count follows density and masks; fixed generated count is unavailable."); end
 		elseif elementId == TerrainEditorTypes.TreePrefab then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setTreePrefabName(value); end
+			if self.terrain and okValue then self:setSelectedFoliagePrefab("tree", value); end
 		elseif elementId == TerrainEditorTypes.SelectedTreeLayer then
 			local okSelected, selected = safeCall(sender, "getSelectedOption");
 			self.selectedTreeLayerIndex = okSelected and selected or self.selectedTreeLayerIndex;
@@ -2763,10 +2841,10 @@ function TerrainEditor:handleEvent(parameters, results)
 			if okValue then self:setSelectedFoliagePrefab("tree", value); end
 		elseif elementId == TerrainEditorTypes.GrassEnabled then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setGrassEnabled(value); end
+			if self.terrain and okValue then self:applyFoliageRule("grass", "enabled", value); end
 		elseif elementId == TerrainEditorTypes.GrassDensity then
 			local okValue, value = safeCall(sender, "getValue");
-			if self.terrain and okValue then self.terrain:setGrassDensity(value); end
+			if self.terrain and okValue then self:applyFoliageRule("grass", "density", value); end
 		elseif elementId == TerrainEditorTypes.SelectedGrassLayer then
 			local okSelected, selected = safeCall(sender, "getSelectedOption");
 			self.selectedGrassLayerIndex = okSelected and selected or self.selectedGrassLayerIndex;

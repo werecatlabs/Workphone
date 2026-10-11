@@ -11,6 +11,7 @@
 #define WORKPHONE_GRAPHICS_PAGED_GEOMETRY_H
 
 #include "workphone_vector.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,6 +141,18 @@ void wp_geometry_page_add_entity( wp_geometry_page *page, void *entity, wp_vec3f
 void *wp_geometry_page_get_data( wp_geometry_page *page );
 wp_vec3f wp_geometry_page_get_center( const wp_geometry_page *page );
 wp_s32 wp_geometry_page_is_loaded( const wp_geometry_page *page );
+/* Async loads explicitly defer inside load_page, then complete on the pager owner
+ * thread. A generation is invalidated by unload/reload/reuse; stale completions
+ * return zero. Failed pages remain failed until explicitly reloaded. */
+enum wp_geometry_page_load_state
+{
+    WORKPHONE_PAGE_UNLOADED = 0, WORKPHONE_PAGE_QUEUED = 1,
+    WORKPHONE_PAGE_LOADING = 2, WORKPHONE_PAGE_READY = 3, WORKPHONE_PAGE_FAILED = 4
+};
+wp_s32 wp_geometry_page_get_load_state( const wp_geometry_page *page );
+uint64_t wp_geometry_page_get_load_generation( const wp_geometry_page *page );
+wp_s32 wp_geometry_page_defer_load( wp_geometry_page *page );
+wp_s32 wp_geometry_page_complete_load( wp_geometry_page *page, uint64_t generation, wp_s32 success );
 wp_s32 wp_geometry_page_is_visible( const wp_geometry_page *page );
 wp_u32 wp_geometry_page_get_query_flag( const wp_geometry_page *page );
 wp_paged_geometry_aabb wp_geometry_page_get_bounding_box( const wp_geometry_page *page );

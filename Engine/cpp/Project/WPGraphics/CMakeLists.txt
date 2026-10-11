@@ -94,6 +94,12 @@ else ()
     add_library(WPGraphics SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
+# Foliage cooked descriptors use the vendored parser with module-local symbols.
+target_sources(WPGraphics PRIVATE ${WP_ROOT}/Dependencies/cJSON/cJSON.c)
+target_include_directories(WPGraphics PRIVATE ${WP_ROOT}/Dependencies/cJSON)
+set_source_files_properties(${WP_ROOT}/Dependencies/cJSON/cJSON.c
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON COMPILE_DEFINITIONS CJSON_HIDE_SYMBOLS)
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         target_link_libraries(WPGraphics Workphone)
@@ -112,6 +118,7 @@ endif()
 target_link_libraries(WPGraphics WorkphoneGraphics)
 
 target_compile_definitions(WPGraphics PRIVATE FREEIMAGE_LIB)
+target_compile_definitions(WPGraphics PRIVATE WP_FOLIAGE_SOURCE_RESOURCES=$<BOOL:${WP_BUILD_RESOURCE_SYSTEM}>)
 if (TARGET FreeImage)
     add_dependencies(WPGraphics FreeImage)
 endif()

@@ -209,7 +209,8 @@ namespace workphone::render
             return recipe;
         }
 
-        void validateImageSize( u32 width, u32 height, const TextureMipSettings &settings )
+        u64 validateImageSize( u32 width, u32 height, const TextureMipSettings &settings,
+                              u64 maximumBytes = graphicsTextureByteLimit )
         {
             require( width && height && width <= maxTextureDimension && height <= maxTextureDimension &&
                          settings.atlasColumns && width % settings.atlasColumns == 0,
@@ -218,7 +219,7 @@ namespace workphone::render
             for( ;; )
             {
                 const auto bytes = u64( width ) * height * 4u;
-                require( bytes <= graphicsTextureByteLimit - total,
+                require( total <= maximumBytes && bytes <= maximumBytes - total,
                          "Decoded image and mip chain exceed the aggregate byte limit" );
                 total += bytes;
                 if( settings.filter == TextureMipFilter::None || ( width == 1 && height == 1 ) )
@@ -228,6 +229,7 @@ namespace workphone::render
                 if( width < settings.atlasColumns || width % settings.atlasColumns )
                     break;
             }
+            return total;
         }
 
         struct ImageLifetime
@@ -259,12 +261,25 @@ namespace workphone::render
         };
         using Bitmap = std::unique_ptr<FIBITMAP, BitmapDeleter>;
 
-        CookedTextureData compileTexture( const resource::CompileContext &context )
+        CookedTextureData compileTexture( const resource::CompileContext &context,
+            u64 maximumOutputBytes = graphicsTextureByteLimit,
+            const std::function<void(u64)> &admitEncoded = {},
+            const std::function<void(u64)> &admitDecoded = {} )
         {
             const auto recipe = readTextureRecipe( context );
             const auto sourcePath = fs::u8path( context.sourceRoot.c_str() ) /
                                     fs::u8path( recipe.source.substr( 7 ).c_str() );
-            auto encoded = readFile( sourcePath, encodedImageByteLimit );
+            u64 encodedLimit = encodedImageByteLimit;
+            if( admitEncoded )
+            {
+                std::error_code error;
+                const auto size = fs::file_size( sourcePath, error );
+                require( !error && size && size <= encodedImageByteLimit,
+                         "Graphics source is missing, empty or exceeds its byte limit" );
+                admitEncoded( size );
+                encodedLimit = size; // A file growing after admission must be rejected.
+            }
+            auto encoded = readFile( sourcePath, encodedLimit );
             if( sourcePath.extension()==".dds" && ddsFormatForTarget(context.target) )
             {
                 const auto image=dds::inspect(encoded);
@@ -295,7 +310,9 @@ namespace workphone::render
                      "Only integer colour images with up to 32 bits per pixel are supported" );
             const auto width = FreeImage_GetWidth( header.get() );
             const auto height = FreeImage_GetHeight( header.get() );
-            validateImageSize( width, height, recipe.settings );
+            const auto decodedBytes = validateImageSize( width, height, recipe.settings,
+                                                        maximumOutputBytes );
+            if( admitDecoded ) admitDecoded( decodedBytes );
             header.reset();
             require( FreeImage_SeekMemory( memory.get(), 0, SEEK_SET ) != 0,
                      "Cannot rewind image decoder stream" );
@@ -369,6 +386,53 @@ namespace workphone::render
             return data;
         }
     }  // namespace
+
+    bool decodeGraphicsTextureSource( const String &sourceRoot, const resource::ResourceID &id,
+        CookedTextureData &output, String &error, u64 maximumOutputBytes, StreamBudget *retainedBudget )
+    {
+        error.clear();
+        try
+        {
+            require( id.isValid() && !id.isSubResource() && id.type() == resource::ResourceTypeID("texres"),
+                     "Graphics source decoding requires a texres file resource" );
+            require( maximumOutputBytes && maximumOutputBytes <= graphicsTextureByteLimit,
+                     "Graphics source output budget must be between one byte and 256 MiB" );
+            resource::CompileContext context;
+            if( !canonicalAssetCatalogRoot( sourceRoot, context.sourceRoot, error ) ) return false;
+            AssetCatalogPath descriptor;
+            if( !canonicalAssetCatalogPath( context.sourceRoot, id.sourceRelativePath(), descriptor, error ) ) return false;
+            context.resourceId = id;
+            context.sourcePath = (fs::u8path(context.sourceRoot.c_str()) / fs::u8path(descriptor.path.c_str())).generic_u8string().c_str();
+            context.target = "windows-dx11";
+            context.packagedBuild = false;
+            auto scheduler = WorldStreamingScheduler::shared();
+            auto metadataBudget = scheduler->reserve( StreamMemoryClass::WorkingCpu, 4ull << 20, error );
+            if( !metadataBudget ) return false;
+            StreamBudget encodedBudget, scratchBudget, sourceBudget;
+            auto candidate = compileTexture( context, maximumOutputBytes,
+                [&]( u64 bytes ) {
+                    encodedBudget = scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes, error );
+                    if( !encodedBudget ) throw std::runtime_error(error.c_str());
+                },
+                [&]( u64 bytes ) {
+                    // Decoder source/conversion, top-down pixels and mip generation
+                    // can overlap. Retained result bytes are admitted separately.
+                    scratchBudget = scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes * 5, error );
+                    if( !scratchBudget ) throw std::runtime_error(error.c_str());
+                    if( retainedBudget )
+                    {
+                        sourceBudget = scheduler->reserve( StreamMemoryClass::SourceCpu, bytes + 4096, error );
+                        if( !sourceBudget ) throw std::runtime_error(error.c_str());
+                    }
+                } );
+            output = std::move(candidate);
+            if( retainedBudget ) *retainedBudget = std::move(sourceBudget);
+            error.clear();
+            return true;
+        }
+        catch( const std::exception &exception )
+        { error = exception.what(); return false; }
+    }
 
     String GraphicsResourceCompiler::name() const
     {

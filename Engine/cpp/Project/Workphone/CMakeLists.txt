@@ -163,6 +163,19 @@ target_include_directories(Workphone PUBLIC
     ${CMAKE_SOURCE_DIR}/Dependencies/boost
 )
 
+# The renderer-neutral foliage service reuses the native page-grid lifecycle.
+# WorkphoneGraphics is the C geometry library, not the WPGraphics renderer plugin.
+if(TARGET WorkphoneGraphics)
+    target_link_libraries(Workphone WorkphoneGraphics)
+    if(TARGET WorkphonePlatformWin32)
+        target_link_libraries(Workphone WorkphonePlatformWin32)
+    endif()
+    target_include_directories(Workphone PRIVATE
+        ${WP_ROOT}/Engine/c/Include
+        ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+        ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+endif()
+
 if (NOT WP_STATIC_LIB)
     if (WIN32)
         if (WP_USE_ONETBB)
