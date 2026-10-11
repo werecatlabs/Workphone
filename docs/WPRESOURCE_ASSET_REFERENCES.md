@@ -58,7 +58,31 @@ Unversioned JSON/XML must be opened and resaved through the owning serializer;
 the service refuses to guess missing resource semantics. Malformed/duplicate JSON
 keys, duplicate XML properties/attributes, unknown XML versions, unsupported
 formats, encoded NULs, external/private paths and over-budget documents fail.
-This is per-document repair, not a full-project discovery or legacy migration tool.
+Project discovery and batch repair are now also available in the Asset Database.
+Use **Scan project document references** to preview known authored extensions
+(.fbscene/.fbscenebin/.fbscenexml, .mat/.material, .prefab/.fbprefab and .resource)
+and all active graph owners, including owners with other extensions. The report
+lists verifiable documents and explicit legacy/malformed/missing/link diagnostics
+in 100-row pages. It excludes private/VCS roots, configured cache scratch and the
+mounted media root. Links/reparse points are reported without recursion. Indexed
+owners inside excluded domains stay visible as blocked entries.
+
+**Reindex verified project documents** rechecks the captured catalog/project/media
+sessions and revisions, scope, document membership and fingerprints. It replaces
+all verifiable graphs in one transaction, validates again before commit and rolls
+back every replacement on failure. It does not rewrite any source files or remove
+blocked owners' old graphs. The report stays visible after success; scan again to
+apply another batch. Read-only project catalogs support preview only. Display DTOs
+are not authority to change the captured batch. A batch with blocked rows leaves
+coverage incomplete; legacy text still needs an owning-serializer resave.
+
+Discovery bounds 10,000 document candidates, 100,000 visited entries, directory
+depth 64 and 256 MiB reads per pass; callers can lower those limits. A global limit
+failure exposes no applicable truncated preview. Batch apply performs multiple
+bounded passes and holds a catalog write transaction. The workflow is synchronous;
+large-project responsiveness/cancellation remains open. Its before/after checks
+detect stale inputs but do not lock external filesystem writers or certify an
+atomic filesystem snapshot.
 
 Select a project or bundled asset in the Editor's Asset Database window to see
 its indexed saved-document users, required/optional policy, type and graph state.
@@ -100,7 +124,7 @@ routes still need adoption. Unsaved edits, raw SQL mutations and unindexed files
 are not a complete project reference inventory. Graph ownership currently follows
 canonical document paths; immutable authored AssetUUID metadata migration remains
 open. Compile/install/platform dependency modes, cycle policy, affected rebuild,
-full-project reindexing and package closure are separate remaining work.
+remaining-format discovery/legacy migration and package closure are separate remaining work.
 
 Focused contracts cover save fingerprints, pending/superseded sessions, graph
 transaction failure, future schemas, optional/missing references, bounded queries,
@@ -109,4 +133,10 @@ media-domain separation, actual empty-scene JSON/XML/binary saves, creation
 undo/redo and non-destructive project cleaning. Authored-document contracts also
 exercise locked destinations, pre/post-publication SQL faults, source-preserving
 reindex repair, property-metadata round trips and actual material/prefab saves. They do not
-establish interactive populated-scene save/reopen or full-project coverage.
+establish interactive populated-scene save/reopen or complete format coverage.
+Project inventory contracts additionally cover unindexed discovery, read-only
+inspection, whole-batch SQL rollback, blocked-owner retention, stale bytes and
+membership, changed project/cache/media bindings, catalog reopen, unknown schema
+rejection and global budgets. The Windows contracts fall back to a directory junction when symlink privileges
+are unavailable; this fallback exercised reparse-point rejection in the current
+run. Other hosts explicitly report an unavailable link fixture as skipped.

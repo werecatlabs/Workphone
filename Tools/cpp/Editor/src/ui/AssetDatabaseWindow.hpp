@@ -4,6 +4,7 @@
 #include "EditorWindow.hpp"
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Database/AssetOperationBrowser.hpp>
+#include <Workphone/Database/AssetDocumentInventory.hpp>
 
 namespace workphone::editor
 {
@@ -15,11 +16,12 @@ namespace workphone::editor
         {
         public:
             Parameter handleEvent( EventType eventType, hash_type eventValue,
-                const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
             void unload( SmartPtr<ISharedObject> data ) override;
             void setOwner( SmartPtr<AssetDatabaseWindow> owner );
             WP_CLASS_REGISTER_DECL;
+
         private:
             ObjectObserver<AssetDatabaseWindow> m_owner;
         };
@@ -32,12 +34,14 @@ namespace workphone::editor
         void refresh();
         void setWindowVisible( bool visible ) override;
         Parameter handleEvent( EventType eventType, hash_type eventValue,
-            const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-            SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+                               const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                               SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
         WP_CLASS_REGISTER_DECL;
+
     private:
         void populate();
         void populateOperations();
+        void populateDocuments();
         SmartPtr<AssetDatabaseManager> m_assetDatabaseManager;
         SmartPtr<AssetDatabaseManager> m_mediaCatalog;
         bool m_showMedia = false;
@@ -53,12 +57,16 @@ namespace workphone::editor
         SmartPtr<ui::IUIButton> m_history;
         SmartPtr<ui::IUIButton> m_restore;
         SmartPtr<ui::IUIButton> m_reindex;
+        SmartPtr<ui::IUIButton> m_scanDocuments, m_reindexDocuments;
+        AssetDocumentInventory m_documentInventory;
+        bool m_showDocuments = false, m_documentCanApply = false;
+        size_t m_documentPage = 0;
         bool m_showOperations = false;
-        size_t m_selectedOperation = static_cast<size_t>(-1);
+        size_t m_selectedOperation = static_cast<size_t>( -1 );
         AssetOperationPage m_operations;
         Array<String> m_operationCursors;
         String m_operationAfter;
         AssetCatalogBrowser m_browser;
     };
-}
+}  // namespace workphone::editor
 #endif

@@ -52,11 +52,14 @@ namespace workphone::editor
         };
         m_refresh = button( "Search / Refresh##CatalogRefresh" );
         m_source = button( "Show bundled media##CatalogSource" );
-        m_history = button("Operation history / Recovery##CatalogHistory");
-        m_restore = button("Undo selected operation##CatalogRestore");
-        m_restore->setEnabled(false);
+        m_history = button( "Operation history / Recovery##CatalogHistory" );
+        m_restore = button( "Undo selected operation##CatalogRestore" );
+        m_restore->setEnabled( false );
         m_reindex = button( "Reindex selected document references##CatalogReindex" );
         m_reindex->setEnabled( false );
+        m_scanDocuments = button( "Scan project document references##CatalogDocumentScan" );
+        m_reindexDocuments = button( "Reindex verified project documents##CatalogDocumentBatch" );
+        m_reindexDocuments->setEnabled( false );
         m_previous = button( "Previous##CatalogPrevious" );
         m_previous->setSameLine( true );
         m_next = button( "Next##CatalogNext" );
@@ -82,7 +85,9 @@ namespace workphone::editor
         {
             listener->unload( nullptr );
             Array<SmartPtr<ui::IUIElement>> controls = {
-                m_tree, m_search, m_type, m_refresh, m_previous, m_next, m_source, m_history, m_restore, m_reindex };
+                m_tree,   m_search,  m_type,    m_refresh, m_previous,      m_next,
+                m_source, m_history, m_restore, m_reindex, m_scanDocuments, m_reindexDocuments
+            };
             for( auto &control : controls )
                 if( control )
                     control->removeObjectListener( listener );
@@ -107,8 +112,17 @@ namespace workphone::editor
         m_previous = nullptr;
         m_next = nullptr;
         m_source = nullptr;
-        m_history=nullptr;m_restore=nullptr;m_reindex=nullptr;
-        m_operations={};m_operationCursors.clear();m_operationAfter.clear();
+        m_history = nullptr;
+        m_restore = nullptr;
+        m_reindex = nullptr;
+        m_operations = {};
+        m_operationCursors.clear();
+        m_operationAfter.clear();
+        m_scanDocuments = nullptr;
+        m_reindexDocuments = nullptr;
+        m_documentInventory = {};
+        m_showDocuments = false;
+        m_documentCanApply = false;
         m_mediaCatalog = nullptr;
         m_assetDatabaseManager = nullptr;
         m_browser.clear();
@@ -120,16 +134,16 @@ namespace workphone::editor
     {
         if( m_showMedia )
             return m_mediaCatalog;
-        if( m_assetDatabaseManager )
-            return m_assetDatabaseManager;
         auto application = core::IApplicationManager::instancePtr();
         auto resources = application ? application->getResourceDatabase() : nullptr;
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
-                                 : nullptr;
+        auto catalog = m_assetDatabaseManager ? m_assetDatabaseManager
+                                              : ( resources ? dynamic_pointer_cast<AssetDatabaseManager>(
+                                                                  resources->getDatabaseManager() )
+                                                            : nullptr );
         String projectRoot, error;
         // Project activation may precede resource-service rebinding. Do not
         // expose the previous project's catalog during that transition.
-        if( !catalog || application->getProjectPath().empty() ||
+        if( !catalog || !application || application->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( application->getProjectPath(), projectRoot, error ) ||
             projectRoot != catalog->getProjectRoot() )
             return nullptr;
@@ -156,15 +170,23 @@ namespace workphone::editor
     {
         if( !m_search || !m_type )
             return;
-        m_selectedOperation=static_cast<size_t>(-1);
-        m_restore->setEnabled(false);
-        m_reindex->setEnabled(false);
-        m_history->setEnabled(!m_showMedia);
-        if(m_showOperations && !m_showMedia)
+        m_documentInventory = {};
+        m_showDocuments = false;
+        m_documentCanApply = false;
+        m_documentPage = 0;
+        m_reindexDocuments->setEnabled( false );
+        m_scanDocuments->setEnabled( !m_showMedia && getAssetDatabaseManager() != nullptr );
+        m_selectedOperation = static_cast<size_t>( -1 );
+        m_restore->setEnabled( false );
+        m_reindex->setEnabled( false );
+        m_history->setEnabled( !m_showMedia );
+        if( m_showOperations && !m_showMedia )
         {
-            m_operationAfter.clear();m_operationCursors.clear();
-            m_operations=queryAssetOperations(getAssetDatabaseManager());
-            populateOperations();return;
+            m_operationAfter.clear();
+            m_operationCursors.clear();
+            m_operations = queryAssetOperations( getAssetDatabaseManager() );
+            populateOperations();
+            return;
         }
         AssetDatabaseManager::EntryQuery query;
         query.search = m_search->getText();
@@ -240,9 +262,54 @@ namespace workphone::editor
             " records | Interrupted operations recover on catalog reopen. Conflicts require explicit repair.");
     }
 
+    void AssetDatabaseWindow::populateDocuments()
+    {
+        if( !m_tree || !m_details || !m_status )
+            return;
+        m_reindex->setEnabled( false );
+        m_restore->setEnabled( false );
+        m_reindexDocuments->setEnabled( m_documentCanApply && m_documentInventory.succeeded &&
+                                        m_documentInventory.ready > 0 );
+        m_tree->clear();
+        const auto &inventory = m_documentInventory;
+        m_previous->setEnabled( inventory.succeeded && m_documentPage > 0 );
+        m_next->setEnabled( inventory.succeeded &&
+                            ( m_documentPage + 1 ) * 100 < inventory.documents.size() );
+        if( !inventory.succeeded )
+        {
+            m_status->setText( inventory.error );
+            m_details->setText( "Scan did not complete. No reference graphs were changed." );
+            return;
+        }
+        auto root = m_tree->addRoot();
+        root->setId( 0 );
+        Util::setText( root, "Project document reference inventory" );
+        const auto begin = m_documentPage * 100;
+        const auto end = std::min( begin + 100, inventory.documents.size() );
+        for( size_t i = begin; i < end; ++i )
+        {
+            const auto &entry = inventory.documents[i];
+            auto node = m_tree->addNode();
+            node->setId( i + 1 );
+            Util::setText( node,
+                           entry.path + ( entry.canReindex ? " [verified]" : " [requires attention]" ) );
+            root->addChild( node );
+        }
+        m_status->setText( "Document scan | " + StringUtil::toString( inventory.ready ) +
+                           " verified | " + StringUtil::toString( inventory.blocked ) +
+                           " require attention | Page " + StringUtil::toString( m_documentPage + 1 ) );
+        m_details->setText(
+            "Select a document for diagnostics. Reindex replaces verified graphs together without "
+            "rewriting files. "
+            "Blocked documents retain their existing graphs. Legacy text needs an owning-editor resave. "
+            "Coverage includes known scene/material/prefab/resource extensions and existing indexed "
+            "documents; other formats and unsaved edits are outside this scan." );
+    }
+
     Parameter AssetDatabaseWindow::handleEvent( EventType eventType, hash_type eventValue,
-        const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-        SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+                                                const Array<Parameter> &arguments,
+                                                SmartPtr<ISharedObject> sender,
+                                                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         if( getLoadingState() != LoadingState::Loaded )
             return {};
@@ -250,19 +317,60 @@ namespace workphone::editor
         {
             // Literal searches may scan the catalog. Apply explicitly instead of
             // issuing a synchronous database scan for every typed character.
+            m_documentInventory = {};
+            m_showDocuments = false;
+            m_reindexDocuments->setEnabled( false );
             m_browser.clear();
             populate();
             m_status->setText( "Press Search / Refresh to apply the filters." );
         }
         else if( eventValue == IEvent::handleSelection )
         {
-            if( sender == m_refresh )
+            if( sender == m_scanDocuments )
+            {
+                m_showMedia = false;
+                m_showOperations = false;
+                m_source->setLabel( "Show bundled media##CatalogSource" );
+                m_history->setLabel( "Operation history / Recovery##CatalogHistory" );
+                m_documentInventory =
+                    scanAssetDocuments( getAssetDatabaseManager(), {}, m_mediaCatalog );
+                m_showDocuments = true;
+                m_documentCanApply = m_documentInventory.succeeded;
+                m_documentPage = 0;
+                populateDocuments();
+            }
+            else if( sender == m_reindexDocuments )
+            {
+                u32 count = 0;
+                String error;
+                if( !m_showDocuments || !reindexAssetDocuments( getAssetDatabaseManager(),
+                                                                m_documentInventory, count, error ) )
+                {
+                    m_documentCanApply = false;
+                    m_reindexDocuments->setEnabled( false );
+                    m_details->setText( error.empty() ? "Scan the active project before rebuilding."
+                                                      : error );
+                }
+                else
+                {
+                    const auto blocked = m_documentInventory.blocked;
+                    m_documentCanApply = false;
+                    populateDocuments();
+                    m_details->setText( StringUtil::toString( count ) + " document graphs rebuilt. " +
+                                        StringUtil::toString( blocked ) +
+                                        " documents still require attention. Source files were not "
+                                        "modified. Scan again before another rebuild." );
+                }
+            }
+            else if( sender == m_refresh )
                 refresh();
             else if( sender == m_source )
             {
-                m_showOperations=false;m_history->setLabel("Operation history / Recovery##CatalogHistory");
+                m_showOperations = false;
+                m_history->setLabel( "Operation history / Recovery##CatalogHistory" );
                 m_showMedia = !m_showMedia;
-                m_source->setLabel( m_showMedia ? "Show project assets##CatalogSource" : "Show bundled media##CatalogSource" );
+                m_source->setLabel( m_showMedia ? "Show project assets##CatalogSource"
+                                                : "Show bundled media##CatalogSource" );
                 refresh();
             }
             else if( sender == m_reindex )
@@ -272,56 +380,97 @@ namespace workphone::editor
                 AssetDatabaseManager::EntrySnapshot entry;
                 auto catalog = getAssetDatabaseManager();
                 String error;
-                if( m_showMedia || m_showOperations || !id ||
+                if( m_showMedia || m_showOperations || m_showDocuments || !id ||
                     !m_browser.select( id - 1, catalog, entry ) ||
                     entry.kind != AssetDatabaseManager::EntryKind::File )
                     error = "Catalog changed. Refresh and select a project document again.";
                 else if( reindexAssetDocument( catalog, entry.path, error, m_mediaCatalog ) )
                 {
                     refresh();
-                    m_details->setText( "Saved reference graph rebuilt from verified document bytes. The document was not modified." );
+                    m_details->setText(
+                        "Saved reference graph rebuilt from verified document bytes. The document was "
+                        "not modified." );
                     return {};
                 }
                 m_details->setText( error );
             }
-            else if(sender==m_history)
+            else if( sender == m_history )
             {
-                m_showOperations=!m_showOperations;
-                m_history->setLabel(m_showOperations?"Show assets##CatalogHistory":"Operation history / Recovery##CatalogHistory");
+                m_showOperations = !m_showOperations;
+                m_history->setLabel( m_showOperations ? "Show assets##CatalogHistory"
+                                                      : "Operation history / Recovery##CatalogHistory" );
                 refresh();
             }
-            else if(sender==m_restore)
+            else if( sender == m_restore )
             {
-                auto catalog=getAssetDatabaseManager();
-                if(!m_operations.canUndo(catalog,m_selectedOperation))
-                {m_details->setText("Operation or project session changed. Refresh and select it again.");return {};}
-                const auto id=m_operations.rows[m_selectedOperation].id;
-                const auto result=catalog->undoFileOperation(id);
+                auto catalog = getAssetDatabaseManager();
+                if( !m_operations.canUndo( catalog, m_selectedOperation ) )
+                {
+                    m_details->setText(
+                        "Operation or project session changed. Refresh and select it again." );
+                    return {};
+                }
+                const auto id = m_operations.rows[m_selectedOperation].id;
+                const auto result = catalog->undoFileOperation( id );
                 refresh();
-                m_details->setText(result.succeeded?"Operation undone. Restored assets retain their original UUIDs; save or reload affected documents as needed.":
-                    "Undo failed; existing content retained. "+result.error);
+                m_details->setText( result.succeeded
+                                        ? "Operation undone. Restored assets retain their original "
+                                          "UUIDs; save or reload affected documents as needed."
+                                        : "Undo failed; existing content retained. " + result.error );
             }
             else if( sender == m_previous )
             {
-                if(m_showOperations)
+                if( m_showDocuments )
                 {
-                    if(!m_operations.session.isCurrent(getAssetDatabaseManager()))
-                    {m_operations=queryAssetOperations(nullptr);populateOperations();return {};}
-                    if(!m_operationCursors.empty())
-                    {m_operationAfter=m_operationCursors.back();m_operationCursors.pop_back();m_operations=queryAssetOperations(getAssetDatabaseManager(),100,m_operationAfter);}
-                    populateOperations();return {};
+                    if( m_documentPage )
+                        --m_documentPage;
+                    populateDocuments();
+                    return {};
+                }
+                if( m_showOperations )
+                {
+                    if( !m_operations.session.isCurrent( getAssetDatabaseManager() ) )
+                    {
+                        m_operations = queryAssetOperations( nullptr );
+                        populateOperations();
+                        return {};
+                    }
+                    if( !m_operationCursors.empty() )
+                    {
+                        m_operationAfter = m_operationCursors.back();
+                        m_operationCursors.pop_back();
+                        m_operations =
+                            queryAssetOperations( getAssetDatabaseManager(), 100, m_operationAfter );
+                    }
+                    populateOperations();
+                    return {};
                 }
                 m_browser.previous( getAssetDatabaseManager() );
                 populate();
             }
             else if( sender == m_next )
             {
-                if(m_showOperations)
+                if( m_showDocuments )
                 {
-                    if(m_operations.hasMore && !m_operations.rows.empty() && m_operations.session.isCurrent(getAssetDatabaseManager()))
-                    {m_operationCursors.push_back(m_operationAfter);m_operationAfter=m_operations.rows.back().id;m_operations=queryAssetOperations(getAssetDatabaseManager(),100,m_operationAfter);}
-                    else m_operations=queryAssetOperations(nullptr);
-                    populateOperations();return {};
+                    if( ( m_documentPage + 1 ) * 100 < m_documentInventory.documents.size() )
+                        ++m_documentPage;
+                    populateDocuments();
+                    return {};
+                }
+                if( m_showOperations )
+                {
+                    if( m_operations.hasMore && !m_operations.rows.empty() &&
+                        m_operations.session.isCurrent( getAssetDatabaseManager() ) )
+                    {
+                        m_operationCursors.push_back( m_operationAfter );
+                        m_operationAfter = m_operations.rows.back().id;
+                        m_operations =
+                            queryAssetOperations( getAssetDatabaseManager(), 100, m_operationAfter );
+                    }
+                    else
+                        m_operations = queryAssetOperations( nullptr );
+                    populateOperations();
+                    return {};
                 }
                 m_browser.next( getAssetDatabaseManager() );
                 populate();
@@ -333,16 +482,38 @@ namespace workphone::editor
             const auto id = node ? node->getId() : 0;
             if( id > 0 )
             {
-                if(m_showOperations)
+                if( m_showDocuments )
                 {
-                    const auto index=static_cast<size_t>(id-1);
-                    if(index>=m_operations.rows.size() || !m_operations.session.isCurrent(getAssetDatabaseManager()))
-                    {refresh();m_details->setText("Project journal changed. Select the record again.");return {};}
-                    m_selectedOperation=index;const auto &row=m_operations.rows[index];
-                    m_restore->setEnabled(m_operations.canUndo(getAssetDatabaseManager(),index));
-                    m_restore->setLabel(row.kind=="delete"?"Restore quarantined asset##CatalogRestore":"Undo selected operation##CatalogRestore");
-                    m_details->setText("Operation: "+row.id+"\nState: "+row.state+"\nSource: "+row.source+
-                        "\nDestination: "+row.destination+"\nRoot: "+row.root);
+                    if( static_cast<size_t>( id ) <= m_documentInventory.documents.size() )
+                    {
+                        const auto &entry = m_documentInventory.documents[id - 1];
+                        m_details->setText(
+                            entry.path + "\n" +
+                            ( entry.canReindex
+                                  ? "Verified typed document; eligible for transactional graph rebuild."
+                                  : entry.diagnostic ) );
+                    }
+                    return {};
+                }
+                if( m_showOperations )
+                {
+                    const auto index = static_cast<size_t>( id - 1 );
+                    if( index >= m_operations.rows.size() ||
+                        !m_operations.session.isCurrent( getAssetDatabaseManager() ) )
+                    {
+                        refresh();
+                        m_details->setText( "Project journal changed. Select the record again." );
+                        return {};
+                    }
+                    m_selectedOperation = index;
+                    const auto &row = m_operations.rows[index];
+                    m_restore->setEnabled( m_operations.canUndo( getAssetDatabaseManager(), index ) );
+                    m_restore->setLabel( row.kind == "delete"
+                                             ? "Restore quarantined asset##CatalogRestore"
+                                             : "Undo selected operation##CatalogRestore" );
+                    m_details->setText( "Operation: " + row.id + "\nState: " + row.state +
+                                        "\nSource: " + row.source + "\nDestination: " + row.destination +
+                                        "\nRoot: " + row.root );
                     return {};
                 }
                 AssetDatabaseManager::EntrySnapshot entry;
@@ -353,27 +524,38 @@ namespace workphone::editor
                 }
                 else
                 {
-                    m_reindex->setEnabled( !m_showMedia && entry.kind == AssetDatabaseManager::EntryKind::File );
-                    String details = "UUID: " + entry.uuid + "\nPath: " + entry.path + "\nType: " + entry.type +
-                        "\nKind: " + ( entry.kind == AssetDatabaseManager::EntryKind::File ? "File" : "Scene object" );
+                    m_reindex->setEnabled( !m_showMedia &&
+                                           entry.kind == AssetDatabaseManager::EntryKind::File );
+                    String details =
+                        "UUID: " + entry.uuid + "\nPath: " + entry.path + "\nType: " + entry.type +
+                        "\nKind: " +
+                        ( entry.kind == AssetDatabaseManager::EntryKind::File ? "File"
+                                                                              : "Scene object" );
                     // References to bundled media are owned by project documents.
-                    const auto showingMedia=m_showMedia;
-                    m_showMedia=false;
-                    auto project=getAssetDatabaseManager();
-                    m_showMedia=showingMedia;
-                    const auto references=queryAssetReferences(project,entry.uuid,true,showingMedia?"media":"project");
-                    if(!references.succeeded) details+="\nReference graph: "+references.error;
+                    const auto showingMedia = m_showMedia;
+                    m_showMedia = false;
+                    auto project = getAssetDatabaseManager();
+                    m_showMedia = showingMedia;
+                    const auto references = queryAssetReferences( project, entry.uuid, true,
+                                                                  showingMedia ? "media" : "project" );
+                    if( !references.succeeded )
+                        details += "\nReference graph: " + references.error;
                     else
                     {
-                        details+="\nIndexed saved-document users: "+StringUtil::toString(references.edges.size())+
-                            (references.hasMore?" (first page; additional users exist)":"");
-                        for(const auto &edge:references.edges)
-                            details+="\n"+edge.sourcePath+" | "+edge.slot+" | "+edge.expectedType+
-                                (edge.required?" | required":" | optional")+" | "+edge.sourceState+
-                                (edge.diagnostic.empty()?"":" | "+edge.diagnostic);
-                        details+="\nCoverage: indexed saves only; unsaved edits and unindexed legacy documents are not represented.";
+                        details += "\nIndexed saved-document users: " +
+                                   StringUtil::toString( references.edges.size() ) +
+                                   ( references.hasMore ? " (first page; additional users exist)" : "" );
+                        for( const auto &edge : references.edges )
+                            details += "\n" + edge.sourcePath + " | " + edge.slot + " | " +
+                                       edge.expectedType +
+                                       ( edge.required ? " | required" : " | optional" ) + " | " +
+                                       edge.sourceState +
+                                       ( edge.diagnostic.empty() ? "" : " | " + edge.diagnostic );
+                        details +=
+                            "\nCoverage: indexed saves only; unsaved edits and unindexed legacy "
+                            "documents are not represented.";
                     }
-                    m_details->setText(details);
+                    m_details->setText( details );
                 }
             }
         }

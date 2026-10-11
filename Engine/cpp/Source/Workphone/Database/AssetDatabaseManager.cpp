@@ -1328,8 +1328,8 @@ namespace workphone
             error.clear();
             try
             {
-                if( !catalog || catalog->isReadOnly() || !serialized || bytes.empty() ||
-                    bytes.size() > 64 * 1024 * 1024 )
+                if( !catalog || ( catalog->isReadOnly() && !captureOnly ) || !serialized ||
+                    bytes.empty() || bytes.size() > 64 * 1024 * 1024 )
                     throw std::runtime_error(
                         "Reference save requires a writable catalog, serialized data and bounded "
                         "bytes" );
@@ -1423,11 +1423,12 @@ namespace workphone
                         throw std::runtime_error( "Bundled media reference session changed" );
                     if( referencesPresent( *catalog ) )
                     {
-                        auto row = queryCatalog( *catalog,
-                            "SELECT state FROM wp_asset_reference_documents WHERE path_key=?",
+                        auto row = queryCatalog(
+                            *catalog, "SELECT state FROM wp_asset_reference_documents WHERE path_key=?",
                             { source.key } );
                         if( !row || ( !row->eof() && row->getFieldValue( "state" ) == "quarantined" ) )
-                            throw std::runtime_error( "Restore quarantined reference identity before reindex" );
+                            throw std::runtime_error(
+                                "Restore quarantined reference identity before reindex" );
                     }
                     save = std::move( candidate );
                     return true;
@@ -2091,6 +2092,351 @@ namespace workphone
                                                         : error.c_str() );
             if( !finishReferenceSave( catalog, save, error ) || !transaction.commit() )
                 throw std::runtime_error( "Cannot commit document reindex" );
+            return true;
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
+    }
+    struct AssetDocumentInventorySnapshot
+    {
+        AssetCatalogSession session, mediaSession;
+        ObjectObserver<AssetDatabaseManager> media;
+        ObjectObserver<ResourceDatabase> activeResources;
+        AssetDocumentScanOptions options;
+        Array<AssetDocumentInventoryEntry> documents;
+        String root, cacheKey, mediaKey;
+        u64 generation = 0, mediaGeneration = 0;
+        bool active = false, hasMedia = false;
+    };
+    namespace
+    {
+        bool documentLink( const std::filesystem::path &path )
+        {
+#if defined WP_PLATFORM_WIN32
+            const auto attributes = GetFileAttributesW( path.c_str() );
+            if( attributes == INVALID_FILE_ATTRIBUTES )
+                throw std::runtime_error( "Cannot inspect document scan entry" );
+            if( attributes & FILE_ATTRIBUTE_REPARSE_POINT )
+                return true;
+#endif
+            return std::filesystem::is_symlink( std::filesystem::symlink_status( path ) );
+        }
+        bool documentExtension( const std::filesystem::path &path )
+        {
+            const auto extension = StringUtil::make_lower( path.extension().u8string().c_str() );
+            return extension == ".fbscene" || extension == ".fbscenebin" || extension == ".fbscenexml" ||
+                   extension == ".prefab" || extension == ".fbprefab" || extension == ".resource" ||
+                   extension == ".mat" || extension == ".material";
+        }
+        class DocumentScanBudgetExceeded : public std::runtime_error
+        {
+        public:
+            DocumentScanBudgetExceeded() :
+                std::runtime_error( "Project document scan exceeds the byte budget" )
+            {
+            }
+        };
+        Array<u8> readInventoryDocument( const std::filesystem::path &file, u64 &budget )
+        {
+            const auto size = std::filesystem::file_size( file );
+            if( !size || size > 64ull * 1024 * 1024 )
+                throw std::runtime_error( "Document is empty or exceeds the 64 MiB document limit" );
+            if( size > budget )
+                throw DocumentScanBudgetExceeded();
+            budget -= size;
+            Array<u8> bytes;
+            bytes.resize( static_cast<size_t>( size ) );
+            std::ifstream input( file, std::ios::binary );
+            input.read( reinterpret_cast<char *>( bytes.data() ),
+                        static_cast<std::streamsize>( bytes.size() ) );
+            if( !input || input.peek() != std::char_traits<char>::eof() )
+                throw std::runtime_error( "Document changed or could not be read during scan" );
+            return bytes;
+        }
+        bool sameInventory( const AssetDocumentInventorySnapshot &a,
+                            const AssetDocumentInventorySnapshot &b )
+        {
+            if( a.root != b.root || a.cacheKey != b.cacheKey || a.mediaKey != b.mediaKey ||
+                a.active != b.active || a.activeResources.lock() != b.activeResources.lock() ||
+                a.hasMedia != b.hasMedia || a.media.lock() != b.media.lock() ||
+                a.mediaGeneration != b.mediaGeneration || a.documents.size() != b.documents.size() )
+                return false;
+            for( size_t i = 0; i < a.documents.size(); ++i )
+            {
+                const auto &left = a.documents[i];
+                const auto &right = b.documents[i];
+                if( left.path != right.path || left.digest != right.digest ||
+                    left.canReindex != right.canReindex || left.diagnostic != right.diagnostic )
+                    return false;
+            }
+            return true;
+        }
+    }  // namespace
+    AssetDocumentInventory scanAssetDocuments( SmartPtr<AssetDatabaseManager> catalog,
+                                               const AssetDocumentScanOptions &options,
+                                               SmartPtr<AssetDatabaseManager> media )
+    {
+        AssetDocumentInventory report;
+        try
+        {
+            namespace fs = std::filesystem;
+            if( !catalog || !options.maxDocuments || options.maxDocuments > 10000 ||
+                !options.maxEntries || options.maxEntries > 100000 || !options.maxDepth ||
+                options.maxDepth > 64 || !options.maxBytes || options.maxBytes > 256ull * 1024 * 1024 )
+                throw std::runtime_error(
+                    "Scan requires an available project catalog and bounded limits" );
+            ScopedLock lock( catalog.get() );
+            auto snapshot = std::make_shared<AssetDocumentInventorySnapshot>();
+            snapshot->options = options;
+            snapshot->root = catalog->getProjectRoot();
+            if( !snapshot->session.capture( catalog ) )
+                throw std::runtime_error( "Document scan catalog session is unavailable" );
+            snapshot->generation = catalog->getCatalogGeneration();
+            auto app = core::IApplicationManager::instancePtr();
+            auto resources =
+                app ? dynamic_pointer_cast<ResourceDatabase>( app->getResourceDatabase() ) : nullptr;
+            String error;
+            AssetCatalogPath domain;
+            if( resources && resources->getDatabaseManager() == catalog )
+            {
+                String activeRoot;
+                if( !canonicalAssetCatalogRoot( app->getProjectPath(), activeRoot, error ) ||
+                    activeRoot != snapshot->root )
+                    throw std::runtime_error( "Document scan project catalog has not been rebound" );
+                snapshot->active = true;
+                snapshot->activeResources = resources;
+                if( media && media != resources->getMediaCatalog() )
+                    throw std::runtime_error(
+                        "Document scan media mount does not match the active project" );
+                media = resources->getMediaCatalog();
+                if( !app->getCachePath().empty() &&
+                    canonicalAssetCatalogPath( snapshot->root, app->getCachePath(), domain, error ) )
+                    snapshot->cacheKey = domain.key;
+                // A cache rooted at the project itself cannot silently exclude every document.
+                else if( !app->getCachePath().empty() )
+                {
+                    String cacheRoot;
+                    const auto configured = fs::u8path( app->getCachePath().c_str() );
+                    const auto absolute = configured.is_absolute()
+                                              ? configured
+                                              : fs::u8path( snapshot->root.c_str() ) / configured;
+                    if( canonicalAssetCatalogRoot( absolute.u8string().c_str(), cacheRoot, error ) &&
+                        cacheRoot == snapshot->root )
+                        throw std::runtime_error( "Project root cannot also be the cache root" );
+                }
+            }
+            if( media )
+            {
+                if( !media->isReadOnly() || !snapshot->mediaSession.capture( media ) )
+                    throw std::runtime_error(
+                        "Document scan requires an available read-only media mount" );
+                snapshot->hasMedia = true;
+                snapshot->media = media;
+                snapshot->mediaGeneration = media->getCatalogGeneration();
+                if( media->getProjectRoot() == snapshot->root )
+                    throw std::runtime_error( "Project and bundled media roots must be separate" );
+                if( canonicalAssetCatalogPath( snapshot->root, media->getProjectRoot(), domain, error ) )
+                    snapshot->mediaKey = domain.key;
+            }
+            auto excluded = [&]( const String &key ) {
+                return referencePathWithin( ".workphone", key ) || referencePathWithin( ".git", key ) ||
+                       referencePathWithin( ".svn", key ) ||
+                       referencePathWithin( snapshot->cacheKey, key ) ||
+                       referencePathWithin( snapshot->mediaKey, key );
+            };
+            struct Candidate
+            {
+                String path, diagnostic;
+            };
+            std::map<std::string, Candidate> candidates;
+            auto add = [&]( const String &key, const String &path, const String &diagnostic ) {
+                auto found = candidates.find( key.c_str() );
+                if( found == candidates.end() )
+                {
+                    if( candidates.size() >= options.maxDocuments )
+                        throw std::runtime_error( "Project document scan exceeds the document budget" );
+                    candidates.emplace( key.c_str(), Candidate{ path, diagnostic } );
+                }
+                else if( !diagnostic.empty() )
+                    found->second.diagnostic = diagnostic;
+            };
+            if( referencesPresent( *catalog ) )
+            {
+                auto rows = queryCatalog(
+                    *catalog,
+                    "SELECT substr(path_key,1,1025) AS path_key,substr(path,1,1025) AS path FROM "
+                    "wp_asset_reference_documents WHERE state<>'quarantined' "
+                    "ORDER BY path_key LIMIT 10001" );
+                if( !rows )
+                    throw std::runtime_error( "Cannot enumerate indexed reference documents" );
+                while( !rows->eof() )
+                {
+                    const auto path = rows->getFieldValue( "path" );
+                    const auto key = rows->getFieldValue( "path_key" );
+                    AssetCatalogPath canonical;
+                    if( !validValue( path, 1024 ) || !validValue( key, 1024 ) ||
+                        !canonicalAssetCatalogPath( snapshot->root, path, canonical, error ) ||
+                        canonical.path != path || canonical.key != key )
+                        throw std::runtime_error( "Indexed reference document has an invalid path" );
+                    add( key, path, excluded( key ) ? "Indexed document is in an excluded domain" : "" );
+                    rows->nextRow();
+                }
+            }
+            const auto root = fs::u8path( snapshot->root.c_str() );
+            fs::recursive_directory_iterator it( root ), end;
+            for( ; it != end; ++it )
+            {
+                if( ++report.visited > options.maxEntries )
+                    throw std::runtime_error( "Project document scan exceeds the entry budget" );
+                const auto file = it->path();
+                const String relative = file.lexically_relative( root ).generic_u8string().c_str();
+                // Inspect exclusion lexically before resolving links in excluded storage.
+                auto lexicalKey = relative;
+#ifdef _WIN32
+                for( auto &character : lexicalKey )
+                    if( character >= 'A' && character <= 'Z' )
+                        character += 'a' - 'A';
+#endif
+                if( excluded( lexicalKey ) )
+                {
+                    ++report.excluded;
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                if( static_cast<u32>( it.depth() ) >= options.maxDepth )
+                    throw std::runtime_error(
+                        "Project document scan exceeds the directory depth budget" );
+                if( documentLink( file ) )
+                {
+                    it.disable_recursion_pending();
+                    add( lexicalKey, relative, "Links and reparse points require explicit import" );
+                    continue;
+                }
+                if( fs::is_directory( file ) )
+                    continue;
+                if( !fs::is_regular_file( file ) )
+                {
+                    add( lexicalKey, relative, "Special files cannot own saved references" );
+                    continue;
+                }
+                if( !documentExtension( file ) &&
+                    candidates.find( lexicalKey.c_str() ) == candidates.end() )
+                    continue;
+                AssetCatalogPath canonical;
+                if( !canonicalAssetCatalogPath( snapshot->root, relative, canonical, error ) )
+                    throw std::runtime_error( "Cannot canonicalize discovered document path" );
+                add( canonical.key, canonical.path, "" );
+            }
+            u64 budget = options.maxBytes;
+            for( const auto &item : candidates )
+            {
+                AssetDocumentInventoryEntry entry;
+                entry.path = item.second.path;
+                entry.diagnostic = item.second.diagnostic;
+                if( entry.diagnostic.empty() )
+                {
+                    const auto file = root / fs::u8path( entry.path.c_str() );
+                    try
+                    {
+                        if( documentLink( file ) || !fs::is_regular_file( file ) )
+                            throw std::runtime_error(
+                                "Indexed document is missing or is not a regular file" );
+                        auto bytes = readInventoryDocument( file, budget );
+                        entry.digest = referenceDigest( bytes.data(), bytes.size() );
+                        auto serialized = parseReferenceDocument( bytes );
+                        AssetReferenceSave save;
+                        if( !beginReferenceSave( catalog, entry.path, serialized, bytes, save, error,
+                                                 media, false, true ) )
+                            throw std::runtime_error( error.c_str() );
+                        entry.canReindex = true;
+                    }
+                    catch( const DocumentScanBudgetExceeded & )
+                    {
+                        throw;
+                    }
+                    catch( const std::exception &e )
+                    {
+                        entry.diagnostic = e.what();
+                    }
+                }
+                if( entry.canReindex )
+                    ++report.ready;
+                else
+                    ++report.blocked;
+                report.documents.push_back( std::move( entry ) );
+            }
+            report.bytesRead = options.maxBytes - budget;
+            if( !snapshot->session.isCurrent( catalog ) ||
+                snapshot->generation != catalog->getCatalogGeneration() ||
+                ( media && ( !snapshot->mediaSession.isCurrent( media ) ||
+                             snapshot->mediaGeneration != media->getCatalogGeneration() ) ) )
+                throw std::runtime_error( "Catalog changed during document scan; scan again" );
+            snapshot->documents = report.documents;
+            report.m_snapshot = snapshot;
+            report.succeeded = true;
+        }
+        catch( const std::exception &e )
+        {
+            // Never publish a truncated inventory as a usable preview.
+            report = {};
+            report.error = e.what();
+        }
+        return report;
+    }
+    bool reindexAssetDocuments( SmartPtr<AssetDatabaseManager> catalog,
+                                const AssetDocumentInventory &inventory, u32 &indexed, String &error )
+    {
+        indexed = 0;
+        error.clear();
+        try
+        {
+            const auto snapshot = inventory.m_snapshot;
+            if( !catalog || catalog->isReadOnly() || !snapshot ||
+                !snapshot->session.isCurrent( catalog ) )
+                throw std::runtime_error( "Document inventory session expired; scan the project again" );
+            ScopedLock lock( catalog.get() );
+            auto media = snapshot->media.lock();
+            if( snapshot->hasMedia && ( !media || !snapshot->mediaSession.isCurrent( media ) ) )
+                throw std::runtime_error( "Document inventory media session expired; scan again" );
+            CatalogTransaction transaction( *catalog );
+            if( !transaction.active() || snapshot->generation != catalog->getCatalogGeneration() )
+                throw std::runtime_error( "Catalog changed since document preview; scan again" );
+            auto current = scanAssetDocuments( catalog, snapshot->options, media );
+            if( !current.succeeded || !sameInventory( *snapshot, *current.m_snapshot ) )
+                throw std::runtime_error(
+                    "Project documents or mounts changed since preview; scan again" );
+            u64 budget = snapshot->options.maxBytes;
+            u32 count = 0;
+            for( const auto &entry : snapshot->documents )
+            {
+                if( !entry.canReindex )
+                    continue;
+                auto bytes = readInventoryDocument( std::filesystem::u8path( snapshot->root.c_str() ) /
+                                                        std::filesystem::u8path( entry.path.c_str() ),
+                                                    budget );
+                if( referenceDigest( bytes.data(), bytes.size() ) != entry.digest )
+                    throw std::runtime_error( "Document changed during batch reindex" );
+                auto serialized = parseReferenceDocument( bytes );
+                AssetReferenceSave save;
+                if( !beginReferenceSave( catalog, entry.path, serialized, bytes, save, error, media,
+                                         false ) ||
+                    !finishReferenceSave( catalog, save, error ) )
+                    throw std::runtime_error( error.empty() ? "Cannot reindex document batch"
+                                                            : error.c_str() );
+                ++count;
+            }
+            // Check membership and every candidate again before publishing the batch.
+            // External filesystem writers cannot be locked by SQLite; this bounds the
+            // detectable race without claiming a cross-store atomic filesystem snapshot.
+            auto finalScan = scanAssetDocuments( catalog, snapshot->options, media );
+            if( !finalScan.succeeded || !sameInventory( *snapshot, *finalScan.m_snapshot ) ||
+                !snapshot->session.isCurrent( catalog ) || !transaction.commit() )
+                throw std::runtime_error(
+                    "Project changed or batch commit failed; no graphs published" );
+            indexed = count;
             return true;
         }
         catch( const std::exception &e )

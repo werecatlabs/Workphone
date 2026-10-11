@@ -740,6 +740,68 @@ interactive populated-scene/material/prefab save/reopen and large-project latenc
 remain unverified. Full-project legacy migration, remaining domain authoring,
 compile/install policy, recovery/retention and shipping adoption remain open.
 
+## Increment 13: Project document discovery and transactional reindex (11 October 2026)
+
+The asset catalog now exposes a detached project document inventory and a batch
+reference rebuild. Discovery includes .fbscene/.fbscenebin/.fbscenexml, .mat/
+.material, .prefab/.fbprefab and .resource, plus every active indexed document
+regardless of extension. It distinguishes verifiable typed documents from legacy,
+malformed, missing, quarantined-path, linked and unsupported documents. Private
+.workphone and VCS roots, configured cache scratch and the mounted media root
+are excluded. Existing indexed owners in excluded domains remain explicit blocked
+records rather than being silently dropped. Links/reparse points are reported
+without traversal. Read-only catalogs can inspect; only writable catalogs can apply.
+
+Preview performs no graph/schema writes and retains no resource instances. Its
+private snapshot binds apply to the catalog session/revision, project/resource
+service binding, cache/media scope, media session/revision and document membership/
+fingerprints. Editing public display rows cannot authorize extra writes. Apply
+revalidates the inventory, replaces every verifiable graph inside one database
+transaction, then rechecks the inventory before commit. Any validation/SQL failure
+rolls back the whole batch and returns zero published graphs. Source files are never
+rewritten. Blocked owners retain their previous graph/revision and remain visible;
+a successful batch with blocked rows is explicitly incomplete coverage.
+
+The Editor Asset Database adds Scan project document references and Reindex
+verified project documents, with 100-row pages and per-document diagnostics.
+Successful rebuild retains the report and disables reuse until another scan.
+Project activation checks now also cover explicitly supplied window catalogs.
+Legacy JSON/XML requires an owning-editor resave; automatic migration cannot
+infer missing reference types safely and remains open.
+
+Limits are 10,000 candidates, 100,000 visited filesystem entries, directory depth
+64, 64 MiB per document and 256 MiB read budget per scan pass, with lower caller
+limits supported. Exceeding a global limit yields no applicable partial preview.
+Apply performs multiple bounded read/verification passes. It holds the catalog
+write transaction synchronously; asynchronous jobs/cancellation and large-project
+latency gates remain open. SQLite cannot exclude external filesystem writers:
+this does not establish an atomic filesystem snapshot or close the documented
+external-writer/durability release gates. Unknown unindexed format families,
+unsaved edits, remaining serializers and compile/install dependency policy still
+need explicit adoption; the scan is not a package-closure certificate.
+
+Current-source WPAssetCatalogTests, Editor, WorkphoneMediaCatalog,
+WPGraphicsCookedResourceTests, LuaRuntimeTests and WPResourceTests builds passed.
+The six-suite catalog/cooked-graphics/Lua/resource/writer-lease/index-migration
+CTest gate passed (6/6, 20.53 seconds). After adding the Windows junction fallback,
+WPAssetCatalogTests rebuilt and its catalog suite passed again (11.13 seconds).
+The fallback exercised actual reparse-point traversal rejection; the initial
+symlink-only attempt lacked the required Windows privilege. No Editor interaction
+or representative hardware/package certification was performed. git diff --check
+passed. Logs: project_x64/resource-inventory-final-build.log,
+project_x64/resource-inventory-final-tests.log,
+project_x64/resource-inventory-junction-build.log and
+project_x64/resource-inventory-junction-tests.log.
+
+Expanded contracts cover side-effect-free preview, new/known-extension and existing
+nonstandard-extension discovery, XML/binary parsing, global limits, whole-batch
+rollback after a later SQL fault, blocked-owner graph retention, private snapshot
+authority, unchanged source timestamps, missing targets, stale file bytes/membership,
+project/cache/media changes, unknown graph schemas, read-only inspection, reopened
+sessions and Windows junction rejection. Automatic legacy migration, asynchronous
+scan jobs, remaining format families and complete project/package coverage remain
+open alongside the release gates below.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -756,7 +818,7 @@ the same immutable resource pipeline.
    complete-request index transactions and immutable artifacts. Certify
    interrupted publication.
 3. Extend the saved-document reference graph across remaining domain authoring routes
-   and project-wide legacy discovery/migration; persist
+   and legacy migration/remaining-format discovery; persist
    typed compile/install/platform dependency modes, invalidation and cycle policy.
    Indexed forward/reverse queries and project missing/type diagnostics now exist.
 4. Integrate typed runtime consumers and owner-thread publication throughout the

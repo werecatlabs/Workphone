@@ -51,6 +51,12 @@ adoption, durable JSON/XML property metadata and selected-document reference
 reindexing in the Editor. It fixes material texture fallback overwriting UUIDs
 and prefab save no-ops. Full-project discovery/legacy migration, remaining domain
 routes, crash/orphan recovery and power-loss certification remain open.
+Increment 13 adds bounded project document discovery, paged Editor diagnostics and
+transactional batch reindex with session/revision/mount/membership/byte validation.
+It covers known authored extensions and existing graph owners, with explicit legacy/
+missing/unsupported blockers. Automatic legacy migration, other unindexed format
+families, asynchronous scale and shipping coverage remain open. Successful batch
+reindex does not certify a complete project or package closure.
 
 ### Current review summary
 

@@ -2,6 +2,7 @@
 #include <Workphone/Core/DataUtil.hpp>
 #include <Workphone/Scene/GameScene.hpp>
 #include "AssetDocumentSaveContracts.hpp"
+#include "AssetDocumentInventoryContracts.hpp"
 #ifdef WP_EDITOR_ASSET_COMMAND_CONTRACTS
 #    include <commands/AddResourceCmd.hpp>
 #    include <jobs/ProjectCleanJob.hpp>
@@ -351,6 +352,7 @@ namespace
         resources->setDatabaseManager( nullptr );
         resources = nullptr;
         catalog->unload( nullptr );
+        assetDocumentInventoryContracts( folder );
         std::cout << "PASS: durable typed reference graph, saved-byte fences, reverse queries, guarded "
                      "deletion and graph-aware undo\n";
     }

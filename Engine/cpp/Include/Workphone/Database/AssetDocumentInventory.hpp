@@ -29,9 +29,9 @@ namespace workphone
 
     private:
         std::shared_ptr<const AssetDocumentInventorySnapshot> m_snapshot;
-        friend WPCore_API AssetDocumentInventory scanAssetDocuments(
-            SmartPtr<AssetDatabaseManager>, const AssetDocumentScanOptions &,
-            SmartPtr<AssetDatabaseManager> );
+        friend WPCore_API AssetDocumentInventory scanAssetDocuments( SmartPtr<AssetDatabaseManager>,
+                                                                     const AssetDocumentScanOptions &,
+                                                                     SmartPtr<AssetDatabaseManager> );
         friend WPCore_API bool reindexAssetDocuments( SmartPtr<AssetDatabaseManager>,
                                                       const AssetDocumentInventory &, u32 &, String & );
     };
