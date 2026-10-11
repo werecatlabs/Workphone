@@ -62,6 +62,24 @@ namespace workphone
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
             return bound ? bound->queryBound( sql, values ) : nullptr;
         }
+        SmartPtr<AssetDatabaseManager> catalogForUuid( const ResourceDatabase &resources,
+            const String &uuid, AssetDatabaseManager::EntrySnapshot &entry )
+        {
+            auto project = dynamic_pointer_cast<AssetDatabaseManager>( resources.getDatabaseManager() );
+            auto media = resources.getMediaCatalog();
+            AssetDatabaseManager::EntrySnapshot projectEntry, mediaEntry;
+            const bool inProject = project && project->tryGetEntry( uuid, projectEntry );
+            const bool inMedia = media && media->tryGetEntry( uuid, mediaEntry );
+            if( inProject && inMedia )
+            {
+                WP_LOG_ERROR( "Ambiguous UUID exists in both project and bundled media catalogs: " + uuid );
+                entry = projectEntry;
+                return nullptr;
+            }
+            if( inProject ) { entry = projectEntry; return project; }
+            if( inMedia ) { entry = mediaEntry; return media; }
+            return nullptr;
+        }
         const String ReferenceObjectType = "ResourceReference";
         const String ReferenceRootUUID = "reference-root";
         const String ReferenceRootPath = "reference";
@@ -371,6 +389,7 @@ namespace workphone
             m_objects.clear();
             m_resourceMap.clear();
             setDatabaseManager( nullptr );
+            setMediaCatalog( nullptr );
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -1319,21 +1338,24 @@ namespace workphone
 
     auto ResourceDatabase::loadResource( const UUID &id ) -> SmartPtr<IResource>
     {
-        // Source metadata must also be usable by headless tools and packaged applications.
-        if( auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() ) )
+        if( id.is_nil() ) return nullptr;
+        AssetDatabaseManager::EntrySnapshot entry;
+        if( auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry ) )
         {
-            AssetDatabaseManager::EntrySnapshot entry;
-            if( catalog->tryGetEntry( StringUtil::toString( id ), entry ) &&
-                entry.kind == AssetDatabaseManager::EntryKind::File )
+            if( entry.kind != AssetDatabaseManager::EntryKind::File ) return nullptr;
+            if( entry.type == "script" )
             {
-                if( entry.type != "script" )
-                    return loadResourceById( id );
                 auto script = make_ptr<ScriptAsset>();
                 script->getHandle()->setUUID( entry.uuid );
                 script->loadFromFile( catalog->getProjectRoot() + "/" + entry.path );
                 return catalog->isEntryCurrent( entry ) ? script : nullptr;
             }
+            auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {entry.uuid} );
+            auto resource = query && !query->eof() ?
+                createOrRetrieveResource( query, true, catalog->getProjectRoot() ) : nullptr;
+            return catalog->isEntryCurrent( entry ) ? resource : nullptr;
         }
+        if( !entry.uuid.empty() ) return nullptr; // An ambiguous authored identity cannot use the legacy fallback.
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
@@ -1470,7 +1492,7 @@ namespace workphone
         auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {uuid} );
         if( !query || query->eof() )
             return nullptr;
-        auto resource = createOrRetrieveResource( query, true );
+        auto resource = createOrRetrieveResource( query, true, catalog->getProjectRoot() );
         return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
     }
     auto ResourceDatabase::loadDirector( const String &path ) -> SmartPtr<IBuildDirector>
@@ -1620,17 +1642,7 @@ namespace workphone
 
     auto ResourceDatabase::loadResourceById( const UUID &uuid ) -> SmartPtr<IResource>
     {
-        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-        AssetDatabaseManager::EntrySnapshot snapshot;
-        if( !catalog || !catalog->tryGetEntry( StringUtil::toString( uuid ), snapshot ) ||
-            snapshot.kind != AssetDatabaseManager::EntryKind::File )
-            return nullptr;
-        if( snapshot.type == "script" )
-            return loadResource( uuid );
-        auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?",
-                                          {snapshot.uuid} );
-        auto resource = query && !query->eof() ? createOrRetrieveResource( query, true ) : nullptr;
-        return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
+        return loadResource( uuid );
     }
     void ResourceDatabase::unloadUnusedResources()
     {
@@ -1710,7 +1722,8 @@ namespace workphone
         }
     }
 
-    auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource )
+    auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource,
+                                                    const String &sourceRoot )
         -> SmartPtr<IResource>
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -1718,13 +1731,6 @@ namespace workphone
 
         auto factoryManager = applicationManager->getFactoryManager();
         auto soundManager = applicationManager->getSoundManager();
-
-        auto databaseManager = getDatabaseManager();
-        WP_ASSERT( databaseManager );
-
-        auto assetDatabaseManager =
-            workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-        WP_ASSERT( assetDatabaseManager );
 
         auto fileSystem = applicationManager->getFileSystem();
         WP_ASSERT( fileSystem );
@@ -1736,7 +1742,7 @@ namespace workphone
 
         auto id = query->getFieldValue( "id" );
         auto uuid = query->getFieldValue( "uuid" );
-        auto path = query->getFieldValue( "path" );
+        auto path = sourceRoot + "/" + query->getFieldValue( "path" );
         auto type = query->getFieldValue( "type" );
 
         if( type == "Material" )
@@ -1753,7 +1759,7 @@ namespace workphone
 
             return materialResult.first;
         }
-        if( StringUtil::contains( type, "MeshResource" ) )
+        if( type == "Mesh" || StringUtil::contains( type, "MeshResource" ) )
         {
             auto meshManager = applicationManager->getMeshManager();
             if( !meshManager || ( bLoadResource && !graphicsSystem ) )
@@ -1781,6 +1787,14 @@ namespace workphone
             }
 
             return textureResult.first;
+        }
+        if( type == "Font" )
+        {
+            auto manager = graphicsSystem ? graphicsSystem->getFontManager() : nullptr;
+            if( !manager ) return nullptr;
+            auto result = manager->createOrRetrieve( uuid, path, type ).first;
+            if( bLoadResource && result ) graphicsSystem->loadObject( result );
+            return result;
         }
         if( StringUtil::contains( type, "Sound" ) )
         {
@@ -2045,11 +2059,9 @@ namespace workphone
             if( object && object->getHandle() && object->getHandle()->getUUID() == id )
                 return object;
 
-        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
         AssetDatabaseManager::EntrySnapshot entry;
-        if( !catalog || !catalog->tryGetEntry( StringUtil::toString( id ), entry ) ||
-            entry.kind != AssetDatabaseManager::EntryKind::File )
-            return nullptr;
+        auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry );
+        if( !catalog || entry.kind != AssetDatabaseManager::EntryKind::File ) return nullptr;
         auto application = core::IApplicationManager::instancePtr();
         if( !application )
             return nullptr;
@@ -2069,7 +2081,22 @@ namespace workphone
                 result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
         }
         else if( entry.type == "script" )
-            result = loadResource( id );
+        {
+            auto script = make_ptr<ScriptAsset>();
+            script->getHandle()->setUUID( entry.uuid );
+            script->loadFromFile( path );
+            result = script;
+        }
+        else if( entry.type == "Font" )
+        {
+            auto manager = graphics ? graphics->getFontManager() : nullptr;
+            if( manager ) result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
+        else if( entry.type == "Mesh" )
+        {
+            auto manager = application->getMeshManager();
+            if( manager ) result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
         else if( StringUtil::contains( entry.type, "Sound" ) )
         {
             if( auto manager = application->getSoundManager() )
@@ -2086,6 +2113,26 @@ namespace workphone
             }
         }
         return catalog->isEntryCurrent( entry ) ? result : nullptr;
+    }
+
+    bool ResourceDatabase::setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog )
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        if( catalog )
+        {
+            if( !catalog->isReadOnly() ) return false;
+            auto marker = queryResourceValues( catalog,
+                "SELECT namespace,version FROM wp_media_catalog WHERE id=1", {} );
+            if( !marker || marker->eof() || marker->getFieldValue( "namespace" ) != "workphone.builtin.media.v1" ||
+                marker->getFieldValue( "version" ) != "1" ) return false;
+        }
+        m_mediaCatalog = catalog;
+        return true;
+    }
+    SmartPtr<AssetDatabaseManager> ResourceDatabase::getMediaCatalog() const
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        return m_mediaCatalog;
     }
 
     auto ResourceDatabase::loadAssetNode( SmartPtr<IDatabaseManager> db, SmartPtr<Properties> parent,

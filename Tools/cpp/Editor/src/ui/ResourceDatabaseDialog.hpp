@@ -10,7 +10,7 @@ namespace workphone::editor
     class ResourceDatabaseDialog : public EditorWindow
     {
     public:
-        enum WidgetId { Tree, AddComponent, Select, Previous, Next, Count };
+        enum WidgetId { Tree, AddComponent, Select, Previous, Next, Source, Count };
         class UIElementListener : public IEventListener
         {
         public:
@@ -79,6 +79,8 @@ namespace workphone::editor
         SmartPtr<ui::IUIButton> m_select;
         SmartPtr<ui::IUIButton> m_previous;
         SmartPtr<ui::IUIButton> m_next;
+        SmartPtr<ui::IUIButton> m_source;
+        bool m_showMedia = false;
         SmartPtr<UIElementListener> m_uiListener;
         SmartPtr<DragSource> m_dragSource;
     };

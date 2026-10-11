@@ -1,4 +1,5 @@
 #include <EditorPCH.hpp>
+#include <Workphone/Database/AssetReferenceChange.hpp>
 #include <ui/PropertiesWindow.hpp>
 #include <editor/EditorManager.hpp>
 #include <editor/Project.hpp>
@@ -915,7 +916,18 @@ namespace workphone::editor
 
                             if( auto selected = getSelected() )
                             {
-                                resourceDatabaseDialog->setCurrentObject( selected );
+                                SmartPtr<ISharedObject> target = selected;
+                                if( auto file = dynamic_pointer_cast<FileSelection>( selected ) )
+                                {
+                                    auto resources = applicationManager->getResourceDatabase();
+                                    target = resources ? resources->loadResource( file->getFilePath() ) : nullptr;
+                                    if( !target )
+                                    {
+                                        WP_LOG_ERROR( "Import this asset before assigning its resource references." );
+                                        return;
+                                    }
+                                }
+                                resourceDatabaseDialog->setCurrentObject( target );
                             }
                             else
                             {
@@ -986,7 +998,9 @@ namespace workphone::editor
         }
 
         auto resourceTypeName = propertyChanged.getAttribute( "resourceType" );
-        auto resourceType = typeManager->getTypeByName( resourceTypeName );
+        auto resourceType = AssetReferenceChange::referenceType( resourceTypeName );
+        if( isButton && resourceType != 0 )
+            return propertyChanged.isReadOnly() ? 0 : resourceType;
 
         if( object->isDerived<FileSelection>() )
         {
@@ -1020,7 +1034,7 @@ namespace workphone::editor
                                 auto &property = properties->getPropertyObject( name );
 
                                 auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = typeManager->getTypeByName( resourceTypeName );
+                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
                             }
 
                             material->setProperties( properties );
@@ -1047,7 +1061,7 @@ namespace workphone::editor
                                 auto &property = properties->getPropertyObject( name );
 
                                 auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = typeManager->getTypeByName( resourceTypeName );
+                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
                             }
 
                             meshResource->setProperties( properties );
@@ -1073,7 +1087,7 @@ namespace workphone::editor
                                 auto &property = properties->getPropertyObject( name );
 
                                 auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = typeManager->getTypeByName( resourceTypeName );
+                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
                             }
 
                             textureResource->setProperties( properties );
@@ -1099,7 +1113,7 @@ namespace workphone::editor
                                 auto &property = properties->getPropertyObject( name );
 
                                 auto resourceTypeName = property.getAttribute( "resourceType" );
-                                resourceType = typeManager->getTypeByName( resourceTypeName );
+                                resourceType = AssetReferenceChange::referenceType( resourceTypeName );
                             }
 
                             soundResource->setProperties( properties );

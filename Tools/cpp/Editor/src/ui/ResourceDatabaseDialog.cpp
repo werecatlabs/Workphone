@@ -3,6 +3,8 @@
 #include <commands/ModifyPropertyCmd.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/System/FileSelection.hpp>
 
 namespace workphone::editor
 {
@@ -41,6 +43,7 @@ namespace workphone::editor
             return result;
         };
         m_refresh = button( "Search / Refresh##PickerRefresh", AddComponent );
+        m_source = button( "Show bundled media##PickerSource", Source );
         m_select = button( "Select##PickerSelect", Select );
         m_select->setSameLine( true );
         m_previous = button( "Previous##PickerPrevious", Previous );
@@ -68,7 +71,7 @@ namespace workphone::editor
         if( m_uiListener )
         {
             m_uiListener->unload( nullptr );
-            Array<SmartPtr<ui::IUIElement>> controls = { m_tree, m_search, m_refresh, m_select, m_previous, m_next };
+            Array<SmartPtr<ui::IUIElement>> controls = { m_tree, m_search, m_refresh, m_select, m_previous, m_next, m_source };
             for( auto &control : controls )
                 if( control )
                     control->removeObjectListener( m_uiListener );
@@ -94,6 +97,7 @@ namespace workphone::editor
         m_select = nullptr;
         m_previous = nullptr;
         m_next = nullptr;
+        m_source = nullptr;
         m_uiListener = nullptr;
         m_dragSource = nullptr;
         m_currentObject = nullptr;
@@ -112,6 +116,11 @@ namespace workphone::editor
         if( !result || app->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) || root != result->getProjectRoot() )
             return nullptr;
+        if( m_showMedia )
+        {
+            auto concrete = dynamic_pointer_cast<ResourceDatabase>( resources );
+            return concrete ? concrete->getMediaCatalog() : nullptr;
+        }
         return result;
     }
     void ResourceDatabaseDialog::captureTargets()
@@ -125,7 +134,15 @@ namespace workphone::editor
             auto selection = app ? app->getSelectionManager() : nullptr;
             if( selection )
                 for( auto target : selection->getSelection() )
+                {
+                    if( auto file = dynamic_pointer_cast<FileSelection>( target ) )
+                    {
+                        auto resources = app->getResourceDatabase();
+                        target = resources ? resources->loadResource( file->getFilePath() ) : nullptr;
+                    }
                     m_targets.push_back( target );
+                    if( m_targets.size() > 256 ) break;
+                }
         }
     }
     void ResourceDatabaseDialog::setWindowVisible( bool visible )
@@ -192,7 +209,7 @@ namespace workphone::editor
             ++count;
         }
         m_select->setEnabled( count != 0 && !m_targets.empty() );
-        m_status->setText( StringUtil::toString( count ) + " compatible assets on catalog page " +
+        m_status->setText( String( m_showMedia ? "Bundled media | " : "Project assets | " ) + StringUtil::toString( count ) + " compatible assets on catalog page " +
                           StringUtil::toString( m_browser.pageNumber() ) );
     }
     bool ResourceDatabaseDialog::entryForNode( SmartPtr<ui::IUITreeNode> node,
@@ -309,6 +326,12 @@ namespace workphone::editor
         else if( eventValue == IEvent::handleSelection )
         {
             if( sender == owner->m_refresh ) owner->populate();
+            else if( sender == owner->m_source )
+            {
+                owner->m_showMedia = !owner->m_showMedia;
+                owner->m_source->setLabel( owner->m_showMedia ? "Show project assets##PickerSource" : "Show bundled media##PickerSource" );
+                owner->populate();
+            }
             else if( sender == owner->m_select ) owner->select();
             else if( sender == owner->m_previous )
             {

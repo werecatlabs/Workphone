@@ -13,7 +13,7 @@ namespace workphone
         {
             data = make_ptr<Properties>();
             data->setProperty( "texture", "old-value" );
-            data->getPropertyObject( "texture" ).setAttribute( "resourceType", TypeManager::instance()->getName( render::ITexture::typeInfo() ) );
+            data->getPropertyObject( "texture" ).setAttribute( "resourceType", "Texture" );
             data->getPropertyObject( "texture" ).setAttribute( "label", "Surface texture" );
             data->setProperty( "unrelated", "keep" );
         }
@@ -62,6 +62,10 @@ namespace
         AssetDatabaseManager::EntrySnapshot entry;
         check( catalog->tryGetEntry( id, entry ), "Reference fixture must capture a detached identity" );
         auto target = make_ptr<ReferenceContractTarget>();
+        check( AssetReferenceChange::referenceType( "Texture" ) == render::ITexture::typeInfo() &&
+               AssetReferenceChange::referenceType( TypeManager::instance()->getName( render::ITexture::typeInfo() ) ) == render::ITexture::typeInfo() &&
+               AssetReferenceChange::referenceType( "unknown-reference-family" ) == 0,
+               "Reference family labels and registered names must resolve without inventing types" );
         AssetReferenceChange wrong;
         check( !wrong.prepare( catalog, entry, target, "texture", render::IMaterial::typeInfo() ),
                "Reference preparation must reject incompatible asset types" );

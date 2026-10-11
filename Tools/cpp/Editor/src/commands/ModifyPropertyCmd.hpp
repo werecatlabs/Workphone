@@ -31,6 +31,9 @@ namespace workphone
             Array<AssetReferenceChange> m_changes;
             String m_error;
             bool m_applied = false;
+        WeakPtr<AssetDatabaseManager> m_referenceCatalog;
+        WeakPtr<AssetDatabaseManager> m_projectCatalog;
+        u64 m_projectInstance = 0;
         };
     }  // namespace editor
 }  // namespace workphone
