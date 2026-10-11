@@ -1477,6 +1477,24 @@ namespace workphone
         return nullptr;
     }
 
+    SmartPtr<IResource> ResourceDatabase::loadMediaResource( const String &path )
+    {
+        auto catalog = getMediaCatalog();
+        if( !catalog || path.empty() )
+            return nullptr;
+        auto director = dynamic_pointer_cast<scene::ResourceDirector>(
+            catalog->getResourceEntryFromPath( path ) );
+        if( !director )
+            return nullptr;
+        AssetDatabaseManager::EntrySnapshot snapshot;
+        const auto uuid = director->getResourceUUID();
+        if( !catalog->tryGetEntry( uuid, snapshot ) ||
+            snapshot.kind != AssetDatabaseManager::EntryKind::File )
+            return nullptr;
+        auto resource = loadResourceById( StringUtil::parseUUID( uuid ) );
+        return getMediaCatalog() == catalog && catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
+    }
+
     auto ResourceDatabase::loadResource( const String &path ) -> SmartPtr<IResource>
     {
         auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );

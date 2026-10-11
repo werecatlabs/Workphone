@@ -25,7 +25,6 @@
 #include <ui/AnimationWindow.hpp>
 #include <ui/AnimationGraphWindow.hpp>
 #include <ui/AssetDatabaseWindow.hpp>
-#include <Workphone/Database/MediaAssetCatalog.hpp>
 #include <ui/CutsceneWindow.hpp>
 #include <ui/CollisionMaskDialog.hpp>
 #include <ui/CollisionMaskManager.hpp>
@@ -744,17 +743,8 @@ namespace workphone::editor
         }
 
         auto assetDatabaseWindow = factoryManager->make_ptr<AssetDatabaseWindow>();
-        String mediaCatalogError;
-        auto mediaCatalog = openMediaAssetCatalog( applicationManager->getMediaPath(), mediaCatalogError );
-        if( mediaCatalog )
-        {
-            assetDatabaseWindow->setMediaCatalog( mediaCatalog );
-            if( auto resources = dynamic_pointer_cast<ResourceDatabase>( applicationManager->getResourceDatabase() ) )
-                if( !resources->setMediaCatalog( mediaCatalog ) )
-                    WP_LOG_ERROR( "Cannot mount bundled media in the resource resolver." );
-        }
-        else
-            WP_LOG_ERROR( "Built-in media catalog: " + mediaCatalogError );
+        if( auto resources = dynamic_pointer_cast<ResourceDatabase>( applicationManager->getResourceDatabase() ) )
+            assetDatabaseWindow->setMediaCatalog( resources->getMediaCatalog() );
         assetDatabaseWindow->setClassName( "AssetDatabase" );
         assetDatabaseWindow->load( nullptr );
         setAssetDatabaseWindow( assetDatabaseWindow );

@@ -48,6 +48,10 @@ payloads are never written. Process-kill/power-loss certification remains open.
 
 Open Asset Database and choose Show bundled media to search, filter, page and
 inspect its UUIDs. The catalog browser and resolver retain a separate media mount.
+The Editor mounts Media/.workphone/media-assets.db during resource startup,
+before loading graphics resources, scenes or UI, and logs its resolved path.
+The browser reuses that mount. Missing skybox faces explicitly load the bundled
+checker.png through its media UUID; authored face textures retain their assignments.
 Project-relative path lookup continues to mean project assets; UUID lookup can
 resolve media through its own source root. A UUID present in both catalogs is
 rejected rather than silently shadowed. No media rows are imported into a project.

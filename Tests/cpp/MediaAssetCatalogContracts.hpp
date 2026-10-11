@@ -58,13 +58,21 @@ namespace
                "Media UUID resolution must use its own source root without importing project rows" );
         check( resources->loadResourceById( StringUtil::parseUUID( scriptId ) ) != nullptr,
                "UUID loading must support the same mounted media identity" );
+        auto mediaScript = resources->loadMediaResource( "Editor/tool.lua" );
+        check( mediaScript && mediaScript->getHandle()->getUUIDAsString() == scriptId &&
+               mediaScript->getFilePath() == catalog->getProjectRoot() + "/Editor/tool.lua",
+               "Explicit bundled paths must load media using its catalog identity and source root" );
+        check( !resources->loadMediaResource( "../outside.lua" ) &&
+               !resources->loadMediaResource( "missing.png" ),
+               "Explicit media lookup must reject escaped and uncatalogued paths" );
         check( !resources->loadResource( String( "Editor/tool.lua" ) ),
                "Project-relative paths must not silently resolve against bundled media" );
         auto projectBound = dynamic_cast<IParameterizedDatabase *>( projectMount->getDatabase().get() );
         check( projectBound->queryBound( "INSERT INTO resources(uuid,path,path_key,type,kind) VALUES(?,'collision.lua','collision.lua','script','file')", {scriptId} ) != nullptr,
                "Catalog UUID collision fixture must seed" );
         check( !resources->getObject( StringUtil::parseUUID( scriptId ) ) &&
-               !resources->loadResourceById( StringUtil::parseUUID( scriptId ) ),
+               !resources->loadResourceById( StringUtil::parseUUID( scriptId ) ) &&
+               !resources->loadMediaResource( "Editor/tool.lua" ),
                "Cross-catalog UUID collisions must reject resolution instead of shadowing assets" );
         check( projectBound->queryBound( "DELETE FROM resources", {} ) != nullptr,
                "Clear project collision fixture" );
@@ -72,6 +80,8 @@ namespace
         check( emptyProject && emptyProject->getFieldValueAsInt( "n" ) == 0,
                "Media resolution must never adopt media rows into the project database" );
         resources->setMediaCatalog( nullptr );
+        check( !resources->loadMediaResource( "Editor/tool.lua" ),
+               "Explicit media paths must stop resolving after unmount" );
         check( !resources->getObject( StringUtil::parseUUID( scriptId ) ),
                "Unmounting media must stop new media UUID resolution" );
         resources->setDatabaseManager( nullptr );

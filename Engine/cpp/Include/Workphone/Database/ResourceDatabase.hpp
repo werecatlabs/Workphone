@@ -270,6 +270,9 @@ namespace workphone
         bool setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog );
         SmartPtr<AssetDatabaseManager> getMediaCatalog() const;
 
+        /** Load an explicit bundled-media path through its catalog UUID and source root. */
+        SmartPtr<IResource> loadMediaResource( const String &path );
+
         /**
          * @brief Find a shared object by its file identifier string.
          * @return Shared object or null if not found.

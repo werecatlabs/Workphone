@@ -2,6 +2,7 @@
 #include <Workphone/Scene/Components/Skybox.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Interface/IO/IFileSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSceneNode.hpp>
@@ -703,12 +704,24 @@ namespace workphone::scene
                     material->setLightingEnabled( false );
 
                     auto textures = getTextures();
+                    SmartPtr<render::ITexture> defaultTexture;
+                    bool defaultRequested = false;
                     for( auto &texture : textures )
                     {
                         if( !texture )
                         {
-                            texture = resourceDatabase->loadResourceByType<render::ITexture>(
-                                defaultSkyboxTextureName );
+                            if( !defaultRequested )
+                            {
+                                defaultRequested = true;
+                                auto resources = dynamic_cast<ResourceDatabase *>( resourceDatabase );
+                                if( resources && resources->getMediaCatalog() )
+                                    defaultTexture = dynamic_pointer_cast<render::ITexture>(
+                                        resources->loadMediaResource( defaultSkyboxTextureName ) );
+                                else
+                                    defaultTexture = resourceDatabase->loadResourceByType<render::ITexture>(
+                                        defaultSkyboxTextureName );
+                            }
+                            texture = defaultTexture;
                         }
                     }
 
