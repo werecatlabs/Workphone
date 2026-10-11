@@ -49,19 +49,21 @@ namespace workphone::scene
     {
         try
         {
+            if( isLoaded() )
+                return;
+
             setLoadingState( LoadingState::Loading );
 
+            // Properties may already have assigned a resource before component load.
+            // Keep that subscription, and subscribe before applying any load data.
+            if( !getMaterialObjectListener() )
+            {
+                auto listener = workphone::make_ptr<MaterialStateObjectListener>();
+                listener->setOwner( this );
+                setMaterialObjectListener( listener );
+            }
+
             Component::load( data );
-
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
-
-            auto materialObjectListener = factoryManager->make_ptr<MaterialStateObjectListener>();
-            materialObjectListener->setOwner( this );
-            setMaterialObjectListener( materialObjectListener );
 
             updateMaterial();
             updateImageComponent();
@@ -222,86 +224,38 @@ namespace workphone::scene
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
-
-            auto taskManager = applicationManager->getTaskManagerPtr();
-            WP_ASSERT( taskManager );
-
-            auto fileSystem = applicationManager->getFileSystemPtr();
-            WP_ASSERT( fileSystem );
-
-            auto resourceDatabase = applicationManager->getResourceDatabasePtr();
-            WP_ASSERT( resourceDatabase );
+            if( !properties )
+                return;
 
             SmartPtr<render::IMaterial> material;
             auto materialPath = getMaterialPath();
-            auto index = 0u;
+            auto index = getIndex();
 
+            const auto hasMaterial = properties->hasProperty( getMaterialStr() );
             properties->getPropertyValue( getMaterialStr(), material );
-            properties->getPropertyValue( getMaterialPathStr(), materialPath );
+            const auto hasPath = properties->getPropertyValue( getMaterialPathStr(), materialPath );
             properties->getPropertyValue( getIndexStr(), index );
 
-            setMaterialPath( materialPath );
-
-            auto dirty = false;
-
-            if( m_material != material )
+            // Bind once, with the final section index. Never replace m_material
+            // directly: doing so leaves completion listeners on the old resource.
+            m_index = index;
+            if( hasMaterial && material )
             {
-                m_material = material;
-
-                if( m_material )
-                {
-                    m_materialPath = m_material->getFilePath();
-                }
-
-                dirty = true;
+                m_materialPath = material->getFilePath();
+                setMaterial( material );
+            }
+            else if( hasPath )
+            {
+                setMaterialPath( materialPath );
+            }
+            else if( hasMaterial )
+            {
+                m_materialPath = String();
+                setMaterial( nullptr );
             }
 
-            if( !m_material )
-            {
-                m_material = resourceDatabase->loadResourceByType<render::IMaterial>( m_materialPath );
-            }
-
-            if( m_material )
-            {
-                if( !m_material->isLoaded() )
-                {
-                    if( graphicsSystem )
-                    {
-                        graphicsSystem->loadObject( m_material, false );
-                    }
-                    else
-                    {
-                        m_material->load( nullptr );
-                    }
-
-                    dirty = true;
-                }
-            }
-
-            if( auto material = m_material )
-            {
-                auto count = 0;
-                while( !material->isLoaded() && count++ < 10 )
-                {
-                    Thread::sleep( 0.01 );
-                }
-            }
-
-            if( m_index != index )
-            {
-                m_index = index;
-                dirty = true;
-            }
-
-            if( dirty )
-            {
-                updateImageComponent();
-                updateDependentComponents();
-            }
+            updateImageComponent();
+            updateDependentComponents();
         }
         catch( std::exception &e )
         {
@@ -362,8 +316,13 @@ namespace workphone::scene
         auto resourceDatabase = applicationManager->getResourceDatabase();
         if( resourceDatabase )
         {
-            auto material = resourceDatabase->createOrRetrieveByType<render::IMaterial>( materialPath );
-            setMaterial( material.first );
+            // Catalog loading resolves project-relative paths against the source root,
+            // rather than the Editor executable's working directory.
+            auto material = resourceDatabase->loadResourceByType<render::IMaterial>( materialPath );
+            if( !material )
+                material =
+                    resourceDatabase->createOrRetrieveByType<render::IMaterial>( materialPath ).first;
+            setMaterial( material );
         }
     }
 
@@ -378,6 +337,13 @@ namespace workphone::scene
         WP_ASSERT( applicationManager );
 
         auto graphicsSystem = applicationManager->getGraphicsSystem();
+
+        if( !getMaterialObjectListener() )
+        {
+            auto listener = workphone::make_ptr<MaterialStateObjectListener>();
+            listener->setOwner( this );
+            setMaterialObjectListener( listener );
+        }
 
         if( m_material != material )
         {
@@ -412,7 +378,8 @@ namespace workphone::scene
                     materialStateObject->addStateListener( m_materialListener );
                 }
 
-                graphicsSystem->loadObject( m_material );
+                if( graphicsSystem && !m_material->isLoaded() )
+                    graphicsSystem->loadObject( m_material );
             }
 
             updateMaterial();
@@ -446,9 +413,7 @@ namespace workphone::scene
             auto materialPath = getMaterialPath();
             if( !StringUtil::isNullOrEmpty( materialPath ) )
             {
-                auto newMaterial =
-                    resourceDatabase->createOrRetrieveByType<render::IMaterial>( materialPath );
-                setMaterial( newMaterial.first );
+                setMaterialPath( materialPath );
             }
         }
         else
@@ -516,7 +481,12 @@ namespace workphone::scene
 
     void Material::setMaterialObjectListener( SmartPtr<IEventListener> materialObjectListener )
     {
+        if( auto previous = getMaterialObjectListener() )
+            if( m_material )
+                m_material->removeObjectListener( previous );
         m_materialObjectListener = materialObjectListener;
+        if( m_material && materialObjectListener )
+            m_material->addObjectListener( materialObjectListener );
     }
 
     Material::MaterialStateObjectListener::MaterialStateObjectListener() = default;
@@ -549,21 +519,23 @@ namespace workphone::scene
                                                              SmartPtr<ISharedObject> object,
                                                              SmartPtr<IEvent> event ) -> Parameter
     {
-        auto task = Thread::getCurrentTask();
-        if( task == TaskId::Application )
+        const auto task = Thread::getCurrentTask();
+        const auto application = core::IApplicationManager::instancePtr();
+        const auto inlinePrimary = application && !application->hasTasks() &&
+                                   ( task == TaskId::Primary || task == TaskId::None );
+        if( task == TaskId::Application || inlinePrimary )
         {
-            if( eventValue == IEvent::loadingStateChanged )
+            if( eventValue == IEvent::loadingStateChanged && arguments.size() >= 2 )
             {
                 if( arguments[1].getS32() == static_cast<u32>( LoadingState::Loaded ) )
                 {
                     auto owner = getOwner();
                     if( owner )
                     {
-                        if( owner->getMaterial() == sender )
+                        if( owner->getMaterial() == sender && sender && sender->isLoaded() )
                         {
                             if( owner->getLoadingState() == LoadingState::Loaded )
                             {
-                                //owner->updateMaterial();
                                 owner->updateImageComponent();
                                 owner->updateDependentComponents();
                             }

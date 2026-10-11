@@ -121,10 +121,23 @@ if (WP_BUILD_TESTS)
     #        set_tests_properties(WPGraphics.claw_production_render PROPERTIES LABELS "graphics;gpu;production" TIMEOUT 60)
     if(WIN32 AND WP_GRAPHICS_SYSTEM_CLAW AND WP_BUILD_RENDERER_DX11 AND TARGET WPGraphics)
             if(WP_BUILD_RESOURCE_SYSTEM AND TARGET WPSQLite)
+                add_executable(WPMaterialLoadSequenceTests MaterialLoadSequenceTests.cpp)
+                target_compile_definitions(WPMaterialLoadSequenceTests PRIVATE BOOST_ALL_NO_LIB)
+                target_include_directories(WPMaterialLoadSequenceTests PRIVATE
+                    ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost
+                    ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+                    ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+                    ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
+                target_link_libraries(WPMaterialLoadSequenceTests PRIVATE WPGraphics Workphone WPSQLite)
+                target_link_directories(WPMaterialLoadSequenceTests PRIVATE
+                    ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+                set_target_properties(WPMaterialLoadSequenceTests PROPERTIES FOLDER Tests/Cpp)
+                add_test(NAME WPGraphics.material_load_sequence COMMAND WPMaterialLoadSequenceTests)
+                set_tests_properties(WPGraphics.material_load_sequence PROPERTIES LABELS "graphics;assets;scene;headless" TIMEOUT 30)
                 add_executable(WPGraphicsCookedResourceTests ClawCookedResourceTests.cpp)
                 target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE BOOST_ALL_NO_LIB)
                 target_include_directories(WPGraphicsCookedResourceTests PRIVATE
-                    ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost
+                    ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost
                     ${WP_ROOT}/Engine/c/Include/WorkphoneCore
                     ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
                     ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
