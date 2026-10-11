@@ -59,6 +59,8 @@ namespace workphone
                 throw std::runtime_error( "Bundled media root is not an existing directory." );
             auto destination = fs::absolute( fs::u8path( requestedPath.empty() ?
                 ( root + "/.workphone/media-assets.db" ).c_str() : requestedPath.c_str() ) ).lexically_normal();
+            if( !mediaType( destination ).empty() )
+                throw std::runtime_error( "A media catalog destination cannot use a source-asset extension." );
             const bool exists = fs::exists( destination );
             // Validate ownership read-only before a builder opens an existing DB for writes.
             if( exists )
@@ -94,7 +96,10 @@ namespace workphone
 #endif
                 if( fs::is_directory( status ) )
                 {
-                    const auto name = it->path().filename().u8string();
+                    auto name = it->path().filename().u8string();
+#ifdef _WIN32
+                    for( auto &c : name ) if( c >= 'A' && c <= 'Z' ) c += 'a' - 'A';
+#endif
                     if( name == ".workphone" || name == ".git" ) it.disable_recursion_pending();
                     continue;
                 }
@@ -112,6 +117,8 @@ namespace workphone
                 const bool runtime = path.key.find( "Runtime/" ) == 0 || path.key.find( "runtime/" ) == 0;
                 entries.push_back( { id, path.path, path.key, type, runtime ? "runtime" : "editor-only" } );
             }
+            std::sort( entries.begin(), entries.end(),
+                []( const Row &a, const Row &b ) { return a.key < b.key; } );
             fs::create_directories( destination.parent_path() );
             auto working = destination;
             if( !exists )

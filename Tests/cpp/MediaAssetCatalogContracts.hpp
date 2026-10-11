@@ -128,6 +128,9 @@ namespace
         check( !missing->openReadOnly( absent.u8string().c_str(), error ) && !fs::exists( absent ),
                "A failed read-only open must never create a database" );
         missing->unload( nullptr );
+        auto invalidDestination = root / "not-a-database.lua";
+        check( !buildMediaAssetCatalog( root.u8string().c_str(), invalidDestination.u8string().c_str(), error ) &&
+               !fs::exists( invalidDestination ), "A catalog must not create a database disguised as a source asset" );
         auto foreignPath = folder / "project-catalog.db";
         auto project = make_ptr<AssetDatabaseManager>();
         project->setProjectRoot( root.u8string().c_str() );
