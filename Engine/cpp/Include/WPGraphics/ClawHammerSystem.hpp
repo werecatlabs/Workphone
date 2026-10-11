@@ -206,6 +206,13 @@ namespace workphone
             ///< Configured renderer type (selected before configure())
             RenderApi m_configuredRendererType = RenderApi::None;
             std::atomic<bool> m_vsync{ false };
+            // Cached timings must be released with this graphics system, before
+            // the application destroys its profiler and allocation pools.
+            SmartPtr<IProfile> m_preparationProfile;
+            SmartPtr<IProfile> m_sceneProfile;
+            SmartPtr<IProfile> m_uiBuildProfile;
+            SmartPtr<IProfile> m_uiSubmitProfile;
+            SmartPtr<IProfile> m_presentationProfile;
             void publishRenderStatistics();
             mutable std::mutex m_statisticsMutex;
             String m_renderStatistics;

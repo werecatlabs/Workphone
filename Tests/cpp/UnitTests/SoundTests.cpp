@@ -1,4 +1,5 @@
 #include "UnitTests.hpp"
+#include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -6,6 +7,11 @@ using namespace workphone;
 
 BOOST_AUTO_TEST_CASE( audio_test )
 {
+    if( UnitTests::isHeadlessSoundMode() )
+    {
+        BOOST_TEST_MESSAGE( "Audio output device unavailable - playback test skipped" );
+        return;
+    }
     try
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -81,6 +87,11 @@ BOOST_AUTO_TEST_CASE( audio )
 
 BOOST_AUTO_TEST_CASE( sound_manager_initialization )
 {
+    if( UnitTests::isHeadlessSoundMode() )
+    {
+        BOOST_TEST_MESSAGE( "Audio output device unavailable - device test skipped" );
+        return;
+    }
     try
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -248,6 +259,11 @@ BOOST_AUTO_TEST_CASE( sound_play_stop_pause_resume )
 
 BOOST_AUTO_TEST_CASE( sound_multiple_instances )
 {
+    if( UnitTests::isHeadlessSoundMode() )
+    {
+        BOOST_TEST_MESSAGE( "Audio output device unavailable - playback test skipped" );
+        return;
+    }
     try
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -292,6 +308,11 @@ BOOST_AUTO_TEST_CASE( sound_multiple_instances )
 
 BOOST_AUTO_TEST_CASE( sound_resource_database_test )
 {
+    if( UnitTests::isHeadlessSoundMode() )
+    {
+        BOOST_TEST_MESSAGE( "Audio output device unavailable - playback test skipped" );
+        return;
+    }
     try
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -301,6 +322,11 @@ BOOST_AUTO_TEST_CASE( sound_resource_database_test )
         BOOST_REQUIRE( resourceDatabase );
 
         auto dbFilePath = "test_sound_resources.db";
+        TestGuard guard;
+        auto originalPath = resourceDatabase->getFilePath();
+        guard.addCleanup( [resourceDatabase, originalPath]() mutable {
+            resourceDatabase->setFilePath( originalPath );
+        } );
         resourceDatabase->setFilePath( dbFilePath );
         resourceDatabase->createDatabase();
 
@@ -368,6 +394,11 @@ BOOST_AUTO_TEST_CASE( sound_resource_database_invalid_import )
         BOOST_REQUIRE( resourceDatabase );
 
         auto dbFilePath = "test_sound_resources_invalid.db";
+        TestGuard guard;
+        auto originalPath = resourceDatabase->getFilePath();
+        guard.addCleanup( [resourceDatabase, originalPath]() mutable {
+            resourceDatabase->setFilePath( originalPath );
+        } );
         resourceDatabase->setFilePath( dbFilePath );
 
         // Test importing non-existent file

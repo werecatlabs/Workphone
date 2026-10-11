@@ -70,6 +70,17 @@ namespace
 
 BOOST_FIXTURE_TEST_SUITE( FileSystemTestSuite, FileSystemFixture )
 
+BOOST_AUTO_TEST_CASE( filesystem_refresh_preserves_indexed_media )
+{
+    BOOST_REQUIRE( fileSystem->isExistingFile( "cube_internal.fbmeshbin", true, true ) );
+    for( int i = 0; i < 2; ++i )
+    {
+        fileSystem->refreshAll( false );
+        BOOST_CHECK( fileSystem->isExistingFile( "cube_internal.fbmeshbin", true, true ) );
+        BOOST_CHECK( fileSystem->open( "cube_internal.fbmeshbin", true, true, false, true, true ) );
+    }
+}
+
 BOOST_AUTO_TEST_CASE( filesystem_open_file )
 {
     auto applicationManager = core::IApplicationManager::instance();

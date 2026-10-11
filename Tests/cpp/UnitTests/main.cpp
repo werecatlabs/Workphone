@@ -137,6 +137,8 @@ namespace
             flags |= _CRTDBG_LEAK_CHECK_DF;
         }
         _CrtSetDbgFlag( flags );
+        if( const char *allocation = std::getenv( "WP_TEST_CRT_BREAK_ALLOC" ) )
+            _CrtSetBreakAlloc( std::strtol( allocation, nullptr, 10 ) );
         _CrtSetReportMode( _CRT_WARN, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG );
         _CrtSetReportFile( _CRT_WARN, _CRTDBG_FILE_STDERR );
         _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_FILE | _CRTDBG_MODE_DEBUG );

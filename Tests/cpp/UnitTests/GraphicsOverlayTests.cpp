@@ -186,18 +186,8 @@ BOOST_AUTO_TEST_CASE( graphics_overlay_material_switch )
         BOOST_REQUIRE( !StringUtil::isNullOrEmpty( workingDirectory ) );
         fileSystem->addFolder( workingDirectory, true );
 
-        auto mediaFolderPath = String( "" );
-
-#if defined WP_PLATFORM_WIN32
-        mediaFolderPath = String( "../../../../Media/" );
-#elif defined WP_PLATFORM_APPLE
-        mediaFolderPath = String( "../../Media/" );
-#else
-        mediaFolderPath = String( "../../Media/" );
-#endif
-
+        auto mediaFolderPath = applicationManager->getMediaPath();
         fileSystem->addFolder( mediaFolderPath );
-        applicationManager->setMediaPath( mediaFolderPath );
 
         auto sceneManager = applicationManager->getGameManager();
         auto scene = sceneManager->getCurrentScene();

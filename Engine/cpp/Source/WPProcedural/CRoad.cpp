@@ -4,6 +4,7 @@
 #include <WPProcedural/CRoadNode.hpp>
 #include <WPProcedural/CRoadHitPoint.hpp>
 #include <WPProcedural/CRoadElement.hpp>
+#include <WPProcedural/RoadSegmentResult.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <algorithm>
@@ -32,10 +33,24 @@ namespace workphone
             unload( nullptr );
         }
 
+        void CRoad::setUserData( hash_type id, void *userData )
+        {
+            if( id == StringUtil::getHash( "WPRoadSegmentResult" ) )
+            {
+                auto previous = getUserData( id );
+                if( previous == userData )
+                    return;
+                delete static_cast<RoadSegmentResult *>( previous );
+            }
+            IObject::setUserData( id, userData );
+        }
         void CRoad::unload( SmartPtr<ISharedObject> data )
         {
             try
             {
+                const auto resultId = StringUtil::getHash( "WPRoadSegmentResult" );
+                if( getUserData( resultId ) )
+                    setUserData( resultId, nullptr );
                 for( auto &roadNode : m_roadNodes )
                 {
                     if( roadNode )

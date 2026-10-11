@@ -2326,9 +2326,26 @@ namespace workphone
                 auto &imported = texturesByPath[texturePath];
                 if( !imported )
                 {
-                    // loadResource registers the resource synchronously. importFile queues a job,
-                    // which can finish after the material has already serialized its texture reference.
+                    // Loading only resolves registered assets. Admit resolved import inputs
+                    // synchronously before serializing the material's texture identities.
                     imported = resourceDatabase->loadResourceByType<render::ITexture>( texturePath );
+                    if( !imported )
+                    {
+                        auto graphics = applicationManager->getGraphicsSystem();
+                        auto manager = graphics ? graphics->getTextureManager() : nullptr;
+                        if( manager )
+                        {
+                            const auto absolute = Path::isPathAbsolute( texturePath ) ? texturePath :
+                                Path::getAbsolutePath( projectFolder, texturePath );
+                            imported = dynamic_pointer_cast<render::ITexture>(
+                                manager->createOrRetrieve( absolute ).first );
+                            if( imported )
+                            {
+                                resourceDatabase->addResource( imported );
+                                imported = resourceDatabase->loadResourceByType<render::ITexture>( texturePath );
+                            }
+                        }
+                    }
                 }
                 texture = imported;
                 if( !texture )
@@ -2543,6 +2560,11 @@ namespace workphone
                 {
                     applyAssimpMaterialProperties( material, pass, mat, index, folderPath );
                     materialManager->saveToFile( materialPath, material );
+                    if( fileSystem->isExistingFile( absoluteMaterialPath ) )
+                    {
+                        material->setFilePath( absoluteMaterialPath );
+                        applicationManager->getResourceDatabase()->addResource( material );
+                    }
                 }
             }
 

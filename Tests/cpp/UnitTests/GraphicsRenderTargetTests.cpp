@@ -27,18 +27,8 @@ namespace
 
         void setupMediaPath()
         {
-            auto mediaFolderPath = String( "" );
-
-#if defined WP_PLATFORM_WIN32
-            mediaFolderPath = String( "../../../../Media/" );
-#elif defined WP_PLATFORM_APPLE
-            mediaFolderPath = String( "../../Media/" );
-#else
-            mediaFolderPath = String( "../../Media/" );
-#endif
-
+            auto mediaFolderPath = applicationManager->getMediaPath();
             fileSystem->addFolder( mediaFolderPath );
-            applicationManager->setMediaPath( mediaFolderPath );
 
             auto workingDirectory = Path::getWorkingDirectory();
             fileSystem->addFolder( workingDirectory );

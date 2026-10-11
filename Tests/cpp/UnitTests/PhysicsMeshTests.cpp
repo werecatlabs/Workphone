@@ -1106,7 +1106,7 @@ BOOST_AUTO_TEST_CASE( physics_meshshape_cooks_shared_vertex_buffer )
     BOOST_CHECK_EQUAL_COLLECTIONS( cookedIndices.begin(), cookedIndices.end(), expectedIndices.begin(),
                                    expectedIndices.end() );
 
-    const String roundTripPath = "physics_shared_vertex_roundtrip.fbmeshbin";
+    const String roundTripPath = Path::getWorkingDirectory() + "/physics_shared_vertex_roundtrip.fbmeshbin";
     guard.trackFilesystemPath( roundTripPath );
     auto serializableMesh = workphone::dynamic_pointer_cast<Mesh>( mesh );
     BOOST_REQUIRE( serializableMesh );

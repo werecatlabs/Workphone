@@ -120,6 +120,7 @@ namespace workphone
             }
 
             auto fileList = factoryManager->make_ptr<FileList>();
+            fileList->load( nullptr );
             fileList->setPath( path );
             //WP_ASSERT( fileList->getReferences() == 1 );
             m_fileList = fileList;
@@ -144,6 +145,11 @@ namespace workphone
                 if( Path::isPathAbsolute( cleanFilePath ) )
                 {
                     filePath = Path::lexically_relative( projectPath, cleanFilePath );
+                    // Windows paths on different drives have no relative path.
+                    // Keep the absolute name so refreshing an external media
+                    // archive does not replace its file names with empty strings.
+                    if( filePath.empty() )
+                        filePath = cleanFilePath;
                     absolutePath = cleanFilePath;
                 }
                 else

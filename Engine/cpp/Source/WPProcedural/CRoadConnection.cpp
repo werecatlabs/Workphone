@@ -3,6 +3,7 @@
 #include <WPProcedural/CRoadConnectionData.hpp>
 #include <WPProcedural/CRoadNode.hpp>
 #include <WPProcedural/CRoadElement.hpp>
+#include <WPProcedural/IntersectionResult.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <algorithm>
@@ -77,10 +78,24 @@ namespace workphone
             unload( nullptr );
         }
 
+        void CRoadConnection::setUserData( hash_type id, void *userData )
+        {
+            if( id == StringUtil::getHash( "WPIntersectionResult" ) )
+            {
+                auto previous = getUserData( id );
+                if( previous == userData )
+                    return;
+                delete static_cast<IntersectionResult *>( previous );
+            }
+            IObject::setUserData( id, userData );
+        }
         void CRoadConnection::unload( SmartPtr<ISharedObject> data )
         {
             try
             {
+                const auto resultId = StringUtil::getHash( "WPIntersectionResult" );
+                if( getUserData( resultId ) )
+                    setUserData( resultId, nullptr );
                 for( auto &connData : m_connectionData )
                 {
                     if( connData )

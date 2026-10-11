@@ -7,6 +7,7 @@
 #include <Workphone/Interface/Physics/IPlaneShape3.hpp>
 #include <Workphone/Interface/Physics/ISphereShape3.hpp>
 #include <Workphone/Interface/Physics/ITerrainShape.hpp>
+#include <Workphone/Graphics/Terrain.hpp>
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
@@ -453,7 +454,7 @@ BOOST_AUTO_TEST_CASE( component_physics_colliders_terrain_properties_round_trip 
     }
 }
 
-BOOST_AUTO_TEST_CASE( component_physics_colliders_terrain_load_creates_shape_with_base_state )
+BOOST_AUTO_TEST_CASE( component_physics_colliders_terrain_requires_authoritative_source )
 {
     try
     {
@@ -478,9 +479,8 @@ BOOST_AUTO_TEST_CASE( component_physics_colliders_terrain_load_creates_shape_wit
         checkVectorClose( collider.getTerrainScale(), Vector3<real_Num>( 2.0f, 4.0f, 6.0f ) );
 
         auto shape = workphone::dynamic_pointer_cast<physics::ITerrainShape>( collider.getShape() );
-        BOOST_REQUIRE( shape );
-        BOOST_CHECK( shape->isTrigger() );
-        checkVectorClose( shape->getLocalPose().getPosition(), expectedPosition );
+        BOOST_CHECK( !shape );
+        BOOST_CHECK( !collider.getTerrainError().empty() );
 
         collider.unload( nullptr );
         BOOST_CHECK( !collider.getShape() );
@@ -510,6 +510,12 @@ BOOST_AUTO_TEST_CASE( component_physics_colliders_actor_attachment_loads_collide
         auto sphere = actor->addComponent<scene::CollisionSphere>();
         auto mesh = actor->addComponent<scene::CollisionMesh>();
         auto terrain = actor->addComponent<scene::CollisionTerrain>();
+        auto source = actor->addComponent<scene::TerrainSystem>();
+        render::TerrainData data;
+        data.dimensions = Vector2I( 4, 4 );
+        data.heights.resize( 16 );
+        String error;
+        BOOST_REQUIRE_MESSAGE( source->applyTerrainData( data, error ), error );
 
         BOOST_REQUIRE( box );
         BOOST_REQUIRE( sphere );
@@ -524,6 +530,9 @@ BOOST_AUTO_TEST_CASE( component_physics_colliders_actor_attachment_loads_collide
 
         fixture.scene->registerAllUpdates( actor );
         fixture.scene->addActor( actor );
+
+        source->setTerrain( make_ptr<render::Terrain>() );
+        source->updateTransform();
 
         BOOST_CHECK( box->isLoaded() );
         BOOST_CHECK( sphere->isLoaded() );

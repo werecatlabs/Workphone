@@ -72,6 +72,8 @@ namespace workphone
         class WPCore_API Material : public ResourceGraphics<IMaterial>
         {
         public:
+            SmartPtr<IStateContext> getStateContext() const override;
+            IStateContext *getStateContextPtr() const override;
             static const String materialTypeStr;
             static const String materialTypeDataStr;
             /** Property name used to persist the bound data-driven shader id. */
@@ -1267,6 +1269,7 @@ namespace workphone
 
             /** Root node of the material graph system */
             AtomicSmartPtr<IMaterialNode> m_root;
+            AtomicSmartPtr<IStateContext> m_materialStateContext;
 
             /** Primary technique used for rendering (cached for performance) */
             AtomicSmartPtr<IMaterialTechnique> m_technique;

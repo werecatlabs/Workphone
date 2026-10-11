@@ -7,9 +7,50 @@
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <vector>
+#include <Workphone/Mesh/VertexBuffer.hpp>
+#include <Workphone/Mesh/IndexBuffer.hpp>
+#include <Workphone/Mesh/VertexDeclaration.hpp>
+#if defined( _MSC_VER ) && defined( _DEBUG )
+#include <crtdbg.h>
+#endif
 
 using namespace workphone;
+
+BOOST_AUTO_TEST_CASE( mesh_cpu_buffer_replacement_and_destruction_release_storage )
+{
+    auto declaration = make_ptr<VertexDeclaration>();
+    declaration->addElement( 0, 0, VertexElementSemantic::VES_POSITION,
+                              VertexElementType::VET_FLOAT3 );
+    const auto exercise = [&]() {
+        VertexBuffer vertices;
+        vertices.setVertexDeclaration( declaration );
+        vertices.setNumVertices( 4 );
+        vertices.createVertexData();
+        vertices.setNumVertices( 8 );
+        vertices.createVertexData();
+        IndexBuffer indices;
+        indices.setIndexType( IIndexBuffer::Type::IT_16BIT );
+        indices.setNumIndices( 6 );
+        indices.createIndexData();
+        indices.setIndexType( IIndexBuffer::Type::IT_32BIT );
+        indices.setNumIndices( 12 );
+        indices.createIndexData();
+    };
+    exercise(); // Warm any diagnostic caches before measuring owned storage.
+#if defined( _MSC_VER ) && defined( _DEBUG )
+    _CrtMemState before{}, after{}, difference{};
+    _CrtMemCheckpoint( &before );
+#endif
+    exercise();
+#if defined( _MSC_VER ) && defined( _DEBUG )
+    _CrtMemCheckpoint( &after );
+    const auto changed = _CrtMemDifference( &difference, &before, &after );
+    BOOST_CHECK_MESSAGE( !changed, "CPU buffer destruction leaked CRT allocations" );
+#endif
+    BOOST_CHECK_EQUAL( declaration->getSize( 0 ), 3u * sizeof( f32 ) );
+}
 
 namespace
 {
@@ -627,6 +668,13 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
     app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
     app->setResourceDatabase( database );
     database->load( nullptr );
+
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+    BOOST_REQUIRE( catalog->setProjectRoot( directory.generic_string() ) );
+    const auto catalogPath = ( directory / "Cache" / "asset.db" ).generic_string();
+    database->setFilePath( catalogPath );
+    catalog->loadFromFile( catalogPath );
     const auto folder = String( directory.generic_string() );
     app->getFileSystem()->addFolder( folder, true );
     guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
@@ -702,6 +750,13 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
     app->setResourceDatabase( database );
     database->load( nullptr );
 
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+    BOOST_REQUIRE( catalog->setProjectRoot( directory.generic_string() ) );
+    const auto catalogPath = ( directory / "Cache" / "asset.db" ).generic_string();
+    database->setFilePath( catalogPath );
+    catalog->loadFromFile( catalogPath );
+
     // A valid 1x1, 24-bit BMP; fixtures need no external image assets.
     const unsigned char bmp[] = {
         0x42, 0x4d, 58, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0,
@@ -758,7 +813,8 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
         BOOST_REQUIRE( texture );
         const auto expected = name == "Local" ? "Assets/Model/Textures/Local.bmp"
                                                : "Assets/Shared/Shared.bmp";
-        BOOST_CHECK_EQUAL( StringUtil::cleanupPath( texture->getFilePath() ), expected );
+        BOOST_CHECK( std::filesystem::equivalent( texture->getFilePath().c_str(),
+                                                 directory / expected ) );
         auto handle = texture->getHandle();
         BOOST_REQUIRE( handle );
         BOOST_CHECK( database->loadResourceById( handle->getUUID() ) == texture );
@@ -767,8 +823,8 @@ BOOST_AUTO_TEST_CASE( mesh_material_import_registers_local_and_project_textures_
         BOOST_CHECK( saved.find( expected ) != String::npos );
         auto normal = material->getTexture( 1 );
         BOOST_REQUIRE( normal );
-        BOOST_CHECK_EQUAL( StringUtil::cleanupPath( normal->getFilePath() ),
-                           "Assets/Model/Textures/Normal.bmp" );
+        BOOST_CHECK( std::filesystem::equivalent( normal->getFilePath().c_str(),
+                       directory / "Assets/Model/Textures/Normal.bmp" ) );
         if( sharedNormal )
         {
             BOOST_CHECK( normal == sharedNormal );

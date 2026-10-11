@@ -408,7 +408,7 @@ BOOST_AUTO_TEST_CASE( gamescene_save_fbscene_writes_json_scene )
     String savedText;
     requireSavedText( filePath, savedText );
 
-    BOOST_CHECK_EQUAL( scene->getFilePath(), filePath );
+    BOOST_CHECK( std::filesystem::equivalent( scene->getFilePath().c_str(), filePath.c_str() ) );
     BOOST_CHECK_EQUAL( scene->getLabel(), "json_scene" );
     BOOST_CHECK( savedText.find( "{" ) == 0 );
     BOOST_CHECK( savedText.find( "\"children\"" ) != String::npos );
@@ -426,7 +426,7 @@ BOOST_AUTO_TEST_CASE( gamescene_save_fbscenexml_writes_xml_scene )
     String savedText;
     requireSavedText( filePath, savedText );
 
-    BOOST_CHECK_EQUAL( scene->getFilePath(), filePath );
+    BOOST_CHECK( std::filesystem::equivalent( scene->getFilePath().c_str(), filePath.c_str() ) );
     BOOST_CHECK_EQUAL( scene->getLabel(), "xml_scene" );
     BOOST_CHECK( savedText.find( "<?xml" ) == 0 );
     BOOST_CHECK( savedText.find( "<Root" ) != String::npos );
@@ -457,7 +457,7 @@ BOOST_AUTO_TEST_CASE( gamescene_save_fbscenebin_writes_binary_properties_scene )
     BOOST_CHECK_EQUAL( requireProperty<String>( actor, GameActorUtil::labelStr ), "Saved Actor" );
     BOOST_CHECK( findComponentByType( actor, "CollisionBox" ) );
     BOOST_CHECK( findComponentByType( actor, "Rigidbody" ) );
-    BOOST_CHECK_EQUAL( scene->getFilePath(), filePath );
+    BOOST_CHECK( std::filesystem::equivalent( scene->getFilePath().c_str(), filePath.c_str() ) );
     BOOST_CHECK_EQUAL( scene->getLabel(), "binary_scene" );
 }
 
@@ -472,7 +472,7 @@ BOOST_AUTO_TEST_CASE( gamescene_save_without_extension_defaults_to_fbscene_json 
     requireSavedText( expectedFilePath, savedText );
 
     BOOST_CHECK( !std::filesystem::exists( extensionlessPath.c_str() ) );
-    BOOST_CHECK_EQUAL( scene->getFilePath(), extensionlessPath );
+    BOOST_CHECK( std::filesystem::equivalent( scene->getFilePath().c_str(), expectedFilePath.c_str() ) );
     BOOST_CHECK_EQUAL( scene->getLabel(), "extensionless_scene" );
     BOOST_CHECK( savedText.find( "{" ) == 0 );
     BOOST_CHECK( savedText.find( "<?xml" ) == String::npos );
@@ -489,7 +489,7 @@ BOOST_AUTO_TEST_CASE( gamescene_save_uses_current_file_path_when_no_path_is_supp
     String savedText;
     requireSavedText( filePath, savedText );
 
-    BOOST_CHECK_EQUAL( scene->getFilePath(), filePath );
+    BOOST_CHECK( std::filesystem::equivalent( scene->getFilePath().c_str(), filePath.c_str() ) );
     BOOST_CHECK_EQUAL( scene->getLabel(), "current_path_scene" );
     BOOST_CHECK( savedText.find( "{" ) == 0 );
     requireSavedActorData( savedText, DataFormat::JSON );

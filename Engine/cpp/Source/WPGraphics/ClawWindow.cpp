@@ -129,6 +129,7 @@ namespace workphone
 
         ClawWindow::~ClawWindow()
         {
+            unload( nullptr );
         }
 
         void ClawWindow::load( SmartPtr<ISharedObject> data )

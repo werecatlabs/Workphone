@@ -728,6 +728,11 @@ BOOST_AUTO_TEST_CASE( components_mesh_collider_raycast )
         auto rigidbodyState = rigidbody->getState();
         BOOST_CHECK( rigidbodyState == IComponent::State::Edit );
 
+        // Loading tasks alone do not register the body with its physics scene.
+        fixture.updatePhysics( 3 );
+        BOOST_REQUIRE( rigidbody->getRigidStatic() );
+        BOOST_REQUIRE_GT( rigidbody->getRigidStatic()->getNumShapes(), 0u );
+
         // Perform raycast
         auto origin = Vector3<real_Num>::unitY() * 250.0f;
         auto dir = -Vector3<real_Num>::unitY();

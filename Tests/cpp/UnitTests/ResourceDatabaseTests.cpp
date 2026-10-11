@@ -187,6 +187,7 @@ namespace
             database->loadFromFile( databasePath, "" );
 
             assetDatabaseManager = workphone::make_ptr<AssetDatabaseManager>();
+            BOOST_REQUIRE( assetDatabaseManager->setProjectRoot( databaseDirectory ) );
             assetDatabaseManager->setDatabase( database );
             assetDatabaseManager->setDatabasePath( databasePath );
             assetDatabaseManager->create();
@@ -260,7 +261,12 @@ BOOST_AUTO_TEST_CASE( material_texture_binding_survives_serialization )
     auto technique = material->createTechnique();
     BOOST_REQUIRE( technique );
     BOOST_REQUIRE( technique->createPass() );
-    auto texture = context.resourceDatabase->loadResourceByType<render::ITexture>( "panel.png" );
+    const auto fixturePath = context.databaseDirectory + "/panel.png";
+    std::filesystem::copy_file(
+        std::filesystem::path( context.applicationManager->getMediaPath().c_str() ) / "panel.png",
+        std::filesystem::path( fixturePath.c_str() ) );
+    auto texture = dynamic_pointer_cast<render::ITexture>(
+        graphics->getTextureManager()->createOrRetrieve( fixturePath ).first );
     BOOST_REQUIRE( texture );
     context.resourceDatabase->addResource( texture );
     material->setTexture( texture, 0 );
@@ -491,7 +497,7 @@ BOOST_AUTO_TEST_CASE( resource_database_loadResource_createsRegisteredResourceFr
         auto loadedResource = context.resourceDatabase->loadResource( path );
         BOOST_REQUIRE( loadedResource );
         BOOST_CHECK( loadedResource->isDerived<ResourceDatabaseTestResource>() );
-        BOOST_CHECK_EQUAL( loadedResource->getFilePath(), path );
+        BOOST_CHECK_EQUAL( loadedResource->getFilePath(), context.assetDatabaseManager->getProjectRoot() + "/" + path );
         BOOST_CHECK_EQUAL( loadedResource->getHandle()->getUUIDAsString(), uuid );
     }
     catch( std::exception &e )

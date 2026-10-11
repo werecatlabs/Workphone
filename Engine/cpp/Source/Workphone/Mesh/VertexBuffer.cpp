@@ -13,7 +13,12 @@ namespace workphone
         m_vertexData.resize( 1 );
     }
 
-    VertexBuffer::~VertexBuffer() = default;
+    VertexBuffer::~VertexBuffer()
+    {
+        // CPU buffers also own their data when no manager explicitly unloads them.
+        for( auto data : m_vertexData )
+            delete[] data;
+    }
 
     void VertexBuffer::unload( SmartPtr<ISharedObject> data )
     {
@@ -58,7 +63,7 @@ namespace workphone
 
     auto VertexBuffer::createVertexData( s32 index ) -> void *
     {
-        if( m_vertexDeclaration )
+        if( m_vertexDeclaration && index >= 0 )
         {
             auto newSize = index + 1;
             if( newSize >= static_cast<s32>( m_vertexData.size() ) )
@@ -75,6 +80,7 @@ namespace workphone
             auto vertexSize = m_vertexDeclaration->getSize( index );
             auto numBytes = vertexSize * m_numVertices;
             auto buffer = new u8[numBytes];
+            delete[] m_vertexData[index];
             m_vertexData[index] = buffer;
             return buffer;
         }

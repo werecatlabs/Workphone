@@ -539,6 +539,9 @@ BOOST_AUTO_TEST_CASE( physics_test_scene_vehicle_moves_under_gravity )
 
     auto vehicleActor = guard.scene->findActorByName( "Vehicle" );
     BOOST_REQUIRE( vehicleActor );
+    // This test checks immediate body-to-actor synchronization. Render sampling
+    // for smooth actors is exercised by the following vehicle test.
+    vehicleActor->setSmoothMotion( false );
 
     auto groundActor = guard.scene->findActorByName( "Plane" );
     BOOST_REQUIRE( groundActor );
@@ -684,6 +687,7 @@ BOOST_AUTO_TEST_CASE( physics_loaded_vehicle_drives_and_updates_smooth_transform
     auto vehicle = car->getVehicleController();
     BOOST_REQUIRE( vehicle );
     BOOST_REQUIRE( vehicle->getState() == vehicle::IVehicle::State::PLAY );
+    car->setControls( 1.0f, 0.0f, 0.0f );
     vehicle->setChannel( static_cast<s32>( vehicle::IVehicle::Input::THROTTLE ), 1.0f );
     const auto initialPosition = body->getTransform().getPosition();
     auto physicsScene = guard.physicsManager->getPhysicsScene();

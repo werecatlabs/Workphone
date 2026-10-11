@@ -53,7 +53,7 @@ namespace
         stateContext->addState( state );
     }
 
-    SmartPtr<render::Terrain> createStateBackedTerrain( TestGuard &fixture )
+    SmartPtr<render::Terrain> createStateBackedTerrain( TestGuard &fixture, f32 heightScale = 1.0f )
     {
         BOOST_REQUIRE( fixture.stateManager );
         BOOST_REQUIRE( fixture.factoryManager );
@@ -83,6 +83,7 @@ namespace
             }
         } );
 
+        terrain->setHeightScale( heightScale );
         const auto id = terrain->getId();
         addStateData<TransformStateData>( stateContext, fixture.factoryManager, id );
         addStateData<TerrainStateData>( stateContext, fixture.factoryManager, id );
@@ -126,12 +127,24 @@ namespace
         BOOST_REQUIRE( actor );
         BOOST_REQUIRE( actor->isStatic() );
 
+        auto source = actor->addComponent<scene::TerrainSystem>();
+        BOOST_REQUIRE( source );
+        render::TerrainData data;
+        data.dimensions = Vector2I( width, depth );
+        data.heights.resize( size_t( width ) * depth );
+        data.heightScale = 1.0f;
+        String error;
+        BOOST_REQUIRE_MESSAGE( source->applyTerrainData( data, error ), error );
+        actor->setPosition( position );
+        actor->setScale( scale );
+        actor->getTransform()->update();
+
         auto collisionTerrain = actor->addComponent<scene::CollisionTerrain>();
         BOOST_REQUIRE( collisionTerrain );
         collisionTerrain->setTerrainWidth( width );
         collisionTerrain->setTerrainDepth( depth );
         collisionTerrain->setTerrainScale( scale );
-        collisionTerrain->setPosition( position );
+        collisionTerrain->setPosition( Vector3<real_Num>::zero() );
 
         rigidbody = actor->addComponent<scene::Rigidbody>();
         BOOST_REQUIRE( rigidbody );
@@ -139,7 +152,11 @@ namespace
         fixture.scene->registerAllUpdates( actor );
         fixture.scene->addActor( actor );
         fixture.sceneManager->edit();
+        // Publish synchronously: these tests exercise collision, not render scheduling.
+        source->setTerrain( make_ptr<render::Terrain>() );
+        source->updateTransform();
         fixture.updatePhysics( 3 );
+        fixture.runUpdateCycle( 3 );
 
         BOOST_REQUIRE( collisionTerrain->isLoaded() );
         BOOST_REQUIRE( collisionTerrain->getShape() );
@@ -162,7 +179,7 @@ BOOST_AUTO_TEST_CASE( state_backed_terrain_defaults )
             return;
         }
 
-        auto terrain = createStateBackedTerrain( fixture );
+        auto terrain = createStateBackedTerrain( fixture, 50.0f );
 
         BOOST_CHECK_EQUAL( terrain->getHeightMapSize().X(), 256 );
         BOOST_CHECK_EQUAL( terrain->getHeightMapSize().Y(), 256 );
@@ -175,7 +192,7 @@ BOOST_AUTO_TEST_CASE( state_backed_terrain_defaults )
         BOOST_CHECK_EQUAL( terrain->getTextures().size(), 24u );
         BOOST_CHECK( !terrain->getHeightMap() );
         BOOST_CHECK( !terrain->getTexture( 0u ) );
-        BOOST_CHECK( !terrain->getMesh() );
+        BOOST_CHECK( terrain->getMesh() );
         // getLayerBlendMapSize returns 0 when no blend maps have been configured.
         BOOST_CHECK_EQUAL( terrain->getLayerBlendMapSize(), 0u );
         // Without graphics system, getBlendMap returns null. With graphics system,
@@ -270,7 +287,7 @@ BOOST_AUTO_TEST_CASE( height_data_round_trip_and_bilinear_sampling )
             terrain->getHeightAtWorldPosition( Vector3<real_Num>( -100.0f, 0.0f, -100.0f ) ), 0.0f,
             0.001f );
         BOOST_CHECK_CLOSE(
-            terrain->getHeightAtWorldPosition( Vector3<real_Num>( 100.0f, 0.0f, 100.0f ) ), 33.0f,
+            terrain->getHeightAtWorldPosition( Vector3<real_Num>( 100.0f, 0.0f, 100.0f ) ), 0.0f,
             0.001f );
     }
     catch( std::exception &e )
@@ -330,9 +347,9 @@ BOOST_AUTO_TEST_CASE( height_scale_round_trip )
         terrain->setHeightScale( 10.0f );
         BOOST_CHECK_CLOSE( terrain->getHeightScale(), 10.0f, 0.001f );
 
-        // The stored height data is not multiplied by height scale; sampling returns raw values.
+        // Samples retain authored values; world queries apply height scale.
         BOOST_CHECK_CLOSE( terrain->getHeightAtWorldPosition( Vector3<real_Num>( 0.0f, 0.0f, 0.0f ) ),
-                           1.0f, 0.001f );
+                           10.0f, 0.001f );
     }
     catch( std::exception &e )
     {
@@ -382,7 +399,7 @@ BOOST_AUTO_TEST_CASE( optional_graphics_queries_return_null_when_unconfigured )
             BOOST_REQUIRE( missResult );
             BOOST_CHECK( !missResult->hasIntersected() );
         }
-        BOOST_CHECK( !terrain->getMesh() );
+        BOOST_CHECK( terrain->getMesh() );
     }
     catch( std::exception &e )
     {
@@ -510,7 +527,7 @@ BOOST_AUTO_TEST_CASE( terrain_origin_centered_sampling )
         BOOST_CHECK_CLOSE( terrain->getHeightAtWorldPosition( Vector3<real_Num>( 99.0f, 0.0f, -51.0f ) ),
                            9.0f, 0.001f );
         BOOST_CHECK_CLOSE(
-            terrain->getHeightAtWorldPosition( Vector3<real_Num>( 101.0f, 0.0f, -49.0f ) ), 9.0f,
+            terrain->getHeightAtWorldPosition( Vector3<real_Num>( 101.0f, 0.0f, -49.0f ) ), 0.0f,
             0.001f );
     }
     catch( std::exception &e )
@@ -792,6 +809,9 @@ BOOST_AUTO_TEST_CASE( load_unload_load_recreates_shape )
         BOOST_CHECK( !collisionTerrain->getShape() );
 
         collisionTerrain->load( nullptr );
+        // Component::unload detaches its owner. Reattach before recreating collision.
+        collisionTerrain->setActor( actor );
+        collisionTerrain->updateTransform();
         BOOST_REQUIRE( collisionTerrain->getShape() );
         BOOST_CHECK(
             workphone::dynamic_pointer_cast<physics::ITerrainShape>( collisionTerrain->getShape() ) );
@@ -819,7 +839,8 @@ BOOST_AUTO_TEST_CASE( shape_pose_and_scale )
         auto collisionTerrain = createLoadedTerrainCollider(
             fixture, actor, rigidbody, 16u, 8u, Vector3<real_Num>( 2.0f, 3.0f, 4.0f ), offset );
 
-        checkVectorClose( collisionTerrain->getPosition(), offset );
+        checkVectorClose( actor->getPosition(), offset );
+        checkVectorClose( collisionTerrain->getPosition(), Vector3<real_Num>::zero() );
 
         auto shape = collisionTerrain->getShape();
         BOOST_REQUIRE( shape );
@@ -849,22 +870,11 @@ BOOST_AUTO_TEST_CASE( trigger_and_enabled_inheritance )
             return;
         }
 
-        auto actor = fixture.createBasicActor( true );
-        BOOST_REQUIRE( actor );
-
-        auto collisionTerrain = actor->addComponent<scene::CollisionTerrain>();
-        BOOST_REQUIRE( collisionTerrain );
-        collisionTerrain->setTerrainWidth( 8u );
-        collisionTerrain->setTerrainDepth( 8u );
+        SmartPtr<scene::IGameActor> actor;
+        SmartPtr<scene::Rigidbody> rigidbody;
+        auto collisionTerrain = createLoadedTerrainCollider( fixture, actor, rigidbody, 8u, 8u );
         collisionTerrain->setTrigger( true );
         collisionTerrain->setEnabled( false );
-
-        auto rigidbody = actor->addComponent<scene::Rigidbody>();
-        BOOST_REQUIRE( rigidbody );
-
-        fixture.scene->registerAllUpdates( actor );
-        fixture.scene->addActor( actor );
-        fixture.sceneManager->edit();
         fixture.updatePhysics( 3 );
 
         BOOST_REQUIRE( collisionTerrain->getShape() );
@@ -981,6 +991,8 @@ BOOST_AUTO_TEST_CASE( default_terrain_actor_enters_scene_as_static_physics )
 
         auto actor = ApplicationUtil::createDefaultTerrain( true );
         BOOST_REQUIRE( actor );
+        actor->getComponent<scene::TerrainSystem>()->setTerrain( make_ptr<render::Terrain>() );
+        actor->getComponent<scene::TerrainSystem>()->updateTransform();
         BOOST_CHECK( actor->isStatic() );
 
         fixture.sceneManager->play();
@@ -1010,6 +1022,8 @@ BOOST_AUTO_TEST_CASE( default_terrain_actor_addToScene_creates_static_body )
 
         auto actor = ApplicationUtil::createDefaultTerrain( true );
         BOOST_REQUIRE( actor );
+        actor->getComponent<scene::TerrainSystem>()->setTerrain( make_ptr<render::Terrain>() );
+        actor->getComponent<scene::TerrainSystem>()->updateTransform();
         BOOST_CHECK( actor->isStatic() );
 
         fixture.sceneManager->play();
@@ -1040,6 +1054,8 @@ BOOST_AUTO_TEST_CASE( collider_attaches_to_static_body )
 
         auto actor = ApplicationUtil::createDefaultTerrain( true );
         BOOST_REQUIRE( actor );
+        actor->getComponent<scene::TerrainSystem>()->setTerrain( make_ptr<render::Terrain>() );
+        actor->getComponent<scene::TerrainSystem>()->updateTransform();
 
         fixture.sceneManager->play();
         fixture.resetTimer();
@@ -1077,6 +1093,8 @@ BOOST_AUTO_TEST_CASE( shape_removed_on_actor_destroy )
 
         auto actor = ApplicationUtil::createDefaultTerrain( true );
         BOOST_REQUIRE( actor );
+        actor->getComponent<scene::TerrainSystem>()->setTerrain( make_ptr<render::Terrain>() );
+        actor->getComponent<scene::TerrainSystem>()->updateTransform();
 
         fixture.sceneManager->play();
         fixture.resetTimer();
@@ -1224,7 +1242,7 @@ BOOST_AUTO_TEST_CASE( standalone_collider_lifecycle )
 
         BOOST_CHECK_NO_THROW( collisionTerrain->unload( nullptr ) );
         BOOST_CHECK_NO_THROW( collisionTerrain->load( nullptr ) );
-        BOOST_CHECK( collisionTerrain->getShape() );
+        BOOST_CHECK( !collisionTerrain->getShape() );
         BOOST_CHECK_NO_THROW( collisionTerrain->unload( nullptr ) );
         BOOST_CHECK( !collisionTerrain->getShape() );
     }

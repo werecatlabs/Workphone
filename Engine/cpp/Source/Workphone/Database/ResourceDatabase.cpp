@@ -695,7 +695,7 @@ namespace workphone
         auto cachePath = applicationManager->getCachePath();
 
         auto dbFilePath = getFilePath();
-        auto databasePath = cachePath + "/" + dbFilePath;
+        auto databasePath = Path::isPathAbsolute( dbFilePath ) ? dbFilePath : cachePath + "/" + dbFilePath;
         databasePath = StringUtil::cleanupPath( databasePath );
 
         assetDatabaseManager->loadFromFile( databasePath );
@@ -2640,7 +2640,7 @@ namespace workphone
             auto cachePath = importCachePath;
 
             auto dbFilePath = resourceDatabase->getFilePath();
-            auto databasePath = cachePath + "/" + dbFilePath;
+            auto databasePath = Path::isPathAbsolute( dbFilePath ) ? dbFilePath : cachePath + "/" + dbFilePath;
             databasePath = StringUtil::cleanupPath( databasePath );
 
             if( !resourceDatabase->getDatabaseManager() )

@@ -2,6 +2,7 @@
 #include "TestGuard.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsTerrain.hpp>
+#include <Workphone/Graphics/Terrain.hpp>
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
@@ -168,7 +169,7 @@ namespace
         u32 usageFlags = 0u;
     };
 
-    class RecordingTerrain : public render::IGraphicsTerrain
+    class RecordingTerrain : public render::Terrain
     {
     public:
         Transform3<real_Num> getWorldTransform() const override

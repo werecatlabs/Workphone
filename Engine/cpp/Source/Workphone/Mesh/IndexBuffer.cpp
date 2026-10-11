@@ -11,13 +11,16 @@ namespace workphone
         m_indexSize = sizeof( u32 );
     }
 
-    IndexBuffer::~IndexBuffer() = default;
+    IndexBuffer::~IndexBuffer()
+    {
+        unload( nullptr );
+    }
 
     void IndexBuffer::unload( SmartPtr<ISharedObject> data )
     {
         if( m_indexData )
         {
-            delete[] m_indexData;
+            delete[] static_cast<u8 *>( m_indexData );
             m_indexData = nullptr;
         }
     }
@@ -62,26 +65,12 @@ namespace workphone
 
     auto IndexBuffer::createIndexData() -> void *
     {
-        auto indexType = getIndexType();
-        switch( indexType )
-        {
-        case Type::IT_16BIT:
-        {
-            m_indexData = new u16[m_numIndices];
-        }
-        break;
-        case Type::IT_32BIT:
-        {
-            m_indexData = new u32[m_numIndices];
-        }
-        break;
-        default:
-        {
-        }
-        };
-
+        auto replacement = new u8[size_t( m_numIndices ) * m_indexSize];
+        delete[] static_cast<u8 *>( m_indexData );
+        m_indexData = replacement;
         return m_indexData;
     }
+
 
     auto IndexBuffer::getIndexData() const -> void *
     {

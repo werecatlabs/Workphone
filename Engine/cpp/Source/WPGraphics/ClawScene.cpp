@@ -228,6 +228,21 @@ namespace workphone
 
             // Release C++ wrappers while their scene-owned C nodes are still valid.
             GraphicsScene::clear();
+            // Native clear destroys every non-root node. Detach cameras/lights
+            // and invalidate the wrappers before releasing that native storage.
+            auto root = getRootSceneNode();
+            for( auto &node : m_sceneNodes.snapshot() )
+                if( node && node != root )
+                    node->unload( nullptr );
+            m_sceneNodes.clear();
+            m_registeredSceneNodes.clear();
+            if( root )
+                root->removeChildren();
+            for( auto &camera : m_cameras.snapshot() )
+                if( camera )
+                    camera->detachFromParent( camera->getOwner() );
+            m_cameras.clear();
+            setDefaultCamera( nullptr );
             if( m_scene )
             {
                 wp_graphics_scene_clear( m_scene );

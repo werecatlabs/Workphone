@@ -23,6 +23,27 @@
 
 using namespace workphone;
 
+BOOST_AUTO_TEST_CASE( material_owns_and_releases_its_state_context )
+{
+    auto material = workphone::make_ptr<render::Material>();
+    material->load( nullptr );
+    auto original = material->getStateContext();
+    BOOST_REQUIRE( original );
+    material->load( nullptr );
+    BOOST_CHECK( material->getStateContext() == original );
+    material->unload( nullptr );
+    BOOST_CHECK( !material->getStateContext() );
+    BOOST_CHECK( !original->getOwner() );
+    BOOST_CHECK( original->getStateListeners().empty() );
+    material->load( nullptr );
+    auto replacement = material->getStateContext();
+    BOOST_REQUIRE( replacement );
+    BOOST_CHECK( replacement != original );
+    material = nullptr;
+    BOOST_CHECK( !replacement->getOwner() );
+    BOOST_CHECK( replacement->getStateListeners().empty() );
+}
+
 namespace
 {
     struct FloatFieldCase
@@ -576,7 +597,8 @@ BOOST_AUTO_TEST_CASE( material_techniques_and_texture_units_support_add_remove )
     BOOST_TEST( textureUnit->getMaterial().get() == material.get() );
     BOOST_TEST( pass->getNumTexturesNodes() == originalTextureCount + 1u );
 
-    const auto textureName = String( "Textures/Material Test/albedo.png" );
+    // Resolve a registered fixture asset; setting a missing path clears a slot.
+    const auto textureName = applicationManager->getProjectPath() + "/panel.png";
     textureUnit->setTextureName( textureName );
     BOOST_TEST( textureUnit->getTextureName() == textureName );
 
@@ -1205,7 +1227,8 @@ BOOST_AUTO_TEST_CASE( claw_scene_renders_assigned_mesh_material_colour )
             BOOST_TEST( static_cast<int>( blue ) > static_cast<int>( green ) + 20 );
         }
         if( colour != ColourF::White )
-            BOOST_TEST( static_cast<int>( blue ) < 20 );
+            // Standard PBR contributes neutral specular light even to a saturated base.
+            BOOST_TEST( static_cast<int>( blue ) < std::max( red, green ) / 2 );
     }
     const auto drawPixel = [&]( ColourF clear = ColourF::Black,
                                 const Matrix4F &transform = Matrix4F::identity() ) {

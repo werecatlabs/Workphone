@@ -41,9 +41,9 @@ namespace workphone
             class RenderPhaseProfile
             {
             public:
-                RenderPhaseProfile( WeakPtr<IProfile> &cached, const char *label )
+                RenderPhaseProfile( SmartPtr<IProfile> &cached, const char *label )
                 {
-                    m_profile = cached.lock();
+                    m_profile = cached;
                     if( !m_profile )
                         if( auto app = core::IApplicationManager::instancePtr() )
                             if( auto profiler = app->getProfiler() )
@@ -311,6 +311,12 @@ namespace workphone
             ScopedLock lock( this );
             setLoadingState( LoadingState::Unloading );
 
+            m_preparationProfile = nullptr;
+            m_sceneProfile = nullptr;
+            m_uiBuildProfile = nullptr;
+            m_uiSubmitProfile = nullptr;
+            m_presentationProfile = nullptr;
+
             // Queued objects can be owned by the graphics managers below. Release
             // their references before those managers destroy the objects.
             clearObjectQueues();
@@ -427,8 +433,7 @@ namespace workphone
             try
             {
                 ScopedLock lock( this );
-                static thread_local WeakPtr<IProfile> preparationProfile;
-                RenderPhaseProfile preparation( preparationProfile, "Graphics preparation" );
+                RenderPhaseProfile preparation( m_preparationProfile, "Graphics preparation" );
                 if( m_statisticsResetRequested.exchange( false ) )
                     if( auto renderer = dynamic_pointer_cast<ClawRendererDX11>( getRenderer() ) )
                         if( auto dx11 = wp_renderer_get_dx11( renderer->getNativeRenderer() ) )
@@ -522,8 +527,7 @@ namespace workphone
             if( auto renderer = getRenderer() )
             {
                 const auto renderScenePass = [this, &renderer]() {
-                    static thread_local WeakPtr<IProfile> sceneProfile;
-                    RenderPhaseProfile timing( sceneProfile, "Scene draw" );
+                    RenderPhaseProfile timing( m_sceneProfile, "Scene draw" );
                     const auto pipelineFrameStarted = beginGraphicsPipelineFrame( renderer );
 
                     render();
@@ -621,20 +625,17 @@ namespace workphone
                         {
                             if( auto application = ui->getApplication() )
                             {
-                                static thread_local WeakPtr<IProfile> uiBuildProfile;
-                                RenderPhaseProfile timing( uiBuildProfile, "Editor UI build" );
+                                RenderPhaseProfile timing( m_uiBuildProfile, "Editor UI build" );
                                 application->update();
                             }
                         }
                     }
 
-                    static thread_local WeakPtr<IProfile> uiSubmitProfile;
-                    RenderPhaseProfile timing( uiSubmitProfile, "UI submission" );
+                    RenderPhaseProfile timing( m_uiSubmitProfile, "UI submission" );
                     m_imguiManager->render();
                 }
 
-                static thread_local WeakPtr<IProfile> presentationProfile;
-                RenderPhaseProfile timing( presentationProfile, "Presentation" );
+                RenderPhaseProfile timing( m_presentationProfile, "Presentation" );
                 renderer->endRender();
             }
         }

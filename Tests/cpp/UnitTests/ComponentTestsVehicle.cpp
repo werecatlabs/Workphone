@@ -669,7 +669,9 @@ BOOST_AUTO_TEST_CASE( components_car_controller_wires_four_wheels_by_drive_type 
     BOOST_REQUIRE( controller );
     BOOST_REQUIRE( controller->getVehicleController() );
     controller->setDriveType( VehicleDriveType::RearWheelDrive );
+    Thread::setCurrentTask( fixture.sceneManager->getSceneTask() );
     controller->update();
+    fixture.setupThread();
 
     const std::array<Vector3<real_Num>, 4> expectedPositions = {
         Vector3<real_Num>( -0.905f, 0.0f, -1.265f ), Vector3<real_Num>( 0.905f, 0.0f, -1.265f ),

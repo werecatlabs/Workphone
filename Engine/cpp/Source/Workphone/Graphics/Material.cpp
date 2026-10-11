@@ -150,10 +150,23 @@ namespace workphone::render
 
     Material::~Material()
     {
+        unload( nullptr );
+    }
+
+    SmartPtr<IStateContext> Material::getStateContext() const
+    {
+        return m_materialStateContext;
+    }
+
+    IStateContext *Material::getStateContextPtr() const
+    {
+        return m_materialStateContext.load().get();
     }
 
     void Material::createStateObject()
     {
+        if( getStateContext() )
+            return;
         auto pThis = getSharedFromThis<ISharedObject>();
 
         auto applicationManager = core::IApplicationManager::instance();
@@ -172,6 +185,7 @@ namespace workphone::render
         WP_ASSERT( graphicsFactoryManager );
 
         auto stateContext = stateManager->addStateContext();
+        m_materialStateContext = stateContext;
         stateContext->setOwner( pThis.get() );
 
         auto stateListener = graphicsFactoryManager->make_object<Material::MaterialStateListener>();
@@ -334,6 +348,18 @@ namespace workphone::render
     {
         try
         {
+            if( auto context = getStateContext() )
+            {
+                for( auto listener : context->getStateListeners() )
+                    if( auto materialListener = dynamic_pointer_cast<MaterialStateListener>( listener ) )
+                        materialListener->setOwner( nullptr );
+                context->setOwner( nullptr );
+                if( auto app = core::IApplicationManager::instancePtr() )
+                    if( auto manager = app->getStateManager() )
+                        manager->removeStateContext( context );
+                context->unload( nullptr );
+                m_materialStateContext = nullptr;
+            }
             const auto &state = getLoadingState();
             if( state != LoadingState::Unloaded )
             {

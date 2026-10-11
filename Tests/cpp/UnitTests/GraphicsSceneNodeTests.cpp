@@ -47,6 +47,26 @@ namespace
 }  // namespace
 
 #if WP_GRAPHICS_SYSTEM_CLAW
+BOOST_AUTO_TEST_CASE( claw_scene_clear_detaches_camera_and_invalidates_nodes )
+{
+    TestGuard guard;
+    auto scene = guard.graphicsSystem->getGraphicsScene();
+    BOOST_REQUIRE( scene );
+    auto node = dynamic_pointer_cast<render::ClawSceneNode>( scene->addSceneNode() );
+    auto camera = dynamic_pointer_cast<render::ClawCamera>(
+        scene->addGraphicsObjectByType<render::IGraphicsCamera>() );
+    BOOST_REQUIRE( node );
+    BOOST_REQUIRE( camera );
+    node->load( nullptr );
+    node->attachObject( camera );
+    BOOST_REQUIRE( wp_camera_get_node( camera->getNativeCamera() ) );
+    scene->clear();
+    BOOST_CHECK( !node->getNativeNode() );
+    BOOST_CHECK( !wp_camera_get_node( camera->getNativeCamera() ) );
+    BOOST_CHECK_NO_THROW( camera->getViewMatrix() );
+    BOOST_CHECK_NO_THROW( scene->clear() );
+}
+
 BOOST_AUTO_TEST_CASE( claw_scene_node_deferred_load_preserves_mesh_world_matrix )
 {
     TestGuard guard;

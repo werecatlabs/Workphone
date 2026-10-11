@@ -2,6 +2,7 @@
 #include "TypeManagerFixture.hpp"
 #include "UnitTestsFixture.hpp"
 #include "Workphone/Workphone.hpp"
+#include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <boost/test/unit_test.hpp>
 #include <memory>
 #include <filesystem>
@@ -39,6 +40,7 @@ namespace workphone
 
     namespace
     {
+        std::filesystem::path unitTestProject;
         void releaseInitialReference( core::ApplicationManager *ptr )
         {
             if( ptr )
@@ -556,9 +558,11 @@ namespace workphone
         auto settingsCacheAbsolutePath = Path::getAbsolutePath( workingDirectory, settingsCachePath );
         fileSystem->addFolder( settingsCacheAbsolutePath );
 
-        fileSystem->addFolder( mediaFolderPath, false );
-        fileSystem->addFolder( mediaFolderPath + "/Scripts", true );
-        fileSystem->addFolder( mediaFolderPath + "/Tests", true );
+        // Archive paths must stay valid when a test rebinds the project catalog.
+        fileSystem->addFolder( mediaAbsolutePath, false );
+        fileSystem->addFolder( mediaAbsolutePath + "/Scripts", true );
+        fileSystem->addFolder( mediaAbsolutePath + "/Tests", true );
+        fileSystem->addFolder( workingDirectory + "/Tests", true );
         const auto fixtures = std::filesystem::path( __FILE__ ).parent_path() / "Fixtures";
         fileSystem->addFolder( String( fixtures.generic_string().c_str() ), true );
 
@@ -655,9 +659,40 @@ namespace workphone
             }
         }
 
+        // Resource loading now requires authored catalog identities. Give the
+        // fixture its own project and catalog instead of relying on asset.db
+        // and files left by an Editor session.
+        unitTestProject = std::filesystem::temp_directory_path() /
+                          ( "workphone-unit-tests-" + std::string( StringUtil::getUUID().c_str() ) );
+        std::filesystem::create_directories( unitTestProject );
+        const String projectRoot( unitTestProject.generic_string().c_str() );
+        applicationManager->setProjectPath( projectRoot );
+        applicationManager->setCachePath( projectRoot + "/Cache" );
+        applicationManager->setSettingsPath( projectRoot + "/SettingsCache" );
+        std::filesystem::create_directories( unitTestProject / "Cache" );
+        std::filesystem::create_directories( unitTestProject / "SettingsCache" );
+        fileSystem->addFolder( mediaAbsolutePath, true );
+        fileSystem->addFolder( workingDirectory, true );
+        BOOST_REQUIRE( fileSystem->isExistingFile( "cube_internal.fbmeshbin", true, true ) );
         auto resourceDatabase = factoryManager->make_ptr<ResourceDatabase>();
         resourceDatabase->load( nullptr );
         applicationManager->setResourceDatabase( resourceDatabase );
+        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( resourceDatabase->getDatabaseManager() );
+        BOOST_REQUIRE( catalog );
+        BOOST_REQUIRE( catalog->setProjectRoot( projectRoot ) );
+        const auto databasePath = projectRoot + "/asset.db";
+        resourceDatabase->setFilePath( databasePath );
+        catalog->loadFromFile( databasePath );
+        if( graphicsSystem )
+        {
+            const auto source = std::filesystem::path( mediaAbsolutePath.c_str() ) / "panel.png";
+            const auto destination = unitTestProject / "panel.png";
+            std::filesystem::copy_file( source, destination );
+            auto texture = graphicsSystem->getTextureManager()->createOrRetrieve(
+                String( destination.generic_string().c_str() ) ).first;
+            BOOST_REQUIRE( texture );
+            resourceDatabase->addResource( texture );
+        }
 
         BOOST_CHECK( applicationManager->getPhysicsManager() == nullptr );
         auto physicsManager = factoryManager->make_object<physics::IPhysicsManager>();
@@ -793,6 +828,22 @@ namespace workphone
             }
 
             BOOST_CHECK( core::ApplicationManager::instance() == nullptr );
+        }
+
+        if( !unitTestProject.empty() )
+        {
+            // Only remove the private directory created by setupGame, after catalogs close.
+            const auto root = std::filesystem::weakly_canonical( unitTestProject );
+            const auto temporary = std::filesystem::weakly_canonical(
+                std::filesystem::temp_directory_path() );
+            if( root.parent_path() == temporary &&
+                root.filename().string().rfind( "workphone-unit-tests-", 0 ) == 0 )
+            {
+                std::error_code error;
+                std::filesystem::remove_all( root, error );
+                BOOST_CHECK_MESSAGE( !error, "Failed to remove unit test project: " << error.message() );
+            }
+            unitTestProject.clear();
         }
     }
 
@@ -976,6 +1027,6 @@ namespace workphone
             return true;
         }
 
-        return !soundManager->isValid();
+        return !soundManager->isLoaded() || !soundManager->isValid();
     }
 }  // namespace workphone

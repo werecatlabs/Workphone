@@ -5,7 +5,7 @@
 
 using namespace workphone;
 
-BOOST_AUTO_TEST_CASE( state_context_supports_2048_states_and_preserves_order )
+BOOST_AUTO_TEST_CASE( state_context_grows_beyond_2048_states_and_preserves_order )
 {
     auto manager = core::IApplicationManager::instance()->getStateManager();
     auto context = manager->addStateContext();
@@ -28,10 +28,10 @@ BOOST_AUTO_TEST_CASE( state_context_supports_2048_states_and_preserves_order )
 
     auto overflow = make_ptr<State>();
     const auto references = overflow->getReferences();
-    BOOST_CHECK_THROW( context->addState( overflow ), std::length_error );
-    BOOST_CHECK_EQUAL( overflow->getReferences(), references );
-    BOOST_CHECK( !overflow->getStateContext() );
-    BOOST_CHECK_EQUAL( context->getStates().size(), 2048u );
+    context->addState( overflow );
+    BOOST_CHECK_EQUAL( overflow->getReferences(), references + 1 );
+    BOOST_CHECK( overflow->getStateContext() == context );
+    BOOST_CHECK_EQUAL( context->getStates().size(), 2049u );
 
     context->removeState( states[1024] );
     context->addState( overflow );

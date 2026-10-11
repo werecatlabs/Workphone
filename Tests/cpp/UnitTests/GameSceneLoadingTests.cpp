@@ -103,8 +103,9 @@ BOOST_AUTO_TEST_CASE( gamescene_load_binary_scene_synchronously_populates_actors
     guard.trackFilesystemPath( binaryScenePath );
 
     const auto sourceScenePath =
-        Path::lexically_normal( guard.applicationManager->getMediaPath(), TestScenePath );
-    auto sourceStream = guard.fileSystem->open( sourceScenePath );
+        Path::lexically_normal( Path::getAbsolutePath( Path::getWorkingDirectory(),
+            guard.applicationManager->getMediaPath() ), TestScenePath );
+    auto sourceStream = guard.fileSystem->open( sourceScenePath, true, false, false, true, true );
     BOOST_REQUIRE( sourceStream );
     auto sourceProperties = make_ptr<Properties>();
     DataUtil::parse( sourceStream->getAsString(), sourceProperties.get(), DataFormat::JSON );

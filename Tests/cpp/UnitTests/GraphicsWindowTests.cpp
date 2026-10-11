@@ -10,6 +10,17 @@
 using namespace workphone;
 
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( WP_PLATFORM_WIN32 )
+BOOST_AUTO_TEST_CASE( claw_unloaded_window_destruction_detaches_state_context )
+{
+    auto window = make_ptr<render::ClawWindow>();
+    auto context = window->getStateContext();
+    BOOST_REQUIRE( context );
+    BOOST_CHECK( context->getOwnerPtr() == window.get() );
+    window = nullptr;
+    BOOST_CHECK( !context->getOwnerPtr() );
+    BOOST_CHECK( context->getStateListeners().empty() );
+}
+
 BOOST_AUTO_TEST_CASE( claw_window_state_changes_preserve_actual_size )
 {
     TestGuard guard;
