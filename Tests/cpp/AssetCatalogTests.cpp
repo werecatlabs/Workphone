@@ -21,6 +21,8 @@
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include "MediaAssetCatalogContracts.hpp"
 #include "AssetReferenceChangeContracts.hpp"
+#include "DatabaseValueContracts.hpp"
+#include "DomainAssetReadContracts.hpp"
 
 namespace workphone
 {
@@ -1070,6 +1072,8 @@ int main()
             browsingContracts(folder);
             mediaAssetCatalogContracts(folder);
             assetReferenceChangeContracts(folder);
+            databaseValueContracts(folder);
+            domainAssetReadContracts(folder);
             maintenanceContracts(folder);
             fileOperationContracts(folder);
             std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "

@@ -46,6 +46,9 @@
 #include <Workphone/Core/LogManager.hpp>
 
 #include <initializer_list>
+#include <set>
+#include <functional>
+#include <filesystem>
 
 namespace workphone
 {
@@ -1381,6 +1384,7 @@ namespace workphone
         }
 
         auto properties = loadAssetProperties( id );
+        if( !properties ) return nullptr;
 
         auto uuid = properties->getProperty( "uuid" );
         if( StringUtil::isNullOrEmpty( uuid ) )
@@ -2135,85 +2139,145 @@ namespace workphone
         return m_mediaCatalog;
     }
 
+    namespace
+    {
+        std::set<String> domainColumns( SmartPtr<IDatabaseManager> db, const String &table )
+        {
+            // Only fixed internal table names reach this helper.
+            auto rows = queryResourceValues( db, "PRAGMA table_info(" + table + ")", {} );
+            std::set<String> columns;
+            if( !rows ) throw std::runtime_error( "Cannot inspect domain schema." );
+            while( !rows->eof() )
+            {
+                columns.insert( rows->getFieldValue( "name" ) );
+                rows->nextRow();
+            }
+            return columns;
+        }
+        SmartPtr<Properties> readDomainTree( SmartPtr<IDatabaseManager> db, const UUID &uuid,
+                                             SmartPtr<Properties> flattened )
+        {
+            if( !db || uuid.is_nil() ) return nullptr;
+            auto connection = db->getDatabase();
+            DatabaseConnectionLock guard( connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
+            if( !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) ) return nullptr;
+            try
+            {
+                const auto columns = domainColumns( db, "configured_actors" );
+                if( !columns.count( "id" ) || !columns.count( "parent_id" ) )
+                    throw std::runtime_error( "Domain actor schema is unsupported." );
+                const auto attributes = domainColumns( db, "attribs" );
+                const String identityColumn = columns.count( "uuid" ) ? "uuid" : "id";
+                auto identity = queryResourceValues( db, "SELECT id FROM configured_actors WHERE " + identityColumn + "=? LIMIT 2",
+                                                    {StringUtil::toString( uuid )} );
+                if( !identity || identity->eof() ) throw std::runtime_error( "Domain UUID is missing; numeric actors require an explicit UUID column." );
+                const auto rootId = identity->getFieldValue( "id" );
+                identity->nextRow();
+                if( !identity->eof() ) throw std::runtime_error( "Domain UUID is ambiguous." );
+                String attributeOwner;
+                if( !attributes.empty() )
+                {
+                    if( !attributes.count( "title" ) || !attributes.count( "value" ) )
+                        throw std::runtime_error( "Domain attribute schema is unsupported." );
+                    attributeOwner = attributes.count( "configured_actor_id" ) ? "configured_actor_id" :
+                                     attributes.count( "actor_id" ) ? "actor_id" : "";
+                    if( attributeOwner.empty() ) throw std::runtime_error( "Domain attributes have no supported owner column." );
+                }
+                std::set<String> visited;
+                size_t bytes = 0, attributeCount = 0;
+                auto account = [&]( const String &text ) {
+                    if( text.size() > 65536 || text.size() > 4u * 1024u * 1024u - bytes )
+                        throw std::runtime_error( "Domain property byte budget exceeded." );
+                    bytes += text.size();
+                };
+                std::function<SmartPtr<Properties>( const String &, size_t )> visit;
+                visit = [&]( const String &id, size_t depth ) -> SmartPtr<Properties> {
+                    if( depth > 64 || visited.size() >= 4096 || !visited.insert( id ).second )
+                        throw std::runtime_error( "Domain hierarchy contains a cycle or exceeds its traversal budget." );
+                    auto row = queryResourceValues( db, "SELECT * FROM configured_actors WHERE id=? LIMIT 2", {id} );
+                    if( !row || row->eof() || row->getNumFields() > 256 )
+                        throw std::runtime_error( "Domain actor is missing or exceeds its field budget." );
+                    auto result = make_ptr<Properties>();
+                    for( u32 field = 0; field < row->getNumFields(); ++field )
+                    {
+                        const auto name = row->getFieldName( field );
+                        const auto value = row->getFieldValue( field );
+                        account( name ); account( value );
+                        result->setProperty( name, value );
+                    }
+                    row->nextRow();
+                    if( !row->eof() ) throw std::runtime_error( "Domain actor ID is ambiguous." );
+                    if( !attributeOwner.empty() )
+                    {
+                        auto values = queryResourceValues( db, "SELECT title,value FROM attribs WHERE " + attributeOwner + "=? ORDER BY title LIMIT 4097", {id} );
+                        if( !values ) throw std::runtime_error( "Cannot read domain attributes." );
+                        std::set<String> names;
+                        while( !values->eof() )
+                        {
+                            const auto name = values->getFieldValue( "title" );
+                            const auto value = values->getFieldValue( "value" );
+                            if( ++attributeCount > 4096 || name.empty() || name.size() > 256 || !names.insert( name ).second )
+                                throw std::runtime_error( "Domain attributes are ambiguous or exceed their budget." );
+                            account( name ); account( value );
+                            result->setProperty( name, value );
+                            if( depth == 0 && flattened ) flattened->setProperty( name, value );
+                            values->nextRow();
+                        }
+                    }
+                    auto children = queryResourceValues( db, "SELECT id FROM configured_actors WHERE parent_id=? ORDER BY id LIMIT 4097", {id} );
+                    if( !children ) throw std::runtime_error( "Cannot read domain children." );
+                    while( !children->eof() )
+                    {
+                        result->addChild( visit( children->getFieldValue( "id" ), depth + 1 ) );
+                        children->nextRow();
+                    }
+                    return result;
+                };
+                auto tree = visit( rootId, 0 );
+                if( !queryResourceValues( db, "RELEASE wp_domain_read", {} ) )
+                    throw std::runtime_error( "Cannot finish domain read snapshot." );
+                return tree;
+            }
+            catch( const std::exception &failure )
+            {
+                queryResourceValues( db, "ROLLBACK TO wp_domain_read", {} );
+                queryResourceValues( db, "RELEASE wp_domain_read", {} );
+                WP_LOG_ERROR( String( "Domain asset read failed: " ) + failure.what() );
+                return nullptr;
+            }
+        }
+    }
     auto ResourceDatabase::loadAssetNode( SmartPtr<IDatabaseManager> db, SmartPtr<Properties> parent,
                                           const UUID &id ) -> SmartPtr<Properties>
     {
-        auto applicationManager = core::IApplicationManager::instance();
-
-        auto properties = workphone::make_ptr<Properties>();
-        parent->addChild( properties );
-
-        auto sAssetId = StringUtil::toString( id );
-        String sql = "select * from configured_actors where id = '" + sAssetId + "'";
-
-        if( auto query = db->executeQuery( sql ) )
-        {
-            while( !query->eof() )
-            {
-                auto numFields = query->getNumFields();
-                for( size_t i = 0; i < numFields; ++i )
-                {
-                    auto name = query->getFieldName( static_cast<u32>( i ) );
-                    auto value = query->getFieldValue( static_cast<u32>( i ) );
-
-                    properties->setProperty( name, value );
-                }
-
-                query->nextRow();
-            }
-        }
-
-        String parentSql = "select * from configured_actors where parent_id = '" + sAssetId + "'";
-        if( auto query = db->executeQuery( parentSql ) )
-        {
-            while( !query->eof() )
-            {
-                auto id = query->getFieldValue( "id" );
-                auto iId = StringUtil::parseUUID( id );
-                loadAssetNode( db, properties, iId );
-                query->nextRow();
-            }
-        }
-
-        return properties;
+        auto result = readDomainTree( db, id, nullptr );
+        if( result && parent ) parent->addChild( result );
+        return result;
     }
 
     auto ResourceDatabase::loadAssetProperties( const UUID &id ) -> SmartPtr<Properties>
     {
-        auto applicationManager = core::IApplicationManager::instance();
-
-        auto databaseManager = workphone::make_ptr<AssetDatabaseManager>();
-
-        auto mediaPath = applicationManager->getMediaPath();
-
-        auto databaseFilePath = String( "/AssetDatabase.db" );
-        databaseManager->loadFromFile( mediaPath + databaseFilePath );
-
-        auto properties = workphone::make_ptr<Properties>();
+        auto application = core::IApplicationManager::instancePtr();
+        if( !application || id.is_nil() ) return nullptr;
+        const auto path = application->getMediaPath() + "/AssetDatabase.db";
+        std::error_code error;
+        if( !std::filesystem::is_regular_file( std::filesystem::u8path( path.c_str() ), error ) || error )
+            return nullptr;
+        auto factory = application->getFactoryManager();
+        auto backend = factory ? factory->make_object<IDatabase>() : nullptr;
+        auto reader = backend ? dynamic_cast<IReadOnlyDatabase *>( backend.get() ) : nullptr;
+        String diagnostic;
+        if( !reader || !reader->openReadOnly( path, diagnostic ) ) return nullptr;
+        auto domain = make_ptr<DatabaseManager>();
+        domain->setDatabase( backend );
+        auto properties = make_ptr<Properties>();
         properties->setName( "asset" );
-
-        auto propertyName = String( "asset_type" );
-        auto propertyValue = String( "model" );
-        properties->setProperty( propertyName, propertyValue );
-
-        loadAssetNode( databaseManager, properties, id );
-
-        auto sAssetId = StringUtil::toString( id );
-        String sql = "select * from attribs where actor_id = '" + sAssetId + "'";
-
-        if( auto query = databaseManager->executeQuery( sql ) )
-        {
-            while( !query->eof() )
-            {
-                auto name = query->getFieldValue( "title" );
-                auto value = query->getFieldValue( "value" );
-
-                properties->setProperty( name, value );
-
-                query->nextRow();
-            }
-        }
-
+        properties->setProperty( "asset_type", "model" );
+        auto tree = readDomainTree( domain, id, properties );
+        domain->close();
+        if( !tree ) return nullptr;
+        properties->setProperty( "uuid", StringUtil::toString( id ) );
+        properties->addChild( tree );
         return properties;
     }
 

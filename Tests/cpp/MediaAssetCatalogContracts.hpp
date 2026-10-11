@@ -1,5 +1,6 @@
 #pragma once
 #include <Workphone/Database/MediaAssetCatalog.hpp>
+#include <Workphone/Script/ScriptAsset.hpp>
 #include <fstream>
 #include <map>
 
