@@ -3,6 +3,7 @@
 
 #include <commands/Command.hpp>
 #include <Workphone/Database/AssetReferenceChange.hpp>
+#include <Workphone/Database/AssetCatalogBrowser.hpp>
 
 namespace workphone
 {
@@ -31,6 +32,8 @@ namespace workphone
             Array<AssetReferenceChange> m_changes;
             String m_error;
             bool m_applied = false;
+            ObjectObserver<AssetDatabaseManager> m_referenceCatalog;
+            AssetCatalogSession m_projectSession;
         };
     }  // namespace editor
 }  // namespace workphone

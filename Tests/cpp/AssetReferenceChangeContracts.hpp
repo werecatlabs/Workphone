@@ -13,7 +13,7 @@ namespace workphone
         {
             data = make_ptr<Properties>();
             data->setProperty( "texture", "old-value" );
-            data->getPropertyObject( "texture" ).setAttribute( "resourceType", TypeManager::instance()->getName( render::ITexture::typeInfo() ) );
+            data->getPropertyObject( "texture" ).setAttribute( "resourceType", "Texture" );
             data->getPropertyObject( "texture" ).setAttribute( "label", "Surface texture" );
             data->setProperty( "unrelated", "keep" );
         }
@@ -22,9 +22,14 @@ namespace workphone
         {
             if( reject && replacement->getProperty( "texture" ) != "old-value" ) return;
             data = make_ptr<Properties>( *replacement );
+            if( regenerateType )
+                data->getPropertyObject( "texture" ).setAttribute( "resourceType",
+                    data->getProperty( "texture" ) == "old-value" ? String( "Texture" ) :
+                    String( TypeManager::instance()->getName( render::ITexture::typeInfo() ) ) );
         }
         SmartPtr<Properties> data;
         bool reject = false;
+        bool regenerateType = false;
         WP_CLASS_REGISTER_DECL;
     };
     WP_CLASS_REGISTER_DERIVED( workphone, ReferenceContractTarget, ISharedObject );
@@ -62,7 +67,15 @@ namespace
         AssetDatabaseManager::EntrySnapshot entry;
         check( catalog->tryGetEntry( id, entry ), "Reference fixture must capture a detached identity" );
         auto target = make_ptr<ReferenceContractTarget>();
+        target->regenerateType = true;
+        check( AssetReferenceChange::referenceType( "Texture" ) == render::ITexture::typeInfo() &&
+               AssetReferenceChange::referenceType( TypeManager::instance()->getName( render::ITexture::typeInfo() ) ) == render::ITexture::typeInfo() &&
+               AssetReferenceChange::referenceType( "unknown-reference-family" ) == 0,
+               "Reference family labels and registered names must resolve without inventing types" );
         AssetReferenceChange wrong;
+        check( !AssetReferenceChange::typeMatches( "Texture", 0 ) &&
+               !AssetReferenceChange::typeMatches( "Texture", TypeManager::instance()->getTotalNumTypes() + 100 ),
+               "Invalid requested type IDs must reject without entering the type registry" );
         check( !wrong.prepare( catalog, entry, target, "texture", render::IMaterial::typeInfo() ),
                "Reference preparation must reject incompatible asset types" );
         AssetReferenceChange missing;
@@ -125,6 +138,32 @@ namespace
         catalog->loadFromFile( path.u8string().c_str() );
         command->undo();
         check( command->wasApplied(), "Closing and reopening the same catalog must expire old commands" );
+        const auto mediaRoot = folder / "reference-media";
+        std::filesystem::create_directories( mediaRoot );
+        { std::ofstream file( mediaRoot / "surface.png", std::ios::binary ); file << "texture fixture"; }
+        String mediaError;
+        auto media = openMediaAssetCatalog( mediaRoot.u8string().c_str(), mediaError );
+        check( media && resources->setMediaCatalog( media ), "Mount media for real Editor reference commands" );
+        auto mediaPage = media->queryEntries( {} );
+        check( mediaPage.succeeded && mediaPage.entries.size() == 1, "Capture media reference identity" );
+        auto mediaEntry = mediaPage.entries.front();
+        auto mediaTarget = make_ptr<ReferenceContractTarget>();
+        auto mediaCommand = make_ptr<editor::ModifyPropertyCmd>();
+        check( mediaCommand->configure( media, mediaEntry, {mediaTarget}, "texture", render::ITexture::typeInfo() ),
+               "Editor reference commands must accept the read-only mounted media catalog" );
+        mediaCommand->execute();
+        check( mediaCommand->wasApplied() && mediaTarget->data->getProperty( "texture" ) == mediaEntry.uuid,
+               "A media assignment must write the stable media UUID" );
+        mediaCommand->undo();
+        check( !mediaCommand->wasApplied() && mediaTarget->data->getProperty( "texture" ) == "old-value",
+               "Media references must support undo" );
+        mediaCommand->redo();
+        check( mediaCommand->wasApplied(), "Media references must support redo" );
+        resources->setMediaCatalog( nullptr );
+        mediaCommand->undo();
+        check( mediaCommand->wasApplied() && mediaTarget->data->getProperty( "texture" ) == mediaEntry.uuid,
+               "Changing the media mount must invalidate its existing reference commands" );
+        media->unload( nullptr );
 #endif
         const auto databasePath = catalog->getDatabasePath();
         const auto generation = catalog->getCatalogGeneration();

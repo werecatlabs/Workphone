@@ -1,5 +1,6 @@
 #pragma once
 #include <Workphone/Database/MediaAssetCatalog.hpp>
+#include <Workphone/Script/ScriptAsset.hpp>
 #include <fstream>
 #include <map>
 
@@ -43,6 +44,38 @@ namespace
         check( catalog && catalog->isReadOnly(), "Opening media must create then mount it read-only" );
         const auto initial = identities( catalog );
         check( initial.size() == 4, "Media inventory must classify supported files and skip private state" );
+        auto projectMount = make_ptr<AssetDatabaseManager>();
+        projectMount->setProjectRoot( folder.u8string().c_str() );
+        projectMount->loadFromFile( ( folder / "media-mount-project.db" ).u8string().c_str() );
+        auto resources = make_ptr<ResourceDatabase>();
+        resources->setDatabaseManager( projectMount );
+        check( !resources->setMediaCatalog( projectMount ) && resources->setMediaCatalog( catalog ),
+               "Resource resolution must mount only an owned read-only media catalog" );
+        const auto scriptId = initial.at( "Editor/tool.lua" );
+        auto script = dynamic_pointer_cast<ScriptAsset>( resources->getObject( StringUtil::parseUUID( scriptId ) ) );
+        check( script && script->getHandle()->getUUIDAsString() == scriptId &&
+               script->getFilePath() == catalog->getProjectRoot() + "/Editor/tool.lua",
+               "Media UUID resolution must use its own source root without importing project rows" );
+        check( resources->loadResourceById( StringUtil::parseUUID( scriptId ) ) != nullptr,
+               "UUID loading must support the same mounted media identity" );
+        check( !resources->loadResource( String( "Editor/tool.lua" ) ),
+               "Project-relative paths must not silently resolve against bundled media" );
+        auto projectBound = dynamic_cast<IParameterizedDatabase *>( projectMount->getDatabase().get() );
+        check( projectBound->queryBound( "INSERT INTO resources(uuid,path,path_key,type,kind) VALUES(?,'collision.lua','collision.lua','script','file')", {scriptId} ) != nullptr,
+               "Catalog UUID collision fixture must seed" );
+        check( !resources->getObject( StringUtil::parseUUID( scriptId ) ) &&
+               !resources->loadResourceById( StringUtil::parseUUID( scriptId ) ),
+               "Cross-catalog UUID collisions must reject resolution instead of shadowing assets" );
+        check( projectBound->queryBound( "DELETE FROM resources", {} ) != nullptr,
+               "Clear project collision fixture" );
+        auto emptyProject = query( projectMount, "SELECT count(*) AS n FROM resources" );
+        check( emptyProject && emptyProject->getFieldValueAsInt( "n" ) == 0,
+               "Media resolution must never adopt media rows into the project database" );
+        resources->setMediaCatalog( nullptr );
+        check( !resources->getObject( StringUtil::parseUUID( scriptId ) ),
+               "Unmounting media must stop new media UUID resolution" );
+        resources->setDatabaseManager( nullptr );
+        projectMount->unload( nullptr );
         auto runtime = query( catalog, "SELECT uuid FROM wp_media_entries WHERE usage='runtime'" );
         check( runtime && !runtime->eof() && runtime->getFieldValue( "uuid" ) == initial.at( "Runtime/shared.png" ),
                "Runtime eligibility must be explicit and tied to the media UUID" );
@@ -96,6 +129,9 @@ namespace
         check( !missing->openReadOnly( absent.u8string().c_str(), error ) && !fs::exists( absent ),
                "A failed read-only open must never create a database" );
         missing->unload( nullptr );
+        auto invalidDestination = root / "not-a-database.lua";
+        check( !buildMediaAssetCatalog( root.u8string().c_str(), invalidDestination.u8string().c_str(), error ) &&
+               !fs::exists( invalidDestination ), "A catalog must not create a database disguised as a source asset" );
         auto foreignPath = folder / "project-catalog.db";
         auto project = make_ptr<AssetDatabaseManager>();
         project->setProjectRoot( root.u8string().c_str() );
@@ -114,6 +150,6 @@ namespace
         check( !buildMediaAssetCatalog( root.u8string().c_str(), foreign.u8string().c_str(), error ),
                "Media builder must refuse unrelated/domain database files" );
         check( fs::file_size( foreign ) == 21, "Refusing a foreign database must not modify it" );
-        std::cout << "PASS: separate media catalog creation, stable UUIDs, rebuild/relocation, eligibility, read-only access and project/domain isolation\n";
+        std::cout << "PASS: media creation, stable UUIDs, rebuild/relocation, read-only mounts, UUID resolution, collision rejection and project/domain isolation\n";
     }
 }

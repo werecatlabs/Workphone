@@ -13,6 +13,53 @@
 
 namespace workphone
 {
+    namespace
+    {
+        SmartPtr<IDatabaseQuery> boundQuery( DatabaseManager &manager, const String &sql,
+                                            const Array<String> &values = {} )
+        {
+            auto database = manager.getDatabase();
+            auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
+            return bound ? bound->queryBound( sql, values ) : nullptr;
+        }
+        String readValue( DatabaseManager &manager, const String &table,
+                          const String &name, const String &fallback )
+        {
+            ScopedLock lock( &manager );
+            if( name.size() > 1024 || name.find( '\0' ) != String::npos ) return fallback;
+            auto query = boundQuery( manager, "SELECT value FROM " + table + " WHERE param=? LIMIT 2", {name} );
+            if( !query || query->eof() ) return fallback;
+            const auto value = query->getFieldValue( "value" );
+            query->nextRow();
+            if( !query->eof() )
+            {
+                WP_LOG_ERROR( "Ambiguous database setting; repair duplicate keys before use." );
+                return fallback;
+            }
+            return value;
+        }
+        void writeValue( DatabaseManager &manager, const String &table, const String &name, const String &value )
+        {
+            ScopedLock lock( &manager );
+            if( name.size() > 1024 || value.size() > 1024 * 1024 ||
+                name.find( '\0' ) != String::npos || value.find( '\0' ) != String::npos )
+            { WP_LOG_ERROR( "Invalid database setting key or value." ); return; }
+            auto database = manager.getDatabase();
+            DatabaseConnectionLock connection( database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr );
+            // Savepoints compose with the caller's transaction. BEGIN IMMEDIATE
+            // here would either reject nesting or commit somebody else's work.
+            if( !boundQuery( manager, "SAVEPOINT wp_key_value" ) ) return;
+            auto matches = boundQuery( manager, "SELECT count(*) AS n FROM " + table + " WHERE param=?", {name} );
+            bool okay = matches && !matches->eof() && matches->getFieldValueAsInt( "n" ) <= 1;
+            if( okay )
+                okay = boundQuery( manager, "UPDATE " + table + " SET value=? WHERE param=?", {value,name} ) != nullptr &&
+                       boundQuery( manager, "INSERT INTO " + table + "(param,value) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM " + table + " WHERE param=?)", {name,value,name} ) != nullptr;
+            if( okay && boundQuery( manager, "RELEASE wp_key_value" ) ) return;
+            boundQuery( manager, "ROLLBACK TO wp_key_value" );
+            boundQuery( manager, "RELEASE wp_key_value" );
+            WP_LOG_ERROR( "Database setting update failed; previous values retained." );
+        }
+    }
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager, IDatabaseManager );
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager::QueryJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager::DMLQueryJob, Job );
@@ -253,7 +300,8 @@ namespace workphone
                 WP_LOG( "Database::load: database exists at " + filePath );
             }
 
-            executeDML( "attach database '" + filePath + "' as refdb; " );
+            if( !boundQuery( *this, "ATTACH DATABASE ? AS refdb", {filePath} ) )
+                WP_LOG_ERROR( "Could not attach reference database." );
         }
         catch( Exception &e )
         {
@@ -263,24 +311,7 @@ namespace workphone
 
     void DatabaseManager::attach( const StringW &filePath )
     {
-        try
-        {
-            ScopedLock lock( this );
-
-            WP_ASSERT( !StringUtilW::isNullOrEmpty( filePath ) );
-            WP_LOG( L"Database::load: " + filePath );
-
-            if( PathW::isExistingFile( filePath ) )
-            {
-                WP_LOG( L"Database::load: database exists at " + filePath );
-            }
-
-            executeDML( L"attach database '" + filePath + L"' as 'refdb'; " );
-        }
-        catch( Exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        attach( StringUtilW::toUTF16to8( filePath ) );
     }
 
     SmartPtr<IDatabaseQuery> DatabaseManager::executeQuery( const String &queryStr )
@@ -411,22 +442,7 @@ namespace workphone
 
     void DatabaseManager::setSetting( const String &name, const String &value )
     {
-        ScopedLock lock( this );
-
-        auto sql = String( "select * from settings where param = '" ) + name + "'";
-        auto queryResult = executeQuery( sql );
-        auto hasSetting = !queryResult->eof();
-        if( hasSetting )
-        {
-            auto insertSql = "update settings set value='" + value + "' where param = '" + name + "'";
-            executeQuery( insertSql );
-        }
-        else
-        {
-            auto insertSql =
-                "insert into settings(param, value) VALUES('" + name + "', '" + value + "')";
-            executeQuery( insertSql );
-        }
+        writeValue( *this, "settings", name, value );
     }
 
     void DatabaseManager::setSettingAsBool( const String &name, bool bValue )
@@ -449,28 +465,12 @@ namespace workphone
 
     String DatabaseManager::getSetting( const String &name, String value /*= ""*/ )
     {
-        auto sql = "select * from settings where param = '" + name + "'";
-        auto queryResult = executeQuery( sql );
-        while( !queryResult->eof() )
-        {
-            value = queryResult->getFieldValue( "value" );
-            queryResult->nextRow();
-        }
-
-        return value;
+        return readValue( *this, "settings", name, value );
     }
 
     String DatabaseManager::getSettingRef( const String &name, String value /*= ""*/ )
     {
-        auto sql = "select * from refdb.settings where param = '" + name + "'";
-        auto queryResult = executeQuery( sql );
-        while( !queryResult->eof() )
-        {
-            value = queryResult->getFieldValue( "value" );
-            queryResult->nextRow();
-        }
-
-        return value;
+        return readValue( *this, "refdb.settings", name, value );
     }
 
     s32 DatabaseManager::getSettingAsInt( const String &name, s32 defaultValue /*= 0*/ )
@@ -508,28 +508,17 @@ namespace workphone
 
     bool DatabaseManager::hasStateValue( const String &name )
     {
-        auto sql = "select * from sim_states where param = '" + name + "';";
-        auto query = executeQuery( sql );
-        if( query && !query->eof() )
-        {
-            return true;
-        }
-
-        return false;
+        ScopedLock lock( this );
+        if( name.size() > 1024 || name.find( '\0' ) != String::npos ) return false;
+        auto query = boundQuery( *this, "SELECT param FROM sim_states WHERE param=? LIMIT 2", {name} );
+        if( !query || query->eof() ) return false;
+        query->nextRow();
+        return query->eof();
     }
 
     void DatabaseManager::setStateValue( const String &name, const String &value )
     {
-        if( hasStateValue( name ) )
-        {
-            auto sql = "update sim_states set value = '" + value + "' where param = '" + name + "';";
-            executeQuery( sql );
-        }
-        else
-        {
-            auto sql = "INSERT INTO sim_states(param, value) VALUES('" + name + "', '" + value + "');";
-            executeQuery( sql );
-        }
+        writeValue( *this, "sim_states", name, value );
     }
 
     void DatabaseManager::setStateValueAsBool( const String &name, bool value )
@@ -549,50 +538,22 @@ namespace workphone
 
     String DatabaseManager::getStateValue( const String &name )
     {
-        auto sql = "select * from sim_states where param = '" + name + "';";
-        auto query = executeQuery( sql );
-        if( query && !query->eof() )
-        {
-            return query->getFieldValue( "value" );
-        }
-
-        return {};
+        return readValue( *this, "sim_states", name, {} );
     }
 
     bool DatabaseManager::getStateValueAsBool( const String &name )
     {
-        auto sql = "select * from sim_states where param = '" + name + "';";
-        auto query = executeQuery( sql );
-        if( query && !query->eof() )
-        {
-            return StringUtil::parseBool( query->getFieldValue( "value" ), false );
-        }
-
-        return false;
+        return StringUtil::parseBool( getStateValue( name ), false );
     }
 
     s32 DatabaseManager::getStateValueAsInt( const String &name )
     {
-        auto sql = "select * from sim_states where param = '" + name + "';";
-        auto query = executeQuery( sql );
-        if( query && !query->eof() )
-        {
-            return StringUtil::parseInt( query->getFieldValue( "value" ), 0 );
-        }
-
-        return 0;
+        return StringUtil::parseInt( getStateValue( name ), 0 );
     }
 
     f32 DatabaseManager::getStateValueAsFloat( const String &name )
     {
-        auto sql = "select * from sim_states where param = '" + name + "';";
-        auto query = executeQuery( sql );
-        if( query && !query->eof() )
-        {
-            return StringUtil::parseFloat( query->getFieldValue( "value" ), 0.0f );
-        }
-
-        return 0.0f;
+        return StringUtil::parseFloat( getStateValue( name ), 0.0f );
     }
 
     void DatabaseManager::optimise()
@@ -720,20 +681,22 @@ namespace workphone
 
     String DatabaseManager::getResourceValue( s32 id )
     {
-        auto parent_id = -1;
+        ScopedLock lock( this );
 
 #if WP_BUILD_EDITOR_PLUGIN
-        auto modelSql = "Select * From configured_actors where id = " + StringUtil::toString( id );
+        auto modelSql = String( "SELECT resource_name FROM configured_actors WHERE id=? LIMIT 2" );
 #else
-        auto modelSql = "Select * From refdb.configured_actors where id = " + StringUtil::toString( id );
+        auto modelSql = String( "SELECT resource_name FROM refdb.configured_actors WHERE id=? LIMIT 2" );
 #endif
 
-        auto modelResult = executeQuery( modelSql );
+        auto modelResult = boundQuery( *this, modelSql, { StringUtil::toString( id ) } );
         if( modelResult )
         {
             if( !modelResult->eof() )
             {
-                return modelResult->getFieldValue( "resource_name" );
+                const auto value = modelResult->getFieldValue( "resource_name" );
+                modelResult->nextRow();
+                return modelResult->eof() ? value : String();
             }
         }
 
@@ -742,18 +705,22 @@ namespace workphone
 
     String DatabaseManager::getResourceValue( const String &name )
     {
+        ScopedLock lock( this );
+        if( name.size() > 1024 || name.find( '\0' ) != String::npos ) return name;
 #if WP_BUILD_EDITOR_PLUGIN
-        auto modelSql = "select * from resourcemap where name = '" + name + "'";
+        auto modelSql = String( "SELECT name FROM resourcemap WHERE name=? LIMIT 2" );
 #else
-        auto modelSql = "select * from refdb.resourcemap where name = '" + name + "'";
+        auto modelSql = String( "SELECT name FROM refdb.resourcemap WHERE name=? LIMIT 2" );
 #endif
 
-        auto modelResult = executeQuery( modelSql );
+        auto modelResult = boundQuery( *this, modelSql, {name} );
         if( modelResult )
         {
             if( !modelResult->eof() )
             {
-                return modelResult->getFieldValue( "name" );
+                const auto value = modelResult->getFieldValue( "name" );
+                modelResult->nextRow();
+                return modelResult->eof() ? value : name;
             }
         }
 

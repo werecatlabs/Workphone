@@ -265,6 +265,11 @@ namespace workphone
          */
         SmartPtr<ISharedObject> getObject( const UUID &uuid ) override;
 
+        /** Optional bundled catalog. It remains separate from the writable
+         * project catalog and must be opened read-only before mounting. */
+        bool setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog );
+        SmartPtr<AssetDatabaseManager> getMediaCatalog() const;
+
         /**
          * @brief Find a shared object by its file identifier string.
          * @return Shared object or null if not found.
@@ -320,7 +325,7 @@ namespace workphone
          * @return Smart pointer to the resource instance.
          */
         SmartPtr<IResource> createOrRetrieveResource( SmartPtr<IDatabaseQuery> query,
-                                                      bool bLoadResource );
+                                                      bool bLoadResource, const String &sourceRoot );
 
         /**
          * @brief Load asset properties by UUID from the database.
@@ -352,6 +357,7 @@ namespace workphone
 
         /** Database manager used for persistence and queries. */
         SmartPtr<IDatabaseManager> m_databaseManager;
+        SmartPtr<AssetDatabaseManager> m_mediaCatalog;
 
         /** File path to the resource database on disk. */
         String m_filePath;

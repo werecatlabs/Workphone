@@ -2,6 +2,7 @@
 #include <commands/ModifyPropertyCmd.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
 
 namespace workphone::editor
 {
@@ -13,8 +14,23 @@ namespace workphone::editor
         const AssetDatabaseManager::EntrySnapshot &entry,
         const Array<SmartPtr<ISharedObject>> &targets, const String &property, hash_type expectedType )
     {
-        if( !m_changes.empty() || targets.empty() )
+        if( !m_changes.empty() || targets.empty() || targets.size() > 256 )
+        {
+            m_error = "Reference command requires 1 to 256 targets and can only be configured once.";
             return false;
+        }
+        auto app = core::IApplicationManager::instancePtr();
+        auto resources = app ? app->getResourceDatabase() : nullptr;
+        auto project = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        if( !project ) { m_error = "No active project catalog."; return false; }
+        if( !m_projectSession.capture( project ) )
+        { m_error = "Cannot capture the active project catalog session."; return false; }
+        m_referenceCatalog = catalog;
+        if( activeCatalog() != catalog )
+        { m_error = "The selected catalog is not mounted in the active project session."; return false; }
+        AssetDatabaseManager::EntrySnapshot collision;
+        if( catalog != project && project->tryGetEntry( entry.uuid, collision ) )
+        { m_error = "The selected UUID conflicts with an asset in the project catalog."; return false; }
         Array<SmartPtr<ISharedObject>> unique;
         for( const auto &target : targets )
         {
@@ -36,14 +52,17 @@ namespace workphone::editor
     {
         auto app = core::IApplicationManager::instancePtr();
         auto resources = app ? app->getResourceDatabase() : nullptr;
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+        auto project = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
                                  : nullptr;
         String root, error;
-        if( !catalog || app->getProjectPath().empty() ||
+        if( !project || !m_projectSession.isCurrent( project ) || app->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) ||
-            root != catalog->getProjectRoot() )
+            root != project->getProjectRoot() )
             return nullptr;
-        return catalog;
+        auto selected = m_referenceCatalog.lock();
+        if( selected == project ) return project;
+        auto concrete = dynamic_pointer_cast<ResourceDatabase>( resources );
+        return concrete && selected && concrete->getMediaCatalog() == selected ? selected : nullptr;
     }
     void ModifyPropertyCmd::markDirty()
     {

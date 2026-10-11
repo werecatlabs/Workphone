@@ -134,6 +134,11 @@ namespace workphone::editor
     }
     void AssetDatabaseWindow::setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog )
     {
+        if( catalog && !catalog->isReadOnly() )
+        {
+            WP_LOG_ERROR( "The bundled media browser requires a read-only catalog." );
+            return;
+        }
         m_mediaCatalog = catalog;
         refresh();
     }
@@ -168,7 +173,8 @@ namespace workphone::editor
             m_browser.clear();
             m_previous->setEnabled( false );
             m_next->setEnabled( false );
-            m_status->setText( "No active asset catalog. Open a project and refresh." );
+            m_status->setText( m_showMedia ? "Bundled media catalog is unavailable. See the Editor log." :
+                                          "No active asset catalog. Open a project and refresh." );
             return;
         }
         const auto &page = m_browser.page();

@@ -21,6 +21,8 @@
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include "MediaAssetCatalogContracts.hpp"
 #include "AssetReferenceChangeContracts.hpp"
+#include "DatabaseValueContracts.hpp"
+#include "DomainAssetReadContracts.hpp"
 
 namespace workphone
 {
@@ -176,6 +178,9 @@ namespace
         query.search = "";
 
         AssetCatalogBrowser browser;
+        AssetCatalogSession session;
+        require( session.capture( catalog ) && session.isCurrent( catalog ),
+                 "Captured project session must accept its active catalog" );
         require( browser.refresh( catalog, query ) && browser.pageNumber() == 1 && !browser.hasPrevious(),
                  "Browser refresh must reset pagination" );
         AssetDatabaseManager::EntrySnapshot selected;
@@ -190,6 +195,7 @@ namespace
                  "Invalid tree row selection must not expose the previous identity" );
         auto other = make_ptr<AssetDatabaseManager>();
         other->loadFromFile( String( ( folder / "browse-other.db" ).string().c_str() ) );
+        require( !session.isCurrent( other ), "Captured targets must reject a different project catalog" );
         require( !browser.select( 0, other, selected ) && browser.page().entries.empty(),
                  "Project switch must clear displayed rows and reject stale selection" );
         require( browser.refresh( catalog, query ) && !browser.next( other ) &&
@@ -207,6 +213,7 @@ namespace
         require( !page.succeeded && page.entries.empty() && !page.error.empty(),
                  "External writes must invalidate pages without returning partial results" );
         require( !catalog->isEntryCurrent( snapshot ), "External writes must invalidate displayed selection" );
+        require( session.isCurrent( catalog ), "Ordinary catalog revisions must preserve the captured project lifetime" );
         require( !browser.previous( catalog ) && browser.page().entries.empty(),
                  "Returning to page one must reject a changed generation too" );
         require( browser.refresh( catalog, query ), "Browser must refresh the revised catalog" );
@@ -226,16 +233,23 @@ namespace
         catalog->close();
         require( !catalog->queryEntries( query ).succeeded, "Closed catalog browse must fail without reopening" );
         catalog->open();
+        require( !session.isCurrent( catalog ), "Reopening a catalog must expire captured targets" );
+        require( session.capture( catalog ), "Targets may be recaptured in the new project session" );
+        session.clear();
+        require( !session.isCurrent( catalog ), "Clearing captured targets must expire their session" );
         require( !catalog->queryEntries( query, &beforeClose ).succeeded,
                  "Close/reopen must invalidate old page continuations" );
         require( catalog->queryEntries( query ).succeeded, "Reopened catalog must support a fresh browse" );
         auto transient = make_ptr<AssetDatabaseManager>();
         transient->loadFromFile( String( ( folder / "browse-transient.db" ).string().c_str() ) );
         require( browser.refresh( transient, query ), "Transient project browser must open" );
-        WeakPtr<AssetDatabaseManager> weakCatalog = transient;
+        ObjectObserver<AssetDatabaseManager> weakCatalog = transient;
+        require( session.capture( transient ), "Transient project session must be captured" );
         transient->unload( nullptr );
         transient = nullptr;
         require( weakCatalog.expired(), "Browser must not retain the previous project catalog" );
+        require( !weakCatalog.lock() && !session.isCurrent( nullptr ),
+                 "Destroyed project observers must reject without reading released storage" );
         require( !browser.next( nullptr ) && browser.page().entries.empty(),
                  "Expired project callbacks must discard detached rows" );
         catalog->unload( nullptr );
@@ -1070,6 +1084,8 @@ int main()
             browsingContracts(folder);
             mediaAssetCatalogContracts(folder);
             assetReferenceChangeContracts(folder);
+            databaseValueContracts(folder);
+            domainAssetReadContracts(folder);
             maintenanceContracts(folder);
             fileOperationContracts(folder);
             std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "

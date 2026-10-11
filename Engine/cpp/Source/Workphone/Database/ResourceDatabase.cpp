@@ -46,6 +46,9 @@
 #include <Workphone/Core/LogManager.hpp>
 
 #include <initializer_list>
+#include <set>
+#include <functional>
+#include <filesystem>
 
 namespace workphone
 {
@@ -61,6 +64,24 @@ namespace workphone
             auto database = manager->getDatabase();
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
             return bound ? bound->queryBound( sql, values ) : nullptr;
+        }
+        SmartPtr<AssetDatabaseManager> catalogForUuid( const ResourceDatabase &resources,
+            const String &uuid, AssetDatabaseManager::EntrySnapshot &entry )
+        {
+            auto project = dynamic_pointer_cast<AssetDatabaseManager>( resources.getDatabaseManager() );
+            auto media = resources.getMediaCatalog();
+            AssetDatabaseManager::EntrySnapshot projectEntry, mediaEntry;
+            const bool inProject = project && project->tryGetEntry( uuid, projectEntry );
+            const bool inMedia = media && media->tryGetEntry( uuid, mediaEntry );
+            if( inProject && inMedia )
+            {
+                WP_LOG_ERROR( "Ambiguous UUID exists in both project and bundled media catalogs: " + uuid );
+                entry = projectEntry;
+                return nullptr;
+            }
+            if( inProject ) { entry = projectEntry; return project; }
+            if( inMedia ) { entry = mediaEntry; return media; }
+            return nullptr;
         }
         const String ReferenceObjectType = "ResourceReference";
         const String ReferenceRootUUID = "reference-root";
@@ -371,6 +392,7 @@ namespace workphone
             m_objects.clear();
             m_resourceMap.clear();
             setDatabaseManager( nullptr );
+            setMediaCatalog( nullptr );
 
             setLoadingState( LoadingState::Unloaded );
         }
@@ -1319,21 +1341,24 @@ namespace workphone
 
     auto ResourceDatabase::loadResource( const UUID &id ) -> SmartPtr<IResource>
     {
-        // Source metadata must also be usable by headless tools and packaged applications.
-        if( auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() ) )
+        if( id.is_nil() ) return nullptr;
+        AssetDatabaseManager::EntrySnapshot entry;
+        if( auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry ) )
         {
-            AssetDatabaseManager::EntrySnapshot entry;
-            if( catalog->tryGetEntry( StringUtil::toString( id ), entry ) &&
-                entry.kind == AssetDatabaseManager::EntryKind::File )
+            if( entry.kind != AssetDatabaseManager::EntryKind::File ) return nullptr;
+            if( entry.type == "script" )
             {
-                if( entry.type != "script" )
-                    return loadResourceById( id );
                 auto script = make_ptr<ScriptAsset>();
                 script->getHandle()->setUUID( entry.uuid );
                 script->loadFromFile( catalog->getProjectRoot() + "/" + entry.path );
                 return catalog->isEntryCurrent( entry ) ? script : nullptr;
             }
+            auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {entry.uuid} );
+            auto resource = query && !query->eof() ?
+                createOrRetrieveResource( query, true, catalog->getProjectRoot() ) : nullptr;
+            return catalog->isEntryCurrent( entry ) ? resource : nullptr;
         }
+        if( !entry.uuid.empty() ) return nullptr; // An ambiguous authored identity cannot use the legacy fallback.
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
@@ -1359,6 +1384,7 @@ namespace workphone
         }
 
         auto properties = loadAssetProperties( id );
+        if( !properties ) return nullptr;
 
         auto uuid = properties->getProperty( "uuid" );
         if( StringUtil::isNullOrEmpty( uuid ) )
@@ -1470,7 +1496,7 @@ namespace workphone
         auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {uuid} );
         if( !query || query->eof() )
             return nullptr;
-        auto resource = createOrRetrieveResource( query, true );
+        auto resource = createOrRetrieveResource( query, true, catalog->getProjectRoot() );
         return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
     }
     auto ResourceDatabase::loadDirector( const String &path ) -> SmartPtr<IBuildDirector>
@@ -1620,17 +1646,7 @@ namespace workphone
 
     auto ResourceDatabase::loadResourceById( const UUID &uuid ) -> SmartPtr<IResource>
     {
-        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-        AssetDatabaseManager::EntrySnapshot snapshot;
-        if( !catalog || !catalog->tryGetEntry( StringUtil::toString( uuid ), snapshot ) ||
-            snapshot.kind != AssetDatabaseManager::EntryKind::File )
-            return nullptr;
-        if( snapshot.type == "script" )
-            return loadResource( uuid );
-        auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?",
-                                          {snapshot.uuid} );
-        auto resource = query && !query->eof() ? createOrRetrieveResource( query, true ) : nullptr;
-        return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
+        return loadResource( uuid );
     }
     void ResourceDatabase::unloadUnusedResources()
     {
@@ -1710,7 +1726,8 @@ namespace workphone
         }
     }
 
-    auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource )
+    auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource,
+                                                    const String &sourceRoot )
         -> SmartPtr<IResource>
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -1718,13 +1735,6 @@ namespace workphone
 
         auto factoryManager = applicationManager->getFactoryManager();
         auto soundManager = applicationManager->getSoundManager();
-
-        auto databaseManager = getDatabaseManager();
-        WP_ASSERT( databaseManager );
-
-        auto assetDatabaseManager =
-            workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-        WP_ASSERT( assetDatabaseManager );
 
         auto fileSystem = applicationManager->getFileSystem();
         WP_ASSERT( fileSystem );
@@ -1736,7 +1746,7 @@ namespace workphone
 
         auto id = query->getFieldValue( "id" );
         auto uuid = query->getFieldValue( "uuid" );
-        auto path = query->getFieldValue( "path" );
+        auto path = sourceRoot + "/" + query->getFieldValue( "path" );
         auto type = query->getFieldValue( "type" );
 
         if( type == "Material" )
@@ -1753,7 +1763,7 @@ namespace workphone
 
             return materialResult.first;
         }
-        if( StringUtil::contains( type, "MeshResource" ) )
+        if( type == "Mesh" || StringUtil::contains( type, "MeshResource" ) )
         {
             auto meshManager = applicationManager->getMeshManager();
             if( !meshManager || ( bLoadResource && !graphicsSystem ) )
@@ -1781,6 +1791,14 @@ namespace workphone
             }
 
             return textureResult.first;
+        }
+        if( type == "Font" )
+        {
+            auto manager = graphicsSystem ? graphicsSystem->getFontManager() : nullptr;
+            if( !manager ) return nullptr;
+            auto result = manager->createOrRetrieve( uuid, path, type ).first;
+            if( bLoadResource && result ) graphicsSystem->loadObject( result );
+            return result;
         }
         if( StringUtil::contains( type, "Sound" ) )
         {
@@ -2045,11 +2063,9 @@ namespace workphone
             if( object && object->getHandle() && object->getHandle()->getUUID() == id )
                 return object;
 
-        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
         AssetDatabaseManager::EntrySnapshot entry;
-        if( !catalog || !catalog->tryGetEntry( StringUtil::toString( id ), entry ) ||
-            entry.kind != AssetDatabaseManager::EntryKind::File )
-            return nullptr;
+        auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry );
+        if( !catalog || entry.kind != AssetDatabaseManager::EntryKind::File ) return nullptr;
         auto application = core::IApplicationManager::instancePtr();
         if( !application )
             return nullptr;
@@ -2069,7 +2085,22 @@ namespace workphone
                 result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
         }
         else if( entry.type == "script" )
-            result = loadResource( id );
+        {
+            auto script = make_ptr<ScriptAsset>();
+            script->getHandle()->setUUID( entry.uuid );
+            script->loadFromFile( path );
+            result = script;
+        }
+        else if( entry.type == "Font" )
+        {
+            auto manager = graphics ? graphics->getFontManager() : nullptr;
+            if( manager ) result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
+        else if( entry.type == "Mesh" )
+        {
+            auto manager = application->getMeshManager();
+            if( manager ) result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
         else if( StringUtil::contains( entry.type, "Sound" ) )
         {
             if( auto manager = application->getSoundManager() )
@@ -2088,85 +2119,165 @@ namespace workphone
         return catalog->isEntryCurrent( entry ) ? result : nullptr;
     }
 
+    bool ResourceDatabase::setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog )
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        if( catalog )
+        {
+            if( !catalog->isReadOnly() ) return false;
+            auto marker = queryResourceValues( catalog,
+                "SELECT namespace,version FROM wp_media_catalog WHERE id=1", {} );
+            if( !marker || marker->eof() || marker->getFieldValue( "namespace" ) != "workphone.builtin.media.v1" ||
+                marker->getFieldValue( "version" ) != "1" ) return false;
+        }
+        m_mediaCatalog = catalog;
+        return true;
+    }
+    SmartPtr<AssetDatabaseManager> ResourceDatabase::getMediaCatalog() const
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        return m_mediaCatalog;
+    }
+
+    namespace
+    {
+        std::set<String> domainColumns( SmartPtr<IDatabaseManager> db, const String &table )
+        {
+            // Only fixed internal table names reach this helper.
+            auto rows = queryResourceValues( db, "PRAGMA table_info(" + table + ")", {} );
+            std::set<String> columns;
+            if( !rows ) throw std::runtime_error( "Cannot inspect domain schema." );
+            while( !rows->eof() )
+            {
+                columns.insert( rows->getFieldValue( "name" ) );
+                rows->nextRow();
+            }
+            return columns;
+        }
+        SmartPtr<Properties> readDomainTree( SmartPtr<IDatabaseManager> db, const UUID &uuid,
+                                             SmartPtr<Properties> flattened )
+        {
+            if( !db || uuid.is_nil() ) return nullptr;
+            auto connection = db->getDatabase();
+            DatabaseConnectionLock guard( connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
+            if( !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) ) return nullptr;
+            try
+            {
+                const auto columns = domainColumns( db, "configured_actors" );
+                if( !columns.count( "id" ) || !columns.count( "parent_id" ) )
+                    throw std::runtime_error( "Domain actor schema is unsupported." );
+                const auto attributes = domainColumns( db, "attribs" );
+                const String identityColumn = columns.count( "uuid" ) ? "uuid" : "id";
+                auto identity = queryResourceValues( db, "SELECT id FROM configured_actors WHERE " + identityColumn + "=? LIMIT 2",
+                                                    {StringUtil::toString( uuid )} );
+                if( !identity || identity->eof() ) throw std::runtime_error( "Domain UUID is missing; numeric actors require an explicit UUID column." );
+                const auto rootId = identity->getFieldValue( "id" );
+                identity->nextRow();
+                if( !identity->eof() ) throw std::runtime_error( "Domain UUID is ambiguous." );
+                String attributeOwner;
+                if( !attributes.empty() )
+                {
+                    if( !attributes.count( "title" ) || !attributes.count( "value" ) )
+                        throw std::runtime_error( "Domain attribute schema is unsupported." );
+                    attributeOwner = attributes.count( "configured_actor_id" ) ? "configured_actor_id" :
+                                     attributes.count( "actor_id" ) ? "actor_id" : "";
+                    if( attributeOwner.empty() ) throw std::runtime_error( "Domain attributes have no supported owner column." );
+                }
+                std::set<String> visited;
+                size_t bytes = 0, attributeCount = 0;
+                auto account = [&]( const String &text ) {
+                    if( text.size() > 65536 || text.size() > 4u * 1024u * 1024u - bytes )
+                        throw std::runtime_error( "Domain property byte budget exceeded." );
+                    bytes += text.size();
+                };
+                std::function<SmartPtr<Properties>( const String &, size_t )> visit;
+                visit = [&]( const String &id, size_t depth ) -> SmartPtr<Properties> {
+                    if( depth > 64 || visited.size() >= 4096 || !visited.insert( id ).second )
+                        throw std::runtime_error( "Domain hierarchy contains a cycle or exceeds its traversal budget." );
+                    auto row = queryResourceValues( db, "SELECT * FROM configured_actors WHERE id=? LIMIT 2", {id} );
+                    if( !row || row->eof() || row->getNumFields() > 256 )
+                        throw std::runtime_error( "Domain actor is missing or exceeds its field budget." );
+                    auto result = make_ptr<Properties>();
+                    for( u32 field = 0; field < row->getNumFields(); ++field )
+                    {
+                        const auto name = row->getFieldName( field );
+                        const auto value = row->getFieldValue( field );
+                        account( name ); account( value );
+                        result->setProperty( name, value );
+                    }
+                    row->nextRow();
+                    if( !row->eof() ) throw std::runtime_error( "Domain actor ID is ambiguous." );
+                    if( !attributeOwner.empty() )
+                    {
+                        auto values = queryResourceValues( db, "SELECT title,value FROM attribs WHERE " + attributeOwner + "=? ORDER BY title LIMIT 4097", {id} );
+                        if( !values ) throw std::runtime_error( "Cannot read domain attributes." );
+                        std::set<String> names;
+                        while( !values->eof() )
+                        {
+                            const auto name = values->getFieldValue( "title" );
+                            const auto value = values->getFieldValue( "value" );
+                            if( ++attributeCount > 4096 || name.empty() || name.size() > 256 || !names.insert( name ).second )
+                                throw std::runtime_error( "Domain attributes are ambiguous or exceed their budget." );
+                            account( name ); account( value );
+                            result->setProperty( name, value );
+                            if( depth == 0 && flattened ) flattened->setProperty( name, value );
+                            values->nextRow();
+                        }
+                    }
+                    auto children = queryResourceValues( db, "SELECT id FROM configured_actors WHERE parent_id=? ORDER BY id LIMIT 4097", {id} );
+                    if( !children ) throw std::runtime_error( "Cannot read domain children." );
+                    while( !children->eof() )
+                    {
+                        result->addChild( visit( children->getFieldValue( "id" ), depth + 1 ) );
+                        children->nextRow();
+                    }
+                    return result;
+                };
+                auto tree = visit( rootId, 0 );
+                if( !queryResourceValues( db, "RELEASE wp_domain_read", {} ) )
+                    throw std::runtime_error( "Cannot finish domain read snapshot." );
+                return tree;
+            }
+            catch( const std::exception &failure )
+            {
+                queryResourceValues( db, "ROLLBACK TO wp_domain_read", {} );
+                queryResourceValues( db, "RELEASE wp_domain_read", {} );
+                WP_LOG_ERROR( String( "Domain asset read failed: " ) + failure.what() );
+                return nullptr;
+            }
+        }
+    }
     auto ResourceDatabase::loadAssetNode( SmartPtr<IDatabaseManager> db, SmartPtr<Properties> parent,
                                           const UUID &id ) -> SmartPtr<Properties>
     {
-        auto applicationManager = core::IApplicationManager::instance();
-
-        auto properties = workphone::make_ptr<Properties>();
-        parent->addChild( properties );
-
-        auto sAssetId = StringUtil::toString( id );
-        String sql = "select * from configured_actors where id = '" + sAssetId + "'";
-
-        if( auto query = db->executeQuery( sql ) )
-        {
-            while( !query->eof() )
-            {
-                auto numFields = query->getNumFields();
-                for( size_t i = 0; i < numFields; ++i )
-                {
-                    auto name = query->getFieldName( static_cast<u32>( i ) );
-                    auto value = query->getFieldValue( static_cast<u32>( i ) );
-
-                    properties->setProperty( name, value );
-                }
-
-                query->nextRow();
-            }
-        }
-
-        String parentSql = "select * from configured_actors where parent_id = '" + sAssetId + "'";
-        if( auto query = db->executeQuery( parentSql ) )
-        {
-            while( !query->eof() )
-            {
-                auto id = query->getFieldValue( "id" );
-                auto iId = StringUtil::parseUUID( id );
-                loadAssetNode( db, properties, iId );
-                query->nextRow();
-            }
-        }
-
-        return properties;
+        auto result = readDomainTree( db, id, nullptr );
+        if( result && parent ) parent->addChild( result );
+        return result;
     }
 
     auto ResourceDatabase::loadAssetProperties( const UUID &id ) -> SmartPtr<Properties>
     {
-        auto applicationManager = core::IApplicationManager::instance();
-
-        auto databaseManager = workphone::make_ptr<AssetDatabaseManager>();
-
-        auto mediaPath = applicationManager->getMediaPath();
-
-        auto databaseFilePath = String( "/AssetDatabase.db" );
-        databaseManager->loadFromFile( mediaPath + databaseFilePath );
-
-        auto properties = workphone::make_ptr<Properties>();
+        auto application = core::IApplicationManager::instancePtr();
+        if( !application || id.is_nil() ) return nullptr;
+        const auto path = application->getMediaPath() + "/AssetDatabase.db";
+        std::error_code error;
+        if( !std::filesystem::is_regular_file( std::filesystem::u8path( path.c_str() ), error ) || error )
+            return nullptr;
+        auto factory = application->getFactoryManager();
+        auto backend = factory ? factory->make_object<IDatabase>() : nullptr;
+        auto reader = backend ? dynamic_cast<IReadOnlyDatabase *>( backend.get() ) : nullptr;
+        String diagnostic;
+        if( !reader || !reader->openReadOnly( path, diagnostic ) ) return nullptr;
+        auto domain = make_ptr<DatabaseManager>();
+        domain->setDatabase( backend );
+        auto properties = make_ptr<Properties>();
         properties->setName( "asset" );
-
-        auto propertyName = String( "asset_type" );
-        auto propertyValue = String( "model" );
-        properties->setProperty( propertyName, propertyValue );
-
-        loadAssetNode( databaseManager, properties, id );
-
-        auto sAssetId = StringUtil::toString( id );
-        String sql = "select * from attribs where actor_id = '" + sAssetId + "'";
-
-        if( auto query = databaseManager->executeQuery( sql ) )
-        {
-            while( !query->eof() )
-            {
-                auto name = query->getFieldValue( "title" );
-                auto value = query->getFieldValue( "value" );
-
-                properties->setProperty( name, value );
-
-                query->nextRow();
-            }
-        }
-
+        properties->setProperty( "asset_type", "model" );
+        auto tree = readDomainTree( domain, id, properties );
+        domain->close();
+        if( !tree ) return nullptr;
+        properties->setProperty( "uuid", StringUtil::toString( id ) );
+        properties->addChild( tree );
         return properties;
     }
 

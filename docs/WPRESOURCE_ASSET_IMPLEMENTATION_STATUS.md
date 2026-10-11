@@ -508,10 +508,72 @@ shipping/hardware acceptance is implied by the headless model tests.
 Bounds apply to returned rows and input text, not database scan time. Literal
 substring searches can scan the catalog; indexed search, asynchronous query
 publication/cancellation and representative large-project latency budgets remain
-open. The resource reference picker still requires its separate worker/lifetime,
-type-checking and undo repairs; a repaired read-only browser does not close those
+open. At this historical increment, the resource reference picker still required its
+separate worker/lifetime, type-checking and undo repairs; a repaired read-only browser does not close those
 requirements. DDS cooking/uploads, packaging and production certification also
 remain open.
+
+## Increment 8: bundled media mounts, reference commands and domain read isolation (11 October 2026)
+
+The Editor creates a separate derived media catalog when absent, mounts it using
+an OS-enforced SQLite read-only connection, and exposes a project/media switch in
+the catalog browser and reference picker. The explicit WorkphoneMediaCatalog
+builder classifies bundled sources, assigns deterministic path-based UUIDv5
+identities, records Editor-only versus Runtime-tree eligibility, and publishes
+without overwriting unrelated project/domain databases. Rebuilds preserve stable
+path identities. Scanning skips private storage, links/reparse points and enforces
+entry/depth budgets. Database reads no longer require a project for absolute paths.
+See [bundled media ownership and workflow](WPRESOURCE_BUILTIN_MEDIA.md).
+
+ResourceDatabase retains the media mount separately from the writable project
+catalog. UUID reads resolve against the owning catalog and root, reject ambiguous
+cross-catalog UUIDs, and do not adopt media rows into the project. Project-relative
+paths remain project-scoped. Material, texture, font, mesh, sound and script UUID
+routes use their existing resource managers/types; metadata-only script resolution
+is not evidence of execution. Unmounting media stops new media UUID resolution.
+
+The bounded reference picker no longer queues raw window pointers on worker jobs.
+It captures weak targets, verifies selection/session/type evidence, resolves only
+the chosen runtime resource, and submits a real ModifyPropertyCmd group. Public
+property family labels and concrete registered type names resolve consistently.
+Edits preserve metadata and unrelated properties, mark supported owners dirty and
+support undo/redo, with preflight of every target and best-effort rollback for
+setter rejection. The command captures both the project session and selected
+project/media mount. Project switches, close/reopen, unmounting, independent edits
+and destroyed targets cannot apply stale edits. Opening a reference button no
+longer writes the button value into a referenced asset; imported file selections
+resolve to their resource before editing. Save remains explicit.
+
+Legacy settings/state lookups and updates now bind keys and values. Updates hold
+the connection guard and use savepoints inside caller-owned transactions. Missing
+queries return defaults, ambiguous authored keys are retained for explicit repair,
+and failed mutations roll back. Reference database attachment and resource-map
+lookups bind values too. These compatibility methods still expose their legacy
+void/default-return APIs; a complete structured-result repository remains open.
+
+Domain asset reads use a separate read-only backend and never initialize catalog
+schema in AssetDatabase.db. Root lookup uses an explicit UUID column where present
+or the legacy text-ID layout. Numeric descendants retain their row IDs. All
+attributes are read under one snapshot; duplicate UUIDs/attributes, missing rows,
+cycles and byte/count/depth overflow fail without publishing partial children.
+Numeric-only domain roots require an authored UUID mapping; this increment does
+not invent identities or migrate that database. Missing databases are not created.
+
+Validation is in progress against rebuilt Windows RelWithDebInfo targets. Initial
+execution exposed an absolute-path startup restriction and a stale SQLite factory
+object compiled with the previous class size. The path handling was repaired and
+the factory translation unit rebuilt. The media catalog was created successfully;
+its first verified inventory contained 251 assets (7 fonts, 4 materials, 2 meshes,
+9 sounds, 4 textures and 225 scripts), all Editor-only, and SQLite integrity_check
+reported ok. Final regression results are recorded below after completion.
+
+Remaining boundaries: source-format validation/cooking, package closure and
+eligibility enforcement, UUID runtime maps, asynchronous indexed-scale browsing,
+persisted reference graph updates, authored metadata migration, standalone domain
+editing, DDS profiles/cooking/uploads, actual save/reopen and interactive/hardware
+release acceptance remain open. Trusted property setters are not a transactional
+sandbox; failed rollback is reported and can require manual repair. The broader
+production plan is not certified by these focused contracts.
 
 ## Next implementation gates
 
@@ -532,7 +594,7 @@ existing texture compiler and the next cooking consistency milestone.
 4. Integrate typed runtime consumers and owner-thread publication throughout the
    Editor and shipping sample; complete asynchronous session-safe jobs.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;
-   implement domain editing, previews/reference pickers, packaging controls and
+   implement domain editing, previews, reference graph persistence, packaging controls and
    the declared format-family matrix.
 6. Execute the plan's representative Editor, source-free package, failure,
    concurrency, performance and release gates. Passing focused tests alone does

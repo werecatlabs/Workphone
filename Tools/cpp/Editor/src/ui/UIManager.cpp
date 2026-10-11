@@ -46,6 +46,7 @@
 #include <ui/TagManager.hpp>
 #include <ui/TerrainWindow.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
 #include <WPImGui/WPImGui.hpp>
 
@@ -746,7 +747,12 @@ namespace workphone::editor
         String mediaCatalogError;
         auto mediaCatalog = openMediaAssetCatalog( applicationManager->getMediaPath(), mediaCatalogError );
         if( mediaCatalog )
+        {
             assetDatabaseWindow->setMediaCatalog( mediaCatalog );
+            if( auto resources = dynamic_pointer_cast<ResourceDatabase>( applicationManager->getResourceDatabase() ) )
+                if( !resources->setMediaCatalog( mediaCatalog ) )
+                    WP_LOG_ERROR( "Cannot mount bundled media in the resource resolver." );
+        }
         else
             WP_LOG_ERROR( "Built-in media catalog: " + mediaCatalogError );
         assetDatabaseWindow->setClassName( "AssetDatabase" );

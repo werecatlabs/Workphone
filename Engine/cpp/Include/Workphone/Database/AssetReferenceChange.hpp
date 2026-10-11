@@ -1,7 +1,7 @@
 #ifndef WP_ASSET_REFERENCE_CHANGE_HPP
 #define WP_ASSET_REFERENCE_CHANGE_HPP
 #include <Workphone/Database/AssetDatabaseManager.hpp>
-#include <Workphone/Memory/WeakPtr.hpp>
+#include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
@@ -9,6 +9,9 @@
 #include <Workphone/Interface/Graphics/ITexture.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
+#include <Workphone/Interface/Graphics/IFont.hpp>
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Interface/Sound/ISound.hpp>
 
 namespace workphone
 {
@@ -17,16 +20,34 @@ namespace workphone
     class AssetReferenceChange
     {
     public:
+        /** Properties use both public family labels and concrete runtime names.
+         * A picker selects a public family; resolving the chosen object validates
+         * its actual runtime interface before any target is edited. */
+        static hash_type referenceType( const String &name )
+        {
+            auto types = TypeManager::instance();
+            if( !types ) return 0;
+            if( name == "Material" ) return render::IMaterial::typeInfo();
+            if( name == "Texture" ) return render::ITexture::typeInfo();
+            if( name == "Actor" ) return scene::IGameActor::typeInfo();
+            if( name == "script" || name == "Script" ) return ScriptAsset::typeInfo();
+            if( name == "Font" ) return render::IFont::typeInfo();
+            if( name == "Mesh" ) return IMeshResource::typeInfo();
+            if( name == "Sound" ) return ISound::typeInfo();
+            const auto actual = types->getIdFromName( name );
+            if( !actual ) return 0;
+            for( auto family : { render::IMaterial::typeInfo(), render::ITexture::typeInfo(),
+                                 scene::IGameActor::typeInfo(), ScriptAsset::typeInfo(),
+                                 render::IFont::typeInfo(), IMeshResource::typeInfo(), ISound::typeInfo() } )
+                if( types->isDerived( actual, family ) ) return family;
+            return actual;
+        }
         static bool typeMatches( const String &storedType, hash_type requested )
         {
             auto types = TypeManager::instance();
-            if( !types || requested == 0 )
+            if( !types || requested == 0 || requested >= types->getTotalNumTypes() )
                 return false;
-            const auto actual = storedType == "Material" ? render::IMaterial::typeInfo() :
-                                storedType == "Texture" ? render::ITexture::typeInfo() :
-                                storedType == "Actor" ? scene::IGameActor::typeInfo() :
-                                storedType == "script" ? ScriptAsset::typeInfo() :
-                                types->getIdFromName( storedType );
+            const auto actual = referenceType( storedType );
             return actual != 0 && types->isDerived( actual, requested );
         }
         bool prepare( SmartPtr<AssetDatabaseManager> catalog,
@@ -46,7 +67,7 @@ namespace workphone
             m_declaredType = properties->getPropertyObject( property ).getAttribute( "resourceType" );
             auto types = TypeManager::instance();
             if( !m_declaredType.empty() &&
-                !typeMatches( entry.type, types->getIdFromName( m_declaredType ) ) )
+                !typeMatches( entry.type, referenceType( m_declaredType ) ) )
                 return fail( "Asset type does not match the property's declared reference type." );
             m_catalog = catalog;
             m_target = target;
@@ -113,10 +134,15 @@ namespace workphone
         {
             auto object = m_target.lock();
             auto properties = object ? object->getProperties() : nullptr;
+            const auto declared = properties && properties->hasProperty( m_property ) ?
+                properties->getPropertyObject( m_property ).getAttribute( "resourceType" ) : String();
+            const auto family = referenceType( m_declaredType );
+            const bool sameType = declared == m_declaredType ||
+                ( family != 0 && referenceType( declared ) == family );
             if( !properties || !properties->hasProperty( m_property ) ||
                 properties->getPropertyObject( m_property ).isReadOnly() ||
                 properties->getProperty( m_property ) != expected ||
-                properties->getPropertyObject( m_property ).getAttribute( "resourceType" ) != m_declaredType )
+                !sameType )
                 return fail( "Reference property was removed, locked or independently changed." );
             m_error.clear();
             return true;
@@ -126,6 +152,7 @@ namespace workphone
             if( !propertyCurrent( expected ) )
                 return false;
             auto object = m_target.lock();
+            if( !object ) return fail( "Reference target was destroyed." );
             auto properties = object->getProperties();
             auto replacement = make_ptr<Properties>( *properties );
             replacement->getPropertyObject( m_property ).setValue( value );
@@ -147,8 +174,8 @@ namespace workphone
             m_error.clear();
             return true;
         }
-        WeakPtr<AssetDatabaseManager> m_catalog;
-        WeakPtr<ISharedObject> m_target;
+        ObjectObserver<AssetDatabaseManager> m_catalog;
+        ObjectObserver<ISharedObject> m_target;
         AssetDatabaseManager::EntrySnapshot m_entry;
         String m_property;
         String m_declaredType;
