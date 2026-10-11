@@ -18,8 +18,14 @@
 
 #if defined WP_PLATFORM_WIN32
 #    include <process.h>
+#    include <io.h>
+#    include <share.h>
+#    include <fcntl.h>
+#    include <sys/stat.h>
 #else
 #    include <unistd.h>
+#    include <fcntl.h>
+#    include <sys/file.h>
 #endif
 
 namespace workphone::resource
@@ -117,12 +123,14 @@ namespace workphone::resource
         }
 
         bool sameRuntimeHeader( const CompiledResourceHeader &left,
-                                const CompiledResourceHeader &right )
+                                const CompiledResourceHeader &right, bool compareArtifacts = true )
         {
             return left.resourceId == right.resourceId && left.resourceType == right.resourceType &&
                    left.compilerVersion == right.compilerVersion && left.sourceHash == right.sourceHash &&
                    left.payloadHash == right.payloadHash && left.payloadSize == right.payloadSize &&
-                   left.installDependencies == right.installDependencies;
+                   left.installDependencies == right.installDependencies &&
+                   (!compareArtifacts || (left.formatVersion == right.formatVersion &&
+                                          left.installArtifacts == right.installArtifacts));
         }
 
         bool readManifest( const String &path, RuntimeManifest &manifest, String &error )
@@ -364,6 +372,54 @@ namespace workphone::resource
                    std::to_string( ++payloadTemporaryCounter ).c_str();
         }
 
+        // Retain the lock file: unlinking it can give competing processes different
+        // inodes/handles. OS handle ownership, not file existence, determines liveness.
+        class WriterLease
+        {
+        public:
+            ~WriterLease()
+            {
+                if(descriptor >= 0)
+                {
+#if defined WP_PLATFORM_WIN32
+                    _close(descriptor);
+#else
+                    close(descriptor);
+#endif
+                }
+            }
+            bool acquire(const fs::path &path, String &error)
+            {
+                std::error_code filesystemError;
+                fs::create_directories(path.parent_path(),filesystemError);
+                if(filesystemError)
+                {
+                    error="Cannot create authoring writer lease directory";
+                    return false;
+                }
+#if defined WP_PLATFORM_WIN32
+                const auto result=_wsopen_s(&descriptor,path.c_str(),_O_CREAT | _O_RDWR | _O_BINARY | _O_NOINHERIT,
+                                           _SH_DENYRW,_S_IREAD | _S_IWRITE);
+                if(result != 0) descriptor=-1;
+#else
+                descriptor=open(path.c_str(),O_CREAT | O_RDWR | O_CLOEXEC,0600);
+                if(descriptor >= 0 && flock(descriptor,LOCK_EX | LOCK_NB) != 0)
+                {
+                    close(descriptor);
+                    descriptor=-1;
+                }
+#endif
+                if(descriptor < 0)
+                {
+                    error="Authoring writer lease is busy or unavailable for this cooked root and target";
+                    return false;
+                }
+                return true;
+            }
+        private:
+            int descriptor=-1;
+        };
+
         struct TemporaryFile
         {
             String path;
@@ -394,13 +450,20 @@ namespace workphone::resource
         {
         }
 
+        CompilationVariant variant(bool packaged) const { return {config.target,packaged}; }
+        String variantArtifactNamespace(bool packaged) const
+        { return artifactNamespace(config.target) + (packaged ? "package/" : "editor/"); }
+        static String variantResourceKey(const String &id, bool packaged)
+        { return String(packaged ? "package:" : "editor:") + id; }
+
         void invalidateBuildEvidence( const ResourceID &changed )
         {
             std::set<String> visited{ changed.str() };
             Array<String> pending{ changed.str() };
             for( size_t index = 0; index < pending.size(); ++index )
             {
-                verifiedBuilds.erase( pending[index] );
+                verifiedBuilds.erase( variantResourceKey(pending[index],false) );
+                verifiedBuilds.erase( variantResourceKey(pending[index],true) );
                 Array<String> dependents;
                 if( !database->getDependents( pending[index], dependents ) )
                 {
@@ -416,7 +479,7 @@ namespace workphone::resource
 
         CompilationReport compileNode( const ResourceID &resourceId, const CompilationOptions &options,
                                        std::map<String, CompilationReport> &completed,
-                                       Array<String> &stack )
+                                       Array<String> &stack, Array<CompilationCommit> &pendingCommits )
         {
             const auto completedIterator = completed.find( resourceId.str() );
             if( completedIterator != completed.end() )
@@ -518,7 +581,7 @@ namespace workphone::resource
                     if( dependencyId == resourceId )
                         return fail( "A resource cannot depend on itself" );
 
-                    const auto childReport = compileNode( dependencyId, options, completed, stack );
+                    const auto childReport = compileNode( dependencyId, options, completed, stack, pendingCommits );
                     if( !childReport.succeeded() )
                     {
                         auto report =
@@ -563,7 +626,7 @@ namespace workphone::resource
                 if( dependencyId == resourceId )
                     return fail( "A resource cannot install-depend on itself" );
 
-                const auto childReport = compileNode( dependencyId, options, completed, stack );
+                const auto childReport = compileNode( dependencyId, options, completed, stack, pendingCommits );
                 if( !childReport.succeeded() )
                 {
                     auto report =
@@ -581,6 +644,7 @@ namespace workphone::resource
             }
 
             u64 sourceHash = hashString( resourceId.str() );
+            sourceHash = combineHash( sourceHash, CompiledResourceHeader::currentFormatVersion );
             sourceHash = combineHash( sourceHash, compilerVersion );
             sourceHash = hashString( config.target, sourceHash );
             sourceHash = combineHash( sourceHash, options.packagedBuild ? 1u : 0u );
@@ -592,19 +656,33 @@ namespace workphone::resource
                 sourceHash = combineHash( sourceHash, dependency.second );
             }
 
+            Array<InstallDependencyArtifact> installArtifacts;
+            Array<ResourceID> installIds;
+            for( const auto &dependency : installDependencies )
+            {
+                const auto &child = completed.at(dependency.first);
+                const auto relative = fs::u8path(child.outputPath.c_str()).lexically_relative(compiledRoot);
+                const String artifact = relative.generic_u8string().c_str();
+                if(artifact.find(variantArtifactNamespace(options.packagedBuild)) != 0)
+                    return fail("Install dependency artifact is outside the selected variant");
+                installArtifacts.push_back({artifact, child.sourceHash, child.outputHash});
+                installIds.push_back(dependency.second);
+                sourceHash = hashString(artifact, sourceHash);
+            }
+
             CompiledResourceRecord previousRecord;
             u64 scannedHash=0,scannedSize=0;
             if(!CompiledResourceIO::hashFile(context.sourcePath,scannedHash,scannedSize,error) ||
                scannedHash!=sourceFileHash || scannedSize!=sourceFileSize)
                 return fail("Source changed during dependency scanning");
-            if( !database->getRecord( resourceId.str(), previousRecord ) )
+            if( !database->getRecord( resourceId.str(), variant(options.packagedBuild), previousRecord ) )
                 return fail( String( "Failed to query compilation database: " ) +
                              database->getLastError() );
 
             if( !options.force && previousRecord.isValid() &&
                 previousRecord.compilerVersion == compilerVersion &&
                 previousRecord.sourceHash == sourceHash &&
-                previousRecord.outputPath.find(artifactNamespace(config.target))==0 )
+                previousRecord.outputPath.find(variantArtifactNamespace(options.packagedBuild))==0 )
             {
                 if(!resolveUnderRoot(compiledRoot,"data://"+previousRecord.outputPath,true,outputPath,error))
                     error.clear();
@@ -615,6 +693,9 @@ namespace workphone::resource
                 if( fs::is_regular_file( outputPath ) &&
                     CompiledResourceIO::validate( context.outputPath, existingHeader, error ) &&
                     existingHeader.resourceId == resourceId &&
+                    existingHeader.formatVersion == CompiledResourceHeader::currentFormatVersion &&
+                    existingHeader.installDependencies == installIds &&
+                    existingHeader.installArtifacts == installArtifacts &&
                     existingHeader.compilerVersion == compilerVersion &&
                     existingHeader.sourceHash == sourceHash &&
                     existingHeader.payloadHash == previousRecord.outputHash )
@@ -711,14 +792,15 @@ namespace workphone::resource
                 return fail( error );
 
             CompiledResourceHeader header;
+            header.formatVersion = CompiledResourceHeader::currentFormatVersion;
             header.resourceId = resourceId;
             header.resourceType = resourceId.type();
             header.compilerVersion = compilerVersion;
             header.sourceHash = sourceHash;
             header.payloadHash = payloadHash;
             header.payloadSize = payloadSize;
-            for( const auto &dependency : installDependencies )
-                header.installDependencies.push_back( dependency.second );
+            header.installDependencies = std::move(installIds);
+            header.installArtifacts = std::move(installArtifacts);
 
             String relativeArtifact=artifactNamespace(config.target) +
                 (options.packagedBuild?"package/":"editor/") + encodedArtifactKey(resourceId.str()) + "/" +
@@ -767,18 +849,8 @@ namespace workphone::resource
             databaseDependencies.reserve( canonicalDependencies.size() );
             for( const auto &dependency : canonicalDependencies )
                 databaseDependencies.push_back( { dependency.first, dependency.second } );
-            if( !database->commitCompilation( newRecord, databaseDependencies ) )
-                return fail(
-                    String( "Artifact staged but compilation index commit failed; previous generation retained: " ) +
-                    database->getLastError() );
-
-            {
-                std::unique_lock<std::shared_mutex> cacheLock( cacheMutex );
-                // A cached parent owns its prior install dependency snapshot. Invalidating
-                // only the child would let the next parent load silently reuse that snapshot.
-                runtimeCache.clear();
-            }
-            invalidateBuildEvidence( resourceId );
+            // Artifacts are immutable candidates until the complete request succeeds.
+            pendingCommits.push_back({newRecord,variant(options.packagedBuild),std::move(databaseDependencies)});
 
             CompilationReport report;
             report.status = status;
@@ -794,17 +866,88 @@ namespace workphone::resource
             return report;
         }
 
+        bool publishBatch(const Array<CompilationCommit> &pendingCommits,
+                          const std::map<String,CompilationReport> &completed, bool packaged, String &error)
+        {
+            if(!pendingCommits.empty())
+            {
+                if(!database->commitCompilations(pendingCommits))
+                {
+                    error="Compilation set index commit failed; previous set retained: " + database->getLastError();
+                    return false;
+                }
+                std::unique_lock<std::shared_mutex> cacheLock(cacheMutex);
+                runtimeCache.clear();
+                cacheLock.unlock();
+                for(const auto &entry : pendingCommits)
+                    invalidateBuildEvidence(ResourceID(entry.record.resourceId));
+            }
+            for(const auto &entry : completed)
+                verifiedBuilds[variantResourceKey(entry.first,packaged)] = entry.second;
+            activePackagedBuild=packaged;
+            return true;
+        }
+
+        void abandonBatch(const std::map<String,CompilationReport> &completed)
+        {
+            for(const auto &entry : completed)
+                invalidateBuildEvidence(ResourceID(entry.first));
+        }
+
         struct LoadRequest
         {
             std::set<String> stack;
             std::map<String, std::shared_ptr<const RuntimeResource>> completed;
             std::map<String, u32> subtreeDepth;
+            std::map<String, String> artifacts;
             u64 payloadBytes = 0;
+            bool packagedBuild = false;
         };
 
         std::shared_ptr<const RuntimeResource> loadNode( const ResourceID &resourceId,
-                                                        LoadRequest &request, String &error )
+                                                        LoadRequest &request, String &error,
+                                                        const InstallDependencyArtifact *parentPin = nullptr )
         {
+            CompiledResourceRecord committedRecord;
+            String artifact;
+            if(runtimeOnly)
+            {
+                const auto entry = runtimeManifest.artifacts.find(resourceId.str());
+                if(entry == runtimeManifest.artifacts.end())
+                {
+                    error = "Resource is not present in the runtime manifest: " + resourceId.str();
+                    return nullptr;
+                }
+                artifact = entry->second;
+                if(parentPin && artifact != parentPin->path)
+                {
+                    error = "Runtime manifest conflicts with a parent's dependency artifact pin";
+                    return nullptr;
+                }
+            }
+            else if(parentPin)
+                artifact = parentPin->path;
+            else
+            {
+                if(!database->getRecord(resourceId.str(),variant(request.packagedBuild),committedRecord) ||
+                   !committedRecord.isValid())
+                {
+                    error = "No committed artifact for this resource, target and build mode";
+                    return nullptr;
+                }
+                artifact = committedRecord.outputPath;
+            }
+            if(!runtimeOnly && artifact.find(variantArtifactNamespace(request.packagedBuild)) != 0)
+            {
+                error = "Dependency artifact is outside the selected target and build mode";
+                return nullptr;
+            }
+            const auto selected = request.artifacts.emplace(resourceId.str(),artifact);
+            if(!selected.second && selected.first->second != artifact)
+            {
+                error = "Runtime closure requests conflicting artifact generations for " + resourceId.str();
+                return nullptr;
+            }
             if( request.stack.size() >= runtimeConfig.maxDependencyDepth )
             {
                 error = "Runtime install dependency depth exceeds the configured limit";
@@ -818,6 +961,12 @@ namespace workphone::resource
             const auto complete = request.completed.find( resourceId.str() );
             if( complete != request.completed.end() )
             {
+                if(parentPin && (complete->second->header.sourceHash != parentPin->sourceHash ||
+                                 complete->second->header.payloadHash != parentPin->payloadHash))
+                {
+                    error = "Dependency artifact fingerprint conflicts within the runtime closure";
+                    return nullptr;
+                }
                 if( request.stack.size() + request.subtreeDepth[resourceId.str()] >
                     runtimeConfig.maxDependencyDepth )
                 {
@@ -841,7 +990,7 @@ namespace workphone::resource
             std::shared_ptr<const RuntimeResource> cached;
             {
                 std::shared_lock<std::shared_mutex> lock( cacheMutex );
-                const auto iterator = runtimeCache.find( resourceId.str() );
+                const auto iterator = runtimeCache.find( artifact );
                 if( iterator != runtimeCache.end() )
                     cached = iterator->second.lock();
             }
@@ -860,20 +1009,6 @@ namespace workphone::resource
             if( !cached )
             {
                 fs::path outputPath;
-                String artifact;
-                if(runtimeOnly)
-                    artifact=runtimeManifest.artifacts.at(resourceId.str());
-                else
-                {
-                    CompiledResourceRecord record;
-                    if(!database->getRecord(resourceId.str(),record) || !record.isValid() ||
-                        record.outputPath.find(artifactNamespace(config.target))!=0)
-                    {
-                        error="No committed artifact for this resource and target";
-                        return nullptr;
-                    }
-                    artifact=record.outputPath;
-                }
                 if( !resolveUnderRoot( compiledRoot, String( "data://" ) + artifact,
                                        true, outputPath, error ) )
                     return nullptr;
@@ -889,7 +1024,23 @@ namespace workphone::resource
                 error = String( "Compiled resource identity mismatch for " ) + resourceId.str();
                 return nullptr;
             }
-            if( runtimeOnly && !sameRuntimeHeader( header, pinned->second ) )
+            if(!runtimeOnly && !parentPin && (header.compilerVersion!=committedRecord.compilerVersion ||
+                header.sourceHash!=committedRecord.sourceHash || header.payloadHash!=committedRecord.outputHash))
+            {
+                error="Compiled resource does not match the committed variant record";
+                return nullptr;
+            }
+            if(parentPin && (header.sourceHash != parentPin->sourceHash || header.payloadHash != parentPin->payloadHash))
+            {
+                error = "Compiled dependency does not match its parent's artifact fingerprint";
+                return nullptr;
+            }
+            if(!runtimeOnly && header.formatVersion < 2 && !header.installDependencies.empty())
+            {
+                error = "Legacy compiled parent has no dependency artifact pins; recook this resource";
+                return nullptr;
+            }
+            if( runtimeOnly && !sameRuntimeHeader( header, pinned->second, false ) )
             {
                 error = String( "Compiled resource does not match the pinned runtime manifest: " ) +
                         resourceId.str();
@@ -906,9 +1057,11 @@ namespace workphone::resource
             if( loaded )
                 loaded->dependencies.reserve( header.installDependencies.size() );
             u32 subtreeDepth = 1;
-            for( const auto &dependencyId : header.installDependencies )
+            for( size_t index = 0; index < header.installDependencies.size(); ++index )
             {
-                auto dependency = loadNode( dependencyId, request, error );
+                const auto &dependencyId = header.installDependencies[index];
+                const auto *pin = header.formatVersion >= 2 ? &header.installArtifacts[index] : nullptr;
+                auto dependency = loadNode( dependencyId, request, error, pin );
                 if( !dependency )
                     return nullptr;
                 subtreeDepth = std::max( subtreeDepth, request.subtreeDepth[dependencyId.str()] + 1 );
@@ -936,6 +1089,8 @@ namespace workphone::resource
         std::map<String, std::weak_ptr<const RuntimeResource>> runtimeCache;
         bool initialized = false;
         bool runtimeOnly = false;
+        bool activePackagedBuild = false;
+        std::unique_ptr<WriterLease> writerLease;
     };
 
     ResourceSystem::ResourceSystem( std::shared_ptr<IResourceCompilerRegistry> registry,
@@ -999,9 +1154,29 @@ namespace workphone::resource
             return false;
         }
 
+        fs::path leasePath;
+        if(!resolveUnderRoot(compiled,"data://.resource-writers/" +
+            String(std::to_string(hashString(config.target)).c_str()) + ".lock",false,leasePath,error))
+            return false;
+        auto writerLease=std::make_unique<WriterLease>();
+        if(!writerLease->acquire(leasePath,error)) return false;
+
         String databasePath = config.databasePath;
         if( databasePath.empty() )
             databasePath = pathString( compiled / ".resource_compilation.db" );
+        auto databaseFile=fs::absolute(fs::u8path(databasePath.c_str()),filesystemError);
+        if(!filesystemError) databaseFile=fs::weakly_canonical(databaseFile,filesystemError);
+        // Index paths are relative to this root. Sharing an index across roots can
+        // bypass root/target admission and resolve another root's records incorrectly.
+        if(filesystemError || !isUnderRoot(compiled,databaseFile) ||
+            isUnderRoot(compiled / "artifacts",databaseFile) ||
+            isUnderRoot(compiled / ".staging",databaseFile) ||
+            isUnderRoot(compiled / ".resource-writers",databaseFile))
+        {
+            error="Compilation database must be inside its cooked root and outside reserved artifact, staging and lease storage";
+            return false;
+        }
+        databasePath=pathString(databaseFile);
         if( !m_impl->database->connect( databasePath ) )
         {
             error = String( "Failed to open resource compilation database: " ) +
@@ -1009,6 +1184,7 @@ namespace workphone::resource
             return false;
         }
 
+        m_impl->writerLease=std::move(writerLease);
         m_impl->config = config;
         m_impl->config.databasePath = databasePath;
         m_impl->sourceRoot = std::move( source );
@@ -1019,6 +1195,7 @@ namespace workphone::resource
         m_impl->runtimeManifest = RuntimeManifest();
         m_impl->verifiedBuilds.clear();
         m_impl->runtimeOnly = false;
+        m_impl->activePackagedBuild = false;
         m_impl->initialized = true;
         return true;
     }
@@ -1088,9 +1265,10 @@ namespace workphone::resource
             return false;
         }
         if(isUnderRoot(m_impl->compiledRoot / "artifacts",destination) ||
-           isUnderRoot(m_impl->compiledRoot / ".staging",destination))
+           isUnderRoot(m_impl->compiledRoot / ".staging",destination) ||
+           isUnderRoot(m_impl->compiledRoot / ".resource-writers",destination))
         {
-            error="Runtime manifests cannot replace files in reserved artifact or staging storage";
+            error="Runtime manifests cannot replace files in reserved artifact, staging or writer-lease storage";
             return false;
         }
         RuntimeManifest manifest;
@@ -1119,8 +1297,8 @@ namespace workphone::resource
             }
             fs::path output;
             CompiledResourceRecord record;
-            if(!m_impl->database->getRecord(id.str(),record) || !record.isValid() ||
-               record.outputPath.find(artifactNamespace(m_impl->config.target))!=0)
+            if(!m_impl->database->getRecord(id.str(),m_impl->variant(m_impl->activePackagedBuild),record) || !record.isValid() ||
+               record.outputPath.find(m_impl->variantArtifactNamespace(m_impl->activePackagedBuild))!=0)
             {
                 error="No committed artifact for runtime manifest resource";
                 return false;
@@ -1136,8 +1314,8 @@ namespace workphone::resource
             CompiledResourceHeader header;
             if( !CompiledResourceIO::validate( pathString( output ), header, error ) )
                 return false;
-            const auto verified = m_impl->verifiedBuilds.find( id.str() );
-            if( !m_impl->database->getRecord( id.str(), record ) || !record.isValid() ||
+            const auto verified = m_impl->verifiedBuilds.find( Impl::variantResourceKey(id.str(),m_impl->activePackagedBuild) );
+            if( !m_impl->database->getRecord( id.str(), m_impl->variant(m_impl->activePackagedBuild), record ) || !record.isValid() ||
                 header.resourceId != id || header.compilerVersion != record.compilerVersion ||
                 header.sourceHash != record.sourceHash || header.payloadHash != record.outputHash ||
                 verified == m_impl->verifiedBuilds.end() ||
@@ -1150,10 +1328,22 @@ namespace workphone::resource
             }
             visiting.insert( id.str() );
             u32 subtreeDepth = 1;
-            for( const auto &dependency : header.installDependencies )
+            for( size_t index = 0; index < header.installDependencies.size(); ++index )
             {
+                const auto &dependency = header.installDependencies[index];
                 if( !visit( dependency ) )
                     return false;
+                if(header.formatVersion >= 2)
+                {
+                    const auto &pin = header.installArtifacts[index];
+                    const auto &child = manifest.resources.at(dependency.str());
+                    if(pin.path != manifest.artifacts.at(dependency.str()) ||
+                       pin.sourceHash != child.sourceHash || pin.payloadHash != child.payloadHash)
+                    {
+                        error = "Runtime manifest closure conflicts with a parent's dependency artifact pin";
+                        return false;
+                    }
+                }
                 subtreeDepth = std::max( subtreeDepth, subtreeDepths[dependency.str()] + 1 );
             }
             visiting.erase( id.str() );
@@ -1244,7 +1434,9 @@ namespace workphone::resource
         m_impl->sourceRoot.clear();
         m_impl->compiledRoot.clear();
         m_impl->initialized = false;
+        m_impl->writerLease.reset();
         m_impl->runtimeOnly = false;
+        m_impl->activePackagedBuild = false;
     }
 
     bool ResourceSystem::isInitialized() const
@@ -1268,10 +1460,12 @@ namespace workphone::resource
         }
         std::map<String, CompilationReport> completed;
         Array<String> stack;
-        auto report = m_impl->compileNode( resourceId, options, completed, stack );
-        for( const auto &entry : completed )
-            if( entry.second.succeeded() )
-                m_impl->verifiedBuilds[entry.first] = entry.second;
+        Array<CompilationCommit> pendingCommits;
+        auto report = m_impl->compileNode( resourceId, options, completed, stack, pendingCommits );
+        String error;
+        if(report.succeeded() && !m_impl->publishBatch(pendingCommits,completed,options.packagedBuild,error))
+            report=failureReport(resourceId,error);
+        if(!report.succeeded()) m_impl->abandonBatch(completed);
         return report;
     }
 
@@ -1307,7 +1501,7 @@ namespace workphone::resource
         for( size_t index = 0; index < pending.size(); ++index )
         {
             Array<String> direct;
-            if( !m_impl->database->getDependents( pending[index], direct ) )
+            if( !m_impl->database->getDependents( pending[index], m_impl->variant(options.packagedBuild), direct ) )
             {
                 reports.push_back(
                     failureReport( ResourceID(), String( "Failed to query affected resources: " ) +
@@ -1327,11 +1521,19 @@ namespace workphone::resource
 
         std::map<String, CompilationReport> completed;
         Array<String> stack;
+        Array<CompilationCommit> pendingCommits;
         for( const auto &id : affected )
-            reports.push_back( m_impl->compileNode( ResourceID( id ), options, completed, stack ) );
-        for( const auto &entry : completed )
-            if( entry.second.succeeded() )
-                m_impl->verifiedBuilds[entry.first] = entry.second;
+            reports.push_back( m_impl->compileNode( ResourceID( id ), options, completed, stack, pendingCommits ) );
+        if(reports.empty()) return reports;
+        const bool allSucceeded=std::all_of(reports.begin(),reports.end(),
+            [](const CompilationReport &report) { return report.succeeded(); });
+        if(!allSucceeded || !m_impl->publishBatch(pendingCommits,completed,options.packagedBuild,error))
+        {
+            m_impl->abandonBatch(completed);
+            if(error.empty()) error="Affected compilation set not committed because one or more resources failed";
+            for(auto &report : reports)
+                if(report.succeeded()) report=failureReport(report.resourceId,error);
+        }
         return reports;
     }
 
@@ -1357,12 +1559,13 @@ namespace workphone::resource
         // are loaded concurrently. Async scheduling and residency budgets remain separate work.
         std::lock_guard<std::mutex> loadLock( m_impl->runtimeLoadMutex );
         Impl::LoadRequest request;
+        request.packagedBuild = m_impl->activePackagedBuild;
         auto loaded = m_impl->loadNode( resourceId, request, error );
         if( !loaded )
             return nullptr;
         std::unique_lock<std::shared_mutex> cacheLock( m_impl->cacheMutex );
         for( const auto &entry : request.completed )
-            m_impl->runtimeCache[entry.first] = entry.second;
+            m_impl->runtimeCache[request.artifacts.at(entry.first)] = entry.second;
         return loaded;
     }
 

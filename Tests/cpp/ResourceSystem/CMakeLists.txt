@@ -18,3 +18,15 @@ if (WIN32)
 endif()
 
 add_test(NAME WPResourceTests COMMAND WPResourceTests)
+
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME WPResource.writer_lease
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ResourceWriterLeaseContracts.py"
+            "$<TARGET_FILE:WPResourceTests>")
+    add_test(NAME WPResource.index_migration
+        COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/ResourceCompilationMigrationContracts.py"
+            "$<TARGET_FILE:WPResourceTests>")
+endif()

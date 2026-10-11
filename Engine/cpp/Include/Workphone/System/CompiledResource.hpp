@@ -8,9 +8,24 @@
 
 namespace workphone::resource
 {
+    struct WPCore_API InstallDependencyArtifact
+    {
+        String path;
+        u64 sourceHash = 0;
+        u64 payloadHash = 0;
+
+        bool operator==( const InstallDependencyArtifact &other ) const
+        {
+            return path == other.path && sourceHash == other.sourceHash && payloadHash == other.payloadHash;
+        }
+    };
+
     struct WPCore_API CompiledResourceHeader
     {
-        static constexpr u16 currentFormatVersion = 1;
+        static constexpr u16 currentFormatVersion = 2;
+
+        // Existing callers without generation pins write v1; authoring cooks select v2.
+        u16 formatVersion = 1;
 
         ResourceID resourceId;
         ResourceTypeID resourceType;
@@ -19,6 +34,8 @@ namespace workphone::resource
         u64 payloadHash = 0;
         u64 payloadSize = 0;
         Array<ResourceID> installDependencies;
+        // V2 entries correspond positionally to installDependencies; paths are root-relative.
+        Array<InstallDependencyArtifact> installArtifacts;
 
         bool isValid() const;
     };

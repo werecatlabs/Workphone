@@ -10,6 +10,7 @@
 #include <functional>
 #include <fstream>
 #include <limits>
+#include <set>
 #include <thread>
 #include <type_traits>
 
@@ -30,6 +31,14 @@ namespace workphone::resource
         constexpr u32 maxResourceIdBytes = 1024 * 1024;
         constexpr u32 maxInstallDependencies = 4096;
         std::atomic<u64> temporaryFileCounter{ 0 };
+
+        bool validArtifactPath( const String &path )
+        {
+            ResourceID normalized;
+            return !path.empty() && path.size() <= 4096 && path.find(':') == String::npos &&
+                   path.find('\\') == String::npos && normalized.set("data://" + path) &&
+                   normalized.sourceRelativePath() == path && path.find("artifacts/v2/") == 0;
+        }
 
         template <typename T>
         bool writeLittleEndian( std::ostream &stream, T value )
@@ -87,7 +96,7 @@ namespace workphone::resource
         bool writeHeader( std::ostream &stream, const CompiledResourceHeader &header )
         {
             stream.write( magic, sizeof( magic ) );
-            if( !writeLittleEndian<u16>( stream, CompiledResourceHeader::currentFormatVersion ) ||
+            if( !writeLittleEndian<u16>( stream, header.formatVersion ) ||
                 !writeLittleEndian<u16>( stream, 0 ) ||
                 !writeLittleEndian<u64>( stream, header.compilerVersion ) ||
                 !writeLittleEndian<u64>( stream, header.sourceHash ) ||
@@ -105,6 +114,12 @@ namespace workphone::resource
                 if( !writeString( stream, dependency.str() ) )
                     return false;
             }
+            if( header.formatVersion >= 2 )
+                for( const auto &artifact : header.installArtifacts )
+                    if( !writeString(stream, artifact.path) ||
+                        !writeLittleEndian<u64>(stream, artifact.sourceHash) ||
+                        !writeLittleEndian<u64>(stream, artifact.payloadHash) )
+                        return false;
             return stream.good();
         }
 
@@ -135,11 +150,12 @@ namespace workphone::resource
                 error = "Compiled resource header is truncated";
                 return false;
             }
-            if( formatVersion != CompiledResourceHeader::currentFormatVersion || flags != 0 )
+            if( formatVersion == 0 || formatVersion > CompiledResourceHeader::currentFormatVersion || flags != 0 )
             {
                 error = "Unsupported compiled resource container version or flags";
                 return false;
             }
+            header.formatVersion = formatVersion;
             if( dependencyCount > maxInstallDependencies )
             {
                 error = "Compiled resource has too many install dependencies";
@@ -177,6 +193,23 @@ namespace workphone::resource
                     return false;
                 }
                 header.installDependencies.push_back( dependency );
+            }
+
+            if( formatVersion >= 2 )
+            {
+                header.installArtifacts.reserve(dependencyCount);
+                for( u32 i = 0; i < dependencyCount; ++i )
+                {
+                    InstallDependencyArtifact artifact;
+                    if( !readString(stream, artifact.path) || !validArtifactPath(artifact.path) ||
+                        !readLittleEndian(stream, artifact.sourceHash) ||
+                        !readLittleEndian(stream, artifact.payloadHash) )
+                    {
+                        error = "Compiled resource contains an invalid dependency artifact pin";
+                        return false;
+                    }
+                    header.installArtifacts.push_back(std::move(artifact));
+                }
             }
 
             const auto offset = stream.tellg();
@@ -230,15 +263,22 @@ namespace workphone::resource
     bool CompiledResourceHeader::isValid() const
     {
         if( !resourceId.isValid() || resourceType != resourceId.type() || compilerVersion == 0 ||
-            sourceHash == 0 || payloadHash == 0 || installDependencies.size() > maxInstallDependencies )
+            sourceHash == 0 || payloadHash == 0 || installDependencies.size() > maxInstallDependencies ||
+            formatVersion == 0 || formatVersion > currentFormatVersion ||
+            (formatVersion == 1 && !installArtifacts.empty()) ||
+            (formatVersion >= 2 && installArtifacts.size() != installDependencies.size()) )
         {
             return false;
         }
+        std::set<String> unique;
         for( const auto &dependency : installDependencies )
         {
-            if( !dependency.isValid() )
+            if( !dependency.isValid() || !unique.insert(dependency.str()).second )
                 return false;
         }
+        for( const auto &artifact : installArtifacts )
+            if( !validArtifactPath(artifact.path) || artifact.sourceHash == 0 || artifact.payloadHash == 0 )
+                return false;
         return true;
     }
 

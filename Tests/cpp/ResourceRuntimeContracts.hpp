@@ -197,14 +197,38 @@ namespace resource_runtime_contracts
                  "Manifest accepted an unchecked parent after an independent child recook" );
         auto newRoot = authoring.load( rootId, error );
         require( newRoot && newRoot != oldRoot &&
-                 newRoot->dependencies[0]->dependencies[0] != oldLeaf &&
                  oldLeaf->payload.back() == '\n',
-                 "Child recook did not invalidate cached parent or retain the old snapshot" );
+                 "Child recook did not clear the cache or retain the old snapshot" );
         require( std::string( oldLeaf->payload.begin(), oldLeaf->payload.end() ) == "leaf-v1\n" &&
                  std::string( newRoot->dependencies[0]->dependencies[0]->payload.begin(),
-                              newRoot->dependencies[0]->dependencies[0]->payload.end() ) == "leaf-v2\n",
-                 "Recook changed a held resource or reloaded stale child bytes" );
+                              newRoot->dependencies[0]->dependencies[0]->payload.end() ) == "leaf-v1\n",
+                 "Independently recooked child changed the older parent's dependency snapshot" );
+        auto directLeaf = authoring.load(leafId,error);
+        require(directLeaf && directLeaf != newRoot->dependencies[0]->dependencies[0] &&
+                std::string(directLeaf->payload.begin(),directLeaf->payload.end()) == "leaf-v2\n",
+                "Direct child load must select the latest committed generation beside the old parent");
+        require(authoring.load(rootId,error) == newRoot,
+                "Generation cache must retain the parent without aliasing its child's latest generation");
+        authoring.clearRuntimeCache();
+        authoring.shutdown();
+        require(authoring.initialize(authoringConfig,error),error);
+        auto restartedRoot = authoring.load(rootId,error);
+        require(restartedRoot &&
+                std::string(restartedRoot->dependencies[0]->dependencies[0]->payload.begin(),
+                            restartedRoot->dependencies[0]->dependencies[0]->payload.end()) == "leaf-v1\n",
+                "Persistent dependency pins must survive a service restart and independent child recook");
+        const auto oldLeafPath=cooked / fs::u8path(restartedRoot->dependencies[0]->header.installArtifacts[0].path.c_str());
+        const auto oldLeafBytes=read(oldLeafPath);
+        authoring.clearRuntimeCache();
+        fs::remove(oldLeafPath);
+        require(!authoring.load(rootId,error),"Missing pinned child must fail instead of falling back to the latest index entry");
+        write(oldLeafPath,oldLeafBytes);
+        require(authoring.load(rootId,error)!=nullptr,"Missing dependency failure must not poison the generation cache");
         require( authoring.compile( rootId ).succeeded(), "Runtime closure recook failed" );
+        auto recookedRoot = authoring.load(rootId,error);
+        require(recookedRoot && std::string(recookedRoot->dependencies[0]->dependencies[0]->payload.begin(),
+                                           recookedRoot->dependencies[0]->dependencies[0]->payload.end()) == "leaf-v2\n",
+                "Recooking the parent must advance its complete pinned dependency closure");
         const auto manifest = cooked / "runtime.wprm";
         require( authoring.writeRuntimeManifest( pathText( manifest ), { rootId }, error ), error );
         const auto manifestBytes = read( manifest );
@@ -320,6 +344,25 @@ namespace resource_runtime_contracts
 
         for( const auto &entry : fs::directory_iterator( relocated ) )
             fs::permissions( entry.path(), fs::perms::owner_all, fs::perm_options::add );
+        const auto parentPath=relocated / artifactPaths.at("root.rtres");
+        const auto goodParentBytes=read(parentPath);
+        RuntimeResource alteredParent;
+        require(CompiledResourceIO::read(pathText(parentPath),alteredParent,error),error);
+        const auto parentPayload=fixture.root / "parent.payload";
+        write(parentPayload,std::string(alteredParent.payload.begin(),alteredParent.payload.end()));
+        alteredParent.header.installArtifacts[0].path=artifactPaths.at("right.rtres").generic_u8string().c_str();
+        require(CompiledResourceIO::writeAtomic(pathText(parentPath),alteredParent.header,pathText(parentPayload),error),error);
+        require(runtime.initializeRuntime(runtimeConfig,error),error);
+        require(!runtime.load(rootId,error),"Runtime accepted parent pins inconsistent with manifest artifact paths");
+        runtime.shutdown();
+        write(parentPath,goodParentBytes);
+        require(CompiledResourceIO::read(pathText(parentPath),alteredParent,error),error);
+        ++alteredParent.header.installArtifacts[0].payloadHash;
+        require(CompiledResourceIO::writeAtomic(pathText(parentPath),alteredParent.header,pathText(parentPayload),error),error);
+        require(runtime.initializeRuntime(runtimeConfig,error),error);
+        require(!runtime.load(rootId,error),"Runtime accepted a dependency fingerprint inconsistent with its parent pin");
+        runtime.shutdown();
+        write(parentPath,goodParentBytes);
         const auto leafPath = relocated / artifactPaths.at("leaf.rtres");
         const auto goodLeafBytes = read( leafPath );
         auto corruptLeafBytes = goodLeafBytes;
@@ -411,9 +454,14 @@ namespace resource_runtime_contracts
         std::map<String,String> pinnedPaths;
         for(const auto &entry:descriptors)
         {
-            fs::copy_file(relocated / artifactPaths.at(entry.first),legacy / entry.first);
-            CompiledResourceHeader header;
-            require(CompiledResourceIO::validate(pathText(legacy / entry.first),header,error),error);
+            RuntimeResource resource;
+            require(CompiledResourceIO::read(pathText(relocated / artifactPaths.at(entry.first)),resource,error),error);
+            auto header = resource.header;
+            header.formatVersion = 1;
+            header.installArtifacts.clear();
+            const auto payload = fixture.root / "legacy.payload";
+            write(payload,std::string(resource.payload.begin(),resource.payload.end()));
+            require(CompiledResourceIO::writeAtomic(pathText(legacy / entry.first),header,pathText(payload),error),error);
             pinnedPaths[header.resourceId.str()]=pathText(artifactPaths.at(entry.first));
             legacyHeaders.push_back(header);
         }

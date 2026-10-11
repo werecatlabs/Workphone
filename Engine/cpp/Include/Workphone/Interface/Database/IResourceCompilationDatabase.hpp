@@ -8,6 +8,13 @@
 
 namespace workphone::resource
 {
+    /** Compilation namespace. Compiler versions and input settings remain in the source hash. */
+    struct WPCore_API CompilationVariant
+    {
+        String target;
+        bool packagedBuild = false;
+    };
+
     /** Durable metadata for a successfully compiled resource. */
     struct WPCore_API CompiledResourceRecord
     {
@@ -42,6 +49,14 @@ namespace workphone::resource
         }
     };
 
+    /** One member of an all-or-nothing compilation-index publication. */
+    struct WPCore_API CompilationCommit
+    {
+        CompiledResourceRecord record;
+        CompilationVariant variant;
+        Array<CompileDependencyRecord> dependencies;
+    };
+
     /**
      * Thread-safe SQLite index used by the resource compiler.
      *
@@ -61,6 +76,9 @@ namespace workphone::resource
         virtual String getLastError() const = 0;
         virtual bool reset() = 0;
 
+        // Legacy operations: getRecord rejects multiple variants; dependency queries
+        // aggregate variants; removeRecord removes all variants. Legacy commits use
+        // the reserved empty-target namespace. Production cooking uses explicit variants.
         virtual bool getRecord( const String &resourceId, CompiledResourceRecord &record ) const = 0;
         virtual bool commitCompilation( const CompiledResourceRecord &record,
                                         const Array<CompileDependencyRecord> &dependencies ) = 0;
@@ -69,6 +87,20 @@ namespace workphone::resource
         virtual bool getDependencies( const String &resourceId,
                                       Array<CompileDependencyRecord> &dependencies ) const = 0;
         virtual bool getDependents( const String &dependencyPath, Array<String> &resourceIds ) const = 0;
+
+        // Explicit variants never fall back to another target or build mode.
+        virtual bool getRecord( const String &resourceId, const CompilationVariant &variant,
+                                CompiledResourceRecord &record ) const = 0;
+        virtual bool commitCompilation( const CompiledResourceRecord &record,
+                                        const CompilationVariant &variant,
+                                        const Array<CompileDependencyRecord> &dependencies ) = 0;
+        virtual bool removeRecord( const String &resourceId, const CompilationVariant &variant ) = 0;
+        virtual bool getDependencies( const String &resourceId, const CompilationVariant &variant,
+                                      Array<CompileDependencyRecord> &dependencies ) const = 0;
+        virtual bool getDependents( const String &dependencyPath, const CompilationVariant &variant,
+                                    Array<String> &resourceIds ) const = 0;
+        /** Commit every record and edge in one transaction, or retain the previous set. */
+        virtual bool commitCompilations( const Array<CompilationCommit> &compilations ) = 0;
     };
 }  // namespace workphone::resource
 

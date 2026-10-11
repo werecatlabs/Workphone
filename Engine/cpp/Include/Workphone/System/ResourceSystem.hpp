@@ -24,6 +24,12 @@ namespace workphone::resource
      * Compilation is serialized per ResourceSystem instance, while registry,
      * metadata queries, and runtime cache reads are thread-safe. Compilers can be
      * registered dynamically before or after initialization.
+     * Authoring starts in Editor mode. A successful compile (or wholly successful
+     * nonempty compileAffected batch) selects its build mode for later loads and
+     * manifest exports. Each load/export closure uses that one mode throughout.
+     * Authoring holds an OS writer lease for its canonical cooked root and target
+     * until shutdown. Distinct targets may coexist. Each compile/affected batch
+     * publishes its complete changed index set in a single SQLite transaction.
      */
     class WPCore_API ResourceSystem final : public IResourceSystem
     {

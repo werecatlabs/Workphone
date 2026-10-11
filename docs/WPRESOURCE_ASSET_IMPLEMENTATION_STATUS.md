@@ -119,10 +119,9 @@ outer container format is unchanged; the manifest's inner payload is now version
 The DDS extension (RES-050–054) remains planned; future native DDS texture bytes fit
 inside the same target-specific immutable WPRS artifacts.
 
-Limitations: the compilation index still keeps one active record per logical ID,
-so switching target/mode may require rechecking/rebuilding its active record.
-All variant artifacts and already-exported manifests coexist, but multi-variant
-index queries/BuildKey schemas remain open. Artifact fingerprints retain the
+Historical limitation at the end of increment 2: the compilation index kept one
+active record per logical ID. Increment 3 below replaces that target/mode indexing.
+The complete BuildKey/profile/toolchain schema remains open. Artifact fingerprints retain the
 existing FNV-64 scheme and are not authenticated digests. Final input rechecks do
 not replace immutable source snapshots against arbitrary external writes.
 Whole dependency-closure commit, owner-thread compatible-set installation,
@@ -160,6 +159,195 @@ monolithic unit target was not built/run. No interactive Editor acceptance,
 independent shipping package launch, representative hardware benchmark, Debug
 build or process-kill/power-loss certification was performed in this increment.
 
+## Increment 3: variant-aware compilation records and loading
+
+The compilation database now uses schema **3**, with `(resource_id, target,
+packaged_build)` primary keys and matching composite dependency foreign keys.
+Records and edges commit together; deletion cascades only within the selected
+variant. Explicit queries never fall back to another target or mode, and
+`compileAffected` walks the selected variant's reverse graph.
+
+The ResourceSystem uses explicit variants for compilation, authoring loads and
+manifest export. Authoring starts in Editor mode; the last successful root compile
+or wholly successful nonempty affected batch selects the mode for subsequent
+loads/exports. A failed build preserves that selection. Each load/export closure
+uses one mode throughout; cache and current-session publication evidence keys
+include mode. Failed builds revoke publication evidence for affected resources
+and their dependents, while last-good committed artifacts remain loadable.
+Publication invalidation conservatively clears both modes through the aggregate
+graph; it does not delete their persisted records.
+Authoring loads also verify the mode-qualified artifact namespace and committed
+compiler/source/payload fingerprints before installing newly read containers.
+
+Compatibility: schema 0–2 compilation indexes are derived data and are invalidated
+transactionally, requiring recooking. This migration does not change authored
+catalog tables or remove existing artifact files/manifests. Databases with a newer
+schema are rejected. The old unqualified `getRecord` returns a sole variant and
+rejects ambiguity; unqualified dependency queries aggregate variants and removal
+removes every variant of that logical resource. Legacy commits use a reserved
+empty-target namespace. The interface adds explicit variant methods, so database
+implementations and linked consumers must be rebuilt together.
+
+Regression coverage includes three coexisting target/mode records; transaction
+rollback preserving the previous record and edges; persistence after reopening;
+scoped forward/reverse queries and cascading removal; ambiguous legacy reads;
+two ResourceSystems using independent SQLite connections; Editor/package
+UpToDate reuse and restart reuse; variant-specific affected builds; retained
+instances across mode switches; one-mode install closures and runtime manifest
+export; and failed-build publication revocation/selection preservation.
+An independent Python fixture runner exercises native schema-1/2 migration,
+preservation of an authored sentinel table and rejection of a newer schema.
+Its first native run exposed an active `PRAGMA user_version` cursor preventing
+replacement of existing tables. The migration now finalizes that cursor before
+starting schema replacement. The runner explicitly closes Python connections,
+including on failure, so Windows can release and clean up fixture files.
+CTest registers `WPResource.index_migration` when a Python interpreter is found.
+
+The rebuilt `RelWithDebInfo` contracts passed in targeted CTest runs:
+
+| Suite | Time |
+|---|---|
+| WorkphoneAssets.catalog_contracts | 3.97 s |
+| WPResourceTests | 0.90 s |
+| WPResource.index_migration | 0.47 s |
+| WPGraphics.cooked_material_resource | 1.54 s |
+| WPLua.runtime_contracts | 0.70 s |
+
+`RelWithDebInfo` builds succeeded for `WPResourceTests`, `WPAssetCatalogTests`,
+`WPGraphicsCookedResourceTests`, `LuaRuntimeTests` and `Editor`, including their
+required dependencies. Build log: `project_x64/resource-variants-build.log`.
+`git diff --check` passed. These tests exercise the updated native service/database and cooked
+consumer fixtures; they do not certify interactive Editor workflows, a standalone
+shipping package, representative hardware, Debug or process-kill/power-loss safety.
+
+This completes target/mode separation within RES-013, not its full BuildKey
+contract. Settings/profile/architecture/backend/toolchain variants, strong digests,
+immutable input snapshots, cross-process writer admission, atomic compatible-set
+publication, package/Editor controls, DDS cooking and native compressed texture
+uploads remain open. No interactive Editor or shipping-package acceptance is
+claimed by these source changes.
+
+## Increment 4: complete-request index publication and writer admission (2026-10-11)
+
+The shared compilation database exposes `commitCompilations`: every changed record
+and dependency edge in a request commits in one SQLite transaction. Invalid or
+duplicate variant records are rejected; an error in any member rolls back the
+whole set. Single-resource commit APIs delegate to this transaction path. Schema
+3 and existing artifact/manifest formats remain unchanged.
+
+The cooker accumulates candidate records while building immutable artifacts.
+It publishes the index only after all requested roots and their dependencies
+succeed. `compileAffected` treats its requested roots as one set. On a compiler
+or index failure, no candidate record becomes active, successful-looking sibling
+reports are changed to failure, old cache/install objects remain valid, and
+publication eligibility for the attempted closure is revoked. A successful
+transaction clears the runtime cache and enables publication of the checked set.
+Unreferenced candidate files are retained for future recovery/GC work.
+
+Authoring now holds an OS writer lease for the canonical cooked root and target
+through shutdown. Both build modes share that admission scope. A second session
+for the same target fails before opening its index; other targets can coexist.
+Windows uses a non-inheritable file descriptor with exclusive sharing; POSIX uses
+nonblocking `flock`. Process exit releases ownership. Lock files persist and must
+not be unlinked to implement stale-lock recovery: ownership follows open handles.
+Runtime-only mounts require no lease and continue reading pinned immutable paths.
+Manifest export cannot overwrite reserved writer-lease storage.
+
+Compatibility: custom compilation database paths must canonicalize inside the
+cooked root, outside artifacts, staging and lease storage. External indexes are
+rejected without opening them, preventing another cooked root from sharing a
+target's index while bypassing root admission. Existing external-index users must
+relocate their derived index or recook with the default path. Direct compilation
+database clients are responsible for their own writer admission; this lease
+contract covers ResourceSystem authoring sessions. Rebuild linked consumers for
+the added batch database interface.
+
+Regression coverage includes a child cooking before parent failure; last-good
+closure loading after cache eviction; whole-closure commit failure and recovery;
+retained old install objects; multi-root affected-build failure and recovery;
+multi-record transaction rollback of records and edges after reopening; duplicate
+batch rejection; same-process writer rejection; and independent-process writer
+contention, canonical-root aliases, distinct targets, normal shutdown, forced
+process termination and initialization failure. External/shared-across-root index
+paths are rejected. Python-backed CTest fixtures use the rebuilt native service.
+
+The rebuilt Windows `RelWithDebInfo` contracts passed in targeted CTest runs:
+
+| Suite | Time |
+|---|---|
+| WPResourceTests | 1.95 s |
+| WPResource.writer_lease | 3.46 s |
+| WPResource.index_migration | 0.51 s |
+| WorkphoneAssets.catalog_contracts | 3.57 s |
+| WPGraphics.cooked_material_resource | 1.67 s |
+| WPLua.runtime_contracts | 0.68 s |
+
+`RelWithDebInfo` builds succeeded for `WPResourceTests`, `WPAssetCatalogTests`,
+`WPGraphicsCookedResourceTests`, `LuaRuntimeTests` and `Editor`, including required
+dependencies. Build log: `project_x64/resource-closure-build.log`.
+`git diff --check` passed.
+Windows and POSIX lease implementations are present; the POSIX path was not
+compiled or exercised on this Windows host. No interactive Editor acceptance,
+standalone shipping-package launch, Debug build or hardware performance
+certification was performed.
+
+This implements complete-request index atomicity and participating-writer
+admission. It does not certify power-loss recovery, immutable source snapshots,
+strong digests, generation journals/recovery/GC, graph-wide owner-thread consumer
+swaps, or arbitrary external writers changing source/artifact/index files. The
+parent records outside the requested set are not rebuilt by `compile(child)`;
+callers use `compileAffected` to include reverse dependents. Persistent per-parent
+dependency-artifact pinning and compatible-set installation remain separate gates.
+The process termination fixture tests release of an idle writer lease, not a crash
+in the middle of publication. DDS and the remaining Editor/release gates stay open.
+
+## Increment 5: persistent dependency artifact pins (11 October 2026)
+
+Authoring cooks now emit WPRS container version 2. Each install dependency carries
+its immutable, cooked-root-relative artifact path and source/payload fingerprints.
+These pins are stored inside the parent's container, so reopening the service or
+evicting its cache does not make an older parent resolve a newly committed child.
+A direct load of that child still selects its latest committed variant. Recooking
+the parent advances its complete pinned closure.
+
+Cook identity includes the container format and install-artifact paths. Old
+version-one outputs therefore recook into distinct immutable generations without
+overwriting existing packages. Readers continue accepting version-one containers
+and legacy manifests; authoring loads reject unpinned version-one parents with
+install dependencies and request a recook. Existing callers of the container
+writer default to version one unless they explicitly provide version-two pins.
+The compilation database remains schema 3 and runtime manifests remain payload
+version 2: their existing per-resource paths and fingerprints constrain all parent
+pins during runtime loading and manifest export. Rebuild linked consumers for the
+extended compiled-header structure.
+
+Runtime caches identify exact artifact generations. Separate load requests can
+retain both old and current instances of a logical child. Within one closure,
+conflicting generations for the same logical ID fail explicitly; missing pinned
+files never fall back to the latest index entry. Failed closures publish no
+partial cache entries. Existing closure count, depth and payload limits still
+apply, including cached nodes and shared subtrees. Authoring pins must belong to
+the selected target/mode namespace; runtime pins must agree with manifest paths
+and child fingerprints. Container readers/writers reject malformed paths,
+incomplete pins, duplicate install IDs, unsupported versions and truncated pins.
+
+Coverage adds persistent old-parent loading after a child-only rebuild and service
+restart; simultaneous old/current child caching; parent recook advancement;
+missing-pinned-child recovery; incompatible diamond rejection and retry; pin path
+and fingerprint mismatch against a manifest; malformed/truncated pin records;
+and genuine version-one container/package compatibility.
+
+Validation: Windows RelWithDebInfo rebuild and focused CTest suites pending.
+Build log: `project_x64/resource-pinning-build.log`.
+
+This closes the per-parent pinning gap recorded under increment 4. It does not
+automatically rebuild reverse dependents after `compile(child)`, certify typed
+consumer swaps on owner threads, or implement immutable source snapshots, strong
+digests, generation recovery/GC, full profile/toolchain BuildKeys, DDS cooking or
+the remaining Editor workflows. Container metadata is not cryptographically
+authenticated. Interactive Editor, shipping application, hardware/performance
+and interrupted-publication acceptance remain separate release gates.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -170,8 +358,9 @@ existing texture compiler and the next cooking consistency milestone.
 
 1. Finish the first integrity slice: authored numeric-ID lookup/traversal, immutable
    metadata migration, reference-aware operations, retention and recovery UI.
-2. Complete variant-aware BuildKey indexing, whole-closure generation publication,
-   source snapshots, recovery and retention on top of the immutable artifacts.
+2. Extend target/mode indexing to full profile/toolchain BuildKeys, immutable
+   source snapshots and generation recovery/retention on top of complete-request
+   index transactions and immutable artifacts. Certify interrupted publication.
 3. Persist typed dependency/reference edges and implement reverse queries,
    dependency invalidation and required-missing/cycle diagnostics.
 4. Integrate typed runtime consumers and owner-thread publication throughout the

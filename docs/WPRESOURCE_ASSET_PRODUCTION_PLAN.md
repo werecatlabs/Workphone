@@ -9,6 +9,22 @@ Status: retain the repaired catalog, cooked material/texture bridge, cooked Lua 
 
 Related plans: [WPGraphics production](WPGRAPHICS_PRODUCTION_PLAN.md), [animation production](WPANIMATION_PRODUCTION_PLAN.md), [foliage production](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md) and [physics production](WPPHYSICS_PRODUCTION_PLAN.md). This document owns shared identity, dependency, import/cook, runtime residency, publication and packaging contracts. Feature plans own the contents and quality of their typed assets.
 
+### Implementation progress after this review
+
+The [implementation ledger](WPRESOURCE_ASSET_IMPLEMENTATION_STATUS.md) records
+subsequent changes and rebuilt validation separately from the review evidence
+below. Integrity repairs and immutable artifact/manifest-v2 publication have been
+implemented. Increment 3 adds schema-3 target/mode-qualified compilation
+records, scoped dependency queries, mode-qualified runtime caches and publication
+evidence, and consistent mode selection throughout load/export closures.
+RES-013 is still partial: full profile/settings/toolchain BuildKeys remain open.
+Increment 4 adds complete-request
+index transactions and canonical-root/target OS writer leases; immutable source
+snapshots, recovery/GC and power-loss certification remain open. Increment 5 adds
+version-2 cooked containers with persistent dependency artifact pins, generation
+cache identities and incompatible-closure rejection. Platform DDS
+packages RES-050–054 remain planned.
+
 ### Current review summary
 
 | Area | Current foundation | Required production completion |
