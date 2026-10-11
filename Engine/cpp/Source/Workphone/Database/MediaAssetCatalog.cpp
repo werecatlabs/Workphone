@@ -3,6 +3,7 @@
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <boost/uuid/name_generator_sha1.hpp>
+#include <boost/uuid/uuid_io.hpp>
 #include <filesystem>
 #include <set>
 #include <algorithm>
