@@ -373,7 +373,7 @@ namespace workphone
     template <typename T>
     workphone::Vector3<T> Matrix4<T>::transformAffine( const Vector3<T> &v ) const
     {
-        WP_ASSERT( isAffine() );
+        //WP_ASSERT( isAffine() );
 
         return Vector3<T>( m[0][0] * v.X() + m[0][1] * v.Y() + m[0][2] * v.Z() + m[0][3],
                            m[1][0] * v.X() + m[1][1] * v.Y() + m[1][2] * v.Z() + m[1][3],

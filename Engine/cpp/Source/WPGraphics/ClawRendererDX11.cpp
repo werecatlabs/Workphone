@@ -1238,7 +1238,10 @@ namespace workphone::render
             }
             views.push_back(cameraTileView);
         };
-        addCamera(getCamera());
+
+        auto c = getCamera();
+        addCamera(c);
+
         // Resident demand is the union of scene cameras. Changing which viewport
         // draws first must not cancel another camera's in-flight tile generation.
         for(const auto&camera:cameras)
