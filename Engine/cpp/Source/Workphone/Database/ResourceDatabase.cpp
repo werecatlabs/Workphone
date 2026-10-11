@@ -1,6 +1,9 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Database/AssetImportQueue.hpp>
+#include <Workphone/Database/AssetCatalogBrowser.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
 #include <Workphone/Database/ResourceReference.hpp>
 #include <Workphone/System/Director.hpp>
@@ -87,22 +90,134 @@ namespace workphone
         const String ReferenceRootUUID = "reference-root";
         const String ReferenceRootPath = "reference";
 
-        s32 getMaxPendingImportJobs( core::IApplicationManager *applicationManager )
-        {
-            constexpr s32 minPendingImportJobs = 4;
-            constexpr s32 maxPendingImportJobs = 64;
-            constexpr s32 maxPrimaryThreadPendingImportJobs = 8192;
-            constexpr s32 pendingImportJobsPerWorker = 2;
+        thread_local ResourceDatabase *activeImport = nullptr;
+        thread_local String importProjectPath, importCachePath, importSettingsPath;
+        thread_local std::function<bool()> currentImportSession;
+        auto importQueue = std::make_shared<AssetImportQueue>();
 
-            auto threadPool = applicationManager->getThreadPoolPtr();
-            if( !threadPool || threadPool->getNumThreads() == 0 )
+        class ImportPump : public Job
+        {
+        public:
+            explicit ImportPump( std::shared_ptr<AssetImportQueue> queue ) : queue( std::move( queue ) )
             {
-                return maxPrimaryThreadPendingImportJobs;
+            }
+            ~ImportPump() override
+            {
+                if( !executed )
+                    queue->cancel();
+            }
+            void execute() override
+            {
+                executed = true;
+                queue->drain();
             }
 
-            auto numWorkers = static_cast<s32>( threadPool->getNumThreads() );
-            return std::min( maxPendingImportJobs,
-                             std::max( minPendingImportJobs, numWorkers * pendingImportJobsPerWorker ) );
+        private:
+            std::shared_ptr<AssetImportQueue> queue;
+            bool executed = false;
+        };
+
+        void dispatchImport( ResourceDatabase *database, std::function<void()> operation,
+                             bool nestedFile = false )
+        {
+            if( nestedFile && activeImport == database )
+            {
+                if( currentImportSession && currentImportSession() )
+                    operation();
+                return;
+            }
+            auto app = core::IApplicationManager::instance();
+            if( !app || app->getQuit() || !app->isRunning() || !database->isLoaded() )
+                return;
+            auto owner = SmartPtr<ResourceDatabase>( database );
+            auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+            const auto project = app->getProjectPath(), cache = app->getCachePath(),
+                       settings = app->getSettingsPath();
+            auto session = std::make_shared<AssetCatalogSession>();
+            const bool bound = catalog && catalog->getDatabase() && catalog->getDatabase()->isLoaded();
+            if( bound && !session->capture( catalog ) )
+                return;
+            if( catalog && !bound &&
+                !catalog->setProjectRoot( project.empty() ? Path::getWorkingDirectory() : project ) )
+                return;
+            auto valid = [owner, catalog, project, cache, settings, session, bound]() {
+                auto current = core::IApplicationManager::instance();
+                return current && !current->getQuit() && current->isRunning() && owner->isLoaded() &&
+                       current->getResourceDatabase() == owner &&
+                       owner->getDatabaseManager() == catalog && current->getProjectPath() == project &&
+                       current->getCachePath() == cache && current->getSettingsPath() == settings &&
+                       ( !bound || session->isCurrent( catalog ) );
+            };
+            if( !importQueue->enqueue( [owner, valid, project, cache, settings,
+                                        operation = std::move( operation )]() {
+                    if( !valid() )
+                    {
+                        WP_LOG_ERROR( "Skipped asset import from an expired project/catalog session." );
+                        return;
+                    }
+                    activeImport = owner.get();
+                    importProjectPath = project;
+                    importCachePath = cache;
+                    importSettingsPath = settings;
+                    currentImportSession = valid;
+                    try
+                    {
+                        operation();
+                    }
+                    catch( const std::exception &error )
+                    {
+                        WP_LOG_ERROR( error.what() );
+                    }
+                    catch( ... )
+                    {
+                        WP_LOG_ERROR( "Asset import failed with an unknown exception." );
+                    }
+                    currentImportSession = {};
+                    activeImport = nullptr;
+                } ) )
+                return;
+            auto queue = app->getJobQueue();
+            auto pool = app->getThreadPool();
+            if( app->hasTasks() && queue && queue->isRunning() && pool && pool->getNumThreads() > 1 )
+                queue->addJob( make_ptr<ImportPump>( importQueue ) );
+            else
+                importQueue->drain();
+        }
+
+        class ResourceCleanupJob : public Job
+        {
+        public:
+            ResourceCleanupJob( SmartPtr<ResourceDatabase> owner, bool remove ) :
+                owner( owner ),
+                remove( remove )
+            {
+                setPrimary( true );
+            }
+            void execute() override
+            {
+                if( owner->isLoaded() )
+                    if( remove )
+                        owner->removeUnusedResources();
+                    else
+                        owner->unloadUnusedResources();
+            }
+
+        private:
+            SmartPtr<ResourceDatabase> owner;
+            bool remove;
+        };
+        bool deferResourceCleanup( ResourceDatabase *owner, bool remove )
+        {
+            if( Thread::getCurrentThreadId() == Thread::ThreadId::Primary )
+                return false;
+            auto app = core::IApplicationManager::instance();
+            auto queue = app ? app->getJobQueue() : nullptr;
+            if( queue && queue->isRunning() && app->isRunning() && !app->getQuit() )
+                queue->addJob(
+                    make_ptr<ResourceCleanupJob>( SmartPtr<ResourceDatabase>( owner ), remove ) );
+            else
+                WP_LOG_ERROR( "Resource cleanup requires an available primary-thread job queue." );
+            return true;
         }
 
         String getFirstFieldValue( SmartPtr<IDatabaseQuery> query,
@@ -642,41 +757,71 @@ namespace workphone
         auto cleanResourceScriptPath = "clean_resources_table.sql";
         assetDatabaseManager->runScript( cleanResourceScriptPath );
 
-        auto resourcesQueryStr = String( "SELECT path FROM resources" );
-        auto query = assetDatabaseManager->executeQuery( resourcesQueryStr );
+        // Release the read statement before starting deletion transactions.
+        auto query =
+            assetDatabaseManager->executeQuery( "SELECT path FROM resources WHERE kind='file'" );
+        Array<String> missing;
+        const auto root = assetDatabaseManager->getProjectRoot();
         if( query )
         {
             while( !query->eof() )
             {
-                auto path = query->getFieldValue( "path" );
-                auto fileExists = fileSystem->isExistingFile( path );
-                if( !fileExists )
-                {
-                    assetDatabaseManager->removeResourceEntryFromPath( path );
-                }
-
+                const auto path = query->getFieldValue( "path" );
+                std::error_code error;
+                if( !std::filesystem::exists( std::filesystem::u8path( ( root + "/" + path ).c_str() ),
+                                              error ) &&
+                    !error )
+                    missing.push_back( path );
                 query->nextRow();
             }
         }
+        query = nullptr;
+        for( const auto &path : missing )
+            assetDatabaseManager->removeResourceEntryFromPath( path );
     }
 
     void ResourceDatabase::deleteCache()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        auto fileSystem = applicationManager->getFileSystem();
+        dispatchImport(
+            this,
+            [this]() {
+                auto applicationManager = core::IApplicationManager::instance();
+                auto fileSystem = applicationManager->getFileSystem();
 
-        auto cachePath = applicationManager->getCachePath();
-        auto folderListing = fileSystem->getFolderListing( cachePath );
+                auto cachePath = importCachePath;
+                auto folderListing = fileSystem->getFolderListing( cachePath );
 
-        auto &files = folderListing->getFiles();
-        for( auto &file : files )
-        {
-            auto ext = Path::getFileExtension( file );
-            if( ext == ".fbmeshbin" || ext == ".pxtrianglemesh" )
-            {
-                fileSystem->deleteFile( file );
-            }
-        }
+                if( !folderListing )
+                    return;
+                String root, error;
+                if( !canonicalAssetCatalogRoot( cachePath, root, error ) )
+                    return;
+                auto &files = folderListing->getFiles();
+                for( auto &file : files )
+                {
+                    if( !currentImportSession || !currentImportSession() )
+                        return;
+                    auto ext = Path::getFileExtension( file );
+                    AssetCatalogPath candidate;
+                    if( !canonicalAssetCatalogPath( root, file, candidate, error ) )
+                        continue;
+                    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
+                    AssetCatalogPath live;
+                    if( catalog &&
+                        canonicalAssetCatalogPath( root, catalog->getDatabasePath(), live, error ) &&
+                        ( candidate.key == live.key || candidate.key == live.key + "-wal" ||
+                          candidate.key == live.key + "-shm" ||
+                          candidate.key == live.key + "-journal" ) )
+                        continue;
+                    // Only known regenerable payloads are cache-owned. Catalogs, WAL/SHM,
+                    // manifests, source files and unknown files must survive reimport.
+                    if( ext == ".fbmeshbin" || ext == ".pxtrianglemesh" )
+                    {
+                        fileSystem->deleteFile( file );
+                    }
+                }
+            },
+            true );
     }
 
     auto ResourceDatabase::hasResource( SmartPtr<IResource> resource ) -> bool
@@ -830,229 +975,231 @@ namespace workphone
 
     void ResourceDatabase::importFolder( SmartPtr<IFolderExplorer> folderListing, bool overwrite )
     {
-        try
-        {
-            if( folderListing )
-            {
-                WP_LOG( "Importing: " + folderListing->getFolderName() );
-
-                auto applicationManager = core::IApplicationManager::instance();
-                WP_ASSERT( applicationManager );
-
-                auto projectPath = applicationManager->getProjectPath();
-                if( StringUtil::isNullOrEmpty( projectPath ) )
+        dispatchImport(
+            this,
+            [this, folderListing, overwrite]() {
+                try
                 {
-                    projectPath = Path::getWorkingDirectory();
-                }
-
-                const auto &files = folderListing->getFiles();
-                for( const auto &file : files )
-                {
-                    auto relativePath = Path::getRelativePath( projectPath, file );
-                    importFile( relativePath, overwrite );
-                }
-
-                auto subFolders = folderListing->getSubFolders();
-                for( const auto &subFolder : subFolders )
-                {
-                    try
+                    if( folderListing )
                     {
-                        importFolder( subFolder, overwrite );
-                    }
-                    catch( std::exception &e )
-                    {
-                        WP_LOG_EXCEPTION( e );
+                        WP_LOG( "Importing: " + folderListing->getFolderName() );
+
+                        auto applicationManager = core::IApplicationManager::instance();
+                        WP_ASSERT( applicationManager );
+
+                        auto projectPath = importProjectPath;
+                        if( StringUtil::isNullOrEmpty( projectPath ) )
+                        {
+                            projectPath = Path::getWorkingDirectory();
+                        }
+
+                        const auto &files = folderListing->getFiles();
+                        for( const auto &file : files )
+                        {
+                            auto relativePath = Path::getRelativePath( projectPath, file );
+                            importFile( relativePath, overwrite );
+                        }
+
+                        auto subFolders = folderListing->getSubFolders();
+                        for( const auto &subFolder : subFolders )
+                        {
+                            try
+                            {
+                                importFolder( subFolder, overwrite );
+                            }
+                            catch( std::exception &e )
+                            {
+                                WP_LOG_EXCEPTION( e );
+                            }
+                        }
                     }
                 }
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+                catch( std::exception &e )
+                {
+                    WP_LOG_EXCEPTION( e );
+                }
+            },
+            true );
     }
 
     void ResourceDatabase::importFolder( const String &path, bool overwrite )
     {
-        try
-        {
-            if( !StringUtil::isNullOrEmpty( path ) )
-            {
+        dispatchImport(
+            this,
+            [this, path, overwrite]() {
+                try
+                {
+                    if( !StringUtil::isNullOrEmpty( path ) )
+                    {
+                        auto applicationManager = core::IApplicationManager::instance();
+                        WP_ASSERT( applicationManager );
+
+                        auto fileSystem = applicationManager->getFileSystem();
+                        WP_ASSERT( fileSystem );
+
+                        auto projectPath = importProjectPath;
+                        if( StringUtil::isNullOrEmpty( projectPath ) )
+                        {
+                            projectPath = Path::getWorkingDirectory();
+                        }
+
+                        auto folderListing = fileSystem->getFolderListing( path );
+                        if( folderListing )
+                        {
+                            importFolder( folderListing, overwrite );
+                        }
+                    }
+                }
+                catch( std::exception &e )
+                {
+                    WP_LOG_EXCEPTION( e );
+                }
+            },
+            true );
+    }
+
+    void ResourceDatabase::importFile( const String &filePath, bool overwrite )
+    {
+        dispatchImport(
+            this,
+            [this, filePath, overwrite]() {
+                if( !isLoaded() )
+                {
+                    return;
+                }
+
+                auto applicationManager = core::IApplicationManager::instancePtr();
+                WP_ASSERT( applicationManager );
+
+                if( applicationManager->getQuit() )
+                {
+                    return;
+                }
+
+                if( applicationManager->isRunning() == false )
+                {
+                    return;
+                }
+
+                auto factoryManager = applicationManager->getFactoryManagerPtr();
+                auto job = factoryManager->make_ptr<ImportFileJob>();
+                job->setFilePath( filePath );
+                job->setOverwrite( overwrite );
+                job->execute();
+            },
+            true );
+    }
+
+    void ResourceDatabase::importCache()
+    {
+        dispatchImport(
+            this,
+            [this]() {
                 auto applicationManager = core::IApplicationManager::instance();
                 WP_ASSERT( applicationManager );
 
                 auto fileSystem = applicationManager->getFileSystem();
                 WP_ASSERT( fileSystem );
 
-                auto projectPath = applicationManager->getProjectPath();
+                clean();
+
+                auto projectPath = importProjectPath;
                 if( StringUtil::isNullOrEmpty( projectPath ) )
                 {
                     projectPath = Path::getWorkingDirectory();
                 }
 
-                auto folderListing = fileSystem->getFolderListing( path );
-                if( folderListing )
-                {
-                    importFolder( folderListing, overwrite );
-                }
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
-    }
+                auto cachePath = importCachePath;
 
-    void ResourceDatabase::importFile( const String &filePath, bool overwrite )
-    {
-        if( !isLoaded() )
-        {
-            return;
-        }
+                std::cout << "Importing: " << cachePath << std::endl;
 
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        WP_ASSERT( applicationManager );
+                importFolder( cachePath );
 
-        if( applicationManager->getQuit() )
-        {
-            return;
-        }
-
-        if( applicationManager->isRunning() == false )
-        {
-            return;
-        }
-
-        const auto maxPendingImportJobs = getMaxPendingImportJobs( applicationManager );
-        while( ResourceDatabase::m_numJobs >= maxPendingImportJobs )
-        {
-            if( applicationManager->getQuit() || applicationManager->isRunning() == false )
-            {
-                return;
-            }
-
-            Thread::sleep( 0.1 );
-        }
-
-        auto jobQueue = applicationManager->getJobQueuePtr();
-        auto factoryManager = applicationManager->getFactoryManagerPtr();
-
-        auto job = factoryManager->make_ptr<ImportFileJob>();
-        job->setFilePath( filePath );
-        job->setOverwrite( overwrite );
-
-        if( applicationManager->hasTasks() )
-        {
-            if( jobQueue )
-            {
-                jobQueue->addJob( job );
-            }
-            else
-            {
-                job->execute();
-            }
-        }
-        else
-        {
-            job->execute();
-        }
-    }
-
-    void ResourceDatabase::importCache()
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto fileSystem = applicationManager->getFileSystem();
-        WP_ASSERT( fileSystem );
-
-        clean();
-
-        auto projectPath = applicationManager->getProjectPath();
-        if( StringUtil::isNullOrEmpty( projectPath ) )
-        {
-            projectPath = Path::getWorkingDirectory();
-        }
-
-        auto cachePath = applicationManager->getCachePath();
-
-        std::cout << "Importing: " << cachePath << std::endl;
-
-        importFolder( cachePath );
-
-        std::cout << "Finished Importing: " << cachePath << std::endl;
+                std::cout << "Finished Importing: " << cachePath << std::endl;
+            },
+            false );
     }
 
     void ResourceDatabase::importAssets()
     {
-        try
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
+        dispatchImport(
+            this,
+            [this]() {
+                try
+                {
+                    auto applicationManager = core::IApplicationManager::instance();
+                    WP_ASSERT( applicationManager );
 
-            auto fileSystem = applicationManager->getFileSystem();
-            WP_ASSERT( fileSystem );
+                    auto fileSystem = applicationManager->getFileSystem();
+                    WP_ASSERT( fileSystem );
 
-            auto databaseManager = getDatabaseManager();
-            WP_ASSERT( databaseManager );
+                    auto databaseManager = getDatabaseManager();
+                    WP_ASSERT( databaseManager );
 
-            auto assetDatabaseManager =
-                workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-            WP_ASSERT( assetDatabaseManager );
+                    auto assetDatabaseManager =
+                        workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
+                    WP_ASSERT( assetDatabaseManager );
 
-            clean();
+                    clean();
 
-            assetDatabaseManager->create();
+                    assetDatabaseManager->create();
 
-            auto projectPath = applicationManager->getProjectPath();
-            if( StringUtil::isNullOrEmpty( projectPath ) )
-            {
-                projectPath = Path::getWorkingDirectory();
-            }
+                    auto projectPath = importProjectPath;
+                    if( StringUtil::isNullOrEmpty( projectPath ) )
+                    {
+                        projectPath = Path::getWorkingDirectory();
+                    }
 
-            auto cachePath = applicationManager->getCachePath();
-            importFolder( cachePath );
+                    auto cachePath = importCachePath;
+                    importFolder( cachePath );
 
-            auto projectAssetsPath = projectPath + "/Assets";
-            auto folderListing = fileSystem->getFolderListing( projectAssetsPath );
-            if( folderListing )
-            {
-                importFolder( folderListing );
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+                    auto projectAssetsPath = projectPath + "/Assets";
+                    auto folderListing = fileSystem->getFolderListing( projectAssetsPath );
+                    if( folderListing )
+                    {
+                        importFolder( folderListing );
+                    }
+                }
+                catch( std::exception &e )
+                {
+                    WP_LOG_EXCEPTION( e );
+                }
+            },
+            false );
     }
 
     void ResourceDatabase::reimportAssets()
     {
-        try
-        {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
+        dispatchImport(
+            this,
+            [this]() {
+                try
+                {
+                    auto applicationManager = core::IApplicationManager::instance();
+                    WP_ASSERT( applicationManager );
 
-            auto fileSystem = applicationManager->getFileSystem();
-            WP_ASSERT( fileSystem );
+                    auto fileSystem = applicationManager->getFileSystem();
+                    WP_ASSERT( fileSystem );
 
-            clean();
+                    clean();
 
-            auto cachePath = applicationManager->getCachePath();
-            fileSystem->deleteFilesFromPath( cachePath );
+                    auto cachePath = importCachePath;
+                    deleteCache();
 
-            auto projectPath = applicationManager->getProjectPath();
-            auto assetsPath = projectPath + "/Assets";
-            auto folderListing = fileSystem->getFolderListing( assetsPath );
-            if( folderListing )
-            {
-                importFolder( folderListing );
-            }
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+                    auto projectPath = importProjectPath;
+                    auto assetsPath = projectPath + "/Assets";
+                    auto folderListing = fileSystem->getFolderListing( assetsPath );
+                    if( folderListing )
+                    {
+                        importFolder( folderListing );
+                    }
+                }
+                catch( std::exception &e )
+                {
+                    WP_LOG_EXCEPTION( e );
+                }
+            },
+            false );
     }
 
     void ResourceDatabase::calculateDependencies()
@@ -1668,80 +1815,50 @@ namespace workphone
     }
     void ResourceDatabase::unloadUnusedResources()
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-
-        for( auto object : m_objects )
+        if( deferResourceCleanup( this, false ) )
+            return;
+        Array<SmartPtr<ISharedObject>> candidates;
         {
-            if( object )
-            {
-                if( object->getReferences() == 1 )
-                {
-                    object->unload( nullptr );
-                }
-            }
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            for( const auto &object : m_objects )
+                if( object && object->getReferences() == 1 )
+                    candidates.push_back( object );
+            if( m_instances )
+                for( const auto &resource : *m_instances )
+                    if( resource && resource->getReferences() == 1 )
+                        candidates.push_back( resource );
         }
-
-        if( auto p = getInstancesPtr() )
-        {
-            auto &instances = *p;
-
-            for( auto instance : instances )
-            {
-                if( instance )
-                {
-                    if( instance->getReferences() == 1 )
-                    {
-                        instance->unload( nullptr );
-                    }
-                }
-            }
-        }
+        for( auto &object : candidates )
+            if( object->getReferences() == 2 )
+                object->unload( nullptr );
     }
 
     void ResourceDatabase::removeUnusedResources()
     {
-        RecursiveMutex::ScopedLock lock( m_mutex );
-
-        auto objectsToRemove = Array<SmartPtr<ISharedObject>>();
-        objectsToRemove.reserve( m_objects.size() );
-
-        for( auto &object : m_objects )
+        if( deferResourceCleanup( this, true ) )
+            return;
+        Array<SmartPtr<ISharedObject>> detached;
         {
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            auto collect = [&]( auto &objects ) {
+                for( auto it = objects.begin(); it != objects.end(); )
+                    if( *it && ( *it )->getReferences() == 1 )
+                    {
+                        detached.push_back( *it );
+                        it = objects.erase( it );
+                    }
+                    else
+                        ++it;
+            };
+            collect( m_objects );
+            if( m_instances )
+                collect( *m_instances );
+        }
+        // Recheck ownership after detachment: a concurrent acquired reference
+        // keeps its live resource rather than having it unloaded underneath it.
+        for( auto &object : detached )
             if( object->getReferences() == 1 )
-            {
                 object->unload( nullptr );
-                objectsToRemove.push_back( object );
-            }
-        }
-
-        for( auto &object : objectsToRemove )
-        {
-            m_objects.erase( std::remove( m_objects.begin(), m_objects.end(), object ),
-                             m_objects.end() );
-        }
-
-        if( auto p = getInstancesPtr() )
-        {
-            auto &instances = *p;
-
-            auto instancesToRemove = Array<SmartPtr<ISharedObject>>();
-            instancesToRemove.reserve( instances.size() );
-
-            for( auto &instance : instances )
-            {
-                if( instance->getReferences() == 1 )
-                {
-                    instance->unload( nullptr );
-                    instancesToRemove.push_back( instance );
-                }
-            }
-
-            for( auto &object : instancesToRemove )
-            {
-                instances.erase( std::remove( instances.begin(), instances.end(), object ),
-                                 instances.end() );
-            }
-        }
     }
 
     auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource,
@@ -2419,11 +2536,13 @@ namespace workphone
 
     auto ResourceDatabase::getInstancesPtr() const -> SharedPtr<Array<SmartPtr<IResource>>>
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
         return m_instances;
     }
 
     void ResourceDatabase::setInstancesPtr( SharedPtr<Array<SmartPtr<IResource>>> instances )
     {
+        RecursiveMutex::ScopedLock lock( m_mutex );
         m_instances = instances;
     }
 
@@ -2495,6 +2614,13 @@ namespace workphone
             auto resourceDatabase = applicationManager->getResourceDatabasePtr();
             WP_ASSERT( resourceDatabase );
 
+            if( activeImport != resourceDatabase )
+            {
+                resourceDatabase->importFile( filePath, getOverwrite() );
+                return;
+            }
+            if( !currentImportSession || !currentImportSession() )
+                return;
             auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
 
             auto fileSystem = applicationManager->getFileSystemPtr();
@@ -2510,7 +2636,7 @@ namespace workphone
             auto prefabManager = applicationManager->getPrefabManager();
             WP_ASSERT( prefabManager );
 
-            auto cachePath = applicationManager->getCachePath();
+            auto cachePath = importCachePath;
 
             auto dbFilePath = resourceDatabase->getFilePath();
             auto databasePath = cachePath + "/" + dbFilePath;
@@ -2535,10 +2661,10 @@ namespace workphone
 
             assetDatabaseManager->loadFromFile( databasePath );
 
-            auto projectPath = applicationManager->getProjectPath();
-            auto settingsCachePath = applicationManager->getSettingsPath();
+            auto projectPath = importProjectPath;
+            auto settingsCachePath = importSettingsPath;
 
-            auto basePath = applicationManager->getProjectPath();
+            auto basePath = importProjectPath;
             if( StringUtil::isNullOrEmpty( basePath ) )
             {
                 basePath = Path::getWorkingDirectory();
@@ -2769,7 +2895,7 @@ namespace workphone
                 }
             }
 
-            resourceDatabase->unloadUnusedResources();
+            // Runtime eviction is an explicit primary-thread maintenance operation.
         }
         catch( std::exception &e )
         {

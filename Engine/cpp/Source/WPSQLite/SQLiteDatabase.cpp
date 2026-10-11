@@ -89,6 +89,7 @@ namespace workphone
                 if( m_database )
                 {
                     m_database->open( filePath.c_str() );
+                    m_database->setBusyTimeout( 1000 );
                 }
                 else
                 {
@@ -131,6 +132,7 @@ namespace workphone
             if( !m_database )
                 m_database = workphone::make_shared<CppSQLite3DB>();
             m_database->open( filePath.c_str() );
+            m_database->setBusyTimeout( 1000 );
 
             if( !StringUtil::isNullOrEmpty( key ) )
             {
@@ -204,7 +206,16 @@ namespace workphone
                     const auto executed = sqlite3_exec(m_database->mpDB, sql.c_str(), nullptr, nullptr, nullptr);
                     if( executed != SQLITE_OK )
                     {
-                        WP_LOG_ERROR(sqlite3_errmsg(m_database->mpDB));
+                        if( executed == SQLITE_BUSY || executed == SQLITE_LOCKED )
+                        {
+                            WP_LOG_ERROR(
+                                "SQLite writer is busy; retry after the other transaction completes "
+                                "(1000 ms timeout)." );
+                        }
+                        else
+                        {
+                            WP_LOG_ERROR( sqlite3_errmsg( m_database->mpDB ) );
+                        }
                         return nullptr;
                     }
                     return workphone::make_ptr<SQLiteQuery>();

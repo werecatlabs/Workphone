@@ -1432,7 +1432,8 @@ namespace workphone::editor
             break;
             case WidgetId::AssetReimportId:
             {
-                resourceDatabase->reimportAssets();
+                auto job = workphone::make_ptr<AssetImportJob>( true );
+                jobQueue->addJob( job );
             }
             break;
             case WidgetId::AssetDatabaseBuildId:

@@ -1075,6 +1075,7 @@ namespace
     }
 }  // namespace
 #include "AssetReferenceGraphContracts.hpp"
+#include "AssetImportSchedulingContracts.hpp"
 
 int main()
 {
@@ -1122,6 +1123,7 @@ int main()
             identityLifecycleContracts( folder );
             std::cout << "PASS: canonical catalog aliases, explicit kinds, project relocation, "
                          "generation lifecycle and version-one migration rollback\n";
+            assetImportSchedulingContracts( folder );
             runAssetCatalogPathContracts( folder );
 #ifdef WP_CATALOG_RESOURCE_SYSTEM_TESTS
             catalogResourceAdapterContracts( folder );
