@@ -20,15 +20,18 @@ namespace
         };
         auto app = core::IApplicationManager::instancePtr();
         const auto oldMedia = app->getMediaPath();
+        const auto oldWorkingDirectory = std::filesystem::current_path();
         struct Restore
         {
             SmartPtr<core::IApplicationManager> app;
             String media;
-            ~Restore() { app->setMediaPath( media ); }
-        } restore{app,oldMedia};
+            std::filesystem::path workingDirectory;
+            ~Restore() { std::filesystem::current_path( workingDirectory ); app->setMediaPath( media ); }
+        } restore{app,oldMedia,oldWorkingDirectory};
         const auto root = folder / "domain-media";
         std::filesystem::create_directories( root );
-        app->setMediaPath( root.u8string().c_str() );
+        std::filesystem::current_path( folder );
+        app->setMediaPath( "domain-media" );
         auto resources = make_ptr<DomainContractResourceDatabase>();
         const auto uuid = StringUtil::getUUID();
         check( !resources->loadAssetProperties( StringUtil::parseUUID( uuid ) ) &&

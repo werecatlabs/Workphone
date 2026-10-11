@@ -30,7 +30,12 @@ packages RES-050–054 remain planned. Increment 7 adds bounded, generation-qual
 catalog DTO queries and a functional read-only Editor catalog browser, backed by
 a weakly bound navigation/selection model. RES-046 remains partial: the reference
 picker, undoable assignment, asynchronous publication and interactive acceptance
-remain open. The standalone domain Editor remains RES-045.
+remain open. The standalone domain Editor remains RES-045. Increment 8 adds a
+separate read-only bundled media catalog and UUID mount, typed grouped reference
+assignment/undo, bound legacy settings/state access and bounded read-only domain
+asset traversal. Persisted reference graph updates, package eligibility/UUID
+integration and interactive acceptance remain open. See the
+[bundled media guide](WPRESOURCE_BUILTIN_MEDIA.md).
 
 ### Current review summary
 
