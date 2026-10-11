@@ -11,6 +11,7 @@
 #include "workphone_physics_internal.h"
 #include "workphone_physics_geometry.h"
 #include <math.h>
+#include <float.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -328,28 +329,51 @@ wp_f32 wp_collision_shape_get_plane_offset( const wp_collision_shape *shape )
 
 void wp_collision_shape_set_mesh_data( wp_collision_shape *shape, const wp_collision_mesh_data *data )
 {
-    if( !shape )
-    {
-        return;
-    }
+    (void)wp_collision_shape_try_set_mesh_data( shape, data );
+}
 
-    invalidate_shape_bounds( shape );
+wp_s32 wp_collision_shape_try_set_mesh_data( wp_collision_shape *shape,
+                                            const wp_collision_mesh_data *data )
+{
+    wp_triangle_mesh *candidate;
+    size_t i;
+    wp_f32 value;
+    if( !shape || shape->type != WORKPHONE_COLLISION_SHAPE_MESH )
+        return 0;
+    candidate = NULL;
+    if( data )
+    {
+        if( ( data->vertex_count && !data->vertices ) ||
+            ( data->triangle_count && ( !data->indices || !data->vertex_count ) ) ||
+            data->vertex_count > SIZE_MAX / ( sizeof( wp_f32 ) * 3u ) ||
+            data->triangle_count > SIZE_MAX / ( sizeof( wp_u32 ) * 3u ) )
+            return 0;
+        for( i = 0; i < (size_t)data->vertex_count * 3u; ++i )
+        {
+            value = data->vertices[i];
+            if( value != value || value > FLT_MAX || value < -FLT_MAX )
+                return 0;
+        }
+        for( i = 0; i < (size_t)data->triangle_count * 3u; ++i )
+            if( data->indices[i] >= data->vertex_count )
+                return 0;
+        if( data->triangle_count )
+        {
+            candidate = wp_triangle_mesh_create( data->vertices, data->vertex_count,
+                                                  data->indices, data->triangle_count );
+            if( !candidate )
+                return 0;
+            wp_triangle_mesh_set_refit_callback( candidate, invalidate_shape_bounds, shape );
+        }
+    }
     wp_triangle_mesh_destroy( shape->triangle_mesh );
-    shape->triangle_mesh = NULL;
-
-    if( !data )
-    {
+    shape->triangle_mesh = candidate;
+    if( data )
+        shape->mesh_data = *data;
+    else
         memset( &shape->mesh_data, 0, sizeof( wp_collision_mesh_data ) );
-        return;
-    }
-
-    shape->mesh_data = *data;
-    if( data->vertices && data->indices && data->vertex_count > 0u && data->triangle_count > 0u )
-    {
-        shape->triangle_mesh = wp_triangle_mesh_create( data->vertices, data->vertex_count,
-                                                        data->indices, data->triangle_count );
-        wp_triangle_mesh_set_refit_callback( shape->triangle_mesh, invalidate_shape_bounds, shape );
-    }
+    invalidate_shape_bounds( shape );
+    return 1;
 }
 
 const wp_collision_mesh_data *wp_collision_shape_get_mesh_data( const wp_collision_shape *shape )

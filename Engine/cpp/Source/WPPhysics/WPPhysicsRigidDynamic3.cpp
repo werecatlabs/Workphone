@@ -35,6 +35,8 @@ namespace workphone::physics
         {
             throw std::runtime_error("Failed to create a WPPhysics dynamic rigid body.");
         }
+        try { m_shapes.reserve(WP_RIGIDBODY_MAX_SHAPES); }
+        catch(...) { wp_rigidbody_destroy(m_body); m_body = nullptr; throw; }
 
         if(type == WORKPHONE_RIGIDBODY_KINEMATIC)
         {

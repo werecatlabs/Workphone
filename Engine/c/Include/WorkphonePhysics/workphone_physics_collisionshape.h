@@ -216,6 +216,14 @@ wp_f32 wp_collision_shape_get_plane_offset( const wp_collision_shape *shape );
  */
 void wp_collision_shape_set_mesh_data( wp_collision_shape *shape, const wp_collision_mesh_data *data );
 
+/** Validate and prepare replacement mesh data before publication. Returns zero on
+ * invalid indices/nonfinite vertices or allocation failure, retaining the old mesh.
+ * NULL clears the mesh. A zero-triangle descriptor is valid empty geometry (terrain holes).
+ * Shallow array ownership is identical to set_mesh_data. Call only at a physics synchronization point.
+ */
+wp_s32 wp_collision_shape_try_set_mesh_data( wp_collision_shape *shape,
+                                            const wp_collision_mesh_data *data );
+
 /**
  * @brief Gets the mesh data associated with a mesh-type collision shape.
  * @param shape Pointer to the collision shape.

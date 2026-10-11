@@ -26,6 +26,72 @@ namespace terrain_data_contracts
 
     inline void run()
     {
+        {
+            TerrainData appearanceData;
+            auto &a = appearanceData.appearance;
+            a.projection = TerrainProjection::Triplanar;
+            a.triplanarSharpness = 7;
+            a.heightBlend = true;
+            a.heightTransition = .4f;
+            a.detailNormal = "data://terrain-detail.texres";
+            a.detailUvScale = { 8, 3 };
+            a.detailStrength = 2;
+            a.macroScale = .2f; a.macroStrength = .4f; a.macroSeed = 0xffffffffu;
+            a.macroTint = { .2f, .3f, .4f, 1 };
+            a.wetness = .6f; a.wetDarkening = .2f; a.wetRoughness = .08f;
+            a.snow = .7f; a.snowRoughness = .9f; a.snowTint = { .8f, .9f, 1, 1 };
+            appearanceData.layers[0].heightScale = 2;
+            appearanceData.layers[0].heightBias = -.25f;
+            appearanceData.surfaceMasks = { { 0, 1 }, { .25f, .75f }, { .5f, .5f }, { 1, 0 } };
+            String error;
+            const auto json = serializeTerrainData( appearanceData );
+            TerrainData decoded;
+            require( !json.empty() && deserializeTerrainData( json, decoded, error ) &&
+                         decoded.appearance == a && decoded.surfaceMasks == appearanceData.surfaceMasks &&
+                         decoded.layers == appearanceData.layers,
+                     "v3 persists all appearance controls, full-width seeds, height parameters and wet/snow masks" );
+            auto legacy = json;
+            const auto version = legacy.find( "\"version\":3" );
+            require( version != String::npos, "v3 source format marker is present" );
+            legacy.replace( version, 11, "\"version\":2" );
+            require( deserializeTerrainData( legacy, decoded, error ) &&
+                         decoded.appearance == TerrainAppearance{} && decoded.surfaceMasks.empty() &&
+                         decoded.layers[0].heightScale == 1 && decoded.layers[0].heightBias == 0,
+                     "v2 migration leaves existing rendering unchanged and ignores newer optional fields" );
+            auto source = make_ptr<Terrain>();
+            const auto original = source->getTerrainSnapshot();
+            require( source->applyTerrainData( appearanceData, error ) &&
+                         source->getTerrainSnapshot() != original && source->getTerrainSnapshot()->appearance == a,
+                     "appearance-only edits must publish a new authoritative source" );
+            auto edited = *source->getTerrainSnapshot();
+            edited.surfaceMasks[0] = { .1f, .2f };
+            require( source->applyTerrainData( edited, error ) &&
+                         source->getTerrainSnapshot()->surfaceMasks == edited.surfaceMasks,
+                     "mask-only edits must publish even when geometry and layers are unchanged" );
+            const auto retained = source->getTerrainSnapshot();
+            for( int invalidCase = 0; invalidCase < 8; ++invalidCase )
+            {
+                auto invalid = edited;
+                switch( invalidCase )
+                {
+                case 0: invalid.appearance.projection = TerrainProjection( 2 ); break;
+                case 1: invalid.appearance.heightTransition = 0; break;
+                case 2: invalid.appearance.wetness = 1.1f; break;
+                case 3: invalid.appearance.snow = -1; break;
+                case 4: invalid.appearance.macroStrength = std::numeric_limits<float>::quiet_NaN(); break;
+                case 5: invalid.surfaceMasks[0].x = 2; break;
+                case 6: invalid.surfaceMasks.pop_back(); break;
+                case 7: invalid.layers[0].heightScale = 5; break;
+                }
+                require( !validateTerrainData( invalid, error ) &&
+                             !source->applyTerrainData( invalid, error ) && source->getTerrainSnapshot() == retained,
+                         "invalid appearance or mask edits must preserve the last complete source" );
+            }
+            source->setHeightMapSize( { 3, 3 } );
+            require( source->getTerrainSnapshot()->surfaceMasks.empty() &&
+                         source->getTerrainSnapshot()->appearance == a,
+                     "topology changes clear incompatible sample masks while retaining appearance controls" );
+        }
         TerrainData data;
         data.dimensions = { 3, 5 };
         data.spacing = { 2, 3 };
@@ -141,6 +207,23 @@ namespace terrain_data_contracts
         invalid.dimensions = { 8193, 8193 };
         require( !validateTerrainData( invalid, error ),
                  "Oversized terrain dimensions must fail before allocating" );
+        for( const auto axis : { 0, 1 } )
+        {
+            invalid = data;
+            invalid.layers[3].uvScale[axis] = std::numeric_limits<f32>::max();
+            require( !validateTerrainData( invalid, error ),
+                     "Finite tiling must reject overflowing UVs on either terrain axis" );
+        }
+        invalid = data;
+        invalid.origin.x = -8;
+        invalid.layers[1].uvScale.x = std::numeric_limits<f32>::max() / 6;
+        require( !validateTerrainData( invalid, error ),
+                 "UV validation must include the negative local origin, not only the far endpoint" );
+        auto largeTiling = data;
+        largeTiling.layers[2].uvScale = { std::numeric_limits<f32>::max() / 16,
+                                         std::numeric_limits<f32>::max() / 16 };
+        require( validateTerrainData( largeTiling, error ),
+                 "Large tiling whose complete local footprint remains finite is supported" );
         invalid = saddle;
         invalid.origin.x = 1.e20f;
         require( !validateTerrainData( invalid, error ),

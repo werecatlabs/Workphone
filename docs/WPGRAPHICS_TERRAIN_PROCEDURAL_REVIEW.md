@@ -8,6 +8,12 @@ This was a source audit and proposed implementation programme; the original revi
 
 ## Outcome and release scope
 
+Implementation follow-up, 11 October 2026: the [terrain runtime and expanded
+authoring report](WPGRAPHICS_IMPLEMENTATION_STATUS.md#terrain-runtime-and-expanded-authoring--11-october-2026)
+and [workflow guide](TERRAIN_WORKFLOW.md) describe the current connected features,
+failure behavior and supported bounds. The audit findings below remain historical;
+the package evidence requirements and release gates are still authoritative.
+
 Production readiness means an advertised feature has a working authoring-to-runtime path, stable saved data, bounded resource use, failure handling, automated checks and representative visual evidence. Existing class names, UI controls, browser demos and test target names are implementation leads rather than completion evidence.
 
 | Track | R1: production core | R2: comprehensive release | Later, separately scoped |

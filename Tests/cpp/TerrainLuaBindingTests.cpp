@@ -75,6 +75,106 @@ int main()
                 assert(editor:updateBoundSetting(TerrainEditorTypes.HeightScale, {getValue=function() return 2 end}))
                 assert(editor:updateBoundSetting(TerrainEditorTypes.ChunkSize, {getValue=function() return 64 end}))
                 assert(terrainFixture:getHeightMapSize():X() == 3 and terrainFixture:getHeightMapSize():Y() == 5)
+                -- Unsupported material controls must neither report success nor change saved settings/data.
+                local unsupported = {
+                    {TerrainEditorTypes.LayerBlendMode, 'layerBlendMode'},
+                    {TerrainEditorTypes.LayerUVSet, 'layerUVSet'},
+                    {TerrainEditorTypes.LayerProjection, 'layerProjection'},
+                    {TerrainEditorTypes.LayerOffsetX, 'layerOffsetX'},
+                    {TerrainEditorTypes.LayerOffsetY, 'layerOffsetY'},
+                    {TerrainEditorTypes.LayerRotation, 'layerRotation'},
+                    {TerrainEditorTypes.LayerTriplanar, 'layerTriplanar'},
+                    {TerrainEditorTypes.LayerTriplanarScale, 'layerTriplanarScale'},
+                    {TerrainEditorTypes.LayerAO, 'layerAO'},
+                    {TerrainEditorTypes.LayerHeightBlend, 'layerHeightBlend'},
+                    {TerrainEditorTypes.LayerHeightContrast, 'layerHeightContrast'},
+                    {TerrainEditorTypes.LayerPaintHardness, 'layerPaintHardness'},
+                }
+                local materialRevision = terrainFixture:getTerrainRevision()
+                for _, setting in ipairs(unsupported) do
+                    local previous = editor.settings[setting[2]]
+                    editor.controlBindings[setting[1]] = {key=setting[2], valueType='value'}
+                    assert(not editor:updateBoundSetting(setting[1], {getValue=function() return 2 end}))
+                    assert(string.find(editor._currentStatus, 'Unavailable:', 1, true))
+                    assert(editor.settings[setting[2]] == previous)
+                    assert(terrainFixture:getTerrainRevision() == materialRevision)
+                end
+                for _, setting in ipairs({
+                    {TerrainEditorTypes.LayerSlopeMin, 'layerSlopeMin'},
+                    {TerrainEditorTypes.LayerSlopeMax, 'layerSlopeMax'},
+                    {TerrainEditorTypes.LayerHeightMin, 'layerHeightMin'},
+                    {TerrainEditorTypes.LayerHeightMax, 'layerHeightMax'},
+                }) do
+                    local previous = editor.settings[setting[2]]
+                    editor.controlBindings[setting[1]] = {key=setting[2], valueType='value'}
+                    assert(editor:updateBoundSetting(setting[1], {getValue=function() return 12 end}))
+                    assert(editor.settings[setting[2]] == 12)
+                    assert(string.find(editor._currentStatus, 'auto-paint', 1, true))
+                    assert(terrainFixture:getTerrainRevision() == materialRevision)
+                    editor.settings[setting[2]] = previous
+                end
+                local layer = {layer=0}
+                assert(terrainFixture:editTerrain('getLayer', layer) == '')
+                local priorRoughness = layer.roughness
+                editor.controlBindings[TerrainEditorTypes.LayerRoughness] = {key='layerRoughness', valueType='value'}
+                assert(editor:updateBoundSetting(TerrainEditorTypes.LayerRoughness, {getValue=function() return 0.4 end}))
+                assert(terrainFixture:editTerrain('getLayer', layer) == '' and math.abs(layer.roughness - 0.4) < 0.0001)
+                materialRevision = terrainFixture:getTerrainRevision()
+                assert(not editor:updateBoundSetting(TerrainEditorTypes.LayerRoughness, {getValue=function() return 2 end}))
+                assert(terrainFixture:getTerrainRevision() == materialRevision)
+                assert(editor:updateBoundSetting(TerrainEditorTypes.LayerRoughness, {getValue=function() return priorRoughness end}))
+                -- Global appearance controls use persistent native values, with rejected edits reported.
+                editor.controlBindings[TerrainEditorTypes.Wetness] = {key='wetness', valueType='value'}
+                editor.controlBindings[TerrainEditorTypes.AppearanceProjection] = {key='appearanceProjection', valueType='selected'}
+                editor.controlBindings[TerrainEditorTypes.HeightBlendEnabled] = {key='heightBlendEnabled', valueType='toggle'}
+                assert(editor:updateBoundSetting(TerrainEditorTypes.Wetness, {getValue=function() return 0.7 end}))
+                assert(editor:updateBoundSetting(TerrainEditorTypes.AppearanceProjection, {getSelectedOption=function() return 1 end}))
+                assert(editor:updateBoundSetting(TerrainEditorTypes.HeightBlendEnabled, {getValue=function() return true end}))
+                local appearance = {}
+                assert(terrainFixture:editTerrain('getAppearance', appearance) == '')
+                assert(math.abs(appearance.wetness - 0.7) < 0.0001 and appearance.projection == 1 and appearance.heightBlend == 1)
+                materialRevision = terrainFixture:getTerrainRevision()
+                assert(not editor:updateBoundSetting(TerrainEditorTypes.Wetness, {getValue=function() return 2 end}))
+                assert(terrainFixture:getTerrainRevision() == materialRevision and math.abs(editor.settings.wetness - 0.7) < 0.0001)
+                editor.controlBindings[TerrainEditorTypes.LayerHeightBias] = {key='layerHeightBias', valueType='value'}
+                assert(editor:updateBoundSetting(TerrainEditorTypes.LayerHeightBias, {getValue=function() return -0.3 end}))
+                assert(terrainFixture:editTerrain('getLayer', layer) == '' and math.abs(layer.heightBias + 0.3) < 0.0001)
+                -- Undo modifies native state before any UI refresh. Editing a different field must not replay stale values.
+                local history = IApplicationManager.instance():getCommandManager()
+                editor.controlBindings[TerrainEditorTypes.Snow] = {key='snow', valueType='value'}
+                assert(editor:updateBoundSetting(TerrainEditorTypes.Snow, {getValue=function() return 0.5 end}))
+                history:getPreviousCommand():undo()
+                assert(editor.settings.snow == 0.5, 'Fixture must exercise an actually stale cached field')
+                assert(editor:updateBoundSetting(TerrainEditorTypes.Wetness, {getValue=function() return 0.8 end}))
+                assert(terrainFixture:editTerrain('getAppearance', appearance) == '' and appearance.snow == 0 and math.abs(appearance.wetness - 0.8) < 0.0001)
+                assert(editor.settings.snow == 0, 'Native values must resynchronize after a partial material edit')
+                local priorBias = layer.heightBias
+                assert(editor:updateBoundSetting(TerrainEditorTypes.LayerHeightBias, {getValue=function() return 0.4 end}))
+                history:getPreviousCommand():undo()
+                assert(math.abs(editor.settings.layerHeightBias - 0.4) < 0.0001)
+                assert(editor:updateBoundSetting(TerrainEditorTypes.LayerRoughness, {getValue=function() return 0.6 end}))
+                assert(terrainFixture:editTerrain('getLayer', layer) == '' and math.abs(layer.heightBias - priorBias) < 0.0001)
+                -- External changes are reflected by the editor update without replaying authoring commands.
+                assert(terrainFixture:editTerrain('appearance', {snow=0.25}) == '')
+                local externalRevision = terrainFixture:getTerrainRevision()
+                editor:update()
+                assert(editor.settings.snow == 0.25 and terrainFixture:getTerrainRevision() == externalRevision)
+                editor.settings.layerPaintSize = 0.6
+                editor.settings.layerPaintStrength = 1
+                assert(editor:performAction(TerrainEditorTypes.ClearWetness), editor._currentStatus)
+                local mask = {index=7}
+                assert(terrainFixture:editTerrain('getSurfaceMask', mask) == '' and mask.wetness == 0 and mask.snow == 1)
+                assert(editor:performAction(TerrainEditorTypes.PaintWetness), editor._currentStatus)
+                assert(terrainFixture:editTerrain('getSurfaceMask', mask) == '' and mask.wetness == 1 and mask.snow == 1)
+                -- A real viewport snow stroke uses the mask channel and restores it on cancellation.
+                editor.settings.brushMode = 13
+                editor.settings.viewportBrushEnabled = true
+                assert(editor:handleViewportBrush('begin', 0, 20, 0, 0, -1, 0))
+                assert(terrainFixture:editTerrain('getSurfaceMask', mask) == '' and mask.snow == 0)
+                assert(editor:handleViewportBrush('cancel', 0, 0, 0, 0, 0, 0))
+                assert(terrainFixture:editTerrain('getSurfaceMask', mask) == '' and mask.snow == 1)
+                editor.settings.brushMode = 0
+                editor.settings.viewportBrushEnabled = false
                 -- An unsupported generation size must preserve the authored rectangular grid and scale.
                 local revision = terrainFixture:getTerrainRevision()
                 editor.settings.heightmapResolution = 8192
@@ -88,15 +188,80 @@ int main()
                 editor.settings.brushStrength = 4
                 editor.settings.brushOpacity = 1
                 assert(editor:performAction(TerrainEditorTypes.SculptApplyRaise), editor._currentStatus)
-                assert(not editor:performAction(TerrainEditorTypes.ExportMesh))
-                assert(string.find(editor._currentStatus, 'Unavailable', 1, true))
-                assert(not editor:performAction(TerrainEditorTypes.RunHydraulicErosion))
                 editor.settings.outputFile = terrainFixturePath
                 assert(editor:performAction(TerrainEditorTypes.SaveTerrain), editor._currentStatus)
                 assert(editor:performAction(TerrainEditorTypes.ExportTerrainJson), editor._currentStatus)
                 assert(editor:performAction(TerrainEditorTypes.ExportTerrainRecipe), editor._currentStatus)
                 assert(editor.settings.outputFile == terrainFixturePath)
+                -- The actual Lua viewport adapter groups drag updates and restores cancelled edits.
+                editor.settings.viewportBrushEnabled = true
+                assert(editor:handleViewportBrush('begin', 0, 20, 0, 0, -1, 0))
+                assert(editor:handleViewportBrush('update', 1, 20, 1, 0, -1, 0))
+                assert(editor:handleViewportBrush('cancel', 0, 0, 0, 0, -1, 0))
+                assert(editor:handleViewportBrush('begin', 0, 20, 0, 0, -1, 0))
+                editor.controlBindings[TerrainEditorTypes.ViewportBrushEnabled] = {key='viewportBrushEnabled', valueType='toggle'}
+                assert(editor:updateBoundSetting(TerrainEditorTypes.ViewportBrushEnabled, {getValue=function() return false end}))
+                assert(editor._strokeTerrain == nil and not editor:getViewportBrushEnabled())
+                -- A transient native publication lock must retain the original stroke owner for retry.
+                local attempts = 0
+                local busyOwner = {editTerrain=function(self, action, options)
+                    assert(action == 'cancel')
+                    attempts = attempts + 1
+                    return attempts == 1 and 'Physics publication busy' or ''
+                end}
+                editor._strokeTerrain = busyOwner
+                assert(not editor:handleViewportBrush('cancel', 0, 0, 0, 0, 0, 0))
+                assert(editor._strokeTerrain == busyOwner and editor._cancelStrokePending)
+                editor:update()
+                assert(attempts == 2 and editor._strokeTerrain == nil and not editor._cancelStrokePending)
+                assert(editor:performAction(TerrainEditorTypes.ExportMesh), editor._currentStatus)
+                editor.settings.outputFile = terrainFixturePath
+                assert(editor:performAction(TerrainEditorTypes.ExportHeightData), editor._currentStatus)
+                editor.settings.outputFile = terrainFixturePath
+                -- Recipe actions only prepare data; cancel leaves the saved sculpt and undo history intact.
+                editor.settings.recipeMode = true
+                editor.settings.brushStrength = 0.2
+                assert(editor:ensureRecipe(), editor._currentStatus)
+                collectgarbage('collect')
+                assert(editor.recipe:getOperationCount() == 0)
+                assert(editor:performAction(TerrainEditorTypes.SculptApplyNoise), editor._currentStatus)
+                collectgarbage('collect')
+                assert(editor.recipe:getOperationCount() == 1, 'Queued recipe must retain one owned operation after Lua collection')
+                assert(editor:performAction(TerrainEditorTypes.RecipePreview), editor._currentStatus)
+                assert(editor._recipePending and editor._showRecipePreview)
+                assert(editor:performAction(TerrainEditorTypes.RecipeSave), editor._currentStatus)
+                assert(editor._recipePending and editor._showRecipePreview, 'Saving an in-flight recipe must retain its polling and visible-preview intent')
+                collectgarbage('collect')
+                assert(editor.recipe:getOperationCount() == 1)
+                assert(editor:getTerrainRecipePreview() == nil, 'Pending preview must not be drawn')
+                for attempt=1,100000 do
+                    editor:update()
+                    if not editor._recipePending then break end
+                end
+                assert(not editor._recipePending, 'Recipe worker must finish')
+                local previewRecipe, previewOwner = editor:getTerrainRecipePreview()
+                assert(previewRecipe == editor.recipe and previewOwner == editor.terrain)
+                assert(editor:performAction(TerrainEditorTypes.RecipeCancel), editor._currentStatus)
+                assert(not editor.recipe:isBusy())
+                assert(editor:getTerrainRecipePreview() == nil, 'Cancellation hides the prepared overlay')
+                assert(editor:performAction(TerrainEditorTypes.RecipeSave), editor._currentStatus)
+                collectgarbage('collect')
+                assert(editor.recipe:getOperationCount() == 1)
+                editor.recipe = nil
+                collectgarbage('collect')
+                assert(editor:performAction(TerrainEditorTypes.RecipeLoad), editor._currentStatus)
+                collectgarbage('collect')
+                assert(editor.recipe:getOperationCount() == 1)
+                assert(editor:performAction(TerrainEditorTypes.RecipePreview), editor._currentStatus)
+                collectgarbage('collect')
+                assert(editor:performAction(TerrainEditorTypes.RecipeCancel), editor._currentStatus)
+                editor.settings.recipeMode = false
+                editor.settings.outputFile = terrainFixturePath
             )" );
+            if( !fs::exists( folder / "edited.obj" ) || !fs::exists( folder / "edited.r32" ) ||
+                !fs::exists( folder / "edited.terrain.recipe.json" ) )
+                throw std::runtime_error(
+                    "Lua exports must write actual mesh, float heights and ordered recipe files" );
             if( terrain->getTerrainSnapshot()->heights[7] != 2 )
                 throw std::runtime_error( "Real Lua brush must change native terrain samples" );
             auto undo = commands->getPreviousCommand();

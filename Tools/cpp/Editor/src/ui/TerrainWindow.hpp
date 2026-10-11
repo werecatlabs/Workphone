@@ -2,7 +2,7 @@
 #define _TerrainFrame_H
 
 #include <EditorPrerequisites.hpp>
-#include "ui/EditorWindow.hpp"
+#include "ui/ScriptWindow.hpp"
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 
@@ -10,9 +10,24 @@ namespace workphone
 {
     namespace editor
     {
-        class TerrainWindow : public EditorWindow
+        class TerrainWindow : public ScriptWindow
         {
         public:
+            class ViewportListener : public IEventListener
+            {
+            public:
+                Parameter handleEvent( EventType, hash_type, const Array<Parameter> &,
+                                       SmartPtr<ISharedObject>, SmartPtr<ISharedObject>,
+                                       SmartPtr<IEvent> ) override;
+                void setOwner( SmartPtr<TerrainWindow> owner )
+                {
+                    m_owner = owner;
+                }
+                WP_CLASS_REGISTER_DECL;
+
+            private:
+                AtomicWeakPtr<TerrainWindow> m_owner;
+            };
             class UIElementListener : public IEventListener
             {
             public:
@@ -61,10 +76,13 @@ namespace workphone
             void setTerrainEditor( SmartPtr<ui::IUITerrainEditor> terrainEditor );
 
             void updateSelection() override;
+            void setWindowVisible( bool visible ) override;
 
             WP_CLASS_REGISTER_DECL;
 
         private:
+            void attachViewport();
+            void cancelViewportStroke();
             // events
             void OnRaiseBtnToggled();
             void OnLowerBtnToggled();
@@ -91,6 +109,8 @@ namespace workphone
             void addComboBoxBitmap();
 
             SmartPtr<IEventListener> m_terrainEditorListener;
+            SmartPtr<ViewportListener> m_viewportListener;
+            AtomicWeakPtr<ui::IUIRenderWindow> m_sceneViewport;
             SmartPtr<ui::IUITerrainEditor> m_terrainEditor;
 
             ITerrainManagerListener *m_terrainManagerListener = nullptr;

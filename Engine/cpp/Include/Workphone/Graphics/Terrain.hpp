@@ -10,6 +10,7 @@
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <mutex>
+#include <functional>
 
 namespace workphone
 {
@@ -62,6 +63,21 @@ namespace workphone
              * a nonzero token rejects stale edits. Failed edits retain the current snapshot.
              */
             bool applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision = 0 );
+
+            /** Preserve component-owned identity/revision instead of assigning a second token. */
+            bool requestTerrainSnapshot( TerrainSnapshot snapshot, String &error, u64 expectedRevision = 0 );
+            TerrainSnapshot getActiveTerrainSnapshot() const;
+            Transform3<real_Num> getRequestedTerrainWorldTransform() const;
+            void setDeferredTerrainPublication( bool deferred );
+            bool isTerrainPublicationDeferred() const;
+            bool hasPendingTerrainPublication() const;
+            using TerrainPublication = std::function<bool( const std::function<void()> &, String & )>;
+            using TerrainPublicationGate = std::function<bool( TerrainSnapshot, const TerrainPublication &, String & )>;
+            void setTerrainPublicationGate( TerrainPublicationGate gate );
+            /** Renderer owner calls only after all fallible GPU/material preparation.
+             * commitRenderer must contain no-fail swaps. Gate supplies synchronized physics publication.
+             */
+            bool publishPendingTerrain( TerrainSnapshot expected, const std::function<void()> &commitRenderer, String &error );
 
             /**
              * @brief Register the terrain state data in the state context.
@@ -289,9 +305,15 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            /** Renderer lifecycle: no query surface exists until its first complete publication. */
+            void resetActiveTerrainPublication();
             mutable std::mutex m_terrainDataMutex;
             TerrainSnapshot m_terrainSnapshot;
+            TerrainSnapshot m_activeTerrainSnapshot;
             Transform3<real_Num> m_terrainWorldTransform;
+            Transform3<real_Num> m_activeTerrainWorldTransform;
+            bool m_deferredTerrainPublication = false;
+            TerrainPublicationGate m_terrainPublicationGate;
             bool m_terrainVisible = true;
             mutable SmartPtr<IMesh> m_cpuTerrainMesh;
             mutable u64 m_cpuTerrainMeshRevision = 0;

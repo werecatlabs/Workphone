@@ -2,6 +2,7 @@
 #define CollisionTerrain_h__
 
 #include <Workphone/Scene/Components/Collision.hpp>
+#include <Workphone/Graphics/TerrainData.hpp>
 
 namespace workphone
 {
@@ -45,6 +46,19 @@ namespace workphone
             /** @copydoc Component::updateTransform */
             void updateTransform() override;
 
+            /** Prepare at the scene/physics owner synchronization point. Failure keeps
+             * the active shape untouched. TerrainSystem commits all prepared consumers.
+             */
+            bool prepareTerrain( render::TerrainSnapshot snapshot,
+                                 const Transform3<real_Num> &worldTransform, String &error );
+            void commitTerrain();
+            void discardPreparedTerrain();
+            render::TerrainSnapshot getTerrainSnapshot() const;
+            u64 getTerrainRevision() const;
+            const String &getTerrainError() const;
+            Transform3<real_Num> getPublishedTerrainTransform() const;
+            bool isTerrainPrepared( render::TerrainSnapshot snapshot, const Transform3<real_Num> &placement ) const;
+
             /** @copydoc Collision::handleComponentEvent */
             FSMReturnType handleComponentEvent( u32 state, FSMEvent eventType ) override;
 
@@ -80,6 +94,13 @@ namespace workphone
 
             /** World-space scale applied to the heightfield. */
             Vector3<real_Num> m_terrainScale = Vector3<real_Num>::unit();
+
+            SmartPtr<physics::IPhysicsShape3> m_preparedShape;
+            render::TerrainSnapshot m_terrainSnapshot;
+            render::TerrainSnapshot m_preparedSnapshot;
+            Transform3<real_Num> m_preparedTransform;
+            Transform3<real_Num> m_publishedTransform;
+            String m_terrainError;
         };
     }  // namespace scene
 }  // namespace workphone

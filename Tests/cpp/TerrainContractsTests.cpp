@@ -11,6 +11,9 @@
 #include <Workphone/System/StateManager.hpp>
 #include "TerrainDataContracts.hpp"
 #include "TerrainEditingContracts.hpp"
+#include "TerrainTileContracts.hpp"
+#include "TerrainIntegrationContracts.hpp"
+#include "WorldStreamingContracts.hpp"
 #include <cstdio>
 #include <stdexcept>
 
@@ -170,7 +173,10 @@ int main()
     int result = 0;
     try
     {
+        world_streaming_contracts::run();
         terrain_data_contracts::run();
+        terrain_tile_contracts::run();
+        terrain_integration_contracts::run();
         persistenceContracts();
         attachmentContracts();
         terrain_editing_contracts::run();

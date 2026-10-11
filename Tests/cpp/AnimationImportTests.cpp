@@ -56,7 +56,7 @@ namespace
     void importedRoutes()
     {
         Assimp::Importer importer;
-        const auto source = importer.ReadFile( WP_TEST_SOURCE_ROOT "/Tests/Fixtures/Animation/analytic_channels.gltf", 0 );
+        const auto source = importer.ReadFile( WP_TEST_SOURCE_ROOT "/Tests/cpp/Fixtures/Animation/analytic_channels.gltf", 0 );
         if( !source ) throw std::runtime_error( importer.GetErrorString() );
         require( source->mNumAnimations == 1, "committed glTF has one real imported clip" );
         auto loader = make_ptr<ImportHarness>();

@@ -166,7 +166,10 @@ namespace workphone
              * @brief Render terrain.
              * @param terrain Smart pointer to the terrain object.
              */
-            void renderTerrain( const SmartPtr<ClawTerrain> &terrain );
+            void prepareTerrain( SmartPtr<ClawTerrain> terrain,
+                                 const Array<SmartPtr<IGraphicsCamera>> &cameras = {} );
+            void renderTerrain( SmartPtr<ClawTerrain> terrain, bool prepare = true );
+            u64 terrainFrameToken() const { return m_inFrame ? m_terrainFrame : 0; }
 
             /**
              * @brief Render sky geometry.
@@ -189,6 +192,8 @@ namespace workphone
              * @param mesh Pointer to the native mesh structure.
              */
             static void forgetMesh( const wp_graphics_mesh *mesh );
+            /** Stage a native terrain tile's immutable vertex/index buffers without drawing. */
+            bool prepareTerrainGeometry( const wp_graphics_mesh *mesh );
 
             WP_CLASS_REGISTER_DECL;
 
@@ -243,6 +248,7 @@ namespace workphone
             u32 m_windowHeight = 720;
             u32 m_primitiveCount = 0;
             bool m_inFrame = false;
+            u64 m_terrainFrame = 0;
             bool m_shadowPass = false;
             bool m_shadowsEnabled = false;
             Matrix4F m_shadowMatrix = Matrix4F::identity();

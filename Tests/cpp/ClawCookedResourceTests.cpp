@@ -717,6 +717,8 @@ namespace
     }
 }  // namespace
 
+#include "CookedTerrainContracts.hpp"
+
 int main()
 {
     try
@@ -724,6 +726,7 @@ int main()
         Fixture fixture;
         fixture.initialize();
         contracts( fixture );
+        cooked_terrain_contracts::run( *fixture.graphics.renderer, fixture.folder );
         return 0;
     }
     catch( const std::exception &error )

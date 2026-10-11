@@ -56,6 +56,37 @@ typedef struct wp_material_dx11
     wp_vec4f fog_params;        /* mode (0 none, 1 exp, 2 exp2, 3 linear), density, start, end */
 } wp_material_dx11;
 
+/** Four-layer terrain constants. Texture slots are albedo/normal/ORM per layer,
+ * followed by a linear RGBA control map. UV scales are cycles per local metre;
+ * control_transform maps local XZ to texel-centred coordinates over the full grid.
+ * ORM channels are occlusion, roughness, metallic. Missing maps use unit defaults.
+ * A zero control sum selects layer zero. Binding borrows views until unbound. */
+typedef struct wp_terrain_material_dx11
+{
+    wp_vec4f control_transform; /* x/z offset, inverse extent (with texel centres) */
+    wp_vec4f controls; /* enabled, control map present, reserved, reserved */
+    wp_vec4f tint[4];
+    wp_vec4f surface[4]; /* UV scale x/y, roughness multiplier, metallic multiplier */
+    wp_vec4f maps[4]; /* albedo present, normal present, ORM present, normal strength */
+    wp_vec4f height[4]; /* ORM-alpha height scale, bias, reserved, reserved */
+    wp_vec4f appearance; /* projection 0 planar/1 triplanar, sharpness, height blend, transition */
+    wp_vec4f detail; /* UV scale x/y, normal strength, detail texture present */
+    wp_vec4f macro; /* local cycles/metre, strength, seed low/high 16-bit halves */
+    wp_vec4f macro_tint;
+    wp_vec4f weather; /* wetness, wet darkening, wet roughness, snow */
+    wp_vec4f snow; /* snow roughness, surface mask present, reserved, reserved */
+    wp_vec4f snow_tint;
+} wp_terrain_material_dx11;
+
+enum { WP_TERRAIN_MATERIAL_VIEWS = 15 };
+/** Atomically validate/install 12 layer views, control, detail normal and wet/snow mask.
+ * NULL disables terrain.
+ * Invalid constants/views leave the previous complete binding unchanged. */
+wp_s32 wp_renderer_dx11_set_terrain_material( wp_renderer_dx11 *renderer,
+    const wp_terrain_material_dx11 *material, void *const *views );
+wp_s32 wp_renderer_dx11_validate_terrain_material( wp_renderer_dx11 *renderer,
+    const wp_terrain_material_dx11 *material, void *const *views );
+
 /** Directional depth pass. light_matrix uses the mesh shader's OpenGL clip convention.
  * End restores output targets, viewport and scissor. Caller submits caster geometry
  * with light_matrix, then enables shadow receiving for each colour draw. */

@@ -720,8 +720,19 @@ namespace workphone
                                          getEnableShadows() && lightCastsShadows &&
                                          lightIntensity > 0.0f &&
                                          ( !viewport || viewport->getShadowsEnabled() );
-                    if( shadows && dx11Renderer->beginShadowMap(
-                                       pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 ) )
+                    const auto terrainObjects=m_terrains.snapshot();
+                    Array<SmartPtr<IGraphicsCamera>> terrainCameras;
+                    for(const auto&sceneCamera:m_cameras.snapshot())
+                        if(auto terrainCamera=dynamic_pointer_cast<IGraphicsCamera>(sceneCamera))
+                            terrainCameras.push_back(terrainCamera);
+                    const bool shadowPass=shadows && dx11Renderer->beginShadowMap(
+                        pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
+                    // Publish once before both passes: a worker finishing during
+                    // shadows cannot switch terrain revision for the colour pass.
+                    for(const auto&object:terrainObjects)
+                        if(auto terrain=dynamic_pointer_cast<ClawTerrain>(object))
+                            dx11Renderer->prepareTerrain(terrain,terrainCameras);
+                    if( shadowPass )
                     {
                         // Camera culling cannot exclude casters: offscreen objects can shadow visible receivers.
                         const auto mask =
@@ -744,9 +755,9 @@ namespace workphone
                                                            &world );
                             dx11Renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
                         }
-                        for( auto &object : m_terrains.snapshot() )
+                        for( auto &object : terrainObjects )
                             if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
-                                dx11Renderer->renderTerrain( terrain );
+                                dx11Renderer->renderTerrain( terrain, false );
                         if( foliage )
                             for( const auto &batch : *foliage )
                                 if( batch->castsShadows() && ( batch->visibilityMask() & foliageMask ) )
@@ -758,11 +769,11 @@ namespace workphone
                         dx11Renderer->renderSky( sky );
                     }
 
-                    for( auto &terrainObject : m_terrains.snapshot() )
+                    for( auto &terrainObject : terrainObjects )
                     {
                         if( auto terrain = dynamic_pointer_cast<ClawTerrain>( terrainObject ) )
                         {
-                            dx11Renderer->renderTerrain( terrain );
+                            dx11Renderer->renderTerrain( terrain, false );
                         }
                     }
                     // Render one retained population snapshot in both passes.

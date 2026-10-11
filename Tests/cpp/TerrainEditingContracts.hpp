@@ -2,6 +2,7 @@
 #define WPTerrainEditingContracts_h__
 
 #include <Workphone/Scene/TerrainEditing.hpp>
+#include "TerrainAuthoringContracts.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
@@ -264,6 +265,7 @@ namespace terrain_editing_contracts
     inline void run()
     {
         Fixture fixture;
+        terrain_authoring_contracts::run( fixture.folder );
         history( make_ptr<CommandManager>() );
         history( make_ptr<CommandManagerMT>() );
         queuedHistory( fixture.application );

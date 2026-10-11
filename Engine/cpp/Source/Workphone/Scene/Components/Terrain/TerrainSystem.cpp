@@ -1,5 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Scene/Components/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
+#include <Workphone/Scene/TerrainEditing.hpp>
+#include <Workphone/Scene/TerrainIntegration.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainGrassLayer.hpp>
@@ -22,6 +25,13 @@
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/StringTypes.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
+#include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
+#include <Workphone/Interface/Physics/IPhysicsManager.hpp>
+#include <Workphone/Interface/Physics/IPhysicsShape3.hpp>
+#include <Workphone/Interface/Physics/IPhysicsBody3.hpp>
+#include <Workphone/Interface/Physics/IRigidStatic3.hpp>
+#include <Workphone/Interface/Physics/IRigidDynamic3.hpp>
+#include <Workphone/Physics/TerrainShape.hpp>
 #include <cJSON.h>
 #include <algorithm>
 #include <cmath>
@@ -37,6 +47,90 @@ namespace workphone::scene
 
     namespace
     {
+        // Declare before source/physics guards so dependent work runs only after
+        // every publication lock and retiring resource has been released.
+        struct TerrainIntegrationNotice
+        {
+            TerrainSystem *owner;
+            render::TerrainSnapshot source;
+            Transform3<real_Num> placement;
+            u64 serial = 0;
+            bool ready = false, detached = false;
+            ~TerrainIntegrationNotice()
+            { if( ready ) notifyTerrainIntegration( owner, source, placement, serial, detached ); }
+        };
+        // Scene operations in the default backend share the manager's recursive
+        // mutex. Acquire it without waiting before preparing any collision shape:
+        // physics callbacks may already own that mutex and enter this source.
+        struct TerrainPhysicsBoundary
+        {
+            SmartPtr<physics::IPhysicsManager> manager;
+            std::unique_lock<ISharedObject> lock;
+
+            bool acquire( bool required, String &error )
+            {
+                if( !required ) return true;
+                const auto app = core::IApplicationManager::instancePtr();
+                manager = app ? app->getPhysicsManager() : nullptr;
+                if( !manager )
+                { error = "Terrain collision physics manager is unavailable."; return false; }
+                lock = std::unique_lock<ISharedObject>( *manager, std::try_to_lock );
+                if( !lock.owns_lock() )
+                { error = "Terrain publication is waiting for the physics scene boundary."; return false; }
+                return true;
+            }
+        };
+
+        bool validateTerrainBodyCapacity( const Array<SmartPtr<CollisionTerrain>> &collisions,
+                                          String &error )
+        {
+            // WPPhysics bodies have sixteen slots. Count every initial addition
+            // together; replacements reuse their existing slot. This preflight
+            // runs under the physics boundary before any no-fail publication.
+            Array<std::pair<SmartPtr<physics::IRigidBody3>, u32>> additions;
+            for( auto collision : collisions )
+            {
+                auto previous = collision->getShape();
+                auto body = previous ? dynamic_pointer_cast<physics::IRigidBody3>( previous->getActor() ) : nullptr;
+                if( !body )
+                {
+                    auto component = collision->getRigidBody();
+                    if( !component )
+                        if( auto actor = collision->getActor() ) component = actor->getComponent<Rigidbody>();
+                    if( component )
+                    {
+                        body = component->getRigidStatic();
+                        if( !body ) body = component->getRigidDynamic();
+                    }
+                }
+                if( !body || ( previous && previous->getActor() == body ) ) continue;
+                auto it = std::find_if( additions.begin(), additions.end(), [&]( const auto &item ) {
+                    return item.first == body;
+                } );
+                if( it == additions.end() )
+                { additions.emplace_back( body, 1 ); it = additions.end() - 1; }
+                else ++it->second;
+                if( body->getNumShapes() > 16u || it->second > 16u - body->getNumShapes() )
+                { error = "Terrain body has no free collision shape slot (maximum 16)."; return false; }
+            }
+            return true;
+        }
+
+        bool validateTerrainCollisionRequest( const Array<SmartPtr<CollisionTerrain>> &collisions,
+                                             const render::TerrainData &data, String &error )
+        {
+            if( collisions.empty() ) return true;
+            for( auto collision : collisions )
+                if( collision->getPosition() != Vector3<real_Num>::zero() )
+                { error = "Authoritative terrain collision requires a zero center offset."; return false; }
+            const auto cells = size_t( data.dimensions.x - 1 ) * ( data.dimensions.y - 1 );
+            const auto solidCells = data.holes.empty() ? cells :
+                static_cast<size_t>( std::count( data.holes.begin(), data.holes.end(), u8( 0 ) ) );
+            if( solidCells * 2 > physics::TerrainCollisionData::maximumSupportedTriangles )
+            { error = "Terrain collision exceeds 524288 solid triangles; tiled collision is unavailable."; return false; }
+            return true;
+        }
+
         constexpr u32 MinHeightMapDimension = 2u;
         constexpr u32 MaxGeneratedHeightMapDimension = 4096u;
         const String DefaultTerrainTextureName = "checker.png";
@@ -375,6 +469,7 @@ namespace workphone::scene
         data->heights.assign( 256 * 256, 0.0f );
         data->revision = 1;
         m_terrainData = data;
+        m_activeTerrainData = data;
         m_textures.resize( static_cast<size_t>( render::IGraphicsTerrain::TextureTypes::COUNT ) );
         m_metalnessValues.resize( 4, m_defaultMetalnessValue );
     }
@@ -416,8 +511,12 @@ namespace workphone::scene
 
     void TerrainSystem::unload( SmartPtr<ISharedObject> data )
     {
+        TerrainIntegrationNotice notice{ this };
+        notice.ready = notice.detached = true;
         try
         {
+            String strokeError;
+            if( !cancelEditStroke( strokeError ) ) WP_LOG_WARNING( strokeError );
             if( isLoaded() )
             {
                 setLoadingState( LoadingState::Unloading );
@@ -460,6 +559,12 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             WP_LOG_EXCEPTION( e );
+        }
+        {
+            std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+            m_integrationAvailable = false;
+            m_integrationDetached = true;
+            notice.serial = ++m_integrationSerial;
         }
     }
 
@@ -917,16 +1022,67 @@ namespace workphone::scene
 
     void TerrainSystem::updateTransform()
     {
+        if( terrainIntegrationIsNotifying( this ) ) return;
+        TerrainIntegrationNotice notice{ this };
+        std::lock_guard<std::mutex> guard( m_terrainDataMutex );
         if( auto actor = getActor() )
         {
             if( auto actorTransform = actor->getTransform() )
             {
                 auto worldTransform = actorTransform->getWorldTransform();
-
+                const auto snapshot = m_terrainData;
+                String error;
+                if( !render::validateTerrainPlacement( *snapshot, worldTransform, error ) )
+                {
+                    WP_LOG_WARNING( "TerrainSystem: " + error );
+                    return;
+                }
+                auto collisions = actor->getComponentsByType<CollisionTerrain>();
+                if( !validateTerrainCollisionRequest( collisions, *snapshot, error ) )
+                { WP_LOG_WARNING( "TerrainSystem: " + error ); return; }
+                if( auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
+                    if( concrete->isTerrainPublicationDeferred() )
+                    {
+                        // Authoring never waits for physics or rebuilds collision.
+                        // The render publication gate prepares the final requested pose.
+                        concrete->setWorldTransform( worldTransform );
+                        return;
+                    }
+                TerrainPhysicsBoundary boundary;
+                if( !boundary.acquire( !collisions.empty(), error ) )
+                {
+                    WP_LOG_WARNING( "TerrainSystem: " + error );
+                    return;
+                }
+                if( !validateTerrainBodyCapacity( collisions, error ) )
+                { WP_LOG_WARNING( "TerrainSystem: " + error ); return; }
+                for( auto collision : collisions )
+                    if( !collision->prepareTerrain( snapshot, worldTransform, error ) )
+                    {
+                        for( auto prepared : collisions )
+                            prepared->discardPreparedTerrain();
+                        WP_LOG_WARNING( "TerrainSystem: " + error );
+                        return;
+                    }
                 if( m_terrain )
                 {
                     m_terrain->setWorldTransform( worldTransform );
+                    auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() );
+                    if( !concrete || concrete->getRequestedTerrainWorldTransform() != worldTransform )
+                    {
+                        for( auto prepared : collisions )
+                            prepared->discardPreparedTerrain();
+                        WP_LOG_WARNING( "TerrainSystem: renderer rejected terrain placement." );
+                        return;
+                    }
+                    if( concrete->isTerrainPublicationDeferred() ) return;
                 }
+                for( auto collision : collisions )
+                    collision->commitTerrain();
+                notice.source = snapshot; notice.placement = worldTransform; notice.ready = true;
+                m_integrationPlacement = worldTransform;
+                m_integrationAvailable = true; m_integrationDetached = false;
+                notice.serial = ++m_integrationSerial;
             }
         }
     }
@@ -1313,6 +1469,10 @@ namespace workphone::scene
 
     void TerrainSystem::setTerrain( SmartPtr<render::IGraphicsTerrain> terrain )
     {
+        if( terrainIntegrationIsNotifying( this ) ) return;
+        TerrainIntegrationNotice notice{ this };
+        std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+        if( m_terrain == terrain ) return;
         if( terrain )
         {
             auto concrete = dynamic_cast<render::Terrain *>( terrain.get() );
@@ -1322,8 +1482,8 @@ namespace workphone::scene
                 WP_LOG_WARNING( "TerrainSystem: renderer cannot accept authoritative height data." );
                 return;
             }
-            const auto snapshot = getTerrainSnapshot();
-            auto placement = concrete->getWorldTransform();
+            const auto snapshot = m_terrainData;
+            auto placement = concrete->getRequestedTerrainWorldTransform();
             if( auto actor = getActor() )
                 if( auto transform = actor->getTransform() )
                     placement = transform->getWorldTransform();
@@ -1331,15 +1491,39 @@ namespace workphone::scene
             // when no new transform event follows attachment. Validate both source
             // and placement before touching the candidate or retiring a valid runtime.
             if( !render::validateTerrainPlacement( *snapshot, placement, error ) ||
-                !concrete->applyTerrainData( *snapshot, error ) )
+                !concrete->requestTerrainSnapshot( snapshot, error ) )
             {
                 WP_LOG_WARNING( "TerrainSystem: renderer cannot accept authoritative height data: " +
                                 error );
                 return;
             }
             concrete->setWorldTransform( placement );
+            notice.source = concrete->getActiveTerrainSnapshot();
+            if( notice.source != m_activeTerrainData ) notice.source.reset();
+            notice.placement = concrete->getWorldTransform();
+            AtomicWeakPtr<TerrainSystem> owner( this );
+            concrete->setTerrainPublicationGate(
+                [owner, concrete]( render::TerrainSnapshot requested,
+                    const render::Terrain::TerrainPublication &publish, String &failure ) {
+                    if( auto source = owner.load().lock() )
+                    {
+                        // The gate never owns the component or renderer. A retired runtime
+                        // cannot publish its old pending generation into a reattached source.
+                        return source->publishTerrainConsumers( requested, publish, failure, concrete );
+                    }
+                    failure = "Terrain source no longer exists.";
+                    return false;
+                } );
         }
+        if( m_terrain && m_terrain != terrain )
+            if( auto previous = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
+                previous->setTerrainPublicationGate( {} );
         m_terrain = terrain;
+        notice.ready = true;
+        m_integrationPlacement = notice.placement;
+        m_integrationAvailable = notice.source != nullptr;
+        m_integrationDetached = false;
+        notice.serial = ++m_integrationSerial;
     }
 
     SmartPtr<render::IGraphicsTerrain> TerrainSystem::getTerrain() const
@@ -1351,6 +1535,103 @@ namespace workphone::scene
     {
         std::lock_guard<std::mutex> guard( m_terrainDataMutex );
         return m_terrainData;
+    }
+
+    render::TerrainSnapshot TerrainSystem::getActiveTerrainSnapshot() const
+    {
+        std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+        return m_activeTerrainData;
+    }
+
+    void TerrainSystem::getTerrainIntegrationState( render::TerrainSnapshot &snapshot,
+        Transform3<real_Num> &placement, u64 &serial, bool &detached ) const
+    {
+        std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+        snapshot = m_integrationAvailable ? m_activeTerrainData : nullptr;
+        placement = m_integrationPlacement;
+        serial = m_integrationSerial;
+        detached = m_integrationDetached;
+    }
+
+    bool TerrainSystem::publishTerrainConsumers( render::TerrainSnapshot snapshot,
+        const render::Terrain::TerrainPublication &publish, String &error, render::Terrain *renderer )
+    {
+        if( terrainIntegrationIsNotifying( this ) )
+        { error = "Terrain cannot republish during dependent notification."; return false; }
+        TerrainIntegrationNotice notice{ this };
+        Array<SmartPtr<physics::IPhysicsShape3>> retiredShapes;
+        std::lock_guard<std::mutex> guard( m_terrainDataMutex );
+        if( m_terrain.get() != renderer )
+        { error = "Terrain renderer was detached."; return false; }
+        if( snapshot != m_terrainData )
+        { error = "Terrain source changed during renderer preparation."; return false; }
+        Array<SmartPtr<CollisionTerrain>> collisions;
+        Array<SmartPtr<physics::IPhysicsScene3>> scenes;
+        TerrainPhysicsBoundary boundary;
+        Transform3<real_Num> placement;
+        if( auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
+            placement = concrete->getRequestedTerrainWorldTransform();
+        if( auto actor = getActor() )
+        {
+            collisions = actor->getComponentsByType<CollisionTerrain>();
+            if( !boundary.acquire( !collisions.empty(), error ) ) return false;
+            // Initial deferred terrain has no published shape yet, but its body
+            // may already be registered in a live scene waiting for that shape.
+            for( auto component : actor->getComponentsByType<Rigidbody>() )
+            {
+                for( auto collision : collisions )
+                    if( !collision->getRigidBody() ) collision->setRigidBody( component );
+                SmartPtr<physics::IPhysicsBody3> body = component->getRigidStatic();
+                if( !body ) body = component->getRigidDynamic();
+                if( body )
+                    if( auto scene = body->getScene() )
+                        if( std::find( scenes.begin(), scenes.end(), scene ) == scenes.end() ) scenes.push_back( scene );
+            }
+        }
+        if( !validateTerrainBodyCapacity( collisions, error ) ) return false;
+        for( auto collision : collisions )
+        {
+            if( !collision->isTerrainPrepared( snapshot, placement ) )
+            {
+                // A consumer may have been attached/recreated after this render
+                // generation was requested. Recover its candidate before entering
+                // any scene/terrain publication locks; failures leave active data intact.
+                if( !collision->prepareTerrain( snapshot, placement, error ) ) return false;
+            }
+            if( auto shape = collision->getShape() )
+            {
+                // Keep intrusive shape destruction outside the publication locks.
+                retiredShapes.push_back( shape );
+                if( auto body = shape->getActor() )
+                    if( auto scene = body->getScene() )
+                        if( std::find( scenes.begin(), scenes.end(), scene ) == scenes.end() )
+                            scenes.push_back( scene );
+            }
+        }
+        std::sort( scenes.begin(), scenes.end(), []( const auto &a, const auto &b ) {
+            return std::less<physics::IPhysicsScene3 *>()( a.get(), b.get() );
+        } );
+        Array<std::unique_lock<ISharedObject>> locks;
+        for( auto scene : scenes )
+        {
+            locks.emplace_back( *scene, std::try_to_lock );
+            // Physics callbacks can enter source code while holding the scene lock.
+            // Never wait for that lock with the source mutex held; retry next render frame.
+            if( !locks.back().owns_lock() )
+            { error = "Terrain publication is waiting for the physics scene boundary."; return false; }
+        }
+        const bool published = publish( [&] {
+            for( auto collision : collisions ) collision->commitTerrain();
+            m_activeTerrainData = snapshot;
+        }, error );
+        if( published )
+        {
+            notice.source = snapshot; notice.placement = placement; notice.ready = true;
+            m_integrationPlacement = placement;
+            m_integrationAvailable = true; m_integrationDetached = false;
+            notice.serial = ++m_integrationSerial;
+        }
+        return published;
     }
 
     SmartPtr<ISharedObject> TerrainSystem::toData() const
@@ -1374,8 +1655,13 @@ namespace workphone::scene
     bool TerrainSystem::applyTerrainData( const render::TerrainData &data, String &error,
                                           u64 expectedRevision )
     {
+        if( terrainIntegrationIsNotifying( this ) )
+        { error = "Terrain cannot be edited during dependent publication notification."; return false; }
         if( !render::validateTerrainData( data, error ) )
             return false;
+        TerrainIntegrationNotice notice{ this };
+        Array<SmartPtr<CollisionTerrain>> preparedCollisions;
+        const auto discard = [&] { for( auto collision : preparedCollisions ) collision->discardPreparedTerrain(); };
         try
         {
             auto candidate = std::make_shared<render::TerrainData>( data );
@@ -1389,7 +1675,12 @@ namespace workphone::scene
                 candidate->spacing == m_terrainData->spacing &&
                 candidate->origin == m_terrainData->origin &&
                 candidate->heightScale == m_terrainData->heightScale &&
-                candidate->heights == m_terrainData->heights )
+                candidate->heights == m_terrainData->heights &&
+                candidate->layers == m_terrainData->layers &&
+                candidate->layerWeights == m_terrainData->layerWeights &&
+                candidate->appearance == m_terrainData->appearance &&
+                candidate->surfaceMasks == m_terrainData->surfaceMasks &&
+                candidate->holes == m_terrainData->holes )
             {
                 error.clear();
                 return true;
@@ -1400,144 +1691,96 @@ namespace workphone::scene
                 return false;
             }
             candidate->revision = m_terrainData->revision + 1;
-            if( m_terrain )
+            Transform3<real_Num> placement;
+            TerrainPhysicsBoundary boundary;
+            auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() );
+            if( m_terrain && !concrete )
+            { error = "This renderer does not support authoritative terrain data."; return false; }
+            const auto deferred = concrete && concrete->isTerrainPublicationDeferred();
+            if( auto actor = getActor() )
             {
-                auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() );
-                if( !concrete )
+                if( auto transform = actor->getTransform() ) placement = transform->getWorldTransform();
+                if( !render::validateTerrainPlacement( *candidate, placement, error ) ) return false;
+                auto collisions = actor->getComponentsByType<CollisionTerrain>();
+                if( !validateTerrainCollisionRequest( collisions, *candidate, error ) ) return false;
+                if( !deferred )
                 {
-                    error = "This renderer does not support authoritative terrain data.";
-                    return false;
+                    if( !boundary.acquire( !collisions.empty(), error ) ) return false;
+                    if( !validateTerrainBodyCapacity( collisions, error ) ) return false;
+                    for( auto collision : collisions )
+                    {
+                        preparedCollisions.push_back( collision );
+                        if( !collision->prepareTerrain( candidate, placement, error ) ) { discard(); return false; }
+                    }
                 }
-                if( !concrete->applyTerrainData( *candidate, error ) )
-                    return false;
+            }
+            if( concrete )
+            {
+                if( !concrete->requestTerrainSnapshot( candidate, error ) )
+                { discard(); return false; }
             }
             m_terrainData = candidate;
             m_heightMapSize = candidate->dimensions;
             m_heightScale = candidate->heightScale;
+            if( !deferred )
+            {
+                for( auto collision : preparedCollisions ) collision->commitTerrain();
+                m_activeTerrainData = candidate;
+                notice.source = candidate;
+                notice.placement = concrete ? concrete->getWorldTransform() : placement;
+                notice.ready = true;
+                m_integrationPlacement = notice.placement;
+                m_integrationAvailable = true; m_integrationDetached = false;
+                notice.serial = ++m_integrationSerial;
+            }
             error.clear();
             return true;
         }
         catch( const std::exception &exception )
         {
+            discard();
             error = String( "Unable to prepare terrain: " ) + exception.what();
             return false;
         }
     }
 
+    bool TerrainSystem::beginEditStroke( SmartPtr<ICommandManager> commands, String &error )
+    {
+        error.clear();
+        if( m_editStroke ) { error = "Commit or cancel the active terrain stroke first."; return false; }
+        if( !commands ) { error = "Terrain strokes require command history."; return false; }
+        m_editStroke = std::make_unique<TerrainEditStroke>( this, commands );
+        return true;
+    }
+    bool TerrainSystem::updateEditStroke( const TerrainBrush &brush, String &error )
+    {
+        if( !m_editStroke ) { error = "Begin a terrain stroke before updating it."; return false; }
+        return m_editStroke->update( brush, error );
+    }
+    bool TerrainSystem::commitEditStroke( String &error )
+    {
+        if( !m_editStroke ) { error = "No active terrain stroke."; return false; }
+        if( !m_editStroke->commit( error ) ) return false;
+        m_editStroke.reset(); return true;
+    }
+    bool TerrainSystem::cancelEditStroke( String &error )
+    {
+        error.clear();
+        if( !m_editStroke ) return true;
+        if( !m_editStroke->cancel( error ) ) return false;
+        m_editStroke.reset(); return true;
+    }
+
     String TerrainSystem::exportTerrainData() const
     {
-        const auto data = getTerrainSnapshot();
-        using Json = std::unique_ptr<cJSON, decltype( &cJSON_Delete )>;
-        Json root( cJSON_CreateObject(), cJSON_Delete );
-        const float spacing[] = { data->spacing.x, data->spacing.y };
-        const float origin[] = { data->origin.x, data->origin.y };
-        if( !root || !cJSON_AddStringToObject( root.get(), "format", "workphone.terrain" ) ||
-            !cJSON_AddNumberToObject( root.get(), "version", render::terrainDataFormatVersion ) ||
-            !cJSON_AddNumberToObject( root.get(), "width", data->dimensions.x ) ||
-            !cJSON_AddNumberToObject( root.get(), "depth", data->dimensions.y ) ||
-            !cJSON_AddNumberToObject( root.get(), "heightScale", data->heightScale ) )
-            return {};
-        const auto addArray = [&]( const char *name, const float *values, int count ) {
-            Json array( cJSON_CreateFloatArray( values, count ), cJSON_Delete );
-            if( !array || !cJSON_AddItemToObject( root.get(), name, array.get() ) )
-                return false;
-            array.release();
-            return true;
-        };
-        if( !addArray( "spacing", spacing, 2 ) || !addArray( "origin", origin, 2 ) ||
-            !addArray( "heights", data->heights.data(), static_cast<int>( data->heights.size() ) ) )
-            return {};
-        std::unique_ptr<char, decltype( &cJSON_free )> json( cJSON_PrintUnformatted( root.get() ),
-                                                             cJSON_free );
-        return json ? String( json.get() ) : String();
+        return render::serializeTerrainData( *getTerrainSnapshot() );
     }
 
     bool TerrainSystem::importTerrainData( const String &json, String &error )
     {
-        // Bound input before the parser allocates its object tree. No partial changes.
-        if( json.empty() || json.size() > 128ull * 1024ull * 1024ull )
-        {
-            error = "Terrain JSON is empty or exceeds the 128 MiB limit.";
-            return false;
-        }
-        const auto expectedRevision = getTerrainRevision();
-        try
-        {
-            using Json = std::unique_ptr<cJSON, decltype( &cJSON_Delete )>;
-            const char *end = nullptr;
-            Json root( cJSON_ParseWithLengthOpts( json.c_str(), json.size() + 1, &end, 1 ),
-                       cJSON_Delete );
-            if( !root || !cJSON_IsObject( root.get() ) || end != json.c_str() + json.size() )
-            {
-                error = "Invalid terrain JSON.";
-                return false;
-            }
-            const auto field = [&]( const char *name ) {
-                return cJSON_GetObjectItemCaseSensitive( root.get(), name );
-            };
-            const auto number = []( const cJSON *value ) {
-                return cJSON_IsNumber( value ) && std::isfinite( value->valuedouble ) &&
-                       std::abs( value->valuedouble ) <= std::numeric_limits<float>::max();
-            };
-            const auto format = field( "format" );
-            const auto version = field( "version" );
-            const auto width = field( "width" );
-            const auto depth = field( "depth" );
-            const auto scale = field( "heightScale" );
-            const auto spacing = field( "spacing" );
-            const auto origin = field( "origin" );
-            const auto heights = field( "heights" );
-            if( !cJSON_IsString( format ) || String( format->valuestring ) != "workphone.terrain" ||
-                !number( version ) || version->valuedouble != render::terrainDataFormatVersion ||
-                !number( width ) || !number( depth ) || width->valuedouble < 2 ||
-                depth->valuedouble < 2 || width->valuedouble > render::terrainMaximumDimension ||
-                depth->valuedouble > render::terrainMaximumDimension ||
-                std::floor( width->valuedouble ) != width->valuedouble ||
-                std::floor( depth->valuedouble ) != depth->valuedouble ||
-                width->valuedouble * depth->valuedouble > render::terrainMaximumSamples ||
-                !number( scale ) || !cJSON_IsArray( spacing ) || cJSON_GetArraySize( spacing ) != 2 ||
-                !cJSON_IsArray( origin ) || cJSON_GetArraySize( origin ) != 2 ||
-                !cJSON_IsArray( heights ) )
-            {
-                error = "Unsupported terrain schema, dimensions or metadata.";
-                return false;
-            }
-            render::TerrainData data;
-            data.dimensions = Vector2I( static_cast<s32>( width->valuedouble ),
-                                        static_cast<s32>( depth->valuedouble ) );
-            const auto count = static_cast<size_t>( data.dimensions.x ) * data.dimensions.y;
-            if( static_cast<size_t>( cJSON_GetArraySize( heights ) ) != count ||
-                !number( cJSON_GetArrayItem( spacing, 0 ) ) ||
-                !number( cJSON_GetArrayItem( spacing, 1 ) ) ||
-                !number( cJSON_GetArrayItem( origin, 0 ) ) ||
-                !number( cJSON_GetArrayItem( origin, 1 ) ) )
-            {
-                error = "Terrain arrays have invalid sizes or numbers.";
-                return false;
-            }
-            data.spacing = Vector2F( static_cast<f32>( cJSON_GetArrayItem( spacing, 0 )->valuedouble ),
-                                     static_cast<f32>( cJSON_GetArrayItem( spacing, 1 )->valuedouble ) );
-            data.origin = Vector2F( static_cast<f32>( cJSON_GetArrayItem( origin, 0 )->valuedouble ),
-                                    static_cast<f32>( cJSON_GetArrayItem( origin, 1 )->valuedouble ) );
-            data.heightScale = static_cast<f32>( scale->valuedouble );
-            data.heights.clear();
-            data.heights.reserve( count );
-            for( auto value = heights->child; value; value = value->next )
-            {
-                if( !number( value ) )
-                {
-                    error = "Terrain contains a nonfinite or invalid sample.";
-                    return false;
-                }
-                data.heights.push_back( static_cast<f32>( value->valuedouble ) );
-            }
-            return applyTerrainData( data, error, expectedRevision );
-        }
-        catch( const std::exception &exception )
-        {
-            error = String( "Unable to read terrain: " ) + exception.what();
-            return false;
-        }
+        const auto revision = getTerrainRevision();
+        render::TerrainData data;
+        return render::deserializeTerrainData( json, data, error ) && applyTerrainData( data, error, revision );
     }
 
     void TerrainSystem::setHeightScale( f32 heightScale )
@@ -1579,6 +1822,9 @@ namespace workphone::scene
         }
         auto candidate = *before;
         candidate.dimensions = heightMapSize;
+        candidate.layerWeights.clear();
+        candidate.surfaceMasks.clear();
+        candidate.holes.clear();
         candidate.origin = Vector2F( -heightMapSize.x * candidate.spacing.x * 0.5f,
                                      -heightMapSize.y * candidate.spacing.y * 0.5f );
         candidate.heights.assign( static_cast<size_t>( heightMapSize.x ) * heightMapSize.y, 0.0f );

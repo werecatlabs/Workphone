@@ -16,7 +16,7 @@ $CTestExecutable = (Get-Command $CTestExecutable -ErrorAction Stop).Source
 $selection = '^(WPGraphics|WorkphoneGraphics|WorkphoneAssets|WPAnimation)\.|^WPResourceTests$'
 $requiredTests = @(
     'WPAnimation.core_contracts', 'WPAnimation.import_contracts',
-    'WPGraphics.terrain_contracts', 'WPGraphics.terrain_lua_workflow',
+    'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
     'WPGraphics.production_Skinning', 'WPGraphics.production_ParticleSimulation',
     'WorkphoneGraphics.mesh_serializer', 'WorkphoneGraphics.mesh_import_assets',
     'WorkphoneGraphics.renderer_contract', 'WorkphoneGraphics.shader_contract',
@@ -35,7 +35,7 @@ $reportPath = Join-Path $buildPath "claw-graphics-$Configuration-results.xml"
 $evidencePath = Join-Path $buildPath "claw-graphics-$Configuration-evidence.json"
 # Do not accidentally certify an old report if this CTest invocation fails.
 if (Test-Path -LiteralPath $reportPath) { Remove-Item -LiteralPath $reportPath }
-& $CTestExecutable --test-dir $buildPath -C $Configuration -R $selection --output-on-failure --no-tests=error --test-output-size-passed 65536 --test-output-size-failed 65536 --output-junit $reportPath
+& $CTestExecutable --test-dir $buildPath -C $Configuration -R $selection --output-on-failure --no-tests=error --test-output-size-passed 262144 --test-output-size-failed 262144 --output-junit $reportPath
 $testExit = $LASTEXITCODE
 if (-not (Test-Path -LiteralPath $reportPath)) { throw 'CTest did not produce a report.' }
 [xml]$report = Get-Content -LiteralPath $reportPath -Raw
@@ -48,7 +48,7 @@ $fixturePaths = @(
     'bin/Media/Ogre/models/ninja.mesh', 'bin/Media/Ogre/models/ogrehead.mesh',
     'bin/Media/Ogre/mygui/Common/Scene/Mikki.mesh', 'bin/Media/OgreNext/models/char_feet.mesh'
 )
-$testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/GraphicsProduction') -Filter '*Tests.c') +
+$testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp/GraphicsProduction') -Filter '*Tests.c') +
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/c') -Filter 'WorkphoneGraphics*Tests.c') +
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter 'Claw*Tests.cpp') +
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter '*Contracts.hpp') +
@@ -60,7 +60,7 @@ $verificationPaths = @(
     'Tests/cpp/AnimationImportTests.cpp',
     'Tests/cpp/UnitTests/AnimationGraphTests.cpp',
     'Tests/cpp/UnitTests/AnimationIKTests.cpp',
-    'Tests/Fixtures/Animation/analytic_channels.gltf',
+    'Tests/cpp/Fixtures/Animation/analytic_channels.gltf',
     'Engine/c/Include/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h',
     'Engine/c/Source/WorkphonePlatformWin32/workphone_graphics_renderer_dx11.c',
     'Engine/cpp/Include/WPAssimp/AnimationImport.hpp',
@@ -80,6 +80,41 @@ $verificationPaths = @(
     'Engine/cpp/Include/Workphone/System/ResourceSystem.hpp',
     'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp',
     'Tests/cpp/TerrainContractsTests.cpp', 'Tests/cpp/TerrainLuaBindingTests.cpp',
+    'Tests/cpp/TerrainPhysicsContractsTests.cpp',
+    'Engine/cpp/Include/Workphone/Graphics/TerrainTiles.hpp',
+    'Engine/cpp/Source/Workphone/Graphics/TerrainTiles.cpp',
+    'Engine/cpp/Include/Workphone/System/WorldStreamingScheduler.hpp',
+    'Engine/cpp/Source/Workphone/System/WorldStreamingScheduler.cpp',
+    'Engine/cpp/Include/Workphone/Scene/TerrainIntegration.hpp',
+    'Engine/cpp/Source/Workphone/Scene/TerrainIntegration.cpp',
+    'Engine/cpp/Include/Workphone/Scene/TerrainRecipes.hpp',
+    'Engine/cpp/Include/Workphone/Scene/TerrainMasks.hpp',
+    'Engine/cpp/Include/WPGraphics/ClawTerrainMaterial.hpp',
+    'Engine/cpp/Source/WPGraphics/ClawTerrainMaterial.cpp',
+    'Engine/cpp/Source/WPGraphics/ClawTerrainTiles.cpp',
+    'Engine/cpp/Source/WPGraphics/ClawTerrainTilesState.hpp',
+    'Engine/cpp/Include/Workphone/Scene/Components/CollisionTerrain.hpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/CollisionTerrain.cpp',
+    'Engine/cpp/Source/Workphone/Scene/Components/Rigidbody.cpp',
+    'Engine/cpp/Include/Workphone/Physics/TerrainShape.hpp',
+    'Engine/cpp/Source/Workphone/Physics/TerrainShape.cpp',
+    'Engine/cpp/Include/WPPhysics/WPPhysicsTerrainShape3.hpp',
+    'Engine/cpp/Source/WPPhysics/WPPhysicsTerrainShape3.cpp',
+    'Engine/cpp/Include/WPPhysics/WPPhysicsScene3.hpp',
+    'Engine/cpp/Source/WPPhysics/WPPhysicsScene3.cpp',
+    'Engine/cpp/Source/WPPhysics/WPPhysicsManager3.cpp',
+    'Engine/cpp/Source/WPPhysics/WPPhysicsRigidStatic3.cpp',
+    'Engine/cpp/Source/WPPhysics/WPPhysicsRigidDynamic3.cpp',
+    'Engine/c/Include/WorkphonePhysics/workphone_physics_collisionshape.h',
+    'Engine/c/Source/WorkphonePhysics/workphone_physics_collisionshape.c',
+    'Engine/cpp/Source/WPLuabind/Bindings/render_bindings/RenderLuaBindings.cpp',
+    'Engine/cpp/Source/WPLuabind/ScriptObjectUtil.cpp',
+    'Engine/cpp/Source/WPImGui/ImGuiApplication.cpp',
+    'Tools/cpp/Editor/src/ui/TerrainWindow.hpp',
+    'Tools/cpp/Editor/src/ui/TerrainWindow.cpp',
+    'Tools/cpp/Editor/src/ui/ActorWindow.cpp',
+    'Tests/CMakeLists.txt',
+    'Tests/cpp/GraphicsProduction/CMakeLists.txt',
     'Engine/cpp/Include/Workphone/Graphics/TerrainData.hpp',
     'Engine/cpp/Include/Workphone/Graphics/Terrain.hpp',
     'Engine/cpp/Include/WPGraphics/ClawTerrain.hpp',

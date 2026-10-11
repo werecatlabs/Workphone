@@ -5,6 +5,7 @@
 #include <WPImGui/ImGuiMenuBar.hpp>
 #include <WPImGui/ImGuiMenu.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/TerrainRecipes.hpp>
 #include "ImGuizmo.hpp"
 #include "ImSequencer.hpp"
 //#include "ImZoomSlider.hpp"
@@ -42,6 +43,111 @@ extern void ImGui_ImplWin32_AddKeyEvent( ImGuiKey key, bool down, int native_key
 
 namespace workphone::ui
 {
+    namespace
+    {
+        // A prepared recipe is an editor-only overlay. It never changes active
+        // gameplay queries or collision before the normal commit/publication gate.
+        void drawTerrainRecipePreview( const Parameter &reply, SmartPtr<render::IGraphicsCamera> camera,
+                                       ImVec2 minimum, ImVec2 size )
+        {
+            const auto &objects = reply.getArray();
+            if( objects.size() != 2 )
+                return;
+            auto recipe = dynamic_pointer_cast<scene::TerrainRecipeStack>( objects[0].getObject() );
+            auto terrain = dynamic_pointer_cast<scene::TerrainSystem>( objects[1].getObject() );
+            auto snapshot = recipe ? recipe->getPreviewFor( terrain ) : nullptr;
+            if( !snapshot || snapshot->heights.size() > 65536 )
+                return;
+            auto actor = terrain->getActor();
+            const auto placement = actor ? actor->getWorldTransform() : Transform3<real_Num>();
+            String error;
+            if( !render::validateTerrainTransform( placement, error ) )
+                return;
+            const auto world = placement.getTransformationMatrix();
+            const auto clip = Matrix4F( camera->getProjectionMatrix().ptr() ) *
+                              Matrix4F( camera->getViewMatrix().ptr() );
+            struct Projected
+            {
+                ImVec2 screen;
+                f32 depth = -1;
+                ImU32 colour = 0;
+            };
+            Array<Projected> points( snapshot->heights.size() );
+            const auto width = snapshot->dimensions.X(), depth = snapshot->dimensions.Y();
+            for( s32 z = 0; z < depth; ++z )
+                for( s32 x = 0; x < width; ++x )
+                {
+                    const auto index = size_t( z ) * width + x;
+                    const auto p = world.transformAffine(
+                        Vector3<real_Num>( snapshot->origin.x + x * snapshot->spacing.x,
+                                           snapshot->heights[index] * snapshot->heightScale,
+                                           snapshot->origin.y + z * snapshot->spacing.y ) );
+                    const auto w = clip[3][0] * p.x + clip[3][1] * p.y + clip[3][2] * p.z + clip[3][3];
+                    if( !std::isfinite( w ) || w <= .000001 )
+                        continue;
+                    const auto sx =
+                        ( clip[0][0] * p.x + clip[0][1] * p.y + clip[0][2] * p.z + clip[0][3] ) / w;
+                    const auto sy =
+                        ( clip[1][0] * p.x + clip[1][1] * p.y + clip[1][2] * p.z + clip[1][3] ) / w;
+                    auto &point = points[index];
+                    point.screen = { minimum.x + f32( sx * .5 + .5 ) * size.x,
+                                     minimum.y + f32( .5 - sy * .5 ) * size.y };
+                    if( !std::isfinite( point.screen.x ) || !std::isfinite( point.screen.y ) )
+                        continue;
+                    // Camera matrices expose [-1,1] depth; the DX11 vertex
+                    // shader performs this same conversion to [0,1].
+                    point.depth = f32(
+                        .5 +
+                        .5 * ( clip[2][0] * p.x + clip[2][1] * p.y + clip[2][2] * p.z + clip[2][3] ) /
+                            w );
+                    const auto weights =
+                        snapshot->layerWeights.empty()
+                            ? Vector4F( 1, 0, 0, 0 )
+                            : render::normalizeTerrainWeights( snapshot->layerWeights[index] );
+                    // Stable diagnostic colours show painted control weights even
+                    // when the material's external texture assets are unavailable.
+                    point.colour = IM_COL32( int( 50 + 205 * ( weights.z + weights.w ) ),
+                                             int( 50 + 205 * ( weights.x + weights.y + weights.w ) ),
+                                             int( 50 + 205 * weights.x ), 180 );
+                }
+            auto draw = ImGui::GetWindowDrawList();
+            draw->PushClipRect( minimum, { minimum.x + size.x, minimum.y + size.y }, true );
+            auto line = [&]( size_t a, size_t b ) {
+                const auto &p = points[a], &q = points[b];
+                if( p.depth < 0 || p.depth > 1 || q.depth < 0 || q.depth > 1 ||
+                    !std::isfinite( p.depth ) || !std::isfinite( q.depth ) )
+                    return;
+                if( ( p.screen.x < minimum.x && q.screen.x < minimum.x ) ||
+                    ( p.screen.y < minimum.y && q.screen.y < minimum.y ) ||
+                    ( p.screen.x > minimum.x + size.x && q.screen.x > minimum.x + size.x ) ||
+                    ( p.screen.y > minimum.y + size.y && q.screen.y > minimum.y + size.y ) )
+                    return;
+                // Subpixel grid edges add no useful information and can dominate
+                // draw-list storage when zoomed far out from a large recipe.
+                if( std::abs( p.screen.x - q.screen.x ) + std::abs( p.screen.y - q.screen.y ) < .75f )
+                    return;
+                draw->AddLine( p.screen, q.screen, p.colour, 1.0f );
+            };
+            for( s32 z = 0; z < depth - 1; ++z )
+                for( s32 x = 0; x < width - 1; ++x )
+                {
+                    if( render::terrainCellIsHole( *snapshot, x, z ) )
+                        continue;
+                    const auto a = size_t( z ) * width + x, b = a + 1, c = a + width, d = c + 1;
+                    line( a, b );
+                    line( a, c );
+                    line( b, c );
+                    if( x == width - 2 || render::terrainCellIsHole( *snapshot, x + 1, z ) )
+                        line( b, d );
+                    if( z == depth - 2 || render::terrainCellIsHole( *snapshot, x, z + 1 ) )
+                        line( c, d );
+                }
+            draw->AddText( { minimum.x + 12, minimum.y + 12 }, IM_COL32( 100, 235, 255, 255 ),
+                           "Terrain recipe preview: geometry / layer weights (uncommitted)" );
+            draw->PopClipRect();
+        }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone::ui, ImGuiApplication, IUIApplication );
 
     Array<u8> ImGuiApplication::s_fontData;
@@ -1786,6 +1892,7 @@ namespace workphone::ui
             auto renderWindows = ui->getRenderWindows();
             for( auto &renderWindow : renderWindows )
             {
+                bool terrainInputDispatched = false;
                 auto visible = renderWindow->isVisible();
                 if( visible )
                 {
@@ -1833,6 +1940,91 @@ namespace workphone::ui
                         {
                             viewMatrix = renderCamera->getViewMatrix().transpose();
                             projectionMatrix = renderCamera->getProjectionMatrix().transpose();
+                        }
+
+                        // The scene image's exact content rectangle is the input
+                        // surface. Lua tools receive a world ray, independent of
+                        // docking, DPI scaling, title bars and render-target size.
+                        ImGuizmo::Enable( true );
+                        if( renderCamera && sceneRectSize.x > 0 && sceneRectSize.y > 0 )
+                        {
+                            terrainInputDispatched = true;
+                            const auto mouse = ImGui::GetMousePos();
+                            const bool hovered = ImGui::IsWindowHovered() && mouse.x >= sceneRectMin.x &&
+                                                 mouse.y >= sceneRectMin.y &&
+                                                 mouse.x < sceneRectMin.x + sceneRectSize.x &&
+                                                 mouse.y < sceneRectMin.y + sceneRectSize.y;
+                            const char *phase = "hover";
+                            if( ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
+                                !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) )
+                                phase = "cancel";
+                            else if( ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+                                phase = "commit";
+                            else if( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+                                phase = "begin";
+                            else if( hovered && ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+                                phase = "update";
+                            else if( !hovered )
+                                phase = "cancel";
+                            const auto ray =
+                                renderCamera->getRay( ( mouse.x - sceneRectMin.x ) / sceneRectSize.x,
+                                                      ( mouse.y - sceneRectMin.y ) / sceneRectSize.y );
+                            const auto origin = ray.getOrigin(), direction = ray.getDirection();
+                            const Parameters args{ Parameter( phase ),
+                                                   Parameter( f64( origin.x ) ),
+                                                   Parameter( f64( origin.y ) ),
+                                                   Parameter( f64( origin.z ) ),
+                                                   Parameter( f64( direction.x ) ),
+                                                   Parameter( f64( direction.y ) ),
+                                                   Parameter( f64( direction.z ) ) };
+                            for( auto listener : renderWindow->getObjectListeners() )
+                            {
+                                const auto reply = listener->handleEvent(
+                                    EventType::UI, StringUtil::getHash( "terrainViewportBrush" ), args,
+                                    renderWindow, nullptr, nullptr );
+                                const auto recipePreview = listener->handleEvent(
+                                    EventType::UI, StringUtil::getHash( "terrainRecipePreview" ), {},
+                                    renderWindow, nullptr, nullptr );
+                                drawTerrainRecipePreview( recipePreview, renderCamera, sceneRectMin,
+                                                          sceneRectSize );
+                                const auto &ring = reply.getArray();
+                                if( ring.empty() || !ring.front().getBool() )
+                                    continue;
+                                ImGuizmo::Enable( false );
+                                if( !hovered )
+                                    continue;
+                                const auto clip = Matrix4F( renderCamera->getProjectionMatrix().ptr() ) *
+                                                  Matrix4F( renderCamera->getViewMatrix().ptr() );
+                                const auto project = [&]( const Parameter &parameter, ImVec2 &screen ) {
+                                    const auto p = parameter.getVector3();
+                                    const auto w = clip[3][0] * p.x + clip[3][1] * p.y +
+                                                   clip[3][2] * p.z + clip[3][3];
+                                    if( !std::isfinite( p.x ) || !std::isfinite( p.y ) ||
+                                        !std::isfinite( p.z ) || w <= 0.000001 )
+                                        return false;
+                                    const auto x = ( clip[0][0] * p.x + clip[0][1] * p.y +
+                                                     clip[0][2] * p.z + clip[0][3] ) /
+                                                   w;
+                                    const auto y = ( clip[1][0] * p.x + clip[1][1] * p.y +
+                                                     clip[1][2] * p.z + clip[1][3] ) /
+                                                   w;
+                                    screen = { sceneRectMin.x + f32( x * .5 + .5 ) * sceneRectSize.x,
+                                               sceneRectMin.y + f32( .5 - y * .5 ) * sceneRectSize.y };
+                                    return std::isfinite( screen.x ) && std::isfinite( screen.y );
+                                };
+                                auto draw = ImGui::GetWindowDrawList();
+                                draw->PushClipRect( sceneRectMin,
+                                                    { sceneRectMin.x + sceneRectSize.x,
+                                                      sceneRectMin.y + sceneRectSize.y },
+                                                    true );
+                                for( size_t i = 2; i < ring.size(); ++i )
+                                {
+                                    ImVec2 a, b;
+                                    if( project( ring[i - 1], a ) && project( ring[i], b ) )
+                                        draw->AddLine( a, b, IM_COL32( 255, 210, 70, 230 ), 2.0f );
+                                }
+                                draw->PopClipRect();
+                            }
                         }
 
                         if( editorManager && sceneManager && renderCamera )
@@ -2149,6 +2341,16 @@ namespace workphone::ui
                     }
 
                     ImGui::End();
+                }
+                if( !terrainInputDispatched )
+                {
+                    const Parameters cancel{ Parameter( "cancel" ), Parameter( 0.0 ), Parameter( 0.0 ),
+                                             Parameter( 0.0 ),      Parameter( 0.0 ), Parameter( -1.0 ),
+                                             Parameter( 0.0 ) };
+                    for( auto listener : renderWindow->getObjectListeners() )
+                        listener->handleEvent( EventType::UI,
+                                               StringUtil::getHash( "terrainViewportBrush" ), cancel,
+                                               renderWindow, nullptr, nullptr );
                 }
             }
 
