@@ -372,6 +372,151 @@ namespace workphone::resource
                    std::to_string( ++payloadTemporaryCounter ).c_str();
         }
 
+        // One captured byte sequence per logical input across the entire request.
+        // Compilers are trusted code, but receive only captured files for compilation.
+        class BuildInputs
+        {
+        public:
+            BuildInputs(const fs::path &source, const fs::path &cooked) : sourceRoot(source), cookedRoot(cooked) {}
+            ~BuildInputs()
+            {
+                if(root.empty() || !isUnderRoot(cookedRoot / ".staging",root)) return;
+                std::error_code ignored;
+                for(fs::recursive_directory_iterator item(root,ignored), end; item!=end; item.increment(ignored))
+                {
+                    if(ignored) break;
+                    fs::permissions(item->path(),fs::perms::owner_all,fs::perm_options::add,ignored);
+                }
+                fs::remove_all(root,ignored);
+            }
+
+            bool capture(const String &logical, bool required, String &pinned, String &error)
+            {
+                pinned.clear();
+                const auto normalized=normalizeLogicalDataPath(logical,error);
+                if(normalized.empty()) return false;
+                auto existing=entries.find(normalized);
+                if(existing!=entries.end())
+                {
+                    if(required && existing->second.absent)
+                    {
+                        error="Required input was absent when this build request captured it: " + normalized;
+                        return false;
+                    }
+                    pinned=existing->second.pinned;
+                    return true;
+                }
+                if(entries.size()>=65536)
+                {
+                    error="Build input snapshot exceeds its 65536-file limit";
+                    return false;
+                }
+                fs::path actual;
+                if(!resolveUnderRoot(sourceRoot,normalized,false,actual,error)) return false;
+                std::error_code status;
+                const bool exists=fs::exists(actual,status);
+                if(status || (!exists && required))
+                {
+                    error="Cannot capture required build input: " + normalized;
+                    return false;
+                }
+                if(!exists)
+                {
+                    entries.emplace(normalized,Entry{actual,{},0,0,true});
+                    return true;
+                }
+                if(!fs::is_regular_file(actual,status) || status)
+                {
+                    error="Build input is not a regular file: " + normalized;
+                    return false;
+                }
+                if(root.empty())
+                {
+                    fs::path staging;
+                    if(!resolveUnderRoot(cookedRoot,"data://.staging",false,staging,error)) return false;
+                    fs::create_directories(staging,status);
+                    if(status) { error="Cannot create input snapshot staging directory"; return false; }
+                    do
+                    {
+                        const auto candidate=fs::u8path(makePayloadTemporaryPath(pathString(staging / "inputs")).c_str());
+                        if(fs::create_directory(candidate,status)) { root=candidate; break; }
+                        if(status) { error="Cannot create input snapshot directory"; return false; }
+                    } while(true);
+                }
+                fs::path destination;
+                if(!resolveUnderRoot(root,normalized,false,destination,error)) return false;
+                fs::create_directories(destination.parent_path(),status);
+                if(status) { error="Cannot create input snapshot subdirectory"; return false; }
+                std::ifstream input(actual,std::ios::binary);
+                std::ofstream output(destination,std::ios::binary|std::ios::trunc);
+                if(!input || !output) { error="Cannot open build input snapshot files"; return false; }
+                constexpr u64 byteLimit=1024ull*1024ull*1024ull;
+                u64 size=0, hash=14695981039346656037ull;
+                char buffer[64*1024];
+                while(input)
+                {
+                    input.read(buffer,sizeof(buffer));
+                    const auto count=input.gcount();
+                    if(static_cast<u64>(count)>byteLimit-totalBytes-size)
+                    { error="Build input snapshot exceeds its 1 GiB byte limit"; return false; }
+                    if(count>0)
+                    {
+                        output.write(buffer,count);
+                        hash=hashBytes(buffer,static_cast<size_t>(count),hash);
+                        size+=static_cast<u64>(count);
+                    }
+                }
+                output.flush();
+                if(!input.eof() || !output) { error="Failed while capturing build input bytes"; return false; }
+                output.close();
+                if(output.fail()) { error="Failed to close build input snapshot"; return false; }
+                u64 checkedHash=0,checkedSize=0;
+                if(!CompiledResourceIO::hashFile(pathString(actual),checkedHash,checkedSize,error) ||
+                   checkedHash!=hash || checkedSize!=size)
+                { error="Source changed while capturing build input: " + normalized; return false; }
+                fs::permissions(destination,fs::perms::owner_read|fs::perms::group_read|fs::perms::others_read,
+                                fs::perm_options::replace,status);
+                if(status) { error="Cannot protect captured build input"; return false; }
+                pinned=pathString(destination);
+                entries.emplace(normalized,Entry{actual,pinned,hash,size,false});
+                totalBytes+=size;
+                return true;
+            }
+
+            bool verify(String &error) const
+            {
+                for(const auto &entry:entries)
+                {
+                    fs::path current;
+                    if(!resolveUnderRoot(sourceRoot,entry.first,false,current,error) ||
+                       !pathComponentEquals(current,entry.second.source))
+                    { error="Build input path changed during the request: " + entry.first; return false; }
+                    if(entry.second.absent)
+                    {
+                        std::error_code status;
+                        if(fs::exists(current,status) || status)
+                        { error="Optional build input appeared during the request: " + entry.first; return false; }
+                        continue;
+                    }
+                    for(const auto &path:{pathString(current),entry.second.pinned})
+                    {
+                        u64 hash=0,size=0;
+                        if(!CompiledResourceIO::hashFile(path,hash,size,error) ||
+                           hash!=entry.second.hash || size!=entry.second.size)
+                        { error="Source or captured input changed during the build: " + entry.first; return false; }
+                    }
+                }
+                return true;
+            }
+
+            const fs::path &directory() const { return root; }
+        private:
+            struct Entry { fs::path source; String pinned; u64 hash; u64 size; bool absent; };
+            fs::path sourceRoot, cookedRoot, root;
+            std::map<String,Entry> entries;
+            u64 totalBytes=0;
+        };
+
         // Retain the lock file: unlinking it can give competing processes different
         // inodes/handles. OS handle ownership, not file existence, determines liveness.
         class WriterLease
@@ -479,7 +624,8 @@ namespace workphone::resource
 
         CompilationReport compileNode( const ResourceID &resourceId, const CompilationOptions &options,
                                        std::map<String, CompilationReport> &completed,
-                                       Array<String> &stack, Array<CompilationCommit> &pendingCommits )
+                                       Array<String> &stack, Array<CompilationCommit> &pendingCommits,
+                                       BuildInputs &inputs )
         {
             const auto completedIterator = completed.find( resourceId.str() );
             if( completedIterator != completed.end() )
@@ -545,6 +691,18 @@ namespace workphone::resource
             if( resourceId.str().size()>1024 || config.target.size()>128 )
                 return fail("Resource identity or target exceeds artifact namespace limits");
 
+            if(!inputs.capture("data://"+resourceId.sourceRelativePath(),true,context.sourcePath,error))
+                return fail(error);
+            Array<CompileDependency> scanInputs;
+            context.snapshotInput=[&inputs,&scanInputs](const String &logical, bool required, String &path, String &captureError)
+            {
+                if(!inputs.capture(logical,required,path,captureError)) return false;
+                auto dependency=CompileDependency::data(logical);
+                dependency.optional=!required;
+                scanInputs.push_back(std::move(dependency));
+                return true;
+            };
+
             u64 sourceFileHash=0, sourceFileSize=0;
             if(!CompiledResourceIO::hashFile(context.sourcePath,sourceFileHash,sourceFileSize,error))
                 return fail(error);
@@ -564,6 +722,7 @@ namespace workphone::resource
             {
                 return fail( "Compiler dependency scan threw an unknown exception" );
             }
+            dependencies.compileDependencies.insert(dependencies.compileDependencies.end(),scanInputs.begin(),scanInputs.end());
 
             std::map<String, bool> canonicalDependencies;
             std::map<String, u64> dependencyHashes;
@@ -581,7 +740,7 @@ namespace workphone::resource
                     if( dependencyId == resourceId )
                         return fail( "A resource cannot depend on itself" );
 
-                    const auto childReport = compileNode( dependencyId, options, completed, stack, pendingCommits );
+                    const auto childReport = compileNode( dependencyId, options, completed, stack, pendingCommits, inputs );
                     if( !childReport.succeeded() )
                     {
                         auto report =
@@ -600,14 +759,18 @@ namespace workphone::resource
                     canonicalPath = normalizeLogicalDataPath( dependency.path, error );
                     if( canonicalPath.empty() )
                         return fail( error );
-                    fs::path dependencyPath;
-                    if( !resolveUnderRoot( sourceRoot, canonicalPath, true, dependencyPath, error ) )
-                        return fail( error );
                     u64 dependencySize = 0;
-                    if( !CompiledResourceIO::hashFile( pathString( dependencyPath ), dependencyHash,
-                                                       dependencySize, error ) )
-                        return fail( error );
-                    dependencyHash = combineHash( dependencyHash, dependencySize );
+                    String snapshot;
+                    if(!inputs.capture(canonicalPath,!dependency.optional,snapshot,error)) return fail(error);
+                    if(snapshot.empty())
+                        dependencyHash=hashString("optional-input-absent-v1");
+                    else
+                    {
+                        if( !CompiledResourceIO::hashFile( snapshot, dependencyHash,
+                                                           dependencySize, error ) )
+                            return fail( error );
+                        dependencyHash = combineHash( dependencyHash, dependencySize );
+                    }
                 }
 
                 const auto existing = canonicalDependencies.find( canonicalPath );
@@ -626,7 +789,7 @@ namespace workphone::resource
                 if( dependencyId == resourceId )
                     return fail( "A resource cannot install-depend on itself" );
 
-                const auto childReport = compileNode( dependencyId, options, completed, stack, pendingCommits );
+                const auto childReport = compileNode( dependencyId, options, completed, stack, pendingCommits, inputs );
                 if( !childReport.succeeded() )
                 {
                     auto report =
@@ -644,6 +807,7 @@ namespace workphone::resource
             }
 
             u64 sourceHash = hashString( resourceId.str() );
+            sourceHash = hashString( "captured-build-inputs-v1", sourceHash );
             sourceHash = combineHash( sourceHash, CompiledResourceHeader::currentFormatVersion );
             sourceHash = combineHash( sourceHash, compilerVersion );
             sourceHash = hashString( config.target, sourceHash );
@@ -729,6 +893,8 @@ namespace workphone::resource
 
             CompilationStatus status = CompilationStatus::Failure;
             Array<String> compilerMessages;
+            context.sourceRoot=pathString(inputs.directory());
+            context.snapshotInput={};
             const auto compileStart = std::chrono::steady_clock::now();
             try
             {
@@ -775,14 +941,6 @@ namespace workphone::resource
                        pinnedHeader.resourceId.str()!=dependency.first ||
                        combineHash(pinnedHeader.sourceHash,pinnedHeader.payloadHash)!=dependencyHashes.at(dependency.first))
                         return fail("Compiled dependency changed during compilation");
-                }
-                else
-                {
-                    fs::path checkedPath;
-                    if(!resolveUnderRoot(sourceRoot,dependency.first,true,checkedPath,error) ||
-                       !CompiledResourceIO::hashFile(pathString(checkedPath),checkedHash,checkedSize,error) ||
-                       combineHash(checkedHash,checkedSize)!=dependencyHashes.at(dependency.first))
-                        return fail("Raw dependency changed during compilation");
                 }
             }
 
@@ -1461,9 +1619,11 @@ namespace workphone::resource
         std::map<String, CompilationReport> completed;
         Array<String> stack;
         Array<CompilationCommit> pendingCommits;
-        auto report = m_impl->compileNode( resourceId, options, completed, stack, pendingCommits );
+        BuildInputs inputs(m_impl->sourceRoot,m_impl->compiledRoot);
+        auto report = m_impl->compileNode( resourceId, options, completed, stack, pendingCommits, inputs );
         String error;
-        if(report.succeeded() && !m_impl->publishBatch(pendingCommits,completed,options.packagedBuild,error))
+        if(report.succeeded() && (!inputs.verify(error) ||
+           !m_impl->publishBatch(pendingCommits,completed,options.packagedBuild,error)))
             report=failureReport(resourceId,error);
         if(!report.succeeded()) m_impl->abandonBatch(completed);
         return report;
@@ -1522,12 +1682,14 @@ namespace workphone::resource
         std::map<String, CompilationReport> completed;
         Array<String> stack;
         Array<CompilationCommit> pendingCommits;
+        BuildInputs inputs(m_impl->sourceRoot,m_impl->compiledRoot);
         for( const auto &id : affected )
-            reports.push_back( m_impl->compileNode( ResourceID( id ), options, completed, stack, pendingCommits ) );
+            reports.push_back( m_impl->compileNode( ResourceID( id ), options, completed, stack, pendingCommits, inputs ) );
         if(reports.empty()) return reports;
         const bool allSucceeded=std::all_of(reports.begin(),reports.end(),
             [](const CompilationReport &report) { return report.succeeded(); });
-        if(!allSucceeded || !m_impl->publishBatch(pendingCommits,completed,options.packagedBuild,error))
+        if(!allSucceeded || !inputs.verify(error) ||
+           !m_impl->publishBatch(pendingCommits,completed,options.packagedBuild,error))
         {
             m_impl->abandonBatch(completed);
             if(error.empty()) error="Affected compilation set not committed because one or more resources failed";

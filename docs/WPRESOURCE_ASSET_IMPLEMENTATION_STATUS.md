@@ -365,6 +365,70 @@ the remaining Editor workflows. Container metadata is not cryptographically
 authenticated. Interactive Editor, shipping application, hardware/performance
 and interrupted-publication acceptance remain separate release gates.
 
+## Increment 6: captured build inputs and optional-input invalidation (11 October 2026)
+
+Each `compile` or `compileAffected` request now owns an isolated input tree under
+`.staging`. A logical input is copied once and shared throughout that request.
+Dependency scanners receive a captured descriptor. Compilation receives captured
+`sourcePath` and `sourceRoot` paths, so reads cannot observe transient edits to
+the original descriptor or raw dependencies. Copies stream with a combined
+1 GiB byte limit and 65,536-input limit, verify their source fingerprint before
+acceptance, and become read-only. A final whole-request check compares both the
+captured files and current logical source paths/bytes before the complete index
+transaction and session evidence publication. Failure retains the prior index
+and installed objects; unused immutable artifact candidates may remain.
+
+Scanners that read auxiliary input bytes use the new `CompileContext.snapshotInput`
+hook before reading them. The hook automatically contributes raw dependency edges
+and fingerprints. Optional absent inputs contribute an explicit absent marker and
+an edge, so later creation, deletion and empty-file transitions invalidate reverse
+dependents. During scanning, `sourceRoot` still identifies the authoring tree for
+path validation; auxiliary byte reads must use the capture hook. The callback is
+cleared before compilation. Standalone tools without this callback retain their
+previous compiler behavior. Lua's optional `.lua.deps` scanner now uses the hook.
+Rebuild linked compiler consumers for the extended context/dependency structures.
+
+Build identity includes a capture-policy marker so existing pre-snapshot outputs
+recook into new immutable generations. Temporary snapshot paths do not participate
+in identity. WPRS version 2 and compilation schema 3 remain unchanged. Private
+snapshot directories are cleaned on normal success, failure and up-to-date paths;
+process-crash leftovers await the planned generation recovery/retention service.
+Existing indexes gain absent-input edges when their roots are recooked; perform a
+full recook before relying on optional-file creation events after upgrading.
+
+Regression coverage includes restored descriptor/raw edits during compilation,
+persistent raw edits retaining the previous record, optional input appearance
+during a build, reverse invalidation after creation/deletion, empty versus absent
+identity, shared input trees across multi-root requests, changes to an already
+compiled root before batch publication, cleanup after failure and recovery, and
+authoring files remaining untouched by a compiler write to its captured descriptor.
+The real Lua contracts additionally cover optional sidecar creation/removal and
+incremental compilation afterward.
+
+The rebuilt Windows `RelWithDebInfo` contracts passed in targeted CTest runs:
+
+| Suite | Time |
+|---|---|
+| WPResourceTests | 2.27 s |
+| WPResource.writer_lease | 3.50 s |
+| WPResource.index_migration | 1.05 s |
+| WorkphoneAssets.catalog_contracts | 3.78 s |
+| WPGraphics.cooked_material_resource | 2.35 s |
+| WPLua.runtime_contracts | 1.05 s |
+
+The four native test targets and `Editor` rebuilt successfully, including required
+dependencies. `git diff --check` passed. No interactive Editor, standalone shipping
+application, POSIX build or hardware/performance acceptance was performed.
+Build log: `project_x64/resource-input-snapshot-build.log`.
+
+Compilers remain trusted code; this is not a process sandbox. File capture is lazy,
+not an atomic filesystem snapshot. External writes after the final validation
+check still require the planned authored revision/publication coordination.
+Cryptographic digests, interrupted-publication recovery, input-cache retention,
+configurable budgets and representative performance certification remain open.
+DDS profiles/cooking, the remaining asset database/Editor workflows, typed consumer
+swaps and shipping-release acceptance remain separate production gates.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -375,9 +439,10 @@ existing texture compiler and the next cooking consistency milestone.
 
 1. Finish the first integrity slice: authored numeric-ID lookup/traversal, immutable
    metadata migration, reference-aware operations, retention and recovery UI.
-2. Extend target/mode indexing to full profile/toolchain BuildKeys, immutable
-   source snapshots and generation recovery/retention on top of complete-request
-   index transactions and immutable artifacts. Certify interrupted publication.
+2. Extend target/mode indexing to full profile/toolchain BuildKeys, authored
+   revision fences and generation recovery/retention on top of captured inputs,
+   complete-request index transactions and immutable artifacts. Certify
+   interrupted publication.
 3. Persist typed dependency/reference edges and implement reverse queries,
    dependency invalidation and required-missing/cycle diagnostics.
 4. Integrate typed runtime consumers and owner-thread publication throughout the

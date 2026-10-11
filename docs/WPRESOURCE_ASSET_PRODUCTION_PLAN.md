@@ -19,10 +19,13 @@ records, scoped dependency queries, mode-qualified runtime caches and publicatio
 evidence, and consistent mode selection throughout load/export closures.
 RES-013 is still partial: full profile/settings/toolchain BuildKeys remain open.
 Increment 4 adds complete-request
-index transactions and canonical-root/target OS writer leases; immutable source
-snapshots, recovery/GC and power-loss certification remain open. Increment 5 adds
+index transactions and canonical-root/target OS writer leases; recovery/GC and
+power-loss certification remain open. Increment 5 adds
 version-2 cooked containers with persistent dependency artifact pins, generation
-cache identities and incompatible-closure rejection. Platform DDS
+cache identities and incompatible-closure rejection. Increment 6 adds isolated
+request-owned compiler inputs, whole-request input validation and optional Lua
+sidecar invalidation. Recovery/GC, stronger identities and release certification
+remain open. Platform DDS
 packages RES-050–054 remain planned.
 
 ### Current review summary

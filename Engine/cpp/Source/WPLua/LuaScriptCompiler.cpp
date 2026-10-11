@@ -23,11 +23,22 @@ namespace workphone
     {
         auto path = std::filesystem::u8path( context.sourcePath.c_str() );
         path += ".deps";
-        std::error_code status;
-        if( !std::filesystem::exists( path, status ) )
+        if(context.snapshotInput)
         {
-            if( status ) { error = "Cannot inspect Lua dependency manifest"; return false; }
-            return true;
+            String snapshot;
+            if(!context.snapshotInput("data://"+context.resourceId.sourceRelativePath()+".deps",false,snapshot,error))
+                return false;
+            if(snapshot.empty()) return true;
+            path=std::filesystem::u8path(snapshot.c_str());
+        }
+        else
+        {
+            std::error_code status;
+            if( !std::filesystem::exists( path, status ) )
+            {
+                if( status ) { error = "Cannot inspect Lua dependency manifest"; return false; }
+                return true;
+            }
         }
         std::ifstream input( path, std::ios::binary );
         if( !input ) { error = "Cannot read Lua dependency manifest"; return false; }

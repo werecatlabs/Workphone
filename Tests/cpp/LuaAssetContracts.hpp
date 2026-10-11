@@ -126,6 +126,16 @@ inline void runLuaAssetContracts( workphone::LuaManager &manager )
     check( compiled && compiled->dependencies.size() == 1, "installed module dependency" );
     check( resources->compile( ResourceID( "data://logic/Actor.lua" ) ).status == CompilationStatus::UpToDate,
            "incremental Lua compile" );
+    write("logic/Helper.lua.deps","# Optional sidecar now exists\n");
+    const auto sidecarCreated=resources->compileAffected("data://logic/Helper.lua.deps");
+    check(sidecarCreated.size()==2 && sidecarCreated[0].succeeded() && sidecarCreated[1].succeeded(),
+          "creating a previously absent Lua sidecar must rebuild its module and reverse dependents");
+    fs::remove(source / "logic/Helper.lua.deps");
+    const auto sidecarRemoved=resources->compileAffected("data://logic/Helper.lua.deps");
+    check(sidecarRemoved.size()==2 && sidecarRemoved[0].succeeded() && sidecarRemoved[1].succeeded(),
+          "removing an optional Lua sidecar must rebuild its module and reverse dependents");
+    check(resources->compile(ResourceID("data://logic/Actor.lua")).status==CompilationStatus::UpToDate,
+          "Lua snapshots must preserve incremental compilation after optional input removal");
     write( "logic/Actor.lua", "local =" );
     check( !resources->compile( ResourceID( "data://logic/Actor.lua" ) ).succeeded(), "invalid Lua source compiled" );
     auto oldState = manager.getLuaState();

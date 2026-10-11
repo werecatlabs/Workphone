@@ -6,6 +6,7 @@
 
 #include <ostream>
 #include <map>
+#include <functional>
 
 namespace workphone::resource
 {
@@ -27,6 +28,7 @@ namespace workphone::resource
     {
         String path;
         bool isResource = false;
+        bool optional = false;
 
         static CompileDependency resource( const ResourceID &resourceId );
         static CompileDependency data( const String &dataPath );
@@ -49,6 +51,12 @@ namespace workphone::resource
         bool packagedBuild = false;
         /** Pinned absolute artifacts of successfully compiled dependencies. */
         std::map<String, String> dependencyArtifacts;
+        /** During dependency scanning, capture auxiliary data:// inputs before
+         * reading them. Optional absent inputs return an empty snapshot path and
+         * their absence is checked before publication. Empty for standalone tools.
+         * Compile receives a snapshot sourcePath/sourceRoot and no callback.
+         */
+        std::function<bool( const String &, bool, String &, String & )> snapshotInput;
     };
 
     /** Base interface implemented by format-specific resource compilers. */

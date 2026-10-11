@@ -282,6 +282,137 @@ namespace
             return output ? CompilationStatus::Success : CompilationStatus::Failure;
         }
     };
+
+    class SnapshotCompiler final : public IResourceCompiler
+    {
+    public:
+        enum class Mutation { None, DescriptorABA, RawABA, PersistentRaw, OptionalAppears, EarlierRoot };
+        explicit SnapshotCompiler(fs::path source) : authored(std::move(source)) {}
+        mutable Mutation mutation=Mutation::None;
+        mutable Array<fs::path> roots;
+        String name() const override { return "SnapshotContracts"; }
+        Array<CompilerOutput> outputs() const override { return {{ResourceTypeID("snapres"),1}}; }
+        bool getDependencies(const CompileContext &context,DependencySet &dependencies,String &error) const override
+        {
+            require(static_cast<bool>(context.snapshotInput),"Dependency scanning requires the capture hook");
+            require(fs::u8path(context.sourcePath.c_str())!=authored / context.resourceId.sourceRelativePath().c_str(),
+                    "Scanner descriptor must be a captured file");
+            String optional;
+            if(!context.snapshotInput("data://snapshot.optional",false,optional,error)) return false;
+            dependencies.compileDependencies.push_back(CompileDependency::data("data://snapshot.raw"));
+            return true;
+        }
+        CompilationStatus compile(const CompileContext &context,std::ostream &output,Array<String> &) const override
+        {
+            require(!context.snapshotInput,"Compilation must not capture undeclared inputs");
+            const auto root=fs::u8path(context.sourceRoot.c_str());
+            roots.push_back(root);
+            require(root!=authored && fs::u8path(context.sourcePath.c_str())==root / context.resourceId.sourceRelativePath().c_str(),
+                    "Compile context must identify the isolated input tree");
+            const auto capturedSource=resource_runtime_contracts::read(fs::u8path(context.sourcePath.c_str()));
+            const auto capturedRaw=resource_runtime_contracts::read(root / "snapshot.raw");
+            if(mutation==Mutation::DescriptorABA)
+            {
+                const auto source=authored / context.resourceId.sourceRelativePath().c_str();
+                const auto original=resource_runtime_contracts::read(source);
+                writeFile(source,"transient descriptor bytes\n");
+                require(resource_runtime_contracts::read(fs::u8path(context.sourcePath.c_str()))==capturedSource,
+                        "Live descriptor ABA must not affect compiler input bytes");
+                writeFile(source,original);
+            }
+            if(mutation==Mutation::RawABA || mutation==Mutation::PersistentRaw)
+            {
+                const auto original=resource_runtime_contracts::read(authored / "snapshot.raw");
+                writeFile(authored / "snapshot.raw","transient raw bytes\n");
+                require(resource_runtime_contracts::read(root / "snapshot.raw")==capturedRaw,
+                        "Live raw-input edits must not affect compiler input bytes");
+                if(mutation==Mutation::RawABA) writeFile(authored / "snapshot.raw",original);
+            }
+            if(mutation==Mutation::OptionalAppears) writeFile(authored / "snapshot.optional","appeared\n");
+            if(mutation==Mutation::EarlierRoot && context.resourceId.str()=="data://snapshot-b.snapres")
+                writeFile(authored / "snapshot-a.snapres","changed after its compiler completed\n");
+            output << capturedSource << capturedRaw;
+            if(fs::exists(root / "snapshot.optional"))
+                output << resource_runtime_contracts::read(root / "snapshot.optional");
+            return output ? CompilationStatus::Success : CompilationStatus::Failure;
+        }
+        fs::path authored;
+    };
+
+    void snapshotContracts(ResourceSystem &system, const std::shared_ptr<FaultDatabase> &database,
+                           const std::shared_ptr<SnapshotCompiler> &compiler, const fs::path &source,
+                           const CompilationVariant &variant)
+    {
+        const ResourceID first("data://snapshot-a.snapres"), second("data://snapshot-b.snapres");
+        writeFile(source / "snapshot-a.snapres","snapshot-a\n");
+        writeFile(source / "snapshot-b.snapres","snapshot-b\n");
+        writeFile(source / "snapshot.raw","raw-original\n");
+        String error;
+        CompilationOptions forced;
+        forced.force=true;
+        require(system.compile(first).succeeded() && system.compile(second).succeeded(),"Cook snapshot baselines");
+        auto original=system.load(first,error);
+        require(original && std::string(original->payload.begin(),original->payload.end())=="snapshot-a\nraw-original\n",
+                "Captured descriptor/raw bytes must become the cooked payload");
+        Array<String> dependents;
+        require(database->getDependents("data://snapshot.optional",variant,dependents) && dependents.size()==2,
+                "Absent auxiliary scan inputs must persist reverse dependency edges");
+        for(const auto action:{SnapshotCompiler::Mutation::DescriptorABA,SnapshotCompiler::Mutation::RawABA})
+        {
+            compiler->mutation=action;
+            require(system.compile(first,forced).succeeded(),"Restored live-input edits must leave captured bytes valid");
+            auto loaded=system.load(first,error);
+            require(loaded && loaded->payload==original->payload,"ABA edits must not stamp transient bytes with original fingerprints");
+        }
+        CompiledResourceRecord previous,read;
+        require(database->getRecord(first.str(),variant,previous),"Read snapshot baseline record");
+        compiler->mutation=SnapshotCompiler::Mutation::PersistentRaw;
+        const auto before=database->batchCommits;
+        require(!system.compile(first,forced).succeeded() && database->batchCommits==before &&
+                database->getRecord(first.str(),variant,read) && read.outputPath==previous.outputPath,
+                "Persistent raw edits must abandon publication and retain the previous index record");
+        writeFile(source / "snapshot.raw","raw-original\n");
+        compiler->mutation=SnapshotCompiler::Mutation::OptionalAppears;
+        require(!system.compile(first,forced).succeeded(),"Optional input appearance must reject an obsolete absent-input build");
+        compiler->mutation=SnapshotCompiler::Mutation::None;
+        compiler->roots.clear();
+        const auto affected=system.compileAffected("data://snapshot.optional");
+        require(affected.size()==2 && affected[0].succeeded() && affected[1].succeeded() &&
+                compiler->roots.size()==2 && compiler->roots[0]==compiler->roots[1],
+                "Optional input creation must rebuild both dependents using one shared request snapshot");
+        auto present=system.load(first,error);
+        require(present && std::string(present->payload.begin(),present->payload.end())==
+                "snapshot-a\nraw-original\nappeared\n","Newly present optional bytes must affect the cooked payload");
+        fs::remove(source / "snapshot.optional");
+        const auto removed=system.compileAffected("data://snapshot.optional");
+        require(removed.size()==2 && removed[0].succeeded() && removed[1].succeeded(),
+                "Optional input deletion must invalidate its previously present dependents");
+        require(database->getRecord(first.str(),variant,previous),"Read absent optional-input fingerprint");
+        writeFile(source / "snapshot.optional","");
+        const auto emptyPresent=system.compileAffected("data://snapshot.optional");
+        require(emptyPresent.size()==2 && emptyPresent[0].succeeded() && emptyPresent[1].succeeded() &&
+                database->getRecord(first.str(),variant,read) && read.sourceHash!=previous.sourceHash,
+                "An empty optional file must have distinct identity from an absent optional file");
+        fs::remove(source / "snapshot.optional");
+        const auto emptyRemoved=system.compileAffected("data://snapshot.optional");
+        require(emptyRemoved.size()==2 && emptyRemoved[0].succeeded() && emptyRemoved[1].succeeded(),
+                "Recover absent optional-input identity after removing an empty file");
+        CompiledResourceRecord previousSecond;
+        require(database->getRecord(first.str(),variant,previous) && database->getRecord(second.str(),variant,previousSecond),
+                "Read pre-failure shared snapshot records");
+        writeFile(source / "snapshot.raw","new shared bytes\n");
+        compiler->mutation=SnapshotCompiler::Mutation::EarlierRoot;
+        const auto failed=system.compileAffected("data://snapshot.raw");
+        require(failed.size()==2 && !failed[0].succeeded() && !failed[1].succeeded() &&
+                database->getRecord(first.str(),variant,read) && read.outputPath==previous.outputPath &&
+                database->getRecord(second.str(),variant,read) && read.outputPath==previousSecond.outputPath,
+                "Final request verification must reject edits to a root that compiled before another root");
+        compiler->mutation=SnapshotCompiler::Mutation::None;
+        writeFile(source / "snapshot-a.snapres","snapshot-a\n");
+        require(system.compile(first).succeeded(),"Recover after abandoned snapshot publication");
+        for(const auto &root:compiler->roots)
+            require(!fs::exists(root),"Successful and failed builds must clean up their private snapshots");
+    }
 }  // namespace
 
 int main(int argc, char **argv)
@@ -352,6 +483,8 @@ int main(int argc, char **argv)
             std::make_shared<ResourceCompilerRegistry>();
         String error;
         require( registry->registerCompiler( std::make_shared<TextCompiler>(), &error ), error.c_str() );
+        auto snapshotCompiler=std::make_shared<SnapshotCompiler>(source);
+        require(registry->registerCompiler(snapshotCompiler,&error),error.c_str());
         require( !registry->registerCompiler( std::make_shared<TextCompiler>(), &error ),
                  "Duplicate compiler registration was accepted" );
 
@@ -363,6 +496,7 @@ int main(int argc, char **argv)
         config.target = "smoke";
         error.clear();
         require( system.initialize( config, error ), error.c_str() );
+        snapshotContracts(system,database,snapshotCompiler,source,{config.target,false});
 
         {
             ResourceSystem contender(registry,std::make_shared<ResourceCompilationDatabase>());
@@ -674,6 +808,8 @@ int main(int argc, char **argv)
         writeFile(source / "mutating.txtres","original\n");
         require(!system.compile(ResourceID("data://mutating.txtres")).succeeded(),
                 "Compiler-time source changes must reject publication");
+        require(resource_runtime_contracts::read(source / "mutating.txtres")=="original\n",
+                "Compiler writes must not modify the authored descriptor through its captured path");
         CompiledResourceRecord uncommitted;
         require(database->getRecord("data://mutating.txtres",uncommitted) && !uncommitted.isValid(),
                 "Changed-input compilation must not create a committed index record");
