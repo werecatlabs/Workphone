@@ -49,6 +49,13 @@ if (WP_BUILD_TESTS)
         target_include_directories(WPAssetCatalogTests PRIVATE ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
         target_link_libraries(WPAssetCatalogTests PRIVATE $<TARGET_LINKER_FILE:WPSQLite> $<TARGET_LINKER_FILE:Workphone>)
         add_dependencies(WPAssetCatalogTests WPSQLite Workphone)
+        if(WP_BUILD_EDITOR)
+            target_sources(WPAssetCatalogTests PRIVATE
+                ${WP_ROOT}/Tools/cpp/Editor/src/commands/Command.cpp
+                ${WP_ROOT}/Tools/cpp/Editor/src/commands/ModifyPropertyCmd.cpp)
+            target_include_directories(WPAssetCatalogTests PRIVATE ${WP_ROOT}/Tools/cpp/Editor/src)
+            target_compile_definitions(WPAssetCatalogTests PRIVATE WP_EDITOR_ASSET_COMMAND_CONTRACTS=1)
+        endif()
         set_target_properties(WPAssetCatalogTests PROPERTIES FOLDER Tests/Cpp)
         add_test(NAME WorkphoneAssets.catalog_contracts COMMAND WPAssetCatalogTests)
         set_tests_properties(WorkphoneAssets.catalog_contracts PROPERTIES LABELS "assets;database;headless" TIMEOUT 60)

@@ -1,773 +1,361 @@
 #include <EditorPCH.hpp>
 #include <ui/ResourceDatabaseDialog.hpp>
-#include <ui/ProjectTreeData.hpp>
-#include <editor/EditorManager.hpp>
+#include <commands/ModifyPropertyCmd.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 
 namespace workphone::editor
 {
     WP_CLASS_REGISTER_DERIVED( workphone::editor, ResourceDatabaseDialog, EditorWindow );
-    WP_CLASS_REGISTER_DERIVED( workphone::editor, ResourceDatabaseDialog::UIElementListener,
-                               IEventListener );
-    WP_CLASS_REGISTER_DERIVED( workphone::editor, ResourceDatabaseDialog::DragSource,
-                               ui::IUIDragSource );
+    WP_CLASS_REGISTER_DERIVED( workphone::editor, ResourceDatabaseDialog::UIElementListener, IEventListener );
+    WP_CLASS_REGISTER_DERIVED( workphone::editor, ResourceDatabaseDialog::DragSource, ui::IUIDragSource );
 
-    ResourceDatabaseDialog::ResourceDatabaseDialog() = default;
-
-    ResourceDatabaseDialog::~ResourceDatabaseDialog()
-    {
-        unload( nullptr );
-    }
-
+    ResourceDatabaseDialog::~ResourceDatabaseDialog() { unload( nullptr ); }
     void ResourceDatabaseDialog::load( SmartPtr<ISharedObject> data )
     {
-        try
-        {
-            setLoadingState( LoadingState::Loading );
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto ui = applicationManager->getUI();
-            WP_ASSERT( ui );
-
-            auto parent = getParent();
-
-            auto parentWindow = ui->addElementByType<ui::IUIWindow>();
-            if( parentWindow )
-            {
-                setParentWindow( parentWindow );
-                parentWindow->setLabel( "ResourceDatabaseDialog" );
-
-                if( parent )
-                {
-                    parent->addChild( parentWindow );
-                }
-
-                m_buttonWindow = ui->addElementByType<ui::IUIWindow>();
-                parentWindow->addChild( m_buttonWindow );
-
-                m_buttonWindow->setSize( Vector2F( 0.0f, 50.0f ) );
-
-                m_treeWindow = ui->addElementByType<ui::IUIWindow>();
-                parentWindow->addChild( m_treeWindow );
-
-                auto uiListener = workphone::make_ptr<UIElementListener>();
-                uiListener->setOwner( this );
-                m_uiListener = uiListener;
-
-                auto tree = ui->addElementByType<ui::IUITreeCtrl>();
-                m_treeWindow->addChild( tree );
-                tree->setMultiSelect( false );
-                tree->addObjectListener( uiListener );
-                tree->setElementId( Tree );
-                m_tree = tree;
-
-                auto addComponentButton = ui->addElementByType<ui::IUIButton>();
-                WP_ASSERT( addComponentButton );
-
-                addComponentButton->setLabel( "Refresh" );
-                m_buttonWindow->addChild( addComponentButton );
-                addComponentButton->addObjectListener( uiListener );
-                addComponentButton->setElementId( AddComponent );
-                m_addComponentButton = addComponentButton;
-
-                auto selectButton = ui->addElementByType<ui::IUIButton>();
-                WP_ASSERT( selectButton );
-
-                selectButton->setSameLine( true );
-                selectButton->setLabel( "Select" );
-                m_buttonWindow->addChild( selectButton );
-                selectButton->addObjectListener( uiListener );
-                selectButton->setElementId( Select );
-                m_selectButton = selectButton;
-
-                auto dragSource = workphone::make_ptr<DragSource>();
-                dragSource->setOwner( this );
-                m_tree->setDragSource( dragSource );
-            }
-
-            setLoadingState( LoadingState::Loaded );
-        }
-        catch( std::exception e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        if( getParentWindow() )
+            return;
+        auto app = core::IApplicationManager::instancePtr();
+        auto ui = app ? app->getUI() : nullptr;
+        if( !ui )
+            return;
+        setLoadingState( LoadingState::Loading );
+        auto window = ui->addElementByType<ui::IUIWindow>();
+        window->setLabel( "Select asset reference" );
+        setParentWindow( window );
+        if( auto parent = getParent() )
+            parent->addChild( window );
+        m_uiListener = make_ptr<UIElementListener>();
+        m_uiListener->setOwner( this );
+        m_search = ui->addElementByType<ui::IUITextEntry>();
+        m_search->setLabel( "Path or UUID##ResourcePickerSearch" );
+        m_search->setPlaceholder( "Literal, case-sensitive search" );
+        m_search->addObjectListener( m_uiListener );
+        window->addChild( m_search );
+        auto button = [&]( const String &label, WidgetId id ) {
+            auto result = ui->addElementByType<ui::IUIButton>();
+            result->setLabel( label );
+            result->setElementId( id );
+            result->addObjectListener( m_uiListener );
+            window->addChild( result );
+            return result;
+        };
+        m_refresh = button( "Search / Refresh##PickerRefresh", AddComponent );
+        m_select = button( "Select##PickerSelect", Select );
+        m_select->setSameLine( true );
+        m_previous = button( "Previous##PickerPrevious", Previous );
+        m_previous->setSameLine( true );
+        m_next = button( "Next##PickerNext", Next );
+        m_next->setSameLine( true );
+        m_status = ui->addElementByType<ui::IUIText>();
+        window->addChild( m_status );
+        m_tree = ui->addElementByType<ui::IUITreeCtrl>();
+        m_tree->setMultiSelect( false );
+        m_tree->setElementId( Tree );
+        m_tree->addObjectListener( m_uiListener );
+        window->addChild( m_tree );
+        m_dragSource = make_ptr<DragSource>();
+        m_dragSource->setOwner( this );
+        m_tree->setDragSource( m_dragSource );
+        setLoadingState( LoadingState::Loaded );
+        populate();
     }
-
     void ResourceDatabaseDialog::unload( SmartPtr<ISharedObject> data )
     {
-        try
+        if( getLoadingState() == LoadingState::Unloaded && !getParentWindow() )
+            return;
+        setLoadingState( LoadingState::Unloading );
+        if( m_uiListener )
         {
-            setLoadingState( LoadingState::Unloading );
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto ui = applicationManager->getUI();
-
-            if( m_tree )
-            {
-                if( m_uiListener )
-                {
-                    m_tree->removeObjectListener( m_uiListener );
-                }
-
-                m_tree->clear();
-                m_treeNodes.clear();
-
-                if( ui )
-                {
-                    ui->removeElement( m_tree );
-                }
-
-                m_tree = nullptr;
-            }
-
-            if( m_addComponentButton )
-            {
-                if( ui )
-                {
-                    ui->removeElement( m_addComponentButton );
-                }
-
-                m_addComponentButton = nullptr;
-            }
-
-            if( m_selectButton )
-            {
-                if( ui )
-                {
-                    ui->removeElement( m_selectButton );
-                }
-
-                m_selectButton = nullptr;
-            }
-
-            if( m_buttonWindow )
-            {
-                if( ui )
-                {
-                    ui->removeElement( m_buttonWindow );
-                }
-
-                m_buttonWindow = nullptr;
-            }
-
-            if( m_uiListener )
-            {
-                m_uiListener->unload( nullptr );
-                m_uiListener = nullptr;
-            }
-
-            if( m_treeWindow )
-            {
-                if( ui )
-                {
-                    ui->removeElement( m_treeWindow );
-                }
-
-                m_treeWindow = nullptr;
-            }
-
-            if( auto parentWindow = getParentWindow() )
-            {
-                if( ui )
-                {
-                    ui->removeElement( parentWindow );
-                }
-
-                setParentWindow( nullptr );
-            }
-
-            for( auto data : m_dataArray )
-            {
-                data->unload( nullptr );
-            }
-
-            m_dataArray.clear();
-
-            EditorWindow::unload( data );
-
-            setLoadingState( LoadingState::Unloaded );
+            m_uiListener->unload( nullptr );
+            Array<SmartPtr<ui::IUIElement>> controls = { m_tree, m_search, m_refresh, m_select, m_previous, m_next };
+            for( auto &control : controls )
+                if( control )
+                    control->removeObjectListener( m_uiListener );
         }
-        catch( std::exception e )
+        if( m_dragSource )
+            m_dragSource->unload( nullptr );
+        if( m_tree )
+            m_tree->setDragSource( nullptr );
+        auto app = core::IApplicationManager::instancePtr();
+        if( auto window = getParentWindow() )
         {
-            WP_LOG_EXCEPTION( e );
+            if( auto parent = getParent() )
+                parent->removeChild( window );
+            if( app )
+                if( auto ui = app->getUI() )
+                    ui->removeElement( window );
+            setParentWindow( nullptr );
         }
+        m_tree = nullptr;
+        m_search = nullptr;
+        m_status = nullptr;
+        m_refresh = nullptr;
+        m_select = nullptr;
+        m_previous = nullptr;
+        m_next = nullptr;
+        m_uiListener = nullptr;
+        m_dragSource = nullptr;
+        m_currentObject = nullptr;
+        m_targets.clear();
+        m_browser.clear();
+        EditorWindow::unload( data );
+        setLoadingState( LoadingState::Unloaded );
     }
-
-    void ResourceDatabaseDialog::addResourceToTree( SmartPtr<ui::IUITreeNode> rootNode,
-                                                    SmartPtr<IBuildDirector> resource )
+    SmartPtr<AssetDatabaseManager> ResourceDatabaseDialog::catalog() const
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto factoryManager = applicationManager->getFactoryManager();
-        WP_ASSERT( factoryManager );
-
-        auto ui = applicationManager->getUI();
-        WP_ASSERT( ui );
-
-        auto resourceType = getResourceType();
-
-        WP_ASSERT( resource->isDerived<IBuildDirector>() );
-
-        auto handle = resource->getHandle();
-        auto name = resource->getName();
-
-        auto uuid = handle->getUUIDAsString();
-        //WP_ASSERT( !StringUtil::isNullOrEmpty( uuid ) );
-
-        auto label = Path::getFileName( name );
-
-        auto treeNode = m_tree->addNode();
-        WP_ASSERT( treeNode );
-
-        if( resourceType == ISharedObject::typeInfo() )
+        auto app = core::IApplicationManager::instancePtr();
+        auto resources = app ? app->getResourceDatabase() : nullptr;
+        auto result = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                                : nullptr;
+        String root, error;
+        if( !result || app->getProjectPath().empty() ||
+            !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) || root != result->getProjectRoot() )
+            return nullptr;
+        return result;
+    }
+    void ResourceDatabaseDialog::captureTargets()
+    {
+        m_targets.clear();
+        if( auto target = getCurrentObject() )
+            m_targets.push_back( target );
+        else
         {
-            Util::setText( treeNode, label );
-
-            auto data =
-                factoryManager->make_ptr<ProjectTreeData>( "resource", "resource", resource, resource );
-            treeNode->setNodeUserData( data );
-
-            rootNode->addChild( treeNode );
-
-            m_dataArray.emplace_back( data );
-        }
-        else if( resourceType == render::IMaterial::typeInfo() )
-        {
-            if( auto resourceProperties = resource->getProperties() )
-            {
-                String value;
-                resourceProperties->getPropertyValue( "type", value );
-
-                if( value == "Material" )
-                {
-                    Util::setText( treeNode, label );
-
-                    auto data = factoryManager->make_ptr<ProjectTreeData>( "resource", "resource",
-                                                                           resource, resource );
-                    treeNode->setNodeUserData( data );
-
-                    rootNode->addChild( treeNode );
-
-                    m_dataArray.emplace_back( data );
-                }
-            }
-        }
-        else if( resourceType == scene::IGameActor::typeInfo() )
-        {
-            if( resource->isDerived<scene::IGameActor>() )
-            {
-                Util::setText( treeNode, name );
-
-                auto data = factoryManager->make_ptr<ProjectTreeData>( "resource", "resource", resource,
-                                                                       resource );
-                treeNode->setNodeUserData( data );
-
-                rootNode->addChild( treeNode );
-
-                m_dataArray.emplace_back( data );
-            }
-        }
-        else if( resourceType == scene::IComponent::typeInfo() )
-        {
-            if( resource->isDerived<scene::IComponent>() )
-            {
-                Util::setText( treeNode, name );
-
-                auto data = factoryManager->make_ptr<ProjectTreeData>( "resource", "resource", resource,
-                                                                       resource );
-                treeNode->setNodeUserData( data );
-
-                rootNode->addChild( treeNode );
-
-                m_dataArray.emplace_back( data );
-            }
-
-            if( auto resourceProperties = resource->getProperties() )
-            {
-                String value;
-                resourceProperties->getPropertyValue( "type", value );
-
-                if( value == "Component" )
-                {
-                    Util::setText( treeNode, name );
-
-                    auto data = factoryManager->make_ptr<ProjectTreeData>( "resource", "resource",
-                                                                           resource, resource );
-                    treeNode->setNodeUserData( data );
-
-                    rootNode->addChild( treeNode );
-
-                    m_dataArray.emplace_back( data );
-                }
-            }
-        }
-        else if( resourceType == render::ITexture::typeInfo() )
-        {
-            if( auto resourceProperties = resource->getProperties() )
-            {
-                String value;
-                resourceProperties->getPropertyValue( "type", value );
-
-                if( value == "Texture" )
-                {
-                    Util::setText( treeNode, label );
-
-                    auto imageElement = ui->addElementByType<ui::IUIImage>();
-                    WP_ASSERT( imageElement );
-
-                    auto data = factoryManager->make_ptr<ProjectTreeData>( "resource", "resource",
-                                                                           resource, resource );
-                    treeNode->setNodeUserData( data );
-
-                    rootNode->addChild( treeNode );
-
-                    m_dataArray.emplace_back( data );
-                }
-            }
+            auto app = core::IApplicationManager::instancePtr();
+            auto selection = app ? app->getSelectionManager() : nullptr;
+            if( selection )
+                for( auto target : selection->getSelection() )
+                    m_targets.push_back( target );
         }
     }
-
+    void ResourceDatabaseDialog::setWindowVisible( bool visible )
+    {
+        if( visible )
+        {
+            captureTargets();
+            populate();
+        }
+        else
+        {
+            m_targets.clear();
+            m_currentObject = nullptr;
+            m_browser.clear();
+        }
+        EditorWindow::setWindowVisible( visible );
+    }
     void ResourceDatabaseDialog::updateSelection()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        auto jobQueue = applicationManager->getJobQueue();
-
-        auto populateFunction = std::bind( &ResourceDatabaseDialog::populate, this );
-        jobQueue->startJob( populateFunction );
+        // UI callers execute on the owning thread. Never queue a raw window or
+        // mutate controls from the worker job queue.
+        populate();
     }
-
     void ResourceDatabaseDialog::populate()
     {
-        if( !m_tree )
+        if( !m_search )
+            return;
+        AssetDatabaseManager::EntryQuery query;
+        query.search = m_search->getText();
+        if( m_resourceType == render::IMaterial::typeInfo() ) query.type = "Material";
+        else if( m_resourceType == render::ITexture::typeInfo() ) query.type = "Texture";
+        else if( m_resourceType == scene::IGameActor::typeInfo() ) query.type = "Actor";
+        else if( m_resourceType == ScriptAsset::typeInfo() ) query.type = "script";
+        m_browser.refresh( catalog(), query );
+        renderPage();
+    }
+    void ResourceDatabaseDialog::renderPage()
+    {
+        if( !m_tree || !m_status )
+            return;
+        m_tree->clear();
+        const auto &page = m_browser.page();
+        m_previous->setEnabled( m_browser.hasPrevious() );
+        m_next->setEnabled( page.succeeded && page.hasMore );
+        m_select->setEnabled( false );
+        if( !page.succeeded )
         {
+            m_status->setText( page.error );
             return;
         }
-
-        if( m_tree )
+        auto root = m_tree->addRoot();
+        root->setId( 0 );
+        Util::setText( root, "Compatible assets" );
+        size_t count = 0;
+        for( size_t i = 0; i < page.entries.size(); ++i )
         {
-            m_tree->clear();
+            const auto &entry = page.entries[i];
+            if( !AssetReferenceChange::typeMatches( entry.type, m_resourceType ) )
+                continue;
+            auto node = m_tree->addNode();
+            node->setId( i + 1 );
+            Util::setText( node, entry.path + " [" + entry.type + "] " + entry.uuid );
+            root->addChild( node );
+            ++count;
         }
-
-        m_treeNodes.clear();
-
-        for( auto data : m_dataArray )
-        {
-            data->unload( nullptr );
-        }
-
-        m_dataArray.clear();
-
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto factoryManager = applicationManager->getFactoryManager();
-        WP_ASSERT( factoryManager );
-
-        auto ui = applicationManager->getUI();
-        WP_ASSERT( ui );
-
-        auto resourceDatabase = applicationManager->getResourceDatabase();
-
-        auto rootNode = m_tree->addRoot();
-        WP_ASSERT( rootNode );
-        rootNode->setExpanded( true );
-
-        auto resourceType = getResourceType();
-
-        auto resources = resourceDatabase->getResourceData();
-        for( auto resource : resources )
-        {
-            auto parent = rootNode;
-
-            auto name = resource->getName();
-
-            auto path = Path::getFilePath( name );
-            if( !StringUtil::isNullOrEmpty( path ) )
-            {
-                auto it = m_treeNodes.find( path );
-                if( it != m_treeNodes.end() )
-                {
-                    parent = it->second;
-                }
-                else
-                {
-                    //parent = m_tree->addNode();
-                    //WP_ASSERT( parent );
-
-                    //Util::setText( parent, path );
-
-                    //auto data = factoryManager->make_ptr<ProjectTreeData>( "resource", "resource",
-                    //                                                       nullptr, nullptr );
-                    //parent->setNodeUserData( data );
-
-                    //rootNode->addChild( parent );
-
-                    //m_treeNodes[path] = parent;
-
-                    auto splitPaths = StringUtil::split( path, "/" );
-
-                    auto previousNode = SmartPtr<ui::IUITreeNode>();
-                    auto currentPath = String();
-                    for( auto &splitPath : splitPaths )
-                    {
-                        if( splitPath == "." || splitPath == ".." )
-                        {
-                            continue;
-                        }
-
-                        if( !currentPath.empty() )
-                        {
-                            currentPath += "/";
-                        }
-
-                        currentPath += splitPath;
-
-                        auto it = m_treeNodes.find( currentPath );
-                        if( it == m_treeNodes.end() )
-                        {
-                            auto splitNode = m_tree->addNode();
-                            WP_ASSERT( splitNode );
-
-                            Util::setText( splitNode, splitPath );
-
-                            auto data = factoryManager->make_ptr<ProjectTreeData>(
-                                "resource", "resource", nullptr, nullptr );
-                            splitNode->setNodeUserData( data );
-
-                            if( !previousNode )
-                            {
-                                rootNode->addChild( splitNode );
-                            }
-                            else
-                            {
-                                previousNode->addChild( splitNode );
-                            }
-
-                            m_treeNodes[currentPath] = splitNode;
-
-                            previousNode = splitNode;
-                        }
-                        else
-                        {
-                            previousNode = it->second;
-                        }
-                    }
-
-                    auto it = m_treeNodes.find( currentPath );
-                    if( it != m_treeNodes.end() )
-                    {
-                        parent = it->second;
-                    }
-                }
-            }
-
-            addResourceToTree( parent, resource );
-        }
+        m_select->setEnabled( count != 0 && !m_targets.empty() );
+        m_status->setText( StringUtil::toString( count ) + " compatible assets on catalog page " +
+                          StringUtil::toString( m_browser.pageNumber() ) );
     }
-
+    bool ResourceDatabaseDialog::entryForNode( SmartPtr<ui::IUITreeNode> node,
+        AssetDatabaseManager::EntrySnapshot &entry )
+    {
+        const auto id = node ? node->getId() : 0;
+        return id > 0 && m_browser.select( id - 1, catalog(), entry ) &&
+               AssetReferenceChange::typeMatches( entry.type, m_resourceType );
+    }
     void ResourceDatabaseDialog::select()
     {
-        WP_ASSERT( m_tree );
-
-        auto treeNode = m_tree->getSelectedTreeNode();
-        if( treeNode )
+        if( !m_tree )
+            return;
+        AssetDatabaseManager::EntrySnapshot entry;
+        if( !entryForNode( m_tree->getSelectedTreeNode(), entry ) )
         {
-            auto data = treeNode->getNodeUserData();
-            if( data )
+            renderPage();
+            m_status->setText( "Selection expired or incompatible. Search / Refresh and select again." );
+            return;
+        }
+        Array<SmartPtr<ISharedObject>> targets;
+        for( auto &weak : m_targets )
+        {
+            auto target = weak.lock();
+            if( !target )
             {
-                auto uuid = String();
-
-                auto projectData = workphone::static_pointer_cast<ProjectTreeData>( data );
-                if( auto resourceObject = projectData->getObjectData() )
-                {
-                    if( auto handle = resourceObject->getHandle() )
-                    {
-                        uuid = handle->getUUIDAsString();
-                    }
-
-                    if( StringUtil::isNullOrEmpty( uuid ) )
-                    {
-                        if( resourceObject->isDerived<IBuildDirector>() )
-                        {
-                            auto director =
-                                workphone::static_pointer_cast<IBuildDirector>( resourceObject );
-                            auto directorProperties = director->getProperties();
-                            directorProperties->getPropertyValue( "uuid", uuid );
-                        }
-                    }
-                }
-
-                auto applicationManager = core::IApplicationManager::instance();
-                WP_ASSERT( applicationManager );
-
-                auto selectionManager = applicationManager->getSelectionManager();
-                WP_ASSERT( selectionManager );
-
-                if( auto selected = getCurrentObject() )
-                {
-                    selectObject( selected, uuid );
-                }
-                else
-                {
-                    auto selection = selectionManager->getSelection();
-                    for( auto selected : selection )
-                    {
-                        selectObject( selected, uuid );
-                    }
-                }
+                m_status->setText( "An assignment target was destroyed. Reopen the picker." );
+                return;
             }
+            targets.push_back( target );
+        }
+        assign( targets, entry );
+    }
+    void ResourceDatabaseDialog::selectObject( SmartPtr<ISharedObject> target, const String &uuid )
+    {
+        for( size_t i = 0; i < m_browser.page().entries.size(); ++i )
+            if( m_browser.page().entries[i].uuid == uuid )
+            {
+                AssetDatabaseManager::EntrySnapshot entry;
+                if( m_browser.select( i, catalog(), entry ) )
+                    assign( { target }, entry );
+                return;
+            }
+    }
+    void ResourceDatabaseDialog::assign( const Array<SmartPtr<ISharedObject>> &targets,
+        const AssetDatabaseManager::EntrySnapshot &entry )
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto commands = app ? app->getCommandManager() : nullptr;
+        auto resources = app ? app->getResourceDatabase() : nullptr;
+        auto active = catalog();
+        if( !commands || !resources || !active || targets.empty() ||
+            !AssetReferenceChange::typeMatches( entry.type, m_resourceType ) || !active->isEntryCurrent( entry ) )
+        {
+            m_status->setText( "Assignment services, targets or catalog selection are no longer valid." );
+            return;
+        }
+        try
+        {
+            // Resolve only the chosen resource. Properties' typed UUID readers
+            // then reuse the production resource managers.
+            auto object = resources->getObject( StringUtil::parseUUID( entry.uuid ) );
+            auto types = TypeManager::instance();
+            if( !object || !types || !types->isDerived( object->getTypeInfo(), m_resourceType ) ||
+                !object->getHandle() || object->getHandle()->getUUIDAsString() != entry.uuid ||
+                !active->isEntryCurrent( entry ) )
+            {
+                m_status->setText( "The selected asset could not resolve to the requested runtime type." );
+                return;
+            }
+            auto command = make_ptr<ModifyPropertyCmd>();
+            if( !command->configure( active, entry, targets, m_propertyName, m_resourceType ) )
+            {
+                m_status->setText( command->getError() );
+                return;
+            }
+            command->execute();
+            if( !command->wasApplied() )
+            {
+                m_status->setText( command->getError() );
+                return;
+            }
+            commands->addCommand( command );
+            m_selectedObject = entry.uuid;
+            m_status->setText( "Reference assigned. Undo/redo is available; save the owning document to persist." );
+        }
+        catch( const std::exception &e )
+        {
+            m_status->setText( String( "Reference assignment failed: " ) + e.what() );
         }
     }
+    String ResourceDatabaseDialog::getSelectedObject() const { return m_selectedObject; }
+    void ResourceDatabaseDialog::setSelectedObject( const String &value ) { m_selectedObject = value; }
+    SmartPtr<ui::IUITreeCtrl> ResourceDatabaseDialog::getTree() const { return m_tree; }
+    void ResourceDatabaseDialog::setTree( SmartPtr<ui::IUITreeCtrl> tree ) { m_tree = tree; }
+    SmartPtr<ISharedObject> ResourceDatabaseDialog::getCurrentObject() const { return m_currentObject.lock(); }
+    void ResourceDatabaseDialog::setCurrentObject( SmartPtr<ISharedObject> object ) { m_currentObject = object; }
+    String ResourceDatabaseDialog::getPropertyName() const { return m_propertyName; }
+    void ResourceDatabaseDialog::setPropertyName( const String &name ) { m_propertyName = name; }
 
-    void ResourceDatabaseDialog::selectObject( SmartPtr<ISharedObject> selected, const String &uuid )
+    Parameter ResourceDatabaseDialog::UIElementListener::handleEvent( EventType eventType, hash_type eventValue,
+        const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+        SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        //WP_ASSERT(selected->isDerived<core::IPrototype>());
-
-        if( selected->isDerived<scene::Material>() )
+        auto owner = getOwner();
+        if( !owner || owner->getLoadingState() != LoadingState::Loaded )
+            return {};
+        if( eventValue == IEvent::handleValueChanged && sender == owner->m_search )
         {
-            auto node = workphone::static_pointer_cast<scene::Material>( selected );
-
-            auto properties = node->getProperties();
-            if( properties )
+            owner->m_browser.clear();
+            owner->renderPage();
+            owner->m_status->setText( "Press Search / Refresh to apply the filter." );
+        }
+        else if( eventValue == IEvent::handleSelection )
+        {
+            if( sender == owner->m_refresh ) owner->populate();
+            else if( sender == owner->m_select ) owner->select();
+            else if( sender == owner->m_previous )
             {
-                properties->setProperty( m_propertyName, uuid );
-                node->setProperties( properties );
+                owner->m_browser.previous( owner->catalog() );
+                owner->renderPage();
+            }
+            else if( sender == owner->m_next )
+            {
+                owner->m_browser.next( owner->catalog() );
+                owner->renderPage();
             }
         }
-        else if( selected->isDerived<render::IMaterialNode>() )
-        {
-            auto node = workphone::static_pointer_cast<render::IMaterialNode>( selected );
-
-            auto properties = node->getProperties();
-            if( properties )
-            {
-                properties->setProperty( m_propertyName, uuid );
-                node->setProperties( properties );
-            }
-
-            auto material = node->getMaterial();
-            if( material )
-            {
-                material->save();
-            }
-        }
-        else if( selected->isDerived<IResource>() )
-        {
-            auto resource = workphone::static_pointer_cast<IResource>( selected );
-
-            auto properties = resource->getProperties();
-            if( properties )
-            {
-                properties->setProperty( m_propertyName, uuid );
-                resource->setProperties( properties );
-            }
-        }
-        else if( selected->isDerived<core::IPrototype>() )
-        {
-            auto prototype = workphone::static_pointer_cast<core::IPrototype>( selected );
-
-            auto properties = prototype->getProperties();
-            if( properties )
-            {
-                properties->setProperty( m_propertyName, uuid );
-                prototype->setProperties( properties );
-            }
-        }
-        else if( selected->isDerived<scene::IComponentEventListener>() )
-        {
-            auto prototype = workphone::static_pointer_cast<scene::IComponentEventListener>( selected );
-
-            auto properties = prototype->getProperties();
-            if( properties )
-            {
-                properties->setProperty( m_propertyName, uuid );
-                prototype->setProperties( properties );
-            }
-        }
-    }
-
-    String ResourceDatabaseDialog::getSelectedObject() const
-    {
-        return m_selectedObject;
-    }
-
-    void ResourceDatabaseDialog::setSelectedObject( const String &selectedObject )
-    {
-        m_selectedObject = selectedObject;
-    }
-
-    SmartPtr<ui::IUITreeCtrl> ResourceDatabaseDialog::getTree() const
-    {
-        return m_tree;
-    }
-
-    void ResourceDatabaseDialog::setTree( SmartPtr<ui::IUITreeCtrl> tree )
-    {
-        m_tree = tree;
-    }
-
-    SmartPtr<ISharedObject> ResourceDatabaseDialog::getCurrentObject() const
-    {
-        return m_currentObject;
-    }
-
-    void ResourceDatabaseDialog::setCurrentObject( SmartPtr<ISharedObject> currentObject )
-    {
-        m_currentObject = currentObject;
-    }
-
-    String ResourceDatabaseDialog::getPropertyName() const
-    {
-        return m_propertyName;
-    }
-
-    void ResourceDatabaseDialog::setPropertyName( const String &propertyName )
-    {
-        m_propertyName = propertyName;
-    }
-
-    void ResourceDatabaseDialog::handleTreeSelectionChanged()
-    {
-        // auto selectedId = event.GetItem();
-        // auto data = (ProjectTreeData*)m_tree->GetItemData(selectedId);
-        // if (data)
-        //{
-        //	auto factory = fb::static_pointer_cast<IFactory>(data->getOwnerData());
-        //	auto selectedObject = factory->getObjectType();
-        //	setSelectedObject(selectedObject);
-        // }
-    }
-
-    void ResourceDatabaseDialog::handleTreeSelectionActivated()
-    {
-        // auto selectedId = event.GetItem();
-        // auto data = (ProjectTreeData*)m_tree->GetItemData(selectedId);
-        // if (data)
-        //{
-        //	auto factory = fb::static_pointer_cast<IFactory>(data->getOwnerData());
-        //	auto selectedObject = factory->getObjectType();
-        //	setSelectedObject(selectedObject);
-        // }
-
-        // EndModal(wxID_OK);
-    }
-
-    Parameter ResourceDatabaseDialog::UIElementListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
-    {
-        if( eventValue == IEvent::handleSelection )
-        {
-            auto owner = getOwner();
-            auto tree = owner->getTree();
-            auto selectedNode = tree->getSelectedTreeNode();
-
-            auto element = workphone::dynamic_pointer_cast<ui::IUIElement>( sender );
-            auto elementId = static_cast<WidgetId>( element->getElementId() );
-            switch( elementId )
-            {
-            case AddComponent:
-            {
-                owner->populate();
-            }
-            break;
-            case Select:
-            {
-                owner->select();
-            }
-            break;
-            }
-        }
-
         return {};
     }
-
-    ResourceDatabaseDialog *ResourceDatabaseDialog::UIElementListener::getOwner() const
+    SmartPtr<ResourceDatabaseDialog> ResourceDatabaseDialog::UIElementListener::getOwner() const
     {
-        return m_owner;
+        auto weak = m_owner.load();
+        return weak.lock();
     }
-
-    void ResourceDatabaseDialog::UIElementListener::setOwner( ResourceDatabaseDialog *owner )
-    {
-        m_owner = owner;
-    }
-
-    ResourceDatabaseDialog::UIElementListener::UIElementListener() = default;
-
-    ResourceDatabaseDialog::UIElementListener::~UIElementListener() = default;
-
-    Parameter ResourceDatabaseDialog::DragSource::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    void ResourceDatabaseDialog::UIElementListener::setOwner( SmartPtr<ResourceDatabaseDialog> owner ) { m_owner = owner; }
+    void ResourceDatabaseDialog::UIElementListener::unload( SmartPtr<ISharedObject> data ) { m_owner = nullptr; }
+    Parameter ResourceDatabaseDialog::DragSource::handleEvent( EventType eventType, hash_type eventValue,
+        const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+        SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         if( eventValue == IEvent::handleDrag )
-        {
-            auto dataStr = handleDrag( Vector2I::zero(), sender );
-            return Parameter( dataStr );
-        }
-
+            return Parameter( handleDrag( Vector2I::zero(), dynamic_pointer_cast<ui::IUIElement>( sender ) ) );
         return {};
     }
-
-    String ResourceDatabaseDialog::DragSource::handleDrag( const Vector2I &position,
-                                                           SmartPtr<ui::IUIElement> element )
+    String ResourceDatabaseDialog::DragSource::handleDrag( const Vector2I &position, SmartPtr<ui::IUIElement> element )
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        auto selectionManager = applicationManager->getSelectionManager();
-
-        if( element->isDerived<ui::IUITreeNode>() )
-        {
-            auto treeNode = workphone::static_pointer_cast<ui::IUITreeNode>( element );
-            auto text = Util::getText( treeNode );
-
-            auto userData = treeNode->getNodeUserData();
-            if( userData )
-            {
-                auto projectTreeData = workphone::static_pointer_cast<ProjectTreeData>( userData );
-                WP_ASSERT( projectTreeData );
-
-                auto data = workphone::make_ptr<Properties>();
-
-                data->setProperty( "sourceId", treeNode->getTreeNodeId() );
-
-                auto treeData =
-                    workphone::static_pointer_cast<ProjectTreeData>( treeNode->getNodeUserData() );
-                auto actor = treeData->getObjectData();
-
-                if( actor )
-                {
-                    if( auto handle = actor->getHandle() )
-                    {
-                        auto uuid = handle->getUUIDAsString();
-                        data->setProperty( "resourceId", handle->getInstanceId() );
-                        data->setProperty( "resourceUUID", uuid );
-                    }
-                }
-
-                return DataUtil::toString( data.get(), true );
-            }
-        }
-
-        return {};
+        auto owner = getOwner();
+        auto node = dynamic_pointer_cast<ui::IUITreeNode>( element );
+        AssetDatabaseManager::EntrySnapshot entry;
+        if( !owner || owner->getLoadingState() != LoadingState::Loaded || !owner->entryForNode( node, entry ) )
+            return {};
+        auto data = make_ptr<Properties>();
+        data->setProperty( "sourceId", node->getTreeNodeId() );
+        data->setProperty( "resourceUUID", entry.uuid );
+        data->setProperty( "resourceType", entry.type );
+        return DataUtil::toString( data.get(), true );
     }
-
-    ResourceDatabaseDialog *ResourceDatabaseDialog::DragSource::getOwner() const
+    SmartPtr<ResourceDatabaseDialog> ResourceDatabaseDialog::DragSource::getOwner() const
     {
-        return m_owner;
+        auto weak = m_owner.load();
+        return weak.lock();
     }
-
-    void ResourceDatabaseDialog::DragSource::setOwner( ResourceDatabaseDialog *owner )
-    {
-        m_owner = owner;
-    }
-
-    ResourceDatabaseDialog::DragSource::DragSource() = default;
-
-    ResourceDatabaseDialog::DragSource::~DragSource() = default;
-
-}  // namespace workphone::editor
+    void ResourceDatabaseDialog::DragSource::setOwner( SmartPtr<ResourceDatabaseDialog> owner ) { m_owner = owner; }
+    void ResourceDatabaseDialog::DragSource::unload( SmartPtr<ISharedObject> data ) { m_owner = nullptr; }
+}

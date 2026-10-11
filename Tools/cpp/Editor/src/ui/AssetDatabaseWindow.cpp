@@ -49,6 +49,7 @@ namespace workphone::editor
             return result;
         };
         m_refresh = button( "Search / Refresh##CatalogRefresh" );
+        m_source = button( "Show bundled media##CatalogSource" );
         m_previous = button( "Previous##CatalogPrevious" );
         m_previous->setSameLine( true );
         m_next = button( "Next##CatalogNext" );
@@ -74,7 +75,7 @@ namespace workphone::editor
         {
             listener->unload( nullptr );
             Array<SmartPtr<ui::IUIElement>> controls = {
-                m_tree, m_search, m_type, m_refresh, m_previous, m_next };
+                m_tree, m_search, m_type, m_refresh, m_previous, m_next, m_source };
             for( auto &control : controls )
                 if( control )
                     control->removeObjectListener( listener );
@@ -98,6 +99,8 @@ namespace workphone::editor
         m_refresh = nullptr;
         m_previous = nullptr;
         m_next = nullptr;
+        m_source = nullptr;
+        m_mediaCatalog = nullptr;
         m_assetDatabaseManager = nullptr;
         m_browser.clear();
         EditorWindow::unload( data );
@@ -106,6 +109,8 @@ namespace workphone::editor
 
     SmartPtr<AssetDatabaseManager> AssetDatabaseWindow::getAssetDatabaseManager() const
     {
+        if( m_showMedia )
+            return m_mediaCatalog;
         if( m_assetDatabaseManager )
             return m_assetDatabaseManager;
         auto application = core::IApplicationManager::instancePtr();
@@ -125,6 +130,11 @@ namespace workphone::editor
     void AssetDatabaseWindow::setAssetDatabaseManager( SmartPtr<AssetDatabaseManager> manager )
     {
         m_assetDatabaseManager = manager;
+        refresh();
+    }
+    void AssetDatabaseWindow::setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog )
+    {
+        m_mediaCatalog = catalog;
         refresh();
     }
 
@@ -180,7 +190,8 @@ namespace workphone::editor
             Util::setText( node, entry.path + " [" + entry.type + "] " + entry.uuid );
             root->addChild( node );
         }
-        m_status->setText( catalog->getProjectRoot() + " | Page " +
+        m_status->setText( String( m_showMedia ? "Bundled media (read-only) | " : "Project assets | " ) +
+            catalog->getProjectRoot() + " | Page " +
             StringUtil::toString( m_browser.pageNumber() ) + " | " +
             StringUtil::toString( page.entries.size() ) + " assets" );
     }
@@ -203,6 +214,12 @@ namespace workphone::editor
         {
             if( sender == m_refresh )
                 refresh();
+            else if( sender == m_source )
+            {
+                m_showMedia = !m_showMedia;
+                m_source->setLabel( m_showMedia ? "Show project assets##CatalogSource" : "Show bundled media##CatalogSource" );
+                refresh();
+            }
             else if( sender == m_previous )
             {
                 m_browser.previous( getAssetDatabaseManager() );

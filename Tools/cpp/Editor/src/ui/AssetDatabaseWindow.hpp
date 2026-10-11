@@ -27,6 +27,7 @@ namespace workphone::editor
         void unload( SmartPtr<ISharedObject> data ) override;
         SmartPtr<AssetDatabaseManager> getAssetDatabaseManager() const;
         void setAssetDatabaseManager( SmartPtr<AssetDatabaseManager> manager );
+        void setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog );
         void refresh();
         void setWindowVisible( bool visible ) override;
         Parameter handleEvent( EventType eventType, hash_type eventValue,
@@ -36,6 +37,8 @@ namespace workphone::editor
     private:
         void populate();
         SmartPtr<AssetDatabaseManager> m_assetDatabaseManager;
+        SmartPtr<AssetDatabaseManager> m_mediaCatalog;
+        bool m_showMedia = false;
         SmartPtr<ui::IUITreeCtrl> m_tree;
         SmartPtr<ui::IUITextEntry> m_search;
         SmartPtr<ui::IUITextEntry> m_type;
@@ -44,6 +47,7 @@ namespace workphone::editor
         SmartPtr<ui::IUIButton> m_refresh;
         SmartPtr<ui::IUIButton> m_previous;
         SmartPtr<ui::IUIButton> m_next;
+        SmartPtr<ui::IUIButton> m_source;
         AssetCatalogBrowser m_browser;
     };
 }

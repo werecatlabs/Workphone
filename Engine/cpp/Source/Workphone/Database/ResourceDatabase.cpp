@@ -2039,106 +2039,53 @@ namespace workphone
 
     auto ResourceDatabase::getObject( const UUID &id ) -> SmartPtr<ISharedObject>
     {
-        if( !id.is_nil() )
+        if( id.is_nil() )
+            return nullptr;
+        for( auto object : getSceneObjects() )
+            if( object && object->getHandle() && object->getHandle()->getUUID() == id )
+                return object;
+
+        auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
+        AssetDatabaseManager::EntrySnapshot entry;
+        if( !catalog || !catalog->tryGetEntry( StringUtil::toString( id ), entry ) ||
+            entry.kind != AssetDatabaseManager::EntryKind::File )
+            return nullptr;
+        auto application = core::IApplicationManager::instancePtr();
+        if( !application )
+            return nullptr;
+        auto graphics = application->getGraphicsSystem();
+        auto path = catalog->getProjectRoot() + "/" + entry.path;
+        SmartPtr<ISharedObject> result;
+        if( entry.type == "Material" )
         {
-            auto objects = getSceneObjects();
-            for( auto object : objects )
+            auto manager = graphics ? graphics->getMaterialManager() : nullptr;
+            if( manager )
+                result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
+        else if( entry.type == "Texture" )
+        {
+            auto manager = graphics ? graphics->getTextureManager() : nullptr;
+            if( manager )
+                result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
+        else if( entry.type == "script" )
+            result = loadResource( id );
+        else if( StringUtil::contains( entry.type, "Sound" ) )
+        {
+            if( auto manager = application->getSoundManager() )
+                result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+        }
+        else if( auto factory = application->getFactoryManager() )
+        {
+            auto resource = factory->createObjectFromType<IResource>( entry.type );
+            if( resource && resource->getHandle() )
             {
-                if( object )
-                {
-                    auto handle = object->getHandle();
-                    auto objectUuid = handle->getUUID();
-
-                    if( id == objectUuid )
-                    {
-                        return object;
-                    }
-                }
-            }
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto factoryManager = applicationManager->getFactoryManager();
-
-            auto databaseManager = getDatabaseManager();
-            auto assetDatabaseManager =
-                workphone::static_pointer_cast<AssetDatabaseManager>( databaseManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-
-            auto materialManager = SmartPtr<render::IMaterialManager>();
-            auto textureManager = SmartPtr<render::ITextureManager>();
-
-            if( graphicsSystem )
-            {
-                materialManager = graphicsSystem->getMaterialManager();
-                textureManager = graphicsSystem->getTextureManager();
-            }
-
-            auto soundManager = applicationManager->getSoundManager();
-
-            auto cachePath = applicationManager->getCachePath();
-
-            auto dbFilePath = getFilePath();
-            assetDatabaseManager->loadFromFile( Path::lexically_normal( cachePath, dbFilePath ) );
-
-            auto query = queryResourceValues( assetDatabaseManager,
-                "SELECT * FROM resources WHERE uuid=?", {StringUtil::toString( id )} );
-            if( query )
-            {
-                while( !query->eof() )
-                {
-                    auto dbid = query->getFieldValue( "id" );
-                    auto uuid = query->getFieldValue( "uuid" );
-                    auto path = query->getFieldValue( "path" );
-                    auto type = query->getFieldValue( "type" );
-
-                    if( type == "Material" )
-                    {
-                        if( !materialManager )
-                            return nullptr;
-                        auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
-                        return materialResult.first;
-                    }
-                    else if( type == "Texture" )
-                    {
-                        if( !textureManager )
-                            return nullptr;
-                        auto textureResult = textureManager->createOrRetrieve( uuid, path, type );
-                        return textureResult.first;
-                    }
-                    else if( StringUtil::contains( type, "Sound" ) )
-                    {
-                        if( soundManager )
-                        {
-                            auto soundResult = soundManager->createOrRetrieve( uuid, path, type );
-                            return soundResult.first;
-                        }
-                    }
-                    else
-                    {
-                        auto resource = factoryManager->createObjectFromType<IResource>( type );
-                        if( resource )
-                        {
-                            auto handle = resource->getHandle();
-                            if( handle )
-                            {
-                                handle->setUUID( uuid );
-                            }
-
-                            resource->loadFromFile( path );
-
-                            return resource;
-                        }
-                    }
-
-                    query->nextRow();
-                }
+                resource->getHandle()->setUUID( entry.uuid );
+                resource->loadFromFile( path );
+                result = resource;
             }
         }
-
-        return nullptr;
+        return catalog->isEntryCurrent( entry ) ? result : nullptr;
     }
 
     auto ResourceDatabase::loadAssetNode( SmartPtr<IDatabaseManager> db, SmartPtr<Properties> parent,

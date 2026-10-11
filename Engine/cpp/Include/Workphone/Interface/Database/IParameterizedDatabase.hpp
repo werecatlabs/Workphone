@@ -7,6 +7,14 @@
 
 namespace workphone
 {
+    /** Optional backend capability. Must use an OS/SQLite read-only connection;
+     * it must not create a missing file or depend on a writable session pragma. */
+    class IReadOnlyDatabase
+    {
+    public:
+        virtual ~IReadOnlyDatabase() = default;
+        virtual bool openReadOnly( const String &path, String &error ) = 0;
+    };
     /** Optional connection-wide transaction guard. Recursive on the owning thread.
      * Every query/open/close path of an implementing backend uses the same guard. */
     class ISerializedDatabase

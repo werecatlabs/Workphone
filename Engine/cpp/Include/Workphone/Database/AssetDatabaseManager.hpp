@@ -92,6 +92,9 @@ namespace workphone
          * retain both content and the journal for explicit repair. */
         Array<FileOperationResult> recoverFileOperations();
         void open() override;
+        /** Open an existing v2 catalog without migration or any write access. */
+        bool openReadOnly( const String &path, String &error );
+        bool isReadOnly() const { return m_readOnly; }
         void close() override;
 
         /** @brief Default constructor.
@@ -227,6 +230,7 @@ namespace workphone
         u64 m_catalogGeneration = 0;
         u64 m_catalogInstance = 0;
         bool m_catalogReady = false;
+        bool m_readOnly = false;
         String m_databaseRevision;
 
         AtomicObject<FixedString<128>>

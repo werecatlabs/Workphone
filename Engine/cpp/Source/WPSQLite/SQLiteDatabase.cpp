@@ -42,6 +42,30 @@ namespace workphone
         }
     }
 
+    bool SQLiteDatabase::openReadOnly( const String &path, String &error )
+    {
+        std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );
+        error.clear();
+        close();
+        if( path.empty() || path.find( '\0' ) != String::npos )
+        {
+            error = "Invalid read-only database path.";
+            return false;
+        }
+        m_database = workphone::make_shared<CppSQLite3DB>();
+        auto status = sqlite3_open_v2( path.c_str(), &m_database->mpDB,
+                                      SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nullptr );
+        if( status != SQLITE_OK )
+        {
+            error = m_database->mpDB ? sqlite3_errmsg( m_database->mpDB ) : "Cannot open read-only database.";
+            close();
+            return false;
+        }
+        sqlite3_busy_timeout( m_database->mpDB, 5000 );
+        setLoadingState( LoadingState::Loaded );
+        return true;
+    }
+
     void SQLiteDatabase::loadFromFile( const String &filePath )
     {
         std::lock_guard<std::recursive_mutex> lock( m_boundQueryMutex );

@@ -1,4 +1,4 @@
-﻿set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+ï»¿set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
@@ -31,3 +31,7 @@ if (WP_BUILD_EDITOR AND WP_BUILD_ENGINE AND WP_BUILD_SQLITE AND WP_BUILD_IMGUI)
     #add_subdirectory(./AssetDatabaseEditor)
 endif()
 
+
+if(WP_BUILD_ENGINE AND WP_BUILD_SQLITE AND TARGET Workphone AND TARGET WPSQLite)
+    add_subdirectory(MediaAssetCatalogTool)
+endif()

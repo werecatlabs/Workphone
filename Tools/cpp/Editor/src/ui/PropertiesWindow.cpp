@@ -917,6 +917,10 @@ namespace workphone::editor
                             {
                                 resourceDatabaseDialog->setCurrentObject( selected );
                             }
+                            else
+                            {
+                                resourceDatabaseDialog->setCurrentObject( nullptr );
+                            }
 
                             resourceDatabaseDialog->setPropertyName( name );
                             resourceDatabaseDialog->setWindowVisible( true );

@@ -1,212 +1,86 @@
 #ifndef ResourceDatabaseDialog_h__
 #define ResourceDatabaseDialog_h__
-
 #include "ui/EditorWindow.hpp"
+#include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
-#include <Workphone/Interface/System/IResource.hpp>
 
-namespace workphone
+namespace workphone::editor
 {
-    namespace editor
+    /** Bounded, read-only asset picker with an undoable assignment boundary. */
+    class ResourceDatabaseDialog : public EditorWindow
     {
-        /**
-         * @brief The ResourceDatabaseDialog class represents a dialog window that displays a resource tree for a particular resource type.
-         */
-        class ResourceDatabaseDialog : public EditorWindow
+    public:
+        enum WidgetId { Tree, AddComponent, Select, Previous, Next, Count };
+        class UIElementListener : public IEventListener
         {
         public:
-            /**
-             * @brief The WidgetId enumeration defines identifiers for various widgets used in the dialog.
-             */
-            enum WidgetId
-            {
-                Tree,
-                ///< Identifier for the tree widget.
-                AddComponent,
-                ///< Identifier for the "add component" button widget.
-                Select,
-                ///< Identifier for the "select" button widget.
-
-                Count  ///< Total count of widget identifiers.
-            };
-
-            class UIElementListener : public IEventListener
-            {
-            public:
-                UIElementListener();
-                ~UIElementListener() override;
-
-                Parameter handleEvent( EventType eventType, hash_type eventValue,
-                                       const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                                       SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
-
-                ResourceDatabaseDialog *getOwner() const;
-
-                void setOwner( ResourceDatabaseDialog *owner );
-
-                WP_CLASS_REGISTER_DECL;
-
-            private:
-                ResourceDatabaseDialog *m_owner = nullptr;
-            };
-
-            class DragSource : public ui::IUIDragSource
-            {
-            public:
-                DragSource();
-                ~DragSource() override;
-
-                Parameter handleEvent( EventType eventType, hash_type eventValue,
-                                       const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                                       SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
-
-                String handleDrag( const Vector2I &position, SmartPtr<ui::IUIElement> element );
-
-                ResourceDatabaseDialog *getOwner() const;
-
-                void setOwner( ResourceDatabaseDialog *owner );
-
-                WP_CLASS_REGISTER_DECL;
-
-            private:
-                ResourceDatabaseDialog *m_owner = nullptr;
-            };
-
-            /**
-             * @brief Constructs a ResourceDatabaseDialog instance.
-             */
-            ResourceDatabaseDialog();
-
-            /**
-             * @brief Destructs the ResourceDatabaseDialog instance.
-             */
-            ~ResourceDatabaseDialog() override;
-
-            /**
-             * @brief Loads the dialog's data.
-             *
-             * @param data A SmartPtr to the shared data object to load.
-             */
-            void load( SmartPtr<ISharedObject> data ) override;
-
-            /**
-             * @brief Unloads the dialog's data.
-             *
-             * @param data A SmartPtr to the shared data object to unload.
-             */
+            Parameter handleEvent( EventType eventType, hash_type eventValue,
+                const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+            SmartPtr<ResourceDatabaseDialog> getOwner() const;
+            void setOwner( SmartPtr<ResourceDatabaseDialog> owner );
             void unload( SmartPtr<ISharedObject> data ) override;
-
-            /**
-             * @brief Adds a resource to the resource tree.
-             *
-             * @param parent A SmartPtr to the parent tree node to which the resource should be added.
-             * @param resource A SmartPtr to the resource to add.
-             */
-            void addResourceToTree( SmartPtr<ui::IUITreeNode> parent,
-                                    SmartPtr<IBuildDirector> resource );
-
-            /**
-             * @brief Populates the dialog's tree with resources.
-             */
-            void populate();
-
-            /**
-             * @brief Selects the specified resource in the tree.
-             */
-            void select();
-
-            /**
-             * @brief Selects the specified object by UUID in the resource tree.
-             *
-             * @param selected A SmartPtr to the selected object.
-             * @param uuid The UUID of the selected object.
-             */
-            void selectObject( SmartPtr<ISharedObject> selected, const String &uuid );
-
-            /**
-             * @brief Gets the UUID of the currently selected object.
-             *
-             * @return The UUID of the currently selected object.
-             */
-            String getSelectedObject() const;
-
-            /**
-             * @brief Sets the UUID of the currently selected object.
-             *
-             * @param selectedObject The UUID of the object to select.
-             */
-            void setSelectedObject( const String &selectedObject );
-
-            /**
-             * @brief Gets a SmartPtr to the dialog's tree.
-             *
-             * @return A SmartPtr to the dialog's tree.
-             */
-            SmartPtr<ui::IUITreeCtrl> getTree() const;
-
-            /**
-             * @brief Sets the dialog's tree.
-             *
-             * @param tree A SmartPtr to the tree to set.
-             */
-            void setTree( SmartPtr<ui::IUITreeCtrl> tree );
-
-            /**
-             * @brief Gets the currently selected object.
-             * @return A SmartPtr to the currently selected object.
-             */
-            SmartPtr<ISharedObject> getCurrentObject() const;
-
-            /**
-             * @brief Sets the currently selected object.
-             * @param currentObject A SmartPtr to the object to set as currently selected.
-             */
-            void setCurrentObject( SmartPtr<ISharedObject> currentObject );
-
-            /**
-             * @brief Gets the name of the currently selected object's property.
-             *
-             */
-            String getPropertyName() const;
-            void setPropertyName( const String &propertyName );
-
-            void updateSelection() override;
-
-            hash_type getResourceType() const
-            {
-                return m_resourceType;
-            }
-
-            void setResourceType( hash_type resourceType )
-            {
-                m_resourceType = resourceType;
-            }
-
             WP_CLASS_REGISTER_DECL;
-
-        protected:
-            void handleTreeSelectionChanged();
-            void handleTreeSelectionActivated();
-
-            hash_type m_resourceType = 0;
-
-            std::map<String, SmartPtr<ui::IUITreeNode>> m_treeNodes;
-
-            SmartPtr<ui::IUIWindow> m_buttonWindow;
-            SmartPtr<ui::IUIWindow> m_treeWindow;
-
-            SmartPtr<ui::IUITreeCtrl> m_tree;
-            SmartPtr<IEventListener> m_uiListener;
-
-            SmartPtr<ui::IUIButton> m_addComponentButton;
-            SmartPtr<ui::IUIButton> m_selectButton;
-
-            String m_selectedObject;
-
-            SmartPtr<ISharedObject> m_currentObject;
-            String m_propertyName;
+        private:
+            AtomicWeakPtr<ResourceDatabaseDialog> m_owner;
         };
-    }  // end namespace editor
-}  // namespace workphone
+        class DragSource : public ui::IUIDragSource
+        {
+        public:
+            Parameter handleEvent( EventType eventType, hash_type eventValue,
+                const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+            String handleDrag( const Vector2I &position, SmartPtr<ui::IUIElement> element );
+            SmartPtr<ResourceDatabaseDialog> getOwner() const;
+            void setOwner( SmartPtr<ResourceDatabaseDialog> owner );
+            void unload( SmartPtr<ISharedObject> data ) override;
+            WP_CLASS_REGISTER_DECL;
+        private:
+            AtomicWeakPtr<ResourceDatabaseDialog> m_owner;
+        };
 
-#endif  // AddBodyDialog_h__
+        ResourceDatabaseDialog() = default;
+        ~ResourceDatabaseDialog() override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void unload( SmartPtr<ISharedObject> data ) override;
+        void populate();
+        void select();
+        void selectObject( SmartPtr<ISharedObject> selected, const String &uuid );
+        String getSelectedObject() const;
+        void setSelectedObject( const String &value );
+        SmartPtr<ui::IUITreeCtrl> getTree() const;
+        void setTree( SmartPtr<ui::IUITreeCtrl> tree );
+        SmartPtr<ISharedObject> getCurrentObject() const;
+        void setCurrentObject( SmartPtr<ISharedObject> object );
+        String getPropertyName() const;
+        void setPropertyName( const String &name );
+        void updateSelection() override;
+        void setWindowVisible( bool visible ) override;
+        hash_type getResourceType() const { return m_resourceType; }
+        void setResourceType( hash_type type ) { m_resourceType = type; m_browser.clear(); }
+        WP_CLASS_REGISTER_DECL;
+    private:
+        SmartPtr<AssetDatabaseManager> catalog() const;
+        bool entryForNode( SmartPtr<ui::IUITreeNode> node, AssetDatabaseManager::EntrySnapshot &entry );
+        void renderPage();
+        void captureTargets();
+        void assign( const Array<SmartPtr<ISharedObject>> &targets,
+                     const AssetDatabaseManager::EntrySnapshot &entry );
+        hash_type m_resourceType = 0;
+        WeakPtr<ISharedObject> m_currentObject;
+        Array<WeakPtr<ISharedObject>> m_targets;
+        String m_propertyName;
+        String m_selectedObject;
+        AssetCatalogBrowser m_browser;
+        SmartPtr<ui::IUITreeCtrl> m_tree;
+        SmartPtr<ui::IUITextEntry> m_search;
+        SmartPtr<ui::IUIText> m_status;
+        SmartPtr<ui::IUIButton> m_refresh;
+        SmartPtr<ui::IUIButton> m_select;
+        SmartPtr<ui::IUIButton> m_previous;
+        SmartPtr<ui::IUIButton> m_next;
+        SmartPtr<UIElementListener> m_uiListener;
+        SmartPtr<DragSource> m_dragSource;
+    };
+}
+#endif

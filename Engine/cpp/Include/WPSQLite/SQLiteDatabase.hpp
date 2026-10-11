@@ -19,13 +19,14 @@ namespace workphone
      * for SQLite databases.
      */
     class SQLiteDatabase : public IDatabase, public IParameterizedDatabase, public ISerializedDatabase,
-                           public IBackupDatabase
+                           public IBackupDatabase, public IReadOnlyDatabase
     {
     public:
         /**
          * @brief Default constructor
          */
         SQLiteDatabase();
+        bool openReadOnly( const String &path, String &error ) override;
 
         /**
          * @brief Destructor

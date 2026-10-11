@@ -427,6 +427,13 @@ namespace workphone
     void AssetDatabaseManager::open()
     {
         ScopedLock lock( this );
+        if( m_readOnly )
+        {
+            String error;
+            if( !openReadOnly( getDatabasePath(), error ) )
+                WP_LOG_ERROR( error );
+            return;
+        }
         loadFromFile( getDatabasePath() );
         if( m_catalogReady )
             for( auto database : m_attached )
@@ -436,6 +443,9 @@ namespace workphone
     {
         ScopedLock lock( this );
         m_catalogReady = false;
+        // A reopened connection is a new authoring session, even at the same
+        // path. Detached edits may survive ordinary row revisions, not close.
+        m_catalogInstance = nextCatalogInstance.fetch_add( 1 );
         invalidateCatalog();
         DatabaseManager::close();
     }
@@ -458,6 +468,9 @@ namespace workphone
     void AssetDatabaseManager::loadFromFile( const String &path )
     {
         ScopedLock lock( this );
+        if( m_readOnly )
+            close();
+        m_readOnly = false;
         // Resource lookups repeatedly request this connection. Reopening and
         // validating the catalog per mesh/material makes procedural startup slow.
         // The same relative name can still refer to a different project.
@@ -477,6 +490,39 @@ namespace workphone
     {
         // Both overloads use the same switching and project path policy.
         loadFromFile( StringUtilW::toUTF16to8( path ) );
+    }
+    bool AssetDatabaseManager::openReadOnly( const String &path, String &error )
+    {
+        ScopedLock lock( this );
+        close();
+        m_readOnly = true;
+        setDatabase( nullptr );
+        setDatabasePath( path );
+        error.clear();
+        auto app = core::IApplicationManager::instancePtr();
+        auto factory = app ? app->getFactoryManager() : nullptr;
+        auto database = factory ? factory->make_object<IDatabase>() : nullptr;
+        auto reader = database ? dynamic_cast<IReadOnlyDatabase *>( database.get() ) : nullptr;
+        if( !reader || !captureProjectRoot() || !reader->openReadOnly( path, error ) )
+        {
+            if( error.empty() ) error = "Read-only catalog backend or source root is unavailable.";
+            return false;
+        }
+        setDatabase( database );
+        setDatabasePath( path );
+        auto version = queryCatalog( *this, "SELECT id,version FROM wp_asset_catalog_schema" );
+        bool valid = version && !version->eof() && version->getFieldValue( "id" ) == "1" &&
+                     version->getFieldValue( "version" ) == "2";
+        if( valid ) { version->nextRow(); valid = version->eof(); }
+        if( !valid || !validateIdentity( *this, m_projectRoot ) || !refreshDatabaseRevision() )
+        {
+            error = "Read-only catalog schema, identity or revision validation failed.";
+            close();
+            return false;
+        }
+        m_catalogReady = true;
+        invalidateCatalog();
+        return true;
     }
     void AssetDatabaseManager::create()
     {
@@ -1142,6 +1188,7 @@ namespace workphone
         FileOperationResult result;
         try
         {
+            if(m_readOnly) throw std::runtime_error("Built-in media catalog is read-only");
             if(!m_catalogReady || !refreshDatabaseRevision()) throw std::runtime_error("Catalog is not open");
             for(const auto &recovery : recoverFileOperations())
                 if(!recovery.succeeded)
@@ -1237,6 +1284,7 @@ namespace workphone
         result.operationId=id;
         try
         {
+            if(m_readOnly) throw std::runtime_error("Built-in media catalog is read-only");
             if(!m_catalogReady) throw std::runtime_error("Original project catalog is closed");
             auto row=queryCatalog(*this,"SELECT * FROM wp_asset_operations WHERE id=?",{id});
             if(!row || row->eof() || row->getFieldValue("state")!="committed" || row->getFieldValue("root")!=m_projectRoot)
@@ -1274,6 +1322,7 @@ namespace workphone
     {
         ScopedLock lock(this);
         Array<FileOperationResult> results;
+        if(m_readOnly) return results;
         if(!m_catalogReady) return results;
         auto table=queryCatalog(*this,"SELECT name FROM sqlite_master WHERE type='table' AND name='wp_asset_operations'");
         if(!table || table->eof()) return results;
