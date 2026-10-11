@@ -559,15 +559,37 @@ cycles and byte/count/depth overflow fail without publishing partial children.
 Numeric-only domain roots require an authored UUID mapping; this increment does
 not invent identities or migrate that database. Missing databases are not created.
 
-Validation is in progress against rebuilt Windows RelWithDebInfo targets. Initial
-execution exposed an absolute-path startup restriction and a stale SQLite factory
-object compiled with the previous class size. The path handling was repaired and
-the factory translation unit rebuilt. The media catalog was created successfully;
-its first verified inventory contained 251 assets (7 fonts, 4 materials, 2 meshes,
-9 sounds, 4 textures and 225 scripts), all Editor-only, and SQLite integrity_check
-reported ok. Final regression results are recorded below after completion.
+Validation used rebuilt Windows RelWithDebInfo Workphone, SQLite, catalog-test
+and Editor targets. Initial execution exposed an absolute-path startup restriction
+and a stale SQLite factory object compiled with the previous class size. Both were
+corrected. Normal-heap debugger reproduction also identified a destroyed target
+access through the legacy intrusive WeakPtr. Asset browsing, picker targets and
+reference commands now use owner-thread ObjectObserver lifetime tokens invalidated
+before destruction; these tokens do not retain the object or follow reused storage.
+This is scoped protection, not a replacement of every legacy weak pointer or a
+concurrent weak-to-strong promotion mechanism.
 
-Remaining boundaries: source-format validation/cooking, package closure and
+The media inventory contains 251 assets (7 fonts, 4 materials, 2 meshes, 9 sounds,
+4 textures and 225 scripts), all Editor-only. SQLite integrity_check reports ok;
+an explicit rebuild retained all 251 path-to-UUID identities. Reference checks
+cover regenerated compatible type metadata, invalid type IDs, destroyed targets,
+recycled object storage, grouped undo/redo and session expiry. Refreshing picker
+rows cannot recapture targets from an earlier project session, and missing source
+files are rejected before runtime resource construction.
+
+The six focused checks were run directly: catalog contracts, cooked graphics
+resources, Lua runtime contracts, resource contracts, writer leases and compilation
+index migration. Catalog contracts passed five consecutive normal-heap runs.
+Logs are in project_x64/resource-observer-pass-*.log and
+project_x64/resource-final-*.log. The Editor build log is
+project_x64/resource-observer-build.log. Concurrent CMake edits disabled catalog
+and cooked-resource registration; these results are direct execution evidence,
+not a successful root CTest run at Increment 8. Increment 9 restores test
+registration and records the fresh automated regression results below. Interactive Editor save/reopen
+and representative hardware acceptance have not been executed.
+
+At the end of Increment 8, remaining boundaries included source-format
+validation/cooking, package closure and
 eligibility enforcement, UUID runtime maps, asynchronous indexed-scale browsing,
 persisted reference graph updates, authored metadata migration, standalone domain
 editing, DDS profiles/cooking/uploads, actual save/reopen and interactive/hardware
@@ -575,26 +597,172 @@ release acceptance remain open. Trusted property setters are not a transactional
 sandbox; failed rollback is reported and can require manual repair. The broader
 production plan is not certified by these focused contracts.
 
+## Increment 9: Windows DDS profiles and restored resource release tests (11 October 2026)
+
+The existing texture compiler now supports explicit versioned Windows DX11 DDS
+profiles for BGRA8, BC1 and BC3 in linear/SRGB forms. Native DDS bytes live inside
+immutable typed resource artifacts, with target/mode indexing and pinned material
+closures. The bounded parser validates layout, pitch and full mip payloads before
+native installation; authored DX10 DDS passthrough validates the exact profile.
+The deterministic first-party encoder needs no external tool. Graphics compiler
+versions are bumped to 2, requiring explicit recooking of previous artifacts.
+
+Claw installs encoded subresources directly after device capability checks,
+retains last-good views on failure and retains DDS bytes for source-free reupload.
+The existing Editor property panel exposes read-only native texture profile,
+container, format, mip count and byte estimates. Catalog and cooked-resource test
+registration is restored; WP_BUILD_TESTS enables root CTest independently of
+WP_EDITOR_TESTS. The rebuilt Editor and all six focused CTest suites passed
+(17.05 seconds total). All six DDS GPU formats passed exact mip readback; linear
+BGRA8/BC1/BC3 passed visible production draw checks. Manifest loading succeeded
+with original images absent and compiler services unset. The device was Microsoft
+Basic Render Driver, driver 10.0.19041.7548, feature level 11.0. Build evidence is
+in project_x64/resource-dds-final-build.log and
+project_x64/resource-dds-validation-build.log; regression evidence is in
+project_x64/resource-dds-final-tests.log. Actual interactive Editor save/reopen
+and representative hardware acceptance remain unverified.
+
+See [DDS profile support and validation](WPRESOURCE_WINDOWS_DDS.md). RES-050 through RES-052
+have a bounded 2D implementation; RES-053 has inspection data but still needs
+profile authoring/preview, and RES-054 has focused contracts but still needs
+representative hardware, quality/performance and relocated package acceptance.
+This increment does not close the remaining catalog metadata, reference graph,
+retention/recovery UI, domain editing or asynchronous scale work.
+
+## Increment 10: Editor operation history and quarantine restore (11 October 2026)
+
+The Asset Database window exposes paginated journal inspection and guarded undo
+for committed move/copy/delete operations. Deleted assets can be restored from
+quarantine with original UUIDs. The view shows operation state, root, source and
+destination; malformed records fail without partial publication. Project-session
+fences reject stale navigation and restore actions. Bundled media remains read-only.
+Queries neither construct assets nor create journal schema. The window callback
+also uses the destruction-safe owner-thread observer introduced in Increment 8.
+
+Journal contracts cover empty history, bounded pages/continuations, invalid
+limits/cursors, committed-record selection, session expiry and the existing
+byte-exact undo/conflict/interruption behavior. Catalog contracts passed after
+rebuilding WPAssetCatalogTests and Editor. Logs: project_x64/resource-recovery-build.log
+and project_x64/resource-recovery-tests.log. See [recovery workflow and boundaries](WPRESOURCE_ASSET_RECOVERY.md).
+The final combined six-suite CTest gate passed in 17.19 seconds;
+project_x64/resource-production-final-tests.log records that run. git diff --check passed.
+Interactive acceptance, retention/purge, reference-aware deletion and a conflict
+resolution wizard remain open; compiled UI and service contracts do not prove
+interactive save/reopen behavior.
+
+## Increment 11: Durable saved references and guarded asset operations (11 October 2026)
+
+A separately versioned graph persists typed project/media references with document
+revision, property provenance and required/optional policy. Production scene saves
+capture the serialized tree before file IO, publish pending records, validate the
+installed bytes and complete the graph. Graph writes roll back atomically; failed
+writes, external edits and expired/superseded completions cannot publish ready
+records. Script reference properties now declare resource metadata explicitly.
+
+Bounded indexed forward/reverse queries return detached edges and project
+missing/type diagnostics without resource construction. Catalog/reference revision
+triggers fence continuations. The Asset Database details view displays saved users
+for project and bundled-media assets. Required surviving users block quarantine
+with actionable source/property diagnostics. Folder-internal users are quarantined
+together; restore reactivates their edges. Moves/undo relocate document graph
+ownership. Copy undo cannot remove a newly required copy. Legacy removal/clear
+routes also check required users; quarantined graph identities cannot be replaced
+by a new save. Unsupported/incomplete graph schemas fail without migration.
+
+Editor creation undo now uses the same guarded quarantine service. Redo restores
+retained bytes and UUIDs, with project-session expiry; it does not generate another
+asset. Project Clean no longer deletes authored .meta/.lighting/.unity files; it
+performs catalog maintenance and refreshes the filesystem view. The headless
+command path handles the absence of a job queue without dereferencing it.
+
+Rebuilt WPAssetCatalogTests and Editor passed the extended graph/scene-save and
+actual creation/clean command contracts. The six-suite catalog, cooked graphics,
+Lua, resource, writer-lease and migration gate passed in 17.81 seconds. Logs:
+project_x64/resource-reference-final-build.log and
+project_x64/resource-reference-final-tests.log. Production empty-scene saves cover
+JSON/XML/binary serialization, directory/extension handling, pending-write
+prevention, graph-failure rollback and scratch exclusion. The tests also exercise
+creation undo refusing a required user, byte/UUID-preserving redo, session expiry
+and authored-file retention during Project Clean. git diff --check passed.
+
+See [reference graph coverage and limits](WPRESOURCE_ASSET_REFERENCES.md).
+The implementation remains partial for RES-009/046: full-project legacy indexing,
+material/prefab/domain saves, unsaved changes, durable authored UUID ownership,
+compile/install/platform dependency policy, cycles and affected rebuild remain
+open. The save marker detects incomplete file writes; it is not atomic document
+replacement or a power-loss recovery guarantee. Synchronous validation budgets
+bound work but do not certify large-project UI latency. Interactive populated-scene
+save/reopen and representative package/hardware acceptance remain unverified.
+
+## Increment 12: Staged authoring saves and document reindex (11 October 2026)
+
+The shared authored save service stages and flushes complete bytes through an
+exclusive sibling temporary file before replacement. Project saves persist a
+pending graph and fence it across installation/completion. Preparation failures
+retain the prior file/graph; replacement failures retain prior complete bytes;
+completion failures retain new complete bytes with the pending safety fence.
+Owned staging files are removed on normal completion/failure. Media/private
+storage writes are rejected, and cache scratch/exports stay outside the graph.
+This does not certify machine/power-loss durability or retain previous-document
+history. Process-crash orphan cleanup and publication replay remain open.
+
+Scene saves use the shared service. Material direct/save/manager routes and actor/
+resource prefab saves now adopt it. Previously empty prefab resource/save routes
+now persist stored Properties. Empty material texture slots and their serialization
+no longer require graphics startup. Texture UUID and path fallback use different
+fields; their previous shared key overwrote the UUID with the path. The loader
+retains compatibility with path-only legacy material texture fields. Unimplemented
+USD scene serialization now fails explicitly rather than writing a placeholder.
+
+JSON and XML preserve property type/read-only/attribute metadata. Versioned JSON
+retains ordinary name/value fields alongside the flat legacy representation. The
+Editor exposes selected-document reindex for typed JSON, versioned XML and portable
+binary. Reindex verifies installed bytes, retains project/media ownership and
+replaces the graph transactionally without rewriting the document. Ambiguous
+legacy text requires an owning-serializer resave. Malformed, duplicate, unsupported,
+private/outside-project and over-budget inputs fail without replacing the old graph.
+This is individual document repair; project-wide discovery and legacy migration
+remain open.
+
+Current-source builds passed for WPAssetCatalogTests, Editor, WorkphoneMediaCatalog,
+WPGraphicsCookedResourceTests, LuaRuntimeTests and WPResourceTests. The six-suite
+catalog/cooked-graphics/Lua/resource/writer-lease/migration CTest gate passed in
+19.38 seconds. Logs: project_x64/resource-document-final-build.log and
+project_x64/resource-document-final-tests.log. git diff --check passed.
+
+The expanded contracts exercise actual material direct/save/manager routes,
+texture UUID/type persistence, prefab actor/resource/save routes, JSON/XML metadata
+round trips, binary/XML/JSON reindexing, read-only/media/private/path containment,
+byte-exact installation, locked destination preservation, pre/post-publication SQL
+faults, pending repair without rewriting source bytes, future graph/XML schemas,
+duplicate/malformed text and staging-file cleanup. Editor controls are compiled;
+interactive populated-scene/material/prefab save/reopen and large-project latency
+remain unverified. Full-project legacy migration, remaining domain authoring,
+compile/install policy, recovery/retention and shipping adoption remain open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
 platform texture profiles, Windows DDS cooking, native compressed uploads,
-Editor target previews and package certification. These are planned, not yet
-implemented. Keep their identity/settings/BuildKey decisions integrated with the
-existing texture compiler and the next cooking consistency milestone.
+Editor target previews and package certification. Increment 9 implements the
+bounded 2D compiler/upload subset. Complete the
+remaining profile authoring, quality, topology and shipping-package gates using
+the same immutable resource pipeline.
 
-1. Finish the first integrity slice: authored numeric-ID lookup/traversal, immutable
-   metadata migration, reference-aware operations, retention and recovery UI.
+1. Finish the first integrity slice: authored numeric-root UUID mapping, immutable
+   metadata migration, full-project reference coverage, retention and conflict resolution UI.
 2. Extend target/mode indexing to full profile/toolchain BuildKeys, authored
    revision fences and generation recovery/retention on top of captured inputs,
    complete-request index transactions and immutable artifacts. Certify
    interrupted publication.
-3. Persist typed dependency/reference edges and implement reverse queries,
-   dependency invalidation and required-missing/cycle diagnostics.
+3. Extend the saved-document reference graph across remaining domain authoring routes
+   and project-wide legacy discovery/migration; persist
+   typed compile/install/platform dependency modes, invalidation and cycle policy.
+   Indexed forward/reverse queries and project missing/type diagnostics now exist.
 4. Integrate typed runtime consumers and owner-thread publication throughout the
    Editor and shipping sample; complete asynchronous session-safe jobs.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;
-   implement domain editing, previews, reference graph persistence, packaging controls and
+   implement domain editing, previews, full reference coverage, packaging controls and
    the declared format-family matrix.
 6. Execute the plan's representative Editor, source-free package, failure,
    concurrency, performance and release gates. Passing focused tests alone does

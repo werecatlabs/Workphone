@@ -229,6 +229,16 @@ typedef struct wp_texture_mip_dx11
 void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *renderer,
     const wp_texture_mip_dx11 *levels, wp_u32 level_count );
 
+typedef struct wp_texture_encoded_mip_dx11
+{
+    const void *bytes;
+    wp_u32 width, height, byte_count;
+} wp_texture_encoded_mip_dx11;
+/* Whitelisted DXGI BC1/BC3/BGRA8 linear/SRGB formats. Exact pitches and byte
+ * counts are computed and checked before device creation. Returns an owned SRV. */
+void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *renderer,
+    const wp_texture_encoded_mip_dx11 *levels, wp_u32 count, wp_u32 dxgi_format );
+
 /**
  * @brief Creates an off-screen colour/depth target that can also be sampled as a texture.
  */

@@ -6,6 +6,7 @@
 #include <Workphone/Core/ColourF.hpp>
 #include <ostream>
 #include <Workphone/System/CompiledResource.hpp>
+struct wp_renderer_dx11;
 
 namespace workphone::render
 {
@@ -19,7 +20,16 @@ namespace workphone::render
         TextureMipSettings mipSettings;
         String target;
         bool packagedBuild = false;
+        std::vector<u8> ddsBytes;
     };
+
+    /** Exact versioned target profiles; zero denotes the existing portable BGRA
+     * path. Unknown windows-dx11-dds-* profiles fail, never silently fall back. */
+    WPGraphics_API u32 ddsFormatForTarget( const String &target );
+    class ClawTexture;
+    WPGraphics_API bool validateCookedTextureData( const CookedTextureData &data, String &error );
+    WPGraphics_API bool uploadCookedDds( ClawTexture *texture, const CookedTextureData &data,
+                                         wp_renderer_dx11 *renderer, String &error );
 
     struct CookedMaterialData
     {

@@ -318,6 +318,7 @@ namespace workphone
 
         auto name = properties.getName();
         propertiesElem->SetAttribute( NAME_ATTRIBUTE.c_str(), name.c_str() );
+        propertiesElem->SetAttribute( "PropertyMetadataVersion", "1" );
 
         const auto propertiesArray = properties.getPropertiesAsArray();
 
@@ -344,6 +345,13 @@ namespace workphone
             WP_ASSERT( keyValueNode );
 
             keyNode->LinkEndChild( keyValueNode );
+            for( const auto &attribute : property.getAttributes() )
+            {
+                auto entry = new TiXmlElement( "Attribute" );
+                entry->SetAttribute( "Name", attribute.first.c_str() );
+                entry->SetAttribute( "Value", attribute.second.c_str() );
+                keyNode->LinkEndChild( entry );
+            }
         }
 
         if( recursive )
@@ -473,6 +481,13 @@ namespace workphone
                 property.setReadOnly( StringUtil::parseBool( propertyIsReadOnly, false ) );
             }
 
+            for( auto entry = propertyNode->FirstChildElement( "Attribute" ); entry;
+                 entry = entry->NextSiblingElement( "Attribute" ) )
+            {
+                const auto name = entry->Attribute( "Name" );
+                const auto value = entry->Attribute( "Value" );
+                if( name && value ) property.setAttribute( name, value );
+            }
             propertyNode = propertyNode->NextSiblingElement( PROPERTY_ELEMENT.c_str() );
         }
 

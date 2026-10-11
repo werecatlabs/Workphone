@@ -106,6 +106,26 @@ namespace
         check( dead.prepare( catalog, entry, ephemeral, "texture", render::ITexture::typeInfo() ), "Prepare weak target" );
         ephemeral = nullptr;
         check( !dead.apply( catalog ), "Expired targets must reject assignment" );
+        // Factories can reuse the same address. A previous observer must not
+        // attach to the new object's lifetime even when its counts are positive.
+        alignas( ReferenceContractTarget ) unsigned char storage[sizeof( ReferenceContractTarget )];
+        auto pooled = new( storage ) ReferenceContractTarget;
+        pooled->setPoolElement( true );
+        SmartPtr<ReferenceContractTarget> pooledOwner( pooled );
+        pooled->removeReference(); // transfer the constructor's initial owner
+        ObjectObserver<ReferenceContractTarget> oldObserver( pooledOwner );
+        pooledOwner = nullptr;
+        check( oldObserver.expired() && !oldObserver.lock(), "Last owner release must expire pooled observers" );
+        pooled->~ReferenceContractTarget();
+        pooled = new( storage ) ReferenceContractTarget;
+        pooled->setPoolElement( true );
+        pooledOwner = pooled;
+        pooled->removeReference();
+        ObjectObserver<ReferenceContractTarget> newObserver( pooledOwner );
+        check( !oldObserver.lock() && newObserver.lock() == pooledOwner,
+               "Recycled storage must have a fresh lifetime token" );
+        pooledOwner = nullptr;
+        pooled->~ReferenceContractTarget();
 #ifdef WP_EDITOR_ASSET_COMMAND_CONTRACTS
         auto second = make_ptr<ReferenceContractTarget>();
         auto command = make_ptr<editor::ModifyPropertyCmd>();

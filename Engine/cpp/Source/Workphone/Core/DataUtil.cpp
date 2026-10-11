@@ -485,6 +485,11 @@ auto propertiesFromObject( const JsonObject &obj ) -> SmartPtr<Properties>
 
         for( const auto &[key, value] : obj )
         {
+            if( key == "__wp_properties_v1" )
+            {
+                // Versioned metadata is applied after the flat property values.
+                continue;
+            }
             if( key == "handle_name" )
             {
                 if( auto stringValue = std::get_if<String>( &value ) )
@@ -492,7 +497,7 @@ auto propertiesFromObject( const JsonObject &obj ) -> SmartPtr<Properties>
                     properties->setName( *stringValue );
                 }
             }
-            else if( key == "name" )
+            else if( key == "name" && obj.find( "__wp_properties_v1" ) == obj.end() )
             {
                 isPropertyName = true;
 
@@ -501,7 +506,7 @@ auto propertiesFromObject( const JsonObject &obj ) -> SmartPtr<Properties>
                     property.setName( *stringValue );
                 }
             }
-            else if( key == "value" )
+            else if( key == "value" && obj.find( "__wp_properties_v1" ) == obj.end() )
             {
                 isPropertyValue = true;
                 setPropertyValueFromJson( property, value );
@@ -566,6 +571,23 @@ auto propertiesFromObject( const JsonObject &obj ) -> SmartPtr<Properties>
             properties->setProperty( "name", property.getName() );
         }
 
+        const auto metadataIt = obj.find( "__wp_properties_v1" );
+        if( metadataIt != obj.end() )
+        {
+            const auto &metadata = std::get<JsonArray>( metadataIt->second );
+            for( const auto &item : metadata )
+            {
+                const auto &entry = std::get<JsonObject>( item );
+                const auto &name = std::get<String>( entry.at( "name" ) );
+                auto &field = properties->getPropertyObject( name );
+                if( field.getName() != name )
+                    throw std::runtime_error( "Property metadata has no corresponding value" );
+                field.setTypeName( std::get<String>( entry.at( "type" ) ) );
+                field.setReadOnly( std::get<bool>( entry.at( "readOnly" ) ) );
+                for( const auto &attribute : std::get<JsonObject>( entry.at( "attributes" ) ) )
+                    field.setAttribute( attribute.first, std::get<String>( attribute.second ) );
+            }
+        }
         return properties;
     }
     catch( std::exception &e )
@@ -784,13 +806,25 @@ namespace workphone
         static const String handleNameStr = "handle_name";
         j[handleNameStr] = JsonValue( propertiesName );
 
+        JsonArray metadata;
         auto propertiesArray = properties->getPropertiesAsArray();
         for( auto &prop : propertiesArray )
         {
             auto name = prop.getName();
             auto value = prop.getValue();
+            if( name == "__wp_properties_v1" || name == "handle_name" || name == "children" )
+                throw std::runtime_error( "Property name collides with a reserved serialization field" );
             j[name] = JsonValue( value );
+            JsonObject entry, attributes;
+            entry["name"] = JsonValue( name );
+            entry["type"] = JsonValue( prop.getTypeName() );
+            entry["readOnly"] = JsonValue( prop.isReadOnly() );
+            for( const auto &attribute : prop.getAttributes() )
+                attributes[attribute.first] = JsonValue( attribute.second );
+            entry["attributes"] = JsonValue( attributes );
+            metadata.push_back( JsonValue( entry ) );
         }
+        j["__wp_properties_v1"] = JsonValue( metadata );
 
         auto children = properties->getChildren();
 

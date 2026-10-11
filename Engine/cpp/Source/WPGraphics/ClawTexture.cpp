@@ -4,6 +4,7 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawTexture.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
+#include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/LogManager.hpp>
@@ -26,6 +27,8 @@ namespace
     {
         workphone::Array<workphone::u8> pixels;
         workphone::Array<workphone::render::TextureMipLevel> cookedLevels;
+        std::vector<workphone::u8> ddsBytes;
+        workphone::String cookedProfile;
         workphone::String sourcePath;
         bool decodeAttempted = false;
         void *textureView = nullptr;
@@ -121,6 +124,15 @@ namespace
             nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
         return wp_renderer_dx11_create_texture_mips_native( renderer, nativeLevels.data(),
                                                             static_cast<wp_u32>( nativeLevels.size() ) );
+    }
+
+    void *uploadDds( wp_renderer_dx11 *renderer, const std::vector<workphone::u8> &bytes )
+    {
+        const auto image=workphone::dds::inspect(bytes);
+        std::vector<wp_texture_encoded_mip_dx11> levels;
+        for(const auto &m:image.mips) levels.push_back({bytes.data()+m.offset,m.width,m.height,m.size});
+        return wp_renderer_dx11_create_texture_encoded_mips_native(renderer,levels.data(),
+            static_cast<wp_u32>(levels.size()),image.format);
     }
 
     bool decodeTexture( workphone::render::ClawTexture *texture )
@@ -251,7 +263,7 @@ namespace
             std::scoped_lock lock( g_textureMutex );
             auto found = g_textureData.find( texture );
             if( found != g_textureData.end() &&
-                ( !found->second.pixels.empty() || !found->second.cookedLevels.empty() ) )
+                ( !found->second.pixels.empty() || !found->second.cookedLevels.empty() || !found->second.ddsBytes.empty() ) )
             {
                 return true;
             }
@@ -282,7 +294,7 @@ namespace
 
         auto &data = found->second;
         const auto previousView = data.device == device ? data.textureView : nullptr;
-        if( ( data.pixels.empty() && data.cookedLevels.empty() ) ||
+        if( ( data.pixels.empty() && data.cookedLevels.empty() && data.ddsBytes.empty() ) ||
             ( !data.uploadPending && data.attemptedRenderer == dx11 && data.attemptedDevice == device ) )
         {
             return previousView;
@@ -295,7 +307,9 @@ namespace
         try
         {
             void *candidate = nullptr;
-            if( !data.cookedLevels.empty() )
+            if( !data.ddsBytes.empty() )
+                candidate=uploadDds(dx11,data.ddsBytes);
+            else if( !data.cookedLevels.empty() )
                 candidate = uploadMipLevels( dx11, data.cookedLevels );
             else
             {
@@ -383,9 +397,15 @@ namespace workphone
                     // Authored properties outlive decoded pixels and GPU residency.
                     const auto settings = found->second.mipSettings;
                     auto cookedLevels = std::move( found->second.cookedLevels );
+                    auto ddsBytes=std::move(found->second.ddsBytes);
+                    auto profile=std::move(found->second.cookedProfile);
+                    const auto dimensions=found->second.pixelSize;
                     found->second = ClawTextureData{};
                     found->second.mipSettings = settings;
                     found->second.cookedLevels = std::move( cookedLevels );
+                    found->second.ddsBytes=std::move(ddsBytes);
+                    found->second.cookedProfile=std::move(profile);
+                    if(!found->second.ddsBytes.empty()) found->second.pixelSize=dimensions;
                     if( !found->second.cookedLevels.empty() )
                         found->second.pixelSize = {
                             static_cast<s32>( found->second.cookedLevels.front().width ),
@@ -416,6 +436,8 @@ namespace workphone
                 std::memcpy( pixels.data(), data, byteCount );
                 textureData.pixels = std::move( pixels );
                 textureData.cookedLevels.clear();
+                textureData.ddsBytes.clear();
+                textureData.cookedProfile.clear();
                 textureData.pixelSize = size;
                 textureData.uploadPending = true;
             }
@@ -455,6 +477,8 @@ namespace workphone
                     // All allocating work has succeeded; publish the complete replacement.
                     destroyTextureView( data );
                     data.cookedLevels.swap( retainedLevels );
+                    data.ddsBytes.clear();
+                    data.cookedProfile.clear();
                     data.pixels.clear();
                     data.sourcePath.clear();
                     data.decodeAttempted = true;
@@ -477,6 +501,39 @@ namespace workphone
                 error = String( "Cooked texture upload failed: " ) + exception.what();
                 return false;
             }
+        }
+
+        bool uploadCookedDds( ClawTexture *texture, const CookedTextureData &input,
+                               wp_renderer_dx11 *renderer, String &error )
+        {
+            error.clear();
+            auto device=renderer?wp_renderer_dx11_get_device(renderer):nullptr;
+            if(!texture || !device || texture->getRenderTarget() ||
+               (texture->getUsageFlags() & static_cast<u32>(TextureUsage::TU_RENDERTARGET)))
+            { error="Native DDS upload requires a sampled texture and active DX11 device"; return false; }
+            if(input.ddsBytes.empty()){error="Native DDS payload is missing";return false;}
+            if(!validateCookedTextureData(input,error)) return false;
+            try
+            {
+                auto retained=input.ddsBytes;
+                auto profile=input.target;
+                const auto image=dds::inspect(retained);
+                std::scoped_lock lock(g_textureMutex);
+                auto &data=g_textureData[texture];
+                auto view=uploadDds(renderer,retained);
+                if(!view){error="DX11 rejected the DDS format or mip payload; previous texture retained";return false;}
+                destroyTextureView(data);
+                data.ddsBytes.swap(retained);data.cookedLevels.clear();data.pixels.clear();data.sourcePath.clear();
+                data.cookedProfile.swap(profile);
+                data.mipSettings=input.mipSettings;data.decodeAttempted=true;
+                data.pixelSize={static_cast<s32>(image.mips[0].width),static_cast<s32>(image.mips[0].height)};
+                data.textureView=view;data.renderer=renderer;data.device=device;
+                data.attemptedRenderer=renderer;data.attemptedDevice=device;data.uploadPending=false;
+                texture->setSize(data.pixelSize);
+            }
+            catch(const std::exception &e){error=e.what();return false;}
+            texture->setLoadingState(LoadingState::Loaded);
+            return true;
         }
 
         Vector2I ClawTexture::getSize() const
@@ -567,6 +624,20 @@ namespace workphone
             properties->setProperty( "mipmapFilter", static_cast<s32>( settings.filter ) );
             properties->setProperty( "mipmapAtlasColumns", settings.atlasColumns );
             properties->setProperty( "mipmapAlphaCutoff", settings.alphaCutoff );
+            if(found!=g_textureData.end() && !found->second.ddsBytes.empty())
+            {
+                const auto image=dds::inspect(found->second.ddsBytes);
+                properties->setProperty("cookedContainer","DDS DX10");
+                properties->setProperty("cookedProfile",found->second.cookedProfile);
+                properties->setProperty("cookedDxgiFormat",image.format);
+                properties->setProperty("cookedMipCount",static_cast<u32>(image.mips.size()));
+                properties->setProperty("cookedEncodedBytes",static_cast<u32>(found->second.ddsBytes.size()));
+                u32 resident=0;for(const auto &m:image.mips)resident+=m.size;
+                properties->setProperty("cookedResidentBytes",resident);
+                for(const char *name : {"cookedContainer","cookedProfile","cookedDxgiFormat","cookedMipCount",
+                                       "cookedEncodedBytes","cookedResidentBytes"})
+                    properties->getPropertyObject(name).setReadOnly(true);
+            }
             return properties;
         }
 
@@ -600,6 +671,11 @@ namespace workphone
                 settings.atlasColumns != data.mipSettings.atlasColumns ||
                 settings.alphaCutoff != data.mipSettings.alphaCutoff )
             {
+                if(!data.ddsBytes.empty())
+                {
+                    WP_LOG_WARNING("Native DDS mip settings require descriptor reimport; retaining cooked settings.");
+                    return;
+                }
                 // An explicit authoring edit opts back into legacy mip generation.
                 if( !data.cookedLevels.empty() )
                 {

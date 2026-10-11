@@ -31,6 +31,10 @@ namespace workphone::render
     {
         try
         {
+            // Empty slots are created during authoring before graphics startup.
+            // Only an actual texture upload needs a graphics service.
+            if( !getTexture() )
+                return;
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
@@ -154,25 +158,18 @@ namespace workphone::render
     {
         try
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-            WP_ASSERT( graphicsSystem );
-
-            auto factoryManager = applicationManager->getFactoryManager();
-            WP_ASSERT( factoryManager );
-
-            ScopedLock lock( graphicsSystem );
-
-            auto properties = factoryManager->make_ptr<Properties>();
+            // A detached texture slot can be serialized before graphics startup.
+            auto properties = workphone::make_ptr<Properties>();
 
             if( auto texture = getTexture() )
             {
                 auto handle = texture->getHandle();
-                properties->setProperty( MaterialTexture::textureStr, handle->getUUIDAsString() );
+                properties->setProperty( MaterialTexture::textureStr, handle->getUUIDAsString(),
+                                         Properties::resourceStr );
+                properties->getPropertyObject( MaterialTexture::textureStr )
+                    .setAttribute( "resourceType", "Texture" );
                 // Keep a path fallback for materials used without an asset database entry.
-                properties->setProperty( texturePathStr, texture->getFilePath() );
+                properties->setProperty( "texturePath", texture->getFilePath() );
             }
 
             return properties;
@@ -230,7 +227,7 @@ namespace workphone::render
                 }
                 if( !getTexture() )
                 {
-                    auto path = properties->getProperty( texturePathStr );
+                    auto path = properties->getProperty( "texturePath" );
                     if( path.empty() && !isUUID )
                         path = sTextureUUID;
                     if( !path.empty() )

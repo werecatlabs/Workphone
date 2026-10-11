@@ -236,7 +236,7 @@ else()
     option(WP_EDITOR_TESTS "Build editor with unit tests" OFF)
 endif()
 
-if (WP_EDITOR_TESTS)
+if (WP_BUILD_TESTS OR WP_EDITOR_TESTS)
     enable_testing()
 endif()
 

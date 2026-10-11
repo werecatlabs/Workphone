@@ -1,8 +1,7 @@
 #include <EditorPCH.hpp>
 #include "jobs/ProjectCleanJob.hpp"
-#include <editor/EditorManager.hpp>
-#include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 
 namespace workphone::editor
 {
@@ -20,28 +19,19 @@ namespace workphone::editor
             auto fileSystem = applicationManager->getFileSystem();
             WP_ASSERT( fileSystem );
 
-            auto editorManager = EditorManager::getSingletonPtr();
-            auto uiManager = editorManager->getUI();
-
-            auto metaFiles = fileSystem->getFileNamesWithExtension( ".meta" );
-            for( auto &file : metaFiles )
-            {
-                fileSystem->deleteFile( file );
-            }
-
-            auto lightingFiles = fileSystem->getFileNamesWithExtension( ".lighting" );
-            for( auto &file : lightingFiles )
-            {
-                fileSystem->deleteFile( file );
-            }
-
-            auto unityFiles = fileSystem->getFileNamesWithExtension( ".unity" );
-            for( auto &file : unityFiles )
-            {
-                fileSystem->deleteFile( file );
-            }
-
-            uiManager->rebuildResourceTree();
+            auto resources = applicationManager->getResourceDatabase();
+            auto catalog =
+                resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                          : nullptr;
+            String root, error;
+            if( !catalog || catalog->isReadOnly() || applicationManager->getProjectPath().empty() ||
+                !canonicalAssetCatalogRoot( applicationManager->getProjectPath(), root, error ) ||
+                root != catalog->getProjectRoot() )
+                throw std::runtime_error( "Project clean requires the active writable project catalog" );
+            // Metadata, lighting and imported scene files are authored content.
+            // Artifact pruning requires the generation retention/pin policy.
+            catalog->optimise();
+            fileSystem->refreshPath( root, applicationManager->getJobQueue() != nullptr );
         }
         catch( std::exception &e )
         {

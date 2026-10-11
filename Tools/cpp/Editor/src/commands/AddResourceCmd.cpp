@@ -1,6 +1,7 @@
 #include <EditorPCH.hpp>
 #include <commands/AddResourceCmd.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 
 namespace workphone::editor
 {
@@ -11,15 +12,54 @@ namespace workphone::editor
 
     AddResourceCmd::~AddResourceCmd() = default;
 
+    SmartPtr<AssetDatabaseManager> AddResourceCmd::activeCreationCatalog() const
+    {
+        auto app = core::IApplicationManager::instancePtr();
+        auto resources = app ? app->getResourceDatabase() : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
+        String root, error;
+        if( !catalog || !m_creationSession.isCurrent( catalog ) || app->getProjectPath().empty() ||
+            !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) ||
+            root != catalog->getProjectRoot() )
+            return nullptr;
+        return catalog;
+    }
     void AddResourceCmd::redo()
     {
-        execute();
+        if( m_undoOperationId.empty() )
+            return;
+        auto catalog = activeCreationCatalog();
+        if( !catalog )
+        {
+            WP_LOG_ERROR( "Creation redo project session expired." );
+            return;
+        }
+        const auto result = catalog->undoFileOperation( m_undoOperationId );
+        if( !result.succeeded )
+        {
+            WP_LOG_ERROR( "Cannot restore created asset: " + result.error );
+            return;
+        }
+        m_undoOperationId.clear();
+        auto app = core::IApplicationManager::instancePtr();
+        if( auto fs = app->getFileSystem() )
+            fs->refreshPath( Path::getFilePath( String( m_createdFilePath ) ),
+                             app->getJobQueue() != nullptr );
     }
 
     void AddResourceCmd::execute()
     {
         try
         {
+            if( !m_undoOperationId.empty() )
+            {
+                redo();
+                return;
+            }
+            if( !String( m_createdFilePath ).empty() )
+                return;
             auto applicationManager = core::IApplicationManager::instance();
             WP_ASSERT( applicationManager );
 
@@ -28,12 +68,21 @@ namespace workphone::editor
             auto fileSystem = applicationManager->getFileSystem();
             WP_ASSERT( fileSystem );
 
-            auto graphicsSystem = applicationManager->getGraphicsSystem();
-            auto materialManager = graphicsSystem->getMaterialManager();
-
             auto resourceDatabase = applicationManager->getResourceDatabase();
-
-            auto filePath = getFilePath();
+            auto catalog = resourceDatabase ? dynamic_pointer_cast<AssetDatabaseManager>(
+                                                  resourceDatabase->getDatabaseManager() )
+                                            : nullptr;
+            if( !catalog || catalog->isReadOnly() || !m_creationSession.capture( catalog ) ||
+                !activeCreationCatalog() )
+                throw std::runtime_error(
+                    "Asset creation requires the active writable project catalog" );
+            AssetCatalogPath source;
+            String error;
+            if( !canonicalAssetCatalogPath( catalog->getProjectRoot(), getFilePath(), source, error ) )
+                throw std::runtime_error( error.c_str() );
+            if( source.key == ".workphone" || source.key.find( ".workphone/" ) == 0 )
+                throw std::runtime_error( "Asset operation storage is reserved" );
+            auto filePath = catalog->getProjectRoot() + "/" + source.path;
 
             SmartPtr<IResource> resource;
             SmartPtr<Properties> data;
@@ -65,6 +114,8 @@ namespace workphone::editor
             break;
             case ResourceType::Material:
             {
+                if( !application )
+                    throw std::runtime_error( "Material creation requires an application" );
                 resource = application->createDefaultMaterial();
                 WP_ASSERT( resource );
 
@@ -120,10 +171,14 @@ namespace workphone::editor
                     newFilePath = Path::lexically_normal( path, newFileName );
                 }
 
+                if( fileSystem->isExistingFile( newFilePath ) )
+                    throw std::runtime_error( "Cannot find an unused asset filename" );
                 fileSystem->writeAllText( newFilePath, dataStr );
                 createdFilePath = newFilePath;
             }
 
+            if( !fileSystem->isExistingFile( createdFilePath ) )
+                throw std::runtime_error( "Created asset file was not written" );
             m_createdFilePath = createdFilePath;
 
             if( resource )
@@ -134,7 +189,7 @@ namespace workphone::editor
             }
 
             auto refreshPath = Path::getFilePath( createdFilePath );
-            fileSystem->refreshPath( refreshPath, true );
+            fileSystem->refreshPath( refreshPath, applicationManager->getJobQueue() != nullptr );
         }
         catch( std::exception &e )
         {
@@ -144,36 +199,26 @@ namespace workphone::editor
 
     void AddResourceCmd::undo()
     {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto fileSystem = applicationManager->getFileSystem();
-        WP_ASSERT( fileSystem );
-
-        auto resourceDatabase = applicationManager->getResourceDatabase();
-
-        auto filePath = String( m_createdFilePath );
-        if( StringUtil::isNullOrEmpty( filePath ) )
+        if( String( m_createdFilePath ).empty() || !m_undoOperationId.empty() )
+            return;
+        auto catalog = activeCreationCatalog();
+        if( !catalog )
         {
-            filePath = getFilePath();
+            WP_LOG_ERROR( "Creation undo project session expired." );
+            return;
         }
-
-        if( auto resource = workphone::dynamic_pointer_cast<IResource>( getResource() ) )
+        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Delete,
+                                                           String( m_createdFilePath ) );
+        if( !result.succeeded )
         {
-            resourceDatabase->removeResource( resource );
+            WP_LOG_ERROR( "Cannot undo created asset: " + result.error );
+            return;
         }
-        else
-        {
-            resourceDatabase->removeResourceFromPath( filePath );
-        }
-
-        if( fileSystem->isExistingFile( filePath ) )
-        {
-            fileSystem->deleteFile( filePath );
-        }
-
-        auto refreshPath = Path::getFilePath( filePath );
-        fileSystem->refreshPath( refreshPath, true );
+        m_undoOperationId = result.operationId;
+        auto app = core::IApplicationManager::instancePtr();
+        if( auto fs = app->getFileSystem() )
+            fs->refreshPath( Path::getFilePath( String( m_createdFilePath ) ),
+                             app->getJobQueue() != nullptr );
     }
 
     String AddResourceCmd::getFilePath() const

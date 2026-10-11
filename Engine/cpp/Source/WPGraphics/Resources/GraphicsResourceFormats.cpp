@@ -1,6 +1,7 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
+#include <Workphone/Graphics/DdsTexture.hpp>
 
 #include <cmath>
 #include <cstring>
@@ -9,9 +10,22 @@
 
 namespace workphone::render
 {
+    u32 ddsFormatForTarget( const String &target )
+    {
+        if( target == "windows-dx11-dds-bgra8-v1" ) return 87;
+        if( target == "windows-dx11-dds-bgra8-srgb-v1" ) return 91;
+        if( target == "windows-dx11-dds-bc1-v1" ) return 71;
+        if( target == "windows-dx11-dds-bc1-srgb-v1" ) return 72;
+        if( target == "windows-dx11-dds-bc3-v1" ) return 77;
+        if( target == "windows-dx11-dds-bc3-srgb-v1" ) return 78;
+        if( target.find( "windows-dx11-dds-" ) == 0 )
+            throw std::runtime_error( "Unsupported Windows DDS texture profile" );
+        return 0;
+    }
     namespace
     {
         constexpr u32 textureMagic = 0x58545057u;   // WPTX
+        constexpr u32 ddsMagic = 0x58445057u;       // WPDX
         constexpr u32 materialMagic = 0x544d5057u;  // WPMT
         constexpr u32 maxTextureDimension = 16384;
         constexpr u32 maxMipLevels = 15;
@@ -45,6 +59,38 @@ namespace workphone::render
         {
             validateTarget( data.target );
             validateSettings( data.mipSettings );
+            if( !data.ddsBytes.empty() )
+            {
+                const auto image = dds::inspect( data.ddsBytes );
+                require( data.levels.empty() && image.format == ddsFormatForTarget( data.target ),
+                         "DDS artifact does not match its target profile" );
+                require( image.alphaMode==(dds::blockBytes(image.format)==8 ? 3u : 1u),
+                         "DDS alpha mode does not match the opaque BC1 or straight-alpha profile" );
+                const auto &first = image.mips.front();
+                const bool compressed=dds::blockBytes(image.format)!=0;
+                const bool srgb=image.format==72 || image.format==78 || image.format==91;
+                require(!compressed || (first.width%4==0 && first.height%4==0),
+                        "DX11 block-compressed base dimensions must be multiples of four");
+                require(!compressed || data.mipSettings.filter!=TextureMipFilter::Normal,
+                        "Compressed normal-map profiles are unsupported");
+                require(!srgb || data.mipSettings.filter==TextureMipFilter::Colour ||
+                        data.mipSettings.filter==TextureMipFilter::Cutout || data.mipSettings.filter==TextureMipFilter::None,
+                        "SRGB profile mip semantics are inconsistent");
+                require( first.width % data.mipSettings.atlasColumns == 0,
+                         "DDS atlas dimensions are inconsistent" );
+                auto width=first.width, height=first.height;
+                size_t count=1;
+                while( data.mipSettings.filter != TextureMipFilter::None && (width!=1 || height!=1) )
+                {
+                    width=std::max(width/2,1u);height=std::max(height/2,1u);
+                    if(width<data.mipSettings.atlasColumns || width%data.mipSettings.atlasColumns) break;
+                    ++count;
+                }
+                require( image.mips.size()==count, "DDS mip count does not match the recipe" );
+                return;
+            }
+            require( ddsFormatForTarget( data.target )==0,
+                     "Windows DDS profile requires a native DDS payload" );
             require( !data.levels.empty() && data.levels.size() <= maxMipLevels,
                      "Invalid cooked texture mip count" );
             const auto &first = data.levels.front();
@@ -203,16 +249,29 @@ namespace workphone::render
         }
     }  // namespace
 
+    bool validateCookedTextureData( const CookedTextureData &data, String &error )
+    {
+        error.clear();
+        try { validateTexture(data); return true; }
+        catch(const std::exception &e) { error=e.what(); return false; }
+    }
     bool writeCookedTexture( const CookedTextureData &data, std::ostream &output, String &error )
     {
         error.clear();
         try
         {
             validateTexture( data );
-            writePrefix( output, textureMagic, data.target, data.packagedBuild );
+            writePrefix( output, data.ddsBytes.empty() ? textureMagic : ddsMagic, data.target, data.packagedBuild );
             write32( output, static_cast<u32>( data.mipSettings.filter ) );
             write32( output, data.mipSettings.atlasColumns );
             writeFloat( output, data.mipSettings.alphaCutoff );
+            if( !data.ddsBytes.empty() )
+            {
+                write64( output, data.ddsBytes.size() );
+                output.write( reinterpret_cast<const char *>(data.ddsBytes.data()), data.ddsBytes.size() );
+                require( output.good(), "Failed writing native DDS payload" );
+                return true;
+            }
             write32( output, static_cast<u32>( data.levels.size() ) );
             for( const auto &level : data.levels )
             {
@@ -268,11 +327,25 @@ namespace workphone::render
                      "Cooked textures cannot contain install dependencies" );
             Reader reader( value.payload );
             CookedTextureData data;
-            readPrefix( reader, textureMagic, data.target, data.packagedBuild );
+            require( value.payload.size()>=4, "Truncated texture prefix" );
+            const auto magic=u32(value.payload[0]) | u32(value.payload[1])<<8 |
+                             u32(value.payload[2])<<16 | u32(value.payload[3])<<24;
+            require( magic==textureMagic || magic==ddsMagic, "Unknown texture payload encoding" );
+            readPrefix( reader, magic, data.target, data.packagedBuild );
             data.mipSettings.filter = static_cast<TextureMipFilter>( reader.read32() );
             data.mipSettings.atlasColumns = reader.read32();
             data.mipSettings.alphaCutoff = reader.readFloat();
             validateSettings( data.mipSettings );
+            if( magic==ddsMagic )
+            {
+                const auto size=reader.read64();
+                require(size<=graphicsTextureByteLimit+148 && size==reader.remaining(),
+                        "Invalid embedded DDS size" );
+                reader.readBytes(data.ddsBytes,static_cast<size_t>(size));
+                validateTexture(data);
+                output=std::move(data);
+                return true;
+            }
             const auto count = reader.read32();
             require( count && count <= maxMipLevels, "Invalid cooked texture mip count" );
             data.levels.reserve( count );

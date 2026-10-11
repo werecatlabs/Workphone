@@ -181,8 +181,10 @@ namespace workphone::render
                 return {};
             }
             candidate->texture = make_ptr<ClawTexture>();
-            if( !candidate->texture->uploadCookedMips( texture.levels, texture.mipSettings,
-                                                       m_data->activeRenderer(), error ) )
+            const bool installed=texture.ddsBytes.empty() ?
+                candidate->texture->uploadCookedMips(texture.levels,texture.mipSettings,m_data->activeRenderer(),error) :
+                uploadCookedDds(candidate->texture.get(),texture,m_data->activeRenderer(),error);
+            if( !installed )
                 return {};
             candidate->material = make_ptr<ClawMaterial>();
             auto technique = make_ptr<ClawMaterialTechnique>();

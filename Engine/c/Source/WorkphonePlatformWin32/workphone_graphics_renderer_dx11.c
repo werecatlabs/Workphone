@@ -2565,6 +2565,48 @@ void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *r,
     return SUCCEEDED(hr) ? view : NULL;
 }
 
+void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *r,
+    const wp_texture_encoded_mip_dx11 *levels, wp_u32 count, wp_u32 format )
+{
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_SUBRESOURCE_DATA data[15];
+    ID3D11Texture2D *texture = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    wp_u32 i, w, h, block, support = 0;
+    uint64_t total = 0;
+    HRESULT hr;
+    if( !r || !levels || !count || count > 15 ||
+        !wp_renderer_dx11_dimensions_supported(r,levels[0].width,levels[0].height) ) return NULL;
+    block = format==71 || format==72 ? 8 : format==77 || format==78 ? 16 : 0;
+    if( !block && format!=87 && format!=91 ) return NULL;
+    w=levels[0].width;h=levels[0].height;
+    if( block && (w%4 || h%4) ) return NULL;
+    hr=ID3D11Device_CheckFormatSupport(r->device,(DXGI_FORMAT)format,&support);
+    if(FAILED(hr) || (support & (D3D11_FORMAT_SUPPORT_TEXTURE2D|D3D11_FORMAT_SUPPORT_SHADER_SAMPLE)) !=
+                                (D3D11_FORMAT_SUPPORT_TEXTURE2D|D3D11_FORMAT_SUPPORT_SHADER_SAMPLE)) return NULL;
+    memset(data,0,sizeof(data));
+    for(i=0;i<count;++i)
+    {
+        wp_u32 row=block ? ((w+3)/4)*block : w*4;
+        uint64_t size=(uint64_t)row*(block ? (h+3)/4 : h);
+        if(!levels[i].bytes || levels[i].width!=w || levels[i].height!=h ||
+           levels[i].byte_count!=size || size>256ull*1024*1024-total) return NULL;
+        total+=size;
+        data[i].pSysMem=levels[i].bytes;data[i].SysMemPitch=row;data[i].SysMemSlicePitch=(UINT)size;
+        if(w==1 && h==1 && i+1<count) return NULL;
+        w=w>1?w/2:1;h=h>1?h/2:1;
+    }
+    memset(&desc,0,sizeof(desc));
+    desc.Width=levels[0].width;desc.Height=levels[0].height;desc.MipLevels=count;desc.ArraySize=1;
+    desc.Format=(DXGI_FORMAT)format;desc.SampleDesc.Count=1;
+    desc.Usage=D3D11_USAGE_IMMUTABLE;desc.BindFlags=D3D11_BIND_SHADER_RESOURCE;
+    hr=ID3D11Device_CreateTexture2D(r->device,&desc,data,&texture);
+    if(FAILED(hr)) return NULL;
+    hr=ID3D11Device_CreateShaderResourceView(r->device,(ID3D11Resource *)texture,NULL,&view);
+    ID3D11Texture2D_Release(texture);
+    return SUCCEEDED(hr)?view:NULL;
+}
+
 void wp_renderer_dx11_set_render_target_native( wp_renderer_dx11 *r, void *render_target_view )
 {
     if( !r )

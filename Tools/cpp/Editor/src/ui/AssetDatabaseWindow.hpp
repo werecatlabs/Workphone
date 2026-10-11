@@ -3,6 +3,7 @@
 #include <EditorPrerequisites.hpp>
 #include "EditorWindow.hpp"
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
+#include <Workphone/Database/AssetOperationBrowser.hpp>
 
 namespace workphone::editor
 {
@@ -20,7 +21,7 @@ namespace workphone::editor
             void setOwner( SmartPtr<AssetDatabaseWindow> owner );
             WP_CLASS_REGISTER_DECL;
         private:
-            AtomicWeakPtr<AssetDatabaseWindow> m_owner;
+            ObjectObserver<AssetDatabaseWindow> m_owner;
         };
         ~AssetDatabaseWindow() override;
         void load( SmartPtr<ISharedObject> data ) override;
@@ -36,6 +37,7 @@ namespace workphone::editor
         WP_CLASS_REGISTER_DECL;
     private:
         void populate();
+        void populateOperations();
         SmartPtr<AssetDatabaseManager> m_assetDatabaseManager;
         SmartPtr<AssetDatabaseManager> m_mediaCatalog;
         bool m_showMedia = false;
@@ -48,6 +50,14 @@ namespace workphone::editor
         SmartPtr<ui::IUIButton> m_previous;
         SmartPtr<ui::IUIButton> m_next;
         SmartPtr<ui::IUIButton> m_source;
+        SmartPtr<ui::IUIButton> m_history;
+        SmartPtr<ui::IUIButton> m_restore;
+        SmartPtr<ui::IUIButton> m_reindex;
+        bool m_showOperations = false;
+        size_t m_selectedOperation = static_cast<size_t>(-1);
+        AssetOperationPage m_operations;
+        Array<String> m_operationCursors;
+        String m_operationAfter;
         AssetCatalogBrowser m_browser;
     };
 }

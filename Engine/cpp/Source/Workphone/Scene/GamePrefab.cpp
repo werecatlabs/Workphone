@@ -1,5 +1,9 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/GamePrefab.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
+#include <Workphone/Core/DataUtil.hpp>
+#include <Workphone/Core/Path.hpp>
+#include <stdexcept>
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Interface/Scene/IGameManager.hpp>
 #include <Workphone/Interface/Scene/IGameScene.hpp>
@@ -32,6 +36,14 @@ namespace workphone::scene
 
     void GamePrefab::save()
     {
+        auto properties = dynamic_pointer_cast<Properties>( getData() );
+        const auto path = getFilePath();
+        String error;
+        const auto format =
+            Path::getFileExtension( path ) == ".fbscenexml" ? DataFormat::XML : DataFormat::JSON;
+        if( !saveAssetDocumentText( path, properties,
+                                    DataUtil::toString( properties.get(), true, format ), error ) )
+            throw std::runtime_error( error.c_str() );
     }
 
     void GamePrefab::load( SmartPtr<ISharedObject> data )

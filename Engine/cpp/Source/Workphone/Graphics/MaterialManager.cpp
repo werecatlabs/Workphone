@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Graphics/MaterialManager.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Core/LogManager.hpp>
@@ -228,7 +229,9 @@ namespace workphone::render
             auto pData = workphone::static_pointer_cast<Properties>( material->toData() );
 
             auto materialStr = DataUtil::toString( pData.get(), true );
-            fileSystem->writeAllText( filePath, materialStr );
+            String error;
+            if( !saveAssetDocumentText( filePath, pData, materialStr, error ) )
+                throw std::runtime_error( error.c_str() );
         }
         catch( std::exception &e )
         {

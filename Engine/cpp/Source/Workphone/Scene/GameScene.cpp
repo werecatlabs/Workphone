@@ -20,6 +20,9 @@
 #include <Workphone/Core/Path.hpp>
 #include <Workphone/Core/LogManager.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Jobs/ActorLoadJob.hpp>
 #include <Workphone/Jobs/CameraManagerReset.hpp>
@@ -462,47 +465,37 @@ namespace workphone::scene
         auto data = toData();
         WP_ASSERT( data );
 
-        if( data )
+        if( !data )
+            return;
+        auto scenePath = StringUtil::cleanupPath( path );
+        auto sceneFileExt = Path::getFileExtension( scenePath );
+        if( sceneFileExt.empty() )
+            scenePath += ApplicationUtil::builtinSceneExt;
+        Array<u8> bytes;
+        if( sceneFileExt == ApplicationUtil::builtinBinarySceneExt )
+            bytes = PropertiesBinarySerializer::serialize( *static_pointer_cast<Properties>( data ) );
+        else
         {
-            setFilePath( path );
-
-            auto name = Path::getFileNameWithoutExtension( path );
-            setLabel( name );
-
-            auto scenePath = StringUtil::cleanupPath( path );
-            WP_ASSERT( !StringUtil::isNullOrEmpty( scenePath ) );
-
-            auto sceneFileExt = Path::getFileExtension( scenePath );
-
-            if( StringUtil::isNullOrEmpty( sceneFileExt ) )
-            {
-                scenePath += ApplicationUtil::builtinSceneExt;
-            }
-
-            if( sceneFileExt == ApplicationUtil::builtinBinarySceneExt )
-            {
-                auto properties = workphone::static_pointer_cast<Properties>( data );
-                auto binaryData = PropertiesBinarySerializer::serialize( *properties );
-                WP_ASSERT( !binaryData.empty() );
-                fileSystem->writeAllBytes( scenePath, std::move( binaryData ) );
-            }
-            else
-            {
-                auto format = DataFormat::JSON;
-                if( sceneFileExt == ApplicationUtil::builtinXmlSceneExt )
-                {
-                    format = DataFormat::XML;
-                }
-                else if( sceneFileExt == ApplicationUtil::builtinUsdSceneExt )
-                {
-                    format = DataFormat::USD;
-                }
-
-                auto dataStr = DataUtil::toString( data.get(), true, format );
-                WP_ASSERT( !StringUtil::isNullOrEmpty( dataStr ) );
-                fileSystem->writeAllText( scenePath, dataStr );
-            }
+            auto format = DataFormat::JSON;
+            if( sceneFileExt == ApplicationUtil::builtinXmlSceneExt )
+                format = DataFormat::XML;
+            else if( sceneFileExt == ApplicationUtil::builtinUsdSceneExt )
+                throw std::runtime_error( "USD scene serialization is not implemented" );
+            const auto text = DataUtil::toString( data.get(), true, format );
+            bytes.resize( text.size() );
+            std::copy( text.begin(), text.end(), bytes.begin() );
         }
+        if( bytes.empty() )
+            throw std::runtime_error( "Scene serialization returned no bytes" );
+
+        String installedPath, error;
+        if( !saveAssetDocument( scenePath, static_pointer_cast<Properties>( data ), bytes, installedPath,
+                                error ) )
+            throw std::runtime_error( error.c_str() );
+        scenePath = installedPath;
+        // Publish the new path only after the serialized document and graph agree.
+        setFilePath( scenePath );
+        setLabel( Path::getFileNameWithoutExtension( scenePath ) );
     }
 
     void GameScene::saveScene()

@@ -1,6 +1,15 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/Database/AssetReferenceGraph.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
+#include <Workphone/Database/AssetDocumentInventory.hpp>
+#include <Workphone/Database/ResourceDatabase.hpp>
+#include <Workphone/Core/PropertiesBinarySerializer.hpp>
+#include <cJSON.h>
+#include <tinyxml.h>
+#include <memory>
+#include <Workphone/Database/AssetReferenceChange.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
@@ -23,6 +32,9 @@
 #        define NOMINMAX
 #    endif
 #    include <Windows.h>
+#else
+#    include <fcntl.h>
+#    include <unistd.h>
 #endif
 
 namespace workphone
@@ -30,6 +42,8 @@ namespace workphone
     WP_CLASS_REGISTER_DERIVED( workphone, AssetDatabaseManager, DatabaseManager );
     namespace
     {
+        bool referenceDeleteAllowed( AssetDatabaseManager &, const Array<String> &, const String &, String & );
+        bool referencesPresent( AssetDatabaseManager & );
         std::atomic<u64> nextCatalogInstance{ 1 };
 #ifdef _WIN32
         const String pathPolicy = "windows-ascii-fold";
@@ -724,9 +738,20 @@ namespace workphone
         CatalogTransaction transaction( *this );
         auto rows =
             transaction.active() ? queryCatalog( *this, "SELECT 1 FROM resources LIMIT 1" ) : nullptr;
-        if( rows && !rows->eof() && queryCatalog( *this, "DELETE FROM resources" ) &&
-            transaction.commit() )
+        Array<String> targets;
+        auto identities =
+            transaction.active() ? queryCatalog( *this, "SELECT uuid FROM resources" ) : nullptr;
+        while( identities && !identities->eof() )
+        {
+            targets.push_back( identities->getFieldValue( "uuid" ) );
+            identities->nextRow();
+        }
+        String error;
+        if( identities && referenceDeleteAllowed( *this, targets, {}, error ) && rows && !rows->eof() &&
+            queryCatalog( *this, "DELETE FROM resources" ) && transaction.commit() )
             invalidateCatalog();
+        if( !error.empty() )
+            WP_LOG_ERROR( "Catalog clear rejected: " + error );
     }
     void AssetDatabaseManager::clearResourceEntryCache()
     {
@@ -835,10 +860,14 @@ namespace workphone
         if( !validValue( uuid, 256 ) )
             return;
         CatalogTransaction transaction( *this );
-        if( transaction.active() && hasResourceById( uuid ) &&
+        String error;
+        if( transaction.active() && referenceDeleteAllowed( *this, { uuid }, {}, error ) &&
+            hasResourceById( uuid ) &&
             queryCatalog( *this, "DELETE FROM resources WHERE uuid=?", { uuid } ) &&
             transaction.commit() )
             invalidateCatalog();
+        if( !error.empty() )
+            WP_LOG_ERROR( "Catalog removal rejected: " + error );
     }
     void AssetDatabaseManager::removeResourceEntryFromPath( const String &path )
     {
@@ -848,11 +877,21 @@ namespace workphone
         if( !m_catalogReady || !canonicalAssetCatalogPath( m_projectRoot, path, canonical, error ) )
             return;
         CatalogTransaction transaction( *this );
-        if( transaction.active() && getResourceEntryFromPath( path ) &&
+        String referenceError;
+        auto identity =
+            transaction.active()
+                ? queryCatalog( *this, "SELECT uuid FROM resources WHERE kind='file' AND path_key=?",
+                                { canonical.key } )
+                : nullptr;
+        if( identity && !identity->eof() &&
+            referenceDeleteAllowed( *this, { identity->getFieldValue( "uuid" ) }, {}, referenceError ) &&
+            getResourceEntryFromPath( path ) &&
             queryCatalog( *this, "DELETE FROM resources WHERE kind='file' AND path_key=?",
                           { canonical.key } ) &&
             transaction.commit() )
             invalidateCatalog();
+        if( !referenceError.empty() )
+            WP_LOG_ERROR( "Catalog removal rejected: " + referenceError );
     }
     bool AssetDatabaseManager::hasResourceById( const String &uuid )
     {
@@ -1038,6 +1077,1133 @@ namespace workphone
     }
     namespace
     {
+        bool referenceSchema( AssetDatabaseManager &manager )
+        {
+            if( !referencesPresent( manager ) )
+            {
+                if( !queryCatalog( manager,
+                                   "CREATE TABLE wp_asset_reference_schema(id INTEGER PRIMARY KEY "
+                                   "CHECK(id=1),version INTEGER NOT NULL)" ) ||
+                    !queryCatalog( manager, "INSERT INTO wp_asset_reference_schema VALUES(1,1)" ) )
+                    return false;
+            }
+            for( const auto *sql :
+                 { "CREATE TABLE IF NOT EXISTS wp_asset_reference_documents(path_key TEXT PRIMARY KEY "
+                   "CHECK(length(CAST(path_key AS BLOB)) BETWEEN 1 AND 1024),path TEXT NOT NULL "
+                   "CHECK(length(CAST(path AS BLOB)) BETWEEN 1 AND 1024),revision TEXT NOT NULL "
+                   "CHECK(length(revision) BETWEEN 1 AND 128),digest TEXT NOT NULL CHECK(length(digest) "
+                   "BETWEEN 1 AND 128),state TEXT NOT NULL CHECK(state IN "
+                   "('pending','ready','quarantined')))",
+                   "CREATE TABLE IF NOT EXISTS wp_asset_references(id INTEGER PRIMARY KEY "
+                   "AUTOINCREMENT,source_key TEXT NOT NULL CHECK(length(CAST(source_key AS BLOB)) "
+                   "BETWEEN 1 AND 1024),slot TEXT NOT NULL CHECK(length(CAST(slot AS BLOB)) BETWEEN 1 "
+                   "AND 1024),target_uuid TEXT NOT NULL CHECK(length(CAST(target_uuid AS BLOB)) BETWEEN "
+                   "1 AND 256),target_catalog TEXT NOT NULL CHECK(target_catalog IN "
+                   "('project','media')),expected_type TEXT NOT NULL CHECK(length(CAST(expected_type AS "
+                   "BLOB)) BETWEEN 1 AND 256),required INTEGER NOT NULL CHECK(required IN "
+                   "(0,1)),UNIQUE(source_key,slot))",
+                   "CREATE INDEX IF NOT EXISTS wp_asset_reference_reverse ON "
+                   "wp_asset_references(target_catalog,target_uuid,id)",
+                   "CREATE INDEX IF NOT EXISTS wp_asset_reference_forward ON "
+                   "wp_asset_references(source_key,id)" } )
+                if( !queryCatalog( manager, sql ) )
+                    return false;
+            for( const String table :
+                 { String( "wp_asset_reference_documents" ), String( "wp_asset_references" ) } )
+                for( const String event :
+                     { String( "INSERT" ), String( "UPDATE" ), String( "DELETE" ) } )
+                    if( !queryCatalog( manager, "CREATE TRIGGER IF NOT EXISTS " + table + "_" + event +
+                                                    " AFTER " + event + " ON " + table +
+                                                    " BEGIN UPDATE wp_asset_catalog_changes SET "
+                                                    "revision=revision+1 WHERE id=1; END" ) )
+                        return false;
+            return true;
+        }
+        bool referencesPresent( AssetDatabaseManager &manager )
+        {
+            auto rows = queryCatalog(
+                manager,
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+                "('wp_asset_reference_schema','wp_asset_reference_documents','wp_asset_references')" );
+            if( !rows )
+                throw std::runtime_error( "Cannot inspect reference graph schema" );
+            size_t count = 0;
+            while( !rows->eof() )
+            {
+                ++count;
+                rows->nextRow();
+            }
+            if( !count )
+                return false;
+            if( count != 3 )
+                throw std::runtime_error(
+                    "Reference graph schema is incomplete; explicit repair required" );
+            auto version = queryCatalog( manager,
+                                         "SELECT version FROM wp_asset_reference_schema WHERE id=1 AND "
+                                         "typeof(version)='integer' AND version=1" );
+            if( !version || version->eof() )
+                throw std::runtime_error( "Unsupported reference graph schema version" );
+            return true;
+        }
+        String referenceDigest( const u8 *data, size_t size )
+        {
+            u64 hash = 14695981039346656037ull;
+            for( size_t i = 0; i < size; ++i )
+            {
+                hash ^= data[i];
+                hash *= 1099511628211ull;
+            }
+            return ( std::to_string( size ) + ":" + std::to_string( hash ) ).c_str();
+        }
+        String referenceFileDigest( AssetDatabaseManager &manager, const String &path, size_t &budget )
+        {
+            AssetCatalogPath canonical;
+            String error;
+            if( !canonicalAssetCatalogPath( manager.getProjectRoot(), path, canonical, error ) ||
+                canonical.path != path )
+                throw std::runtime_error( "Reference source path no longer resolves: " +
+                                          std::string( path.c_str() ) );
+            const auto file = std::filesystem::u8path( manager.getProjectRoot().c_str() ) /
+                              std::filesystem::u8path( path.c_str() );
+            const auto size = std::filesystem::file_size( file );
+            if( size > 64 * 1024 * 1024 || size > budget )
+                throw std::runtime_error( "Reference source validation exceeds byte budget" );
+            budget -= static_cast<size_t>( size );
+            std::ifstream input( file, std::ios::binary );
+            if( !input )
+                throw std::runtime_error( "Cannot read reference source document" );
+            std::vector<u8> bytes( static_cast<size_t>( size ) );
+            if( size )
+                input.read( reinterpret_cast<char *>( bytes.data() ),
+                            static_cast<std::streamsize>( size ) );
+            if( !input || input.peek() != std::char_traits<char>::eof() )
+                throw std::runtime_error( "Reference source changed while reading" );
+            return referenceDigest( bytes.data(), bytes.size() );
+        }
+        bool referencePathWithin( const String &prefix, const String &key )
+        {
+            return !prefix.empty() &&
+                   ( prefix == key ||
+                     ( key.size() > prefix.size() && key.compare( 0, prefix.size(), prefix ) == 0 &&
+                       key[prefix.size()] == '/' ) );
+        }
+        bool referenceDeleteAllowed( AssetDatabaseManager &manager, const Array<String> &uuids,
+                                     const String &removedSourceKey, String &error )
+        {
+            try
+            {
+                if( !referencesPresent( manager ) )
+                    return true;
+                // Validate all surviving indexed documents, including pending saves:
+                // a stale document may have added a reference absent from the old graph.
+                auto docs = queryCatalog(
+                    manager,
+                    "SELECT substr(path_key,1,1025) AS path_key,substr(path,1,1025) AS "
+                    "path,substr(state,1,32) AS state,substr(digest,1,129) AS digest FROM "
+                    "wp_asset_reference_documents WHERE state<>'quarantined' LIMIT 10001" );
+                if( !docs )
+                    throw std::runtime_error( "Cannot validate reference graph" );
+                size_t count = 0, budget = 256 * 1024 * 1024;
+                while( !docs->eof() )
+                {
+                    const auto key = docs->getFieldValue( "path_key" );
+                    if( ++count > 10000 || !validValue( key, 1024 ) ||
+                        !validValue( docs->getFieldValue( "path" ), 1024 ) ||
+                        !validValue( docs->getFieldValue( "digest" ), 128 ) )
+                        throw std::runtime_error( "Malformed or over-budget reference graph documents" );
+                    if( !referencePathWithin( removedSourceKey, key ) )
+                    {
+                        if( docs->getFieldValue( "state" ) != "ready" ||
+                            referenceFileDigest( manager, docs->getFieldValue( "path" ), budget ) !=
+                                docs->getFieldValue( "digest" ) )
+                            throw std::runtime_error(
+                                "Reference graph is pending or stale. Save/reindex the document before "
+                                "deletion: " +
+                                std::string( docs->getFieldValue( "path" ).c_str() ) );
+                    }
+                    docs->nextRow();
+                }
+                for( const auto &uuid : uuids )
+                {
+                    auto rows = queryCatalog(
+                        manager,
+                        "SELECT substr(d.path,1,1025) AS path,substr(r.slot,1,1025) AS slot FROM "
+                        "wp_asset_references r JOIN wp_asset_reference_documents d "
+                        "ON d.path_key=r.source_key WHERE d.state='ready' AND "
+                        "r.target_catalog='project' AND r.target_uuid=? AND r.required=1 "
+                        "AND (?='' OR (d.path_key<>? AND substr(d.path_key,1,length(?4))<>?4)) LIMIT 1",
+                        { uuid, removedSourceKey, removedSourceKey, removedSourceKey + "/" } );
+                    if( !rows )
+                        throw std::runtime_error( "Cannot query required asset users" );
+                    if( !rows->eof() )
+                        throw std::runtime_error( "Asset is required by " +
+                                                  std::string( rows->getFieldValue( "path" ).c_str() ) +
+                                                  " at " +
+                                                  std::string( rows->getFieldValue( "slot" ).c_str() ) +
+                                                  " (" + std::string( uuid.c_str() ) + ")" );
+                }
+                return true;
+            }
+            catch( const std::exception &e )
+            {
+                error = e.what();
+                return false;
+            }
+        }
+        bool applyReferenceDocuments( AssetDatabaseManager &manager, const String &kind,
+                                      const String &source, const String &destination, bool undo )
+        {
+            if( !referencesPresent( manager ) )
+                return true;
+            AssetCatalogPath from, to;
+            String error;
+            if( !canonicalAssetCatalogPath( manager.getProjectRoot(), source, from, error ) ||
+                !canonicalAssetCatalogPath( manager.getProjectRoot(), destination, to, error ) )
+                return false;
+            if( kind == "copy" )
+            {
+                // Copies of indexed authored documents require an identity remapper.
+                auto row = queryCatalog( manager,
+                                         "SELECT path_key FROM wp_asset_reference_documents WHERE "
+                                         "path_key=?1 OR substr(path_key,1,length(?2))=?2 LIMIT 1",
+                                         { from.key, from.key + "/" } );
+                return row && row->eof();
+            }
+            auto pending = queryCatalog(
+                manager,
+                "SELECT path_key FROM wp_asset_reference_documents WHERE (path_key=?1 OR "
+                "substr(path_key,1,length(?2))=?2) AND state NOT IN ('ready','quarantined') LIMIT 1",
+                { from.key, from.key + "/" } );
+            if( !pending || !pending->eof() )
+                return false;
+            if( kind == "delete" )
+                return queryCatalog( manager,
+                                     "UPDATE wp_asset_reference_documents SET state=?1 WHERE "
+                                     "(path_key=?2 OR substr(path_key,1,length(?3))=?3) AND state=?4",
+                                     { undo ? "ready" : "quarantined", from.key, from.key + "/",
+                                       undo ? "quarantined" : "ready" } ) != nullptr;
+            if( undo )
+                std::swap( from, to );
+            auto rows = queryCatalog( manager,
+                                      "SELECT substr(path_key,1,1025) AS path_key,substr(path,1,1025) "
+                                      "AS path FROM wp_asset_reference_documents WHERE path_key=?1 OR "
+                                      "substr(path_key,1,length(?2))=?2 LIMIT 10001",
+                                      { from.key, from.key + "/" } );
+            if( !rows )
+                return false;
+            Array<std::pair<String, String>> paths;
+            while( !rows->eof() )
+            {
+                if( paths.size() >= 10000 || !validValue( rows->getFieldValue( "path_key" ), 1024 ) ||
+                    !validValue( rows->getFieldValue( "path" ), 1024 ) )
+                    return false;
+                paths.push_back( { rows->getFieldValue( "path_key" ), rows->getFieldValue( "path" ) } );
+                rows->nextRow();
+            }
+            for( const auto &p : paths )
+            {
+                const auto newKey = to.key + p.first.substr( from.key.size() );
+                const auto newPath = to.path + p.second.substr( from.path.size() );
+                if( !queryCatalog(
+                        manager,
+                        "UPDATE wp_asset_reference_documents SET path_key=?,path=? WHERE path_key=?",
+                        { newKey, newPath, p.first } ) ||
+                    !queryCatalog( manager,
+                                   "UPDATE wp_asset_references SET source_key=? WHERE source_key=?",
+                                   { newKey, p.first } ) )
+                    return false;
+            }
+            return true;
+        }
+    }  // namespace
+    namespace
+    {
+        bool beginReferenceSave( SmartPtr<AssetDatabaseManager> catalog, const String &sourcePath,
+                                 SmartPtr<Properties> serialized, const Array<u8> &bytes,
+                                 AssetReferenceSave &save, String &error,
+                                 SmartPtr<AssetDatabaseManager> media, bool ownTransaction,
+                                 bool captureOnly = false )
+        {
+            save = {};
+            error.clear();
+            try
+            {
+                if( !catalog || catalog->isReadOnly() || !serialized || bytes.empty() ||
+                    bytes.size() > 64 * 1024 * 1024 )
+                    throw std::runtime_error(
+                        "Reference save requires a writable catalog, serialized data and bounded "
+                        "bytes" );
+                ScopedLock lock( catalog.get() );
+                AssetCatalogPath source;
+                if( !canonicalAssetCatalogPath( catalog->getProjectRoot(), sourcePath, source, error ) ||
+                    referencePathWithin( ".workphone", source.key ) )
+                    throw std::runtime_error( "Invalid reference document source path" );
+                AssetCatalogSession mediaSession;
+                if( media && ( !media->isReadOnly() || !mediaSession.capture( media ) ) )
+                    throw std::runtime_error(
+                        "Bundled media reference catalog is unavailable or writable" );
+                AssetReferenceSave candidate;
+                if( !candidate.session.capture( catalog ) )
+                    throw std::runtime_error( "Catalog session is unavailable" );
+                candidate.sourcePath = source.path;
+                candidate.sourceKey = source.key;
+                candidate.revision = StringUtil::getUUID();
+                candidate.digest = referenceDigest( bytes.data(), bytes.size() );
+                struct Node
+                {
+                    SmartPtr<Properties> value;
+                    String slot;
+                    size_t depth;
+                };
+                Array<Node> nodes{ { serialized, "root", 0 } };
+                std::set<const Properties *> visited;
+                size_t properties = 0;
+                for( size_t i = 0; i < nodes.size(); ++i )
+                {
+                    auto &node = nodes[i];
+                    if( !node.value || node.depth > 64 || !visited.insert( node.value.get() ).second )
+                        throw std::runtime_error( "Cyclic/shared or over-depth reference document" );
+                    auto fields = node.value->getPropertiesAsArray();
+                    if( ( properties += fields.size() ) > 100000 )
+                        throw std::runtime_error( "Reference document exceeds property limit" );
+                    auto children = node.value->getChildren();
+                    if( nodes.size() + children.size() > 10000 )
+                        throw std::runtime_error( "Reference document exceeds node limit" );
+                    // Copy these before push_back can reallocate the vector.
+                    const auto slot = node.slot;
+                    const auto depth = node.depth;
+                    for( size_t j = 0; j < children.size(); ++j )
+                        nodes.push_back(
+                            { children[j], slot + "/" + StringUtil::toString( j ), depth + 1 } );
+                }
+                for( const auto &node : nodes )
+                    for( const auto &property : node.value->getPropertiesAsArray() )
+                    {
+                        auto type = property.getAttribute( "resourceType" );
+                        // Script's durable UUID predates resource metadata.
+                        if( type.empty() && property.getName() == "scriptAssetUuid" )
+                            type = "script";
+                        if( property.getValue().empty() )
+                            continue;
+                        if( ( type.empty() || type == "None" ) &&
+                            property.getTypeName() == Properties::resourceStr )
+                            type = "workphone::IResource";
+                        if( type.empty() || type == "None" )
+                            continue;
+                        const auto family = AssetReferenceChange::referenceType( type );
+                        auto types = TypeManager::instance();
+                        if( types && family &&
+                            ( types->isDerived( family, scene::IGameActor::typeInfo() ) ||
+                              types->isDerived( family, scene::IComponent::typeInfo() ) ) )
+                            continue;
+                        const String slot = node.slot + ":" + property.getName();
+                        if( !validValue( property.getValue(), 256 ) || !validValue( type, 256 ) ||
+                            !validValue( slot, 1024 ) )
+                            throw std::runtime_error( "Invalid typed reference fields" );
+                        String domain = "project";
+                        AssetDatabaseManager::EntrySnapshot projectEntry, mediaEntry;
+                        const bool inProject = catalog->tryGetEntry( property.getValue(), projectEntry );
+                        const bool inMedia =
+                            media && media->tryGetEntry( property.getValue(), mediaEntry );
+                        if( inProject && inMedia )
+                            throw std::runtime_error( "Reference UUID collides with bundled media" );
+                        if( inMedia )
+                            domain = "media";
+                        const auto requirement = property.getAttribute( "referenceRequired" );
+                        if( !requirement.empty() && requirement != "true" && requirement != "false" )
+                            throw std::runtime_error( "referenceRequired must be true or false" );
+                        candidate.edges.push_back( { source.path, slot, property.getValue(), domain,
+                                                     type, requirement != "false" } );
+                        if( candidate.edges.size() > 10000 )
+                            throw std::runtime_error( "Reference document exceeds edge limit" );
+                    }
+                if( captureOnly )
+                {
+                    if( media && !mediaSession.isCurrent( media ) )
+                        throw std::runtime_error( "Bundled media reference session changed" );
+                    if( referencesPresent( *catalog ) )
+                    {
+                        auto row = queryCatalog( *catalog,
+                            "SELECT state FROM wp_asset_reference_documents WHERE path_key=?",
+                            { source.key } );
+                        if( !row || ( !row->eof() && row->getFieldValue( "state" ) == "quarantined" ) )
+                            throw std::runtime_error( "Restore quarantined reference identity before reindex" );
+                    }
+                    save = std::move( candidate );
+                    return true;
+                }
+                std::unique_ptr<CatalogTransaction> transaction;
+                if( ownTransaction )
+                    transaction = std::make_unique<CatalogTransaction>( *catalog );
+                if( media && !mediaSession.isCurrent( media ) )
+                    throw std::runtime_error( "Bundled media reference session changed" );
+                if( ( transaction && !transaction->active() ) || !referenceSchema( *catalog ) )
+                    throw std::runtime_error( "Cannot initialize reference graph transaction" );
+                auto existing = queryCatalog(
+                    *catalog, "SELECT state FROM wp_asset_reference_documents WHERE path_key=?",
+                    { source.key } );
+                if( !existing ||
+                    ( !existing->eof() && existing->getFieldValue( "state" ) == "quarantined" ) )
+                    throw std::runtime_error(
+                        "Restore the quarantined document before reusing its reference identity/path" );
+                if( !queryCatalog( *catalog, "DELETE FROM wp_asset_references WHERE source_key=?",
+                                   { source.key } ) ||
+                    !queryCatalog( *catalog, "DELETE FROM wp_asset_reference_documents WHERE path_key=?",
+                                   { source.key } ) ||
+                    !queryCatalog( *catalog,
+                                   "INSERT INTO wp_asset_reference_documents VALUES(?,?,?,?,'pending')",
+                                   { source.key, source.path, candidate.revision, candidate.digest } ) )
+                    throw std::runtime_error( "Cannot persist pending reference save" );
+                for( const auto &edge : candidate.edges )
+                    if( !queryCatalog( *catalog,
+                                       "INSERT INTO "
+                                       "wp_asset_references(source_key,slot,target_uuid,target_catalog,"
+                                       "expected_type,required) VALUES(?,?,?,?,?,?)",
+                                       { source.key, edge.slot, edge.targetUuid, edge.targetCatalog,
+                                         edge.expectedType, edge.required ? "1" : "0" } ) )
+                        throw std::runtime_error( "Cannot persist typed reference edge" );
+                if( transaction && !transaction->commit() )
+                    throw std::runtime_error( "Cannot commit pending reference save" );
+                save = std::move( candidate );
+                return true;
+            }
+            catch( const std::exception &e )
+            {
+                error = e.what();
+                return false;
+            }
+        }
+        bool finishReferenceSave( SmartPtr<AssetDatabaseManager> catalog, const AssetReferenceSave &save,
+                                  String &error )
+        {
+            if( !save.session.isCurrent( catalog ) )
+                throw std::runtime_error( "Reference save project session expired" );
+            if( !referencesPresent( *catalog ) )
+                throw std::runtime_error( "Reference graph is unavailable" );
+            auto row = queryCatalog( *catalog,
+                                     "SELECT path,digest FROM wp_asset_reference_documents WHERE "
+                                     "path_key=? AND revision=? AND state='pending'",
+                                     { save.sourceKey, save.revision } );
+            if( !row || row->eof() || row->getFieldValue( "path" ) != save.sourcePath )
+                throw std::runtime_error( "Reference save was superseded or is no longer pending" );
+            size_t budget = 64 * 1024 * 1024;
+            if( referenceFileDigest( *catalog, save.sourcePath, budget ) !=
+                row->getFieldValue( "digest" ) )
+                throw std::runtime_error(
+                    "Saved bytes differ from the captured reference document; graph remains pending" );
+            if( !queryCatalog( *catalog,
+                               "UPDATE wp_asset_reference_documents SET state='ready' WHERE path_key=? "
+                               "AND revision=?",
+                               { save.sourceKey, save.revision } ) )
+                throw std::runtime_error( "Cannot complete durable reference save" );
+            return true;
+        }
+    }  // namespace
+    bool beginAssetReferenceSave( SmartPtr<AssetDatabaseManager> catalog, const String &path,
+                                  SmartPtr<Properties> serialized, const Array<u8> &bytes,
+                                  AssetReferenceSave &save, String &error,
+                                  SmartPtr<AssetDatabaseManager> media )
+    {
+        return beginReferenceSave( catalog, path, serialized, bytes, save, error, media, true );
+    }
+    bool completeAssetReferenceSave( SmartPtr<AssetDatabaseManager> catalog,
+                                     const AssetReferenceSave &save, String &error )
+    {
+        error.clear();
+        try
+        {
+            if( !catalog || catalog->isReadOnly() )
+                throw std::runtime_error( "Reference save catalog is unavailable/read-only" );
+            ScopedLock lock( catalog.get() );
+            CatalogTransaction transaction( *catalog );
+            if( !transaction.active() || !finishReferenceSave( catalog, save, error ) ||
+                !transaction.commit() )
+                throw std::runtime_error( "Cannot complete durable reference save" );
+            return true;
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
+    }
+
+    namespace
+    {
+        class StagedAssetDocument
+        {
+        public:
+            explicit StagedAssetDocument( const std::filesystem::path &destination ) :
+                target( destination )
+            {
+                stage =
+                    target.parent_path() /
+                    std::filesystem::u8path( ( target.filename().u8string() + ".workphone-save-" +
+                                               std::string( StringUtil::getUUID().c_str() ) + ".tmp" ) );
+            }
+            ~StagedAssetDocument()
+            {
+                if( owned )
+                {
+                    std::error_code ignored;
+                    std::filesystem::remove( stage, ignored );
+                }
+            }
+            void write( const Array<u8> &bytes )
+            {
+#if defined WP_PLATFORM_WIN32
+                auto handle = CreateFileW( stage.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                           FILE_ATTRIBUTE_NORMAL, nullptr );
+                if( handle == INVALID_HANDLE_VALUE )
+                    throw std::runtime_error( "Cannot exclusively stage asset document" );
+                owned = true;
+                DWORD written = 0;
+                const bool ok = WriteFile( handle, bytes.data(), static_cast<DWORD>( bytes.size() ),
+                                           &written, nullptr ) &&
+                                written == bytes.size() && FlushFileBuffers( handle );
+                const bool closed = CloseHandle( handle ) != 0;
+                if( !ok || !closed )
+                    throw std::runtime_error( "Cannot flush staged asset document" );
+#else
+                const auto fd = ::open( stage.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600 );
+                if( fd < 0 )
+                    throw std::runtime_error( "Cannot exclusively stage asset document" );
+                owned = true;
+                size_t offset = 0;
+                while( offset < bytes.size() )
+                {
+                    const auto count = ::write( fd, bytes.data() + offset, bytes.size() - offset );
+                    if( count <= 0 )
+                    {
+                        ::close( fd );
+                        throw std::runtime_error( "Cannot write staged asset document" );
+                    }
+                    offset += static_cast<size_t>( count );
+                }
+                const bool flushed = ::fsync( fd ) == 0;
+                const bool closed = ::close( fd ) == 0;
+                if( !flushed || !closed )
+                    throw std::runtime_error( "Cannot flush staged asset document" );
+#endif
+            }
+            void publish()
+            {
+#if defined WP_PLATFORM_WIN32
+                if( !MoveFileExW( stage.c_str(), target.c_str(),
+                                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                    throw std::runtime_error( "Cannot replace asset document (Windows error " +
+                                              std::to_string( GetLastError() ) + ")" );
+#else
+                std::filesystem::rename( stage, target );
+#endif
+                owned = false;
+            }
+
+        private:
+            std::filesystem::path target, stage;
+            bool owned = false;
+        };
+    }  // namespace
+    bool saveAssetDocument( const String &path, SmartPtr<Properties> serialized, const Array<u8> &bytes,
+                            String &installedPath, String &error )
+    {
+        installedPath.clear();
+        error.clear();
+        try
+        {
+            namespace fs = std::filesystem;
+            if( !validValue( path, 4096 ) || !serialized || bytes.empty() ||
+                bytes.size() > 64 * 1024 * 1024 )
+                throw std::runtime_error(
+                    "Asset save requires a path, Properties and 1..64 MiB of serialized bytes" );
+            auto app = core::IApplicationManager::instancePtr();
+            if( !app )
+                throw std::runtime_error( "Asset save application is unavailable" );
+            const auto projectPath = app->getProjectPath();
+            auto resources = app->getResourceDatabase();
+            auto catalog =
+                resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                          : nullptr;
+            auto concrete = dynamic_pointer_cast<ResourceDatabase>( resources );
+            auto media = concrete ? concrete->getMediaCatalog() : nullptr;
+            String root;
+            if( !canonicalAssetCatalogRoot(
+                    app->getProjectPath().empty()
+                        ? ( catalog ? catalog->getProjectRoot()
+                                    : String( fs::current_path().u8string().c_str() ) )
+                        : app->getProjectPath(),
+                    root, error ) )
+                throw std::runtime_error( error.c_str() );
+            auto destination = fs::u8path( path.c_str() );
+            const bool relative = destination.is_relative();
+            if( relative )
+                destination = fs::u8path( root.c_str() ) / destination;
+            destination = fs::weakly_canonical( destination );
+            const String absolute = destination.u8string().c_str();
+            AssetCatalogPath source, cache, mediaPath;
+            const bool underRoot = canonicalAssetCatalogPath( root, absolute, source, error );
+            if( relative && !underRoot )
+                throw std::runtime_error(
+                    "Relative asset saves must remain inside the captured project root" );
+            if( underRoot && referencePathWithin( ".workphone", source.key ) )
+                throw std::runtime_error( "Asset saves cannot overwrite private catalog storage" );
+            if( media &&
+                canonicalAssetCatalogPath( media->getProjectRoot(), absolute, mediaPath, error ) )
+                throw std::runtime_error( "Bundled media is read-only; save a project copy instead" );
+            bool indexed = false;
+            if( catalog )
+            {
+                if( root != catalog->getProjectRoot() )
+                    throw std::runtime_error( "Asset save project catalog has not been rebound" );
+                if( underRoot )
+                {
+                    if( catalog->isReadOnly() )
+                        throw std::runtime_error( "Project asset catalog is read-only" );
+                    const auto cachePath = app->getCachePath();
+                    const bool inCache = !cachePath.empty() &&
+                                         canonicalAssetCatalogPath( root, cachePath, cache, error ) &&
+                                         referencePathWithin( cache.key, source.key );
+                    indexed = !inCache;
+                }
+            }
+            error.clear();
+            if( fs::exists( destination ) && !fs::is_regular_file( destination ) )
+                throw std::runtime_error( "Asset save destination is not a regular file" );
+            fs::create_directories( destination.parent_path() );
+            // Stage and flush before changing the durable reference revision.
+            StagedAssetDocument staged( destination );
+            staged.write( bytes );
+            auto bindingCurrent = [&]() {
+                return app->getProjectPath() == projectPath && app->getResourceDatabase() == resources &&
+                       ( !catalog || ( resources->getDatabaseManager() == catalog &&
+                                       catalog->getProjectRoot() == root ) ) &&
+                       ( !concrete || concrete->getMediaCatalog() == media );
+            };
+            if( !bindingCurrent() )
+                throw std::runtime_error( "Asset save project/media binding changed during staging" );
+            if( indexed )
+            {
+                ScopedLock lock( catalog.get() );
+                AssetReferenceSave save;
+                if( !beginReferenceSave( catalog, absolute, serialized, bytes, save, error, media,
+                                         true ) )
+                    throw std::runtime_error( error.c_str() );
+                // Fence other catalog writers across publication. A failure after
+                // replacement leaves the durable pending revision for repair.
+                CatalogTransaction transaction( *catalog );
+                auto pending = transaction.active()
+                                   ? queryCatalog( *catalog,
+                                                   "SELECT revision FROM wp_asset_reference_documents "
+                                                   "WHERE path_key=? AND revision=? AND state='pending'",
+                                                   { save.sourceKey, save.revision } )
+                                   : nullptr;
+                if( !pending || pending->eof() || !save.session.isCurrent( catalog ) ||
+                    !bindingCurrent() )
+                    throw std::runtime_error( "Asset save was superseded before publication" );
+                staged.publish();
+                if( !finishReferenceSave( catalog, save, error ) || !transaction.commit() )
+                    throw std::runtime_error(
+                        "Document installed; reference graph remains pending. Reindex or save again" );
+            }
+            else
+                staged.publish();
+            installedPath = absolute;
+            return true;
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
+    }
+    bool saveAssetDocumentText( const String &path, SmartPtr<Properties> serialized, const String &text,
+                                String &error )
+    {
+        Array<u8> bytes;
+        bytes.resize( text.size() );
+        std::copy( text.begin(), text.end(), bytes.begin() );
+        String installed;
+        return saveAssetDocument( path, serialized, bytes, installed, error );
+    }
+
+    namespace
+    {
+        // Bound recursion and allocation before invoking the existing JSON parser.
+        // Reject encoded NULs rather than letting cJSON truncate identity strings.
+        void preflightReferenceJson( const Array<u8> &bytes )
+        {
+            size_t depth = 0, tokens = 0;
+            bool quoted = false, escaped = false;
+            for( size_t i = 0; i < bytes.size(); ++i )
+            {
+                const auto c = bytes[i];
+                if( !c )
+                    throw std::runtime_error( "Reference JSON contains NUL bytes" );
+                if( quoted )
+                {
+                    if( escaped )
+                    {
+                        if( c == 'u' && i + 4 < bytes.size() && bytes[i + 1] == '0' &&
+                            bytes[i + 2] == '0' && bytes[i + 3] == '0' && bytes[i + 4] == '0' )
+                            throw std::runtime_error( "Reference JSON contains an encoded NUL" );
+                        escaped = false;
+                    }
+                    else if( c == '\\' )
+                        escaped = true;
+                    else if( c == '"' )
+                        quoted = false;
+                }
+                else if( c == '"' )
+                {
+                    quoted = true;
+                    if( ++tokens > 300000 )
+                        throw std::runtime_error( "Reference JSON exceeds token budget" );
+                }
+                else if( c == ',' )
+                {
+                    if( ++tokens > 300000 )
+                        throw std::runtime_error( "Reference JSON exceeds token budget" );
+                }
+                else if( c == '{' || c == '[' )
+                {
+                    if( ++depth > 128 || ++tokens > 300000 )
+                        throw std::runtime_error( "Reference JSON exceeds structural budget" );
+                }
+                else if( c == '}' || c == ']' )
+                {
+                    if( !depth )
+                        throw std::runtime_error( "Unbalanced reference JSON" );
+                    --depth;
+                }
+            }
+            if( quoted || depth )
+                throw std::runtime_error( "Incomplete reference JSON" );
+        }
+        const cJSON *jsonMember( const cJSON *node, const char *name )
+        {
+            return cJSON_GetObjectItemCaseSensitive( node, name );
+        }
+        String jsonString( const cJSON *node )
+        {
+            if( !cJSON_IsString( node ) || !node->valuestring )
+                throw std::runtime_error( "Reference JSON requires string property values" );
+            return node->valuestring;
+        }
+        SmartPtr<Properties> referenceProperties( const cJSON *node, size_t depth, size_t &nodes,
+                                                  size_t &fields )
+        {
+            if( !cJSON_IsObject( node ) || depth > 64 || ++nodes > 10000 )
+                throw std::runtime_error( "Reference JSON exceeds Properties tree budget" );
+            auto metadata = jsonMember( node, "__wp_properties_v1" );
+            if( !cJSON_IsArray( metadata ) )
+                throw std::runtime_error(
+                    "Legacy JSON lacks typed property metadata. Open and save it before reindexing" );
+            auto result = make_ptr<Properties>();
+            result->setName( jsonString( jsonMember( node, "handle_name" ) ) );
+            std::set<String> names;
+            for( auto entry = metadata->child; entry; entry = entry->next )
+            {
+                if( !cJSON_IsObject( entry ) || ++fields > 100000 )
+                    throw std::runtime_error( "Invalid or excessive reference property metadata" );
+                const auto name = jsonString( jsonMember( entry, "name" ) );
+                if( name.empty() || name == "__wp_properties_v1" || name == "handle_name" ||
+                    name == "children" || !names.insert( name ).second )
+                    throw std::runtime_error( "Duplicate/reserved reference property metadata" );
+                const auto value = jsonString( jsonMember( node, name.c_str() ) );
+                const auto type = jsonString( jsonMember( entry, "type" ) );
+                const auto readOnly = jsonMember( entry, "readOnly" );
+                const auto attributes = jsonMember( entry, "attributes" );
+                if( !cJSON_IsBool( readOnly ) || !cJSON_IsObject( attributes ) )
+                    throw std::runtime_error( "Malformed property policy metadata" );
+                result->setProperty( name, value, type );
+                auto &property = result->getPropertyObject( name );
+                property.setReadOnly( cJSON_IsTrue( readOnly ) );
+                for( auto attribute = attributes->child; attribute; attribute = attribute->next )
+                    property.setAttribute( attribute->string, jsonString( attribute ) );
+            }
+            // Every value must have metadata; guessing an unknown property's
+            // resource semantics could authorize deleting a required asset.
+            for( auto entry = node->child; entry; entry = entry->next )
+            {
+                const String name = entry->string;
+                if( name != "handle_name" && name != "children" && name != "__wp_properties_v1" &&
+                    !names.count( name ) )
+                    throw std::runtime_error( "Reference JSON has values without property metadata" );
+            }
+            const auto children = jsonMember( node, "children" );
+            if( !cJSON_IsArray( children ) )
+                throw std::runtime_error( "Reference JSON requires a children array" );
+            for( auto child = children->child; child; child = child->next )
+                result->addChild( referenceProperties( child, depth + 1, nodes, fields ) );
+            return result;
+        }
+
+        void preflightReferenceXml( const std::string &text )
+        {
+            if( text.find( '\0' ) != std::string::npos )
+                throw std::runtime_error( "Reference XML contains NUL bytes" );
+            for( size_t at = text.find( "&#" ); at != std::string::npos; at = text.find( "&#", at + 2 ) )
+            {
+                auto end = text.find( ';', at + 2 );
+                if( end == std::string::npos || end - at > 12 )
+                    throw std::runtime_error( "Malformed XML character reference" );
+                const auto number = text.substr( at + 2, end - at - 2 );
+                size_t consumed = 0;
+                const bool hex = !number.empty() && number[0] == 'x';
+                const auto value =
+                    std::stoul( hex ? number.substr( 1 ) : number, &consumed, hex ? 16 : 10 );
+                if( !value || value > 0x10ffff || ( value >= 0xd800 && value <= 0xdfff ) ||
+                    consumed != number.size() - ( hex ? 1 : 0 ) )
+                    throw std::runtime_error( "Invalid XML character reference" );
+            }
+            size_t depth = 0, tags = 0;
+            for( size_t i = 0; i < text.size(); ++i )
+            {
+                if( text[i] == '\0' )
+                    throw std::runtime_error( "Reference XML contains NUL bytes" );
+                if( text[i] != '<' )
+                    continue;
+                if( text.compare( i, 4, "<!--" ) == 0 || text.compare( i, 9, "<![CDATA[" ) == 0 )
+                {
+                    const bool comment = text.compare( i, 4, "<!--" ) == 0;
+                    const auto end = text.find( comment ? "-->" : "]]>", i + ( comment ? 4 : 9 ) );
+                    if( end == std::string::npos )
+                        throw std::runtime_error( "Incomplete reference XML" );
+                    i = end + 2;
+                    continue;
+                }
+                if( text.compare( i, 2, "<!" ) == 0 )
+                    throw std::runtime_error( "Reference XML declarations/entities are unsupported" );
+                const bool closing = text.compare( i, 2, "</" ) == 0;
+                const bool declaration = text.compare( i, 2, "<?" ) == 0;
+                char quote = 0;
+                size_t end = i + 1;
+                for( ; end < text.size(); ++end )
+                {
+                    const auto c = text[end];
+                    if( quote )
+                    {
+                        if( c == quote )
+                            quote = 0;
+                    }
+                    else if( c == '\'' || c == '"' )
+                    {
+                        if( ++tags > 300000 )
+                            throw std::runtime_error( "Reference XML exceeds attribute budget" );
+                        quote = c;
+                    }
+                    else if( c == '>' )
+                        break;
+                }
+                if( end == text.size() )
+                    throw std::runtime_error( "Incomplete reference XML tag" );
+                if( ++tags > 300000 )
+                    throw std::runtime_error( "Reference XML exceeds element budget" );
+                if( !declaration )
+                {
+                    if( closing )
+                    {
+                        if( !depth )
+                            throw std::runtime_error( "Unbalanced reference XML" );
+                        --depth;
+                    }
+                    else if( text[end - 1] != '/' )
+                    {
+                        if( ++depth > 128 )
+                            throw std::runtime_error( "Reference XML exceeds depth budget" );
+                    }
+                }
+                i = end;
+            }
+            if( depth )
+                throw std::runtime_error( "Unbalanced reference XML" );
+        }
+        SmartPtr<Properties> referenceXmlProperties( const TiXmlElement *node, size_t depth,
+                                                     size_t &nodes, size_t &fields )
+        {
+            if( !node || String( node->Value() ) != "Properties" || depth > 64 || ++nodes > 10000 )
+                throw std::runtime_error( "Invalid or over-budget XML Properties tree" );
+            const auto version = node->Attribute( "PropertyMetadataVersion" );
+            const auto name = node->Attribute( "Name" );
+            if( !version || String( version ) != "1" || !name )
+                throw std::runtime_error(
+                    "Legacy XML lacks typed property metadata. Open and save it before reindexing" );
+            auto result = make_ptr<Properties>();
+            result->setName( name );
+            std::set<String> names;
+            bool childrenSeen = false;
+            for( auto child = node->FirstChildElement(); child; child = child->NextSiblingElement() )
+            {
+                const String kind = child->Value();
+                if( kind == "Children" )
+                {
+                    if( childrenSeen )
+                        throw std::runtime_error( "Duplicate XML Children group" );
+                    childrenSeen = true;
+                    for( auto entry = child->FirstChildElement(); entry;
+                         entry = entry->NextSiblingElement() )
+                        result->addChild( referenceXmlProperties( entry, depth + 1, nodes, fields ) );
+                }
+                else if( kind == "Property" )
+                {
+                    const auto key = child->Attribute( "Name" ), type = child->Attribute( "Type" ),
+                               readOnly = child->Attribute( "readOnly" );
+                    if( ++fields > 100000 || !key || !*key || !type || !readOnly ||
+                        ( String( readOnly ) != "true" && String( readOnly ) != "false" ) ||
+                        !names.insert( key ).second )
+                        throw std::runtime_error( "Malformed/duplicate XML property metadata" );
+                    result->setProperty( key, child->GetText() ? child->GetText() : "", type );
+                    auto &property = result->getPropertyObject( key );
+                    property.setReadOnly( String( readOnly ) == "true" );
+                    std::set<String> attributes;
+                    for( auto entry = child->FirstChildElement(); entry;
+                         entry = entry->NextSiblingElement() )
+                    {
+                        const auto attribute = entry->Attribute( "Name" ),
+                                   value = entry->Attribute( "Value" );
+                        if( String( entry->Value() ) != "Attribute" || !attribute || !value ||
+                            !attributes.insert( attribute ).second )
+                            throw std::runtime_error( "Malformed/duplicate XML property attribute" );
+                        property.setAttribute( attribute, value );
+                    }
+                }
+                else
+                    throw std::runtime_error( "Unsupported XML Properties element" );
+            }
+            return result;
+        }
+        SmartPtr<Properties> parseReferenceDocument( const Array<u8> &bytes )
+        {
+            if( PropertiesBinarySerializer::hasBinaryHeader( bytes.data(), bytes.size() ) )
+            {
+                auto result = make_ptr<Properties>();
+                String error;
+                if( !PropertiesBinarySerializer::deserialize( bytes, *result, &error ) )
+                    throw std::runtime_error( error.c_str() );
+                return result;
+            }
+            const std::string textBytes( bytes.begin(), bytes.end() );
+            const auto first = textBytes.find_first_not_of( " \t\r\n" );
+            if( first != std::string::npos && textBytes[first] == '<' )
+            {
+                preflightReferenceXml( textBytes );
+                TiXmlDocument document;
+                document.Parse( textBytes.c_str() );
+                const auto root = document.RootElement();
+                if( document.Error() || !root || String( root->Value() ) != "Root" ||
+                    root->NextSiblingElement() )
+                    throw std::runtime_error( "Malformed XML reference document" );
+                const auto properties = root->FirstChildElement();
+                if( !properties || properties->NextSiblingElement() )
+                    throw std::runtime_error( "Malformed XML reference root" );
+                size_t nodes = 0, fields = 0;
+                return referenceXmlProperties( properties, 0, nodes, fields );
+            }
+            preflightReferenceJson( bytes );
+            std::vector<char> text( bytes.begin(), bytes.end() );
+            text.push_back( 0 );
+            std::unique_ptr<cJSON, decltype( &cJSON_Delete )> json(
+                cJSON_ParseWithLengthOpts( text.data(), text.size(), nullptr, 1 ), &cJSON_Delete );
+            if( !json )
+                throw std::runtime_error(
+                    "Malformed or unsupported reference document; reindex supports typed JSON and "
+                    "portable binary" );
+            // cJSON permits duplicate keys. Reject them before any identity lookup.
+            std::vector<const cJSON *> pending{ json.get() };
+            size_t visited = 0;
+            for( size_t i = 0; i < pending.size(); ++i )
+            {
+                auto node = pending[i];
+                std::set<std::string> keys;
+                for( auto child = node->child; child; child = child->next )
+                {
+                    if( ++visited > 300000 )
+                        throw std::runtime_error( "Reference JSON exceeds value budget" );
+                    if( cJSON_IsObject( node ) &&
+                        ( !child->string || !keys.insert( child->string ).second ) )
+                        throw std::runtime_error( "Reference JSON contains duplicate object keys" );
+                    if( child->child )
+                        pending.push_back( child );
+                }
+            }
+            size_t nodes = 0, fields = 0;
+            return referenceProperties( json.get(), 0, nodes, fields );
+        }
+    }  // namespace
+    bool reindexAssetDocument( SmartPtr<AssetDatabaseManager> catalog, const String &path, String &error,
+                               SmartPtr<AssetDatabaseManager> media )
+    {
+        error.clear();
+        try
+        {
+            if( !catalog || catalog->isReadOnly() )
+                throw std::runtime_error( "Reindex requires an active writable project catalog" );
+            ScopedLock lock( catalog.get() );
+            auto app = core::IApplicationManager::instancePtr();
+            auto resources =
+                app ? dynamic_pointer_cast<ResourceDatabase>( app->getResourceDatabase() ) : nullptr;
+            if( resources && resources->getDatabaseManager() == catalog )
+            {
+                String activeRoot;
+                if( !canonicalAssetCatalogRoot( app->getProjectPath(), activeRoot, error ) ||
+                    activeRoot != catalog->getProjectRoot() )
+                    throw std::runtime_error( "Reindex project catalog has not been rebound" );
+                if( !media )
+                    media = resources->getMediaCatalog();
+                AssetCatalogPath cache;
+                const auto cachePath = app->getCachePath();
+                AssetCatalogPath candidate;
+                if( canonicalAssetCatalogPath( catalog->getProjectRoot(), path, candidate, error ) &&
+                    !cachePath.empty() &&
+                    canonicalAssetCatalogPath( catalog->getProjectRoot(), cachePath, cache, error ) &&
+                    referencePathWithin( cache.key, candidate.key ) )
+                    throw std::runtime_error( "Cache scratch files cannot own project references" );
+            }
+            AssetCatalogSession session;
+            if( !session.capture( catalog ) )
+                throw std::runtime_error( "Reindex project session is unavailable" );
+            AssetCatalogPath source;
+            if( !canonicalAssetCatalogPath( catalog->getProjectRoot(), path, source, error ) ||
+                referencePathWithin( ".workphone", source.key ) )
+                throw std::runtime_error(
+                    "Reindex source must be a project document outside private storage" );
+            const auto file = std::filesystem::u8path( catalog->getProjectRoot().c_str() ) /
+                              std::filesystem::u8path( source.path.c_str() );
+            if( !std::filesystem::is_regular_file( file ) )
+                throw std::runtime_error( "Reindex source is not a regular file" );
+            const auto size = std::filesystem::file_size( file );
+            if( !size || size > 64 * 1024 * 1024 )
+                throw std::runtime_error( "Reindex document exceeds byte budget" );
+            Array<u8> bytes;
+            bytes.resize( static_cast<size_t>( size ) );
+            std::ifstream input( file, std::ios::binary );
+            input.read( reinterpret_cast<char *>( bytes.data() ),
+                        static_cast<std::streamsize>( bytes.size() ) );
+            if( !input || input.peek() != std::char_traits<char>::eof() )
+                throw std::runtime_error( "Reindex source changed while reading" );
+            auto serialized = parseReferenceDocument( bytes );
+            CatalogTransaction transaction( *catalog );
+            AssetReferenceSave save;
+            if( !transaction.active() || !session.isCurrent( catalog ) ||
+                !beginReferenceSave( catalog, source.path, serialized, bytes, save, error, media,
+                                     false ) )
+                throw std::runtime_error( error.empty() ? "Cannot begin document reindex"
+                                                        : error.c_str() );
+            if( !finishReferenceSave( catalog, save, error ) || !transaction.commit() )
+                throw std::runtime_error( "Cannot commit document reindex" );
+            return true;
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
+    }
+    AssetReferencePage queryAssetReferences( SmartPtr<AssetDatabaseManager> catalog, const String &value,
+                                             bool reverse, const String &targetCatalog, u32 limit,
+                                             const AssetReferenceCursor *cursor )
+    {
+        AssetReferencePage page;
+        try
+        {
+            if( !catalog || !limit || limit > 256 || !validValue( value, reverse ? 256 : 1024 ) ||
+                ( targetCatalog != "project" && targetCatalog != "media" ) )
+                throw std::runtime_error( "Invalid reference query" );
+            ScopedLock lock( catalog.get() );
+            AssetDatabaseManager::EntryQuery query;
+            query.pageSize = 1;
+            const auto identity = catalog->queryEntries( query );
+            if( !identity.succeeded )
+                throw std::runtime_error( "Reference catalog is unavailable" );
+            page.next = {
+                0, identity.next.generation, identity.next.catalogInstance, value, targetCatalog, reverse
+            };
+            if( cursor &&
+                ( cursor->generation != page.next.generation ||
+                  cursor->catalogInstance != page.next.catalogInstance || cursor->value != value ||
+                  cursor->targetCatalog != targetCatalog || cursor->reverse != reverse ) )
+                throw std::runtime_error( "Reference query continuation expired; refresh" );
+            DatabaseConnectionLock connection(
+                dynamic_cast<ISerializedDatabase *>( catalog->getDatabase().get() ) );
+            if( referencesPresent( *catalog ) )
+            {
+                String lookup = value;
+                if( !reverse )
+                {
+                    AssetCatalogPath canonical;
+                    String error;
+                    if( !canonicalAssetCatalogPath( catalog->getProjectRoot(), value, canonical,
+                                                    error ) )
+                        throw std::runtime_error( error.c_str() );
+                    lookup = canonical.key;
+                }
+                auto rows = queryCatalog(
+                    *catalog,
+                    "SELECT r.id,substr(d.path,1,1025) AS path,substr(r.slot,1,1025) AS slot,"
+                    "substr(r.target_uuid,1,257) AS target_uuid,substr(r.target_catalog,1,16) AS "
+                    "target_catalog,"
+                    "substr(r.expected_type,1,257) AS expected_type,r.required,d.state FROM "
+                    "wp_asset_references r "
+                    "JOIN wp_asset_reference_documents d ON d.path_key=r.source_key WHERE "
+                    "d.state<>'quarantined' AND " +
+                        String( reverse ? "r.target_uuid=? AND r.target_catalog=?"
+                                        : "r.source_key=? AND ? IN ('project','media')" ) +
+                        " AND r.id>? ORDER BY r.id LIMIT ?",
+                    { lookup, targetCatalog, StringUtil::toString( cursor ? cursor->afterId : 0 ),
+                      StringUtil::toString( limit + 1 ) } );
+                if( !rows )
+                    throw std::runtime_error( "Cannot query reference graph" );
+                while( !rows->eof() )
+                {
+                    if( page.edges.size() == limit )
+                    {
+                        page.hasMore = true;
+                        break;
+                    }
+                    AssetReferenceEdge edge{
+                        rows->getFieldValue( "path" ),          rows->getFieldValue( "slot" ),
+                        rows->getFieldValue( "target_uuid" ),   rows->getFieldValue( "target_catalog" ),
+                        rows->getFieldValue( "expected_type" ), rows->getFieldValue( "required" ) == "1"
+                    };
+                    if( !validValue( edge.sourcePath, 1024 ) || !validValue( edge.slot, 1024 ) ||
+                        !validValue( edge.targetUuid, 256 ) || !validValue( edge.expectedType, 256 ) ||
+                        ( edge.targetCatalog != "project" && edge.targetCatalog != "media" ) ||
+                        ( rows->getFieldValue( "required" ) != "0" &&
+                          rows->getFieldValue( "required" ) != "1" ) ||
+                        ( rows->getFieldValue( "state" ) != "ready" &&
+                          rows->getFieldValue( "state" ) != "pending" ) )
+                        throw std::runtime_error( "Malformed reference graph record" );
+                    edge.sourceState = rows->getFieldValue( "state" );
+                    if( edge.targetCatalog == "project" )
+                    {
+                        AssetDatabaseManager::EntrySnapshot target;
+                        if( !catalog->tryGetEntry( edge.targetUuid, target ) )
+                            edge.diagnostic = "Missing project asset";
+                        else if( !AssetReferenceChange::typeMatches(
+                                     target.type,
+                                     AssetReferenceChange::referenceType( edge.expectedType ) ) )
+                            edge.diagnostic = "Reference type mismatch";
+                    }
+                    page.next.afterId = std::stoull( rows->getFieldValue( "id" ).c_str() );
+                    page.edges.push_back( std::move( edge ) );
+                    rows->nextRow();
+                }
+            }
+            if( catalog->getCatalogGeneration() != page.next.generation )
+                throw std::runtime_error( "Reference graph changed during query" );
+            page.succeeded = true;
+        }
+        catch( const std::exception &e )
+        {
+            page.edges.clear();
+            page.hasMore = false;
+            page.error = e.what();
+        }
+        return page;
+    }
+
+    namespace
+    {
         namespace assetfs = std::filesystem;
         bool operationSchema( AssetDatabaseManager &manager )
         {
@@ -1179,7 +2345,7 @@ namespace workphone
             }
             return true;
         }
-    }
+    }  // namespace
 
     AssetDatabaseManager::FileOperationResult AssetDatabaseManager::performFileOperation(
         FileOperation operation, const String &sourceInput, const String &destinationInput )
@@ -1242,6 +2408,16 @@ namespace workphone
                 if(assetfs::is_directory(from)) for(const auto &entry:assetfs::recursive_directory_iterator(from))
                     if(assetfs::is_regular_file(entry.path())) checkFormat(entry.path());
             }
+            Array<String> removedIds;
+            for(const auto &entry:entries) removedIds.push_back(entry.uuid);
+            {
+                CatalogTransaction transaction(*this);
+                if(!transaction.active() ||
+                    (operation==FileOperation::Delete && !referenceDeleteAllowed(*this,removedIds,source.key,result.error)) ||
+                    !applyReferenceDocuments(*this,kind,source.path,destination.path,false))
+                    throw std::runtime_error(result.error.empty()?"Operation conflicts with indexed reference documents":result.error.c_str());
+                // Preflight graph mutations are rolled back, just like catalog undo preflight.
+            }
             assetfs::create_directories(stage.parent_path());
             // Re-audit after creating the reserved storage prefix.
             operationPath(m_projectRoot,storage);
@@ -1265,10 +2441,12 @@ namespace workphone
             {
                 CatalogTransaction transaction(*this);
                 if(!transaction.active() || !refreshDatabaseRevision() || m_databaseRevision!=expectedRevision ||
-                    !applyOperationEntries(*this,entries,kind,false) || !queryCatalog(*this,
+                    (operation==FileOperation::Delete && !referenceDeleteAllowed(*this,removedIds,source.key,result.error)) ||
+                    !applyOperationEntries(*this,entries,kind,false) ||
+                    !applyReferenceDocuments(*this,kind,source.path,destination.path,false) || !queryCatalog(*this,
                     "UPDATE wp_asset_operations SET state='committed' WHERE id=?",{result.operationId}) ||
                     !transaction.commit())
-                    throw std::runtime_error("Asset catalog commit failed; journal recovery required");
+                    throw std::runtime_error(result.error.empty()?"Asset catalog commit failed; journal recovery required":result.error.c_str());
             }
             invalidateCatalog();
             result.succeeded=true;
@@ -1296,18 +2474,28 @@ namespace workphone
             if(assetfs::exists(to) || treeDigest(from)!=row->getFieldValue("digest"))
                 throw std::runtime_error("Undo conflicts with external files or changed asset bytes");
             const auto entries=operationEntries(*this,id);
+            Array<String> removedIds;
+            for(const auto &entry:entries) removedIds.push_back(entry.newUuid);
+            const auto originalSource=row->getFieldValue("source");
+            const auto originalDestination=row->getFieldValue("destination");
             {
                 CatalogTransaction transaction(*this);
                 // Preflight catalog conflicts without committing the reverse mutation.
-                if(!transaction.active() || !applyOperationEntries(*this,entries,kind,true))
-                    throw std::runtime_error("Undo conflicts with current asset identities");
+                if(!transaction.active() ||
+                    (kind=="copy" && !referenceDeleteAllowed(*this,removedIds,{},result.error)) ||
+                    !applyOperationEntries(*this,entries,kind,true) ||
+                    !applyReferenceDocuments(*this,kind,originalSource,originalDestination,true))
+                    throw std::runtime_error(result.error.empty()?"Undo conflicts with current asset identities/reference documents":result.error.c_str());
             }
             if(!queryCatalog(*this,"UPDATE wp_asset_operations SET state='undoing' WHERE id=?",{id}))
                 throw std::runtime_error("Cannot journal undo");
             if(!renameExclusive(from,to,result.error)) return result;
             {
                 CatalogTransaction transaction(*this);
-                if(!transaction.active() || !applyOperationEntries(*this,entries,kind,true) ||
+                if(!transaction.active() ||
+                    (kind=="copy" && !referenceDeleteAllowed(*this,removedIds,{},result.error)) ||
+                    !applyOperationEntries(*this,entries,kind,true) ||
+                    !applyReferenceDocuments(*this,kind,originalSource,originalDestination,true) ||
                     !queryCatalog(*this,"UPDATE wp_asset_operations SET state='undone' WHERE id=?",{id}) ||
                     !transaction.commit()) throw std::runtime_error("Undo catalog commit failed; recovery required");
             }

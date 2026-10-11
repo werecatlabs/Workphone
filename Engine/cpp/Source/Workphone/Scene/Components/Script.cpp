@@ -195,7 +195,8 @@ namespace workphone::scene
         }
 
         properties->setProperty( classNameStr, m_className );
-        properties->setProperty( "scriptAssetUuid", m_scriptAssetUuid );
+        properties->setProperty( "scriptAssetUuid", m_scriptAssetUuid, Properties::resourceStr );
+        properties->getPropertyObject( "scriptAssetUuid" ).setAttribute( "resourceType", "script" );
         properties->setProperty( updateInEditModeStr, m_updateInEditMode );
         properties->setProperty( updateInPlayModeStr, m_updateInPlayMode );
 

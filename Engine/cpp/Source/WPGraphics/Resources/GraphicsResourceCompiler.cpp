@@ -1,6 +1,7 @@
 #include <WPGraphics/WPClawHammerPCH.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
+#include <Workphone/Graphics/DdsTexture.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <boost/json.hpp>
 #include <FreeImage.h>
@@ -168,6 +169,13 @@ namespace workphone::render
             require( std::floor( columns ) == columns, "Texture atlasColumns must be an integer" );
             recipe.settings.atlasColumns = static_cast<u32>( columns );
             recipe.settings.alphaCutoff = scalar( descriptor.at( "alphaCutoff" ), 0.0f, 1.0f );
+            const auto gpuFormat=ddsFormatForTarget(context.target);
+            const bool srgb=gpuFormat==72 || gpuFormat==78 || gpuFormat==91;
+            require( !srgb || recipe.settings.filter==TextureMipFilter::Colour ||
+                      recipe.settings.filter==TextureMipFilter::Cutout || recipe.settings.filter==TextureMipFilter::None,
+                     "SRGB DDS profiles require colour/cutout/none mip semantics" );
+            require( !dds::blockBytes(gpuFormat) || recipe.settings.filter!=TextureMipFilter::Normal,
+                     "Normal maps require the lossless BGRA profile until a normal-map compression profile is supported" );
             require( recipe.settings.alphaCutoff > 0.0f && recipe.settings.alphaCutoff < 1.0f,
                      "Texture alphaCutoff must be strictly between zero and one" );
             return recipe;
@@ -257,6 +265,21 @@ namespace workphone::render
             const auto sourcePath = fs::u8path( context.sourceRoot.c_str() ) /
                                     fs::u8path( recipe.source.substr( 7 ).c_str() );
             auto encoded = readFile( sourcePath, encodedImageByteLimit );
+            if( sourcePath.extension()==".dds" && ddsFormatForTarget(context.target) )
+            {
+                const auto image=dds::inspect(encoded);
+                require(image.format==ddsFormatForTarget(context.target),
+                        "Authored DDS format does not match its target profile" );
+                require(!dds::blockBytes(image.format) ||
+                        (image.mips[0].width%4==0 && image.mips[0].height%4==0),
+                        "DX11 block-compressed base dimensions must be multiples of four" );
+                CookedTextureData data;
+                data.target=context.target;data.packagedBuild=context.packagedBuild;
+                data.mipSettings=recipe.settings;data.ddsBytes=std::move(encoded);
+                String error;
+                require(validateCookedTextureData(data,error),error.c_str());
+                return data;
+            }
             std::lock_guard<std::mutex> codecLock( imageCodecMutex );
             static ImageLifetime imageLifetime;
             std::unique_ptr<FIMEMORY, MemoryDeleter> memory(
@@ -306,6 +329,13 @@ namespace workphone::render
             data.levels.reserve( levels.size() );
             for( auto &level : levels )
                 data.levels.push_back( std::move( level ) );
+            if( const auto gpuFormat=ddsFormatForTarget(context.target) )
+            {
+                require( !dds::blockBytes(gpuFormat) || (width%4==0 && height%4==0),
+                         "DX11 block-compressed base dimensions must be multiples of four" );
+                data.ddsBytes=dds::encode(data.levels,gpuFormat);
+                data.levels.clear();
+            }
             return data;
         }
 
@@ -347,8 +377,8 @@ namespace workphone::render
 
     Array<resource::CompilerOutput> GraphicsResourceCompiler::outputs() const
     {
-        return { { resource::ResourceTypeID( "texres" ), 1 },
-                 { resource::ResourceTypeID( "matres" ), 1 } };
+        return { { resource::ResourceTypeID( "texres" ), 2 },
+                 { resource::ResourceTypeID( "matres" ), 2 } };
     }
 
     bool GraphicsResourceCompiler::getDependencies( const resource::CompileContext &context,

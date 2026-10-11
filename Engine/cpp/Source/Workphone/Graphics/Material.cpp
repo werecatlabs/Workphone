@@ -1,5 +1,6 @@
 ﻿#include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/Material.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
 #include <Workphone/Graphics/MaterialShader.hpp>
 #include <Workphone/Graphics/MaterialTechnique.hpp>
@@ -204,7 +205,9 @@ namespace workphone::render
         auto properties = workphone::static_pointer_cast<Properties>( data );
         auto materialStr = DataUtil::toString( properties.get(), true );
 
-        fileSystem->writeAllText( filePath, materialStr );
+        String error;
+        if( !saveAssetDocumentText( filePath, properties, materialStr, error ) )
+            throw std::runtime_error( error.c_str() );
     }
 
     void Material::loadFromFile( const String &filePath )
@@ -266,7 +269,9 @@ namespace workphone::render
                 if( fileSystem->findFileInfo( fileId, fileInfo ) )
                 {
                     auto filePath = String( fileInfo.filePath.c_str() );
-                    fileSystem->writeAllText( filePath, dataStr );
+                    String error;
+                    if( !saveAssetDocumentText( filePath, materialData, dataStr, error ) )
+                        throw std::runtime_error( error.c_str() );
                     wroteFile = true;
                 }
                 else
@@ -280,7 +285,9 @@ namespace workphone::render
                 auto filePath = getFilePath();
                 if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
-                    fileSystem->writeAllText( filePath, dataStr );
+                    String error;
+                    if( !saveAssetDocumentText( filePath, materialData, dataStr, error ) )
+                        throw std::runtime_error( error.c_str() );
 
                     FileInfo fileInfo;
                     if( fileSystem->findFileInfo( filePath, fileInfo ) )

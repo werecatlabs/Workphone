@@ -466,6 +466,98 @@ namespace
         require( publisher.publish( red, error ), error );
         requireDraw( fixture, publisher.current(), false );
 
+        for(const char *profile : {"windows-dx11-dds-bgra8-v1","windows-dx11-dds-bgra8-srgb-v1",
+                                  "windows-dx11-dds-bc1-v1","windows-dx11-dds-bc1-srgb-v1",
+                                  "windows-dx11-dds-bc3-v1","windows-dx11-dds-bc3-srgb-v1"})
+        {
+            auto nativeResources=std::make_shared<ResourceSystem>(fixture.resources->registry(),
+                std::make_shared<ResourceCompilationDatabase>());
+            ResourceSystemConfig nativeConfig;
+            nativeConfig.sourceRoot=sourceRoot;nativeConfig.compiledRoot=pathText(fixture.folder/"compiled");
+            nativeConfig.target=profile;
+            require(nativeResources->initialize(nativeConfig,error),error);
+            ClawMaterialResource nativePublisher(fixture.catalog,nativeResources,sourceRoot,fixture.mappings,
+                                                 fixture.graphics.renderer,profile,true);
+            auto native=nativePublisher.stage(fixture.uuid,error);
+            require(native!=nullptr,error);
+            require(nativePublisher.publish(native,error),error);
+            void *rawView=nullptr;native->texture()->getTextureFinal(&rawView);
+            require(rawView!=nullptr,"DDS profile must install a native texture view");
+            D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc{};
+            static_cast<ID3D11ShaderResourceView *>(rawView)->GetDesc(&viewDesc);
+            require(viewDesc.Format==static_cast<DXGI_FORMAT>(ddsFormatForTarget(profile)) &&
+                    viewDesc.Texture2D.MipLevels==3,"DDS upload must preserve native GPU format and mip tails");
+            CookedTextureData encoded;
+            require(decodeCookedTexture(*native->resource()->dependencies.at(0),encoded,error),error);
+            const auto layout=dds::inspect(encoded.ddsBytes);
+            auto properties=native->texture()->getProperties();
+            require(properties->getProperty("cookedProfile")==profile &&
+                    properties->getPropertyObject("cookedProfile").isReadOnly() &&
+                    properties->getPropertyObject("cookedResidentBytes").isReadOnly(),
+                    "Editor texture inspection must expose immutable cooked profile and memory data");
+            wp_texture_encoded_mip_dx11 invalidMip{encoded.ddsBytes.data()+layout.mips[0].offset,4,4,0};
+            auto renderer=wp_renderer_get_dx11(fixture.graphics.renderer->getNativeRenderer());
+            require(!wp_renderer_dx11_create_texture_encoded_mips_native(renderer,&invalidMip,1,layout.format) &&
+                    !wp_renderer_dx11_create_texture_encoded_mips_native(renderer,&invalidMip,1,49),
+                    "Native upload boundary must reject incorrect byte counts and unsupported formats");
+            ComPtr<ID3D11Resource> gpuResource;
+            static_cast<ID3D11ShaderResourceView *>(rawView)->GetResource(gpuResource.GetAddressOf());
+            ComPtr<ID3D11Texture2D> gpuTexture;
+            require(SUCCEEDED(gpuResource.As(&gpuTexture)),"Native DDS must be a 2D resource");
+            D3D11_TEXTURE2D_DESC stagingDesc{};gpuTexture->GetDesc(&stagingDesc);
+            stagingDesc.Usage=D3D11_USAGE_STAGING;stagingDesc.BindFlags=stagingDesc.MiscFlags=0;
+            stagingDesc.CPUAccessFlags=D3D11_CPU_ACCESS_READ;
+            ComPtr<ID3D11Device> device;gpuTexture->GetDevice(device.GetAddressOf());
+            ComPtr<ID3D11DeviceContext> context;device->GetImmediateContext(context.GetAddressOf());
+            ComPtr<ID3D11Texture2D> staging;
+            require(SUCCEEDED(device->CreateTexture2D(&stagingDesc,nullptr,staging.GetAddressOf())),
+                    "DDS readback texture must allocate");
+            context->CopyResource(staging.Get(),gpuTexture.Get());
+            for(unsigned level=0;level<layout.mips.size();++level)
+            {
+                const auto &mip=layout.mips[level];
+                D3D11_MAPPED_SUBRESOURCE mapped{};
+                require(SUCCEEDED(context->Map(staging.Get(),level,D3D11_MAP_READ,0,&mapped)),
+                        "Every DDS mip must support readback");
+                bool exact=true;
+                const auto rows=dds::blockBytes(layout.format)?(mip.height+3)/4:mip.height;
+                for(unsigned row=0;row<rows;++row)
+                    exact=exact && mapped.RowPitch>=mip.rowPitch &&
+                        std::memcmp(static_cast<const u8 *>(mapped.pData)+row*mapped.RowPitch,
+                                    encoded.ddsBytes.data()+mip.offset+row*mip.rowPitch,mip.rowPitch)==0;
+                context->Unmap(staging.Get(),level);
+                require(exact,"DDS GPU subresources must preserve exact encoded bytes and row pitches");
+            }
+            if(viewDesc.Format==DXGI_FORMAT_B8G8R8A8_UNORM || viewDesc.Format==DXGI_FORMAT_BC1_UNORM ||
+               viewDesc.Format==DXGI_FORMAT_BC3_UNORM) requireDraw(fixture,nativePublisher.current(),false);
+            fs::rename(fixture.source/"albedo.tga",fixture.source/"albedo.hidden");
+            const auto manifest=fixture.folder/(std::string(profile)+".wprm");
+            require(nativeResources->writeRuntimeManifest(pathText(manifest),{ResourceID("data://surface.matres")},error),error);
+            ResourceSystem sourceFree(nullptr,nullptr);
+            RuntimeResourceConfig runtimeConfig;
+            runtimeConfig.compiledRoot=nativeConfig.compiledRoot;runtimeConfig.manifestPath=pathText(manifest);
+            runtimeConfig.target=profile;
+            require(sourceFree.initializeRuntime(runtimeConfig,error),error);
+            auto packaged=sourceFree.load(ResourceID("data://surface.matres"),error);
+            CookedMaterialData materialData;
+            require(packaged && decodeCookedMaterial(*packaged,materialData,error) && materialData.packagedBuild,
+                    "DDS package closure must load without source images or compiler services");
+            sourceFree.shutdown();
+            native->texture()->unload(nullptr);native->texture()->load(nullptr);
+            rawView=nullptr;native->texture()->getTextureFinal(&rawView);
+            fs::rename(fixture.source/"albedo.hidden",fixture.source/"albedo.tga");
+            require(rawView!=nullptr,"Retained DDS must reupload without the source image");
+            // Invalid replacement must leave the installed DDS view unchanged.
+            CookedTextureData broken;
+            require(!uploadCookedDds(native->texture().get(),broken,
+                    wp_renderer_get_dx11(fixture.graphics.renderer->getNativeRenderer()),error),
+                    "Invalid DDS replacement must fail");
+            void *preserved=nullptr;native->texture()->getTextureFinal(&preserved);
+            require(preserved==rawView,"Failed DDS upload must retain the previous native view");
+            nativeResources->shutdown();
+        }
+        std::cout << "PASS: six Windows DDS profiles, native formats, compressed draw and source-free retained reupload\n";
+
         writeImage( fixture.source / "albedo.tga", true );
         auto green = publisher.stage( fixture.uuid, error, true );
         require( green && publisher.current() == red,

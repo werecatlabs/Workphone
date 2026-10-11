@@ -1,6 +1,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
+#include <Workphone/Database/AssetOperationBrowser.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/System/Resource.hpp>
@@ -788,6 +789,11 @@ namespace
         require(catalog->setProjectRoot(root.u8string().c_str()), "Operation project root");
         const auto databasePath=(root / "catalog.db").u8string();
         catalog->loadFromFile(databasePath.c_str());
+        auto emptyHistory=queryAssetOperations(catalog);
+        require(emptyHistory.succeeded && emptyHistory.rows.empty(),"Journal browsing must work before any operations without creating schema");
+        require(!queryAssetOperations(catalog,0).succeeded && !queryAssetOperations(catalog,257).succeeded &&
+                !queryAssetOperations(catalog,1,String("bad\0cursor",10)).succeeded,
+                "Journal browsing must enforce row and cursor limits");
         auto resource=asset("source/data.bin");
         catalog->addResourceEntry(resource);
         const auto uuid=resource->getHandle()->getUUIDAsString();
@@ -808,6 +814,18 @@ namespace
         auto deleted=catalog->performFileOperation(Operation::Delete,"moved");
         require(deleted.succeeded && !fs::exists(root / "moved") && !catalog->hasResourceById(uuid),
                 "Delete quarantines bytes and removes identities together");
+        auto history=queryAssetOperations(catalog,1);
+        require(history.succeeded && history.rows.size()==1 && history.hasMore,
+                "Journal browsing must return bounded stable pages");
+        auto nextHistory=queryAssetOperations(catalog,1,history.rows.back().id);
+        require(nextHistory.succeeded && nextHistory.rows.size()==1 &&
+                nextHistory.rows.front().id>history.rows.front().id,"Journal continuation must not repeat records");
+        auto allHistory=queryAssetOperations(catalog);
+        size_t deleteIndex=0;
+        while(deleteIndex<allHistory.rows.size() && allHistory.rows[deleteIndex].id!=deleted.operationId) ++deleteIndex;
+        require(allHistory.canUndo(catalog,deleteIndex) && !allHistory.canUndo(nullptr,deleteIndex) &&
+                !allHistory.canUndo(catalog,allHistory.rows.size()),
+                "Recovery selection must bind a committed record to the current project session");
         fs::create_directories(root / "moved");
         write(root / "moved" / "external.bin","external");
         require(!catalog->undoFileOperation(deleted.operationId).succeeded &&
@@ -823,6 +841,7 @@ namespace
         require(!interrupted.succeeded && fs::exists(root / "interrupted"), "Inject failure after filesystem publication");
         catalog->unload(nullptr);
         catalog->loadFromFile(databasePath.c_str());
+        require(!allHistory.canUndo(catalog,deleteIndex),"Journal actions must expire when the catalog reopens");
         require(fs::exists(root / "moved") && !fs::exists(root / "interrupted") &&
                 catalog->tryGetEntry(uuid,entry) && entry.path=="moved/data.bin" &&
                 read(root / "moved" / "data.bin")==bytes, "Reopen must recover interrupted move without losing identity or bytes");
@@ -1055,6 +1074,8 @@ namespace
         require( !catalog.hasResourceById( persistedId ), "Explicit clear must remove rows" );
     }
 }  // namespace
+#include "AssetReferenceGraphContracts.hpp"
+
 int main()
 {
     TypeManager types;
@@ -1088,6 +1109,7 @@ int main()
             domainAssetReadContracts(folder);
             maintenanceContracts(folder);
             fileOperationContracts(folder);
+            assetReferenceGraphContracts(folder);
             std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "
                          "binary-safe asset operations, conflict-aware undo and interrupted-operation recovery\n";
             std::cout << "PASS: catalog identity, parameter binding, scoped deletion, rollback, "

@@ -25,17 +25,32 @@ version-2 cooked containers with persistent dependency artifact pins, generation
 cache identities and incompatible-closure rejection. Increment 6 adds isolated
 request-owned compiler inputs, whole-request input validation and optional Lua
 sidecar invalidation. Recovery/GC, stronger identities and release certification
-remain open. Platform DDS
-packages RES-050–054 remain planned. Increment 7 adds bounded, generation-qualified
+remain open. Increment 9 implements the bounded 2D Windows DDS subset of
+RES-050 through RES-054; expanded profiles, preview and certification remain open.
+Increment 7 adds bounded, generation-qualified
 catalog DTO queries and a functional read-only Editor catalog browser, backed by
 a weakly bound navigation/selection model. RES-046 remains partial: the reference
 picker, undoable assignment, asynchronous publication and interactive acceptance
 remain open. The standalone domain Editor remains RES-045. Increment 8 adds a
 separate read-only bundled media catalog and UUID mount, typed grouped reference
 assignment/undo, bound legacy settings/state access and bounded read-only domain
-asset traversal. Persisted reference graph updates, package eligibility/UUID
+asset traversal. Full-project reference graph adoption, package eligibility/UUID
 integration and interactive acceptance remain open. See the
 [bundled media guide](WPRESOURCE_BUILTIN_MEDIA.md).
+Increment 10 adds Editor journal inspection and guarded quarantine restore/undo;
+retention and interactive conflict resolution remain open.
+Increment 11 adds a versioned saved-document reference graph, scene-save capture,
+indexed forward/reverse queries, Editor where-used details and reference-aware
+quarantine/undo for indexed documents. Creation undo/redo now uses guarded
+quarantine/restore, and Project Clean retains authored metadata/lighting/scenes.
+Full-project indexing, unsaved references,
+other domain save routes and compile/install dependency policy remain open. See
+[reference coverage and operation policy](WPRESOURCE_ASSET_REFERENCES.md).
+Increment 12 adds staged authored-document replacement, material/prefab save
+adoption, durable JSON/XML property metadata and selected-document reference
+reindexing in the Editor. It fixes material texture fallback overwriting UUIDs
+and prefab save no-ops. Full-project discovery/legacy migration, remaining domain
+routes, crash/orphan recovery and power-loss certification remain open.
 
 ### Current review summary
 
@@ -480,8 +495,9 @@ generation publication (RES-014–017); RES-052 extends RES-019/021/022/049;
 RES-053 extends RES-023–031/046; RES-054 extends RES-047 and RG6. Sequence profile
 and DDS cooker work with backlog step 7, native installation with step 8, and
 Editor/package acceptance with steps 10–11. Include Windows DDS in the R1 texture
-family acceptance matrix. These packages are planned; no DDS cooker, compressed
-GPU upload or platform preview implementation is claimed by this amendment.
+family acceptance matrix. Increment 9 implements explicit 2D BGRA8/BC1/BC3 DDS
+profiles and native GPU upload. Full platform preview, additional topology/formats
+and hardware/package certification remain open. See [supported DDS profiles](WPRESOURCE_WINDOWS_DDS.md).
 
 Format references: Microsoft's [DDS programming guide](https://learn.microsoft.com/en-us/windows/win32/direct3ddds/dx-graphics-dds-pguide)
 defines DDS headers/subresources and pitch validation; [Direct3D 11 block compression](https://learn.microsoft.com/en-us/windows/win32/direct3d11/texture-block-compression-in-direct3d-11)

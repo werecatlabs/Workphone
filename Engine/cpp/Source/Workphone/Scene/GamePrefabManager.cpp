@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Scene/GamePrefabManager.hpp>
 #include <Workphone/Scene/GamePrefab.hpp>
 #include <Workphone/Scene/GameActor.hpp>
@@ -206,7 +207,15 @@ namespace workphone::scene
 
     void GamePrefabManager::saveToFile( const String &filePath, SmartPtr<IResource> resource )
     {
-        resource->saveToFile( filePath );
+        if( !resource )
+            throw std::runtime_error( "Cannot save a null prefab resource" );
+        auto prefab = dynamic_pointer_cast<IGamePrefab>( resource );
+        auto data = prefab ? dynamic_pointer_cast<Properties>( prefab->getData() )
+                           : dynamic_pointer_cast<Properties>( resource->toData() );
+        String error;
+        if( !saveAssetDocumentText( filePath, data,
+                                    DataUtil::toString( data.get(), true, getDataFormat() ), error ) )
+            throw std::runtime_error( error.c_str() );
     }
 
     SmartPtr<IResource> GamePrefabManager::loadFromFile( const String &filePath )
@@ -436,7 +445,10 @@ namespace workphone::scene
             auto data = prefab->toData();
             auto dataStr = DataUtil::toString( data.get(), true, fmt );
 
-            fileSystem->writeAllText( filePath, dataStr );
+            String error;
+            if( !saveAssetDocumentText( filePath, dynamic_pointer_cast<Properties>( data ), dataStr,
+                                        error ) )
+                throw std::runtime_error( error.c_str() );
         }
         catch( std::exception &e )
         {

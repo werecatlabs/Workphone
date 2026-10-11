@@ -3,6 +3,7 @@
 
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
+#include <Workphone/Graphics/DdsTexture.hpp>
 
 #include <cstring>
 #include <filesystem>
@@ -122,6 +123,65 @@ namespace graphics_compiler_contracts
                  "Texture cook must carry its full mip chain and build configuration" );
         require( std::memcmp( textureData.levels.front().bgra.data(), tga.data() + 18, 64 ) == 0,
                  "Texture cook must preserve top-origin BGRA channel order" );
+
+        for(const char *profile : {"windows-dx11-dds-bgra8-v1","windows-dx11-dds-bgra8-srgb-v1",
+                                  "windows-dx11-dds-bc1-v1","windows-dx11-dds-bc1-srgb-v1",
+                                  "windows-dx11-dds-bc3-v1","windows-dx11-dds-bc3-srgb-v1"})
+        {
+            auto nativeContext=context;nativeContext.target=profile;
+            auto native=cook(compiler,nativeContext);
+            CookedTextureData nativeData;
+            require(decodeCookedTexture(native,nativeData,error) && nativeData.levels.empty(),
+                    "DDS profiles must carry native payloads without decoded BGRA copies");
+            auto image=dds::inspect(nativeData.ddsBytes);
+            require(image.format==ddsFormatForTarget(profile) && image.mips.size()==3 &&
+                    image.mips[0].width==4 && image.mips[2].width==1,
+                    "DDS profile, dimensions and mip tails must match");
+            require(cook(compiler,nativeContext).payload==native.payload,
+                    "Repeated DDS compilation must produce identical bytes");
+            const auto rejectDds=[&](std::vector<u8> bytes){
+                bool rejected=false;try{dds::inspect(bytes);}catch(const std::exception &){rejected=true;}
+                require(rejected,"Malformed DDS must fail inspection");
+            };
+            auto bytes=nativeData.ddsBytes;bytes.pop_back();rejectDds(bytes);
+            bytes=nativeData.ddsBytes;bytes.push_back(0);rejectDds(bytes);
+            for(auto field : {4u,76u,84u,128u,132u,140u})
+            { bytes=nativeData.ddsBytes;dds::put(bytes,field,0);rejectDds(bytes); }
+            bytes=nativeData.ddsBytes;dds::put(bytes,16,0xffffffff);rejectDds(bytes);
+            bytes=nativeData.ddsBytes;dds::put(bytes,20,1);rejectDds(bytes);
+            bytes=nativeData.ddsBytes;dds::put(bytes,136,4);rejectDds(bytes);
+            bytes=nativeData.ddsBytes;dds::put(bytes,140,2);rejectDds(bytes);
+            nativeData.target="portable-profile";
+            require(!validateCookedTextureData(nativeData,error),"DDS format cannot be installed under a portable target");
+            nativeData.target=profile;
+            dds::put(nativeData.ddsBytes,144,2);
+            require(!validateCookedTextureData(nativeData,error),"DDS alpha mode cannot silently change profile semantics");
+            dds::put(nativeData.ddsBytes,144,dds::blockBytes(image.format)==8?3u:1u);
+            // Passthrough is byte-exact, including the full mip chain.
+            write(source/"native.dds",std::string(reinterpret_cast<const char *>(nativeData.ddsBytes.data()),nativeData.ddsBytes.size()));
+            write(source/"image.texres",R"({"version":1,"source":"data://native.dds","mipFilter":"colour","atlasColumns":1,"alphaCutoff":0.5})");
+            CookedTextureData passthrough;
+            require(decodeCookedTexture(cook(compiler,nativeContext),passthrough,error) &&
+                    passthrough.ddsBytes==nativeData.ddsBytes,"Authored DDS passthrough must retain exact native bytes");
+            write(source/"image.texres",textureJson);
+        }
+        {
+            Array<TextureMipLevel> odd;
+            for(auto size : {std::pair<u32,u32>{3,5},{1,2},{1,1}})
+            {
+                TextureMipLevel mip;mip.width=size.first;mip.height=size.second;
+                mip.bgra.assign(mip.width*mip.height*4,255);odd.push_back(std::move(mip));
+            }
+            auto bytes=dds::encode(odd,77);
+            auto image=dds::inspect(bytes);
+            require(image.mips.size()==3 && image.mips[0].rowPitch==16 && image.mips[0].size==32 &&
+                    image.mips[2].size==16,"DDS inspection must compute odd dimensions and block mip tails exactly");
+            require(dds::inspect(dds::encode(odd,87)).mips[0].size==60,
+                    "Lossless DDS must preserve odd dimensions without block padding");
+            odd[0].bgra[3]=0;
+            bool rejected=false;try{dds::encode(odd,71);}catch(const std::exception &){rejected=true;}
+            require(rejected,"Opaque BC1 must reject alpha instead of dropping it");
+        }
 
         const auto rejectDescriptor = [&]( const std::string &json ) {
             write( source / "image.texres", json );

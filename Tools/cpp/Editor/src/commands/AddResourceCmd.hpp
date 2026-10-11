@@ -7,6 +7,7 @@
 
 #include <EditorPrerequisites.hpp>
 #include <commands/Command.hpp>
+#include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
 #include <Workphone/Atomics/AtomicValue.hpp>
 
@@ -50,6 +51,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            SmartPtr<AssetDatabaseManager> activeCreationCatalog() const;
+            AssetCatalogSession m_creationSession;
+            String m_undoOperationId;
             SmartPtr<ISharedObject> m_resource;
             AtomicObject<String> m_filePath;
             AtomicObject<String> m_createdFilePath;
