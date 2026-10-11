@@ -1677,15 +1677,21 @@ namespace workphone::editor
 
         String mediaRoot;
         String mediaCatalogError;
-        if( canonicalAssetCatalogRoot( applicationManager->getMediaPath(), mediaRoot, mediaCatalogError ) )
+        if( canonicalAssetCatalogRoot( applicationManager->getMediaPath(), mediaRoot,
+                                       mediaCatalogError ) )
         {
             const auto catalogPath = mediaRoot + "/.workphone/media-assets.db";
             auto mediaCatalog = openMediaAssetCatalog( mediaRoot, mediaCatalogError, catalogPath );
             if( mediaCatalog && resourceDatabase->setMediaCatalog( mediaCatalog ) )
+            {
                 WP_LOG( "Mounted bundled media catalog: " + catalogPath );
+            }
             else
+            {
                 WP_LOG_ERROR( "Cannot mount bundled media catalog " + catalogPath + ": " +
-                              ( mediaCatalog ? String( "Resource resolver rejected the catalog" ) : mediaCatalogError ) );
+                              ( mediaCatalog ? String( "Resource resolver rejected the catalog" )
+                                             : mediaCatalogError ) );
+            }
         }
         else
             WP_LOG_ERROR( "Cannot resolve bundled Media folder: " + mediaCatalogError );
