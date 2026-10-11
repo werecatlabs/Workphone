@@ -129,6 +129,32 @@ namespace
         catalog->loadFromFile( path.u8string().c_str() );
         command->undo();
         check( command->wasApplied(), "Closing and reopening the same catalog must expire old commands" );
+        const auto mediaRoot = folder / "reference-media";
+        std::filesystem::create_directories( mediaRoot );
+        { std::ofstream file( mediaRoot / "surface.png", std::ios::binary ); file << "texture fixture"; }
+        String mediaError;
+        auto media = openMediaAssetCatalog( mediaRoot.u8string().c_str(), mediaError );
+        check( media && resources->setMediaCatalog( media ), "Mount media for real Editor reference commands" );
+        auto mediaPage = media->queryEntries( {} );
+        check( mediaPage.succeeded && mediaPage.entries.size() == 1, "Capture media reference identity" );
+        auto mediaEntry = mediaPage.entries.front();
+        auto mediaTarget = make_ptr<ReferenceContractTarget>();
+        auto mediaCommand = make_ptr<editor::ModifyPropertyCmd>();
+        check( mediaCommand->configure( media, mediaEntry, {mediaTarget}, "texture", render::ITexture::typeInfo() ),
+               "Editor reference commands must accept the read-only mounted media catalog" );
+        mediaCommand->execute();
+        check( mediaCommand->wasApplied() && mediaTarget->data->getProperty( "texture" ) == mediaEntry.uuid,
+               "A media assignment must write the stable media UUID" );
+        mediaCommand->undo();
+        check( !mediaCommand->wasApplied() && mediaTarget->data->getProperty( "texture" ) == "old-value",
+               "Media references must support undo" );
+        mediaCommand->redo();
+        check( mediaCommand->wasApplied(), "Media references must support redo" );
+        resources->setMediaCatalog( nullptr );
+        mediaCommand->undo();
+        check( mediaCommand->wasApplied() && mediaTarget->data->getProperty( "texture" ) == mediaEntry.uuid,
+               "Changing the media mount must invalidate its existing reference commands" );
+        media->unload( nullptr );
 #endif
         const auto databasePath = catalog->getDatabasePath();
         const auto generation = catalog->getCatalogGeneration();
