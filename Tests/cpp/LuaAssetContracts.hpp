@@ -111,6 +111,14 @@ inline void runLuaAssetContracts( workphone::LuaManager &manager )
     check( catalog->tryGetEntry( uuid, snapshot ) && snapshot.type == "script", "source asset identity/type" );
     auto database = make_ptr<ResourceDatabase>();
     database->setDatabaseManager( catalog );
+    application.app->setResourceDatabase( database );
+    const bool textureBindingsValid = manager.executeSource(
+        "local db=IApplicationManager.instance():getResourceDatabase(); "
+        "assert(db:loadTexture('logic/Actor.lua') == nil); "
+        "assert(db:loadTexture('missing.png') == nil); "
+        "assert(db:loadMediaTexture('checker.png') == nil)", "=typed-texture-bindings" );
+    application.app->setResourceDatabase( nullptr );
+    check( textureBindingsValid, "typed texture bindings must reject missing/non-texture resources" );
     auto retrieved = dynamic_pointer_cast<ScriptAsset>( database->loadResource( StringUtil::parseUUID( uuid ) ) );
     check( retrieved && retrieved->getHandle()->getUUIDAsString() == uuid, "headless script UUID lookup" );
     retrieved = dynamic_pointer_cast<ScriptAsset>( database->loadResource( String( "logic/Actor.lua" ) ) );

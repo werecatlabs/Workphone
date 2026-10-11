@@ -1895,15 +1895,15 @@ function MaterialEditor:handleDrop(args, elementId)
 		return cjson.decode(dataStr);
 	end);
 
-	if not okDecode or decoded == nil then
+	if not okDecode or type(decoded) ~= "table" then
 		if self.statusText then
 			self.statusText:setText("Invalid drop data.");
 		end
 		return;
 	end
 
-	local path = decoded.filePath or decoded.path;
-	if path == nil then
+	local path = decoded.filePath or decoded.path or decoded.assetPath;
+	if type(path) ~= "string" or path == "" then
 		return;
 	end
 
@@ -1911,7 +1911,18 @@ function MaterialEditor:handleDrop(args, elementId)
 	local resourceDatabase = applicationManager:getResourceDatabase();
 
 	if isTexturePath(path) then
-		local texture = resourceDatabase:loadResource(path);
+		local texture;
+		if decoded.assetDomain == "media" then
+			texture = resourceDatabase:loadMediaTexture(path);
+		else
+			texture = resourceDatabase:loadTexture(path);
+		end
+		if texture == nil then
+			if self.statusText then
+				self.statusText:setText("Unable to load catalogued texture: "..path);
+			end
+			return;
+		end
 		local slot = self.textureSlotIds[elementId];
 		if slot ~= nil then
 			local material = self:getCurrentMaterial();

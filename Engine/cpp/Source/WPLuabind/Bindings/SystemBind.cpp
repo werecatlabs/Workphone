@@ -11,6 +11,17 @@
 
 namespace workphone
 {
+    SmartPtr<render::ITexture> loadEditorTexture( IResourceDatabase *resources, const String &path )
+    {
+        return resources ? dynamic_pointer_cast<render::ITexture>( resources->loadResource( path ) ) : nullptr;
+    }
+
+    SmartPtr<render::ITexture> loadEditorMediaTexture( IResourceDatabase *resources, const String &path )
+    {
+        auto database = dynamic_cast<ResourceDatabase *>( resources );
+        return database ? dynamic_pointer_cast<render::ITexture>( database->loadMediaResource( path ) ) : nullptr;
+    }
+
     luabind::object _IProfiler_getProfiles( IProfiler *profiler, lua_State *L )
     {
         auto result = luabind::newtable( L );
@@ -288,6 +299,8 @@ namespace workphone
                                            const String & )>( &IResourceDatabase::loadResource ) )
                  .def( "loadResource", static_cast<SmartPtr<IResource> ( IResourceDatabase::* )(
                                            const UUID & )>( &IResourceDatabase::loadResource ) )
+                 .def( "loadTexture", &loadEditorTexture )
+                 .def( "loadMediaTexture", &loadEditorMediaTexture )
                  .def( "loadDirector", static_cast<SmartPtr<IBuildDirector> ( IResourceDatabase::* )(
                                            const String & )>( &IResourceDatabase::loadDirector ) )
                  .def( "loadDirectorFromResourcePath",

@@ -19,7 +19,7 @@ function ResourceSelect:__init(editorWindow, window, elementId, label)
 	local resourceDatabase = applicationManager:getResourceDatabase();
 	local ui = applicationManager:getUI();	
 	
-	local defaultTexture = resourceDatabase:loadResource("checker.png");
+	local defaultTexture = resourceDatabase:loadMediaTexture("checker.png");
 	
 	local windowTypeInfo = IUIWindow.typeInfo();
 	local buttonTypeInfo = IUIButton.typeInfo();
@@ -116,70 +116,48 @@ function ResourceSelect:setMaterial(material)
 				self.image:setTexture(texture);
 			end
 		else	
-			local defaultTexture = resourceDatabase:loadResource(defaultTextureName);
+			local defaultTexture = resourceDatabase:loadMediaTexture(defaultTextureName);
 		
-			if self.image then
+			if self.image and defaultTexture then
 				self.image:setTexture(defaultTexture);
 			end
 		end
 	else
-        local defaultTexture = resourceDatabase:loadResource(defaultTextureName);
+        local defaultTexture = resourceDatabase:loadMediaTexture(defaultTextureName);
 
-        if self.image then
+        if self.image and defaultTexture then
             self.image:setTexture(defaultTexture);
         end
 	end	
 end
 
 function ResourceSelect:setTexture(texture)
-    print("ResourceSelect setTexture called");
+    if self.material == nil and self.terrain == nil then
+        return false;
+    end
 
-	local applicationManager = IApplicationManager.instance();
-	local resourceDatabase = applicationManager:getResourceDatabase();
+    -- Clearing a slot keeps the established checker fallback. Never pass nil
+    -- through the native SmartPtr<ITexture> bindings when media is unavailable.
+    local selected = texture;
+    if selected == nil then
+        local resources = IApplicationManager.instance():getResourceDatabase();
+        selected = resources:loadMediaTexture("checker.png");
+    end
+    if selected == nil then
+        return false;
+    end
 
-	local defaultTexture = resourceDatabase:loadResource("checker.png");
-	local whiteTexture = resourceDatabase:loadResource("panel.png");
-
-	if texture then
-		if self.image then
-			self.image:setTexture(texture);	
-		end
-	else
-		if self.image then
-			self.image:setTexture(defaultTexture);	
-		end
-	end
-	
-	if self.material then
-		print("ResourceSelect setTexture called material "..self.material:getName());
-
-		if texture then
-			print("ResourceSelect setTexture texture");
-
-			self.material:setTexture(texture, self.index);
-			self.material:save();
-		else
-			print("ResourceSelect setTexture texture");
-
-			self.material:setTexture(defaultTexture, self.index);
-			self.material:save();
-		end
-	else
-		print("ResourceSelect setTexture called material null");
-
-		if whiteTexture then
-			if self.material then
-				self.material:setTexture(whiteTexture, self.index);
-				self.material:save();
-			end
-		end
-	end
-
-	if self.terrain then
-		if texture then
-			self.terrain:setHeightMap(texture);
-			end
-		end
+    if self.material then
+        self.material:setTexture(selected, self.index);
+        self.material:save();
+    end
+    if self.terrain then
+        self.terrain:setHeightMap(selected);
+    end
+    if self.image then
+        self.image:setTexture(selected);
+    end
+    return true;
 end
 
 function ResourceSelect:setIndex(index)
