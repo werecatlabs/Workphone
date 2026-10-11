@@ -1,584 +1,255 @@
 #include <EditorPCH.hpp>
 #include "ui/AssetDatabaseWindow.hpp"
+#include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::editor
 {
-
     WP_CLASS_REGISTER_DERIVED( workphone::editor, AssetDatabaseWindow, EditorWindow );
     WP_CLASS_REGISTER_DERIVED( workphone::editor, AssetDatabaseWindow::EventListener, IEventListener );
 
-    AssetDatabaseWindow::AssetDatabaseWindow()
-    {
-    }
-
     AssetDatabaseWindow::~AssetDatabaseWindow()
     {
+        unload( nullptr );
     }
 
     void AssetDatabaseWindow::load( SmartPtr<ISharedObject> data )
     {
-        try
-        {
-            setLoadingState( LoadingState::Loading );
+        if( getParentWindow() )
+            return;
+        auto application = core::IApplicationManager::instancePtr();
+        auto ui = application ? application->getUI() : nullptr;
+        if( !ui )
+            return;
+        setLoadingState( LoadingState::Loading );
+        auto window = ui->addElementByType<ui::IUIWindow>();
+        setParentWindow( window );
+        window->setLabel( "Asset Database" );
+        if( auto parent = getParent() )
+            parent->addChild( window );
+        auto listener = make_ptr<EventListener>();
+        listener->setOwner( this );
+        setEventListener( listener );
 
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto ui = applicationManager->getUI();
-            WP_ASSERT( ui );
-
-            auto parent = getParent();
-
-            auto parentWindow = ui->addElementByType<ui::IUIWindow>();
-            setParentWindow( parentWindow );
-
-            auto eventListener = workphone::make_ptr<EventListener>();
-            eventListener->setOwner( this );
-            applicationManager->addObjectListener( eventListener );
-            setEventListener( eventListener );
-
-            auto tabBar = ui->addElementByType<ui::IUITabBar>();
-            setTabBar( tabBar );
-            parentWindow->addChild( tabBar );
-
-            auto tabItemObjects = tabBar->addTabItem();
-            tabItemObjects->setLabel( "Resources" );
-
-            //auto tabItemResourceTrees = tabBar->addTabItem();
-            //tabItemResourceTrees->setLabel( "Resource Tree" );
-
-            auto tabItemStaticComponents = tabBar->addTabItem();
-            tabItemStaticComponents->setLabel( "Static Components" );
-
-            auto tabItemReferenceComponents = tabBar->addTabItem();
-            tabItemReferenceComponents->setLabel( "Reference Components" );
-
-            //auto tabItemComponents = tabBar->addTabItem();
-            //tabItemComponents->setLabel( "Configurable Components" );
-
-            auto modelTreeWindow = ui->addElementByType<ui::IUIWindow>();
-            tabItemObjects->addChild( modelTreeWindow );
-
-            modelTreeWindow->setSize( Vector2F( 400, 400 ) );
-
-            auto resourcesTree = ui->addElementByType<ui::IUITreeCtrl>();
-            modelTreeWindow->addChild( resourcesTree );
-            resourcesTree->addObjectListener( eventListener );
-            setResourceTreeCtrl( resourcesTree );
-
-            auto resourceAttribsWindow = ui->addElementByType<ui::IUIWindow>();
-            resourceAttribsWindow->setSameLine( true );
-            tabItemObjects->addChild( resourceAttribsWindow );
-
-            auto grid = ui->addElementByType<ui::IUIDataGrid>();
-            //grid->setSameLine( true );
-            resourceAttribsWindow->addChild( grid );
-            setResourceAttribsGrid( grid );
-
-            auto staticComponentsWindow = ui->addElementByType<ui::IUIWindow>();
-            //staticComponentsWindow->setSameLine( true );
-            tabItemStaticComponents->addChild( staticComponentsWindow );
-            staticComponentsWindow->setSize( Vector2F( 400, 400 ) );
-
-            auto staticComponentsTree = ui->addElementByType<ui::IUITreeCtrl>();
-            staticComponentsWindow->addChild( staticComponentsTree );
-            staticComponentsTree->addObjectListener( eventListener );
-            setStaticComponentsTreeCtrl( staticComponentsTree );
-
-            auto staticComponentsGridWindow = ui->addElementByType<ui::IUIWindow>();
-            staticComponentsGridWindow->setSameLine( true );
-            tabItemStaticComponents->addChild( staticComponentsGridWindow );
-
-            auto staticComponentsGrid = ui->addElementByType<ui::IUIDataGrid>();
-            //staticComponentsGrid->setSameLine( true );
-            staticComponentsGridWindow->addChild( staticComponentsGrid );
-            setStaticComponentsAttribsGrid( staticComponentsGrid );
-
-            auto referenceTreeWindow = ui->addElementByType<ui::IUIWindow>();
-            tabItemReferenceComponents->addChild( referenceTreeWindow );
-            referenceTreeWindow->setSize( Vector2F( 400, 400 ) );
-
-            auto modelTreeComponents = ui->addElementByType<ui::IUITreeCtrl>();
-            modelTreeComponents->addObjectListener( eventListener );
-            referenceTreeWindow->addChild( modelTreeComponents );
-            setComponentsTreeCtrl( modelTreeComponents );
-
-            auto referenceComponentsWindow = ui->addElementByType<ui::IUIWindow>();
-            referenceComponentsWindow->setSameLine( true );
-            tabItemReferenceComponents->addChild( referenceComponentsWindow );
-
-            auto referenceComponentsGrid = ui->addElementByType<ui::IUIDataGrid>();
-            referenceComponentsWindow->addChild( referenceComponentsGrid );
-            setComponentsAttribsGrid( referenceComponentsGrid );
-
-            //buildResourceTree( resourcesTree );
-            //buildStaticComponentsTree( staticComponentsTree );
-            //buildComponentsTree( modelTreeComponents );
-
-            setLoadingState( LoadingState::Loaded );
-        }
-        catch( std::exception &e )
-        {
-            WP_LOG_EXCEPTION( e );
-        }
+        m_search = ui->addElementByType<ui::IUITextEntry>();
+        m_search->setLabel( "Search path or UUID##CatalogSearch" );
+        m_search->setPlaceholder( "Literal substring (case sensitive)" );
+        m_search->addObjectListener( listener );
+        window->addChild( m_search );
+        m_type = ui->addElementByType<ui::IUITextEntry>();
+        m_type->setLabel( "Asset type##CatalogType" );
+        m_type->setPlaceholder( "Exact type, or empty for all" );
+        m_type->addObjectListener( listener );
+        window->addChild( m_type );
+        auto button = [&]( const String &label ) {
+            auto result = ui->addElementByType<ui::IUIButton>();
+            result->setLabel( label );
+            result->addObjectListener( listener );
+            window->addChild( result );
+            return result;
+        };
+        m_refresh = button( "Search / Refresh##CatalogRefresh" );
+        m_previous = button( "Previous##CatalogPrevious" );
+        m_previous->setSameLine( true );
+        m_next = button( "Next##CatalogNext" );
+        m_next->setSameLine( true );
+        m_status = ui->addElementByType<ui::IUIText>();
+        window->addChild( m_status );
+        m_tree = ui->addElementByType<ui::IUITreeCtrl>();
+        m_tree->addObjectListener( listener );
+        window->addChild( m_tree );
+        m_details = ui->addElementByType<ui::IUIText>();
+        window->addChild( m_details );
+        setLoadingState( LoadingState::Loaded );
+        refresh();
     }
 
     void AssetDatabaseWindow::unload( SmartPtr<ISharedObject> data )
     {
-        try
+        if( getLoadingState() == LoadingState::Unloaded )
+            return;
+        setLoadingState( LoadingState::Unloading );
+        auto listener = getEventListener();
+        if( listener )
         {
-            setLoadingState( LoadingState::Unloading );
-
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto ui = applicationManager->getUI();
-            WP_ASSERT( ui );
-
-            auto eventListener = getEventListener();
-            if( eventListener )
-            {
-                applicationManager->removeObjectListener( eventListener );
-
-                if( m_resourceTreeCtrl )
-                {
-                    m_resourceTreeCtrl->removeObjectListener( eventListener );
-                }
-
-                if( m_staticComponentsTreeCtrl )
-                {
-                    m_staticComponentsTreeCtrl->removeObjectListener( eventListener );
-                }
-
-                if( m_componentsTreeCtrl )
-                {
-                    m_componentsTreeCtrl->removeObjectListener( eventListener );
-                }
-            }
-
-            if( auto parentWindow = getParentWindow() )
-            {
-                ui->removeElement( parentWindow );
-                setParentWindow( nullptr );
-            }
-
-            m_assetDatabaseManager = nullptr;
-            m_tabBar = nullptr;
-            m_resourceTreeCtrl = nullptr;
-            m_resourceAttribsGrid = nullptr;
-            m_staticComponentsTreeCtrl = nullptr;
-            m_staticComponentsAttribsGrid = nullptr;
-            m_componentsTreeCtrl = nullptr;
-            m_componentsAttribsGrid = nullptr;
-
-            EditorWindow::unload( data );
-
-            setLoadingState( LoadingState::Unloaded );
+            listener->unload( nullptr );
+            Array<SmartPtr<ui::IUIElement>> controls = {
+                m_tree, m_search, m_type, m_refresh, m_previous, m_next };
+            for( auto &control : controls )
+                if( control )
+                    control->removeObjectListener( listener );
+            setEventListener( nullptr );
         }
-        catch( std::exception &e )
+        auto application = core::IApplicationManager::instancePtr();
+        if( auto window = getParentWindow() )
         {
-            WP_LOG_EXCEPTION( e );
+            if( auto parent = getParent() )
+                parent->removeChild( window );
+            if( application )
+                if( auto ui = application->getUI() )
+                    ui->removeElement( window );
+            setParentWindow( nullptr );
         }
-    }
-
-    void AssetDatabaseWindow::setAssetDatabaseManager(
-        SmartPtr<AssetDatabaseManager> assetDatabaseManager )
-    {
-        m_assetDatabaseManager = assetDatabaseManager;
+        m_tree = nullptr;
+        m_search = nullptr;
+        m_type = nullptr;
+        m_status = nullptr;
+        m_details = nullptr;
+        m_refresh = nullptr;
+        m_previous = nullptr;
+        m_next = nullptr;
+        m_assetDatabaseManager = nullptr;
+        m_browser.clear();
+        EditorWindow::unload( data );
+        setLoadingState( LoadingState::Unloaded );
     }
 
     SmartPtr<AssetDatabaseManager> AssetDatabaseWindow::getAssetDatabaseManager() const
     {
-        if( !m_assetDatabaseManager )
+        if( m_assetDatabaseManager )
+            return m_assetDatabaseManager;
+        auto application = core::IApplicationManager::instancePtr();
+        auto resources = application ? application->getResourceDatabase() : nullptr;
+        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                                 : nullptr;
+        String projectRoot, error;
+        // Project activation may precede resource-service rebinding. Do not
+        // expose the previous project's catalog during that transition.
+        if( !catalog || application->getProjectPath().empty() ||
+            !canonicalAssetCatalogRoot( application->getProjectPath(), projectRoot, error ) ||
+            projectRoot != catalog->getProjectRoot() )
+            return nullptr;
+        return catalog;
+    }
+
+    void AssetDatabaseWindow::setAssetDatabaseManager( SmartPtr<AssetDatabaseManager> manager )
+    {
+        m_assetDatabaseManager = manager;
+        refresh();
+    }
+
+    void AssetDatabaseWindow::refresh()
+    {
+        if( !m_search || !m_type )
+            return;
+        AssetDatabaseManager::EntryQuery query;
+        query.search = m_search->getText();
+        query.type = m_type->getText();
+        m_browser.refresh( getAssetDatabaseManager(), query );
+        populate();
+    }
+
+    void AssetDatabaseWindow::setWindowVisible( bool visible )
+    {
+        if( visible )
+            refresh();
+        EditorWindow::setWindowVisible( visible );
+    }
+
+    void AssetDatabaseWindow::populate()
+    {
+        if( !m_tree || !m_status || !m_details )
+            return;
+        m_tree->clear();
+        m_details->setText( "Select an asset to inspect its identity." );
+        auto catalog = getAssetDatabaseManager();
+        if( !catalog )
         {
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto workingDirectory = Path::getWorkingDirectory();
-            auto mediaRelativePath = applicationManager->getMediaPath();
-
-            auto mediaPath = Path::lexically_normal( workingDirectory, mediaRelativePath );
-
-            auto databaseManager = workphone::make_ptr<AssetDatabaseManager>();
-            databaseManager->loadFromFile( mediaPath + "/resources.db" );
-
-            m_assetDatabaseManager = databaseManager;
+            m_browser.clear();
+            m_previous->setEnabled( false );
+            m_next->setEnabled( false );
+            m_status->setText( "No active asset catalog. Open a project and refresh." );
+            return;
         }
-
-        return m_assetDatabaseManager;
-    }
-
-    void AssetDatabaseWindow::setTabBar( SmartPtr<ui::IUITabBar> tabBar )
-    {
-        m_tabBar = tabBar;
-    }
-
-    SmartPtr<ui::IUITabBar> AssetDatabaseWindow::getTabBar() const
-    {
-        return m_tabBar;
-    }
-
-    void AssetDatabaseWindow::buildResourceTree( SmartPtr<ui::IUITreeCtrl> treeCtrl )
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto root = treeCtrl->addRoot();
-        Util::setText( root, "Resources" );
-
-        auto vehiclesNode = treeCtrl->addNode();
-
-        Util::setText( vehiclesNode, "Vehicles" );
-        root->addChild( vehiclesNode );
-
-        auto databaseManager = getAssetDatabaseManager();
-        auto sql = "select * from configured_models";
-        auto result = databaseManager->executeQuery( sql );
-        if( result )
+        const auto &page = m_browser.page();
+        m_previous->setEnabled( m_browser.hasPrevious() );
+        m_next->setEnabled( page.succeeded && page.hasMore );
+        if( !page.succeeded )
         {
-            while( !result->eof() )
-            {
-                auto id = result->getFieldValueAsInt( "id" );
-                auto parentId = result->getFieldValueAsInt( "parent_id" );
-                auto name = result->getFieldValue( "name" );
-
-                auto treeNode = treeCtrl->addNode();
-                Util::setText( treeNode, name );
-                treeNode->setId( id );
-
-                if( auto parent = treeCtrl->getNodeById( parentId ) )
-                {
-                    parent->addChild( treeNode );
-                }
-                else
-                {
-                    root->addChild( treeNode );
-                }
-
-                result->nextRow();
-            }
+            m_status->setText( page.error );
+            return;
         }
-    }
-
-    void AssetDatabaseWindow::buildStaticComponentsTree( SmartPtr<ui::IUITreeCtrl> treeCtrl )
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto root = treeCtrl->addRoot();
-        Util::setText( root, "Resources" );
-
-        auto databaseManager = getAssetDatabaseManager();
-        auto sql = "select * from configured_models";
-        auto result = databaseManager->executeQuery( sql );
-        if( result )
+        auto root = m_tree->addRoot();
+        root->setId( 0 );
+        Util::setText( root, "Assets" );
+        for( size_t i = 0; i < page.entries.size(); ++i )
         {
-            while( !result->eof() )
-            {
-                auto id = result->getFieldValueAsInt( "id" );
-                auto parentId = result->getFieldValueAsInt( "parent_id" );
-                auto name = result->getFieldValue( "name" );
-                auto standard = result->getFieldValue( "standard" );
-
-                if( !StringUtil::isNullOrEmpty( standard ) )
-                {
-                    auto treeNode = treeCtrl->addNode();
-                    Util::setText( treeNode, name );
-                    treeNode->setId( id );
-
-                    if( auto parent = treeCtrl->getNodeById( parentId ) )
-                    {
-                        parent->addChild( treeNode );
-                    }
-                    else
-                    {
-                        root->addChild( treeNode );
-                    }
-
-                    auto componentsSql =
-                        "select * from model_objects where model_id = " + StringUtil::toString( id );
-                    auto componentsResult = databaseManager->executeQuery( componentsSql );
-                    if( componentsResult )
-                    {
-                        while( !componentsResult->eof())
-                        {
-                            auto componentId = componentsResult->getFieldValueAsInt( "id" );
-                            auto componentName = componentsResult->getFieldValue( "ident" );
-
-                            auto componentTreeNode = treeCtrl->addNode();
-                            Util::setText( componentTreeNode, componentName );
-                            componentTreeNode->setId( componentId );
-                            treeNode->addChild( componentTreeNode );
-
-                            componentsResult->nextRow();
-                        }
-                    }
-                }
-
-                result->nextRow();
-            }
+            const auto &entry = page.entries[i];
+            auto node = m_tree->addNode();
+            node->setId( i + 1 );
+            Util::setText( node, entry.path + " [" + entry.type + "] " + entry.uuid );
+            root->addChild( node );
         }
-    }
-
-    void AssetDatabaseWindow::buildComponentsTree( SmartPtr<ui::IUITreeCtrl> treeCtrl )
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto databaseManager = getAssetDatabaseManager();
-
-        auto root = treeCtrl->addRoot();
-        Util::setText( root, "Configurable Components" );
-
-        auto sql = "select * from ref_components";
-        auto result = databaseManager->executeQuery( sql );
-        if( result )
-        {
-            while( !result->eof() )
-            {
-                auto id = result->getFieldValueAsInt( "id" );
-                auto name = result->getFieldValue( "title" );
-
-                auto treeNode = treeCtrl->addNode();
-
-                Util::setText( treeNode, name );
-                treeNode->setId( id );
-
-                root->addChild( treeNode );
-
-                result->nextRow();
-            }
-        }
-    }
-
-    void AssetDatabaseWindow::buildResourceAttribs( SmartPtr<ui::IUIDataGrid> grid, s32 id )
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto databaseManager = getAssetDatabaseManager();
-
-        auto sqlStr = "select * from attribs where configured_model_id=" + StringUtil::toString( id );
-        auto queryResult = databaseManager->executeQuery( sqlStr );
-        if( queryResult )
-        {
-            if( !queryResult->eof() )
-            {
-                auto properties = queryResult->getProperties();
-                if( properties )
-                {
-                    if( grid )
-                    {
-                        grid->setProperties( properties );
-                    }
-                }
-            }
-        }
-    }
-
-    void AssetDatabaseWindow::buildStaticComponentAttribs( SmartPtr<ui::IUIDataGrid> grid, s32 id )
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto databaseManager = getAssetDatabaseManager();
-        WP_ASSERT( databaseManager );
-
-        auto sqlStr = "select * from " + m_staticAttribsTableName +
-                      " where object_id=" + StringUtil::toString( id );
-        auto queryResult = databaseManager->executeQuery( sqlStr );
-        if( queryResult )
-        {
-            if( !queryResult->eof() )
-            {
-                auto properties = queryResult->getProperties();
-                if( properties )
-                {
-                    if( grid )
-                    {
-                        grid->setProperties( properties );
-                    }
-                }
-            }
-        }
-    }
-
-    void AssetDatabaseWindow::buildComponentAttribs( SmartPtr<ui::IUIDataGrid> grid, s32 id )
-    {
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto databaseManager = getAssetDatabaseManager();
-
-        auto sqlStr = "select * from ref_attribs where ref_component_id=" + StringUtil::toString( id );
-        auto queryResult = databaseManager->executeQuery( sqlStr );
-
-        if( queryResult )
-        {
-            if( !queryResult->eof() )
-            {
-                auto properties = queryResult->getProperties();
-                if( properties )
-                {
-                    if( grid )
-                    {
-                        grid->setProperties( properties );
-                    }
-                }
-            }
-        }
+        m_status->setText( catalog->getProjectRoot() + " | Page " +
+            StringUtil::toString( m_browser.pageNumber() ) + " | " +
+            StringUtil::toString( page.entries.size() ) + " assets" );
     }
 
     Parameter AssetDatabaseWindow::handleEvent( EventType eventType, hash_type eventValue,
-                                                const Array<Parameter> &arguments,
-                                                SmartPtr<ISharedObject> sender,
-                                                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+        const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+        SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        if( eventValue == IEvent::handleTreeSelectionActivated )
+        if( getLoadingState() != LoadingState::Loaded )
+            return {};
+        if( eventValue == IEvent::handleValueChanged && ( sender == m_search || sender == m_type ) )
         {
-            //if( sender == m_owner->m_tree )
-            //{
-            //    auto node = fb::static_pointer_cast<ui::IUITreeNode>( arguments[0].object );
-            //    m_owner->handleTreeSelectionChanged( node );
-            //}
+            // Literal searches may scan the catalog. Apply explicitly instead of
+            // issuing a synchronous database scan for every typed character.
+            m_browser.clear();
+            populate();
+            m_status->setText( "Press Search / Refresh to apply the filters." );
         }
-        else if( eventValue == IEvent::handleTreeSelectionRelease )
+        else if( eventValue == IEvent::handleSelection )
         {
-            if( auto treeCtrl = getResourceTreeCtrl() )
+            if( sender == m_refresh )
+                refresh();
+            else if( sender == m_previous )
             {
-                if( sender == treeCtrl )
-                {
-                    auto selectedNode = treeCtrl->getSelectedTreeNode();
-                    if( selectedNode )
-                    {
-                        auto id = selectedNode->getId();
-                        buildResourceAttribs( getResourceAttribsGrid(), static_cast<s32>( id ) );
-                    }
-                }
+                m_browser.previous( getAssetDatabaseManager() );
+                populate();
             }
-
-            if( auto staticComponentsTreeCtrl = getStaticComponentsTreeCtrl() )
+            else if( sender == m_next )
             {
-                if( sender == staticComponentsTreeCtrl )
-                {
-                    auto selectedNode = staticComponentsTreeCtrl->getSelectedTreeNode();
-                    if( selectedNode )
-                    {
-                        auto id = selectedNode->getId();
-                        buildStaticComponentAttribs( getStaticComponentsAttribsGrid(),
-                                                     static_cast<s32>( id ) );
-                    }
-                }
+                m_browser.next( getAssetDatabaseManager() );
+                populate();
             }
-
-            if( auto componentsTreeCtrl = getComponentsTreeCtrl() )
+        }
+        else if( eventValue == IEvent::handleTreeSelectionRelease && sender == m_tree )
+        {
+            auto node = m_tree->getSelectedTreeNode();
+            const auto id = node ? node->getId() : 0;
+            if( id > 0 )
             {
-                if( sender == componentsTreeCtrl )
+                AssetDatabaseManager::EntrySnapshot entry;
+                if( !m_browser.select( id - 1, getAssetDatabaseManager(), entry ) )
                 {
-                    auto selectedNode = componentsTreeCtrl->getSelectedTreeNode();
-                    if( selectedNode )
-                    {
-                        auto id = selectedNode->getId();
-                        buildComponentAttribs( getComponentsAttribsGrid(), static_cast<s32>( id ) );
-                    }
+                    populate();
+                    m_details->setText( "Catalog changed. Refresh and select the asset again." );
                 }
+                else
+                    m_details->setText( "UUID: " + entry.uuid + "\nPath: " + entry.path +
+                        "\nType: " + entry.type + "\nKind: " +
+                        ( entry.kind == AssetDatabaseManager::EntryKind::File ? "File" : "Scene object" ) );
             }
         }
         return {};
     }
 
-    void AssetDatabaseWindow::setResourceAttribsGrid( SmartPtr<ui::IUIDataGrid> resourceAttribsGrid )
+    Parameter AssetDatabaseWindow::EventListener::handleEvent( EventType eventType, hash_type eventValue,
+        const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+        SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        m_resourceAttribsGrid = resourceAttribsGrid;
+        auto weak = m_owner.load();
+        if( auto owner = weak.lock() )
+            return owner->handleEvent( eventType, eventValue, arguments, sender, object, event );
+        return {};
     }
-
-    SmartPtr<ui::IUIDataGrid> AssetDatabaseWindow::getResourceAttribsGrid() const
-    {
-        return m_resourceAttribsGrid;
-    }
-
-    void AssetDatabaseWindow::setResourceTreeCtrl( SmartPtr<ui::IUITreeCtrl> resourceTreeCtrl )
-    {
-        m_resourceTreeCtrl = resourceTreeCtrl;
-    }
-
-    SmartPtr<ui::IUITreeCtrl> AssetDatabaseWindow::getResourceTreeCtrl() const
-    {
-        return m_resourceTreeCtrl;
-    }
-
-    void AssetDatabaseWindow::setStaticComponentsAttribsGrid(
-        SmartPtr<ui::IUIDataGrid> staticComponentsAttribsGrid )
-    {
-        m_staticComponentsAttribsGrid = staticComponentsAttribsGrid;
-    }
-
-    SmartPtr<ui::IUIDataGrid> AssetDatabaseWindow::getStaticComponentsAttribsGrid() const
-    {
-        return m_staticComponentsAttribsGrid;
-    }
-
-    void AssetDatabaseWindow::setStaticComponentsTreeCtrl(
-        SmartPtr<ui::IUITreeCtrl> staticComponentsTreeCtrl )
-    {
-        m_staticComponentsTreeCtrl = staticComponentsTreeCtrl;
-    }
-
-    SmartPtr<ui::IUITreeCtrl> AssetDatabaseWindow::getStaticComponentsTreeCtrl() const
-    {
-        return m_staticComponentsTreeCtrl;
-    }
-
-    void AssetDatabaseWindow::setComponentsAttribsGrid( SmartPtr<ui::IUIDataGrid> componentsAttribsGrid )
-    {
-        m_componentsAttribsGrid = componentsAttribsGrid;
-    }
-
-    SmartPtr<ui::IUIDataGrid> AssetDatabaseWindow::getComponentsAttribsGrid() const
-    {
-        return m_componentsAttribsGrid;
-    }
-
-    void AssetDatabaseWindow::setComponentsTreeCtrl( SmartPtr<ui::IUITreeCtrl> componentsTreeCtrl )
-    {
-        m_componentsTreeCtrl = componentsTreeCtrl;
-    }
-
-    SmartPtr<ui::IUITreeCtrl> AssetDatabaseWindow::getComponentsTreeCtrl() const
-    {
-        return m_componentsTreeCtrl;
-    }
-
     void AssetDatabaseWindow::EventListener::setOwner( SmartPtr<AssetDatabaseWindow> owner )
     {
         m_owner = owner;
     }
-
-    SmartPtr<AssetDatabaseWindow> AssetDatabaseWindow::EventListener::getOwner() const
-    {
-        auto p = m_owner.load();
-        return p.lock();
-    }
-
-    Parameter AssetDatabaseWindow::EventListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
-    {
-        if( auto owner = getOwner() )
-        {
-            return owner->handleEvent( eventType, eventValue, arguments, sender, object, event );
-        }
-
-        return {};
-    }
-
     void AssetDatabaseWindow::EventListener::unload( SmartPtr<ISharedObject> data )
     {
         m_owner = nullptr;
     }
-
-    AssetDatabaseWindow::EventListener::EventListener() = default;
-
-    AssetDatabaseWindow::EventListener::~EventListener() = default;
-}  // namespace workphone::editor
+}

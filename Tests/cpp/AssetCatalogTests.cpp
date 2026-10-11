@@ -1,5 +1,6 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/System/Resource.hpp>
@@ -77,6 +78,168 @@ namespace
         require( result && !result->eof(), "Expected a scalar SQLite result" );
         return result->getFieldValueAsInt( "n" );
     }
+    void browsingContracts( const std::filesystem::path &folder )
+    {
+        const auto path = folder / "browse.db";
+        auto catalog = make_ptr<AssetDatabaseManager>();
+        catalog->loadFromFile( String( path.string().c_str() ) );
+        auto database = catalog->getDatabase();
+        for( int i = 0; i < 237; ++i )
+        {
+            const auto uuid = String( "browse-" ) + StringUtil::toString( 1000 + i );
+            const auto assetPath = String( "assets/" ) + uuid + ".tex";
+            require( sql( database,
+                "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,'file',?)",
+                { uuid, assetPath, i % 2 ? "Texture" : "Mesh", assetPath } ) != nullptr,
+                "Paged catalog fixture must seed" );
+        }
+        const String special = "assets/100%_quoted'--.tex";
+        require( sql( database,
+            "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,'file',?)",
+            { "special*?[]", special, "Texture", special } ) != nullptr,
+            "Literal filter fixture must seed" );
+        require( sql( database,
+            "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES('scene-object','scene','Actor','scene','')" ) != nullptr,
+            "Scene identity fixture must seed" );
+
+        AssetDatabaseManager::EntryQuery query;
+        query.pageSize = 17;
+        auto page = catalog->queryEntries( query );
+        require( page.succeeded && page.hasMore && page.entries.size() == 17,
+                 "First catalog page must be bounded and expose a continuation" );
+        auto firstCursor = page.next;
+        auto snapshot = page.entries.front();
+        String previous;
+        size_t count = 0;
+        for( ;; )
+        {
+            require( page.succeeded, "Every page of a stable catalog must succeed" );
+            for( const auto &entry : page.entries )
+            {
+                require( previous.empty() || previous < entry.uuid,
+                         "Keyset pages must have strictly ordered unique identities" );
+                require( catalog->isEntryCurrent( entry ), "Page DTO must carry valid generation evidence" );
+                previous = entry.uuid;
+                ++count;
+            }
+            if( !page.hasMore )
+                break;
+            const auto cursor = page.next;
+            page = catalog->queryEntries( query, &cursor );
+        }
+        require( count == 239, "Paged browse must visit every identity exactly once" );
+        query.search = "%_quoted'--";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.size() == 1 && page.entries.front().uuid == "special*?[]",
+                 "SQL metacharacters and quotes must be literal search text" );
+        require( !catalog->queryEntries( query, &firstCursor ).succeeded,
+                 "Continuations must reject changed search filters" );
+        query.search = "*?[]";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.size() == 1 && page.entries.front().uuid == "special*?[]",
+                 "GLOB metacharacters must match literal UUID text" );
+        query.search = "ASSETS/";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.empty(),
+                 "Substring search must preserve case-sensitive semantics" );
+        query.search = "";
+        query.type = "Texture";
+        query.pageSize = 256;
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.size() == 119 && !page.hasMore,
+                 "Type filter must be exact and independent of paging" );
+        query.type = "texture";
+        require( catalog->queryEntries( query ).entries.empty(),
+                 "Type filtering must not conflate case-distinct registered names" );
+        query.type = "Texture' OR 1=1 --";
+        page = catalog->queryEntries( query );
+        require( page.succeeded && page.entries.empty(),
+                 "Type text must remain a bound value, never SQL" );
+        query.type = "";
+        query.includeScenes = false;
+        require( catalog->queryEntries( query ).entries.size() == 238,
+                 "File-only browse must exclude scene identities" );
+        require( !catalog->queryEntries( query, &firstCursor ).succeeded,
+                 "Continuations must reject changed entry-kind filters" );
+        query.includeScenes = true;
+        query.pageSize = 0;
+        require( !catalog->queryEntries( query ).succeeded, "Zero page budgets must fail" );
+        query.pageSize = 257;
+        require( !catalog->queryEntries( query ).succeeded, "Oversized page budgets must fail" );
+        query.pageSize = 17;
+        query.search = String( 1025, 'x' );
+        require( !catalog->queryEntries( query ).succeeded, "Oversized search filters must fail" );
+        query.search = String( "a\0b", 3 );
+        require( !catalog->queryEntries( query ).succeeded, "Embedded NUL filters must fail" );
+        query.search = "";
+
+        AssetCatalogBrowser browser;
+        require( browser.refresh( catalog, query ) && browser.pageNumber() == 1 && !browser.hasPrevious(),
+                 "Browser refresh must reset pagination" );
+        AssetDatabaseManager::EntrySnapshot selected;
+        require( browser.select( 0, catalog, selected ) && selected.uuid == snapshot.uuid,
+                 "Browser must select the displayed DTO without loading an asset" );
+        require( browser.next( catalog ) && browser.pageNumber() == 2 && browser.hasPrevious(),
+                 "Browser next must advance bounded pages" );
+        require( browser.previous( catalog ) && browser.pageNumber() == 1 &&
+                 browser.page().entries.front().uuid == snapshot.uuid,
+                 "Browser previous must recover the original first page" );
+        require( !browser.select( 999, catalog, selected ) && selected.uuid.empty(),
+                 "Invalid tree row selection must not expose the previous identity" );
+        auto other = make_ptr<AssetDatabaseManager>();
+        other->loadFromFile( String( ( folder / "browse-other.db" ).string().c_str() ) );
+        require( !browser.select( 0, other, selected ) && browser.page().entries.empty(),
+                 "Project switch must clear displayed rows and reject stale selection" );
+        require( browser.refresh( catalog, query ) && !browser.next( other ) &&
+                 browser.page().entries.empty(),
+                 "Project switch during navigation must reject the previous catalog" );
+        require( browser.refresh( catalog, query ) && browser.next( catalog ),
+                 "Browser must recover after rejected navigation" );
+        require( !other->queryEntries( query, &firstCursor ).succeeded,
+                 "A different catalog must reject foreign continuations" );
+        other->unload( nullptr );
+        auto external = openDatabase( path );
+        require( sql( external, "UPDATE resources SET type='Changed' WHERE uuid=?", { snapshot.uuid } ) != nullptr,
+                 "External connection fixture must mutate catalog" );
+        page = catalog->queryEntries( query, &firstCursor );
+        require( !page.succeeded && page.entries.empty() && !page.error.empty(),
+                 "External writes must invalidate pages without returning partial results" );
+        require( !catalog->isEntryCurrent( snapshot ), "External writes must invalidate displayed selection" );
+        require( !browser.previous( catalog ) && browser.page().entries.empty(),
+                 "Returning to page one must reject a changed generation too" );
+        require( browser.refresh( catalog, query ), "Browser must refresh the revised catalog" );
+        require( sql( external, "UPDATE resources SET type='ChangedAgain' WHERE uuid=?", { snapshot.uuid } ) != nullptr,
+                 "Second external update must succeed" );
+        require( !browser.select( 0, catalog, selected ) && selected.uuid.empty() &&
+                 browser.page().entries.empty(),
+                 "A stale displayed row must never become an assignment identity" );
+        browser.clear();
+        require( !browser.page().succeeded && browser.page().entries.empty() && !browser.hasPrevious(),
+                 "Closing a browser must discard all detached rows and navigation" );
+
+        page = catalog->queryEntries( query );
+        require( page.succeeded, "Refreshing after an external write must recover browsing" );
+        const auto beforeClose = page.next;
+        external->unload( nullptr );
+        catalog->close();
+        require( !catalog->queryEntries( query ).succeeded, "Closed catalog browse must fail without reopening" );
+        catalog->open();
+        require( !catalog->queryEntries( query, &beforeClose ).succeeded,
+                 "Close/reopen must invalidate old page continuations" );
+        require( catalog->queryEntries( query ).succeeded, "Reopened catalog must support a fresh browse" );
+        auto transient = make_ptr<AssetDatabaseManager>();
+        transient->loadFromFile( String( ( folder / "browse-transient.db" ).string().c_str() ) );
+        require( browser.refresh( transient, query ), "Transient project browser must open" );
+        WeakPtr<AssetDatabaseManager> weakCatalog = transient;
+        transient->unload( nullptr );
+        transient = nullptr;
+        require( weakCatalog.expired(), "Browser must not retain the previous project catalog" );
+        require( !browser.next( nullptr ) && browser.page().entries.empty(),
+                 "Expired project callbacks must discard detached rows" );
+        catalog->unload( nullptr );
+        std::cout << "PASS: bounded catalog DTO browsing, literal filters, stable pages, external revision and lifecycle fences\n";
+    }
+
     void seedLegacyCatalog( SmartPtr<IDatabase> database )
     {
         require( sql( database,
@@ -902,6 +1065,7 @@ int main()
             require( catalog->getDatabase() && catalog->getDatabase()->isLoaded(),
                      "Real SQLite backend must open" );
             contracts( *catalog, folder );
+            browsingContracts(folder);
             maintenanceContracts(folder);
             fileOperationContracts(folder);
             std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "

@@ -884,6 +884,100 @@ namespace workphone
         output = entry;
         return true;
     }
+    AssetDatabaseManager::EntryPage AssetDatabaseManager::queryEntries(
+        const EntryQuery &query, const EntryCursor *cursor )
+    {
+        ScopedLock lock( this );
+        EntryPage page;
+        auto fail = [&page]( const String &error ) {
+            page = EntryPage();
+            page.error = error;
+            return page;
+        };
+        if( query.pageSize == 0 || query.pageSize > 256 || query.search.size() > 1024 ||
+            query.type.size() > 256 || query.search.find( '\0' ) != String::npos ||
+            query.type.find( '\0' ) != String::npos )
+            return fail( "Invalid catalog query: page size must be 1-256 and filters must be bounded text." );
+        if( !m_catalogReady )
+            return fail( "No open asset catalog." );
+        auto database = getDatabase();
+        DatabaseConnectionLock connection( database ? dynamic_cast<ISerializedDatabase *>( database.get() )
+                                                    : nullptr );
+        if( !refreshDatabaseRevision() )
+            return fail( "Cannot read the catalog revision." );
+        const auto generation = m_catalogGeneration;
+        if( cursor && ( cursor->catalogInstance != m_catalogInstance ||
+                        cursor->generation != generation || cursor->search != query.search ||
+                        cursor->type != query.type || cursor->includeScenes != query.includeScenes ||
+                        !validValue( cursor->afterUuid, 256 ) ) )
+            return fail( "Catalog or filters changed; restart browsing from the first page." );
+        // The bundled SQLite predates instr(). GLOB is case-sensitive; escape
+        // its metacharacters so user text remains a literal substring.
+        String pattern = "*";
+        for( const auto ch : query.search )
+        {
+            if( ch == '*' ) pattern += "[*]";
+            else if( ch == '?' ) pattern += "[?]";
+            else if( ch == '[' ) pattern += "[[]";
+            else pattern += ch;
+        }
+        pattern += '*';
+        auto rows = queryCatalog( *this,
+            "SELECT uuid,path,type,kind,path_key FROM resources "
+            "WHERE (?='' OR path GLOB ? OR uuid GLOB ?) "
+            "AND (?='' OR type=?) AND (?='1' OR kind='file') "
+            "AND uuid COLLATE BINARY > ? ORDER BY uuid COLLATE BINARY LIMIT ?",
+            { query.search, pattern, pattern, query.type, query.type,
+              query.includeScenes ? "1" : "0", cursor ? cursor->afterUuid : String(),
+              StringUtil::toString( query.pageSize + 1 ) } );
+        if( !rows )
+            return fail( "Asset catalog query failed." );
+        while( !rows->eof() )
+        {
+            if( page.entries.size() == query.pageSize )
+            {
+                page.hasMore = true;
+                break;
+            }
+            EntrySnapshot entry;
+            entry.uuid = rows->getFieldValue( "uuid" );
+            entry.path = rows->getFieldValue( "path" );
+            entry.type = rows->getFieldValue( "type" );
+            const auto kind = rows->getFieldValue( "kind" );
+            const auto key = rows->getFieldValue( "path_key" );
+            if( !validValue( entry.uuid, 256 ) || !validValue( entry.type, 256 ) )
+                return fail( "Invalid catalog identity; repair the catalog before browsing." );
+            if( kind == "file" )
+            {
+                AssetCatalogPath canonical;
+                String error;
+                if( !canonicalAssetCatalogPath( m_projectRoot, entry.path, canonical, error ) ||
+                    canonical.path != entry.path || canonical.key != key )
+                    return fail( "Invalid catalog path; repair the catalog before browsing." );
+            }
+            else if( kind == "scene" && entry.path == "scene" && key.empty() )
+                entry.kind = EntryKind::Scene;
+            else
+                return fail( "Invalid catalog entry kind." );
+            entry.generation = generation;
+            entry.catalogInstance = m_catalogInstance;
+            page.entries.push_back( entry );
+            rows->nextRow();
+        }
+        // Also catches writes from another connection during this materialized query.
+        if( !refreshDatabaseRevision() || generation != m_catalogGeneration )
+            return fail( "Catalog changed during browsing; refresh the first page." );
+        page.next.search = query.search;
+        page.next.type = query.type;
+        page.next.includeScenes = query.includeScenes;
+        page.next.generation = generation;
+        page.next.catalogInstance = m_catalogInstance;
+        if( !page.entries.empty() )
+            page.next.afterUuid = page.entries.back().uuid;
+        page.succeeded = true;
+        return page;
+    }
+
     bool AssetDatabaseManager::isEntryCurrent( const EntrySnapshot &snapshot )
     {
         ScopedLock lock( this );

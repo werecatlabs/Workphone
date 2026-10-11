@@ -44,6 +44,35 @@ namespace workphone
         u64 getCatalogGeneration();
         bool tryGetEntry( const String &uuid, EntrySnapshot &output );
         bool isEntryCurrent( const EntrySnapshot &snapshot );
+        /** Literal, case-sensitive substring search and exact type filtering. No resources
+         * are constructed. Pages contain at most 256 detached rows ordered by UUID. */
+        struct EntryQuery
+        {
+            String search;
+            String type;
+            bool includeScenes = true;
+            u32 pageSize = 100;
+        };
+        struct EntryCursor
+        {
+            String afterUuid;
+            String search;
+            String type;
+            bool includeScenes = true;
+            u64 generation = 0;
+            u64 catalogInstance = 0;
+        };
+        struct EntryPage
+        {
+            Array<EntrySnapshot> entries;
+            EntryCursor next;
+            bool hasMore = false;
+            bool succeeded = false;
+            String error;
+        };
+        /** Continuations are valid only for the original filters and catalog generation.
+         * On failure no partial rows are returned; callers should restart at page one. */
+        EntryPage queryEntries( const EntryQuery &query, const EntryCursor *cursor = nullptr );
         /** Independent consistent SQLite snapshot; fails without overwriting an existing file. */
         bool backupTo( const String &path, String &error );
         enum class FileOperation { Move, Copy, Delete };

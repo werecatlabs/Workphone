@@ -429,6 +429,90 @@ configurable budgets and representative performance certification remain open.
 DDS profiles/cooking, the remaining asset database/Editor workflows, typed consumer
 swaps and shipping-release acceptance remain separate production gates.
 
+## Implementation increment 7: bounded catalog browser and Editor inspection
+
+11 October 2026. This increment repairs the authored catalog browser portion of
+**RES-046 / RV-23**. Reference assignment, domain editing and the other release
+gates remain open.
+
+AssetDatabaseManager::queryEntries returns detached identity DTOs instead of
+constructing resources/directors. It provides literal, case-sensitive path/UUID
+substring search, exact type filtering, scene exclusion and UUID-ordered keyset
+pagination. Page sizes are constrained to 1–256; filter text and continuation
+identities are bounded and reject embedded NULs. All SQL values are bound.
+Literal matching uses escaped GLOB patterns supported by the bundled SQLite;
+asterisks, question marks and brackets in user input remain literal.
+Continuations carry their original filters, catalog instance and generation;
+changed filters, catalog switches, close/reopen and external committed writes
+invalidate them. Failed queries return an explicit error with no partial rows.
+Connection serialization and a persisted-revision check around materialization
+detect writes through the shared connection or another SQLite connection.
+Each returned row is validated against canonical path/kind rules.
+
+AssetCatalogBrowser is the shared, UI-independent navigation/selection model.
+It retains the catalog weakly, clears detached rows on a project mismatch and
+validates displayed generation evidence before selection or previous-page
+navigation (including a return to page one). Refresh resets page history.
+The native contracts exercise the same model used by the Editor.
+
+AssetDatabaseWindow now resolves the active project's catalog, or an explicitly
+injected catalog, without opening a database from its getter. The active-service
+path rejects a catalog whose captured root does not match the active project,
+including the interval before project service rebinding. It displays
+bounded pages, literal search and exact type controls, previous/next navigation,
+catalog errors and read-only UUID/path/type/kind details. Opening the window
+refreshes its project binding. Editing filters immediately invalidates the
+displayed rows; **Search / Refresh** explicitly applies them so typing does not
+issue a database scan per character. Selection revalidates the active catalog
+and DTO before inspection. Callbacks use weak owners, are disconnected before
+UI removal, and no worker job touches live controls.
+
+The formerly disabled configured-model/component tabs and their unreachable
+legacy SQL were removed from this catalog window. Those tables belong to the
+separate domain database Editor, whose authored editing/clone/backup/undo work
+remains **RES-045**. This window offers inspection; it does not edit catalog
+identity directly.
+
+Regression coverage uses the real SQLite backend and includes 239 mixed
+identities traversed across 17-row pages without omissions or duplicates, literal
+percent/underscore/apostrophe/SQL-looking filters, exact type and scene filtering,
+invalid limits/NULs, foreign and stale cursors, external writes, close/reopen,
+navigation and selection after a project switch, stale previous-page navigation,
+invalid selection indices, explicit clear and release of a weakly held catalog.
+
+The Windows RelWithDebInfo build passed for WPResourceTests, WPAssetCatalogTests,
+WPGraphicsCookedResourceTests, LuaRuntimeTests and Editor, with the final source
+and rebuilt dependencies. All six resource CTest suites passed:
+
+| Suite | Time |
+|---|---|
+| WorkphoneAssets.catalog_contracts | 6.59 s |
+| WPGraphics.cooked_material_resource | 1.76 s |
+| WPLua.runtime_contracts | 0.80 s |
+| WPResourceTests | 1.84 s |
+| WPResource.writer_lease | 3.52 s |
+| WPResource.index_migration | 0.47 s |
+
+Total CTest wall time: 15.12 s. git diff --check passed.
+Build logs: project_x64/resource-catalog-browser-build.log (initial build),
+project_x64/resource-catalog-browser-rebuild.log (SQLite compatibility repair),
+project_x64/resource-catalog-browser-validation-build.log (final complete target
+set and latest Editor source).
+
+Interactive acceptance still required: open two projects with overlapping asset
+UUIDs, open **Asset Database**, search/filter/page/select, switch projects while
+the window remains visible, and verify stale selection rejection and refreshed
+details. Close/reopen the panel and project repeatedly. No interactive UI or
+shipping/hardware acceptance is implied by the headless model tests.
+
+Bounds apply to returned rows and input text, not database scan time. Literal
+substring searches can scan the catalog; indexed search, asynchronous query
+publication/cancellation and representative large-project latency budgets remain
+open. The resource reference picker still requires its separate worker/lifetime,
+type-checking and undo repairs; a repaired read-only browser does not close those
+requirements. DDS cooking/uploads, packaging and production certification also
+remain open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -447,8 +531,9 @@ existing texture compiler and the next cooking consistency milestone.
    dependency invalidation and required-missing/cycle diagnostics.
 4. Integrate typed runtime consumers and owner-thread publication throughout the
    Editor and shipping sample; complete asynchronous session-safe jobs.
-5. Implement the asset database Editor, inspectors, preview/pickers, packaging
-   controls and the declared format-family matrix.
+5. Extend the bounded catalog inspection window with asynchronous scale gates;
+   implement domain editing, previews/reference pickers, packaging controls and
+   the declared format-family matrix.
 6. Execute the plan's representative Editor, source-free package, failure,
    concurrency, performance and release gates. Passing focused tests alone does
    not establish production readiness.

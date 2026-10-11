@@ -26,7 +26,11 @@ cache identities and incompatible-closure rejection. Increment 6 adds isolated
 request-owned compiler inputs, whole-request input validation and optional Lua
 sidecar invalidation. Recovery/GC, stronger identities and release certification
 remain open. Platform DDS
-packages RES-050–054 remain planned.
+packages RES-050–054 remain planned. Increment 7 adds bounded, generation-qualified
+catalog DTO queries and a functional read-only Editor catalog browser, backed by
+a weakly bound navigation/selection model. RES-046 remains partial: the reference
+picker, undoable assignment, asynchronous publication and interactive acceptance
+remain open. The standalone domain Editor remains RES-045.
 
 ### Current review summary
 
