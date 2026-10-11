@@ -19,6 +19,8 @@
 #include <chrono>
 #include <fstream>
 #include <Workphone/Database/ResourceDatabase.hpp>
+#include "MediaAssetCatalogContracts.hpp"
+#include "AssetReferenceChangeContracts.hpp"
 
 namespace workphone
 {
@@ -1066,6 +1068,8 @@ int main()
                      "Real SQLite backend must open" );
             contracts( *catalog, folder );
             browsingContracts(folder);
+            mediaAssetCatalogContracts(folder);
+            assetReferenceChangeContracts(folder);
             maintenanceContracts(folder);
             fileOperationContracts(folder);
             std::cout << "PASS: full-sync maintenance, transaction exclusion, persisted revisions, WAL backup, "

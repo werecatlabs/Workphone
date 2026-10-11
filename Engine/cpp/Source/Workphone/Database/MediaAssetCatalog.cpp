@@ -7,6 +7,9 @@
 #include <filesystem>
 #include <set>
 #include <algorithm>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace workphone
 {
@@ -73,10 +76,22 @@ namespace workphone
             boost::uuids::uuid namespaceUuid;
             std::copy( namespaceId.data(), namespaceId.data() + namespaceId.size(), namespaceUuid.begin() );
             boost::uuids::name_generator_sha1 uuid( namespaceUuid );
+            size_t visited = 0;
             for( fs::recursive_directory_iterator it( fs::u8path( root.c_str() ) ), end; it != end; ++it )
             {
+                if( ++visited > 500000 || it.depth() > 64 )
+                    throw std::runtime_error( "Media inventory exceeds its traversal budget." );
                 auto status = it->symlink_status();
                 if( fs::is_symlink( status ) ) { it.disable_recursion_pending(); continue; }
+#ifdef _WIN32
+                // Directory junctions are reparse points too. Never traverse a
+                // link outside the installation or into a recursive tree.
+                const auto attributes = GetFileAttributesW( it->path().c_str() );
+                if( attributes == INVALID_FILE_ATTRIBUTES )
+                    throw std::runtime_error( "Cannot inspect a media path." );
+                if( attributes & FILE_ATTRIBUTE_REPARSE_POINT )
+                { it.disable_recursion_pending(); continue; }
+#endif
                 if( fs::is_directory( status ) )
                 {
                     const auto name = it->path().filename().u8string();
@@ -91,8 +106,6 @@ namespace workphone
                 if( !canonicalAssetCatalogPath( root, it->path().u8string().c_str(), path, error ) )
                     throw std::runtime_error( error.c_str() );
                 auto id = boost::uuids::to_string( uuid( std::string( ( mediaNamespace + ":" + path.key ).c_str() ) ) );
-                // Convert std::string to workphone::String implicitly (std::string alias) if needed by StringUtil APIs later; boost::uuids::to_string returns std::string, which is compatible with workphone::String in this project configuration.
-
                 if( !keys.insert( path.key.c_str() ).second || !ids.insert( id.c_str() ).second )
                     throw std::runtime_error( "Bundled media has colliding canonical paths or identities." );
                 // Runtime eligibility is opt-in by a dedicated bundled Runtime tree.

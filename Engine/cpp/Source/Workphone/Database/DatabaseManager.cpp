@@ -148,7 +148,7 @@ namespace workphone
                     }
 
                     auto databasePath = getDatabasePath();
-                    if( applicationManager->isEditor() )
+                    if( applicationManager->isEditor() && !Path::isPathAbsolute( databasePath ) )
                     {
                         auto projectPath = applicationManager->getProjectPath();
                         if( StringUtil::isNullOrEmpty( projectPath ) )
@@ -157,10 +157,7 @@ namespace workphone
                             return;
                         }
 
-                        if( !Path::isPathAbsolute( databasePath ) )
-                        {
-                            databasePath = Path::getAbsolutePath( projectPath, databasePath );
-                        }
+                        databasePath = Path::getAbsolutePath( projectPath, databasePath );
                     }
 
                     if( Path::isExistingFile( databasePath ) )
