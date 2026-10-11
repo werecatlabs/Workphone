@@ -3,6 +3,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include "ClawMeshMaterial.hpp"
+#include <Workphone/Scene/TerrainIntegration.hpp>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <cstring>
@@ -25,11 +26,39 @@ namespace workphone::render
         SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error,
         u32 mask, bool shadows )
     {
+        return createPrepared( mesh, instances, error, mask, shadows, false );
+    }
+
+    std::shared_ptr<const ClawFoliageBatch> ClawFoliageBatch::createTerrainGrounded(
+        SmartPtr<ClawMesh> mesh, const scene::TerrainGroundPopulation &population, String &error,
+        const ColourF &tint, u32 mask, bool shadows )
+    {
+        if( !population.getTerrainSnapshot() )
+        { error = "Foliage ground population has not been sampled."; return nullptr; }
+        Array<ClawFoliageInstance> instances;
+        for( const auto &placement : population.getPlacements() )
+        {
+            if( !placement.supported ) continue;
+            const auto &pose = placement.worldTransform;
+            const auto &p = pose.getPosition(); const auto &s = pose.getScale(); const auto &q = pose.getOrientation();
+            ClawFoliageInstance instance;
+            instance.transform.makeTransform( { f32(p.x), f32(p.y), f32(p.z) },
+                { f32(s.x), f32(s.y), f32(s.z) }, { f32(q.w), f32(q.x), f32(q.y), f32(q.z) } );
+            instance.tint = tint;
+            instances.push_back( instance );
+        }
+        return createPrepared( mesh, instances, error, mask, shadows, true );
+    }
+
+    std::shared_ptr<const ClawFoliageBatch> ClawFoliageBatch::createPrepared(
+        SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error,
+        u32 mask, bool shadows, bool allowEmpty )
+    {
         error.clear();
         try
         {
             auto native = mesh ? mesh->getNativeMesh() : nullptr;
-            if( !native || instances.empty() || instances.size() > maximumInstances ||
+            if( !native || ( instances.empty() && !allowEmpty ) || instances.size() > maximumInstances ||
                 wp_graphics_mesh_get_primitive_type( native ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ||
                 !wp_graphics_mesh_get_vertex_count( native ) ||
                 !wp_graphics_mesh_get_index_count( native ) )
@@ -83,7 +112,7 @@ namespace workphone::render
                 const auto &tint = instances[i].tint;
                 output.tint = { tint.r, tint.g, tint.b, tint.a };
             }
-            if( !wp_renderer_dx11_validate_instances_pntc( candidate->m_impl->instances.data(),
+            if( !instances.empty() && !wp_renderer_dx11_validate_instances_pntc( candidate->m_impl->instances.data(),
                                                           static_cast<wp_s32>( instances.size() ) ) )
             {
                 error = "Foliage transforms must be finite, affine and nonsingular with positive determinant; tint must be finite.";

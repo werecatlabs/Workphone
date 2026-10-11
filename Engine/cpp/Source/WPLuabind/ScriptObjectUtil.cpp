@@ -1,6 +1,7 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/ScriptObjectUtil.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Scene/TerrainRecipes.hpp>
 #include <luabind/luabind.hpp>
 #include <luabind/detail/convert_to_lua.hpp>
 
@@ -14,6 +15,11 @@ namespace workphone
         using namespace procedural;
 
         WP_ASSERT( scriptObj->isExactly<ISharedObject>() == false );
+        if( scriptObj->isDerived<scene::TerrainRecipeStack>() )
+        {
+            luabind::detail::convert_to_lua( L, SmartPtr<scene::TerrainRecipeStack>( scriptObj ) );
+            return true;
+        }
         if( scriptObj->isDerived<scene::ProceduralRaceScene>() )
         {
             luabind::detail::convert_to_lua( L, SmartPtr<scene::ProceduralRaceScene>( scriptObj ) );

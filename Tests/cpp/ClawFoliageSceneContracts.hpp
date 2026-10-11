@@ -12,6 +12,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawScene.hpp>
 #include <Workphone/Graphics/Viewport.hpp>
+#include <Workphone/Scene/TerrainIntegration.hpp>
 #include <Workphone/State/States/ViewportStateData.hpp>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <WorkphoneGraphics/workphone_graphics_camera.h>
@@ -266,6 +267,31 @@ namespace claw_foliage_scene_contracts
         require(statistics(native).draws-noCastBefore.draws==2,
                 "a batch with castShadows disabled must retain only its colour submissions");
         scene->setEnableShadows(false);
+
+        {
+            workphone::scene::TerrainGroundPopulation population;
+            workphone::scene::TerrainGroundSeed left;left.id=101;left.localPosition={-.5f,0};
+            workphone::scene::TerrainGroundSeed right;right.id=102;right.localPosition={.5f,0};
+            auto terrain=std::make_shared<TerrainData>();terrain->origin={-1,-1};terrain->spacing={2,2};terrain->revision=1;
+            require(population.setSeeds({left,right},error)&&population.update(terrain,{},error),
+                    "terrain-owned foliage anchors must prepare stable placements");
+            auto grounded=ClawFoliageBatch::createTerrainGrounded(mesh,population,error,ColourF::White,1,false);
+            require(grounded&&grounded->instanceCount()==2&&scene->replaceFoliageBatch(replacement,grounded,error),
+                    "existing foliage renderer must accept terrain ground placement inputs");
+            const auto groundedBefore=statistics(native);
+            renderer.clear(ColourF::Black);scene->render(static_cast<IRenderer *>(&renderer));
+            require(statistics(native).draws-groundedBefore.draws==2&&
+                    statistics(native).instances-groundedBefore.instances==4,
+                    "terrain grounded foliage uses existing section instancing through actual DX11 draws");
+            auto holes=std::make_shared<TerrainData>(*terrain);holes->holes={1};holes->revision=2;
+            require(population.update(holes,{},error),"terrain hole edit updates grounded foliage support");
+            auto empty=ClawFoliageBatch::createTerrainGrounded(mesh,population,error,ColourF::White,1,false);
+            require(empty&&empty->instanceCount()==0&&scene->replaceFoliageBatch(grounded,empty,error),
+                    "fully holed ground replaces foliage with a valid empty batch");
+            const auto holeBefore=statistics(native);
+            renderer.clear(ColourF::Black);scene->render(static_cast<IRenderer *>(&renderer));
+            require(statistics(native).draws==holeBefore.draws,"terrain holes remove grounded foliage GPU submissions");
+        }
 
         mesh=nullptr; first.reset(); replacement.reset(); oldSnapshot.reset();
         scene->clear();

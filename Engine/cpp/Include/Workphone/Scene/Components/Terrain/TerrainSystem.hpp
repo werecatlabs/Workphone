@@ -5,12 +5,15 @@
 #include <Workphone/Memory/AtomicWeakPtr.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
+#include <Workphone/Graphics/Terrain.hpp>
 #include <mutex>
 
 namespace workphone
 {
     namespace scene
     {
+        class TerrainEditStroke;
+        struct TerrainBrush;
 
         /**
          * @brief Component responsible for managing terrain within a scene.
@@ -297,11 +300,21 @@ namespace workphone
              * Mutations are owner-thread commits; retained snapshots are safe to read.
              */
             render::TerrainSnapshot getTerrainSnapshot() const;
+            render::TerrainSnapshot getActiveTerrainSnapshot() const;
+            /** Atomically capture the active integration publication, including pose-only
+             * generations and lifecycle invalidation. Subscriber reconciliation uses serial.
+             */
+            void getTerrainIntegrationState( render::TerrainSnapshot &snapshot,
+                Transform3<real_Num> &placement, u64 &serial, bool &detached ) const;
             u64 getTerrainRevision() const;
             bool applyTerrainData( const render::TerrainData &data, String &error,
                                    u64 expectedRevision = 0 );
             String exportTerrainData() const;
             bool importTerrainData( const String &json, String &error );
+            bool beginEditStroke( SmartPtr<ICommandManager> commands, String &error );
+            bool updateEditStroke( const TerrainBrush &brush, String &error );
+            bool commitEditStroke( String &error );
+            bool cancelEditStroke( String &error );
             SmartPtr<ISharedObject> toData() const override;
 
             /**
@@ -446,6 +459,14 @@ namespace workphone
 
             mutable std::mutex m_terrainDataMutex;
             render::TerrainSnapshot m_terrainData;
+            render::TerrainSnapshot m_activeTerrainData;
+            Transform3<real_Num> m_integrationPlacement;
+            u64 m_integrationSerial = 1;
+            bool m_integrationAvailable = true, m_integrationDetached = false;
+            bool publishTerrainConsumers( render::TerrainSnapshot snapshot,
+                const render::Terrain::TerrainPublication &publish, String &error,
+                render::Terrain *renderer );
+            std::unique_ptr<TerrainEditStroke> m_editStroke;
 
             /** Scene node the terrain is attached to. */
             SmartPtr<render::IGraphicsSceneNode> m_node;

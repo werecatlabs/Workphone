@@ -49,7 +49,7 @@ contract samples different source/clone palettes and continues drawing the clone
 after source unload.
 
 `WPAnimation.import_contracts` exercises both real import routes using the authored
-`Tests/Fixtures/Animation/analytic_channels.gltf`, plus malformed import retention,
+`Tests/cpp/Fixtures/Animation/analytic_channels.gltf`, plus malformed import retention,
 bind defaults, sparse grids and independent skeleton playback. The glTF contains
 two animated nodes and an unskinned triangle; it does not certify mesh-skin import.
 `WPAnimation.core_contracts` registers the existing graph and IK suites in the

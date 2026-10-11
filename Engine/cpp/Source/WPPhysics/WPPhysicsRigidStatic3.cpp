@@ -34,6 +34,8 @@ namespace workphone::physics
         {
             throw std::runtime_error("Failed to create WPPhysics static rigid body.");
         }
+        try { m_shapes.reserve(WP_RIGIDBODY_MAX_SHAPES); }
+        catch(...) { wp_rigidbody_destroy(m_body); m_body = nullptr; throw; }
     }
 
     WPPhysicsRigidStatic3::~WPPhysicsRigidStatic3()

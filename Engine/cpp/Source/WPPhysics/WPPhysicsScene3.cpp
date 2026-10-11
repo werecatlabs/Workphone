@@ -198,6 +198,7 @@ namespace workphone::physics
                                      SmartPtr<ISharedObject> &object, u32 collisionType,
                                      u32 collisionMask)
     {
+        ScopedLock lock(this);
         object = nullptr;
         wp_vec3f p, n;
         wp_rigidbody *hitBody = nullptr;
@@ -358,11 +359,13 @@ namespace workphone::physics
 
     void WPPhysicsScene3::simulate(real_Num elapsedTime, void *, u32, bool)
     {
+        ScopedLock lock(this);
         wp_physics_scene_simulate(m_scene, elapsedTime);
     }
 
     bool WPPhysicsScene3::fetchResults(bool block, u32 *errorState)
     {
+        ScopedLock lock(this);
         if(errorState)
         {
             *errorState = 0;
@@ -399,6 +402,11 @@ namespace workphone::physics
     wp_physics_scene *WPPhysicsScene3::getScene() const
     {
         return m_scene;
+    }
+
+    void WPPhysicsScene3::_getObject(void **object) const
+    {
+        if(object) *object = m_scene;
     }
 
     void WPPhysicsScene3::publishActiveTransforms()

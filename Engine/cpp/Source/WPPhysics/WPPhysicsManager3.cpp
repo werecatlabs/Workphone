@@ -932,7 +932,10 @@ namespace workphone::physics
                 return false;
             }
 
-            bodies = m_bodies;
+            // Detached prepared/retired shapes cannot appear in a body's list.
+            // Avoid allocating a world-sized snapshot during terrain publication.
+            if(collisionShape->getActor())
+                bodies = m_bodies;
             m_shapes.erase(shapeIt);
         }
 

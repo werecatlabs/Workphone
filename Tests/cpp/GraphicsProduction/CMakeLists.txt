@@ -1,4 +1,4 @@
-set(WP_GRAPHICS_CONTRACT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(WP_GRAPHICS_CONTRACT_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 add_library(WPGraphicsProductionReference STATIC
     ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_skinning.c
     ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_particle_simulation.c)

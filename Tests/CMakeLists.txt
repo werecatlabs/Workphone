@@ -8,7 +8,7 @@ if (WP_BUILD_TESTS)
 			#add_subdirectory(./cpp/NetworkProduction)
 		#endif()
 		
-		#add_subdirectory(./cpp/GraphicsProduction)
+		add_subdirectory(./cpp/GraphicsProduction)
 		add_subdirectory(./cpp)
 	endif()
 	

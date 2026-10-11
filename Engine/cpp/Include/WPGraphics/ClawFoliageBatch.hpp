@@ -6,6 +6,8 @@
 #include <Workphone/Core/ColourF.hpp>
 #include <memory>
 
+namespace workphone::scene { class TerrainGroundPopulation; }
+
 namespace workphone::render
 {
     class ClawMesh;
@@ -27,6 +29,12 @@ namespace workphone::render
         static std::shared_ptr<const ClawFoliageBatch> create(
             SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error,
             u32 visibilityMask = ~u32( 0 ), bool castShadows = true );
+        /** Uses terrain-owned stable placements; holes/outside anchors are omitted.
+         * The caller replaces its existing scene batch after a population update.
+         */
+        static std::shared_ptr<const ClawFoliageBatch> createTerrainGrounded(
+            SmartPtr<ClawMesh> mesh, const scene::TerrainGroundPopulation &population, String &error,
+            const ColourF &tint = ColourF::White, u32 visibilityMask = ~u32( 0 ), bool castShadows = true );
         ~ClawFoliageBatch();
         ClawFoliageBatch( const ClawFoliageBatch & ) = delete;
         ClawFoliageBatch &operator=( const ClawFoliageBatch & ) = delete;
@@ -38,6 +46,9 @@ namespace workphone::render
     private:
         ClawFoliageBatch();
         struct Impl;
+        static std::shared_ptr<const ClawFoliageBatch> createPrepared(
+            SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error,
+            u32 visibilityMask, bool castShadows, bool allowEmpty );
         std::unique_ptr<Impl> m_impl;
     };
 }

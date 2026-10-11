@@ -78,6 +78,9 @@ namespace claw_terrain_contracts
     class TerrainFixture : public ClawTerrain
     {
     public:
+        // This fixture inspects CPU/native reference geometry without a device.
+        // The separate GPU fixtures exercise deferred, all-consumer publication.
+        TerrainFixture() { setDeferredTerrainPublication(false); }
         wp_graphics_mesh *cachedMesh() const
         {
             return m_renderMesh;

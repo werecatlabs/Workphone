@@ -4,6 +4,7 @@ param(
     [ValidateSet('Debug', 'RelWithDebInfo')][string[]]$Configuration = @('Debug', 'RelWithDebInfo'),
     [string]$CMakeExecutable,
     [string]$Generator,
+    [switch]$IncludeEditor,
     [switch]$RequireExternalAssets
 )
 $ErrorActionPreference = 'Stop'
@@ -50,6 +51,7 @@ function Invoke-BaselineCMake([string[]]$Arguments, [string]$LogPath) {
 
 Write-Host "Using $CMakeExecutable"
 $configureArguments = @('--preset', 'wpgraphics-baseline', '-B', $buildPath)
+if ($IncludeEditor) { $configureArguments += @('-DWP_BUILD_TOOLS=ON', '-DWP_BUILD_EDITOR=ON') }
 if ($Generator) { $configureArguments += @('-G', $Generator) }
 Invoke-BaselineCMake $configureArguments (Join-Path $buildPath 'baseline-configure.log')
 $presets = Get-Content -LiteralPath (Join-Path $repositoryRoot 'CMakePresets.json') -Raw | ConvertFrom-Json
@@ -58,6 +60,7 @@ foreach ($config in $Configuration) {
     $preset = $presets.buildPresets | Where-Object { $_.name -eq $presetName }
     Write-Host "Building WPGraphics baseline: $config"
     $buildArguments = @('--build', $buildPath, '--config', $config, '--parallel', '4', '--target') + $preset.targets
+    if ($IncludeEditor) { $buildArguments += 'Editor' }
     Invoke-BaselineCMake ($buildArguments + @('--', '/nodeReuse:false', '/verbosity:minimal')) (Join-Path $buildPath "baseline-$config-build.log")
     & (Join-Path $PSScriptRoot 'ValidateClawGraphics.ps1') -BuildDirectory $buildPath -Configuration $config -CTestExecutable $ctestExecutable -RequireExternalAssets:$RequireExternalAssets
 }

@@ -1,5 +1,106 @@
 # WPGraphics implementation status
 
+## Terrain runtime and expanded authoring — 11 October 2026
+
+Continues on `brodex` at `ce2aecf5b`, matching the remote branch when checked.
+The intervening branch work adds immutable resource manifests and input snapshots,
+catalog browsing, asset-reference/lifetime fixes, SQLite integration, and audio
+queue/cache changes. Previous terrain, foliage and animation implementations are
+retained. The moved graphics test directory and commented terrain/graphics target
+registrations have been repaired so validation actually builds those contracts.
+
+The current terrain changes connect these paths:
+
+- Version-three rectangular terrain assets contain four PBR layer descriptors,
+  normalized control weights, wetness/snow masks and cell holes. Version-one and
+  version-two sources migrate. CPU
+  sampling, picking, render geometry, collision, navigation input and shoreline
+  intersections share the same triangulation and hole policy.
+- DX11 stages all layer maps, control data and resident tile geometry before
+  publication. Source, runtime queries, collision and rendered generation advance
+  together; failed preparation or a busy physics scene retains the previous
+  complete runtime generation. Authoring has an explicit requested revision.
+- Terrain appearance includes height blending from ORM alpha, triplanar projection,
+  detail normals, seeded macro tint and masked wetness/snow. Persistent controls
+  and mask brushes participate in undo; defaults retain earlier asset appearance.
+- Terrain uses 64-cell tiles and four distance/error-selected LODs. Coarser interiors
+  retain every shared border sample and source-wide normal, avoiding cracks
+  between different LODs. Hole tiles remain exact. Camera/shadow demand, frustum
+  prefetch, hysteresis, cancellation, bounded worker queues and GPU upload/residency
+  budgets replace global nearest-sample reduction. Both shadow and colour passes
+  consume one published generation.
+- A shared world streaming scheduler replaces terrain-specific worker threads.
+  Producers share bounded CPU preparation, priority/fairness and memory admission;
+  tile GPU reservations follow actual buffers through staging, reuse and retirement.
+- The existing Lua editor drives grouped/cancellable viewport strokes, sculpting,
+  layer painting, holes, image/raw import and actual height/OBJ exports. Native
+  inspector integration provides world-ray input and a sampled brush outline.
+- Thermal/hydraulic erosion, terrace/noise, height/slope masks and road/river grading
+  produce real data. Erosion reads authoritative neighbour halos and writes only
+  the selected region. Ordered recipes retain a base, operation parameters and
+  deterministic seed; their cancellable worker prepares a geometry/control-weight
+  viewport overlay, then commits as one undo command with stale-source protection.
+- Terrain-grounded foliage retains stable placement identities and resamples dirty
+  ground, density/exclusion-mask and filtered layer-weight regions. Retained
+  consumer bindings rebuild selected ground, navigation, shoreline and path inputs
+  after an active terrain publication, preserving their previous complete bundle
+  on failure. Explicit OBJ/JSON exports remain available. Cooked terrain and its
+  texture closure load through ResourceSystem without an authoring database or compiler.
+
+See [Terrain workflow](TERRAIN_WORKFLOW.md) for supported controls, formats,
+transaction behavior and limits. This implementation does not certify the full
+graphics R1/R2 programme. In particular, full-source collision has a 524,288
+triangle budget; terrain CPU source/control data stay resident; adoption of the
+shared scheduler by other world producers, disk-paged collision and the independent foliage/navigation/water
+engines remain separate integration work. GT0/GT1 release evidence also requires
+interactive visual acceptance and representative performance/package/soak runs.
+The [capability matrix](TERRAIN_WORKFLOW.md#capability-and-evidence-matrix) maps
+TERR-01 through TERR-10 to concrete code, tests and unsupported cases; the
+[resource format reference](WPGRAPHICS_TERRAIN_RESOURCE_FORMAT.md) covers cooking
+and migration. The appearance tier remains opaque four-layer PBR with optional
+detail and surface effects; it does not introduce a weather simulation.
+
+Validation completed on 11 October 2026 using CMake 4.4.4, Visual Studio 2026 /
+MSVC 19.51, Windows SDK 10.0.26100 and the NVIDIA RTX 3090 DX11 device (driver
+32.0.16.1692). **Debug: 19 passed, 1 unavailable. RelWithDebInfo: 19 passed,
+1 unavailable.** The Editor builds in both configurations. The only unavailable
+test is `WorkphoneGraphics.mesh_import_assets`, which requires six external
+Ogre/OgreNext fixtures absent from this checkout. Both evidence reports record
+`validationPassed: true`; coverage remains incomplete and release certification
+is false. All 139 recorded source hashes match the final implementation.
+
+The terrain CPU/scheduler, native physics, actual Lua workflow, DX11 production
+and source-free cooked-resource suites pass in both configurations. Coverage
+includes shared budget rejection/recovery and lease retirement, coherent
+collision/render publication, all expanded material effects, thirteen pinned
+texture dependencies, v1/v2/v3 migration, recipe save during preparation, and
+undo followed by a different appearance/layer edit. The native Editor viewport
+was built; an interactive Editor walkthrough was not performed.
+
+Representative local fixture measurements from these runs:
+
+| Fixture | Debug | RelWithDebInfo |
+|---|---:|---:|
+| CPU stream: 1025 × 1025 source, 256 LOD3 tiles | 487.517 ms | 479.969 ms |
+| Thermal erosion: 129 × 129, 16 iterations, seed 97 | 75.156 ms | 29.479 ms |
+| Hydraulic erosion: same dimensions/iterations/seed | 92.348 ms | 38.562 ms |
+| GPU residency: 129 × 129, four tiles, cold preparation | 49.164 ms | 48.487 ms |
+| Ten unchanged GPU preparations | 0.113 ms | 0.031 ms |
+
+Both streaming runs peak at 8 MiB of reserved ready-result capacity. The four-tile
+GPU fixture retains 76,176 geometry bytes and uploads zero geometry bytes during
+its ten warm preparations. Erosion has a 13 MiB simulation-array ceiling at its
+262,144-sample cap; this is not a measured whole-process peak. These are local
+microfixtures, not a mixed-scene frame-time or soak acceptance result.
+
+Reproduce with `Tools/BuildWPGraphicsBaseline.ps1 -Configuration Debug,RelWithDebInfo -IncludeEditor`.
+The current local reports are
+`cmake-build-debug-vs2026-readiness/claw-graphics-{Debug,RelWithDebInfo}-results.xml`
+and the corresponding `-evidence.json` files. Build logs are
+`baseline-{Debug,RelWithDebInfo}-build.log` in that directory. The workflow's
+capability matrix retains the outstanding interactive, representative
+performance/soak and shipping-package acceptance work.
+
 
 ## Foliage, animation and shared-resource foundations - 10 October 2026
 

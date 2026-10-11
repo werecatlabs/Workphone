@@ -52,6 +52,7 @@
 #include <Workphone/Scene/Components/Terrain/TerrainLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/TerrainEditing.hpp>
+#include <Workphone/Scene/TerrainRecipes.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
 #include <Workphone/Scene/Components/Script.hpp>
 #include <Workphone/Scene/Components/VehicleController.hpp>
@@ -62,6 +63,8 @@
 
 namespace workphone
 {
+    String terrainAuthoring( scene::TerrainSystem *terrain, const String &action, luabind::object options );
+    SmartPtr<scene::TerrainRecipeStack> terrainCreateRecipe( scene::TerrainSystem *terrain );
     namespace
     {
         String terrainBrush( scene::TerrainSystem *terrain, const String &mode, f32 x, f32 z,
@@ -409,6 +412,10 @@ namespace workphone
                         .def( "generate", &Script::generate )
                         .scope[def( "typeInfo", Script::typeInfo )]];
 
+        module( L )[class_<TerrainRecipeStack, ISharedObject, SmartPtr<TerrainRecipeStack>>( "TerrainRecipeStack" )
+            .def( "isBusy", &TerrainRecipeStack::isBusy )
+            .def( "getOperationCount", &TerrainRecipeStack::getOperationCount )
+            .def( "getGeneration", &TerrainRecipeStack::getGeneration )];
         module(
             L )[class_<TerrainSystem, Component, SmartPtr<TerrainSystem>>( "TerrainSystem" )
                     .def( "load", &TerrainSystem::load )
@@ -434,6 +441,8 @@ namespace workphone
                     .def( "rebuild", &TerrainSystem::rebuild )
                     .def( "generateHeightMap", &TerrainSystem::generateHeightMap )
                     .def( "applyHeightBrush", &terrainBrush )
+                    .def( "editTerrain", &terrainAuthoring )
+                    .def( "createTerrainRecipe", &terrainCreateRecipe )
                     .def( "saveTerrainDataFile", &terrainSave )
                     .def( "loadTerrainDataFile", &terrainLoad )
                     .def( "exportTerrainData", &TerrainSystem::exportTerrainData )

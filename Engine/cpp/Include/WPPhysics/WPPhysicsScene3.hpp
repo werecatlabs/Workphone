@@ -115,6 +115,7 @@ namespace workphone::physics
 
         /** @brief Returns the underlying low-level physics scene handle. */
         wp_physics_scene *getScene() const;
+        void _getObject(void **object) const override;
 
         /** @brief Sets the spatial partitioning method. */
         void setSpatialPartitioning(SpatialPartitioningMethodEnum method) override;

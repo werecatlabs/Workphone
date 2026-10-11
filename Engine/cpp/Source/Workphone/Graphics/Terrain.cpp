@@ -57,7 +57,8 @@ namespace workphone::render
         initial->heightScale = m_heightScale;
         initial->heights.resize( size_t( m_heightMapSize.x ) * m_heightMapSize.y, 0.0f );
         initial->revision = 1;
-        m_terrainSnapshot = std::move( initial );
+        m_terrainSnapshot = initial;
+        m_activeTerrainSnapshot = std::move( initial );
     }
 
     Terrain::~Terrain()
@@ -73,6 +74,91 @@ namespace workphone::render
     u64 Terrain::getTerrainRevision() const
     {
         return getTerrainSnapshot()->revision;
+    }
+
+    TerrainSnapshot Terrain::getActiveTerrainSnapshot() const
+    {
+        return std::atomic_load( &m_activeTerrainSnapshot );
+    }
+
+    void Terrain::resetActiveTerrainPublication()
+    {
+        SmartPtr<IMesh> retiredMesh;
+        {
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            std::atomic_store( &m_activeTerrainSnapshot, TerrainSnapshot{} );
+            m_activeTerrainWorldTransform = Transform3<real_Num>();
+            retiredMesh = m_cpuTerrainMesh;
+            m_cpuTerrainMesh = nullptr;
+            m_cpuTerrainMeshRevision = 0;
+        }
+    }
+
+    void Terrain::setDeferredTerrainPublication( bool deferred )
+    {
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        if( !deferred && m_deferredTerrainPublication && getActiveTerrainSnapshot() &&
+            ( getTerrainSnapshot() != getActiveTerrainSnapshot() || m_terrainWorldTransform != m_activeTerrainWorldTransform ) )
+        {
+            WP_LOG_WARNING( "Cannot disable terrain publication while a candidate is pending." );
+            return;
+        }
+        m_deferredTerrainPublication = deferred;
+        if( !deferred )
+        {
+            std::atomic_store( &m_activeTerrainSnapshot, getTerrainSnapshot() );
+            m_activeTerrainWorldTransform = m_terrainWorldTransform;
+        }
+    }
+
+    bool Terrain::isTerrainPublicationDeferred() const
+    {
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        return m_deferredTerrainPublication;
+    }
+
+    bool Terrain::hasPendingTerrainPublication() const
+    {
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        return getTerrainSnapshot() != getActiveTerrainSnapshot() ||
+               m_terrainWorldTransform != m_activeTerrainWorldTransform;
+    }
+
+    Transform3<real_Num> Terrain::getRequestedTerrainWorldTransform() const
+    {
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        return m_terrainWorldTransform;
+    }
+
+    void Terrain::setTerrainPublicationGate( TerrainPublicationGate gate )
+    {
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        m_terrainPublicationGate = std::move( gate );
+    }
+
+    bool Terrain::publishPendingTerrain( TerrainSnapshot expected,
+        const std::function<void()> &commitRenderer, String &error )
+    {
+        SmartPtr<IMesh> retiredMesh;
+        TerrainPublicationGate gate;
+        {
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            gate = m_terrainPublicationGate;
+        }
+        const TerrainPublication publish = [&]( const std::function<void()> &commitDependents, String &failure ) {
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            if( !expected || getTerrainSnapshot() != expected )
+            { failure = "Terrain render candidate was superseded."; return false; }
+            if( commitDependents ) commitDependents();
+            if( commitRenderer ) commitRenderer();
+            std::atomic_store( &m_activeTerrainSnapshot, expected );
+            m_activeTerrainWorldTransform = m_terrainWorldTransform;
+            retiredMesh = m_cpuTerrainMesh;
+            m_cpuTerrainMesh = nullptr;
+            m_cpuTerrainMeshRevision = 0;
+            failure.clear(); return true;
+        };
+        return gate ? gate( expected, publish, error ) : publish( {}, error );
     }
 
     bool Terrain::applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision )
@@ -95,7 +181,9 @@ namespace workphone::render
                 if( current->dimensions == candidate->dimensions &&
                     current->spacing == candidate->spacing && current->origin == candidate->origin &&
                     current->heightScale == candidate->heightScale &&
-                    current->heights == candidate->heights )
+                    current->heights == candidate->heights && current->layers == candidate->layers &&
+                    current->layerWeights == candidate->layerWeights && current->holes == candidate->holes &&
+                    current->appearance == candidate->appearance && current->surfaceMasks == candidate->surfaceMasks )
                     return true;
                 if( current->revision == std::numeric_limits<u64>::max() )
                 {
@@ -106,8 +194,12 @@ namespace workphone::render
                 m_heightMapSize = candidate->dimensions;
                 m_heightScale = candidate->heightScale;
                 std::atomic_store( &m_terrainSnapshot, TerrainSnapshot( candidate ) );
-                m_cpuTerrainMesh = nullptr;
-                m_cpuTerrainMeshRevision = 0;
+                if( !m_deferredTerrainPublication )
+                {
+                    std::atomic_store( &m_activeTerrainSnapshot, TerrainSnapshot( candidate ) );
+                    m_cpuTerrainMesh = nullptr;
+                    m_cpuTerrainMeshRevision = 0;
+                }
             }
             // The retained snapshot is authoritative. Mirror legacy state for existing
             // property/renderer listeners without making queries depend on a StateManager.
@@ -141,6 +233,30 @@ namespace workphone::render
             error = exception.what();
             return false;
         }
+    }
+
+    bool Terrain::requestTerrainSnapshot( TerrainSnapshot snapshot, String &error, u64 expectedRevision )
+    {
+        if( !snapshot || !validateTerrainData( *snapshot, error ) )
+        { if( !snapshot ) error = "Missing terrain snapshot."; return false; }
+        {
+            std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+            if( expectedRevision && getTerrainSnapshot()->revision != expectedRevision )
+            { error = "Terrain request was superseded."; return false; }
+            if( !validateTerrainPlacement( *snapshot, m_terrainWorldTransform, error ) ) return false;
+            std::atomic_store( &m_terrainSnapshot, snapshot );
+            m_heightMapSize = snapshot->dimensions;
+            m_heightScale = snapshot->heightScale;
+            if( !m_deferredTerrainPublication )
+            {
+                std::atomic_store( &m_activeTerrainSnapshot, snapshot );
+                m_cpuTerrainMesh = nullptr;
+                m_cpuTerrainMeshRevision = 0;
+            }
+        }
+        try { _onHeightDataChanged(); _onHeightScaleChanged(); }
+        catch( const std::exception &exception ) { WP_LOG_EXCEPTION( exception ); }
+        error.clear(); return true;
     }
 
     void Terrain::load( SmartPtr<ISharedObject> data )
@@ -273,7 +389,7 @@ namespace workphone::render
     Transform3<real_Num> Terrain::getWorldTransform() const
     {
         std::lock_guard<std::mutex> lock( m_terrainDataMutex );
-        return m_terrainWorldTransform;
+        return m_activeTerrainWorldTransform;
     }
 
     void Terrain::setWorldTransform( const Transform3<real_Num> &worldTransform )
@@ -294,6 +410,7 @@ namespace workphone::render
                 return;
             }
             m_terrainWorldTransform = worldTransform;
+            if( !m_deferredTerrainPublication ) m_activeTerrainWorldTransform = worldTransform;
         }
         if( auto context = getStateContext() )
             if( auto state = context->invalidateStateDataById<TransformStateData>( getId() ) )
@@ -312,7 +429,7 @@ namespace workphone::render
             WP_LOG_WARNING( "Terrain position must be finite" );
             return;
         }
-        auto transform = getWorldTransform();
+        auto transform = getRequestedTerrainWorldTransform();
         transform.setPosition( position );
         setWorldTransform( transform );
     }
@@ -323,11 +440,11 @@ namespace workphone::render
         Transform3<real_Num> transform;
         {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
-            snapshot = getTerrainSnapshot();
-            transform = m_terrainWorldTransform;
+            snapshot = getActiveTerrainSnapshot();
+            transform = m_activeTerrainWorldTransform;
         }
         f32 height = 0;
-        sampleTerrainHeight( *snapshot, transform, position, height );
+        if( snapshot ) sampleTerrainHeight( *snapshot, transform, position, height );
         return height;
     }
 
@@ -343,8 +460,12 @@ namespace workphone::render
 
     Vector3<real_Num> Terrain::getTerrainSpacePosition( const Vector3<real_Num> &worldSpace ) const
     {
-        const auto snapshot = getTerrainSnapshot();
-        const auto local = getWorldTransform().inverseTransformPoint( worldSpace );
+        std::lock_guard<std::mutex> lock( m_terrainDataMutex );
+        const auto snapshot = getActiveTerrainSnapshot();
+        if( !snapshot ) return Vector3<real_Num>::zero();
+        const auto &transform = m_activeTerrainWorldTransform;
+        const auto local = ( transform.getOrientation().inverse() *
+            ( worldSpace - transform.getPosition() ) ) / transform.getScale();
         if( !std::isfinite( local.x ) || !std::isfinite( local.y ) || !std::isfinite( local.z ) )
             return Vector3<real_Num>::zero();
         return { std::clamp( ( local.x - snapshot->origin.x ) / snapshot->spacing.x, real_Num( 0 ),
@@ -512,11 +633,11 @@ namespace workphone::render
         Transform3<real_Num> transform;
         {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
-            snapshot = getTerrainSnapshot();
-            transform = m_terrainWorldTransform;
+            snapshot = getActiveTerrainSnapshot();
+            transform = m_activeTerrainWorldTransform;
         }
-        Vector3<real_Num> hit;
-        const auto intersects = intersectTerrain( *snapshot, transform, ray, hit );
+        Vector3<real_Num> hit = Vector3<real_Num>::zero();
+        const auto intersects = snapshot && intersectTerrain( *snapshot, transform, ray, hit );
         return _makeRayResult( intersects, hit );
     }
 
@@ -534,6 +655,8 @@ namespace workphone::render
 
     SmartPtr<IMesh> Terrain::getMesh() const
     {
+        const auto snapshot = getActiveTerrainSnapshot();
+        if( !snapshot ) return nullptr;
         // Mesh's existing synchronization is owned by the engine mesh manager.
         // Renderer-free callers can always use buildTerrainMeshData directly.
         auto application = core::IApplicationManager::instancePtr();
@@ -542,7 +665,6 @@ namespace workphone::render
             WP_LOG_WARNING( "Terrain CPU mesh requires the engine mesh manager" );
             return nullptr;
         }
-        const auto snapshot = getTerrainSnapshot();
         {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             if( m_cpuTerrainMesh && m_cpuTerrainMeshRevision == snapshot->revision )
@@ -572,7 +694,7 @@ namespace workphone::render
             if( mesh )
                 mesh->updateAABB();
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
-            if( getTerrainRevision() == snapshot->revision )
+            if( getActiveTerrainSnapshot() == snapshot )
             {
                 m_cpuTerrainMesh = mesh;
                 m_cpuTerrainMeshRevision = snapshot->revision;
@@ -600,6 +722,9 @@ namespace workphone::render
             return;
         auto candidate = *previous;
         candidate.dimensions = dimensions;
+        candidate.layerWeights.clear();
+        candidate.surfaceMasks.clear();
+        candidate.holes.clear();
         // Preserve the actual legacy Claw convention for existing separate size/data setters.
         candidate.origin = { -dimensions.x * candidate.spacing.x * 0.5f,
                              -dimensions.y * candidate.spacing.y * 0.5f };
@@ -842,6 +967,9 @@ namespace workphone::render
                 if( terrainState )
                 {
                     candidate.dimensions = terrainState->heightMapSize;
+                    candidate.layerWeights.clear();
+                    candidate.surfaceMasks.clear();
+                    candidate.holes.clear();
                     candidate.heightScale = terrainState->heightScale;
                     candidate.heights = terrainState->heightData;
                     m_materialName = terrainState->materialName;

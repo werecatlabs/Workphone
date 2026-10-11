@@ -3,6 +3,7 @@
 #include <Workphone/Scene/Components/RigidbodyListener.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/Components/Collision.hpp>
+#include <Workphone/Scene/Components/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Constraint.hpp>
 #include <Workphone/Scene/Transform.hpp>
 #include <Workphone/Interface/System/IFSMManager.hpp>
@@ -804,6 +805,8 @@ namespace workphone::scene
                     if( collision->isLoaded() )
                     {
                         auto shape = collision->getShape();
+                        if( !shape && dynamic_cast<CollisionTerrain *>( collision.get() ) )
+                            return; // First terrain generation waits for its GPU/physics publication gate.
                         WP_ASSERT( shape );
 
                         if( shape && !shape->isAttached() )
@@ -1480,6 +1483,11 @@ namespace workphone::scene
 
     void Rigidbody::updateTransform()
     {
+        if( auto actor = getActor() )
+            if( auto terrain = actor->getComponent<CollisionTerrain>() )
+                if( terrain->getTerrainSnapshot() &&
+                    actor->getWorldTransform() != terrain->getPublishedTerrainTransform() )
+                    return; // TerrainSystem publishes validated placement and collision together.
         auto state = getState();
         switch( state )
         {

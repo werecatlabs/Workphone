@@ -27,6 +27,9 @@
 #include "ClawSceneNodeTransformContracts.hpp"
 #include "ClawMaterialPassLifetimeContracts.hpp"
 #include "ClawTerrainContracts.hpp"
+#include "ClawTerrainMaterialContracts.hpp"
+#include "ClawTerrainStreamingContracts.hpp"
+#include "ClawTerrainMotionContracts.hpp"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -347,6 +350,9 @@ int main()
             ok &= testRenderedFeatures(renderer);
             ok &= testMeshShadows(renderer);
             ok &= claw_terrain_contracts::run(renderer);
+            ok &= claw_terrain_material_contracts::run(renderer);
+            ok &= claw_terrain_streaming_contracts::run(renderer);
+            ok &= claw_terrain_motion_contracts::run(renderer);
             ok &= claw_foliage_contracts::run(renderer);
             ok &= claw_foliage_scene_contracts::run(renderer);
             ok &= claw_animation_contracts::run(renderer);

@@ -4,6 +4,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawTerrain.hpp>
+#include <WPGraphics/ClawTerrainMaterial.hpp>
 #include <WPGraphics/ClawWindow.hpp>
 #include <WPGraphics/ClawUtil.hpp>
 #include "ClawMeshMaterial.hpp"
@@ -448,12 +449,16 @@ namespace workphone::render
         g_skyEnvironmentCaches.erase( this );
         m_environment.reset();
         m_previewEnvironment.reset();
-        for( auto &[mesh, cache] : g_meshVertexCaches )
+        const auto native = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
+        for( auto it = g_meshVertexCaches.begin(); it != g_meshVertexCaches.end(); )
         {
-            (void)mesh;
-            wp_renderer_dx11_destroy_geometry( cache.geometry );
+            if( it->second.renderer == native && native )
+            {
+                wp_renderer_dx11_destroy_geometry( it->second.geometry );
+                it = g_meshVertexCaches.erase( it );
+            }
+            else ++it;
         }
-        g_meshVertexCaches.clear();
         if( m_renderer )
         {
             wp_renderer_destroy( m_renderer );
@@ -481,6 +486,7 @@ namespace workphone::render
                     ++it;
         }
         m_inFrame = true;
+        ++m_terrainFrame;
         wp_renderer_begin_frame( m_renderer );
         if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
             wp_renderer_dx11_set_environment( dx11, nullptr, 0.0f );
@@ -1196,26 +1202,72 @@ namespace workphone::render
         return submitted;
     }
 
-    void ClawRendererDX11::renderTerrain( const SmartPtr<ClawTerrain> &terrain )
+    bool ClawRendererDX11::prepareTerrainGeometry( const wp_graphics_mesh *mesh )
+    {
+        auto dx11=m_renderer?wp_renderer_get_dx11(m_renderer):nullptr;
+        return mesh && dx11 && getMeshGeometry(dx11,mesh,getMeshVertices(mesh));
+    }
+
+    void ClawRendererDX11::prepareTerrain( SmartPtr<ClawTerrain> terrain,
+        const Array<SmartPtr<IGraphicsCamera>> &cameras )
     {
         if( !terrain || !terrain->isVisible() ) return;
-        auto nativeMesh = terrain->getNativeRenderMesh();
         auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
-        if( !nativeMesh || !dx11 )
+        if( !dx11 )
             return;
+        const Matrix4F requestedTransform( terrain->getRequestedTerrainWorldTransform().getTransformationMatrix().ptr() );
+        Array<TerrainTileView> views;
+        TerrainTileView view;
+        view.cull=false;
+        const auto scale=terrain->getRequestedTerrainWorldTransform().getScale();
+        view.verticalScale=f32(scale.y);
+        view.minimumWorldScale=f32(std::min({scale.x,scale.y,scale.z}));
+        view.prefetchMargin=0.15f;
+        const auto addCamera=[&](const SmartPtr<IGraphicsCamera>&camera) {
+            auto cameraTileView=view;
+            if(camera)
+            {
+                const Matrix4F cameraView(camera->getViewMatrix().ptr());
+                const Matrix4F projection(camera->getProjectionMatrix().ptr());
+                cameraTileView.localToClip=projection*cameraView*requestedTransform;
+                cameraTileView.localCamera=(cameraView*requestedTransform).inverse().transformAffine(Vector3F::zero());
+                const auto target=getRenderTarget();
+                const auto height=target?std::max(1,target->getSize().y):1080;
+                cameraTileView.pixelsPerMetreAtUnitDistance=std::abs(projection[1][1])*height*0.5f;
+                cameraTileView.cull=true;
+            }
+            views.push_back(cameraTileView);
+        };
+        addCamera(getCamera());
+        // Resident demand is the union of scene cameras. Changing which viewport
+        // draws first must not cancel another camera's in-flight tile generation.
+        for(const auto&camera:cameras)
+            if(camera&&camera!=getCamera())
+            {
+                if(views.size()>=15)break;
+                addCamera(camera);
+            }
+        view=views.front();
+        if(m_shadowPass || m_shadowsEnabled)
+        {
+            auto shadowView=view;
+            shadowView.localToClip=m_shadowMatrix*requestedTransform;
+            shadowView.maximumPixelError=1;
+            views.push_back(shadowView);
+        }
+        String terrainError;
+        terrain->prepareRenderTiles(*this,views,terrainError);
+    }
 
-        const auto &vertices = getMeshVertices( nativeMesh );
-        const auto indices = wp_graphics_mesh_get_indices( nativeMesh );
-        const auto indexCount = wp_graphics_mesh_get_index_count( nativeMesh );
-        if( vertices.empty() || !indices || indexCount == 0 ||
-            vertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) ||
-            indexCount > static_cast<u32>( std::numeric_limits<wp_s32>::max() ) )
-            return;
-
-        const auto geometry = getMeshGeometry( dx11, nativeMesh, vertices );
-        if( !geometry )
-            return;
-
+    void ClawRendererDX11::renderTerrain( SmartPtr<ClawTerrain> terrain, bool prepare )
+    {
+        if(!terrain||!terrain->isVisible())return;
+        auto dx11=m_renderer?wp_renderer_get_dx11(m_renderer):nullptr;
+        if(!dx11)return;
+        if(prepare)prepareTerrain(terrain);
+        String terrainError;
+        const auto tiles=terrain->getNativeRenderTiles();
+        if(tiles.empty())return;
         const Matrix4F transform( terrain->getWorldTransform().getTransformationMatrix().ptr() );
         setTransforms( transform );
         void *nativeTexture = nullptr;
@@ -1230,8 +1282,15 @@ namespace workphone::render
         material.specular_color = { 0.04f, 0.04f, 0.04f, 1.0f };
         applySceneLighting( material );
         material.surface = { 0.0f, 0.85f, 8.0f, 8.0f };
+        material.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
         material.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
         wp_renderer_dx11_set_material( dx11, &material );
+        if(!terrain->terrainMaterial().bind(*this,terrainError))
+        {
+            wp_renderer_set_texture_native(m_renderer,nullptr);
+            ClawTerrainMaterial::unbind(*this);
+            return;
+        }
 
         const auto oldCull = wp_renderer_get_cull_mode( m_renderer );
         const auto oldDepthTest = wp_renderer_get_depth_test_enabled( m_renderer );
@@ -1246,14 +1305,30 @@ namespace workphone::render
             wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_LESS );
             wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
         }
-        wp_renderer_dx11_draw_geometry_pntc( dx11, geometry, 0, static_cast<wp_s32>( indexCount ), 0 );
+        for(auto nativeMesh:tiles)
+        {
+            const auto &vertices=getMeshVertices(nativeMesh);
+            const auto indexCount=wp_graphics_mesh_get_index_count(nativeMesh);
+            const auto geometry=getMeshGeometry(dx11,nativeMesh,vertices);
+            if(!geometry)continue;
+            wp_renderer_dx11_draw_geometry_pntc(dx11,geometry,0,static_cast<wp_s32>(indexCount),0);
+            m_primitiveCount+=indexCount/3;
+        }
         wp_renderer_set_cull_mode( m_renderer, oldCull );
         wp_renderer_set_depth_test_enabled( m_renderer, oldDepthTest );
         wp_renderer_set_depth_write_enabled( m_renderer, oldDepthWrite );
         wp_renderer_set_depth_func( m_renderer, oldDepthFunc );
         wp_renderer_set_fill_mode( m_renderer, oldFill );
         wp_renderer_set_texture_native( m_renderer, nullptr );
-        m_primitiveCount += indexCount / 3;
+        ClawTerrainMaterial::unbind(*this);
+        // The context retains bound buffers. Clear the final tile bindings so
+        // terrain retirement also retires their GPU allocation reservations.
+        // Material unbind invalidates the native cached bindings for the next draw.
+        auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) );
+        ID3D11Buffer *emptyBuffer = nullptr;
+        const UINT emptyStride = 0, emptyOffset = 0;
+        context->IASetVertexBuffers( 0, 1, &emptyBuffer, &emptyStride, &emptyOffset );
+        context->IASetIndexBuffer( nullptr, DXGI_FORMAT_UNKNOWN, 0 );
     }
 
     void ClawRendererDX11::renderSky( const SmartPtr<ISky> &sky )

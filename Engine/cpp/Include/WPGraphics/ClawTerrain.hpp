@@ -3,6 +3,8 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
+#include <Workphone/Graphics/TerrainTiles.hpp>
+#include <WPGraphics/ClawTerrainMaterial.hpp>
 #include <Workphone/Interface/Graphics/ITerrainBlendMap.hpp>
 #include <Workphone/Interface/Graphics/ITerrainRayResult.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
@@ -14,6 +16,19 @@ namespace workphone
 {
     namespace render
     {
+        class ClawRendererDX11;
+        class ClawTerrainMaterial;
+        class CookedTerrainCandidate;
+        struct ClawTerrainTileState;
+
+        struct ClawTerrainResidency
+        {
+            u32 residentTiles = 0, stagedTiles = 0, requestedTiles = 0;
+            u64 residentBytes = 0, stagedBytes = 0, uploadedBytes = 0;
+            u64 activeRevision = 0, requestedRevision = 0;
+            bool usedCookedTileManifest = false;
+            TerrainStreamStats worker;
+        };
         /**
          * @class ClawTerrain
          * @brief Implementation of IGraphicsTerrain using the Claw graphics engine.
@@ -105,6 +120,22 @@ namespace workphone
              */
             wp_graphics_mesh *getNativeRenderMesh() const;
 
+            /** Render-owner tile residency. Up to sixteen views can contribute to a
+             * single demand; the most detailed request wins. A complete staged
+             * demand replaces the retained previous generation only after all
+             * native and GPU allocations succeed. */
+            bool prepareRenderTiles( ClawRendererDX11 &, const Array<TerrainTileView> &, String & );
+            Array<wp_graphics_mesh *> getNativeRenderTiles() const;
+            TerrainSnapshot getRenderedTerrainSnapshot() const;
+            ClawTerrainResidency getTerrainResidency() const;
+            String getTerrainResidencyError() const;
+            ClawTerrainMaterial &terrainMaterial();
+            bool applyCookedTerrain( const TerrainData &, ClawTerrainMaterial::TextureResolver,
+                                     String &error );
+            bool applyCookedTerrain( std::shared_ptr<const CookedTerrainCandidate>, String &error );
+            /** Bounds apply independently to active and staged generations. */
+            bool setTerrainResidencyLimits( u32 tiles, u64 bytes, u32 uploadsPerUpdate, String & );
+
             WP_CLASS_REGISTER_DECL;
 
         protected:
@@ -119,6 +150,8 @@ namespace workphone
             u16 m_layerBlendMapSize = 0;              ///< Size of the blend maps.
             mutable wp_graphics_mesh *m_renderMesh = nullptr;
             mutable TerrainSnapshot m_renderSnapshot;
+            std::unique_ptr<ClawTerrainTileState> m_tiles;
+            std::unique_ptr<ClawTerrainMaterial> m_terrainMaterial;
         };
 
     }  // namespace render

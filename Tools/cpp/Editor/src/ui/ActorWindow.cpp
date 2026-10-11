@@ -465,12 +465,7 @@ namespace workphone::editor
             materialWindow->load( nullptr );
             materialWindow->setWindowVisible( false );
 
-            //auto terrainWindow = factoryManager->make_ptr<TerrainWindow>();
-            //terrainWindow->setParent( parentWindow );
-            //terrainWindow->load( data );
-            //m_terrainWindow = terrainWindow;
-
-            auto terrainWindow = factoryManager->make_ptr<ScriptWindow>();
+            auto terrainWindow = factoryManager->make_ptr<TerrainWindow>();
             m_terrainWindow = terrainWindow;
             terrainWindow->setClassName( "TerrainEditor" );
             terrainWindow->setParent( parentWindow );
@@ -1342,6 +1337,8 @@ namespace workphone::editor
 
             if( selection.size() != 1 )
             {
+                if( m_terrainWindow )
+                    m_terrainWindow->setWindowVisible( false );
                 if( m_eventsWindow )
                 {
                     m_eventsWindow->setWindowVisible( false );

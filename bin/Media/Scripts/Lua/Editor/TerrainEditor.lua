@@ -70,6 +70,48 @@ TerrainEditorTypes =
 	SculptClear = 368,
 	BrushCentreX = 9001,
 	BrushCentreZ = 9002,
+    ViewportBrushEnabled = 9003,
+    HeightEncoding = 9004,
+    HeightMinimum = 9005,
+    HeightMaximum = 9006,
+    RawWidth = 9007,
+    RawDepth = 9008,
+    FillHole = 9009,
+    GenerateRiver = 9010,
+    RecipeMode = 9011, RecipePreview = 9012, RecipeCommit = 9013, RecipeCancel = 9014,
+    RecipeSave = 9015, RecipeLoad = 9016, RecipeReset = 9017, RecipeIndex = 9018,
+    RecipeMoveUp = 9019, RecipeMoveDown = 9020, RecipeRemove = 9021, RecipeEnabled = 9022,
+
+
+    -- Persistent global appearance and surface-mask authoring
+    AppearanceProjection = 9100,
+    TriplanarSharpness = 9101,
+    HeightBlendEnabled = 9102,
+    HeightTransition = 9103,
+    DetailNormal = 9104,
+    DetailUvX = 9105,
+    DetailUvZ = 9106,
+    DetailStrength = 9107,
+    MacroScale = 9108,
+    MacroStrength = 9109,
+    MacroSeed = 9110,
+    MacroRed = 9111,
+    MacroGreen = 9112,
+    MacroBlue = 9113,
+    Wetness = 9114,
+    WetDarkening = 9115,
+    WetRoughness = 9116,
+    Snow = 9117,
+    SnowRoughness = 9118,
+    SnowRed = 9119,
+    SnowGreen = 9120,
+    SnowBlue = 9121,
+    LayerHeightScale = 9150,
+    LayerHeightBias = 9151,
+    PaintWetness = 9152,
+    ClearWetness = 9153,
+    PaintSnow = 9154,
+    ClearSnow = 9155,
 
 	-- Layer paint / material
 	LayerBlendMode = 370,
@@ -257,6 +299,13 @@ local TerrainEditorDefaults =
 	worldOriginZ = 0.0,
 
 	brushMode = 0,
+    viewportBrushEnabled = false,
+    recipeMode = false, recipeIndex = 0, recipeEnabled = true,
+    heightEncoding = 0,
+    heightMinimum = 0,
+    heightMaximum = 1,
+    rawWidth = 256,
+    rawDepth = 256,
 	brushSize = 20.0,
 	brushCentreX = 0.0,
 	brushCentreZ = 0.0,
@@ -286,6 +335,7 @@ local TerrainEditorDefaults =
 	layerAO = 1.0,
 	layerHeightBlend = 0.0,
 	layerHeightContrast = 1.0,
+    layerHeightScale = 1.0, layerHeightBias = 0.0,
 	layerSlopeMin = 0.0,
 	layerSlopeMax = 90.0,
 	layerHeightMin = -100.0,
@@ -331,10 +381,10 @@ local TerrainEditorDefaults =
 	plateauAmount = 0.1,
 	terraceSteps = 6,
 
-	hydraulicIterations = 50000,
+	hydraulicIterations = 32,
 	rainAmount = 0.3,
 	sedimentCapacity = 0.6,
-	thermalIterations = 25000,
+	thermalIterations = 32,
 	talusAngle = 35.0,
 	erosionBrushRadius = 4.0,
 
@@ -391,6 +441,57 @@ local TerrainHeightmapResolutions = { 256, 512, 1024, 2048, 4096, 8192 };
 local TerrainControlResolutions = { 256, 512, 1024, 2048, 4096 };
 local TerrainChunkSizes = { 16, 32, 64, 128, 256 };
 local TerrainCollisionResolutions = { 128, 256, 512, 1024, 2048, 4096 };
+
+local TerrainAppearanceControls = {
+    {id=TerrainEditorTypes.AppearanceProjection, key="appearanceProjection", native="projection", label="Projection", minimum=0, maximum=1, default=0, kind="selected"},
+    {id=TerrainEditorTypes.TriplanarSharpness, key="triplanarSharpness", native="triplanarSharpness", label="Triplanar Sharpness", minimum=1, maximum=16, default=4, kind="value"},
+    {id=TerrainEditorTypes.HeightBlendEnabled, key="heightBlendEnabled", native="heightBlend", label="Height Blend (ORM alpha)", minimum=0, maximum=1, default=false, kind="toggle"},
+    {id=TerrainEditorTypes.HeightTransition, key="heightTransition", native="heightTransition", label="Height Blend Transition", minimum=0.001, maximum=1, default=0.2, kind="value"},
+    {id=TerrainEditorTypes.DetailNormal, key="detailNormal", native="detailNormal", label="Detail Normal Resource ID", minimum=0, maximum=0, default="", kind="text"},
+    {id=TerrainEditorTypes.DetailUvX, key="detailUvX", native="detailUvX", label="Detail Cycles per Local Metre X", minimum=0.001, maximum=512, default=4, kind="value"},
+    {id=TerrainEditorTypes.DetailUvZ, key="detailUvZ", native="detailUvZ", label="Detail Cycles per Local Metre Z", minimum=0.001, maximum=512, default=4, kind="value"},
+    {id=TerrainEditorTypes.DetailStrength, key="detailStrength", native="detailStrength", label="Detail Normal Strength", minimum=0, maximum=16, default=1, kind="value"},
+    {id=TerrainEditorTypes.MacroScale, key="macroScale", native="macroScale", label="Macro Cycles per Local Metre", minimum=0.0001, maximum=1, default=0.01, kind="value"},
+    {id=TerrainEditorTypes.MacroStrength, key="macroStrength", native="macroStrength", label="Macro Tint Strength", minimum=0, maximum=1, default=0, kind="value"},
+    {id=TerrainEditorTypes.MacroSeed, key="macroSeed", native="macroSeed", label="Macro Seed", minimum=0, maximum=999999, default=0, kind="int"},
+    {id=TerrainEditorTypes.MacroRed, key="macroRed", native="macroRed", label="Macro Tint Red", minimum=0, maximum=1, default=0.5, kind="value"},
+    {id=TerrainEditorTypes.MacroGreen, key="macroGreen", native="macroGreen", label="Macro Tint Green", minimum=0, maximum=1, default=0.5, kind="value"},
+    {id=TerrainEditorTypes.MacroBlue, key="macroBlue", native="macroBlue", label="Macro Tint Blue", minimum=0, maximum=1, default=0.5, kind="value"},
+    {id=TerrainEditorTypes.Wetness, key="wetness", native="wetness", label="Global Wetness", minimum=0, maximum=1, default=0, kind="value"},
+    {id=TerrainEditorTypes.WetDarkening, key="wetDarkening", native="wetDarkening", label="Wet Darkening", minimum=0, maximum=1, default=0.35, kind="value"},
+    {id=TerrainEditorTypes.WetRoughness, key="wetRoughness", native="wetRoughness", label="Wet Roughness", minimum=0.045, maximum=1, default=0.12, kind="value"},
+    {id=TerrainEditorTypes.Snow, key="snow", native="snow", label="Global Snow", minimum=0, maximum=1, default=0, kind="value"},
+    {id=TerrainEditorTypes.SnowRoughness, key="snowRoughness", native="snowRoughness", label="Snow Roughness", minimum=0.045, maximum=1, default=0.8, kind="value"},
+    {id=TerrainEditorTypes.SnowRed, key="snowRed", native="snowRed", label="Snow Tint Red", minimum=0, maximum=1, default=0.9, kind="value"},
+    {id=TerrainEditorTypes.SnowGreen, key="snowGreen", native="snowGreen", label="Snow Tint Green", minimum=0, maximum=1, default=0.95, kind="value"},
+    {id=TerrainEditorTypes.SnowBlue, key="snowBlue", native="snowBlue", label="Snow Tint Blue", minimum=0, maximum=1, default=1, kind="value"},
+};
+local TerrainAppearanceControlIds = {};
+for _, setting in ipairs(TerrainAppearanceControls) do
+    TerrainEditorDefaults[setting.key] = setting.default;
+    TerrainAppearanceControlIds[setting.id] = true;
+end
+
+local TerrainNativeLayerControls = {
+    [TerrainEditorTypes.LayerTilingX] = "tilingX", [TerrainEditorTypes.LayerTilingY] = "tilingZ",
+    [TerrainEditorTypes.LayerNormalStrength] = "normalStrength", [TerrainEditorTypes.LayerRoughness] = "roughness",
+    [TerrainEditorTypes.LayerMetallic] = "metallic",
+    [TerrainEditorTypes.LayerHeightScale] = "heightScale", [TerrainEditorTypes.LayerHeightBias] = "heightBias",
+};
+local TerrainUnavailableLayerControls = {
+    [TerrainEditorTypes.LayerBlendMode] = "Alternate layer blend modes; terrain uses normalized layer weights.",
+    [TerrainEditorTypes.LayerUVSet] = "UV-set selection; terrain uses local XZ coordinates.",
+    [TerrainEditorTypes.LayerProjection] = "Per-layer projection; use Projection in Global Terrain Appearance.",
+    [TerrainEditorTypes.LayerOffsetX] = "Terrain layer UV offsets.",
+    [TerrainEditorTypes.LayerOffsetY] = "Terrain layer UV offsets.",
+    [TerrainEditorTypes.LayerRotation] = "Terrain layer UV rotation.",
+    [TerrainEditorTypes.LayerTriplanar] = "Per-layer triplanar overrides; use Global Terrain Appearance.",
+    [TerrainEditorTypes.LayerTriplanarScale] = "Per-layer triplanar overrides; use Global Terrain Appearance.",
+    [TerrainEditorTypes.LayerAO] = "Separate AO strength; occlusion is read from the packed ORM texture.",
+    [TerrainEditorTypes.LayerHeightBlend] = "Legacy per-layer height blend controls; use Global Terrain Appearance and ORM Alpha Height Scale/Bias.",
+    [TerrainEditorTypes.LayerHeightContrast] = "Legacy per-layer height blend controls; use Global Terrain Appearance and ORM Alpha Height Scale/Bias.",
+    [TerrainEditorTypes.LayerPaintHardness] = "Variable paint hardness; brushes use smooth radial falloff.",
+};
 
 local function copyDefaults()
 	local copy = {};
@@ -951,7 +1052,7 @@ function TerrainEditor:load()
 	terrainTab:addChild(heightHeader);
 
 	self:addResourceSlot("heightMap", heightHeader, TerrainEditorTypes.HeightMap, "Height Map");
-	addText(ui, heightHeader, "Drop a height map image onto the preview. Supports PNG/TGA/TIFF/JPEG plus HDR/EXR/DDS/KTX when your resource loader supports them.", false);
+	addText(ui, heightHeader, "Height import/export supports binary PGM images (8/16 bit) and little-endian raw U16/F32. Use Output Path; U16 uses the explicit unscaled height range below.", false);
 
 	self:bindRef("terrainSizeXSlider", addSlider(ui, heightHeader, "Terrain Size X", TerrainEditorTypes.TerrainSizeX, 1.0, 8192.0, self.settings.terrainSizeX), "terrainSizeX");
 	self:bindRef("terrainSizeYSlider", addSlider(ui, heightHeader, "Terrain Size Y", TerrainEditorTypes.TerrainSizeY, 1.0, 2048.0, self.settings.terrainSizeY), "terrainSizeY");
@@ -972,26 +1073,51 @@ function TerrainEditor:load()
 	terrainTab:addChild(terrainActionsHeader);
 	self:bindRef("rebuildTerrainButton", addButton(ui, terrainActionsHeader, "Rebuild Terrain", TerrainEditorTypes.RebuildTerrain, false));
 	self:bindRef("importHeightmapButton", addButton(ui, terrainActionsHeader, "Import Heightmap", TerrainEditorTypes.ImportHeightmap, true));
-	self:bindRef("exportHeightmapButton", addButton(ui, terrainActionsHeader, "Export Height Samples (JSON)", TerrainEditorTypes.ExportHeightmap, true));
+	self:bindRef("exportHeightmapButton", addButton(ui, terrainActionsHeader, "Export Height Image / Raw", TerrainEditorTypes.ExportHeightmap, true));
 	self:bindRef("bakeNormalsButton", addButton(ui, terrainActionsHeader, "Bake Normals", TerrainEditorTypes.BakeNormals, false));
-	self:bindRef("bakeHolesButton", addButton(ui, terrainActionsHeader, "Bake Holes", TerrainEditorTypes.BakeHoles, true));
+	self:bindRef("bakeHolesButton", addButton(ui, terrainActionsHeader, "Paint Holes", TerrainEditorTypes.BakeHoles, true));
 	self:bindRef("fitTerrainButton", addButton(ui, terrainActionsHeader, "Fit To Selection", TerrainEditorTypes.FitTerrainToSelection, true));
+
+    self:bindRef("heightEncodingDropdown", addDropdown(ui, terrainActionsHeader, "Height Encoding", TerrainEditorTypes.HeightEncoding, { "PGM 16-bit", "Raw U16 LE", "Raw Float32 LE" }, self.settings.heightEncoding), "heightEncoding", "selected");
+    self:bindRef("heightMinimumInput", addSlider(ui, terrainActionsHeader, "U16 Minimum (unscaled)", TerrainEditorTypes.HeightMinimum, -10000, 10000, self.settings.heightMinimum), "heightMinimum");
+    self:bindRef("heightMaximumInput", addSlider(ui, terrainActionsHeader, "U16 Maximum (unscaled)", TerrainEditorTypes.HeightMaximum, -10000, 10000, self.settings.heightMaximum), "heightMaximum");
+    self:bindRef("rawWidthInput", addSlider(ui, terrainActionsHeader, "Raw Sample Width", TerrainEditorTypes.RawWidth, 2, 8193, self.settings.rawWidth), "rawWidth", "int");
+    self:bindRef("rawDepthInput", addSlider(ui, terrainActionsHeader, "Raw Sample Depth", TerrainEditorTypes.RawDepth, 2, 8193, self.settings.rawDepth), "rawDepth", "int");
+    self:bindRef("fillHoleButton", addButton(ui, terrainActionsHeader, "Fill Holes", TerrainEditorTypes.FillHole, true));
+
+    local recipeHeader = ui:addElement(collapsingHeaderTypeInfo); recipeHeader:setLabel("Ordered Non-destructive Recipe"); terrainTab:addChild(recipeHeader);
+    addText(ui, recipeHeader, "Capture a base up to 65536 samples. Preview prepares on a cancellable worker and overlays its geometry and layer weights in the Scene Viewport. Commit publishes one undoable change. Manual edits require Reset Base.", false);
+    self:bindRef("recipeModeToggle", addToggle(ui, recipeHeader, "Queue Actions into Recipe", TerrainEditorTypes.RecipeMode, self.settings.recipeMode), "recipeMode", "toggle");
+    self:bindRef("recipeIndexInput", addSlider(ui, recipeHeader, "Operation Index (0-based)", TerrainEditorTypes.RecipeIndex, 0, 31, self.settings.recipeIndex), "recipeIndex", "int");
+    self:bindRef("recipeEnabledToggle", addToggle(ui, recipeHeader, "Enable Selected Operation", TerrainEditorTypes.RecipeEnabled, self.settings.recipeEnabled), "recipeEnabled", "toggle");
+    self:bindRef("recipePreviewButton", addButton(ui, recipeHeader, "Prepare Preview", TerrainEditorTypes.RecipePreview, false));
+    self:bindRef("recipeCommitButton", addButton(ui, recipeHeader, "Commit Prepared Result", TerrainEditorTypes.RecipeCommit, true));
+    self:bindRef("recipeCancelButton", addButton(ui, recipeHeader, "Clear / Cancel Preview", TerrainEditorTypes.RecipeCancel, true));
+    self:bindRef("recipeResetButton", addButton(ui, recipeHeader, "Reset Base", TerrainEditorTypes.RecipeReset, false));
+    self:bindRef("recipeSaveButton", addButton(ui, recipeHeader, "Save Ordered Recipe", TerrainEditorTypes.RecipeSave, true));
+    self:bindRef("recipeLoadButton", addButton(ui, recipeHeader, "Load Ordered Recipe", TerrainEditorTypes.RecipeLoad, true));
+    self:bindRef("recipeUpButton", addButton(ui, recipeHeader, "Move Earlier", TerrainEditorTypes.RecipeMoveUp, false));
+    self:bindRef("recipeDownButton", addButton(ui, recipeHeader, "Move Later", TerrainEditorTypes.RecipeMoveDown, true));
+    self:bindRef("recipeRemoveButton", addButton(ui, recipeHeader, "Remove Operation", TerrainEditorTypes.RecipeRemove, true));
 
 	-- Sculpt tab
 	local brushHeader = ui:addElement(collapsingHeaderTypeInfo);
 	brushHeader:setLabel("Brush");
 	sculptTab:addChild(brushHeader);
 	self:bindRef("brushModeDropdown", addDropdown(ui, brushHeader, "Mode", TerrainEditorTypes.BrushMode,
-		{ "Raise/Lower", "Smooth", "Flatten", "Set Height", "Noise", "Terrace", "Erode", "Stamp" }, self.settings.brushMode), "brushMode", "selected");
+		{ "Raise", "Lower", "Smooth", "Flatten", "Noise", "Terrace", "Paint", "Stamp", "Hole", "Fill Hole", "Paint Wetness Mask", "Erase Wetness Mask", "Paint Snow Mask", "Erase Snow Mask" }, self.settings.brushMode), "brushMode", "selected");
+    self:bindRef("viewportBrushToggle", addToggle(ui, brushHeader, "Paint in Scene Viewport", TerrainEditorTypes.ViewportBrushEnabled, self.settings.viewportBrushEnabled), "viewportBrushEnabled", "toggle");
+
 	self:bindRef("brushSizeSlider", addSlider(ui, brushHeader, "Brush Size", TerrainEditorTypes.BrushSize, 0.1, 512.0, self.settings.brushSize), "brushSize");
 	self:bindRef("brushCentreXSlider", addSlider(ui, brushHeader, "Brush Centre X (local metres)", TerrainEditorTypes.BrushCentreX, -8192.0, 8192.0, self.settings.brushCentreX), "brushCentreX");
 	self:bindRef("brushCentreZSlider", addSlider(ui, brushHeader, "Brush Centre Z (local metres)", TerrainEditorTypes.BrushCentreZ, -8192.0, 8192.0, self.settings.brushCentreZ), "brushCentreZ");
-	addText(ui, brushHeader, "Raise, lower, smooth and flatten apply one undoable action at this centre. Brush Size is the radius. Smooth/flatten strength is 0–1; falloff is smooth. Viewport strokes, tablet and mirror modifiers are unavailable.", false);
+	addText(ui, brushHeader, "Brush Size is local-metre radius. Enable Paint in Scene Viewport to drag one undoable stroke; Escape cancels. Paint/smooth/flatten/terrace strength is 0-1. Stamp reads PGM or uses a radial mound. Tablet and mirror modifiers are unavailable.", false);
 	self:bindRef("brushStrengthSlider", addSlider(ui, brushHeader, "Strength", TerrainEditorTypes.BrushStrength, 0.0, 2.0, self.settings.brushStrength), "brushStrength");
 	self:bindRef("brushFalloffSlider", addSlider(ui, brushHeader, "Falloff (fixed smooth)", TerrainEditorTypes.BrushFalloff, 0.0, 1.0, self.settings.brushFalloff), "brushFalloff");
 	safeCall(self.brushFalloffSlider, "setEnabled", false, true);
 	self:bindRef("brushOpacitySlider", addSlider(ui, brushHeader, "Opacity", TerrainEditorTypes.BrushOpacity, 0.0, 1.0, self.settings.brushOpacity), "brushOpacity");
-	self:bindRef("brushSpacingSlider", addSlider(ui, brushHeader, "Spacing", TerrainEditorTypes.BrushSpacing, 0.0, 1.0, self.settings.brushSpacing), "brushSpacing");
+	self:bindRef("brushSpacingSlider", addSlider(ui, brushHeader, "Spacing (input-event sampling)", TerrainEditorTypes.BrushSpacing, 0.0, 1.0, self.settings.brushSpacing), "brushSpacing");
+    safeCall(self.brushSpacingSlider, "setEnabled", false, true);
 	self:bindRef("targetHeightSlider", addSlider(ui, brushHeader, "Target Height", TerrainEditorTypes.TargetHeight, -1024.0, 1024.0, self.settings.targetHeight), "targetHeight");
 	self:bindRef("sculptUseTabletToggle", addToggle(ui, brushHeader, "Use Tablet Pressure", TerrainEditorTypes.SculptUseTablet, self.settings.sculptUseTablet), "sculptUseTablet", "toggle");
 	self:bindRef("sculptMirrorXToggle", addToggle(ui, brushHeader, "Mirror X", TerrainEditorTypes.SculptMirrorX, self.settings.sculptMirrorX), "sculptMirrorX", "toggle");
@@ -1028,35 +1154,63 @@ function TerrainEditor:load()
 	layersTab:addChild(layerMapsHeader);
 	self:addResourceSlot("layerTexture", layerMapsHeader, TerrainEditorTypes.LayerBaseTexture, "Base/Albedo");
 	self:addResourceSlot("layerNormalTexture", layerMapsHeader, TerrainEditorTypes.LayerNormalTexture, "Normal");
-	self:addResourceSlot("layerRoughnessTexture", layerMapsHeader, TerrainEditorTypes.LayerRoughnessTexture, "Roughness");
-	self:addResourceSlot("layerAOTexture", layerMapsHeader, TerrainEditorTypes.LayerAOTexture, "AO");
-	self:addResourceSlot("layerHeightTexture", layerMapsHeader, TerrainEditorTypes.LayerHeightTexture, "Height");
-	self:addResourceSlot("layerMaskTexture", layerMapsHeader, TerrainEditorTypes.LayerMaskTexture, "Mask");
-	self:addResourceSlot("layerSplatTexture", layerMapsHeader, TerrainEditorTypes.LayerSplatTexture, "Splat/Control Map");
-	addText(ui, layerMapsHeader, "Drop textures onto a slot. Existing base texture assignment still uses TerrainLayer:setBaseTexture(). Other maps are stored and use optional bindings when available.", false);
+	self:addResourceSlot("layerRoughnessTexture", layerMapsHeader, TerrainEditorTypes.LayerRoughnessTexture, "ORM (occlusion/roughness/metallic)");
+	self:addResourceSlot("layerAOTexture", layerMapsHeader, TerrainEditorTypes.LayerAOTexture, "AO (Unavailable)");
+	self:addResourceSlot("layerHeightTexture", layerMapsHeader, TerrainEditorTypes.LayerHeightTexture, "Height (Unavailable)");
+	self:addResourceSlot("layerMaskTexture", layerMapsHeader, TerrainEditorTypes.LayerMaskTexture, "Mask (Unavailable)");
+	self:addResourceSlot("layerSplatTexture", layerMapsHeader, TerrainEditorTypes.LayerSplatTexture, "Splat/Control Map (Unavailable)");
+	addText(ui, layerMapsHeader, "Assign albedo, normal and packed ORM textures. Separate AO, height, mask and external control-map slots are unavailable; paint control weights with the terrain brush.", false);
 
 	local layerUVHeader = ui:addElement(collapsingHeaderTypeInfo);
 	layerUVHeader:setLabel("Layer UV / Material");
 	layersTab:addChild(layerUVHeader);
-	self:bindRef("layerBlendModeDropdown", addDropdown(ui, layerUVHeader, "Blend Mode", TerrainEditorTypes.LayerBlendMode,
+	self:bindRef("layerBlendModeDropdown", addDropdown(ui, layerUVHeader, "Blend Mode (Unavailable)", TerrainEditorTypes.LayerBlendMode,
 		{ "Alpha", "Height Blend", "Slope Blend", "Additive", "Multiply" }, self.settings.layerBlendMode), "layerBlendMode", "selected");
-	self:bindRef("layerUVSetDropdown", addDropdown(ui, layerUVHeader, "UV Set", TerrainEditorTypes.LayerUVSet,
+	self:bindRef("layerUVSetDropdown", addDropdown(ui, layerUVHeader, "UV Set (Unavailable)", TerrainEditorTypes.LayerUVSet,
 		{ "UV0", "UV1", "World XZ", "Generated" }, self.settings.layerUVSet), "layerUVSet", "selected");
-	self:bindRef("layerProjectionDropdown", addDropdown(ui, layerUVHeader, "Projection", TerrainEditorTypes.LayerProjection,
+	self:bindRef("layerProjectionDropdown", addDropdown(ui, layerUVHeader, "Projection (Unavailable)", TerrainEditorTypes.LayerProjection,
 		{ "UV", "World Planar", "Triplanar", "Cylindrical" }, self.settings.layerProjection), "layerProjection", "selected");
 	self:bindRef("layerTilingXSlider", addSlider(ui, layerUVHeader, "UV Tiling X", TerrainEditorTypes.LayerTilingX, 0.001, 512.0, self.settings.layerTilingX), "layerTilingX");
 	self:bindRef("layerTilingYSlider", addSlider(ui, layerUVHeader, "UV Tiling Y", TerrainEditorTypes.LayerTilingY, 0.001, 512.0, self.settings.layerTilingY), "layerTilingY");
-	self:bindRef("layerOffsetXSlider", addSlider(ui, layerUVHeader, "UV Offset X", TerrainEditorTypes.LayerOffsetX, -100.0, 100.0, self.settings.layerOffsetX), "layerOffsetX");
-	self:bindRef("layerOffsetYSlider", addSlider(ui, layerUVHeader, "UV Offset Y", TerrainEditorTypes.LayerOffsetY, -100.0, 100.0, self.settings.layerOffsetY), "layerOffsetY");
-	self:bindRef("layerRotationSlider", addSlider(ui, layerUVHeader, "UV Rotation", TerrainEditorTypes.LayerRotation, -360.0, 360.0, self.settings.layerRotation), "layerRotation");
-	self:bindRef("layerTriplanarToggle", addToggle(ui, layerUVHeader, "Use Triplanar", TerrainEditorTypes.LayerTriplanar, self.settings.layerTriplanar), "layerTriplanar", "toggle");
-	self:bindRef("layerTriplanarScaleSlider", addSlider(ui, layerUVHeader, "Triplanar Scale", TerrainEditorTypes.LayerTriplanarScale, 0.001, 512.0, self.settings.layerTriplanarScale), "layerTriplanarScale");
+	self:bindRef("layerOffsetXSlider", addSlider(ui, layerUVHeader, "UV Offset X (Unavailable)", TerrainEditorTypes.LayerOffsetX, -100.0, 100.0, self.settings.layerOffsetX), "layerOffsetX");
+	self:bindRef("layerOffsetYSlider", addSlider(ui, layerUVHeader, "UV Offset Y (Unavailable)", TerrainEditorTypes.LayerOffsetY, -100.0, 100.0, self.settings.layerOffsetY), "layerOffsetY");
+	self:bindRef("layerRotationSlider", addSlider(ui, layerUVHeader, "UV Rotation (Unavailable)", TerrainEditorTypes.LayerRotation, -360.0, 360.0, self.settings.layerRotation), "layerRotation");
+	self:bindRef("layerTriplanarToggle", addToggle(ui, layerUVHeader, "Use Triplanar (Unavailable)", TerrainEditorTypes.LayerTriplanar, self.settings.layerTriplanar), "layerTriplanar", "toggle");
+	self:bindRef("layerTriplanarScaleSlider", addSlider(ui, layerUVHeader, "Triplanar Scale (Unavailable)", TerrainEditorTypes.LayerTriplanarScale, 0.001, 512.0, self.settings.layerTriplanarScale), "layerTriplanarScale");
 	self:bindRef("layerNormalStrengthSlider", addSlider(ui, layerUVHeader, "Normal Strength", TerrainEditorTypes.LayerNormalStrength, 0.0, 4.0, self.settings.layerNormalStrength), "layerNormalStrength");
 	self:bindRef("layerRoughnessSlider", addSlider(ui, layerUVHeader, "Roughness", TerrainEditorTypes.LayerRoughness, 0.0, 1.0, self.settings.layerRoughness), "layerRoughness");
 	self:bindRef("layerMetallicSlider", addSlider(ui, layerUVHeader, "Metallic", TerrainEditorTypes.LayerMetallic, 0.0, 1.0, self.settings.layerMetallic), "layerMetallic");
-	self:bindRef("layerAOSlider", addSlider(ui, layerUVHeader, "AO Strength", TerrainEditorTypes.LayerAO, 0.0, 4.0, self.settings.layerAO), "layerAO");
-	self:bindRef("layerHeightBlendSlider", addSlider(ui, layerUVHeader, "Height Blend", TerrainEditorTypes.LayerHeightBlend, 0.0, 1.0, self.settings.layerHeightBlend), "layerHeightBlend");
-	self:bindRef("layerHeightContrastSlider", addSlider(ui, layerUVHeader, "Height Contrast", TerrainEditorTypes.LayerHeightContrast, 0.0, 8.0, self.settings.layerHeightContrast), "layerHeightContrast");
+	self:bindRef("layerAOSlider", addSlider(ui, layerUVHeader, "AO Strength (Unavailable)", TerrainEditorTypes.LayerAO, 0.0, 4.0, self.settings.layerAO), "layerAO");
+	self:bindRef("layerHeightBlendSlider", addSlider(ui, layerUVHeader, "Height Blend (Unavailable)", TerrainEditorTypes.LayerHeightBlend, 0.0, 1.0, self.settings.layerHeightBlend), "layerHeightBlend");
+	self:bindRef("layerHeightContrastSlider", addSlider(ui, layerUVHeader, "Height Contrast (Unavailable)", TerrainEditorTypes.LayerHeightContrast, 0.0, 8.0, self.settings.layerHeightContrast), "layerHeightContrast");
+
+	addText(ui, layerUVHeader, "Four-layer weight painting is always normalized. Global appearance controls enable height blending and planar/triplanar projection. ORM alpha supplies per-layer height; separate legacy slots remain unavailable.", false);
+
+    self:bindRef("layerHeightScaleSlider", addSlider(ui, layerUVHeader, "ORM Alpha Height Scale", TerrainEditorTypes.LayerHeightScale, 0, 4, self.settings.layerHeightScale), "layerHeightScale");
+    self:bindRef("layerHeightBiasSlider", addSlider(ui, layerUVHeader, "ORM Alpha Height Bias", TerrainEditorTypes.LayerHeightBias, -1, 1, self.settings.layerHeightBias), "layerHeightBias");
+
+    local appearanceHeader = ui:addElement(collapsingHeaderTypeInfo);
+    appearanceHeader:setLabel("Global Terrain Appearance");
+    layersTab:addChild(appearanceHeader);
+    addText(ui, appearanceHeader, "These settings affect the entire terrain and persist with source/cooked data. Edits support Undo/Redo. Detail normals use a stable texture resource ID; macro tint is deterministic procedural variation.", false);
+    for _, setting in ipairs(TerrainAppearanceControls) do
+        local control;
+        if setting.kind == "selected" then
+            control=addDropdown(ui, appearanceHeader, setting.label, setting.id, {"Local Planar XZ", "Local Triplanar"}, self.settings[setting.key]);
+        elseif setting.kind == "toggle" then
+            control=addToggle(ui, appearanceHeader, setting.label, setting.id, self.settings[setting.key]);
+        elseif setting.kind == "text" then
+            control=addTextInput(ui, appearanceHeader, setting.label, setting.id, self.settings[setting.key]);
+        else
+            control=addSlider(ui, appearanceHeader, setting.label, setting.id, setting.minimum, setting.maximum, self.settings[setting.key]);
+        end
+        self:bindRef(setting.key .. "Control", control, setting.key, setting.kind);
+    end
+    addText(ui, appearanceHeader, "Wetness/snow strengths multiply persistent sample masks. Masks initially equal one: erase to exclude an area and paint to restore it. Use mask brush modes in the scene viewport, or these buttons at Brush Centre. Radius/strength use Paint Brush Size/Strength; height/slope rules also apply. Mask actions can be queued in recipes.", false);
+    self:bindRef("paintWetnessButton", addButton(ui, appearanceHeader, "Paint Wetness Mask", TerrainEditorTypes.PaintWetness, false));
+    self:bindRef("clearWetnessButton", addButton(ui, appearanceHeader, "Erase Wetness Mask", TerrainEditorTypes.ClearWetness, true));
+    self:bindRef("paintSnowButton", addButton(ui, appearanceHeader, "Paint Snow Mask", TerrainEditorTypes.PaintSnow, false));
+    self:bindRef("clearSnowButton", addButton(ui, appearanceHeader, "Erase Snow Mask", TerrainEditorTypes.ClearSnow, true));
 
 	local autoPaintHeader = ui:addElement(collapsingHeaderTypeInfo);
 	autoPaintHeader:setLabel("Auto Paint / Brush");
@@ -1067,7 +1221,7 @@ function TerrainEditor:load()
 	self:bindRef("layerHeightMaxSlider", addSlider(ui, autoPaintHeader, "Height Max", TerrainEditorTypes.LayerHeightMax, -4096.0, 4096.0, self.settings.layerHeightMax), "layerHeightMax");
 	self:bindRef("layerPaintSizeSlider", addSlider(ui, autoPaintHeader, "Paint Brush Size", TerrainEditorTypes.LayerPaintSize, 0.1, 512.0, self.settings.layerPaintSize), "layerPaintSize");
 	self:bindRef("layerPaintStrengthSlider", addSlider(ui, autoPaintHeader, "Paint Strength", TerrainEditorTypes.LayerPaintStrength, 0.0, 1.0, self.settings.layerPaintStrength), "layerPaintStrength");
-	self:bindRef("layerPaintHardnessSlider", addSlider(ui, autoPaintHeader, "Paint Hardness", TerrainEditorTypes.LayerPaintHardness, 0.0, 1.0, self.settings.layerPaintHardness), "layerPaintHardness");
+	self:bindRef("layerPaintHardnessSlider", addSlider(ui, autoPaintHeader, "Paint Hardness (Unavailable)", TerrainEditorTypes.LayerPaintHardness, 0.0, 1.0, self.settings.layerPaintHardness), "layerPaintHardness");
 	self:bindRef("autoPaintLayerButton", addButton(ui, autoPaintHeader, "Auto Paint Selected Layer", TerrainEditorTypes.AutoPaintLayer, false));
 	self:bindRef("clearLayerPaintButton", addButton(ui, autoPaintHeader, "Clear Layer Paint", TerrainEditorTypes.ClearLayerPaint, true));
 	self:bindRef("normalizeLayerWeightsButton", addButton(ui, autoPaintHeader, "Normalize Weights", TerrainEditorTypes.NormalizeLayerWeights, true));
@@ -1090,25 +1244,25 @@ function TerrainEditor:load()
 	self:bindRef("mountainAmountSlider", addSlider(ui, generationHeader, "Mountain Amount", TerrainEditorTypes.MountainAmount, 0.0, 1.0, self.settings.mountainAmount), "mountainAmount");
 	self:bindRef("valleyAmountSlider", addSlider(ui, generationHeader, "Valley Amount", TerrainEditorTypes.ValleyAmount, 0.0, 1.0, self.settings.valleyAmount), "valleyAmount");
 	self:bindRef("plateauAmountSlider", addSlider(ui, generationHeader, "Plateau Amount", TerrainEditorTypes.PlateauAmount, 0.0, 1.0, self.settings.plateauAmount), "plateauAmount");
-	self:bindRef("terraceStepsSlider", addSlider(ui, generationHeader, "Terrace Steps", TerrainEditorTypes.TerraceSteps, 1.0, 32.0, self.settings.terraceSteps), "terraceSteps", "int");
+	self:bindRef("terraceStepsSlider", addSlider(ui, generationHeader, "Terrace Interval (local metres)", TerrainEditorTypes.TerraceSteps, 1.0, 32.0, self.settings.terraceSteps), "terraceSteps", "int");
 	self:bindRef("generateHeightButton", addButton(ui, generationHeader, "Generate Height", TerrainEditorTypes.GenerateHeight, false));
-	self:bindRef("generateMasksButton", addButton(ui, generationHeader, "Generate Masks", TerrainEditorTypes.GenerateMasks, true));
-	self:bindRef("generateBiomeButton", addButton(ui, generationHeader, "Generate Biome", TerrainEditorTypes.GenerateBiome, true));
+	self:bindRef("generateMasksButton", addButton(ui, generationHeader, "Export Height/Slope Rule Mask", TerrainEditorTypes.GenerateMasks, true));
+	self:bindRef("generateBiomeButton", addButton(ui, generationHeader, "Apply Biome Layer Rules", TerrainEditorTypes.GenerateBiome, true));
 	self:bindRef("randomizeSeedButton", addButton(ui, generationHeader, "Randomize Seed", TerrainEditorTypes.RandomizeSeed, false));
 
 	local erosionHeader = ui:addElement(collapsingHeaderTypeInfo);
 	erosionHeader:setLabel("Erosion");
 	proceduralTab:addChild(erosionHeader);
 	self:addResourceSlot("erosionMaskTexture", erosionHeader, TerrainEditorTypes.ErosionMaskTexture, "Erosion Mask");
-	self:bindRef("hydraulicIterationsSlider", addSlider(ui, erosionHeader, "Hydraulic Iterations", TerrainEditorTypes.HydraulicIterations, 0.0, 500000.0, self.settings.hydraulicIterations), "hydraulicIterations", "int");
+	self:bindRef("hydraulicIterationsSlider", addSlider(ui, erosionHeader, "Hydraulic Iterations", TerrainEditorTypes.HydraulicIterations, 1.0, 1024.0, self.settings.hydraulicIterations), "hydraulicIterations", "int");
 	self:bindRef("rainAmountSlider", addSlider(ui, erosionHeader, "Rain Amount", TerrainEditorTypes.RainAmount, 0.0, 1.0, self.settings.rainAmount), "rainAmount");
 	self:bindRef("sedimentCapacitySlider", addSlider(ui, erosionHeader, "Sediment Capacity", TerrainEditorTypes.SedimentCapacity, 0.0, 2.0, self.settings.sedimentCapacity), "sedimentCapacity");
-	self:bindRef("thermalIterationsSlider", addSlider(ui, erosionHeader, "Thermal Iterations", TerrainEditorTypes.ThermalIterations, 0.0, 500000.0, self.settings.thermalIterations), "thermalIterations", "int");
+	self:bindRef("thermalIterationsSlider", addSlider(ui, erosionHeader, "Thermal Iterations", TerrainEditorTypes.ThermalIterations, 1.0, 1024.0, self.settings.thermalIterations), "thermalIterations", "int");
 	self:bindRef("talusAngleSlider", addSlider(ui, erosionHeader, "Talus Angle", TerrainEditorTypes.TalusAngle, 0.0, 90.0, self.settings.talusAngle), "talusAngle");
 	self:bindRef("erosionBrushRadiusSlider", addSlider(ui, erosionHeader, "Brush Radius", TerrainEditorTypes.ErosionBrushRadius, 1.0, 128.0, self.settings.erosionBrushRadius), "erosionBrushRadius");
 	self:bindRef("runHydraulicErosionButton", addButton(ui, erosionHeader, "Run Hydraulic", TerrainEditorTypes.RunHydraulicErosion, false));
 	self:bindRef("runThermalErosionButton", addButton(ui, erosionHeader, "Run Thermal", TerrainEditorTypes.RunThermalErosion, true));
-	self:bindRef("bakeErosionMasksButton", addButton(ui, erosionHeader, "Bake Erosion Masks", TerrainEditorTypes.BakeErosionMasks, true));
+	self:bindRef("bakeErosionMasksButton", addButton(ui, erosionHeader, "Export Hydraulic Displacement Mask", TerrainEditorTypes.BakeErosionMasks, true));
 
 	-- Foliage tab
 	local treeHeader = ui:addElement(collapsingHeaderTypeInfo);
@@ -1176,7 +1330,7 @@ function TerrainEditor:load()
 	self:bindRef("waterReflectionToggle", addToggle(ui, waterHeader, "Reflections", TerrainEditorTypes.WaterReflection, self.settings.waterReflection), "waterReflection", "toggle");
 	self:bindRef("waterRefractionToggle", addToggle(ui, waterHeader, "Refraction", TerrainEditorTypes.WaterRefraction, self.settings.waterRefraction), "waterRefraction", "toggle");
 	self:bindRef("waterFlowSpeedSlider", addSlider(ui, waterHeader, "Flow Speed", TerrainEditorTypes.WaterFlowSpeed, -20.0, 20.0, self.settings.waterFlowSpeed), "waterFlowSpeed");
-	self:bindRef("generateWaterPlaneButton", addButton(ui, waterHeader, "Generate Water Plane", TerrainEditorTypes.GenerateWaterPlane, false));
+	self:bindRef("generateWaterPlaneButton", addButton(ui, waterHeader, "Export Shoreline Input JSON", TerrainEditorTypes.GenerateWaterPlane, false));
 
 	local roadsHeader = ui:addElement(collapsingHeaderTypeInfo);
 	roadsHeader:setLabel("Roads / Rivers / Splines");
@@ -1186,8 +1340,10 @@ function TerrainEditor:load()
 	self:bindRef("roadWidthSlider", addSlider(ui, roadsHeader, "Road Width", TerrainEditorTypes.RoadWidth, 0.1, 128.0, self.settings.roadWidth), "roadWidth");
 	self:bindRef("roadShoulderWidthSlider", addSlider(ui, roadsHeader, "Shoulder Width", TerrainEditorTypes.RoadShoulderWidth, 0.0, 64.0, self.settings.roadShoulderWidth), "roadShoulderWidth");
 	self:bindRef("roadFlattenStrengthSlider", addSlider(ui, roadsHeader, "Flatten Strength", TerrainEditorTypes.RoadFlattenStrength, 0.0, 1.0, self.settings.roadFlattenStrength), "roadFlattenStrength");
-	self:bindRef("roadSnapToTerrainToggle", addToggle(ui, roadsHeader, "Snap To Terrain", TerrainEditorTypes.RoadSnapToTerrain, self.settings.roadSnapToTerrain), "roadSnapToTerrain", "toggle");
+	self:bindRef("roadSnapToTerrainToggle", addToggle(ui, roadsHeader, "Centreline elevations supplied by file", TerrainEditorTypes.RoadSnapToTerrain, self.settings.roadSnapToTerrain), "roadSnapToTerrain", "toggle");
+    safeCall(self.roadSnapToTerrainToggle, "setEnabled", false, true);
 	self:bindRef("generateRoadButton", addButton(ui, roadsHeader, "Generate Road", TerrainEditorTypes.GenerateRoad, false));
+    self:bindRef("generateRiverButton", addButton(ui, roadsHeader, "Grade River Bed", TerrainEditorTypes.GenerateRiver, true));
 	self:bindRef("clearRoadsButton", addButton(ui, roadsHeader, "Clear Roads", TerrainEditorTypes.ClearRoads, true));
 
 	-- LOD / streaming tab
@@ -1227,7 +1383,7 @@ function TerrainEditor:load()
 	collisionTab:addChild(navHeader);
 	self:bindRef("navWalkableSlopeSlider", addSlider(ui, navHeader, "Walkable Slope", TerrainEditorTypes.NavWalkableSlope, 0.0, 90.0, self.settings.navWalkableSlope), "navWalkableSlope");
 	self:bindRef("navAgentRadiusSlider", addSlider(ui, navHeader, "Agent Radius", TerrainEditorTypes.NavAgentRadius, 0.01, 20.0, self.settings.navAgentRadius), "navAgentRadius");
-	self:bindRef("buildNavMeshButton", addButton(ui, navHeader, "Build NavMesh", TerrainEditorTypes.BuildNavMesh, false));
+	self:bindRef("buildNavMeshButton", addButton(ui, navHeader, "Export Navigation Input OBJ", TerrainEditorTypes.BuildNavMesh, false));
 
 	local lightingHeader = ui:addElement(collapsingHeaderTypeInfo);
 	lightingHeader:setLabel("Lighting / GI");
@@ -1264,6 +1420,11 @@ function TerrainEditor:load()
 	self:bindRef("showOverdrawToggle", addToggle(ui, debugHeader, "Show Overdraw", TerrainEditorTypes.ShowOverdraw, self.settings.showOverdraw), "showOverdraw", "toggle");
 	self:bindRef("profilerEnabledToggle", addToggle(ui, debugHeader, "Terrain Profiler", TerrainEditorTypes.ProfilerEnabled, self.settings.profilerEnabled), "profilerEnabled", "toggle");
 
+    for elementId, _ in pairs(TerrainUnavailableLayerControls) do
+        local binding = self.controlBindings[elementId];
+        if binding then safeCall(binding.control, "setEnabled", false, true); end
+    end
+
 	self:syncToControls();
 	self:updateSelection();
 
@@ -1271,6 +1432,9 @@ function TerrainEditor:load()
 end
 
 function TerrainEditor:unload()
+    if self.recipe and self.terrain then safeCall(self.terrain, "editTerrain", "recipeCancel", {recipe=self.recipe}); end
+    self.recipe=nil; self._recipePending=false;
+    self:handleViewportBrush("cancel", 0, 0, 0, 0, 0, 0);
 	print("TerrainEditor unload called");
 
 	local applicationManager = IApplicationManager.instance();
@@ -1328,34 +1492,33 @@ function TerrainEditor:hide()
 end
 
 function TerrainEditor:update()
+    if self.terrain then
+        local ok, revision=safeCall(self.terrain, "getTerrainRevision");
+        if ok and revision ~= self._materialSettingsRevision then self:syncMaterialControls(); end
+    end
+    if self._cancelStrokePending then
+        if not self:handleViewportBrush("cancel", 0, 0, 0, 0, 0, 0) then return; end
+        self:setStatus("Pending terrain stroke cancellation completed.");
+    end
+    if self._publicationPending and self.terrain then
+        local status={}; local ok, err=safeCall(self.terrain, "editTerrain", "publicationStatus", status);
+        if ok and err == "" and not status.pending then self._publicationPending=false; self:setStatus((self._lastTerrainOperationStatus or "Terrain updated.") .. " Runtime publication complete."); end
+    end
+    if self.recipe and self.terrain and self._recipePending then
+        local ok, err = safeCall(self.terrain, "editTerrain", "recipePoll", {recipe=self.recipe});
+        local busyOk, busy = safeCall(self.recipe, "isBusy");
+        if not ok or (err and err ~= "") then self._recipePending=false; self:setStatus("Recipe preparation failed: " .. tostring(err));
+        elseif busyOk and not busy then self._recipePending=false; self:setStatus("Recipe preview ready in Scene Viewport (wireframe and layer weights). Commit publishes one undoable change."); end
+    end
 end
 
 function TerrainEditor:getLayerCount()
-	if self.terrain == nil then
-		return 0;
-	end
-
-	local configuredCount = self.terrain:getNumLayers();
-	local actualCount = self.terrain:calculateNumLayers();
-
-	if actualCount > configuredCount then
-		return actualCount;
-	end
-
-	return configuredCount;
+    return self.terrain and 4 or 0;
 end
 
 function TerrainEditor:getSelectedLayer()
-	if self.terrain == nil then
-		return nil;
-	end
-
-	local layerCount = self:getLayerCount();
-	if layerCount <= 0 or self.selectedLayerIndex >= layerCount then
-		return nil;
-	end
-
-	return self.terrain:getSubComponentByIndex(self.selectedLayerIndex);
+    -- Legacy component callers may still request this; native material slots are exposed by editTerrain.
+    return nil;
 end
 
 function TerrainEditor:updateLayerControls()
@@ -1397,7 +1560,34 @@ function TerrainEditor:updateLayerControls()
 		setResourcePreview(self.layerTexture, nil);
 	end
 
-	self:applySelectedLayerMaterialSettings(false);
+    self:syncLayerSettings();
+    self:syncToControls();
+end
+
+function TerrainEditor:syncLayerSettings()
+    if self.terrain then
+        local options={layer=self.selectedLayerIndex}; local ok, err=safeCall(self.terrain, "editTerrain", "getLayer", options);
+        if ok and err == "" then
+            self.settings.layerHeightScale=options.heightScale; self.settings.layerHeightBias=options.heightBias;
+            self.settings.layerTilingX=options.tilingX; self.settings.layerTilingY=options.tilingZ;
+            self.settings.layerRoughness=options.roughness; self.settings.layerMetallic=options.metallic; self.settings.layerNormalStrength=options.normalStrength;
+            self.resourcePaths=self.resourcePaths or {};
+            self.resourcePaths[TerrainEditorTypes.LayerBaseTexture]=options.albedo; self.resourcePaths[TerrainEditorTypes.LayerNormalTexture]=options.normal;
+            self.resourcePaths[TerrainEditorTypes.LayerRoughnessTexture]=options.orm;
+        end
+    end
+end
+
+function TerrainEditor:syncMaterialControls()
+    self:syncLayerSettings();
+    self:syncAppearanceSettings();
+    for elementId, binding in pairs(self.controlBindings or {}) do
+        if (TerrainNativeLayerControls[elementId] or TerrainAppearanceControlIds[elementId]) and binding.control then
+            self:setControlValue(binding.control, binding.valueType, self.settings[binding.key], binding.key);
+        end
+    end
+    local ok, revision=safeCall(self.terrain, "getTerrainRevision");
+    if ok then self._materialSettingsRevision=revision; end
 end
 
 function TerrainEditor:getFoliageTypeInfo(kind)
@@ -1520,6 +1710,9 @@ function TerrainEditor:updateFoliageControls()
 end
 
 function TerrainEditor:updateSelection()
+    if self.recipe and self.terrain then safeCall(self.terrain, "editTerrain", "recipeCancel", {recipe=self.recipe}); end
+    self.recipe=nil; self._recipePending=false;
+    if self._strokeTerrain then self:handleViewportBrush("cancel", 0, 0, 0, 0, 0, 0); end
 	print("TerrainEditor updateSelection called");
 
 	self.terrain = nil;
@@ -1544,7 +1737,7 @@ function TerrainEditor:updateSelection()
 
 	if self.terrain then
 		self:syncTerrainDataSettings();
-		self:setStatus("Editing selected terrain. Height brush actions support Undo/Redo; Save and Reload use versioned sample data. Other tools report availability when selected.");
+		self:setStatus("Editing selected terrain. Sculpt, paint, holes, grading and erosion use native undoable commands. Save/Reload persist heights, four materials, weights and holes.");
 		setResourcePreview(self.heightMap, self.terrain:getHeightMap());
 	else
 		self:setStatus("Select a TerrainSystem to edit.");
@@ -1556,40 +1749,11 @@ function TerrainEditor:updateSelection()
 end
 
 function TerrainEditor:addLayer()
-	if self.terrain == nil then
-		return;
-	end
-
-	local layer = self.terrain:addLayer();
-	if layer then
-		local layerCount = self:getLayerCount();
-		self.selectedLayerIndex = layerCount - 1;
-		self.terrain:resizeLayermap();
-	end
-
-	self:updateLayerControls();
-	self:setStatus("Added terrain layer.");
+    self:setStatus("Terrain uses four fixed material slots. Select a slot to edit its persistent textures and weights.");
 end
 
 function TerrainEditor:removeSelectedLayer()
-	if self.terrain == nil then
-		return;
-	end
-
-	local layerCount = self:getLayerCount();
-	if layerCount <= 0 then
-		return;
-	end
-
-	self.terrain:setNumLayers(layerCount - 1);
-	self.terrain:resizeLayermap();
-
-	if self.selectedLayerIndex > 0 then
-		self.selectedLayerIndex = self.selectedLayerIndex - 1;
-	end
-
-	self:updateLayerControls();
-	self:setStatus("Removed terrain layer.");
+    self:setStatus("Terrain uses four fixed material slots. Clear its painted weight or replace its textures instead.");
 end
 
 function TerrainEditor:setHeightMapTexture(texture)
@@ -1599,91 +1763,61 @@ function TerrainEditor:setHeightMapTexture(texture)
 
 	self.terrain:setHeightMap(texture);
 	setResourcePreview(self.heightMap, texture);
-	self:setStatus("Height map assigned.");
+	self:setStatus("Height texture preview assigned. Import Heightmap reads actual PGM/raw samples from Output Path.");
 end
 
 function TerrainEditor:setSelectedLayerTexture(texture)
-	local layer = self:getSelectedLayer();
-	if layer == nil or texture == nil then
-		return;
-	end
-
-	layer:setBaseTexture(texture);
-	setResourcePreview(self.layerTexture, texture);
-
-	if self.terrain then
-		self.terrain:resizeLayermap();
-		self.terrain:updateLayers();
-	end
-
-	self:setStatus("Layer base texture assigned.");
+    if not self.terrain then return; end
+    setResourcePreview(self.layerTexture, texture);
+    self:applySelectedLayerMaterialSettings(true, "albedo");
 end
 
 function TerrainEditor:setOptionalLayerTexture(elementId, texture)
-	local layer = self:getSelectedLayer();
-	local slotInfo = self.resourceSlots and self.resourceSlots[elementId] or nil;
-	if slotInfo and slotInfo.slot then
-		setResourcePreview(slotInfo.slot, texture);
-	end
-
-	if layer == nil or texture == nil then
-		return;
-	end
-
-	if elementId == TerrainEditorTypes.LayerNormalTexture then
-		safeCall(layer, "setNormalTexture", texture);
-	elseif elementId == TerrainEditorTypes.LayerRoughnessTexture then
-		safeCall(layer, "setRoughnessTexture", texture);
-	elseif elementId == TerrainEditorTypes.LayerMaskTexture then
-		safeCall(layer, "setMaskTexture", texture);
-	elseif elementId == TerrainEditorTypes.LayerHeightTexture then
-		safeCall(layer, "setHeightTexture", texture);
-	elseif elementId == TerrainEditorTypes.LayerAOTexture then
-		safeCall(layer, "setAOTexture", texture);
-	elseif elementId == TerrainEditorTypes.LayerSplatTexture then
-		safeCall(layer, "setSplatTexture", texture);
-	end
-
-	if self.terrain then
-		safeCall(self.terrain, "updateLayers");
-	end
+    local slotInfo = self.resourceSlots and self.resourceSlots[elementId] or nil;
+    if slotInfo and slotInfo.slot then setResourcePreview(slotInfo.slot, texture); end
+    if elementId == TerrainEditorTypes.LayerNormalTexture or elementId == TerrainEditorTypes.LayerRoughnessTexture then
+        self:applySelectedLayerMaterialSettings(true, elementId == TerrainEditorTypes.LayerNormalTexture and "normal" or "orm");
+    else self:setStatus("This optional texture slot is not consumed by the four-layer terrain material."); end
 end
 
-function TerrainEditor:applySelectedLayerMaterialSettings(updateStatus)
-	local layer = self:getSelectedLayer();
-	if layer == nil then
-		return;
-	end
+function TerrainEditor:applySelectedLayerMaterialSettings(updateStatus, changedField)
+    if not self.terrain then return false; end
+    local paths = self.resourcePaths or {};
+    local options={
+        layer=math.max(0, math.min(3, self.selectedLayerIndex or 0)),
+        tilingX=self.settings.layerTilingX, tilingZ=self.settings.layerTilingY,
+        roughness=self.settings.layerRoughness, metallic=self.settings.layerMetallic, normalStrength=self.settings.layerNormalStrength,
+        heightScale=self.settings.layerHeightScale, heightBias=self.settings.layerHeightBias,
+        albedo=paths[TerrainEditorTypes.LayerBaseTexture], normal=paths[TerrainEditorTypes.LayerNormalTexture], orm=paths[TerrainEditorTypes.LayerRoughnessTexture] };
+    if changedField then options={layer=options.layer, [changedField]=options[changedField]}; end
+    local ok=self:runTerrainOperation("editTerrain", "Updated persistent terrain layer material.", "layer", options);
+    self:syncMaterialControls();
+    return ok;
+end
 
-	local tiling = safeVector2(self.settings.layerTilingX, self.settings.layerTilingY);
-	local offset = safeVector2(self.settings.layerOffsetX, self.settings.layerOffsetY);
+function TerrainEditor:syncAppearanceSettings()
+    if not self.terrain then return; end
+    local options={}; local ok, err=safeCall(self.terrain, "editTerrain", "getAppearance", options);
+    if ok and err == "" then
+        for _, setting in ipairs(TerrainAppearanceControls) do
+            if options[setting.native] ~= nil then
+                if setting.kind == "toggle" then self.settings[setting.key]=options[setting.native] ~= 0;
+                else self.settings[setting.key]=options[setting.native]; end
+            end
+        end
+    end
+end
 
-	if tiling then
-		safeCall(layer, "setUVTiling", tiling);
-		safeCall(layer, "setTextureTiling", tiling);
-	end
-	if offset then
-		safeCall(layer, "setUVOffset", offset);
-		safeCall(layer, "setTextureOffset", offset);
-	end
-
-	safeCall(layer, "setUVRotation", self.settings.layerRotation);
-	safeCall(layer, "setTriplanar", self.settings.layerTriplanar);
-	safeCall(layer, "setTriplanarScale", self.settings.layerTriplanarScale);
-	safeCall(layer, "setNormalStrength", self.settings.layerNormalStrength);
-	safeCall(layer, "setRoughness", self.settings.layerRoughness);
-	safeCall(layer, "setMetallic", self.settings.layerMetallic);
-	safeCall(layer, "setAO", self.settings.layerAO);
-	safeCall(layer, "setHeightBlend", self.settings.layerHeightBlend);
-	safeCall(layer, "setHeightContrast", self.settings.layerHeightContrast);
-
-	if self.terrain then
-		safeCall(self.terrain, "updateLayers");
-	end
-
-	if updateStatus ~= false then
-		self:setStatus("Layer UV/material settings updated.");
-	end
+function TerrainEditor:applyAppearanceSettings(changedKey)
+    local options={};
+    for _, setting in ipairs(TerrainAppearanceControls) do
+        local value=self.settings[setting.key];
+        if setting.kind == "toggle" then value=value and 1 or 0; end
+        if not changedKey or changedKey == setting.key then options[setting.native]=value; end
+    end
+    local ok=self:runTerrainOperation("editTerrain", "Updated persistent global terrain appearance. Use Edit > Undo/Redo.", "appearance", options);
+    self:syncMaterialControls();
+    return ok;
 end
 
 function TerrainEditor:addTreeLayer()
@@ -1815,6 +1949,7 @@ end
 
 function TerrainEditor:syncTerrainDataSettings()
 	if self.terrain == nil then return; end
+    self:syncAppearanceSettings();
 	local sizeOk, size = safeCall(self.terrain, "getHeightMapSize");
 	if sizeOk and size then
 		self._terrainWidth, self._terrainDepth = size:X(), size:Y();
@@ -1840,7 +1975,7 @@ function TerrainEditor:getOutputPath(extension)
 	end
 
 	local lowerPath = string.lower(path);
-	local knownExtensions = { ".terrain.json", ".height.json", ".mesh.json", ".json" };
+	local knownExtensions = { ".terrain.recipe.json", ".shoreline.json", ".terrain.json", ".height.json", ".mesh.json", ".mask.pgm", ".nav.obj", ".json" };
 	for _, knownExtension in ipairs(knownExtensions) do
 		if string.sub(lowerPath, -#knownExtension) == knownExtension then
 			path = string.sub(path, 1, #path - #knownExtension);
@@ -2103,8 +2238,83 @@ function TerrainEditor:runTerrainOperation(method, successMessage, ...)
 		return false;
 	end
 	if method == "loadTerrainDataFile" or method == "importTerrainData" then self:syncTerrainDataSettings(); end
-	self:setStatus(successMessage);
-	return true;
+    local operationOptions=select(2, ...);
+    if method == "editTerrain" and type(operationOptions) == "table" and operationOptions.recipe and select(1, ...) ~= "recipeSave" then self._recipePending=false; end
+    self._lastTerrainOperationStatus=successMessage;
+    local status={}; local statusOk, statusError=safeCall(self.terrain, "editTerrain", "publicationStatus", status);
+    self._publicationPending=statusOk and statusError == "" and status.pending == true;
+    self:setStatus(successMessage .. (self._publicationPending and " Awaiting render/collision publication; the previous runtime revision remains active." or "") .. (status.error and (" " .. status.error) or ""));
+    return true;
+end
+
+function TerrainEditor:ensureRecipe()
+    if self.recipe then return true; end
+    if not self.terrain then return false; end
+    local ok, value = safeCall(self.terrain, "createTerrainRecipe");
+    if ok and value then self.recipe=value; return true; end
+    self:setStatus("Recipe base is unavailable or exceeds 65536 samples."); return false;
+end
+
+function TerrainEditor:nativeBrushOptions()
+    local paint = self.settings.brushMode == 6 or (tonumber(self.settings.brushMode) or 0) >= 10;
+    local options = { x=tonumber(self.settings.brushCentreX) or 0, z=tonumber(self.settings.brushCentreZ) or 0,
+        radius=tonumber(paint and self.settings.layerPaintSize or self.settings.brushSize) or 1,
+        strength=(tonumber(paint and self.settings.layerPaintStrength or self.settings.brushStrength) or 0) * (tonumber(self.settings.brushOpacity) or 1),
+        target=tonumber(self.settings.targetHeight) or 0, layer=math.max(0, math.min(3, self.selectedLayerIndex or 0)),
+        seed=tonumber(self.settings.generatorSeed) or 0, terraceStep=tonumber(self.settings.terraceSteps) or 1,
+        stampPath=tostring(self.settings.sculptStampPath or ""), minHeight=tonumber(self.settings.layerHeightMin) or -100000,
+        maxHeight=tonumber(self.settings.layerHeightMax) or 100000, minSlope=tonumber(self.settings.layerSlopeMin) or 0, maxSlope=tonumber(self.settings.layerSlopeMax) or 90 };
+    if self.settings.recipeMode and self:ensureRecipe() then options.recipe=self.recipe; end
+    return options;
+end
+
+function TerrainEditor:getTerrainRecipePreview()
+    if self.recipe and self.terrain and self._showRecipePreview and not self._recipePending then return self.recipe, self.terrain; end
+end
+
+function TerrainEditor:getViewportBrushEnabled() return self.terrain ~= nil and self.settings.viewportBrushEnabled == true and not self._cancelStrokePending; end
+function TerrainEditor:getViewportBrushRadius() return tonumber((self.settings.brushMode == 6 or (tonumber(self.settings.brushMode) or 0) >= 10) and self.settings.layerPaintSize or self.settings.brushSize) or 1; end
+function TerrainEditor:handleViewportBrush(phase, originX, originY, originZ, dirX, dirY, dirZ)
+    if phase == "cancel" then
+        local terrain = self._strokeTerrain or self.terrain;
+        self.brushPreview = nil;
+        if terrain then
+            local ok, err = safeCall(terrain, "editTerrain", "cancel", {});
+            if not ok or err ~= "" then
+                self._cancelStrokePending = self._strokeTerrain ~= nil;
+                self:setStatus("Stroke cancellation pending: " .. tostring(err)); return false;
+            end
+        end
+        self._strokeTerrain = nil;
+        self._cancelStrokePending = false;
+        return true;
+    end
+    if phase == "commit" then
+        if not self._strokeTerrain then return false; end
+        local ok, err = safeCall(self._strokeTerrain, "editTerrain", "commit", {});
+        if ok and err == "" then self._strokeTerrain = nil; self:setStatus("Committed terrain stroke. Use Edit > Undo/Redo."); return true; end
+        self:setStatus("Stroke commit failed: " .. tostring(err)); return false;
+    end
+    if not self:getViewportBrushEnabled() then return false; end
+    local options = self:nativeBrushOptions();
+    options.recipe=nil; options.rayX=originX; options.rayY=originY; options.rayZ=originZ; options.dirX=dirX; options.dirY=dirY; options.dirZ=dirZ;
+    local ok, err = safeCall(self.terrain, "editTerrain", "pick", options);
+    if not ok or err ~= "" then self.brushPreview = nil; return false; end
+    self.brushPreview = {x=options.hitX, y=options.hitY, z=options.hitZ, radius=options.radius};
+    self.settings.brushCentreX=options.x; self.settings.brushCentreZ=options.z;
+    if phase == "hover" then return true; end
+    if phase == "begin" then
+        if self._strokeTerrain then return false; end
+        ok, err = safeCall(self.terrain, "editTerrain", "begin", {});
+        if not ok or err ~= "" then self:setStatus(tostring(err)); return false; end
+        self._strokeTerrain = self.terrain;
+    end
+    if self._strokeTerrain ~= self.terrain then return false; end
+    options.mode=({"raise", "lower", "smooth", "flatten", "noise", "terrace", "paint", "stamp", "hole", "fillHole", "paintWetness", "clearWetness", "paintSnow", "clearSnow"})[(tonumber(self.settings.brushMode) or 0)+1] or "raise";
+    if (tonumber(self.settings.brushMode) or 0) >= 10 or self.settings.brushMode == 6 then options.radius=self.settings.layerPaintSize; options.strength=self.settings.layerPaintStrength; end
+    ok, err = safeCall(self.terrain, "editTerrain", "update", options);
+    if not ok or err ~= "" then self:setStatus("Stroke update failed: " .. tostring(err)); return false; end
+    return true;
 end
 
 function TerrainEditor:performAction(elementId)
@@ -2117,6 +2327,10 @@ function TerrainEditor:performAction(elementId)
 		[TerrainEditorTypes.ClearLayerMask] = "clear layer mask",
 		[TerrainEditorTypes.RebuildTerrain] = "rebuild terrain",
 		[TerrainEditorTypes.ImportHeightmap] = "import heightmap",
+        [TerrainEditorTypes.FillHole] = "fill holes",
+        [TerrainEditorTypes.PaintWetness] = "paint wetness mask", [TerrainEditorTypes.ClearWetness] = "erase wetness mask",
+        [TerrainEditorTypes.PaintSnow] = "paint snow mask", [TerrainEditorTypes.ClearSnow] = "erase snow mask",
+        [TerrainEditorTypes.GenerateRiver] = "grade river",
 		[TerrainEditorTypes.ExportHeightmap] = "export heightmap",
 		[TerrainEditorTypes.BakeNormals] = "bake terrain normals",
 		[TerrainEditorTypes.BakeHoles] = "bake terrain holes",
@@ -2165,6 +2379,22 @@ function TerrainEditor:performAction(elementId)
 		end
 	end
 
+    local recipeActions = {[TerrainEditorTypes.RecipePreview]="recipePreview", [TerrainEditorTypes.RecipeCommit]="recipeCommit",
+        [TerrainEditorTypes.RecipeCancel]="recipeCancel", [TerrainEditorTypes.RecipeReset]="recipeReset", [TerrainEditorTypes.RecipeSave]="recipeSave",
+        [TerrainEditorTypes.RecipeLoad]="recipeLoad", [TerrainEditorTypes.RecipeMoveUp]="recipeMove", [TerrainEditorTypes.RecipeMoveDown]="recipeMove", [TerrainEditorTypes.RecipeRemove]="recipeRemove"};
+    if recipeActions[elementId] then
+        self:syncFromControls(); if not self:ensureRecipe() then return false; end
+        local action=recipeActions[elementId]; local index=tonumber(self.settings.recipeIndex) or 0;
+        local options={recipe=self.recipe, index=index, to=index+(elementId == TerrainEditorTypes.RecipeMoveUp and -1 or 1)};
+        if action == "recipeSave" then options.path=self:getOutputPath(".terrain.recipe.json");
+        elseif action == "recipeLoad" then options.path=tostring(self.settings.outputFile or ""); end
+        local ok=self:runTerrainOperation("editTerrain", "Terrain recipe: " .. action, action, options);
+        if ok and action ~= "recipePreview" and action ~= "recipeSave" then self._recipePending=false; end
+        if ok and action == "recipePreview" then self._recipePending=true; self._showRecipePreview=true; self:setStatus("Preparing terrain recipe on a cancellable worker..."); end
+        if ok and (action == "recipeCancel" or action == "recipeCommit" or action == "recipeReset" or action == "recipeLoad") then self._showRecipePreview=false; end
+        return ok;
+    end
+
 	local actionName = actionNames[elementId];
 	if actionName == nil then
 		return false;
@@ -2178,25 +2408,65 @@ function TerrainEditor:performAction(elementId)
 		[TerrainEditorTypes.SculptApplyLower] = "lower",
 		[TerrainEditorTypes.SculptApplySmooth] = "smooth",
 		[TerrainEditorTypes.SculptApplyFlatten] = "flatten",
+        [TerrainEditorTypes.SculptApplyTerrace] = "terrace",
+        [TerrainEditorTypes.SculptApplyNoise] = "noise",
+        [TerrainEditorTypes.SculptApplyStamp] = "stamp",
+        [TerrainEditorTypes.AutoPaintLayer] = "paint",
+        [TerrainEditorTypes.GenerateBiome] = "paint",
+        [TerrainEditorTypes.ClearLayerPaint] = "clearPaint",
+        [TerrainEditorTypes.NormalizeLayerWeights] = "normalize",
+        [TerrainEditorTypes.BakeHoles] = "hole",
+        [TerrainEditorTypes.FillHole] = "fillHole",
+        [TerrainEditorTypes.PaintWetness] = "paintWetness", [TerrainEditorTypes.ClearWetness] = "clearWetness",
+        [TerrainEditorTypes.PaintSnow] = "paintSnow", [TerrainEditorTypes.ClearSnow] = "clearSnow",
 	};
-	local brushMode = brushModes[elementId];
+    local brushMode = brushModes[elementId];
+    if self.settings.recipeMode and (brushMode or elementId == TerrainEditorTypes.RunHydraulicErosion or elementId == TerrainEditorTypes.RunThermalErosion or elementId == TerrainEditorTypes.GenerateRoad or elementId == TerrainEditorTypes.GenerateRiver) and not self:ensureRecipe() then return false; end
 	if brushMode then
 		if self.settings.sculptUseTablet or self.settings.sculptMirrorX or self.settings.sculptMirrorZ then
 			self:setStatus("Tablet and mirror brush modifiers are unavailable.");
 			return false;
 		end
-		return self:runTerrainOperation("applyHeightBrush", "Applied " .. brushMode .. " brush. Use Edit > Undo/Redo.",
-			brushMode, tonumber(self.settings.brushCentreX) or 0, tonumber(self.settings.brushCentreZ) or 0,
-			tonumber(self.settings.brushSize) or 0,
-			(tonumber(self.settings.brushStrength) or 0) * (tonumber(self.settings.brushOpacity) or 1),
-			tonumber(self.settings.targetHeight) or 0);
-	elseif elementId == TerrainEditorTypes.SaveTerrain or elementId == TerrainEditorTypes.ExportTerrainJson or elementId == TerrainEditorTypes.ExportHeightData or
-		elementId == TerrainEditorTypes.ExportHeightmap then
-		local extension = (elementId == TerrainEditorTypes.SaveTerrain or elementId == TerrainEditorTypes.ExportTerrainJson) and ".terrain.json" or ".height.json";
-		local path = self:getOutputPath(extension);
-		local saved = self:runTerrainOperation("saveTerrainDataFile", "Saved versioned terrain samples: " .. path, path);
-		if saved then self._exportedFiles.terrain = path; end
-		return saved;
+        local options=self:nativeBrushOptions();
+        if brushMode == "paint" or brushMode == "clearPaint" or brushMode == "normalize" or brushMode == "paintWetness" or brushMode == "clearWetness" or brushMode == "paintSnow" or brushMode == "clearSnow" then options.radius=self.settings.layerPaintSize; options.strength=self.settings.layerPaintStrength; end
+        return self:runTerrainOperation("editTerrain", (self.settings.recipeMode and "Queued " or "Applied ") .. brushMode .. (self.settings.recipeMode and " in ordered recipe." or ". Use Edit > Undo/Redo."), brushMode, options);
+    elseif elementId == TerrainEditorTypes.GenerateMasks or elementId == TerrainEditorTypes.BakeErosionMasks then
+        local options=self:nativeBrushOptions(); options.recipe=nil; options.path=self:getOutputPath(".mask.pgm");
+        options.iterations=self.settings.hydraulicIterations; options.rain=self.settings.rainAmount; options.capacity=self.settings.sedimentCapacity; options.talus=self.settings.talusAngle;
+        local erosion=elementId == TerrainEditorTypes.BakeErosionMasks;
+        return self:runTerrainOperation("editTerrain", "Exported normalized " .. (erosion and "hydraulic displacement" or "height/slope/radius rule") .. " PGM16 mask: " .. options.path, erosion and "erosionMask" or "ruleMask", options);
+    elseif elementId == TerrainEditorTypes.ImportHeightmap or elementId == TerrainEditorTypes.ExportHeightmap or elementId == TerrainEditorTypes.ExportHeightData then
+        local encoding = ({"pgm16", "raw16", "raw32"})[(tonumber(self.settings.heightEncoding) or 0) + 1];
+        if elementId == TerrainEditorTypes.ExportHeightData then encoding = "raw32"; end
+        local importing = elementId == TerrainEditorTypes.ImportHeightmap;
+        local extension = encoding == "pgm16" and ".pgm" or (encoding == "raw16" and ".r16" or ".r32");
+        local path = importing and tostring(self.settings.outputFile or "") or self:getOutputPath(extension);
+        local options = {path=path, encoding=encoding, width=self.settings.rawWidth, depth=self.settings.rawDepth, minimum=self.settings.heightMinimum, maximum=self.settings.heightMaximum};
+        return self:runTerrainOperation("editTerrain", (importing and "Imported " or "Exported ") .. encoding .. " heights: " .. path, importing and "importHeight" or "exportHeight", options);
+    elseif elementId == TerrainEditorTypes.ExportMesh then
+        local path = self:getOutputPath(".obj");
+        return self:runTerrainOperation("editTerrain", "Exported terrain geometry, UVs and normals: " .. path, "exportMesh", {path=path});
+    elseif elementId == TerrainEditorTypes.RunHydraulicErosion or elementId == TerrainEditorTypes.RunThermalErosion then
+        local hydraulic = elementId == TerrainEditorTypes.RunHydraulicErosion;
+        local options = self:nativeBrushOptions(); options.iterations = hydraulic and self.settings.hydraulicIterations or self.settings.thermalIterations;
+        options.rain = self.settings.rainAmount; options.capacity = self.settings.sedimentCapacity; options.talus = self.settings.talusAngle;
+        return self:runTerrainOperation("editTerrain", (self.settings.recipeMode and "Queued erosion in ordered recipe." or "Applied bounded erosion. Use Edit > Undo/Redo."), hydraulic and "hydraulic" or "thermal", options);
+    elseif elementId == TerrainEditorTypes.GenerateRoad or elementId == TerrainEditorTypes.GenerateRiver then
+        local options = self:nativeBrushOptions(); options.path = self.settings.roadSplinePath; options.width = self.settings.roadWidth;
+        options.shoulder = self.settings.roadShoulderWidth; options.strength = self.settings.roadFlattenStrength; options.riverDepth = self.settings.waterDepth;
+        return self:runTerrainOperation("editTerrain", (self.settings.recipeMode and "Queued grading in ordered recipe." or "Applied centreline grading. Use Edit > Undo/Redo."), elementId == TerrainEditorTypes.GenerateRiver and "river" or "road", options);
+    elseif elementId == TerrainEditorTypes.BuildCollision or elementId == TerrainEditorTypes.RebuildLod then
+        local collision=elementId == TerrainEditorTypes.BuildCollision;
+        return self:runTerrainOperation("editTerrain", collision and "Collision matches the active terrain revision." or "Requested terrain tile/LOD refresh.", collision and "collision" or "rebuildLod", {});
+    elseif elementId == TerrainEditorTypes.BuildNavMesh or elementId == TerrainEditorTypes.GenerateWaterPlane then
+        local navigation = elementId == TerrainEditorTypes.BuildNavMesh;
+        local path = self:getOutputPath(navigation and ".nav.obj" or ".shoreline.json");
+        return self:runTerrainOperation("editTerrain", "Exported " .. (navigation and "navigation mesh input: " or "shoreline input: ") .. path, navigation and "navigation" or "shoreline", {path=path, waterHeight=self.settings.waterHeight});
+    elseif elementId == TerrainEditorTypes.SaveTerrain or elementId == TerrainEditorTypes.ExportTerrainJson then
+        local path = self:getOutputPath(".terrain.json");
+        local saved = self:runTerrainOperation("saveTerrainDataFile", "Saved terrain heights, layers, weights and holes: " .. path, path);
+        if saved then self._exportedFiles.terrain = path; end
+        return saved;
 	elseif elementId == TerrainEditorTypes.ReloadTerrain then
 		local path = tostring(self.settings.outputFile or "");
 		if path == "" then self:setStatus("Set the path of a saved terrain sample file first."); return false; end
@@ -2237,10 +2507,20 @@ function TerrainEditor:updateBoundSetting(elementId, sender)
 		return false;
 	end
 
+    local unavailable = TerrainUnavailableLayerControls[elementId];
+    if unavailable then
+        self:setStatus("Unavailable: " .. unavailable);
+        return false;
+    end
+
 	local value = self:getControlValue(sender, binding.valueType);
 	self.settings[binding.key] = self:normalizeControlValue(binding.key, value, binding.valueType);
 
-	if self.terrain and elementId == TerrainEditorTypes.HeightScale then
+	if elementId == TerrainEditorTypes.ViewportBrushEnabled and not self.settings.viewportBrushEnabled then
+        local cancelled = self:handleViewportBrush("cancel", 0, 0, 0, 0, 0, 0);
+        if cancelled then self:setStatus("Viewport painting disabled; active stroke cancelled."); end
+        return cancelled;
+    elseif self.terrain and elementId == TerrainEditorTypes.HeightScale then
 		local requestedScale = tonumber(self.settings.heightScale);
 		local applied = safeCall(self.terrain, "setHeightScale", requestedScale);
 		self:syncTerrainDataSettings();
@@ -2248,7 +2528,10 @@ function TerrainEditor:updateBoundSetting(elementId, sender)
 			self:setStatus("Terrain height scale was rejected; existing samples are retained."); return false;
 		end
 		self:setStatus("Updated terrain height scale; authored grid dimensions are unchanged.");
-	elseif self.terrain and elementId == TerrainEditorTypes.HeightmapResolution then
+    elseif self.terrain and elementId == TerrainEditorTypes.RecipeEnabled then
+        if not self:ensureRecipe() then return false; end
+        return self:runTerrainOperation("editTerrain", "Updated recipe operation visibility.", "recipeEnable", {recipe=self.recipe, index=self.settings.recipeIndex, enabled=self.settings.recipeEnabled and 1 or 0});
+    elseif self.terrain and elementId == TerrainEditorTypes.HeightmapResolution then
 		local resolution = self:getHeightmapResolution();
 		local applied = safeCall(self.terrain, "setHeightMapSize", Vector2I(resolution, resolution));
 		self:syncTerrainDataSettings();
@@ -2259,8 +2542,12 @@ function TerrainEditor:updateBoundSetting(elementId, sender)
 	elseif elementId == TerrainEditorTypes.GeneratorPreset then
 		self:applyGeneratedTerrainSettings();
 		self:setStatus("Updated generator settings; use Generate to replace height samples.");
-	elseif elementId >= TerrainEditorTypes.LayerBlendMode and elementId <= TerrainEditorTypes.LayerHeightMax then
-		self:applySelectedLayerMaterialSettings(true);
+    elseif TerrainAppearanceControlIds[elementId] then
+        return self:applyAppearanceSettings(binding.key);
+    elseif TerrainNativeLayerControls[elementId] then
+        return self:applySelectedLayerMaterialSettings(true, TerrainNativeLayerControls[elementId]);
+    elseif elementId >= TerrainEditorTypes.LayerSlopeMin and elementId <= TerrainEditorTypes.LayerHeightMax then
+        self:setStatus("Updated auto-paint height/slope rule settings; use Auto Paint Selected Layer or Apply Biome Layer Rules to change terrain weights.");
 	else
 		self:setStatus("Updated terrain setting: " .. binding.key);
 	end
@@ -2431,8 +2718,8 @@ function TerrainEditor:handleEvent(parameters, results)
 		elseif elementId == TerrainEditorTypes.RemoveGrassLayer then
 			self:removeSelectedFoliageLayer("grass");
 		elseif self.layerTexture and elementId == self.layerTexture.deleteHash then
-			local layer = self:getSelectedLayer();
-			if layer then layer:setBaseTexture(nil); self:updateLayerControls(); end
+            self.resourcePaths=self.resourcePaths or {}; self.resourcePaths[TerrainEditorTypes.LayerBaseTexture]="";
+            self:applySelectedLayerMaterialSettings(true, "albedo"); self:updateLayerControls();
 		elseif self.treeLayerTexture and elementId == self.treeLayerTexture.deleteHash then
 			local layer = self:getSelectedFoliageLayer("tree");
 			if layer then layer:setBaseTexture(nil); self:updateFoliageControls(); end

@@ -141,6 +141,55 @@ static const wp_c8 s_ps_pntc_src[] =
     "Texture2D normal_tex : register(t1); Texture2D metallic_tex : register(t2);\n"
     "Texture2D roughness_tex : register(t3); Texture2D emission_tex : register(t4);\n"
     "Texture2D ao_tex : register(t5); Texture2D opacity_tex : register(t6);\n"
+    "Texture2D terrain_albedo0 : register(t9); Texture2D terrain_normal0 : register(t10); Texture2D terrain_orm0 : register(t11);\n"
+    "Texture2D terrain_albedo1 : register(t12); Texture2D terrain_normal1 : register(t13); Texture2D terrain_orm1 : register(t14);\n"
+    "Texture2D terrain_albedo2 : register(t15); Texture2D terrain_normal2 : register(t16); Texture2D terrain_orm2 : register(t17);\n"
+    "Texture2D terrain_albedo3 : register(t18); Texture2D terrain_normal3 : register(t19); Texture2D terrain_orm3 : register(t20);\n"
+    "Texture2D terrain_control : register(t21); SamplerState terrain_control_sampler : register(s3); SamplerState terrain_sampler : register(s4);\n"
+    "Texture2D terrain_detail : register(t22); Texture2D terrain_masks : register(t23);\n"
+    "cbuffer Terrain : register(b3) { float4 terrain_transform; float4 terrain_controls;\n"
+    " float4 terrain_tint[4]; float4 terrain_surface[4]; float4 terrain_maps[4]; float4 terrain_height[4];\n"
+    " float4 terrain_appearance; float4 terrain_detail_params; float4 terrain_macro; float4 terrain_macro_tint;\n"
+    " float4 terrain_weather; float4 terrain_snow; float4 terrain_snow_tint; };\n"
+    "float3 terrainMapNormal(float3 position,float3 n,float2 uv,float3 mapped) {\n"
+    " float3 dp1=ddx(position),dp2=ddy(position); float2 duv1=ddx(uv),duv2=ddy(uv);\n"
+    " float3 p2=cross(dp2,n),p1=cross(n,dp1);\n"
+    " float3 t=p2*duv1.x+p1*duv2.x,b=p2*duv1.y+p1*duv2.y;\n"
+    " float inv=rsqrt(max(max(dot(t,t),dot(b,b)),1e-8));\n"
+    " return normalize(t*inv*mapped.x+b*inv*mapped.y+n*mapped.z+n*1e-6); }\n"
+    "void terrainLayerPlane(Texture2D a,Texture2D n,Texture2D o,float2 plane,float3 worldPos,float3 geometric,\n"
+    " float4 tint,float4 params,float4 flags,float4 height,out float3 albedo,out float3 normal,out float4 orm) {\n"
+    " float2 uv = plane * params.xy;\n"
+    " float3 colour = flags.x > 0.5 ? a.Sample(terrain_sampler, uv).rgb : 1.0;\n"
+    " albedo = pow(max(colour * tint.rgb, 0.0), 2.2);\n"
+    " normal = flags.y > 0.5 ? n.Sample(terrain_sampler, uv).xyz * 2.0 - 1.0 : float3(0,0,1);\n"
+    " normal.xy *= flags.w; normal = normalize(normal + float3(0,0,1e-6));\n"
+    " if(terrain_detail_params.w>0.5 && terrain_detail_params.z>0.0) { float3 detail=terrain_detail.Sample(terrain_sampler,plane*terrain_detail_params.xy).xyz*2.0-1.0;\n"
+    "   detail.xy*=terrain_detail_params.z; detail=normalize(detail+float3(0,0,1e-6));\n"
+    "   normal=normalize(float3(normal.xy+detail.xy,normal.z*detail.z)+float3(0,0,1e-6)); }\n"
+    " normal=terrainMapNormal(worldPos,geometric,plane,normal);\n"
+    " orm = flags.z > 0.5 ? o.Sample(terrain_sampler, uv) : float4(1,1,1,0);\n"
+    " orm.y *= params.z; orm.z *= params.w; orm.w=orm.w*height.x+height.y;\n"
+    "}\n"
+    "void terrainLayer(Texture2D a,Texture2D n,Texture2D o,float3 position,float3 objectNormal,float3 worldPos,float3 geometric,\n"
+    " float4 tint,float4 params,float4 flags,float4 height,out float3 albedo,out float3 normal,out float4 orm) {\n"
+    " if(terrain_appearance.x<0.5) { terrainLayerPlane(a,n,o,position.xz,worldPos,geometric,tint,params,flags,height,albedo,normal,orm); return; }\n"
+    " float3 blend=pow(abs(objectNormal),terrain_appearance.y); blend/=max(dot(blend,1.0),1e-8);\n"
+    " float3 ax,nx,ay,ny,az,nz; float4 ox,oy,oz;\n"
+    " terrainLayerPlane(a,n,o,position.zy,worldPos,geometric,tint,params,flags,height,ax,nx,ox);\n"
+    " terrainLayerPlane(a,n,o,position.xz,worldPos,geometric,tint,params,flags,height,ay,ny,oy);\n"
+    " terrainLayerPlane(a,n,o,position.xy,worldPos,geometric,tint,params,flags,height,az,nz,oz);\n"
+    " albedo=ax*blend.x+ay*blend.y+az*blend.z; orm=ox*blend.x+oy*blend.y+oz*blend.z;\n"
+    " normal=normalize(nx*blend.x+ny*blend.y+nz*blend.z+geometric*1e-6);\n"
+    "}\n"
+    "float terrainMacroHash(float2 cell,uint seed) { uint2 bits=asuint(cell);\n"
+    " uint h=bits.x*1664525u^bits.y*1013904223u^seed; h^=h>>16; h*=2246822519u; h^=h>>13;\n"
+    " return float(h&16777215u)/16777215.0; }\n"
+    "float terrainMacroNoise(float2 position) { float2 p=position*terrain_macro.x, cell=floor(p),f=frac(p); f=f*f*(3.0-2.0*f);\n"
+    " uint seed=uint(terrain_macro.z)|(uint(terrain_macro.w)<<16);\n"
+    " return lerp(lerp(terrainMacroHash(cell,seed),terrainMacroHash(cell+float2(1,0),seed),f.x),\n"
+    " lerp(terrainMacroHash(cell+float2(0,1),seed),terrainMacroHash(cell+1.0,seed),f.x),f.y);\n"
+    "}\n"
     "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
     " float4 specular_color; float4 light_color; float4 light_direction;\n"
     " float4 camera_position; float4 surface; float4 uv_transform;\n"
@@ -171,11 +220,34 @@ static const wp_c8 s_ps_pntc_src[] =
     " i.uv = materialUV(i);\n"
     " float4 sampled = tex.Sample(tex_sampler, i.uv);\n"
     " float3 albedo = pow(max(sampled.rgb * base_color.rgb * i.color.rgb, 0.0), 2.2);\n"
+    " float3 terrainNormal = normalize(front ? i.normal : -i.normal), terrainOrm = float3(1,1,0);\n"
+    " if (terrain_controls.x > 0.5) {\n"
+    "   float4 weights = terrain_controls.y > 0.5 ? max(terrain_control.Sample(terrain_control_sampler, i.object_pos.xz * terrain_transform.zw + terrain_transform.xy), 0.0) : float4(1,0,0,0);\n"
+    "   float total = dot(weights, 1.0); weights = total > 1e-8 ? weights / total : float4(1,0,0,0);\n"
+    "   float3 a0,n0,a1,n1,a2,n2,a3,n3; float4 o0,o1,o2,o3;\n"
+    "   terrainLayer(terrain_albedo0,terrain_normal0,terrain_orm0,i.object_pos,i.object_normal,i.world_pos,terrainNormal,terrain_tint[0],terrain_surface[0],terrain_maps[0],terrain_height[0],a0,n0,o0);\n"
+    "   terrainLayer(terrain_albedo1,terrain_normal1,terrain_orm1,i.object_pos,i.object_normal,i.world_pos,terrainNormal,terrain_tint[1],terrain_surface[1],terrain_maps[1],terrain_height[1],a1,n1,o1);\n"
+    "   terrainLayer(terrain_albedo2,terrain_normal2,terrain_orm2,i.object_pos,i.object_normal,i.world_pos,terrainNormal,terrain_tint[2],terrain_surface[2],terrain_maps[2],terrain_height[2],a2,n2,o2);\n"
+    "   terrainLayer(terrain_albedo3,terrain_normal3,terrain_orm3,i.object_pos,i.object_normal,i.world_pos,terrainNormal,terrain_tint[3],terrain_surface[3],terrain_maps[3],terrain_height[3],a3,n3,o3);\n"
+    "   if(terrain_appearance.z>0.5) { float4 heights=float4(o0.w,o1.w,o2.w,o3.w);\n"
+    "     float4 eligible=lerp(-100.0,heights,step(1e-8,weights)); float high=max(max(eligible.x,eligible.y),max(eligible.z,eligible.w));\n"
+    "     weights*=max(heights-high+terrain_appearance.w,0.0); weights/=max(dot(weights,1.0),1e-8); }\n"
+    "   albedo = a0*weights.x+a1*weights.y+a2*weights.z+a3*weights.w;\n"
+    "   terrainNormal = normalize(n0*weights.x+n1*weights.y+n2*weights.z+n3*weights.w + terrainNormal*1e-6);\n"
+    "   terrainOrm = o0.xyz*weights.x+o1.xyz*weights.y+o2.xyz*weights.z+o3.xyz*weights.w;\n"
+    "   if(terrain_macro.y>0.0) albedo*=lerp(1.0,terrain_macro_tint.rgb,terrain_macro.y*terrainMacroNoise(i.object_pos.xz));\n"
+    "   float2 masks=terrain_snow.y>0.5 ? saturate(terrain_masks.Sample(terrain_control_sampler,i.object_pos.xz*terrain_transform.zw+terrain_transform.xy).rg) : 1.0;\n"
+    "   float wet=terrain_weather.x*masks.x,snow=terrain_weather.w*masks.y;\n"
+    "   albedo*=1.0-wet*terrain_weather.y; terrainOrm.y=lerp(terrainOrm.y,min(terrainOrm.y,terrain_weather.z),wet);\n"
+    "   albedo=lerp(albedo,pow(terrain_snow_tint.rgb,2.2),snow); terrainOrm.yz=lerp(terrainOrm.yz,float2(terrain_snow.x,0),snow);\n"
+    "   terrainNormal=normalize(lerp(terrainNormal,normalize(front ? i.normal : -i.normal),snow));\n"
+    " }\n"
     " float alpha = base_color.a * i.color.a;\n"
     " if (texture_sources.w < 0.5) alpha *= sampled.a;\n"
     " else if (extra_map_flags.y > 0.5 && texture_sources.w < 2.5) {\n"
     "     float4 opacity = opacity_tex.Sample(tex_sampler, i.uv);\n"
     "     alpha *= texture_sources.w < 1.5 ? opacity.r : opacity.a; }\n"
+    " if (terrain_controls.x > 0.5) alpha = 1.0;\n"
     " if (controls.z >= 0.0) clip(alpha - controls.z);\n"
     " if (shadow_controls.y > 0.5) { clip(alpha - 0.001); return 0.0; }\n"
     " float3 emission = emissive_color.rgb;\n"
@@ -196,8 +268,9 @@ static const wp_c8 s_ps_pntc_src[] =
     "     if (texture_sources.y > 4.5) channel = rough.g;\n"
     "     roughness *= channel; }\n"
     " roughness = clamp(roughness, 0.045, 1.0);\n"
+    " if (terrain_controls.x > 0.5) { metalness = saturate(terrainOrm.z); roughness = clamp(terrainOrm.y, 0.045, 1.0); }\n"
     " float3 n = normalize(front ? i.normal : -i.normal);\n"
-    " if (map_flags.x > 0.5) {\n"
+    " if (map_flags.x > 0.5 && terrain_controls.x < 0.5) {\n"
     "     float3 dp1 = ddx(i.world_pos), dp2 = ddy(i.world_pos);\n"
     "     float2 duv1 = ddx(i.uv), duv2 = ddy(i.uv);\n"
     "     float3 p2 = cross(dp2, n), p1 = cross(n, dp1);\n"
@@ -205,6 +278,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "     float inv = rsqrt(max(max(dot(t,t), dot(b,b)), 1e-8));\n"
     "     float3 mapped = normal_tex.Sample(tex_sampler, i.uv).xyz * 2.0 - 1.0;\n"
     "     mapped.xy *= controls.x; n = normalize(t * inv * mapped.x + b * inv * mapped.y + n * mapped.z); }\n"
+    " if (terrain_controls.x > 0.5) n=terrainNormal;\n"
     " float3 dn1 = ddx(n), dn2 = ddy(n);\n"
     " float variance = min(2.0 * (dot(dn1, dn1) + dot(dn2, dn2)), 0.25);\n"
     " roughness = pow(saturate(pow(roughness, 4.0) + variance), 0.25);\n"
@@ -231,6 +305,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "     float4 occlusion = ao_tex.Sample(tex_sampler, i.uv);\n"
     "     ao = texture_sources.z < 0.5 ? occlusion.r : occlusion.b; }\n"
     " if (texture_sources.z > 1.5 && texture_sources.z < 2.5) ao = i.color.a;\n"
+    " if (terrain_controls.x > 0.5) ao = saturate(terrainOrm.x);\n"
     " ao = lerp(1.0, ao, saturate(controls.y));\n"
     " float3 ambient = ambient_color.w > 0.5 ? max(ambient_color.rgb, 0.0) : camera_position.www;\n"
     " float3 ambientF = f0 + (max(1.0 - roughness, f0) - f0) * pow(1.0 - ndv, 5.0);\n"
@@ -368,6 +443,11 @@ struct wp_renderer_dx11
     ID3D11SamplerState *material_sampler;
     ID3D11SamplerState *material_sampler_cache[1600];
     ID3D11ShaderResourceView *material_texture_views[6];
+    ID3D11Buffer *cb_terrain;
+    wp_terrain_material_dx11 terrain;
+    ID3D11ShaderResourceView *terrain_views[WP_TERRAIN_MATERIAL_VIEWS]; /* borrowed */
+    ID3D11SamplerState *terrain_control_sampler;
+    wp_s32 terrain_dirty;
     ID3D11Buffer *cb_material;
     wp_material_dx11 material;
     ID3D11Texture2D *shadow_texture;
@@ -1592,6 +1672,20 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
         return NULL;
     }
 
+    buf_desc.ByteWidth = sizeof( wp_terrain_material_dx11 );
+    hr = ID3D11Device_CreateBuffer( r->device, &buf_desc, NULL, &r->cb_terrain );
+    if( FAILED( hr ) ) { wp_renderer_dx11_destroy( r ); return NULL; }
+    r->terrain_dirty = 1;
+    {
+        D3D11_SAMPLER_DESC desc;
+        memset( &desc, 0, sizeof( desc ) );
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
+        hr = ID3D11Device_CreateSamplerState( r->device, &desc, &r->terrain_control_sampler );
+        if( FAILED( hr ) ) { wp_renderer_dx11_destroy( r ); return NULL; }
+    }
+
     buf_desc.ByteWidth = sizeof( wp_shadow_constants_dx11 );
     hr = ID3D11Device_CreateBuffer( r->device, &buf_desc, NULL, &r->cb_shadow );
     if( FAILED( hr ) )
@@ -1721,6 +1815,8 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
 
     if( r->cb_transform )
         ID3D11Buffer_Release( r->cb_transform );
+    if( r->cb_terrain ) ID3D11Buffer_Release( r->cb_terrain );
+    if( r->terrain_control_sampler ) ID3D11SamplerState_Release( r->terrain_control_sampler );
     if( r->cb_material )
         ID3D11Buffer_Release( r->cb_material );
     if( r->vb )
@@ -2260,6 +2356,84 @@ void wp_renderer_dx11_set_environment( wp_renderer_dx11 *r, void *view, wp_f32 m
     r->material.environment.y = max_lod;
     r->material_dirty = 1;
 }
+
+static wp_s32 wp_renderer_dx11_stage_terrain_material( wp_renderer_dx11 *r,
+    const wp_terrain_material_dx11 *material, void *const *views, wp_s32 apply )
+{
+    wp_terrain_material_dx11 value;
+    ID3D11ShaderResourceView *candidate[WP_TERRAIN_MATERIAL_VIEWS] = { 0 };
+    wp_s32 i;
+    if( !r ) return 0;
+    memset( &value, 0, sizeof( value ) );
+    if( material )
+    {
+        const wp_f32 *floats = (const wp_f32 *)material;
+        for( i = 0; i < (wp_s32)( sizeof( *material ) / sizeof( wp_f32 ) ); ++i )
+            if( !( floats[i] >= -FLT_MAX && floats[i] <= FLT_MAX ) ) return 0;
+        value = *material;
+        if( value.controls.x != 1.0f || value.control_transform.z <= 0.0f ||
+            value.control_transform.w <= 0.0f || !views ) return 0;
+        if( (value.appearance.x != 0 && value.appearance.x != 1) ||
+            value.appearance.y < 1 || value.appearance.y > 16 ||
+            (value.appearance.z != 0 && value.appearance.z != 1) || value.appearance.w < .001f || value.appearance.w > 1 ||
+            value.detail.x <= 0 || value.detail.y <= 0 || value.detail.z < 0 || value.detail.z > 16 ||
+            value.macro.x <= 0 || value.macro.y < 0 || value.macro.y > 1 ||
+            value.macro.z < 0 || value.macro.z > 65535 || floorf(value.macro.z) != value.macro.z ||
+            value.macro.w < 0 || value.macro.w > 65535 || floorf(value.macro.w) != value.macro.w ||
+            value.weather.x < 0 || value.weather.x > 1 || value.weather.y < 0 || value.weather.y > 1 ||
+            value.weather.z < .045f || value.weather.z > 1 || value.weather.w < 0 || value.weather.w > 1 ||
+            value.snow.x < .045f || value.snow.x > 1 ) return 0;
+        for( i = 0; i < 4; ++i )
+        {
+            const wp_vec4f *p = &value.surface[i], *m = &value.maps[i], *t = &value.tint[i];
+            const wp_vec4f *h = &value.height[i];
+            if( p->x <= 0 || p->y <= 0 || p->z < 0 || p->z > 1 || p->w < 0 || p->w > 1 ||
+                m->w < 0 || m->w > 16 || t->x < 0 || t->x > 1 || t->y < 0 || t->y > 1 ||
+                t->z < 0 || t->z > 1 || t->w < 0 || t->w > 1 || h->x < 0 || h->x > 4 || h->y < -1 || h->y > 1 ||
+                ((const wp_f32*)&value.macro_tint)[i] < 0 || ((const wp_f32*)&value.macro_tint)[i] > 1 ||
+                ((const wp_f32*)&value.snow_tint)[i] < 0 || ((const wp_f32*)&value.snow_tint)[i] > 1 ) return 0;
+            if( (m->x > 0.5f && !views[i*3]) || (m->y > 0.5f && !views[i*3+1]) ||
+                (m->z > 0.5f && !views[i*3+2]) ) return 0;
+        }
+        if( value.controls.y > 0.5f && !views[12] ) return 0;
+        if( value.detail.w > 0.5f && !views[13] ) return 0;
+        if( value.snow.y > 0.5f && !views[14] ) return 0;
+        for( i = 0; i < WP_TERRAIN_MATERIAL_VIEWS; ++i )
+        {
+            ID3D11Device *device = NULL;
+            D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+            candidate[i] = (ID3D11ShaderResourceView *)views[i];
+            if( !candidate[i] ) continue;
+            ID3D11ShaderResourceView_GetDevice( candidate[i], &device );
+            if( device != r->device ) { if( device ) ID3D11Device_Release( device ); return 0; }
+            ID3D11Device_Release( device );
+            ID3D11ShaderResourceView_GetDesc( candidate[i], &desc );
+            if( desc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ) return 0;
+        }
+    }
+    if( !apply ) return 1;
+    if( memcmp( &r->terrain, &value, sizeof( value ) ) )
+    { r->terrain = value; r->terrain_dirty = 1; }
+    if( memcmp( r->terrain_views, candidate, sizeof( candidate ) ) )
+    { memcpy( r->terrain_views, candidate, sizeof( candidate ) ); r->pntc_bindings_valid = 0; }
+    /* The immediate context owns COM references to bound views. Release them at
+       unbind, before the owner retires its material and returns allocation leases;
+       waiting for another draw would leave unaccounted resident terrain textures. */
+    if( !material && r->context )
+    {
+        ID3D11DeviceContext_PSSetShaderResources( r->context, 9, WP_TERRAIN_MATERIAL_VIEWS, candidate );
+        r->pntc_bindings_valid = 0;
+    }
+    return 1;
+}
+
+wp_s32 wp_renderer_dx11_validate_terrain_material( wp_renderer_dx11 *r,
+    const wp_terrain_material_dx11 *material, void *const *views )
+{ return wp_renderer_dx11_stage_terrain_material( r, material, views, 0 ); }
+
+wp_s32 wp_renderer_dx11_set_terrain_material( wp_renderer_dx11 *r,
+    const wp_terrain_material_dx11 *material, void *const *views )
+{ return wp_renderer_dx11_stage_terrain_material( r, material, views, 1 ); }
 
 void wp_renderer_dx11_set_material_textures( wp_renderer_dx11 *r, void *const *views )
 {
@@ -2968,6 +3142,11 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
         if( !wp_renderer_dx11_upload_constants( r, r->cb_shadow, &r->shadow, sizeof( r->shadow ) ) ) return 0;
         r->shadow_dirty = 0;
     }
+    if( r->terrain_dirty )
+    {
+        if( !wp_renderer_dx11_upload_constants( r, r->cb_terrain, &r->terrain, sizeof( r->terrain ) ) ) return 0;
+        r->terrain_dirty = 0;
+    }
     // ptc_texture_view is the ImGui atlas. It is a valid fallback for UI draws,
     // but an untextured mesh must sample white rather than arbitrary font glyphs.
     texture_view = r->ptc_external_texture_view ? r->ptc_external_texture_view
@@ -2976,6 +3155,10 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
     if( !r->pntc_bindings_valid )
     {
         ID3D11ShaderResourceView *shadow_view = r->shadow_pass ? NULL : r->shadow_view;
+        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 3, 1, &r->cb_terrain );
+        ID3D11DeviceContext_PSSetShaderResources( r->context, 9, WP_TERRAIN_MATERIAL_VIEWS, r->terrain_views );
+        ID3D11DeviceContext_PSSetSamplers( r->context, 3, 1, &r->terrain_control_sampler );
+        ID3D11DeviceContext_PSSetSamplers( r->context, 4, 1, &r->pntc_sampler_state );
         ID3D11DeviceContext_PSSetConstantBuffers( r->context, 2, 1, &r->cb_shadow );
         ID3D11DeviceContext_PSSetShaderResources( r->context, 8, 1, &shadow_view );
         ID3D11DeviceContext_PSSetSamplers( r->context, 2, 1, &r->shadow_sampler );
