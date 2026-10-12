@@ -1,4 +1,10 @@
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
+#include <Workphone/Interface/Procedural/TextureForgeTypes.hpp>
+#if WP_COOKED_PROCEDURAL
+#include <WPProcedural/WPProcedural.hpp>
+#include <Workphone/Interface/Procedural/ITextureForge.hpp>
+#endif
 #include <WPGraphics/Resources/ClawMaterialResource.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <WPGraphics/Resources/GraphicsResourceFormats.hpp>
@@ -326,19 +332,35 @@ namespace
     };
 
     void requireGpuMips( const std::shared_ptr<const ClawMaterialResource::Candidate> &candidate,
-                         bool green )
+                         bool green, const procedural::TextureBuffer *generated = nullptr )
     {
         require( candidate && candidate->resource() && candidate->resource()->dependencies.size() == 1,
                  "Published material must retain its installed cooked texture dependency" );
         CookedTextureData cooked;
         String error;
         require( decodeCookedTexture( *candidate->resource()->dependencies[0], cooked, error ), error );
-        require( cooked.levels.size() == 3 && cooked.levels[0].width == 4 &&
-                     cooked.levels[1].width == 2 && cooked.levels[2].width == 1,
-                 "Offline compiler must produce the complete 4x4 colour mip chain" );
-        const auto &base = cooked.levels[0].bgra;
-        require( base[( green ? 1 : 2 )] == 128 && base[( 3 * 4 + 3 ) * 4 + ( green ? 1 : 2 )] == 248,
-                 "Generated TGA orientation and BGRA channel identity must survive cooking" );
+        if( generated )
+        {
+            require( cooked.levels.size() == 7 && cooked.levels[0].width == generated->width &&
+                         cooked.levels[0].height == generated->height && cooked.levels.back().width == 1,
+                     "Generated asphalt must retain its full 64x64 semantic mip chain" );
+            const auto &base = cooked.levels[0].bgra;
+            require( base.size() == generated->pixels.size(), "Generated asphalt byte extent changed" );
+            for( size_t i = 0; i < base.size(); i += 4 )
+                require( base[i] == generated->pixels[i + 2] &&
+                             base[i + 1] == generated->pixels[i + 1] &&
+                             base[i + 2] == generated->pixels[i] && base[i + 3] == generated->pixels[i + 3],
+                         "Generated asphalt source pixels changed during cook" );
+        }
+        else
+        {
+            require( cooked.levels.size() == 3 && cooked.levels[0].width == 4 &&
+                         cooked.levels[1].width == 2 && cooked.levels[2].width == 1,
+                     "Offline compiler must produce the complete 4x4 colour mip chain" );
+            const auto &base = cooked.levels[0].bgra;
+            require( base[( green ? 1 : 2 )] == 128 && base[( 3 * 4 + 3 ) * 4 + ( green ? 1 : 2 )] == 248,
+                     "Generated TGA orientation and BGRA channel identity must survive cooking" );
+        }
         auto texture = candidate->texture();
         auto *view = claw_texture_mip_contracts::view( *texture );
         const auto desc = claw_texture_mip_contracts::description( view );
@@ -384,7 +406,7 @@ namespace
 
     void requireDraw( Fixture &fixture,
                       const std::shared_ptr<const ClawMaterialResource::Candidate> &candidate,
-                      bool green )
+                      bool green, bool asphalt = false )
     {
         require( candidate != nullptr, "A visible cooked material must exist" );
         auto target = make_ptr<ClawRenderTarget>();
@@ -429,8 +451,11 @@ namespace
         const unsigned alpha = pixel[3];
         context->Unmap( staging.Get(), 0 );
         renderer->setRenderTarget( nullptr );
-        const bool expectedColour =
-            green ? actualGreen > 60 && actualGreen > red + 40 && actualGreen > blue + 40
+        const bool expectedColour = asphalt
+            ? red > 5 && red < 200 && actualGreen > 5 && blue > 5 && alpha > 200 &&
+                  std::abs( int( red ) - int( actualGreen ) ) < 25 &&
+                  std::abs( int( red ) - int( blue ) ) < 25
+            : green ? actualGreen > 60 && actualGreen > red + 40 && actualGreen > blue + 40
                   : red > 60 && red > actualGreen + 40 && red > blue + 40;
         if( !expectedColour )
         {
@@ -448,6 +473,118 @@ namespace
         require( expectedColour,
                  green ? "Catalog-cooked green texture must visibly shade the production mesh draw"
                        : "Catalog-cooked red texture must visibly shade the production mesh draw" );
+    }
+
+    void generatedAsphaltContracts( Fixture &fixture )
+    {
+#if WP_COOKED_PROCEDURAL
+        auto plugin = make_ptr<procedural::WPProcedural>();
+        plugin->load( nullptr );
+        auto forge = fixture.graphics.application->getFactoryManager()->
+            createObjectFromType<procedural::ITextureForge>( "ITextureForge" );
+        require( forge != nullptr, "Generated asphalt contract requires the real texture forge" );
+        forge->setSeed( 731 );
+        procedural::SurfaceBakeParams params;
+        params.size = 64;
+        auto surface = forge->bakeSurface( procedural::SurfaceTag::Asphalt, params );
+        // Match the racing surface's restrained aggregate calibration.
+        for( size_t i = 0; i < surface.albedo.pixels.size(); i += 4 )
+        {
+            for( unsigned channel = 0; channel < 3; ++channel )
+                surface.albedo.pixels[i + channel] = u8( 60 + surface.albedo.pixels[i + channel] / 6 );
+            for( unsigned channel = 0; channel < 2; ++channel )
+                surface.normal.pixels[i + channel] =
+                    u8( 128 + ( int( surface.normal.pixels[i + channel] ) - 128 ) / 10 );
+        }
+        forge = nullptr;
+        plugin->unload( nullptr );
+        plugin = nullptr;
+        const auto source = fixture.folder / "generated-asphalt-source";
+        std::string exportError;
+        require( procedural::texture_export::exportAsphaltSource( surface, source, 731, exportError ),
+                 exportError.c_str() );
+        auto catalog = make_ptr<AssetDatabaseManager>();
+        require( catalog->setProjectRoot( pathText( source ) ), "Generated catalog source root must bind" );
+        catalog->loadFromFile( pathText( fixture.folder / "generated-asphalt.db" ) );
+        auto material = asset<CookedMaterialTestAsset>( "asphalt.matres" );
+        catalog->addResourceEntry( material );
+        Array<SmartPtr<CookedTextureTestAsset>> textures;
+        for( const char *name : { "albedo", "normal", "orm", "ao", "roughness", "metalness" } )
+        {
+            auto texture = asset<CookedTextureTestAsset>( String( "asphalt-" ) + name + ".texres" );
+            catalog->addResourceEntry( texture );
+            textures.push_back( texture );
+        }
+        auto resources = std::make_shared<ResourceSystem>( fixture.resources->registry(),
+            std::make_shared<ResourceCompilationDatabase>() );
+        ResourceSystemConfig config;
+        config.sourceRoot = pathText( source );
+        config.compiledRoot = pathText( fixture.folder / "generated-asphalt-compiled" );
+        config.target = "cooked-dx11-contract";
+        String error;
+        require( resources->initialize( config, error ), error );
+        for( const auto &texture : textures )
+        {
+            const ResourceID id( String( "data://" ) + texture->getFilePath() );
+            require( resources->compile( id, {} ).succeeded(), "Generated semantic map must cook" );
+            auto loaded = resources->load( id, error );
+            CookedTextureData decoded;
+            require( loaded && decodeCookedTexture( *loaded, decoded, error ) && decoded.levels.size() == 7,
+                     "Generated normal/ORM/scalar source maps must decode with complete semantic mips" );
+        }
+        {
+            ClawMaterialResource publisher( catalog, resources, config.sourceRoot, fixture.mappings,
+                                            fixture.graphics.renderer, config.target );
+            const auto uuid = material->getHandle()->getUUIDAsString();
+            require( publisher.reload( uuid, error ), error );
+            auto visible = publisher.current();
+            requireGpuMips( visible, false, &surface.albedo );
+            requireDraw( fixture, visible, false, true );
+            std::ifstream originalStream( source / "asphalt.matres", std::ios::binary );
+            const std::string originalMaterial( std::istreambuf_iterator<char>( originalStream ), {} );
+            originalStream.close();
+            writeText( source / "asphalt.matres", "{\"version\":1," );
+            require( !publisher.reload( uuid, error, true ) && publisher.current() == visible,
+                     "Failed generated-material rebake must retain the last visible GPU bundle" );
+            requireDraw( fixture, publisher.current(), false, true );
+            writeText( source / "asphalt.matres", originalMaterial.c_str() );
+            Array<ResourceID> packagedIds{ ResourceID( "data://asphalt.matres" ) };
+            for( const auto &texture : textures )
+                packagedIds.push_back( ResourceID( String( "data://" ) + texture->getFilePath() ) );
+            CompilationOptions packageOptions;
+            packageOptions.packagedBuild = true;
+            for( const auto &id : packagedIds )
+                require( resources->compile( id, packageOptions ).succeeded(),
+                         "Generated material package closure must compile" );
+            const auto manifest = fixture.folder / "generated-asphalt.wprm";
+            require( resources->writeRuntimeManifest( pathText( manifest ), packagedIds, error ), error );
+            const auto hidden = fixture.folder / "generated-asphalt-source-hidden";
+            fs::rename( source, hidden );
+            ResourceSystem packaged( nullptr, nullptr );
+            RuntimeResourceConfig runtime;
+            runtime.compiledRoot = config.compiledRoot;
+            runtime.manifestPath = pathText( manifest );
+            runtime.target = config.target;
+            require( packaged.initializeRuntime( runtime, error ), error );
+            for( const auto &id : packagedIds )
+                require( packaged.load( id, error ) != nullptr,
+                         "Generated material and semantic maps must load without sources or compilers" );
+            // Retained cooked data must reupload and draw while every source is unavailable.
+            visible->texture()->unload( nullptr );
+            visible->texture()->load( nullptr );
+            requireGpuMips( visible, false, &surface.albedo );
+            requireDraw( fixture, visible, false, true );
+            packaged.shutdown();
+            fs::rename( hidden, source );
+            require( publisher.unload( error ), error );
+        }
+        resources->shutdown();
+        catalog->unload( nullptr );
+        std::cout << "PASS: real forge asphalt source export, six semantic map cooks/decodes, exact "
+                     "GPU albedo mip bytes, base-colour-only draw, last-good rebake retention and source-free closure/reupload\n";
+#else
+        std::cout << "SKIP: generated asphalt material contract requires WPProcedural target\n";
+#endif
     }
 
     void contracts( Fixture &fixture )
@@ -726,6 +863,7 @@ int main()
     {
         Fixture fixture;
         fixture.initialize();
+        generatedAsphaltContracts( fixture );
         contracts( fixture );
         cooked_terrain_contracts::run( *fixture.graphics.renderer, fixture.folder );
         cooked_foliage_contracts::run( *fixture.graphics.renderer, fixture.folder );

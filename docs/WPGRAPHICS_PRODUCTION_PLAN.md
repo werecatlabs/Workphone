@@ -1,5 +1,7 @@
 # WPGraphics production readiness and feature implementation plan
 
+Cross-system follow-up: [WPProcedural production and racing visual quality plan](WPPROCEDURAL_PRODUCTION_PLAN.md), reviewed 12 October 2026, adds ordered procedural implementation packages, visual showcase requirements and independent comparison gates. It does not certify visual parity or replace the graphics release gates below.
+
 Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).
 Recorded implementation baseline: the 10 October cooked-material increment starts from `7107f0a39`, retaining the identity/adapter work committed as `7809b208c`. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for execution evidence and historical baselines.
 Historical implementation evidence: initial graphics review at `8a767dda5`; catalog follow-up starting from `d5c859612`, Visual Studio 2026/MSVC 19.51 and CMake 4.4.4, RelWithDebInfo.

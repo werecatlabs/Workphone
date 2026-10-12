@@ -12,6 +12,12 @@
 #include <Workphone/Interface/Procedural/IVehiclePresentation.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Scene/Components/ProceduralVehicle.hpp>
+#include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/FoliagePlantGenerator.hpp>
+#include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
+#include <chrono>
+#include <fstream>
+#include <iterator>
 #include <Workphone/Scene/Components/ProceduralRoad.hpp>
 #include <Workphone/Scene/Components/ProceduralSky.hpp>
 #include <Workphone/Scene/Components/ProceduralSurfaceTexture.hpp>
@@ -122,6 +128,35 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     auto repeat = textures->bakeSurface( SurfaceTag::Concrete, params );
     require( texture.albedo.pixels == repeat.albedo.pixels && texture.albedo.width == 16,
              "Seeded texture service changed output" );
+    const auto exportDirectory = std::filesystem::temp_directory_path() /
+        ( "workphone-asphalt-source-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count() ) );
+    std::string exportError;
+    require( texture_export::exportAsphaltSource( texture, exportDirectory, 42, exportError ),
+             "Generated material source export failed" );
+    const auto readExport = [&]( const char *file ) {
+        std::ifstream stream( exportDirectory / file, std::ios::binary );
+        return std::string( std::istreambuf_iterator<char>( stream ), {} );
+    };
+    const auto sourceTga = readExport( "asphalt-albedo.tga" );
+    require( sourceTga.size() == 18 + texture.albedo.pixels.size() &&
+                 static_cast<unsigned char>( sourceTga[17] ) == 0x28 &&
+                 static_cast<unsigned char>( sourceTga[18] ) == texture.albedo.pixels[2] &&
+                 static_cast<unsigned char>( sourceTga[20] ) == texture.albedo.pixels[0],
+             "Source material export lost top-origin RGBA-to-BGRA encoding" );
+    require( readExport( "asphalt-normal.texres" ).find( "\"mipFilter\":\"normal\"" ) !=
+                 std::string::npos &&
+                 readExport( "asphalt-roughness.texres" ).find( "\"mipFilter\":\"roughness\"" ) !=
+                 std::string::npos,
+             "Source material descriptors lost semantic mip filters" );
+    require( readExport( "material-source.json" ).find( "\"seed\":42" ) != std::string::npos &&
+                 readExport( "material-source.json" ).find( "\"auxiliaryMapsBoundByCookedMaterial\":false" ) !=
+                 std::string::npos,
+             "Source material metadata omitted provenance or cooked tier limitation" );
+    require( !texture_export::exportAsphaltSource( texture, exportDirectory, 99, exportError ) &&
+                 readExport( "asphalt-albedo.tga" ) == sourceTga,
+             "Repeated material export overwrote existing source assets" );
+    std::filesystem::remove_all( exportDirectory );
     sky->setState( {} );
     sky->update();
     require( std::isfinite( sky->getResults().sunAltitude ), "Sky service produced invalid results" );
@@ -133,6 +168,44 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     for( auto index : road.roadSurface.indices )
         require( index < road.roadSurface.vertices.size(),
                  "Road service returned an out-of-range index" );
+
+    auto race = workphone::make_ptr<scene::ProceduralRaceScene>();
+    require( !race->getFoliageWorldEnabled(), "Legacy foliage selection must remain the default" );
+    race->setFoliageWorldEnabled( true );
+    auto restoredRace = workphone::make_ptr<scene::ProceduralRaceScene>();
+    restoredRace->setProperties( race->getProperties() );
+    require( restoredRace->getFoliageWorldEnabled(), "Foliage world selection did not persist" );
+    restoredRace->clearGeneratedScene();
+    require( restoredRace->getFoliageWorldEnabled() && !restoredRace->getAssets().foliageTerrain,
+             "Clearing generated foliage reset authoring selection or retained its owner" );
+    auto foliageOwner = workphone::make_ptr<render::Terrain>();
+    auto foliage = std::make_shared<render::FoliageWorldData>();
+    auto species = std::make_shared<render::FoliageSpecies>();
+    scene::FoliagePlantRecipe plant;
+    plant.wind.amplitude = .08f;
+    String foliageError;
+    require( scene::generateFoliagePlant( plant, *species, foliageError ),
+             "Racing foliage generator returned invalid topology" );
+    require( species->lods[0].indices.size() > species->lods[1].indices.size() &&
+                 species->lods[1].indices.size() > species->lods[2].indices.size(),
+             "Racing foliage must contain actual reduced LOD meshes" );
+    foliage->species.push_back( species );
+    render::FoliageInstance instance;
+    instance.id = 1;
+    foliage->instances.push_back( instance );
+    foliage->revision = 1;
+    require( foliageOwner->setFoliageSnapshot( foliage, foliageError ) &&
+                 foliageOwner->getFoliageSnapshot() == foliage,
+             "Foliage attachment did not retain its immutable generation" );
+    auto invalidFoliage = std::make_shared<render::FoliageWorldData>( *foliage );
+    invalidFoliage->instances[0].species = 99;
+    require( !foliageOwner->setFoliageSnapshot( invalidFoliage, foliageError ) &&
+                 foliageOwner->getFoliageSnapshot() == foliage,
+             "Failed foliage publication replaced the last complete generation" );
+    require( foliageOwner->setFoliageSnapshot( {}, foliageError ) &&
+                 !foliageOwner->getFoliageSnapshot() &&
+                 !foliageOwner->getActiveFoliage().snapshot,
+             "Foliage removal retained requested or active generation" );
 
     auto vehicleComponent = workphone::make_ptr<scene::ProceduralVehicle>();
     auto properties = vehicleComponent->getProperties();

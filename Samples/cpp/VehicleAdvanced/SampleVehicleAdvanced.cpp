@@ -262,6 +262,7 @@ namespace workphone
             m_benchmarkStarted = false;
             m_captureAttempted = false;
             m_capturePassed = false;
+            m_replayTick = 0;
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -454,7 +455,7 @@ namespace workphone
                 profileNow - m_profileStart > ( m_benchmarkSeconds > 0 ? m_benchmarkSeconds : 3 ) )
             {
                 size_t treeMeshes = 0, treeImposters = 0;
-                bool treeLODValid = !m_assets.treeLODs.empty();
+                bool treeLODValid = m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
                 for( const auto &group : m_assets.treeLODs )
                 {
                     auto levels = group->getLevels();
@@ -492,6 +493,51 @@ namespace workphone
                         " textures=" + StringUtil::toString( m_assets.textures.size() ) );
                 m_captureAttempted = true;
                 bool nativeFrameValid = true;
+                std::ostringstream evidence;
+                evidence.imbue( std::locale::classic() );
+                evidence << std::setprecision( 17 )
+                         << "{\n  \"schema\": \"workphone.vehicle-review.v1\",\n"
+                         << "  \"seed\": " << m_seed << ",\n  \"quality\": " << int( m_quality )
+                         << ",\n  \"camera\": " << advanced::jsonString( m_captureView )
+                         << ",\n  \"capture\": " << advanced::jsonString( m_capturePath )
+                         << ",\n  \"replay\": " << advanced::jsonString( m_replayPath )
+                         << ",\n  \"materialSourceExport\": " << advanced::jsonString( m_materialExportDirectory )
+                         << ",\n  \"replayHz\": 120,\n  \"replayTicksConsumed\": " << m_replayTick
+                         << ",\n  \"replayTicksAvailable\": " << m_replayControls.size()
+                         << ",\n  \"requestedWidth\": " << m_reviewWidth
+                         << ",\n  \"requestedHeight\": " << m_reviewHeight
+                         << ",\n  \"forcedTreeLOD\": " << m_forcedLOD
+                         << ",\n  \"forcedVehicleLOD\": " << m_forcedVehicleLOD
+                         << ",\n  \"orbit\": " << ( m_orbitCamera ? "true" : "false" )
+                         << ",\n  \"hud\": " << ( m_hudEnabled ? "true" : "false" )
+                         << ",\n  \"audioEnabled\": " << ( m_audioEnabled ? "true" : "false" )
+                         << ",\n  \"effectsEnabled\": " << ( m_effectsEnabled ? "true" : "false" )
+                         << ",\n  \"measurementSeconds\": " << profileNow - m_profileStart
+                         << ",\n  \"performanceAcceptance\": \"unverified\""
+                         << ",\n  \"imagePipelineSettings\": null"
+                         << ",\n  \"renderUpdatesMeasured\": " << m_profileFrames
+                         << ",\n  \"sceneMeshes\": " << m_assets.meshes.size()
+                         << ",\n  \"sceneTextures\": " << m_assets.textures.size();
+                evidence << ",\n  \"device\": " << advanced::captureDeviceEvidence();
+                evidence << ",\n  \"foliageWorldEnabled\": " << ( m_foliageWorldEnabled ? "true" : "false" );
+                bool foliageValid = !m_foliageWorldEnabled;
+                if( m_assets.foliageTerrain )
+                {
+                    const auto foliage = m_assets.foliageTerrain->getFoliageDiagnostics();
+                    foliageValid = foliage.currentGenerationReady && foliage.failedPages == 0 && foliage.error.empty();
+                    evidence << ",\n  \"foliage\": {\"ready\": " << ( foliage.currentGenerationReady ? "true" : "false" )
+                             << ", \"residentPages\": " << foliage.residentPages
+                             << ", \"pendingPages\": " << foliage.pendingPages
+                             << ", \"failedPages\": " << foliage.failedPages
+                             << ", \"residentInstances\": " << foliage.residentInstances
+                             << ", \"testedInstances\": " << foliage.testedInstances
+                             << ", \"culledInstances\": " << foliage.culledInstances
+                             << ", \"lodInstances\": [" << foliage.lodInstances[0] << ',' << foliage.lodInstances[1] << ',' << foliage.lodInstances[2] << ']'
+                             << ", \"actualDraws\": " << foliage.actualDraws
+                             << ", \"geometryBytes\": " << foliage.geometryBytes
+                             << ", \"uploadBytes\": " << foliage.uploadBytes
+                             << ", \"error\": " << advanced::jsonString( foliage.error ) << "}";
+                }
 #if WP_GRAPHICS_SYSTEM_CLAW
                 // Consume the completed render-task snapshot: querying the C system
                 // directly from the application task would race frame publication.
@@ -510,6 +556,10 @@ namespace workphone
                              << " skippedPasses=" << skippedPasses
                              << " valid=" << ( nativeFrameValid ? "true" : "false" );
                 WP_LOG( nativeReport.str() );
+                evidence << ",\n  \"nativeUpdates\": " << nativeUpdates
+                         << ",\n  \"nativeRenders\": " << nativeRenders
+                         << ",\n  \"nativeCompletedPasses\": " << completedPasses
+                         << ",\n  \"nativeSkippedPasses\": " << skippedPasses;
                 if( !nativeFrameValid )
                     WP_LOG_ERROR( "VehicleAdvanced: expected one native update per rendered frame and an active target." );
 #endif
@@ -533,6 +583,20 @@ namespace workphone
                            << " transformUploadsPerFrame=" << stats.transform_uploads / frames
                            << " stateBindingsPerFrame=" << stats.state_bindings / frames;
                     WP_LOG( report.str() );
+                    evidence << ",\n  \"dx11\": {\"frames\": " << stats.frames
+                             << ", \"intervalSamples\": " << stats.interval_samples
+                             << ", \"gpuSamples\": " << stats.gpu_samples
+                             << ", \"meanIntervalMs\": " << stats.interval_ms
+                             << ", \"p95IntervalMs\": " << stats.interval_p95_ms
+                             << ", \"cpuIncludingPresentMs\": " << stats.cpu_frame_ms
+                             << ", \"presentMs\": " << stats.present_ms
+                             << ", \"gpuMs\": " << stats.gpu_frame_ms
+                             << ", \"draws\": " << stats.draws
+                             << ", \"triangles\": " << stats.triangles
+                             << ", \"instancedDraws\": " << stats.instanced_draws
+                             << ", \"instances\": " << stats.instances
+                             << ", \"instanceUploadBytes\": " << stats.instance_upload_bytes
+                             << ", \"geometryCreations\": " << stats.geometry_creations << "}";
                 }
 #endif
                 const bool reflectionValid = advanced::validateReflection( m_assets );
@@ -543,7 +607,15 @@ namespace workphone
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
-                                  nativeFrameValid;
+                                  nativeFrameValid && foliageValid;
+                evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
+                         << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
+                         << "  \"limits\": \"Control replay is physics-tick based; settings and source hashes are recorded by the capture runner. Timings do not certify image quality.\"\n}\n";
+                if( !m_evidencePath.empty() && !advanced::writeReviewEvidence( m_evidencePath, evidence.str() ) )
+                {
+                    WP_LOG_ERROR( "VehicleAdvanced: could not write evidence manifest." );
+                    m_capturePassed = false;
+                }
                 if( !vehicleLODValid )
                     WP_LOG_ERROR( "Vehicle LOD visibility validation failed." );
                 if( !treeLODValid )
@@ -611,6 +683,23 @@ namespace workphone
             steering = 0;
         }
 
+        if( !m_replayControls.empty() && m_physicsConfigured )
+        {
+            if( m_replayTick < m_replayControls.size() )
+            {
+                const auto &control = m_replayControls[m_replayTick++];
+                throttle = control.throttle;
+                brake = control.brake;
+                steering = control.steering;
+            }
+            else
+            {
+                throttle = 0;
+                brake = 1;
+                steering = 0;
+            }
+        }
+
         // At speed, limit requested lateral acceleration rather than allowing a full
         // parking-speed steering angle to overturn the car. Keep full lock for hairpins.
         const auto speed =
@@ -660,7 +749,7 @@ namespace workphone
         }
         if( m_collisionSmokeTest )
             m_raceScene->setControls( 0, 0, 0 );
-        else if( m_smokeTest || m_trackSmokeTest || !m_capturePath.empty() )
+        else if( m_smokeTest || m_trackSmokeTest || !m_capturePath.empty() || m_benchmarkSeconds > 0 )
             m_raceScene->setControls( throttle, brake, steering );
         else
             m_raceScene->usePlayerControls();
@@ -1263,10 +1352,18 @@ namespace workphone
         m_raceScene->setAutomaticPresentation( !m_audioSmokeTest && !m_effectsSmokeTest );
         m_raceScene->setSeed( m_seed );
         m_raceScene->setQuality( static_cast<s32>( m_quality ) );
+        m_raceScene->setFoliageWorldEnabled( m_foliageWorldEnabled );
+        m_raceScene->setMaterialExportDirectory( m_materialExportDirectory );
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
         for( auto &group : m_assets.treeLODs ) group->setForcedLOD( m_forcedLOD );
+        if( m_assets.foliageTerrain )
+        {
+            String error;
+            if( !m_assets.foliageTerrain->setFoliageForcedLod( m_forcedLOD, error ) )
+                throw std::runtime_error( error );
+        }
         m_assets.vehicleLOD->setForcedLOD( m_forcedVehicleLOD );
         // The fixed high-altitude circuit review must retain surface contrast.
         if( m_captureView == "track" && !m_orbitCamera )
@@ -1480,7 +1577,7 @@ int main( int argc, char **argv )
         if( std::string( argv[i] ) == "--help" )
         {
             std::cout
-                << "SampleVehicleAdvanced [--seed N] [--quality low|medium|high] [--plugins PATH]\n"
+                << "SampleVehicleAdvanced [--seed N] [--quality low|medium|high|cinematic] [--plugins PATH]\n"
                    "  --smoke-test                 Settle, accelerate, turn, brake and reset checks\n"
                    "  --track-smoke-test            Drive one full lap through the physics controller\n"
                    "  --collision-smoke-test        Verify trackside boxes and a garage impact\n"
@@ -1490,6 +1587,10 @@ int main( int argc, char **argv )
                    "  --no-hud --force-lod auto|0|1  Clean captures and tree LOD comparisons\n"
                    "  --force-vehicle-lod auto|0|1|2  Override the vehicle level (clamped for low)\n"
                    "  --benchmark SECONDS [--orbit] Measure after five seconds of warmup\n"
+                   "  --evidence PATH.json          Write machine-readable review results\n"
+                   "  --replay PATH.csv             Apply 120 Hz tick,throttle,brake,steering inputs\n"
+                   "  --foliage-world               Use paged instanced broadleaf vegetation\n"
+                   "  --export-materials NEW_DIR    Bake asphalt maps and resource source descriptors\n"
                    "  --resolution WIDTHxHEIGHT     Set the review window resolution\n"
                    "  --no-audio                    Disable vehicle sounds\n"
                    "  --audio-smoke-test            Check idle, redline, skid and mute playback\n"
@@ -1508,9 +1609,13 @@ int main( int argc, char **argv )
     std::string effectsCapture;
     String pluginsConfig;
     std::string capturePath, captureView = "follow";
+    std::string evidencePath, replayPath;
+    std::vector<advanced::ReviewControl> replayControls;
+    std::string materialExportDirectory;
     u32 seed = 7;
     auto quality = procedural::VehicleAppearanceQuality::High;
     bool hud = true, orbit = false;
+    bool foliageWorld = false;
     s32 forcedLOD = -1;
     s32 forcedVehicleLOD = -1;
     f64 benchmarkSeconds = 0;
@@ -1537,6 +1642,8 @@ int main( int argc, char **argv )
                 hud = false;
             else if( String( argv[i] ) == "--orbit" )
                 orbit = true;
+            else if( String( argv[i] ) == "--foliage-world" )
+                foliageWorld = true;
             else if( String( argv[i] ) == "--force-lod" && i + 1 < argc )
             {
                 const String value = argv[++i];
@@ -1580,6 +1687,12 @@ int main( int argc, char **argv )
                 pluginsConfig = argv[++i];
             else if( String( argv[i] ) == "--capture" && i + 1 < argc )
                 capturePath = argv[++i];
+            else if( String( argv[i] ) == "--evidence" && i + 1 < argc )
+                evidencePath = argv[++i];
+            else if( String( argv[i] ) == "--replay" && i + 1 < argc )
+                replayPath = argv[++i];
+            else if( String( argv[i] ) == "--export-materials" && i + 1 < argc )
+                materialExportDirectory = argv[++i];
             else if( String( argv[i] ) == "--view" && i + 1 < argc )
                 captureView = argv[++i];
             else if( String( argv[i] ) == "--seed" && i + 1 < argc )
@@ -1593,8 +1706,10 @@ int main( int argc, char **argv )
                     quality = procedural::VehicleAppearanceQuality::Standard;
                 else if( value == "high" )
                     quality = procedural::VehicleAppearanceQuality::High;
+                else if( value == "cinematic" )
+                    quality = procedural::VehicleAppearanceQuality::Cinematic;
                 else
-                    throw std::runtime_error( "Quality must be low, medium, or high." );
+                    throw std::runtime_error( "Quality must be low, medium, high, or cinematic." );
             }
             else
                 throw std::runtime_error( std::string( "Unknown option or missing value: " ) + argv[i] );
@@ -1610,6 +1725,12 @@ int main( int argc, char **argv )
         if( (effectsSmokeTest && !effectsEnabled) || (!effectsCapture.empty() && !effectsSmokeTest) )
             throw std::runtime_error("Effects capture requires --effects-smoke-test with effects enabled.");
         if( orbit && benchmarkSeconds <= 0 ) throw std::runtime_error( "--orbit requires --benchmark." );
+        if( ( !evidencePath.empty() || !replayPath.empty() ) && capturePath.empty() && benchmarkSeconds <= 0 )
+            throw std::runtime_error( "--evidence and --replay require a capture or benchmark run." );
+        if( advanced::reviewPathsAlias( evidencePath, capturePath ) || advanced::reviewPathsAlias( evidencePath, replayPath ) ||
+            advanced::reviewPathsAlias( capturePath, replayPath ) )
+            throw std::runtime_error( "Evidence output must differ from capture and replay paths." );
+        if( !replayPath.empty() ) replayControls = advanced::loadReviewReplay( replayPath );
     }
     catch( const std::exception &e )
     {
@@ -1664,6 +1785,9 @@ int main( int argc, char **argv )
         app->setEffectsOptions( effectsEnabled, effectsSmokeTest, effectsCapture );
         app->setCapture( capturePath, captureView );
         app->setReviewOptions( hud, forcedLOD, forcedVehicleLOD, benchmarkSeconds, orbit, width, height );
+        app->setEvidenceOptions( evidencePath, replayPath, std::move( replayControls ) );
+        app->setFoliageWorldEnabled( foliageWorld );
+        app->setMaterialExportDirectory( materialExportDirectory );
         if( !pluginsConfig.empty() )
             app->setPluginsConfigFilePath( pluginsConfig );
         app->load( nullptr );

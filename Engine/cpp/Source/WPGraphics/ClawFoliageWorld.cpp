@@ -6,6 +6,8 @@
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
+#include <Workphone/Interface/Graphics/ITextureManager.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <workphone_graphics_renderer.h>
 #include <workphone_graphics_renderer_dx11.h>
@@ -162,8 +164,14 @@ namespace workphone::render
                 return {};
 #endif
             }
+            // Runtime procedural textures have manager-owned names rather than catalog UUIDs.
+            // Resolve the existing resource first; never reload a generated texture from disk.
+            auto graphics = app ? app->getGraphicsSystem() : nullptr;
+            auto manager = graphics ? graphics->getTextureManager() : nullptr;
+            auto texture = manager ? dynamic_pointer_cast<ITexture>( manager->getByName( id ) ) : nullptr;
             auto database = app ? app->getResourceDatabase() : nullptr;
-            auto texture = database ? database->loadResourceByType<ITexture>( id ) : nullptr;
+            if( !texture && database )
+                texture = database->loadResourceByType<ITexture>( id );
             if( !texture )
             {
                 error = "Foliage texture is unavailable: " + id;

@@ -246,6 +246,17 @@ endif()
 add_dependencies(SampleVehicleAdvanced WPProcedural)
 target_link_libraries(SampleVehicleAdvanced WPProcedural)
 
+if(WP_BUILD_TESTS)
+    add_executable(VehicleReviewTests ${WP_ROOT}/Tests/cpp/VehicleReviewTests.cpp)
+    target_compile_features(VehicleReviewTests PRIVATE cxx_std_17)
+    target_include_directories(VehicleReviewTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(VehicleReviewTests PROPERTIES FOLDER Tests/Cpp)
+    if(MSVC)
+        target_compile_options(VehicleReviewTests PRIVATE /Y-)
+    endif()
+    add_test(NAME WPProcedural.vehicle_review COMMAND VehicleReviewTests)
+endif()
+
 # Keep the sample self-contained, including asset-only incremental builds.
 add_custom_target(VehicleAdvancedAudio
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SampleVehicleAdvanced>/Audio/VehicleAdvanced"

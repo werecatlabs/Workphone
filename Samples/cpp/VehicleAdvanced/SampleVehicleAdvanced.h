@@ -7,6 +7,7 @@
 #include "ProceduralScene.h"
 #include "VehicleAudio.h"
 #include "VehicleVisualEffects.h"
+#include "ReviewEvidence.h"
 #include <atomic>
 #include <array>
 #include <limits>
@@ -45,6 +46,15 @@ namespace workphone
             m_orbitCamera = orbit; m_reviewWidth = width; m_reviewHeight = height;
         }
         void reset();
+        void setFoliageWorldEnabled( bool enabled ) { m_foliageWorldEnabled = enabled; }
+        void setMaterialExportDirectory( const std::string &path ) { m_materialExportDirectory = path; }
+        void setEvidenceOptions( const std::string &path, const std::string &replay,
+                                 std::vector<advanced::ReviewControl> controls )
+        {
+            m_evidencePath = path;
+            m_replayPath = replay;
+            m_replayControls = std::move( controls );
+        }
         void setSmokeTest( bool enabled );
         void setTrackSmokeTest( bool enabled )
         {
@@ -117,8 +127,13 @@ namespace workphone
         u32 m_audioSmokePhase = 0;
 
         std::string m_capturePath, m_captureView;
+        std::string m_evidencePath, m_replayPath;
+        std::string m_materialExportDirectory;
+        std::vector<advanced::ReviewControl> m_replayControls;
+        size_t m_replayTick = 0;
         bool m_capturePassed = false, m_captureAttempted = false, m_physicsConfigured = false;
         bool m_hudEnabled = true, m_orbitCamera = false, m_benchmarkStarted = false;
+        bool m_foliageWorldEnabled = false;
         s32 m_forcedLOD = -1;
         s32 m_forcedVehicleLOD = -1;
         f64 m_benchmarkSeconds = 0;

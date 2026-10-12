@@ -89,7 +89,8 @@ namespace workphone
             // --- Persistence -------------------------------------------------
 
             /** Save a runtime texture to disk.
-             *  format is advisory; currently writes PPM as a universal fallback. */
+             *  Supports PNG, TGA and PAM with straight alpha, or opaque PPM.
+             *  Exports UNORM8 without gamma conversion; other formats return false. */
             bool saveTextureToFile(
                 SmartPtr<render::ITexture> texture,
                 const String &filePath,

@@ -12,6 +12,7 @@
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
+#include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -144,6 +145,38 @@ namespace workphone::scene::race
                 m->setRoughness( 1 );
                 m->setMetalness( 1 );
             }
+        }
+        SmartPtr<render::IMaterial> raceAsphalt( SceneAssets &assets,
+                                               SmartPtr<ITextureForge> forge,
+                                               const SurfaceBakeParams &params, u32 seed )
+        {
+            auto asphalt = forge->bakeSurface( SurfaceTag::Asphalt, params );
+            // Keep the forge's seeded aggregate detail subtle at driving distance.
+            // Its general-purpose height/rut contrast is too strong for a race surface.
+            for( size_t i = 0; i < asphalt.albedo.pixels.size(); i += 4 )
+            {
+                for( size_t channel = 0; channel < 3; ++channel )
+                    asphalt.albedo.pixels[i + channel] =
+                        static_cast<u8>( 60 + asphalt.albedo.pixels[i + channel] / 6 );
+                for( size_t channel = 0; channel < 2; ++channel )
+                    asphalt.normal.pixels[i + channel] = static_cast<u8>(
+                        128 + ( int( asphalt.normal.pixels[i + channel] ) - 128 ) / 10 );
+            }
+            if( !assets.exportSourceDirectory.empty() )
+            {
+                std::string error;
+                if( !texture_export::exportAsphaltSource( asphalt,
+                        std::filesystem::u8path( assets.exportSourceDirectory.c_str() ), seed, error ) )
+                    throw std::runtime_error( "Asphalt source export failed: " + error );
+            }
+            auto roadMat = material( assets, { .07f, .075f, .085f, 1 }, .9f );
+            maps( assets, roadMat, asphalt.albedo, asphalt.normal, asphalt.orm );
+            roadMat->setNormalStrength( .2f );
+            auto sampler = make_ptr<Properties>();
+            sampler->setProperty( "uvFilter", u32( 3 ) );
+            sampler->setProperty( "uvAniso", 8.f );
+            roadMat->setProperties( sampler );
+            return roadMat;
         }
         SmartPtr<scene::IGameActor> mesh( SceneAssets &assets, const String &name, const Geometry &g,
                                           SmartPtr<render::IMaterial> m,
@@ -504,6 +537,7 @@ namespace workphone::scene::race
             }
             generator = nullptr;
         }
+        void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality );
         void buildTrack( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
             assets.circuit = generateCircuit( seed );
@@ -515,21 +549,7 @@ namespace workphone::scene::race
             forge->setSeed( seed );
             SurfaceBakeParams params;
             params.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
-            auto asphalt = forge->bakeSurface( SurfaceTag::Asphalt, params );
-            // Keep the forge's seeded aggregate detail subtle at driving distance.
-            // Its general-purpose height/rut contrast is too strong for a race surface.
-            for( size_t i = 0; i < asphalt.albedo.pixels.size(); i += 4 )
-            {
-                for( size_t channel = 0; channel < 3; ++channel )
-                    asphalt.albedo.pixels[i + channel] =
-                        static_cast<u8>( 60 + asphalt.albedo.pixels[i + channel] / 6 );
-                for( size_t channel = 0; channel < 2; ++channel )
-                    asphalt.normal.pixels[i + channel] = static_cast<u8>(
-                        128 + ( int( asphalt.normal.pixels[i + channel] ) - 128 ) / 10 );
-            }
-            auto roadMat = material( assets, { .07f, .075f, .085f, 1 }, .9f );
-            maps( assets, roadMat, asphalt.albedo, asphalt.normal, asphalt.orm );
-            roadMat->setNormalStrength( .2f );
+            auto roadMat = raceAsphalt( assets, forge, params, seed );
             auto grass = material( assets, { .28f, .43f, .16f, 1 }, 1 );
             auto grassMaps = forge->bakeSurface( SurfaceTag::Dirt, params );
             auto gravelMaps = forge->bakeSurface( SurfaceTag::Stone, params );
@@ -629,7 +649,7 @@ namespace workphone::scene::race
                                { float( x - 6 ), .02f, float( z + 1 ) }, { 0, 1, 0 } );
             mesh( assets, "Start finish black", checkerDark, dark );
             mesh( assets, "Start finish white", checkerWhite, white );
-            Geometry gantry, pits;
+            Geometry gantry, pits, pitApron, pitTrim, pitRoof, pitGlazing, pitLouvers;
             gantry.box( { -8, 3, 3 }, { .6f, 6, .6f } );
             gantry.box( { 8, 3, 3 }, { .6f, 6, .6f } );
             gantry.box( { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
@@ -637,8 +657,23 @@ namespace workphone::scene::race
             staticBox( assets, "Gantry right post", { 8, 3, 3 }, { .6f, 6, .6f } );
             staticBox( assets, "Gantry overhead beam", { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
             mesh( assets, "Start gantry", gantry, dark );
+            // A continuous service apron grounds the garages and avoids six isolated boxes.
+            pitApron.quad( { -35, .006f, -68 }, { -14, .006f, -68 },
+                           { -14, .006f, -6 }, { -35, .006f, -6 }, { 0, 1, 0 },
+                           0, 14, 0, 41.333f );
+            mesh( assets, "Pit service apron", pitApron, roadMat );
             for( int i = 0; i < 6; ++i )
             {
+                const float z = float( -12 - i * 10 );
+                // Shallow roof, fascia and mullions give readable scale at chase distance.
+                pitRoof.box( { -28, 5.12f, z }, { 12.5f, .24f, 8.5f } );
+                pitTrim.box( { -21.86f, 4.55f, z }, { .18f, .28f, 8 } );
+                pitGlazing.box( { -21.88f, 4.08f, z }, { .12f, .55f, 6 } );
+                for( int mullion = -1; mullion <= 1; ++mullion )
+                    pitTrim.box( { -21.78f, 4.08f, z + mullion * 2.f },
+                                 { .14f, .65f, .08f } );
+                for( int slat = 1; slat < 10; ++slat )
+                    pitLouvers.box( { -21.81f, slat * .32f, z }, { .08f, .035f, 6 } );
                 pits.box( { -28, 2.5f, float( -12 - i * 10 ) }, { 12, 5, 8 } );
                 staticBox( assets, "Pit garage", { -28, 2.5f, float( -12 - i * 10 ) }, { 12, 5, 8 } );
             }
@@ -651,108 +686,118 @@ namespace workphone::scene::race
                            { .12f, 3.4f, 6 } );
             }
             mesh( assets, "Pit doors", pitDoors, dark );
-            // Batch trees into 64-metre patches. The shared data-oriented LODSystem
-            // chooses one renderer set per patch, without per-tree update callbacks.
-            std::mt19937 rng( seed );
-            std::uniform_real_distribution<float> unit( 0, 1 );
+            mesh( assets, "Pit roof caps", pitRoof, steel );
+            mesh( assets, "Pit fascia and mullions", pitTrim, red );
+            mesh( assets, "Pit door slats", pitLouvers, steel );
+            mesh( assets, "Pit clerestory glazing", pitGlazing,
+                  material( assets, { .045f, .10f, .13f, 1 }, .24f, .25f ) );
             Geometry hills;
-            struct TreePatch
+            if( assets.useFoliageWorld )
+                buildFoliageWorld( assets, seed, quality );
+            else
             {
-                Geometry trunks, leaves, imposters;
-                Array<scene::LODDetailBound> detailBounds;
-            };
-            std::map<std::pair<int, int>, TreePatch> patches;
-            const std::array<MeshImposterAtlas, 4> atlases = {
-                bakePineImposter( 0 ), bakePineImposter( 1 ), bakePineImposter( 2 ), bakePineImposter( 3 ) };
-            const auto &atlas = atlases[0];
-            // All four near silhouettes have matching far views in one twelve-
-            // column atlas. Keep the existing one-material patch batching.
-            TextureBuffer treeTexture( atlas.width * 4, atlas.height );
-            for( u32 variant = 0; variant < atlases.size(); ++variant )
-                for( u32 y = 0; y < atlas.height; ++y )
-                    std::copy_n( atlases[variant].rgba.begin() + size_t( y ) * atlas.width * 4,
-                        size_t( atlas.width ) * 4, treeTexture.pixels.begin() +
-                        ( size_t( y ) * treeTexture.width + variant * atlas.width ) * 4 );
-            auto imposterMaterial = material( assets, ColourF::White, 1 );
-            auto imposterTexture = upload( assets, treeTexture, render::TextureMipFilter::Cutout, 12 );
-            imposterMaterial->setTexture( imposterTexture, 0 );
-            // Colour is already lit by the CPU bake. Keep its alpha mask in the
-            // albedo slot and supply baked colour through the PBS emission slot.
-            imposterMaterial->setTexture( imposterTexture, 13 );
-            imposterMaterial->setDiffuse( ColourF::Black );
-            imposterMaterial->setEmissive( ColourF::White );
-            imposterMaterial->setEmissionEnabled( true );
-            imposterMaterial->setCutout( true );
-            imposterMaterial->setAlphaClip( .5f );
-            imposterMaterial->setTransparent( false );
-            imposterMaterial->setDepthWrite( true );
-            // A two-texel palette preserves both surface colours in one opaque draw.
-            // No mip reduction: these are categorical entries, not a continuous image.
-            TextureBuffer palette( 2, 1 );
-            palette.pixels = { 31, 14, 5, 255, 46, 82, 33, 255 };
-            auto nearTreeMaterial = material( assets, ColourF::White, 1 );
-            // IMaterial mode 1 maps to WORKPHONE_CULL_MODE_NONE in ClawUtil.
-            // Open needle sprigs and far cards remain visible from both sides.
-            nearTreeMaterial->setCullMode( 1 );
-            nearTreeMaterial->setTexture( upload( assets, palette, render::TextureMipFilter::None ), 0 );
-            int treeCount = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
-            for( int i = 0; i < treeCount; ++i )
-            {
-                Vector3F p( -100 + unit( rng ) * 380, 0, -250 + unit( rng ) * 440 );
-                auto nearest = assets.circuit.nearest( p );
-                if( ( p - points[nearest].position ).length() < 22 ||
-                    ( p.x < -15 && p.z > -85 && p.z < 15 ) )
-                    continue;
-                float h = 4 + unit( rng ) * 7;
-                staticBox( assets, "Tree trunk", p + Vector3F( 0, h * .3f, 0 ),
-                           { h * .05f, h * .6f, h * .05f } );
-                const auto key =
-                    std::make_pair( int( std::floor( p.x / 64 ) ), int( std::floor( p.z / 64 ) ) );
-                const Vector3F centre( key.first * 64.f + 32, 0, key.second * 64.f + 32 );
-                auto &patch = patches[key];
-                patch.detailBounds.push_back( { p - centre + Vector3F( 0, h * .5f, 0 ), h } );
-                const u32 variant = ( seed ^ ( u32( i ) * 104729u ) ) % 4u;
-                pineGeometry( patch.trunks, patch.leaves, p - centre, h, variant );
-                pineImposterGeometry( patch.imposters, atlases[variant], p - centre, h, variant );
-            }
-            for( const auto &[key, patch] : patches )
-            {
-                auto root = app->getGameManager()->createActor();
-                root->setName( "Tree LOD patch" );
-                assets.actors.push_back( root );
-                root->setPosition( { key.first * 64.f + 32, 0, key.second * 64.f + 32 } );
-                app->getGameManager()->getCurrentScene()->addActor( root );
-                Geometry nearTrees;
-                auto append = [&]( const Geometry &source, float paletteU ) {
-                    const auto base = static_cast<u32>( nearTrees.positions.size() );
-                    nearTrees.positions.insert( nearTrees.positions.end(), source.positions.begin(),
-                                                source.positions.end() );
-                    nearTrees.normals.insert( nearTrees.normals.end(), source.normals.begin(),
-                                              source.normals.end() );
-                    nearTrees.tangents.insert( nearTrees.tangents.end(), source.tangents.begin(),
-                                               source.tangents.end() );
-                    nearTrees.uv.insert( nearTrees.uv.end(), source.positions.size(),
-                                         Vector3F( paletteU, .5f, 0 ) );
-                    for( auto index : source.indices )
-                        nearTrees.indices.push_back( base + index );
+                // Batch trees into 64-metre patches. The shared data-oriented LODSystem
+                // chooses one renderer set per patch, without per-tree update callbacks.
+                std::mt19937 rng( seed );
+                std::uniform_real_distribution<float> unit( 0, 1 );
+                struct TreePatch
+                {
+                    Geometry trunks, leaves, imposters;
+                    Array<scene::LODDetailBound> detailBounds;
                 };
-                append( patch.trunks, .25f );
-                append( patch.leaves, .75f );
-                auto trees = mesh( assets, "LOD0 pine batch", nearTrees, nearTreeMaterial, root );
-                auto cards =
-                    mesh( assets, "LOD1 pine imposters", patch.imposters, imposterMaterial, root );
-                auto lod = root->addComponent<scene::LODGroup>();
-                lod->setLocalReferencePoint( { 0, 3.5f, 0 } );
-                lod->setSize( 7 );
-                lod->setDetailBounds( patch.detailBounds );
-                lod->setHysteresis( .15f );
-                lod->setCullBelowLastLOD( false );
-                lod->addLevel( .085f, { trees->getComponent<scene::MeshRenderer>() } );
-                lod->addLevel( 0, { cards->getComponent<scene::MeshRenderer>() } );
-                String error;
-                if( !lod->validate( &error ) )
-                    throw std::runtime_error( "Invalid generated tree LOD group: " + error );
-                assets.treeLODs.push_back( lod );
+                std::map<std::pair<int, int>, TreePatch> patches;
+                const std::array<MeshImposterAtlas, 4> atlases = {
+                    bakePineImposter( 0 ), bakePineImposter( 1 ), bakePineImposter( 2 ), bakePineImposter( 3 ) };
+                const auto &atlas = atlases[0];
+                // All four near silhouettes have matching far views in one twelve-
+                // column atlas. Keep the existing one-material patch batching.
+                TextureBuffer treeTexture( atlas.width * 4, atlas.height );
+                for( u32 variant = 0; variant < atlases.size(); ++variant )
+                    for( u32 y = 0; y < atlas.height; ++y )
+                        std::copy_n( atlases[variant].rgba.begin() + size_t( y ) * atlas.width * 4,
+                            size_t( atlas.width ) * 4, treeTexture.pixels.begin() +
+                            ( size_t( y ) * treeTexture.width + variant * atlas.width ) * 4 );
+                auto imposterMaterial = material( assets, ColourF::White, 1 );
+                auto imposterTexture = upload( assets, treeTexture, render::TextureMipFilter::Cutout, 12 );
+                imposterMaterial->setTexture( imposterTexture, 0 );
+                // Colour is already lit by the CPU bake. Keep its alpha mask in the
+                // albedo slot and supply baked colour through the PBS emission slot.
+                imposterMaterial->setTexture( imposterTexture, 13 );
+                imposterMaterial->setDiffuse( ColourF::Black );
+                imposterMaterial->setEmissive( ColourF::White );
+                imposterMaterial->setEmissionEnabled( true );
+                imposterMaterial->setCutout( true );
+                imposterMaterial->setAlphaClip( .5f );
+                imposterMaterial->setTransparent( false );
+                imposterMaterial->setDepthWrite( true );
+                // A two-texel palette preserves both surface colours in one opaque draw.
+                // No mip reduction: these are categorical entries, not a continuous image.
+                TextureBuffer palette( 2, 1 );
+                palette.pixels = { 31, 14, 5, 255, 46, 82, 33, 255 };
+                auto nearTreeMaterial = material( assets, ColourF::White, 1 );
+                // IMaterial mode 1 maps to WORKPHONE_CULL_MODE_NONE in ClawUtil.
+                // Open needle sprigs and far cards remain visible from both sides.
+                nearTreeMaterial->setCullMode( 1 );
+                nearTreeMaterial->setTexture( upload( assets, palette, render::TextureMipFilter::None ), 0 );
+                int treeCount = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
+                for( int i = 0; i < treeCount; ++i )
+                {
+                    Vector3F p( -100 + unit( rng ) * 380, 0, -250 + unit( rng ) * 440 );
+                    auto nearest = assets.circuit.nearest( p );
+                    if( ( p - points[nearest].position ).length() < 22 ||
+                        ( p.x < -15 && p.z > -85 && p.z < 15 ) )
+                        continue;
+                    float h = 4 + unit( rng ) * 7;
+                    staticBox( assets, "Tree trunk", p + Vector3F( 0, h * .3f, 0 ),
+                               { h * .05f, h * .6f, h * .05f } );
+                    const auto key =
+                        std::make_pair( int( std::floor( p.x / 64 ) ), int( std::floor( p.z / 64 ) ) );
+                    const Vector3F centre( key.first * 64.f + 32, 0, key.second * 64.f + 32 );
+                    auto &patch = patches[key];
+                    patch.detailBounds.push_back( { p - centre + Vector3F( 0, h * .5f, 0 ), h } );
+                    const u32 variant = ( seed ^ ( u32( i ) * 104729u ) ) % 4u;
+                    pineGeometry( patch.trunks, patch.leaves, p - centre, h, variant );
+                    pineImposterGeometry( patch.imposters, atlases[variant], p - centre, h, variant );
+                }
+                for( const auto &[key, patch] : patches )
+                {
+                    auto root = app->getGameManager()->createActor();
+                    root->setName( "Tree LOD patch" );
+                    assets.actors.push_back( root );
+                    root->setPosition( { key.first * 64.f + 32, 0, key.second * 64.f + 32 } );
+                    app->getGameManager()->getCurrentScene()->addActor( root );
+                    Geometry nearTrees;
+                    auto append = [&]( const Geometry &source, float paletteU ) {
+                        const auto base = static_cast<u32>( nearTrees.positions.size() );
+                        nearTrees.positions.insert( nearTrees.positions.end(), source.positions.begin(),
+                                                    source.positions.end() );
+                        nearTrees.normals.insert( nearTrees.normals.end(), source.normals.begin(),
+                                                  source.normals.end() );
+                        nearTrees.tangents.insert( nearTrees.tangents.end(), source.tangents.begin(),
+                                                   source.tangents.end() );
+                        nearTrees.uv.insert( nearTrees.uv.end(), source.positions.size(),
+                                             Vector3F( paletteU, .5f, 0 ) );
+                        for( auto index : source.indices )
+                            nearTrees.indices.push_back( base + index );
+                    };
+                    append( patch.trunks, .25f );
+                    append( patch.leaves, .75f );
+                    auto trees = mesh( assets, "LOD0 pine batch", nearTrees, nearTreeMaterial, root );
+                    auto cards =
+                        mesh( assets, "LOD1 pine imposters", patch.imposters, imposterMaterial, root );
+                    auto lod = root->addComponent<scene::LODGroup>();
+                    lod->setLocalReferencePoint( { 0, 3.5f, 0 } );
+                    lod->setSize( 7 );
+                    lod->setDetailBounds( patch.detailBounds );
+                    lod->setHysteresis( .15f );
+                    lod->setCullBelowLastLOD( false );
+                    lod->addLevel( .085f, { trees->getComponent<scene::MeshRenderer>() } );
+                    lod->addLevel( 0, { cards->getComponent<scene::MeshRenderer>() } );
+                    String error;
+                    if( !lod->validate( &error ) )
+                        throw std::runtime_error( "Invalid generated tree LOD group: " + error );
+                    assets.treeLODs.push_back( lod );
+                }
             }
             // Keep the track and all authored tree positions on the flat contact plane.
             // Outside that footprint, a continuous ridge replaces overlapping cone silhouettes.
@@ -788,6 +833,109 @@ namespace workphone::scene::race
                 }
             mesh( assets, "Distant terrain", hills, grass );
         }
+        void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
+        {
+            auto app = core::IApplicationManager::instance();
+            auto scene = app->getGraphicsSystem()->getGraphicsScene();
+            // Reuse the terrain attachment consumed by ClawScene, including its page stream,
+            // per-view instance bins, wind, shadow LOD and publication diagnostics.
+            auto carrier = scene->addGraphicsObjectByType<render::IGraphicsTerrain>();
+            assets.foliageTerrain = dynamic_pointer_cast<render::Terrain>( carrier );
+            if( !assets.foliageTerrain )
+            {
+                if( carrier )
+                    scene->removeGraphicsObject( carrier );
+                throw std::runtime_error( "Graphics backend lacks the foliage terrain attachment." );
+            }
+            render::TerrainData ground;
+            ground.origin = { -550, -550 };
+            ground.spacing = { 1100, 1100 };
+            ground.holes = { 1 }; // Existing meadow/collision own the ground; no duplicate surface.
+            String error;
+            if( !assets.foliageTerrain->applyTerrainData( ground, error ) )
+                throw std::runtime_error( "Cannot prepare foliage attachment: " + error );
+            TextureBuffer leafAtlas( 64, 64 );
+            for( u32 y = 0; y < 64; ++y )
+                for( u32 x = 0; x < 64; ++x )
+                {
+                    const float u = ( float( x ) + .5f ) / 32 - 1;
+                    const float v = ( float( y ) + .5f ) / 32 - 1;
+                    const auto pixel = ( size_t( y ) * 64 + x ) * 4;
+                    const float edge = u * u + v * v * .85f;
+                    leafAtlas.pixels[pixel] = u8( 42 + y / 4 );
+                    leafAtlas.pixels[pixel + 1] = u8( 83 + y / 3 );
+                    leafAtlas.pixels[pixel + 2] = u8( 27 + y / 5 );
+                    leafAtlas.pixels[pixel + 3] = edge < .8f ? 255 : 0;
+                }
+            auto leafTexture = upload( assets, leafAtlas, render::TextureMipFilter::Cutout );
+            auto world = std::make_shared<render::FoliageWorldData>();
+            world->revision = 1;
+            for( u32 variant = 0; variant < 4; ++variant )
+            {
+                FoliagePlantRecipe recipe;
+                recipe.speciesId = assets.resourcePrefix + "/broadleaf/" + StringUtil::toString( variant );
+                recipe.seed = seed ^ ( 7919u + variant * 104729u );
+                recipe.height = 6 + variant;
+                recipe.radius = 1.7f + variant * .2f;
+                recipe.branches = 18 + variant * 2;
+                recipe.bark.tint = { .16f, .085f, .035f, 1 };
+                recipe.leaves.albedo = leafTexture->getName();
+                recipe.wind.amplitude = .08f;
+                recipe.wind.frequency = .65f;
+                recipe.wind.flutter = .025f;
+                recipe.wind.bendStart = 1.5f;
+                recipe.wind.bendEnd = recipe.height;
+                auto species = std::make_shared<render::FoliageSpecies>();
+                if( !generateFoliagePlant( recipe, *species, error ) )
+                    throw std::runtime_error( "Cannot generate racing foliage: " + error );
+                species->maximumDistance = 600;
+                species->shadowDistance = 120;
+                world->species.push_back( species );
+                for( const auto &lod : species->lods )
+                    assets.triangles += lod.indices.size() / 3;
+            }
+            std::mt19937 random( seed );
+            std::uniform_real_distribution<float> unit( 0, 1 );
+            const int count = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
+            auto city = assets.openCity ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute )
+                                       : OpenCityLayout{};
+            for( int i = 0; i < count; ++i )
+            {
+                Vector3F p( -100 + unit( random ) * 380, 0, -250 + unit( random ) * 440 );
+                if( assets.openCity )
+                {
+                    if( city.lots.empty() )
+                        continue;
+                    const auto &lot = city.lots[size_t( i ) % city.lots.size()];
+                    if( !lot.park )
+                        continue;
+                    p = { lot.x + ( unit( random ) - .5f ) * std::max( 0.f, lot.width - 6 ),
+                          .04f, lot.z + ( unit( random ) - .5f ) * std::max( 0.f, lot.depth - 6 ) };
+                }
+                else if( ( p - assets.circuit.samples[assets.circuit.nearest( p )].position ).length() < 22 ||
+                         ( p.x < -15 && p.z > -85 && p.z < 15 ) )
+                    continue;
+                render::FoliageInstance instance;
+                instance.id = render::foliageStableHash( ( u64( seed ) << 32 ) | u32( i + 1 ) );
+                if( !instance.id )
+                    instance.id = u64( i + 1 );
+                instance.species = u32( i ) % 4;
+                instance.seed = u32( render::foliageStableHash( instance.id ) );
+                instance.position = p;
+                instance.rotation = QuaternionF::eulerDegrees( 0, unit( random ) * 360, 0 );
+                const float scale = .75f + unit( random ) * .5f;
+                instance.scale = { scale, scale, scale };
+                const float tint = .85f + unit( random ) * .15f;
+                instance.tint = { tint, tint, tint, 1 };
+                world->instances.push_back( instance );
+                const float h = ( 6 + instance.species ) * scale;
+                staticBox( assets, "Foliage world trunk", p + Vector3F( 0, h * .3f, 0 ),
+                           { .24f * scale, h * .6f, .24f * scale } );
+            }
+            if( !render::validateFoliageWorld( *world, error ) ||
+                !assets.foliageTerrain->setFoliageSnapshot( world, error ) )
+                throw std::runtime_error( "Cannot publish racing foliage: " + error );
+        }
         void buildCity( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
             const auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute );
@@ -796,7 +944,19 @@ namespace workphone::scene::race
             if( !roads )
                 throw std::runtime_error( "Open city requires the WPProcedural road service." );
             roads->setSeed( seed );
-            Geometry asphalt, pavement, markings, buildings[3], windows, parks;
+            auto forge = app->getFactoryManager()->createObjectFromType<ITextureForge>( "ITextureForge" );
+            if( !forge )
+                throw std::runtime_error( "Open city requires the WPProcedural texture forge." );
+            forge->setSeed( seed );
+            SurfaceBakeParams surfaceParams;
+            surfaceParams.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
+            auto cityAsphalt = raceAsphalt( assets, forge, surfaceParams, seed );
+            // World projection gives segments and intersections the same physical texture scale.
+            cityAsphalt->setUVProjection( 3 );
+            auto sampler = make_ptr<Properties>();
+            sampler->setProperty( "uvTriplanarScale", 1.f / 1.5f );
+            cityAsphalt->setProperties( sampler );
+            Geometry asphalt, pavement, markings, buildings[3], windows, parks, roofs, facadeTrim;
             // Match the existing flat physics proxy. Preserve library topology,
             // kerbs and markings without introducing unsupported road-height bumps.
             auto append = []( Geometry &g, const RoadMesh &source, bool flat = false ) {
@@ -859,6 +1019,20 @@ namespace workphone::scene::race
                 auto &walls = buildings[lotIndex++ % 3];
                 const Vector3F size( lot.width, lot.height, lot.depth );
                 walls.box( { lot.x, lot.height * .5f, lot.z }, size );
+                // A roof cap, parapet and plinth establish a consistent modular grammar.
+                roofs.box( { lot.x, lot.height + .08f, lot.z },
+                           { lot.width + .3f, .16f, lot.depth + .3f } );
+                for( int side : { -1, 1 } )
+                {
+                    facadeTrim.box( { lot.x, lot.height + .35f, lot.z + side * lot.depth * .5f },
+                                    { lot.width + .3f, .5f, .2f } );
+                    facadeTrim.box( { lot.x + side * lot.width * .5f, lot.height + .35f, lot.z },
+                                    { .2f, .5f, lot.depth } );
+                    facadeTrim.box( { lot.x, .3f, lot.z + side * ( lot.depth * .5f + .04f ) },
+                                    { lot.width, .6f, .08f } );
+                }
+                if( quality != VehicleAppearanceQuality::Preview )
+                    roofs.box( { lot.x, lot.height + .55f, lot.z }, { 2.4f, .9f, 1.6f } );
                 auto collision = app->getGameManager()->createActor();
                 assets.actors.push_back( collision );
                 collision->setName( "City building collision" );
@@ -899,7 +1073,7 @@ namespace workphone::scene::race
                     wall->addComponent<Rigidbody>();
                     app->getGameManager()->getCurrentScene()->addActor( wall );
                 }
-            mesh( assets, "City streets", asphalt, material( assets, { .07f, .075f, .085f, 1 }, .9f ) );
+            mesh( assets, "City streets", asphalt, cityAsphalt );
             mesh( assets, "City sidewalks", pavement,
                   material( assets, { .42f, .43f, .44f, 1 }, .95f ) );
             mesh( assets, "City lane markings", markings,
@@ -907,14 +1081,35 @@ namespace workphone::scene::race
             const ColourF colours[] = { { .42f, .38f, .32f, 1 },
                                         { .54f, .52f, .47f, 1 },
                                         { .24f, .29f, .34f, 1 } };
+            SurfaceBakeResult concrete;
+            forge->bakeConcrete( concrete, surfaceParams );
             for( int i = 0; i < 3; ++i )
-                mesh( assets, "City buildings", buildings[i], material( assets, colours[i], .85f ) );
+            {
+                auto facade = material( assets, colours[i], .85f );
+                maps( assets, facade, concrete.albedo, concrete.normal, concrete.orm );
+                // maps() sets a neutral multiplier; restore the curated facade family tint.
+                facade->setDiffuse( colours[i] );
+                facade->setUVProjection( 3 );
+                facade->setNormalStrength( .12f );
+                auto properties = make_ptr<Properties>();
+                properties->setProperty( "uvFilter", u32( 3 ) );
+                properties->setProperty( "uvAniso", 8.f );
+                properties->setProperty( "uvTriplanarScale", .25f );
+                facade->setProperties( properties );
+                mesh( assets, "City buildings", buildings[i], facade );
+            }
+            mesh( assets, "City roof caps and service units", roofs,
+                  material( assets, { .19f, .21f, .22f, 1 }, .82f ) );
+            mesh( assets, "City parapets and plinths", facadeTrim,
+                  material( assets, { .34f, .33f, .30f, 1 }, .9f ) );
             mesh( assets, "City windows", windows,
                   material( assets, { .055f, .13f, .19f, 1 }, .22f, .35f ) );
             mesh( assets, "City parks", parks, material( assets, { .16f, .32f, .12f, 1 }, 1 ) );
             Geometry ground;
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
             mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
+            if( assets.useFoliageWorld )
+                buildFoliageWorld( assets, seed, quality );
             assets.circuit = {};
             for( size_t i = 0; i < city.route.size(); ++i )
             {

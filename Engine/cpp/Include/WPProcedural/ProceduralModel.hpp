@@ -4,6 +4,7 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Math/Vector2.hpp>
+#include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <vector>
 #include <memory>
@@ -44,6 +45,8 @@ namespace workphone
         {
             std::vector<ProceduralVertex> vertices;  ///< Ordered vertex data.
             std::vector<uint32_t> indices;           ///< Triangle index list (groups of 3).
+            AABB3F bounds;
+            bool boundsValid = false;
 
             /** Remove all vertices and indices, resetting to an empty state. */
             void clear();
@@ -77,7 +80,7 @@ namespace workphone
             /** @return true when the mesh contains at least one triangle. */
             bool hasGeometry() const;
 
-            /** Compute an axis-aligned bounding box of the mesh (no-op stub for now). */
+            /** Compute finite axis-aligned bounds; empty/non-finite meshes have boundsValid=false. */
             void computeBoundingBox();
         };
 

@@ -1,5 +1,6 @@
 #include <EditorPCH.hpp>
 #include <procedural/ProceduralTextureBindings.hpp>
+#include <Workphone/Graphics/ProceduralTextureExport.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Procedural/IProceduralTexture.hpp>
 #include <Workphone/Interface/Procedural/IProceduralManager.hpp>
@@ -315,29 +316,18 @@ namespace workphone::editor
         int w = static_cast<int>( texture->getWidth() );
         int h = static_cast<int>( texture->getHeight() );
 
-        // Write a simple PPM (uncompressed) as a fallback since TGA/DDS encoding
-        // requires a dedicated codec. The runtime texture manager handles
-        // format-specific export when available.
-        // ref: texture export patterns from MaterialEditor.lua
+        std::vector<unsigned char> encoded;
+        if( !procedural::texture_export::encode( static_cast<u32>( w ), static_cast<u32>( h ),
+                                     imgData, std::string( format.c_str() ), encoded ) )
+            return false;
 
+        // Validate and encode before opening so unsupported exports do not
+        // truncate an existing artifact. Never disguise PPM bytes as PNG/DDS.
         auto out = fileSystem->openWrite( filePath, true );
-        if( !out ) return false;
-
-        String header = StringUtil::format( "P6\n%d %d\n255\n", w, h );
-        out->write( header.c_str(), static_cast<u32>( header.size() ) );
-
-        Array<u8> rgb;
-        rgb.reserve( imgData.size() * 3 );
-        for( const auto &c : imgData )
-        {
-            rgb.push_back( static_cast<u8>( std::min( 255, int( c.r * 255.0f ) ) ) );
-            rgb.push_back( static_cast<u8>( std::min( 255, int( c.g * 255.0f ) ) ) );
-            rgb.push_back( static_cast<u8>( std::min( 255, int( c.b * 255.0f ) ) ) );
-        }
-        out->write( rgb.data(), static_cast<u32>( rgb.size() ) );
+        if( !out || !out->isOpen() || !out->isWriteable() ) return false;
+        const auto written = out->write( encoded.data(), static_cast<u32>( encoded.size() ) );
         out->close();
-
-        return true;
+        return written == encoded.size();
     }
 
     SmartPtr<render::IMaterial> ProceduralTextureBindings::createOrGetMaterial(

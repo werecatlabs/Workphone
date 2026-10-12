@@ -2,10 +2,12 @@
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
 #include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Mesh/MeshManager.hpp>
 #include <WPProcedural/WPProcedural.hpp>
 #include <iostream>
 #include <stdexcept>
 void checkClientContracts( workphone::SmartPtr<workphone::IFactoryManager> factories );
+void checkMeshContracts();
 #if WP_PROCEDURAL_TEST_CLAW
 void checkClawContracts();
 #endif
@@ -20,11 +22,14 @@ int main()
         auto factories = workphone::make_ptr<workphone::FactoryManager>();
         factories->load( nullptr );
         app->setFactoryManager( factories );
+        auto meshManager = workphone::make_ptr<workphone::MeshManager>();
+        app->setMeshManager( meshManager );
         auto plugin = workphone::make_ptr<workphone::procedural::WPProcedural>();
         try
         {
             plugin->load( nullptr );
             checkClientContracts( factories );
+            checkMeshContracts();
 #if WP_PROCEDURAL_TEST_CLAW
             checkClawContracts();
 #endif
@@ -39,6 +44,8 @@ int main()
             result = 1;
         }
         plugin = nullptr;
+        app->setMeshManager( nullptr );
+        meshManager = nullptr;
         app->setFactoryManager( nullptr );
         factories->unload( nullptr );
         factories = nullptr;

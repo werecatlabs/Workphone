@@ -260,12 +260,14 @@ option(WP_BUILD_PROCEDURAL_SERVICE_TESTS "Build procedural service contract test
 if(WP_BUILD_PROCEDURAL_SERVICE_TESTS)
     add_executable(ProceduralServiceTests
         ${WP_ROOT}/Tests/cpp/ProceduralServices/ServiceTests.cpp
-        ${WP_ROOT}/Tests/cpp/ProceduralServices/ClientContracts.cpp)
+        ${WP_ROOT}/Tests/cpp/ProceduralServices/ClientContracts.cpp
+        ${WP_ROOT}/Tests/cpp/ProceduralServices/MeshContracts.cpp)
     target_compile_features(ProceduralServiceTests PRIVATE cxx_std_17)
     if(MSVC)
         set_source_files_properties(
             ${WP_ROOT}/Tests/cpp/ProceduralServices/ServiceTests.cpp
             ${WP_ROOT}/Tests/cpp/ProceduralServices/ClientContracts.cpp
+            ${WP_ROOT}/Tests/cpp/ProceduralServices/MeshContracts.cpp
             PROPERTIES COMPILE_OPTIONS /Y- SKIP_PRECOMPILE_HEADERS ON)
     endif()
     target_link_libraries(ProceduralServiceTests PRIVATE Workphone WPProcedural)
@@ -282,4 +284,8 @@ if(WP_BUILD_PROCEDURAL_SERVICE_TESTS)
         endif()
     endif()
     set_target_properties(ProceduralServiceTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPProcedural.services COMMAND ProceduralServiceTests)
+    set_tests_properties(WPProcedural.services PROPERTIES
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:ProceduralServiceTests>"
+        LABELS "procedural;contract")
 endif()

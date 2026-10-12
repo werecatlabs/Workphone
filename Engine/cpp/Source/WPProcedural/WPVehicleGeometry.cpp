@@ -209,6 +209,10 @@ namespace workphone
                     {
                         const std::uint32_t a = row * cols + col;
                         const std::uint32_t d = a + cols;
+                        const float middleAngle = ( static_cast<float>( col ) + 0.5f ) / radial * kTwoPi;
+                        if( stations[row].z >= -0.39f && stations[row + 1].z <= 0.77f &&
+                            std::sin( middleAngle ) > 0.73f )
+                            continue; // Open cockpit, never a painted roof over the driver.
                         // ring tangent x longitudinal row points out of the shell
                         b.triangle( a, a + 1u, d );
                         b.triangle( a + 1u, d + 1u, d );
@@ -233,6 +237,7 @@ namespace workphone
 
             void loftPod( Builder &b, const std::vector<PodStation> &stations, std::uint32_t radial )
             {
+                const auto base = static_cast<std::uint32_t>( b.mesh.vertices.size() );
                 const std::uint32_t cols = radial + 1u;
                 for( std::size_t row = 0; row < stations.size(); ++row )
                 {
@@ -260,11 +265,21 @@ namespace workphone
                 for( std::uint32_t row = 0; row + 1u < stations.size(); ++row )
                     for( std::uint32_t col = 0; col < radial; ++col )
                     {
-                        const std::uint32_t a = row * cols + col;
+                        const std::uint32_t a = base + row * cols + col;
                         const std::uint32_t d = a + cols;
                         b.triangle( a, a + 1u, d );
                         b.triangle( a + 1u, d + 1u, d );
                     }
+                const auto front = b.vertex( Vector3F( stations.front().centreX,
+                    ( stations.front().bottom + stations.front().top ) * 0.5f, stations.front().z ), Vector2F( 0.5f, 0.5f ) );
+                const auto rear = b.vertex( Vector3F( stations.back().centreX,
+                    ( stations.back().bottom + stations.back().top ) * 0.5f, stations.back().z ), Vector2F( 0.5f, 0.5f ) );
+                const auto rearBase = base + static_cast<std::uint32_t>( stations.size() - 1 ) * cols;
+                for( std::uint32_t col = 0; col < radial; ++col )
+                {
+                    b.triangle( front, base + col + 1, base + col );
+                    b.triangle( rear, rearBase + col, rearBase + col + 1 );
+                }
             }
 
             void addTyre( Builder &b, const Vector3F &centre, float width, float radius,
@@ -409,6 +424,34 @@ namespace workphone
                          std::max<std::uint32_t>( 12u, segments / 2u ), !right );
             }
 
+            void addAirfoil( Builder &builder, float span, float chord, float height,
+                             float z, float rise, std::uint32_t subdivisions )
+            {
+                // An elliptical leading edge and tapered trailing edge give the
+                // wing a readable highlight instead of a rectangular slab.
+                const std::uint32_t rows = subdivisions;
+                for( std::uint32_t row = 0; row < rows; ++row )
+                {
+                    const float u0 = static_cast<float>( row ) / rows;
+                    const float u1 = static_cast<float>( row + 1 ) / rows;
+                    auto profile = [&]( float u, float sign, float x ) {
+                        const float thickness = chord * ( 0.003f + 0.10f * std::sqrt( std::max( 0.0f, u ) ) * ( 1.0f - u ) );
+                        const float camber = rise * u + chord * 0.09f * std::sin( kPi * u );
+                        const float sweep = 0.055f * std::pow( std::abs( x ) / ( span * 0.5f ), 2.0f );
+                        return Vector3F( x, height + camber + sign * thickness, z + chord * ( u - 0.5f ) + sweep );
+                    };
+                    const float left = -span * 0.5f, right = span * 0.5f;
+                    builder.quad( profile( u0, 1, left ), profile( u1, 1, left ), profile( u1, 1, right ), profile( u0, 1, right ) );
+                    builder.quad( profile( u0, -1, right ), profile( u1, -1, right ), profile( u1, -1, left ), profile( u0, -1, left ) );
+                    builder.quad( profile( u0, -1, left ), profile( u1, -1, left ), profile( u1, 1, left ), profile( u0, 1, left ) );
+                    builder.quad( profile( u0, 1, right ), profile( u1, 1, right ), profile( u1, -1, right ), profile( u0, -1, right ) );
+                    if( row == 0 )
+                        builder.quad( profile( u0, -1, left ), profile( u0, 1, left ), profile( u0, 1, right ), profile( u0, -1, right ) );
+                    if( row + 1 == rows )
+                        builder.quad( profile( u1, -1, right ), profile( u1, 1, right ), profile( u1, 1, left ), profile( u1, -1, left ) );
+                }
+            }
+
             VehicleLOD buildLOD( const VehicleGeometryConfig &cfg, std::uint32_t level )
             {
                 const std::uint32_t bodyRadial = level == 0 ? 32u : ( level == 1 ? 18u : 10u );
@@ -427,10 +470,10 @@ namespace workphone
                     { -cfg.bodyLength * 0.48f, 0.13f, 0.16f, 0.36f, 0.01f },
                     { frontZ - 0.28f, 0.22f, 0.15f, 0.46f, 0.025f },
                     { frontZ + 0.34f, 0.31f, 0.14f, 0.58f, 0.04f },
-                    { -0.38f, 0.49f, 0.13f, 0.80f, 0.09f },
-                    { 0.18f, 0.57f, 0.12f, 0.91f, 0.13f },
-                    { 0.76f, 0.69f, 0.11f, 0.82f, 0.15f },
-                    { rearZ - 0.30f, 0.56f, 0.12f, 0.71f, 0.12f },
+                    { -0.38f, 0.36f, 0.13f, 0.80f, 0.035f },
+                    { 0.18f, 0.38f, 0.12f, 0.86f, 0.04f },
+                    { 0.76f, 0.36f, 0.11f, 0.88f, 0.04f },
+                    { rearZ - 0.30f, 0.32f, 0.12f, 0.71f, 0.04f },
                     { rearZ + 0.33f, 0.32f, 0.16f, 0.58f, 0.05f },
                     { cfg.bodyLength * 0.47f, 0.09f, 0.22f, 0.37f, 0.01f }
                 };
@@ -448,6 +491,14 @@ namespace workphone
                                                              0.52f } };
                     loftPod( paint, pods, std::max<std::uint32_t>( 8u, bodyRadial / 2u ) );
                 }
+                const std::vector<PodStation> airbox = {
+                    { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
+                    { 0.54f, 0.0f, 0.14f, 0.80f, 1.22f },
+                    { 0.83f, 0.0f, 0.13f, 0.79f, 1.16f },
+                    { 1.27f, 0.0f, 0.07f, 0.65f, 0.99f },
+                    { rearZ - 0.17f, 0.0f, 0.025f, 0.57f, 0.74f }
+                };
+                loftPod( paint, airbox, std::max<std::uint32_t>( 8u, bodyRadial / 2u ) );
                 paint.finalise();
                 lod.sections.push_back( std::move( paint.mesh ) );
 
@@ -462,12 +513,19 @@ namespace workphone
                 }
                 carbonMatte.box( Vector3F( 0, 0.105f, 0.35f ), Vector3F( 1.86f, 0.075f, 3.34f ),
                                  Vector3F( 0.08f, 0.32f, 0.42f ) );
-                carbonMatte.box( Vector3F( 0, 0.18f, frontZ - 1.16f ),
-                                 Vector3F( 1.82f, 0.055f, 0.38f ) );
-                carbonMatte.box( Vector3F( 0, 0.28f, frontZ - 1.04f ),
-                                 Vector3F( 1.66f, 0.045f, 0.31f ) );
-                carbonMatte.box( Vector3F( 0, 0.79f, rearZ + 0.31f ), Vector3F( 1.05f, 0.07f, 0.34f ) );
-                carbonMatte.box( Vector3F( 0, 0.94f, rearZ + 0.38f ), Vector3F( 1.03f, 0.055f, 0.27f ) );
+                const auto wingSteps = level == 0 ? 14u : ( level == 1 ? 8u : 4u );
+                addAirfoil( carbonMatte, 1.82f, 0.40f, 0.17f, frontZ - 1.14f, 0.035f, wingSteps );
+                addAirfoil( carbonMatte, 1.68f, 0.27f, 0.25f, frontZ - 0.98f, 0.065f, wingSteps );
+                addAirfoil( carbonMatte, 1.07f, 0.36f, 0.78f, rearZ + 0.30f, 0.07f, wingSteps );
+                addAirfoil( carbonMatte, 1.04f, 0.25f, 0.94f, rearZ + 0.42f, 0.07f, wingSteps );
+                // Wing pylons and front endplates remain in all silhouette LODs.
+                for( int side : { -1, 1 } )
+                {
+                    const float sign = static_cast<float>( side );
+                    carbonMatte.box( Vector3F( sign * 0.90f, 0.24f, frontZ - 1.10f ), Vector3F( 0.027f, 0.24f, 0.48f ) );
+                    addRod( carbonMatte, Vector3F( sign * 0.13f, 0.25f, frontZ - 0.83f ), Vector3F( sign * 0.16f, 0.20f, frontZ - 1.15f ), 0.024f, 6 );
+                    addRod( carbonMatte, Vector3F( sign * 0.17f, 0.39f, rearZ + 0.08f ), Vector3F( sign * 0.22f, 0.83f, rearZ + 0.31f ), 0.025f, 6 );
+                }
                 Builder carbonGloss( "aero_carbon_gloss", VehicleMaterial::CarbonGloss );
                 // Edge-on endplates retain the deep clearcoat response; broad sky-facing
                 // planes stay matte so they do not collapse into uniform mirrored slabs.
@@ -485,6 +543,23 @@ namespace workphone
                     addRod( carbonMatte, Vector3F( 0, 0.98f, -0.22f ), Vector3F( 0.34f, 0.82f, 0.43f ),
                             0.028f, haloSides );
                 }
+                carbonMatte.box( Vector3F( 0, 0.67f, 0.10f ), Vector3F( 0.45f, 0.035f, 0.85f ) );
+                carbonMatte.box( Vector3F( 0, 0.80f, 0.43f ), Vector3F( 0.33f, 0.25f, 0.12f ) );
+                for( int side : { -1, 1 } )
+                    addRod( carbonMatte, Vector3F( side * 0.27f, 0.79f, -0.34f ),
+                            Vector3F( side * 0.29f, 0.84f, 0.48f ), 0.035f, level == 0 ? 10u : 6u );
+                carbonMatte.quad( Vector3F( -0.085f, 0.90f, 0.375f ), Vector3F( 0.085f, 0.90f, 0.375f ),
+                                  Vector3F( 0.075f, 1.10f, 0.375f ), Vector3F( -0.075f, 1.10f, 0.375f ) );
+                if( cfg.includeFineDetails && level < 2 )
+                {
+                    for( int side : { -1, 1 } )
+                    {
+                        addRod( carbonMatte, Vector3F( side * 0.30f, 0.73f, -0.28f ), Vector3F( side * 0.54f, 0.78f, -0.14f ), 0.014f, 6 );
+                        carbonMatte.box( Vector3F( side * 0.55f, 0.78f, -0.12f ), Vector3F( 0.16f, 0.055f, 0.08f ) );
+                    }
+                    for( int fin = -2; fin <= 2; ++fin )
+                        carbonMatte.box( Vector3F( fin * 0.25f, 0.16f, rearZ + 0.10f ), Vector3F( 0.018f, 0.19f, 0.76f ) );
+                }
                 // Diffuser kick and strakes make the rear silhouette credible at grazing angles.
                 carbonMatte.quad(
                     Vector3F( -0.76f, 0.08f, rearZ - 0.30f ), Vector3F( 0.76f, 0.08f, rearZ - 0.30f ),
@@ -496,12 +571,9 @@ namespace workphone
                 lod.sections.push_back( std::move( carbonGloss.mesh ) );
 
                 Builder glass( "cockpit_glass", VehicleMaterial::Glass );
-                glass.quad( Vector3F( -0.285f, 0.79f, -0.50f ), Vector3F( 0.285f, 0.79f, -0.50f ),
-                            Vector3F( 0.245f, 0.92f, 0.16f ), Vector3F( -0.245f, 0.92f, 0.16f ),
+                glass.quad( Vector3F( -0.24f, 0.76f, -0.49f ), Vector3F( 0.24f, 0.76f, -0.49f ),
+                            Vector3F( 0.22f, 0.87f, -0.30f ), Vector3F( -0.22f, 0.87f, -0.30f ),
                             Vector3F( 0, 0.03f, 0.38f ) );
-                glass.quad( Vector3F( -0.245f, 0.92f, 0.16f ), Vector3F( 0.245f, 0.92f, 0.16f ),
-                            Vector3F( 0.16f, 0.82f, 0.52f ), Vector3F( -0.16f, 0.82f, 0.52f ),
-                            Vector3F( 0, 0.04f, 0.45f ) );
                 glass.finalise();
                 lod.sections.push_back( std::move( glass.mesh ) );
 

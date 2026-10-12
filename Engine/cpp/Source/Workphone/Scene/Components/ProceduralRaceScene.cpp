@@ -94,6 +94,8 @@ namespace workphone::scene
             if( m_openCity )
                 m_cityLayout = procedural::OpenCityLayout::generate( m_seed, m_cityBlocks, m_cityRoute );
             m_assets.openCity = m_openCity;
+            m_assets.useFoliageWorld = m_foliageWorldEnabled;
+            m_assets.exportSourceDirectory = m_materialExportDirectory;
             m_assets.cityBlocks = m_cityBlocks;
             m_assets.cityRoute = m_cityRoute;
             race::buildScene( m_assets, actor, m_seed, m_quality );
@@ -143,6 +145,13 @@ namespace workphone::scene
         if( graphics )
         {
             auto scene = graphics->getGraphicsScene();
+            if( m_assets.foliageTerrain )
+            {
+                String error;
+                m_assets.foliageTerrain->setFoliageSnapshot( {}, error );
+                if( scene )
+                    scene->removeGraphicsObject( m_assets.foliageTerrain );
+            }
             if( scene && m_assets.sky )
                 scene->removeGraphicsObject( m_assets.sky );
             if( scene && m_assets.sun )
@@ -444,6 +453,7 @@ namespace workphone::scene
         p->setProperty( "Audio Enabled", getAudioEnabled() );
         p->setProperty( "Effects Enabled", getEffectsEnabled() );
         p->setProperty( "Open City", m_openCity );
+        p->setProperty( "Foliage World", m_foliageWorldEnabled );
         p->setProperty( "City Blocks", m_cityBlocks );
         p->setProperty( "City Route", m_cityRoute );
         p->setProperty( "Generation Error", m_generationError );
@@ -466,6 +476,7 @@ namespace workphone::scene
         setAudioEnabled( audio );
         setEffectsEnabled( effects );
         p->getPropertyValue( "Open City", m_openCity );
+        p->getPropertyValue( "Foliage World", m_foliageWorldEnabled );
         p->getPropertyValue( "City Blocks", m_cityBlocks );
         p->getPropertyValue( "City Route", m_cityRoute );
         m_cityBlocks = std::clamp( m_cityBlocks / 2 * 2, 6, 10 );
@@ -502,6 +513,26 @@ namespace workphone::scene
     bool ProceduralRaceScene::isPhysicsConfigured() const
     {
         return m_physicsConfigured;
+    }
+
+    void ProceduralRaceScene::setFoliageWorldEnabled( bool enabled )
+    {
+        m_foliageWorldEnabled = enabled;
+    }
+
+    bool ProceduralRaceScene::getFoliageWorldEnabled() const
+    {
+        return m_foliageWorldEnabled;
+    }
+
+    void ProceduralRaceScene::setMaterialExportDirectory( const String &directory )
+    {
+        m_materialExportDirectory = directory;
+    }
+
+    String ProceduralRaceScene::getMaterialExportDirectory() const
+    {
+        return m_materialExportDirectory;
     }
 
     bool ProceduralRaceScene::isGenerated() const

@@ -25,11 +25,17 @@ namespace workphone
         {
             vertices.clear();
             indices.clear();
+            bounds = AABB3F();
+            boundsValid = false;
         }
 
         bool ProceduralMesh::hasGeometry() const
         {
-            return !indices.empty() && ( indices.size() % 3 == 0 );
+            if( vertices.empty() || indices.empty() || indices.size() % 3 != 0 ) return false;
+            for( const auto &v : vertices )
+                if( !std::isfinite( v.position.x ) || !std::isfinite( v.position.y ) || !std::isfinite( v.position.z ) ) return false;
+            for( auto index : indices ) if( index >= vertices.size() ) return false;
+            return true;
         }
 
         uint32_t ProceduralMesh::addVertex( const Vector3F &p )
@@ -41,6 +47,7 @@ namespace workphone
                 return std::numeric_limits<uint32_t>::max();
             }
 
+            boundsValid = false;
             vertices.push_back( { p, {} } );
             return static_cast<uint32_t>( vertices.size() - 1 );
         }
@@ -52,13 +59,24 @@ namespace workphone
                 WP_LOG_ERROR( "ProceduralMesh::addVertex - vertex limit reached (UINT32_MAX)." );
                 return std::numeric_limits<uint32_t>::max();
             }
+            boundsValid = false;
             vertices.push_back( v );
             return static_cast<uint32_t>( vertices.size() - 1 );
         }
 
         void ProceduralMesh::computeBoundingBox()
         {
-            // No-op stub - WPGeometryKit previously provided an empty implementation.
+            boundsValid = false;
+            bounds = AABB3F();
+            if( vertices.empty() ) return;
+            for( const auto &vertex : vertices )
+            {
+                const auto &p = vertex.position;
+                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) ) return;
+            }
+            bounds = AABB3F( vertices.front().position );
+            for( const auto &vertex : vertices ) bounds.merge( vertex.position );
+            boundsValid = true;
         }
 
         void ProceduralMesh::addTriangle( uint32_t a, uint32_t b, uint32_t c )
@@ -96,11 +114,53 @@ namespace workphone
                 return;
             }
 
+            if( &other == this )
+            {
+                try
+                {
+                    const auto copy = other;
+                    append( copy, offset );
+                }
+                catch( const std::exception &e )
+                {
+                    WP_LOG_ERROR( String( "ProceduralMesh::append - copy failed: " ) + e.what() );
+                }
+                return;
+            }
+            if( !std::isfinite( offset.x ) || !std::isfinite( offset.y ) || !std::isfinite( offset.z ) || !other.hasGeometry() )
+            {
+                WP_LOG_ERROR( "ProceduralMesh::append - invalid source geometry rejected." );
+                return;
+            }
+            for( const auto &vertex : other.vertices )
+            {
+                const auto p = vertex.position + offset;
+                if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+                {
+                    WP_LOG_ERROR( "ProceduralMesh::append - transformed position is non-finite." );
+                    return;
+                }
+            }
+            try
+            {
+                // Reserve both arrays before changing either size. Vertex/index copies
+                // below cannot throw once this capacity is available.
+                vertices.reserve( combinedSize );
+                indices.reserve( indices.size() + other.indices.size() );
+            }
+            catch( const std::exception &e )
+            {
+                WP_LOG_ERROR( String( "ProceduralMesh::append - allocation failed: " ) + e.what() );
+                return;
+            }
+            boundsValid = false;
             const uint32_t base = static_cast<uint32_t>( vertices.size() );
 
             for( const auto &v : other.vertices )
             {
-                vertices.push_back( { v.position + offset, v.normal } );
+                auto copy = v;
+                copy.position = copy.position + offset;
+                vertices.push_back( copy );
             }
 
             const uint32_t otherVSize = static_cast<uint32_t>( other.vertices.size() );
@@ -733,6 +793,7 @@ namespace workphone
                 if( staged.hasGeometry() )
                 {
                     staged.computeNormals();
+                    staged.computeBoundingBox();
                     component.bakedMesh = std::move( staged );
                 }
                 else

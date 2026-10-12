@@ -27,6 +27,8 @@ ProceduralTextureEditorTypes = {
     OutputPathId       = 1004,
     SaveTextureButtonId = 1005,
     ApplyToMaterialId   = 1006,
+    SaveRecipeId        = 1007,
+    LoadRecipeId        = 1008,
 
     -- Node list
     AddNoiseNodeId     = 2000,
@@ -253,6 +255,8 @@ function ProceduralTextureEditor:load()
     srgbToggle:setChecked(self.state.outputSrgb)
     toolbarWin:addChild(srgbToggle)
 
+    addButton(toolbarWin, "Save Recipe", ProceduralTextureEditorTypes.SaveRecipeId, "Save graph settings beside the output texture")
+    addButton(toolbarWin, "Load Recipe", ProceduralTextureEditorTypes.LoadRecipeId, "Load graph settings beside the output texture")
     -- Save button
     addButton(toolbarWin, "Save Texture", ProceduralTextureEditorTypes.SaveTextureButtonId, "Save generated texture to disk")
     addButton(toolbarWin, "Apply Material",ProceduralTextureEditorTypes.ApplyToMaterialId, "Apply to material slot")
@@ -367,6 +371,16 @@ function ProceduralTextureEditor:handleEvent(parameters, results)
         self:addNode("triplanar")
     elseif elementId == ProceduralTextureEditorTypes.AddAtlasNodeId then
         self:addNode("atlas")
+    elseif elementId == ProceduralTextureEditorTypes.SaveRecipeId or elementId == ProceduralTextureEditorTypes.LoadRecipeId then
+        local path = safeGetText(self.outputPathCtrl, self.state.outputPath)
+        if not path or path == "" or path == "None" then
+            self:setStatus("Set an output path first.")
+        else
+            local ok
+            if elementId == ProceduralTextureEditorTypes.SaveRecipeId then ok = self:saveRecipe(path .. ".recipe.json")
+            else ok = self:loadRecipe(path .. ".recipe.json") end
+            self:setStatus(ok and "Recipe operation completed." or "Recipe operation failed; current graph retained.")
+        end
     elseif elementId == ProceduralTextureEditorTypes.SaveTextureButtonId then
         self:saveTexture()
     elseif elementId == ProceduralTextureEditorTypes.ApplyToMaterialId then
@@ -442,7 +456,8 @@ end
 function ProceduralTextureEditor:rebuildNodeTree()
     if not self.nodeTree then return end
     self.nodeTree:clear()
-    for id, node in pairs(self.nodes) do
+    for _, id in ipairs(self:orderedNodeIds()) do
+        local node = self.nodes[id]
         local item = ui.IUITreeCtrlItem()
         item:setText(node.label)
         item:setData(id)
@@ -616,7 +631,6 @@ function ProceduralTextureEditor:generateNoiseNode(node)
     )
 
     if tex then
-        self.generatedTexture = tex
         self:setStatus("Noise texture generated: " .. res .. "x" .. res)
     else
         self:setStatus("Noise generation failed.")
@@ -625,8 +639,8 @@ function ProceduralTextureEditor:generateNoiseNode(node)
     return tex
 end
 
-function ProceduralTextureEditor:generateColorCorrectNode(node)
-    if not node or not self.generatedTexture then return nil end
+function ProceduralTextureEditor:generateColorCorrectNode(node, source)
+    if not node or not source then return nil end
     local p = node.params
 
     local appMgr = IApplicationManager.instance()
@@ -637,7 +651,7 @@ function ProceduralTextureEditor:generateColorCorrectNode(node)
     if not bindings then return nil end
 
     local tex = bindings:colourCorrectTexture(
-        self.generatedTexture,
+        source,
         p.ccBrightness or 0.0,
         p.ccContrast   or 1.0,
         p.ccSaturation or 1.0,
@@ -647,14 +661,13 @@ function ProceduralTextureEditor:generateColorCorrectNode(node)
     )
 
     if tex then
-        self.generatedTexture = tex
         self:setStatus("Colour-corrected.")
     end
     return tex
 end
 
-function ProceduralTextureEditor:generateNormalNode(node)
-    if not node or not self.generatedTexture then return nil end
+function ProceduralTextureEditor:generateNormalNode(node, source)
+    if not node or not source then return nil end
     local p = node.params
 
     local appMgr = IApplicationManager.instance()
@@ -665,42 +678,138 @@ function ProceduralTextureEditor:generateNormalNode(node)
     if not bindings then return nil end
 
     local tex = bindings:generateNormalMapFromHeight(
-        self.generatedTexture,
+        source,
         p.normalStrength or 1.0,
         p.normalInvertY  or false,
         ""
     )
 
     if tex then
-        self.generatedTexture = tex
         self:setStatus("Normal map generated.")
     end
     return tex
 end
 
+function ProceduralTextureEditor:orderedNodeIds()
+    local ids = {}
+    for id in pairs(self.nodes) do ids[#ids + 1] = id end
+    table.sort(ids)
+    return ids
+end
+
 function ProceduralTextureEditor:generate()
-    -- Find first node and generate chain
-    local firstNode = nil
-    for id, node in pairs(self.nodes) do
-        firstNode = node
-        break
+    local ids = self:orderedNodeIds()
+    if #ids == 0 then self:setStatus("Add a noise node first."); return false end
+    -- This editor currently represents a linear chain in creation order.
+    -- Reject unsupported nodes before invoking any generation or changing output.
+    for index, id in ipairs(ids) do
+        local kind = self.nodes[id].type
+        if (index == 1 and kind ~= "noise") or
+           (index > 1 and kind ~= "normal" and kind ~= "colorcorrect") then
+            self:setStatus("Use one noise source followed by normal/colour correction nodes.")
+            return false
+        end
     end
-    if not firstNode then
-        self:setStatus("Add a node first.")
-        return
+    local ok, candidate = pcall(function()
+        local texture = self:generateNoiseNode(self.nodes[ids[1]])
+        if not texture then error("Noise source failed") end
+        for index = 2, #ids do
+            local node = self.nodes[ids[index]]
+            if node.type == "normal" then texture = self:generateNormalNode(node, texture)
+            else texture = self:generateColorCorrectNode(node, texture) end
+            if not texture then error("Node " .. tostring(node.id) .. " failed") end
+        end
+        return texture
+    end)
+    if not ok then
+        self:setStatus("Generation failed; previous output retained: " .. tostring(candidate))
+        return false
     end
+    self.generatedTexture = candidate
+    self:setStatus("Generated " .. #ids .. " nodes in creation order.")
+    return true
+end
 
-    self.generatedTexture = nil
-
-    if firstNode.type == "noise" then
-        self:generateNoiseNode(firstNode)
-    elseif firstNode.type == "normal" then
-        self:generateNormalNode(firstNode)
-    elseif firstNode.type == "colorcorrect" then
-        self:generateColorCorrectNode(firstNode)
-    else
-        self:setStatus("Node type '" .. firstNode.type .. "' generation not yet implemented.")
+-- Versioned plain-data recipes; no runtime texture pointers or executable Lua.
+function ProceduralTextureEditor:exportRecipe()
+    local recipe = {version = 1, state = {}, nodes = {}}
+    for key in pairs(ProceduralTextureEditorDefaults) do recipe.state[key] = self.state[key] end
+    for _, id in ipairs(self:orderedNodeIds()) do
+        local node, params = self.nodes[id], {}
+        for key in pairs(ProceduralTextureEditorDefaults) do params[key] = node.params[key] end
+        recipe.nodes[#recipe.nodes + 1] = {id = id, type = node.type, params = params}
     end
+    return recipe
+end
+
+function ProceduralTextureEditor:importRecipe(recipe)
+    if type(recipe) ~= "table" or recipe.version ~= 1 or type(recipe.nodes) ~= "table" or
+       type(recipe.state) ~= "table" or #recipe.nodes > 256 then return false end
+    local entries = 0
+    for index in pairs(recipe.nodes) do
+        if type(index) ~= "number" or index < 1 or index % 1 ~= 0 or index > #recipe.nodes then return false end
+        entries = entries + 1
+    end
+    if entries ~= #recipe.nodes then return false end
+    local function validatedSettings(settings)
+        if type(settings) ~= "table" then return nil end
+        local result = copyDefaults()
+        for key, default in pairs(ProceduralTextureEditorDefaults) do
+            local value = settings[key]
+            if value ~= nil then
+                if type(value) ~= type(default) then return nil end
+                if type(value) == "number" and (value ~= value or math.abs(value) == math.huge) then return nil end
+                result[key] = value
+            end
+        end
+        local r = result.outputResolution
+        if r < 1 or r > 8192 or r % 1 ~= 0 then return nil end
+        if result.noiseOctaves < 1 or result.noiseOctaves > 32 or result.noiseOctaves % 1 ~= 0 then return nil end
+        return result
+    end
+    local state, nodes, maximum = validatedSettings(recipe.state), {}, 0
+    if not state then return false end
+    for _, node in ipairs(recipe.nodes) do
+        if type(node) ~= "table" or type(node.id) ~= "number" or node.id < 1 or
+           node.id > 1000000 or node.id % 1 ~= 0 or nodes[node.id] then return false end
+        if node.type ~= "noise" and node.type ~= "normal" and node.type ~= "colorcorrect" then return false end
+        local params = validatedSettings(node.params)
+        if not params then return false end
+        nodes[node.id] = {id = node.id, type = node.type, label = node.type .. "_" .. node.id, params = params}
+        maximum = math.max(maximum, node.id)
+    end
+    self.state, self.nodes, self.nextNodeId = state, nodes, maximum + 1
+    self.selectedNodeId = nil
+    self:rebuildNodeTree()
+    self:clearParamPanel()
+    self:setStatus("Recipe loaded; generate to replace the current output.")
+    return true
+end
+
+function ProceduralTextureEditor:saveRecipe(path)
+    if type(path) ~= "string" or path == "" then return false end
+    local ok, json = pcall(require, "cjson")
+    if not ok then self:setStatus("JSON codec unavailable."); return false end
+    local encoded, contents = pcall(json.encode, self:exportRecipe())
+    if not encoded then return false end
+    local file = io.open(path, "wb")
+    if not file then return false end
+    local written = file:write(contents)
+    local closed = file:close()
+    return written ~= nil and closed ~= nil
+end
+
+function ProceduralTextureEditor:loadRecipe(path)
+    if type(path) ~= "string" or path == "" then return false end
+    local file = io.open(path, "rb")
+    if not file then return false end
+    local contents = file:read(4 * 1024 * 1024 + 1)
+    file:close()
+    if not contents or #contents > 4 * 1024 * 1024 then return false end
+    local ok, json = pcall(require, "cjson")
+    if not ok then return false end
+    local decoded, recipe = pcall(json.decode, contents)
+    return decoded and self:importRecipe(recipe)
 end
 
 -- ============================================================================

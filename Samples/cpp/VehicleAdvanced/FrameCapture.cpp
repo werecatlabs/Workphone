@@ -1,4 +1,5 @@
 #include "FrameCapture.h"
+#include "ReviewEvidence.h"
 #include <Workphone/Workphone.hpp>
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
 #    include <WPGraphics/ClawRendererDX11.hpp>
@@ -10,6 +11,58 @@
 
 namespace workphone::advanced
 {
+    std::string captureDeviceEvidence()
+    {
+#if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
+        using Microsoft::WRL::ComPtr;
+        auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
+        auto renderer = dynamic_cast<render::ClawRendererDX11 *>( graphics->getRendererPtr() );
+        if( !renderer ) return "null";
+        auto device = static_cast<ID3D11Device *>( wp_renderer_get_dx11_device( renderer->getNativeRenderer() ) );
+        if( !device ) return "null";
+        ComPtr<IDXGIDevice> dxgi;
+        ComPtr<IDXGIAdapter> adapter;
+        DXGI_ADAPTER_DESC desc{};
+        if( FAILED( device->QueryInterface( IID_PPV_ARGS( &dxgi ) ) ) ||
+            FAILED( dxgi->GetAdapter( &adapter ) ) || FAILED( adapter->GetDesc( &desc ) ) ) return "null";
+        const auto length = WideCharToMultiByte( CP_UTF8, 0, desc.Description, -1, nullptr, 0, nullptr, nullptr );
+        std::string name( size_t( std::max( length, 1 ) ), '\0' );
+        if( length > 0 ) WideCharToMultiByte( CP_UTF8, 0, desc.Description, -1, &name[0], length, nullptr, nullptr );
+        if( !name.empty() && name.back() == '\0' ) name.pop_back();
+        LARGE_INTEGER driver{};
+        const bool hasDriver = SUCCEEDED( adapter->CheckInterfaceSupport( __uuidof( IDXGIDevice ), &driver ) );
+        std::ostringstream out;
+        out << "{\"adapter\": " << jsonString( name ) << ", \"vendorId\": " << desc.VendorId
+            << ", \"deviceId\": " << desc.DeviceId << ", \"dedicatedVideoMemory\": " << desc.DedicatedVideoMemory
+            << ", \"featureLevel\": " << unsigned( device->GetFeatureLevel() ) << ", \"driverVersion\": ";
+        if( hasDriver ) out << jsonString( std::to_string( HIWORD( driver.HighPart ) ) + "." +
+            std::to_string( LOWORD( driver.HighPart ) ) + "." + std::to_string( HIWORD( driver.LowPart ) ) + "." +
+            std::to_string( LOWORD( driver.LowPart ) ) );
+        else out << "null";
+        ComPtr<ID3D11DeviceContext> context;
+        device->GetImmediateContext( &context );
+        ComPtr<ID3D11RenderTargetView> target;
+        context->OMGetRenderTargets( 1, &target, nullptr );
+        if( target )
+        {
+            ComPtr<ID3D11Resource> resource;
+            target->GetResource( &resource );
+            ComPtr<ID3D11Texture2D> texture;
+            if( SUCCEEDED( resource.As( &texture ) ) )
+            {
+                D3D11_TEXTURE2D_DESC actual{};
+                texture->GetDesc( &actual );
+                out << ", \"captureTarget\": {\"width\": " << actual.Width << ", \"height\": " << actual.Height
+                    << ", \"samples\": " << actual.SampleDesc.Count << ", \"format\": " << unsigned( actual.Format ) << "}";
+            }
+        }
+        out << "}";
+        return out.str();
+#else
+        return "null";
+#endif
+    }
+
     bool captureFrame( const std::string &path )
     {
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )

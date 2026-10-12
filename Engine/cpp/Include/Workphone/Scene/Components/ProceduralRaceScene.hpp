@@ -8,6 +8,7 @@
 #include <Workphone/Interface/Procedural/OpenCityLayout.hpp>
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Scene/Components/LODGroup.hpp>
+#include <Workphone/Graphics/Terrain.hpp>
 #include <array>
 #include <mutex>
 #include <vector>
@@ -59,7 +60,8 @@ namespace workphone::scene::race
      */
     struct SceneAssets
     {
-        bool openCity = false;
+        bool openCity = false, useFoliageWorld = false;
+        SmartPtr<render::Terrain> foliageTerrain;
         int cityBlocks = 8, cityRoute = 0;
         procedural::GeneratedVehicle vehicle;
         Circuit circuit;
@@ -75,6 +77,7 @@ namespace workphone::scene::race
         SmartPtr<render::ISky> sky;
         SmartPtr<render::IGraphicsLight> sun;
         String resourcePrefix;
+        String exportSourceDirectory;
         u64 triangles = 0, textureBytes = 0;
     };
 
@@ -210,6 +213,11 @@ namespace workphone::scene
         /** Query whether a scene has been generated. */
         bool isGenerated() const;
 
+        void setFoliageWorldEnabled( bool enabled );
+        bool getFoliageWorldEnabled() const;
+        void setMaterialExportDirectory( const String &directory );
+        String getMaterialExportDirectory() const;
+
         /** Query whether physics has been configured for the generated scene. */
         bool isPhysicsConfigured() const;
 
@@ -285,6 +293,8 @@ namespace workphone::scene
 
         /** Select open-city generation instead of the standalone circuit. */
         bool m_openCity = false;
+        bool m_foliageWorldEnabled = false;
+        String m_materialExportDirectory;
 
         /** City size and selected street route used for generation. */
         s32 m_cityBlocks = 8, m_cityRoute = 0;

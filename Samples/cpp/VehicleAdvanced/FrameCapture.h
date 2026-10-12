@@ -3,4 +3,5 @@
 namespace workphone::advanced
 {
     bool captureFrame( const std::string &path );
+    std::string captureDeviceEvidence();
 }

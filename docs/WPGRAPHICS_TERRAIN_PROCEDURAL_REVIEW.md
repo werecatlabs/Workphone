@@ -1,5 +1,7 @@
 # WPGraphics terrain and procedural review and implementation plan
 
+The [12 October procedural production and racing visual quality plan](WPPROCEDURAL_PRODUCTION_PLAN.md) expands the cross-system implementation backlog, city/road/vehicle/material art targets, SampleVehicleAdvanced showcase, packaging gates and independent commercial-reference comparison protocol. Its current-source baseline accounts for later terrain and foliage work; the original findings below remain historical.
+
 Reviewed 9 October 2026 against `38e012a5b` in `C:\dev\Workphone`. This extends the [graphics production plan](WPGRAPHICS_PRODUCTION_PLAN.md), retaining animation, particles, water, asset catalog integration and independent backend certification.
 
 Foliage follow-up at `2a37b63ea`: the [dedicated foliage plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md) now owns tree/grass/species paging, instancing, LOD/impostors and procedural foliage tools. **Actual batch-count/draw-call reduction and foliage LOD are mandatory R1/GF0 requirements.** Rich plant/biome tools and streaming scale use R2/GF1. The follow-up credits existing merged pine patches and the retained native C pager; its C++ wrapper has been removed.

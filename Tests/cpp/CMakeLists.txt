@@ -175,6 +175,12 @@ if (WP_BUILD_TESTS)
                     ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
                 target_link_libraries(WPGraphicsCookedResourceTests PRIVATE
                     WPGraphics Workphone WPSQLite WorkphoneGraphics WorkphoneCore WorkphonePlatformWin32 d3d11)
+                if(TARGET WPProcedural)
+                    target_link_libraries(WPGraphicsCookedResourceTests PRIVATE WPProcedural)
+                    target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE WP_COOKED_PROCEDURAL=1)
+                else()
+                    target_compile_definitions(WPGraphicsCookedResourceTests PRIVATE WP_COOKED_PROCEDURAL=0)
+                endif()
                 target_link_directories(WPGraphicsCookedResourceTests PRIVATE
                     ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
                 set_target_properties(WPGraphicsCookedResourceTests PROPERTIES FOLDER Tests/Cpp)
@@ -379,6 +385,11 @@ if(WIN32 AND WP_ENABLE_LUA AND TARGET WPLuaBind)
     set_target_properties(LuaRuntimeTests PROPERTIES FOLDER Tests/Cpp)
     add_test(NAME WPLua.runtime_contracts COMMAND LuaRuntimeTests)
     foreach(lua_host_target VehicleLuaBindingTests LuaRuntimeTests)
+        if(WIN32)
+            target_link_directories(${lua_host_target} PRIVATE
+                ${WP_ROOT}/Dependencies/lib/windows/boost
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+        endif()
         target_sources(${lua_host_target} PRIVATE
             ${WP_ROOT}/Engine/cpp/Source/WPLua/LuaScriptCompiler.cpp)
         target_compile_definitions(${lua_host_target} PRIVATE WPLua_EXPORTS)

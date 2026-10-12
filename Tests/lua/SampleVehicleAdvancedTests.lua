@@ -52,6 +52,7 @@ local function fixture()
     function race:isPhysicsConfigured() return true end
     function race:setSeed(seed) self.seed = seed end
     function race:setQuality(quality) self.quality = quality end
+    function race:setFoliageWorldEnabled(enabled) self.foliageWorldEnabled = enabled end
     function race:setAudioEnabled(enabled) self.audioEnabled = enabled end
     function race:setEffectsEnabled(enabled) self.effectsEnabled = enabled end
     function race:regenerate() return self.generated end
@@ -267,14 +268,17 @@ local parameters = {at=function() return properties end}
 sample:getProperties(parameters)
 assert(fields["Audio Enabled"] and fields["Effects Enabled"], "Editor properties must expose presentation defaults")
 fields["Audio Enabled"], fields["Effects Enabled"] = false, false
+fields["Foliage World"] = true
 sample:setProperties(parameters)
 sample:generate()
 assert(not race.audioEnabled and not race.effectsEnabled, "Generate must honor saved presentation options")
+assert(race.foliageWorldEnabled, "Generate must honor saved foliage renderer selection")
 fields = { ["Effects Enabled"] = true }
 sample:setProperties(parameters)
 assert(not race.audioEnabled and race.effectsEnabled, "Partial property updates must preserve audio selection")
 sample:generate()
 assert(not race.audioEnabled and race.effectsEnabled and #destroyed == 1, "Regeneration must preserve presentation selection and replace its subtree")
+assert(race.foliageWorldEnabled, "Partial updates and regeneration must retain foliage selection")
 sample:shutdown()
 
 sample, app, race, body, keys, destroyed = fixture()

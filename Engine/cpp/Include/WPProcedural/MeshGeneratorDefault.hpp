@@ -95,6 +95,28 @@ namespace workphone
             real_Num getGenerationProgress() const override;
 
             String getGenerationStatus() const override;
+        private:
+            bool beginGeneration();
+            SmartPtr<IMesh> finishGeneration( SmartPtr<IMesh> mesh );
+            SmartPtr<IMesh> failGeneration( const String &message );
+            real_Num m_meshQuality = 1;
+            u32 m_numLodLevels = 1;
+            real_Num m_lodDistance = 100;
+            u32 m_maxVertexCount = 1000000;
+            u32 m_maxTriangleCount = 1000000;
+            real_Num m_simplificationThreshold = 0;
+            bool m_generateUVs = true;
+            real_Num m_uvScale = 1;
+            bool m_generateNormals = true;
+            bool m_generateTangents = false;
+            bool m_optimizeMesh = false;
+            bool m_mergeDuplicateVertices = false;
+            real_Num m_vertexMergeTolerance = 0.0001;
+            bool m_generateCollision = false;
+            real_Num m_collisionSimplification = 0;
+            Array<SmartPtr<IMesh>> m_generatedMeshes;
+            real_Num m_progress = 0;
+            String m_status = "Ready";
         };
     }  // end namespace procedural
 }  // namespace workphone

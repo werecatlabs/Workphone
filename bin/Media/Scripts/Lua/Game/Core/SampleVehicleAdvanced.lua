@@ -22,6 +22,7 @@ end
 function SampleVehicleAdvanced:__init(component)
     BaseComponent.__init(self, component)
     self.audioEnabled, self.effectsEnabled = true, true
+    self.foliageWorldEnabled = false
     self.seed, self.quality = 7, 2 -- Preview=0, Standard=1, High=2, Cinematic=3.
     self.started, self.startFailed, self.resetWasDown = false, false, false
     self.smokeTest, self.trackSmokeTest = false, false
@@ -70,6 +71,7 @@ function SampleVehicleAdvanced:getProperties(parameters)
     properties:setPropertyAsInt("Appearance Quality", self.quality)
     properties:setPropertyAsBool("Audio Enabled", self.audioEnabled)
     properties:setPropertyAsBool("Effects Enabled", self.effectsEnabled)
+    properties:setPropertyAsBool("Foliage World", self.foliageWorldEnabled)
     properties:setPropertyAsBool("Smoke Test", self.smokeTest)
     properties:setPropertyAsBool("Track Smoke Test", self.trackSmokeTest)
     properties:setPropertyAsBool("Performance Test", self.performanceTest)
@@ -83,6 +85,7 @@ function SampleVehicleAdvanced:setProperties(parameters)
         properties:getPropertyAsInt("Appearance Quality", self.quality))
     self:setPresentationOptions(properties:getPropertyAsBool("Audio Enabled", self.audioEnabled),
         properties:getPropertyAsBool("Effects Enabled", self.effectsEnabled))
+    self.foliageWorldEnabled = properties:getPropertyAsBool("Foliage World", self.foliageWorldEnabled)
     self:setSmokeTest(properties:getPropertyAsBool("Smoke Test", self.smokeTest))
     self:setTrackSmokeTest(properties:getPropertyAsBool("Track Smoke Test", self.trackSmokeTest))
     self.performanceTest = properties:getPropertyAsBool("Performance Test", self.performanceTest)
@@ -123,6 +126,7 @@ function SampleVehicleAdvanced:generate()
         assert(self.raceScene, "ProceduralRaceScene is unavailable; rebuild Workphone and WPLua")
         self.raceScene:setSeed(self.seed)
         self.raceScene:setQuality(self.quality)
+        self.raceScene:setFoliageWorldEnabled(self.foliageWorldEnabled)
         self:setPresentationOptions(self.audioEnabled, self.effectsEnabled)
         if self.configureRaceScene then self:configureRaceScene(self.raceScene) end
         assert(self.raceScene:regenerate(), self.raceScene:getGenerationError())
