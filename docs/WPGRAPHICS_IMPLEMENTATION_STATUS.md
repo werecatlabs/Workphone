@@ -28,7 +28,9 @@ This increment advances the C90 implementation/C++17 wrapper boundary. It does
 - VehicleAdvanced capture/benchmark reports native frame counters and requires
   a completed native target with one update per render. Warmup starts on the
   render task after loading, so procedural generation cannot consume the entire
-  measurement interval before the first frame. Loading resets review state.
+  measurement interval before the first frame. Warmup and measurement each
+  require at least 30 rendered sample updates as well as their elapsed-time
+  threshold. Loading resets review state.
 - The isolated C90 contract preset now includes mesh conversion/serialization
   and the correctly registered frame target. Full builds use the real native
   scene implementation. Disabled wrapper/DX11 regression targets are restored.

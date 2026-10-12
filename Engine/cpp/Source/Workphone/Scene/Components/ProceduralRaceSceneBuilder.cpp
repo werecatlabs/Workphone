@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
+#include <Workphone/Scene/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>
@@ -216,28 +217,101 @@ namespace workphone::scene::race
             staticBox( assets, "Guardrail beam", ( start + end ) * .5f + Vector3F( 0, .5f, 0 ),
                        { .2f, .5f, length }, QuaternionF::eulerDegrees( 0, yaw, 0 ) );
         }
-        void pineGeometry( Geometry &trunks, Geometry &leaves, Vector3F p, float h )
+        void pineGeometry( Geometry &trunks, Geometry &leaves, Vector3F p, float h, u32 seed = 0 )
         {
-            trunks.box( p + Vector3F( 0, h * .3f, 0 ), { h * .05f, h * .6f, h * .05f } );
-            for( int layer = 0; layer < 3; ++layer )
-            {
-                float y = h * ( .4f + .17f * layer ), radius = h * ( .27f - .06f * layer );
-                for( int side = 0; side < 8; ++side )
+            // Reuse the engine's validated deterministic plant generator for the
+            // branching skeleton. Four canonical variants are prepared once and
+            // shared by patch batches and the existing far-impostor bake.
+            static const auto variants = [] {
+                std::array<std::pair<Geometry, Geometry>, 4> result;
+                for( u32 variant = 0; variant < result.size(); ++variant )
                 {
-                    float a = 2 * pi * side / 8, b = 2 * pi * ( side + 1 ) / 8;
-                    auto p0 = p + Vector3F( std::cos( a ) * radius, y, std::sin( a ) * radius );
-                    auto p1 = p + Vector3F( std::cos( b ) * radius, y, std::sin( b ) * radius );
-                    auto top = p + Vector3F( 0, y + h * .32f, 0 );
-                    auto normal = ( p1 - p0 ).crossProduct( top - p0 );
-                    normal.normalise();
-                    leaves.quad( p0, p1, top, top, normal );
+                    scene::FoliagePlantRecipe recipe;
+                    recipe.speciesId = "circuit-pine-" + StringUtil::toString( variant );
+                    recipe.seed = 7919u + variant * 104729u;
+                    recipe.height = 1;
+                    recipe.radius = .22f;
+                    recipe.trunkRadius = .025f;
+                    recipe.branches = 14;
+                    render::FoliageSpecies species;
+                    String error;
+                    if( !scene::generateFoliagePlant( recipe, species, error ) )
+                        throw std::runtime_error( "Cannot generate circuit pine: " + error );
+                    const auto &source = species.lods[0];
+                    auto &bark = result[variant].first;
+                    auto &needles = result[variant].second;
+                    auto taper = []( Vector3F position ) {
+                        // The reusable recipe is a broadleaf skeleton. Narrow
+                        // its upper branches into a conifer crown, retaining
+                        // open gaps and an exposed lower trunk.
+                        const float width = .96f - .68f * std::clamp( position.y, 0.f, 1.f );
+                        position.x *= width;
+                        position.z *= width;
+                        return position;
+                    };
+                    const auto &woodSection = source.sections[0];
+                    // Native plant cylinders contain independent four-vertex
+                    // quads. Reconstruct their normals after crown tapering.
+                    const auto woodVertices = woodSection.indexCount / 6u * 4u;
+                    for( u32 first = 0; first < woodVertices; first += 4u )
+                    {
+                        const auto a = taper( source.positions[first] );
+                        const auto b = taper( source.positions[first + 1u] );
+                        const auto c = taper( source.positions[first + 2u] );
+                        const auto d = taper( source.positions[first + 3u] );
+                        auto normal = ( b - a ).crossProduct( c - a );
+                        normal.normalise();
+                        bark.quad( a, b, c, d, normal );
+                    }
+                    // The source's textured leaf cards provide seeded clump
+                    // positions/orientations. The sample's opaque palette has
+                    // no leaf atlas, so represent each clump with three pointed
+                    // overlapping sprigs instead of rendering solid rectangles.
+                    // This keeps real silhouette gaps without alpha overdraw.
+                    for( u32 first = woodVertices; first + 3u < source.positions.size(); first += 4u )
+                    {
+                        const auto centre = taper( ( source.positions[first] + source.positions[first + 1u] ) * .5f );
+                        auto radial = Vector3F( centre.x, 0, centre.z );
+                        radial.normalise();
+                        auto cardRight = source.positions[first + 1u] - source.positions[first];
+                        cardRight.normalise();
+                        auto direction = radial * .8f + cardRight * .45f;
+                        direction.normalise();
+                        const float phase = float( render::foliageStableHash( recipe.seed + first ) >> 40 ) / 16777216.f;
+                        for( int sprig = -1; sprig <= 1; ++sprig )
+                        {
+                            const float angle = sprig * .65f;
+                            const auto axis = Vector3F( direction.x * std::cos( angle ) - direction.z * std::sin( angle ),
+                                -.015f + .045f * phase, direction.x * std::sin( angle ) + direction.z * std::cos( angle ) );
+                            const auto tip = centre + axis * ( .065f + .025f * phase );
+                            const auto middle = centre + ( tip - centre ) * .57f + Vector3F( 0, .025f, 0 );
+                            auto across = Vector3F( -axis.z, .35f * sprig, axis.x );
+                            across.normalise();
+                            across *= .018f + .009f * phase;
+                            auto normal = ( middle + across - centre ).crossProduct( tip - centre );
+                            normal.normalise();
+                            needles.quad( centre, middle + across, tip, middle - across, normal );
+                        }
+                    }
                 }
-            }
+                return result;
+            }();
+            const auto &variant = variants[seed % variants.size()];
+            auto append = [&]( Geometry &target, const Geometry &source ) {
+                const auto base = static_cast<u32>( target.positions.size() );
+                for( const auto &position : source.positions ) target.positions.push_back( p + position * h );
+                target.normals.insert( target.normals.end(), source.normals.begin(), source.normals.end() );
+                target.tangents.insert( target.tangents.end(), source.tangents.begin(), source.tangents.end() );
+                target.uv.insert( target.uv.end(), source.uv.begin(), source.uv.end() );
+                for( auto index : source.indices ) target.indices.push_back( base + index );
+            };
+            append( trunks, variant.first );
+            append( leaves, variant.second );
         }
-        MeshImposterAtlas bakePineImposter()
+        MeshImposterAtlas bakePineImposter( u32 variant )
         {
             Geometry trunks, canopy;
-            pineGeometry( trunks, canopy, {}, 1 );
+            pineGeometry( trunks, canopy, {}, 1, variant );
             Array<MeshImposterTriangle> triangles;
             auto append = [&]( const Geometry &g, ColourF colour ) {
                 for( size_t i = 0; i < g.indices.size(); i += 3 )
@@ -249,7 +323,7 @@ namespace workphone::scene::race
             append( canopy, { .18f, .32f, .13f, 1 } );
             return generateMeshImposters( triangles, { -.28f, 0, -.28f }, { .28f, 1.08f, .28f } );
         }
-        void pineImposterGeometry( Geometry &g, const MeshImposterAtlas &atlas, Vector3F p, float h )
+        void pineImposterGeometry( Geometry &g, const MeshImposterAtlas &atlas, Vector3F p, float h, u32 variant )
         {
             for( size_t i = 0; i < atlas.views.size(); ++i )
             {
@@ -265,8 +339,8 @@ namespace workphone::scene::race
                         point( view.maximum.x, view.maximum.y ), point( view.minimum.x, view.maximum.y ),
                         view.towardCamera );
                 // Match the bake's one-pixel transparent border and top-left image origin.
-                const float u0 = ( float( i * atlas.tileWidth ) + 1 ) / atlas.width;
-                const float u1 = ( float( ( i + 1 ) * atlas.tileWidth ) - 2 ) / atlas.width;
+                const float u0 = ( float( variant * atlas.width + i * atlas.tileWidth ) + 1 ) / ( atlas.width * 4 );
+                const float u1 = ( float( variant * atlas.width + ( i + 1 ) * atlas.tileWidth ) - 2 ) / ( atlas.width * 4 );
                 const float top = 1.f / atlas.height, bottom = float( atlas.height - 2 ) / atlas.height;
                 g.uv[base] = { u0, bottom, 0 };
                 g.uv[base + 1] = { u1, bottom, 0 };
@@ -573,11 +647,19 @@ namespace workphone::scene::race
                 Array<scene::LODDetailBound> detailBounds;
             };
             std::map<std::pair<int, int>, TreePatch> patches;
-            const auto atlas = bakePineImposter();
-            TextureBuffer treeTexture( atlas.width, atlas.height );
-            treeTexture.pixels.assign( atlas.rgba.begin(), atlas.rgba.end() );
+            const std::array<MeshImposterAtlas, 4> atlases = {
+                bakePineImposter( 0 ), bakePineImposter( 1 ), bakePineImposter( 2 ), bakePineImposter( 3 ) };
+            const auto &atlas = atlases[0];
+            // All four near silhouettes have matching far views in one twelve-
+            // column atlas. Keep the existing one-material patch batching.
+            TextureBuffer treeTexture( atlas.width * 4, atlas.height );
+            for( u32 variant = 0; variant < atlases.size(); ++variant )
+                for( u32 y = 0; y < atlas.height; ++y )
+                    std::copy_n( atlases[variant].rgba.begin() + size_t( y ) * atlas.width * 4,
+                        size_t( atlas.width ) * 4, treeTexture.pixels.begin() +
+                        ( size_t( y ) * treeTexture.width + variant * atlas.width ) * 4 );
             auto imposterMaterial = material( assets, ColourF::White, 1 );
-            auto imposterTexture = upload( assets, treeTexture, render::TextureMipFilter::Cutout, 3 );
+            auto imposterTexture = upload( assets, treeTexture, render::TextureMipFilter::Cutout, 12 );
             imposterMaterial->setTexture( imposterTexture, 0 );
             // Colour is already lit by the CPU bake. Keep its alpha mask in the
             // albedo slot and supply baked colour through the PBS emission slot.
@@ -594,6 +676,9 @@ namespace workphone::scene::race
             TextureBuffer palette( 2, 1 );
             palette.pixels = { 31, 14, 5, 255, 46, 82, 33, 255 };
             auto nearTreeMaterial = material( assets, ColourF::White, 1 );
+            // IMaterial mode 1 maps to WORKPHONE_CULL_MODE_NONE in ClawUtil.
+            // Open needle sprigs and far cards remain visible from both sides.
+            nearTreeMaterial->setCullMode( 1 );
             nearTreeMaterial->setTexture( upload( assets, palette, render::TextureMipFilter::None ), 0 );
             int treeCount = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
             for( int i = 0; i < treeCount; ++i )
@@ -611,8 +696,9 @@ namespace workphone::scene::race
                 const Vector3F centre( key.first * 64.f + 32, 0, key.second * 64.f + 32 );
                 auto &patch = patches[key];
                 patch.detailBounds.push_back( { p - centre + Vector3F( 0, h * .5f, 0 ), h } );
-                pineGeometry( patch.trunks, patch.leaves, p - centre, h );
-                pineImposterGeometry( patch.imposters, atlas, p - centre, h );
+                const u32 variant = ( seed ^ ( u32( i ) * 104729u ) ) % 4u;
+                pineGeometry( patch.trunks, patch.leaves, p - centre, h, variant );
+                pineImposterGeometry( patch.imposters, atlases[variant], p - centre, h, variant );
             }
             for( const auto &[key, patch] : patches )
             {
