@@ -1,5 +1,5 @@
-#ifndef ResourceReference_h__
-#define ResourceReference_h__
+#ifndef __WP_ResourceReference_h__
+#define __WP_ResourceReference_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Database/IResourceReference.hpp>

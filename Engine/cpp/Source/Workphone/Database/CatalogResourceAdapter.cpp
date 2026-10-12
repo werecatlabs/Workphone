@@ -60,7 +60,9 @@ namespace workphone
     bool CatalogResourceAdapter::validateRequest( const Request &request, String &error ) const
     {
         if( !validateBinding( error ) )
+        {
             return false;
+        }
         auto catalog = m_catalog;
         if( !catalog->isEntryCurrent( request.entry ) )
         {
@@ -125,7 +127,9 @@ namespace workphone
         request = Request();
         error.clear();
         if( !validateBinding( error ) )
+        {
             return false;
+        }
         Request resolved;
         auto catalog = m_catalog;
         if( !catalog->tryGetEntry( uuid, resolved.entry ) )
@@ -135,7 +139,9 @@ namespace workphone
         }
         resolved.resourceId.set( resolved.entry.path );
         if( !validateRequest( resolved, error ) )
+        {
             return false;
+        }
         request = std::move( resolved );
         return true;
     }
@@ -281,10 +287,14 @@ namespace workphone
     {
         error.clear();
         if( !validateRequest( request, error ) )
+        {
             return nullptr;
+        }
         auto loaded = m_resources->load( request.resourceId, error );
         if( !loaded || !validateRequest( request, error ) )
+        {
             return nullptr;
+        }
         const auto registry = m_resources->registry();
         const auto compiler = registry ? registry->getCompiler( request.resourceId.type() ) : nullptr;
         if( !compiler || loaded->header.resourceId != request.resourceId ||

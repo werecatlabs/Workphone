@@ -5,17 +5,21 @@
 
 namespace workphone
 {
+
     struct AssetDocumentScanOptions
     {
         u32 maxDocuments = 10000, maxEntries = 100000, maxDepth = 64;
         u64 maxBytes = 256ull * 1024 * 1024;
     };
+
     struct AssetDocumentInventoryEntry
     {
         String path, digest, diagnostic;
         bool canReindex = false;
     };
+
     struct AssetDocumentInventorySnapshot;
+
     /** Detached report. The private snapshot binds apply to the original scan;
      * editing the displayed rows cannot authorize additional writes. No source
      * files are rewritten, and blocked/missing documents retain their old graph. */
@@ -35,6 +39,7 @@ namespace workphone
         friend WPCore_API bool reindexAssetDocuments( SmartPtr<AssetDatabaseManager>,
                                                       const AssetDocumentInventory &, u32 &, String & );
     };
+
     /** Discover known scene/material/prefab/resource extensions and all active
      * indexed documents. Excludes private/VCS storage, configured cache and the
      * mounted media root. Links/special files are reported, never traversed.
@@ -43,6 +48,7 @@ namespace workphone
     WPCore_API AssetDocumentInventory scanAssetDocuments(
         SmartPtr<AssetDatabaseManager> catalog, const AssetDocumentScanOptions &options = {},
         SmartPtr<AssetDatabaseManager> media = nullptr );
+
     /** Revalidate the inventory and atomically replace all verifiable graphs.
      * Catalog/session/media/file/membership changes expire the preview. Any SQL
      * or validation failure rolls back the entire batch. Blocked rows remain

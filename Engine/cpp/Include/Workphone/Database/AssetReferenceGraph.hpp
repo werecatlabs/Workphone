@@ -5,12 +5,14 @@
 
 namespace workphone
 {
+
     struct AssetReferenceEdge
     {
         String sourcePath, slot, targetUuid, targetCatalog, expectedType;
         bool required = true;
         String sourceState, diagnostic;
     };
+
     /** A pending save is durable before file IO. Complete only after the exact
      * serialized bytes have been installed. Failed/abandoned saves block deletion. */
     struct AssetReferenceSave
@@ -19,6 +21,7 @@ namespace workphone
         String sourcePath, sourceKey, revision, digest;
         Array<AssetReferenceEdge> edges;
     };
+
     WPCore_API bool beginAssetReferenceSave( SmartPtr<AssetDatabaseManager> catalog,
                                              const String &sourcePath, SmartPtr<Properties> serialized,
                                              const Array<u8> &bytes, AssetReferenceSave &save,
@@ -33,6 +36,7 @@ namespace workphone
         String value, targetCatalog;
         bool reverse = true;
     };
+
     struct AssetReferencePage
     {
         Array<AssetReferenceEdge> edges;
@@ -40,6 +44,7 @@ namespace workphone
         bool succeeded = false, hasMore = false;
         String error;
     };
+
     /** Indexed forward/reverse queries. Reverse value is a target UUID; forward
      * value is a source path. No resources are constructed. Pages expire on any
      * catalog/reference revision. Quarantined documents are excluded. */

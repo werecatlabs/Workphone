@@ -1,5 +1,6 @@
 #ifndef WP_ASSET_OPERATION_BROWSER_HPP
 #define WP_ASSET_OPERATION_BROWSER_HPP
+
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
@@ -12,6 +13,7 @@ namespace workphone
     {
         String id, kind, source, destination, root, state;
     };
+
     /** Read-only journal inspection. Undo still uses the production service's
      * state, byte-digest, path and collision checks immediately before mutation. */
     struct AssetOperationPage
@@ -20,6 +22,7 @@ namespace workphone
         AssetCatalogSession session;
         bool succeeded = false, hasMore = false;
         String error;
+
         bool canUndo( SmartPtr<AssetDatabaseManager> catalog, size_t index ) const
         {
             return succeeded && index < rows.size() && catalog && !catalog->isReadOnly() &&
@@ -27,6 +30,7 @@ namespace workphone
                    rows[index].root == catalog->getProjectRoot();
         }
     };
+
     inline AssetOperationPage queryAssetOperations( SmartPtr<AssetDatabaseManager> catalog,
                                                     u32 limit = 100, const String &afterId = {} )
     {
@@ -52,7 +56,9 @@ namespace workphone
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='wp_asset_operations'",
                     {} );
                 if( !table )
+                {
                     throw std::runtime_error( "Cannot inspect operation journal schema." );
+                }
                 if( !table->eof() )
                 {
                     auto rows = bound->queryBound(
@@ -62,7 +68,9 @@ namespace workphone
                         "FROM wp_asset_operations WHERE id>? ORDER BY id LIMIT ?",
                         { afterId, StringUtil::toString( limit + 1 ) } );
                     if( !rows )
+                    {
                         throw std::runtime_error( "Cannot read operation journal." );
+                    }
                     while( !rows->eof() )
                     {
                         if( page.rows.size() == limit )
@@ -85,16 +93,20 @@ namespace workphone
                             ( row.state != "prepared" && row.state != "committed" &&
                               row.state != "undoing" && row.state != "undone" &&
                               row.state != "rolled-back" ) )
+                        {
                             throw std::runtime_error(
                                 "Operation journal contains malformed records; explicit repair "
                                 "required." );
+                        }
                         page.rows.push_back( std::move( row ) );
                         rows->nextRow();
                     }
                 }
             }
             if( !page.session.isCurrent( catalog ) )
+            {
                 throw std::runtime_error( "Project changed while reading operation journal." );
+            }
             page.succeeded = true;
         }
         catch( const std::exception &e )
