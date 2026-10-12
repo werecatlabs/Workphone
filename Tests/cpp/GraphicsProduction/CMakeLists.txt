@@ -11,14 +11,14 @@ if(NOT MSVC)
     target_compile_options(WPGraphicsProductionReference PRIVATE -Wall -Wextra -Werror -pedantic)
 endif()
 foreach(contract IN ITEMS Skinning ParticleSimulation)
-    add_executable(WPGraphics${contract}Tests ${contract}Tests.c)
-    target_link_libraries(WPGraphics${contract}Tests PRIVATE WPGraphicsProductionReference)
-    set_target_properties(WPGraphics${contract}Tests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
-    add_test(NAME WPGraphics.production_${contract} COMMAND WPGraphics${contract}Tests)
+    add_executable(WPGraphics${contract}C89Tests ${contract}Tests.c)
+    target_link_libraries(WPGraphics${contract}C89Tests PRIVATE WPGraphicsProductionReference)
+    set_target_properties(WPGraphics${contract}C89Tests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
+    add_test(NAME WPGraphics.production_${contract} COMMAND WPGraphics${contract}C89Tests)
     set_tests_properties(WPGraphics.production_${contract} PROPERTIES LABELS "graphics;headless;production" TIMEOUT 30)
 endforeach()
 
-add_executable(WorkphoneGraphicsFrameTests
+add_executable(WorkphoneGraphicsFrameCppTests
     ${WP_GRAPHICS_CONTRACT_ROOT}/Tests/c/WorkphoneGraphicsFrameTests.c
     ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_system.c)
 target_include_directories(WorkphoneGraphicsFrameTests PRIVATE
