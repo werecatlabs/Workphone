@@ -881,6 +881,59 @@ interactive Editor acceptance, executable shipping-package launch, Linux/macOS
 runtime run, representative hardware, process-kill or power-loss certification was
 performed. The complete production plan and the remaining gates below stay open.
 
+## Increment 15: Catalog-admitted package export and shipping policy (12 October 2026)
+
+`CatalogResourceAdapter::writeRuntimePackage` now admits the complete package-mode
+install closure against the current project catalog. Every member must have one
+durable UUID, an explicit supported type mapping and runtime shipping eligibility.
+Stale roots, uncataloged dependencies, ambiguous paths, unsupported types,
+subresources and mismatched actual resource-service source roots reject export.
+The previous destination and previously exported packages remain intact on failure.
+
+`ResourceSystem::writeRuntimePackageChecked` obtains the actual pinned closure
+before calling the resolver under its operation fence. It requires complete UUID
+coverage and a retained admission token, then verifies that the rebound manifest
+still describes the same artifacts and generations. Catalog admission acquires
+locks in resource -> catalog -> SQLite connection order and retains a
+`BEGIN IMMEDIATE` transaction through artifact copying and exclusive publication.
+This excludes independent SQLite writers and other users of the same connection
+through publication. A writable project catalog is required; read-only catalogs,
+bundled-media closure integration and unmapped subresources fail explicitly.
+
+Project shipping policy is persisted separately in version-1 package policy tables.
+Unconfigured project files default to runtime eligibility without inspection
+creating schema. Explicit runtime, Editor-only and excluded values are supported.
+Setters require current file DTOs and a writable project session. Revision triggers
+invalidate snapshots after policy writes, including independent bound SQL writes.
+Unknown versions, incomplete layouts and missing revision triggers fail without
+automatic repair. Bundled media inspection reads its inventory-owned usage and
+rejects project setters.
+
+The Asset Database window exposes guarded shipping-policy controls for project
+files. Copy inherits explicit policy in the existing operation transaction; move
+retains UUID policy. Quarantine/delete retains policy by UUID so undo/restore cannot
+silently turn an Editor-only asset into runtime content. Policy/history retention
+and purge remain open. Unsupported policy schema blocks copy before file staging.
+
+The low-level explicit-binding ResourceSystem export remains available and does
+not itself enforce catalog policy. Existing PackageEditor/CLI callers have not
+been migrated to the checked adapter route. This increment therefore supplies the
+eligibility/complete-mapping API subset of RES-028/030, not shipping certification.
+It performs synchronous bounded closure validation; asynchronous jobs, scale,
+multi-mount integration and interactive Editor acceptance remain open.
+
+Merged-source validation exposed stale CMake source discovery: the present
+`AssetImportQueue.cpp` was absent from the generated project. Workphone source
+globs now use `CONFIGURE_DEPENDS`, and regeneration includes newly merged sources.
+The empty, header-implemented `AssetReferenceChange.cpp` now includes the required
+PCH. `AssetImportQueue` now exports its public API from Workphone.dll. The catalog
+concurrency test wraps the factory-created real backend through public interfaces
+instead of subclassing the unexported concrete SQLite implementation.
+
+The rebuilt catalog/resource/writer-lease/index-migration suites passed **4/4 in
+31.76 seconds**. Complete graphics/Lua/Editor build and regression evidence will
+be recorded after the current-source Windows run completes.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add

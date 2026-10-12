@@ -8,7 +8,6 @@
 #include <Workphone/Database/AssetPackagePolicy.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
-#include <WPSQLite/SQLiteDatabase.hpp>
 
 #include <filesystem>
 #include <fstream>
@@ -39,16 +38,39 @@ namespace catalog_adapter_contracts
     using namespace workphone::resource;
     namespace fs = std::filesystem;
 
-    class ObservedDatabase final : public SQLiteDatabase
+    // Observe the real factory backend through its supported interfaces. Concrete
+    // SQLiteDatabase methods are intentionally not exported from the DLL.
+    class ObservedDatabase final : public IDatabase, public IParameterizedDatabase,
+                                   public ISerializedDatabase
     {
     public:
+        ObservedDatabase() : database(core::IApplicationManager::instance()->getFactoryManager()->make_object<IDatabase>()) {}
+        ~ObservedDatabase() override { close(); }
         std::function<void(const String &)> afterQuery;
+        void loadFromFile(const String &path) override
+        { database->loadFromFile(path); setLoadingState(database->getLoadingState()); }
+        void loadFromFile(const String &path,const String &key) override
+        { database->loadFromFile(path,key); setLoadingState(database->getLoadingState()); }
+        void close() override
+        { database->close(); setLoadingState(LoadingState::Unloaded); }
+        void unload(SmartPtr<ISharedObject>) override { close(); }
+        void setKey(const String &key) override { database->setKey(key); }
+        SmartPtr<IDatabaseQuery> query(const String &sql) override { return database->query(sql); }
+        SmartPtr<IDatabaseQuery> query(const StringW &sql) override { return database->query(sql); }
+        void queryDML(const String &sql) override { database->queryDML(sql); }
+        void queryDML(const StringW &sql) override { database->queryDML(sql); }
+        void lockConnection() override
+        { dynamic_cast<ISerializedDatabase *>(database.get())->lockConnection(); }
+        void unlockConnection() override
+        { dynamic_cast<ISerializedDatabase *>(database.get())->unlockConnection(); }
         SmartPtr<IDatabaseQuery> queryBound(const String &sql,const Array<String> &values) override
         {
-            auto result = SQLiteDatabase::queryBound(sql,values);
+            auto result = dynamic_cast<IParameterizedDatabase *>(database.get())->queryBound(sql,values);
             if(result && afterQuery) afterQuery(sql);
             return result;
         }
+    private:
+        SmartPtr<IDatabase> database;
     };
 
     inline void require( bool condition, const char *message )

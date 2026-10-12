@@ -61,7 +61,7 @@ namespace workphone::editor
         m_shipRuntime = button( "Allow in runtime packages##CatalogShipRuntime" );
         m_shipEditorOnly = button( "Editor only##CatalogShipEditorOnly" );
         m_shipExcluded = button( "Exclude from packages##CatalogShipExcluded" );
-        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} ) control->setEnabled(false);
+        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} ) control->setEnabled(false);
         m_scanDocuments = button( "Scan project document references##CatalogDocumentScan" );
         m_reindexDocuments = button( "Reindex verified project documents##CatalogDocumentBatch" );
         m_reindexDocuments->setEnabled( false );
@@ -213,7 +213,7 @@ namespace workphone::editor
 
     void AssetDatabaseWindow::populate()
     {
-        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
             if( control ) control->setEnabled(false);
         if(m_showOperations && !m_showMedia){populateOperations();return;}
         if( !m_tree || !m_status || !m_details )
@@ -258,7 +258,7 @@ namespace workphone::editor
 
     void AssetDatabaseWindow::populateOperations()
     {
-        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
             if( control ) control->setEnabled(false);
         if(!m_tree || !m_status || !m_details) return;
         m_tree->clear();m_selectedOperation=static_cast<size_t>(-1);m_restore->setEnabled(false);
@@ -277,7 +277,7 @@ namespace workphone::editor
 
     void AssetDatabaseWindow::populateDocuments()
     {
-        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
             if( control ) control->setEnabled(false);
         if( !m_tree || !m_details || !m_status )
             return;
@@ -572,7 +572,7 @@ namespace workphone::editor
                             policy.usage == AssetPackageUsage::EditorOnly ? "Editor only" : "Excluded") +
                             (policy.explicitPolicy ? " (explicit)" : " (project default)");
                     else details += "\nShipping policy: " + policyError;
-                    for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+                    for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
                         control->setEnabled(policyReady && !m_showMedia && !getAssetDatabaseManager()->isReadOnly());
                     // References to bundled media are owned by project documents.
                     const auto showingMedia = m_showMedia;

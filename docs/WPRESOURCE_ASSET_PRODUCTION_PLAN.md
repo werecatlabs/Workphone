@@ -64,6 +64,13 @@ UUID/directory-export subset of RES-018/028/030; eligibility, PackageEditor/CLI,
 typed application adoption and release certification remain open. See the
 [runtime package guide](WPRESOURCE_RUNTIME_PACKAGES.md).
 
+Increment 15 adds catalog-admitted package export with complete closure UUID/type
+mapping and persisted runtime/Editor-only/excluded shipping policy. The resource,
+catalog and SQLite admission fences remain held through package publication.
+Editor controls and policy-preserving file operations use the existing catalog
+session and operation journal. PackageEditor/CLI adoption, mounted media closure
+integration, asynchronous scale and interactive/release acceptance remain open.
+
 ### Current review summary
 
 | Area | Current foundation | Required production completion |

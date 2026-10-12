@@ -1,4 +1,5 @@
 #pragma once
+#include <Workphone/WorkphonePrerequisites.hpp>
 #include <deque>
 #include <functional>
 #include <mutex>
@@ -7,7 +8,7 @@ namespace workphone
 {
     // FIFO admission with one drainer; callbacks always run outside the queue mutex.
     // A cancelled scheduler job must call cancel() to release the drain reservation.
-    class AssetImportQueue
+    class WPCore_API AssetImportQueue
     {
     public:
         bool enqueue( std::function<void()> operation );

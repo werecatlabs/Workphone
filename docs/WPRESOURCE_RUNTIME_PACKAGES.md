@@ -65,8 +65,9 @@ Failure clears the binding. This captures detached evidence; the package caller
 must own catalog-session admission throughout collection and export. The resource
 operation fence does not prevent independent catalog changes. Bundled media and
 project catalogs must be mapped explicitly with distinct logical source identities;
-UUID/path collisions fail rather than applying implicit mount precedence. Per-asset
-shipping eligibility and saved-reference graph policy remain separate open work.
+UUID/path collisions fail rather than applying implicit mount precedence. The
+checked catalog export below enforces per-file project shipping eligibility;
+full saved-reference coverage and mounted-media closure integration remain open.
 
 ```cpp
 ResourceSystem runtime(nullptr, nullptr);
@@ -87,6 +88,42 @@ require an initialized runtime mount and cannot consult a catalog, source tree,
 compiler or SQLite database. A previously exported UUID remains pinned to its old
 generation after an authoring rename or recook; a new binding can retain that UUID
 while selecting the new logical path.
+
+## Catalog-admitted export and shipping policy
+
+Use `CatalogResourceAdapter::writeRuntimePackage(directory, roots, error)` with
+current adapter requests for project packages that must enforce shipping policy.
+It verifies the actual ResourceSystem source root and every pinned install
+dependency against the project catalog and the adapter's registered type mappings.
+Every member receives a UUID binding. Missing or ambiguous catalog identities,
+unsupported types, subresources, stale root requests, Editor-only or excluded
+dependencies reject the entire export with diagnostics.
+
+The resource operation fence is acquired before catalog and SQLite connection
+locks. A retained `BEGIN IMMEDIATE` admission excludes independent writers and
+same-connection operations through exclusive directory publication; it rolls back
+its read admission afterward. This route requires a writable project catalog.
+Read-only and mounted bundled-media package integration are not supported here.
+
+`getAssetPackagePolicy` inspects a file without creating schema. Project files
+default to `AssetPackageUsage::Runtime`; `setAssetPackagePolicy` persists Runtime,
+EditorOnly or Excluded from a current project file snapshot. The Asset Database
+window exposes these controls. The separate version-1 policy schema and revision
+triggers reject unsupported or incomplete layouts without repair. Policy writes
+expire catalog snapshots, including writes through independent SQLite connections.
+Media inspection uses the inventory's existing policy and rejects project setters.
+Copy inherits policy atomically; move retains it; quarantine/delete retains UUID
+policy for restore. Purging retained history/policy remains open.
+
+The lower-level `ResourceSystem::writeRuntimePackageChecked` invokes a resolver
+with the actual source root, target and pinned closure. A successful resolver must
+return complete UUID bindings and a lifetime token retained until publication or
+failure. Acquire external locks in resource -> catalog -> connection order; do not
+reenter resource operations from the callback. A second manifest validation checks
+that artifacts and generations did not change during admission. Resolver exceptions
+fail export and clean request-owned staging. The raw explicit-binding export and
+partial-map manifest format remain available; they do not enforce catalog policy.
+PackageEditor/CLI adoption of the checked route remains open.
 
 ## Validation boundary
 
