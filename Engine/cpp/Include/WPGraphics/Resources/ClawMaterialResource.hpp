@@ -44,12 +44,18 @@ namespace workphone::render
         ClawMaterialResource &operator=( const ClawMaterialResource & ) = delete;
 
         std::shared_ptr<const Candidate> stage( const String &uuid, String &error, bool force = false );
+        /** Stage an already loaded package resource without a source catalog or compiler.
+         * Uses the same typed dependency validation and transactional GPU construction. */
+        std::shared_ptr<const Candidate> stageRuntime(
+            std::shared_ptr<const resource::RuntimeResource> resource, String &error );
         bool publish( std::shared_ptr<const Candidate> candidate, String &error );
         bool reload( const String &uuid, String &error, bool force = false );
         std::shared_ptr<const Candidate> current() const;
         bool unload( String &error );
 
     private:
+        std::shared_ptr<const Candidate> prepare( std::shared_ptr<Candidate::Data> candidate,
+                                                 String &error );
         struct Data;
         std::unique_ptr<Data> m_data;
     };

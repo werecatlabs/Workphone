@@ -626,11 +626,8 @@ namespace
             const auto unoccluded = drawControl( { 128, 128, 255, 255 }, { 255, 230, 0, 255 }, 2 );
             const auto occluded = drawControl( { 128, 128, 255, 255 }, { 20, 230, 0, 255 }, 2 );
             require( unoccluded[0] > occluded[0] + 10, "ORM red occlusion must attenuate ambient light" );
-            auto metalMaterial = originalMaterial;
-            const auto metalField = metalMaterial.find( "\"metalness\":0" );
-            require( metalField != std::string::npos, "Generated material metalness fixture missing" );
-            metalMaterial.replace( metalField, std::strlen( "\"metalness\":0" ), "\"metalness\":1" );
-            writeText( source / "asphalt.matres", metalMaterial.c_str() );
+            require( originalMaterial.find( "\"metalness\":1" ) != std::string::npos,
+                     "Generated material must enable the ORM metalness multiplier" );
             const auto dielectric = drawControl( { 128, 128, 255, 255 }, { 255, 230, 0, 255 }, 2 );
             const auto metallic = drawControl( { 128, 128, 255, 255 }, { 255, 230, 255, 255 }, 2 );
             require( delta( dielectric, metallic ) > 10, "ORM blue metalness must change real DX11 dielectric response" );
@@ -687,6 +684,21 @@ namespace
                      packagedMaterial->dependencies.size() == 3 && packagedBinding.normalTexture.id.isValid() &&
                      packagedBinding.ormTexture.id.isValid(),
                      "Source-free material must retain its exact albedo, normal and ORM closure" );
+            ClawMaterialResource runtimePublisher( nullptr, nullptr, "", {},
+                fixture.graphics.renderer, config.target, true );
+            auto runtimeVisible = runtimePublisher.stageRuntime( packagedMaterial, error );
+            require( runtimeVisible && runtimePublisher.publish( runtimeVisible, error ), error );
+            requireGpuMips( runtimeVisible, false, &surface.albedo );
+            requireAuxiliaryMaps( runtimeVisible );
+            requireDraw( fixture, runtimeVisible, false, true );
+            require( !runtimePublisher.stageRuntime( nullptr, error ) &&
+                     runtimePublisher.current() == runtimeVisible,
+                     "Invalid runtime material must retain the previous visible bundle" );
+            ClawMaterialResource wrongRuntimeMode( nullptr, nullptr, "", {},
+                fixture.graphics.renderer, config.target, false );
+            require( !wrongRuntimeMode.stageRuntime( packagedMaterial, error ),
+                     "Runtime material must reject mismatched package mode" );
+            require( runtimePublisher.unload( error ), error );
             // Retained cooked data must reupload and draw while every source is unavailable.
             visible->normalTexture()->unload( nullptr );
             visible->normalTexture()->load( nullptr );

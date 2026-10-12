@@ -23,6 +23,7 @@ namespace workphone::render
         SmartPtr<ClawTexture> ormTexture;
         std::shared_ptr<const resource::RuntimeResource> resource;
         CatalogResourceAdapter::Request request;
+        bool runtime = false;
         std::shared_ptr<const int> publisher;
         u64 ticket = 0;
         Microsoft::WRL::ComPtr<ID3D11Device> device;
@@ -186,6 +187,44 @@ namespace workphone::render
                 error = "Cooked material generation changed between compilation and loading.";
                 return {};
             }
+            return prepare( std::move( candidate ), error );
+        }
+        catch( const std::exception &e )
+        {
+            error = String( "Cooked material staging failed: " ) + e.what();
+            return {};
+        }
+    }
+
+    std::shared_ptr<const ClawMaterialResource::Candidate> ClawMaterialResource::stageRuntime(
+        std::shared_ptr<const resource::RuntimeResource> resource, String &error )
+    {
+        error.clear();
+        if( !m_data->checkOwner( error ) ) return {};
+        if( m_data->ticket == std::numeric_limits<u64>::max() )
+        {
+            error = "Cooked material request sequence exhausted; recreate the owner.";
+            return {};
+        }
+        auto candidate = std::make_shared<Candidate::Data>();
+        candidate->publisher = m_data->publisher;
+        candidate->ticket = ++m_data->ticket;
+        candidate->device = m_data->device();
+        candidate->runtime = true;
+        candidate->resource = std::move( resource );
+        if( !candidate->resource || !candidate->device )
+        {
+            error = "Runtime material requires a loaded resource and active DX11 device.";
+            return {};
+        }
+        return prepare( std::move( candidate ), error );
+    }
+
+    std::shared_ptr<const ClawMaterialResource::Candidate> ClawMaterialResource::prepare(
+        std::shared_ptr<Candidate::Data> candidate, String &error )
+    {
+        try
+        {
             CookedMaterialData material;
             if( !decodeCookedMaterial( *candidate->resource, material, error ) )
             {
@@ -294,6 +333,15 @@ namespace workphone::render
         {
             error = "Cooked material candidate belongs to an unavailable or replaced DX11 device.";
             return false;
+        }
+        if( candidate->m_data->runtime )
+        {
+            // The immutable, fully decoded package generation is pinned by the candidate.
+            // Owner-thread/ticket/device checks above provide the same publication boundary
+            // without requiring an authoring catalog on the deployed machine.
+            auto retired = std::move( m_data->visible );
+            m_data->visible = std::move( candidate );
+            return true;
         }
         // Compile, decode, GPU creation and material construction all finish before
         // this lock. The final catalog check and noexcept pointer swap are indivisible
