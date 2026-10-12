@@ -114,6 +114,7 @@ Checks: >-
   portability-std-allocator-const,
   readability-avoid-return-with-void-value,
   readability-avoid-unconditional-preprocessor-if,
+  readability-braces-around-statements,
   readability-const-return-type,
   readability-container-data-pointer,
   readability-container-size-empty,
@@ -183,6 +184,8 @@ CheckOptions:
   modernize-use-override.IgnoreDestructors: 'true'
   performance-move-const-arg.CheckMoveToConstRef: 'true'
   performance-move-const-arg.CheckTriviallyCopyableMove: 'false'
+  # Require braces even for a one-line if/else or loop body.
+  readability-braces-around-statements.ShortStatementLines: '0'
   readability-inconsistent-declaration-parameter-name.IgnoreMacros: 'true'
   readability-inconsistent-declaration-parameter-name.Strict: 'false'
 ...

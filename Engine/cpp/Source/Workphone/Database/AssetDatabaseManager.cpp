@@ -6,9 +6,6 @@
 #include <Workphone/Database/AssetDocumentInventory.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Core/PropertiesBinarySerializer.hpp>
-#include <cJSON.h>
-#include <tinyxml.h>
-#include <memory>
 #include <Workphone/Database/AssetReferenceChange.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
@@ -21,12 +18,16 @@
 #include <Workphone/Scene/Directors/ResourceDirector.hpp>
 #include <Workphone/Core/FileInfo.hpp>
 #include <Workphone/Script/ScriptAsset.hpp>
+#include <cJSON.h>
+#include <tinyxml.h>
 #include <atomic>
 #include <filesystem>
-#include <set>
-#include <map>
 #include <fstream>
+#include <map>
+#include <memory>
+#include <set>
 #include <stdexcept>
+
 #if defined WP_PLATFORM_WIN32
 #    ifndef NOMINMAX
 #        define NOMINMAX
@@ -40,11 +41,15 @@
 namespace workphone
 {
     WP_CLASS_REGISTER_DERIVED( workphone, AssetDatabaseManager, DatabaseManager );
+
     namespace
     {
+
         bool referenceDeleteAllowed( AssetDatabaseManager &, const Array<String> &, const String &, String & );
         bool referencesPresent( AssetDatabaseManager & );
+        
         std::atomic<u64> nextCatalogInstance{ 1 };
+
 #ifdef _WIN32
         const String pathPolicy = "windows-ascii-fold";
 #else
@@ -55,6 +60,7 @@ namespace workphone
         {
             return !value.empty() && value.size() <= limit && value.find( '\0' ) == String::npos;
         }
+
         SmartPtr<IDatabaseQuery> queryCatalog( AssetDatabaseManager &manager, const String &sql,
                                                const Array<String> &values = {} )
         {
@@ -67,6 +73,7 @@ namespace workphone
             }
             return bound->queryBound( sql, values );
         }
+
         // The manager's recursive mutex covers the transaction and publication.
         class CatalogTransaction
         {
@@ -81,21 +88,28 @@ namespace workphone
                 m_serialized->lockConnection();
                 m_active = queryCatalog( manager, "BEGIN IMMEDIATE" ) != nullptr;
             }
+
             ~CatalogTransaction()
             {
                 if( m_active )
                     queryCatalog( m_manager, "ROLLBACK" );
+
                 if( m_serialized )
                     m_serialized->unlockConnection();
             }
+
             bool active() const
             {
                 return m_active;
             }
+
             bool commit()
             {
                 if( !m_active || !queryCatalog( m_manager, "COMMIT" ) )
+                {
                     return false;
+                }
+
                 m_active = false;
                 return true;
             }
@@ -106,23 +120,30 @@ namespace workphone
             ISerializedDatabase *m_serialized = nullptr;
             bool m_active = false;
         };
+
         String resourcePath( SmartPtr<ISharedObject> object )
         {
             if( !object || object->isDerived<scene::IGameActor>() ||
                 object->isDerived<scene::IComponent>() || !object->isDerived<IResource>() )
                 return "scene";
+
             auto resource = static_pointer_cast<IResource>( object );
+
             String path;
+
             auto app = core::IApplicationManager::instancePtr();
             auto filesystem = app ? app->getFileSystem() : nullptr;
+
             if( filesystem && !resource->getFileSystemId().is_nil() )
             {
                 FileInfo info;
                 if( filesystem->findFileInfo( resource->getFileSystemId(), info ) )
                     path = info.filePath.str();
             }
+
             return path.empty() ? resource->getFilePath() : path;
         }
+
         AssetDatabaseManager::EntryKind resourceKind( SmartPtr<ISharedObject> object )
         {
             return object && object->isDerived<IResource>() && !object->isDerived<scene::IGameActor>() &&
@@ -130,6 +151,7 @@ namespace workphone
                        ? AssetDatabaseManager::EntryKind::File
                        : AssetDatabaseManager::EntryKind::Scene;
         }
+
         bool resolveResourcePath( AssetDatabaseManager &manager, SmartPtr<ISharedObject> object,
                                   AssetCatalogPath &path )
         {
@@ -146,6 +168,7 @@ namespace workphone
             WP_LOG_ERROR( "Invalid catalog source path: " + error );
             return false;
         }
+
         String kindName( AssetDatabaseManager::EntryKind kind )
         {
             return kind == AssetDatabaseManager::EntryKind::File ? "file" : "scene";
@@ -214,6 +237,7 @@ namespace workphone
         }
 
         String invalidIdentityFields();
+
         bool validateIdentity( AssetDatabaseManager &manager, const String &root )
         {
             auto policy = queryCatalog( manager,
@@ -282,6 +306,7 @@ namespace workphone
             invalid += "))";
             return invalid;
         }
+
         bool installChangeTracking( AssetDatabaseManager &manager )
         {
             if( !queryCatalog( manager,
@@ -310,6 +335,7 @@ namespace workphone
             }
             return true;
         }
+
         bool guardIdentity( AssetDatabaseManager &manager )
         {
             const auto invalid = invalidIdentityFields();
@@ -354,45 +380,56 @@ namespace workphone
                    installChangeTracking( manager );
         }
     }  // namespace
+
     AssetDatabaseManager::AssetDatabaseManager()
     {
         m_resourcesTableName = "resources";
         m_catalogInstance = nextCatalogInstance.fetch_add( 1 );
     }
+
     AssetDatabaseManager::~AssetDatabaseManager() = default;
+
     void AssetDatabaseManager::invalidateCatalog()
     {
         ++m_catalogGeneration;
         clearResourceEntryCache();
     }
+
     bool AssetDatabaseManager::setProjectRoot( const String &root )
     {
         ScopedLock lock( this );
+
         if( auto database = getDatabase(); database && database->isLoaded() )
             return false;
+
         String canonical, error;
         if( !canonicalAssetCatalogRoot( root, canonical, error ) )
         {
             WP_LOG_ERROR( "Invalid catalog project root: " + error );
             return false;
         }
+
         m_projectRootOverride = canonical;
         m_projectRoot = canonical;
         invalidateCatalog();
         return true;
     }
+
     String AssetDatabaseManager::getProjectRoot()
     {
         ScopedLock lock( this );
         return m_projectRoot;
     }
+
     u64 AssetDatabaseManager::getCatalogGeneration()
     {
         ScopedLock lock( this );
         if( m_catalogReady )
             refreshDatabaseRevision();
+
         return m_catalogGeneration;
     }
+
     bool AssetDatabaseManager::refreshDatabaseRevision()
     {
         auto row = queryCatalog( *this,
@@ -410,6 +447,7 @@ namespace workphone
         }
         return true;
     }
+
     bool AssetDatabaseManager::captureProjectRoot()
     {
         String root = m_projectRootOverride;

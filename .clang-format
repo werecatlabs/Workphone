@@ -7,11 +7,15 @@ AlignEscapedNewlines: Left
 AllowAllConstructorInitializersOnNextLine: false
 AllowShortBlocksOnASingleLine: Never
 AllowShortLambdasOnASingleLine: All
-AllowShortFunctionsOnASingleLine: 'false'
-AllowShortIfStatementsOnASingleLine: 'false'
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: 'false'
 BinPackParameters: 'true'
 BreakBeforeBraces: Custom
+# Add missing control-statement braces when formatting (clang-format 15+).
+InsertBraces: true
+# Separate function definitions, including those inside classes, with a blank line.
+SeparateDefinitionBlocks: Always
 ColumnLimit: '105'
 CommentPragmas:  '^[^ ]'
 PackConstructorInitializers: CurrentLine
