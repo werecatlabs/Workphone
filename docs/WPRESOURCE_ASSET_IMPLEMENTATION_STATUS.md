@@ -931,8 +931,34 @@ concurrency test wraps the factory-created real backend through public interface
 instead of subclassing the unexported concrete SQLite implementation.
 
 The rebuilt catalog/resource/writer-lease/index-migration suites passed **4/4 in
-31.76 seconds**. Complete graphics/Lua/Editor build and regression evidence will
-be recorded after the current-source Windows run completes.
+31.76 seconds**. The complete six-suite CTest gate passed **6/6 in 34.13 seconds**:
+
+| Suite | Time |
+|---|---|
+| WorkphoneAssets.catalog_contracts | 19.99 s |
+| WPGraphics.cooked_material_resource | 6.79 s |
+| WPLua.runtime_contracts | 0.88 s |
+| WPResourceTests | 2.54 s |
+| WPResource.writer_lease | 3.34 s |
+| WPResource.index_migration | 0.45 s |
+
+New contracts cover policy persistence/defaults, stale sessions, independent SQL
+revision changes, failed-write rollback, read-only/media ownership, future/missing
+schema tracking, policy-preserving copy/move/quarantine/restore, complete transitive
+UUID mapping, ineligible/uncataloged/unmapped dependency rejection, actual source
+root binding, same-connection/independent writer exclusion through publication,
+resolver failure/exception cleanup, admission lifetime and occupied destinations.
+
+WPResourceTests, WPAssetCatalogTests, WPGraphicsCookedResourceTests and
+LuaRuntimeTests were rebuilt with current Windows/MSVC v145 RelWithDebInfo sources.
+The Editor controls also required mutable SmartPtr loop handles to call
+`setEnabled`; the final current-source Editor build passed. Regression log:
+project_x64/resource-admission-tests.log. Build log:
+project_x64/resource-admission-validation-build.log (test targets and dependencies)
+and project_x64/resource-admission-editor-build.log (successful final Editor build).
+git diff --check passed. No interactive Editor run,
+Debug build, process-kill/power-loss test, platform-port execution or real shipping
+application certification was performed. The remaining production gates stay open.
 
 ## Next implementation gates
 
