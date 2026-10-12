@@ -184,7 +184,7 @@ namespace workphone
                 driveTrain->update();
 
 #if !WP_FINAL
-                assertDriveTrainOutput( *driveTrain );
+                assertDriveTrainOutput( driveTrain.get() );
 #endif
             }
             else

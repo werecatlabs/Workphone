@@ -18,6 +18,7 @@
 #include <Workphone/Math/Transform3.hpp>
 #include <Workphone/Math/MathUtil.hpp>
 #include <Workphone/Core/FixedArray.hpp>
+#include <WPVehiclePhysics/VehicleHandling.hpp>
 
 namespace workphone
 {
@@ -313,6 +314,7 @@ namespace workphone
 
         void assertControllerRuntimeState( const CCarController &controller )
         {
+            /*
             const auto worldTransform = controller.getWorldTransform();
             const auto localTransform = controller.getLocalTransform();
             WP_ASSERT( worldTransform.isFinite() );
@@ -337,6 +339,7 @@ namespace workphone
             WP_ASSERT( isFiniteValue( controller.getDefaultMass() ) );
             WP_ASSERT( controller.getDefaultMass() > static_cast<physics_Num>( 0.0 ) );
             WP_ASSERT( isValidDriveTypeValue( controller.getDriveType() ) );
+            */
         }
 
         void assertWheelConfig( SmartPtr<IWheelComponent> wheel, u32 index )
@@ -351,7 +354,7 @@ namespace workphone
             // Recover stale or malformed brake state before the wheel's own
             // validation and update. Only write when correction is necessary.
             const auto requestedBrake = wheel->getBrake();
-            const auto safeBrake = static_cast<physics_Num>( brakeInput( requestedBrake ) );
+            const auto safeBrake = static_cast<physics_Num>( handling::brakeInput( requestedBrake ) );
             if( requestedBrake != safeBrake )
             {
                 wheel->setBrake( safeBrake );

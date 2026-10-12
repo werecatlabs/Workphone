@@ -7,7 +7,7 @@ namespace workphone
 {
     namespace
     {
-        constexpr auto MaxWheelForce = static_cast<physics_Num>( 1.0e8 );
+        //constexpr auto MaxWheelForce = static_cast<physics_Num>( 1.0e8 );
         constexpr auto MaxWheelVelocity = static_cast<physics_Num>( 1.0e5 );
         constexpr auto MaxAngularVelocity = static_cast<physics_Num>( 1.0e5 );
         constexpr auto MaxWheelTorque = static_cast<physics_Num>( 1.0e8 );
