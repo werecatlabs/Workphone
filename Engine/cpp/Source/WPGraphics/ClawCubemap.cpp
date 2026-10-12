@@ -12,27 +12,33 @@ namespace workphone::render
         struct V
         {
             float x, y, z;
+
             V operator+( V b ) const
             {
                 return { x + b.x, y + b.y, z + b.z };
             }
+
             V operator*( float s ) const
             {
                 return { x * s, y * s, z * s };
             }
         };
+
         float dot( V a, V b )
         {
             return a.x * b.x + a.y * b.y + a.z * b.z;
         }
+
         V cross( V a, V b )
         {
             return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
         }
+
         V unit( V v )
         {
             return v * ( 1.0f / std::sqrt( std::max( dot( v, v ), 1e-12f ) ) );
         }
+
         struct Face
         {
             unsigned width = 0, height = 0;
@@ -46,6 +52,7 @@ namespace workphone::render
                                { u, -1, -v }, { u, -v, 1 },  { -u, -v, -1 } };
             return unit( axes[face] );
         }
+
         V sample( const std::array<Face, 6> &faces, V d )
         {
             if( faces[0].pixels.empty() )
@@ -97,6 +104,7 @@ namespace workphone::render
                      face.pixels[jy * face.width + jx] * fx ) *
                        fy;
         }
+
         bool readFace( ID3D11Device *device, ID3D11DeviceContext *context,
                        ID3D11ShaderResourceView *view, Face &face )
         {
@@ -107,7 +115,9 @@ namespace workphone::render
                                                       reinterpret_cast<void **>( &source ) );
             resource->Release();
             if( FAILED( hr ) )
+            {
                 return false;
+            }
             D3D11_TEXTURE2D_DESC desc;
             source->GetDesc( &desc );
             const bool bgra = desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -139,6 +149,7 @@ namespace workphone::render
             face.height = desc.Height;
             face.pixels.resize( size_t( desc.Width ) * desc.Height );
             for( unsigned y = 0; y < desc.Height; ++y )
+            {
                 for( unsigned x = 0; x < desc.Width; ++x )
                 {
                     const auto p =
@@ -147,44 +158,64 @@ namespace workphone::render
                                                         std::pow( p[1] / 255.0f, 2.2f ),
                                                         std::pow( p[bgra ? 0 : 2] / 255.0f, 2.2f ) };
                 }
+            }
             context->Unmap( staging, 0 );
             staging->Release();
             return true;
         }
     }  // namespace
+
     ClawCubemap::~ClawCubemap()
     {
         reset();
     }
+
     void ClawCubemap::reset()
     {
         if( m_view )
+        {
             m_view->Release();
+        }
         m_view = nullptr;
         for( auto &face : m_faces )
         {
             if( face )
+            {
                 face->Release();
+            }
             face = nullptr;
         }
     }
+
     bool ClawCubemap::update( ID3D11Device *device, ID3D11DeviceContext *context,
                               const std::array<ID3D11ShaderResourceView *, 6> &views )
     {
         if( !device || !context )
+        {
             return false;
+        }
         if( m_view && views == m_faces )
+        {
             return true;
+        }
         std::array<Face, 6> faces;
         const bool hasFaces =
             std::all_of( views.begin(), views.end(), []( auto p ) { return p != nullptr; } );
         if( hasFaces )
+        {
             for( unsigned i = 0; i < 6; ++i )
+            {
                 if( !readFace( device, context, views[i], faces[i] ) )
+                {
                     return false;
+                }
+            }
+        }
         if( !hasFaces &&
             std::any_of( views.begin(), views.end(), []( auto p ) { return p != nullptr; } ) )
+        {
             return false;
+        }
         std::array<std::vector<float>, 48> pixels;
         std::array<D3D11_SUBRESOURCE_DATA, 48> data{};
         // GGX samples depend on roughness, not face or texel. Compute the
@@ -210,12 +241,14 @@ namespace workphone::render
             }
         }
         for( unsigned f = 0; f < 6; ++f )
+        {
             for( unsigned mip = 0; mip < 8; ++mip )
             {
                 const unsigned size = 128u >> mip, index = f * 8 + mip;
                 auto &output = pixels[index];
                 output.resize( size * size * 4 );
                 for( unsigned y = 0; y < size; ++y )
+                {
                     for( unsigned x = 0; x < size; ++x )
                     {
                         const V n =
@@ -247,9 +280,11 @@ namespace workphone::render
                         output[offset + 2] = sum.z / weight;
                         output[offset + 3] = 1;
                     }
+                }
                 data[index].pSysMem = output.data();
                 data[index].SysMemPitch = size * 16;
             }
+        }
         D3D11_TEXTURE2D_DESC desc{};
         desc.Width = desc.Height = 128;
         desc.MipLevels = 8;
@@ -262,17 +297,25 @@ namespace workphone::render
         ID3D11Texture2D *texture = nullptr;
         ID3D11ShaderResourceView *view = nullptr;
         if( FAILED( device->CreateTexture2D( &desc, data.data(), &texture ) ) )
+        {
             return false;
+        }
         const auto hr = device->CreateShaderResourceView( texture, nullptr, &view );
         texture->Release();
         if( FAILED( hr ) )
+        {
             return false;
+        }
         reset();
         m_view = view;
         m_faces = views;
         for( auto face : m_faces )
+        {
             if( face )
+            {
                 face->AddRef();
+            }
+        }
         return true;
     }
 }  // namespace workphone::render

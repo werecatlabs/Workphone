@@ -12,10 +12,14 @@ namespace workphone::render
     void CParticleSystem::load( SmartPtr<ISharedObject> data )
     {
         std::unique_lock<std::mutex> lock( m_simulationMutex );
-        if( m_simulation ) return;
+        if( m_simulation )
+        {
+            return;
+        }
         if( !getTemplateName().empty() )
         {
-            WP_LOG_ERROR( "Claw particles: template loading is not implemented; use explicit settings." );
+            WP_LOG_ERROR(
+                "Claw particles: template loading is not implemented; use explicit settings." );
             setLoadingState( LoadingState::Unloaded );
             return;
         }
@@ -70,8 +74,14 @@ namespace workphone::render
         // Validate unloaded settings using a tiny temporary pool; live changes allocate nothing.
         auto validator = m_simulation ? m_simulation : wp_particle_simulation_create( 1, m_seed );
         const bool valid = validator && wp_particle_simulation_configure( validator, &settings );
-        if( !m_simulation ) wp_particle_simulation_destroy( validator );
-        if( !valid ) return false;
+        if( !m_simulation )
+        {
+            wp_particle_simulation_destroy( validator );
+        }
+        if( !valid )
+        {
+            return false;
+        }
         m_simulationSettings = settings;
         m_customSimulationSettings = true;
         return true;
@@ -85,9 +95,13 @@ namespace workphone::render
             WP_LOG_ERROR( "Claw particles: unsupported particle state." );
             return;
         }
-        const bool starting = m_simulation && state == ParticleSystemState::Started &&
+        const bool starting =
+            m_simulation && state == ParticleSystemState::Started &&
             wp_particle_simulation_get_state( m_simulation ) == WORKPHONE_PARTICLE_STATE_STOPPED;
-        if( m_simulation ) wp_particle_simulation_set_state( m_simulation, static_cast<wp_particle_state>( state ) );
+        if( m_simulation )
+        {
+            wp_particle_simulation_set_state( m_simulation, static_cast<wp_particle_state>( state ) );
+        }
         if( starting && getFastForwardTime() > 0.0f )
         {
             auto remaining = getFastForwardTime();
@@ -95,11 +109,14 @@ namespace workphone::render
             {
                 WP_LOG_ERROR( "Claw particles: prewarm must be finite and at most ten seconds." );
             }
-            else while( remaining > 0.0f )
+            else
             {
-                const auto slice = std::min( remaining, 1.0f );
-                wp_particle_simulation_advance( m_simulation, slice );
-                remaining -= slice;
+                while( remaining > 0.0f )
+                {
+                    const auto slice = std::min( remaining, 1.0f );
+                    wp_particle_simulation_advance( m_simulation, slice );
+                    remaining -= slice;
+                }
             }
         }
         m_state = state;
@@ -108,13 +125,18 @@ namespace workphone::render
     ParticleSystemState CParticleSystem::getState() const
     {
         std::lock_guard<std::mutex> lock( m_simulationMutex );
-        return m_simulation ? static_cast<ParticleSystemState>( wp_particle_simulation_get_state( m_simulation ) ) : m_state;
+        return m_simulation
+                   ? static_cast<ParticleSystemState>( wp_particle_simulation_get_state( m_simulation ) )
+                   : m_state;
     }
 
     bool CParticleSystem::simulate( f32 seconds )
     {
         std::lock_guard<std::mutex> lock( m_simulationMutex );
-        if( !m_simulation ) return false;
+        if( !m_simulation )
+        {
+            return false;
+        }
         if( !m_customSimulationSettings )
         {
             m_simulationSettings.rate = getRate();
@@ -124,7 +146,10 @@ namespace workphone::render
             m_simulationSettings.size_max = getStartSize().Y();
             m_simulationSettings.duration = getDuration();
             m_simulationSettings.looping = getLooping();
-            if( !wp_particle_simulation_configure( m_simulation, &m_simulationSettings ) ) return false;
+            if( !wp_particle_simulation_configure( m_simulation, &m_simulationSettings ) )
+            {
+                return false;
+            }
         }
         const bool advanced = wp_particle_simulation_advance( m_simulation, seconds );
         m_state = static_cast<ParticleSystemState>( wp_particle_simulation_get_state( m_simulation ) );
@@ -140,7 +165,8 @@ namespace workphone::render
         {
             const auto samples = wp_particle_simulation_get_samples( m_simulation );
             result.resize( count );
-            std::memcpy( result.data(), samples, static_cast<size_t>(count) * sizeof(wp_particle_sample) );
+            std::memcpy( result.data(), samples,
+                         static_cast<size_t>( count ) * sizeof( wp_particle_sample ) );
         }
         return result;
     }
@@ -163,13 +189,13 @@ namespace workphone::render
         return wp_particle_simulation_get_dropped( m_simulation );
     }
 
-    bool CParticleSystem::emitParticle( const Vector3F &position, const Vector3F &velocity,
-                                       f32 size, f32 lifetime )
+    bool CParticleSystem::emitParticle( const Vector3F &position, const Vector3F &velocity, f32 size,
+                                        f32 lifetime )
     {
         std::lock_guard<std::mutex> lock( m_simulationMutex );
-        return wp_particle_simulation_emit( m_simulation,
-            { position.x, position.y, position.z }, { velocity.x, velocity.y, velocity.z },
-            size, lifetime ) != 0;
+        return wp_particle_simulation_emit( m_simulation, { position.x, position.y, position.z },
+                                            { velocity.x, velocity.y, velocity.z }, size,
+                                            lifetime ) != 0;
     }
 
     void CParticleSystem::setSeed( u32 seed )
@@ -182,4 +208,4 @@ namespace workphone::render
         }
         m_seed = seed;
     }
-}
+}  // namespace workphone::render

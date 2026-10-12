@@ -15,14 +15,15 @@ namespace workphone
     {
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawTerrain, Terrain );
 
-        ClawTerrain::ClawTerrain() : m_terrain( nullptr ),
+        ClawTerrain::ClawTerrain() :
+            m_terrain( nullptr ),
             m_tiles( std::make_unique<ClawTerrainTileState>() ),
             m_terrainMaterial( std::make_unique<ClawTerrainMaterial>() )
         {
             // Preserve Claw's existing unit-scale default; explicit TerrainData
             // carries its own scale when a source asset is published.
             Terrain::setHeightScale( 1.0f );
-            setDeferredTerrainPublication(true);
+            setDeferredTerrainPublication( true );
             resetActiveTerrainPublication();
         }
 
@@ -45,12 +46,21 @@ namespace workphone
         void ClawTerrain::unload( SmartPtr<ISharedObject> data )
         {
             m_tiles->stream.drain();
-            m_tiles->resident.clear();m_tiles->staged.clear();
-            m_tiles->requested.reset();m_tiles->active.reset();
-            m_tiles->cookedSource.reset();m_tiles->cookedDescriptions.clear();m_tiles->usedCookedTileManifest=false;
-            m_tiles->lastError.clear();m_tiles->preparationError.clear();m_tiles->uploadFrame=0;m_tiles->frameUploads=0;
-            m_tiles->descriptions.clear();m_tiles->demand.clear();m_tiles->device=nullptr;
-            m_tiles->textureResolver={};
+            m_tiles->resident.clear();
+            m_tiles->staged.clear();
+            m_tiles->requested.reset();
+            m_tiles->active.reset();
+            m_tiles->cookedSource.reset();
+            m_tiles->cookedDescriptions.clear();
+            m_tiles->usedCookedTileManifest = false;
+            m_tiles->lastError.clear();
+            m_tiles->preparationError.clear();
+            m_tiles->uploadFrame = 0;
+            m_tiles->frameUploads = 0;
+            m_tiles->descriptions.clear();
+            m_tiles->demand.clear();
+            m_tiles->device = nullptr;
+            m_tiles->textureResolver = {};
             m_tiles->materialCandidate.reset();
             m_terrainMaterial->clear();
             releaseRenderMesh();
@@ -134,7 +144,9 @@ namespace workphone
         void ClawTerrain::_getObject( void **ppObject ) const
         {
             if( ppObject )
+            {
                 *ppObject = m_terrain;
+            }
         }
 
         SmartPtr<ITexture> ClawTerrain::getHeightMap() const
@@ -149,10 +161,17 @@ namespace workphone
 
         void ClawTerrain::setTextureLayer( s32 layer, const String &textureName )
         {
-            if(layer<0||layer>=4)return;
-            auto data=*getTerrainSnapshot();data.layers[layer].albedo=textureName;
+            if( layer < 0 || layer >= 4 )
+            {
+                return;
+            }
+            auto data = *getTerrainSnapshot();
+            data.layers[layer].albedo = textureName;
             String error;
-            if(!applyTerrainData(data,error))WP_LOG_WARNING("Terrain texture layer: "+error);
+            if( !applyTerrainData( data, error ) )
+            {
+                WP_LOG_WARNING( "Terrain texture layer: " + error );
+            }
         }
 
         Array<SmartPtr<ITexture>> ClawTerrain::getTextures() const
@@ -162,9 +181,12 @@ namespace workphone
 
         void ClawTerrain::setTextures( const Array<SmartPtr<ITexture>> &textures )
         {
-            if(textures.size()>32)return;
+            if( textures.size() > 32 )
+            {
+                return;
+            }
             m_textures = textures;
-            m_tiles->refreshMaterial=true;
+            m_tiles->refreshMaterial = true;
             m_tiles->materialCandidate.reset();
         }
 
@@ -175,11 +197,16 @@ namespace workphone
 
         void ClawTerrain::setTexture( u32 index, SmartPtr<ITexture> texture )
         {
-            if(index>=32)return;
+            if( index >= 32 )
+            {
+                return;
+            }
             if( index >= m_textures.size() )
+            {
                 m_textures.resize( index + 1 );
+            }
             m_textures[index] = texture;
-            m_tiles->refreshMaterial=true;
+            m_tiles->refreshMaterial = true;
             m_tiles->materialCandidate.reset();
         }
 
@@ -225,7 +252,7 @@ namespace workphone
 
         void ClawTerrain::updateMaterial()
         {
-            m_tiles->refreshMaterial=true;
+            m_tiles->refreshMaterial = true;
             m_tiles->materialCandidate.reset();
             Terrain::updateMaterial();
         }
@@ -234,30 +261,40 @@ namespace workphone
         {
             const auto snapshot = getActiveTerrainSnapshot();
             if( !snapshot )
+            {
                 return nullptr;
+            }
             if( snapshot != m_renderSnapshot )
+            {
                 rebuildRenderMesh( snapshot );
+            }
             return m_renderMesh;
         }
 
         void ClawTerrain::rebuildRenderMesh( const TerrainSnapshot &snapshot ) const
         {
             if( !snapshot )
+            {
                 return;
+            }
 
             try
             {
                 TerrainMeshData meshData;
                 String error;
                 if( !buildTerrainMeshData( *snapshot, meshData, error ) )
+                {
                     return;
+                }
 
                 // An all-hole generation has no reference geometry. It is a
                 // complete result and must retire any previous solid surface.
                 if( meshData.positions.empty() || meshData.indices.empty() )
                 {
                     if( getActiveTerrainSnapshot() != snapshot )
+                    {
                         return;
+                    }
                     releaseRenderMesh();
                     m_renderSnapshot = snapshot;
                     return;
@@ -268,7 +305,9 @@ namespace workphone
                 if( meshData.positions.size() >
                         std::numeric_limits<u32>::max() / sizeof( wp_graphics_mesh_vertex_pntc ) ||
                     meshData.indices.size() > std::numeric_limits<u32>::max() / sizeof( u32 ) )
+                {
                     return;
+                }
 
                 Array<wp_graphics_mesh_vertex_pntc> vertices( meshData.positions.size() );
                 for( size_t i = 0; i < vertices.size(); ++i )
@@ -295,14 +334,18 @@ namespace workphone
                                                        static_cast<u32>( meshData.indices.size() ) ) ||
                     wp_graphics_mesh_add_submesh( candidate.get(), 0,
                                                   static_cast<u32>( meshData.indices.size() ), 0 ) < 0 )
+                {
                     return;
+                }
                 wp_graphics_mesh_set_primitive_type( candidate.get(),
                                                      WORKPHONE_PRIMITIVE_TRIANGLE_LIST );
 
                 // The source can change while CPU geometry is being prepared. Retry
                 // next draw instead of replacing the current mesh with stale work.
                 if( getActiveTerrainSnapshot() != snapshot )
+                {
                     return;
+                }
                 releaseRenderMesh();
                 m_renderMesh = candidate.release();
                 m_renderSnapshot = snapshot;

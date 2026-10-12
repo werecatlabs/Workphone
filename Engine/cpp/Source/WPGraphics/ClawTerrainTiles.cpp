@@ -17,13 +17,17 @@ namespace workphone::render
         {
             auto result = std::make_shared<ClawTerrainTileMesh>();
             if( data.indices.empty() )
+            {
                 return result;  // A completely excavated tile is valid.
+            }
             result->bytes = data.positions.size() * sizeof( wp_graphics_mesh_vertex_pntc ) +
                             data.indices.size() * sizeof( u32 );
-            result->gpuBudget = WorldStreamingScheduler::shared()->reserve(
-                StreamMemoryClass::Gpu, result->bytes, error );
+            result->gpuBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::Gpu,
+                                                                            result->bytes, error );
             if( !result->gpuBudget )
+            {
                 return {};
+            }
             Array<wp_graphics_mesh_vertex_pntc> vertices( data.positions.size() );
             for( size_t i = 0; i < vertices.size(); ++i )
             {
@@ -74,10 +78,12 @@ namespace workphone::render
     {
         auto &p = *m_tiles;
         error.clear();
+
         struct RecordError
         {
             String &destination;
             const String &source;
+
             ~RecordError() noexcept
             {
                 try
@@ -89,6 +95,7 @@ namespace workphone::render
                 }
             }
         } recordError{ p.preparationError, error };
+
         auto snapshot = getTerrainSnapshot();
         auto *native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
         if( !snapshot || !native || views.empty() || views.size() > 16 )
@@ -119,11 +126,14 @@ namespace workphone::render
                     p.cookedDescriptions.clear();
                     p.usedCookedTileManifest = false;
                 }
-                auto sourceBudget = snapshot == p.active ? p.activeSourceBudget :
-                    WorldStreamingScheduler::shared()->reserve(
-                        StreamMemoryClass::SourceCpu, terrainSourceBytes( *snapshot ), error );
+                auto sourceBudget = snapshot == p.active ? p.activeSourceBudget
+                                                         : WorldStreamingScheduler::shared()->reserve(
+                                                               StreamMemoryClass::SourceCpu,
+                                                               terrainSourceBytes( *snapshot ), error );
                 if( !sourceBudget )
+                {
                     return false;
+                }
                 Array<TerrainTileInfo> descriptions;
                 if( snapshot == p.cookedSource )
                 {
@@ -133,7 +143,9 @@ namespace workphone::render
                 else
                 {
                     if( !describeTerrainTiles( *snapshot, descriptions, error ) )
+                    {
                         return false;
+                    }
                 }
                 p.descriptions = std::move( descriptions );
                 p.requested = snapshot;
@@ -169,11 +181,15 @@ namespace workphone::render
                                                                p.textureResolver, getTexture( 0 ) );
                     if( !candidate ||
                         !m_terrainMaterial->publish( renderer, std::move( candidate ), error ) )
+                    {
                         return false;
+                    }
                     p.refreshMaterial = false;
                 }
                 if( hasPendingTerrainPublication() )
+                {
                     return publishPendingTerrain( snapshot, {}, error );
+                }
                 return true;
             }
             if( deviceChanged || canonicalDemand != p.demand )
@@ -183,23 +199,33 @@ namespace workphone::render
                 ClawTerrainTileState::Meshes previousStaged;
                 previousStaged.swap( p.staged );
                 if( deviceChanged )
+                {
                     p.materialCandidate.reset();
+                }
                 Array<TerrainTileKey> missing;
                 for( auto key : demand )
                 {
                     const auto staged = previousStaged.find( p.key( key ) );
                     const auto existing = p.resident.find( p.key( key ) );
                     if( !deviceChanged && staged != previousStaged.end() )
+                    {
                         p.staged.emplace( staged->first, staged->second );
+                    }
                     else if( !deviceChanged && p.active == snapshot && existing != p.resident.end() )
+                    {
                         p.staged.emplace( existing->first, existing->second );
+                    }
                     else if( missing.size() < 256 )
+                    {
                         missing.push_back( key );
+                    }
                 }
                 p.demand = std::move( canonicalDemand );
                 p.device = device;
                 if( !p.stream.request( snapshot, p.descriptions, missing, error ) )
+                {
                     return false;
+                }
             }
             // Small assets remain immediately usable by tools and existing render
             // callers. Large assets are generated only by the bounded worker.
@@ -216,9 +242,13 @@ namespace workphone::render
                 {
                     p.stream.cancel();
                     auto scheduler = WorldStreamingScheduler::shared();
-                    immediateWork = scheduler->reserve( StreamMemoryClass::WorkingCpu, 1ull << 20, error );
+                    immediateWork =
+                        scheduler->reserve( StreamMemoryClass::WorkingCpu, 1ull << 20, error );
                     if( immediateWork )
-                        immediateResult = scheduler->reserve( StreamMemoryClass::ResultCpu, 1ull << 20, error );
+                    {
+                        immediateResult =
+                            scheduler->reserve( StreamMemoryClass::ResultCpu, 1ull << 20, error );
+                    }
                     if( !immediateWork || !immediateResult )
                     {
                         p.demand.clear();
@@ -229,15 +259,23 @@ namespace workphone::render
                     auto mesh = std::make_shared<TerrainMeshData>();
                     if( buildTerrainTile( *snapshot, p.descriptions[result.key.tile], result.key.lod,
                                           *mesh, result.error ) )
+                    {
                         result.mesh = std::move( mesh );
+                    }
                 }
                 else if( !p.stream.take( result ) )
+                {
                     break;
+                }
                 if( result.source != snapshot ||
                     std::find( p.demand.begin(), p.demand.end(), result.key ) == p.demand.end() )
+                {
                     continue;
+                }
                 if( p.staged.count( p.key( result.key ) ) )
+                {
                     continue;
+                }
                 if( !result.mesh )
                 {
                     p.lastError = result.error;
@@ -247,9 +285,11 @@ namespace workphone::render
                     p.demand.clear();
                     return false;
                 }
-                const auto bytes = result.mesh->indices.empty() ? 0 :
-                    result.mesh->positions.size() * sizeof( wp_graphics_mesh_vertex_pntc ) +
-                    result.mesh->indices.size() * sizeof( u32 );
+                const auto bytes =
+                    result.mesh->indices.empty()
+                        ? 0
+                        : result.mesh->positions.size() * sizeof( wp_graphics_mesh_vertex_pntc ) +
+                              result.mesh->indices.size() * sizeof( u32 );
                 if( bytes > p.maximumBytes - p.bytes( p.staged ) )
                 {
                     p.lastError =
@@ -280,12 +320,18 @@ namespace workphone::render
             {
                 Array<TerrainTileKey> missing;
                 for( auto key : demand )
+                {
                     if( !p.staged.count( p.key( key ) ) && missing.size() < 256 )
+                    {
                         missing.push_back( key );
+                    }
+                }
                 // Finish one bounded request window before queuing the next.
                 p.stream.cancel();
                 if( !p.stream.request( snapshot, p.descriptions, missing, error ) )
+                {
                     return false;
+                }
             }
             if( p.staged.size() == p.demand.size() && getTerrainSnapshot() == snapshot )
             {
@@ -294,11 +340,15 @@ namespace workphone::render
                 if( p.refreshMaterial || m_terrainMaterial->snapshot() != snapshot )
                 {
                     if( !p.materialCandidate )
+                    {
                         p.materialCandidate = m_terrainMaterial->stage(
                             renderer, snapshot, error, p.textureResolver, getTexture( 0 ) );
+                    }
                     if( !p.materialCandidate ||
                         !m_terrainMaterial->validateCandidate( renderer, p.materialCandidate, error ) )
+                    {
                         return false;
+                    }
                 }
                 const auto retiredSourceBudget = p.activeSourceBudget;
                 const auto retiredSource = p.active;
@@ -306,17 +356,23 @@ namespace workphone::render
                         snapshot,
                         [&] {
                             if( p.materialCandidate )
+                            {
                                 m_terrainMaterial->swapPrevalidated( p.materialCandidate );
+                            }
                             p.resident.swap( p.staged );
                             p.active = snapshot;
                             p.activeSourceBudget = p.requestedSourceBudget;
                             p.refreshMaterial = false;
                         },
                         error ) )
+                {
                     return false;
+                }
                 // Retire buffers after leaving source/physics publication locks.
                 if( retiredSource != snapshot )
+                {
                     releaseRenderMesh();
+                }
                 p.staged.clear();
                 p.materialCandidate.reset();
             }
@@ -336,22 +392,30 @@ namespace workphone::render
     {
         Array<wp_graphics_mesh *> result;
         for( const auto &entry : m_tiles->resident )
+        {
             if( entry.second->mesh )
+            {
                 result.push_back( entry.second->mesh );
+            }
+        }
         return result;
     }
+
     TerrainSnapshot ClawTerrain::getRenderedTerrainSnapshot() const
     {
         return m_tiles->active;
     }
+
     String ClawTerrain::getTerrainResidencyError() const
     {
         return m_tiles->preparationError;
     }
+
     ClawTerrainMaterial &ClawTerrain::terrainMaterial()
     {
         return *m_terrainMaterial;
     }
+
     bool ClawTerrain::applyCookedTerrain( const TerrainData &data,
                                           ClawTerrainMaterial::TextureResolver resolver, String &error )
     {
@@ -361,7 +425,9 @@ namespace workphone::render
             return false;
         }
         if( !applyTerrainData( data, error ) )
+        {
             return false;
+        }
         m_tiles->textureResolver = std::move( resolver );
         m_tiles->cookedSource.reset();
         m_tiles->cookedDescriptions.clear();
@@ -372,6 +438,7 @@ namespace workphone::render
         m_tiles->refreshMaterial = true;
         return true;
     }
+
     bool ClawTerrain::applyCookedTerrain( std::shared_ptr<const CookedTerrainCandidate> candidate,
                                           String &error )
     {
@@ -386,7 +453,9 @@ namespace workphone::render
             // owns its cooked closure; CPU decode scratch is released with candidate.
             auto descriptions = candidate->tiles;
             if( !applyCookedTerrain( candidate->terrain, candidate->resolver, error ) )
+            {
                 return false;
+            }
             m_tiles->cookedSource = getTerrainSnapshot();
             m_tiles->cookedDescriptions = std::move( descriptions );
             return true;
@@ -397,6 +466,7 @@ namespace workphone::render
             return false;
         }
     }
+
     ClawTerrainResidency ClawTerrain::getTerrainResidency() const
     {
         const auto &p = *m_tiles;

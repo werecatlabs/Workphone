@@ -1,6 +1,7 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include "WPGraphics/ClawLightmap.hpp"
 #include <Workphone/Workphone.hpp>
+
 // #include <CImg.hpp>
 
 namespace workphone
@@ -63,7 +64,9 @@ namespace workphone
         }
 
         if( m_searchPattern.empty() )
+        {
             buildSearchPattern();
+        }
 
         calculateLightMap();
     }
@@ -401,7 +404,9 @@ namespace workphone
             for( j = -size; j <= size; ++j )
             {
                 if( i == 0 && j == 0 )
+                {
                     continue;
+                }
 
                 m_searchPattern.push_back( std::make_pair( i, j ) );
             }
@@ -414,9 +419,13 @@ namespace workphone
     {
         int pixel = static_cast<int>( textureCoord * m_texSize );
         if( pixel < 0 )
+        {
             pixel = 0;
+        }
         if( pixel >= m_texSize )
+        {
             pixel = m_texSize - 1;
+        }
 
         return pixel;
     }

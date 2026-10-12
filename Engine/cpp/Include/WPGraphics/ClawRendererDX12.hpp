@@ -68,7 +68,10 @@ namespace workphone
             // ClawHammerSystem::configure / switchRenderer keep their casts consistent;
             // the UI renderers bail early on a null renderer.  A future DX12 wp_renderer
             // bridge would replace this with a real pointer.
-            wp_renderer *getNativeRenderer() const { return nullptr; }
+            wp_renderer *getNativeRenderer() const
+            {
+                return nullptr;
+            }
 
             // ── IRenderer3 ──────────────────────────────────────────────────
             void setCamera( SmartPtr<IGraphicsCamera> camera ) override;

@@ -156,18 +156,26 @@ namespace workphone::render
     u32 ClawUtil::fromCCullMode( wp_cull_mode mode )
     {
         if( mode == WORKPHONE_CULL_MODE_NONE )
+        {
             return 1u;
+        }
         if( mode == WORKPHONE_CULL_MODE_FRONT )
+        {
             return 3u;
+        }
         return 2u;
     }
 
     wp_cull_mode ClawUtil::toCCullMode( u32 mode )
     {
         if( mode == 1u )
+        {
             return WORKPHONE_CULL_MODE_NONE;
+        }
         if( mode == 3u )
+        {
             return WORKPHONE_CULL_MODE_FRONT;
+        }
         return WORKPHONE_CULL_MODE_BACK;
     }
 
@@ -178,11 +186,11 @@ namespace workphone::render
         case WORKPHONE_BLEND_MODE_NONE:
             return 0u;
         case WORKPHONE_BLEND_MODE_ADDITIVE:
-              return 3u;
+            return 3u;
         case WORKPHONE_BLEND_MODE_MULTIPLY:
-              return 4u;
-          case WORKPHONE_BLEND_MODE_PREMULTIPLIED:
-              return 2u;
+            return 4u;
+        case WORKPHONE_BLEND_MODE_PREMULTIPLIED:
+            return 2u;
         default:
             return 1u;
         }
@@ -195,11 +203,11 @@ namespace workphone::render
         case 0:
             return WORKPHONE_BLEND_MODE_NONE;
         case 2:
-              return WORKPHONE_BLEND_MODE_PREMULTIPLIED;
-          case 3:
-              return WORKPHONE_BLEND_MODE_ADDITIVE;
+            return WORKPHONE_BLEND_MODE_PREMULTIPLIED;
+        case 3:
+            return WORKPHONE_BLEND_MODE_ADDITIVE;
         case 4:
-              return WORKPHONE_BLEND_MODE_MULTIPLY;
+            return WORKPHONE_BLEND_MODE_MULTIPLY;
         default:
             return WORKPHONE_BLEND_MODE_ALPHA;
         }

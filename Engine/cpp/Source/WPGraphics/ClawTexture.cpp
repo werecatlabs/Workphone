@@ -44,12 +44,14 @@ namespace
 
     std::mutex g_textureMutex;
     std::unordered_map<const workphone::render::ClawTexture *, ClawTextureData> g_textureData;
+
     struct FreeImageLifetime
     {
         FreeImageLifetime()
         {
             FreeImage_Initialise( FALSE );
         }
+
         ~FreeImageLifetime()
         {
             FreeImage_DeInitialise();
@@ -122,18 +124,23 @@ namespace
         std::vector<wp_texture_mip_dx11> nativeLevels;
         nativeLevels.reserve( levels.size() );
         for( const auto &level : levels )
+        {
             nativeLevels.push_back( { level.bgra.data(), level.width, level.height } );
+        }
         return wp_renderer_dx11_create_texture_mips_native( renderer, nativeLevels.data(),
                                                             static_cast<wp_u32>( nativeLevels.size() ) );
     }
 
     void *uploadDds( wp_renderer_dx11 *renderer, const std::vector<workphone::u8> &bytes )
     {
-        const auto image=workphone::dds::inspect(bytes);
+        const auto image = workphone::dds::inspect( bytes );
         std::vector<wp_texture_encoded_mip_dx11> levels;
-        for(const auto &m:image.mips) levels.push_back({bytes.data()+m.offset,m.width,m.height,m.size});
-        return wp_renderer_dx11_create_texture_encoded_mips_native(renderer,levels.data(),
-            static_cast<wp_u32>(levels.size()),image.format);
+        for( const auto &m : image.mips )
+        {
+            levels.push_back( { bytes.data() + m.offset, m.width, m.height, m.size } );
+        }
+        return wp_renderer_dx11_create_texture_encoded_mips_native(
+            renderer, levels.data(), static_cast<wp_u32>( levels.size() ), image.format );
     }
 
     bool decodeTexture( workphone::render::ClawTexture *texture )
@@ -264,7 +271,8 @@ namespace
             std::scoped_lock lock( g_textureMutex );
             auto found = g_textureData.find( texture );
             if( found != g_textureData.end() &&
-                ( !found->second.pixels.empty() || !found->second.cookedLevels.empty() || !found->second.ddsBytes.empty() ) )
+                ( !found->second.pixels.empty() || !found->second.cookedLevels.empty() ||
+                  !found->second.ddsBytes.empty() ) )
             {
                 return true;
             }
@@ -284,8 +292,9 @@ namespace
         auto renderer = graphicsSystem
                             ? dynamic_pointer_cast<ClawRendererDX11>( graphicsSystem->getRenderer() )
                             : nullptr;
-        auto dx11 = explicitRenderer ? explicitRenderer :
-            (renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr);
+        auto dx11 = explicitRenderer
+                        ? explicitRenderer
+                        : ( renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr );
         auto device = dx11 ? wp_renderer_dx11_get_device( dx11 ) : nullptr;
 
         std::scoped_lock lock( g_textureMutex );
@@ -311,9 +320,13 @@ namespace
         {
             void *candidate = nullptr;
             if( !data.ddsBytes.empty() )
-                candidate=uploadDds(dx11,data.ddsBytes);
+            {
+                candidate = uploadDds( dx11, data.ddsBytes );
+            }
             else if( !data.cookedLevels.empty() )
+            {
                 candidate = uploadMipLevels( dx11, data.cookedLevels );
+            }
             else
             {
                 const auto levels = generateTextureMips( data.pixels.data(), data.pixelSize.x,
@@ -400,20 +413,25 @@ namespace workphone
                     // Authored properties outlive decoded pixels and GPU residency.
                     const auto settings = found->second.mipSettings;
                     auto cookedLevels = std::move( found->second.cookedLevels );
-                    auto ddsBytes=std::move(found->second.ddsBytes);
-                    auto profile=std::move(found->second.cookedProfile);
-                    const auto dimensions=found->second.pixelSize;
+                    auto ddsBytes = std::move( found->second.ddsBytes );
+                    auto profile = std::move( found->second.cookedProfile );
+                    const auto dimensions = found->second.pixelSize;
                     found->second = ClawTextureData{};
                     found->second.mipSettings = settings;
                     found->second.cookedLevels = std::move( cookedLevels );
-                    found->second.ddsBytes=std::move(ddsBytes);
-                    found->second.cookedProfile=std::move(profile);
-                    if(!found->second.ddsBytes.empty()) found->second.pixelSize=dimensions;
+                    found->second.ddsBytes = std::move( ddsBytes );
+                    found->second.cookedProfile = std::move( profile );
+                    if( !found->second.ddsBytes.empty() )
+                    {
+                        found->second.pixelSize = dimensions;
+                    }
                     if( !found->second.cookedLevels.empty() )
+                    {
                         found->second.pixelSize = {
                             static_cast<s32>( found->second.cookedLevels.front().width ),
                             static_cast<s32>( found->second.cookedLevels.front().height )
                         };
+                    }
                 }
             }
 
@@ -454,34 +472,80 @@ namespace workphone
         std::shared_ptr<const TextureMipLevel> ClawTexture::getCpuBaseMip( String &error )
         {
             error.clear();
-            if(getRenderTarget()||(getUsageFlags()&static_cast<u32>(TextureUsage::TU_RENDERTARGET)))
-            {error="Foliage baking cannot read render-target textures; retained CPU pixels are required.";return {};}
+            if( getRenderTarget() ||
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                error =
+                    "Foliage baking cannot read render-target textures; retained CPU pixels are "
+                    "required.";
+                return {};
+            }
             try
             {
-                if(!ensureTextureDecoded(this))
-                {error="Foliage baking could not decode texture source: "+getFilePath();return {};}
-                std::scoped_lock lock(g_textureMutex);
-                const auto found=g_textureData.find(this);
-                if(found==g_textureData.end()){error="Texture has no retained CPU data.";return {};}
-                const auto &data=found->second;
-                if(!data.ddsBytes.empty())
-                {error="Foliage baking requires decoded BGRA source pixels; compressed DDS-only textures are unavailable.";return {};}
-                const auto width=data.cookedLevels.empty()?u32(data.pixelSize.x):data.cookedLevels.front().width;
-                const auto height=data.cookedLevels.empty()?u32(data.pixelSize.y):data.cookedLevels.front().height;
-                const auto bytes=u64(width)*height*4;
-                if(!width||!height||bytes>graphicsTextureByteLimit||
-                    (data.cookedLevels.empty()?data.pixels.size():data.cookedLevels.front().bgra.size())!=bytes)
-                {error="Retained texture base mip has invalid dimensions or byte count.";return {};}
-                struct Snapshot {StreamBudget budget;TextureMipLevel mip;};
-                auto budget=WorldStreamingScheduler::shared()->reserve(StreamMemoryClass::SourceCpu,bytes+sizeof(Snapshot)+256,error);
-                if(!budget)return {};
-                auto snapshot=std::make_shared<Snapshot>();snapshot->budget=std::move(budget);
-                snapshot->mip.width=width;snapshot->mip.height=height;
-                if(data.cookedLevels.empty())snapshot->mip.bgra.assign(data.pixels.begin(),data.pixels.end());
-                else snapshot->mip.bgra=data.cookedLevels.front().bgra;
-                return std::shared_ptr<const TextureMipLevel>(snapshot,&snapshot->mip);
+                if( !ensureTextureDecoded( this ) )
+                {
+                    error = "Foliage baking could not decode texture source: " + getFilePath();
+                    return {};
+                }
+                std::scoped_lock lock( g_textureMutex );
+                const auto found = g_textureData.find( this );
+                if( found == g_textureData.end() )
+                {
+                    error = "Texture has no retained CPU data.";
+                    return {};
+                }
+                const auto &data = found->second;
+                if( !data.ddsBytes.empty() )
+                {
+                    error =
+                        "Foliage baking requires decoded BGRA source pixels; compressed DDS-only "
+                        "textures are unavailable.";
+                    return {};
+                }
+                const auto width = data.cookedLevels.empty() ? u32( data.pixelSize.x )
+                                                             : data.cookedLevels.front().width;
+                const auto height = data.cookedLevels.empty() ? u32( data.pixelSize.y )
+                                                              : data.cookedLevels.front().height;
+                const auto bytes = u64( width ) * height * 4;
+                if( !width || !height || bytes > graphicsTextureByteLimit ||
+                    ( data.cookedLevels.empty() ? data.pixels.size()
+                                                : data.cookedLevels.front().bgra.size() ) != bytes )
+                {
+                    error = "Retained texture base mip has invalid dimensions or byte count.";
+                    return {};
+                }
+
+                struct Snapshot
+                {
+                    StreamBudget budget;
+                    TextureMipLevel mip;
+                };
+
+                auto budget = WorldStreamingScheduler::shared()->reserve(
+                    StreamMemoryClass::SourceCpu, bytes + sizeof( Snapshot ) + 256, error );
+                if( !budget )
+                {
+                    return {};
+                }
+                auto snapshot = std::make_shared<Snapshot>();
+                snapshot->budget = std::move( budget );
+                snapshot->mip.width = width;
+                snapshot->mip.height = height;
+                if( data.cookedLevels.empty() )
+                {
+                    snapshot->mip.bgra.assign( data.pixels.begin(), data.pixels.end() );
+                }
+                else
+                {
+                    snapshot->mip.bgra = data.cookedLevels.front().bgra;
+                }
+                return std::shared_ptr<const TextureMipLevel>( snapshot, &snapshot->mip );
             }
-            catch(const std::exception &exception){error=exception.what();return {};}
+            catch( const std::exception &exception )
+            {
+                error = exception.what();
+                return {};
+            }
         }
 
         bool ClawTexture::uploadCookedMips( const Array<TextureMipLevel> &levels,
@@ -497,7 +561,9 @@ namespace workphone
                 return false;
             }
             if( !validateCookedMips( levels, settings, error ) )
+            {
                 return false;
+            }
             try
             {
                 auto retainedLevels = levels;
@@ -540,35 +606,62 @@ namespace workphone
         }
 
         bool uploadCookedDds( ClawTexture *texture, const CookedTextureData &input,
-                               wp_renderer_dx11 *renderer, String &error )
+                              wp_renderer_dx11 *renderer, String &error )
         {
             error.clear();
-            auto device=renderer?wp_renderer_dx11_get_device(renderer):nullptr;
-            if(!texture || !device || texture->getRenderTarget() ||
-               (texture->getUsageFlags() & static_cast<u32>(TextureUsage::TU_RENDERTARGET)))
-            { error="Native DDS upload requires a sampled texture and active DX11 device"; return false; }
-            if(input.ddsBytes.empty()){error="Native DDS payload is missing";return false;}
-            if(!validateCookedTextureData(input,error)) return false;
+            auto device = renderer ? wp_renderer_dx11_get_device( renderer ) : nullptr;
+            if( !texture || !device || texture->getRenderTarget() ||
+                ( texture->getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                error = "Native DDS upload requires a sampled texture and active DX11 device";
+                return false;
+            }
+            if( input.ddsBytes.empty() )
+            {
+                error = "Native DDS payload is missing";
+                return false;
+            }
+            if( !validateCookedTextureData( input, error ) )
+            {
+                return false;
+            }
             try
             {
-                auto retained=input.ddsBytes;
-                auto profile=input.target;
-                const auto image=dds::inspect(retained);
-                std::scoped_lock lock(g_textureMutex);
-                auto &data=g_textureData[texture];
-                auto view=uploadDds(renderer,retained);
-                if(!view){error="DX11 rejected the DDS format or mip payload; previous texture retained";return false;}
-                destroyTextureView(data);
-                data.ddsBytes.swap(retained);data.cookedLevels.clear();data.pixels.clear();data.sourcePath.clear();
-                data.cookedProfile.swap(profile);
-                data.mipSettings=input.mipSettings;data.decodeAttempted=true;
-                data.pixelSize={static_cast<s32>(image.mips[0].width),static_cast<s32>(image.mips[0].height)};
-                data.textureView=view;data.renderer=renderer;data.device=device;
-                data.attemptedRenderer=renderer;data.attemptedDevice=device;data.uploadPending=false;
-                texture->setSize(data.pixelSize);
+                auto retained = input.ddsBytes;
+                auto profile = input.target;
+                const auto image = dds::inspect( retained );
+                std::scoped_lock lock( g_textureMutex );
+                auto &data = g_textureData[texture];
+                auto view = uploadDds( renderer, retained );
+                if( !view )
+                {
+                    error = "DX11 rejected the DDS format or mip payload; previous texture retained";
+                    return false;
+                }
+                destroyTextureView( data );
+                data.ddsBytes.swap( retained );
+                data.cookedLevels.clear();
+                data.pixels.clear();
+                data.sourcePath.clear();
+                data.cookedProfile.swap( profile );
+                data.mipSettings = input.mipSettings;
+                data.decodeAttempted = true;
+                data.pixelSize = { static_cast<s32>( image.mips[0].width ),
+                                   static_cast<s32>( image.mips[0].height ) };
+                data.textureView = view;
+                data.renderer = renderer;
+                data.device = device;
+                data.attemptedRenderer = renderer;
+                data.attemptedDevice = device;
+                data.uploadPending = false;
+                texture->setSize( data.pixelSize );
             }
-            catch(const std::exception &e){error=e.what();return false;}
-            texture->setLoadingState(LoadingState::Loaded);
+            catch( const std::exception &e )
+            {
+                error = e.what();
+                return false;
+            }
+            texture->setLoadingState( LoadingState::Loaded );
             return true;
         }
 
@@ -628,10 +721,16 @@ namespace workphone
 
         void *ClawTexture::getNativeTextureView( wp_renderer_dx11 *renderer ) const
         {
-            if(!renderer || getRenderTarget() ||
-                (getUsageFlags() & static_cast<u32>(TextureUsage::TU_RENDERTARGET)))return nullptr;
-            if(!ensureTextureDecoded(const_cast<ClawTexture *>(this)))return nullptr;
-            return ensureTextureView(this,renderer);
+            if( !renderer || getRenderTarget() ||
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                return nullptr;
+            }
+            if( !ensureTextureDecoded( const_cast<ClawTexture *>( this ) ) )
+            {
+                return nullptr;
+            }
+            return ensureTextureView( this, renderer );
         }
 
         size_t ClawTexture::getTextureHandle() const
@@ -668,19 +767,27 @@ namespace workphone
             properties->setProperty( "mipmapFilter", static_cast<s32>( settings.filter ) );
             properties->setProperty( "mipmapAtlasColumns", settings.atlasColumns );
             properties->setProperty( "mipmapAlphaCutoff", settings.alphaCutoff );
-            if(found!=g_textureData.end() && !found->second.ddsBytes.empty())
+            if( found != g_textureData.end() && !found->second.ddsBytes.empty() )
             {
-                const auto image=dds::inspect(found->second.ddsBytes);
-                properties->setProperty("cookedContainer","DDS DX10");
-                properties->setProperty("cookedProfile",found->second.cookedProfile);
-                properties->setProperty("cookedDxgiFormat",image.format);
-                properties->setProperty("cookedMipCount",static_cast<u32>(image.mips.size()));
-                properties->setProperty("cookedEncodedBytes",static_cast<u32>(found->second.ddsBytes.size()));
-                u32 resident=0;for(const auto &m:image.mips)resident+=m.size;
-                properties->setProperty("cookedResidentBytes",resident);
-                for(const char *name : {"cookedContainer","cookedProfile","cookedDxgiFormat","cookedMipCount",
-                                       "cookedEncodedBytes","cookedResidentBytes"})
-                    properties->getPropertyObject(name).setReadOnly(true);
+                const auto image = dds::inspect( found->second.ddsBytes );
+                properties->setProperty( "cookedContainer", "DDS DX10" );
+                properties->setProperty( "cookedProfile", found->second.cookedProfile );
+                properties->setProperty( "cookedDxgiFormat", image.format );
+                properties->setProperty( "cookedMipCount", static_cast<u32>( image.mips.size() ) );
+                properties->setProperty( "cookedEncodedBytes",
+                                         static_cast<u32>( found->second.ddsBytes.size() ) );
+                u32 resident = 0;
+                for( const auto &m : image.mips )
+                {
+                    resident += m.size;
+                }
+                properties->setProperty( "cookedResidentBytes", resident );
+                for( const char *name :
+                     { "cookedContainer", "cookedProfile", "cookedDxgiFormat", "cookedMipCount",
+                       "cookedEncodedBytes", "cookedResidentBytes" } )
+                {
+                    properties->getPropertyObject( name ).setReadOnly( true );
+                }
             }
             return properties;
         }
@@ -688,7 +795,9 @@ namespace workphone
         void ClawTexture::setProperties( SmartPtr<Properties> properties )
         {
             if( !properties )
+            {
                 return;
+            }
             Texture::setProperties( properties );
             std::scoped_lock lock( g_textureMutex );
             auto &data = g_textureData[this];
@@ -715,9 +824,11 @@ namespace workphone
                 settings.atlasColumns != data.mipSettings.atlasColumns ||
                 settings.alphaCutoff != data.mipSettings.alphaCutoff )
             {
-                if(!data.ddsBytes.empty())
+                if( !data.ddsBytes.empty() )
                 {
-                    WP_LOG_WARNING("Native DDS mip settings require descriptor reimport; retaining cooked settings.");
+                    WP_LOG_WARNING(
+                        "Native DDS mip settings require descriptor reimport; retaining cooked "
+                        "settings." );
                     return;
                 }
                 // An explicit authoring edit opts back into legacy mip generation.

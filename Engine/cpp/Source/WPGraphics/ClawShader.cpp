@@ -89,7 +89,9 @@ namespace workphone
                                         nullptr, toCText( "main" ) ) )
         {
             if( !m_shader )
+            {
                 WP_LOG_ERROR( "ClawShader: failed to create native C shader." );
+            }
         }
 
         ClawShader::~ClawShader()
@@ -114,7 +116,9 @@ namespace workphone
                 Shader::setStage( static_cast<Stage>( wp_shader_get_type( m_shader ) ) );
             }
             else
+            {
                 Shader::setStage( stage );
+            }
         }
 
         IShader::Language ClawShader::getLanguage() const
@@ -131,7 +135,9 @@ namespace workphone
                 Shader::setLanguage( fromCLanguage( wp_shader_get_language( m_shader ) ) );
             }
             else
+            {
                 Shader::setLanguage( language );
+            }
         }
 
         String ClawShader::getSource() const
@@ -153,7 +159,9 @@ namespace workphone
                 m_binary.clear();
             }
             else
+            {
                 Shader::setSource( source );
+            }
         }
 
         String ClawShader::getEntryPoint() const
@@ -170,7 +178,9 @@ namespace workphone
                 Shader::setEntryPoint( String( fromCText( wp_shader_get_entry_point( m_shader ) ) ) );
             }
             else
+            {
                 Shader::setEntryPoint( entryPoint );
+            }
         }
 
         String ClawShader::getProfile() const
@@ -187,22 +197,28 @@ namespace workphone
                 Shader::setProfile( String( fromCText( wp_shader_get_profile( m_shader ) ) ) );
             }
             else
+            {
                 Shader::setProfile( profile );
+            }
         }
 
         Array<IShader::Define> ClawShader::getDefines() const
         {
             Array<Define> result;
             if( !m_shader )
+            {
                 return Shader::getDefines();
+            }
             const auto count = wp_shader_get_define_count( m_shader );
             result.reserve( static_cast<size_t>( count ) );
             for( wp_s32 i = 0; i < count; ++i )
             {
                 const auto *entry = wp_shader_get_define_at( m_shader, i );
                 if( entry )
+                {
                     result.push_back( Define{ String( fromCText( entry->name ) ),
                                               String( fromCText( entry->value ) ) } );
+                }
             }
             return result;
         }
@@ -219,7 +235,9 @@ namespace workphone
             {
                 if( !wp_shader_set_define( m_shader, toCText( define.name.c_str() ),
                                            toCText( define.value.c_str() ) ) )
+                {
                     WP_LOG_ERROR( "ClawShader: rejected invalid or excess shader define." );
+                }
             }
             Shader::setDefines( getDefines() );
         }
@@ -229,10 +247,14 @@ namespace workphone
             if( m_shader )
             {
                 if( wp_shader_set_define( m_shader, toCText( name.c_str() ), toCText( value.c_str() ) ) )
+                {
                     Shader::setDefine( name, value );
+                }
             }
             else
+            {
                 Shader::setDefine( name, value );
+            }
         }
 
         void ClawShader::removeDefine( const String &name )
@@ -240,16 +262,22 @@ namespace workphone
             if( m_shader )
             {
                 if( wp_shader_remove_define( m_shader, toCText( name.c_str() ) ) )
+                {
                     Shader::removeDefine( name );
+                }
             }
             else
+            {
                 Shader::removeDefine( name );
+            }
         }
 
         void ClawShader::clearDefines()
         {
             if( m_shader )
+            {
                 wp_shader_clear_defines( m_shader );
+            }
             Shader::clearDefines();
         }
 
@@ -288,7 +316,9 @@ namespace workphone
                 std::memcpy( m_binary.data(), binary, binarySize );
             }
             else if( !m_source.empty() )
+            {
                 m_binary.clear();
+            }
 
             if( !Shader::compile() )
             {
@@ -332,9 +362,13 @@ namespace workphone
                 wp_u32 binarySize = 0u;
                 wp_shader_get_binary( m_shader, &binarySize );
                 if( binarySize > 0u )
+                {
                     wp_shader_set_binary( m_shader, nullptr, 0u );
+                }
                 else
+                {
                     wp_shader_mark_dirty( m_shader );
+                }
             }
         }
 
@@ -376,7 +410,9 @@ namespace workphone
         {
             Shader::clearDiagnostics();
             if( m_shader )
+            {
                 wp_shader_set_last_error( m_shader, nullptr );
+            }
         }
 
         Array<u8> ClawShader::getBinary() const
@@ -385,7 +421,9 @@ namespace workphone
             const void *binary;
             Array<u8> result;
             if( !m_shader )
+            {
                 return Shader::getBinary();
+            }
             binary = wp_shader_get_binary( m_shader, &binarySize );
             if( binary != nullptr && binarySize > 0u )
             {
@@ -400,24 +438,32 @@ namespace workphone
             const auto cLanguage = toCLanguage( language );
             if( !m_shader || binary.empty() || cLanguage == WORKPHONE_SHADER_LANGUAGE_UNKNOWN ||
                 binary.size() > std::numeric_limits<wp_u32>::max() )
+            {
                 return false;
+            }
             wp_shader_set_language( m_shader, cLanguage );
             if( !wp_shader_set_binary( m_shader, binary.data(), static_cast<wp_u32>( binary.size() ) ) )
+            {
                 return false;
+            }
             return Shader::setBinary( binary, language );
         }
 
         bool ClawShader::setSpecializationConstant( const String &name, u32 value )
         {
             if( m_shader && !wp_shader_set_specialization( m_shader, toCText( name.c_str() ), value ) )
+            {
                 return false;
+            }
             return Shader::setSpecializationConstant( name, value );
         }
 
         bool ClawShader::getSpecializationConstant( const String &name, u32 &value ) const
         {
             if( !m_shader )
+            {
                 return Shader::getSpecializationConstant( name, value );
+            }
             const auto count = wp_shader_get_specialization_count( m_shader );
             for( wp_s32 i = 0; i < count; ++i )
             {

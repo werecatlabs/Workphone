@@ -20,12 +20,18 @@ namespace workphone::render
     {
         namespace fs = std::filesystem;
         constexpr char magic[8] = { 'W', 'P', 'T', 'E', 'R', 'R', '0', '1' };
+
         struct TerrainTextureBudget
         {
             StreamBudget gpu, cpu;
+
             TerrainTextureBudget( StreamBudget gpuBytes, StreamBudget cpuBytes ) :
-                gpu( std::move( gpuBytes ) ), cpu( std::move( cpuBytes ) ) {}
+                gpu( std::move( gpuBytes ) ),
+                cpu( std::move( cpuBytes ) )
+            {
+            }
         };
+
         // Base destruction runs in reverse order: ClawTexture retires its GPU view
         // and retained reupload mip cache before the ownership budget is released.
         // Returning a texture through the public resolver therefore retains its own
@@ -34,31 +40,45 @@ namespace workphone::render
         {
         public:
             BudgetedTerrainTexture( StreamBudget gpuBytes, StreamBudget cpuBytes ) :
-                TerrainTextureBudget( std::move( gpuBytes ), std::move( cpuBytes ) ) {}
+                TerrainTextureBudget( std::move( gpuBytes ), std::move( cpuBytes ) )
+            {
+            }
         };
+
         void require( bool condition, const char *message )
         {
             if( !condition )
+            {
                 throw std::runtime_error( message );
+            }
         }
+
         Array<resource::ResourceID> textureIDs( const TerrainData &terrain )
         {
             std::set<resource::ResourceID> unique;
             const auto insert = [&]( const String &name ) {
-                if( name.empty() ) return;
+                if( name.empty() )
+                {
+                    return;
+                }
                 resource::ResourceID id;
                 String error;
                 require( id.set( name, &error ) && !id.isSubResource() &&
-                         id.type() == resource::ResourceTypeID( "texres" ),
+                             id.type() == resource::ResourceTypeID( "texres" ),
                          "Cooked terrain maps require data:// texture resource IDs with type texres" );
                 unique.insert( id );
             };
             for( const auto &layer : terrain.layers )
+            {
                 for( const auto *name : { &layer.albedo, &layer.normal, &layer.orm } )
+                {
                     insert( *name );
+                }
+            }
             insert( terrain.appearance.detailNormal );
             return Array<resource::ResourceID>( unique.begin(), unique.end() );
         }
+
         TerrainData readTerrain( const resource::CompileContext &context )
         {
             require( context.resourceId.type() == resource::ResourceTypeID( "terrain" ) &&
@@ -76,25 +96,33 @@ namespace workphone::render
             TerrainData terrain;
             String error;
             if( !deserializeTerrainData( source, terrain, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             return terrain;
         }
+
         void writeNumber( std::ostream &out, u64 value, size_t size )
         {
             for( size_t i = 0; i < size; ++i )
+            {
                 out.put( static_cast<char>( ( value >> ( i * 8 ) ) & 255 ) );
+            }
         }
+
         void writeString( std::ostream &out, const String &value )
         {
             writeNumber( out, value.size(), 4 );
             out.write( value.data(), static_cast<std::streamsize>( value.size() ) );
         }
+
         void writeFloat( std::ostream &out, f32 value )
         {
             u32 bits = 0;
             std::memcpy( &bits, &value, sizeof( bits ) );
             writeNumber( out, bits, 4 );
         }
+
         void writeTiles( std::ostream &out, const Array<TerrainTileInfo> &tiles )
         {
             writeNumber( out, 1, 4 );
@@ -112,24 +140,33 @@ namespace workphone::render
                 writeNumber( out, tile.last.y, 4 );
                 for( auto value : { tile.minimum.x, tile.minimum.y, tile.minimum.z, tile.maximum.x,
                                     tile.maximum.y, tile.maximum.z } )
+                {
                     writeFloat( out, value );
+                }
                 for( auto value : tile.errors )
+                {
                     writeFloat( out, value );
+                }
                 writeNumber( out, tile.hasHoles ? 1 : 0, 4 );
             }
         }
+
         struct Reader
         {
             const Array<u8> &bytes;
             size_t offset = 0;
+
             u64 number( size_t count )
             {
                 require( count <= bytes.size() - offset, "Truncated cooked terrain payload" );
                 u64 result = 0;
                 for( size_t i = 0; i < count; ++i )
+                {
                     result |= u64( bytes[offset++] ) << ( i * 8 );
+                }
                 return result;
             }
+
             String string( size_t limit )
             {
                 const auto count = number( 4 );
@@ -141,6 +178,7 @@ namespace workphone::render
                 require( value.find( '\0' ) == String::npos, "Embedded NUL in cooked terrain payload" );
                 return value;
             }
+
             f32 floating()
             {
                 const auto bits = u32( number( 4 ) );
@@ -149,6 +187,7 @@ namespace workphone::render
                 return value;
             }
         };
+
         void verifyTiles( Reader &read, const Array<TerrainTileInfo> &tiles )
         {
             require( read.number( 4 ) == 1 && read.number( 4 ) == terrainTileCells &&
@@ -165,14 +204,19 @@ namespace workphone::render
                          "Cooked terrain tile coordinates mismatch source" );
                 for( auto value : { tile.minimum.x, tile.minimum.y, tile.minimum.z, tile.maximum.x,
                                     tile.maximum.y, tile.maximum.z } )
+                {
                     require( read.floating() == value, "Cooked terrain tile bounds mismatch source" );
+                }
                 for( auto value : tile.errors )
+                {
                     require( read.floating() == value,
                              "Cooked terrain LOD error bounds mismatch source" );
+                }
                 require( read.number( 4 ) == ( tile.hasHoles ? 1 : 0 ),
                          "Cooked terrain hole metadata mismatch source" );
             }
         }
+
         void validateTexture( const resource::RuntimeResource &dependency,
                               const resource::ResourceID &id, const String &target, bool packaged,
                               const TerrainData &terrain )
@@ -182,38 +226,51 @@ namespace workphone::render
             require( dependency.header.resourceId == id && dependency.dependencies.empty(),
                      "Cooked terrain texture identity/closure mismatch" );
             if( !decodeCookedTexture( dependency, texture, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             require( texture.target == target && texture.packagedBuild == packaged,
                      "Cooked terrain texture target/build mismatch" );
             if( terrain.appearance.detailNormal == id.str() )
+            {
                 require( texture.mipSettings.filter == TextureMipFilter::None ||
-                         texture.mipSettings.filter == TextureMipFilter::Normal,
+                             texture.mipSettings.filter == TextureMipFilter::Normal,
                          "Terrain detail normal mip chain requires normal filtering" );
+            }
             // No-mip assets remain valid. Generated mip chains must respect map semantics:
             // colour filters decode sRGB; normal and packed ORM channels remain linear.
             for( const auto &layer : terrain.layers )
             {
                 const auto filter = texture.mipSettings.filter;
                 if( layer.albedo == id.str() )
+                {
                     require( filter == TextureMipFilter::None || filter == TextureMipFilter::Colour,
                              "Terrain albedo mip chain requires colour filtering" );
+                }
                 if( layer.normal == id.str() )
+                {
                     require( filter == TextureMipFilter::None || filter == TextureMipFilter::Normal,
                              "Terrain normal mip chain requires normal filtering" );
+                }
                 if( layer.orm == id.str() )
+                {
                     require( filter == TextureMipFilter::None || filter == TextureMipFilter::Data,
                              "Terrain packed ORM mip chain requires linear data filtering" );
+                }
             }
         }
     }  // namespace
+
     String TerrainResourceCompiler::name() const
     {
         return "WPGraphics.TerrainResourceCompiler";
     }
+
     Array<resource::CompilerOutput> TerrainResourceCompiler::outputs() const
     {
         return { { resource::ResourceTypeID( "terrain" ), 3 } };
     }
+
     bool TerrainResourceCompiler::getDependencies( const resource::CompileContext &context,
                                                    resource::DependencySet &dependencies,
                                                    String &error ) const
@@ -236,6 +293,7 @@ namespace workphone::render
             return false;
         }
     }
+
     resource::CompilationStatus TerrainResourceCompiler::compile(
         const resource::CompileContext &context, std::ostream &output, Array<String> &messages ) const
     {
@@ -251,7 +309,9 @@ namespace workphone::render
             Array<TerrainTileInfo> tiles;
             String tileError;
             if( !describeTerrainTiles( terrain, tiles, tileError ) )
+            {
                 throw std::runtime_error( tileError.c_str() );
+            }
             output.write( magic, 8 );
             writeNumber( output, 3, 4 );
             writeNumber( output, context.packagedBuild ? 1 : 0, 4 );
@@ -267,13 +327,17 @@ namespace workphone::render
                 AssetCatalogPath relative;
                 String error;
                 if( !canonicalAssetCatalogPath( context.compiledRoot, pinned->second, relative, error ) )
+                {
                     throw std::runtime_error( error.c_str() );
+                }
                 const auto path =
                     fs::u8path( context.compiledRoot.c_str() ) / fs::u8path( relative.path.c_str() );
                 resource::RuntimeResource texture;
                 if( !resource::CompiledResourceIO::read( path.generic_u8string().c_str(), texture, error,
                                                          graphicsTextureByteLimit + 4096 ) )
+                {
                     throw std::runtime_error( error.c_str() );
+                }
                 validateTexture( texture, id, context.target, context.packagedBuild, terrain );
                 writeString( output, id.str() );
                 writeNumber( output, texture.header.compilerVersion, 8 );
@@ -289,6 +353,7 @@ namespace workphone::render
             return resource::CompilationStatus::Failure;
         }
     }
+
     bool decodeCookedTerrain( const resource::RuntimeResource &resource, CookedTerrainData &output,
                               String &error )
     {
@@ -306,15 +371,15 @@ namespace workphone::render
             const auto tileCompilerVersion = resource::combineHash(
                 resource::combineHash( resource::combineHash( 14695981039346656037ull, 1 ), 2 ),
                 terrainType.value() );
-            require(
-                resource.header.isValid() && !resource.header.resourceId.isSubResource() &&
-                    resource.header.resourceType == terrainType &&
-                    resource.header.resourceId.type() == terrainType &&
-                    ( resource.header.compilerVersion == legacyCompilerVersion ||
-                      resource.header.compilerVersion == tileCompilerVersion ||
-                      resource.header.compilerVersion == currentCompilerVersion ) &&
-                    resource.payload.size() >= 24 && resource.payload.size() <= terrainResourceByteLimit,
-                "Unsupported cooked terrain header/size" );
+            require( resource.header.isValid() && !resource.header.resourceId.isSubResource() &&
+                         resource.header.resourceType == terrainType &&
+                         resource.header.resourceId.type() == terrainType &&
+                         ( resource.header.compilerVersion == legacyCompilerVersion ||
+                           resource.header.compilerVersion == tileCompilerVersion ||
+                           resource.header.compilerVersion == currentCompilerVersion ) &&
+                         resource.payload.size() >= 24 &&
+                         resource.payload.size() <= terrainResourceByteLimit,
+                     "Unsupported cooked terrain header/size" );
             require( resource.header.payloadSize == resource.payload.size() &&
                          resource.header.payloadHash ==
                              resource::hashBytes( resource.payload.data(), resource.payload.size() ),
@@ -335,11 +400,17 @@ namespace workphone::render
             require( !result.target.empty(), "Empty cooked terrain target" );
             const auto json = read.string( static_cast<size_t>( terrainResourceByteLimit ) );
             if( !deserializeTerrainData( json, result.terrain, error ) )
+            {
                 return false;
+            }
             if( !describeTerrainTiles( result.terrain, result.tiles, error ) )
+            {
                 return false;
+            }
             if( version >= 2 )
+            {
                 verifyTiles( read, result.tiles );
+            }
             const auto ids = textureIDs( result.terrain );
             require( read.number( 4 ) == ids.size() && resource.header.installDependencies == ids &&
                          resource.dependencies.size() == ids.size(),
@@ -366,6 +437,7 @@ namespace workphone::render
             return false;
         }
     }
+
     DecodedCookedTerrain::DecodedCookedTerrain( CookedTerrainData value,
                                                 std::shared_ptr<const resource::RuntimeResource> source,
                                                 Array<CookedTextureData> maps ) :
@@ -374,6 +446,7 @@ namespace workphone::render
         textures( std::move( maps ) )
     {
     }
+
     CookedTerrainCandidate::CookedTerrainCandidate( std::shared_ptr<const DecodedCookedTerrain> source,
                                                     ClawTerrainMaterial::TextureResolver maps ) :
         decoded( std::move( source ) ),
@@ -383,6 +456,7 @@ namespace workphone::render
         resource( decoded->resource )
     {
     }
+
     std::shared_ptr<const DecodedCookedTerrain> decodeCookedTerrainResource(
         std::shared_ptr<const resource::RuntimeResource> resource, const String &target,
         bool packagedBuild, String &error )
@@ -397,7 +471,9 @@ namespace workphone::render
             }
             CookedTerrainData decoded;
             if( !decodeCookedTerrain( *resource, decoded, error ) )
+            {
                 return {};
+            }
             require( decoded.target == target && decoded.packagedBuild == packagedBuild,
                      "Cooked terrain consumer target/build mismatch" );
             Array<CookedTextureData> textures;
@@ -405,7 +481,9 @@ namespace workphone::render
             {
                 CookedTextureData texture;
                 if( !decodeCookedTexture( *dependency, texture, error ) )
+                {
                     return {};
+                }
                 textures.push_back( std::move( texture ) );
             }
             return std::shared_ptr<const DecodedCookedTerrain>( new DecodedCookedTerrain(
@@ -417,6 +495,7 @@ namespace workphone::render
             return {};
         }
     }
+
     bool queueCookedTerrainDecode( WorldStreamProducer &producer,
                                    std::shared_ptr<const resource::RuntimeResource> resource,
                                    const String &target, bool packagedBuild,
@@ -426,7 +505,8 @@ namespace workphone::render
         try
         {
             require( resource && resource->dependencies.size() <= 13 && !target.empty() &&
-                         target.size() <= 128, "Invalid terrain decode request" );
+                         target.size() <= 128,
+                     "Invalid terrain decode request" );
             // Terrain JSON has no expansion/compression. cJSON nodes plus output arrays
             // require fewer than 64 bytes per encoded byte, including one-character
             // numbers; decoded vectors require fewer than eight. Texture payloads
@@ -439,13 +519,15 @@ namespace workphone::render
                              item.header.installArtifacts.size() <= 13 &&
                              item.header.resourceId.str().size() <= 4096,
                          "Terrain decode input exceeds closure limits" );
-                sourceBytes += sizeof( resource::RuntimeResource ) + item.payload.capacity() +
-                               item.header.resourceId.str().capacity() + 1 +
-                               item.header.resourceId.type().str().capacity() + 1 +
-                               item.header.resourceType.str().capacity() + 1 +
-                               item.dependencies.capacity() * sizeof( item.dependencies[0] ) +
-                               item.header.installDependencies.capacity() * sizeof( resource::ResourceID ) +
-                               item.header.installArtifacts.capacity() * sizeof( resource::InstallDependencyArtifact );
+                sourceBytes +=
+                    sizeof( resource::RuntimeResource ) + item.payload.capacity() +
+                    item.header.resourceId.str().capacity() + 1 +
+                    item.header.resourceId.type().str().capacity() + 1 +
+                    item.header.resourceType.str().capacity() + 1 +
+                    item.dependencies.capacity() * sizeof( item.dependencies[0] ) +
+                    item.header.installDependencies.capacity() * sizeof( resource::ResourceID ) +
+                    item.header.installArtifacts.capacity() *
+                        sizeof( resource::InstallDependencyArtifact );
                 for( const auto &id : item.header.installDependencies )
                 {
                     require( id.str().size() <= 4096, "Terrain dependency ID exceeds its limit" );
@@ -465,22 +547,29 @@ namespace workphone::render
                 account( *dependency );
                 textureBytes += dependency->payload.size();
             }
-            const u64 workingBytes = ( 1ull << 20 ) + resource->payload.size() * 64ull + textureBytes * 2;
+            const u64 workingBytes =
+                ( 1ull << 20 ) + resource->payload.size() * 64ull + textureBytes * 2;
             const u64 resultBytes = ( 1ull << 20 ) + resource->payload.size() * 8ull + textureBytes;
             require( sourceBytes <= options.maximumSourceBytes &&
                          workingBytes <= options.maximumWorkingBytes &&
                          resultBytes <= options.maximumResultBytes,
                      "Cooked terrain exceeds declared source, decode scratch or result budget" );
-            auto sourceBudget = producer.reserve(
-                StreamMemoryClass::SourceCpu, sourceBytes, error );
-            if( !sourceBudget ) return false;
+            auto sourceBudget = producer.reserve( StreamMemoryClass::SourceCpu, sourceBytes, error );
+            if( !sourceBudget )
+            {
+                return false;
+            }
+
             struct InputOwner
             {
                 StreamBudget budget;
                 std::shared_ptr<const resource::RuntimeResource> resource;
             };
-            auto owner = std::make_shared<InputOwner>( InputOwner{ std::move( sourceBudget ), resource } );
-            auto leasedResource = std::shared_ptr<const resource::RuntimeResource>( owner, resource.get() );
+
+            auto owner =
+                std::make_shared<InputOwner>( InputOwner{ std::move( sourceBudget ), resource } );
+            auto leasedResource =
+                std::shared_ptr<const resource::RuntimeResource>( owner, resource.get() );
             WorldStreamRequest request;
             request.key = options.key;
             request.priority = options.priority;
@@ -490,10 +579,16 @@ namespace workphone::render
             request.execute = [leasedResource = std::move( leasedResource ), target, packagedBuild,
                                resultBytes]( const StreamCancellation &cancel ) {
                 WorldStreamResult result;
-                if( cancel.cancelled() ) return result;
-                auto decoded = decodeCookedTerrainResource( leasedResource, target, packagedBuild,
-                                                            result.error );
-                if( cancel.cancelled() ) return WorldStreamResult{};
+                if( cancel.cancelled() )
+                {
+                    return result;
+                }
+                auto decoded =
+                    decodeCookedTerrainResource( leasedResource, target, packagedBuild, result.error );
+                if( cancel.cancelled() )
+                {
+                    return WorldStreamResult{};
+                }
                 if( decoded )
                 {
                     result.payload = std::move( decoded );
@@ -509,6 +604,7 @@ namespace workphone::render
             return false;
         }
     }
+
     std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
         ClawRendererDX11 &renderer, std::shared_ptr<const DecodedCookedTerrain> decoded, String &error )
     {
@@ -526,20 +622,30 @@ namespace workphone::render
                 // Retained map keys, texture objects and cache/map node bookkeeping
                 // accompany the reupload mip copy, including maximum-length IDs.
                 retainedBytes += sizeof( BudgetedTerrainTexture ) +
-                    decoded->resource->dependencies[i]->header.resourceId.str().capacity() + 1 + 512;
+                                 decoded->resource->dependencies[i]->header.resourceId.str().capacity() +
+                                 1 + 512;
                 retainedBytes += texture.levels.size() * sizeof( TextureMipLevel );
-                for( const auto &level : texture.levels ) uploadedBytes += level.bgra.size();
+                for( const auto &level : texture.levels )
+                {
+                    uploadedBytes += level.bgra.size();
+                }
             }
             retainedBytes += uploadedBytes;
             StreamBudget gpuBudget, cpuBudget;
             if( uploadedBytes )
             {
-                gpuBudget = WorldStreamingScheduler::shared()->reserve(
-                    StreamMemoryClass::Gpu, uploadedBytes, error );
-                if( !gpuBudget ) return {};
-                cpuBudget = WorldStreamingScheduler::shared()->reserve(
-                    StreamMemoryClass::SourceCpu, retainedBytes, error );
-                if( !cpuBudget ) return {};
+                gpuBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::Gpu,
+                                                                        uploadedBytes, error );
+                if( !gpuBudget )
+                {
+                    return {};
+                }
+                cpuBudget = WorldStreamingScheduler::shared()->reserve( StreamMemoryClass::SourceCpu,
+                                                                        retainedBytes, error );
+                if( !cpuBudget )
+                {
+                    return {};
+                }
             }
             auto textures = std::make_shared<std::map<String, SmartPtr<ITexture>>>();
             for( size_t i = 0; i < decoded->textures.size(); ++i )
@@ -549,7 +655,9 @@ namespace workphone::render
                 auto texture = make_ptr<BudgetedTerrainTexture>( gpuBudget, cpuBudget );
                 if( !texture->uploadCookedMips( decodedTexture.levels, decodedTexture.mipSettings,
                                                 native, error ) )
+                {
                     return {};
+                }
                 textures->emplace( dependency->header.resourceId.str(), texture );
             }
             ClawTerrainMaterial::TextureResolver resolver = [textures, resource = decoded->resource](
@@ -572,6 +680,7 @@ namespace workphone::render
             return {};
         }
     }
+
     std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
         ClawRendererDX11 &renderer, std::shared_ptr<const resource::RuntimeResource> resource,
         const String &target, bool packagedBuild, String &error )

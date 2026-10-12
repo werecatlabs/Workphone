@@ -5,8 +5,6 @@
 #include <Workphone/Graphics/GraphicsPipeline.hpp>
 #include <Workphone/Core/Array.hpp>
 
-
-
 namespace workphone
 {
     namespace render

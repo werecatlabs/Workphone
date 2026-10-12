@@ -62,10 +62,16 @@ namespace workphone
             // All material setters write pass state. A newly-created Claw material
             // previously had no passes, so edits were silently discarded.
             if( getNumTechniques() == 0u )
+            {
                 createTechnique();
+            }
             for( auto technique : getTechniques() )
+            {
                 if( technique && technique->getNumPasses() == 0u )
+                {
                     technique->createPass();
+                }
+            }
             Material::createMaterialByType();
         }
 
@@ -76,7 +82,9 @@ namespace workphone
             // Selection may load a resource that is already in the graphics queue.
             // Reprocessing that entry must not reload its file over live edits.
             if( isLoaded() )
+            {
                 return;
+            }
             createMaterialByType();
             Material::load( data );
             syncNativeMaterial();
@@ -86,7 +94,9 @@ namespace workphone
         void ClawMaterial::syncNativeMaterial() const
         {
             if( !m_material || getNumTechniques() == 0u )
+            {
                 return;
+            }
             wp_graphics_material_desc desc;
             wp_graphics_material_desc_init( &desc );
             wp_graphics_material_get_desc( m_material, &desc );
@@ -105,7 +115,8 @@ namespace workphone
             desc.index_of_refraction = getEditorFloat( "refractionIor", 1.45f );
             desc.blend_mode = ClawUtil::toCBlendMode( getBlendMode() );
             desc.cull_mode = getEditorBool( "doubleSided", false )
-                                 ? WORKPHONE_CULL_MODE_NONE : ClawUtil::toCCullMode( getCullMode() );
+                                 ? WORKPHONE_CULL_MODE_NONE
+                                 : ClawUtil::toCCullMode( getCullMode() );
             const auto setFlag = [&]( wp_u32 flag, bool enabled ) {
                 desc.flags = enabled ? desc.flags | flag : desc.flags & ~flag;
             };
@@ -448,7 +459,9 @@ namespace workphone
                     setRefractionEnabled( ( flags & WORKPHONE_MATERIAL_FLAG_REFRACTION ) != 0 );
                     setDepthWrite( ( flags & WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE ) != 0 );
                     if( !( flags & WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK ) )
+                    {
                         setDepthTest( 0u );
+                    }
                 }
 
                 auto blendMode = static_cast<u32>( wp_graphics_material_get_blend_mode( m_material ) );
@@ -475,9 +488,13 @@ namespace workphone
                                 static_cast<const void *>( textureName.c_str() ) );
                             wp_graphics_material_set_texture_name( m_material, layer, cStr );
                             if( textureName.empty() )
+                            {
                                 setTexture( SmartPtr<ITexture>(), static_cast<u32>( layer ) );
+                            }
                             else
+                            {
                                 setTexture( textureName, static_cast<u32>( layer ) );
+                            }
                         }
                     }
                 }

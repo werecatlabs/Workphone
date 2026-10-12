@@ -35,14 +35,13 @@ namespace workphone::render
                               std::shared_ptr<resource::IResourceSystem> resources,
                               const String &sourceRoot,
                               const Array<CatalogResourceAdapter::TypeMapping> &mappings,
-                              SmartPtr<ClawRendererDX11> renderer,
-                              const String &target = "pc", bool packagedBuild = false );
+                              SmartPtr<ClawRendererDX11> renderer, const String &target = "pc",
+                              bool packagedBuild = false );
         ~ClawMaterialResource();
         ClawMaterialResource( const ClawMaterialResource & ) = delete;
         ClawMaterialResource &operator=( const ClawMaterialResource & ) = delete;
 
-        std::shared_ptr<const Candidate> stage( const String &uuid, String &error,
-                                                bool force = false );
+        std::shared_ptr<const Candidate> stage( const String &uuid, String &error, bool force = false );
         bool publish( std::shared_ptr<const Candidate> candidate, String &error );
         bool reload( const String &uuid, String &error, bool force = false );
         std::shared_ptr<const Candidate> current() const;
@@ -52,6 +51,6 @@ namespace workphone::render
         struct Data;
         std::unique_ptr<Data> m_data;
     };
-}
+}  // namespace workphone::render
 
 #endif

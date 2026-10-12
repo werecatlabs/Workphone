@@ -6,7 +6,7 @@
 #include "workphone_graphics_window.h"
 
 #if defined WP_PLATFORM_WIN32
-#include <workphone_platform_window_win32.h>
+#    include <workphone_platform_window_win32.h>
 
 #    if WP_BUILD_IMGUI
 #        include "imgui.h"
@@ -37,7 +37,7 @@ namespace workphone
 
 #if defined WP_PLATFORM_WIN32
             wp_s32 forwardWindowEvent( void *userData, HWND hwnd, UINT message, WPARAM wParam,
-                                      LPARAM lParam )
+                                       LPARAM lParam )
             {
                 auto window = static_cast<ClawWindow *>( userData );
                 auto event = workphone::make_ptr<WindowMessageData>();
@@ -141,7 +141,8 @@ namespace workphone
 
             setLoadingState( LoadingState::Loading );
             const auto requestedSize = getSize();
-            WP_LOG_INFO( "WPGraphics/Window: loading '" + getName() + "' at " + std::to_string( requestedSize.x ) + "x" + std::to_string( requestedSize.y ) );
+            WP_LOG_INFO( "WPGraphics/Window: loading '" + getName() + "' at " +
+                         std::to_string( requestedSize.x ) + "x" + std::to_string( requestedSize.y ) );
 
             if( !m_window )
             {
@@ -162,8 +163,8 @@ namespace workphone
                     wp_graphics_window_set_window_handle(
                         m_window, wp_platform_window_win32_get_hwnd( m_platformWindow ) );
 
-                    wp_platform_window_win32_set_event_callback( m_platformWindow,
-                                                                 forwardWindowEvent, this );
+                    wp_platform_window_win32_set_event_callback( m_platformWindow, forwardWindowEvent,
+                                                                 this );
                 }
             }
 #endif

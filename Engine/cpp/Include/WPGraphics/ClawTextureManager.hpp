@@ -11,8 +11,8 @@ namespace workphone
         /**
          * @class ClawTextureManager
          * @brief Texture resource manager used by the ClawHammer renderer.
-         * 
-         * This class handles the lifecycle of texture resources, including loading, 
+         *
+         * This class handles the lifecycle of texture resources, including loading,
          * creating, and cloning textures within the ClawHammer rendering pipeline.
          */
         class WPGraphics_API ClawTextureManager : public TextureManager

@@ -41,7 +41,9 @@ namespace workphone
             auto applicationManager = core::IApplicationManager::instancePtr();
             auto timer = applicationManager ? applicationManager->getTimer() : nullptr;
             if( timer && !simulate( static_cast<f32>( timer->getDeltaTime() ) ) && isLoaded() )
+            {
                 WP_LOG_ERROR( "Claw particles: invalid timestep or settings; frame was not advanced." );
+            }
         }
 
         SmartPtr<IParticle> CParticleSystem::createParticle( SmartPtr<IParticleEmitter> emitter )
@@ -62,7 +64,9 @@ namespace workphone
         void CParticleSystem::_getObject( void **ppObject ) const
         {
             if( ppObject )
+            {
                 *ppObject = m_simulation;
+            }
         }
 
         void CParticleSystem::handleEvent( SmartPtr<IEvent> event )
@@ -73,7 +77,9 @@ namespace workphone
         {
             auto samples = getRenderSnapshot();
             if( samples.empty() )
+            {
                 return {};
+            }
             Vector3<real_Num> minimum( samples[0].position.x, samples[0].position.y,
                                        samples[0].position.z );
             auto maximum = minimum;

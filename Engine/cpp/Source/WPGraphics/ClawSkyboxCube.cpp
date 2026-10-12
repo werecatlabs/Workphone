@@ -35,7 +35,9 @@ namespace workphone
         void ClawSkyboxCube::setTexture( SmartPtr<ITexture> texture, u32 layerIdx )
         {
             if( layerIdx >= m_textures.size() )
+            {
                 m_textures.resize( layerIdx + 1 );
+            }
             m_textures[layerIdx] = texture;
         }
 
@@ -134,7 +136,9 @@ namespace workphone
         void ClawSkyboxCube::updateNative()
         {
             if( !m_skybox )
+            {
                 return;
+            }
 
             if( !m_scene )
             {
@@ -151,7 +155,9 @@ namespace workphone
 
             SmartPtr<IGraphicsCamera> camera = m_scene->getActiveCamera();
             if( !camera )
+            {
                 camera = m_scene->getDefaultCamera();
+            }
 
             void *cameraNative = nullptr;
             if( camera )

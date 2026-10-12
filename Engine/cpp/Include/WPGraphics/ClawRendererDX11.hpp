@@ -20,6 +20,7 @@ struct wp_geometry_dx11;
 namespace workphone
 {
     class StreamBudgetLease;
+
     namespace render
     {
         class ClawMesh;
@@ -160,17 +161,22 @@ namespace workphone
             void renderMesh( ClawMesh *mesh, const Matrix4F &transform );
             /** Draw fixed-LOD instances through the same material/submesh path.
              * Returns submitted instance-sections; zero means no output. */
-            u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances,
-                                     u32 count );
+            u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances, u32 count );
             u32 renderFoliageGeometry( const wp_geometry_dx11 *, u32 firstIndex, u32 indexCount,
-                const wp_foliage_instance_dx11 *, u32 count, const wp_foliage_parameters_dx11 &,
-                const FoliageMaterial &, void *const *albedoNormalOrm, bool unlit = false, bool atlas = false );
+                                       const wp_foliage_instance_dx11 *, u32 count,
+                                       const wp_foliage_parameters_dx11 &, const FoliageMaterial &,
+                                       void *const *albedoNormalOrm, bool unlit = false,
+                                       bool atlas = false );
             Matrix4F foliageViewProjection( bool shadow = false ) const;
-            u32 renderHeight() const { return m_rtHeight; }
+
+            u32 renderHeight() const
+            {
+                return m_rtHeight;
+            }
+
             /** Draw an immutable particle snapshot; does not advance simulation. */
-            void renderParticles( const Array<wp_particle_sample> &particles,
-                                  const Matrix4F &world, const Vector3F &scale,
-                                  const SmartPtr<IMaterial> &material = nullptr );
+            void renderParticles( const Array<wp_particle_sample> &particles, const Matrix4F &world,
+                                  const Vector3F &scale, const SmartPtr<IMaterial> &material = nullptr );
 
             /**
              * @brief Render terrain.
@@ -179,7 +185,11 @@ namespace workphone
             void prepareTerrain( SmartPtr<ClawTerrain> terrain,
                                  const Array<SmartPtr<IGraphicsCamera>> &cameras = {} );
             void renderTerrain( SmartPtr<ClawTerrain> terrain, bool prepare = true );
-            u64 terrainFrameToken() const { return m_inFrame ? m_terrainFrame : 0; }
+
+            u64 terrainFrameToken() const
+            {
+                return m_inFrame ? m_terrainFrame : 0;
+            }
 
             /**
              * @brief Render sky geometry.

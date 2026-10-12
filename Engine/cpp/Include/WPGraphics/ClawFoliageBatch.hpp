@@ -6,7 +6,10 @@
 #include <Workphone/Core/ColourF.hpp>
 #include <memory>
 
-namespace workphone::scene { class TerrainGroundPopulation; }
+namespace workphone::scene
+{
+    class TerrainGroundPopulation;
+}
 
 namespace workphone::render
 {
@@ -34,7 +37,8 @@ namespace workphone::render
          */
         static std::shared_ptr<const ClawFoliageBatch> createTerrainGrounded(
             SmartPtr<ClawMesh> mesh, const scene::TerrainGroundPopulation &population, String &error,
-            const ColourF &tint = ColourF::White, u32 visibilityMask = ~u32( 0 ), bool castShadows = true );
+            const ColourF &tint = ColourF::White, u32 visibilityMask = ~u32( 0 ),
+            bool castShadows = true );
         ~ClawFoliageBatch();
         ClawFoliageBatch( const ClawFoliageBatch & ) = delete;
         ClawFoliageBatch &operator=( const ClawFoliageBatch & ) = delete;
@@ -51,5 +55,5 @@ namespace workphone::render
             u32 visibilityMask, bool castShadows, bool allowEmpty );
         std::unique_ptr<Impl> m_impl;
     };
-}
+}  // namespace workphone::render
 #endif

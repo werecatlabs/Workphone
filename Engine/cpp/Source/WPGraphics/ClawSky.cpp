@@ -19,7 +19,9 @@ namespace workphone
         void ClawSky::setTexture( SmartPtr<ITexture> texture, u32 layerIdx )
         {
             if( layerIdx >= m_textures.size() )
+            {
                 m_textures.resize( layerIdx + 1 );
+            }
             m_textures[layerIdx] = texture;
         }
 

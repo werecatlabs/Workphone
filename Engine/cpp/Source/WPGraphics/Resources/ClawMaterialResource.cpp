@@ -42,15 +42,20 @@ namespace workphone::render
               std::shared_ptr<resource::IResourceSystem> resources, const String &root,
               const Array<CatalogResourceAdapter::TypeMapping> &mappings,
               SmartPtr<ClawRendererDX11> renderer, const String &target, bool packagedBuild ) :
-            catalog( catalog ), adapter( catalog, resources, root, mappings ),
-            renderer( renderer ), target( target ), packagedBuild( packagedBuild )
+            catalog( catalog ),
+            adapter( catalog, resources, root, mappings ),
+            renderer( renderer ),
+            target( target ),
+            packagedBuild( packagedBuild )
         {
         }
 
         bool checkOwner( String &error ) const
         {
             if( std::this_thread::get_id() == owner )
+            {
                 return true;
+            }
             error = "Cooked material operations require the constructing render thread.";
             return false;
         }
@@ -61,7 +66,9 @@ namespace workphone::render
             auto graphics = application ? application->getGraphicsSystemPtr() : nullptr;
             if( !renderer || !renderer->isLoaded() || !graphics ||
                 graphics->getRenderer().get() != renderer.get() )
+            {
                 return nullptr;
+            }
             return wp_renderer_get_dx11( renderer->getNativeRenderer() );
         }
 
@@ -77,30 +84,33 @@ namespace workphone::render
         m_data( std::move( data ) )
     {
     }
+
     ClawMaterialResource::Candidate::~Candidate() = default;
+
     SmartPtr<ClawMaterial> ClawMaterialResource::Candidate::material() const
     {
         return m_data->material;
     }
+
     SmartPtr<ClawTexture> ClawMaterialResource::Candidate::texture() const
     {
         return m_data->texture;
     }
-    std::shared_ptr<const resource::RuntimeResource>
-    ClawMaterialResource::Candidate::resource() const
+
+    std::shared_ptr<const resource::RuntimeResource> ClawMaterialResource::Candidate::resource() const
     {
         return m_data->resource;
     }
 
     ClawMaterialResource::ClawMaterialResource(
-        SmartPtr<AssetDatabaseManager> catalog,
-        std::shared_ptr<resource::IResourceSystem> resources, const String &sourceRoot,
-        const Array<CatalogResourceAdapter::TypeMapping> &mappings,
+        SmartPtr<AssetDatabaseManager> catalog, std::shared_ptr<resource::IResourceSystem> resources,
+        const String &sourceRoot, const Array<CatalogResourceAdapter::TypeMapping> &mappings,
         SmartPtr<ClawRendererDX11> renderer, const String &target, bool packagedBuild ) :
         m_data( std::make_unique<Data>( catalog, resources, sourceRoot, mappings, renderer, target,
-                                       packagedBuild ) )
+                                        packagedBuild ) )
     {
     }
+
     ClawMaterialResource::~ClawMaterialResource() = default;
 
     std::shared_ptr<const ClawMaterialResource::Candidate> ClawMaterialResource::stage(
@@ -108,7 +118,9 @@ namespace workphone::render
     {
         error.clear();
         if( !m_data->checkOwner( error ) )
+        {
             return {};
+        }
         if( m_data->ticket == std::numeric_limits<u64>::max() )
         {
             error = "Cooked material request sequence exhausted; recreate the owner.";
@@ -120,14 +132,16 @@ namespace workphone::render
             auto candidate = std::make_shared<Candidate::Data>();
             candidate->publisher = m_data->publisher;
             candidate->ticket = ticket;
-            candidate->device = m_data->device(); // Pins identity through device recreation.
+            candidate->device = m_data->device();  // Pins identity through device recreation.
             if( !candidate->device )
             {
                 error = "Cooked material requires the active DX11 renderer.";
                 return {};
             }
             if( !m_data->adapter.resolve( uuid, candidate->request, error ) )
+            {
                 return {};
+            }
             if( candidate->request.resourceId.type() != resource::ResourceTypeID( "matres" ) )
             {
                 error = "Cooked material requires a matres catalog entry.";
@@ -141,12 +155,16 @@ namespace workphone::render
             {
                 error = "Cooked material compilation failed.";
                 for( const auto &message : report.messages )
+                {
                     error += " " + message;
+                }
                 return {};
             }
             candidate->resource = m_data->adapter.load( candidate->request, error );
             if( !candidate->resource )
+            {
                 return {};
+            }
             // Compilation and loading are separate service operations. Another
             // caller may recook this ID without changing the catalog generation.
             if( candidate->resource->header.resourceId != report.resourceId ||
@@ -158,16 +176,19 @@ namespace workphone::render
             }
             CookedMaterialData material;
             if( !decodeCookedMaterial( *candidate->resource, material, error ) )
+            {
                 return {};
-            if( material.target != m_data->target ||
-                material.packagedBuild != m_data->packagedBuild )
+            }
+            if( material.target != m_data->target || material.packagedBuild != m_data->packagedBuild )
             {
                 error = "Cooked material target/build mode does not match its consumer.";
                 return {};
             }
             CookedTextureData texture;
             if( !decodeCookedTexture( *candidate->resource->dependencies.at( 0 ), texture, error ) )
+            {
                 return {};
+            }
             if( candidate->device.Get() != m_data->device() )
             {
                 error = "DX11 device changed while staging the cooked material.";
@@ -181,11 +202,16 @@ namespace workphone::render
                 return {};
             }
             candidate->texture = make_ptr<ClawTexture>();
-            const bool installed=texture.ddsBytes.empty() ?
-                candidate->texture->uploadCookedMips(texture.levels,texture.mipSettings,m_data->activeRenderer(),error) :
-                uploadCookedDds(candidate->texture.get(),texture,m_data->activeRenderer(),error);
+            const bool installed =
+                texture.ddsBytes.empty()
+                    ? candidate->texture->uploadCookedMips( texture.levels, texture.mipSettings,
+                                                            m_data->activeRenderer(), error )
+                    : uploadCookedDds( candidate->texture.get(), texture, m_data->activeRenderer(),
+                                       error );
             if( !installed )
+            {
                 return {};
+            }
             candidate->material = make_ptr<ClawMaterial>();
             auto technique = make_ptr<ClawMaterialTechnique>();
             technique->setMaterial( candidate->material );
@@ -217,7 +243,9 @@ namespace workphone::render
     {
         error.clear();
         if( !m_data->checkOwner( error ) )
+        {
             return false;
+        }
         if( !candidate || candidate->m_data->publisher != m_data->publisher ||
             candidate->m_data->ticket != m_data->ticket )
         {
@@ -245,7 +273,9 @@ namespace workphone::render
         try
         {
             if( !m_data->adapter.isCurrent( candidate->m_data->request, error ) )
+            {
                 return false;
+            }
         }
         catch( const std::exception &e )
         {
@@ -282,11 +312,15 @@ namespace workphone::render
         // A retained old handle remains valid for its original device, but callers
         // must reacquire current() when drawing after a renderer lifecycle change.
         if( std::this_thread::get_id() != m_data->owner || !m_data->visible )
+        {
             return {};
+        }
         const auto device = m_data->device();
         if( !device || m_data->visible->m_data->device.Get() != device ||
             FAILED( device->GetDeviceRemovedReason() ) )
+        {
             return {};
+        }
         return m_data->visible;
     }
 
@@ -294,11 +328,15 @@ namespace workphone::render
     {
         error.clear();
         if( !m_data->checkOwner( error ) )
+        {
             return false;
+        }
         if( m_data->ticket != std::numeric_limits<u64>::max() )
+        {
             ++m_data->ticket;
+        }
         m_data->publisher = std::make_shared<const int>( 0 );
         m_data->visible.reset();
         return true;
     }
-}
+}  // namespace workphone::render

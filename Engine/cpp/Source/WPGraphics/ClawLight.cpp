@@ -20,7 +20,9 @@ namespace workphone::render
     void ClawLight::load( SmartPtr<ISharedObject> data )
     {
         if( m_light )
+        {
             return;
+        }
         setLoadingState( LoadingState::Loading );
         m_light = wp_light_create();
         setLoadingState( LoadingState::Loaded );
@@ -138,7 +140,9 @@ namespace workphone::render
         // Native scene-node transforms are authoritative during rendering.
         // The C++ world-transform cache may not have processed the latest update.
         if( m_light && wp_light_get_node( m_light ) )
+        {
             return ClawUtil::fromCVector( wp_light_get_derived_direction( m_light ) );
+        }
 
         if( auto owner = getOwner() )
         {

@@ -170,8 +170,7 @@ namespace workphone
 
         protected:
             /** Native C89 frame-driver callback. */
-            static void renderFrameCallback( wp_graphics_system *system, f32 deltaTime,
-                                             void *userData );
+            static void renderFrameCallback( wp_graphics_system *system, f32 deltaTime, void *userData );
 
             /** Render all C++ targets for one native frame-driver invocation. */
             void renderFrame( f32 deltaTime );

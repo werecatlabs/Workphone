@@ -128,11 +128,11 @@ namespace workphone::ui
             if( state != WORKPHONE_WIDGET_INVALID )
             {
                 const auto &style = ctx->style.checkbox;
-                const auto *input =
-                    state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
-                            ( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM )
-                        ? nullptr
-                        : &ctx->input;
+                const auto *input = state == WORKPHONE_WIDGET_ROM ||
+                                            state == WORKPHONE_WIDGET_DISABLED ||
+                                            ( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM )
+                                        ? nullptr
+                                        : &ctx->input;
                 auto hitBounds = bounds;
                 hitBounds.x -= style.touch_padding.x;
                 hitBounds.y -= style.touch_padding.y;
@@ -146,10 +146,10 @@ namespace workphone::ui
 
                 auto *canvas = wp_window_get_canvas( ctx );
                 const auto height = MathF::max(
-                    1.0f, MathF::min( ctx->style.font->height,
-                                     MathF::min( bounds.h, bounds.w * 0.5f ) ) );
-                const wp_rect track = { bounds.x, bounds.y + ( bounds.h - height ) * 0.5f,
-                                        height * 2.0f, height };
+                    1.0f,
+                    MathF::min( ctx->style.font->height, MathF::min( bounds.h, bounds.w * 0.5f ) ) );
+                const wp_rect track = { bounds.x, bounds.y + ( bounds.h - height ) * 0.5f, height * 2.0f,
+                                        height };
                 const auto hovered = ctx->last_widget_state &
                                      ( WORKPHONE_WIDGET_STATE_HOVER | WORKPHONE_WIDGET_STATE_ACTIVED );
                 const auto &background = m_isToggled
@@ -171,8 +171,7 @@ namespace workphone::ui
                 }
                 const auto inset = MathF::min( 2.0f, height * 0.25f );
                 const wp_rect thumb = { track.x + inset + ( m_isToggled ? height : 0.0f ),
-                                        track.y + inset, height - 2.0f * inset,
-                                        height - 2.0f * inset };
+                                        track.y + inset, height - 2.0f * inset, height - 2.0f * inset };
                 const auto textColour = hovered ? style.text_hover : style.text_normal;
                 wp_fill_circle( canvas, thumb, wp_rgb_factor( textColour, style.color_factor ) );
                 if( !label.empty() )

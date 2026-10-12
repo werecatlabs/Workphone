@@ -19,12 +19,15 @@ namespace workphone::render
         bool shadows = true;
     };
 
-    ClawFoliageBatch::ClawFoliageBatch() : m_impl( std::make_unique<Impl>() ) {}
+    ClawFoliageBatch::ClawFoliageBatch() : m_impl( std::make_unique<Impl>() )
+    {
+    }
+
     ClawFoliageBatch::~ClawFoliageBatch() = default;
 
     std::shared_ptr<const ClawFoliageBatch> ClawFoliageBatch::create(
-        SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error,
-        u32 mask, bool shadows )
+        SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error, u32 mask,
+        bool shadows )
     {
         return createPrepared( mesh, instances, error, mask, shadows, false );
     }
@@ -34,16 +37,25 @@ namespace workphone::render
         const ColourF &tint, u32 mask, bool shadows )
     {
         if( !population.getTerrainSnapshot() )
-        { error = "Foliage ground population has not been sampled."; return nullptr; }
+        {
+            error = "Foliage ground population has not been sampled.";
+            return nullptr;
+        }
         Array<ClawFoliageInstance> instances;
         for( const auto &placement : population.getPlacements() )
         {
-            if( !placement.supported ) continue;
+            if( !placement.supported )
+            {
+                continue;
+            }
             const auto &pose = placement.worldTransform;
-            const auto &p = pose.getPosition(); const auto &s = pose.getScale(); const auto &q = pose.getOrientation();
+            const auto &p = pose.getPosition();
+            const auto &s = pose.getScale();
+            const auto &q = pose.getOrientation();
             ClawFoliageInstance instance;
-            instance.transform.makeTransform( { f32(p.x), f32(p.y), f32(p.z) },
-                { f32(s.x), f32(s.y), f32(s.z) }, { f32(q.w), f32(q.x), f32(q.y), f32(q.z) } );
+            instance.transform.makeTransform( { f32( p.x ), f32( p.y ), f32( p.z ) },
+                                              { f32( s.x ), f32( s.y ), f32( s.z ) },
+                                              { f32( q.w ), f32( q.x ), f32( q.y ), f32( q.z ) } );
             instance.tint = tint;
             instances.push_back( instance );
         }
@@ -51,8 +63,8 @@ namespace workphone::render
     }
 
     std::shared_ptr<const ClawFoliageBatch> ClawFoliageBatch::createPrepared(
-        SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error,
-        u32 mask, bool shadows, bool allowEmpty )
+        SmartPtr<ClawMesh> mesh, const Array<ClawFoliageInstance> &instances, String &error, u32 mask,
+        bool shadows, bool allowEmpty )
     {
         error.clear();
         try
@@ -76,8 +88,10 @@ namespace workphone::render
             }
             for( u32 i = 0; i < indexCount; ++i )
             {
-                const auto index = wp_graphics_mesh_get_index_format( native ) == WORKPHONE_INDEX_FORMAT_UINT16
-                    ? static_cast<const uint16_t *>( indices )[i] : static_cast<const wp_u32 *>( indices )[i];
+                const auto index =
+                    wp_graphics_mesh_get_index_format( native ) == WORKPHONE_INDEX_FORMAT_UINT16
+                        ? static_cast<const uint16_t *>( indices )[i]
+                        : static_cast<const wp_u32 *>( indices )[i];
                 if( index >= vertexCount )
                 {
                     error = "Foliage mesh index is outside its vertex buffer.";
@@ -88,9 +102,12 @@ namespace workphone::render
             {
                 const auto section = wp_graphics_mesh_get_submesh( native, i );
                 if( !section || !section->index_count || section->index_count % 3 ||
-                    section->index_start > indexCount || section->index_count > indexCount - section->index_start )
+                    section->index_start > indexCount ||
+                    section->index_count > indexCount - section->index_start )
                 {
-                    error = "Foliage material section is outside its index buffer or has incomplete triangles.";
+                    error =
+                        "Foliage material section is outside its index buffer or has incomplete "
+                        "triangles.";
                     return nullptr;
                 }
             }
@@ -99,7 +116,9 @@ namespace workphone::render
             {
                 if( !isSupportedFoliageMaterial( resolveMeshMaterial( mesh.get(), i ) ) )
                 {
-                    error = "Foliage material sections must be opaque or alpha-tested; blended transparency is unsupported.";
+                    error =
+                        "Foliage material sections must be opaque or alpha-tested; blended transparency "
+                        "is unsupported.";
                     return nullptr;
                 }
             }
@@ -108,14 +127,18 @@ namespace workphone::render
             for( size_t i = 0; i < instances.size(); ++i )
             {
                 auto &output = candidate->m_impl->instances[i];
-                std::memcpy( output.transform.m, instances[i].transform.ptr(), sizeof( output.transform.m ) );
+                std::memcpy( output.transform.m, instances[i].transform.ptr(),
+                             sizeof( output.transform.m ) );
                 const auto &tint = instances[i].tint;
                 output.tint = { tint.r, tint.g, tint.b, tint.a };
             }
-            if( !instances.empty() && !wp_renderer_dx11_validate_instances_pntc( candidate->m_impl->instances.data(),
-                                                          static_cast<wp_s32>( instances.size() ) ) )
+            if( !instances.empty() &&
+                !wp_renderer_dx11_validate_instances_pntc( candidate->m_impl->instances.data(),
+                                                           static_cast<wp_s32>( instances.size() ) ) )
             {
-                error = "Foliage transforms must be finite, affine and nonsingular with positive determinant; tint must be finite.";
+                error =
+                    "Foliage transforms must be finite, affine and nonsingular with positive "
+                    "determinant; tint must be finite.";
                 return nullptr;
             }
             candidate->m_impl->mesh = mesh;
@@ -130,11 +153,24 @@ namespace workphone::render
         }
     }
 
-    u32 ClawFoliageBatch::instanceCount() const { return static_cast<u32>( m_impl->instances.size() ); }
-    u32 ClawFoliageBatch::visibilityMask() const { return m_impl->mask; }
-    bool ClawFoliageBatch::castsShadows() const { return m_impl->shadows; }
+    u32 ClawFoliageBatch::instanceCount() const
+    {
+        return static_cast<u32>( m_impl->instances.size() );
+    }
+
+    u32 ClawFoliageBatch::visibilityMask() const
+    {
+        return m_impl->mask;
+    }
+
+    bool ClawFoliageBatch::castsShadows() const
+    {
+        return m_impl->shadows;
+    }
+
     u64 ClawFoliageBatch::render( ClawRendererDX11 &renderer ) const
     {
-        return renderer.renderMeshInstances( m_impl->mesh.get(), m_impl->instances.data(), instanceCount() );
+        return renderer.renderMeshInstances( m_impl->mesh.get(), m_impl->instances.data(),
+                                             instanceCount() );
     }
-}
+}  // namespace workphone::render

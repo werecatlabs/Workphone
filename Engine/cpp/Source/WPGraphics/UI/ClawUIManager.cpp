@@ -100,7 +100,8 @@ namespace workphone::ui
                 auto applicationManager = core::IApplicationManager::instance();
                 if( applicationManager )
                 {
-                    m_inputListener = applicationManager->getFactoryManager()->make_ptr<InputListener>( this );
+                    m_inputListener =
+                        applicationManager->getFactoryManager()->make_ptr<InputListener>( this );
                     if( auto inputManager = applicationManager->getInputDeviceManager() )
                     {
                         inputManager->addListener( m_inputListener );
@@ -197,15 +198,17 @@ namespace workphone::ui
 
                             // The image displayed in the editor can be scaled relative
                             // to the texture into which the game UI was rendered.
-                            if( auto renderWindow = dynamic_pointer_cast<IUIRenderWindow>( sceneWindow ) )
+                            if( auto renderWindow =
+                                    dynamic_pointer_cast<IUIRenderWindow>( sceneWindow ) )
                             {
                                 if( auto texture = renderWindow->getRenderTexture() )
                                 {
                                     const auto textureSize = texture->getSize();
                                     if( textureSize.x > 0 && textureSize.y > 0 )
                                     {
-                                        position *= Vector2F( static_cast<f32>( textureSize.x ) / size.X(),
-                                                             static_cast<f32>( textureSize.y ) / size.Y() );
+                                        position *=
+                                            Vector2F( static_cast<f32>( textureSize.x ) / size.X(),
+                                                      static_cast<f32>( textureSize.y ) / size.Y() );
                                     }
                                 }
                             }

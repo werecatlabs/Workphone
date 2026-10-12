@@ -74,9 +74,13 @@ namespace workphone::render
     void ClawOverlayManager::update( struct wp_context *ctx )
     {
         if( !ctx && m_workphoneContext )
+        {
             ctx = m_workphoneContext->getContext();
+        }
         if( !ctx )
+        {
             return;
+        }
 
         auto overlays = getOverlays();
         for( auto overlay : overlays )

@@ -54,11 +54,13 @@ namespace workphone::render
             WeakPtr<ISky> sky;
             ClawCubemap cubemap;
         };
+
         struct SkyEnvironmentCache
         {
             std::unordered_map<const ISky *, SkyEnvironmentEntry> skies;
             const ClawCubemap *active = nullptr;
         };
+
         // A scene may draw several skies. One shared filtered cube would be
         // invalidated by every switch between them, repeating GGX filtering.
         std::unordered_map<const ClawRendererDX11 *, SkyEnvironmentCache> g_skyEnvironmentCaches;
@@ -174,7 +176,9 @@ namespace workphone::render
                                  topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP ) )
             {
                 for( auto &vertex : cache.vertices )
+                {
                     vertex.normal = {};
+                }
 
                 const auto indexCount = wp_graphics_mesh_get_index_count( mesh );
                 const auto elementCount = indexCount > 0 ? indexCount : count;
@@ -185,9 +189,13 @@ namespace workphone::render
                     u32 ib = readMeshIndex( mesh, i + 1 );
                     const u32 ic = readMeshIndex( mesh, i + 2 );
                     if( step == 1u && ( i & 1u ) )
+                    {
                         std::swap( ia, ib );
+                    }
                     if( ia >= count || ib >= count || ic >= count )
+                    {
                         continue;
+                    }
                     const auto &a = cache.vertices[ia].position;
                     const auto &b = cache.vertices[ib].position;
                     const auto &c = cache.vertices[ic].position;
@@ -249,14 +257,18 @@ namespace workphone::render
             }
             if( !renderer || vertices.empty() ||
                 wp_graphics_mesh_get_primitive_type( mesh ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST )
+            {
                 return nullptr;
+            }
 
             const void *indices = wp_graphics_mesh_get_indices( mesh );
             const auto count = indices ? wp_graphics_mesh_get_index_count( mesh )
                                        : wp_graphics_mesh_get_vertex_count( mesh );
             if( vertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) ||
                 count > static_cast<u32>( std::numeric_limits<wp_s32>::max() ) )
+            {
                 return nullptr;
+            }
             if( !cache.geometry )
             {
                 Array<u32> sequentialIndices;
@@ -264,7 +276,9 @@ namespace workphone::render
                 {
                     sequentialIndices.resize( count );
                     for( u32 i = 0; i < count; ++i )
+                    {
                         sequentialIndices[i] = i;
+                    }
                     indices = sequentialIndices.data();
                 }
                 cache.geometry = wp_renderer_dx11_create_indexed_geometry_pntc(
@@ -281,10 +295,14 @@ namespace workphone::render
         {
             if( !renderer || vertices.empty() ||
                 vertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
+            {
                 return;
+            }
             Array<u32> indices( vertices.size() );
             for( size_t i = 0; i < indices.size(); ++i )
+            {
                 indices[i] = static_cast<u32>( i );
+            }
             if( auto geometry = wp_renderer_dx11_create_indexed_geometry_pntc(
                     renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ), indices.data(),
                     static_cast<wp_s32>( indices.size() ), 1 ) )
@@ -299,18 +317,24 @@ namespace workphone::render
             const SmartPtr<IMaterial> &material )
         {
             if( !material )
+            {
                 return {};
+            }
             for( const auto &technique : material->getTechniques() )
             {
                 if( !technique )
+                {
                     continue;
+                }
                 for( const auto &pass : technique->getPasses() )
                 {
                     if( auto context = pass ? pass->getStateContext() : nullptr )
                     {
                         if( auto state =
                                 context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
+                        {
                             return state;
+                        }
                     }
                 }
             }
@@ -329,28 +353,34 @@ namespace workphone::render
                 nativeMaterial.uv_transform.y = state->uvOffsetY;
                 nativeMaterial.uv_transform.w = state->uvRotation;
                 nativeMaterial.projection = { static_cast<f32>( material->getUVProjection() ),
-                    material->getTriplanarScale(), 0.0f, 0.0f };
+                                              material->getTriplanarScale(), 0.0f, 0.0f };
                 nativeMaterial.controls.x = state->normalStrength;
                 nativeMaterial.controls.y = state->aoStrength;
                 nativeMaterial.controls.z = state->getFlag( cutoutFlag ) ? state->alphaClip : -1.0f;
                 nativeMaterial.controls.w = state->blendMode == 2u ? 1.0f : 0.0f;
                 nativeMaterial.texture_sources = { static_cast<f32>( state->metallicSource ),
-                    static_cast<f32>( state->roughnessSource ), static_cast<f32>( state->aoSource ),
-                    static_cast<f32>( state->opacitySource ) };
-                const auto intensity = state->getFlag( emissionEnabledFlag ) ? state->emissionIntensity : 0.0f;
+                                                   static_cast<f32>( state->roughnessSource ),
+                                                   static_cast<f32>( state->aoSource ),
+                                                   static_cast<f32>( state->opacitySource ) };
+                const auto intensity =
+                    state->getFlag( emissionEnabledFlag ) ? state->emissionIntensity : 0.0f;
                 nativeMaterial.emissive_color.x *= intensity;
                 nativeMaterial.emissive_color.y *= intensity;
                 nativeMaterial.emissive_color.z *= intensity;
                 // UI materials use the same texture and alpha handling without lighting.
                 if( state->materialType == MaterialType::UI )
+                {
                     nativeMaterial.uv_transform.z = 0.0f;
+                }
             }
         }
 
         bool isMaterialDoubleSided( const SmartPtr<IMaterial> &material )
         {
             if( auto state = getPrimaryMaterialPassState( material ) )
+            {
                 return state->getFlag( doubleSidedFlag );
+            }
             return false;
         }
     }  // namespace
@@ -398,8 +428,10 @@ namespace workphone::render
                      std::to_string( m_rtHeight ) +
                      "; native window=" + String( nativeWindow ? "available" : "missing" ) );
         if( !nativeWindow )
+        {
             WP_LOG_WARNING(
                 "WPGraphics/DX11: no native window handle; device initialization may fail." );
+        }
         m_renderer = wp_renderer_create_dx11( nativeWindow, static_cast<wp_s32>( m_rtWidth ),
                                               static_cast<wp_s32>( m_rtHeight ) );
 
@@ -459,7 +491,10 @@ namespace workphone::render
                 wp_renderer_dx11_destroy_geometry( it->second.geometry );
                 it = g_meshVertexCaches.erase( it );
             }
-            else ++it;
+            else
+            {
+                ++it;
+            }
         }
         if( m_renderer )
         {
@@ -483,16 +518,24 @@ namespace workphone::render
             auto &cache = found->second;
             cache.active = nullptr;
             for( auto it = cache.skies.begin(); it != cache.skies.end(); )
+            {
                 if( !it->second.sky.lock() )
+                {
                     it = cache.skies.erase( it );
+                }
                 else
+                {
                     ++it;
+                }
+            }
         }
         m_inFrame = true;
         ++m_terrainFrame;
         wp_renderer_begin_frame( m_renderer );
         if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
+        {
             wp_renderer_dx11_set_environment( dx11, nullptr, 0.0f );
+        }
     }
 
     void ClawRendererDX11::endRender()
@@ -511,7 +554,7 @@ namespace workphone::render
                 auto applicationManager = core::IApplicationManager::instancePtr();
                 auto graphicsSystem = (ClawHammerSystem *)applicationManager->getGraphicsSystemPtr();
 
-                wp_renderer_dx11_present( dx11,  graphicsSystem->getVSync() ? 1 : 0 );
+                wp_renderer_dx11_present( dx11, graphicsSystem->getVSync() ? 1 : 0 );
             }
         }
 
@@ -747,35 +790,52 @@ namespace workphone::render
     }
 
     void ClawRendererDX11::renderParticles( const Array<wp_particle_sample> &particles,
-        const Matrix4F &world, const Vector3F &scale, const SmartPtr<IMaterial> &material )
+                                            const Matrix4F &world, const Vector3F &scale,
+                                            const SmartPtr<IMaterial> &material )
     {
-        if( !m_renderer || particles.empty() ) return;
+        if( !m_renderer || particles.empty() )
+        {
+            return;
+        }
         const auto view = m_camera ? Matrix4F( m_camera->getViewMatrix().ptr() ) : Matrix4F::identity();
         const auto inverseView = view.inverse();
         const Vector3F right( inverseView[0][0], inverseView[1][0], inverseView[2][0] );
         const Vector3F up( inverseView[0][1], inverseView[1][1], inverseView[2][1] );
-        struct DrawParticle { Vector3F center; f32 depth; const wp_particle_sample *particle; };
+
+        struct DrawParticle
+        {
+            Vector3F center;
+            f32 depth;
+            const wp_particle_sample *particle;
+        };
+
         Array<DrawParticle> draw;
         draw.reserve( particles.size() );
         for( const auto &particle : particles )
         {
             const auto center = world.transformAffine( Vector3F( particle.position.x * scale.X(),
-                particle.position.y * scale.Y(), particle.position.z * scale.Z() ) );
+                                                                 particle.position.y * scale.Y(),
+                                                                 particle.position.z * scale.Z() ) );
             // Native camera inversion can round the affine bottom-right element.
             // Depth only needs the view's third row, without an exact-affine assertion.
-            const auto depth = view[2][0] * center.X() + view[2][1] * center.Y() +
-                view[2][2] * center.Z() + view[2][3];
+            const auto depth =
+                view[2][0] * center.X() + view[2][1] * center.Y() + view[2][2] * center.Z() + view[2][3];
             draw.push_back( { center, depth, &particle } );
         }
-        std::stable_sort( draw.begin(), draw.end(), []( const auto &a, const auto &b ) { return a.depth < b.depth; } );
+        std::stable_sort( draw.begin(), draw.end(),
+                          []( const auto &a, const auto &b ) { return a.depth < b.depth; } );
         const auto oldBlend = wp_renderer_get_blend_mode( m_renderer );
         const auto oldCull = wp_renderer_get_cull_mode( m_renderer );
         const auto oldDepthWrite = wp_renderer_get_depth_write_enabled( m_renderer );
         const auto oldDepthTest = wp_renderer_get_depth_test_enabled( m_renderer );
         const auto oldDepthFunc = wp_renderer_get_depth_func( m_renderer );
         const auto oldFill = wp_renderer_get_fill_mode( m_renderer );
-        auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() ) : WORKPHONE_BLEND_MODE_ALPHA;
-        if( blend == WORKPHONE_BLEND_MODE_NONE ) blend = WORKPHONE_BLEND_MODE_ALPHA;
+        auto blend =
+            material ? ClawUtil::toCBlendMode( material->getBlendMode() ) : WORKPHONE_BLEND_MODE_ALPHA;
+        if( blend == WORKPHONE_BLEND_MODE_NONE )
+        {
+            blend = WORKPHONE_BLEND_MODE_ALPHA;
+        }
         wp_renderer_set_blend_mode( m_renderer, blend );
         wp_renderer_set_cull_mode( m_renderer, WORKPHONE_CULL_MODE_NONE );
         wp_renderer_set_depth_test_enabled( m_renderer, 1 );
@@ -783,7 +843,13 @@ namespace workphone::render
         wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_LEQUAL );
         wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
         void *texture = nullptr;
-        if( material ) if( auto input = material->getTexture( 0 ) ) input->getTextureFinal( &texture );
+        if( material )
+        {
+            if( auto input = material->getTexture( 0 ) )
+            {
+                input->getTextureFinal( &texture );
+            }
+        }
         wp_renderer_set_texture_native( m_renderer, texture );
         setTransforms( Matrix4F::identity() );
         // Bounded batches avoid overflowing the transient native vertex buffer.
@@ -800,14 +866,20 @@ namespace workphone::render
                 const auto half = p.size * 0.5f;
                 const auto r = right * ( half * std::abs( scale.X() ) );
                 const auto u = up * ( half * std::abs( scale.Y() ) );
-                const Vector3F corners[] = { draw[i].center-r-u, draw[i].center+r-u,
-                    draw[i].center+r+u, draw[i].center-r+u };
-                const wp_vec2f uv[] = { {0,1}, {1,1}, {1,0}, {0,0} };
-                const auto colour = packColour( ColourF( p.color[0], p.color[1], p.color[2], p.color[3] ) );
+                const Vector3F corners[] = { draw[i].center - r - u, draw[i].center + r - u,
+                                             draw[i].center + r + u, draw[i].center - r + u };
+                const wp_vec2f uv[] = { { 0, 1 }, { 1, 1 }, { 1, 0 }, { 0, 0 } };
+                const auto colour =
+                    packColour( ColourF( p.color[0], p.color[1], p.color[2], p.color[3] ) );
                 for( auto index : k_quadIndices )
-                    vertices.push_back( { { corners[index].X(), corners[index].Y(), corners[index].Z() }, uv[index], colour } );
+                {
+                    vertices.push_back( { { corners[index].X(), corners[index].Y(), corners[index].Z() },
+                                          uv[index],
+                                          colour } );
+                }
             }
-            wp_renderer_draw_triangles_ptc( m_renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ) );
+            wp_renderer_draw_triangles_ptc( m_renderer, vertices.data(),
+                                            static_cast<wp_s32>( vertices.size() ) );
             m_primitiveCount += static_cast<u32>( vertices.size() / 3 );
         }
         wp_renderer_set_texture_native( m_renderer, nullptr );
@@ -829,11 +901,12 @@ namespace workphone::render
         m_lightIntensity = std::max( intensity, 0.0f );
     }
 
-    void ClawRendererDX11::setSceneFog( u32 mode, const ColourF &colour, f32 density, f32 start, f32 end )
+    void ClawRendererDX11::setSceneFog( u32 mode, const ColourF &colour, f32 density, f32 start,
+                                        f32 end )
     {
         m_fogColour = { colour.r, colour.g, colour.b, 1.f };
         m_fogParams = { static_cast<f32>( std::min( mode, 3u ) ), std::max( density, 0.f ),
-            std::max( start, 0.f ), std::max( end, start + .001f ) };
+                        std::max( start, 0.f ), std::max( end, start + .001f ) };
     }
 
     void ClawRendererDX11::applySceneLighting( wp_material_dx11 &material ) const
@@ -858,15 +931,25 @@ namespace workphone::render
         material.fog_params = m_shadowPass ? wp_vec4f{} : m_fogParams;
         auto dx11 = wp_renderer_get_dx11( m_renderer );
         if( dx11 && !m_hasSkyEnvironment && !m_previewEnvironment.getView() )
-            m_previewEnvironment.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
+        {
+            m_previewEnvironment.update(
+                static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
                 static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), {} );
+        }
         if( dx11 )
         {
             const ClawCubemap *environment = &m_previewEnvironment;
             if( m_hasSkyEnvironment )
-                if( auto found = g_skyEnvironmentCaches.find( this ); found != g_skyEnvironmentCaches.end() )
+            {
+                if( auto found = g_skyEnvironmentCaches.find( this );
+                    found != g_skyEnvironmentCaches.end() )
+                {
                     if( found->second.active )
+                    {
                         environment = found->second.active;
+                    }
+                }
+            }
             wp_renderer_dx11_set_environment( dx11, environment->getView(), environment->getMaxLod() );
         }
     }
@@ -876,10 +959,14 @@ namespace workphone::render
         disableShadows();
         auto camera = getCamera();
         auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
-        if( !dx11 || !camera || m_lightDirection.dotProduct( m_lightDirection ) < 1e-8f ) return false;
+        if( !dx11 || !camera || m_lightDirection.dotProduct( m_lightDirection ) < 1e-8f )
+        {
+            return false;
+        }
         mapSize = std::clamp( mapSize, 64, 8192 );
         const auto direction = m_lightDirection.normaliseCopy();
-        const Vector3F up = std::abs( direction.Y() ) > 0.95f ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 );
+        const Vector3F up =
+            std::abs( direction.Y() ) > 0.95f ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 );
         // Match the camera's screen-space winding while depth increases along
         // the light direction, so single-sided casters retain their front faces.
         const auto right = direction.crossProduct( up ).normaliseCopy();
@@ -887,45 +974,65 @@ namespace workphone::render
         auto lightView = Matrix4F::identity();
         for( int i = 0; i < 3; ++i )
         {
-            lightView[0][i] = right[i]; lightView[1][i] = vertical[i]; lightView[2][i] = direction[i];
+            lightView[0][i] = right[i];
+            lightView[1][i] = vertical[i];
+            lightView[2][i] = direction[i];
         }
         const auto inverse = ( Matrix4F( camera->getProjectionMatrix().ptr() ) *
-                               Matrix4F( camera->getViewMatrix().ptr() ) ).inverse();
+                               Matrix4F( camera->getViewMatrix().ptr() ) )
+                                 .inverse();
         const auto transformPoint = []( const Matrix4F &matrix, const Vector3F &point ) {
-            const float w = matrix[3][0] * point[0] + matrix[3][1] * point[1] +
-                            matrix[3][2] * point[2] + matrix[3][3];
+            const float w = matrix[3][0] * point[0] + matrix[3][1] * point[1] + matrix[3][2] * point[2] +
+                            matrix[3][3];
             Vector3F result;
-            for( int i = 0; i < 3; ++i ) result[i] = ( matrix[i][0] * point[0] +
-                matrix[i][1] * point[1] + matrix[i][2] * point[2] + matrix[i][3] ) / w;
+            for( int i = 0; i < 3; ++i )
+            {
+                result[i] = ( matrix[i][0] * point[0] + matrix[i][1] * point[1] +
+                              matrix[i][2] * point[2] + matrix[i][3] ) /
+                            w;
+            }
             return result;
         };
         Vector3F minimum( 1e30f, 1e30f, 1e30f ), maximum( -1e30f, -1e30f, -1e30f );
         const float nearClip = camera->getNearClipDistance();
         const float farClip = camera->getFarClipDistance();
-        const float fraction = std::clamp( ( std::min( farClip, 200.0f ) - nearClip ) /
-                                          std::max( farClip - nearClip, 0.001f ), 0.001f, 1.0f );
-        for( int y = -1; y <= 1; y += 2 ) for( int x = -1; x <= 1; x += 2 )
+        const float fraction = std::clamp(
+            ( std::min( farClip, 200.0f ) - nearClip ) / std::max( farClip - nearClip, 0.001f ), 0.001f,
+            1.0f );
+        for( int y = -1; y <= 1; y += 2 )
         {
-            const auto nearPoint = transformPoint( inverse, Vector3F( static_cast<float>( x ), static_cast<float>( y ), -1 ) );
-            const auto farPoint = transformPoint( inverse, Vector3F( static_cast<float>( x ), static_cast<float>( y ), 1 ) );
-            for( const auto &point : { nearPoint, nearPoint + ( farPoint - nearPoint ) * fraction } )
+            for( int x = -1; x <= 1; x += 2 )
             {
-                const auto p = transformPoint( lightView, point );
-                for( int i = 0; i < 3; ++i )
+                const auto nearPoint = transformPoint(
+                    inverse, Vector3F( static_cast<float>( x ), static_cast<float>( y ), -1 ) );
+                const auto farPoint = transformPoint(
+                    inverse, Vector3F( static_cast<float>( x ), static_cast<float>( y ), 1 ) );
+                for( const auto &point : { nearPoint, nearPoint + ( farPoint - nearPoint ) * fraction } )
                 {
-                    minimum[i] = std::min( minimum[i], p[i] ); maximum[i] = std::max( maximum[i], p[i] );
+                    const auto p = transformPoint( lightView, point );
+                    for( int i = 0; i < 3; ++i )
+                    {
+                        minimum[i] = std::min( minimum[i], p[i] );
+                        maximum[i] = std::max( maximum[i], p[i] );
+                    }
                 }
             }
         }
         // Leave depth room for casters outside the camera frustum toward the light.
-        minimum[2] -= 500.0f; maximum[2] += 50.0f;
+        minimum[2] -= 500.0f;
+        maximum[2] += 50.0f;
         auto projection = Matrix4F::identity();
         for( int i = 0; i < 3; ++i )
         {
             const float extent = std::max( maximum[i] - minimum[i], 1.0f ) + 2.0f;
             float center = ( minimum[i] + maximum[i] ) * 0.5f;
-            if( i < 2 ) center = std::floor( center / ( extent / static_cast<float>( mapSize ) ) ) * ( extent / static_cast<float>( mapSize ) );
-            projection[i][i] = 2.0f / extent; projection[i][3] = -2.0f * center / extent;
+            if( i < 2 )
+            {
+                center = std::floor( center / ( extent / static_cast<float>( mapSize ) ) ) *
+                         ( extent / static_cast<float>( mapSize ) );
+            }
+            projection[i][i] = 2.0f / extent;
+            projection[i][3] = -2.0f * center / extent;
         }
         m_shadowMatrix = projection * lightView;
         const auto matrix = toCMatrix( m_shadowMatrix );
@@ -935,7 +1042,10 @@ namespace workphone::render
 
     void ClawRendererDX11::endShadowMap()
     {
-        if( !m_shadowPass ) return;
+        if( !m_shadowPass )
+        {
+            return;
+        }
         wp_renderer_dx11_end_shadow_map( wp_renderer_get_dx11( m_renderer ) );
         m_shadowPass = false;
         m_shadowsEnabled = true;
@@ -945,7 +1055,10 @@ namespace workphone::render
     void ClawRendererDX11::disableShadows()
     {
         m_shadowsEnabled = false;
-        if( m_renderer ) wp_renderer_dx11_enable_shadow_receiving( wp_renderer_get_dx11( m_renderer ), 0 );
+        if( m_renderer )
+        {
+            wp_renderer_dx11_enable_shadow_receiving( wp_renderer_get_dx11( m_renderer ), 0 );
+        }
     }
 
     void ClawRendererDX11::renderMesh( ClawMesh *mesh, const Matrix4F &transform )
@@ -955,26 +1068,38 @@ namespace workphone::render
 
     Matrix4F ClawRendererDX11::foliageViewProjection( bool shadow ) const
     {
-        if( shadow && m_shadowPass ) return m_shadowMatrix;
+        if( shadow && m_shadowPass )
+        {
+            return m_shadowMatrix;
+        }
         const auto camera = getCamera();
         return camera ? Matrix4F( camera->getProjectionMatrix().ptr() ) *
-                        Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
+                            Matrix4F( camera->getViewMatrix().ptr() )
+                      : Matrix4F::identity();
     }
 
-    u32 ClawRendererDX11::renderFoliageGeometry( const wp_geometry_dx11 *geometry,
-        u32 first, u32 indices, const wp_foliage_instance_dx11 *instances, u32 count,
-        const wp_foliage_parameters_dx11 &parameters, const FoliageMaterial &source,
-        void *const *views, bool unlit, bool atlas )
+    u32 ClawRendererDX11::renderFoliageGeometry( const wp_geometry_dx11 *geometry, u32 first,
+                                                 u32 indices, const wp_foliage_instance_dx11 *instances,
+                                                 u32 count, const wp_foliage_parameters_dx11 &parameters,
+                                                 const FoliageMaterial &source, void *const *views,
+                                                 bool unlit, bool atlas )
     {
         auto native = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
         if( !native || !geometry || !count || count > foliageMaximumInstances || !views ||
-            !wp_renderer_dx11_validate_foliage_instances( instances, s32(count), &parameters ) ) return 0;
+            !wp_renderer_dx11_validate_foliage_instances( instances, s32( count ), &parameters ) )
+        {
+            return 0;
+        }
         if( !m_foliageStreamBudget )
         {
             String error;
             m_foliageStreamBudget = WorldStreamingScheduler::shared()->reserve(
-                StreamMemoryClass::Gpu, WP_DX11_INSTANCE_CAPACITY * 160ull + sizeof(parameters), error );
-            if( !m_foliageStreamBudget ) return 0;
+                StreamMemoryClass::Gpu, WP_DX11_INSTANCE_CAPACITY * 160ull + sizeof( parameters ),
+                error );
+            if( !m_foliageStreamBudget )
+            {
+                return 0;
+            }
         }
         setTransforms( Matrix4F::identity() );
         wp_renderer_dx11_set_terrain_material( native, nullptr, nullptr );
@@ -983,47 +1108,58 @@ namespace workphone::render
         wp_renderer_dx11_set_material_textures( native, maps );
         wp_renderer_dx11_set_material_sampler( native, atlas ? 1 : 0, atlas ? 1 : 0, 2, 1 );
         wp_material_dx11 material{};
-        material.base_color = { source.tint.r,source.tint.g,source.tint.b,source.tint.a };
-        material.specular_color = { .04f,.04f,.04f,0 };
-        material.surface = { source.metalness,source.roughness,1,1 };
-        material.uv_transform = { 0,0,unlit ? 0.0f : 1.0f,0 };
-        material.controls = { 1,1,source.alphaCutoff,0 };
-        material.map_flags = { views[1] ? 1.0f : 0.0f,views[2] ? 1.0f : 0.0f,views[2] ? 1.0f : 0.0f,0 };
-        material.extra_map_flags = { views[2] ? 1.0f : 0.0f,0,0,0 };
-        material.texture_sources = { 4,3,0,0 };
+        material.base_color = { source.tint.r, source.tint.g, source.tint.b, source.tint.a };
+        material.specular_color = { .04f, .04f, .04f, 0 };
+        material.surface = { source.metalness, source.roughness, 1, 1 };
+        material.uv_transform = { 0, 0, unlit ? 0.0f : 1.0f, 0 };
+        material.controls = { 1, 1, source.alphaCutoff, 0 };
+        material.map_flags = { views[1] ? 1.0f : 0.0f, views[2] ? 1.0f : 0.0f, views[2] ? 1.0f : 0.0f,
+                               0 };
+        material.extra_map_flags = { views[2] ? 1.0f : 0.0f, 0, 0, 0 };
+        material.texture_sources = { 4, 3, 0, 0 };
         applySceneLighting( material );
-        wp_renderer_dx11_set_material( native,&material );
-        wp_renderer_dx11_enable_shadow_receiving( native,m_shadowsEnabled );
-        wp_renderer_set_blend_mode( m_renderer,WORKPHONE_BLEND_MODE_NONE );
-        wp_renderer_set_depth_write_enabled( m_renderer,1 );
-        wp_renderer_set_depth_test_enabled( m_renderer,1 );
-        wp_renderer_set_depth_func( m_renderer,m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS : WORKPHONE_DEPTH_FUNC_LEQUAL );
-        wp_renderer_set_cull_mode( m_renderer,source.twoSided ? WORKPHONE_CULL_MODE_NONE : WORKPHONE_CULL_MODE_BACK );
-        wp_renderer_set_fill_mode( m_renderer,WORKPHONE_FILL_MODE_SOLID );
-        const auto submitted = wp_renderer_dx11_draw_foliage_instances( native,geometry,s32(first),s32(indices),
-            instances,s32(count),&parameters );
-        m_primitiveCount = u32(std::min<u64>(std::numeric_limits<u32>::max(),u64(m_primitiveCount)+u64(indices/3)*submitted));
-        wp_renderer_set_texture_native( m_renderer,nullptr );
-        wp_renderer_dx11_set_material_textures( native,nullptr );
-        auto context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(native));
-        ID3D11Buffer *empty = nullptr; UINT stride=0,offset=0;
+        wp_renderer_dx11_set_material( native, &material );
+        wp_renderer_dx11_enable_shadow_receiving( native, m_shadowsEnabled );
+        wp_renderer_set_blend_mode( m_renderer, WORKPHONE_BLEND_MODE_NONE );
+        wp_renderer_set_depth_write_enabled( m_renderer, 1 );
+        wp_renderer_set_depth_test_enabled( m_renderer, 1 );
+        wp_renderer_set_depth_func(
+            m_renderer, m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS : WORKPHONE_DEPTH_FUNC_LEQUAL );
+        wp_renderer_set_cull_mode(
+            m_renderer, source.twoSided ? WORKPHONE_CULL_MODE_NONE : WORKPHONE_CULL_MODE_BACK );
+        wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
+        const auto submitted = wp_renderer_dx11_draw_foliage_instances(
+            native, geometry, s32( first ), s32( indices ), instances, s32( count ), &parameters );
+        m_primitiveCount =
+            u32( std::min<u64>( std::numeric_limits<u32>::max(),
+                                u64( m_primitiveCount ) + u64( indices / 3 ) * submitted ) );
+        wp_renderer_set_texture_native( m_renderer, nullptr );
+        wp_renderer_dx11_set_material_textures( native, nullptr );
+        auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+        ID3D11Buffer *empty = nullptr;
+        UINT stride = 0, offset = 0;
         ID3D11ShaderResourceView *emptyView = nullptr;
-        context->PSSetShaderResources(0,1,&emptyView);
-        context->IASetVertexBuffers(0,1,&empty,&stride,&offset);
-        context->IASetIndexBuffer(nullptr,DXGI_FORMAT_R32_UINT,0);
-        return u32(submitted);
+        context->PSSetShaderResources( 0, 1, &emptyView );
+        context->IASetVertexBuffers( 0, 1, &empty, &stride, &offset );
+        context->IASetIndexBuffer( nullptr, DXGI_FORMAT_R32_UINT, 0 );
+        return u32( submitted );
     }
 
-    u64 ClawRendererDX11::renderMeshInstances( ClawMesh *mesh,
-                                              const wp_instance_pntc_dx11 *instances, u32 count )
+    u64 ClawRendererDX11::renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances,
+                                               u32 count )
     {
         if( !mesh || !count || count > 65536 ||
             !wp_renderer_dx11_validate_instances_pntc( instances, static_cast<wp_s32>( count ) ) )
+        {
             return 0;
+        }
         const auto native = mesh->getNativeMesh();
-        if( !native || wp_graphics_mesh_get_primitive_type( native ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ||
+        if( !native ||
+            wp_graphics_mesh_get_primitive_type( native ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ||
             !wp_graphics_mesh_get_index_count( native ) )
+        {
             return 0;
+        }
         // Transparent instances need per-view sorting. This first tier supports
         // opaque and alpha-tested species through the existing material path.
         const auto sections = std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) );
@@ -1031,13 +1167,15 @@ namespace workphone::render
         {
             auto material = resolveMeshMaterial( mesh, section );
             if( !isSupportedFoliageMaterial( material ) )
+            {
                 return 0;
+            }
         }
         return renderMeshBatch( mesh, Matrix4F::identity(), instances, count );
     }
 
     u64 ClawRendererDX11::renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
-                                          const wp_instance_pntc_dx11 *instances, u32 instanceCount )
+                                           const wp_instance_pntc_dx11 *instances, u32 instanceCount )
     {
         auto nativeMesh = mesh ? mesh->getNativeMesh() : nullptr;
         if( !m_renderer || !mesh || !mesh->isVisible() || !nativeMesh )
@@ -1104,26 +1242,52 @@ namespace workphone::render
 
             // These are Workphone/Ogre PBS slots, not the low-level C material slots.
             const auto state = getPrimaryMaterialPassState( material );
-            if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) ) continue;
-            wp_renderer_dx11_enable_shadow_receiving( dx11, m_shadowsEnabled && mesh->getReceiveShadows() &&
-                ( !state || state->getFlag( receiveShadowsFlag ) ) );
+            if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
+            {
+                continue;
+            }
+            wp_renderer_dx11_enable_shadow_receiving(
+                dx11, m_shadowsEnabled && mesh->getReceiveShadows() &&
+                          ( !state || state->getFlag( receiveShadowsFlag ) ) );
             u32 textureSlots[] = { 1u, 2u, 3u, 13u, 22u, 24u };
             if( state )
             {
-                if( state->metallicSource == 3u ) textureSlots[1] = 25u;
-                if( state->roughnessSource == 2u || state->roughnessSource == 4u ) textureSlots[2] = 2u;
-                if( state->roughnessSource == 3u ) textureSlots[2] = 25u;
-                if( state->aoSource == 1u ) textureSlots[4] = 25u;
-                if( state->opacitySource == 2u ) textureSlots[5] = 25u;
+                if( state->metallicSource == 3u )
+                {
+                    textureSlots[1] = 25u;
+                }
+                if( state->roughnessSource == 2u || state->roughnessSource == 4u )
+                {
+                    textureSlots[2] = 2u;
+                }
+                if( state->roughnessSource == 3u )
+                {
+                    textureSlots[2] = 25u;
+                }
+                if( state->aoSource == 1u )
+                {
+                    textureSlots[4] = 25u;
+                }
+                if( state->opacitySource == 2u )
+                {
+                    textureSlots[5] = 25u;
+                }
             }
             void *textureViews[6] = {};
             if( material )
+            {
                 for( size_t i = 0; i < 6; ++i )
+                {
                     if( auto texture = material->getTexture( textureSlots[i] ) )
+                    {
                         texture->getTextureFinal( &textureViews[i] );
+                    }
+                }
+            }
             wp_renderer_dx11_set_material_textures( dx11, textureViews );
-            wp_renderer_dx11_set_material_sampler( dx11, state ? state->uvWrapU : 0u,
-                state ? state->uvWrapV : 0u, state ? state->uvFilter : 1u,
+            wp_renderer_dx11_set_material_sampler(
+                dx11, state ? state->uvWrapU : 0u, state ? state->uvWrapV : 0u,
+                state ? state->uvFilter : 1u,
                 state ? static_cast<u32>( Math<f32>::clamp( state->uvAniso, 1.0f, 16.0f ) ) : 1u );
 
             wp_material_dx11 nativeMaterial{};
@@ -1137,7 +1301,9 @@ namespace workphone::render
             applySceneLighting( nativeMaterial );
             // A material's reflection probe overrides the sky environment for this draw.
             if( material )
-                if( auto reflection = material->getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
+            {
+                if( auto reflection =
+                        material->getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
                 {
                     void *view = nullptr;
                     reflection->getTextureFinal( &view );
@@ -1147,56 +1313,68 @@ namespace workphone::render
                         static_cast<ID3D11ShaderResourceView *>( view )->GetDesc( &desc );
                         if( desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURECUBE )
                         {
-                            wp_renderer_dx11_set_environment( dx11, view, static_cast<float>( desc.TextureCube.MipLevels - 1 ) );
+                            wp_renderer_dx11_set_environment(
+                                dx11, view, static_cast<float>( desc.TextureCube.MipLevels - 1 ) );
                             nativeMaterial.environment.z = 1.0f;
                         }
                     }
                 }
+            }
             nativeMaterial.surface = { material ? material->getMetalness() : 0.0f,
                                        material ? material->getRoughness() : 0.5f, 1.0f, 1.0f };
             nativeMaterial.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
             nativeMaterial.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
-            nativeMaterial.map_flags = { textureViews[0] ? 1.0f : 0.0f,
-                textureViews[1] ? 1.0f : 0.0f, textureViews[2] ? 1.0f : 0.0f,
-                textureViews[3] ? 1.0f : 0.0f };
+            nativeMaterial.map_flags = { textureViews[0] ? 1.0f : 0.0f, textureViews[1] ? 1.0f : 0.0f,
+                                         textureViews[2] ? 1.0f : 0.0f, textureViews[3] ? 1.0f : 0.0f };
             nativeMaterial.extra_map_flags = { textureViews[4] ? 1.0f : 0.0f,
-                textureViews[5] ? 1.0f : 0.0f, 0.0f, 0.0f };
+                                               textureViews[5] ? 1.0f : 0.0f, 0.0f, 0.0f };
             applyPrimaryMaterialUvState( material, state, nativeMaterial );
             if( dx11 )
+            {
                 wp_renderer_dx11_set_material( dx11, &nativeMaterial );
-            auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() ) : WORKPHONE_BLEND_MODE_NONE;
+            }
+            auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() )
+                                  : WORKPHONE_BLEND_MODE_NONE;
             if( material && material->isTransparent() && blend == WORKPHONE_BLEND_MODE_NONE )
+            {
                 blend = WORKPHONE_BLEND_MODE_ALPHA;
+            }
             wp_renderer_set_blend_mode( m_renderer, blend );
-            wp_renderer_set_depth_write_enabled( m_renderer, m_shadowPass || !material || material->getDepthWrite() );
+            wp_renderer_set_depth_write_enabled(
+                m_renderer, m_shadowPass || !material || material->getDepthWrite() );
             // The editor's comparison list differs from the C renderer enum.
-            constexpr wp_depth_func depthFunctions[] = { WORKPHONE_DEPTH_FUNC_NEVER,
-                WORKPHONE_DEPTH_FUNC_LESS, WORKPHONE_DEPTH_FUNC_LEQUAL, WORKPHONE_DEPTH_FUNC_EQUAL,
-                WORKPHONE_DEPTH_FUNC_GEQUAL, WORKPHONE_DEPTH_FUNC_GREATER, WORKPHONE_DEPTH_FUNC_ALWAYS };
+            constexpr wp_depth_func depthFunctions[] = {
+                WORKPHONE_DEPTH_FUNC_NEVER, WORKPHONE_DEPTH_FUNC_LESS,   WORKPHONE_DEPTH_FUNC_LEQUAL,
+                WORKPHONE_DEPTH_FUNC_EQUAL, WORKPHONE_DEPTH_FUNC_GEQUAL, WORKPHONE_DEPTH_FUNC_GREATER,
+                WORKPHONE_DEPTH_FUNC_ALWAYS
+            };
             const auto depthTest = material ? material->getDepthTest() : 2u;
             wp_renderer_set_depth_test_enabled( m_renderer, 1 );
-            wp_renderer_set_depth_func( m_renderer, m_shadowPass ? WORKPHONE_DEPTH_FUNC_LESS : depthFunctions[std::min( depthTest, 6u )] );
-            wp_renderer_set_fill_mode( m_renderer, !m_shadowPass && state && state->getFlag( showWireframeFlag )
-                ? WORKPHONE_FILL_MODE_WIREFRAME : WORKPHONE_FILL_MODE_SOLID );
-            wp_renderer_set_cull_mode( m_renderer, isMaterialDoubleSided( material )
-                                                       ? WORKPHONE_CULL_MODE_NONE
-                                                       : material ? ClawUtil::toCCullMode( material->getCullMode() )
-                                                                  : WORKPHONE_CULL_MODE_BACK );
+            wp_renderer_set_depth_func( m_renderer, m_shadowPass
+                                                        ? WORKPHONE_DEPTH_FUNC_LESS
+                                                        : depthFunctions[std::min( depthTest, 6u )] );
+            wp_renderer_set_fill_mode( m_renderer,
+                                       !m_shadowPass && state && state->getFlag( showWireframeFlag )
+                                           ? WORKPHONE_FILL_MODE_WIREFRAME
+                                           : WORKPHONE_FILL_MODE_SOLID );
+            wp_renderer_set_cull_mode( m_renderer,
+                                       isMaterialDoubleSided( material ) ? WORKPHONE_CULL_MODE_NONE
+                                       : material ? ClawUtil::toCCullMode( material->getCullMode() )
+                                                  : WORKPHONE_CULL_MODE_BACK );
 
             if( instances )
             {
                 if( geometry && count > 0 && count % 3u == 0 )
                 {
                     const auto drawn = wp_renderer_dx11_draw_geometry_pntc_instanced(
-                        dx11, geometry, static_cast<wp_s32>( start ),
-                        static_cast<wp_s32>( count ), 0, instances,
-                        static_cast<wp_s32>( instanceCount ) );
+                        dx11, geometry, static_cast<wp_s32>( start ), static_cast<wp_s32>( count ), 0,
+                        instances, static_cast<wp_s32>( instanceCount ) );
                     if( drawn > 0 )
                     {
                         submitted += drawn;
-                        m_primitiveCount = static_cast<u32>( std::min<u64>(
-                            std::numeric_limits<u32>::max(),
-                            u64( m_primitiveCount ) + u64( count / 3u ) * drawn ) );
+                        m_primitiveCount = static_cast<u32>(
+                            std::min<u64>( std::numeric_limits<u32>::max(),
+                                           u64( m_primitiveCount ) + u64( count / 3u ) * drawn ) );
                     }
                 }
             }
@@ -1268,78 +1446,105 @@ namespace workphone::render
 
     bool ClawRendererDX11::prepareTerrainGeometry( const wp_graphics_mesh *mesh )
     {
-        auto dx11=m_renderer?wp_renderer_get_dx11(m_renderer):nullptr;
-        return mesh && dx11 && getMeshGeometry(dx11,mesh,getMeshVertices(mesh));
+        auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
+        return mesh && dx11 && getMeshGeometry( dx11, mesh, getMeshVertices( mesh ) );
     }
 
     void ClawRendererDX11::prepareTerrain( SmartPtr<ClawTerrain> terrain,
-        const Array<SmartPtr<IGraphicsCamera>> &cameras )
+                                           const Array<SmartPtr<IGraphicsCamera>> &cameras )
     {
-        if( !terrain || !terrain->isVisible() ) return;
+        if( !terrain || !terrain->isVisible() )
+        {
+            return;
+        }
         auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
         if( !dx11 )
+        {
             return;
-        const Matrix4F requestedTransform( terrain->getRequestedTerrainWorldTransform().getTransformationMatrix().ptr() );
+        }
+        const Matrix4F requestedTransform(
+            terrain->getRequestedTerrainWorldTransform().getTransformationMatrix().ptr() );
         Array<TerrainTileView> views;
         TerrainTileView view;
-        view.cull=false;
-        const auto scale=terrain->getRequestedTerrainWorldTransform().getScale();
-        view.verticalScale=f32(scale.y);
-        view.minimumWorldScale=f32(std::min({scale.x,scale.y,scale.z}));
-        view.prefetchMargin=0.15f;
-        const auto addCamera=[&](const SmartPtr<IGraphicsCamera>&camera) {
-            auto cameraTileView=view;
-            if(camera)
+        view.cull = false;
+        const auto scale = terrain->getRequestedTerrainWorldTransform().getScale();
+        view.verticalScale = f32( scale.y );
+        view.minimumWorldScale = f32( std::min( { scale.x, scale.y, scale.z } ) );
+        view.prefetchMargin = 0.15f;
+        const auto addCamera = [&]( const SmartPtr<IGraphicsCamera> &camera ) {
+            auto cameraTileView = view;
+            if( camera )
             {
-                const Matrix4F cameraView(camera->getViewMatrix().ptr());
-                const Matrix4F projection(camera->getProjectionMatrix().ptr());
-                cameraTileView.localToClip=projection*cameraView*requestedTransform;
-                cameraTileView.localCamera=(cameraView*requestedTransform).inverse().transformAffine(Vector3F::zero());
-                const auto target=getRenderTarget();
-                const auto height=target?std::max(1,target->getSize().y):1080;
-                cameraTileView.pixelsPerMetreAtUnitDistance=std::abs(projection[1][1])*height*0.5f;
-                cameraTileView.cull=true;
+                const Matrix4F cameraView( camera->getViewMatrix().ptr() );
+                const Matrix4F projection( camera->getProjectionMatrix().ptr() );
+                cameraTileView.localToClip = projection * cameraView * requestedTransform;
+                cameraTileView.localCamera =
+                    ( cameraView * requestedTransform ).inverse().transformAffine( Vector3F::zero() );
+                const auto target = getRenderTarget();
+                const auto height = target ? std::max( 1, target->getSize().y ) : 1080;
+                cameraTileView.pixelsPerMetreAtUnitDistance =
+                    std::abs( projection[1][1] ) * height * 0.5f;
+                cameraTileView.cull = true;
             }
-            views.push_back(cameraTileView);
+            views.push_back( cameraTileView );
         };
 
         auto c = getCamera();
-        addCamera(c);
+        addCamera( c );
 
         // Resident demand is the union of scene cameras. Changing which viewport
         // draws first must not cancel another camera's in-flight tile generation.
-        for(const auto&camera:cameras)
-            if(camera&&camera!=getCamera())
-            {
-                if(views.size()>=15)break;
-                addCamera(camera);
-            }
-        view=views.front();
-        if(m_shadowPass || m_shadowsEnabled)
+        for( const auto &camera : cameras )
         {
-            auto shadowView=view;
-            shadowView.localToClip=m_shadowMatrix*requestedTransform;
-            shadowView.maximumPixelError=1;
-            views.push_back(shadowView);
+            if( camera && camera != getCamera() )
+            {
+                if( views.size() >= 15 )
+                {
+                    break;
+                }
+                addCamera( camera );
+            }
+        }
+        view = views.front();
+        if( m_shadowPass || m_shadowsEnabled )
+        {
+            auto shadowView = view;
+            shadowView.localToClip = m_shadowMatrix * requestedTransform;
+            shadowView.maximumPixelError = 1;
+            views.push_back( shadowView );
         }
         String terrainError;
-        terrain->prepareRenderTiles(*this,views,terrainError);
+        terrain->prepareRenderTiles( *this, views, terrainError );
     }
 
     void ClawRendererDX11::renderTerrain( SmartPtr<ClawTerrain> terrain, bool prepare )
     {
-        if(!terrain||!terrain->isVisible())return;
-        auto dx11=m_renderer?wp_renderer_get_dx11(m_renderer):nullptr;
-        if(!dx11)return;
-        if(prepare)prepareTerrain(terrain);
+        if( !terrain || !terrain->isVisible() )
+        {
+            return;
+        }
+        auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
+        if( !dx11 )
+        {
+            return;
+        }
+        if( prepare )
+        {
+            prepareTerrain( terrain );
+        }
         String terrainError;
-        const auto tiles=terrain->getNativeRenderTiles();
-        if(tiles.empty())return;
+        const auto tiles = terrain->getNativeRenderTiles();
+        if( tiles.empty() )
+        {
+            return;
+        }
         const Matrix4F transform( terrain->getWorldTransform().getTransformationMatrix().ptr() );
         setTransforms( transform );
         void *nativeTexture = nullptr;
         if( auto texture = terrain->getTexture( 0 ) )
+        {
             texture->getTextureFinal( &nativeTexture );
+        }
         wp_renderer_set_texture_native( m_renderer, nativeTexture );
 
         wp_renderer_dx11_enable_shadow_receiving( dx11, m_shadowsEnabled );
@@ -1352,10 +1557,10 @@ namespace workphone::render
         material.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
         material.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
         wp_renderer_dx11_set_material( dx11, &material );
-        if(!terrain->terrainMaterial().bind(*this,terrainError))
+        if( !terrain->terrainMaterial().bind( *this, terrainError ) )
         {
-            wp_renderer_set_texture_native(m_renderer,nullptr);
-            ClawTerrainMaterial::unbind(*this);
+            wp_renderer_set_texture_native( m_renderer, nullptr );
+            ClawTerrainMaterial::unbind( *this );
             return;
         }
 
@@ -1372,14 +1577,18 @@ namespace workphone::render
             wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_LESS );
             wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
         }
-        for(auto nativeMesh:tiles)
+        for( auto nativeMesh : tiles )
         {
-            const auto &vertices=getMeshVertices(nativeMesh);
-            const auto indexCount=wp_graphics_mesh_get_index_count(nativeMesh);
-            const auto geometry=getMeshGeometry(dx11,nativeMesh,vertices);
-            if(!geometry)continue;
-            wp_renderer_dx11_draw_geometry_pntc(dx11,geometry,0,static_cast<wp_s32>(indexCount),0);
-            m_primitiveCount+=indexCount/3;
+            const auto &vertices = getMeshVertices( nativeMesh );
+            const auto indexCount = wp_graphics_mesh_get_index_count( nativeMesh );
+            const auto geometry = getMeshGeometry( dx11, nativeMesh, vertices );
+            if( !geometry )
+            {
+                continue;
+            }
+            wp_renderer_dx11_draw_geometry_pntc( dx11, geometry, 0, static_cast<wp_s32>( indexCount ),
+                                                 0 );
+            m_primitiveCount += indexCount / 3;
         }
         wp_renderer_set_cull_mode( m_renderer, oldCull );
         wp_renderer_set_depth_test_enabled( m_renderer, oldDepthTest );
@@ -1387,7 +1596,7 @@ namespace workphone::render
         wp_renderer_set_depth_func( m_renderer, oldDepthFunc );
         wp_renderer_set_fill_mode( m_renderer, oldFill );
         wp_renderer_set_texture_native( m_renderer, nullptr );
-        ClawTerrainMaterial::unbind(*this);
+        ClawTerrainMaterial::unbind( *this );
         // The context retains bound buffers. Clear the final tile bindings so
         // terrain retirement also retires their GPU allocation reservations.
         // Material unbind invalidates the native cached bindings for the next draw.
@@ -1424,12 +1633,14 @@ namespace workphone::render
         {
             std::array<ID3D11ShaderResourceView *, 6> views{};
             for( size_t face = 0; face < std::min( textures.size(), views.size() ); ++face )
+            {
                 if( textures[face] )
                 {
                     void *view = nullptr;
                     textures[face]->getTextureFinal( &view );
                     views[face] = static_cast<ID3D11ShaderResourceView *>( view );
                 }
+            }
             auto &cache = g_skyEnvironmentCaches[this];
             auto &entry = cache.skies[sky.get()];
             if( entry.sky.lock() != sky )
@@ -1437,7 +1648,8 @@ namespace workphone::render
                 entry.cubemap.reset();
                 entry.sky = sky;
             }
-            m_hasSkyEnvironment = entry.cubemap.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
+            m_hasSkyEnvironment = entry.cubemap.update(
+                static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
                 static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ), views );
             cache.active = m_hasSkyEnvironment ? &entry.cubemap : nullptr;
         }
@@ -1519,9 +1731,11 @@ namespace workphone::render
     {
         auto camera = getCamera();
         const auto nativeWorld = toCMatrix( world );
-        const auto view = !m_shadowPass && camera ? Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
-        const auto projection = m_shadowPass ? m_shadowMatrix :
-            camera ? Matrix4F( camera->getProjectionMatrix().ptr() ) : Matrix4F::identity();
+        const auto view =
+            !m_shadowPass && camera ? Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
+        const auto projection = m_shadowPass ? m_shadowMatrix
+                                : camera     ? Matrix4F( camera->getProjectionMatrix().ptr() )
+                                             : Matrix4F::identity();
         const auto nativeView = toCMatrix( view );
         const auto nativeProjection = toCMatrix( projection );
 

@@ -444,7 +444,8 @@ namespace workphone
                 {
                     stateContext->setOwner( nullptr );
                     auto applicationManager = core::IApplicationManager::instance();
-                    auto stateManager = applicationManager ? applicationManager->getStateManager() : nullptr;
+                    auto stateManager =
+                        applicationManager ? applicationManager->getStateManager() : nullptr;
                     if( stateManager )
                     {
                         stateManager->removeStateContext( stateContext );

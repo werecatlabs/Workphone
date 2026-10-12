@@ -72,10 +72,12 @@ namespace workphone
             static u32 fromCCullMode( wp_cull_mode mode );
 
             static void calculatePositionAndSize( const Vector2F &position, const Vector2F &size,
-                                           Vector2F &outAbsolutePosition, Vector2F &outAbsoluteSize );
+                                                  Vector2F &outAbsolutePosition,
+                                                  Vector2F &outAbsoluteSize );
 
-            static void calculateBounds( const Vector2F &position, const Vector2F &size, wp_rect *outBounds );
-           
+            static void calculateBounds( const Vector2F &position, const Vector2F &size,
+                                         wp_rect *outBounds );
+
             static wp_color toWpColor( const ColourF &c );
 
             static wp_style_item solidItem( const ColourF &c );

@@ -23,13 +23,16 @@ namespace workphone
     namespace render
     {
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawMesh, GraphicsMesh );
+
         namespace
         {
             // Convert the registered CPU resource without creating a temporary mesh file.
             wp_graphics_mesh *createProceduralNativeMesh( SmartPtr<workphone::IMesh> mesh )
             {
                 if( !mesh )
+                {
                     return nullptr;
+                }
                 Array<wp_graphics_mesh_vertex_pnt> vertices;
                 Array<wp_u32> indices;
                 Array<Pair<wp_u32, wp_u32>> ranges;
@@ -37,16 +40,24 @@ namespace workphone
                 for( const auto &section : mesh->getSubMeshes() )
                 {
                     if( !section || section->getUseSharedVertices() )
+                    {
                         return nullptr;
+                    }
                     auto vb = section->getVertexBuffer();
                     auto ib = section->getIndexBuffer();
                     if( !vb || !ib )
+                    {
                         return nullptr;
+                    }
                     if( !vb->getNumVertices() || !ib->getNumIndices() )
+                    {
                         continue;
+                    }
                     auto declaration = vb->getVertexDeclaration();
                     if( !declaration )
+                    {
                         return nullptr;
+                    }
                     auto position =
                         declaration->findElementBySemantic( VertexElementSemantic::VES_POSITION );
                     auto normal =
@@ -58,12 +69,16 @@ namespace workphone
                         normal->getType() != VertexElementType::VET_FLOAT3 ||
                         ( uv->getType() != VertexElementType::VET_FLOAT2 &&
                           uv->getType() != VertexElementType::VET_FLOAT3 ) )
+                    {
                         return nullptr;
+                    }
                     const auto limit = std::numeric_limits<wp_u32>::max();
                     if( vertices.size() + vb->getNumVertices() > limit ||
                         indices.size() + ib->getNumIndices() > limit || ib->getNumIndices() % 3 != 0 ||
                         !ib->getIndexData() )
+                    {
                         return nullptr;
+                    }
                     const auto base = static_cast<wp_u32>( vertices.size() );
                     auto read = [&]( SmartPtr<IVertexElement> element, u32 vertex, float *out,
                                      u32 count ) {
@@ -71,7 +86,9 @@ namespace workphone
                         const auto data =
                             static_cast<const u8 *>( vb->getVertexData( element->getSource() ) );
                         if( !data || element->getOffset() + count * sizeof( float ) > stride )
+                        {
                             return false;
+                        }
                         std::memcpy(
                             out, data + static_cast<size_t>( vertex ) * stride + element->getOffset(),
                             count * sizeof( float ) );
@@ -82,7 +99,9 @@ namespace workphone
                         float p[3], n[3], t[2];
                         if( !read( position, i, p, 3 ) || !read( normal, i, n, 3 ) ||
                             !read( uv, i, t, 2 ) )
+                        {
                             return nullptr;
+                        }
                         wp_graphics_mesh_vertex_pnt vertex{};
                         vertex.position = { p[0], p[1], p[2] };
                         vertex.normal = { n[0], n[1], n[2] };
@@ -98,12 +117,16 @@ namespace workphone
                                                ? static_cast<const u16 *>( ib->getIndexData() )[i]
                                                : static_cast<const u32 *>( ib->getIndexData() )[i];
                         if( index >= vb->getNumVertices() )
+                        {
                             return nullptr;
+                        }
                         indices.push_back( base + index );
                     }
                 }
                 if( vertices.empty() || indices.empty() )
+                {
                     return nullptr;
+                }
                 std::unique_ptr<wp_graphics_mesh, decltype( &wp_graphics_mesh_destroy )> result(
                     wp_graphics_mesh_create(), &wp_graphics_mesh_destroy );
                 if( !result ||
@@ -112,11 +135,17 @@ namespace workphone
                                                     static_cast<wp_u32>( vertices.size() ) ) ||
                     !wp_graphics_mesh_set_indices_u32( result.get(), indices.data(),
                                                        static_cast<wp_u32>( indices.size() ) ) )
+                {
                     return nullptr;
+                }
                 for( size_t i = 0; i < ranges.size(); ++i )
+                {
                     if( wp_graphics_mesh_add_submesh( result.get(), ranges[i].first, ranges[i].second,
                                                       materials[i] ) < 0 )
+                    {
                         return nullptr;
+                    }
+                }
                 wp_graphics_mesh_compute_aabb( result.get() );
                 return result.release();
             }
@@ -148,9 +177,13 @@ namespace workphone
             setLoadingState( LoadingState::Loading );
 
             if( !m_mesh )
+            {
                 m_mesh = wp_graphics_mesh_create();
+            }
             if( m_renderObject )
+            {
                 wp_graphics_object_set_mesh( m_renderObject, m_mesh );
+            }
 
             GraphicsMesh::load( data );
 
@@ -238,7 +271,9 @@ namespace workphone
             m_skinOutput.clear();
             // Keep the scene's native render object attached while replacing its mesh.
             if( m_renderObject )
+            {
                 wp_graphics_object_set_mesh( m_renderObject, nullptr );
+            }
             if( m_mesh )
             {
                 ClawRendererDX11::forgetMesh( m_mesh );
@@ -334,7 +369,9 @@ namespace workphone
                         if( auto resource = materialManager->getByName( materialName ) )
                         {
                             if( auto material = dynamic_pointer_cast<IMaterial>( resource ) )
+                            {
                                 setMaterial( material, index );
+                            }
                         }
                     }
                 }
@@ -397,7 +434,9 @@ namespace workphone
             m_castShadows = castShadows;
             GraphicsMesh::setCastShadows( castShadows );
             if( m_renderObject )
+            {
                 wp_graphics_object_set_cast_shadows( m_renderObject, castShadows ? 1 : 0 );
+            }
         }
 
         bool ClawMesh::getCastShadows() const
@@ -410,7 +449,9 @@ namespace workphone
             m_receiveShadows = receiveShadows;
             GraphicsMesh::setReceiveShadows( receiveShadows );
             if( m_renderObject )
+            {
                 wp_graphics_object_set_receive_shadows( m_renderObject, receiveShadows ? 1 : 0 );
+            }
         }
 
         bool ClawMesh::getReceiveShadows() const
@@ -422,7 +463,9 @@ namespace workphone
         {
             GraphicsMesh::setVisibilityFlags( flags );
             if( m_renderObject )
+            {
                 wp_graphics_object_set_visibility_flags( m_renderObject, flags );
+            }
         }
 
         String ClawMesh::getMeshName() const
@@ -459,47 +502,85 @@ namespace workphone
 
         bool ClawMesh::setSkinningData( const Array<wp_skin_vertex> &vertices )
         {
-            if( !m_mesh || vertices.size() != wp_graphics_mesh_get_vertex_count( m_mesh ) || vertices.empty() ) return false;
+            if( !m_mesh || vertices.size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
+                vertices.empty() )
+            {
+                return false;
+            }
             const auto format = wp_graphics_mesh_get_vertex_format( m_mesh );
-            if( format != WORKPHONE_VERTEX_FORMAT_PNT && format != WORKPHONE_VERTEX_FORMAT_PNTC ) return false;
+            if( format != WORKPHONE_VERTEX_FORMAT_PNT && format != WORKPHONE_VERTEX_FORMAT_PNTC )
+            {
+                return false;
+            }
             // Validate indices/weights with an identity palette before publishing bind data.
             Array<wp_mat4f> identity( WP_SKIN_MAX_JOINTS );
             for( auto &matrix : identity )
             {
-                std::memset( &matrix, 0, sizeof(matrix) );
-                for( u32 i = 0; i < 4; ++i ) matrix.m[i][i] = 1.0f;
+                std::memset( &matrix, 0, sizeof( matrix ) );
+                for( u32 i = 0; i < 4; ++i )
+                {
+                    matrix.m[i][i] = 1.0f;
+                }
             }
             Array<wp_skin_result> validated( vertices.size() );
             if( !wp_skin_vertices( vertices.data(), static_cast<wp_u32>( vertices.size() ),
-                identity.data(), static_cast<wp_u32>( identity.size() ), validated.data() ) ) return false;
+                                   identity.data(), static_cast<wp_u32>( identity.size() ),
+                                   validated.data() ) )
+            {
+                return false;
+            }
             m_skinVertices = std::make_shared<const Array<wp_skin_vertex>>( vertices );
             m_skinOutput = std::move( validated );
             return true;
         }
 
-        bool ClawMesh::hasSkinningData() const { return m_skinVertices && !m_skinVertices->empty(); }
+        bool ClawMesh::hasSkinningData() const
+        {
+            return m_skinVertices && !m_skinVertices->empty();
+        }
 
         bool ClawMesh::applySkinningPalette( const Array<wp_mat4f> &palette )
         {
-            if( !m_mesh || !m_skinVertices || m_skinVertices->empty() || m_skinVertices->size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
-                palette.empty() || palette.size() > WP_SKIN_MAX_JOINTS ) return false;
+            if( !m_mesh || !m_skinVertices || m_skinVertices->empty() ||
+                m_skinVertices->size() != wp_graphics_mesh_get_vertex_count( m_mesh ) ||
+                palette.empty() || palette.size() > WP_SKIN_MAX_JOINTS )
+            {
+                return false;
+            }
             if( !wp_skin_vertices( m_skinVertices->data(), static_cast<wp_u32>( m_skinVertices->size() ),
-                palette.data(), static_cast<wp_u32>( palette.size() ), m_skinOutput.data() ) ) return false;
+                                   palette.data(), static_cast<wp_u32>( palette.size() ),
+                                   m_skinOutput.data() ) )
+            {
+                return false;
+            }
             const auto count = wp_graphics_mesh_get_vertex_count( m_mesh );
             const auto stride = wp_graphics_mesh_get_vertex_stride( m_mesh );
             const auto source = static_cast<const u8 *>( wp_graphics_mesh_get_vertices( m_mesh ) );
-            if( !source || stride < sizeof(wp_vec3f) * 2 ) return false;
-            Array<u8> vertices( static_cast<size_t>(count) * stride );
+            if( !source || stride < sizeof( wp_vec3f ) * 2 )
+            {
+                return false;
+            }
+            Array<u8> vertices( static_cast<size_t>( count ) * stride );
             std::memcpy( vertices.data(), source, vertices.size() );
             for( u32 i = 0; i < count; ++i )
             {
-                std::memcpy( vertices.data() + static_cast<size_t>(i) * stride, &m_skinOutput[i].position, sizeof(wp_vec3f) );
-                std::memcpy( vertices.data() + static_cast<size_t>(i) * stride + sizeof(wp_vec3f), &m_skinOutput[i].normal, sizeof(wp_vec3f) );
+                std::memcpy( vertices.data() + static_cast<size_t>( i ) * stride,
+                             &m_skinOutput[i].position, sizeof( wp_vec3f ) );
+                std::memcpy( vertices.data() + static_cast<size_t>( i ) * stride + sizeof( wp_vec3f ),
+                             &m_skinOutput[i].normal, sizeof( wp_vec3f ) );
             }
-            if( !wp_graphics_mesh_set_vertices( m_mesh, wp_graphics_mesh_get_vertex_format(m_mesh), vertices.data(), count ) ) return false;
+            if( !wp_graphics_mesh_set_vertices( m_mesh, wp_graphics_mesh_get_vertex_format( m_mesh ),
+                                                vertices.data(), count ) )
+            {
+                return false;
+            }
             ClawRendererDX11::forgetMesh( m_mesh );
             wp_graphics_mesh_compute_aabb( m_mesh );
-            if( m_renderObject ) wp_graphics_object_set_local_aabb( m_renderObject, wp_graphics_mesh_get_local_aabb(m_mesh) );
+            if( m_renderObject )
+            {
+                wp_graphics_object_set_local_aabb( m_renderObject,
+                                                   wp_graphics_mesh_get_local_aabb( m_mesh ) );
+            }
             return true;
         }
 
@@ -509,15 +590,28 @@ namespace workphone
             if( !m_mesh || vertices.empty() || indices.empty() || indices.size() % 3 != 0 ||
                 vertices.size() > std::numeric_limits<u32>::max() ||
                 indices.size() > std::numeric_limits<u32>::max() )
+            {
                 return false;
-            for( auto index : indices ) if( index >= vertices.size() ) return false;
-            if( !wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNTC,
-                                                vertices.data(), static_cast<u32>( vertices.size() ) ) ||
-                !wp_graphics_mesh_set_indices_u32( m_mesh, indices.data(), static_cast<u32>( indices.size() ) ) )
+            }
+            for( auto index : indices )
+            {
+                if( index >= vertices.size() )
+                {
+                    return false;
+                }
+            }
+            if( !wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNTC, vertices.data(),
+                                                static_cast<u32>( vertices.size() ) ) ||
+                !wp_graphics_mesh_set_indices_u32( m_mesh, indices.data(),
+                                                   static_cast<u32>( indices.size() ) ) )
+            {
                 return false;
+            }
             wp_graphics_mesh_clear_submeshes( m_mesh );
             if( wp_graphics_mesh_add_submesh( m_mesh, 0, static_cast<u32>( indices.size() ), 0 ) < 0 )
+            {
                 return false;
+            }
             // New authored geometry needs an explicit new binding; equal vertex
             // counts alone do not make the old skin indices/positions compatible.
             m_skinVertices.reset();
@@ -525,7 +619,10 @@ namespace workphone
             wp_graphics_mesh_compute_aabb( m_mesh );
             ClawRendererDX11::forgetMesh( m_mesh );
             if( m_renderObject )
-                wp_graphics_object_set_local_aabb( m_renderObject, wp_graphics_mesh_get_local_aabb( m_mesh ) );
+            {
+                wp_graphics_object_set_local_aabb( m_renderObject,
+                                                   wp_graphics_mesh_get_local_aabb( m_mesh ) );
+            }
             return true;
         }
 
@@ -537,9 +634,13 @@ namespace workphone
             mesh->setMaterialName( getMaterialName() );
             mesh->setMaterial( getMaterial() );
             for( size_t i = 0; i < m_subMaterialNames.size(); ++i )
+            {
                 mesh->setMaterialName( m_subMaterialNames[i], static_cast<s32>( i ) );
+            }
             for( size_t i = 0; i < m_subMaterials.size(); ++i )
+            {
                 mesh->setMaterial( m_subMaterials[i], static_cast<s32>( i ) );
+            }
             mesh->setHardwareAnimationEnabled( m_hardwareAnimationEnabled );
             mesh->setSkeleton( getSkeleton() );
             mesh->setVisible( isVisible() );
@@ -554,23 +655,40 @@ namespace workphone
                 const auto indices = wp_graphics_mesh_get_index_count( m_mesh );
                 if( !candidate ||
                     ( vertices && !wp_graphics_mesh_set_vertices(
-                        candidate.get(), wp_graphics_mesh_get_vertex_format( m_mesh ),
-                        wp_graphics_mesh_get_vertices( m_mesh ), vertices ) ) ) return nullptr;
+                                      candidate.get(), wp_graphics_mesh_get_vertex_format( m_mesh ),
+                                      wp_graphics_mesh_get_vertices( m_mesh ), vertices ) ) )
+                {
+                    return nullptr;
+                }
                 if( indices )
                 {
-                    const auto copied = wp_graphics_mesh_get_index_format( m_mesh ) == WORKPHONE_INDEX_FORMAT_UINT16
-                        ? wp_graphics_mesh_set_indices_u16( candidate.get(),
-                            static_cast<const uint16_t *>( wp_graphics_mesh_get_indices( m_mesh ) ), indices )
-                        : wp_graphics_mesh_set_indices_u32( candidate.get(),
-                            static_cast<const wp_u32 *>( wp_graphics_mesh_get_indices( m_mesh ) ), indices );
-                    if( !copied ) return nullptr;
+                    const auto copied =
+                        wp_graphics_mesh_get_index_format( m_mesh ) == WORKPHONE_INDEX_FORMAT_UINT16
+                            ? wp_graphics_mesh_set_indices_u16(
+                                  candidate.get(),
+                                  static_cast<const uint16_t *>(
+                                      wp_graphics_mesh_get_indices( m_mesh ) ),
+                                  indices )
+                            : wp_graphics_mesh_set_indices_u32(
+                                  candidate.get(),
+                                  static_cast<const wp_u32 *>( wp_graphics_mesh_get_indices( m_mesh ) ),
+                                  indices );
+                    if( !copied )
+                    {
+                        return nullptr;
+                    }
                 }
-                wp_graphics_mesh_set_primitive_type( candidate.get(), wp_graphics_mesh_get_primitive_type( m_mesh ) );
+                wp_graphics_mesh_set_primitive_type( candidate.get(),
+                                                     wp_graphics_mesh_get_primitive_type( m_mesh ) );
                 for( wp_s32 i = 0; i < wp_graphics_mesh_get_submesh_count( m_mesh ); ++i )
                 {
                     const auto section = wp_graphics_mesh_get_submesh( m_mesh, i );
-                    if( !section || wp_graphics_mesh_add_submesh( candidate.get(), section->index_start,
-                          section->index_count, section->material_id ) < 0 ) return nullptr;
+                    if( !section ||
+                        wp_graphics_mesh_add_submesh( candidate.get(), section->index_start,
+                                                      section->index_count, section->material_id ) < 0 )
+                    {
+                        return nullptr;
+                    }
                 }
                 wp_graphics_mesh_compute_aabb( candidate.get() );
                 mesh->m_mesh = candidate.release();

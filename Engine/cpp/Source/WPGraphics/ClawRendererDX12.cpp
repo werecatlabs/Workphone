@@ -106,7 +106,8 @@ namespace workphone::render
             }
             return true;
         };
-        const bool ok = initializeStage( "device", &ClawRendererDX12::createDevice ) &&
+        const bool ok =
+            initializeStage( "device", &ClawRendererDX12::createDevice ) &&
             initializeStage( "command objects", &ClawRendererDX12::createCommandObjects ) &&
             initializeStage( "descriptor heaps", &ClawRendererDX12::createDescriptorHeaps ) &&
             initializeStage( "render target", &ClawRendererDX12::createRenderTarget ) &&
@@ -119,11 +120,15 @@ namespace workphone::render
             initializeStage( "constant buffer", &ClawRendererDX12::createConstantBuffer );
 
         if( !ok )
+        {
             releaseResources();
+        }
 
         setLoadingState( ok ? LoadingState::Loaded : LoadingState::Unloaded );
         if( ok )
+        {
             WP_LOG_INFO( "WPGraphics/DX12: renderer initialization completed." );
+        }
     }
 
     void ClawRendererDX12::unload( SmartPtr<ISharedObject> data )
@@ -205,7 +210,9 @@ namespace workphone::render
         m_primitiveCount = 0;
 
         if( !m_commandAllocator || !m_commandList )
+        {
             return;
+        }
 
         m_commandAllocator->Reset();
         m_commandList->Reset( m_commandAllocator, nullptr );
@@ -223,8 +230,10 @@ namespace workphone::render
 
         // Transition the off-screen render target to RENDER_TARGET state.
         if( m_renderTargetResource )
+        {
             transitionResource( m_renderTargetResource, D3D12_RESOURCE_STATE_COMMON,
                                 D3D12_RESOURCE_STATE_RENDER_TARGET );
+        }
 
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
         D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -236,8 +245,10 @@ namespace workphone::render
         if( m_commandList )
         {
             if( m_renderTargetResource )
+            {
                 transitionResource( m_renderTargetResource, D3D12_RESOURCE_STATE_RENDER_TARGET,
                                     D3D12_RESOURCE_STATE_COMMON );
+            }
 
             m_commandList->Close();
 
@@ -268,7 +279,9 @@ namespace workphone::render
     void ClawRendererDX12::clear( const ColourF &colour )
     {
         if( !m_commandList )
+        {
             return;
+        }
 
         const float clearColour[4] = { colour.r, colour.g, colour.b, colour.a };
 
@@ -280,7 +293,9 @@ namespace workphone::render
             void *nativeRtv = nullptr;
             m_renderTarget->_getObject( &nativeRtv );
             if( nativeRtv )
+            {
                 rtvHandle = *static_cast<D3D12_CPU_DESCRIPTOR_HANDLE *>( nativeRtv );
+            }
         }
 
         m_commandList->ClearRenderTargetView( rtvHandle, clearColour, 0, nullptr );
@@ -306,7 +321,9 @@ namespace workphone::render
 
         // Viewport commands must be recorded into an open command list.
         if( !m_commandList || !m_viewport || !m_inFrame )
+        {
             return;
+        }
 
         D3D12_VIEWPORT vp = {};
         vp.Width = static_cast<float>( m_rtWidth );
@@ -329,7 +346,9 @@ namespace workphone::render
                                    const ColourF &colour )
     {
         if( !m_commandList || !m_quadVBMapped )
+        {
             return;
+        }
 
         Matrix4F view = m_camera ? Matrix4F( m_camera->getViewMatrix().ptr() ) : Matrix4F();
         Matrix4F proj = m_camera ? Matrix4F( m_camera->getProjectionMatrix().ptr() ) : Matrix4F();
@@ -401,7 +420,9 @@ namespace workphone::render
                                    const ColourF &colour )
     {
         if( !m_commandList )
+        {
             return;
+        }
 
         Matrix4F view = m_camera ? Matrix4F( m_camera->getViewMatrix().ptr() ) : Matrix4F();
         Matrix4F proj = m_camera ? Matrix4F( m_camera->getProjectionMatrix().ptr() ) : Matrix4F();
@@ -413,7 +434,9 @@ namespace workphone::render
     void ClawRendererDX12::_getObject( void **ppObject )
     {
         if( ppObject )
+        {
             *ppObject = m_device;
+        }
     }
 
     // ── IRenderer3 ────────────────────────────────────────────────────────
@@ -432,7 +455,9 @@ namespace workphone::render
                                      const ColourF &colour )
     {
         if( !m_commandList || !m_lineVBMapped )
+        {
             return;
+        }
 
         // Lines are in world space; apply view * projection only.
         Matrix4F view = m_camera ? Matrix4F( m_camera->getViewMatrix().ptr() ) : Matrix4F();
@@ -469,7 +494,9 @@ namespace workphone::render
     void ClawRendererDX12::waitForGpu()
     {
         if( !m_commandQueue || !m_fence || !m_fenceEvent )
+        {
             return;
+        }
 
         ++m_fenceValue;
         m_commandQueue->Signal( m_fence, m_fenceValue );
@@ -509,7 +536,9 @@ namespace workphone::render
 
         IDXGIFactory4 *factory = nullptr;
         if( FAILED( CreateDXGIFactory1( IID_PPV_ARGS( &factory ) ) ) )
+        {
             return false;
+        }
 
         IDXGIAdapter1 *adapter = nullptr;
         for( UINT i = 0; factory->EnumAdapters1( i, &adapter ) != DXGI_ERROR_NOT_FOUND; ++i )
@@ -525,14 +554,18 @@ namespace workphone::render
 
             if( SUCCEEDED(
                     D3D12CreateDevice( adapter, D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS( &m_device ) ) ) )
+            {
                 break;
+            }
 
             adapter->Release();
             adapter = nullptr;
         }
 
         if( adapter )
+        {
             adapter->Release();
+        }
 
         factory->Release();
 
@@ -545,21 +578,29 @@ namespace workphone::render
         queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
         queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
         if( FAILED( m_device->CreateCommandQueue( &queueDesc, IID_PPV_ARGS( &m_commandQueue ) ) ) )
+        {
             return false;
+        }
 
         if( FAILED( m_device->CreateCommandAllocator( D3D12_COMMAND_LIST_TYPE_DIRECT,
                                                       IID_PPV_ARGS( &m_commandAllocator ) ) ) )
+        {
             return false;
+        }
 
         if( FAILED( m_device->CreateCommandList( 0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator,
                                                  nullptr, IID_PPV_ARGS( &m_commandList ) ) ) )
+        {
             return false;
+        }
 
         // Close immediately so it can be Reset at the start of the first frame.
         m_commandList->Close();
 
         if( FAILED( m_device->CreateFence( 0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS( &m_fence ) ) ) )
+        {
             return false;
+        }
 
         m_fenceValue = 0;
         m_fenceEvent = CreateEvent( nullptr, FALSE, FALSE, nullptr );
@@ -575,7 +616,9 @@ namespace workphone::render
             desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
             desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
             if( FAILED( m_device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_rtvHeap ) ) ) )
+            {
                 return false;
+            }
         }
 
         // DSV heap – 1 descriptor.
@@ -585,7 +628,9 @@ namespace workphone::render
             desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
             desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
             if( FAILED( m_device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_dsvHeap ) ) ) )
+            {
                 return false;
+            }
         }
 
         // CBV/SRV/UAV heap – slot 0: null SRV (colour draws), slot 1: active texture SRV.
@@ -595,7 +640,9 @@ namespace workphone::render
             desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
             desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
             if( FAILED( m_device->CreateDescriptorHeap( &desc, IID_PPV_ARGS( &m_cbvSrvHeap ) ) ) )
+            {
                 return false;
+            }
         }
 
         m_rtvDescSize = m_device->GetDescriptorHandleIncrementSize( D3D12_DESCRIPTOR_HEAP_TYPE_RTV );
@@ -636,7 +683,9 @@ namespace workphone::render
         if( FAILED( m_device->CreateCommittedResource( &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
                                                        D3D12_RESOURCE_STATE_COMMON, &clearValue,
                                                        IID_PPV_ARGS( &m_renderTargetResource ) ) ) )
+        {
             return false;
+        }
 
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
         m_device->CreateRenderTargetView( m_renderTargetResource, nullptr, rtvHandle );
@@ -666,7 +715,9 @@ namespace workphone::render
         if( FAILED( m_device->CreateCommittedResource( &heapProps, D3D12_HEAP_FLAG_NONE, &desc,
                                                        D3D12_RESOURCE_STATE_DEPTH_WRITE, &clearValue,
                                                        IID_PPV_ARGS( &m_depthStencilResource ) ) ) )
+        {
             return false;
+        }
 
         D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = m_dsvHeap->GetCPUDescriptorHandleForHeapStart();
         m_device->CreateDepthStencilView( m_depthStencilResource, nullptr, dsvHandle );
@@ -698,13 +749,17 @@ namespace workphone::render
                 error = nullptr;
             }
             if( FAILED( hr ) )
+            {
                 return false;
+            }
 
             hr = m_device->CreateRootSignature( 0, blob->GetBufferPointer(), blob->GetBufferSize(),
                                                 IID_PPV_ARGS( &m_colourRootSignature ) );
             blob->Release();
             if( FAILED( hr ) )
+            {
                 return false;
+            }
         }
 
         // ── Texture root signature: root CBV at slot 0, SRV table at slot 1 ──
@@ -755,13 +810,17 @@ namespace workphone::render
                 error = nullptr;
             }
             if( FAILED( hr ) )
+            {
                 return false;
+            }
 
             hr = m_device->CreateRootSignature( 0, blob->GetBufferPointer(), blob->GetBufferSize(),
                                                 IID_PPV_ARGS( &m_textureRootSignature ) );
             blob->Release();
             if( FAILED( hr ) )
+            {
                 return false;
+            }
         }
 
         return true;
@@ -781,7 +840,9 @@ namespace workphone::render
             errBlob = nullptr;
         }
         if( FAILED( hr ) )
+        {
             return false;
+        }
 
         hr = D3DCompile( k_colourShaderSrc, sizeof( k_colourShaderSrc ) - 1, "ColourPS", nullptr,
                          nullptr, "PSMain", "ps_5_0", 0, 0, &psBlob, &errBlob );
@@ -865,7 +926,9 @@ namespace workphone::render
             errBlob = nullptr;
         }
         if( FAILED( hr ) )
+        {
             return false;
+        }
 
         hr = D3DCompile( k_textureShaderSrc, sizeof( k_textureShaderSrc ) - 1, "TexturePS", nullptr,
                          nullptr, "PSMain", "ps_5_0", 0, 0, &psBlob, &errBlob );
@@ -944,18 +1007,26 @@ namespace workphone::render
             if( FAILED( m_device->CreateCommittedResource( &uploadHeap, D3D12_HEAP_FLAG_NONE, &desc,
                                                            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                                                            IID_PPV_ARGS( ppRes ) ) ) )
+            {
                 return false;
+            }
 
             D3D12_RANGE readRange = {};
             return SUCCEEDED( ( *ppRes )->Map( 0, &readRange, ppMapped ) );
         };
 
         if( !createUploadBuffer( k_lineVBSize, &m_lineVBUpload, &m_lineVBMapped ) )
+        {
             return false;
+        }
         if( !createUploadBuffer( k_colourQuadVBSize, &m_colourQuadVBUpload, &m_colourQuadVBMapped ) )
+        {
             return false;
+        }
         if( !createUploadBuffer( k_quadVBSize, &m_quadVBUpload, &m_quadVBMapped ) )
+        {
             return false;
+        }
 
         return true;
     }
@@ -980,12 +1051,16 @@ namespace workphone::render
         if( FAILED( m_device->CreateCommittedResource( &uploadHeap, D3D12_HEAP_FLAG_NONE, &desc,
                                                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                                                        IID_PPV_ARGS( &m_quadIBUpload ) ) ) )
+        {
             return false;
+        }
 
         void *mapped = nullptr;
         D3D12_RANGE readRange = {};
         if( FAILED( m_quadIBUpload->Map( 0, &readRange, &mapped ) ) )
+        {
             return false;
+        }
 
         memcpy( mapped, indices, sizeof( indices ) );
         m_quadIBUpload->Unmap( 0, nullptr );
@@ -1010,7 +1085,9 @@ namespace workphone::render
         if( FAILED( m_device->CreateCommittedResource( &uploadHeap, D3D12_HEAP_FLAG_NONE, &desc,
                                                        D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                                                        IID_PPV_ARGS( &m_cbUpload ) ) ) )
+        {
             return false;
+        }
 
         D3D12_RANGE readRange = {};
         return SUCCEEDED( m_cbUpload->Map( 0, &readRange, &m_cbMapped ) );
@@ -1019,13 +1096,17 @@ namespace workphone::render
     void ClawRendererDX12::updateConstantBuffer( const Matrix4F &wvp )
     {
         if( m_cbMapped )
+        {
             memcpy( m_cbMapped, wvp.ptr(), 16 * sizeof( float ) );
+        }
     }
 
     void ClawRendererDX12::renderQuad( const Matrix4F &wvp, const ColourF &colour )
     {
         if( !m_commandList || !m_colourQuadVBMapped )
+        {
             return;
+        }
 
         updateConstantBuffer( wvp );
 

@@ -26,7 +26,9 @@ namespace workphone::render
         void require( bool condition, const char *message )
         {
             if( !condition )
+            {
                 throw std::runtime_error( message );
+            }
         }
 
         std::vector<u8> readFile( const fs::path &path, u64 limit )
@@ -59,14 +61,20 @@ namespace workphone::render
                     for( ++i; i < text.size(); ++i )
                     {
                         if( text[i] == '\\' )
+                        {
                             ++i;
+                        }
                         else if( text[i] == '"' )
+                        {
                             break;
+                        }
                     }
                     auto next = i + 1;
                     while( next < text.size() && ( text[next] == ' ' || text[next] == '\t' ||
                                                    text[next] == '\r' || text[next] == '\n' ) )
+                    {
                         ++next;
+                    }
                     if( depth == 1 && next < text.size() && text[next] == ':' )
                     {
                         const auto key =
@@ -77,9 +85,13 @@ namespace workphone::render
                     }
                 }
                 else if( text[i] == '{' || text[i] == '[' )
+                {
                     ++depth;
+                }
                 else if( text[i] == '}' || text[i] == ']' )
+                {
                     --depth;
+                }
             }
         }
 
@@ -98,8 +110,10 @@ namespace workphone::render
             require( object.size() == fields.size(),
                      "Graphics descriptor has missing or unsupported fields" );
             for( const auto &field : object )
+            {
                 require( fields.count( std::string( field.key().data(), field.key().size() ) ) != 0,
                          "Unsupported graphics descriptor field" );
+            }
             const auto &version = object.at( "version" );
             require( version.is_number() && version.to_number<double>() == 1.0,
                      "Unsupported graphics descriptor version" );
@@ -144,23 +158,39 @@ namespace workphone::render
             AssetCatalogPath canonical;
             String error;
             if( !canonicalAssetCatalogPath( context.sourceRoot, path.substr( 7 ), canonical, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             recipe.source = "data://" + canonical.path;
             const auto filter = stringField( descriptor, "mipFilter" );
             if( filter == "none" )
+            {
                 recipe.settings.filter = TextureMipFilter::None;
+            }
             else if( filter == "colour" )
+            {
                 recipe.settings.filter = TextureMipFilter::Colour;
+            }
             else if( filter == "data" )
+            {
                 recipe.settings.filter = TextureMipFilter::Data;
+            }
             else if( filter == "normal" )
+            {
                 recipe.settings.filter = TextureMipFilter::Normal;
+            }
             else if( filter == "cutout" )
+            {
                 recipe.settings.filter = TextureMipFilter::Cutout;
+            }
             else if( filter == "roughness" )
+            {
                 recipe.settings.filter = TextureMipFilter::Roughness;
+            }
             else
+            {
                 throw std::runtime_error( "Unknown texture mipFilter" );
+            }
             const auto &columnValue = descriptor.at( "atlasColumns" );
             require( columnValue.is_number(), "Texture atlasColumns must be numeric" );
             const auto columns = columnValue.to_number<double>();
@@ -169,13 +199,15 @@ namespace workphone::render
             require( std::floor( columns ) == columns, "Texture atlasColumns must be an integer" );
             recipe.settings.atlasColumns = static_cast<u32>( columns );
             recipe.settings.alphaCutoff = scalar( descriptor.at( "alphaCutoff" ), 0.0f, 1.0f );
-            const auto gpuFormat=ddsFormatForTarget(context.target);
-            const bool srgb=gpuFormat==72 || gpuFormat==78 || gpuFormat==91;
-            require( !srgb || recipe.settings.filter==TextureMipFilter::Colour ||
-                      recipe.settings.filter==TextureMipFilter::Cutout || recipe.settings.filter==TextureMipFilter::None,
+            const auto gpuFormat = ddsFormatForTarget( context.target );
+            const bool srgb = gpuFormat == 72 || gpuFormat == 78 || gpuFormat == 91;
+            require( !srgb || recipe.settings.filter == TextureMipFilter::Colour ||
+                         recipe.settings.filter == TextureMipFilter::Cutout ||
+                         recipe.settings.filter == TextureMipFilter::None,
                      "SRGB DDS profiles require colour/cutout/none mip semantics" );
-            require( !dds::blockBytes(gpuFormat) || recipe.settings.filter!=TextureMipFilter::Normal,
-                     "Normal maps require the lossless BGRA profile until a normal-map compression profile is supported" );
+            require( !dds::blockBytes( gpuFormat ) || recipe.settings.filter != TextureMipFilter::Normal,
+                     "Normal maps require the lossless BGRA profile until a normal-map compression "
+                     "profile is supported" );
             require( recipe.settings.alphaCutoff > 0.0f && recipe.settings.alphaCutoff < 1.0f,
                      "Texture alphaCutoff must be strictly between zero and one" );
             return recipe;
@@ -203,14 +235,16 @@ namespace workphone::render
             String error;
             if( !canonicalAssetCatalogPath( context.sourceRoot, recipe.textureId.sourceRelativePath(),
                                             canonical, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             recipe.target = context.target;
             recipe.packagedBuild = context.packagedBuild;
             return recipe;
         }
 
         u64 validateImageSize( u32 width, u32 height, const TextureMipSettings &settings,
-                              u64 maximumBytes = graphicsTextureByteLimit )
+                               u64 maximumBytes = graphicsTextureByteLimit )
         {
             require( width && height && width <= maxTextureDimension && height <= maxTextureDimension &&
                          settings.atlasColumns && width % settings.atlasColumns == 0,
@@ -223,11 +257,15 @@ namespace workphone::render
                          "Decoded image and mip chain exceed the aggregate byte limit" );
                 total += bytes;
                 if( settings.filter == TextureMipFilter::None || ( width == 1 && height == 1 ) )
+                {
                     break;
+                }
                 width = std::max( width / 2u, 1u );
                 height = std::max( height / 2u, 1u );
                 if( width < settings.atlasColumns || width % settings.atlasColumns )
+                {
                     break;
+                }
             }
             return total;
         }
@@ -238,33 +276,41 @@ namespace workphone::render
             {
                 FreeImage_Initialise( FALSE );
             }
+
             ~ImageLifetime()
             {
                 FreeImage_DeInitialise();
             }
         };
+
         struct MemoryDeleter
         {
             void operator()( FIMEMORY *memory ) const
             {
                 if( memory )
+                {
                     FreeImage_CloseMemory( memory );
+                }
             }
         };
+
         struct BitmapDeleter
         {
             void operator()( FIBITMAP *bitmap ) const
             {
                 if( bitmap )
+                {
                     FreeImage_Unload( bitmap );
+                }
             }
         };
+
         using Bitmap = std::unique_ptr<FIBITMAP, BitmapDeleter>;
 
         CookedTextureData compileTexture( const resource::CompileContext &context,
-            u64 maximumOutputBytes = graphicsTextureByteLimit,
-            const std::function<void(u64)> &admitEncoded = {},
-            const std::function<void(u64)> &admitDecoded = {} )
+                                          u64 maximumOutputBytes = graphicsTextureByteLimit,
+                                          const std::function<void( u64 )> &admitEncoded = {},
+                                          const std::function<void( u64 )> &admitDecoded = {} )
         {
             const auto recipe = readTextureRecipe( context );
             const auto sourcePath = fs::u8path( context.sourceRoot.c_str() ) /
@@ -277,22 +323,24 @@ namespace workphone::render
                 require( !error && size && size <= encodedImageByteLimit,
                          "Graphics source is missing, empty or exceeds its byte limit" );
                 admitEncoded( size );
-                encodedLimit = size; // A file growing after admission must be rejected.
+                encodedLimit = size;  // A file growing after admission must be rejected.
             }
             auto encoded = readFile( sourcePath, encodedLimit );
-            if( sourcePath.extension()==".dds" && ddsFormatForTarget(context.target) )
+            if( sourcePath.extension() == ".dds" && ddsFormatForTarget( context.target ) )
             {
-                const auto image=dds::inspect(encoded);
-                require(image.format==ddsFormatForTarget(context.target),
-                        "Authored DDS format does not match its target profile" );
-                require(!dds::blockBytes(image.format) ||
-                        (image.mips[0].width%4==0 && image.mips[0].height%4==0),
-                        "DX11 block-compressed base dimensions must be multiples of four" );
+                const auto image = dds::inspect( encoded );
+                require( image.format == ddsFormatForTarget( context.target ),
+                         "Authored DDS format does not match its target profile" );
+                require( !dds::blockBytes( image.format ) ||
+                             ( image.mips[0].width % 4 == 0 && image.mips[0].height % 4 == 0 ),
+                         "DX11 block-compressed base dimensions must be multiples of four" );
                 CookedTextureData data;
-                data.target=context.target;data.packagedBuild=context.packagedBuild;
-                data.mipSettings=recipe.settings;data.ddsBytes=std::move(encoded);
+                data.target = context.target;
+                data.packagedBuild = context.packagedBuild;
+                data.mipSettings = recipe.settings;
+                data.ddsBytes = std::move( encoded );
                 String error;
-                require(validateCookedTextureData(data,error),error.c_str());
+                require( validateCookedTextureData( data, error ), error.c_str() );
                 return data;
             }
             std::lock_guard<std::mutex> codecLock( imageCodecMutex );
@@ -310,9 +358,12 @@ namespace workphone::render
                      "Only integer colour images with up to 32 bits per pixel are supported" );
             const auto width = FreeImage_GetWidth( header.get() );
             const auto height = FreeImage_GetHeight( header.get() );
-            const auto decodedBytes = validateImageSize( width, height, recipe.settings,
-                                                        maximumOutputBytes );
-            if( admitDecoded ) admitDecoded( decodedBytes );
+            const auto decodedBytes =
+                validateImageSize( width, height, recipe.settings, maximumOutputBytes );
+            if( admitDecoded )
+            {
+                admitDecoded( decodedBytes );
+            }
             header.reset();
             require( FreeImage_SeekMemory( memory.get(), 0, SEEK_SET ) != 0,
                      "Cannot rewind image decoder stream" );
@@ -345,12 +396,14 @@ namespace workphone::render
             auto levels = generateTextureMips( pixels.data(), width, height, recipe.settings );
             data.levels.reserve( levels.size() );
             for( auto &level : levels )
-                data.levels.push_back( std::move( level ) );
-            if( const auto gpuFormat=ddsFormatForTarget(context.target) )
             {
-                require( !dds::blockBytes(gpuFormat) || (width%4==0 && height%4==0),
+                data.levels.push_back( std::move( level ) );
+            }
+            if( const auto gpuFormat = ddsFormatForTarget( context.target ) )
+            {
+                require( !dds::blockBytes( gpuFormat ) || ( width % 4 == 0 && height % 4 == 0 ),
                          "DX11 block-compressed base dimensions must be multiples of four" );
-                data.ddsBytes=dds::encode(data.levels,gpuFormat);
+                data.ddsBytes = dds::encode( data.levels, gpuFormat );
                 data.levels.clear();
             }
             return data;
@@ -361,21 +414,28 @@ namespace workphone::render
             auto data = readMaterialRecipe( context );
             AssetCatalogPath compiledPath;
             String error;
-            const auto pinned=context.dependencyArtifacts.find(data.textureId.str());
-            if(pinned==context.dependencyArtifacts.end())
-                throw std::runtime_error("Material compiler requires a pinned texture artifact");
-            if( !canonicalAssetCatalogPath( context.compiledRoot, pinned->second,
-                                            compiledPath, error ) )
+            const auto pinned = context.dependencyArtifacts.find( data.textureId.str() );
+            if( pinned == context.dependencyArtifacts.end() )
+            {
+                throw std::runtime_error( "Material compiler requires a pinned texture artifact" );
+            }
+            if( !canonicalAssetCatalogPath( context.compiledRoot, pinned->second, compiledPath, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             const auto path =
                 fs::u8path( context.compiledRoot.c_str() ) / fs::u8path( compiledPath.path.c_str() );
             resource::RuntimeResource dependency;
             if( !resource::CompiledResourceIO::read( path.generic_u8string().c_str(), dependency, error,
                                                      graphicsTextureByteLimit + 4096u ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             CookedTextureData texture;
             if( !decodeCookedTexture( dependency, texture, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             require( dependency.header.resourceId == data.textureId &&
                          texture.target == context.target &&
                          texture.packagedBuild == context.packagedBuild,
@@ -388,50 +448,83 @@ namespace workphone::render
     }  // namespace
 
     bool decodeGraphicsTextureSource( const String &sourceRoot, const resource::ResourceID &id,
-        CookedTextureData &output, String &error, u64 maximumOutputBytes, StreamBudget *retainedBudget )
+                                      CookedTextureData &output, String &error, u64 maximumOutputBytes,
+                                      StreamBudget *retainedBudget )
     {
         error.clear();
         try
         {
-            require( id.isValid() && !id.isSubResource() && id.type() == resource::ResourceTypeID("texres"),
-                     "Graphics source decoding requires a texres file resource" );
+            require(
+                id.isValid() && !id.isSubResource() && id.type() == resource::ResourceTypeID( "texres" ),
+                "Graphics source decoding requires a texres file resource" );
             require( maximumOutputBytes && maximumOutputBytes <= graphicsTextureByteLimit,
                      "Graphics source output budget must be between one byte and 256 MiB" );
             resource::CompileContext context;
-            if( !canonicalAssetCatalogRoot( sourceRoot, context.sourceRoot, error ) ) return false;
+            if( !canonicalAssetCatalogRoot( sourceRoot, context.sourceRoot, error ) )
+            {
+                return false;
+            }
             AssetCatalogPath descriptor;
-            if( !canonicalAssetCatalogPath( context.sourceRoot, id.sourceRelativePath(), descriptor, error ) ) return false;
+            if( !canonicalAssetCatalogPath( context.sourceRoot, id.sourceRelativePath(), descriptor,
+                                            error ) )
+            {
+                return false;
+            }
             context.resourceId = id;
-            context.sourcePath = (fs::u8path(context.sourceRoot.c_str()) / fs::u8path(descriptor.path.c_str())).generic_u8string().c_str();
+            context.sourcePath =
+                ( fs::u8path( context.sourceRoot.c_str() ) / fs::u8path( descriptor.path.c_str() ) )
+                    .generic_u8string()
+                    .c_str();
             context.target = "windows-dx11";
             context.packagedBuild = false;
             auto scheduler = WorldStreamingScheduler::shared();
             auto metadataBudget = scheduler->reserve( StreamMemoryClass::WorkingCpu, 4ull << 20, error );
-            if( !metadataBudget ) return false;
+            if( !metadataBudget )
+            {
+                return false;
+            }
             StreamBudget encodedBudget, scratchBudget, sourceBudget;
-            auto candidate = compileTexture( context, maximumOutputBytes,
+            auto candidate = compileTexture(
+                context, maximumOutputBytes,
                 [&]( u64 bytes ) {
                     encodedBudget = scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes, error );
-                    if( !encodedBudget ) throw std::runtime_error(error.c_str());
+                    if( !encodedBudget )
+                    {
+                        throw std::runtime_error( error.c_str() );
+                    }
                 },
                 [&]( u64 bytes ) {
                     // Decoder source/conversion, top-down pixels and mip generation
                     // can overlap. Retained result bytes are admitted separately.
-                    scratchBudget = scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes * 5, error );
-                    if( !scratchBudget ) throw std::runtime_error(error.c_str());
+                    scratchBudget =
+                        scheduler->reserve( StreamMemoryClass::WorkingCpu, bytes * 5, error );
+                    if( !scratchBudget )
+                    {
+                        throw std::runtime_error( error.c_str() );
+                    }
                     if( retainedBudget )
                     {
-                        sourceBudget = scheduler->reserve( StreamMemoryClass::SourceCpu, bytes + 4096, error );
-                        if( !sourceBudget ) throw std::runtime_error(error.c_str());
+                        sourceBudget =
+                            scheduler->reserve( StreamMemoryClass::SourceCpu, bytes + 4096, error );
+                        if( !sourceBudget )
+                        {
+                            throw std::runtime_error( error.c_str() );
+                        }
                     }
                 } );
-            output = std::move(candidate);
-            if( retainedBudget ) *retainedBudget = std::move(sourceBudget);
+            output = std::move( candidate );
+            if( retainedBudget )
+            {
+                *retainedBudget = std::move( sourceBudget );
+            }
             error.clear();
             return true;
         }
         catch( const std::exception &exception )
-        { error = exception.what(); return false; }
+        {
+            error = exception.what();
+            return false;
+        }
     }
 
     String GraphicsResourceCompiler::name() const
@@ -469,7 +562,9 @@ namespace workphone::render
                 dependencies.installDependencies.push_back( recipe.textureId );
             }
             else
+            {
                 throw std::runtime_error( "Unsupported graphics resource type" );
+            }
             return true;
         }
         catch( const std::exception &exception )
@@ -489,11 +584,17 @@ namespace workphone::render
             String error;
             bool succeeded = false;
             if( context.resourceId.type() == resource::ResourceTypeID( "texres" ) )
+            {
                 succeeded = writeCookedTexture( compileTexture( context ), output, error );
+            }
             else if( context.resourceId.type() == resource::ResourceTypeID( "matres" ) )
+            {
                 succeeded = writeCookedMaterial( compileMaterial( context ), output, error );
+            }
             else
+            {
                 error = "Unsupported graphics resource type";
+            }
             if( !succeeded )
             {
                 messages.push_back( error );

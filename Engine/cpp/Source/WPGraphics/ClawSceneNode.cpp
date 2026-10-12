@@ -209,7 +209,9 @@ namespace workphone
             else if( auto light = dynamic_pointer_cast<ClawLight>( object ) )
             {
                 if( m_node && !light->isLoaded() )
+                {
                     light->load( nullptr );
+                }
                 wp_light *nativeLight = nullptr;
                 light->_getObject( (void **)&nativeLight );
                 wp_light_attach_to_node( nativeLight, m_node );

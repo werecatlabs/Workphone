@@ -6,13 +6,20 @@
 
 namespace workphone::render
 {
-    enum class ClawFeatureStatus { Unavailable, Experimental, Implemented };
+    enum class ClawFeatureStatus
+    {
+        Unavailable,
+        Experimental,
+        Implemented
+    };
+
     struct ClawFeatureCapability
     {
         const char *name;
         ClawFeatureStatus status;
         const char *limitation;
     };
+
     struct ClawCapabilities
     {
         IGraphicsSystem::RenderApi backend;
@@ -21,8 +28,9 @@ namespace workphone::render
         u32 maxParticleCapacity = 0;
         Array<ClawFeatureCapability> features;
     };
+
     /** Implementation inventory, not an assertion that a device is available.
      * Certification requires the independent release gates in the production plan. */
     WPGraphics_API ClawCapabilities getClawCapabilities( IGraphicsSystem::RenderApi backend );
-}
+}  // namespace workphone::render
 #endif

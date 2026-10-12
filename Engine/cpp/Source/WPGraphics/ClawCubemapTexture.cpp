@@ -16,46 +16,61 @@ namespace workphone::render
     {
         setTextureType( TextureType::TEX_TYPE_CUBE_MAP );
     }
+
     void ClawCubemapTexture::setFaces( const Array<SmartPtr<ITexture>> &faces )
     {
         if( faces.size() != 6 )
+        {
             throw std::invalid_argument( "A cubemap requires six faces." );
+        }
         for( const auto &face : faces )
+        {
             if( !face || face.get() == this )
+            {
                 throw std::invalid_argument( "Cubemap faces must be valid 2D textures." );
+            }
+        }
         m_faces = faces;
         m_cube.reset();
         m_renderer = nullptr;
     }
+
     Array<SmartPtr<ITexture>> ClawCubemapTexture::getFaces() const
     {
         return m_faces;
     }
+
     Array<SmartPtr<ITexture>> ClawCubemapTexture::getCubemapFaces() const
     {
         return getFaces();
     }
+
     Vector2I ClawCubemapTexture::getSize() const
     {
         return Vector2I( 128, 128 );
     }
+
     Vector2I ClawCubemapTexture::getActualSize() const
     {
         return getSize();
     }
+
     void ClawCubemapTexture::getTextureGPU( void **texture ) const
     {
         getTextureFinal( texture );
     }
+
     void ClawCubemapTexture::_getObject( void **texture ) const
     {
         getTextureFinal( texture );
     }
+
     void ClawCubemapTexture::load( SmartPtr<ISharedObject> data )
     {
         Texture::load( data );
         setLoadingState( LoadingState::Loaded );
     }
+
     void ClawCubemapTexture::unload( SmartPtr<ISharedObject> data )
     {
         m_cube.reset();
@@ -63,10 +78,13 @@ namespace workphone::render
         Texture::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
+
     void ClawCubemapTexture::getTextureFinal( void **texture ) const
     {
         if( !texture )
+        {
             return;
+        }
         *texture = nullptr;
         auto app = core::IApplicationManager::instancePtr();
         auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
@@ -74,7 +92,9 @@ namespace workphone::render
             graphics ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
         auto dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
         if( !dx11 || m_faces.size() != 6 )
+        {
             return;
+        }
         if( m_renderer != dx11 )
         {
             m_cube.reset();
@@ -93,12 +113,16 @@ namespace workphone::render
             void *view = nullptr;
             m_faces[i]->getTextureFinal( &view );
             if( !view )
+            {
                 return;
+            }
             views[i] = static_cast<ID3D11ShaderResourceView *>( view );
         }
         if( m_cube.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
                            static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ),
                            views ) )
+        {
             *texture = m_cube.getView();
+        }
     }
 }  // namespace workphone::render

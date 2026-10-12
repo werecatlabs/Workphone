@@ -197,7 +197,9 @@ namespace workphone
         void ClawViewport::_getObject( void **ppObject ) const
         {
             if( ppObject )
+            {
                 *ppObject = (void *)this;
+            }
         }
 
         SmartPtr<ITexture> ClawViewport::getBackgroundTexture() const

@@ -88,7 +88,7 @@ namespace workphone
              * software backend.  Returns nullptr when no font pixels are available.
              */
             void *ensureFontTextureNative( struct wp_renderer *renderer, const void *fontPixels,
-                                          wp_s32 fontWidth, wp_s32 fontHeight );
+                                           wp_s32 fontWidth, wp_s32 fontHeight );
 
             /** Release any cached native font SRV. */
             void releaseFontTextureNative();

@@ -73,7 +73,9 @@ namespace workphone
 
             auto clampClip = []( float value, int maximum ) -> int {
                 if( !std::isfinite( value ) )
+                {
                     return 0;
+                }
 
                 value = std::max( 0.0f, std::min( value, static_cast<float>( maximum ) ) );
 
@@ -119,7 +121,9 @@ namespace workphone
         ClawImguiManager *ClawImguiManager::getSingletonPtr()
         {
             if( !ms_singleton )
+            {
                 ms_singleton = new ClawImguiManager();
+            }
             return ms_singleton;
         }
 
@@ -132,7 +136,9 @@ namespace workphone
             m_lastHeadlessTime( std::chrono::high_resolution_clock::now() )
         {
             if( !ms_singleton )
+            {
                 ms_singleton = this;
+            }
         }
 
         ClawImguiManager::~ClawImguiManager()
@@ -140,13 +146,17 @@ namespace workphone
             shutdown();
 
             if( ms_singleton == this )
+            {
                 ms_singleton = nullptr;
+            }
         }
 
         void ClawImguiManager::load( SmartPtr<ISharedObject> data )
         {
             if( isLoaded() )
+            {
                 return;
+            }
 
             setLoadingState( LoadingState::Loading );
 
@@ -154,7 +164,9 @@ namespace workphone
             {
                 auto renderer = getRenderer();
                 if( renderer )
+                {
                     init( renderer );
+                }
             }
             catch( const std::bad_alloc & )
             {
@@ -169,7 +181,9 @@ namespace workphone
         void ClawImguiManager::unload( SmartPtr<ISharedObject> data )
         {
             if( getLoadingState() == LoadingState::Unloaded )
+            {
                 return;
+            }
 
             setLoadingState( LoadingState::Unloading );
 
@@ -181,7 +195,9 @@ namespace workphone
         void ClawImguiManager::shutdown()
         {
             if( m_shuttingDown )
+            {
                 return;
+            }
 
             m_shuttingDown = true;
 
@@ -238,7 +254,9 @@ namespace workphone
             }
 
             if( m_renderer || ImGui::GetCurrentContext() )
+            {
                 shutdown();
+            }
 
             WP_LOG_INFO( "ClawImguiManager::init: creating UI context and font atlas." );
 
@@ -248,7 +266,9 @@ namespace workphone
             if( applicationManager )
             {
                 if( auto application = applicationManager->getApplication() )
+                {
                     applicationName = application->getName();
+                }
             }
 
             static const String iniFileExt = ".ini";
@@ -279,7 +299,9 @@ namespace workphone
                         void *windowHandle = nullptr;
                         window->getWindowHandle( &windowHandle );
                         if( windowHandle && !ImGui_ImplWin32_Init( windowHandle ) )
+                        {
                             WP_LOG_ERROR( "ClawImguiManager: failed to initialise the Win32 backend." );
+                        }
                     }
                 }
             }
@@ -293,8 +315,11 @@ namespace workphone
                 {
                     const String fontPath = "fa-solid-900.ttf";
                     if( !ui->loadFont( fontPath, "awesome" ) )
-                        WP_LOG_WARNING( "ClawImguiManager::init: failed to load fa-solid-900.ttf; "
-                                        "the default font remains available." );
+                    {
+                        WP_LOG_WARNING(
+                            "ClawImguiManager::init: failed to load fa-solid-900.ttf; "
+                            "the default font remains available." );
+                    }
                 }
             }
 
@@ -307,9 +332,9 @@ namespace workphone
             const s32 height = wp_renderer_get_height( m_renderer );
             updateProjectionMatrix( width > 0 ? static_cast<float>( width ) : 1280.0f,
                                     height > 0 ? static_cast<float>( height ) : 720.0f );
-            WP_LOG_INFO( "ClawImguiManager::init: context configured; viewport=" +
-                         std::to_string( width ) + "x" + std::to_string( height ) +
-                         ", docking enabled, settings=" + m_iniPath );
+            WP_LOG_INFO(
+                "ClawImguiManager::init: context configured; viewport=" + std::to_string( width ) + "x" +
+                std::to_string( height ) + ", docking enabled, settings=" + m_iniPath );
         }
 
         bool ClawImguiManager::isInitialised() const
@@ -320,7 +345,9 @@ namespace workphone
         void ClawImguiManager::setupViewport( s32 width, s32 height )
         {
             if( width > 0 && height > 0 )
+            {
                 updateProjectionMatrix( static_cast<float>( width ), static_cast<float>( height ) );
+            }
         }
 
         wp_renderer *ClawImguiManager::getRenderer() const
@@ -343,7 +370,9 @@ namespace workphone
             ScopedLock lock( this, true );
 
             if( !m_renderer || !ImGui::GetCurrentContext() )
+            {
                 return;
+            }
 
             m_frameEnded = false;
             ImGuiIO &io = ImGui::GetIO();
@@ -351,7 +380,9 @@ namespace workphone
 #if defined WP_PLATFORM_WIN32
             const bool hasPlatformBackend = io.BackendPlatformUserData != nullptr;
             if( hasPlatformBackend )
+            {
                 ImGui_ImplWin32_NewFrame();
+            }
 #else
             const bool hasPlatformBackend = false;
 #endif
@@ -391,32 +422,44 @@ namespace workphone
             ScopedLock lock( this, true );
 
             if( !m_renderer || m_frameEnded || !ImGui::GetCurrentContext() )
+            {
                 return;
+            }
 
             m_frameEnded = true;
 
             const int currentFrame = ImGui::GetFrameCount();
             if( currentFrame == m_lastRenderedFrame )
+            {
                 return;
+            }
             m_lastRenderedFrame = currentFrame;
 
             ImGui::Render();
             ImDrawData *drawData = ImGui::GetDrawData();
             if( !drawData || drawData->CmdListsCount <= 0 || drawData->CmdListsCount > 0x10000 )
+            {
                 return;
+            }
 
             if( drawData->DisplaySize.x <= 0.0f || drawData->DisplaySize.y <= 0.0f ||
                 !std::isfinite( drawData->DisplaySize.x ) || !std::isfinite( drawData->DisplaySize.y ) ||
                 !std::isfinite( drawData->DisplayPos.x ) || !std::isfinite( drawData->DisplayPos.y ) )
+            {
                 return;
+            }
 
             const wp_viewport_i vp = wp_renderer_get_viewport( m_renderer );
             if( vp.width <= 0 || vp.height <= 0 )
+            {
                 return;
+            }
 
             if( m_vpWidth != vp.width || m_vpHeight != vp.height )
+            {
                 updateProjectionMatrix( static_cast<float>( vp.width ),
                                         static_cast<float>( vp.height ) );
+            }
 
             const int vpWidth = vp.width;
             const int vpHeight = vp.height;
@@ -470,20 +513,28 @@ namespace workphone
             {
                 const ImDrawList *drawList = drawData->CmdLists[n];
                 if( !drawList )
+                {
                     continue;
+                }
 
                 if( drawList->VtxBuffer.empty() || drawList->IdxBuffer.empty() )
+                {
                     continue;
+                }
 
                 const ImDrawVert *vtxSrc = drawList->VtxBuffer.Data;
                 const unsigned int vertexCount = static_cast<unsigned int>( drawList->VtxBuffer.Size );
                 const unsigned int indexCount = static_cast<unsigned int>( drawList->IdxBuffer.Size );
 
                 if( vertexCount == 0u || indexCount == 0u )
+                {
                     continue;
+                }
 
                 if( vtxSrc == nullptr || drawList->IdxBuffer.Data == nullptr )
+                {
                     continue;
+                }
 
                 if( vertexCount > kMaxConvertVertices )
                 {
@@ -493,7 +544,9 @@ namespace workphone
                 }
 
                 if( converted.size() < vertexCount )
+                {
                     converted.resize( vertexCount );
+                }
 
                 for( unsigned int v = 0u; v < vertexCount; ++v )
                 {
@@ -534,7 +587,9 @@ namespace workphone
                 {
                     const ImDrawCmd *cmd = &drawList->CmdBuffer[i];
                     if( !cmd || cmd->ElemCount == 0u )
+                    {
                         continue;
+                    }
 
                     if( cmd->UserCallback )
                     {
@@ -569,13 +624,19 @@ namespace workphone
                     const unsigned int indexOffset = cmd->IdxOffset;
 
                     if( indexOffset >= indexCount || cmd->ElemCount > ( indexCount - indexOffset ) )
+                    {
                         continue;
+                    }
 
                     if( !prepared && cmd->VtxOffset != 0u )
+                    {
                         continue;
+                    }
 
                     if( cmd->VtxOffset > vertexCount )
+                    {
                         continue;
+                    }
 
                     const ImTextureID textureId = cmd->GetTexID();
                     // Bind whichever texture this draw cmd expects:
@@ -585,9 +646,13 @@ namespace workphone
                     // planted a valid SRV in ptc_external_texture_view (common after
                     // project load), because nullptr does not clear that field.
                     if( textureId && textureId != fontTexId )
+                    {
                         wp_renderer_set_texture_native( m_renderer, textureId );
+                    }
                     else
+                    {
                         wp_renderer_set_texture_native( m_renderer, fontTexId );
+                    }
 
                     const float scaleX = getSafeFramebufferScale( clipScale.x );
                     const float scaleY = getSafeFramebufferScale( clipScale.y );
@@ -598,7 +663,9 @@ namespace workphone
 
                     if( !std::isfinite( clipMinX ) || !std::isfinite( clipMinY ) ||
                         !std::isfinite( clipMaxX ) || !std::isfinite( clipMaxY ) )
+                    {
                         continue;
+                    }
 
                     const int clipL = clampInt( static_cast<int>( std::floor( clipMinX ) ), 0, vpWidth );
                     const int clipT =
@@ -607,7 +674,9 @@ namespace workphone
                     const int clipB = clampInt( static_cast<int>( std::ceil( clipMaxY ) ), 0, vpHeight );
 
                     if( clipR <= clipL || clipB <= clipT )
+                    {
                         continue;
+                    }
 
                     wp_viewport_i scissor;
                     scissor.x = offX + clipL;
@@ -671,7 +740,9 @@ namespace workphone
             auto ui = applicationManager->getUI();
 
             if( !m_renderer )
+            {
                 return;
+            }
 
             if( !ImGui::GetCurrentContext() )
             {
@@ -687,7 +758,9 @@ namespace workphone
             }
 
             if( io.Fonts->Fonts.empty() )
+            {
                 io.Fonts->AddFontDefault();
+            }
 
             // Load Font Awesome font (must happen before createFontTexture bakes the atlas)
             if( ui )

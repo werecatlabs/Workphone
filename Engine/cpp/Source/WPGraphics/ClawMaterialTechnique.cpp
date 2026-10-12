@@ -33,8 +33,8 @@ namespace workphone::render
     SmartPtr<IMaterialPass> ClawMaterialTechnique::createPass()
     {
         auto pass = workphone::make_ptr<ClawMaterialPass>();
-            pass->setMaterial( getMaterial() );
-            pass->setParent( this );
+        pass->setMaterial( getMaterial() );
+        pass->setParent( this );
         addPass( pass );
         return pass;
     }
@@ -50,7 +50,9 @@ namespace workphone::render
     void ClawMaterialTechnique::removePass( SmartPtr<IMaterialPass> pass )
     {
         if( !pass )
+        {
             return;
+        }
 
         for( size_t i = 0; i < m_passes.size(); ++i )
         {
@@ -99,7 +101,9 @@ namespace workphone::render
     void ClawMaterialTechnique::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
+        {
             return;
+        }
 
         //hash32 scheme = 0;
         //if (properties->getProperty("scheme", scheme))

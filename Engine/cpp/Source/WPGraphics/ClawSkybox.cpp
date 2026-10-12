@@ -31,14 +31,20 @@ namespace workphone
         void ClawSkybox::setTexture( SmartPtr<ITexture> texture, u32 layerIdx )
         {
             if( layerIdx >= m_textures.size() )
+            {
                 m_textures.resize( layerIdx + 1 );
+            }
             m_textures[layerIdx] = texture;
 
             if( !m_skybox )
+            {
                 return;
+            }
 
             if( layerIdx >= WP_SKYBOX_MAX_TEXTURES )
+            {
                 return;
+            }
 
             if( texture )
             {
@@ -55,14 +61,20 @@ namespace workphone
         void ClawSkybox::setTexture( const String &fileName, u32 layerIdx )
         {
             if( layerIdx >= m_textures.size() )
+            {
                 m_textures.resize( layerIdx + 1 );
+            }
             m_textures[layerIdx] = nullptr;
 
             if( !m_skybox )
+            {
                 return;
+            }
 
             if( layerIdx >= WP_SKYBOX_MAX_TEXTURES )
+            {
                 return;
+            }
 
             auto name = static_cast<const wp_c8 *>( static_cast<const void *>( fileName.c_str() ) );
             wp_skybox_set_texture_name( m_skybox, static_cast<wp_s32>( layerIdx ), name );
@@ -78,7 +90,9 @@ namespace workphone
             m_textures = textures;
 
             if( !m_skybox )
+            {
                 return;
+            }
 
             const u32 count = static_cast<u32>( m_textures.size() ) < WP_SKYBOX_MAX_TEXTURES
                                   ? static_cast<u32>( m_textures.size() )
@@ -107,11 +121,15 @@ namespace workphone
         String ClawSkybox::getTextureName( u32 layerIdx ) const
         {
             if( !m_skybox || layerIdx >= WP_SKYBOX_MAX_TEXTURES )
+            {
                 return StringUtil::EmptyString;
+            }
 
             const wp_c8 *name = wp_skybox_get_texture_name( m_skybox, static_cast<wp_s32>( layerIdx ) );
             if( !name || !name[0] )
+            {
                 return StringUtil::EmptyString;
+            }
 
             return String( reinterpret_cast<const c8 *>( name ) );
         }
@@ -191,7 +209,9 @@ namespace workphone
         void ClawSkybox::updateNative()
         {
             if( !m_skybox )
+            {
                 return;
+            }
 
             wp_skybox_set_enabled( m_skybox, m_visible ? 1 : 0 );
             wp_skybox_set_distance( m_skybox, m_distance );

@@ -25,7 +25,8 @@ namespace workphone::render
     {
         if( width <= 0 || height <= 0 )
         {
-            WP_LOG_ERROR( "WPGraphics/Pipeline: invalid dimensions " + std::to_string( width ) + "x" + std::to_string( height ) + "; both must be positive." );
+            WP_LOG_ERROR( "WPGraphics/Pipeline: invalid dimensions " + std::to_string( width ) + "x" +
+                          std::to_string( height ) + "; both must be positive." );
             return false;
         }
 
@@ -38,7 +39,8 @@ namespace workphone::render
             shutdown();
         }
 
-        WP_LOG_INFO( "WPGraphics/Pipeline: initializing CPU post-processing at " + std::to_string( width ) + "x" + std::to_string( height ) +
+        WP_LOG_INFO( "WPGraphics/Pipeline: initializing CPU post-processing at " +
+                     std::to_string( width ) + "x" + std::to_string( height ) +
                      "; quality=" + std::to_string( static_cast<s32>( getQualityLevel() ) ) );
         if( !GraphicsPipeline::initialize( width, height ) )
         {
@@ -50,7 +52,8 @@ namespace workphone::render
             wp_pipeline_create( width, height, static_cast<wp_pipeline_quality>( getQualityLevel() ) );
         if( !m_nativePipeline )
         {
-            WP_LOG_ERROR( "WPGraphics/Pipeline: native effect or framebuffer allocation failed at " + std::to_string( width ) + "x" + std::to_string( height ) );
+            WP_LOG_ERROR( "WPGraphics/Pipeline: native effect or framebuffer allocation failed at " +
+                          std::to_string( width ) + "x" + std::to_string( height ) );
             GraphicsPipeline::shutdown();
             return false;
         }
@@ -58,11 +61,14 @@ namespace workphone::render
         m_rgbaOutput.resize( static_cast<size_t>( width ) * height * 4u, 0.0f );
         m_hasPreviousViewProjection = false;
         applyNativeSettings();
-        WP_LOG_INFO( "WPGraphics/Pipeline: ready; TAA=" + std::to_string( isTAAEnabled() ) +
-                     ", AO=" + std::to_string( isGTAOEnabled() ) + ", SSR=" + std::to_string( isSSREnabled() ) +
-                     ", bloom=" + std::to_string( isBloomEnabled() ) + ", exposure=" + std::to_string( isExposureEnabled() ) +
-                     ", DOF=" + std::to_string( isDOFEnabled() ) + ", motion blur=" + std::to_string( isMotionBlurEnabled() ) +
-                     ", contact shadows=" + std::to_string( isContactShadowsEnabled() ) + ", CSM=" + std::to_string( isCSMEnabled() ) );
+        WP_LOG_INFO( "WPGraphics/Pipeline: ready; TAA=" + std::to_string( isTAAEnabled() ) + ", AO=" +
+                     std::to_string( isGTAOEnabled() ) + ", SSR=" + std::to_string( isSSREnabled() ) +
+                     ", bloom=" + std::to_string( isBloomEnabled() ) +
+                     ", exposure=" + std::to_string( isExposureEnabled() ) +
+                     ", DOF=" + std::to_string( isDOFEnabled() ) +
+                     ", motion blur=" + std::to_string( isMotionBlurEnabled() ) +
+                     ", contact shadows=" + std::to_string( isContactShadowsEnabled() ) +
+                     ", CSM=" + std::to_string( isCSMEnabled() ) );
         return true;
     }
 
@@ -109,21 +115,21 @@ namespace workphone::render
         const auto nativeView = ClawUtil::toNativeMatrix( view );
         const auto nativeProjection = ClawUtil::toNativeMatrix( projection );
         const auto nativeCurrent = ClawUtil::toNativeMatrix( viewProjection );
-        const auto nativePrevious =
-            ClawUtil::toNativeMatrix( m_hasPreviousViewProjection ? m_previousViewProjection : viewProjection );
+        const auto nativePrevious = ClawUtil::toNativeMatrix(
+            m_hasPreviousViewProjection ? m_previousViewProjection : viewProjection );
         const auto nativeInverse = ClawUtil::toNativeMatrix( inverseViewProjection );
 
         wp_pipeline_set_view_proj( m_nativePipeline, &nativeCurrent, &nativePrevious, &nativeInverse );
         wp_pipeline_set_frame_inputs( m_nativePipeline, m_hdrInput.data(), m_normalInput.data(),
-                                 m_depthInput.data(), m_velocityInput.data() );
+                                      m_depthInput.data(), m_velocityInput.data() );
 
         void *nativeScene = nullptr;
         if( auto clawScene = dynamic_cast<ClawScene *>( getScene() ) )
         {
             nativeScene = clawScene->getNativeScene();
         }
-        wp_pipeline_render_frame( m_nativePipeline, nativeScene, &nativeView, &nativeProjection, nullptr, 0,
-                             nullptr );
+        wp_pipeline_render_frame( m_nativePipeline, nativeScene, &nativeView, &nativeProjection, nullptr,
+                                  0, nullptr );
 
         s32 width = 0;
         s32 height = 0;
@@ -150,7 +156,9 @@ namespace workphone::render
     {
         auto software = renderer ? wp_renderer_get_software( renderer ) : nullptr;
         if( !software || !isInitialized() )
+        {
             return false;
+        }
 
         const auto width = wp_renderer_software_get_width( software );
         const auto height = wp_renderer_software_get_height( software );
@@ -158,7 +166,9 @@ namespace workphone::render
             static_cast<const wp_u8 *>( wp_renderer_software_get_framebuffer( software ) );
         const auto *depth = wp_renderer_software_get_depth_buffer( software );
         if( !pixels || !depth || width != getWidth() || height != getHeight() )
+        {
             return false;
+        }
 
         const auto format = wp_renderer_software_get_pixel_format( software );
         const size_t pixelCount = static_cast<size_t>( width ) * height;
@@ -193,7 +203,9 @@ namespace workphone::render
     {
         auto software = renderer ? wp_renderer_get_software( renderer ) : nullptr;
         if( !software || m_rgbaOutput.empty() )
+        {
             return false;
+        }
         const auto format = wp_renderer_software_get_pixel_format( software );
         const size_t pixelCount = static_cast<size_t>( getWidth() ) * getHeight();
         const size_t stride =
@@ -213,7 +225,9 @@ namespace workphone::render
             m_ldrPresentation[i * stride + 1u] = g;
             m_ldrPresentation[i * stride + ( bgra ? 0u : 2u )] = b;
             if( stride == 4u )
+            {
                 m_ldrPresentation[i * stride + 3u] = 255u;
+            }
         }
         return wp_renderer_software_set_framebuffer( software, m_ldrPresentation.data(), format ) != 0;
     }
@@ -228,30 +242,38 @@ namespace workphone::render
     {
         GraphicsPipeline::setTaaSettings( settings );
         if( m_nativePipeline )
+        {
             wp_pipeline_set_taa_params( m_nativePipeline, settings.m_feedback );
+        }
     }
 
     void ClawGraphicsPipeline::setTaoaSettings( const TaoaSettings &settings )
     {
         GraphicsPipeline::setTaoaSettings( settings );
         if( m_nativePipeline )
+        {
             wp_pipeline_set_ao_params( m_nativePipeline, settings.m_radius, settings.m_intensity );
+        }
     }
 
     void ClawGraphicsPipeline::setHdrSettings( const HdrSettings &settings )
     {
         GraphicsPipeline::setHdrSettings( settings );
         if( m_nativePipeline )
+        {
             wp_pipeline_set_bloom_params( m_nativePipeline, settings.m_bloomThreshold,
-                                     settings.m_bloomIntensity );
+                                          settings.m_bloomIntensity );
+        }
     }
 
     void ClawGraphicsPipeline::setCsmSettings( const CsmSettings &settings )
     {
         GraphicsPipeline::setCsmSettings( settings );
         if( m_nativePipeline )
+        {
             wp_pipeline_set_shadow_quality( m_nativePipeline, settings.m_cascadeCount,
-                                       settings.m_shadowMapSize );
+                                            settings.m_shadowMapSize );
+        }
     }
 
 #define WP_CLAW_TOGGLE( method, baseMethod, nativeMethod )     \
@@ -277,9 +299,13 @@ namespace workphone::render
     const f32 *ClawGraphicsPipeline::getOutputBuffer( s32 *outWidth, s32 *outHeight ) const
     {
         if( outWidth )
+        {
             *outWidth = getWidth();
+        }
         if( outHeight )
+        {
             *outHeight = getHeight();
+        }
         return m_rgbaOutput.empty() ? nullptr : m_rgbaOutput.data();
     }
 
@@ -302,13 +328,17 @@ namespace workphone::render
     {
         GraphicsPipeline::setDebugView( view );
         if( m_nativePipeline )
+        {
             wp_pipeline_set_debug_view( m_nativePipeline, ClawUtil::toNativeDebugView( view ) );
+        }
     }
 
     void ClawGraphicsPipeline::applyNativeSettings()
     {
         if( !m_nativePipeline )
+        {
             return;
+        }
 
         enableTAA( isTAAEnabled() );
         enableGTAO( isGTAOEnabled() );

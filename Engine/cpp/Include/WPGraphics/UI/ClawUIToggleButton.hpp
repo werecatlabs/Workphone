@@ -112,14 +112,15 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         private:
-            SmartPtr<ClawUIToggleGroup> m_toggleGroup; ///< Toggle group that coordinates mutual exclusion.
-            ToggleType m_toggleType = ToggleType::ToggleButton; ///< Toggle behavior for this control.
-            ToggleState m_toggleState = ToggleState::Off; ///< Current toggle state.
-            f32 m_textSize = 1.0f; ///< Label text size multiplier.
-            bool m_showLabel = true; ///< True when the label should be rendered.
-            String m_label; ///< Text displayed on the button.
-            String m_toggleMaterial; ///< Material used to render the toggle appearance.
-            bool m_isToggled = false; ///< True when the button is in the toggled-on state.
+            SmartPtr<ClawUIToggleGroup>
+                m_toggleGroup;  ///< Toggle group that coordinates mutual exclusion.
+            ToggleType m_toggleType = ToggleType::ToggleButton;  ///< Toggle behavior for this control.
+            ToggleState m_toggleState = ToggleState::Off;        ///< Current toggle state.
+            f32 m_textSize = 1.0f;                               ///< Label text size multiplier.
+            bool m_showLabel = true;   ///< True when the label should be rendered.
+            String m_label;            ///< Text displayed on the button.
+            String m_toggleMaterial;   ///< Material used to render the toggle appearance.
+            bool m_isToggled = false;  ///< True when the button is in the toggled-on state.
         };
     }  // end namespace ui
 }  // namespace workphone

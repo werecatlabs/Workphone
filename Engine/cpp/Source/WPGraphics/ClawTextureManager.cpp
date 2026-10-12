@@ -14,8 +14,7 @@ namespace workphone
         ClawTextureManager::ClawTextureManager() = default;
         ClawTextureManager::~ClawTextureManager() = default;
 
-        SmartPtr<ITexture> ClawTextureManager::createCubeMap(
-            const Array<SmartPtr<ITexture>> &textures )
+        SmartPtr<ITexture> ClawTextureManager::createCubeMap( const Array<SmartPtr<ITexture>> &textures )
         {
             auto texture = workphone::make_ptr<ClawCubemapTexture>();
             texture->setName( "GeneratedCubemap/" + StringUtil::getUUID() );
@@ -196,10 +195,11 @@ namespace workphone
                 }
                 // Manual textures have no file to decode. Initialise the pixel storage before
                 // loading so copyData-backed procedural resources stay entirely in memory.
-                if( width && height && !(static_cast<u32>(usage) & static_cast<u32>(TextureUsage::TU_RENDERTARGET)) )
+                if( width && height &&
+                    !( static_cast<u32>( usage ) & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
                 {
-                    Array<u8> pixels(static_cast<size_t>(width)*height*4u,0);
-                    texture->copyData(pixels.data(),Vector2I(width,height));
+                    Array<u8> pixels( static_cast<size_t>( width ) * height * 4u, 0 );
+                    texture->copyData( pixels.data(), Vector2I( width, height ) );
                 }
                 texture->load( nullptr );
             }

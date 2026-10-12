@@ -10,6 +10,7 @@ namespace workphone::ui
         m_context = new struct wp_context
         {
         };
+
         m_memory = new wp_byte[kMemorySize];
 
         if( !m_context || !m_memory )
@@ -47,7 +48,9 @@ namespace workphone::ui
         wp_font_atlas_end( &m_atlas, m_fontTexture, &m_nullTexture );
 
         if( defaultFont )
+        {
             defaultFont->handle.height = 13.0f;
+        }
         const struct wp_user_font *userFont = defaultFont ? &defaultFont->handle : nullptr;
 
         // Initialise fixed-size Nuklear context.
@@ -77,7 +80,9 @@ namespace workphone::ui
         // cleanup only releases font source data; clear also frees the glyphs,
         // font objects and configuration allocated for the atlas.
         if( m_atlas.permanent.alloc && m_atlas.permanent.free )
+        {
             wp_font_atlas_clear( &m_atlas );
+        }
 
         delete[] static_cast<wp_byte *>( m_memory );
         m_memory = nullptr;

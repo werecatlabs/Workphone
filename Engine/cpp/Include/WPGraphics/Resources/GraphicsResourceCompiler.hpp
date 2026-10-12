@@ -15,8 +15,10 @@ namespace workphone::render
      * Both output and retainedBudget are unchanged on failure.
      */
     WPGraphics_API bool decodeGraphicsTextureSource( const String &sourceRoot,
-        const resource::ResourceID &id, CookedTextureData &output, String &error,
-        u64 maximumOutputBytes = 32ull * 1024 * 1024, StreamBudget *retainedBudget = nullptr );
+                                                     const resource::ResourceID &id,
+                                                     CookedTextureData &output, String &error,
+                                                     u64 maximumOutputBytes = 32ull * 1024 * 1024,
+                                                     StreamBudget *retainedBudget = nullptr );
 
     /** First-party texres/matres descriptor compiler for the existing registry.
      * Both JSON descriptors require version:1. texres requires source:data://...,

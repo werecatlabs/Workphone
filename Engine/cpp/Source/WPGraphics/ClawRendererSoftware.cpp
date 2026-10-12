@@ -57,11 +57,15 @@ namespace workphone::render
                 m_bufferSize = size;
             }
             else
-                WP_LOG_WARNING( "WPGraphics/Software: render target has invalid dimensions; using 1280x720." );
+            {
+                WP_LOG_WARNING(
+                    "WPGraphics/Software: render target has invalid dimensions; using 1280x720." );
+            }
             m_renderTarget = renderTarget;
         }
 
-        WP_LOG_INFO( "WPGraphics/Software: allocating BGRA8 framebuffer and depth buffer at " + std::to_string( m_bufferSize.x ) + "x" + std::to_string( m_bufferSize.y ) );
+        WP_LOG_INFO( "WPGraphics/Software: allocating BGRA8 framebuffer and depth buffer at " +
+                     std::to_string( m_bufferSize.x ) + "x" + std::to_string( m_bufferSize.y ) );
         m_renderer =
             wp_renderer_create_software( m_bufferSize.x, m_bufferSize.y, WORKPHONE_PIXEL_FORMAT_BGRA8 );
         if( m_renderer )
@@ -78,11 +82,13 @@ namespace workphone::render
         setLoadingState( m_renderer ? LoadingState::Loaded : LoadingState::Unloaded );
         if( m_renderer )
         {
-            WP_LOG_INFO( "WPGraphics/Software: renderer ready; render state and transforms configured." );
+            WP_LOG_INFO(
+                "WPGraphics/Software: renderer ready; render state and transforms configured." );
         }
         else
         {
-            WP_LOG_ERROR( "WPGraphics/Software: framebuffer allocation failed at " + std::to_string( m_bufferSize.x ) + "x" + std::to_string( m_bufferSize.y ) );
+            WP_LOG_ERROR( "WPGraphics/Software: framebuffer allocation failed at " +
+                          std::to_string( m_bufferSize.x ) + "x" + std::to_string( m_bufferSize.y ) );
         }
     }
 

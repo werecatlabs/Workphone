@@ -29,6 +29,7 @@ namespace workphone
             bool usedCookedTileManifest = false;
             TerrainStreamStats worker;
         };
+
         /**
          * @class ClawTerrain
          * @brief Implementation of IGraphicsTerrain using the Claw graphics engine.

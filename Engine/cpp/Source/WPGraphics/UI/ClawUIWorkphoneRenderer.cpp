@@ -68,8 +68,7 @@ namespace workphone::ui
 
     void ClawUIWorkphoneRenderer::releaseFontTextureNative()
     {
-        if( m_fontTextureNative && !m_fontTextureIsPixelPointer &&
-            m_fontTextureRenderer )
+        if( m_fontTextureNative && !m_fontTextureIsPixelPointer && m_fontTextureRenderer )
         {
             if( auto *dx11 = wp_renderer_get_dx11( m_fontTextureRenderer ) )
             {
@@ -84,9 +83,8 @@ namespace workphone::ui
     }
 
     void *ClawUIWorkphoneRenderer::ensureFontTextureNative( struct wp_renderer *renderer,
-                                                         const void *fontPixels,
-                                                         wp_s32 fontWidth,
-                                                         wp_s32 fontHeight )
+                                                            const void *fontPixels, wp_s32 fontWidth,
+                                                            wp_s32 fontHeight )
     {
         // No pixels or zero-sized atlas: nothing to cache.
         if( !renderer || !fontPixels || fontWidth <= 0 || fontHeight <= 0 )
@@ -99,14 +97,14 @@ namespace workphone::ui
         // so the cached "native" value is just the pixel pointer itself.
         if( wp_renderer_get_type( renderer ) != WORKPHONE_RENDERER_TYPE_DX11 )
         {
-            if( m_fontTextureNative == fontPixels &&
-                m_fontTextureRenderer == renderer && m_fontTextureCachedWidth == fontWidth &&
-                m_fontTextureCachedHeight == fontHeight && m_fontTextureIsPixelPointer )
+            if( m_fontTextureNative == fontPixels && m_fontTextureRenderer == renderer &&
+                m_fontTextureCachedWidth == fontWidth && m_fontTextureCachedHeight == fontHeight &&
+                m_fontTextureIsPixelPointer )
             {
                 return m_fontTextureNative;
             }
             releaseFontTextureNative();
-            m_fontTextureNative = const_cast< void * >( fontPixels );
+            m_fontTextureNative = const_cast<void *>( fontPixels );
             m_fontTextureRenderer = renderer;
             m_fontTextureCachedWidth = fontWidth;
             m_fontTextureCachedHeight = fontHeight;
@@ -267,7 +265,7 @@ namespace workphone::ui
         // ptc_external_texture_view leak the previous "fall through to nullptr" path had.
         if( !fontNative )
         {
-            fontNative = const_cast< void * >( fontTexture.ptr );
+            fontNative = const_cast<void *>( fontTexture.ptr );
         }
 
         size_t indexOffset = 0;
@@ -279,12 +277,12 @@ namespace workphone::ui
                 continue;
             }
 
-            wp_viewport_i scissor = { viewport.x + static_cast<wp_s32>(
-                                                      std::max( 0.0f, command->clip_rect.x ) ),
-                                      viewport.y + static_cast<wp_s32>(
-                                                       std::max( 0.0f, command->clip_rect.y ) ),
-                                      static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.w ) ),
-                                      static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.h ) ) };
+            wp_viewport_i scissor = {
+                viewport.x + static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.x ) ),
+                viewport.y + static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.y ) ),
+                static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.w ) ),
+                static_cast<wp_s32>( std::max( 0.0f, command->clip_rect.h ) )
+            };
             wp_renderer_set_scissor_rect( renderer, scissor );
 
             // Pick a native handle for every command.  All three branches go through

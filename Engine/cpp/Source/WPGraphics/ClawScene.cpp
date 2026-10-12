@@ -36,41 +36,95 @@ namespace workphone
 
         struct ClawScene::FoliageWorldState
         {
-            struct Attached { SmartPtr<ClawTerrain> terrain; std::shared_ptr<ClawFoliageWorld> world; };
-            std::map<ClawTerrain *,Attached> terrains;
+            struct Attached
+            {
+                SmartPtr<ClawTerrain> terrain;
+                std::shared_ptr<ClawFoliageWorld> world;
+            };
+
+            std::map<ClawTerrain *, Attached> terrains;
             Array<std::shared_ptr<ClawFoliageWorld>> standalone;
             Array<ClawFoliageInteraction> interactions;
-            std::chrono::steady_clock::time_point epoch=std::chrono::steady_clock::now();
-            u64 frame=0;
-            f32 seconds=0;
+            std::chrono::steady_clock::time_point epoch = std::chrono::steady_clock::now();
+            u64 frame = 0;
+            f32 seconds = 0;
             String error;
         };
-        bool ClawScene::addFoliageWorld(std::shared_ptr<ClawFoliageWorld> world,String &error)
+
+        bool ClawScene::addFoliageWorld( std::shared_ptr<ClawFoliageWorld> world, String &error )
         {
-            if(!world){error="A foliage world is required.";return false;}
-            if(!m_foliageWorlds)m_foliageWorlds=std::make_unique<FoliageWorldState>();
-            auto &worlds=m_foliageWorlds->standalone;
-            if(worlds.size()>=64||std::find(worlds.begin(),worlds.end(),world)!=worlds.end())
-            {error="Foliage world already attached or scene world limit exceeded.";return false;}
-            worlds.push_back(std::move(world));error.clear();return true;
+            if( !world )
+            {
+                error = "A foliage world is required.";
+                return false;
+            }
+            if( !m_foliageWorlds )
+            {
+                m_foliageWorlds = std::make_unique<FoliageWorldState>();
+            }
+            auto &worlds = m_foliageWorlds->standalone;
+            if( worlds.size() >= 64 || std::find( worlds.begin(), worlds.end(), world ) != worlds.end() )
+            {
+                error = "Foliage world already attached or scene world limit exceeded.";
+                return false;
+            }
+            worlds.push_back( std::move( world ) );
+            error.clear();
+            return true;
         }
-        bool ClawScene::removeFoliageWorld(const std::shared_ptr<ClawFoliageWorld> &world)
+
+        bool ClawScene::removeFoliageWorld( const std::shared_ptr<ClawFoliageWorld> &world )
         {
-            if(!m_foliageWorlds)return false;auto &worlds=m_foliageWorlds->standalone;
-            auto found=std::find(worlds.begin(),worlds.end(),world);if(found==worlds.end())return false;
-            worlds.erase(found);return true;
+            if( !m_foliageWorlds )
+            {
+                return false;
+            }
+            auto &worlds = m_foliageWorlds->standalone;
+            auto found = std::find( worlds.begin(), worlds.end(), world );
+            if( found == worlds.end() )
+            {
+                return false;
+            }
+            worlds.erase( found );
+            return true;
         }
-        void ClawScene::clearFoliageWorlds(){m_foliageWorlds.reset();}
-        bool ClawScene::setFoliageInteractions(const Array<ClawFoliageInteraction> &values,String &error)
+
+        void ClawScene::clearFoliageWorlds()
         {
-            if(values.size()>16){error="Foliage supports at most sixteen interaction spheres.";return false;}
-            for(const auto &v:values)if(!std::isfinite(v.position.x)||!std::isfinite(v.position.y)||!std::isfinite(v.position.z)||
-                !std::isfinite(v.radius)||v.radius<=0||!std::isfinite(v.strength)||v.strength<0||v.strength>1)
-            {error="Invalid foliage interaction.";return false;}
-            if(!m_foliageWorlds)m_foliageWorlds=std::make_unique<FoliageWorldState>();
-            m_foliageWorlds->interactions=values;error.clear();return true;
+            m_foliageWorlds.reset();
         }
-        String ClawScene::getFoliageError()const{return m_foliageWorlds?m_foliageWorlds->error:String{};}
+
+        bool ClawScene::setFoliageInteractions( const Array<ClawFoliageInteraction> &values,
+                                                String &error )
+        {
+            if( values.size() > 16 )
+            {
+                error = "Foliage supports at most sixteen interaction spheres.";
+                return false;
+            }
+            for( const auto &v : values )
+            {
+                if( !std::isfinite( v.position.x ) || !std::isfinite( v.position.y ) ||
+                    !std::isfinite( v.position.z ) || !std::isfinite( v.radius ) || v.radius <= 0 ||
+                    !std::isfinite( v.strength ) || v.strength < 0 || v.strength > 1 )
+                {
+                    error = "Invalid foliage interaction.";
+                    return false;
+                }
+            }
+            if( !m_foliageWorlds )
+            {
+                m_foliageWorlds = std::make_unique<FoliageWorldState>();
+            }
+            m_foliageWorlds->interactions = values;
+            error.clear();
+            return true;
+        }
+
+        String ClawScene::getFoliageError() const
+        {
+            return m_foliageWorlds ? m_foliageWorlds->error : String{};
+        }
 
         /**
          * @brief Wraps the C graphics scene's root node without owning it.
@@ -232,15 +286,25 @@ namespace workphone
             // and invalidate the wrappers before releasing that native storage.
             auto root = getRootSceneNode();
             for( auto &node : m_sceneNodes.snapshot() )
+            {
                 if( node && node != root )
+                {
                     node->unload( nullptr );
+                }
+            }
             m_sceneNodes.clear();
             m_registeredSceneNodes.clear();
             if( root )
+            {
                 root->removeChildren();
+            }
             for( auto &camera : m_cameras.snapshot() )
+            {
                 if( camera )
+                {
                     camera->detachFromParent( camera->getOwner() );
+                }
+            }
             m_cameras.clear();
             setDefaultCamera( nullptr );
             if( m_scene )
@@ -258,7 +322,8 @@ namespace workphone
             {
                 std::lock_guard<std::mutex> lock( m_foliageMutex );
                 const auto retained = std::atomic_load( &m_foliageBatches );
-                auto candidate = std::make_shared<FoliageBatches>( retained ? *retained : FoliageBatches{} );
+                auto candidate =
+                    std::make_shared<FoliageBatches>( retained ? *retained : FoliageBatches{} );
                 if( previous )
                 {
                     const auto found = std::find( candidate->begin(), candidate->end(), previous );
@@ -271,7 +336,8 @@ namespace workphone
                 }
                 if( replacement )
                 {
-                    if( std::find( candidate->begin(), candidate->end(), replacement ) != candidate->end() )
+                    if( std::find( candidate->begin(), candidate->end(), replacement ) !=
+                        candidate->end() )
                     {
                         error = "Foliage batch is already attached.";
                         return false;
@@ -280,7 +346,9 @@ namespace workphone
                 }
                 u64 count = 0;
                 for( const auto &batch : *candidate )
+                {
                     count += batch->instanceCount();
+                }
                 if( candidate->size() > 1024 || count > 1048576 )
                 {
                     error = "Scene foliage exceeds 1024 batches or 1048576 instances.";
@@ -307,7 +375,8 @@ namespace workphone
             std::shared_ptr<const FoliageBatches> retired;
             {
                 std::lock_guard<std::mutex> lock( m_foliageMutex );
-                retired = std::atomic_exchange( &m_foliageBatches, std::shared_ptr<const FoliageBatches>{} );
+                retired =
+                    std::atomic_exchange( &m_foliageBatches, std::shared_ptr<const FoliageBatches>{} );
             }
         }
 
@@ -449,7 +518,9 @@ namespace workphone
                 graphicsSystem->loadObject( graphicsObject, true );
 
                 if( auto light = dynamic_pointer_cast<IGraphicsLight>( graphicsObject ) )
+                {
                     m_lights.push_back( light );
+                }
 
                 if( graphicsObject->isDerived<IParticleSystem>() )
                 {
@@ -477,9 +548,13 @@ namespace workphone
         bool ClawScene::removeGraphicsObject( SmartPtr<ISharedObject> object )
         {
             if( !GraphicsScene::removeGraphicsObject( object ) )
+            {
                 return false;
+            }
             if( auto light = dynamic_pointer_cast<IGraphicsLight>( object ) )
+            {
                 m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
+            }
             return true;
         }
 
@@ -739,9 +814,12 @@ namespace workphone
                 if( dx11Renderer )
                 {
                     const auto foliage = getFoliageBatches();
-                    const auto foliageMask = m_scene->visibility_mask &
-                        ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() ) : ~u32( 0 ) ) &
-                        ( rawRenderer->getViewport() ? rawRenderer->getViewport()->getVisibilityMask() : ~u32( 0 ) );
+                    const auto foliageMask =
+                        m_scene->visibility_mask &
+                        ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() )
+                                 : ~u32( 0 ) ) &
+                        ( rawRenderer->getViewport() ? rawRenderer->getViewport()->getVisibilityMask()
+                                                     : ~u32( 0 ) );
                     const auto objects = m_lights.snapshot();
                     // The forward shader supports one directional light. Configure it once
                     // for both terrain and meshes, rather than using the renderer's preview sun.
@@ -775,94 +853,169 @@ namespace workphone
                     const auto viewport = rawRenderer->getViewport();
                     SmartPtr<IGraphicsPipeline> pipeline;
                     if( auto manager = core::IApplicationManager::instancePtr() )
+                    {
                         if( auto graphics = manager->getGraphicsSystem() )
+                        {
                             pipeline = graphics->getGraphicsPipeline();
+                        }
+                    }
                     const bool shadows = ( !pipeline || pipeline->isCSMEnabled() ) &&
                                          getEnableShadows() && lightCastsShadows &&
                                          lightIntensity > 0.0f &&
                                          ( !viewport || viewport->getShadowsEnabled() );
-                    const auto terrainObjects=m_terrains.snapshot();
+                    const auto terrainObjects = m_terrains.snapshot();
                     Array<SmartPtr<IGraphicsCamera>> terrainCameras;
-                    for(const auto&sceneCamera:m_cameras.snapshot())
-                        if(auto terrainCamera=dynamic_pointer_cast<IGraphicsCamera>(sceneCamera))
-                            terrainCameras.push_back(terrainCamera);
-                    const bool shadowPass=shadows && dx11Renderer->beginShadowMap(
-                        pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
+                    for( const auto &sceneCamera : m_cameras.snapshot() )
+                    {
+                        if( auto terrainCamera = dynamic_pointer_cast<IGraphicsCamera>( sceneCamera ) )
+                        {
+                            terrainCameras.push_back( terrainCamera );
+                        }
+                    }
+                    const bool shadowPass =
+                        shadows && dx11Renderer->beginShadowMap(
+                                       pipeline ? pipeline->getCsmSettings().m_shadowMapSize : 2048 );
                     // Publish once before both passes: a worker finishing during
                     // shadows cannot switch terrain revision for the colour pass.
-                    for(const auto&object:terrainObjects)
-                        if(auto terrain=dynamic_pointer_cast<ClawTerrain>(object))
-                            dx11Renderer->prepareTerrain(terrain,terrainCameras);
-                    if(!m_foliageWorlds)m_foliageWorlds=std::make_unique<FoliageWorldState>();
-                    auto &foliageState=*m_foliageWorlds;
-                    Array<std::shared_ptr<ClawFoliageWorld>> foliageWorlds=foliageState.standalone;
-                    std::map<ClawFoliageWorld *,SmartPtr<ClawTerrain>> foliageOwners;
-                    std::map<ClawFoliageWorld *,String> foliageErrors;
-                    std::map<ClawFoliageWorld *,ClawFoliageDiagnostics> foliageShadowStats;
-                    std::set<ClawTerrain *> liveTerrains;
-                    String foliageError,foliageFrameError;
-                    const auto observeFoliage=[&](bool success)
-                    {if(!success&&foliageFrameError.empty())foliageFrameError=foliageError;return success;};
-                    for(const auto &object:terrainObjects)
-                        if(auto terrain=dynamic_pointer_cast<ClawTerrain>(object))
+                    for( const auto &object : terrainObjects )
+                    {
+                        if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
                         {
-                            const auto snapshot=terrain->getFoliageSnapshot();
-                            if(!snapshot)continue;
-                            liveTerrains.insert(terrain.get());
-                            auto &attached=foliageState.terrains[terrain.get()];
-                            attached.terrain=terrain;
-                            if(!attached.world)attached.world=std::make_shared<ClawFoliageWorld>();
-                            const auto placement=terrain->getWorldTransform();
+                            dx11Renderer->prepareTerrain( terrain, terrainCameras );
+                        }
+                    }
+                    if( !m_foliageWorlds )
+                    {
+                        m_foliageWorlds = std::make_unique<FoliageWorldState>();
+                    }
+                    auto &foliageState = *m_foliageWorlds;
+                    Array<std::shared_ptr<ClawFoliageWorld>> foliageWorlds = foliageState.standalone;
+                    std::map<ClawFoliageWorld *, SmartPtr<ClawTerrain>> foliageOwners;
+                    std::map<ClawFoliageWorld *, String> foliageErrors;
+                    std::map<ClawFoliageWorld *, ClawFoliageDiagnostics> foliageShadowStats;
+                    std::set<ClawTerrain *> liveTerrains;
+                    String foliageError, foliageFrameError;
+                    const auto observeFoliage = [&]( bool success ) {
+                        if( !success && foliageFrameError.empty() )
+                        {
+                            foliageFrameError = foliageError;
+                        }
+                        return success;
+                    };
+                    for( const auto &object : terrainObjects )
+                    {
+                        if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
+                        {
+                            const auto snapshot = terrain->getFoliageSnapshot();
+                            if( !snapshot )
+                            {
+                                continue;
+                            }
+                            liveTerrains.insert( terrain.get() );
+                            auto &attached = foliageState.terrains[terrain.get()];
+                            attached.terrain = terrain;
+                            if( !attached.world )
+                            {
+                                attached.world = std::make_shared<ClawFoliageWorld>();
+                            }
+                            const auto placement = terrain->getWorldTransform();
                             // A larger world scale can make a new source's local
                             // paging range admissible. Retry after source changes
                             // when the previous source rejected the new scale.
-                            attached.world->setPlacement(Matrix4F(placement.getTransformationMatrix().ptr()),foliageError);
-                            if(attached.world->source().get()!=snapshot.get())
-                                if(!observeFoliage(attached.world->setSource(snapshot,{},foliageError)))continue;
-                            if(!observeFoliage(attached.world->setPlacement(Matrix4F(placement.getTransformationMatrix().ptr()),foliageError)))continue;
-                            if(!observeFoliage(attached.world->setPublicationGate(
-                                [terrain,placement](FoliageSnapshot source,const std::function<void()> &commit,String &error) mutable
-                                {return terrain->publishFoliageSnapshot(std::move(source),placement,commit,error);},foliageError)))continue;
-                            attached.world->setVisibilityMask(terrain->isVisible()?~u32(0):0);
-                            foliageOwners[attached.world.get()]=terrain;
-                            foliageWorlds.push_back(attached.world);
+                            attached.world->setPlacement(
+                                Matrix4F( placement.getTransformationMatrix().ptr() ), foliageError );
+                            if( attached.world->source().get() != snapshot.get() )
+                            {
+                                if( !observeFoliage(
+                                        attached.world->setSource( snapshot, {}, foliageError ) ) )
+                                {
+                                    continue;
+                                }
+                            }
+                            if( !observeFoliage( attached.world->setPlacement(
+                                    Matrix4F( placement.getTransformationMatrix().ptr() ),
+                                    foliageError ) ) )
+                            {
+                                continue;
+                            }
+                            if( !observeFoliage( attached.world->setPublicationGate(
+                                    [terrain, placement]( FoliageSnapshot source,
+                                                          const std::function<void()> &commit,
+                                                          String &error ) mutable {
+                                        return terrain->publishFoliageSnapshot(
+                                            std::move( source ), placement, commit, error );
+                                    },
+                                    foliageError ) ) )
+                            {
+                                continue;
+                            }
+                            attached.world->setVisibilityMask( terrain->isVisible() ? ~u32( 0 ) : 0 );
+                            foliageOwners[attached.world.get()] = terrain;
+                            foliageWorlds.push_back( attached.world );
                         }
-                    for(auto i=foliageState.terrains.begin();i!=foliageState.terrains.end();)
-                        if(!liveTerrains.count(i->first))i=foliageState.terrains.erase(i);else ++i;
-                    const auto makeFoliageView=[&](SmartPtr<IGraphicsCamera> value)
+                    }
+                    for( auto i = foliageState.terrains.begin(); i != foliageState.terrains.end(); )
                     {
-                        ClawFoliageView view;view.key=u64(reinterpret_cast<uintptr_t>(value.get()));
-                        view.visibilityMask=foliageMask;
-                        if(value)
+                        if( !liveTerrains.count( i->first ) )
                         {
-                            const Matrix4F projection(value->getProjectionMatrix().ptr()),cameraView(value->getViewMatrix().ptr());
-                            const auto pose=cameraView.inverse();
-                            view.position={pose[0][3],pose[1][3],pose[2][3]};
-                            view.worldToClip=projection*cameraView;
-                            view.orthographic=std::abs(projection[3][3])>.5f;
-                            view.projectionScale=std::max(.0001f,std::abs(projection[1][1]));
+                            i = foliageState.terrains.erase( i );
+                        }
+                        else
+                        {
+                            ++i;
+                        }
+                    }
+                    const auto makeFoliageView = [&]( SmartPtr<IGraphicsCamera> value ) {
+                        ClawFoliageView view;
+                        view.key = u64( reinterpret_cast<uintptr_t>( value.get() ) );
+                        view.visibilityMask = foliageMask;
+                        if( value )
+                        {
+                            const Matrix4F projection( value->getProjectionMatrix().ptr() ),
+                                cameraView( value->getViewMatrix().ptr() );
+                            const auto pose = cameraView.inverse();
+                            view.position = { pose[0][3], pose[1][3], pose[2][3] };
+                            view.worldToClip = projection * cameraView;
+                            view.orthographic = std::abs( projection[3][3] ) > .5f;
+                            view.projectionScale = std::max( .0001f, std::abs( projection[1][1] ) );
                         }
                         return view;
                     };
-                    const auto colourFoliageView=makeFoliageView(rawRenderer->getCamera());
-                    auto shadowFoliageView=colourFoliageView;
-                    shadowFoliageView.key^=u64(1)<<63;shadowFoliageView.shadow=true;
-                    shadowFoliageView.worldToClip=dx11Renderer->foliageViewProjection(true);
-                    Array<ClawFoliageView> foliageViews{colourFoliageView};
-                    for(const auto &other:terrainCameras)
-                        if(other!=rawRenderer->getCamera()&&foliageViews.size()<15)foliageViews.push_back(makeFoliageView(other));
-                    if(shadowPass)foliageViews.push_back(shadowFoliageView);
-                    const auto foliageFrame=dx11Renderer->terrainFrameToken();
-                    if(!foliageFrame||foliageFrame!=foliageState.frame)
+                    const auto colourFoliageView = makeFoliageView( rawRenderer->getCamera() );
+                    auto shadowFoliageView = colourFoliageView;
+                    shadowFoliageView.key ^= u64( 1 ) << 63;
+                    shadowFoliageView.shadow = true;
+                    shadowFoliageView.worldToClip = dx11Renderer->foliageViewProjection( true );
+                    Array<ClawFoliageView> foliageViews{ colourFoliageView };
+                    for( const auto &other : terrainCameras )
                     {
-                        foliageState.frame=foliageFrame;
-                        foliageState.seconds=std::chrono::duration<f32>(std::chrono::steady_clock::now()-foliageState.epoch).count();
+                        if( other != rawRenderer->getCamera() && foliageViews.size() < 15 )
+                        {
+                            foliageViews.push_back( makeFoliageView( other ) );
+                        }
                     }
-                    for(const auto &world:foliageWorlds)
+                    if( shadowPass )
                     {
-                        observeFoliage(world->setInteractions(foliageState.interactions,foliageError));
-                        if(!observeFoliage(world->prepare(*dx11Renderer,foliageViews,foliageState.seconds,foliageError)))
-                            foliageErrors[world.get()]=foliageError;
+                        foliageViews.push_back( shadowFoliageView );
+                    }
+                    const auto foliageFrame = dx11Renderer->terrainFrameToken();
+                    if( !foliageFrame || foliageFrame != foliageState.frame )
+                    {
+                        foliageState.frame = foliageFrame;
+                        foliageState.seconds =
+                            std::chrono::duration<f32>( std::chrono::steady_clock::now() -
+                                                        foliageState.epoch )
+                                .count();
+                    }
+                    for( const auto &world : foliageWorlds )
+                    {
+                        observeFoliage(
+                            world->setInteractions( foliageState.interactions, foliageError ) );
+                        if( !observeFoliage( world->prepare( *dx11Renderer, foliageViews,
+                                                             foliageState.seconds, foliageError ) ) )
+                        {
+                            foliageErrors[world.get()] = foliageError;
+                        }
                     }
                     if( shadowPass )
                     {
@@ -877,29 +1030,50 @@ namespace workphone
                             auto object = m_scene->objects[i];
                             if( !object || !wp_graphics_object_is_visible( object ) ||
                                 !( wp_graphics_object_get_visibility_flags( object ) & mask ) )
+                            {
                                 continue;
+                            }
                             auto mesh =
                                 static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
                             if( !mesh || !mesh->getCastShadows() )
+                            {
                                 continue;
+                            }
                             wp_mat4f world;
                             wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
                                                            &world );
                             dx11Renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
                         }
                         for( auto &object : terrainObjects )
-                            if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
-                                dx11Renderer->renderTerrain( terrain, false );
-                        if( foliage )
-                            for( const auto &batch : *foliage )
-                                if( batch->castsShadows() && ( batch->visibilityMask() & foliageMask ) )
-                                    batch->render( *dx11Renderer );
-                        for(const auto &world:foliageWorlds)
                         {
-                            auto view=shadowFoliageView;const auto owner=foliageOwners.find(world.get());
-                            if(owner!=foliageOwners.end())view.forcedLod=owner->second->getFoliageForcedLod();
-                            if(!observeFoliage(world->render(*dx11Renderer,view,foliageError)))foliageErrors[world.get()]=foliageError;
-                            foliageShadowStats[world.get()]=world->diagnostics();
+                            if( auto terrain = dynamic_pointer_cast<ClawTerrain>( object ) )
+                            {
+                                dx11Renderer->renderTerrain( terrain, false );
+                            }
+                        }
+                        if( foliage )
+                        {
+                            for( const auto &batch : *foliage )
+                            {
+                                if( batch->castsShadows() && ( batch->visibilityMask() & foliageMask ) )
+                                {
+                                    batch->render( *dx11Renderer );
+                                }
+                            }
+                        }
+                        for( const auto &world : foliageWorlds )
+                        {
+                            auto view = shadowFoliageView;
+                            const auto owner = foliageOwners.find( world.get() );
+                            if( owner != foliageOwners.end() )
+                            {
+                                view.forcedLod = owner->second->getFoliageForcedLod();
+                            }
+                            if( !observeFoliage( world->render( *dx11Renderer, view, foliageError ) ) )
+                            {
+                                foliageErrors[world.get()] = foliageError;
+                            }
+                            foliageShadowStats[world.get()] = world->diagnostics();
                         }
                         dx11Renderer->endShadowMap();
                     }
@@ -917,36 +1091,67 @@ namespace workphone
                     }
                     // Render one retained population snapshot in both passes.
                     if( foliage )
-                        for( const auto &batch : *foliage )
-                            if( batch->visibilityMask() & foliageMask )
-                                batch->render( *dx11Renderer );
-                    for(const auto &world:foliageWorlds)
                     {
-                        auto view=colourFoliageView;const auto owner=foliageOwners.find(world.get());
-                        if(owner!=foliageOwners.end())view.forcedLod=owner->second->getFoliageForcedLod();
-                        if(!observeFoliage(world->render(*dx11Renderer,view,foliageError)))foliageErrors[world.get()]=foliageError;
-                        if(owner!=foliageOwners.end())
+                        for( const auto &batch : *foliage )
                         {
-                            const auto stats=world->diagnostics();const auto shadow=foliageShadowStats.find(world.get());
-                            Terrain::FoliageDiagnostics published;
-                            published.currentGenerationReady=stats.currentGenerationReady;published.sourceRevision=stats.sourceRevision;
-                            published.viewKey=stats.viewKey;published.residentPages=stats.residentPages;published.pendingPages=stats.pendingPages;
-                            published.failedPages=stats.failedPages;published.residentInstances=stats.residentInstances;
-                            published.testedInstances=stats.testedInstances;published.culledInstances=stats.culledInstances;
-                            published.lodInstances=stats.lodInstances;published.groups=stats.groups;published.predictedDraws=stats.predictedDraws;
-                            published.actualDraws=stats.actualDraws;published.submittedInstances=stats.submittedInstances;
-                            published.geometryBytes=stats.geometryBytes;published.uploadBytes=stats.uploadBytes;
-                            if(shadow!=foliageShadowStats.end())
-                            {published.groups+=shadow->second.groups;published.predictedDraws+=shadow->second.predictedDraws;
-                             published.actualDraws+=shadow->second.actualDraws;published.submittedInstances+=shadow->second.submittedInstances;
-                             published.uploadBytes+=shadow->second.uploadBytes;}
-                            published.error=foliageErrors[world.get()];owner->second->setFoliageDiagnostics(published);
+                            if( batch->visibilityMask() & foliageMask )
+                            {
+                                batch->render( *dx11Renderer );
+                            }
                         }
                     }
-                    if(foliageFrameError!=foliageState.error)
+                    for( const auto &world : foliageWorlds )
                     {
-                        foliageState.error=foliageFrameError;
-                        if(!foliageFrameError.empty())WP_LOG_ERROR("ClawScene foliage unavailable: "+foliageFrameError);
+                        auto view = colourFoliageView;
+                        const auto owner = foliageOwners.find( world.get() );
+                        if( owner != foliageOwners.end() )
+                        {
+                            view.forcedLod = owner->second->getFoliageForcedLod();
+                        }
+                        if( !observeFoliage( world->render( *dx11Renderer, view, foliageError ) ) )
+                        {
+                            foliageErrors[world.get()] = foliageError;
+                        }
+                        if( owner != foliageOwners.end() )
+                        {
+                            const auto stats = world->diagnostics();
+                            const auto shadow = foliageShadowStats.find( world.get() );
+                            Terrain::FoliageDiagnostics published;
+                            published.currentGenerationReady = stats.currentGenerationReady;
+                            published.sourceRevision = stats.sourceRevision;
+                            published.viewKey = stats.viewKey;
+                            published.residentPages = stats.residentPages;
+                            published.pendingPages = stats.pendingPages;
+                            published.failedPages = stats.failedPages;
+                            published.residentInstances = stats.residentInstances;
+                            published.testedInstances = stats.testedInstances;
+                            published.culledInstances = stats.culledInstances;
+                            published.lodInstances = stats.lodInstances;
+                            published.groups = stats.groups;
+                            published.predictedDraws = stats.predictedDraws;
+                            published.actualDraws = stats.actualDraws;
+                            published.submittedInstances = stats.submittedInstances;
+                            published.geometryBytes = stats.geometryBytes;
+                            published.uploadBytes = stats.uploadBytes;
+                            if( shadow != foliageShadowStats.end() )
+                            {
+                                published.groups += shadow->second.groups;
+                                published.predictedDraws += shadow->second.predictedDraws;
+                                published.actualDraws += shadow->second.actualDraws;
+                                published.submittedInstances += shadow->second.submittedInstances;
+                                published.uploadBytes += shadow->second.uploadBytes;
+                            }
+                            published.error = foliageErrors[world.get()];
+                            owner->second->setFoliageDiagnostics( published );
+                        }
+                    }
+                    if( foliageFrameError != foliageState.error )
+                    {
+                        foliageState.error = foliageFrameError;
+                        if( !foliageFrameError.empty() )
+                        {
+                            WP_LOG_ERROR( "ClawScene foliage unavailable: " + foliageFrameError );
+                        }
                     }
                     // Use the material-aware C++ draw path for native mesh objects while
                     // retaining the native scene's visibility filtering and queue ordering.
@@ -957,7 +1162,9 @@ namespace workphone
                             auto mesh =
                                 static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
                             if( !mesh )
+                            {
                                 return 0;
+                            }
                             wp_mat4f world;
                             wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
                                                            &world );
@@ -972,12 +1179,16 @@ namespace workphone
                     {
                         auto particles = dynamic_pointer_cast<CParticleSystem>( object );
                         if( !particles || !particles->isVisible() || !particles->isLoaded() )
+                        {
                             continue;
+                        }
 
                         auto viewport = rawRenderer->getViewport();
                         if( viewport &&
                             !( particles->getVisibilityFlags() & viewport->getVisibilityMask() ) )
+                        {
                             continue;
+                        }
 
                         auto owner = particles->getOwner();
                         Matrix4F world =

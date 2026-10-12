@@ -38,7 +38,9 @@ namespace workphone
                 while( m_addParticlesQueue.try_pop( particle ) )
                 {
                     if( m_particles.size() < 500 )
+                    {
                         m_particles.push_back( particle );
+                    }
                 }
 
                 while( m_removeParticlesQueue.try_pop( particle ) )

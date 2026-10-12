@@ -30,7 +30,9 @@ namespace workphone::render
         m_textureName = name;
         m_texture = nullptr;
         if( StringUtil::isNullOrEmpty( name ) )
+        {
             return;
+        }
 
         if( auto applicationManager = core::IApplicationManager::instancePtr() )
         {
@@ -38,9 +40,13 @@ namespace workphone::render
             {
                 auto texture = database->loadResourceByType<ITexture>( name );
                 if( texture && !texture->isLoaded() )
+                {
                     texture->load( nullptr );
+                }
                 if( texture )
+                {
                     setTexture( texture );
+                }
             }
         }
     }
@@ -57,7 +63,9 @@ namespace workphone::render
         {
             m_textureName = texture->getFilePath();
             if( StringUtil::isNullOrEmpty( m_textureName ) )
+            {
                 m_textureName = texture->getName();
+            }
         }
         else
         {
@@ -116,7 +124,9 @@ namespace workphone::render
         if( m_texture )
         {
             if( auto handle = m_texture->getHandle() )
+            {
                 props->setProperty( MaterialTexture::textureStr, handle->getUUIDAsString() );
+            }
         }
         return props;
     }
@@ -134,7 +144,9 @@ namespace workphone::render
             setProperties( properties );
             // Existing engine materials serialize texture resources by UUID.
             if( !StringUtil::isNullOrEmpty( properties->getProperty( MaterialTexture::textureStr ) ) )
+            {
                 MaterialTexture::fromData( data );
+            }
         }
     }
 

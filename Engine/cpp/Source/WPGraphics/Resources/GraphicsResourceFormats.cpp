@@ -12,16 +12,37 @@ namespace workphone::render
 {
     u32 ddsFormatForTarget( const String &target )
     {
-        if( target == "windows-dx11-dds-bgra8-v1" ) return 87;
-        if( target == "windows-dx11-dds-bgra8-srgb-v1" ) return 91;
-        if( target == "windows-dx11-dds-bc1-v1" ) return 71;
-        if( target == "windows-dx11-dds-bc1-srgb-v1" ) return 72;
-        if( target == "windows-dx11-dds-bc3-v1" ) return 77;
-        if( target == "windows-dx11-dds-bc3-srgb-v1" ) return 78;
+        if( target == "windows-dx11-dds-bgra8-v1" )
+        {
+            return 87;
+        }
+        if( target == "windows-dx11-dds-bgra8-srgb-v1" )
+        {
+            return 91;
+        }
+        if( target == "windows-dx11-dds-bc1-v1" )
+        {
+            return 71;
+        }
+        if( target == "windows-dx11-dds-bc1-srgb-v1" )
+        {
+            return 72;
+        }
+        if( target == "windows-dx11-dds-bc3-v1" )
+        {
+            return 77;
+        }
+        if( target == "windows-dx11-dds-bc3-srgb-v1" )
+        {
+            return 78;
+        }
         if( target.find( "windows-dx11-dds-" ) == 0 )
+        {
             throw std::runtime_error( "Unsupported Windows DDS texture profile" );
+        }
         return 0;
     }
+
     namespace
     {
         constexpr u32 textureMagic = 0x58545057u;   // WPTX
@@ -33,15 +54,19 @@ namespace workphone::render
         void require( bool condition, const char *message )
         {
             if( !condition )
+            {
                 throw std::runtime_error( message );
+            }
         }
 
         void validateTarget( const String &target )
         {
             require( !target.empty() && target.size() <= 128, "Invalid cooked graphics target length" );
             for( const unsigned char c : target )
+            {
                 require( c >= 33 && c <= 126,
                          "Cooked graphics target must use printable ASCII without spaces" );
+            }
         }
 
         void validateSettings( const TextureMipSettings &settings )
@@ -64,32 +89,38 @@ namespace workphone::render
                 const auto image = dds::inspect( data.ddsBytes );
                 require( data.levels.empty() && image.format == ddsFormatForTarget( data.target ),
                          "DDS artifact does not match its target profile" );
-                require( image.alphaMode==(dds::blockBytes(image.format)==8 ? 3u : 1u),
+                require( image.alphaMode == ( dds::blockBytes( image.format ) == 8 ? 3u : 1u ),
                          "DDS alpha mode does not match the opaque BC1 or straight-alpha profile" );
                 const auto &first = image.mips.front();
-                const bool compressed=dds::blockBytes(image.format)!=0;
-                const bool srgb=image.format==72 || image.format==78 || image.format==91;
-                require(!compressed || (first.width%4==0 && first.height%4==0),
-                        "DX11 block-compressed base dimensions must be multiples of four");
-                require(!compressed || data.mipSettings.filter!=TextureMipFilter::Normal,
-                        "Compressed normal-map profiles are unsupported");
-                require(!srgb || data.mipSettings.filter==TextureMipFilter::Colour ||
-                        data.mipSettings.filter==TextureMipFilter::Cutout || data.mipSettings.filter==TextureMipFilter::None,
-                        "SRGB profile mip semantics are inconsistent");
+                const bool compressed = dds::blockBytes( image.format ) != 0;
+                const bool srgb = image.format == 72 || image.format == 78 || image.format == 91;
+                require( !compressed || ( first.width % 4 == 0 && first.height % 4 == 0 ),
+                         "DX11 block-compressed base dimensions must be multiples of four" );
+                require( !compressed || data.mipSettings.filter != TextureMipFilter::Normal,
+                         "Compressed normal-map profiles are unsupported" );
+                require( !srgb || data.mipSettings.filter == TextureMipFilter::Colour ||
+                             data.mipSettings.filter == TextureMipFilter::Cutout ||
+                             data.mipSettings.filter == TextureMipFilter::None,
+                         "SRGB profile mip semantics are inconsistent" );
                 require( first.width % data.mipSettings.atlasColumns == 0,
                          "DDS atlas dimensions are inconsistent" );
-                auto width=first.width, height=first.height;
-                size_t count=1;
-                while( data.mipSettings.filter != TextureMipFilter::None && (width!=1 || height!=1) )
+                auto width = first.width, height = first.height;
+                size_t count = 1;
+                while( data.mipSettings.filter != TextureMipFilter::None &&
+                       ( width != 1 || height != 1 ) )
                 {
-                    width=std::max(width/2,1u);height=std::max(height/2,1u);
-                    if(width<data.mipSettings.atlasColumns || width%data.mipSettings.atlasColumns) break;
+                    width = std::max( width / 2, 1u );
+                    height = std::max( height / 2, 1u );
+                    if( width < data.mipSettings.atlasColumns || width % data.mipSettings.atlasColumns )
+                    {
+                        break;
+                    }
                     ++count;
                 }
-                require( image.mips.size()==count, "DDS mip count does not match the recipe" );
+                require( image.mips.size() == count, "DDS mip count does not match the recipe" );
                 return;
             }
-            require( ddsFormatForTarget( data.target )==0,
+            require( ddsFormatForTarget( data.target ) == 0,
                      "Windows DDS profile requires a native DDS payload" );
             require( !data.levels.empty() && data.levels.size() <= maxMipLevels,
                      "Invalid cooked texture mip count" );
@@ -111,11 +142,15 @@ namespace workphone::render
                          "Cooked texture mip dimensions, length or aggregate size is invalid" );
                 total += bytes;
                 if( data.mipSettings.filter == TextureMipFilter::None || ( width == 1 && height == 1 ) )
+                {
                     break;
+                }
                 width = std::max( width / 2u, 1u );
                 height = std::max( height / 2u, 1u );
                 if( width < data.mipSettings.atlasColumns || width % data.mipSettings.atlasColumns )
+                {
                     break;
+                }
             }
             require( expectedCount == data.levels.size(),
                      "Cooked texture contains unexpected mip levels" );
@@ -126,8 +161,10 @@ namespace workphone::render
             validateTarget( data.target );
             for( const auto value : { data.baseColour.r, data.baseColour.g, data.baseColour.b,
                                       data.baseColour.a, data.metalness, data.roughness } )
+            {
                 require( std::isfinite( value ) && value >= 0.0f && value <= 1.0f,
                          "Cooked material values must be finite and within [0,1]" );
+            }
             require( data.textureId.isValid() && !data.textureId.isSubResource() &&
                          data.textureId.type() == resource::ResourceTypeID( "texres" ) &&
                          data.textureId.str().size() <= 1024 && data.textureSourceHash &&
@@ -138,13 +175,19 @@ namespace workphone::render
         void write32( std::ostream &output, u32 value )
         {
             for( unsigned i = 0; i < 4; ++i )
+            {
                 output.put( static_cast<char>( ( value >> ( i * 8u ) ) & 255u ) );
+            }
         }
+
         void write64( std::ostream &output, u64 value )
         {
             for( unsigned i = 0; i < 8; ++i )
+            {
                 output.put( static_cast<char>( ( value >> ( i * 8u ) ) & 255u ) );
+            }
         }
+
         void writeFloat( std::ostream &output, float value )
         {
             static_assert( sizeof( float ) == sizeof( u32 ) && std::numeric_limits<float>::is_iec559,
@@ -153,6 +196,7 @@ namespace workphone::render
             std::memcpy( &bits, &value, sizeof( bits ) );
             write32( output, bits );
         }
+
         void writeString( std::ostream &output, const String &value )
         {
             write32( output, static_cast<u32>( value.size() ) );
@@ -165,26 +209,34 @@ namespace workphone::render
             explicit Reader( const Array<u8> &bytes ) : m_bytes( bytes )
             {
             }
+
             size_t remaining() const
             {
                 return m_bytes.size() - m_position;
             }
+
             u32 read32()
             {
                 require( remaining() >= 4, "Truncated cooked graphics payload" );
                 u32 value = 0;
                 for( unsigned i = 0; i < 4; ++i )
+                {
                     value |= u32( m_bytes[m_position++] ) << ( i * 8u );
+                }
                 return value;
             }
+
             u64 read64()
             {
                 require( remaining() >= 8, "Truncated cooked graphics payload" );
                 u64 value = 0;
                 for( unsigned i = 0; i < 8; ++i )
+                {
                     value |= u64( m_bytes[m_position++] ) << ( i * 8u );
+                }
                 return value;
             }
+
             float readFloat()
             {
                 const auto bits = read32();
@@ -192,6 +244,7 @@ namespace workphone::render
                 std::memcpy( &value, &bits, sizeof( value ) );
                 return value;
             }
+
             String readString( size_t limit )
             {
                 const auto size = read32();
@@ -202,6 +255,7 @@ namespace workphone::render
                 m_position += size;
                 return result;
             }
+
             void readBytes( std::vector<std::uint8_t> &output, size_t size )
             {
                 require( size <= remaining(), "Truncated cooked texture pixels" );
@@ -240,6 +294,7 @@ namespace workphone::render
             require( mode <= 1, "Unknown cooked graphics build mode" );
             packagedBuild = mode != 0;
         }
+
         void writePrefix( std::ostream &output, u32 magic, const String &target, bool packagedBuild )
         {
             write32( output, magic );
@@ -252,23 +307,34 @@ namespace workphone::render
     bool validateCookedTextureData( const CookedTextureData &data, String &error )
     {
         error.clear();
-        try { validateTexture(data); return true; }
-        catch(const std::exception &e) { error=e.what(); return false; }
+        try
+        {
+            validateTexture( data );
+            return true;
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
     }
+
     bool writeCookedTexture( const CookedTextureData &data, std::ostream &output, String &error )
     {
         error.clear();
         try
         {
             validateTexture( data );
-            writePrefix( output, data.ddsBytes.empty() ? textureMagic : ddsMagic, data.target, data.packagedBuild );
+            writePrefix( output, data.ddsBytes.empty() ? textureMagic : ddsMagic, data.target,
+                         data.packagedBuild );
             write32( output, static_cast<u32>( data.mipSettings.filter ) );
             write32( output, data.mipSettings.atlasColumns );
             writeFloat( output, data.mipSettings.alphaCutoff );
             if( !data.ddsBytes.empty() )
             {
                 write64( output, data.ddsBytes.size() );
-                output.write( reinterpret_cast<const char *>(data.ddsBytes.data()), data.ddsBytes.size() );
+                output.write( reinterpret_cast<const char *>( data.ddsBytes.data() ),
+                              data.ddsBytes.size() );
                 require( output.good(), "Failed writing native DDS payload" );
                 return true;
             }
@@ -300,7 +366,9 @@ namespace workphone::render
             writePrefix( output, materialMagic, data.target, data.packagedBuild );
             for( const auto value : { data.baseColour.r, data.baseColour.g, data.baseColour.b,
                                       data.baseColour.a, data.metalness, data.roughness } )
+            {
                 writeFloat( output, value );
+            }
             writeString( output, data.textureId.str() );
             write64( output, data.textureSourceHash );
             write64( output, data.texturePayloadHash );
@@ -327,23 +395,23 @@ namespace workphone::render
                      "Cooked textures cannot contain install dependencies" );
             Reader reader( value.payload );
             CookedTextureData data;
-            require( value.payload.size()>=4, "Truncated texture prefix" );
-            const auto magic=u32(value.payload[0]) | u32(value.payload[1])<<8 |
-                             u32(value.payload[2])<<16 | u32(value.payload[3])<<24;
-            require( magic==textureMagic || magic==ddsMagic, "Unknown texture payload encoding" );
+            require( value.payload.size() >= 4, "Truncated texture prefix" );
+            const auto magic = u32( value.payload[0] ) | u32( value.payload[1] ) << 8 |
+                               u32( value.payload[2] ) << 16 | u32( value.payload[3] ) << 24;
+            require( magic == textureMagic || magic == ddsMagic, "Unknown texture payload encoding" );
             readPrefix( reader, magic, data.target, data.packagedBuild );
             data.mipSettings.filter = static_cast<TextureMipFilter>( reader.read32() );
             data.mipSettings.atlasColumns = reader.read32();
             data.mipSettings.alphaCutoff = reader.readFloat();
             validateSettings( data.mipSettings );
-            if( magic==ddsMagic )
+            if( magic == ddsMagic )
             {
-                const auto size=reader.read64();
-                require(size<=graphicsTextureByteLimit+148 && size==reader.remaining(),
-                        "Invalid embedded DDS size" );
-                reader.readBytes(data.ddsBytes,static_cast<size_t>(size));
-                validateTexture(data);
-                output=std::move(data);
+                const auto size = reader.read64();
+                require( size <= graphicsTextureByteLimit + 148 && size == reader.remaining(),
+                         "Invalid embedded DDS size" );
+                reader.readBytes( data.ddsBytes, static_cast<size_t>( size ) );
+                validateTexture( data );
+                output = std::move( data );
                 return true;
             }
             const auto count = reader.read32();
@@ -414,7 +482,9 @@ namespace workphone::render
                      "Cooked material texture dependency generation does not match" );
             CookedTextureData texture;
             if( !decodeCookedTexture( dependency, texture, error ) )
+            {
                 return false;
+            }
             require( texture.target == data.target && texture.packagedBuild == data.packagedBuild,
                      "Cooked material and texture target/build mode do not match" );
             output = std::move( data );

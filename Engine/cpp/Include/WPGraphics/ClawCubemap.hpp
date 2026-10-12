@@ -23,10 +23,12 @@ namespace workphone::render
         bool update( ID3D11Device *device, ID3D11DeviceContext *context,
                      const std::array<ID3D11ShaderResourceView *, 6> &faces );
         void reset();
+
         ID3D11ShaderResourceView *getView() const
         {
             return m_view;
         }
+
         float getMaxLod() const
         {
             return m_view ? 7.0f : 0.0f;

@@ -33,6 +33,7 @@ namespace workphone::render
         String target;
         bool packagedBuild = false;
     };
+
     WPGraphics_API bool decodeCookedTerrain( const resource::RuntimeResource &resource,
                                              CookedTerrainData &output, String &error );
 
@@ -41,6 +42,7 @@ namespace workphone::render
     WPGraphics_API std::shared_ptr<const DecodedCookedTerrain> decodeCookedTerrainResource(
         std::shared_ptr<const resource::RuntimeResource>, const String &target, bool packagedBuild,
         String &error );
+
     struct CookedTerrainDecodeOptions
     {
         u64 key = 0;
@@ -49,6 +51,7 @@ namespace workphone::render
         u64 maximumWorkingBytes = 128ull << 20;
         u64 maximumResultBytes = 64ull << 20;
     };
+
     /** Replace a dedicated producer's demand with a bounded, source-free CPU decode.
      * Input storage is leased from the producer's scheduler; conservative parser/result
      * bounds are checked before submission. Cancellation discards obsolete decodes
@@ -57,9 +60,10 @@ namespace workphone::render
      * and static_pointer_cast<const DecodedCookedTerrain>(result.payload). This alias
      * retains the result budget; the decoded resource retains the input budget even
      * after uploaded materials take ownership. No GPU work runs on workers. */
-    WPGraphics_API bool queueCookedTerrainDecode(
-        WorldStreamProducer &, std::shared_ptr<const resource::RuntimeResource>,
-        const String &target, bool packagedBuild, const CookedTerrainDecodeOptions &, String &error );
+    WPGraphics_API bool queueCookedTerrainDecode( WorldStreamProducer &,
+                                                  std::shared_ptr<const resource::RuntimeResource>,
+                                                  const String &target, bool packagedBuild,
+                                                  const CookedTerrainDecodeOptions &, String &error );
     /** GPU-only owner stage; consumes a sealed worker decode without repeating
      * height/tile description or texture payload decoding on the render thread. */
     WPGraphics_API std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
@@ -96,6 +100,7 @@ namespace workphone::render
         friend std::shared_ptr<const CookedTerrainCandidate> stageCookedTerrainMaterial(
             ClawRendererDX11 &, std::shared_ptr<const DecodedCookedTerrain>, String & );
     };
+
     /** Source-free, render-owner staging. Decode and upload the entire layer closure
      * before modifying any terrain. Retain the resolver via applyCookedTerrain();
      * it owns the uploaded ClawTextures and immutable cooked dependency handles. */
