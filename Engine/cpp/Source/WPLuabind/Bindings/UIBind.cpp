@@ -768,4 +768,4 @@ namespace workphone
                         "IUIVerticalLayout" )
                         .scope[def( "typeInfo", IUIVerticalLayout::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

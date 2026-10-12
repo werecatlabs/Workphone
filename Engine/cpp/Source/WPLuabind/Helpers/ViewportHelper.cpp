@@ -9,7 +9,7 @@ namespace workphone
 
     Vector2I ViewportHelper::_getActualSize( IViewport *vp )
     {
-        return Vector2I::zero(); // Vector2I( vp->getActualWidth(), vp->getActualHeight() );
+        return Vector2I::zero();  // Vector2I( vp->getActualWidth(), vp->getActualHeight() );
     }
 
     void ViewportHelper::_setClearEveryFrame( IViewport *vp, bool clear )
@@ -30,7 +30,7 @@ namespace workphone
 
     SmartPtr<IViewport> ViewportHelper::_addViewportZorderArgs( IRenderTarget *rt, hash32 id,
                                                                 SmartPtr<IGraphicsCamera> camera,
-                                                                s32                       zorder )
+                                                                s32 zorder )
     {
         return rt->addViewport( id, camera, zorder );
     }
@@ -54,4 +54,4 @@ namespace workphone
         u32 mask = vp->getVisibilityMask();
         return *reinterpret_cast<lua_Integer *>( &mask );
     }
-} // namespace workphone
+}  // namespace workphone

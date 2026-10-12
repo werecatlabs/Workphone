@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindProcedural( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ProceduralBind_h__
+#endif  // ProceduralBind_h__

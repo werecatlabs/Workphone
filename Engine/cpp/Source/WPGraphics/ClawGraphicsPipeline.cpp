@@ -59,6 +59,7 @@ namespace workphone::render
         }
 
         m_rgbaOutput.resize( static_cast<size_t>( width ) * height * 4u, 0.0f );
+        wp_pipeline_set_delta_time( m_nativePipeline, m_frameDeltaTime );
         m_hasPreviousViewProjection = false;
         applyNativeSettings();
         WP_LOG_INFO( "WPGraphics/Pipeline: ready; TAA=" + std::to_string( isTAAEnabled() ) + ", AO=" +
@@ -93,6 +94,12 @@ namespace workphone::render
     void ClawGraphicsPipeline::beginFrame()
     {
         GraphicsPipeline::beginFrame();
+    }
+
+    void ClawGraphicsPipeline::setFrameDeltaTime( wp_f32 deltaTime )
+    {
+        m_frameDeltaTime = deltaTime;
+        wp_pipeline_set_delta_time( m_nativePipeline, deltaTime );
     }
 
     void ClawGraphicsPipeline::endFrame()

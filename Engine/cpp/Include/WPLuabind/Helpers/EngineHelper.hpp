@@ -82,6 +82,6 @@ namespace workphone
 
         // static IFactory* _getFactory(Engine* engine);
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // EngineHelper_h__
+#endif  // EngineHelper_h__

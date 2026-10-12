@@ -484,4 +484,4 @@ namespace workphone
                         .def( "getActions", &IChordDetector::getActions )
                         .scope[def( "typeInfo", IChordDetector::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

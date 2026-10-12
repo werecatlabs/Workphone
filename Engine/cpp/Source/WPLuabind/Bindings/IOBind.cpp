@@ -48,7 +48,7 @@ namespace workphone
         {
             return stream->skipLine();
         }
-    } // namespace
+    }  // namespace
 
     void bindIO( lua_State *L )
     {
@@ -127,4 +127,4 @@ namespace workphone
                                        value( "Write", static_cast<int>( IStream::AccessMode::Write ) )]
                     .scope[def( "typeInfo", IStream::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

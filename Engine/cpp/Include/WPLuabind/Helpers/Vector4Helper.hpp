@@ -49,6 +49,6 @@ namespace workphone
             return vec.W();
         }
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // Vector4Helper_h__
+#endif  // Vector4Helper_h__

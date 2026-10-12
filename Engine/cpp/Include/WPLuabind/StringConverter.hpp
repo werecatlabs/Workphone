@@ -41,6 +41,6 @@ namespace luabind
         : default_converter<workphone::StringBase<char, Traits, Allocator>>
     {
     };
-} // namespace luabind
+}  // namespace luabind
 
-#endif // StringConverter_h__
+#endif  // StringConverter_h__

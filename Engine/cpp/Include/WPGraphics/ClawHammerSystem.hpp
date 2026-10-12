@@ -9,6 +9,7 @@
 #include <atomic>
 
 #include <mutex>
+#include <vector>
 
 namespace workphone
 {
@@ -169,11 +170,16 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            /** Native C89 frame-driver callback. */
-            static void renderFrameCallback( wp_graphics_system *system, f32 deltaTime, void *userData );
-
-            /** Render all C++ targets for one native frame-driver invocation. */
-            void renderFrame( f32 deltaTime );
+            struct FramePassContext;
+            void prepareFramePasses( f32 deltaTime );
+            static s32 beginFramePass( wp_graphics_system *, f32, void * );
+            static void drawFramePass( wp_graphics_system *, f32, void * );
+            static void effectsFramePass( wp_graphics_system *, f32, void * );
+            static void uiFramePass( wp_graphics_system *, f32, void * );
+            static void overlayFramePass( wp_graphics_system *, f32, void * );
+            static void endFramePass( wp_graphics_system *, f32, void * );
+            static void executeFramePassStage( wp_graphics_system *, f32, void *, unsigned stage );
+            std::vector<FramePassContext> m_framePasses;
 
             /**
              * @brief Prepare the graphics pipeline for the renderer's current viewport.

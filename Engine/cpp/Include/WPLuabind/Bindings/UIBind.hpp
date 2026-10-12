@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindUI( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // GUIManagerBind_h__
+#endif  // GUIManagerBind_h__

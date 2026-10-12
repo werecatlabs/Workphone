@@ -23,6 +23,6 @@ namespace workphone
         // static WindowPtr _getRenderWindow( IGraphicsSystem *sys );
         // static WindowPtr _getRenderWindowNamed( IGraphicsSystem *sys, const char *name );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // GraphicsSystemHelper_h__
+#endif  // GraphicsSystemHelper_h__

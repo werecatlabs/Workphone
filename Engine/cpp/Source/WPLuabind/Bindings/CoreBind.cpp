@@ -258,4 +258,4 @@ namespace workphone
                            &Properties::setProperty ) )
                  .scope[def( "typeInfo", Properties::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindPhysics( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // PhysicsBind_h__
+#endif  // PhysicsBind_h__

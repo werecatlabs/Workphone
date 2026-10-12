@@ -23,6 +23,6 @@ namespace workphone
         //                                            PhysicsShape3Ptr collisionShape,
         //                                            boost::shared_ptr<Properties> properties );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // PhysicsHelper3_h__
+#endif  // PhysicsHelper3_h__

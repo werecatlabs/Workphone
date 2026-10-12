@@ -18,6 +18,6 @@ namespace workphone
 
         static lua_Integer _getVisibilityFlags( render::IGraphicsObject *object );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // GraphicsObjectHelper_h__
+#endif  // GraphicsObjectHelper_h__

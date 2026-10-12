@@ -11,6 +11,6 @@ namespace workphone
     //     static FSMPtr addFSMNamed( IFSMContainer *container, const char *name );
     //     static void addFSMInstance( IFSMContainer *container, FSMPtr fsm );
     // };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // FSMContainerHelper_h__
+#endif  // FSMContainerHelper_h__

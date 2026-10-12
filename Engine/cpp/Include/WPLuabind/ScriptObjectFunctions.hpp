@@ -16,12 +16,12 @@ namespace workphone
         static bool getPropertyAsBool( T *obj, const char *propertyName );
         static bool getPropertyAsBoolHash( T *obj, lua_Integer hashId );
 
-        static void       setPropertyAsNumberHash( T *obj, lua_Integer hash, f32 value );
+        static void setPropertyAsNumberHash( T *obj, lua_Integer hash, f32 value );
         static lua_Number getPropertyAsNumberHash( T *obj, lua_Integer hash );
-        static void       setPropertyAsNumber( T *obj, const char *propertyName, f32 value );
-        static f32        getPropertyAsNumber( T *obj, const char *propertyName );
+        static void setPropertyAsNumber( T *obj, const char *propertyName, f32 value );
+        static f32 getPropertyAsNumber( T *obj, const char *propertyName );
 
-        static String      getPropertyAsString( T *obj, const char *propertyName );
+        static String getPropertyAsString( T *obj, const char *propertyName );
         static lua_Integer getPropertyAsHash( T *obj, const char *propertyName );
 
         static IScriptObject *getScriptObject( const char *type );
@@ -72,18 +72,18 @@ namespace workphone
         static void callObjectFunctionParamsResultsHash( T *obj, lua_Integer hashId,
                                                          const Parameters &params, Parameters &results );
 
-        static void     setPropertyAsVector2iHash( T *obj, lua_Integer hash, const Vector2I &value );
-        static void     setPropertyAsVector2i( T *obj, const char *propertyName, const Vector2I &value );
+        static void setPropertyAsVector2iHash( T *obj, lua_Integer hash, const Vector2I &value );
+        static void setPropertyAsVector2i( T *obj, const char *propertyName, const Vector2I &value );
         static Vector2I getPropertyAsVector2iHash( T *obj, lua_Integer hashId );
         static Vector2I getPropertyAsVector2i( T *obj, const char *propertyName );
 
-        static void     setPropertyAsVector2Hash( T *obj, lua_Integer hash, const Vector2F &value );
-        static void     setPropertyAsVector2( T *obj, const char *propertyName, const Vector2F &value );
+        static void setPropertyAsVector2Hash( T *obj, lua_Integer hash, const Vector2F &value );
+        static void setPropertyAsVector2( T *obj, const char *propertyName, const Vector2F &value );
         static Vector2F getPropertyAsVector2Hash( T *obj, lua_Integer hashId );
         static Vector2F getPropertyAsVector2( T *obj, const char *propertyName );
 
-        static void     setPropertyAsVector3( T *obj, const char *propertyName, Vector3F &value );
-        static void     setPropertyAsVector3Hash( T *obj, lua_Integer hash, Vector3F &value );
+        static void setPropertyAsVector3( T *obj, const char *propertyName, Vector3F &value );
+        static void setPropertyAsVector3Hash( T *obj, lua_Integer hash, Vector3F &value );
         static Vector3F getPropertyAsVector3( T *obj, const char *propertyName );
         static Vector3F getPropertyAsVector3Hash( T *obj, lua_Integer hash );
 
@@ -93,18 +93,18 @@ namespace workphone
         static QuaternionF getPropertyAsQuaternion( T *obj, const char *propertyName );
         static QuaternionF getPropertyAsQuaternionHash( T *obj, lua_Integer hash );
 
-        static void    setPropertyAsColour( T *obj, const char *propertyName, const ColourF &color );
-        static void    setPropertyAsColourHash( T *obj, lua_Integer hash, const ColourF &color );
+        static void setPropertyAsColour( T *obj, const char *propertyName, const ColourF &color );
+        static void setPropertyAsColourHash( T *obj, lua_Integer hash, const ColourF &color );
         static ColourF getPropertyAsColour( T *obj, const char *propertyName );
         static ColourF getPropertyAsColourHash( T *obj, lua_Integer hash );
 
-        static void        setPropertyAsInt( T *obj, const char *propertyName, lua_Integer value );
-        static void        setPropertyAsIntHash( T *obj, lua_Integer hash, lua_Integer value );
+        static void setPropertyAsInt( T *obj, const char *propertyName, lua_Integer value );
+        static void setPropertyAsIntHash( T *obj, lua_Integer hash, lua_Integer value );
         static lua_Integer getPropertyAsInt( T *obj, const char *propertyName );
         static lua_Integer getPropertyAsIntHash( T *obj, lua_Integer hash );
 
-        static void        setPropertyAsUInt( T *obj, const char *propertyName, lua_Number value );
-        static void        setPropertyAsUIntHash( T *obj, lua_Integer hash, lua_Number value );
+        static void setPropertyAsUInt( T *obj, const char *propertyName, lua_Number value );
+        static void setPropertyAsUIntHash( T *obj, lua_Integer hash, lua_Number value );
         static lua_Integer getPropertyAsUInt( T *obj, const char *propertyName );
         static lua_Integer getPropertyAsUIntHash( T *obj, lua_Integer hash );
 
@@ -251,8 +251,8 @@ namespace workphone
         // obj->getInvoker()->setEventFunction(StringUtil::getHash(callbackName), scriptEvent);
     }
 
-} // namespace workphone
+}  // namespace workphone
 
 #include "ScriptObjectFunctions.inl"
 
-#endif // ScriptObjectFunctions_h__
+#endif  // ScriptObjectFunctions_h__

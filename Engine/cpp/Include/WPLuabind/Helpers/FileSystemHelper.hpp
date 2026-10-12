@@ -12,6 +12,6 @@ namespace workphone
 
         static Array<String> _getFileNamesWithExt( IFileSystem *system, const char *extension );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // FileSystemHelper_h__
+#endif  // FileSystemHelper_h__

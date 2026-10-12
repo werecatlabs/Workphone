@@ -14,14 +14,14 @@ namespace workphone
 
     lua_Integer _getStringHash( const char *value )
     {
-        auto        hash = StringUtil::getHash( value );
+        auto hash = StringUtil::getHash( value );
         lua_Integer iHash = *&hash;
         return iHash;
     }
 
     lua_Integer _getStringHashLower( const char *value )
     {
-        auto        hash = StringUtil::getHash( value );
+        auto hash = StringUtil::getHash( value );
         lua_Integer iHash = *&hash;
         return iHash;
     }
@@ -135,4 +135,4 @@ namespace workphone
 
         module( L )[def( "hashCheck", hashCheck )];
     }
-} // namespace workphone
+}  // namespace workphone

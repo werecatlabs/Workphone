@@ -17,7 +17,7 @@ namespace workphone
 
     lua_Integer FSMHelper::getFSMState( IFSM *fsm )
     {
-        return 0; //(lua_Integer)fsm->getState();
+        return 0;  //(lua_Integer)fsm->getState();
     }
 
     void FSMHelper::setFSMInitialState( IFSM *fsm, lua_Integer state )
@@ -29,4 +29,4 @@ namespace workphone
     {
         // object->update( Thread::TASK_ID_APPLICATION_LOGIC, t, dt );
     }
-} // namespace workphone
+}  // namespace workphone

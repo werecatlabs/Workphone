@@ -578,4 +578,4 @@ namespace workphone
                           &IAircraftControlSurface::setTipHingeDistanceFromTrailingEdge )
                     .scope[def( "typeInfo", IAircraftControlSurface::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

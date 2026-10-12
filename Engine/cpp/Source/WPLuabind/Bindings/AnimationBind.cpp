@@ -275,4 +275,4 @@ namespace workphone
                     .def( "getTimePosition", &render::IAnimationTextureControl::getTimePosition )
                     .scope[def( "typeInfo", render::IAnimationTextureControl::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

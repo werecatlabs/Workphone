@@ -16,4 +16,4 @@ namespace workphone
         system->getFileNamesWithExtension( extension, fileNames );
         return fileNames;
     }
-} // namespace workphone
+}  // namespace workphone

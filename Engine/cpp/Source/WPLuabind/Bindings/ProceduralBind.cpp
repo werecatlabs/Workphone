@@ -14,7 +14,7 @@ namespace workphone
         // self.append( other, offset );
     }
 
-    void Mesh_appendNoOffset( procedural::IProceduralMesh          &self,
+    void Mesh_appendNoOffset( procedural::IProceduralMesh &self,
                               SmartPtr<procedural::IProceduralMesh> other )
     {
         // self.append( other );
@@ -756,4 +756,4 @@ namespace workphone
                         .def( "print", &ILSystemRule::print )];
     }
 
-} // namespace workphone
+}  // namespace workphone

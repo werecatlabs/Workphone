@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindScript( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ScriptBind_h__
+#endif  // ScriptBind_h__

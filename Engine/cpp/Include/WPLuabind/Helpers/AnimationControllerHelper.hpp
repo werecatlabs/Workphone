@@ -19,6 +19,6 @@ namespace workphone
         //                                                const char *animationName, bool enabled,
         //                                                f32 timePosition );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // AnimationControllerHelper_h__
+#endif  // AnimationControllerHelper_h__

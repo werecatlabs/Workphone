@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindGraphicsSystem( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // GraphicsSystemBind_h__
+#endif  // GraphicsSystemBind_h__

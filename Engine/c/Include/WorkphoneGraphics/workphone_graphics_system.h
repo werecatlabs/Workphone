@@ -39,6 +39,36 @@ typedef struct wp_graphics_system wp_graphics_system;
 typedef void ( *wp_graphics_system_frame_func )( wp_graphics_system *system, wp_f32 delta_time,
                                                  void *user_data );
 
+#define WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES 64
+
+/* Return zero to skip a target (including its end callback). */
+typedef wp_s32 ( *wp_graphics_system_pass_begin_func )( wp_graphics_system *system,
+                                                       wp_f32 delta_time, void *user_data );
+
+/** Native-owned target sequence: begin, draw, effects, UI, overlay, end.
+ * A NULL begin accepts the pass. A NULL draw renders the native scenes.
+ * Other NULL callbacks are skipped. Callback contexts remain caller-owned.
+ * Callbacks must not destroy the system or its scenes. This API is single-threaded.
+ */
+typedef struct wp_graphics_system_render_pass
+{
+    wp_graphics_system_pass_begin_func begin;
+    wp_graphics_system_frame_func draw;
+    wp_graphics_system_frame_func effects;
+    wp_graphics_system_frame_func ui;
+    wp_graphics_system_frame_func overlay;
+    wp_graphics_system_frame_func end;
+    void *user_data;
+} wp_graphics_system_render_pass;
+
+/** Copies an ordered target list; returns 1 on success, 0 for invalid arguments
+ * or mutation during rendering. Count must be in [0, MAX_RENDER_PASSES]. Zero
+ * clears the list and restores the legacy callback/native fallback.
+ */
+wp_s32 wp_graphics_system_set_render_passes( wp_graphics_system *system,
+                                            const wp_graphics_system_render_pass *passes,
+                                            wp_s32 count );
+
 /* =========================================================================
  * Graphics system
  * ====================================================================== */
@@ -106,8 +136,14 @@ wp_s32 wp_graphics_system_get_scene_count( const wp_graphics_system *system );
  */
 void wp_graphics_system_update( wp_graphics_system *system );
 
+/** Sets elapsed seconds for callers using update() followed by render().
+ * Negative/NaN values become zero; values greater than one become one.
+ * Returns zero for a NULL system or during rendering, otherwise one.
+ */
+wp_s32 wp_graphics_system_set_delta_time( wp_graphics_system *system, wp_f32 delta_time );
+
 /**
- * @brief Issues draw calls for all managed scenes.
+ * @brief Executes the registered target passes, or draws all managed scenes.
  * @param system Pointer to the graphics system.
  */
 void wp_graphics_system_render( wp_graphics_system *system );
@@ -115,7 +151,8 @@ void wp_graphics_system_render( wp_graphics_system *system );
 /**
  * @brief Advances and renders one complete graphics frame.
  *
- * Native scene state is updated exactly once. If a frame callback is registered,
+ * Native scene state is updated exactly once. Registered target passes execute
+ * in order under native ownership. Otherwise, if a frame callback is registered,
  * it performs target-specific rendering; otherwise all native scenes are rendered
  * once using the currently bound renderer.
  *

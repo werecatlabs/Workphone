@@ -7,6 +7,6 @@ namespace workphone
 {
     void bindScene( lua_State *L );
     void bindSceneManager( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // SceneBind_h__
+#endif  // SceneBind_h__

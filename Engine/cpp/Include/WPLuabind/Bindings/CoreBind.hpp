@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindCore( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // CoreBind_h__
+#endif  // CoreBind_h__

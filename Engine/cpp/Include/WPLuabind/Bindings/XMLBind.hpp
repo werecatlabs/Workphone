@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindXML( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // XMLBind_h__
+#endif  // XMLBind_h__

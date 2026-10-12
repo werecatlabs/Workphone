@@ -33,4 +33,4 @@ namespace workphone
                         .scope[def( "typeInfo", ITestManager::typeInfo )]];
     }
 
-} // namespace workphone
+}  // namespace workphone

@@ -62,7 +62,7 @@ namespace workphone
         {
             return static_cast<int>( manager->getConnectionStatus() );
         }
-    } // namespace
+    }  // namespace
 
     void bindNet( lua_State *L )
     {
@@ -239,4 +239,4 @@ namespace workphone
                         .def( "isValid", &ISystemAddress::isValid )
                         .scope[def( "typeInfo", ISystemAddress::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindVideo( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // VideoBind_h__
+#endif  // VideoBind_h__

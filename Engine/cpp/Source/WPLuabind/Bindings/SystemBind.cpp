@@ -13,13 +13,15 @@ namespace workphone
 {
     SmartPtr<render::ITexture> loadEditorTexture( IResourceDatabase *resources, const String &path )
     {
-        return resources ? dynamic_pointer_cast<render::ITexture>( resources->loadResource( path ) ) : nullptr;
+        return resources ? dynamic_pointer_cast<render::ITexture>( resources->loadResource( path ) )
+                         : nullptr;
     }
 
     SmartPtr<render::ITexture> loadEditorMediaTexture( IResourceDatabase *resources, const String &path )
     {
         auto database = dynamic_cast<ResourceDatabase *>( resources );
-        return database ? dynamic_pointer_cast<render::ITexture>( database->loadMediaResource( path ) ) : nullptr;
+        return database ? dynamic_pointer_cast<render::ITexture>( database->loadMediaResource( path ) )
+                        : nullptr;
     }
 
     luabind::object _IProfiler_getProfiles( IProfiler *profiler, lua_State *L )
@@ -27,7 +29,9 @@ namespace workphone
         auto result = luabind::newtable( L );
         size_t index = 1;
         for( const auto &profile : profiler->getProfiles() )
+        {
             result[index++] = profile;
+        }
         return result;
     }
 
@@ -123,7 +127,7 @@ namespace workphone
     }
 
     SmartPtr<ISharedObject> _IFactoryManager_make_object( SmartPtr<IFactoryManager> factoryManager,
-                                                          hash64                    typeId )
+                                                          hash64 typeId )
     {
         if( factoryManager )
         {
@@ -570,8 +574,7 @@ namespace workphone
         static_assert( sizeof( lua_Integer ) >= sizeof( hash_type ),
                        "Lua integers must be wide enough to store native event hashes." );
         lua_getglobal( L, "IEvent" );
-        const auto setEventHash = [L]( const char *name, hash_type value )
-        {
+        const auto setEventHash = [L]( const char *name, hash_type value ) {
             lua_pushinteger( L, static_cast<lua_Integer>( value ) );
             lua_setfield( L, -2, name );
         };
@@ -1245,4 +1248,4 @@ namespace workphone
                         .def( "yield", &ICoroutineData::yield )
                         .def( "stop", &ICoroutineData::stop )];
     }
-} // namespace workphone
+}  // namespace workphone

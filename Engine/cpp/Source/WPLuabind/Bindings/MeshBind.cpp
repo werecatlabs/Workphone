@@ -279,4 +279,4 @@ namespace workphone
                         .def( "setMesh", &IMeshResource::setMesh )
                         .scope[def( "typeInfo", IMeshResource::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

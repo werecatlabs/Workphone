@@ -11,8 +11,8 @@ namespace workphone
     {
     public:
         static Vector2I _getActualSize( render::IViewport *vp );
-        static void     _setClearEveryFrame( render::IViewport *vp, bool clear );
-        static void     _setClearEveryFrameFlags( render::IViewport *vp, bool clear, u32 buffers );
+        static void _setClearEveryFrame( render::IViewport *vp, bool clear );
+        static void _setClearEveryFrameFlags( render::IViewport *vp, bool clear, u32 buffers );
 
         static SmartPtr<render::IViewport> _addViewportMinArgs(
             render::IRenderTarget *rt, hash32 id, SmartPtr<render::IGraphicsCamera> camera );
@@ -27,6 +27,6 @@ namespace workphone
 
         static void setVisibilityMask( render::IViewport *vp, lua_Integer mask );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ViewportHelper_h__
+#endif  // ViewportHelper_h__

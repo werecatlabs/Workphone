@@ -119,3 +119,11 @@ target_include_directories(
 target_link_libraries(WorkphoneGraphicsPipelineTests PRIVATE WorkphoneGraphics)
 set_target_properties(WorkphoneGraphicsPipelineTests PROPERTIES FOLDER Tests/C)
 add_test(NAME WorkphoneGraphics.aaa_pipeline COMMAND WorkphoneGraphicsPipelineTests)
+
+add_executable(WorkphoneGraphicsFrameTests WorkphoneGraphicsFrameTests.c)
+target_include_directories(WorkphoneGraphicsFrameTests PRIVATE
+    ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
+    ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
+target_link_libraries(WorkphoneGraphicsFrameTests PRIVATE WorkphoneGraphics)
+set_target_properties(WorkphoneGraphicsFrameTests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
+add_test(NAME WorkphoneGraphics.native_frame COMMAND WorkphoneGraphicsFrameTests)

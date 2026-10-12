@@ -30,9 +30,8 @@ namespace luabind
                 return -1;
             }
 
-            auto       score = -1;
-            const auto updateScore = [&score]( const std::pair<void *, int> &instance )
-            {
+            auto score = -1;
+            const auto updateScore = [&score]( const std::pair<void *, int> &instance ) {
                 if( instance.first && instance.second >= 0 )
                 {
                     score = score < 0 ? instance.second : std::min( score, instance.second );
@@ -174,8 +173,8 @@ namespace luabind
             for( size_t i = 0; i < count; ++i )
             {
                 const auto defaultValue = i == defaultOneIndex ? 1.0 : 0.0;
-                auto       value = getArrayNumber( param, offset + i, defaultValue );
-                auto       fieldName = fieldNames ? fieldNames[i] : nullptr;
+                auto value = getArrayNumber( param, offset + i, defaultValue );
+                auto fieldName = fieldNames ? fieldNames[i] : nullptr;
                 setTableNumber( L, static_cast<int>( i + 1 ), fieldName, value );
             }
         }
@@ -237,8 +236,7 @@ namespace luabind
             }
 
             constexpr auto channelMaximum = 255.0;
-            const auto     channel = [&param]( size_t index, lua_Number defaultValue )
-            {
+            const auto channel = [&param]( size_t index, lua_Number defaultValue ) {
                 constexpr auto maximum = 255.0;
                 return std::clamp( getArrayNumber( param, index, defaultValue ), 0.0, maximum ) /
                        maximum;
@@ -295,7 +293,7 @@ namespace luabind
                 return Parameter( lua_toboolean( L, index ) != 0 );
             case LUA_TNUMBER:
             {
-                int        isIntegerValue = 0;
+                int isIntegerValue = 0;
                 const auto integerValue = lua_tointegerx( L, index, &isIntegerValue );
                 if( isIntegerValue )
                 {
@@ -306,7 +304,7 @@ namespace luabind
             }
             case LUA_TSTRING:
             {
-                size_t      length = 0;
+                size_t length = 0;
                 const auto *value = lua_tolstring( L, index, &length );
                 return Parameter( String( value, length ) );
             }
@@ -571,7 +569,7 @@ namespace luabind
             break;
             default:
             {
-                WP_ASSERT( false ); // unhandled case
+                WP_ASSERT( false );  // unhandled case
                 lua_pushnil( L );
             }
             break;
@@ -624,6 +622,6 @@ namespace luabind
     struct default_converter<const workphone::WeakPtr<T> &> : default_converter<workphone::WeakPtr<T>>
     {
     };
-} // namespace luabind
+}  // namespace luabind
 
-#endif // ParamConverter_h__
+#endif  // ParamConverter_h__

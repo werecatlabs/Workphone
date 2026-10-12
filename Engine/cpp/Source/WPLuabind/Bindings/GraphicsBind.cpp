@@ -28,7 +28,9 @@ namespace workphone
             auto application = core::IApplicationManager::instance();
             ScopedLock lock( application->getGraphicsSystem() );
             if( !material->isLoaded() )
+            {
                 material->load( nullptr );
+            }
         }
     }
 
@@ -69,7 +71,7 @@ namespace workphone
     }
 
     SmartPtr<IParticleTechnique> IParticleSystem_addTechniqueNamed( IParticleSystem *particleSystem,
-                                                                    const String    &name )
+                                                                    const String &name )
     {
         return particleSystem ? particleSystem->addTechnique( name ) : nullptr;
     }
@@ -80,7 +82,7 @@ namespace workphone
     }
 
     SmartPtr<IParticleEmitter> IParticleTechnique_addEmitterNamed( IParticleTechnique *technique,
-                                                                   const String       &name )
+                                                                   const String &name )
     {
         return technique ? technique->addEmitter( name ) : nullptr;
     }
@@ -91,7 +93,7 @@ namespace workphone
     }
 
     SmartPtr<IParticleEmitter> IParticleTechnique_getEmitterByIndex( IParticleTechnique *technique,
-                                                                     lua_Integer         index )
+                                                                     lua_Integer index )
     {
         if( !technique || index < 0 )
         {
@@ -109,7 +111,7 @@ namespace workphone
     }
 
     SmartPtr<IGraphicsScene> IGraphicsSystem_getGraphicsSceneNamed( IGraphicsSystem *sys,
-                                                                    const String    &name )
+                                                                    const String &name )
     {
         return sys ? sys->getGraphicsScene( name ) : nullptr;
     }
@@ -124,7 +126,7 @@ namespace workphone
         return sys ? static_cast<lua_Integer>( sys->getRenderTask() ) : 0;
     }
 
-    bool validateComputeDispatch( const render::IComputeShader               *shader,
+    bool validateComputeDispatch( const render::IComputeShader *shader,
                                   const render::IComputeShader::DispatchSize &size )
     {
         return shader->validateDispatch( size );
@@ -749,8 +751,7 @@ namespace workphone
         module( L )[class_<ISkyboxCube, SmartPtr<ISkyboxCube>>( "ISkyboxCube" )];
         module( L )[class_<ISkyboxPlane, SmartPtr<ISkyboxPlane>>( "ISkyboxPlane" )];
 
-        module( L )[class_<IDebug, SmartPtr<IDebug>>( "IDebug" )
-                        .def( "drawText", &IDebug::drawText )];
+        module( L )[class_<IDebug, SmartPtr<IDebug>>( "IDebug" ).def( "drawText", &IDebug::drawText )];
         module( L )[class_<IDebugCircle, SmartPtr<IDebugCircle>>( "IDebugCircle" )];
         module( L )[class_<IDebugLine, SmartPtr<IDebugLine>>( "IDebugLine" )];
         module( L )[class_<IDebugText, SmartPtr<IDebugText>>( "IDebugText" )];
@@ -912,4 +913,4 @@ namespace workphone
         // LUA_CONST( ITexture, MIP_DEFAULT );
         // LUA_CONST_END;
     }
-} // namespace workphone
+}  // namespace workphone

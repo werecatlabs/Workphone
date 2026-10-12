@@ -14,4 +14,4 @@
 #define LUA_CONST( class, name ) table[#name] = class ::name
 #define LUA_CONST_END }
 
-#endif // WPLuabindTypes_h__
+#endif  // WPLuabindTypes_h__

@@ -14,6 +14,6 @@ namespace workphone
     //    static lua_Integer getCollisionMask( scene::Destructible *destructible );
     //    static void setCollisionMask( scene::Destructible *destructible, lua_Integer newValue );
     //};
-} // namespace workphone
+}  // namespace workphone
 
-#endif // DestructibleHelper_h__
+#endif  // DestructibleHelper_h__

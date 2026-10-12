@@ -8,4 +8,4 @@ namespace workphone
     void bindBaseObjects( lua_State *L );
 }
 
-#endif // ScriptObjectBind_h__
+#endif  // ScriptObjectBind_h__

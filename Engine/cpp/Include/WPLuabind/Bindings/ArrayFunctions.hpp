@@ -15,6 +15,6 @@ namespace workphone
             return params[index];
         }
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ArrayFunctions_h__
+#endif  // ArrayFunctions_h__

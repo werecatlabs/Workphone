@@ -38,7 +38,7 @@ namespace workphone
     }
 
     SmartPtr<IGraphicsSceneNode> SceneNodeHelper::_addChildSceneNodeNamed( IGraphicsSceneNode *node,
-                                                                           const char         *name )
+                                                                           const char *name )
     {
         return node->addChildSceneNode( name );
     }
@@ -62,4 +62,4 @@ namespace workphone
     {
         // node->setVisible( isVisible );
     }
-} // namespace workphone
+}  // namespace workphone

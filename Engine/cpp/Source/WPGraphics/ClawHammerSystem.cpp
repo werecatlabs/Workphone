@@ -119,6 +119,18 @@ namespace workphone
 
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawHammerSystem, GraphicsSystem );
 
+        struct ClawHammerSystem::FramePassContext
+        {
+            ClawHammerSystem *owner;
+            SmartPtr<IRenderer> renderer;
+            SmartPtr<IRenderTarget> target;
+            SmartPtr<IViewport> viewport;
+            bool window;
+            bool failed = false;
+            bool begun = false;
+            bool pipelineStarted = false;
+        };
+
         ClawHammerSystem::ClawHammerSystem() : m_sys( nullptr )
         {
         }
@@ -240,8 +252,7 @@ namespace workphone
                     setLoadingState( LoadingState::Unloaded );
                     return;
                 }
-                wp_graphics_system_set_frame_func( m_sys, &ClawHammerSystem::renderFrameCallback, this );
-                WP_LOG_INFO( "WPGraphics: native graphics system and frame callback ready." );
+                WP_LOG_INFO( "WPGraphics: native graphics system and pass driver ready." );
 
                 auto factoryManager = workphone::make_ptr<FactoryManager>();
                 factoryManager->load( nullptr );
@@ -353,7 +364,8 @@ namespace workphone
 
             if( m_sys )
             {
-                wp_graphics_system_set_frame_func( m_sys, nullptr, nullptr );
+                wp_graphics_system_set_render_passes( m_sys, nullptr, 0 );
+                m_framePasses.clear();
             }
 
             if( auto debug = getDebug() )
@@ -516,6 +528,7 @@ namespace workphone
                     deltaTime = static_cast<wp_f32>( timer->getDeltaTime() );
                 }
 
+                prepareFramePasses( deltaTime );
                 preparation.end();
                 wp_graphics_system_render_frame( m_sys, deltaTime );
                 publishRenderStatistics();
@@ -534,144 +547,161 @@ namespace workphone
             }
         }
 
-        void ClawHammerSystem::renderFrameCallback( wp_graphics_system *system, wp_f32 deltaTime,
-                                                    void *userData )
+        void ClawHammerSystem::prepareFramePasses( wp_f32 deltaTime )
         {
-            auto owner = static_cast<ClawHammerSystem *>( userData );
-            if( owner && owner->m_sys == system )
+            // The C driver copies descriptors; their retained C++ objects stay alive until
+            // synchronous rendering completes. Clear descriptors before replacing contexts.
+            wp_graphics_system_set_render_passes( m_sys, nullptr, 0 );
+            m_framePasses.clear();
+            auto renderer = getRenderer();
+            if( !renderer ) return;
+            if( auto pipeline = dynamic_pointer_cast<ClawGraphicsPipeline>( m_graphicsPipeline ) )
+                pipeline->setFrameDeltaTime( deltaTime );
+            if( auto textures = getTextureManager() )
             {
-                try
+                for( auto &texture : textures->getTextures() )
                 {
-                    owner->renderFrame( deltaTime );
-                }
-                catch( std::exception &e )
-                {
-                    // Never unwind a C++ exception through the C89 callback boundary.
-                    WP_LOG_EXCEPTION( e );
+                    if( !texture || !( texture->getUsageFlags() &
+                                       static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) ) continue;
+                    auto target = texture->getRenderTarget();
+                    if( !target || !target->isActive() || target->getSize().x <= 0 ||
+                        target->getSize().y <= 0 ) continue;
+                    for( auto &viewport : target->getViewports() )
+                    {
+                        if( viewport && viewport->isActive() && viewport->getEnableSceneRender() )
+                            m_framePasses.push_back( { this, renderer, target, viewport, false } );
+                    }
                 }
             }
+            auto window = getDefaultWindow();
+            m_framePasses.push_back( { this, renderer, window,
+                                      window ? window->getViewport( 0 ) : nullptr, true } );
+            std::vector<wp_graphics_system_render_pass> passes;
+            passes.reserve( m_framePasses.size() );
+            for( auto &context : m_framePasses )
+            {
+                wp_graphics_system_render_pass pass = {};
+                pass.begin = &ClawHammerSystem::beginFramePass;
+                pass.draw = &ClawHammerSystem::drawFramePass;
+                pass.effects = &ClawHammerSystem::effectsFramePass;
+                pass.ui = &ClawHammerSystem::uiFramePass;
+                pass.overlay = &ClawHammerSystem::overlayFramePass;
+                pass.end = &ClawHammerSystem::endFramePass;
+                pass.user_data = &context;
+                passes.push_back( pass );
+            }
+            if( !wp_graphics_system_set_render_passes( m_sys, passes.data(),
+                                                       static_cast<wp_s32>( passes.size() ) ) )
+                throw std::runtime_error( "Native graphics frame pass registration failed." );
         }
 
-        void ClawHammerSystem::renderFrame( wp_f32 deltaTime )
+        wp_s32 ClawHammerSystem::beginFramePass( wp_graphics_system *system, wp_f32 dt, void *data )
         {
-            (void)deltaTime;
+            auto &pass = *static_cast<FramePassContext *>( data );
+            if( pass.owner->m_sys != system ) return 0;
+            pass.failed = false;
+            pass.begun = false;
+            pass.pipelineStarted = false;
+            executeFramePassStage( system, dt, data, 0 );
+            // Entered passes always receive end, including failed preparation.
+            return pass.begun ? 1 : 0;
+        }
 
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            auto renderUI = applicationManager ? applicationManager->getRenderUI() : nullptr;
+        void ClawHammerSystem::drawFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        { executeFramePassStage( s, dt, d, 1 ); }
+        void ClawHammerSystem::effectsFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        { executeFramePassStage( s, dt, d, 2 ); }
+        void ClawHammerSystem::uiFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        { executeFramePassStage( s, dt, d, 3 ); }
+        void ClawHammerSystem::overlayFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        { executeFramePassStage( s, dt, d, 4 ); }
+        void ClawHammerSystem::endFramePass( wp_graphics_system *s, wp_f32 dt, void *d )
+        { executeFramePassStage( s, dt, d, 5 ); }
 
-            if( auto renderer = getRenderer() )
+        void ClawHammerSystem::executeFramePassStage( wp_graphics_system *system, wp_f32,
+                                                      void *data, unsigned stage )
+        {
+            auto &pass = *static_cast<FramePassContext *>( data );
+            auto owner = pass.owner;
+            if( owner->m_sys != system || ( pass.failed && stage != 5 ) ) return;
+            auto viewport = pass.viewport;
+            auto renderer = pass.renderer;
+            const bool sceneEnabled = !viewport || viewport->getEnableSceneRender();
+            try
             {
-                const auto renderScenePass = [this, &renderer]() {
-                    RenderPhaseProfile timing( m_sceneProfile, "Scene draw" );
-                    const auto pipelineFrameStarted = beginGraphicsPipelineFrame( renderer );
-
-                    render();
-
-                    if( pipelineFrameStarted )
+                switch( stage )
+                {
+                case 0:
+                    renderer->setRenderTarget( pass.target );
+                    renderer->setViewport( viewport );
+                    if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
+                        renderer3->setCamera( viewport ? viewport->getCamera() : nullptr );
+                    renderer->beginRender();
+                    pass.begun = true;
+                    if( pass.window || ( viewport && viewport->getClearEveryFrame() ) )
+                        renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
+                    if( sceneEnabled )
+                        pass.pipelineStarted = owner->beginGraphicsPipelineFrame( renderer );
+                    break;
+                case 1:
+                    if( sceneEnabled )
                     {
-                        endGraphicsPipelineFrame( renderer );
+                        RenderPhaseProfile timing( owner->m_sceneProfile, "Scene draw" );
+                        owner->render();
                     }
-                };
-
-                // The Editor camera targets a render texture. Treat each active render
-                // target as a compositor pass, then sample its SRV in the ImGui window pass.
-                if( auto textureManager = getTextureManager() )
-                {
-                    for( auto &texture : textureManager->getTextures() )
+                    break;
+                case 2:
+                    if( pass.pipelineStarted )
                     {
-                        if( !texture || !( texture->getUsageFlags() &
-                                           static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
-                        {
-                            continue;
-                        }
-
-                        auto target = texture->getRenderTarget();
-                        if( !target || !target->isActive() || target->getSize().x <= 0 ||
-                            target->getSize().y <= 0 )
-                        {
-                            continue;
-                        }
-
-                        for( auto &targetViewport : target->getViewports() )
-                        {
-                            if( !targetViewport || !targetViewport->isActive() ||
-                                !targetViewport->getEnableSceneRender() )
-                            {
-                                continue;
-                            }
-
-                            renderer->setRenderTarget( target );
-                            renderer->setViewport( targetViewport );
-
-                            if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
-                            {
-                                renderer3->setCamera( targetViewport->getCamera() );
-                            }
-
-                            renderer->beginRender();
-
-                            if( targetViewport->getClearEveryFrame() )
-                            {
-                                renderer->clear( targetViewport->getBackgroundColour() );
-                            }
-
-                            renderScenePass();
-                            if( targetViewport->getEnableUI() && renderUI && renderUI->isLoaded() )
-                            {
-                                renderUI->render();
-                            }
-                            renderer->endRender();
-                        }
+                        pass.pipelineStarted = false;
+                        owner->endGraphicsPipelineFrame( renderer );
                     }
-                }
-
-                auto window = getDefaultWindow();
-                auto viewport = window ? window->getViewport( 0 ) : nullptr;
-
-                renderer->setRenderTarget( window );
-                renderer->setViewport( viewport );
-
-                if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
-                {
-                    renderer3->setCamera( viewport ? viewport->getCamera() : nullptr );
-                }
-
-                renderer->beginRender();
-                renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
-                if( !viewport || viewport->getEnableSceneRender() )
-                {
-                    renderScenePass();
-                }
-
-                // Submit UI after the scene pipeline so temporal and lens effects never alter it.
-                if( ( !viewport || ( viewport->getEnableSceneRender() && viewport->getEnableUI() ) ) &&
-                    renderUI && renderUI->isLoaded() )
-                {
-                    renderUI->render();
-                }
-
-                if( m_imguiManager && m_imguiManager->isInitialised() )
-                {
-                    m_imguiManager->newFrame();
-
-                    if( applicationManager )
+                    break;
+                case 3:
+                    if( sceneEnabled && ( !viewport || viewport->getEnableUI() ) )
+                        if( auto app = core::IApplicationManager::instancePtr() )
+                            if( auto ui = app->getRenderUI(); ui && ui->isLoaded() ) ui->render();
+                    break;
+                case 4:
+                    if( pass.window && owner->m_imguiManager && owner->m_imguiManager->isInitialised() )
                     {
-                        if( auto ui = applicationManager->getUI() )
-                        {
-                            if( auto application = ui->getApplication() )
-                            {
-                                RenderPhaseProfile timing( m_uiBuildProfile, "Editor UI build" );
-                                application->update();
-                            }
-                        }
+                        owner->m_imguiManager->newFrame();
+                        if( auto app = core::IApplicationManager::instancePtr() )
+                            if( auto ui = app->getUI() )
+                                if( auto application = ui->getApplication() )
+                                {
+                                    RenderPhaseProfile timing( owner->m_uiBuildProfile, "Editor UI build" );
+                                    application->update();
+                                }
+                        RenderPhaseProfile timing( owner->m_uiSubmitProfile, "UI submission" );
+                        owner->m_imguiManager->render();
                     }
-
-                    RenderPhaseProfile timing( m_uiSubmitProfile, "UI submission" );
-                    m_imguiManager->render();
+                    break;
+                case 5:
+                    if( pass.pipelineStarted && owner->m_graphicsPipeline )
+                    {
+                        pass.pipelineStarted = false;
+                        try { owner->m_graphicsPipeline->endFrame(); }
+                        catch( ... ) { WP_LOG_ERROR( "Failed to close graphics pipeline frame." ); }
+                    }
+                    if( pass.begun )
+                    {
+                        pass.begun = false;
+                        RenderPhaseProfile timing( owner->m_presentationProfile, "Presentation" );
+                        renderer->endRender();
+                    }
+                    break;
                 }
-
-                RenderPhaseProfile timing( m_presentationProfile, "Presentation" );
-                renderer->endRender();
+            }
+            catch( const std::exception &e )
+            {
+                pass.failed = true;
+                WP_LOG_EXCEPTION( e );
+            }
+            catch( ... )
+            {
+                pass.failed = true;
+                WP_LOG_ERROR( "Unknown exception in graphics frame adapter." );
             }
         }
 

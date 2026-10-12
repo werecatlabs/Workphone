@@ -22,17 +22,17 @@ namespace workphone
         static SmartPtr<render::IGraphicsSceneNode> _addChildSceneNodeNamed(
             render::IGraphicsSceneNode *node, const char *name );
 
-        static void _attachObject( render::IGraphicsSceneNode              *node,
+        static void _attachObject( render::IGraphicsSceneNode *node,
                                    const SmartPtr<render::IGraphicsObject> &obj );
 
-        static void _attachMesh( render::IGraphicsSceneNode            *node,
+        static void _attachMesh( render::IGraphicsSceneNode *node,
                                  const SmartPtr<render::IGraphicsMesh> &obj );
 
-        static void _attachCamera( render::IGraphicsSceneNode              *node,
+        static void _attachCamera( render::IGraphicsSceneNode *node,
                                    const SmartPtr<render::IGraphicsCamera> &obj );
 
         static void _setVisible( render::IGraphicsSceneNode *node, bool isVisible );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // SceneNodeHelper_h__
+#endif  // SceneNodeHelper_h__

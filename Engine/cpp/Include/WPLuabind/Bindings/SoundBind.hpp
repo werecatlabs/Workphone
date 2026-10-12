@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindSound( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // SoundBind_h__
+#endif  // SoundBind_h__

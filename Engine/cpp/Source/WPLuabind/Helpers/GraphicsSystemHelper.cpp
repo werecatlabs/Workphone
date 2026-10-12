@@ -45,4 +45,4 @@ namespace workphone
     //{
     //     return sys->getRenderWindow( name );
     // }
-} // namespace workphone
+}  // namespace workphone

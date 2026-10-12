@@ -7,4 +7,4 @@
 
 namespace workphone
 {
-} // namespace workphone
+}  // namespace workphone

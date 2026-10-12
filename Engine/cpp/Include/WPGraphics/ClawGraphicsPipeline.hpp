@@ -24,6 +24,7 @@ namespace workphone
             void beginFrame() override;
             void endFrame() override;
             void render() override;
+            void setFrameDeltaTime( wp_f32 deltaTime );
 
             /** Capture/present the CPU software renderer. GPU backends stay on their native path. */
             bool captureSoftwareFrame( wp_renderer *renderer );
@@ -58,6 +59,7 @@ namespace workphone
             void applyNativeSettings();
 
             wp_render_pipeline *m_nativePipeline = nullptr;
+            wp_f32 m_frameDeltaTime = 1.0f / 60.0f;
             Matrix4F m_previousViewProjection = Matrix4F::identity();
 
             bool m_hasPreviousViewProjection = false;

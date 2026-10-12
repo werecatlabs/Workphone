@@ -6,6 +6,7 @@ struct wp_render_pipeline
 {
     wp_s32 width, height;
     wp_pipeline_quality quality;
+    wp_f32 delta_time;
     wp_f32 *normal, *depth, *velocity, *hdr_input, *history, *output;
     wp_gtao *gtao;
     wp_ssr *ssr;
@@ -82,6 +83,7 @@ wp_render_pipeline *wp_pipeline_create( wp_s32 w, wp_s32 h, wp_pipeline_quality 
     p->width = w;
     p->height = h;
     p->quality = quality;
+    p->delta_time = 1.0f / 60.0f;
     p->normal = (wp_f32 *)calloc( px * 4u, sizeof( wp_f32 ) );
     p->depth = (wp_f32 *)calloc( px, sizeof( wp_f32 ) );
     p->velocity = (wp_f32 *)calloc( px * 2u, sizeof( wp_f32 ) );
@@ -114,6 +116,18 @@ void wp_pipeline_destroy( wp_render_pipeline *p )
         return;
     release_pipeline( p );
     free( p );
+}
+
+void wp_pipeline_set_delta_time( wp_render_pipeline *p, wp_f32 delta_time )
+{
+    if( !p )
+        return;
+    /* Comparisons also reject NaN without requiring C99 isfinite(). */
+    if( !( delta_time >= 0.0f ) )
+        delta_time = 0.0f;
+    if( delta_time > 0.25f )
+        delta_time = 0.25f;
+    p->delta_time = delta_time;
 }
 
 void wp_pipeline_set_frame_inputs( wp_render_pipeline *p, const wp_f32 *color, const wp_f32 *normal,
@@ -180,7 +194,7 @@ void wp_pipeline_render_frame( wp_render_pipeline *p, void *scene, const wp_mat4
     }
     bloom = p->bloom_on ? wp_hdr_bloom_render( p->hdr, source, p->width, p->height ) : NULL;
     exposure = p->exposure_on
-                   ? wp_hdr_exposure_update( p->hdr, source, p->depth, p->width, p->height, 0.016f )
+                   ? wp_hdr_exposure_update( p->hdr, source, p->depth, p->width, p->height, p->delta_time )
                    : NULL;
     wp_hdr_composite( p->hdr, source, bloom, exposure, p->width, p->height, p->output );
     if( out_color )
@@ -219,6 +233,7 @@ void wp_pipeline_resize( wp_render_pipeline *p, wp_s32 w, wp_s32 h )
     n = wp_pipeline_create( w, h, p->quality );
     if( !n )
         return;
+    n->delta_time = p->delta_time;
     flags[0] = p->shadows_on;
     flags[1] = p->ao_on;
     flags[2] = p->ssr_on;

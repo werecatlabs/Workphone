@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindParamList( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // WPParamListBind_h__
+#endif  // WPParamListBind_h__

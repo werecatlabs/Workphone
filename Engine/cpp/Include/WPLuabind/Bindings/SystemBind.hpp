@@ -7,6 +7,6 @@ namespace workphone
 {
     void bindIO( lua_State *L );
     void bindSystem( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // __WPSystemBind_h__
+#endif  // __WPSystemBind_h__

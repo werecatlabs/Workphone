@@ -141,9 +141,9 @@ namespace workphone
         }
 #    elif WP_USE_WASAPI
         IMMDeviceEnumerator *enumerator = nullptr;
-        auto result =
-            CoCreateInstance( __uuidof( MMDeviceEnumerator ), nullptr, CLSCTX_ALL,
-                              __uuidof( IMMDeviceEnumerator ), reinterpret_cast<void **>( &enumerator ) );
+        auto result = CoCreateInstance( __uuidof( MMDeviceEnumerator ), nullptr, CLSCTX_ALL,
+                                        __uuidof( IMMDeviceEnumerator ),
+                                        reinterpret_cast<void **>( &enumerator ) );
         if( FAILED( result ) )
         {
             cleanupPlatformAudio();
@@ -174,8 +174,7 @@ namespace workphone
             return false;
         }
 
-        result =
-            state->audioClient->Initialize( AUDCLNT_SHAREMODE_SHARED, 0, 0, 0, mixFormat, nullptr );
+        result = state->audioClient->Initialize( AUDCLNT_SHAREMODE_SHARED, 0, 0, 0, mixFormat, nullptr );
         CoTaskMemFree( mixFormat );
         if( FAILED( result ) )
         {
@@ -223,9 +222,8 @@ namespace workphone
             return false;
         }
 
-        result =
-            ( *state->engine )
-                ->CreateOutputMix( state->engine, &state->outputMixObject, 0, nullptr, nullptr );
+        result = ( *state->engine )
+                     ->CreateOutputMix( state->engine, &state->outputMixObject, 0, nullptr, nullptr );
         if( result != SL_RESULT_SUCCESS || !state->outputMixObject )
         {
             cleanupPlatformAudio();
@@ -357,7 +355,6 @@ namespace workphone
             return nullptr;
         }
 
-
         m_sounds.push_back( sound );
         return sound;
     }
@@ -385,7 +382,7 @@ namespace workphone
     }
 
     SmartPtr<ISoundListener3> WPAudioManager::addListener3( const String &name,
-                                                          const Vector3F &position )
+                                                            const Vector3F &position )
     {
         return SoundManager::addListener3( name, position );
     }
@@ -421,7 +418,12 @@ namespace workphone
         }
 #else
         for( auto &sound : m_sounds.snapshot() )
-            if( sound ) sound->setVolume( sound->getVolume() );
+        {
+            if( sound )
+            {
+                sound->setVolume( sound->getVolume() );
+            }
+        }
 #endif
     }
 
@@ -435,7 +437,12 @@ namespace workphone
         }
 #else
         for( auto &sound : m_sounds.snapshot() )
-            if( sound ) sound->setVolume( sound->getVolume() );
+        {
+            if( sound )
+            {
+                sound->setVolume( sound->getVolume() );
+            }
+        }
 #endif
     }
 
@@ -487,8 +494,7 @@ namespace workphone
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
         *ppObject = m_platformAudioState->audioUnit;
 #elif defined WP_PLATFORM_ANDROID
-        *ppObject =
-            const_cast<void *>( reinterpret_cast<const void *>( m_platformAudioState->engine ) );
+        *ppObject = const_cast<void *>( reinterpret_cast<const void *>( m_platformAudioState->engine ) );
 #endif
     }
 

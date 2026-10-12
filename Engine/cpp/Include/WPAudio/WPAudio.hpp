@@ -10,20 +10,20 @@ namespace workphone
     /**
      * @class WPAudio
      * @brief Main entry point for the Workphone Audio library.
-     * 
-     * This class manages the lifecycle of the audio plugin and provides access 
+     *
+     * This class manages the lifecycle of the audio plugin and provides access
      * to the factory manager for audio object creation.
      */
     class WPAudio_API WPAudio : public ISharedObject
     {
     public:
-        /** 
-         * @brief Default constructor. 
+        /**
+         * @brief Default constructor.
          */
         WPAudio();
 
-        /** 
-         * @brief Destructor. 
+        /**
+         * @brief Destructor.
          */
         ~WPAudio() override;
 
@@ -33,26 +33,26 @@ namespace workphone
         /** @copydoc ISharedObject::unload */
         void unload( SmartPtr<ISharedObject> data ) override;
 
-        /** 
-         * @brief Gets the singleton instance of the audio plugin. 
+        /**
+         * @brief Gets the singleton instance of the audio plugin.
          * @return A SmartPtr to the WPAudio instance.
          */
         static SmartPtr<WPAudio> instance();
 
-        /** 
-         * @brief Sets the singleton instance of the audio plugin. 
+        /**
+         * @brief Sets the singleton instance of the audio plugin.
          * @param plugin The SmartPtr to the WPAudio instance to set.
          */
         static void setInstance( SmartPtr<WPAudio> plugin );
 
-        /** 
-         * @brief Gets the factory manager used for creating audio-related objects. 
+        /**
+         * @brief Gets the factory manager used for creating audio-related objects.
          * @return A SmartPtr to the IFactoryManager.
          */
         static SmartPtr<IFactoryManager> getFactoryManager();
 
-        /** 
-         * @brief Sets the factory manager for the audio library. 
+        /**
+         * @brief Sets the factory manager for the audio library.
          * @param factoryManager The SmartPtr to the IFactoryManager to set.
          */
         static void setFactoryManager( SmartPtr<IFactoryManager> factoryManager );

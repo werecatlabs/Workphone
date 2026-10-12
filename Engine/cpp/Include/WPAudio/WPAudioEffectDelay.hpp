@@ -7,8 +7,8 @@ namespace workphone
     /**
      * @class CAudioEffectDelay
      * @brief Concrete implementation of a delay audio effect.
-     * 
-     * This class provides the functionality to process audio samples and apply a 
+     *
+     * This class provides the functionality to process audio samples and apply a
      * delay effect based on the configured sample rate and delay time.
      */
     class CAudioEffectDelay : public IAudioEffectDelay
@@ -19,9 +19,9 @@ namespace workphone
         /** @brief Destructor. */
         ~CAudioEffectDelay() override;
 
-        /** 
-         * @brief Processes the current audio buffer. 
-         * 
+        /**
+         * @brief Processes the current audio buffer.
+         *
          * Applies the delay effect to the input buffer and writes the result to the output buffer.
          */
         void process() override;

@@ -8,6 +8,6 @@ namespace workphone
     void bindComponent( lua_State *L );
     void bindComponentUI( lua_State *L );
 
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ComponentBind_h__
+#endif  // ComponentBind_h__

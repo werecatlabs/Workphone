@@ -19,7 +19,7 @@ namespace workphone
     }
 
     SmartPtr<ISharedObject> _SharedObjectVector_at( const Array<SmartPtr<ISharedObject>> &objects,
-                                                  size_t index )
+                                                    size_t index )
     {
         // Return by value so SmartPtr's Lua converter preserves the selected object's interface.
         return objects.at( index );
@@ -138,4 +138,4 @@ namespace workphone
                     .def( "empty", &SharedObjectVector::empty )
                     .def( "at", _SharedObjectVector_at )];
     }
-} // namespace workphone
+}  // namespace workphone

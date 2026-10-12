@@ -56,4 +56,4 @@ namespace workphone
                         .def( "getFSM", &IFSMListener::getFSM )
                         .def( "setFSM", &IFSMListener::setFSM )];
     }
-} // namespace workphone
+}  // namespace workphone

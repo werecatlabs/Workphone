@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindDatabase( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // DatabaseBind_h__
+#endif  // DatabaseBind_h__

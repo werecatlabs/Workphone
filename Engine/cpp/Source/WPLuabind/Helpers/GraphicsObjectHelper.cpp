@@ -34,4 +34,4 @@ namespace workphone
         u32 mask = object->getVisibilityFlags();
         return *reinterpret_cast<lua_Integer *>( &mask );
     }
-} // namespace workphone
+}  // namespace workphone

@@ -11,6 +11,6 @@ namespace workphone
         //     return resourceMgr->getByName( name );
         // }
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ResourceManagerHelper_h__
+#endif  // ResourceManagerHelper_h__

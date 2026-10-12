@@ -50,4 +50,4 @@ namespace workphone
     //     hash32 hash = *reinterpret_cast<hash32 *>( &newValue );
     //     projectile->setDynamicCollisionMask( hash );
     // }
-} // namespace workphone
+}  // namespace workphone

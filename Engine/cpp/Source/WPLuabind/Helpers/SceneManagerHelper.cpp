@@ -7,14 +7,14 @@ namespace workphone
     using namespace render;
 
     SmartPtr<IGraphicsObject> SceneManagerHelper::_addGraphicsObject( IGraphicsScene *smgr,
-                                                                      const char     *type )
+                                                                      const char *type )
     {
         return smgr->addGraphicsObject( type );
     }
 
     SmartPtr<IGraphicsObject> SceneManagerHelper::_addGraphicsObjectNamed( IGraphicsScene *smgr,
-                                                                           const char     *name,
-                                                                           const char     *type )
+                                                                           const char *name,
+                                                                           const char *type )
     {
         return smgr->addGraphicsObject( name, type );
     }
@@ -38,8 +38,8 @@ namespace workphone
     }
 
     SmartPtr<IParticleSystem> SceneManagerHelper::_addParticleSystem( IGraphicsScene *smgr,
-                                                                      const char     *name,
-                                                                      const char     *templateName )
+                                                                      const char *name,
+                                                                      const char *templateName )
     {
         if( !smgr )
         {
@@ -65,7 +65,7 @@ namespace workphone
     }
 
     SmartPtr<IGraphicsObject> SceneManagerHelper::_getParticleSystem( IGraphicsScene *smgr,
-                                                                      const char     *name )
+                                                                      const char *name )
     {
         if( !smgr || !name )
         {
@@ -94,4 +94,4 @@ namespace workphone
     {
         // smgr->loadSceneFile( filePath, parent );
     }
-} // namespace workphone
+}  // namespace workphone

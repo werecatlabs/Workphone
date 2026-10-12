@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindMath( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // MathBind_h__
+#endif  // MathBind_h__

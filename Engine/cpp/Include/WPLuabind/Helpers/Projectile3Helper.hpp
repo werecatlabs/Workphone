@@ -22,6 +22,6 @@ namespace workphone
     //    static lua_Integer getDynamicCollisionMask( IProjectile3 *projectile );
     //    static void setDynamicCollisionMask( IProjectile3 *projectile, lua_Integer newValue );
     //};
-} // namespace workphone
+}  // namespace workphone
 
-#endif // Projectile3Helper_h__
+#endif  // Projectile3Helper_h__

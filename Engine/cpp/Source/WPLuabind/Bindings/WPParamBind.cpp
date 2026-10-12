@@ -73,4 +73,4 @@ namespace workphone
                         .def( "getArray", &Parameter::getArray )
                         .def( "operator==", &Parameter::operator== )];
     }
-} // namespace workphone
+}  // namespace workphone

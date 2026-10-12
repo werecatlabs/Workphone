@@ -182,4 +182,4 @@ namespace workphone
             table["Count"] = static_cast<u32>( IAiGoal::State::Count );
         }
     }
-} // namespace workphone
+}  // namespace workphone

@@ -12,4 +12,4 @@ namespace workphone
     //{
     //     container->addFSM( fsm );
     // }
-} // namespace workphone
+}  // namespace workphone

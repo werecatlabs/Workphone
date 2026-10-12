@@ -145,7 +145,8 @@ namespace workphone
                 }
                 if( scriptObj->isDerived<scene::TerrainGrassLayer>() )
                 {
-                    luabind::detail::convert_to_lua( L, SmartPtr<scene::TerrainGrassLayer>( scriptObj ) );
+                    luabind::detail::convert_to_lua( L,
+                                                     SmartPtr<scene::TerrainGrassLayer>( scriptObj ) );
                     return true;
                 }
                 if( scriptObj->isDerived<scene::TerrainLayer>() )
@@ -755,7 +756,7 @@ namespace workphone
     }
 
     template <>
-    void CastUtil<physics::IPhysicsShape2>::down_cast( lua_State                               *L,
+    void CastUtil<physics::IPhysicsShape2>::down_cast( lua_State *L,
                                                        const SmartPtr<physics::IPhysicsShape2> &ptr )
     {
         using namespace luabind;
@@ -777,4 +778,4 @@ namespace workphone
     }
 
     template class CastUtil<physics::IPhysicsShape2>;
-} // namespace workphone
+}  // namespace workphone

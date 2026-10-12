@@ -162,7 +162,7 @@ namespace workphone
         {
             return static_cast<lua_Integer>( params.size() );
         }
-    } // namespace
+    }  // namespace
 
     void bindParamList( lua_State *L )
     {
@@ -204,4 +204,4 @@ namespace workphone
                         .def( "empty", &Parameters::empty )
                         .def( "size", getListSize )];
     }
-} // namespace workphone
+}  // namespace workphone

@@ -133,4 +133,4 @@ namespace workphone
     //     auto hash = StringUtil::getHash( name );
     //     return component->getSceneNode( hash );
     // }
-} // namespace workphone
+}  // namespace workphone

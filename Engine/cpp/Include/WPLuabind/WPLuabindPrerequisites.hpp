@@ -20,8 +20,8 @@ namespace boost
     {
         return ptr.get();
     }
-} // namespace boost
+}  // namespace boost
 
 #include <WPLuabind/StringConverter.hpp>
 
-#endif // WPLuabindPrerequisites_h__
+#endif  // WPLuabindPrerequisites_h__

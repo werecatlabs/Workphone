@@ -11,12 +11,18 @@ namespace workphone
     {
         SmartPtr<ISound> createSoundInstance( ISoundManager *manager, const String &path, bool loop )
         {
-            if( !manager ) return nullptr;
+            if( !manager )
+            {
+                return nullptr;
+            }
             auto resource = manager->create( path );
             auto sound = workphone::dynamic_pointer_cast<ISound>( resource );
             if( !sound || !sound->isLoaded() )
             {
-                if( resource ) manager->destroyResource( resource );
+                if( resource )
+                {
+                    manager->destroyResource( resource );
+                }
                 return nullptr;
             }
             sound->setLoop( loop );
@@ -25,9 +31,12 @@ namespace workphone
 
         void destroySoundInstance( ISoundManager *manager, SmartPtr<ISound> sound )
         {
-            if( manager && sound ) manager->destroyResource( sound );
+            if( manager && sound )
+            {
+                manager->destroyResource( sound );
+            }
         }
-    }
+    }  // namespace
 
     void bindSound( lua_State *L )
     {
@@ -178,4 +187,4 @@ namespace workphone
                         .def( "getEnableReverb", &ISoundProject::getEnableReverb )
                         .def( "setEnableReverb", &ISoundProject::setEnableReverb )];
     }
-} // namespace workphone
+}  // namespace workphone

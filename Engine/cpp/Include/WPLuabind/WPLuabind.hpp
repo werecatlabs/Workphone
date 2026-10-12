@@ -26,4 +26,4 @@
 #include "WPLuabind/Bindings/ProceduralBind.hpp"
 #include "WPLuabind/Bindings/VehicleBind.hpp"
 
-#endif // WPLuabind_h__
+#endif  // WPLuabind_h__

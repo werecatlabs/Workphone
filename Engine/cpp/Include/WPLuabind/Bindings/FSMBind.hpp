@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindFSM( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // FSMBind_h__
+#endif  // FSMBind_h__

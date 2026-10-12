@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindMesh( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // CombatBind_h__
+#endif  // CombatBind_h__

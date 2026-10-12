@@ -207,7 +207,7 @@ namespace workphone
     }
 
     SmartPtr<physics::IConstraintDrive> _getDrive( const physics::IConstraintD6 *constraint,
-                                                   lua_Integer                   index )
+                                                   lua_Integer index )
     {
         return constraint->getDrive( static_cast<physics::D6DriveEnum>( index ) );
     }
@@ -956,4 +956,4 @@ namespace workphone
                         .def( "setCheckDynamic", &IRaycastHit::setCheckDynamic )
                         .scope[def( "typeInfo", IRaycastHit::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

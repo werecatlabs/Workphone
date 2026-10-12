@@ -26,6 +26,7 @@ namespace workphone
     namespace
     {
         constexpr u16 WavFormatPcm = 1;
+
         struct WavData
         {
             std::vector<u8> format;
@@ -41,14 +42,20 @@ namespace workphone
         {
             if( !stream || !stream->isOpen() || stream->size() > 64u * 1024u * 1024u ||
                 stream->size() < 12 || !stream->seek( 0 ) )
+            {
                 return false;
+            }
             std::vector<u8> bytes( stream->size() );
             if( stream->read( bytes.data(), bytes.size() ) != bytes.size() )
+            {
                 return false;
+            }
             wp_audio_wav_info info{};
             info.size = sizeof( info );
             if( wp_audio_wav_inspect( bytes.data(), bytes.size(), &info ) != WP_AUDIO_OK )
+            {
                 return false;
+            }
             // Native WAVEFORMATEX is 18 bytes even for a 16-byte PCM fmt chunk.
             wav.format.assign( 18, 0 );
             auto field16 = [&]( size_t offset, u16 value ) {
@@ -57,15 +64,22 @@ namespace workphone
             };
             auto field32 = [&]( size_t offset, u32 value ) {
                 for( size_t i = 0; i < 4; ++i )
+                {
                     wav.format[offset + i] = static_cast<u8>( value >> ( i * 8 ) );
+                }
             };
-            field16( 0, info.format_tag ); field16( 2, info.channels );
-            field32( 4, info.sample_rate ); field32( 8, info.sample_rate * info.block_align );
-            field16( 12, info.block_align ); field16( 14, info.bits_per_sample );
+            field16( 0, info.format_tag );
+            field16( 2, info.channels );
+            field32( 4, info.sample_rate );
+            field32( 8, info.sample_rate * info.block_align );
+            field16( 12, info.block_align );
+            field16( 14, info.bits_per_sample );
             wav.samples.assign( bytes.begin() + info.data_offset,
                                 bytes.begin() + info.data_offset + info.data_bytes );
-            wav.formatTag = info.format_tag; wav.channels = info.channels;
-            wav.sampleRate = info.sample_rate; wav.blockAlign = info.block_align;
+            wav.formatTag = info.format_tag;
+            wav.channels = info.channels;
+            wav.sampleRate = info.sample_rate;
+            wav.blockAlign = info.block_align;
             wav.bitsPerSample = info.bits_per_sample;
             return true;
         }
@@ -105,22 +119,28 @@ namespace workphone
             void STDMETHODCALLTYPE OnVoiceProcessingPassStart( UINT32 ) override
             {
             }
+
             void STDMETHODCALLTYPE OnVoiceProcessingPassEnd() override
             {
             }
+
             void STDMETHODCALLTYPE OnStreamEnd() override
             {
                 owner->playing = false;
             }
+
             void STDMETHODCALLTYPE OnBufferStart( void * ) override
             {
             }
+
             void STDMETHODCALLTYPE OnBufferEnd( void * ) override
             {
             }
+
             void STDMETHODCALLTYPE OnLoopEnd( void * ) override
             {
             }
+
             void STDMETHODCALLTYPE OnVoiceError( void *, HRESULT ) override
             {
                 owner->playing = false;
@@ -279,10 +299,12 @@ namespace workphone
                 return false;
             }
             const auto bytes = candidate->samples.size() + candidate->format.size();
-            const auto result = clipCache.intern( candidate, bytes,
+            const auto result = clipCache.intern(
+                candidate, bytes,
                 []( const WavData &a, const WavData &b ) {
                     return a.format == b.format && a.samples == b.samples;
-                }, state->wav );
+                },
+                state->wav );
             if( result != audio::SharedClipCache<WavData>::Result::Ready )
             {
                 WP_LOG_WARNING( "WPAudio: resident clip budget exceeded." );
@@ -378,7 +400,7 @@ namespace workphone
                                          ? SL_SPEAKER_FRONT_CENTER
                                          : SL_SPEAKER_FRONT_LEFT | SL_SPEAKER_FRONT_RIGHT;
         SLDataFormat_PCM pcm = {
-            SL_DATAFORMAT_PCM,        state->wav->channels,      state->wav->sampleRate * 1000,
+            SL_DATAFORMAT_PCM,         state->wav->channels,      state->wav->sampleRate * 1000,
             state->wav->bitsPerSample, state->wav->bitsPerSample, speakerMask,
             SL_BYTEORDER_LITTLEENDIAN
         };
@@ -515,8 +537,11 @@ namespace workphone
         }
 #elif defined WP_PLATFORM_APPLE || defined WP_PLATFORM_IOS
         if( !state->paused )
+        {
             AudioQueueReset( state->queue );
-        if( ( !state->paused && AudioQueueEnqueueBuffer( state->queue, state->buffer, 0, nullptr ) != noErr ) ||
+        }
+        if( ( !state->paused &&
+              AudioQueueEnqueueBuffer( state->queue, state->buffer, 0, nullptr ) != noErr ) ||
             AudioQueueStart( state->queue, nullptr ) != noErr )
         {
             state->playing = false;
@@ -524,11 +549,14 @@ namespace workphone
         }
 #elif defined WP_PLATFORM_ANDROID
         if( !state->paused )
+        {
             ( *state->bufferQueue )->Clear( state->bufferQueue );
-        if( ( !state->paused && ( *state->bufferQueue )
-                    ->Enqueue( state->bufferQueue, state->wav->samples.data(),
-                               static_cast<SLuint32>( state->wav->samples.size() ) ) !=
-                SL_RESULT_SUCCESS ) ||
+        }
+        if( ( !state->paused &&
+              ( *state->bufferQueue )
+                      ->Enqueue( state->bufferQueue, state->wav->samples.data(),
+                                 static_cast<SLuint32>( state->wav->samples.size() ) ) !=
+                  SL_RESULT_SUCCESS ) ||
             ( *state->player )->SetPlayState( state->player, SL_PLAYSTATE_PLAYING ) !=
                 SL_RESULT_SUCCESS )
         {
@@ -598,7 +626,9 @@ namespace workphone
         auto effectiveGain = getVolume();
 #if !defined WP_PLATFORM_WIN32
         if( auto owner = getOwner() )
+        {
             effectiveGain *= owner->isMute() ? 0.0f : owner->getVolume();
+        }
 #endif
 #if defined WP_PLATFORM_WIN32 && WP_USE_XAUDIO2
         state->sourceVoice->SetVolume( effectiveGain );
@@ -624,7 +654,9 @@ namespace workphone
             // ExitLoop affects the submitted buffer; changing the descriptor alone does not.
             // Enabling looping after submission takes effect on the next play/restart.
             if( !loop && state->sourceVoice )
+            {
                 state->sourceVoice->ExitLoop();
+            }
 #endif
         }
     }

@@ -531,4 +531,4 @@ namespace workphone
                         .def( "getTransformReferences", &scene::ITransform::getTransformReferences )
                         .def( "setTransformReferences", &scene::ITransform::setTransformReferences )];
     }
-} // namespace workphone
+}  // namespace workphone

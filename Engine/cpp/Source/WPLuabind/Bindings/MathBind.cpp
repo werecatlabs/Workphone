@@ -637,4 +637,4 @@ namespace workphone
         register_matrix4<f32>( L, "Matrix4F" );
         register_matrix4<f64>( L, "Matrix4D" );
     }
-} // namespace workphone
+}  // namespace workphone

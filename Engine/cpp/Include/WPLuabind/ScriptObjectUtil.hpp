@@ -19,6 +19,6 @@ namespace workphone
     public:
         static void down_cast( lua_State *L, const SmartPtr<T> &ptr );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // ScriptObjectUtil_h__
+#endif  // ScriptObjectUtil_h__

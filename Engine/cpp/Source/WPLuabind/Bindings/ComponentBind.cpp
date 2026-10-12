@@ -63,48 +63,76 @@
 
 namespace workphone
 {
-    String terrainAuthoring( scene::TerrainSystem *terrain, const String &action, luabind::object options );
+    String terrainAuthoring( scene::TerrainSystem *terrain, const String &action,
+                             luabind::object options );
     SmartPtr<scene::TerrainRecipeStack> terrainCreateRecipe( scene::TerrainSystem *terrain );
+
     namespace
     {
-        String terrainBrush( scene::TerrainSystem *terrain, const String &mode, f32 x, f32 z,
-                             f32 radius, f32 strength, f32 target )
+        String terrainBrush( scene::TerrainSystem *terrain, const String &mode, f32 x, f32 z, f32 radius,
+                             f32 strength, f32 target )
         {
             scene::TerrainBrush brush;
-            if( mode == "raise" ) brush.mode = scene::TerrainBrushMode::Raise;
-            else if( mode == "lower" ) brush.mode = scene::TerrainBrushMode::Lower;
-            else if( mode == "smooth" ) brush.mode = scene::TerrainBrushMode::Smooth;
-            else if( mode == "flatten" ) brush.mode = scene::TerrainBrushMode::Flatten;
-            else return "This terrain brush is unavailable.";
+            if( mode == "raise" )
+            {
+                brush.mode = scene::TerrainBrushMode::Raise;
+            }
+            else if( mode == "lower" )
+            {
+                brush.mode = scene::TerrainBrushMode::Lower;
+            }
+            else if( mode == "smooth" )
+            {
+                brush.mode = scene::TerrainBrushMode::Smooth;
+            }
+            else if( mode == "flatten" )
+            {
+                brush.mode = scene::TerrainBrushMode::Flatten;
+            }
+            else
+            {
+                return "This terrain brush is unavailable.";
+            }
             brush.centre = Vector2F( x, z );
             brush.radius = radius;
             brush.strength = strength;
             brush.targetHeight = target;
             auto application = core::IApplicationManager::instancePtr();
             String error;
-            scene::applyTerrainBrush( terrain, brush, application ? application->getCommandManager() : nullptr, error );
+            scene::applyTerrainBrush( terrain, brush,
+                                      application ? application->getCommandManager() : nullptr, error );
             return error;
         }
+
         String terrainSave( scene::TerrainSystem *terrain, const String &path )
         {
             String error;
             scene::saveTerrainDataFile( terrain, path, error );
             return error;
         }
+
         String terrainLoad( scene::TerrainSystem *terrain, const String &path )
         {
             String error;
             scene::loadTerrainDataFile( terrain, path, error );
             return error;
         }
+
         String terrainImport( scene::TerrainSystem *terrain, const String &data )
         {
             String error;
-            if( terrain ) terrain->importTerrainData( data, error );
-            else error = "No terrain selected.";
+            if( terrain )
+            {
+                terrain->importTerrainData( data, error );
+            }
+            else
+            {
+                error = "No terrain selected.";
+            }
             return error;
         }
-    }
+    }  // namespace
+
     Parameter Component_handleEvent( scene::IComponent *component, lua_Integer eventType,
                                      lua_Integer eventValue, const Array<Parameter> &arguments,
                                      SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
@@ -412,10 +440,11 @@ namespace workphone
                         .def( "generate", &Script::generate )
                         .scope[def( "typeInfo", Script::typeInfo )]];
 
-        module( L )[class_<TerrainRecipeStack, ISharedObject, SmartPtr<TerrainRecipeStack>>( "TerrainRecipeStack" )
-            .def( "isBusy", &TerrainRecipeStack::isBusy )
-            .def( "getOperationCount", &TerrainRecipeStack::getOperationCount )
-            .def( "getGeneration", &TerrainRecipeStack::getGeneration )];
+        module( L )[class_<TerrainRecipeStack, ISharedObject, SmartPtr<TerrainRecipeStack>>(
+                        "TerrainRecipeStack" )
+                        .def( "isBusy", &TerrainRecipeStack::isBusy )
+                        .def( "getOperationCount", &TerrainRecipeStack::getOperationCount )
+                        .def( "getGeneration", &TerrainRecipeStack::getGeneration )];
         module(
             L )[class_<TerrainSystem, Component, SmartPtr<TerrainSystem>>( "TerrainSystem" )
                     .def( "load", &TerrainSystem::load )
@@ -1593,4 +1622,4 @@ namespace workphone
             "ComponentNetworkListener" )];
             */
     }
-} // namespace workphone
+}  // namespace workphone

@@ -86,6 +86,13 @@ wp_render_pipeline *wp_pipeline_create( wp_s32 width, wp_s32 height, wp_pipeline
  */
 void wp_pipeline_destroy( wp_render_pipeline *pipeline );
 
+/** Set elapsed seconds for exposure adaptation on subsequent frames.
+ * Defaults to 1/60 second. Negative/NaN values become zero; values above
+ * 0.25 seconds (including positive infinity) are clamped to 0.25 seconds.
+ * A zero interval freezes exposure adaptation. Preserved across native resize.
+ */
+void wp_pipeline_set_delta_time( wp_render_pipeline *pipeline, wp_f32 delta_time );
+
 /**
  * Render complete frame through pipeline
  *

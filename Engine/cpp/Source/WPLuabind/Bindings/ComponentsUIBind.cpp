@@ -649,4 +649,4 @@ namespace workphone
                         .def( "setTooltip", &ToolTip::setTooltip )
                         .scope[def( "typeInfo", ToolTip::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

@@ -85,4 +85,4 @@ namespace workphone
                         .def( "setResourceUUID", &IResourceReference::setResourceUUID )
                         .scope[def( "typeInfo", IResourceReference::typeInfo )]];
     }
-} // namespace workphone
+}  // namespace workphone

@@ -8,4 +8,4 @@ namespace workphone
     void bindAnimation( lua_State *L );
 }
 
-#endif // AnimationBind_h__
+#endif  // AnimationBind_h__

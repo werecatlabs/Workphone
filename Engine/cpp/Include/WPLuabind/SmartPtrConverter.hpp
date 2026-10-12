@@ -28,7 +28,7 @@ namespace luabind
 
     template <typename B>
     workphone::SmartPtr<B> luabind::default_converter<workphone::SmartPtr<B>>::from( lua_State *L,
-                                                                                     int        index )
+                                                                                     int index )
     {
         if( lua_isnil( L, index ) )
         {
@@ -57,7 +57,7 @@ namespace luabind
     }
 
     template <typename B>
-    void luabind::default_converter<workphone::SmartPtr<B>>::to( lua_State                    *L,
+    void luabind::default_converter<workphone::SmartPtr<B>>::to( lua_State *L,
                                                                  const workphone::SmartPtr<B> &ptr )
     {
         if( !ptr )
@@ -78,6 +78,6 @@ namespace luabind
     struct default_converter<const workphone::SmartPtr<B> &> : default_converter<workphone::SmartPtr<B>>
     {
     };
-} // namespace luabind
+}  // namespace luabind
 
-#endif // SmartPtrConverter_h__
+#endif  // SmartPtrConverter_h__

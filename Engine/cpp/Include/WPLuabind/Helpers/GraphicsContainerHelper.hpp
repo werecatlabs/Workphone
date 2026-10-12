@@ -60,6 +60,6 @@ namespace workphone
         // static SmartPtr<IGraphicsSceneNode> _getSceneNode( GraphicsContainer *component, const char
         // *name );
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // GraphicsContainerHelper_h__
+#endif  // GraphicsContainerHelper_h__

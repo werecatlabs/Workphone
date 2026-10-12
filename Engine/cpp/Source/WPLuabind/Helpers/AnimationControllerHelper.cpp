@@ -31,4 +31,4 @@ namespace workphone
     //{
     //     ctrl->setAnimationEnabled( animationName, enabled, timePosition );
     // }
-} // namespace workphone
+}  // namespace workphone

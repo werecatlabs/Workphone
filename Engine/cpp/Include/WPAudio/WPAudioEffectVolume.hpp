@@ -7,7 +7,7 @@ namespace workphone
     /**
      * @class CAudioEffectVolume
      * @brief Implementation of a volume-based audio effect.
-     * 
+     *
      * This class provides functionality to adjust the volume of an audio stream
      * by processing input samples and writing the scaled result to an output buffer.
      */
@@ -19,7 +19,7 @@ namespace workphone
 
         /**
          * @brief Processes the audio buffers by applying the current volume gain.
-         * 
+         *
          * If bypass is enabled, the input samples are copied directly to the output.
          */
         void process() override;
@@ -55,11 +55,11 @@ namespace workphone
         void setSampleRate( u32 sampleRate ) override;
 
     protected:
-        f32 *m_input = nullptr;     ///< Pointer to the input sample buffer.
-        f32 *m_output = nullptr;    ///< Pointer to the output sample buffer.
-        u32 m_numSamples = 0;       ///< Number of samples per processing block.
-        u32 m_sampleRate = 0;       ///< Audio sample rate in Hz.
-        f32 m_volume = 0.0f;        ///< Volume gain multiplier.
-        bool m_bypass = false;      ///< Bypass flag; if true, processing is skipped.
+        f32 *m_input = nullptr;   ///< Pointer to the input sample buffer.
+        f32 *m_output = nullptr;  ///< Pointer to the output sample buffer.
+        u32 m_numSamples = 0;     ///< Number of samples per processing block.
+        u32 m_sampleRate = 0;     ///< Audio sample rate in Hz.
+        f32 m_volume = 0.0f;      ///< Volume gain multiplier.
+        bool m_bypass = false;    ///< Bypass flag; if true, processing is skipped.
     };
 }  // namespace workphone

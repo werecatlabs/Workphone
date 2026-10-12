@@ -28,4 +28,4 @@ namespace workphone
     //     hash32 hash = *reinterpret_cast<hash32 *>( &newValue );
     //     destructible->setCollisionMask( hash );
     // }
-} // namespace workphone
+}  // namespace workphone

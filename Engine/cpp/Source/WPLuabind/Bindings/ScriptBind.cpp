@@ -59,7 +59,7 @@ namespace workphone
             receiver->getProperty( hash, values );
             return values;
         }
-    } // namespace
+    }  // namespace
 
     void bindScript( lua_State *L )
     {
@@ -237,4 +237,4 @@ namespace workphone
                     .scope[def( "typeInfo", IScriptVariable::typeInfo )]];
     }
 
-} // namespace workphone
+}  // namespace workphone

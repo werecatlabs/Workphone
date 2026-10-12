@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindNet( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // NetBind_h__
+#endif  // NetBind_h__

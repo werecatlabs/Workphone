@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindVehicle( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // VehicleBind_h__
+#endif  // VehicleBind_h__

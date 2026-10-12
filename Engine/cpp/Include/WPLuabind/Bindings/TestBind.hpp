@@ -6,6 +6,6 @@
 namespace workphone
 {
     void bindTest( lua_State *L );
-} // namespace workphone
+}  // namespace workphone
 
-#endif // TestBind_h__
+#endif  // TestBind_h__
