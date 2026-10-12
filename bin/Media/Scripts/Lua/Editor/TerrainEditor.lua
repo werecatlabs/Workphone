@@ -687,10 +687,10 @@ local function setResourcePreview(resourceSelect, texture)
 	local previewTexture = texture;
 
 	if previewTexture == nil then
-		previewTexture = resourceDatabase:loadResource("checker.png");
+		previewTexture = resourceDatabase:loadMediaTexture("checker.png");
 	end
 
-	if resourceSelect and resourceSelect.image then
+	if previewTexture ~= nil and resourceSelect and resourceSelect.image then
 		resourceSelect.image:setTexture(previewTexture);
 	end
 end
@@ -2655,14 +2655,17 @@ function TerrainEditor:handleDrop(sender, args)
 	end
 
 	local path = nil;
+	local assetDomain = nil;
 	if type(dataStr) == "table" then
 		path = dataStr.filePath or dataStr.path;
+		assetDomain = dataStr.assetDomain;
 	elseif type(dataStr) == "string" then
 		local okJson, cjson = pcall(require, "cjson");
 		if okJson and cjson ~= nil then
 			local okDecode, decoded = pcall(function() return cjson.decode(dataStr); end);
 			if okDecode and decoded ~= nil then
 				path = decoded.filePath or decoded.path;
+				assetDomain = decoded.assetDomain;
 			end
 		end
 
@@ -2700,7 +2703,17 @@ function TerrainEditor:handleDrop(sender, args)
 
 	local applicationManager = IApplicationManager.instance();
 	local resourceDatabase = applicationManager:getResourceDatabase();
-	local texture = resourceDatabase:loadResource(path);
+	local texture = nil;
+	if assetDomain == "media" then
+		texture = resourceDatabase:loadMediaTexture(path);
+	else
+		texture = resourceDatabase:loadTexture(path);
+	end
+
+	if texture == nil then
+		self:setStatus("Unable to load texture: " .. path);
+		return;
+	end
 
 	if elementId == TerrainEditorTypes.HeightMap then
 		self:setHeightMapTexture(texture);
