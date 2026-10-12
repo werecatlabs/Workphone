@@ -71,8 +71,10 @@ namespace workphone
     void SoundManager::destroyAll()
     {
         SmartPtr<ISharedObject> pending;
-        while( m_loadQueue.try_pop( pending ) ) pending->unload( nullptr );
-        while( m_unloadQueue.try_pop( pending ) ) pending->unload( nullptr );
+        while( m_loadQueue.try_pop( pending ) )
+            pending->unload( nullptr );
+        while( m_unloadQueue.try_pop( pending ) )
+            pending->unload( nullptr );
         auto sounds = m_sounds.snapshot();
         for( auto &sound : sounds )
         {
@@ -397,7 +399,8 @@ namespace workphone
                                                      const String &clonedResourceName )
     {
         auto source = workphone::dynamic_pointer_cast<ISound>( resource );
-        if( !source ) return nullptr;
+        if( !source )
+            return nullptr;
         // A clone is an independent transport, never createOrRetrieve(path).
         auto copy = workphone::dynamic_pointer_cast<ISound>( create( source->getFilePath() ) );
         if( copy )

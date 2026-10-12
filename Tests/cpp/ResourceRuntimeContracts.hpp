@@ -3,6 +3,7 @@
 
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
+#include <Workphone/Core/StringUtil.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
 
 #include <chrono>
@@ -118,7 +119,8 @@ namespace resource_runtime_contracts
     // This reaches graph/schema validation rather than only the outer payload hash check.
     inline void writeManifestFixture( const fs::path &path, const String &target,
                                       const Array<CompiledResourceHeader> &headers, u64 version = 1,
-                                      const std::map<String,String> &artifacts = {} )
+                                      const std::map<String,String> &artifacts = {},
+                                      const Array<RuntimeResourceBinding> &bindings = {} )
     {
         std::ostringstream bytes( std::ios::binary );
         auto number = [&]( u64 value ) {
@@ -142,9 +144,18 @@ namespace resource_runtime_contracts
             number( header.payloadHash );
             number( header.payloadSize );
             number( header.installDependencies.size() );
-            if(version==2) string(artifacts.at(header.resourceId.str()));
+            if(version==2 || version==3) string(artifacts.at(header.resourceId.str()));
             for( const auto &dependency : header.installDependencies )
                 string( dependency.str() );
+        }
+        if( version >= 3 )
+        {
+            number( bindings.size() );
+            for( const auto &binding : bindings )
+            {
+                string( binding.uuid );
+                string( binding.resourceId.str() );
+            }
         }
         const auto payloadPath = path.parent_path() / "manifest-test.payload";
         write( payloadPath, bytes.str() );
@@ -168,6 +179,10 @@ namespace resource_runtime_contracts
         const auto relocated = fixture.root / "relocated";
         const ResourceID rootId( "data://root.rtres" );
         const ResourceID leafId( "data://leaf.rtres" );
+        const String rootUUID = "a1234567-89ab-cdef-0123-456789abcdef";
+        const String upperRootUUID = "A1234567-89AB-CDEF-0123-456789ABCDEF";
+        const String leafUUID = "b1234567-89ab-cdef-0123-456789abcdef";
+        const Array<RuntimeResourceBinding> bindings = { { rootUUID, rootId }, { leafUUID, leafId } };
         const std::map<std::string, std::string> descriptors = {
             { "root.rtres", "install=data://left.rtres\ninstall=data://right.rtres\nroot\n" },
             { "left.rtres", "install=data://leaf.rtres\nleft\n" },
@@ -187,6 +202,9 @@ namespace resource_runtime_contracts
         authoringConfig.compiledRoot = pathText( cooked );
         authoringConfig.target = "runtime-contract";
         require( authoring.initialize( authoringConfig, error ), error );
+        const auto exportedPackage = fixture.root / "exported-package";
+        require( !authoring.writeRuntimePackage( pathText( exportedPackage ), { rootId }, bindings, error ) &&
+                 !fs::exists( exportedPackage ), "Editor-mode resources must not be exported as a shipping package" );
         require( authoring.compile( rootId ).succeeded(), "Runtime fixture cook failed" );
         auto oldRoot = authoring.load( rootId, error );
         require( oldRoot != nullptr, error );
@@ -232,6 +250,29 @@ namespace resource_runtime_contracts
         const auto manifest = cooked / "runtime.wprm";
         require( authoring.writeRuntimeManifest( pathText( manifest ), { rootId }, error ), error );
         const auto manifestBytes = read( manifest );
+        const auto uuidManifest = cooked / "runtime-uuid.wprm";
+        require( authoring.writeRuntimeManifest( pathText( uuidManifest ), { rootId }, bindings, error ), error );
+        const auto uuidManifestBytes = read( uuidManifest );
+        require( authoring.writeRuntimeManifest( pathText( uuidManifest ), { rootId },
+                     { { leafUUID, leafId }, { upperRootUUID, rootId } }, error ) &&
+                 read( uuidManifest ) == uuidManifestBytes,
+                 "UUID manifest must be deterministic across input order and UUID case" );
+        for( const auto &invalid : Array<Array<RuntimeResourceBinding>>{
+                 { { rootUUID, rootId }, { upperRootUUID, leafId } },
+                 { { rootUUID, rootId }, { leafUUID, rootId } },
+                 { { rootUUID, ResourceID( "data://missing.rtres" ) } },
+                 { { "00000000-0000-0000-0000-000000000000", rootId } },
+                 { { "not-a-uuid", rootId } },
+                 { { rootUUID, ResourceID() } } } )
+        {
+            require( !authoring.writeRuntimeManifest( pathText( uuidManifest ), { rootId }, invalid, error ) &&
+                     !error.empty() && read( uuidManifest ) == uuidManifestBytes,
+                     "Invalid UUID export must preserve the previous manifest" );
+        }
+        ResourceID resolvedUUID = rootId;
+        require( !authoring.resolveRuntimeUUID( rootUUID, resolvedUUID, error ) &&
+                 !resolvedUUID.isValid() && !authoring.loadUUID( rootUUID, error ),
+                 "Authoring must not infer UUID bindings from paths" );
         write( source / "independent.rtres", "independent\n" );
         const ResourceID independentId( "data://independent.rtres" );
         require( authoring.compile( independentId ).succeeded(), "Independent root cook failed" );
@@ -262,6 +303,95 @@ namespace resource_runtime_contracts
             require(database->getRecord(("data://"+entry.first).c_str(),record) && record.isValid(),"Committed artifact path");
             artifactPaths[entry.first]=fs::u8path(record.outputPath.c_str());
         }
+        CompilationOptions packageOptions;
+        packageOptions.packagedBuild = true;
+        const auto packageBuild = authoring.compile( rootId, packageOptions );
+        require( packageBuild.succeeded(), "Runtime fixture package-mode compilation failed" );
+        write( cooked / "unrelated-private-file", "do not package" );
+        require( authoring.writeRuntimePackage( pathText( exportedPackage ), { rootId }, bindings, error ), error );
+        require( !fs::exists( exportedPackage / ".resource_compilation.db" ) &&
+                 !fs::exists( exportedPackage / "unrelated-private-file" ) &&
+                 !fs::exists( exportedPackage / ".resource-writers" ),
+                 "Runtime package must contain only its manifest and install closure" );
+        unsigned packagedFiles = 0;
+        for( const auto &entry : fs::recursive_directory_iterator( exportedPackage ) )
+            if( entry.is_regular_file() ) ++packagedFiles;
+        require( packagedFiles == descriptors.size() + 1, "Runtime package exported an incomplete or excess closure" );
+        const auto packageBeforeRetry = snapshot( exportedPackage );
+        require( !authoring.writeRuntimePackage( pathText( exportedPackage ), { rootId }, bindings, error ) &&
+                 snapshot( exportedPackage ) == packageBeforeRetry,
+                 "Runtime package retry must preserve an existing destination byte-for-byte" );
+        fs::create_directory( fixture.root / "occupied-empty" );
+        require( !authoring.writeRuntimePackage( pathText( fixture.root / "occupied-empty" ), { rootId }, bindings, error ),
+                 "Runtime package must not overwrite an existing empty directory" );
+        require( !authoring.writeRuntimePackage( pathText( source / "package" ), { rootId }, bindings, error ) &&
+                 !authoring.writeRuntimePackage( pathText( cooked / "package" ), { rootId }, bindings, error ) &&
+                 !authoring.writeRuntimePackage( pathText( fixture.root ), { rootId }, bindings, error ),
+                 "Runtime package must reject source/cooked storage overlap" );
+        const auto failedPackage = fixture.root / "failed-package";
+        require( !authoring.writeRuntimePackage( pathText( failedPackage ), { rootId }, { { rootUUID, independentId } }, error ) &&
+                 !fs::exists( failedPackage ), "Invalid UUID package must not publish a partial directory" );
+        const auto packageRootPath = fs::u8path( packageBuild.outputPath.c_str() );
+        const auto packageRootBytes = read( packageRootPath );
+        write( packageRootPath, "damaged" );
+        require( !authoring.writeRuntimePackage( pathText( failedPackage ), { rootId }, bindings, error ) &&
+                 !fs::exists( failedPackage ), "Corrupt package input must not publish a destination" );
+        write( packageRootPath, packageRootBytes );
+        const auto checkedPackage = fixture.root / "checked-package";
+        bool admissionReleased = false, completeAtRelease = false;
+        struct AdmissionProbe
+        {
+            bool &released, &complete;
+            fs::path directory;
+            ~AdmissionProbe()
+            {
+                released = true;
+                complete = fs::exists(directory / "runtime.wprm");
+            }
+        };
+        const RuntimePackageResolver resolver = [&](const RuntimePackageContext &context,
+                                                       RuntimePackageAdmission &admission,String &) {
+            require(fs::equivalent(fs::u8path(context.sourceRoot.c_str()),source) && context.target == authoringConfig.target &&
+                    context.resources.size() == descriptors.size(),"Checked export must disclose its actual pinned source/target/closure");
+            for(const auto &id : context.resources) admission.bindings.push_back({StringUtil::getUUID(),id});
+            admission.lifetime = std::shared_ptr<AdmissionProbe>(new AdmissionProbe{admissionReleased,completeAtRelease,checkedPackage});
+            return true;
+        };
+        require(authoring.writeRuntimePackageChecked(pathText(checkedPackage),{rootId},resolver,error),error);
+        require(admissionReleased && completeAtRelease,"Admission lifetime must extend through complete directory publication");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},{},error),
+                "Checked export must reject an absent resolver");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &,RuntimePackageAdmission &,String &diagnostic) {
+                diagnostic = "policy rejection"; return false;
+            },error) && error == "policy rejection" && !fs::exists(failedPackage),
+                "Rejected admission must preserve diagnostics and publish nothing");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &,RuntimePackageAdmission &,String &) -> bool {
+                throw std::runtime_error("resolver fault");
+            },error) && error.find("resolver fault") != String::npos && !fs::exists(failedPackage),
+                "Resolver exceptions must clean staging without publishing a package");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &,RuntimePackageAdmission &admission,String &) {
+                admission.lifetime = std::make_shared<int>(1);
+                admission.bindings = bindings; return true;
+            },error) && !fs::exists(failedPackage),"Checked export must reject partial UUID coverage");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &context,RuntimePackageAdmission &admission,String &) {
+                for(const auto &id : context.resources) admission.bindings.push_back({StringUtil::getUUID(),id});
+                return true;
+            },error) && !fs::exists(failedPackage),"Checked export must reject unretained admission");
+        const auto racingDestination = fixture.root / "racing-destination";
+        require(!authoring.writeRuntimePackageChecked(pathText(racingDestination),{rootId},
+            [&](const RuntimePackageContext &context,RuntimePackageAdmission &admission,String &) {
+                for(const auto &id : context.resources) admission.bindings.push_back({StringUtil::getUUID(),id});
+                admission.lifetime = std::make_shared<int>(1);
+                fs::create_directory(racingDestination); return true;
+            },error) && fs::is_empty(racingDestination),
+                "A racing destination must be preserved by exclusive final publication");
+        for( const auto &entry : fs::directory_iterator( fixture.root ) )
+            require( entry.path().filename().u8string().find( ".wp-package-" ) != 0,
+                     "Completed or failed export leaked its staging directory" );
         authoring.shutdown();
 
         fs::create_directories( relocated );
@@ -276,10 +406,11 @@ namespace resource_runtime_contracts
             totalPayload += payload.header.payloadSize;
         }
         fs::copy_file( manifest, relocated / "runtime.wprm" );
+        fs::copy_file( uuidManifest, relocated / "runtime-uuid.wprm" );
         fs::remove_all( source );
         fs::remove_all( cooked );
         const auto packageBefore = snapshot( relocated );
-        for( const auto &entry : fs::directory_iterator( relocated ) )
+        for( const auto &entry : fs::recursive_directory_iterator( relocated ) )
             fs::permissions( entry.path(), fs::perms::owner_read, fs::perm_options::replace );
 
         RuntimeResourceConfig runtimeConfig;
@@ -290,6 +421,17 @@ namespace resource_runtime_contracts
         runtimeConfig.maxClosureResources = 5;
         runtimeConfig.maxDependencyDepth = 5;
         ResourceSystem runtime( nullptr, nullptr );
+        auto exportedConfig = runtimeConfig;
+        exportedConfig.compiledRoot = pathText( exportedPackage );
+        exportedConfig.manifestPath = pathText( exportedPackage / "runtime.wprm" );
+        const auto exportedBeforeLoad = snapshot( exportedPackage );
+        for( const auto &entry : fs::recursive_directory_iterator( exportedPackage ) )
+            if( entry.is_regular_file() )
+                fs::permissions( entry.path(), fs::perms::owner_read, fs::perm_options::replace );
+        require( runtime.initializeRuntime( exportedConfig, error ) && runtime.loadUUID( rootUUID, error ) != nullptr,
+                 "Exported runtime package must load by durable UUID with source/cooked storage absent" );
+        runtime.shutdown();
+        require( snapshot( exportedPackage ) == exportedBeforeLoad, "Exported runtime package mount changed files" );
         auto invalidConfig = runtimeConfig;
         invalidConfig.target = "different-target";
         require( !runtime.initializeRuntime( invalidConfig, error ) && !runtime.isInitialized(),
@@ -324,11 +466,40 @@ namespace resource_runtime_contracts
         require( runtime.load( rootId, error ) != nullptr, error );
         runtime.shutdown();
 
+        auto uuidConfig = runtimeConfig;
+        uuidConfig.manifestPath = pathText( relocated / "runtime-uuid.wprm" );
+        require( runtime.initializeRuntime( uuidConfig, error ), error );
+        error = "old diagnostic";
+        require( runtime.resolveRuntimeUUID( upperRootUUID, resolvedUUID, error ) &&
+                 resolvedUUID == rootId && error.empty(),
+                 "Runtime UUID lookup must normalize case and clear previous diagnostics" );
+        auto uuidRoot = runtime.loadUUID( rootUUID, error );
+        require( uuidRoot && uuidRoot == runtime.load( rootId, error ) &&
+                 runtime.loadUUID( leafUUID, error ) == uuidRoot->dependencies[0]->dependencies[0],
+                 "UUID and logical loads must share retained closure identities" );
+        for( const auto &missing : Array<String>{ "c1234567-89ab-cdef-0123-456789abcdef",
+                "data://root.rtres", "00000000-0000-0000-0000-000000000000", "not-a-uuid" } )
+        {
+            resolvedUUID = rootId;
+            require( !runtime.resolveRuntimeUUID( missing, resolvedUUID, error ) && !resolvedUUID.isValid() &&
+                     !runtime.loadUUID( missing, error ) && !error.empty(),
+                     "Invalid or absent UUID must fail without path fallback or partial output" );
+        }
+        auto uuidFirst = std::async( std::launch::async, [&]() { String diagnostic; return runtime.loadUUID( rootUUID, diagnostic ); } );
+        auto uuidSecond = std::async( std::launch::async, [&]() { String diagnostic; return runtime.load( rootId, diagnostic ); } );
+        require( uuidFirst.get() == uuidRoot && uuidSecond.get() == uuidRoot,
+                 "Concurrent UUID and path loads must share identity" );
+        runtime.shutdown();
+        require( !runtime.loadUUID( rootUUID, error ) && !uuidRoot->payload.empty(),
+                 "UUID load after shutdown must fail while retained resources remain valid" );
+        require( snapshot( relocated ) == packageBefore, "UUID lookup/load wrote into the package" );
+
         auto limited = runtimeConfig;
+        limited.manifestPath = uuidConfig.manifestPath;
         limited.maxClosurePayloadBytes = totalPayload - 1;
         require( runtime.initializeRuntime( limited, error ), error );
         auto cachedLeaf = runtime.load( leafId, error );
-        require( cachedLeaf != nullptr && !runtime.load( rootId, error ),
+        require( cachedLeaf != nullptr && !runtime.loadUUID( rootUUID, error ),
                  "Aggregate runtime budget ignored a cached dependency" );
         runtime.shutdown();
         limited = runtimeConfig;
@@ -342,7 +513,7 @@ namespace resource_runtime_contracts
         require( !runtime.load( rootId, error ), "Runtime depth limit missed the longer diamond path" );
         runtime.shutdown();
 
-        for( const auto &entry : fs::directory_iterator( relocated ) )
+        for( const auto &entry : fs::recursive_directory_iterator( relocated ) )
             fs::permissions( entry.path(), fs::perms::owner_all, fs::perm_options::add );
         const auto parentPath=relocated / artifactPaths.at("root.rtres");
         const auto goodParentBytes=read(parentPath);
@@ -418,9 +589,30 @@ namespace resource_runtime_contracts
         writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot } );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted an incomplete manifest closure" );
         graphRoot.installDependencies.clear();
+        const std::map<String, String> uuidPaths = {
+            { rootId.str(), artifactPaths.at("root.rtres").generic_u8string().c_str() }
+        };
+        for( const auto &invalid : Array<Array<RuntimeResourceBinding>>{
+                 { { rootUUID, rootId }, { upperRootUUID, rootId } },
+                 { { rootUUID, rootId }, { leafUUID, rootId } },
+                 { { rootUUID, leafId } },
+                 { { "00000000-0000-0000-0000-000000000000", rootId } },
+                 { { "a1234567_89ab-cdef-0123-456789abcdef", rootId } } } )
+        {
+            writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target,
+                                  { graphRoot }, 3, uuidPaths, invalid );
+            require( !runtime.initializeRuntime( runtimeConfig, error ) && !runtime.isInitialized(),
+                     "Malformed UUID manifest must fail before mount publication" );
+        }
+        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target,
+                              { graphRoot }, 3, uuidPaths, {} );
+        require( runtime.initializeRuntime( runtimeConfig, error ), "V3 empty UUID map must be valid" );
+        require( !runtime.resolveRuntimeUUID( rootUUID, resolvedUUID, error ) && !resolvedUUID.isValid(),
+                 "Empty map must not retain bindings from an earlier mount" );
+        runtime.shutdown();
         writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot, graphRoot } );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted duplicate manifest identities" );
-        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot }, 3 );
+        writeManifestFixture( relocated / "runtime.wprm", runtimeConfig.target, { graphRoot }, 4 );
         require( !runtime.initializeRuntime( runtimeConfig, error ), "Runtime accepted a newer manifest schema" );
         // The shared subtree is visited first along the short branch. Memoization
         // must still count its depth when the long branch reaches it afterwards.

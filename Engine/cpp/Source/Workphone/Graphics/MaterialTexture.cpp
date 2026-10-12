@@ -113,7 +113,7 @@ namespace workphone::render
         auto applicationManager = core::IApplicationManager::instance();
         auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabase() : nullptr;
         setTexture( resourceDatabase ? resourceDatabase->loadResourceByType<ITexture>( texturePath )
-                                    : nullptr );
+                                     : nullptr );
     }
 
     auto MaterialTexture::getTexture() const -> SmartPtr<ITexture>

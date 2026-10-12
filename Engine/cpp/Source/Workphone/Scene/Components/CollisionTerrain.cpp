@@ -155,15 +155,17 @@ namespace workphone::scene
             if( auto actor = getActor() )
                 if( auto source = actor->getComponent<TerrainSystem>() )
                     if( auto terrain = dynamic_cast<render::Terrain *>( source->getTerrain().get() ) )
-                        if( terrain->isTerrainPublicationDeferred() ) return;
+                        if( terrain->isTerrainPublicationDeferred() )
+                            return;
             if( m_terrainError.empty() )
-                m_terrainError = "A TerrainSystem and an available terrain physics backend are required.";
+                m_terrainError =
+                    "A TerrainSystem and an available terrain physics backend are required.";
             WP_LOG_WARNING( "CollisionTerrain: " + m_terrainError );
         }
     }
 
     bool CollisionTerrain::prepareTerrain( render::TerrainSnapshot snapshot,
-                                          const Transform3<real_Num> &worldTransform, String &error )
+                                           const Transform3<real_Num> &worldTransform, String &error )
     {
         const auto fail = [&]( const String &message ) {
             error = message;
@@ -176,10 +178,13 @@ namespace workphone::scene
             !render::validateTerrainPlacement( *snapshot, worldTransform, error ) )
             return fail( error );
         const auto cells = size_t( snapshot->dimensions.x - 1 ) * ( snapshot->dimensions.y - 1 );
-        const auto solidCells = snapshot->holes.empty() ? cells :
-            static_cast<size_t>( std::count( snapshot->holes.begin(), snapshot->holes.end(), u8( 0 ) ) );
+        const auto solidCells = snapshot->holes.empty()
+                                    ? cells
+                                    : static_cast<size_t>( std::count(
+                                          snapshot->holes.begin(), snapshot->holes.end(), u8( 0 ) ) );
         if( solidCells * 2 > physics::TerrainCollisionData::maximumSupportedTriangles )
-            return fail( "Terrain collision exceeds 524288 solid triangles; tiled collision is unavailable." );
+            return fail(
+                "Terrain collision exceeds 524288 solid triangles; tiled collision is unavailable." );
         // Offsets would disagree with rendering and queries. Authoritative terrain
         // placement belongs exclusively to its actor, not legacy collision metadata.
         if( getPosition() != Vector3<real_Num>::zero() )
@@ -197,13 +202,15 @@ namespace workphone::scene
         discardPreparedTerrain();
         try
         {
-            if( auto actor = getActor() ) setRigidBody( actor->getComponent<Rigidbody>() );
+            if( auto actor = getActor() )
+                setRigidBody( actor->getComponent<Rigidbody>() );
             auto source = make_ptr<physics::TerrainCollisionData>();
             source->terrain = snapshot;
             source->scale = worldTransform.getScale();
             auto types = TypeManager::instance();
             const auto shapeType = types ? types->getHash( physics::ITerrainShape::typeInfo() ) : 0;
-            if( !shapeType ) return fail( "Terrain collision type registration is unavailable." );
+            if( !shapeType )
+                return fail( "Terrain collision type registration is unavailable." );
             // Resource admission and native allocation may fail normally while
             // staging a replacement. The typed convenience factory asserts that
             // creation succeeded, so use the nullable factory at this boundary.
@@ -245,17 +252,21 @@ namespace workphone::scene
         if( !m_preparedShape )
             return;
         auto previous = getShape();
-        auto body = previous ? dynamic_pointer_cast<physics::IRigidBody3>( previous->getActor() ) : nullptr;
+        auto body =
+            previous ? dynamic_pointer_cast<physics::IRigidBody3>( previous->getActor() ) : nullptr;
         if( !body )
             if( auto component = getRigidBody() )
-                {
-                    if( auto rigid = component->getRigidStatic() ) body = rigid;
-                    else if( auto rigid = component->getRigidDynamic() ) body = rigid;
-                }
+            {
+                if( auto rigid = component->getRigidStatic() )
+                    body = rigid;
+                else if( auto rigid = component->getRigidDynamic() )
+                    body = rigid;
+            }
         setShape( m_preparedShape );
         if( body )
         {
-            if( previous ) body->removeShape( previous, false );
+            if( previous )
+                body->removeShape( previous, false );
             else
             {
                 m_preparedShape->setCollisionType( body->getCollisionType() );
@@ -314,7 +325,8 @@ namespace workphone::scene
     bool CollisionTerrain::isTerrainPrepared( render::TerrainSnapshot snapshot,
                                               const Transform3<real_Num> &placement ) const
     {
-        return ( m_preparedShape && m_preparedSnapshot == snapshot && m_preparedTransform == placement ) ||
+        return ( m_preparedShape && m_preparedSnapshot == snapshot &&
+                 m_preparedTransform == placement ) ||
                ( getShape() && m_terrainSnapshot == snapshot && m_publishedTransform == placement );
     }
 

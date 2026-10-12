@@ -250,9 +250,9 @@ namespace workphone::scene
                             const auto speed = float( m_chassis->getLinearVelocity().length() );
                             const auto maxSteer = MathF::Abs( MathF::DegToRad( m_maxSteeringAngle ) );
                             if( maxSteer > 0 && wheelbase > 0 )
-                                steering *=
-                                    std::min( 1.f, wheelbase * 8.f /
-                                                       ( std::max( speed * speed * 0.25f, 1.f ) * maxSteer ) );
+                                steering *= std::min(
+                                    1.f, wheelbase * 8.f /
+                                             ( std::max( speed * speed * 0.25f, 1.f ) * maxSteer ) );
                         }
                     }
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ),

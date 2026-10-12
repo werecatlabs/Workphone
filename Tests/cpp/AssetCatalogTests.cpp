@@ -24,6 +24,7 @@
 #include "AssetReferenceChangeContracts.hpp"
 #include "DatabaseValueContracts.hpp"
 #include "DomainAssetReadContracts.hpp"
+#include "AssetPackagePolicyContracts.hpp"
 
 namespace workphone
 {
@@ -1108,6 +1109,7 @@ int main()
             assetReferenceChangeContracts(folder);
             databaseValueContracts(folder);
             domainAssetReadContracts(folder);
+            assetPackagePolicyContracts(folder);
             maintenanceContracts(folder);
             fileOperationContracts(folder);
             assetReferenceGraphContracts(folder);

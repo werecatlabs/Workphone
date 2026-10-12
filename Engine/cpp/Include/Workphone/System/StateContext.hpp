@@ -450,7 +450,8 @@ namespace workphone
         ConcurrentArray<SmartPtr<IEventListener>> m_eventListeners;
         ConcurrentArray<SmartPtr<IState>> m_states;
         ConcurrentArray<SmartPtr<IStateListener>> m_stateListeners;
-        ConcurrentFixedArrayGrowable<SmartPtr<IStateQueue>, static_cast<size_t>( TaskId::Count )> m_stateQueues;
+        ConcurrentFixedArrayGrowable<SmartPtr<IStateQueue>, static_cast<size_t>( TaskId::Count )>
+            m_stateQueues;
 
         /// Static counter for generating unique name extensions
         static u32 m_nextGeneratedNameExt;

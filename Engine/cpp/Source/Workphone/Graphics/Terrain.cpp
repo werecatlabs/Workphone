@@ -82,15 +82,21 @@ namespace workphone::render
         error.clear();
         const auto previous = std::atomic_load( &m_foliageSnapshot );
         if( snapshot == previous )
-        { if( !snapshot ) setFoliageDiagnostics( FoliageDiagnostics{} ); return true; }
-        if( snapshot && !validateFoliageWorld( *snapshot, error ) ) return false;
+        {
+            if( !snapshot )
+                setFoliageDiagnostics( FoliageDiagnostics{} );
+            return true;
+        }
+        if( snapshot && !validateFoliageWorld( *snapshot, error ) )
+            return false;
         std::atomic_store( &m_foliageSnapshot, snapshot );
         if( !snapshot )
         {
             if( !publishFoliageSnapshot( {}, getWorldTransform(), [] {}, error ) )
             {
                 // A reentrant gate may have installed a newer request; retain it.
-                if( !std::atomic_load( &m_foliageSnapshot ) ) std::atomic_store( &m_foliageSnapshot, previous );
+                if( !std::atomic_load( &m_foliageSnapshot ) )
+                    std::atomic_store( &m_foliageSnapshot, previous );
                 return false;
             }
             setFoliageDiagnostics( FoliageDiagnostics{} );
@@ -101,47 +107,90 @@ namespace workphone::render
     void Terrain::setFoliagePublicationGate( FoliagePublicationGate gate )
     {
         std::lock_guard<std::recursive_mutex> publication( m_foliagePublicationMutex );
-        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex ); m_foliagePublicationGate = std::move( gate );
+        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+        m_foliagePublicationGate = std::move( gate );
     }
     Terrain::ActiveFoliage Terrain::getActiveFoliage() const
-    { std::lock_guard<std::mutex> guard(m_foliageDiagnosticsMutex); return m_activeFoliage; }
-    bool Terrain::publishFoliageSnapshot( FoliageSnapshot snapshot, const Transform3<real_Num> &placement,
-                                         const std::function<void()> &commitRenderer, String &error )
+    {
+        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+        return m_activeFoliage;
+    }
+    bool Terrain::publishFoliageSnapshot( FoliageSnapshot snapshot,
+                                          const Transform3<real_Num> &placement,
+                                          const std::function<void()> &commitRenderer, String &error )
     {
         std::lock_guard<std::recursive_mutex> publication( m_foliagePublicationMutex );
         error.clear();
         if( snapshot != std::atomic_load( &m_foliageSnapshot ) )
-        { error = "Foliage publication was superseded by a newer requested snapshot."; return false; }
+        {
+            error = "Foliage publication was superseded by a newer requested snapshot.";
+            return false;
+        }
         FoliagePublicationGate gate;
-        { std::lock_guard<std::mutex> guard(m_foliageDiagnosticsMutex); gate=m_foliagePublicationGate; }
+        {
+            std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+            gate = m_foliagePublicationGate;
+        }
         bool committed = false, stale = false;
-        const auto publish=[&] {
+        const auto publish = [&] {
             // A synchronous gate can reenter the setter while preparing consumers.
             // Never commit a renderer result that no longer matches that request.
-            if( snapshot != std::atomic_load( &m_foliageSnapshot ) ) { stale = true; return; }
-            if( committed ) return;
-            if(commitRenderer) commitRenderer();
-            std::lock_guard<std::mutex> guard(m_foliageDiagnosticsMutex);
-            m_activeFoliage={snapshot,placement}; committed = true;
+            if( snapshot != std::atomic_load( &m_foliageSnapshot ) )
+            {
+                stale = true;
+                return;
+            }
+            if( committed )
+                return;
+            if( commitRenderer )
+                commitRenderer();
+            std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+            m_activeFoliage = { snapshot, placement };
+            committed = true;
         };
         bool accepted = false;
-        try { accepted = gate ? gate(snapshot,placement,publish,error) : (publish(), true); }
-        catch( const std::exception &e ) { error = e.what(); return false; }
-        if( stale ) error = "Foliage publication was superseded while preparing consumers.";
-        else if( accepted && !committed ) error = "Foliage publication gate did not commit the candidate.";
+        try
+        {
+            accepted = gate ? gate( snapshot, placement, publish, error ) : ( publish(), true );
+        }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
+        if( stale )
+            error = "Foliage publication was superseded while preparing consumers.";
+        else if( accepted && !committed )
+            error = "Foliage publication gate did not commit the candidate.";
         return accepted && committed && !stale;
     }
     void Terrain::setFoliageDiagnostics( const FoliageDiagnostics &diagnostics )
-    { std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex ); m_foliageDiagnostics = diagnostics; }
+    {
+        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+        m_foliageDiagnostics = diagnostics;
+    }
     Terrain::FoliageDiagnostics Terrain::getFoliageDiagnostics() const
-    { std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex ); return m_foliageDiagnostics; }
+    {
+        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+        return m_foliageDiagnostics;
+    }
     bool Terrain::setFoliageForcedLod( s32 level, String &error )
     {
-        if( level < -1 || level > 2 ) { error = "Foliage forced LOD must be automatic (-1) or 0..2."; return false; }
-        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex ); m_foliageForcedLod = level; error.clear(); return true;
+        if( level < -1 || level > 2 )
+        {
+            error = "Foliage forced LOD must be automatic (-1) or 0..2.";
+            return false;
+        }
+        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+        m_foliageForcedLod = level;
+        error.clear();
+        return true;
     }
     s32 Terrain::getFoliageForcedLod() const
-    { std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex ); return m_foliageForcedLod; }
+    {
+        std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+        return m_foliageForcedLod;
+    }
     FoliageSnapshot Terrain::getFoliageSnapshot() const
     {
         std::lock_guard<std::recursive_mutex> publication( m_foliagePublicationMutex );
@@ -170,7 +219,8 @@ namespace workphone::render
     {
         std::lock_guard<std::mutex> lock( m_terrainDataMutex );
         if( !deferred && m_deferredTerrainPublication && getActiveTerrainSnapshot() &&
-            ( getTerrainSnapshot() != getActiveTerrainSnapshot() || m_terrainWorldTransform != m_activeTerrainWorldTransform ) )
+            ( getTerrainSnapshot() != getActiveTerrainSnapshot() ||
+              m_terrainWorldTransform != m_activeTerrainWorldTransform ) )
         {
             WP_LOG_WARNING( "Cannot disable terrain publication while a candidate is pending." );
             return;
@@ -209,7 +259,7 @@ namespace workphone::render
     }
 
     bool Terrain::publishPendingTerrain( TerrainSnapshot expected,
-        const std::function<void()> &commitRenderer, String &error )
+                                         const std::function<void()> &commitRenderer, String &error )
     {
         SmartPtr<IMesh> retiredMesh;
         TerrainPublicationGate gate;
@@ -217,18 +267,25 @@ namespace workphone::render
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             gate = m_terrainPublicationGate;
         }
-        const TerrainPublication publish = [&]( const std::function<void()> &commitDependents, String &failure ) {
+        const TerrainPublication publish = [&]( const std::function<void()> &commitDependents,
+                                                String &failure ) {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             if( !expected || getTerrainSnapshot() != expected )
-            { failure = "Terrain render candidate was superseded."; return false; }
-            if( commitDependents ) commitDependents();
-            if( commitRenderer ) commitRenderer();
+            {
+                failure = "Terrain render candidate was superseded.";
+                return false;
+            }
+            if( commitDependents )
+                commitDependents();
+            if( commitRenderer )
+                commitRenderer();
             std::atomic_store( &m_activeTerrainSnapshot, expected );
             m_activeTerrainWorldTransform = m_terrainWorldTransform;
             retiredMesh = m_cpuTerrainMesh;
             m_cpuTerrainMesh = nullptr;
             m_cpuTerrainMeshRevision = 0;
-            failure.clear(); return true;
+            failure.clear();
+            return true;
         };
         return gate ? gate( expected, publish, error ) : publish( {}, error );
     }
@@ -254,8 +311,9 @@ namespace workphone::render
                     current->spacing == candidate->spacing && current->origin == candidate->origin &&
                     current->heightScale == candidate->heightScale &&
                     current->heights == candidate->heights && current->layers == candidate->layers &&
-                    current->layerWeights == candidate->layerWeights && current->holes == candidate->holes &&
-                    current->appearance == candidate->appearance && current->surfaceMasks == candidate->surfaceMasks )
+                    current->layerWeights == candidate->layerWeights &&
+                    current->holes == candidate->holes && current->appearance == candidate->appearance &&
+                    current->surfaceMasks == candidate->surfaceMasks )
                     return true;
                 if( current->revision == std::numeric_limits<u64>::max() )
                 {
@@ -310,12 +368,20 @@ namespace workphone::render
     bool Terrain::requestTerrainSnapshot( TerrainSnapshot snapshot, String &error, u64 expectedRevision )
     {
         if( !snapshot || !validateTerrainData( *snapshot, error ) )
-        { if( !snapshot ) error = "Missing terrain snapshot."; return false; }
+        {
+            if( !snapshot )
+                error = "Missing terrain snapshot.";
+            return false;
+        }
         {
             std::lock_guard<std::mutex> lock( m_terrainDataMutex );
             if( expectedRevision && getTerrainSnapshot()->revision != expectedRevision )
-            { error = "Terrain request was superseded."; return false; }
-            if( !validateTerrainPlacement( *snapshot, m_terrainWorldTransform, error ) ) return false;
+            {
+                error = "Terrain request was superseded.";
+                return false;
+            }
+            if( !validateTerrainPlacement( *snapshot, m_terrainWorldTransform, error ) )
+                return false;
             std::atomic_store( &m_terrainSnapshot, snapshot );
             m_heightMapSize = snapshot->dimensions;
             m_heightScale = snapshot->heightScale;
@@ -326,9 +392,17 @@ namespace workphone::render
                 m_cpuTerrainMeshRevision = 0;
             }
         }
-        try { _onHeightDataChanged(); _onHeightScaleChanged(); }
-        catch( const std::exception &exception ) { WP_LOG_EXCEPTION( exception ); }
-        error.clear(); return true;
+        try
+        {
+            _onHeightDataChanged();
+            _onHeightScaleChanged();
+        }
+        catch( const std::exception &exception )
+        {
+            WP_LOG_EXCEPTION( exception );
+        }
+        error.clear();
+        return true;
     }
 
     void Terrain::load( SmartPtr<ISharedObject> data )
@@ -348,7 +422,10 @@ namespace workphone::render
     void Terrain::unload( SmartPtr<ISharedObject> data )
     {
         std::lock_guard<std::recursive_mutex> publication( m_foliagePublicationMutex );
-        { std::lock_guard<std::mutex> guard(m_foliageDiagnosticsMutex); m_activeFoliage={}; }
+        {
+            std::lock_guard<std::mutex> guard( m_foliageDiagnosticsMutex );
+            m_activeFoliage = {};
+        }
         std::atomic_store( &m_foliageSnapshot, FoliageSnapshot{} );
         setFoliageDiagnostics( FoliageDiagnostics{} );
         try
@@ -486,7 +563,8 @@ namespace workphone::render
                 return;
             }
             m_terrainWorldTransform = worldTransform;
-            if( !m_deferredTerrainPublication ) m_activeTerrainWorldTransform = worldTransform;
+            if( !m_deferredTerrainPublication )
+                m_activeTerrainWorldTransform = worldTransform;
         }
         if( auto context = getStateContext() )
             if( auto state = context->invalidateStateDataById<TransformStateData>( getId() ) )
@@ -520,7 +598,8 @@ namespace workphone::render
             transform = m_activeTerrainWorldTransform;
         }
         f32 height = 0;
-        if( snapshot ) sampleTerrainHeight( *snapshot, transform, position, height );
+        if( snapshot )
+            sampleTerrainHeight( *snapshot, transform, position, height );
         return height;
     }
 
@@ -538,10 +617,12 @@ namespace workphone::render
     {
         std::lock_guard<std::mutex> lock( m_terrainDataMutex );
         const auto snapshot = getActiveTerrainSnapshot();
-        if( !snapshot ) return Vector3<real_Num>::zero();
+        if( !snapshot )
+            return Vector3<real_Num>::zero();
         const auto &transform = m_activeTerrainWorldTransform;
-        const auto local = ( transform.getOrientation().inverse() *
-            ( worldSpace - transform.getPosition() ) ) / transform.getScale();
+        const auto local =
+            ( transform.getOrientation().inverse() * ( worldSpace - transform.getPosition() ) ) /
+            transform.getScale();
         if( !std::isfinite( local.x ) || !std::isfinite( local.y ) || !std::isfinite( local.z ) )
             return Vector3<real_Num>::zero();
         return { std::clamp( ( local.x - snapshot->origin.x ) / snapshot->spacing.x, real_Num( 0 ),
@@ -677,8 +758,8 @@ namespace workphone::render
         if( !slot )
         {
             const u32 blendSize = static_cast<u32>( getLayerBlendMapSize() );
-            slot = workphone::make_ptr<TerrainBlendMapImpl>(
-                SmartPtr<IGraphicsTerrain>( this ), blendSize, index );
+            slot = workphone::make_ptr<TerrainBlendMapImpl>( SmartPtr<IGraphicsTerrain>( this ),
+                                                             blendSize, index );
         }
 
         return slot;
@@ -732,7 +813,8 @@ namespace workphone::render
     SmartPtr<IMesh> Terrain::getMesh() const
     {
         const auto snapshot = getActiveTerrainSnapshot();
-        if( !snapshot ) return nullptr;
+        if( !snapshot )
+            return nullptr;
         // Mesh's existing synchronization is owned by the engine mesh manager.
         // Renderer-free callers can always use buildTerrainMeshData directly.
         auto application = core::IApplicationManager::instancePtr();

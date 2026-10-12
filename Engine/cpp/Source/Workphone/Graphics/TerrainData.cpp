@@ -160,7 +160,8 @@ namespace workphone::render
             !inRange( appearance.wetDarkening, 0, 1 ) || !inRange( appearance.wetRoughness, .045f, 1 ) ||
             !inRange( appearance.snow, 0, 1 ) || !inRange( appearance.snowRoughness, .045f, 1 ) )
             return fail( error, "Terrain appearance settings exceed their finite supported ranges" );
-        if( appearance.detailNormal.size() > 4096 || appearance.detailNormal.find( '\0' ) != String::npos )
+        if( appearance.detailNormal.size() > 4096 ||
+            appearance.detailNormal.find( '\0' ) != String::npos )
             return fail( error, "Terrain detail normal identifier is invalid" );
         for( size_t channel = 0; channel < 4; ++channel )
             if( !inRange( appearance.macroTint[channel], 0, 1 ) ||
@@ -171,17 +172,20 @@ namespace workphone::render
         for( const auto &mask : data.surfaceMasks )
             if( !inRange( mask.x, 0, 1 ) || !inRange( mask.y, 0, 1 ) )
                 return fail( error, "Terrain wetness/snow masks must be finite in [0,1]" );
-        f64 maximumCoordinate = std::max( { std::abs( f64( data.origin.x ) ),
-            std::abs( f64( data.origin.y ) ),
-            std::abs( f64( data.origin.x ) + ( data.dimensions.x - 1 ) * f64( data.spacing.x ) ),
-            std::abs( f64( data.origin.y ) + ( data.dimensions.y - 1 ) * f64( data.spacing.y ) ) } );
-        if( appearance.macroStrength > 0 && maximumCoordinate * appearance.macroScale > std::numeric_limits<f32>::max() )
+        f64 maximumCoordinate = std::max(
+            { std::abs( f64( data.origin.x ) ), std::abs( f64( data.origin.y ) ),
+              std::abs( f64( data.origin.x ) + ( data.dimensions.x - 1 ) * f64( data.spacing.x ) ),
+              std::abs( f64( data.origin.y ) + ( data.dimensions.y - 1 ) * f64( data.spacing.y ) ) } );
+        if( appearance.macroStrength > 0 &&
+            maximumCoordinate * appearance.macroScale > std::numeric_limits<f32>::max() )
             return fail( error, "Terrain macro coordinates exceed the shader range" );
         if( appearance.projection == TerrainProjection::Triplanar )
             for( const auto value : data.heights )
-                maximumCoordinate = std::max( maximumCoordinate, std::abs( f64( value ) * data.heightScale ) );
-        if( !appearance.detailNormal.empty() && maximumCoordinate *
-            std::max( appearance.detailUvScale.x, appearance.detailUvScale.y ) > std::numeric_limits<f32>::max() )
+                maximumCoordinate =
+                    std::max( maximumCoordinate, std::abs( f64( value ) * data.heightScale ) );
+        if( !appearance.detailNormal.empty() &&
+            maximumCoordinate * std::max( appearance.detailUvScale.x, appearance.detailUvScale.y ) >
+                std::numeric_limits<f32>::max() )
             return fail( error, "Terrain detail coordinates exceed the shader range" );
         if( !data.layerWeights.empty() && data.layerWeights.size() != data.heights.size() )
             return fail( error, "Terrain control weights must match sample dimensions" );
@@ -220,8 +224,9 @@ namespace workphone::render
             for( size_t i = 0; i < 4; ++i )
                 if( !std::isfinite( layer.tint[i] ) || layer.tint[i] < 0 || layer.tint[i] > 1 )
                     return fail( error, "Terrain tint must be finite and between zero and one" );
-            if( appearance.projection == TerrainProjection::Triplanar && maximumCoordinate *
-                std::max( layer.uvScale.x, layer.uvScale.y ) > std::numeric_limits<f32>::max() )
+            if( appearance.projection == TerrainProjection::Triplanar &&
+                maximumCoordinate * std::max( layer.uvScale.x, layer.uvScale.y ) >
+                    std::numeric_limits<f32>::max() )
                 return fail( error, "Terrain triplanar coordinates exceed the shader range" );
             // The material shader multiplies local-metre f32 positions by the
             // layer tiling. Finite inputs alone do not ensure finite UVs.
@@ -232,8 +237,8 @@ namespace workphone::render
                 const auto size = axis ? data.dimensions.y : data.dimensions.x;
                 const auto endpoint = f32( f64( origin ) + f64( size - 1 ) * spacing );
                 const auto scale = axis ? layer.uvScale.y : layer.uvScale.x;
-                const auto magnitude = std::max( std::abs( f64( origin ) ),
-                                                 std::abs( f64( endpoint ) ) );
+                const auto magnitude =
+                    std::max( std::abs( f64( origin ) ), std::abs( f64( endpoint ) ) );
                 if( magnitude * scale > std::numeric_limits<f32>::max() )
                     return fail( error, "Terrain layer tiling overflows renderer UV coordinates" );
             }
@@ -549,32 +554,44 @@ namespace workphone::render
         Array<f32> masks;
         masks.reserve( data->surfaceMasks.size() * 2 );
         for( const auto &mask : data->surfaceMasks )
-        { masks.push_back( mask.x ); masks.push_back( mask.y ); }
-        if( !addArray( "surfaceMasks", masks.data(), static_cast<int>( masks.size() ) ) ) return {};
+        {
+            masks.push_back( mask.x );
+            masks.push_back( mask.y );
+        }
+        if( !addArray( "surfaceMasks", masks.data(), static_cast<int>( masks.size() ) ) )
+            return {};
         auto appearance = cJSON_AddObjectToObject( root.get(), "appearance" );
         const auto &a = data->appearance;
         if( !appearance || !cJSON_AddNumberToObject( appearance, "projection", u32( a.projection ) ) ||
             !cJSON_AddBoolToObject( appearance, "heightBlend", a.heightBlend ) ||
             !cJSON_AddStringToObject( appearance, "detailNormal", a.detailNormal.c_str() ) ||
-            !cJSON_AddNumberToObject( appearance, "macroSeed", a.macroSeed ) ) return {};
-        for( const auto &entry : { std::make_pair( "triplanarSharpness", a.triplanarSharpness ),
-                 std::make_pair( "heightTransition", a.heightTransition ),
-                 std::make_pair( "detailStrength", a.detailStrength ),
-                 std::make_pair( "macroScale", a.macroScale ), std::make_pair( "macroStrength", a.macroStrength ),
-                 std::make_pair( "wetness", a.wetness ), std::make_pair( "wetDarkening", a.wetDarkening ),
-                 std::make_pair( "wetRoughness", a.wetRoughness ), std::make_pair( "snow", a.snow ),
-                 std::make_pair( "snowRoughness", a.snowRoughness ) } )
-            if( !cJSON_AddNumberToObject( appearance, entry.first, entry.second ) ) return {};
+            !cJSON_AddNumberToObject( appearance, "macroSeed", a.macroSeed ) )
+            return {};
+        for( const auto &entry :
+             { std::make_pair( "triplanarSharpness", a.triplanarSharpness ),
+               std::make_pair( "heightTransition", a.heightTransition ),
+               std::make_pair( "detailStrength", a.detailStrength ),
+               std::make_pair( "macroScale", a.macroScale ),
+               std::make_pair( "macroStrength", a.macroStrength ),
+               std::make_pair( "wetness", a.wetness ), std::make_pair( "wetDarkening", a.wetDarkening ),
+               std::make_pair( "wetRoughness", a.wetRoughness ), std::make_pair( "snow", a.snow ),
+               std::make_pair( "snowRoughness", a.snowRoughness ) } )
+            if( !cJSON_AddNumberToObject( appearance, entry.first, entry.second ) )
+                return {};
         const auto addAppearanceArray = [&]( const char *name, const f32 *values, int count ) {
             Json array( cJSON_CreateFloatArray( values, count ), cJSON_Delete );
-            if( !array || !cJSON_AddItemToObject( appearance, name, array.get() ) ) return false;
-            array.release(); return true;
+            if( !array || !cJSON_AddItemToObject( appearance, name, array.get() ) )
+                return false;
+            array.release();
+            return true;
         };
         const f32 detailUv[] = { a.detailUvScale.x, a.detailUvScale.y };
         const f32 macroTint[] = { a.macroTint.x, a.macroTint.y, a.macroTint.z, a.macroTint.w };
         const f32 snowTint[] = { a.snowTint.x, a.snowTint.y, a.snowTint.z, a.snowTint.w };
         if( !addAppearanceArray( "detailUvScale", detailUv, 2 ) ||
-            !addAppearanceArray( "macroTint", macroTint, 4 ) || !addAppearanceArray( "snowTint", snowTint, 4 ) ) return {};
+            !addAppearanceArray( "macroTint", macroTint, 4 ) ||
+            !addAppearanceArray( "snowTint", snowTint, 4 ) )
+            return {};
         auto layers = cJSON_AddArrayToObject( root.get(), "layers" );
         if( !layers )
             return {};
@@ -607,7 +624,8 @@ namespace workphone::render
         }
         std::unique_ptr<char, decltype( &cJSON_free )> json( cJSON_PrintUnformatted( root.get() ),
                                                              cJSON_free );
-        if( !json ) return {};
+        if( !json )
+            return {};
         const auto length = std::char_traits<char>::length( json.get() );
         // Every emitted source asset must satisfy the bounded reader contract.
         // Large painted worlds are persisted as tiles rather than unloadable JSON.
@@ -651,7 +669,8 @@ namespace workphone::render
             const auto heights = field( "heights" );
             if( !cJSON_IsString( format ) || String( format->valuestring ) != "workphone.terrain" ||
                 !number( version ) ||
-                ( version->valuedouble != 1 && version->valuedouble != 2 && version->valuedouble != terrainDataFormatVersion ) ||
+                ( version->valuedouble != 1 && version->valuedouble != 2 &&
+                  version->valuedouble != terrainDataFormatVersion ) ||
                 !number( width ) || !number( depth ) || width->valuedouble < 2 ||
                 depth->valuedouble < 2 || width->valuedouble > render::terrainMaximumDimension ||
                 depth->valuedouble > render::terrainMaximumDimension ||
@@ -756,7 +775,9 @@ namespace workphone::render
                                                   std::make_pair( "heightBias", &layer.heightBias ) } )
                         {
                             auto value = get( slot.first );
-                            if( !number( value ) ) return fail( error, "Terrain layer height blend parameters are invalid" );
+                            if( !number( value ) )
+                                return fail( error,
+                                             "Terrain layer height blend parameters are invalid" );
                             *slot.second = f32( value->valuedouble );
                         }
                     const auto uv = get( "uvScale" ), tint = get( "tint" );
@@ -783,13 +804,17 @@ namespace workphone::render
             {
                 const auto appearance = field( "appearance" ), masks = field( "surfaceMasks" );
                 if( !cJSON_IsObject( appearance ) || !cJSON_IsArray( masks ) ||
-                    ( cJSON_GetArraySize( masks ) != 0 && size_t( cJSON_GetArraySize( masks ) ) != count * 2 ) )
+                    ( cJSON_GetArraySize( masks ) != 0 &&
+                      size_t( cJSON_GetArraySize( masks ) ) != count * 2 ) )
                     return fail( error, "Terrain v3 requires appearance and matching surface masks" );
                 auto &a = data.appearance;
-                const auto get = [&]( const char *name ) { return cJSON_GetObjectItemCaseSensitive( appearance, name ); };
+                const auto get = [&]( const char *name ) {
+                    return cJSON_GetObjectItemCaseSensitive( appearance, name );
+                };
                 const auto projection = get( "projection" ), heightBlend = get( "heightBlend" ),
                            seed = get( "macroSeed" ), detail = get( "detailNormal" );
-                if( !number( projection ) || ( projection->valuedouble != 0 && projection->valuedouble != 1 ) ||
+                if( !number( projection ) ||
+                    ( projection->valuedouble != 0 && projection->valuedouble != 1 ) ||
                     !cJSON_IsBool( heightBlend ) || !number( seed ) || seed->valuedouble < 0 ||
                     seed->valuedouble > std::numeric_limits<u32>::max() ||
                     std::floor( seed->valuedouble ) != seed->valuedouble || !cJSON_IsString( detail ) )
@@ -799,37 +824,50 @@ namespace workphone::render
                 a.macroSeed = u32( seed->valuedouble );
                 a.detailNormal = detail->valuestring;
                 for( const auto &entry : { std::make_pair( "triplanarSharpness", &a.triplanarSharpness ),
-                     std::make_pair( "heightTransition", &a.heightTransition ),
-                     std::make_pair( "detailStrength", &a.detailStrength ), std::make_pair( "macroScale", &a.macroScale ),
-                     std::make_pair( "macroStrength", &a.macroStrength ), std::make_pair( "wetness", &a.wetness ),
-                     std::make_pair( "wetDarkening", &a.wetDarkening ), std::make_pair( "wetRoughness", &a.wetRoughness ),
-                     std::make_pair( "snow", &a.snow ), std::make_pair( "snowRoughness", &a.snowRoughness ) } )
+                                           std::make_pair( "heightTransition", &a.heightTransition ),
+                                           std::make_pair( "detailStrength", &a.detailStrength ),
+                                           std::make_pair( "macroScale", &a.macroScale ),
+                                           std::make_pair( "macroStrength", &a.macroStrength ),
+                                           std::make_pair( "wetness", &a.wetness ),
+                                           std::make_pair( "wetDarkening", &a.wetDarkening ),
+                                           std::make_pair( "wetRoughness", &a.wetRoughness ),
+                                           std::make_pair( "snow", &a.snow ),
+                                           std::make_pair( "snowRoughness", &a.snowRoughness ) } )
                 {
                     const auto value = get( entry.first );
-                    if( !number( value ) ) return fail( error, "Terrain appearance scalar is invalid" );
+                    if( !number( value ) )
+                        return fail( error, "Terrain appearance scalar is invalid" );
                     *entry.second = f32( value->valuedouble );
                 }
                 const auto readVector = [&]( const char *name, auto &vector, int size ) {
                     const auto array = get( name );
-                    if( !cJSON_IsArray( array ) || cJSON_GetArraySize( array ) != size ) return false;
+                    if( !cJSON_IsArray( array ) || cJSON_GetArraySize( array ) != size )
+                        return false;
                     for( int i = 0; i < size; ++i )
                     {
                         const auto value = cJSON_GetArrayItem( array, i );
-                        if( !number( value ) ) return false;
+                        if( !number( value ) )
+                            return false;
                         vector[i] = f32( value->valuedouble );
                     }
                     return true;
                 };
                 if( !readVector( "detailUvScale", a.detailUvScale, 2 ) ||
-                    !readVector( "macroTint", a.macroTint, 4 ) || !readVector( "snowTint", a.snowTint, 4 ) )
+                    !readVector( "macroTint", a.macroTint, 4 ) ||
+                    !readVector( "snowTint", a.snowTint, 4 ) )
                     return fail( error, "Terrain appearance vector is invalid" );
                 Vector2F mask;
                 size_t channel = 0;
                 for( auto value = masks->child; value; value = value->next )
                 {
-                    if( !number( value ) ) return fail( error, "Terrain surface mask is invalid" );
+                    if( !number( value ) )
+                        return fail( error, "Terrain surface mask is invalid" );
                     mask[channel++] = f32( value->valuedouble );
-                    if( channel == 2 ) { data.surfaceMasks.push_back( mask ); channel = 0; }
+                    if( channel == 2 )
+                    {
+                        data.surfaceMasks.push_back( mask );
+                        channel = 0;
+                    }
                 }
             }
             if( !validateTerrainData( data, error ) )

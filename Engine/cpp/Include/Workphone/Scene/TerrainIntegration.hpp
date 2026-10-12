@@ -16,14 +16,14 @@ namespace workphone::scene
         Vector2F localPosition = Vector2F( 0, 0 );
         f32 heightOffset = 0, yaw = 0;  // terrain-local metres/radians
         Vector3F scale = Vector3F( 1, 1, 1 );
-        u32 allowedLayers = 15;  // low four bits; combined interpolated layer weight
+        u32 allowedLayers = 15;      // low four bits; combined interpolated layer weight
         f32 minimumLayerWeight = 0;  // zero disables weight filtering
     };
 
     struct TerrainGroundMasks
     {
         Vector2I dimensions = Vector2I( 0, 0 );
-        Array<f32> density;  // optional per-sample [0,1], stable seed-ID acceptance
+        Array<f32> density;    // optional per-sample [0,1], stable seed-ID acceptance
         Array<u8> exclusions;  // optional per-cell 0/1; one excludes the entire cell
     };
 
@@ -146,6 +146,7 @@ namespace workphone::scene
         TerrainIntegrationSnapshot getSnapshot() const;
         String getLastError() const;
         WP_CLASS_REGISTER_DECL;
+
     private:
         class Listener;
         struct State;
@@ -156,7 +157,8 @@ namespace workphone::scene
 
     // Concrete component publication bridge. Called only after every publication lock.
     WPCore_API void notifyTerrainIntegration( TerrainSystem *owner, render::TerrainSnapshot source,
-        const Transform3<real_Num> &placement, u64 serial, bool detached = false ) noexcept;
+                                              const Transform3<real_Num> &placement, u64 serial,
+                                              bool detached = false ) noexcept;
     WPCore_API bool terrainIntegrationIsNotifying( const TerrainSystem *owner );
 
     WPCore_API bool exportTerrainNavigationFile( SmartPtr<TerrainSystem> terrain, const String &path,

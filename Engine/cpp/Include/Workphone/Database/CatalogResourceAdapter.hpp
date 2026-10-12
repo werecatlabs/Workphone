@@ -1,12 +1,15 @@
-#ifndef __WP_CatalogResourceAdapter_h__
-#define __WP_CatalogResourceAdapter_h__
+#ifndef WPCatalogResourceAdapter_h__
+#define WPCatalogResourceAdapter_h__
 
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
 
 namespace workphone
 {
-
+    namespace resource
+    {
+        struct RuntimeResourceBinding;
+    }
     /**
      * Connects durable catalog identity to the existing resource compilation service.
      * Calls reject stale requests before and after work. They do not lock catalog
@@ -43,6 +46,19 @@ namespace workphone
 
         bool resolve( const String &uuid, Request &request, String &error ) const;
         bool isCurrent( const Request &request, String &error ) const;
+        /** Capture an explicitly validated durable UUID mapping for manifest/package
+         * export. This is detached evidence, not a catalog mutation lock; package
+         * callers own catalog-session admission throughout collection and export.
+         */
+        bool runtimeBinding( const Request &request, resource::RuntimeResourceBinding &binding,
+                             String &error ) const;
+        /** Export a project-only package with a catalog UUID and shipping policy
+         * check for every pinned install member. Holds catalog/SQLite mutation
+         * admission through publication. Requires a writable project catalog and
+         * the concrete ResourceSystem; unsupported subassets/media fail explicitly.
+         */
+        bool writeRuntimePackage( const String &directory, const Array<Request> &roots,
+                                  String &error ) const;
         resource::CompilationReport compile( const Request &request,
                                              const resource::CompilationOptions &options = {} ) const;
         std::shared_ptr<const resource::RuntimeResource> load( const Request &request,
@@ -57,7 +73,6 @@ namespace workphone
         String m_sourceRoot;
         Array<TypeMapping> m_mappings;
     };
-
 }  // namespace workphone
 
 #endif  // WPCatalogResourceAdapter_h__

@@ -1,6 +1,5 @@
 #ifndef WP_ASSET_REFERENCE_CHANGE_HPP
 #define WP_ASSET_REFERENCE_CHANGE_HPP
-
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Memory/ObjectObserver.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
@@ -16,7 +15,6 @@
 
 namespace workphone
 {
-
     /** Owner-thread edit of an existing string/UUID reference property. The
      * caller supplies the currently active catalog on every operation. */
     class AssetReferenceChange
@@ -29,91 +27,57 @@ namespace workphone
         {
             auto types = TypeManager::instance();
             if( !types )
-            {
                 return 0;
-            }
             if( name == "Material" )
-            {
                 return render::IMaterial::typeInfo();
-            }
             if( name == "Texture" )
-            {
                 return render::ITexture::typeInfo();
-            }
             if( name == "Actor" )
-            {
                 return scene::IGameActor::typeInfo();
-            }
             if( name == "script" || name == "Script" )
-            {
                 return ScriptAsset::typeInfo();
-            }
             if( name == "Font" )
-            {
                 return render::IFont::typeInfo();
-            }
             if( name == "Mesh" )
-            {
                 return IMeshResource::typeInfo();
-            }
             if( name == "Sound" )
-            {
                 return ISound::typeInfo();
-            }
             const auto actual = types->getIdFromName( name );
             if( !actual )
-            {
                 return 0;
-            }
             for( auto family :
                  { render::IMaterial::typeInfo(), render::ITexture::typeInfo(),
                    scene::IGameActor::typeInfo(), ScriptAsset::typeInfo(), render::IFont::typeInfo(),
                    IMeshResource::typeInfo(), ISound::typeInfo() } )
-            {
                 if( types->isDerived( actual, family ) )
-                {
                     return family;
-                }
-            }
             return actual;
         }
-
         static bool typeMatches( const String &storedType, hash_type requested )
         {
             auto types = TypeManager::instance();
             if( !types || requested == 0 || requested >= types->getTotalNumTypes() )
-            {
                 return false;
-            }
             const auto actual = referenceType( storedType );
             return actual != 0 && types->isDerived( actual, requested );
         }
-
         bool prepare( SmartPtr<AssetDatabaseManager> catalog,
                       const AssetDatabaseManager::EntrySnapshot &entry, SmartPtr<ISharedObject> target,
                       const String &property, hash_type expectedType )
         {
             if( m_prepared )
-            {
                 return fail( "Reference edit has already been prepared." );
-            }
             if( !catalog || !target || !typeMatches( entry.type, expectedType ) ||
                 !catalog->isEntryCurrent( entry ) )
-            {
                 return fail( "Reference type or catalog generation no longer matches." );
-            }
             auto properties = target->getProperties();
             if( !properties || !properties->hasProperty( property ) ||
                 properties->getPropertyObject( property ).isReadOnly() )
-            {
                 return fail( "Reference property is missing or read-only." );
-            }
             m_declaredType = properties->getPropertyObject( property ).getAttribute( "resourceType" );
             auto types = TypeManager::instance();
             if( !m_declaredType.empty() && !typeMatches( entry.type, referenceType( m_declaredType ) ) )
-            {
                 return fail( "Asset type does not match the property's declared reference type." );
-            }
             m_catalog = catalog;
             m_target = target;
             m_entry = entry;
@@ -123,71 +87,50 @@ namespace workphone
             m_error.clear();
             return true;
         }
-
         bool apply( SmartPtr<AssetDatabaseManager> catalog )
         {
             if( !canApply( catalog ) )
-            {
                 return false;
-            }
             if( !write( m_before, m_entry.uuid ) )
-            {
                 return false;
-            }
             m_applied = true;
             m_executed = true;
             return true;
         }
-
         bool canApply( SmartPtr<AssetDatabaseManager> catalog )
         {
             if( !m_prepared || m_applied )
-            {
                 return fail( "Reference edit is not ready to apply." );
-            }
             if( !sessionCurrent( catalog ) )
-            {
                 return false;
-            }
             AssetDatabaseManager::EntrySnapshot current;
             if( !catalog->tryGetEntry( m_entry.uuid, current ) || current.path != m_entry.path ||
                 current.type != m_entry.type || current.kind != m_entry.kind ||
                 ( !m_executed && current.generation != m_entry.generation ) )
-            {
                 return fail( "Referenced asset changed; choose it again." );
-            }
             return propertyCurrent( m_before );
         }
-
         bool undo( SmartPtr<AssetDatabaseManager> catalog )
         {
             if( !canUndo( catalog ) || !write( m_entry.uuid, m_before ) )
-            {
                 return false;
-            }
             m_applied = false;
             return true;
         }
-
         bool canUndo( SmartPtr<AssetDatabaseManager> catalog )
         {
             if( !m_applied )
-            {
                 return fail( "Reference edit is not applied." );
-            }
             return sessionCurrent( catalog ) && propertyCurrent( m_entry.uuid );
         }
-
         bool applied() const
         {
             return m_applied;
         }
-
         const String &error() const
         {
             return m_error;
         }
-
         SmartPtr<ISharedObject> target() const
         {
             return m_target.lock();
@@ -199,23 +142,17 @@ namespace workphone
             m_error = error;
             return false;
         }
-
         bool sessionCurrent( SmartPtr<AssetDatabaseManager> active )
         {
             if( !active || active != m_catalog.lock() )
-            {
                 return fail( "Active project catalog changed." );
-            }
             AssetDatabaseManager::EntryQuery query;
             query.pageSize = 1;
             auto page = active->queryEntries( query );
             if( !page.succeeded || page.next.catalogInstance != m_entry.catalogInstance )
-            {
                 return fail( "Project catalog closed or reopened; the reference edit has expired." );
-            }
             return true;
         }
-
         bool propertyCurrent( const String &expected )
         {
             auto object = m_target.lock();
@@ -230,24 +167,17 @@ namespace workphone
             if( !properties || !properties->hasProperty( m_property ) ||
                 properties->getPropertyObject( m_property ).isReadOnly() ||
                 properties->getProperty( m_property ) != expected || !sameType )
-            {
                 return fail( "Reference property was removed, locked or independently changed." );
-            }
             m_error.clear();
             return true;
         }
-
         bool write( const String &expected, const String &value )
         {
             if( !propertyCurrent( expected ) )
-            {
                 return false;
-            }
             auto object = m_target.lock();
             if( !object )
-            {
                 return fail( "Reference target was destroyed." );
-            }
             auto properties = object->getProperties();
             auto replacement = make_ptr<Properties>( *properties );
             replacement->getPropertyObject( m_property ).setValue( value );
@@ -275,7 +205,6 @@ namespace workphone
             m_error.clear();
             return true;
         }
-
         ObjectObserver<AssetDatabaseManager> m_catalog;
         ObjectObserver<ISharedObject> m_target;
         AssetDatabaseManager::EntrySnapshot m_entry;

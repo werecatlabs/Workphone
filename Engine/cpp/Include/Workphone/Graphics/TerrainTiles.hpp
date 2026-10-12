@@ -66,7 +66,7 @@ namespace workphone::render
     struct TerrainStreamStats
     {
         u64 generation = 0, completed = 0, cancelled = 0;
-        u64 readyBytes = 0; // Conservative queued result reservations, not measured allocator usage.
+        u64 readyBytes = 0;  // Conservative queued result reservations, not measured allocator usage.
         u32 pending = 0, active = 0, ready = 0;
     };
 

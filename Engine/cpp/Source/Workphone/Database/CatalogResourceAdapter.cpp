@@ -1,6 +1,8 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Database/CatalogResourceAdapter.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/System/ResourceSystem.hpp>
+#include "AssetPackagePolicyInternal.hpp"
 
 #include <filesystem>
 #include <set>
@@ -148,6 +150,116 @@ namespace workphone
     {
         error.clear();
         return validateRequest( request, error );
+    }
+
+    bool CatalogResourceAdapter::runtimeBinding( const Request &request,
+                                                 resource::RuntimeResourceBinding &binding,
+                                                 String &error ) const
+    {
+        binding = resource::RuntimeResourceBinding();
+        error.clear();
+        if( !validateRequest( request, error ) )
+            return false;
+        binding.uuid = request.entry.uuid;
+        binding.resourceId = request.resourceId;
+        return true;
+    }
+
+    bool CatalogResourceAdapter::writeRuntimePackage( const String &directory,
+                                                      const Array<Request> &roots, String &error ) const
+    {
+        error.clear();
+        const auto resources = std::dynamic_pointer_cast<resource::ResourceSystem>( m_resources );
+        if( !resources || roots.empty() || roots.size() > 65536 )
+        {
+            error =
+                "Catalog package export requires a concrete ResourceSystem and bounded explicit roots";
+            return false;
+        }
+        Array<resource::ResourceID> ids;
+        for( const auto &root : roots )
+        {
+            if( !root.resourceId.isValid() )
+            {
+                error = "Invalid catalog package root";
+                return false;
+            }
+            ids.push_back( root.resourceId );
+        }
+        return resources->writeRuntimePackageChecked(
+            directory, ids,
+            [&]( const resource::RuntimePackageContext &context,
+                 resource::RuntimePackageAdmission &result, String &diagnostic ) {
+                auto admission =
+                    std::make_shared<asset_package_detail::Admission>( m_catalog, diagnostic );
+                if( !admission->active )
+                    return false;
+                // Source binding is checked against the actual resource service,
+                // rather than relying on the adapter caller's sourceRoot promise.
+                std::error_code ec;
+                if( !validateBinding( diagnostic ) ||
+                    !std::filesystem::equivalent( std::filesystem::u8path( context.sourceRoot.c_str() ),
+                                                  std::filesystem::u8path( m_sourceRoot.c_str() ),
+                                                  ec ) ||
+                    ec )
+                {
+                    diagnostic = "Package resource source root does not match the admitted catalog";
+                    return false;
+                }
+                for( const auto &root : roots )
+                    if( !validateRequest( root, diagnostic ) )
+                        return false;
+                for( const auto &id : context.resources )
+                {
+                    if( id.isSubResource() )
+                    {
+                        diagnostic = "Package subresource has no durable catalog mapping: " + id.str();
+                        return false;
+                    }
+                    AssetCatalogPath path;
+                    if( !canonicalAssetCatalogPath( m_sourceRoot, id.sourceRelativePath(), path,
+                                                    diagnostic ) )
+                        return false;
+                    auto row = asset_package_detail::query(
+                        m_catalog, "SELECT uuid FROM resources WHERE kind='file' AND path_key=? LIMIT 2",
+                        { path.key } );
+                    if( !row || row->eof() )
+                    {
+                        diagnostic = "Package dependency is not a cataloged project file: " + id.str();
+                        return false;
+                    }
+                    const auto uuid = row->getFieldValue( "uuid" );
+                    row->nextRow();
+                    if( !row->eof() )
+                    {
+                        diagnostic = "Ambiguous catalog package path: " + id.str();
+                        return false;
+                    }
+                    Request request;
+                    if( !resolve( uuid, request, diagnostic ) || request.resourceId != id )
+                    {
+                        diagnostic = "Package dependency identity/type mapping failed for " + id.str() +
+                                     ": " + diagnostic;
+                        return false;
+                    }
+                    AssetPackagePolicy policy;
+                    if( !getAssetPackagePolicy( m_catalog, uuid, policy, diagnostic ) )
+                        return false;
+                    if( policy.usage != AssetPackageUsage::Runtime )
+                    {
+                        diagnostic =
+                            "Package dependency is " +
+                            String( policy.usage == AssetPackageUsage::EditorOnly ? "Editor-only"
+                                                                                  : "excluded" ) +
+                            ": " + id.str() + " (" + uuid + ")";
+                        return false;
+                    }
+                    result.bindings.push_back( { uuid, id } );
+                }
+                result.lifetime = std::move( admission );
+                return true;
+            },
+            error );
     }
 
     resource::CompilationReport CatalogResourceAdapter::compile(

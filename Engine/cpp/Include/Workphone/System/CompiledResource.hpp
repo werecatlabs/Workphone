@@ -16,7 +16,8 @@ namespace workphone::resource
 
         bool operator==( const InstallDependencyArtifact &other ) const
         {
-            return path == other.path && sourceHash == other.sourceHash && payloadHash == other.payloadHash;
+            return path == other.path && sourceHash == other.sourceHash &&
+                   payloadHash == other.payloadHash;
         }
     };
 

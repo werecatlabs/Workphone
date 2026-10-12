@@ -57,7 +57,8 @@ namespace workphone
             u64 getTerrainRevision() const;
             const String &getTerrainError() const;
             Transform3<real_Num> getPublishedTerrainTransform() const;
-            bool isTerrainPrepared( render::TerrainSnapshot snapshot, const Transform3<real_Num> &placement ) const;
+            bool isTerrainPrepared( render::TerrainSnapshot snapshot,
+                                    const Transform3<real_Num> &placement ) const;
 
             /** @copydoc Collision::handleComponentEvent */
             FSMReturnType handleComponentEvent( u32 state, FSMEvent eventType ) override;

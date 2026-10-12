@@ -71,7 +71,6 @@ namespace workphone
         return m_indexData;
     }
 
-
     auto IndexBuffer::getIndexData() const -> void *
     {
         return m_indexData;

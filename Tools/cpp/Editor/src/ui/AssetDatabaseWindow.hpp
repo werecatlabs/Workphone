@@ -8,7 +8,7 @@
 
 namespace workphone::editor
 {
-    /** Read-only browser of the active project's authored asset catalog. */
+    /** Bounded catalog inspection and guarded project asset controls. */
     class AssetDatabaseWindow : public EditorWindow
     {
     public:
@@ -58,6 +58,7 @@ namespace workphone::editor
         SmartPtr<ui::IUIButton> m_restore;
         SmartPtr<ui::IUIButton> m_reindex;
         SmartPtr<ui::IUIButton> m_scanDocuments, m_reindexDocuments;
+        SmartPtr<ui::IUIButton> m_shipRuntime, m_shipEditorOnly, m_shipExcluded;
         AssetDocumentInventory m_documentInventory;
         bool m_showDocuments = false, m_documentCanApply = false;
         size_t m_documentPage = 0;

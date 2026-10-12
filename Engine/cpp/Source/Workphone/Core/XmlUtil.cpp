@@ -486,7 +486,8 @@ namespace workphone
             {
                 const auto name = entry->Attribute( "Name" );
                 const auto value = entry->Attribute( "Value" );
-                if( name && value ) property.setAttribute( name, value );
+                if( name && value )
+                    property.setAttribute( name, value );
             }
             propertyNode = propertyNode->NextSiblingElement( PROPERTY_ELEMENT.c_str() );
         }

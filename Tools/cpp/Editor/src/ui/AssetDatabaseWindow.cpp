@@ -3,6 +3,7 @@
 #include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Database/AssetReferenceGraph.hpp>
 #include <Workphone/Database/AssetDocumentSave.hpp>
+#include <Workphone/Database/AssetPackagePolicy.hpp>
 #include <Workphone/Workphone.hpp>
 
 namespace workphone::editor
@@ -57,6 +58,10 @@ namespace workphone::editor
         m_restore->setEnabled( false );
         m_reindex = button( "Reindex selected document references##CatalogReindex" );
         m_reindex->setEnabled( false );
+        m_shipRuntime = button( "Allow in runtime packages##CatalogShipRuntime" );
+        m_shipEditorOnly = button( "Editor only##CatalogShipEditorOnly" );
+        m_shipExcluded = button( "Exclude from packages##CatalogShipExcluded" );
+        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} ) control->setEnabled(false);
         m_scanDocuments = button( "Scan project document references##CatalogDocumentScan" );
         m_reindexDocuments = button( "Reindex verified project documents##CatalogDocumentBatch" );
         m_reindexDocuments->setEnabled( false );
@@ -86,7 +91,8 @@ namespace workphone::editor
             listener->unload( nullptr );
             Array<SmartPtr<ui::IUIElement>> controls = {
                 m_tree,   m_search,  m_type,    m_refresh, m_previous,      m_next,
-                m_source, m_history, m_restore, m_reindex, m_scanDocuments, m_reindexDocuments
+                m_source, m_history, m_restore, m_reindex, m_scanDocuments, m_reindexDocuments,
+                m_shipRuntime, m_shipEditorOnly, m_shipExcluded
             };
             for( auto &control : controls )
                 if( control )
@@ -115,6 +121,9 @@ namespace workphone::editor
         m_history = nullptr;
         m_restore = nullptr;
         m_reindex = nullptr;
+        m_shipRuntime = nullptr;
+        m_shipEditorOnly = nullptr;
+        m_shipExcluded = nullptr;
         m_operations = {};
         m_operationCursors.clear();
         m_operationAfter.clear();
@@ -204,6 +213,8 @@ namespace workphone::editor
 
     void AssetDatabaseWindow::populate()
     {
+        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+            if( control ) control->setEnabled(false);
         if(m_showOperations && !m_showMedia){populateOperations();return;}
         if( !m_tree || !m_status || !m_details )
             return;
@@ -247,6 +258,8 @@ namespace workphone::editor
 
     void AssetDatabaseWindow::populateOperations()
     {
+        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+            if( control ) control->setEnabled(false);
         if(!m_tree || !m_status || !m_details) return;
         m_tree->clear();m_selectedOperation=static_cast<size_t>(-1);m_restore->setEnabled(false);
         m_details->setText("Select a journal record. Delete undo restores quarantined bytes; move/copy undo reverses that operation. Conflicting files are preserved.");
@@ -264,6 +277,8 @@ namespace workphone::editor
 
     void AssetDatabaseWindow::populateDocuments()
     {
+        for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+            if( control ) control->setEnabled(false);
         if( !m_tree || !m_details || !m_status )
             return;
         m_reindex->setEnabled( false );
@@ -372,6 +387,24 @@ namespace workphone::editor
                 m_source->setLabel( m_showMedia ? "Show project assets##CatalogSource"
                                                 : "Show bundled media##CatalogSource" );
                 refresh();
+            }
+            else if( sender == m_shipRuntime || sender == m_shipEditorOnly || sender == m_shipExcluded )
+            {
+                auto node = m_tree->getSelectedTreeNode();
+                const auto id = node ? node->getId() : 0;
+                auto catalog = getAssetDatabaseManager();
+                AssetDatabaseManager::EntrySnapshot entry;
+                String error;
+                const auto usage = sender == m_shipRuntime ? AssetPackageUsage::Runtime :
+                    sender == m_shipEditorOnly ? AssetPackageUsage::EditorOnly : AssetPackageUsage::Excluded;
+                if( m_showMedia || m_showOperations || m_showDocuments || !id ||
+                    !m_browser.select(id-1,catalog,entry) || !setAssetPackagePolicy(catalog,entry,usage,error) )
+                    m_details->setText(error.empty() ? "Refresh and select a current project file before changing shipping policy." : error);
+                else
+                {
+                    refresh();
+                    m_details->setText("Shipping policy saved. Select the asset again to inspect it. Catalog-backed package exports enforce this policy.");
+                }
             }
             else if( sender == m_reindex )
             {
@@ -531,6 +564,16 @@ namespace workphone::editor
                         "\nKind: " +
                         ( entry.kind == AssetDatabaseManager::EntryKind::File ? "File"
                                                                               : "Scene object" );
+                    AssetPackagePolicy policy;
+                    String policyError;
+                    const bool policyReady = getAssetPackagePolicy(getAssetDatabaseManager(),entry.uuid,policy,policyError);
+                    if( policyReady )
+                        details += "\nShipping: " + String(policy.usage == AssetPackageUsage::Runtime ? "Runtime" :
+                            policy.usage == AssetPackageUsage::EditorOnly ? "Editor only" : "Excluded") +
+                            (policy.explicitPolicy ? " (explicit)" : " (project default)");
+                    else details += "\nShipping policy: " + policyError;
+                    for( const auto &control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
+                        control->setEnabled(policyReady && !m_showMedia && !getAssetDatabaseManager()->isReadOnly());
                     // References to bundled media are owned by project documents.
                     const auto showingMedia = m_showMedia;
                     m_showMedia = false;

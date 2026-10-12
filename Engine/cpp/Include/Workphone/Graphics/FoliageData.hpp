@@ -20,10 +20,19 @@ namespace workphone::render
     inline constexpr u32 foliageMaximumMeshIndices = 1572864;
     inline constexpr u64 foliageMaximumSourceBytes = 128ull << 20;
 
-    enum class FoliageKind : u32 { Tree, Bush, Grass, GroundCover };
+    enum class FoliageKind : u32
+    {
+        Tree,
+        Bush,
+        Grass,
+        GroundCover
+    };
     enum FoliageInstanceFlags : u32
     {
-        FoliageManual = 1, FoliageLocked = 2, FoliageRemoved = 4, FoliagePromoted = 8
+        FoliageManual = 1,
+        FoliageLocked = 2,
+        FoliageRemoved = 4,
+        FoliagePromoted = 8
     };
     struct FoliageMaterial
     {
@@ -40,7 +49,7 @@ namespace workphone::render
     {
         Array<Vector3F> positions, normals;
         Array<Vector2F> uvs;
-        Array<ColourF> colours; // Empty means white.
+        Array<ColourF> colours;  // Empty means white.
         Array<u32> indices;
         Array<FoliageMeshSection> sections;
     };
@@ -86,9 +95,18 @@ namespace workphone::render
     struct FoliageCellKey
     {
         s32 x = 0, z = 0;
-        bool operator==( const FoliageCellKey &o ) const { return x == o.x && z == o.z; }
-        bool operator!=( const FoliageCellKey &o ) const { return !( *this == o ); }
-        bool operator<( const FoliageCellKey &o ) const { return x == o.x ? z < o.z : x < o.x; }
+        bool operator==( const FoliageCellKey &o ) const
+        {
+            return x == o.x && z == o.z;
+        }
+        bool operator!=( const FoliageCellKey &o ) const
+        {
+            return !( *this == o );
+        }
+        bool operator<( const FoliageCellKey &o ) const
+        {
+            return x == o.x ? z < o.z : x < o.x;
+        }
     };
     struct FoliageInstance
     {
@@ -119,20 +137,21 @@ namespace workphone::render
     WPCore_API bool validateFoliageSpecies( const FoliageSpecies &, String &error );
     WPCore_API bool validateFoliageWorld( const FoliageWorldData &, String &error );
     // The immutable definition must already have passed validateFoliageWorld.
-    WPCore_API bool validateFoliagePage( const FoliagePageData &,
-                                       const FoliageWorldData &definition, String &error );
-    WPCore_API bool foliageCellForPosition( const Vector3F &, f32 pageSize,
-                                           FoliageCellKey &, String &error );
+    WPCore_API bool validateFoliagePage( const FoliagePageData &, const FoliageWorldData &definition,
+                                         String &error );
+    WPCore_API bool foliageCellForPosition( const Vector3F &, f32 pageSize, FoliageCellKey &,
+                                            String &error );
     WPCore_API u64 foliageCellIdentity( FoliageCellKey );
     WPCore_API u64 foliageStableHash( u64 value );
     WPCore_API u64 foliageSourceBytes( const FoliageWorldData & );
     // Definition/instances must already be validated. Geometry includes off-centre
     // bounds and flutter; bend accounts for nonuniform instance scale projection.
     WPCore_API bool foliageInstanceRadii( const FoliageWorldData &definition,
-        const Array<FoliageInstance> &instances, f32 &geometryRadius, f32 &bendRadius, String &error );
+                                          const Array<FoliageInstance> &instances, f32 &geometryRadius,
+                                          f32 &bendRadius, String &error );
     WPCore_API bool serializeFoliageSpecies( const FoliageSpecies &, String &output, String &error );
     WPCore_API bool deserializeFoliageSpecies( const String &, FoliageSpecies &output, String &error );
     WPCore_API bool serializeFoliageWorld( const FoliageWorldData &, String &output, String &error );
     WPCore_API bool deserializeFoliageWorld( const String &, FoliageWorldData &output, String &error );
-}
+}  // namespace workphone::render
 #endif

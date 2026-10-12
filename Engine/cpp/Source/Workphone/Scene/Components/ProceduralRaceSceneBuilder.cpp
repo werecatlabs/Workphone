@@ -399,9 +399,10 @@ namespace workphone::scene::race
                     }
                     for( size_t i = 0; i < ( rotating ? 4u : 1u ); ++i )
                     {
-                        auto part = mesh( assets, "LOD" + StringUtil::toString( lod ) + " " +
-                            String( section.name.c_str() ), parts[i], m,
-                                          rotating ? assets.wheels[i] : actor );
+                        auto part = mesh(
+                            assets,
+                            "LOD" + StringUtil::toString( lod ) + " " + String( section.name.c_str() ),
+                            parts[i], m, rotating ? assets.wheels[i] : actor );
                         if( !assets.body && !rotating )
                             assets.body = part;
                         if( part )
@@ -624,13 +625,13 @@ namespace workphone::scene::race
                 auto append = [&]( const Geometry &source, float paletteU ) {
                     const auto base = static_cast<u32>( nearTrees.positions.size() );
                     nearTrees.positions.insert( nearTrees.positions.end(), source.positions.begin(),
-                                           source.positions.end() );
+                                                source.positions.end() );
                     nearTrees.normals.insert( nearTrees.normals.end(), source.normals.begin(),
-                                         source.normals.end() );
+                                              source.normals.end() );
                     nearTrees.tangents.insert( nearTrees.tangents.end(), source.tangents.begin(),
-                                          source.tangents.end() );
+                                               source.tangents.end() );
                     nearTrees.uv.insert( nearTrees.uv.end(), source.positions.size(),
-                                    Vector3F( paletteU, .5f, 0 ) );
+                                         Vector3F( paletteU, .5f, 0 ) );
                     for( auto index : source.indices )
                         nearTrees.indices.push_back( base + index );
                 };
@@ -693,127 +694,147 @@ namespace workphone::scene::race
             auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>( "IRoadSystem" );
             if( !roads )
                 throw std::runtime_error( "Open city requires the WPProcedural road service." );
-            roads->setSeed(seed);
+            roads->setSeed( seed );
             Geometry asphalt, pavement, markings, buildings[3], windows, parks;
             // Match the existing flat physics proxy. Preserve library topology,
             // kerbs and markings without introducing unsupported road-height bumps.
-            auto append = [](Geometry &g, const RoadMesh &source, bool flat = false) {
-                const auto base = static_cast<u32>(g.positions.size());
-                for(const auto &v : source.vertices)
+            auto append = []( Geometry &g, const RoadMesh &source, bool flat = false ) {
+                const auto base = static_cast<u32>( g.positions.size() );
+                for( const auto &v : source.vertices )
                 {
-                    g.positions.push_back({float(v.position.x), flat ? .012f : float(v.position.y), float(v.position.z)});
-                    g.normals.push_back(flat ? Vector3F(0,1,0) : Vector3F(float(v.normal.x),float(v.normal.y),float(v.normal.z)));
-                    g.uv.push_back({float(v.uv.x),float(v.uv.y),0});
-                    g.tangents.push_back({1,0,0,1});
+                    g.positions.push_back( { float( v.position.x ), flat ? .012f : float( v.position.y ),
+                                             float( v.position.z ) } );
+                    g.normals.push_back( flat ? Vector3F( 0, 1, 0 )
+                                              : Vector3F( float( v.normal.x ), float( v.normal.y ),
+                                                          float( v.normal.z ) ) );
+                    g.uv.push_back( { float( v.uv.x ), float( v.uv.y ), 0 } );
+                    g.tangents.push_back( { 1, 0, 0, 1 } );
                 }
-                for(auto index : source.indices) g.indices.push_back(base + index);
+                for( auto index : source.indices )
+                    g.indices.push_back( base + index );
             };
             const int half = city.blocks / 2;
             u32 segmentSeed = seed;
-            for(int row = -half; row <= half; ++row)
-                for(int col = -half; col < half; ++col)
-                    for(int axis = 0; axis < 2; ++axis)
+            for( int row = -half; row <= half; ++row )
+                for( int col = -half; col < half; ++col )
+                    for( int axis = 0; axis < 2; ++axis )
                     {
                         RoadSegmentSpec spec;
-                        const float a = col * city.spacing + 6, b = (col + 1) * city.spacing - 6;
-                        spec.start = axis ? Vector3<real_Num>(row * city.spacing,0,a) : Vector3<real_Num>(a,0,row * city.spacing);
-                        spec.end = axis ? Vector3<real_Num>(row * city.spacing,0,b) : Vector3<real_Num>(b,0,row * city.spacing);
+                        const float a = col * city.spacing + 6, b = ( col + 1 ) * city.spacing - 6;
+                        spec.start = axis ? Vector3<real_Num>( row * city.spacing, 0, a )
+                                          : Vector3<real_Num>( a, 0, row * city.spacing );
+                        spec.end = axis ? Vector3<real_Num>( row * city.spacing, 0, b )
+                                        : Vector3<real_Num>( b, 0, row * city.spacing );
                         spec.roadClass = RoadClass::Arterial;
                         spec.seed = segmentSeed++;
                         spec.generateDressing = false;
-                        const auto road = roads->generateSegment(spec);
-                        append(asphalt, road.roadSurface, true);
-                        for(const auto &part : road.sidewalks) append(pavement, part);
-                        for(const auto &part : road.kerbs) append(pavement, part);
-                        append(markings, road.markings);
+                        const auto road = roads->generateSegment( spec );
+                        append( asphalt, road.roadSurface, true );
+                        for( const auto &part : road.sidewalks )
+                            append( pavement, part );
+                        for( const auto &part : road.kerbs )
+                            append( pavement, part );
+                        append( markings, road.markings );
                     }
-            for(int x = -half; x <= half; ++x)
-                for(int z = -half; z <= half; ++z)
+            for( int x = -half; x <= half; ++x )
+                for( int z = -half; z <= half; ++z )
                 {
                     IntersectionSpec spec;
-                    spec.center = {x * city.spacing,0,z * city.spacing};
+                    spec.center = { x * city.spacing, 0, z * city.spacing };
                     spec.roadClass = RoadClass::Arterial;
                     spec.seed = segmentSeed++;
-                    const auto junction = roads->generateIntersection(spec);
-                    append(asphalt, junction.surface, true);
-                    append(markings, junction.markings);
+                    const auto junction = roads->generateIntersection( spec );
+                    append( asphalt, junction.surface, true );
+                    append( markings, junction.markings );
                 }
             size_t lotIndex = 0;
-            for(const auto &lot : city.lots)
+            for( const auto &lot : city.lots )
             {
-                if(lot.park)
+                if( lot.park )
                 {
-                    parks.box({lot.x,.02f,lot.z},{lot.width,.04f,lot.depth});
+                    parks.box( { lot.x, .02f, lot.z }, { lot.width, .04f, lot.depth } );
                     continue;
                 }
                 auto &walls = buildings[lotIndex++ % 3];
-                const Vector3F size(lot.width,lot.height,lot.depth);
-                walls.box({lot.x,lot.height * .5f,lot.z},size);
+                const Vector3F size( lot.width, lot.height, lot.depth );
+                walls.box( { lot.x, lot.height * .5f, lot.z }, size );
                 auto collision = app->getGameManager()->createActor();
-                assets.actors.push_back(collision);
-                collision->setName("City building collision");
-                collision->setStatic(true);
-                collision->setPosition({lot.x,lot.height * .5f,lot.z});
-                collision->addComponent<CollisionBox>()->setExtents(size);
+                assets.actors.push_back( collision );
+                collision->setName( "City building collision" );
+                collision->setStatic( true );
+                collision->setPosition( { lot.x, lot.height * .5f, lot.z } );
+                collision->addComponent<CollisionBox>()->setExtents( size );
                 collision->addComponent<Rigidbody>();
-                app->getGameManager()->getCurrentScene()->addActor(collision);
+                app->getGameManager()->getCurrentScene()->addActor( collision );
                 // Batched facades keep city draw calls independent of building count.
                 const float floorStep = quality == VehicleAppearanceQuality::Preview ? 6.f : 3.5f;
-                for(float y = 2; y < lot.height - 1; y += floorStep)
-                    for(float x = -lot.width / 2 + 3; x < lot.width / 2 - 2; x += 4)
-                        for(int face : {-1,1})
-                            windows.box({lot.x+x,y,lot.z+face*(lot.depth*.5f+.03f)},{1.4f,1.6f,.06f});
-                for(float y = 2; y < lot.height - 1; y += floorStep)
-                    for(float z = -lot.depth / 2 + 3; z < lot.depth / 2 - 2; z += 4)
-                        for(int face : {-1,1})
-                            windows.box({lot.x+face*(lot.width*.5f+.03f),y,lot.z+z},{.06f,1.6f,1.4f});
+                for( float y = 2; y < lot.height - 1; y += floorStep )
+                    for( float x = -lot.width / 2 + 3; x < lot.width / 2 - 2; x += 4 )
+                        for( int face : { -1, 1 } )
+                            windows.box( { lot.x + x, y, lot.z + face * ( lot.depth * .5f + .03f ) },
+                                         { 1.4f, 1.6f, .06f } );
+                for( float y = 2; y < lot.height - 1; y += floorStep )
+                    for( float z = -lot.depth / 2 + 3; z < lot.depth / 2 - 2; z += 4 )
+                        for( int face : { -1, 1 } )
+                            windows.box( { lot.x + face * ( lot.width * .5f + .03f ), y, lot.z + z },
+                                         { .06f, 1.6f, 1.4f } );
             }
             // Contain exploration within the shared collision plane.
             const float boundary = city.extent + 20;
-            for(int axis=0;axis<2;++axis)
-                for(int side : {-1,1})
+            for( int axis = 0; axis < 2; ++axis )
+                for( int side : { -1, 1 } )
                 {
-                    const Vector3F p = axis ? Vector3F(0,.6f,side*boundary) : Vector3F(side*boundary,.6f,0);
-                    const Vector3F size = axis ? Vector3F(boundary*2,1.2f,1) : Vector3F(1,1.2f,boundary*2);
-                    pavement.box(p,size);
-                    auto wall=app->getGameManager()->createActor();
-                    assets.actors.push_back(wall);
-                    wall->setName("City boundary");
-                    wall->setStatic(true);
-                    wall->setPosition(p);
-                    wall->addComponent<CollisionBox>()->setExtents(size);
+                    const Vector3F p =
+                        axis ? Vector3F( 0, .6f, side * boundary ) : Vector3F( side * boundary, .6f, 0 );
+                    const Vector3F size =
+                        axis ? Vector3F( boundary * 2, 1.2f, 1 ) : Vector3F( 1, 1.2f, boundary * 2 );
+                    pavement.box( p, size );
+                    auto wall = app->getGameManager()->createActor();
+                    assets.actors.push_back( wall );
+                    wall->setName( "City boundary" );
+                    wall->setStatic( true );
+                    wall->setPosition( p );
+                    wall->addComponent<CollisionBox>()->setExtents( size );
                     wall->addComponent<Rigidbody>();
-                    app->getGameManager()->getCurrentScene()->addActor(wall);
+                    app->getGameManager()->getCurrentScene()->addActor( wall );
                 }
-            mesh(assets,"City streets",asphalt,material(assets,{.07f,.075f,.085f,1},.9f));
-            mesh(assets,"City sidewalks",pavement,material(assets,{.42f,.43f,.44f,1},.95f));
-            mesh(assets,"City lane markings",markings,material(assets,{.85f,.82f,.65f,1},.8f));
-            const ColourF colours[] = {{.42f,.38f,.32f,1},{.54f,.52f,.47f,1},{.24f,.29f,.34f,1}};
-            for(int i=0;i<3;++i) mesh(assets,"City buildings",buildings[i],material(assets,colours[i],.85f));
-            mesh(assets,"City windows",windows,material(assets,{.055f,.13f,.19f,1},.22f,.35f));
-            mesh(assets,"City parks",parks,material(assets,{.16f,.32f,.12f,1},1));
+            mesh( assets, "City streets", asphalt, material( assets, { .07f, .075f, .085f, 1 }, .9f ) );
+            mesh( assets, "City sidewalks", pavement,
+                  material( assets, { .42f, .43f, .44f, 1 }, .95f ) );
+            mesh( assets, "City lane markings", markings,
+                  material( assets, { .85f, .82f, .65f, 1 }, .8f ) );
+            const ColourF colours[] = { { .42f, .38f, .32f, 1 },
+                                        { .54f, .52f, .47f, 1 },
+                                        { .24f, .29f, .34f, 1 } };
+            for( int i = 0; i < 3; ++i )
+                mesh( assets, "City buildings", buildings[i], material( assets, colours[i], .85f ) );
+            mesh( assets, "City windows", windows,
+                  material( assets, { .055f, .13f, .19f, 1 }, .22f, .35f ) );
+            mesh( assets, "City parks", parks, material( assets, { .16f, .32f, .12f, 1 }, 1 ) );
             Geometry ground;
-            ground.box({0,-.06f,0},{city.extent*2+80,.1f,city.extent*2+80});
-            mesh(assets,"City ground",ground,material(assets,{.28f,.30f,.26f,1},1));
+            ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
+            mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
             assets.circuit = {};
-            for(size_t i=0;i<city.route.size();++i)
+            for( size_t i = 0; i < city.route.size(); ++i )
             {
-                const auto p = city.route[i], next = city.route[(i+1)%city.route.size()];
-                Vector3F forward(next.x-p.x,0,next.z-p.z);
+                const auto p = city.route[i], next = city.route[( i + 1 ) % city.route.size()];
+                Vector3F forward( next.x - p.x, 0, next.z - p.z );
                 forward.normalise();
-                assets.circuit.samples.push_back({{p.x,0,p.z},{-forward.z,0,forward.x},assets.circuit.length});
-                assets.circuit.length += std::hypot(next.x-p.x,next.z-p.z);
+                assets.circuit.samples.push_back(
+                    { { p.x, 0, p.z }, { -forward.z, 0, forward.x }, assets.circuit.length } );
+                assets.circuit.length += std::hypot( next.x - p.x, next.z - p.z );
             }
             Geometry arrows;
-            for(size_t i=0;i<assets.circuit.samples.size();i+=20)
+            for( size_t i = 0; i < assets.circuit.samples.size(); i += 20 )
             {
-                const auto &sample=assets.circuit.samples[i];
-                const auto forward=Vector3F(sample.right.z,0,-sample.right.x);
-                const auto p=sample.position+Vector3F(0,.04f,0);
-                const auto tip=p+forward*2;
-                arrows.quad(p-sample.right*1.5f,p+sample.right*1.5f,tip,tip,{0,1,0});
+                const auto &sample = assets.circuit.samples[i];
+                const auto forward = Vector3F( sample.right.z, 0, -sample.right.x );
+                const auto p = sample.position + Vector3F( 0, .04f, 0 );
+                const auto tip = p + forward * 2;
+                arrows.quad( p - sample.right * 1.5f, p + sample.right * 1.5f, tip, tip, { 0, 1, 0 } );
             }
-            mesh(assets,"City race route arrows",arrows,material(assets,{.05f,.7f,.9f,1},.6f));
+            mesh( assets, "City race route arrows", arrows,
+                  material( assets, { .05f, .7f, .9f, 1 }, .6f ) );
         }
         void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle )
         {
@@ -947,16 +968,17 @@ namespace workphone::scene::race
             graphicsScene->setAmbientLight( ColourF( .28f, .32f, .38f, 1 ) );
             // Use the same horizon palette as the unlit sky. Lit surfaces pass through
             // Reinhard, so invert that transform to converge to the sky's displayed colour.
-            auto horizon = sky->computeSkyColour( Vector3F( 1, 0, 0 ), result.sunDir,
-                                                  state.turbidity, result.sunAltitude );
+            auto horizon = sky->computeSkyColour( Vector3F( 1, 0, 0 ), result.sunDir, state.turbidity,
+                                                  result.sunAltitude );
             const auto fogRadiance = []( float displayedLinear ) {
                 const float colour = std::clamp( displayedLinear, 0.f, .95f );
                 return colour / ( 1 - colour );
             };
-            graphicsScene->setFog( render::IGraphicsScene::FOG_LINEAR,
-                ColourF( fogRadiance( .41f + horizon.r * .15f ),
-                         fogRadiance( .57f + horizon.g * .15f ),
-                         fogRadiance( .82f + horizon.b * .15f ), 1 ), .0007f, 180, 800 );
+            graphicsScene->setFog(
+                render::IGraphicsScene::FOG_LINEAR,
+                ColourF( fogRadiance( .41f + horizon.r * .15f ), fogRadiance( .57f + horizon.g * .15f ),
+                         fogRadiance( .82f + horizon.b * .15f ), 1 ),
+                .0007f, 180, 800 );
             // Keep the host scene's lights; reuse its directional lighting if present.
             for( auto light : graphicsScene->getGraphicsObjectsByType<render::IGraphicsLight>() )
                 if( light->getType() == LightTypes::LT_DIRECTIONAL && light->isVisible() )

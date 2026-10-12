@@ -43,7 +43,8 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
-        if( !scriptManager ) return;
+        if( !scriptManager )
+            return;
 
         if( auto object = getOwnerPtr() )
         {
@@ -58,7 +59,8 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
-        if( !scriptManager ) return;
+        if( !scriptManager )
+            return;
 
         if( auto object = getOwnerPtr() )
         {
@@ -74,7 +76,8 @@ namespace workphone
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto scriptManager = applicationManager ? applicationManager->getScriptManagerPtr() : nullptr;
-        if( !scriptManager ) return;
+        if( !scriptManager )
+            return;
 
         if( auto object = getOwnerPtr() )
         {

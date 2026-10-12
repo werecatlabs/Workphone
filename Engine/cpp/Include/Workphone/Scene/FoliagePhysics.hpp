@@ -5,7 +5,12 @@
 #include <Workphone/Memory/SmartPtr.hpp>
 #include <functional>
 
-namespace workphone::physics { class IPhysicsManager; class IPhysicsScene3; class IRigidStatic3; }
+namespace workphone::physics
+{
+    class IPhysicsManager;
+    class IPhysicsScene3;
+    class IRigidStatic3;
+}  // namespace workphone::physics
 namespace workphone::scene
 {
     class FoliageAuthoring;
@@ -32,6 +37,7 @@ namespace workphone::scene
         SmartPtr<physics::IRigidStatic3> getBody( u64 instanceId ) const;
         FoliagePhysics( const FoliagePhysics & ) = delete;
         FoliagePhysics &operator=( const FoliagePhysics & ) = delete;
+
     private:
         struct State;
         std::unique_ptr<State> m_state;
@@ -45,8 +51,9 @@ namespace workphone::scene
     class WPCore_API FoliageGameplay final
     {
     public:
-        using Acquire = std::function<SmartPtr<ISharedObject>(const render::FoliageInstance &, String &)>;
-        using Release = std::function<void(SmartPtr<ISharedObject>)>;
+        using Acquire =
+            std::function<SmartPtr<ISharedObject>( const render::FoliageInstance &, String & )>;
+        using Release = std::function<void( SmartPtr<ISharedObject> )>;
         FoliageGameplay( SmartPtr<FoliageAuthoring>, Acquire, Release );
         ~FoliageGameplay();
         bool promote( u64 instanceId, String &error );
@@ -55,9 +62,10 @@ namespace workphone::scene
         SmartPtr<ISharedObject> getActor( u64 instanceId ) const;
         FoliageGameplay( const FoliageGameplay & ) = delete;
         FoliageGameplay &operator=( const FoliageGameplay & ) = delete;
+
     private:
         struct State;
         std::unique_ptr<State> m_state;
     };
-}
+}  // namespace workphone::scene
 #endif
