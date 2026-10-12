@@ -244,10 +244,38 @@ namespace workphone
             if( worker.get_id() == std::this_thread::get_id() ) worker.detach();
             else worker.join();
     }
+    namespace
+    {
+        struct SharedScheduler
+        {
+            std::mutex mutex;
+            std::shared_ptr<WorldStreamingScheduler> instance;
+        };
+        SharedScheduler &sharedScheduler()
+        {
+            static SharedScheduler service;
+            return service;
+        }
+    }
     std::shared_ptr<WorldStreamingScheduler> WorldStreamingScheduler::shared()
     {
-        static const auto scheduler = std::make_shared<WorldStreamingScheduler>();
-        return scheduler;
+        auto &service = sharedScheduler();
+        std::lock_guard<std::mutex> lock( service.mutex );
+        if( !service.instance )
+            service.instance = std::make_shared<WorldStreamingScheduler>();
+        return service.instance;
+    }
+    void WorldStreamingScheduler::shutdownShared()
+    {
+        std::shared_ptr<WorldStreamingScheduler> retiring;
+        auto &service = sharedScheduler();
+        {
+            std::lock_guard<std::mutex> lock( service.mutex );
+            retiring = std::move( service.instance );
+        }
+        // Join outside the service mutex: releasing a worker callback can
+        // release other service consumers.
+        retiring.reset();
     }
     StreamBudget WorldStreamingScheduler::reserve( StreamMemoryClass category, u64 bytes, String &error )
     {

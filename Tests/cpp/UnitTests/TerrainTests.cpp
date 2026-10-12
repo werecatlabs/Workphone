@@ -1,10 +1,46 @@
 #include "UnitTests.hpp"
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <boost/test/unit_test.hpp>
 
 using namespace workphone;
 using namespace workphone::render;
+
+BOOST_AUTO_TEST_CASE( world_streaming_shared_service_can_shutdown_and_restart )
+{
+    // Earlier terrain tests may still have consumers retaining the old service.
+    // Keep it alive while testing independent shared-service generations.
+    auto previousService = WorldStreamingScheduler::shared();
+    WorldStreamingScheduler::shutdownShared();
+    for( int i = 0; i < 2; ++i )
+    {
+        auto service = WorldStreamingScheduler::shared();
+        std::weak_ptr<WorldStreamingScheduler> lifetime = service;
+        BOOST_CHECK_GT( service->stats().workers, 0u );
+        service.reset();
+        WorldStreamingScheduler::shutdownShared();
+        BOOST_CHECK( lifetime.expired() );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( terrain_ray_and_blend_results_release_their_references )
+{
+    auto terrain = workphone::make_ptr<render::Terrain>();
+    WeakPtr<IGraphicsTerrain> terrainLifetime( terrain );
+    auto blend = terrain->getBlendMap( 0 );
+    BOOST_REQUIRE( blend );
+    WeakPtr<ITerrainBlendMap> blendLifetime( blend );
+    auto result = terrain->intersects( Ray3F( Vector3F( 0, 10, 0 ), Vector3F( 0, -1, 0 ) ) );
+    BOOST_REQUIRE( result );
+    WeakPtr<ITerrainRayResult> resultLifetime( result );
+    result = nullptr;
+    BOOST_CHECK( resultLifetime.expired() );
+    blend = nullptr;
+    terrain = nullptr;
+    BOOST_CHECK( terrainLifetime.expired() );
+    BOOST_CHECK( blendLifetime.expired() );
+}
 
 namespace
 {

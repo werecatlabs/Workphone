@@ -3,6 +3,7 @@
 #include "UnitTestsFixture.hpp"
 #include "Workphone/Workphone.hpp"
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <boost/test/unit_test.hpp>
 #include <memory>
 #include <filesystem>
@@ -829,6 +830,8 @@ namespace workphone
 
             BOOST_CHECK( core::ApplicationManager::instance() == nullptr );
         }
+
+        WorldStreamingScheduler::shutdownShared();
 
         if( !unitTestProject.empty() )
         {

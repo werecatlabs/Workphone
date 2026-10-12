@@ -87,6 +87,9 @@ namespace workphone
         explicit WorldStreamingScheduler( const WorldStreamLimits &limits = {} );
         ~WorldStreamingScheduler();
         static std::shared_ptr<WorldStreamingScheduler> shared();
+        /// Release the shared service after its consumers have been unloaded,
+        /// while worker threads can still join (before DLL process teardown).
+        static void shutdownShared();
         StreamBudget reserve( StreamMemoryClass memoryClass, u64 bytes, String &error );
         bool setBudget( StreamMemoryClass memoryClass, u64 bytes, String &error );
         std::shared_ptr<WorldStreamProducer> createProducer( const WorldStreamProducerLimits &, String &error );

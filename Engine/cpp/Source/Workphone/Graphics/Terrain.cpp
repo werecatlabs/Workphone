@@ -677,8 +677,8 @@ namespace workphone::render
         if( !slot )
         {
             const u32 blendSize = static_cast<u32>( getLayerBlendMapSize() );
-            slot = SmartPtr<ITerrainBlendMap>(
-                new TerrainBlendMapImpl( SmartPtr<IGraphicsTerrain>( this ), blendSize, index ) );
+            slot = workphone::make_ptr<TerrainBlendMapImpl>(
+                SmartPtr<IGraphicsTerrain>( this ), blendSize, index );
         }
 
         return slot;
@@ -719,7 +719,7 @@ namespace workphone::render
 
     SmartPtr<ITerrainRayResult> Terrain::_makeRayResult( bool hit, const Vector3<real_Num> &pos ) const
     {
-        auto result = SmartPtr<ITerrainRayResult>( new TerrainRayResult() );
+        auto result = workphone::make_ptr<TerrainRayResult>();
         if( result )
         {
             result->setIntersected( hit );
