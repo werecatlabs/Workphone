@@ -13,5 +13,5 @@ namespace workphone
         SmartPtr<Properties> getProperties() const override;
         WP_CLASS_REGISTER_DECL;
     };
-}
+}  // namespace workphone
 #endif

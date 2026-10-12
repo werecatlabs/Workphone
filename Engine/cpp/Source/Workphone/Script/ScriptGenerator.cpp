@@ -102,21 +102,28 @@ namespace workphone
         {
             auto sourceStr = String();
 
-            const auto classNamePath = std::filesystem::path( std::string( path.data(), path.size() ) )
-                                           .stem()
-                                           .string();
+            const auto classNamePath =
+                std::filesystem::path( std::string( path.data(), path.size() ) ).stem().string();
             String className( classNamePath.data(), classNamePath.size() );
             for( auto &character : className )
                 if( !( character >= 'a' && character <= 'z' ) &&
                     !( character >= 'A' && character <= 'Z' ) &&
-                    !( character >= '0' && character <= '9' ) && character != '_' ) character = '_';
-            if( className.empty() ) className = "NewScript";
-            if( std::isdigit( static_cast<unsigned char>( className[0] ) ) ) className.insert( 0, "Script_" );
-            static const char *keywords[] = { "and", "break", "do", "else", "elseif", "end",
-                "false", "for", "function", "goto", "if", "in", "local", "nil", "not", "or",
-                "repeat", "return", "then", "true", "until", "while" };
+                    !( character >= '0' && character <= '9' ) && character != '_' )
+                    character = '_';
+            if( className.empty() )
+                className = "NewScript";
+            if( std::isdigit( static_cast<unsigned char>( className[0] ) ) )
+                className.insert( 0, "Script_" );
+            static const char *keywords[] = { "and",   "break", "do",       "else", "elseif", "end",
+                                              "false", "for",   "function", "goto", "if",     "in",
+                                              "local", "nil",   "not",      "or",   "repeat", "return",
+                                              "then",  "true",  "until",    "while" };
             for( const auto keyword : keywords )
-                if( className == keyword ) { className.insert( 0, "Script_" ); break; }
+                if( className == keyword )
+                {
+                    className.insert( 0, "Script_" );
+                    break;
+                }
 
             sourceStr = "class '" + className +
                         "'\n"

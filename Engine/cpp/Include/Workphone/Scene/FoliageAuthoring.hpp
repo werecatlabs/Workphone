@@ -50,7 +50,8 @@ namespace workphone::scene
         FoliageAuthoring();
         ~FoliageAuthoring() override;
         render::FoliageSnapshot getSnapshot() const;
-        render::FoliageSnapshot getGroundedSnapshot( render::TerrainSnapshot terrain, String &error ) const;
+        render::FoliageSnapshot getGroundedSnapshot( render::TerrainSnapshot terrain,
+                                                     String &error ) const;
         FoliagePlacementRecipe getRecipe() const;
         bool configure( const FoliagePlacementRecipe &, String &error );
         bool setSpecies( Array<std::shared_ptr<const render::FoliageSpecies>>, String &error );
@@ -63,12 +64,12 @@ namespace workphone::scene
         bool commitStroke( String &error );
         bool cancelStroke( String &error );
         bool isStrokeActive() const;
-        bool paint( render::TerrainSnapshot, u32 species, Vector2F centre, f32 radius,
-                    u32 count, u32 seed, String &error );
+        bool paint( render::TerrainSnapshot, u32 species, Vector2F centre, f32 radius, u32 count,
+                    u32 seed, String &error );
         bool erase( Vector2F centre, f32 radius, String &error );
         Array<u64> select( const Array<Vector2F> &polygon ) const;
-        bool transformSelection( const Array<u64> &, Vector3F translation, f32 yaw,
-                                 f32 scale, String &error );
+        bool transformSelection( const Array<u64> &, Vector3F translation, f32 yaw, f32 scale,
+                                 String &error );
         bool replaceSpecies( const Array<u64> &, u32 species, String &error );
         bool setInstanceFlags( const Array<u64> &, u32 mask, bool enabled, String &error );
         bool undo( String &error );
@@ -78,9 +79,10 @@ namespace workphone::scene
         bool save( const String &path, String &error ) const;
         bool load( const String &path, String &error );
         WP_CLASS_REGISTER_DECL;
+
     private:
         struct State;
         std::unique_ptr<State> m_state;
     };
-}
+}  // namespace workphone::scene
 #endif

@@ -468,7 +468,8 @@ namespace workphone::scene
                 auto className = getClassName();
                 if( !StringUtil::isNullOrEmpty( className ) )
                 {
-                    if( !m_scriptAssetUuid.empty() && !scriptManager->loadScriptAsset( m_scriptAssetUuid ) )
+                    if( !m_scriptAssetUuid.empty() &&
+                        !scriptManager->loadScriptAsset( m_scriptAssetUuid ) )
                     {
                         WP_LOG_ERROR( "Cannot load Lua script asset: " + m_scriptAssetUuid );
                         return;
@@ -483,7 +484,8 @@ namespace workphone::scene
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
-        if( scriptManager ) scriptManager->destroyObject( this );
+        if( scriptManager )
+            scriptManager->destroyObject( this );
         setScriptData( nullptr );
         m_scriptClass = nullptr;
     }

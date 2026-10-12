@@ -79,8 +79,7 @@ namespace workphone
                     f32 scale = 1.0f ) override;
 
         /** Apply to this evaluation's bone without storing an instance in the shared clip. */
-        void applyToBone( const SmartPtr<IBone> &bone,
-                          const SmartPtr<IAnimationTimeIndex> &timeIndex,
+        void applyToBone( const SmartPtr<IBone> &bone, const SmartPtr<IAnimationTimeIndex> &timeIndex,
                           f32 weight = 1.0f, f32 scale = 1.0f ) const;
 
         /**

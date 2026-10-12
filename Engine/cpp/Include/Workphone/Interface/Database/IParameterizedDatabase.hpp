@@ -28,16 +28,19 @@ namespace workphone
     class DatabaseConnectionLock final
     {
     public:
-        explicit DatabaseConnectionLock( ISerializedDatabase *database ) : m_database(database)
+        explicit DatabaseConnectionLock( ISerializedDatabase *database ) : m_database( database )
         {
-            if( m_database ) m_database->lockConnection();
+            if( m_database )
+                m_database->lockConnection();
         }
         ~DatabaseConnectionLock()
         {
-            if( m_database ) m_database->unlockConnection();
+            if( m_database )
+                m_database->unlockConnection();
         }
         DatabaseConnectionLock( const DatabaseConnectionLock & ) = delete;
         DatabaseConnectionLock &operator=( const DatabaseConnectionLock & ) = delete;
+
     private:
         ISerializedDatabase *m_database;
     };

@@ -6,7 +6,8 @@
 #include <atomic>
 namespace workphone::render
 {
-    using FoliageBakeTextureResolver = std::function<std::shared_ptr<const TextureMipLevel>( const String &, String & )>;
+    using FoliageBakeTextureResolver =
+        std::function<std::shared_ptr<const TextureMipLevel>( const String &, String & )>;
     WPCore_API void setFoliageImpostorTextureResolver( FoliageBakeTextureResolver resolver );
     WPCore_API FoliageBakeTextureResolver getFoliageImpostorTextureResolver();
     struct FoliageImpostorBakeOptions
@@ -27,13 +28,14 @@ namespace workphone::render
         u64 rasterSamples = 0;
     };
     WPCore_API bool bakeFoliageImpostor( const FoliageSpecies &, const FoliageBakeTextureResolver &,
-        const FoliageImpostorBakeOptions &, FoliageImpostorBake &output, String &error,
-        const std::atomic<bool> *cancel = nullptr );
+                                         const FoliageImpostorBakeOptions &, FoliageImpostorBake &output,
+                                         String &error, const std::atomic<bool> *cancel = nullptr );
     /** Writes four TGA sources and matching .texres descriptors, then publishes the
      * .folspec last. destinationDirectory must be a fresh directory, avoiding partial
      * replacement of existing catalog assets. Texture IDs use options.resourcePrefix.
      */
     WPCore_API bool saveFoliageImpostorSource( const FoliageSpecies &, const FoliageImpostorBake &,
-        const String &destinationDirectory, String &speciesPath, String &error );
-}
+                                               const String &destinationDirectory, String &speciesPath,
+                                               String &error );
+}  // namespace workphone::render
 #endif

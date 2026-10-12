@@ -97,8 +97,7 @@ namespace workphone::scene
             child->setProperty( "diameter", bound.diameter );
             properties->addChild( child );
         }
-        properties->setProperty( "detailBoundCount", static_cast<u32>( detailBounds.size() ),
-                                 true );
+        properties->setProperty( "detailBoundCount", static_cast<u32>( detailBounds.size() ), true );
         return properties;
     }
 

@@ -25,4 +25,4 @@ namespace workphone
         properties->setProperty( "sourcePath", getFilePath() );
         return properties;
     }
-}
+}  // namespace workphone

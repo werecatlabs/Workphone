@@ -12,17 +12,40 @@ namespace workphone
 
     /** Non-owning observer for operations serialized with object destruction on
      * their owner thread. This is not a concurrent weak-to-strong promotion. */
-    template <class T> class ObjectObserver
+    template <class T>
+    class ObjectObserver
     {
     public:
         ObjectObserver() = default;
-        ObjectObserver( T *object ) { assign( object ); }
-        template <class U> ObjectObserver( const SmartPtr<U> &object ) { assign( object.get() ); }
-        ObjectObserver &operator=( T *object ) { assign( object ); return *this; }
-        template <class U> ObjectObserver &operator=( const SmartPtr<U> &object )
-        { assign( object.get() ); return *this; }
-        SmartPtr<T> lock() const { return m_lifetime.expired() ? nullptr : SmartPtr<T>( m_object ); }
-        bool expired() const { return m_lifetime.expired(); }
+        ObjectObserver( T *object )
+        {
+            assign( object );
+        }
+        template <class U>
+        ObjectObserver( const SmartPtr<U> &object )
+        {
+            assign( object.get() );
+        }
+        ObjectObserver &operator=( T *object )
+        {
+            assign( object );
+            return *this;
+        }
+        template <class U>
+        ObjectObserver &operator=( const SmartPtr<U> &object )
+        {
+            assign( object.get() );
+            return *this;
+        }
+        SmartPtr<T> lock() const
+        {
+            return m_lifetime.expired() ? nullptr : SmartPtr<T>( m_object );
+        }
+        bool expired() const
+        {
+            return m_lifetime.expired();
+        }
+
     private:
         void assign( T *object )
         {
@@ -32,5 +55,5 @@ namespace workphone
         T *m_object = nullptr;
         std::weak_ptr<const void> m_lifetime;
     };
-}
+}  // namespace workphone
 #endif

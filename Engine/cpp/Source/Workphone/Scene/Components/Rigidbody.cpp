@@ -806,7 +806,7 @@ namespace workphone::scene
                     {
                         auto shape = collision->getShape();
                         if( !shape && dynamic_cast<CollisionTerrain *>( collision.get() ) )
-                            return; // First terrain generation waits for its GPU/physics publication gate.
+                            return;  // First terrain generation waits for its GPU/physics publication gate.
                         WP_ASSERT( shape );
 
                         if( shape && !shape->isAttached() )
@@ -1487,7 +1487,7 @@ namespace workphone::scene
             if( auto terrain = actor->getComponent<CollisionTerrain>() )
                 if( terrain->getTerrainSnapshot() &&
                     actor->getWorldTransform() != terrain->getPublishedTerrainTransform() )
-                    return; // TerrainSystem publishes validated placement and collision together.
+                    return;  // TerrainSystem publishes validated placement and collision together.
         auto state = getState();
         switch( state )
         {

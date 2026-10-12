@@ -113,7 +113,7 @@ namespace workphone
         bool exchange( T value, memory_semantics order = memory_semantics::full_fence ) noexcept
         {
             return m_value.exchange( value, order );
-        } 
+        }
 
     private:
         /// The value

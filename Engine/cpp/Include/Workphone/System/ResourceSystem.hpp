@@ -30,8 +30,8 @@ namespace workphone::resource
         Array<RuntimeResourceBinding> bindings;
         std::shared_ptr<void> lifetime;
     };
-    using RuntimePackageResolver = std::function<bool( const RuntimePackageContext &,
-                                                       RuntimePackageAdmission &, String & )>;
+    using RuntimePackageResolver =
+        std::function<bool( const RuntimePackageContext &, RuntimePackageAdmission &, String & )>;
 
     /** Read-only cooked mount. Limits apply to each unique install dependency closure. */
     struct WPCore_API RuntimeResourceConfig
@@ -118,7 +118,7 @@ namespace workphone::resource
          * A shallow result never enters the complete-closure identity cache.
          */
         std::shared_ptr<const RuntimeResource> loadPayload( const ResourceID &, String &error,
-                                                          u64 maximumPayloadBytes = 1024ull << 20 );
+                                                            u64 maximumPayloadBytes = 1024ull << 20 );
         void unload( const ResourceID &resourceId ) override;
         void clearRuntimeCache() override;
 

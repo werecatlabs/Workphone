@@ -8,18 +8,22 @@
 namespace workphone::render
 {
     using FoliagePageLoader = std::function<std::shared_ptr<const FoliagePageData>(
-        FoliageCellKey, const StreamCancellation &, String &)>;
+        FoliageCellKey, const StreamCancellation &, String & )>;
     struct FoliageStreamSource
     {
-        FoliageSnapshot snapshot; // Shared species; cooked sources need no eager instance population.
+        FoliageSnapshot snapshot;  // Shared species; cooked sources need no eager instance population.
         Array<FoliageCellKey> cells;
-        Array<u32> pageInstanceCounts; // Exact counts, positionally matching cells.
+        Array<u32> pageInstanceCounts;  // Exact counts, positionally matching cells.
         FoliagePageLoader load;
         // Bounds relative to instance origins, over every page. Negative values
         // derive bounds from a complete authored snapshot; lazy sources supply them.
         f32 maximumGeometryRadius = -1, maximumBendRadius = -1;
     };
-    struct FoliagePageView { Vector3F position; f32 range = 500; };
+    struct FoliagePageView
+    {
+        Vector3F position;
+        f32 range = 500;
+    };
     struct FoliagePageResult
     {
         FoliageSnapshot source;
@@ -53,9 +57,10 @@ namespace workphone::render
         WorldStreamProducerStats stats() const;
         FoliagePageStream( const FoliagePageStream & ) = delete;
         FoliagePageStream &operator=( const FoliagePageStream & ) = delete;
+
     private:
         struct Impl;
         std::unique_ptr<Impl> m_impl;
     };
-}
+}  // namespace workphone::render
 #endif

@@ -324,15 +324,21 @@ namespace workphone::render
     u64 terrainSourceBytes( const TerrainData &data )
     {
         u64 bytes = sizeof( TerrainData ) + data.heights.capacity() * sizeof( f32 ) +
-            data.layerWeights.capacity() * sizeof( Vector4F ) + data.surfaceMasks.capacity() * sizeof( Vector2F ) +
-            data.holes.capacity() * sizeof( u8 ) + data.appearance.detailNormal.capacity();
-        for( const auto &layer : data.layers ) bytes += layer.albedo.capacity() + layer.normal.capacity() + layer.orm.capacity();
+                    data.layerWeights.capacity() * sizeof( Vector4F ) +
+                    data.surfaceMasks.capacity() * sizeof( Vector2F ) +
+                    data.holes.capacity() * sizeof( u8 ) + data.appearance.detailNormal.capacity();
+        for( const auto &layer : data.layers )
+            bytes += layer.albedo.capacity() + layer.normal.capacity() + layer.orm.capacity();
         return bytes;
     }
 
     struct TerrainTileStream::Impl
     {
-        struct SourceOwner { StreamBudget lease; TerrainSnapshot source; };
+        struct SourceOwner
+        {
+            StreamBudget lease;
+            TerrainSnapshot source;
+        };
         std::shared_ptr<WorldStreamingScheduler> scheduler = WorldStreamingScheduler::shared();
         std::shared_ptr<WorldStreamProducer> producer;
         TerrainSnapshot source;
@@ -341,34 +347,56 @@ namespace workphone::render
         {
             String error;
             producer = scheduler->createProducer( {}, error );
-            if( !producer ) throw std::runtime_error( error );
+            if( !producer )
+                throw std::runtime_error( error );
         }
-        ~Impl() { producer->drain(); }
+        ~Impl()
+        {
+            producer->drain();
+        }
     };
 
-    TerrainTileStream::TerrainTileStream() : m_impl( std::make_unique<Impl>() ) {}
+    TerrainTileStream::TerrainTileStream() : m_impl( std::make_unique<Impl>() )
+    {
+    }
     TerrainTileStream::~TerrainTileStream() = default;
     bool TerrainTileStream::request( TerrainSnapshot data, const Array<TerrainTileInfo> &tiles,
                                      const Array<TerrainTileKey> &keys, String &error )
     {
         if( !data || keys.size() > 256 || tiles.size() > 2048 )
-        { error = "Terrain stream requires a source, at most 2048 tiles and 256 requests"; return false; }
+        {
+            error = "Terrain stream requires a source, at most 2048 tiles and 256 requests";
+            return false;
+        }
         for( auto key : keys )
-            if( key.tile >= tiles.size() || key.lod >= terrainTileLods || tiles[key.tile].id != key.tile )
-            { error = "Invalid terrain stream tile request"; return false; }
+            if( key.tile >= tiles.size() || key.lod >= terrainTileLods ||
+                tiles[key.tile].id != key.tile )
+            {
+                error = "Invalid terrain stream tile request";
+                return false;
+            }
         for( size_t i = 0; i < keys.size(); ++i )
             if( std::find( keys.begin(), keys.begin() + i, keys[i] ) != keys.begin() + i )
-            { error = "Duplicate terrain stream tile request"; return false; }
+            {
+                error = "Duplicate terrain stream tile request";
+                return false;
+            }
         auto &p = *m_impl;
-        if( data == p.source && keys == p.demand ) { error.clear(); return true; }
+        if( data == p.source && keys == p.demand )
+        {
+            error.clear();
+            return true;
+        }
         try
         {
             TerrainSnapshot retained = p.source;
             if( data != retained )
             {
                 auto owner = std::make_shared<Impl::SourceOwner>();
-                owner->lease = p.scheduler->reserve( StreamMemoryClass::SourceCpu, terrainSourceBytes( *data ), error );
-                if( !owner->lease ) return false;
+                owner->lease = p.scheduler->reserve( StreamMemoryClass::SourceCpu,
+                                                     terrainSourceBytes( *data ), error );
+                if( !owner->lease )
+                    return false;
                 owner->source = data;
                 retained = TerrainSnapshot( owner, data.get() );
             }
@@ -387,33 +415,46 @@ namespace workphone::render
                 request.maximumResultBytes = 1ull << 20;
                 request.execute = [retained, key, tile]( const StreamCancellation &cancel ) {
                     auto result = std::make_shared<TerrainTileResult>();
-                    result->source = retained; result->key = key;
+                    result->source = retained;
+                    result->key = key;
                     auto mesh = std::make_shared<TerrainMeshData>();
-                    if( buildTerrainTile( *retained, tile, key.lod, *mesh, result->error, [&] { return cancel.cancelled(); } ) )
+                    if( buildTerrainTile( *retained, tile, key.lod, *mesh, result->error,
+                                          [&] { return cancel.cancelled(); } ) )
                         result->mesh = std::move( mesh );
                     WorldStreamResult output;
                     output.payload = result;
                     if( result->mesh )
                         output.bytes = sizeof( TerrainTileResult ) + sizeof( TerrainMeshData ) +
-                            result->mesh->positions.capacity() * sizeof( Vector3F ) + result->mesh->normals.capacity() * sizeof( Vector3F ) +
-                            result->mesh->uvs.capacity() * sizeof( Vector2F ) + result->mesh->indices.capacity() * sizeof( u32 );
+                                       result->mesh->positions.capacity() * sizeof( Vector3F ) +
+                                       result->mesh->normals.capacity() * sizeof( Vector3F ) +
+                                       result->mesh->uvs.capacity() * sizeof( Vector2F ) +
+                                       result->mesh->indices.capacity() * sizeof( u32 );
                     return output;
                 };
                 requests.push_back( std::move( request ) );
             }
-            if( !p.producer->replace( requests, error ) ) return false;
-            p.source = std::move( retained ); p.demand = std::move( demand );
-            error.clear(); return true;
+            if( !p.producer->replace( requests, error ) )
+                return false;
+            p.source = std::move( retained );
+            p.demand = std::move( demand );
+            error.clear();
+            return true;
         }
-        catch( const std::exception &e ) { error = e.what(); return false; }
+        catch( const std::exception &e )
+        {
+            error = e.what();
+            return false;
+        }
     }
     bool TerrainTileStream::take( TerrainTileResult &result )
     {
         WorldStreamResult ready;
-        if( !m_impl->producer->take( ready ) ) return false;
+        if( !m_impl->producer->take( ready ) )
+            return false;
         if( !ready.payload )
         {
-            result = {}; result.source = m_impl->source;
+            result = {};
+            result.source = m_impl->source;
             result.key = { u32( ready.key >> 32 ), u32( ready.key ) };
             result.error = ready.error;
             return true;
@@ -422,23 +463,33 @@ namespace workphone::render
         result = *tile;
         // Alias the complete scheduled payload, not just its mesh control block:
         // callers retaining a mesh also retain its shared ResultCpu reservation.
-        if( tile->mesh ) result.mesh = std::shared_ptr<const TerrainMeshData>( ready.payload, tile->mesh.get() );
+        if( tile->mesh )
+            result.mesh = std::shared_ptr<const TerrainMeshData>( ready.payload, tile->mesh.get() );
         return true;
     }
     void TerrainTileStream::cancel()
     {
-        m_impl->producer->cancel(); m_impl->source.reset(); m_impl->demand.clear();
+        m_impl->producer->cancel();
+        m_impl->source.reset();
+        m_impl->demand.clear();
     }
     void TerrainTileStream::drain()
     {
-        m_impl->producer->drain(); m_impl->source.reset(); m_impl->demand.clear();
+        m_impl->producer->drain();
+        m_impl->source.reset();
+        m_impl->demand.clear();
     }
     TerrainStreamStats TerrainTileStream::stats() const
     {
         const auto value = m_impl->producer->stats();
         TerrainStreamStats result;
-        result.generation = value.generation; result.completed = value.completed; result.cancelled = value.cancelled;
-        result.readyBytes = value.readyBytes; result.pending = value.pending; result.active = value.active; result.ready = value.ready;
+        result.generation = value.generation;
+        result.completed = value.completed;
+        result.cancelled = value.cancelled;
+        result.readyBytes = value.readyBytes;
+        result.pending = value.pending;
+        result.active = value.active;
+        result.ready = value.ready;
         return result;
     }
 }  // namespace workphone::render

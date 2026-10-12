@@ -321,9 +321,9 @@ namespace workphone
             void updateEditModeState();
             void updatePlayModeState();
 
-            bool m_updateInPlayMode = false;       ///< Whether the component updates in play mode.
-            bool m_updateInEditMode = false;       ///< Whether the component updates in edit mode.
-            String m_className;                    ///< Name of the script class.
+            bool m_updateInPlayMode = false;  ///< Whether the component updates in play mode.
+            bool m_updateInEditMode = false;  ///< Whether the component updates in edit mode.
+            String m_className;               ///< Name of the script class.
             String m_scriptAssetUuid;
             SmartPtr<IScriptClass> m_scriptClass;  ///< Script class associated with this component.
             SmartPtr<IScriptInvoker> m_invoker;    ///< Used to call script functions.

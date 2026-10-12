@@ -44,14 +44,16 @@ namespace workphone
             static auto registry = new ObservedLifetimes;
             return *registry;
         }
-    }
+    }  // namespace
     std::weak_ptr<const void> observeObjectLifetime( ISharedObject *object )
     {
-        if( !object || !object->isAlive() || object->getReferences() <= 0 ) return {};
+        if( !object || !object->isAlive() || object->getReferences() <= 0 )
+            return {};
         auto &registry = observedLifetimes();
         std::lock_guard<std::mutex> lock( registry.mutex );
         auto &token = registry.tokens[object];
-        if( !token ) token = std::make_shared<const int>( 0 );
+        if( !token )
+            token = std::make_shared<const int>( 0 );
         return token;
     }
     void expireObjectLifetime( const ISharedObject *object )

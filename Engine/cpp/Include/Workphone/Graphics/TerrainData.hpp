@@ -19,7 +19,7 @@ namespace workphone::render
     struct TerrainLayer
     {
         String albedo, normal, orm;
-        Vector2F uvScale = Vector2F( 1, 1 ); // texture cycles per local metre
+        Vector2F uvScale = Vector2F( 1, 1 );  // texture cycles per local metre
         Vector4F tint = Vector4F( 1, 1, 1, 1 );
         f32 roughness = 1, metallic = 0, normalStrength = 1;
         // Height blending reads the linear ORM alpha channel; missing ORM has height zero.
@@ -33,7 +33,11 @@ namespace workphone::render
         }
     };
 
-    enum class TerrainProjection : u32 { Planar = 0, Triplanar = 1 };
+    enum class TerrainProjection : u32
+    {
+        Planar = 0,
+        Triplanar = 1
+    };
 
     struct TerrainAppearance
     {
@@ -56,9 +60,10 @@ namespace workphone::render
                    heightBlend == o.heightBlend && heightTransition == o.heightTransition &&
                    detailNormal == o.detailNormal && detailUvScale == o.detailUvScale &&
                    detailStrength == o.detailStrength && macroScale == o.macroScale &&
-                   macroStrength == o.macroStrength && macroSeed == o.macroSeed && macroTint == o.macroTint &&
-                   wetness == o.wetness && wetDarkening == o.wetDarkening && wetRoughness == o.wetRoughness &&
-                   snow == o.snow && snowRoughness == o.snowRoughness && snowTint == o.snowTint;
+                   macroStrength == o.macroStrength && macroSeed == o.macroSeed &&
+                   macroTint == o.macroTint && wetness == o.wetness && wetDarkening == o.wetDarkening &&
+                   wetRoughness == o.wetRoughness && snow == o.snow &&
+                   snowRoughness == o.snowRoughness && snowTint == o.snowTint;
         }
     };
 

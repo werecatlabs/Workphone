@@ -316,7 +316,8 @@ namespace workphone
              * generations and lifecycle invalidation. Subscriber reconciliation uses serial.
              */
             void getTerrainIntegrationState( render::TerrainSnapshot &snapshot,
-                Transform3<real_Num> &placement, u64 &serial, bool &detached ) const;
+                                             Transform3<real_Num> &placement, u64 &serial,
+                                             bool &detached ) const;
             u64 getTerrainRevision() const;
             bool applyTerrainData( const render::TerrainData &data, String &error,
                                    u64 expectedRevision = 0 );
@@ -475,8 +476,8 @@ namespace workphone
             u64 m_integrationSerial = 1;
             bool m_integrationAvailable = true, m_integrationDetached = false;
             bool publishTerrainConsumers( render::TerrainSnapshot snapshot,
-                const render::Terrain::TerrainPublication &publish, String &error,
-                render::Terrain *renderer );
+                                          const render::Terrain::TerrainPublication &publish,
+                                          String &error, render::Terrain *renderer );
             std::unique_ptr<TerrainEditStroke> m_editStroke;
             mutable std::mutex m_foliageAuthoringMutex;
             std::mutex m_foliageRefreshMutex;
@@ -488,9 +489,8 @@ namespace workphone
             SmartPtr<physics::IPhysicsScene3> m_foliagePhysicsScene;
             String m_foliagePhysicsError;
             std::recursive_mutex m_foliagePhysicsMutex;
-            bool prepareFoliagePhysics( render::FoliageSnapshot,
-                const Transform3<real_Num> &, String &error,
-                const std::function<void()> &commit = {} );
+            bool prepareFoliagePhysics( render::FoliageSnapshot, const Transform3<real_Num> &,
+                                        String &error, const std::function<void()> &commit = {} );
 
             /** Scene node the terrain is attached to. */
             SmartPtr<render::IGraphicsSceneNode> m_node;

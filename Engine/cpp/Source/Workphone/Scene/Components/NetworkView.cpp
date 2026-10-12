@@ -357,18 +357,21 @@ namespace workphone::scene
             return;
 
         const auto state = network::readActorSnapshot( *packet );
-        if( m_hasReceivedSnapshot && !network::isNewerSequence( state.sequence, m_lastReceivedSequence ) )
+        if( m_hasReceivedSnapshot &&
+            !network::isNewerSequence( state.sequence, m_lastReceivedSequence ) )
         {
             return;
         }
 
         if( ( state.channels & SyncPositionFlag ) != 0 )
         {
-            transform->setPosition( Vector3<real_Num>( state.position[0], state.position[1], state.position[2] ) );
+            transform->setPosition(
+                Vector3<real_Num>( state.position[0], state.position[1], state.position[2] ) );
         }
         if( ( state.channels & SyncRotationFlag ) != 0 )
         {
-            transform->setRotation( Vector3<real_Num>( state.rotation[0], state.rotation[1], state.rotation[2] ) );
+            transform->setRotation(
+                Vector3<real_Num>( state.rotation[0], state.rotation[1], state.rotation[2] ) );
         }
         if( ( state.channels & SyncScaleFlag ) != 0 )
         {
@@ -382,8 +385,8 @@ namespace workphone::scene
     void NetworkView::handlePacket( SmartPtr<IPacket> packet )
     {
         auto application = core::IApplicationManager::instancePtr();
-        if( !packet || !m_networkManager || !isEnabled() || !m_replicationEnabled ||
-            !application || !application->isPlaying() )
+        if( !packet || !m_networkManager || !isEnabled() || !m_replicationEnabled || !application ||
+            !application->isPlaying() )
             return;
 
         NetworkMessageHeader header;
@@ -399,8 +402,9 @@ namespace workphone::scene
         case NetworkMessageType::ActorState:
             // Clients accept only server-published state. Server receives owner
             // state only under the authored Owner policy; AnyPeer is not authority.
-            if( !m_networkManager->isServer() ? sender == 0 :
-                ( m_authorityMode == AuthorityMode::Owner && static_cast<u32>( sender ) == m_ownerId ) )
+            if( !m_networkManager->isServer() ? sender == 0
+                                              : ( m_authorityMode == AuthorityMode::Owner &&
+                                                  static_cast<u32>( sender ) == m_ownerId ) )
                 deserializeView( packet );
             break;
         case NetworkMessageType::OwnershipTransfer:

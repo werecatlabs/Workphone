@@ -38,7 +38,7 @@ namespace workphone
             result.normalise();
             return result;
         }
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone, ActorAnimationTrack, IActorAnimationTrack );
 
@@ -128,8 +128,8 @@ namespace workphone
                 const auto currentPosition = m_bone->getPosition();
                 m_bone->setPosition( currentPosition +
                                      ( targetPosition - currentPosition ) * clampedWeight );
-                    m_bone->setOrientation( blendRotation( m_bone->getOrientation(),
-                                                          transformKeyFrame->getOrientation(), clampedWeight ) );
+                m_bone->setOrientation( blendRotation(
+                    m_bone->getOrientation(), transformKeyFrame->getOrientation(), clampedWeight ) );
                 break;
             }
 
@@ -150,7 +150,8 @@ namespace workphone
                     m_propertyName == "rotation" )
                 {
                     transform->setOrientation( blendRotation( transform->getOrientation(),
-                                                               transformKeyFrame->getOrientation(), clampedWeight ) );
+                                                              transformKeyFrame->getOrientation(),
+                                                              clampedWeight ) );
                 }
 
                 if( m_propertyName.empty() || m_propertyName == "scale" )
@@ -181,19 +182,22 @@ namespace workphone
     }
 
     void ActorAnimationTrack::applyToBone( const SmartPtr<IBone> &bone,
-                                           const SmartPtr<IAnimationTimeIndex> &timeIndex,
-                                           f32 weight, f32 scale ) const
+                                           const SmartPtr<IAnimationTimeIndex> &timeIndex, f32 weight,
+                                           f32 scale ) const
     {
-        if( !bone || !timeIndex || weight <= 0 || m_trackType != TrackType::Transform ) return;
+        if( !bone || !timeIndex || weight <= 0 || m_trackType != TrackType::Transform )
+            return;
         SmartPtr<IAnimationKeyFrame> sampled;
         getInterpolatedKeyFrame( timeIndex, sampled );
         const auto key = workphone::dynamic_pointer_cast<KeyFrameTransform3>( sampled );
-        if( !key ) return;
+        if( !key )
+            return;
         const auto blend = std::clamp( weight, 0.0f, 1.0f );
-        auto target = bone; // SmartPtr intentionally propagates constness to its pointee.
+        auto target = bone;  // SmartPtr intentionally propagates constness to its pointee.
         const auto current = target->getPosition();
         target->setPosition( current + ( key->getPosition() * scale - current ) * blend );
-        target->setOrientation( blendRotation( target->getOrientation(), key->getOrientation(), blend ) );
+        target->setOrientation(
+            blendRotation( target->getOrientation(), key->getOrientation(), blend ) );
     }
 
     SmartPtr<IAnimationKeyFrame> ActorAnimationTrack::createKeyFrame( f32 timePos )
@@ -203,7 +207,8 @@ namespace workphone
         auto keyFrames = getKeyFrames();
         for( auto &existing : keyFrames )
         {
-            if( existing && std::abs( existing->getTime() - timePos ) <= std::numeric_limits<f32>::epsilon() )
+            if( existing &&
+                std::abs( existing->getTime() - timePos ) <= std::numeric_limits<f32>::epsilon() )
             {
                 if( workphone::dynamic_pointer_cast<KeyFrameTransform3>( existing ) )
                     return existing;
@@ -260,8 +265,8 @@ namespace workphone
                                    ( transform2->getPosition() - transform1->getPosition() ) * t );
         interpolated->setScale( transform1->getScale() +
                                 ( transform2->getScale() - transform1->getScale() ) * t );
-        interpolated->setOrientation( blendRotation( transform1->getOrientation(),
-                                                     transform2->getOrientation(), t ) );
+        interpolated->setOrientation(
+            blendRotation( transform1->getOrientation(), transform2->getOrientation(), t ) );
         kf = interpolated;
     }
 

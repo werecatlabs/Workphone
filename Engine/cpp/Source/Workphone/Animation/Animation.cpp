@@ -511,7 +511,8 @@ namespace workphone
                                 boneName = importedBone->getName();
                         if( !StringUtil::isNullOrEmpty( boneName ) )
                         {
-                            actorTrack->applyToBone( skeleton->getBone( boneName ), timeIndex, weight, scale );
+                            actorTrack->applyToBone( skeleton->getBone( boneName ), timeIndex, weight,
+                                                     scale );
                         }
                         // A missing binding must not animate the original imported skeleton.
                         continue;

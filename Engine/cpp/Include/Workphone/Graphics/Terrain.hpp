@@ -64,12 +64,17 @@ namespace workphone
              * snapshots across page preparation and both colour/shadow passes. */
             bool setFoliageSnapshot( FoliageSnapshot snapshot, String &error );
             FoliageSnapshot getFoliageSnapshot() const;
-            struct ActiveFoliage { FoliageSnapshot snapshot; Transform3<real_Num> placement; };
-            using FoliagePublicationGate = std::function<bool(FoliageSnapshot,
-                const Transform3<real_Num> &, const std::function<void()> &, String &)>;
+            struct ActiveFoliage
+            {
+                FoliageSnapshot snapshot;
+                Transform3<real_Num> placement;
+            };
+            using FoliagePublicationGate =
+                std::function<bool( FoliageSnapshot, const Transform3<real_Num> &,
+                                    const std::function<void()> &, String & )>;
             void setFoliagePublicationGate( FoliagePublicationGate );
             bool publishFoliageSnapshot( FoliageSnapshot, const Transform3<real_Num> &,
-                const std::function<void()> &commitRenderer, String &error );
+                                         const std::function<void()> &commitRenderer, String &error );
             ActiveFoliage getActiveFoliage() const;
             struct FoliageDiagnostics
             {
@@ -92,19 +97,22 @@ namespace workphone
             bool applyTerrainData( const TerrainData &data, String &error, u64 expectedRevision = 0 );
 
             /** Preserve component-owned identity/revision instead of assigning a second token. */
-            bool requestTerrainSnapshot( TerrainSnapshot snapshot, String &error, u64 expectedRevision = 0 );
+            bool requestTerrainSnapshot( TerrainSnapshot snapshot, String &error,
+                                         u64 expectedRevision = 0 );
             TerrainSnapshot getActiveTerrainSnapshot() const;
             Transform3<real_Num> getRequestedTerrainWorldTransform() const;
             void setDeferredTerrainPublication( bool deferred );
             bool isTerrainPublicationDeferred() const;
             bool hasPendingTerrainPublication() const;
             using TerrainPublication = std::function<bool( const std::function<void()> &, String & )>;
-            using TerrainPublicationGate = std::function<bool( TerrainSnapshot, const TerrainPublication &, String & )>;
+            using TerrainPublicationGate =
+                std::function<bool( TerrainSnapshot, const TerrainPublication &, String & )>;
             void setTerrainPublicationGate( TerrainPublicationGate gate );
             /** Renderer owner calls only after all fallible GPU/material preparation.
              * commitRenderer must contain no-fail swaps. Gate supplies synchronized physics publication.
              */
-            bool publishPendingTerrain( TerrainSnapshot expected, const std::function<void()> &commitRenderer, String &error );
+            bool publishPendingTerrain( TerrainSnapshot expected,
+                                        const std::function<void()> &commitRenderer, String &error );
 
             /**
              * @brief Register the terrain state data in the state context.

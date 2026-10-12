@@ -718,8 +718,9 @@ namespace workphone::scene
                                     defaultTexture = dynamic_pointer_cast<render::ITexture>(
                                         resources->loadMediaResource( defaultSkyboxTextureName ) );
                                 else
-                                    defaultTexture = resourceDatabase->loadResourceByType<render::ITexture>(
-                                        defaultSkyboxTextureName );
+                                    defaultTexture =
+                                        resourceDatabase->loadResourceByType<render::ITexture>(
+                                            defaultSkyboxTextureName );
                             }
                             texture = defaultTexture;
                         }

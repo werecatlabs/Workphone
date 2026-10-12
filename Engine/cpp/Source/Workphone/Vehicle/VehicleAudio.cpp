@@ -5,14 +5,18 @@
 
 namespace workphone::advanced
 {
-    VehicleAudio::~VehicleAudio() { unload(); }
+    VehicleAudio::~VehicleAudio()
+    {
+        unload();
+    }
 
     bool VehicleAudio::load( SmartPtr<ISoundManager> manager )
     {
         unload();
-        if ( !manager || !manager->isLoaded() ) return false;
+        if( !manager || !manager->isLoaded() )
+            return false;
         m_manager = manager;
-        for ( size_t i = 0; i < m_sounds.size(); ++i )
+        for( size_t i = 0; i < m_sounds.size(); ++i )
         {
             const auto name = i < 6    ? "engine_" + StringUtil::toString( i )
                               : i == 6 ? String( "tyre_roll" )
@@ -20,7 +24,7 @@ namespace workphone::advanced
             auto sound = dynamic_pointer_cast<ISound>(
                 manager->create( "Audio/VehicleAdvanced/" + name + ".wav" ) );
             m_sounds[i] = sound;
-            if ( !sound || !sound->isLoaded() )
+            if( !sound || !sound->isLoaded() )
             {
                 WP_LOG_WARNING( "Vehicle audio: cannot load " + name );
                 unload();
@@ -36,13 +40,14 @@ namespace workphone::advanced
 
     void VehicleAudio::unload()
     {
-        for ( auto& sound : m_sounds )
+        for( auto &sound : m_sounds )
         {
-            if ( sound )
+            if( sound )
             {
                 sound->stop();
                 sound->unload( nullptr );
-                if ( m_manager ) m_manager->destroyResource( sound );
+                if( m_manager )
+                    m_manager->destroyResource( sound );
                 sound = nullptr;
             }
         }
@@ -50,11 +55,11 @@ namespace workphone::advanced
         m_gains = {};
     }
 
-    void VehicleAudio::update( const VehicleAudioInput& input, float dt )
+    void VehicleAudio::update( const VehicleAudioInput &input, float dt )
     {
         smoothVehicleAudio( m_gains, vehicleAudioTargets( input ), dt );
-        for ( size_t i = 0; i < m_sounds.size(); ++i )
-            if ( m_sounds[i] )
+        for( size_t i = 0; i < m_sounds.size(); ++i )
+            if( m_sounds[i] )
                 m_sounds[i]->setVolume( i < 6    ? m_gains.engine[i]
                                         : i == 6 ? m_gains.rolling
                                                  : m_gains.squeal );
@@ -62,8 +67,9 @@ namespace workphone::advanced
 
     bool VehicleAudio::isPlaying() const
     {
-        for ( const auto& sound : m_sounds )
-            if ( !sound || !sound->isPlaying() || !sound->getLoop() ) return false;
+        for( const auto &sound : m_sounds )
+            if( !sound || !sound->isPlaying() || !sound->getLoop() )
+                return false;
         return true;
     }
 }  // namespace workphone::advanced
