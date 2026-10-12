@@ -22,6 +22,8 @@ namespace workphone::render
             ~Candidate();
             SmartPtr<ClawMaterial> material() const;
             SmartPtr<ClawTexture> texture() const;
+            SmartPtr<ClawTexture> normalTexture() const;
+            SmartPtr<ClawTexture> ormTexture() const;
             std::shared_ptr<const resource::RuntimeResource> resource() const;
 
         private:

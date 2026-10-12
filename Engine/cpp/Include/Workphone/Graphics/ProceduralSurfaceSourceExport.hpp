@@ -64,8 +64,10 @@ namespace workphone::procedural::texture_export
                      split, channel == 1 ? "roughness" : "data" );
             }
             const std::string material =
-                "{\"version\":1,\"baseColour\":[1,1,1,1],\"metalness\":0,\"roughness\":0.9,"
-                "\"baseColourTexture\":\"data://asphalt-albedo.texres\"}\n";
+                "{\"version\":1,\"baseColour\":[1,1,1,1],\"metalness\":1,\"roughness\":1,"
+                "\"baseColourTexture\":\"data://asphalt-albedo.texres\","
+                "\"normalTexture\":\"data://asphalt-normal.texres\","
+                "\"ormTexture\":\"data://asphalt-orm.texres\"}\n";
             write( "asphalt.matres", material.data(), material.size() );
             std::ostringstream provenance;
             provenance << "{\"format\":\"workphone.procedural-material-source\",\"version\":1,"
@@ -74,8 +76,8 @@ namespace workphone::procedural::texture_export
                 ",\"tileMetres\":1.5,\"maps\":{\"albedo\":\"srgb\",\"normal\":\"linear-tangent\","
                 "\"orm\":\"linear-AO-roughness-metalness\",\"ao\":\"linear\","
                 "\"roughness\":\"linear\",\"metalness\":\"linear\"},"
-                "\"cookedMaterialTier\":\"baseColour-only\","
-                "\"auxiliaryMapsBoundByCookedMaterial\":false}\n";
+                "\"cookedMaterialTier\":\"albedo-normal-orm\","
+                "\"auxiliaryMapsBoundByCookedMaterial\":true}\n";
             const auto manifest = provenance.str();
             // Written last: its presence certifies the complete source export, not a GPU cook.
             write( "material-source.json.tmp", manifest.data(), manifest.size() );

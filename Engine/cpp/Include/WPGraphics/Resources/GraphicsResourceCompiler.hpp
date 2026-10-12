@@ -24,7 +24,9 @@ namespace workphone::render
      * Both JSON descriptors require version:1. texres requires source:data://...,
      * mipFilter (none/colour/data/normal/cutout/roughness), atlasColumns and
      * alphaCutoff. matres requires baseColour:[r,g,b,a], metalness, roughness and
-     * baseColourTexture:data://...texres. Unknown/duplicate fields are rejected.
+     * baseColourTexture:data://...texres. Optional normalTexture and ormTexture
+     * identify separately pinned texres resources with Normal/Data filtering
+     * and linear storage. Unknown/duplicate fields are rejected.
      */
     class WPGraphics_API GraphicsResourceCompiler final : public resource::IResourceCompiler
     {

@@ -15,6 +15,7 @@
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/FoliagePlantGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
+#include <Workphone/Graphics/Texture.hpp>
 #include <chrono>
 #include <fstream>
 #include <iterator>
@@ -150,9 +151,9 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
                  std::string::npos,
              "Source material descriptors lost semantic mip filters" );
     require( readExport( "material-source.json" ).find( "\"seed\":42" ) != std::string::npos &&
-                 readExport( "material-source.json" ).find( "\"auxiliaryMapsBoundByCookedMaterial\":false" ) !=
+                 readExport( "material-source.json" ).find( "\"auxiliaryMapsBoundByCookedMaterial\":true" ) !=
                  std::string::npos,
-             "Source material metadata omitted provenance or cooked tier limitation" );
+             "Source material metadata omitted provenance or cooked PBR tier" );
     require( !texture_export::exportAsphaltSource( texture, exportDirectory, 99, exportError ) &&
                  readExport( "asphalt-albedo.tga" ) == sourceTga,
              "Repeated material export overwrote existing source assets" );
@@ -168,6 +169,23 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
     for( auto index : road.roadSurface.indices )
         require( index < road.roadSurface.vertices.size(),
                  "Road service returned an out-of-range index" );
+
+    auto namedTexture = workphone::make_ptr<render::Texture>();
+    namedTexture->setName( "procedural/runtime-leaf-atlas" );
+    auto textureProperties = namedTexture->getProperties();
+    textureProperties->setProperty( "mipmapFilter", s32( 4 ) );
+    namedTexture->setProperties( textureProperties );
+    require( namedTexture->getName() == "procedural/runtime-leaf-atlas",
+             "Texture mip-property roundtrip cleared the registered atlas name" );
+    auto partialTextureProperties = workphone::make_ptr<Properties>();
+    partialTextureProperties->setProperty( "mipmapFilter", s32( 4 ) );
+    namedTexture->setProperties( partialTextureProperties );
+    require( namedTexture->getName() == "procedural/runtime-leaf-atlas",
+             "Partial texture property edits must preserve the registered atlas name" );
+    partialTextureProperties->setProperty( "name", String( "procedural/replacement-leaf-atlas" ) );
+    namedTexture->setProperties( partialTextureProperties );
+    require( namedTexture->getName() == "procedural/replacement-leaf-atlas",
+             "Explicit resource name property must update the graphics resource name" );
 
     auto race = workphone::make_ptr<scene::ProceduralRaceScene>();
     require( !race->getFoliageWorldEnabled(), "Legacy foliage selection must remain the default" );

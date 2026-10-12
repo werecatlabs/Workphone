@@ -172,10 +172,8 @@ namespace workphone::scene::race
             auto roadMat = material( assets, { .07f, .075f, .085f, 1 }, .9f );
             maps( assets, roadMat, asphalt.albedo, asphalt.normal, asphalt.orm );
             roadMat->setNormalStrength( .2f );
-            auto sampler = make_ptr<Properties>();
-            sampler->setProperty( "uvFilter", u32( 3 ) );
-            sampler->setProperty( "uvAniso", 8.f );
-            roadMat->setProperties( sampler );
+            roadMat->setEditorUInt( "uvFilter", 3 );
+            roadMat->setEditorFloat( "uvAniso", 8.f );
             return roadMat;
         }
         SmartPtr<scene::IGameActor> mesh( SceneAssets &assets, const String &name, const Geometry &g,
@@ -422,13 +420,11 @@ namespace workphone::scene::race
                 auto m = material( assets, { d.baseColor.r, d.baseColor.g, d.baseColor.b, d.opacity },
                                    d.roughness, d.metallic );
                 m->setEmissive( { d.emissiveColor.r, d.emissiveColor.g, d.emissiveColor.b, 1 } );
-                auto props = m->getProperties();
-                props->setProperty( "emissionIntensity", d.emissiveIntensity );
-                props->setProperty( "enableEmission", d.emissiveIntensity > 0 );
-                props->setProperty( "clearCoat", d.clearcoat );
-                props->setProperty( "clearCoatRoughness", d.clearcoatRoughness );
-                props->setProperty( "normalMapWeight", d.normalScale );
-                m->setProperties( props );
+                m->setEditorFloat( "emissionIntensity", d.emissiveIntensity );
+                m->setEmissionEnabled( d.emissiveIntensity > 0 );
+                m->setEditorFloat( "clearCoat", d.clearcoat );
+                m->setEditorFloat( "clearCoatRoughness", d.clearcoatRoughness );
+                m->setNormalStrength( d.normalScale );
                 m->setSpecular( ColourF( .04f, .04f, .04f, 1 ) );
                 m->setDiffuse( { d.baseColor.r, d.baseColor.g, d.baseColor.b, d.opacity } );
                 m->setRoughness( d.roughness );
@@ -576,14 +572,10 @@ namespace workphone::scene::race
             gravel->setUVProjection( 3 );
             for( auto sampled : { roadMat, grass, gravel } )
             {
-                // Only change sampler fields. A full material property round-trip reloads
-                // texture names, which can discard anonymous procedural texture bindings.
-                auto properties = make_ptr<Properties>();
-                properties->setProperty( "uvFilter", u32( 3 ) );
-                properties->setProperty( "uvAniso", 8.f );
+                sampled->setEditorUInt( "uvFilter", 3 );
+                sampled->setEditorFloat( "uvAniso", 8.f );
                 if( sampled != roadMat )
-                    properties->setProperty( "uvTriplanarScale", sampled == grass ? .08f : .25f );
-                sampled->setProperties( properties );
+                    sampled->setEditorFloat( "uvTriplanarScale", sampled == grass ? .08f : .25f );
             }
             auto steel = material( assets, { .34f, .37f, .4f, 1 }, .45f, .7f );
             auto dark = material( assets, { .015f, .025f, .035f, 1 }, .55f, .35f );
@@ -854,20 +846,93 @@ namespace workphone::scene::race
             String error;
             if( !assets.foliageTerrain->applyTerrainData( ground, error ) )
                 throw std::runtime_error( "Cannot prepare foliage attachment: " + error );
-            TextureBuffer leafAtlas( 64, 64 );
-            for( u32 y = 0; y < 64; ++y )
-                for( u32 x = 0; x < 64; ++x )
+            // Each geometry card represents a small branching spray, not one giant leaf.
+            // Seeded individual leaves, interior gaps and twigs retain a broken silhouette
+            // through the existing alpha-coverage mip chain.
+            constexpr u32 atlasSize = 256;
+            TextureBuffer leafAtlas( atlasSize, atlasSize );
+            const auto randomLeaf = [seed]( u64 id ) {
+                return float( render::foliageStableHash( u64( seed ) ^ 0x4c454146u ^ id ) >> 40 ) /
+                    16777216.f;
+            };
+            const auto ellipse = [&]( float cx, float cy, float rx, float ry, float angle,
+                                      float variation ) {
+                const float cs = std::cos( angle ), sn = std::sin( angle );
+                const float extent = std::max( rx, ry );
+                const int minX = std::max( 0, int( ( cx - extent ) * atlasSize ) - 1 );
+                const int maxX = std::min( int( atlasSize ) - 1, int( ( cx + extent ) * atlasSize ) + 1 );
+                const int minY = std::max( 0, int( ( cy - extent ) * atlasSize ) - 1 );
+                const int maxY = std::min( int( atlasSize ) - 1, int( ( cy + extent ) * atlasSize ) + 1 );
+                for( int y = minY; y <= maxY; ++y )
+                    for( int x = minX; x <= maxX; ++x )
+                    {
+                        const float dx = ( x + .5f ) / atlasSize - cx;
+                        const float dy = ( y + .5f ) / atlasSize - cy;
+                        const float u = ( cs * dx + sn * dy ) / rx;
+                        const float v = ( -sn * dx + cs * dy ) / ry;
+                        const float edge = u * u + v * v;
+                        // Small asymmetric serrations avoid a repeating smooth oval outline.
+                        const float serration = .94f + .06f * std::cos( u * 24.f );
+                        if( edge > serration )
+                            continue;
+                        const float vein = std::abs( v ) < .08f ? 1.13f : 1.f;
+                        const float light = ( .68f + .32f * ( 1 - edge ) ) * variation * vein;
+                        const auto pixel = ( size_t( y ) * atlasSize + x ) * 4;
+                        leafAtlas.pixels[pixel] = u8( 65 * light );
+                        leafAtlas.pixels[pixel + 1] = u8( 118 * light );
+                        leafAtlas.pixels[pixel + 2] = u8( 34 * light );
+                        leafAtlas.pixels[pixel + 3] = 255;
+                    }
+            };
+            const auto twig = [&]( Vector2F start, Vector2F end, float radius ) {
+                const auto delta = end - start;
+                const float squared = delta.dotProduct( delta );
+                for( u32 y = 0; y < atlasSize; ++y )
+                    for( u32 x = 0; x < atlasSize; ++x )
+                    {
+                        const Vector2F p( ( x + .5f ) / atlasSize, ( y + .5f ) / atlasSize );
+                        const float t = std::clamp( ( p - start ).dotProduct( delta ) / squared, 0.f, 1.f );
+                        if( ( p - ( start + delta * t ) ).lengthSquared() > radius * radius )
+                            continue;
+                        const auto pixel = ( size_t( y ) * atlasSize + x ) * 4;
+                        leafAtlas.pixels[pixel] = 74;
+                        leafAtlas.pixels[pixel + 1] = 69;
+                        leafAtlas.pixels[pixel + 2] = 29;
+                        leafAtlas.pixels[pixel + 3] = 255;
+                    }
+            };
+            twig( { .5f, .96f }, { .5f, .08f }, .004f );
+            for( u32 branch = 0; branch < 7; ++branch )
+                for( int side : { -1, 1 } )
                 {
-                    const float u = ( float( x ) + .5f ) / 32 - 1;
-                    const float v = ( float( y ) + .5f ) / 32 - 1;
-                    const auto pixel = ( size_t( y ) * 64 + x ) * 4;
-                    const float edge = u * u + v * v * .85f;
-                    leafAtlas.pixels[pixel] = u8( 42 + y / 4 );
-                    leafAtlas.pixels[pixel + 1] = u8( 83 + y / 3 );
-                    leafAtlas.pixels[pixel + 2] = u8( 27 + y / 5 );
-                    leafAtlas.pixels[pixel + 3] = edge < .8f ? 255 : 0;
+                    const Vector2F start( .5f, .22f + branch * .105f );
+                    const Vector2F end( .5f + side * ( .26f + .08f * randomLeaf( branch + 71 ) ),
+                                       start.y - .13f );
+                    twig( start, end, .003f );
+                    for( u32 leaf = 0; leaf < 7; ++leaf )
+                        for( int pair : { -1, 1 } )
+                        {
+                            const u64 id = branch * 113 + leaf * 7 + ( side + 1 ) * 19 + pair + 1;
+                            const float t = .13f + leaf * .125f;
+                            const auto centre = start + ( end - start ) * t;
+                            ellipse( centre.x + pair * .012f,
+                                     centre.y + pair * ( .018f + .008f * randomLeaf( id + 701 ) ),
+                                     .029f + .015f * randomLeaf( id ),
+                                     .013f + .008f * randomLeaf( id + 313 ),
+                                     side * ( -.45f + pair * .65f ),
+                                     .8f + .4f * randomLeaf( id + 991 ) );
+                        }
                 }
+            const String leafTextureName = assets.resourcePrefix + "/texture/" +
+                StringUtil::toString( assets.textures.size() );
             auto leafTexture = upload( assets, leafAtlas, render::TextureMipFilter::Cutout );
+            // Use the registered resource identity, not a potentially empty display name
+            // returned after a texture property round-trip. An empty albedo is otherwise
+            // valid foliage data and silently produces opaque white leaf cards.
+            leafTexture->setName( leafTextureName );
+            auto registeredLeaf = app->getGraphicsSystem()->getTextureManager()->getByName( leafTextureName );
+            if( !registeredLeaf || registeredLeaf.get() != leafTexture.get() )
+                throw std::runtime_error( "Generated foliage atlas lost its registered texture identity." );
             auto world = std::make_shared<render::FoliageWorldData>();
             world->revision = 1;
             for( u32 variant = 0; variant < 4; ++variant )
@@ -876,10 +941,10 @@ namespace workphone::scene::race
                 recipe.speciesId = assets.resourcePrefix + "/broadleaf/" + StringUtil::toString( variant );
                 recipe.seed = seed ^ ( 7919u + variant * 104729u );
                 recipe.height = 6 + variant;
-                recipe.radius = 1.7f + variant * .2f;
-                recipe.branches = 18 + variant * 2;
+                recipe.radius = 2.6f + variant * .3f;
+                recipe.branches = 36 + variant * 4;
                 recipe.bark.tint = { .16f, .085f, .035f, 1 };
-                recipe.leaves.albedo = leafTexture->getName();
+                recipe.leaves.albedo = leafTextureName;
                 recipe.wind.amplitude = .08f;
                 recipe.wind.frequency = .65f;
                 recipe.wind.flutter = .025f;
@@ -888,6 +953,8 @@ namespace workphone::scene::race
                 auto species = std::make_shared<render::FoliageSpecies>();
                 if( !generateFoliagePlant( recipe, *species, error ) )
                     throw std::runtime_error( "Cannot generate racing foliage: " + error );
+                if( species->materials.size() != 2 || species->materials[1].albedo != leafTextureName )
+                    throw std::runtime_error( "Generated foliage species lost its leaf cutout atlas." );
                 species->maximumDistance = 600;
                 species->shadowDistance = 120;
                 world->species.push_back( species );
@@ -953,9 +1020,7 @@ namespace workphone::scene::race
             auto cityAsphalt = raceAsphalt( assets, forge, surfaceParams, seed );
             // World projection gives segments and intersections the same physical texture scale.
             cityAsphalt->setUVProjection( 3 );
-            auto sampler = make_ptr<Properties>();
-            sampler->setProperty( "uvTriplanarScale", 1.f / 1.5f );
-            cityAsphalt->setProperties( sampler );
+            cityAsphalt->setEditorFloat( "uvTriplanarScale", 1.f / 1.5f );
             Geometry asphalt, pavement, markings, buildings[3], windows, parks, roofs, facadeTrim;
             // Match the existing flat physics proxy. Preserve library topology,
             // kerbs and markings without introducing unsupported road-height bumps.
@@ -1091,11 +1156,9 @@ namespace workphone::scene::race
                 facade->setDiffuse( colours[i] );
                 facade->setUVProjection( 3 );
                 facade->setNormalStrength( .12f );
-                auto properties = make_ptr<Properties>();
-                properties->setProperty( "uvFilter", u32( 3 ) );
-                properties->setProperty( "uvAniso", 8.f );
-                properties->setProperty( "uvTriplanarScale", .25f );
-                facade->setProperties( properties );
+                facade->setEditorUInt( "uvFilter", 3 );
+                facade->setEditorFloat( "uvAniso", 8.f );
+                facade->setEditorFloat( "uvTriplanarScale", .25f );
                 mesh( assets, "City buildings", buildings[i], facade );
             }
             mesh( assets, "City roof caps and service units", roofs,

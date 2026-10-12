@@ -19,6 +19,8 @@ namespace workphone::render
     {
         SmartPtr<ClawMaterial> material;
         SmartPtr<ClawTexture> texture;
+        SmartPtr<ClawTexture> normalTexture;
+        SmartPtr<ClawTexture> ormTexture;
         std::shared_ptr<const resource::RuntimeResource> resource;
         CatalogResourceAdapter::Request request;
         std::shared_ptr<const int> publisher;
@@ -95,6 +97,16 @@ namespace workphone::render
     SmartPtr<ClawTexture> ClawMaterialResource::Candidate::texture() const
     {
         return m_data->texture;
+    }
+
+    SmartPtr<ClawTexture> ClawMaterialResource::Candidate::normalTexture() const
+    {
+        return m_data->normalTexture;
+    }
+
+    SmartPtr<ClawTexture> ClawMaterialResource::Candidate::ormTexture() const
+    {
+        return m_data->ormTexture;
     }
 
     std::shared_ptr<const resource::RuntimeResource> ClawMaterialResource::Candidate::resource() const
@@ -184,11 +196,6 @@ namespace workphone::render
                 error = "Cooked material target/build mode does not match its consumer.";
                 return {};
             }
-            CookedTextureData texture;
-            if( !decodeCookedTexture( *candidate->resource->dependencies.at( 0 ), texture, error ) )
-            {
-                return {};
-            }
             if( candidate->device.Get() != m_data->device() )
             {
                 error = "DX11 device changed while staging the cooked material.";
@@ -201,17 +208,30 @@ namespace workphone::render
                 error = "Cooked material requires application state, factory and timer services.";
                 return {};
             }
-            candidate->texture = make_ptr<ClawTexture>();
-            const bool installed =
-                texture.ddsBytes.empty()
-                    ? candidate->texture->uploadCookedMips( texture.levels, texture.mipSettings,
-                                                            m_data->activeRenderer(), error )
-                    : uploadCookedDds( candidate->texture.get(), texture, m_data->activeRenderer(),
-                                       error );
-            if( !installed )
-            {
-                return {};
-            }
+            const auto installTexture = [&]( const resource::ResourceID &id,
+                                             SmartPtr<ClawTexture> &destination ) {
+                for( const auto &dependency : candidate->resource->dependencies )
+                {
+                    if( !dependency || dependency->header.resourceId != id ) continue;
+                    CookedTextureData texture;
+                    if( !decodeCookedTexture( *dependency, texture, error ) ) return false;
+                    auto uploaded = make_ptr<ClawTexture>();
+                    const bool installed = texture.ddsBytes.empty()
+                        ? uploaded->uploadCookedMips( texture.levels, texture.mipSettings,
+                                                      m_data->activeRenderer(), error )
+                        : uploadCookedDds( uploaded.get(), texture, m_data->activeRenderer(), error );
+                    if( !installed ) return false;
+                    destination = uploaded;
+                    return true;
+                }
+                error = "Cooked material texture dependency is unavailable.";
+                return false;
+            };
+            if( !installTexture( material.textureId, candidate->texture ) ) return {};
+            if( material.normalTexture.id.isValid() &&
+                !installTexture( material.normalTexture.id, candidate->normalTexture ) ) return {};
+            if( material.ormTexture.id.isValid() &&
+                !installTexture( material.ormTexture.id, candidate->ormTexture ) ) return {};
             candidate->material = make_ptr<ClawMaterial>();
             auto technique = make_ptr<ClawMaterialTechnique>();
             technique->setMaterial( candidate->material );
@@ -224,8 +244,24 @@ namespace workphone::render
             candidate->material->setMetalness( material.metalness );
             candidate->material->setRoughness( material.roughness );
             pass->setTexture( candidate->texture, 0 );
+            if( candidate->normalTexture ) pass->setTexture( candidate->normalTexture, 1 );
+            if( candidate->ormTexture )
+            {
+                pass->setTexture( candidate->ormTexture, 25 );
+                // The shared packed slot uses M/R/A channel order in legacy shaders.
+                // Alias this single GPU texture into the existing explicit channel slots
+                // instead: ORM stores AO in R, roughness in G and metalness in B.
+                pass->setTexture( candidate->ormTexture, 2 );
+                pass->setTexture( candidate->ormTexture, 3 );
+                pass->setTexture( candidate->ormTexture, 22 );
+                candidate->material->setEditorUInt( "metallicSource", 4 );
+                candidate->material->setEditorUInt( "roughnessSource", 5 );
+                candidate->material->setEditorUInt( "aoSource", 0 );
+            }
             if( !pass->getStateContext() || !candidate->material->getNativeMaterial() ||
-                candidate->material->getTexture( 0 ) != candidate->texture )
+                candidate->material->getTexture( 0 ) != candidate->texture ||
+                ( candidate->normalTexture && candidate->material->getTexture( 1 ) != candidate->normalTexture ) ||
+                ( candidate->ormTexture && candidate->material->getTexture( 25 ) != candidate->ormTexture ) )
             {
                 error = "Cooked material state/texture installation failed.";
                 return {};

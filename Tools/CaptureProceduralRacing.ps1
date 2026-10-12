@@ -51,7 +51,7 @@ $manifest = [ordered]@{
     requestedResolution = $Resolution; benchmarkSeconds = $Seconds; visualAcceptance = 'unreviewed'
     diff = Get-Identity (Join-Path $output 'working-tree.patch'); sources = $sources; binaries = $binaries
     plugins = Get-Identity $plugins; assets = $assets; replay = $null; runs = @()
-    limitations = @('Fresh build must be performed separately; hashes identify artifacts, not freshness.', 'Control replay is 120 Hz input replay, not deterministic cross-platform physics.', 'Asset hashes inventory the media tree; they are not a runtime dependency trace.', 'No blind comparison or visual acceptance is implied.')
+    limitations = @('Fresh build must be performed separately; hashes identify artifacts, not freshness.', 'Control replay applies one row per physics-task tick; the task targets 120 Hz but physics uses measured deltas.', 'Asset hashes inventory the media tree; they are not a runtime dependency trace.', 'No blind comparison or visual acceptance is implied.')
 }
 if ($Replay) { $manifest.replay = Get-Identity $Replay }
 $failed = $false

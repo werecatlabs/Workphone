@@ -32,7 +32,7 @@ void checkMeshContracts()
     requireMesh( mesh->getSubMesh( 0 )->getIndexBuffer()->getNumIndices() == 6, "Terrain topology incorrect" );
     requireMesh( generator->getGenerationProgress() == 1, "Terrain progress did not complete" );
     requireMesh( generator->getAllGeneratedMeshes().size() == 1, "Terrain history missing" );
-    const auto application = core::IApplicationManager::instance();
+    auto application = core::IApplicationManager::instance();
     const auto meshManager = application->getMeshManager();
     application->setMeshManager( nullptr );
     requireMesh( !generator->generateFromTerrain( terrain ) && generator->getLastGeneratedMesh() == mesh,
@@ -56,7 +56,8 @@ void checkMeshContracts()
     road->addNode( finish );
     auto network = workphone::make_ptr<CRoadNetwork>();
     network->getRoads().push_back( road );
-    requireMesh( static_cast<bool>( generator->generate( network ) ), "Valid road adapter failed" );
+    auto roadMesh = generator->generate( network );
+    if( !roadMesh ) throw std::runtime_error( "Valid road adapter failed: " + generator->getGenerationStatus() );
     generator->clear();
     requireMesh( !generator->getLastGeneratedMesh() && generator->getAllGeneratedMeshes().empty() && generator->getGenerationProgress() == 0, "Clear retained generated meshes" );
     ProceduralMesh source;

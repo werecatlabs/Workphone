@@ -142,7 +142,10 @@ namespace workphone
                 auto segments = road->getRoadSegments();
                 if( segments.empty() )
                 {
-                    const auto nodes = road->getRoadNodes();
+                    // CRoad::getRoadNodes traverses sections, while addNode stores
+                    // the authored spine separately. Accept both existing paths.
+                    auto nodes = road->getRoadNodes();
+                    if( nodes.empty() ) nodes = road->getRoadNodeObjects();
                     for( size_t i = 1; i < nodes.size(); ++i )
                     {
                         if( !nodes[i-1] || !nodes[i] ) return failGeneration( "Null road node" );

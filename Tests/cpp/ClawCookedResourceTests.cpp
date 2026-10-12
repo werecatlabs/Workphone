@@ -331,37 +331,9 @@ namespace
         std::shared_ptr<IResourceSystem> m_delegate;
     };
 
-    void requireGpuMips( const std::shared_ptr<const ClawMaterialResource::Candidate> &candidate,
-                         bool green, const procedural::TextureBuffer *generated = nullptr )
+    void requireUploadedMips( SmartPtr<ClawTexture> texture, const CookedTextureData &cooked )
     {
-        require( candidate && candidate->resource() && candidate->resource()->dependencies.size() == 1,
-                 "Published material must retain its installed cooked texture dependency" );
-        CookedTextureData cooked;
-        String error;
-        require( decodeCookedTexture( *candidate->resource()->dependencies[0], cooked, error ), error );
-        if( generated )
-        {
-            require( cooked.levels.size() == 7 && cooked.levels[0].width == generated->width &&
-                         cooked.levels[0].height == generated->height && cooked.levels.back().width == 1,
-                     "Generated asphalt must retain its full 64x64 semantic mip chain" );
-            const auto &base = cooked.levels[0].bgra;
-            require( base.size() == generated->pixels.size(), "Generated asphalt byte extent changed" );
-            for( size_t i = 0; i < base.size(); i += 4 )
-                require( base[i] == generated->pixels[i + 2] &&
-                             base[i + 1] == generated->pixels[i + 1] &&
-                             base[i + 2] == generated->pixels[i] && base[i + 3] == generated->pixels[i + 3],
-                         "Generated asphalt source pixels changed during cook" );
-        }
-        else
-        {
-            require( cooked.levels.size() == 3 && cooked.levels[0].width == 4 &&
-                         cooked.levels[1].width == 2 && cooked.levels[2].width == 1,
-                     "Offline compiler must produce the complete 4x4 colour mip chain" );
-            const auto &base = cooked.levels[0].bgra;
-            require( base[( green ? 1 : 2 )] == 128 && base[( 3 * 4 + 3 ) * 4 + ( green ? 1 : 2 )] == 248,
-                     "Generated TGA orientation and BGRA channel identity must survive cooking" );
-        }
-        auto texture = candidate->texture();
+        require( texture != nullptr, "Semantic texture must have a retained GPU owner" );
         auto *view = claw_texture_mip_contracts::view( *texture );
         const auto desc = claw_texture_mip_contracts::description( view );
         require( desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM && desc.MipLevels == cooked.levels.size(),
@@ -404,9 +376,47 @@ namespace
         }
     }
 
-    void requireDraw( Fixture &fixture,
+    void requireGpuMips( const std::shared_ptr<const ClawMaterialResource::Candidate> &candidate,
+                         bool green, const procedural::TextureBuffer *generated = nullptr )
+    {
+        require( candidate && candidate->resource() && candidate->resource()->dependencies.size() == ( generated ? 3u : 1u ),
+                 "Published material must retain its installed cooked texture dependency" );
+        CookedTextureData cooked;
+        String error;
+        CookedMaterialData material;
+        require( decodeCookedMaterial( *candidate->resource(), material, error ), error );
+        std::shared_ptr<const RuntimeResource> albedo;
+        for( const auto &dependency : candidate->resource()->dependencies )
+            if( dependency->header.resourceId == material.textureId ) albedo = dependency;
+        require( albedo && decodeCookedTexture( *albedo, cooked, error ), error );
+        if( generated )
+        {
+            require( cooked.levels.size() == 7 && cooked.levels[0].width == generated->width &&
+                         cooked.levels[0].height == generated->height && cooked.levels.back().width == 1,
+                     "Generated asphalt must retain its full 64x64 semantic mip chain" );
+            const auto &base = cooked.levels[0].bgra;
+            require( base.size() == generated->pixels.size(), "Generated asphalt byte extent changed" );
+            for( size_t i = 0; i < base.size(); i += 4 )
+                require( base[i] == generated->pixels[i + 2] &&
+                             base[i + 1] == generated->pixels[i + 1] &&
+                             base[i + 2] == generated->pixels[i] && base[i + 3] == generated->pixels[i + 3],
+                         "Generated asphalt source pixels changed during cook" );
+        }
+        else
+        {
+            require( cooked.levels.size() == 3 && cooked.levels[0].width == 4 &&
+                         cooked.levels[1].width == 2 && cooked.levels[2].width == 1,
+                     "Offline compiler must produce the complete 4x4 colour mip chain" );
+            const auto &base = cooked.levels[0].bgra;
+            require( base[( green ? 1 : 2 )] == 128 && base[( 3 * 4 + 3 ) * 4 + ( green ? 1 : 2 )] == 248,
+                     "Generated TGA orientation and BGRA channel identity must survive cooking" );
+        }
+        requireUploadedMips( candidate->texture(), cooked );
+    }
+
+    std::array<unsigned, 4> requireDraw( Fixture &fixture,
                       const std::shared_ptr<const ClawMaterialResource::Candidate> &candidate,
-                      bool green, bool asphalt = false )
+                      bool green, bool asphalt = false, int semanticLighting = 0 )
     {
         require( candidate != nullptr, "A visible cooked material must exist" );
         auto target = make_ptr<ClawRenderTarget>();
@@ -415,7 +425,12 @@ namespace
         renderer->setRenderTarget( target );
         renderer->setViewport( nullptr );
         renderer->setCamera( nullptr );
-        renderer->setSceneLighting( ColourF::White, Vector3F( 0, -1, 0 ), ColourF::White, 0 );
+        if( semanticLighting == 1 )
+            renderer->setSceneLighting( ColourF( 0.05f, 0.05f, 0.05f, 1 ), Vector3F( 0, 0, 1 ), ColourF::White, 1 );
+        else if( semanticLighting == 2 )
+            renderer->setSceneLighting( ColourF::White, Vector3F( 0, 0, 1 ), ColourF::Black, 0 );
+        else
+            renderer->setSceneLighting( ColourF::White, Vector3F( 0, -1, 0 ), ColourF::White, 0 );
         Triangle mesh;
         mesh.setMaterial( candidate->material() );
         renderer->clear( ColourF::Black );
@@ -457,7 +472,7 @@ namespace
                   std::abs( int( red ) - int( blue ) ) < 25
             : green ? actualGreen > 60 && actualGreen > red + 40 && actualGreen > blue + 40
                   : red > 60 && red > actualGreen + 40 && red > blue + 40;
-        if( !expectedColour )
+        if( !expectedColour && semanticLighting == 0 )
         {
             auto material = candidate->material();
             const auto diffuse = material->getDiffuse();
@@ -470,9 +485,44 @@ namespace
                       << " roughness=" << material->getRoughness() << " cull=" << material->getCullMode()
                       << " depth=" << material->getDepthTest() << '\n';
         }
-        require( expectedColour,
+        require( expectedColour || semanticLighting != 0,
                  green ? "Catalog-cooked green texture must visibly shade the production mesh draw"
                        : "Catalog-cooked red texture must visibly shade the production mesh draw" );
+        return { red, actualGreen, blue, alpha };
+    }
+
+    void requireAuxiliaryMaps( const std::shared_ptr<const ClawMaterialResource::Candidate> &candidate )
+    {
+        CookedMaterialData material;
+        String error;
+        require( candidate && decodeCookedMaterial( *candidate->resource(), material, error ), error );
+        require( material.normalTexture.id == ResourceID( "data://asphalt-normal.texres" ) &&
+                 material.ormTexture.id == ResourceID( "data://asphalt-orm.texres" ),
+                 "Generated asphalt must pin normal and ORM bindings" );
+        require( candidate->normalTexture() && candidate->ormTexture(), "Normal and ORM GPU owners missing" );
+        require( candidate->material()->getTexture( 1 ) == candidate->normalTexture() &&
+                 candidate->material()->getTexture( 2 ) == candidate->ormTexture() &&
+                 candidate->material()->getTexture( 3 ) == candidate->ormTexture() &&
+                 candidate->material()->getTexture( 22 ) == candidate->ormTexture(),
+                 "ORM channel aliases must share one GPU texture" );
+        require( candidate->material()->getEditorUInt( "metallicSource", 99 ) == 4 &&
+                 candidate->material()->getEditorUInt( "roughnessSource", 99 ) == 5 &&
+                 candidate->material()->getEditorUInt( "aoSource", 99 ) == 0,
+                 "ORM channels must bind B metalness, G roughness and R occlusion" );
+        for( const auto &dependency : candidate->resource()->dependencies )
+        {
+            CookedTextureData cooked;
+            if( dependency->header.resourceId == material.normalTexture.id )
+            {
+                require( decodeCookedTexture( *dependency, cooked, error ), error );
+                requireUploadedMips( candidate->normalTexture(), cooked );
+            }
+            if( dependency->header.resourceId == material.ormTexture.id )
+            {
+                require( decodeCookedTexture( *dependency, cooked, error ), error );
+                requireUploadedMips( candidate->ormTexture(), cooked );
+            }
+        }
     }
 
     void generatedAsphaltContracts( Fixture &fixture )
@@ -539,15 +589,77 @@ namespace
             require( publisher.reload( uuid, error ), error );
             auto visible = publisher.current();
             requireGpuMips( visible, false, &surface.albedo );
+            requireAuxiliaryMaps( visible );
             requireDraw( fixture, visible, false, true );
             std::ifstream originalStream( source / "asphalt.matres", std::ios::binary );
             const std::string originalMaterial( std::istreambuf_iterator<char>( originalStream ), {} );
             originalStream.close();
+            const auto writeBuffer = [&]( const char *name, const procedural::TextureBuffer &buffer ) {
+                std::vector<unsigned char> encoded;
+                require( procedural::texture_export::encodeTextureBuffer( buffer, "tga", encoded ), "Semantic control map must encode" );
+                std::ofstream stream( source / name, std::ios::binary | std::ios::trunc );
+                stream.write( reinterpret_cast<const char *>( encoded.data() ), std::streamsize( encoded.size() ) );
+                require( stream.good(), "Semantic control map must write" );
+            };
+            const auto drawControl = [&]( std::array<u8, 4> normal, std::array<u8, 4> orm, int lighting ) {
+                auto normalMap = surface.normal, ormMap = surface.orm;
+                for( size_t i = 0; i < normalMap.pixels.size(); i += 4 )
+                    for( size_t channel = 0; channel < 4; ++channel )
+                    {
+                        normalMap.pixels[i + channel] = normal[channel];
+                        ormMap.pixels[i + channel] = orm[channel];
+                    }
+                writeBuffer( "asphalt-normal.tga", normalMap );
+                writeBuffer( "asphalt-orm.tga", ormMap );
+                require( publisher.reload( uuid, error, true ), error );
+                requireAuxiliaryMaps( publisher.current() );
+                return requireDraw( fixture, publisher.current(), false, true, lighting );
+            };
+            const auto delta = []( const std::array<unsigned, 4> &a, const std::array<unsigned, 4> &b ) {
+                return std::abs( int( a[0] ) - int( b[0] ) ) + std::abs( int( a[1] ) - int( b[1] ) ) + std::abs( int( a[2] ) - int( b[2] ) );
+            };
+            const auto flat = drawControl( { 128, 128, 255, 255 }, { 255, 230, 0, 255 }, 1 );
+            const auto tilted = drawControl( { 230, 128, 203, 255 }, { 255, 230, 0, 255 }, 1 );
+            require( delta( flat, tilted ) > 6, "Cooked normal map must change real DX11 lighting" );
+            const auto smooth = drawControl( { 128, 128, 255, 255 }, { 255, 60, 0, 255 }, 1 );
+            require( delta( flat, smooth ) > 6, "ORM green roughness must change real DX11 specular response" );
+            const auto unoccluded = drawControl( { 128, 128, 255, 255 }, { 255, 230, 0, 255 }, 2 );
+            const auto occluded = drawControl( { 128, 128, 255, 255 }, { 20, 230, 0, 255 }, 2 );
+            require( unoccluded[0] > occluded[0] + 10, "ORM red occlusion must attenuate ambient light" );
+            auto metalMaterial = originalMaterial;
+            const auto metalField = metalMaterial.find( "\"metalness\":0" );
+            require( metalField != std::string::npos, "Generated material metalness fixture missing" );
+            metalMaterial.replace( metalField, std::strlen( "\"metalness\":0" ), "\"metalness\":1" );
+            writeText( source / "asphalt.matres", metalMaterial.c_str() );
+            const auto dielectric = drawControl( { 128, 128, 255, 255 }, { 255, 230, 0, 255 }, 2 );
+            const auto metallic = drawControl( { 128, 128, 255, 255 }, { 255, 230, 255, 255 }, 2 );
+            require( delta( dielectric, metallic ) > 10, "ORM blue metalness must change real DX11 dielectric response" );
+            writeBuffer( "asphalt-normal.tga", surface.normal );
+            writeBuffer( "asphalt-orm.tga", surface.orm );
+            writeText( source / "asphalt.matres", originalMaterial.c_str() );
+            require( publisher.reload( uuid, error, true ), error );
+            visible = publisher.current();
+            requireGpuMips( visible, false, &surface.albedo );
+            requireAuxiliaryMaps( visible );
             writeText( source / "asphalt.matres", "{\"version\":1," );
             require( !publisher.reload( uuid, error, true ) && publisher.current() == visible,
                      "Failed generated-material rebake must retain the last visible GPU bundle" );
             requireDraw( fixture, publisher.current(), false, true );
             writeText( source / "asphalt.matres", originalMaterial.c_str() );
+            std::ifstream normalDescriptorStream( source / "asphalt-normal.texres", std::ios::binary );
+            const std::string normalDescriptor( std::istreambuf_iterator<char>( normalDescriptorStream ), {} );
+            normalDescriptorStream.close();
+            writeText( source / "asphalt-normal.texres",
+                R"({"version":1,"source":"data://asphalt-normal.tga","mipFilter":"colour","atlasColumns":1,"alphaCutoff":0.5})" );
+            require( !publisher.reload( uuid, error, true ) && publisher.current() == visible,
+                     "Wrong normal-map semantic must preserve the last good multimap material" );
+            writeText( source / "asphalt-normal.texres", normalDescriptor.c_str() );
+            fs::rename( source / "asphalt-orm.tga", source / "asphalt-orm-hidden.tga" );
+            require( !publisher.reload( uuid, error, true ) && publisher.current() == visible,
+                     "Missing ORM source must preserve the last good multimap material" );
+            fs::rename( source / "asphalt-orm-hidden.tga", source / "asphalt-orm.tga" );
+            requireAuxiliaryMaps( visible );
+            requireDraw( fixture, visible, false, true );
             Array<ResourceID> packagedIds{ ResourceID( "data://asphalt.matres" ) };
             for( const auto &texture : textures )
                 packagedIds.push_back( ResourceID( String( "data://" ) + texture->getFilePath() ) );
@@ -569,7 +681,18 @@ namespace
             for( const auto &id : packagedIds )
                 require( packaged.load( id, error ) != nullptr,
                          "Generated material and semantic maps must load without sources or compilers" );
+            auto packagedMaterial = packaged.load( ResourceID( "data://asphalt.matres" ), error );
+            CookedMaterialData packagedBinding;
+            require( packagedMaterial && decodeCookedMaterial( *packagedMaterial, packagedBinding, error ) &&
+                     packagedMaterial->dependencies.size() == 3 && packagedBinding.normalTexture.id.isValid() &&
+                     packagedBinding.ormTexture.id.isValid(),
+                     "Source-free material must retain its exact albedo, normal and ORM closure" );
             // Retained cooked data must reupload and draw while every source is unavailable.
+            visible->normalTexture()->unload( nullptr );
+            visible->normalTexture()->load( nullptr );
+            visible->ormTexture()->unload( nullptr );
+            visible->ormTexture()->load( nullptr );
+            requireAuxiliaryMaps( visible );
             visible->texture()->unload( nullptr );
             visible->texture()->load( nullptr );
             requireGpuMips( visible, false, &surface.albedo );
@@ -581,7 +704,7 @@ namespace
         resources->shutdown();
         catalog->unload( nullptr );
         std::cout << "PASS: real forge asphalt source export, six semantic map cooks/decodes, exact "
-                     "GPU albedo mip bytes, base-colour-only draw, last-good rebake retention and source-free closure/reupload\n";
+                     "GPU albedo/normal/ORM mip bytes, real normal/roughness/AO/metalness draws, last-good semantic/missing-map retention and source-free closure/reupload\n";
 #else
         std::cout << "SKIP: generated asphalt material contract requires WPProcedural target\n";
 #endif

@@ -63,8 +63,8 @@ namespace workphone
             /** @copydoc IResource::setProperties */
             virtual void setProperties( SmartPtr<Properties> properties )
             {
-                auto name = String();
-                properties->getProperty( "name", name );
+                auto name = ResourceGraphics<T>::getName();
+                properties->getPropertyValue( "name", name );
 
                 ResourceGraphics<T>::setName( name );
             }

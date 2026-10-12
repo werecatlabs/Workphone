@@ -31,6 +31,27 @@ namespace workphone::render
     WPGraphics_API bool uploadCookedDds( ClawTexture *texture, const CookedTextureData &data,
                                          wp_renderer_dx11 *renderer, String &error );
 
+    enum class MaterialTextureSlot : u32
+    {
+        BaseColour = 0,
+        Normal = 1,
+        ORM = 2
+    };
+
+    struct CookedMaterialTextureReference
+    {
+        resource::ResourceID id;
+        u64 sourceHash = 0;
+        u64 payloadHash = 0;
+        u64 compilerVersion = 0;
+    };
+
+    /** Normal maps require Normal filtering and linear storage; packed ORM maps
+     * require Data filtering and linear storage. Base colour retains the legacy
+     * contract for old materials, which did not restrict texture mip semantics. */
+    WPGraphics_API bool validateMaterialTextureSemantic( const CookedTextureData &texture,
+                                                         MaterialTextureSlot slot, String &error );
+
     struct CookedMaterialData
     {
         ColourF baseColour = ColourF::White;
@@ -40,6 +61,8 @@ namespace workphone::render
         u64 textureSourceHash = 0;
         u64 texturePayloadHash = 0;
         u64 textureCompilerVersion = 0;
+        CookedMaterialTextureReference normalTexture;
+        CookedMaterialTextureReference ormTexture;
         String target;
         bool packagedBuild = false;
     };

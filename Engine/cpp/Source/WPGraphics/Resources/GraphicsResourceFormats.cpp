@@ -170,6 +170,18 @@ namespace workphone::render
                          data.textureId.str().size() <= 1024 && data.textureSourceHash &&
                          data.texturePayloadHash && data.textureCompilerVersion,
                      "Cooked material requires one pinned texres dependency" );
+            for( const auto &ref : { data.normalTexture, data.ormTexture } )
+            {
+                if( !ref.id.isValid() )
+                {
+                    require( !ref.sourceHash && !ref.payloadHash && !ref.compilerVersion,
+                             "Absent material texture slot contains generation metadata" );
+                    continue;
+                }
+                require( !ref.id.isSubResource() && ref.id.type() == resource::ResourceTypeID( "texres" ) &&
+                             ref.id.str().size() <= 1024 && ref.sourceHash && ref.payloadHash && ref.compilerVersion,
+                         "Optional cooked material texture requires a pinned texres dependency" );
+            }
         }
 
         void write32( std::ostream &output, u32 value )
@@ -275,7 +287,8 @@ namespace workphone::render
             require( value.header.isValid() && !value.header.resourceId.isSubResource() &&
                          value.header.resourceId.type() == expected &&
                          value.header.resourceType == expected &&
-                         value.header.compilerVersion == compiler.versionFor( expected ),
+                         ( value.header.compilerVersion == compiler.versionFor( expected ) ||
+                           ( expected == resource::ResourceTypeID( "matres" ) && value.header.compilerVersion == 2 ) ),
                      "Cooked graphics resource type or compiler version is incompatible" );
             require( value.payload.size() <= graphicsTextureByteLimit + 4096u &&
                          value.header.payloadSize == value.payload.size() &&
@@ -284,21 +297,27 @@ namespace workphone::render
                      "Cooked graphics payload size or integrity is invalid" );
         }
 
-        void readPrefix( Reader &reader, u32 magic, String &target, bool &packagedBuild )
+        u32 readPrefix( Reader &reader, u32 magic, String &target, bool &packagedBuild,
+                        u32 maximumVersion = graphicsResourceFormatVersion )
         {
-            require( reader.read32() == magic && reader.read32() == graphicsResourceFormatVersion,
+            require( reader.read32() == magic,
                      "Cooked graphics payload magic or format version is incompatible" );
+            const auto version = reader.read32();
+            require( version >= graphicsResourceFormatVersion && version <= maximumVersion,
+                     "Cooked graphics payload format version is incompatible" );
             target = reader.readString( 128 );
             validateTarget( target );
             const auto mode = reader.read32();
             require( mode <= 1, "Unknown cooked graphics build mode" );
             packagedBuild = mode != 0;
+            return version;
         }
 
-        void writePrefix( std::ostream &output, u32 magic, const String &target, bool packagedBuild )
+        void writePrefix( std::ostream &output, u32 magic, const String &target, bool packagedBuild,
+                          u32 version = graphicsResourceFormatVersion )
         {
             write32( output, magic );
-            write32( output, graphicsResourceFormatVersion );
+            write32( output, version );
             writeString( output, target );
             write32( output, packagedBuild ? 1 : 0 );
         }
@@ -357,13 +376,44 @@ namespace workphone::render
         }
     }
 
+    bool validateMaterialTextureSemantic( const CookedTextureData &texture,
+                                          MaterialTextureSlot slot, String &error )
+    {
+        error.clear();
+        try
+        {
+            const auto format = ddsFormatForTarget( texture.target );
+            const bool srgb = format == 72 || format == 78 || format == 91;
+            switch( slot )
+            {
+            case MaterialTextureSlot::BaseColour: break; // Preserve the version-one contract.
+            case MaterialTextureSlot::Normal:
+                require( texture.mipSettings.filter == TextureMipFilter::Normal && !srgb,
+                         "Material normalTexture requires Normal filtering and linear storage" );
+                break;
+            case MaterialTextureSlot::ORM:
+                require( texture.mipSettings.filter == TextureMipFilter::Data && !srgb,
+                         "Material ormTexture requires Data filtering and linear storage" );
+                break;
+            default: throw std::runtime_error( "Unknown material texture semantic slot" );
+            }
+            return true;
+        }
+        catch( const std::exception &exception )
+        {
+            error = exception.what();
+            return false;
+        }
+    }
+
     bool writeCookedMaterial( const CookedMaterialData &data, std::ostream &output, String &error )
     {
         error.clear();
         try
         {
             validateMaterial( data );
-            writePrefix( output, materialMagic, data.target, data.packagedBuild );
+            const auto count = u32( data.normalTexture.id.isValid() ) + u32( data.ormTexture.id.isValid() );
+            writePrefix( output, materialMagic, data.target, data.packagedBuild, count ? 2 : 1 );
             for( const auto value : { data.baseColour.r, data.baseColour.g, data.baseColour.b,
                                       data.baseColour.a, data.metalness, data.roughness } )
             {
@@ -373,6 +423,20 @@ namespace workphone::render
             write64( output, data.textureSourceHash );
             write64( output, data.texturePayloadHash );
             write64( output, data.textureCompilerVersion );
+            if( count )
+            {
+                write32( output, count );
+                for( const auto slot : { MaterialTextureSlot::Normal, MaterialTextureSlot::ORM } )
+                {
+                    const auto &ref = slot == MaterialTextureSlot::Normal ? data.normalTexture : data.ormTexture;
+                    if( !ref.id.isValid() ) continue;
+                    write32( output, static_cast<u32>( slot ) );
+                    writeString( output, ref.id.str() );
+                    write64( output, ref.sourceHash );
+                    write64( output, ref.payloadHash );
+                    write64( output, ref.compilerVersion );
+                }
+            }
             require( output.good(), "Failed writing cooked material payload" );
             return true;
         }
@@ -453,10 +517,12 @@ namespace workphone::render
         try
         {
             validateResource( value, "matres" );
-            require( value.payload.size() <= 2048, "Cooked material payload exceeds its size limit" );
+            require( value.payload.size() <= 4096, "Cooked material payload exceeds its size limit" );
             Reader reader( value.payload );
             CookedMaterialData data;
-            readPrefix( reader, materialMagic, data.target, data.packagedBuild );
+            const auto version = readPrefix( reader, materialMagic, data.target, data.packagedBuild, 2 );
+            require( value.header.compilerVersion != 2 || version == 1,
+                     "Legacy material compiler cannot produce extended material payloads" );
             data.baseColour.r = reader.readFloat();
             data.baseColour.g = reader.readFloat();
             data.baseColour.b = reader.readFloat();
@@ -468,25 +534,68 @@ namespace workphone::render
             data.textureSourceHash = reader.read64();
             data.texturePayloadHash = reader.read64();
             data.textureCompilerVersion = reader.read64();
+            if( version == 2 )
+            {
+                const auto count = reader.read32();
+                require( count >= 1 && count <= 2, "Invalid cooked material optional slot count" );
+                for( u32 i = 0; i < count; ++i )
+                {
+                    const auto slot = static_cast<MaterialTextureSlot>( reader.read32() );
+                    require( slot == MaterialTextureSlot::Normal || slot == MaterialTextureSlot::ORM,
+                             "Unknown cooked material optional semantic slot" );
+                    auto &ref = slot == MaterialTextureSlot::Normal ? data.normalTexture : data.ormTexture;
+                    require( !ref.id.isValid(), "Duplicate cooked material semantic slot" );
+                    require( ref.id.set( reader.readString( 1024 ) ), "Invalid material slot texture ResourceID" );
+                    ref.sourceHash = reader.read64();
+                    ref.payloadHash = reader.read64();
+                    ref.compilerVersion = reader.read64();
+                }
+            }
             require( reader.remaining() == 0, "Unexpected trailing cooked material data" );
             validateMaterial( data );
-            require( value.header.installDependencies.size() == 1 && value.dependencies.size() == 1 &&
-                         value.header.installDependencies.front() == data.textureId &&
-                         value.dependencies.front(),
-                     "Cooked material install dependencies do not match its typed payload" );
-            const auto &dependency = *value.dependencies.front();
-            require( dependency.header.resourceId == data.textureId &&
-                         dependency.header.sourceHash == data.textureSourceHash &&
-                         dependency.header.payloadHash == data.texturePayloadHash &&
-                         dependency.header.compilerVersion == data.textureCompilerVersion,
-                     "Cooked material texture dependency generation does not match" );
-            CookedTextureData texture;
-            if( !decodeCookedTexture( dependency, texture, error ) )
+            Array<resource::ResourceID> expected{ data.textureId };
+            for( const auto &ref : { data.normalTexture, data.ormTexture } )
             {
-                return false;
+                if( ref.id.isValid() && std::find( expected.begin(), expected.end(), ref.id ) == expected.end() )
+                    expected.push_back( ref.id );
             }
-            require( texture.target == data.target && texture.packagedBuild == data.packagedBuild,
-                     "Cooked material and texture target/build mode do not match" );
+            require( value.header.installDependencies.size() == expected.size() &&
+                         value.dependencies.size() == expected.size(),
+                     "Cooked material install dependency count does not match its semantic slots" );
+            for( const auto &id : expected )
+            {
+                require( std::count( value.header.installDependencies.begin(),
+                                    value.header.installDependencies.end(), id ) == 1,
+                         "Cooked material install dependencies differ from its typed payload" );
+                size_t matches = 0;
+                for( const auto &dependency : value.dependencies )
+                    if( dependency && dependency->header.resourceId == id ) ++matches;
+                require( matches == 1, "Cooked material requires exactly one installed generation per texture" );
+            }
+            const auto validateSlot = [&]( const resource::ResourceID &id, u64 sourceHash,
+                                           u64 payloadHash, u64 compilerVersion, MaterialTextureSlot slot ) {
+                const resource::RuntimeResource *dependency = nullptr;
+                for( const auto &candidate : value.dependencies )
+                    if( candidate && candidate->header.resourceId == id ) dependency = candidate.get();
+                require( dependency && dependency->header.sourceHash == sourceHash &&
+                             dependency->header.payloadHash == payloadHash &&
+                             dependency->header.compilerVersion == compilerVersion,
+                         "Cooked material texture dependency generation does not match" );
+                CookedTextureData texture;
+                if( !decodeCookedTexture( *dependency, texture, error ) )
+                    throw std::runtime_error( error.c_str() );
+                require( texture.target == data.target && texture.packagedBuild == data.packagedBuild,
+                         "Cooked material and texture target/build mode do not match" );
+                if( !validateMaterialTextureSemantic( texture, slot, error ) )
+                    throw std::runtime_error( error.c_str() );
+            };
+            validateSlot( data.textureId, data.textureSourceHash, data.texturePayloadHash,
+                          data.textureCompilerVersion, MaterialTextureSlot::BaseColour );
+            for( const auto slot : { MaterialTextureSlot::Normal, MaterialTextureSlot::ORM } )
+            {
+                const auto &ref = slot == MaterialTextureSlot::Normal ? data.normalTexture : data.ormTexture;
+                if( ref.id.isValid() ) validateSlot( ref.id, ref.sourceHash, ref.payloadHash, ref.compilerVersion, slot );
+            }
             output = std::move( data );
             return true;
         }

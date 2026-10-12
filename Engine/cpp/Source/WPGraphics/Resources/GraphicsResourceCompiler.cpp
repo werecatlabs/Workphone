@@ -96,7 +96,8 @@ namespace workphone::render
         }
 
         json::object readDescriptor( const resource::CompileContext &context,
-                                     const std::set<std::string> &fields )
+                                     const std::set<std::string> &fields,
+                                     const std::set<std::string> &optional = {} )
         {
             auto bytes =
                 readFile( fs::u8path( context.sourcePath.c_str() ), graphicsResourceDescriptorLimit );
@@ -107,11 +108,12 @@ namespace workphone::render
             require( value.is_object(), "Graphics descriptor must be a JSON object" );
             validateUniqueKeys( text );
             const auto &object = value.as_object();
-            require( object.size() == fields.size(),
-                     "Graphics descriptor has missing or unsupported fields" );
+            for( const auto &field : fields )
+                require( object.contains( field ), "Graphics descriptor has missing required fields" );
             for( const auto &field : object )
             {
-                require( fields.count( std::string( field.key().data(), field.key().size() ) ) != 0,
+                const std::string name( field.key().data(), field.key().size() );
+                require( fields.count( name ) != 0 || optional.count( name ) != 0,
                          "Unsupported graphics descriptor field" );
             }
             const auto &version = object.at( "version" );
@@ -216,7 +218,8 @@ namespace workphone::render
         CookedMaterialData readMaterialRecipe( const resource::CompileContext &context )
         {
             const auto descriptor = readDescriptor(
-                context, { "version", "baseColour", "metalness", "roughness", "baseColourTexture" } );
+                context, { "version", "baseColour", "metalness", "roughness", "baseColourTexture" },
+                { "normalTexture", "ormTexture" } );
             CookedMaterialData recipe;
             const auto &colour = descriptor.at( "baseColour" );
             require( colour.is_array() && colour.as_array().size() == 4,
@@ -238,6 +241,17 @@ namespace workphone::render
             {
                 throw std::runtime_error( error.c_str() );
             }
+            const auto optionalTexture = [&]( const char *name, CookedMaterialTextureReference &ref ) {
+                if( !descriptor.contains( name ) ) return;
+                const auto path = stringField( descriptor, name );
+                require( path.substr( 0, 7 ) == "data://" && ref.id.set( path ) &&
+                             !ref.id.isSubResource() && ref.id.type() == resource::ResourceTypeID( "texres" ),
+                         "Optional material texture must identify a texres file resource" );
+                if( !canonicalAssetCatalogPath( context.sourceRoot, ref.id.sourceRelativePath(), canonical, error ) )
+                    throw std::runtime_error( error.c_str() );
+            };
+            optionalTexture( "normalTexture", recipe.normalTexture );
+            optionalTexture( "ormTexture", recipe.ormTexture );
             recipe.target = context.target;
             recipe.packagedBuild = context.packagedBuild;
             return recipe;
@@ -412,37 +426,39 @@ namespace workphone::render
         CookedMaterialData compileMaterial( const resource::CompileContext &context )
         {
             auto data = readMaterialRecipe( context );
-            AssetCatalogPath compiledPath;
-            String error;
-            const auto pinned = context.dependencyArtifacts.find( data.textureId.str() );
-            if( pinned == context.dependencyArtifacts.end() )
+            const auto pin = [&]( const resource::ResourceID &id, MaterialTextureSlot slot,
+                                  u64 &sourceHash, u64 &payloadHash, u64 &compilerVersion ) {
+                AssetCatalogPath compiledPath;
+                String error;
+                const auto pinned = context.dependencyArtifacts.find( id.str() );
+                if( pinned == context.dependencyArtifacts.end() )
+                    throw std::runtime_error( "Material compiler requires a pinned texture artifact" );
+                if( !canonicalAssetCatalogPath( context.compiledRoot, pinned->second, compiledPath, error ) )
+                    throw std::runtime_error( error.c_str() );
+                const auto path = fs::u8path( context.compiledRoot.c_str() ) / fs::u8path( compiledPath.path.c_str() );
+                resource::RuntimeResource dependency;
+                if( !resource::CompiledResourceIO::read( path.generic_u8string().c_str(), dependency, error,
+                                                         graphicsTextureByteLimit + 4096u ) )
+                    throw std::runtime_error( error.c_str() );
+                CookedTextureData texture;
+                if( !decodeCookedTexture( dependency, texture, error ) )
+                    throw std::runtime_error( error.c_str() );
+                require( dependency.header.resourceId == id && texture.target == context.target &&
+                             texture.packagedBuild == context.packagedBuild,
+                         "Compiled material dependency identity, target or build mode is incompatible" );
+                if( !validateMaterialTextureSemantic( texture, slot, error ) )
+                    throw std::runtime_error( error.c_str() );
+                sourceHash = dependency.header.sourceHash;
+                payloadHash = dependency.header.payloadHash;
+                compilerVersion = dependency.header.compilerVersion;
+            };
+            pin( data.textureId, MaterialTextureSlot::BaseColour, data.textureSourceHash,
+                 data.texturePayloadHash, data.textureCompilerVersion );
+            for( const auto slot : { MaterialTextureSlot::Normal, MaterialTextureSlot::ORM } )
             {
-                throw std::runtime_error( "Material compiler requires a pinned texture artifact" );
+                auto &ref = slot == MaterialTextureSlot::Normal ? data.normalTexture : data.ormTexture;
+                if( ref.id.isValid() ) pin( ref.id, slot, ref.sourceHash, ref.payloadHash, ref.compilerVersion );
             }
-            if( !canonicalAssetCatalogPath( context.compiledRoot, pinned->second, compiledPath, error ) )
-            {
-                throw std::runtime_error( error.c_str() );
-            }
-            const auto path =
-                fs::u8path( context.compiledRoot.c_str() ) / fs::u8path( compiledPath.path.c_str() );
-            resource::RuntimeResource dependency;
-            if( !resource::CompiledResourceIO::read( path.generic_u8string().c_str(), dependency, error,
-                                                     graphicsTextureByteLimit + 4096u ) )
-            {
-                throw std::runtime_error( error.c_str() );
-            }
-            CookedTextureData texture;
-            if( !decodeCookedTexture( dependency, texture, error ) )
-            {
-                throw std::runtime_error( error.c_str() );
-            }
-            require( dependency.header.resourceId == data.textureId &&
-                         texture.target == context.target &&
-                         texture.packagedBuild == context.packagedBuild,
-                     "Compiled material dependency identity, target or build mode is incompatible" );
-            data.textureSourceHash = dependency.header.sourceHash;
-            data.texturePayloadHash = dependency.header.payloadHash;
-            data.textureCompilerVersion = dependency.header.compilerVersion;
             return data;
         }
     }  // namespace
@@ -535,7 +551,7 @@ namespace workphone::render
     Array<resource::CompilerOutput> GraphicsResourceCompiler::outputs() const
     {
         return { { resource::ResourceTypeID( "texres" ), 2 },
-                 { resource::ResourceTypeID( "matres" ), 2 } };
+                 { resource::ResourceTypeID( "matres" ), 3 } };
     }
 
     bool GraphicsResourceCompiler::getDependencies( const resource::CompileContext &context,
@@ -560,6 +576,13 @@ namespace workphone::render
                 dependencies.compileDependencies.push_back(
                     resource::CompileDependency::resource( recipe.textureId ) );
                 dependencies.installDependencies.push_back( recipe.textureId );
+                for( const auto &ref : { recipe.normalTexture, recipe.ormTexture } )
+                {
+                    if( !ref.id.isValid() || std::find( dependencies.installDependencies.begin(),
+                            dependencies.installDependencies.end(), ref.id ) != dependencies.installDependencies.end() ) continue;
+                    dependencies.compileDependencies.push_back( resource::CompileDependency::resource( ref.id ) );
+                    dependencies.installDependencies.push_back( ref.id );
+                }
             }
             else
             {
