@@ -3,6 +3,7 @@
 
 #include <Workphone/Interface/Database/IResourceCompilationDatabase.hpp>
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
+#include <functional>
 
 namespace workphone::resource
 {
@@ -12,6 +13,25 @@ namespace workphone::resource
         String uuid;
         ResourceID resourceId;
     };
+
+    struct WPCore_API RuntimePackageContext
+    {
+        String sourceRoot, target;
+        Array<ResourceID> resources;
+    };
+
+    /** A checked exporter retains admission until publication or failure. The
+     * resolver must bind every closure member, acquire external admission in
+     * resource-system -> catalog -> connection order, and never reenter this
+     * ResourceSystem. The lifetime token releases that admission on this thread.
+     */
+    struct WPCore_API RuntimePackageAdmission
+    {
+        Array<RuntimeResourceBinding> bindings;
+        std::shared_ptr<void> lifetime;
+    };
+    using RuntimePackageResolver = std::function<bool( const RuntimePackageContext &,
+                                                       RuntimePackageAdmission &, String & )>;
 
     /** Read-only cooked mount. Limits apply to each unique install dependency closure. */
     struct WPCore_API RuntimeResourceConfig
@@ -73,6 +93,9 @@ namespace workphone::resource
          */
         bool writeRuntimePackage( const String &directory, const Array<ResourceID> &roots,
                                   const Array<RuntimeResourceBinding> &bindings, String &error );
+        /** Policy-aware export. Rejects absent admission or incomplete UUID coverage. */
+        bool writeRuntimePackageChecked( const String &directory, const Array<ResourceID> &roots,
+                                         const RuntimePackageResolver &resolver, String &error );
         /** Runtime-only UUID lookup. Failure clears output; no path fallback. */
         bool resolveRuntimeUUID( const String &uuid, ResourceID &output, String &error ) const;
         /** Resolves and loads under one mount lifetime fence, sharing load() cache/limits. */
@@ -102,6 +125,9 @@ namespace workphone::resource
         std::shared_ptr<IResourceCompilerRegistry> registry() const override;
 
     private:
+        bool writeRuntimePackageImpl( const String &, const Array<ResourceID> &,
+                                      const Array<RuntimeResourceBinding> &,
+                                      const RuntimePackageResolver &, String & );
         bool writeRuntimeManifestLocked( const String &, const Array<ResourceID> &,
                                          const Array<RuntimeResourceBinding> &, String & );
         class Impl;

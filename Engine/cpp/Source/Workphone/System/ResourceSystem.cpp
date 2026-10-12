@@ -1760,6 +1760,20 @@ namespace workphone::resource
 
     bool ResourceSystem::writeRuntimePackage( const String &directory, const Array<ResourceID> &roots,
                                               const Array<RuntimeResourceBinding> &bindings, String &error )
+    {
+        return writeRuntimePackageImpl( directory, roots, bindings, {}, error );
+    }
+
+    bool ResourceSystem::writeRuntimePackageChecked( const String &directory, const Array<ResourceID> &roots,
+                                                     const RuntimePackageResolver &resolver, String &error )
+    {
+        if( !resolver ) { error = "Checked runtime export requires a package resolver"; return false; }
+        return writeRuntimePackageImpl( directory, roots, {}, resolver, error );
+    }
+
+    bool ResourceSystem::writeRuntimePackageImpl( const String &directory, const Array<ResourceID> &roots,
+                                                 const Array<RuntimeResourceBinding> &bindings,
+                                                 const RuntimePackageResolver &resolver, String &error )
     try
     {
         error.clear();
@@ -1817,6 +1831,39 @@ namespace workphone::resource
         if( !writeRuntimeManifestLocked( pathString( manifestPath ), roots, bindings, error ) ) return false;
         RuntimeManifest manifest;
         if( !readManifest( pathString( manifestPath ), manifest, error ) ) return false;
+        RuntimePackageAdmission admission;
+        if( resolver )
+        {
+            RuntimePackageContext context;
+            context.sourceRoot = pathString( m_impl->sourceRoot );
+            context.target = m_impl->config.target;
+            for( const auto &entry : manifest.resources ) context.resources.push_back( entry.second.resourceId );
+            if( !resolver( context, admission, error ) )
+            {
+                if( error.empty() ) error = "Runtime package admission was rejected";
+                return false;
+            }
+            if( !admission.lifetime || admission.bindings.size() != manifest.resources.size() )
+            {
+                error = "Checked runtime packages require retained admission and complete UUID coverage";
+                return false;
+            }
+            if( !writeRuntimeManifestLocked( pathString( manifestPath ), roots, admission.bindings, error ) ) return false;
+            RuntimeManifest rebound;
+            if( !readManifest( pathString( manifestPath ), rebound, error ) ) return false;
+            if( rebound.artifacts != manifest.artifacts || rebound.resources.size() != manifest.resources.size() )
+            {
+                error = "Runtime package closure changed during admission";
+                return false;
+            }
+            for( const auto &entry : manifest.resources )
+                if( !sameRuntimeHeader( entry.second, rebound.resources.at( entry.first ), false ) )
+                {
+                    error = "Runtime package generation changed during admission";
+                    return false;
+                }
+            manifest = std::move( rebound );
+        }
         std::set<String> artifactPaths;
         for( const auto &entry : manifest.resources )
         {
@@ -1875,6 +1922,11 @@ namespace workphone::resource
     catch( const fs::filesystem_error &exception )
     {
         error = String( "Runtime package filesystem failure: " ) + exception.what();
+        return false;
+    }
+    catch( const std::exception &exception )
+    {
+        error = String( "Runtime package admission failed: " ) + exception.what();
         return false;
     }
 

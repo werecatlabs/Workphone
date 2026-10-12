@@ -75,7 +75,12 @@ namespace workphone
         EntryPage queryEntries( const EntryQuery &query, const EntryCursor *cursor = nullptr );
         /** Independent consistent SQLite snapshot; fails without overwriting an existing file. */
         bool backupTo( const String &path, String &error );
-        enum class FileOperation { Move, Copy, Delete };
+        enum class FileOperation
+        {
+            Move,
+            Copy,
+            Delete
+        };
         struct FileOperationResult
         {
             String operationId;
@@ -94,7 +99,10 @@ namespace workphone
         void open() override;
         /** Open an existing v2 catalog without migration or any write access. */
         bool openReadOnly( const String &path, String &error );
-        bool isReadOnly() const { return m_readOnly; }
+        bool isReadOnly() const
+        {
+            return m_readOnly;
+        }
         void close() override;
 
         /** @brief Default constructor.

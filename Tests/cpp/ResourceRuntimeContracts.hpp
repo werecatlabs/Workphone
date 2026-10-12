@@ -3,6 +3,7 @@
 
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
+#include <Workphone/Core/StringUtil.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
 
 #include <chrono>
@@ -336,6 +337,58 @@ namespace resource_runtime_contracts
         require( !authoring.writeRuntimePackage( pathText( failedPackage ), { rootId }, bindings, error ) &&
                  !fs::exists( failedPackage ), "Corrupt package input must not publish a destination" );
         write( packageRootPath, packageRootBytes );
+        const auto checkedPackage = fixture.root / "checked-package";
+        bool admissionReleased = false, completeAtRelease = false;
+        struct AdmissionProbe
+        {
+            bool &released, &complete;
+            fs::path directory;
+            ~AdmissionProbe()
+            {
+                released = true;
+                complete = fs::exists(directory / "runtime.wprm");
+            }
+        };
+        const RuntimePackageResolver resolver = [&](const RuntimePackageContext &context,
+                                                       RuntimePackageAdmission &admission,String &) {
+            require(fs::equivalent(fs::u8path(context.sourceRoot.c_str()),source) && context.target == authoringConfig.target &&
+                    context.resources.size() == descriptors.size(),"Checked export must disclose its actual pinned source/target/closure");
+            for(const auto &id : context.resources) admission.bindings.push_back({StringUtil::getUUID(),id});
+            admission.lifetime = std::shared_ptr<AdmissionProbe>(new AdmissionProbe{admissionReleased,completeAtRelease,checkedPackage});
+            return true;
+        };
+        require(authoring.writeRuntimePackageChecked(pathText(checkedPackage),{rootId},resolver,error),error);
+        require(admissionReleased && completeAtRelease,"Admission lifetime must extend through complete directory publication");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},{},error),
+                "Checked export must reject an absent resolver");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &,RuntimePackageAdmission &,String &diagnostic) {
+                diagnostic = "policy rejection"; return false;
+            },error) && error == "policy rejection" && !fs::exists(failedPackage),
+                "Rejected admission must preserve diagnostics and publish nothing");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &,RuntimePackageAdmission &,String &) -> bool {
+                throw std::runtime_error("resolver fault");
+            },error) && error.find("resolver fault") != String::npos && !fs::exists(failedPackage),
+                "Resolver exceptions must clean staging without publishing a package");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &,RuntimePackageAdmission &admission,String &) {
+                admission.lifetime = std::make_shared<int>(1);
+                admission.bindings = bindings; return true;
+            },error) && !fs::exists(failedPackage),"Checked export must reject partial UUID coverage");
+        require(!authoring.writeRuntimePackageChecked(pathText(failedPackage),{rootId},
+            [&](const RuntimePackageContext &context,RuntimePackageAdmission &admission,String &) {
+                for(const auto &id : context.resources) admission.bindings.push_back({StringUtil::getUUID(),id});
+                return true;
+            },error) && !fs::exists(failedPackage),"Checked export must reject unretained admission");
+        const auto racingDestination = fixture.root / "racing-destination";
+        require(!authoring.writeRuntimePackageChecked(pathText(racingDestination),{rootId},
+            [&](const RuntimePackageContext &context,RuntimePackageAdmission &admission,String &) {
+                for(const auto &id : context.resources) admission.bindings.push_back({StringUtil::getUUID(),id});
+                admission.lifetime = std::make_shared<int>(1);
+                fs::create_directory(racingDestination); return true;
+            },error) && fs::is_empty(racingDestination),
+                "A racing destination must be preserved by exclusive final publication");
         for( const auto &entry : fs::directory_iterator( fixture.root ) )
             require( entry.path().filename().u8string().find( ".wp-package-" ) != 0,
                      "Completed or failed export leaked its staging directory" );

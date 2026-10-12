@@ -327,8 +327,8 @@ namespace workphone
          * @param[in] bLoadResource If true, the resource implementation will be loaded.
          * @return Smart pointer to the resource instance.
          */
-        SmartPtr<IResource> createOrRetrieveResource( SmartPtr<IDatabaseQuery> query,
-                                                      bool bLoadResource, const String &sourceRoot );
+        SmartPtr<IResource> createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource,
+                                                      const String &sourceRoot );
 
         /**
          * @brief Load asset properties by UUID from the database.

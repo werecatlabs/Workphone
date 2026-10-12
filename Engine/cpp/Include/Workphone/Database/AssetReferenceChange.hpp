@@ -26,20 +26,31 @@ namespace workphone
         static hash_type referenceType( const String &name )
         {
             auto types = TypeManager::instance();
-            if( !types ) return 0;
-            if( name == "Material" ) return render::IMaterial::typeInfo();
-            if( name == "Texture" ) return render::ITexture::typeInfo();
-            if( name == "Actor" ) return scene::IGameActor::typeInfo();
-            if( name == "script" || name == "Script" ) return ScriptAsset::typeInfo();
-            if( name == "Font" ) return render::IFont::typeInfo();
-            if( name == "Mesh" ) return IMeshResource::typeInfo();
-            if( name == "Sound" ) return ISound::typeInfo();
+            if( !types )
+                return 0;
+            if( name == "Material" )
+                return render::IMaterial::typeInfo();
+            if( name == "Texture" )
+                return render::ITexture::typeInfo();
+            if( name == "Actor" )
+                return scene::IGameActor::typeInfo();
+            if( name == "script" || name == "Script" )
+                return ScriptAsset::typeInfo();
+            if( name == "Font" )
+                return render::IFont::typeInfo();
+            if( name == "Mesh" )
+                return IMeshResource::typeInfo();
+            if( name == "Sound" )
+                return ISound::typeInfo();
             const auto actual = types->getIdFromName( name );
-            if( !actual ) return 0;
-            for( auto family : { render::IMaterial::typeInfo(), render::ITexture::typeInfo(),
-                                 scene::IGameActor::typeInfo(), ScriptAsset::typeInfo(),
-                                 render::IFont::typeInfo(), IMeshResource::typeInfo(), ISound::typeInfo() } )
-                if( types->isDerived( actual, family ) ) return family;
+            if( !actual )
+                return 0;
+            for( auto family :
+                 { render::IMaterial::typeInfo(), render::ITexture::typeInfo(),
+                   scene::IGameActor::typeInfo(), ScriptAsset::typeInfo(), render::IFont::typeInfo(),
+                   IMeshResource::typeInfo(), ISound::typeInfo() } )
+                if( types->isDerived( actual, family ) )
+                    return family;
             return actual;
         }
         static bool typeMatches( const String &storedType, hash_type requested )
@@ -51,9 +62,8 @@ namespace workphone
             return actual != 0 && types->isDerived( actual, requested );
         }
         bool prepare( SmartPtr<AssetDatabaseManager> catalog,
-                      const AssetDatabaseManager::EntrySnapshot &entry,
-                      SmartPtr<ISharedObject> target, const String &property,
-                      hash_type expectedType )
+                      const AssetDatabaseManager::EntrySnapshot &entry, SmartPtr<ISharedObject> target,
+                      const String &property, hash_type expectedType )
         {
             if( m_prepared )
                 return fail( "Reference edit has already been prepared." );
@@ -66,8 +76,7 @@ namespace workphone
                 return fail( "Reference property is missing or read-only." );
             m_declaredType = properties->getPropertyObject( property ).getAttribute( "resourceType" );
             auto types = TypeManager::instance();
-            if( !m_declaredType.empty() &&
-                !typeMatches( entry.type, referenceType( m_declaredType ) ) )
+            if( !m_declaredType.empty() && !typeMatches( entry.type, referenceType( m_declaredType ) ) )
                 return fail( "Asset type does not match the property's declared reference type." );
             m_catalog = catalog;
             m_target = target;
@@ -114,11 +123,25 @@ namespace workphone
                 return fail( "Reference edit is not applied." );
             return sessionCurrent( catalog ) && propertyCurrent( m_entry.uuid );
         }
-        bool applied() const { return m_applied; }
-        const String &error() const { return m_error; }
-        SmartPtr<ISharedObject> target() const { return m_target.lock(); }
+        bool applied() const
+        {
+            return m_applied;
+        }
+        const String &error() const
+        {
+            return m_error;
+        }
+        SmartPtr<ISharedObject> target() const
+        {
+            return m_target.lock();
+        }
+
     private:
-        bool fail( const String &error ) { m_error = error; return false; }
+        bool fail( const String &error )
+        {
+            m_error = error;
+            return false;
+        }
         bool sessionCurrent( SmartPtr<AssetDatabaseManager> active )
         {
             if( !active || active != m_catalog.lock() )
@@ -134,15 +157,16 @@ namespace workphone
         {
             auto object = m_target.lock();
             auto properties = object ? object->getProperties() : nullptr;
-            const auto declared = properties && properties->hasProperty( m_property ) ?
-                properties->getPropertyObject( m_property ).getAttribute( "resourceType" ) : String();
+            const auto declared =
+                properties && properties->hasProperty( m_property )
+                    ? properties->getPropertyObject( m_property ).getAttribute( "resourceType" )
+                    : String();
             const auto family = referenceType( m_declaredType );
-            const bool sameType = declared == m_declaredType ||
-                ( family != 0 && referenceType( declared ) == family );
+            const bool sameType =
+                declared == m_declaredType || ( family != 0 && referenceType( declared ) == family );
             if( !properties || !properties->hasProperty( m_property ) ||
                 properties->getPropertyObject( m_property ).isReadOnly() ||
-                properties->getProperty( m_property ) != expected ||
-                !sameType )
+                properties->getProperty( m_property ) != expected || !sameType )
                 return fail( "Reference property was removed, locked or independently changed." );
             m_error.clear();
             return true;
@@ -152,7 +176,8 @@ namespace workphone
             if( !propertyCurrent( expected ) )
                 return false;
             auto object = m_target.lock();
-            if( !object ) return fail( "Reference target was destroyed." );
+            if( !object )
+                return fail( "Reference target was destroyed." );
             auto properties = object->getProperties();
             auto replacement = make_ptr<Properties>( *properties );
             replacement->getPropertyObject( m_property ).setValue( value );
@@ -168,7 +193,13 @@ namespace workphone
             }
             catch( const std::exception & )
             {
-                try { object->setProperties( properties ); } catch( ... ) {}
+                try
+                {
+                    object->setProperties( properties );
+                }
+                catch( ... )
+                {
+                }
                 return fail( "The target threw while applying the reference property." );
             }
             m_error.clear();
@@ -185,5 +216,5 @@ namespace workphone
         bool m_applied = false;
         bool m_executed = false;
     };
-}
+}  // namespace workphone
 #endif

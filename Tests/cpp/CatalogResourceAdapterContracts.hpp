@@ -5,11 +5,15 @@
 #include <Workphone/System/Resource.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/Database/AssetPackagePolicy.hpp>
+#include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
+#include <WPSQLite/SQLiteDatabase.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <stdexcept>
 
 namespace workphone
@@ -34,6 +38,18 @@ namespace catalog_adapter_contracts
     using namespace workphone;
     using namespace workphone::resource;
     namespace fs = std::filesystem;
+
+    class ObservedDatabase final : public SQLiteDatabase
+    {
+    public:
+        std::function<void(const String &)> afterQuery;
+        SmartPtr<IDatabaseQuery> queryBound(const String &sql,const Array<String> &values) override
+        {
+            auto result = SQLiteDatabase::queryBound(sql,values);
+            if(result && afterQuery) afterQuery(sql);
+            return result;
+        }
+    };
 
     inline void require( bool condition, const char *message )
     {
@@ -134,6 +150,9 @@ namespace catalog_adapter_contracts
         auto sourceAsset = asset( "root.ctest" );
         catalog->addResourceEntry( sourceAsset );
         const String uuid = sourceAsset->getHandle()->getUUIDAsString();
+        auto dependencyAsset = asset( "dependency.ctest" );
+        catalog->addResourceEntry( dependencyAsset );
+        const auto dependencyUUID = dependencyAsset->getHandle()->getUUIDAsString();
         auto scene = make_ptr<CatalogAdapterTestSceneEntry>();
         scene->getHandle()->setUUID( StringUtil::getUUID() );
         catalog->addResourceEntry( scene );
@@ -186,6 +205,117 @@ namespace catalog_adapter_contracts
         require( packagedRuntime.initializeRuntime( runtimeConfig, error ) && packagedRuntime.loadUUID( uuid, error ),
                  "Catalog UUID must load through a compiler/catalog-free package mount" );
         auto packagedOriginal = packagedRuntime.loadUUID( uuid, error );
+        const auto checkedPath = root / "catalog-admitted-package";
+        require(adapter.writeRuntimePackage(checkedPath.u8string().c_str(),{request},error),error.c_str());
+        ResourceSystem checkedRuntime(nullptr,nullptr);
+        auto checkedConfig = runtimeConfig;
+        checkedConfig.compiledRoot = checkedPath.u8string().c_str();
+        checkedConfig.manifestPath = (checkedPath / "runtime.wprm").u8string().c_str();
+        require(checkedRuntime.initializeRuntime(checkedConfig,error),error.c_str());
+        auto checkedRoot = checkedRuntime.loadUUID(uuid,error);
+        require(checkedRoot && checkedRuntime.loadUUID(dependencyUUID,error) == checkedRoot->dependencies[0],
+                "Catalog export must map every transitive install dependency to its durable UUID");
+        const auto rejectedPath = root / "rejected-catalog-package";
+        AssetPackagePolicy dependencyPolicy;
+        require(getAssetPackagePolicy(catalog,dependencyUUID,dependencyPolicy,error) &&
+                setAssetPackagePolicy(catalog,dependencyPolicy.entry,AssetPackageUsage::EditorOnly,error),error.c_str());
+        require(!adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error) && !fs::exists(rejectedPath),
+                "Catalog export must reject expired root requests");
+        require(adapter.resolve(uuid,request,error),error.c_str());
+        require(!adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error) &&
+                error.find("Editor-only") != String::npos && error.find("dependency.ctest") != String::npos &&
+                !fs::exists(rejectedPath),"Editor-only transitive dependencies must block publication with identity diagnostics");
+        require(checkedRuntime.loadUUID(dependencyUUID,error) == checkedRoot->dependencies[0],
+                "Policy changes must not mutate an already exported package");
+        require(getAssetPackagePolicy(catalog,dependencyUUID,dependencyPolicy,error) &&
+                setAssetPackagePolicy(catalog,dependencyPolicy.entry,AssetPackageUsage::Excluded,error) &&
+                adapter.resolve(uuid,request,error),error.c_str());
+        require(!adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error) &&
+                error.find("excluded") != String::npos,"Explicit excluded dependencies must block packaging");
+        require(getAssetPackagePolicy(catalog,dependencyUUID,dependencyPolicy,error) &&
+                setAssetPackagePolicy(catalog,dependencyPolicy.entry,AssetPackageUsage::Runtime,error) &&
+                adapter.resolve(uuid,request,error),error.c_str());
+        auto db = catalog->getDatabase();
+        auto bound = dynamic_cast<IParameterizedDatabase *>(db.get());
+        require(bound->queryBound("DELETE FROM resources WHERE uuid=?",{dependencyUUID}) != nullptr &&
+                adapter.resolve(uuid,request,error),"Remove dependency catalog identity");
+        require(!adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error) &&
+                error.find("not a cataloged") != String::npos && !fs::exists(rejectedPath),
+                "Uncataloged cooked dependencies must not silently ship by path");
+        catalog->addResourceEntry(dependencyAsset);
+        require(adapter.resolve(uuid,request,error),error.c_str());
+        require(bound->queryBound("UPDATE resources SET type='Unmapped' WHERE uuid=?",{dependencyUUID}) != nullptr &&
+                adapter.resolve(uuid,request,error),"Change dependency catalog type");
+        require(!adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error) && !fs::exists(rejectedPath),
+                "Every package member requires a compatible explicit type mapping");
+        require(bound->queryBound("UPDATE resources SET type=? WHERE uuid=?",{snapshot.type,dependencyUUID}) != nullptr &&
+                adapter.resolve(uuid,request,error),"Restore dependency catalog type");
+        require(bound->queryBound("UPDATE wp_asset_package_schema SET version=2",{}) != nullptr &&
+                adapter.resolve(uuid,request,error),"Seed future package policy version");
+        require(!adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error) && !fs::exists(rejectedPath),
+                "Unsupported shipping metadata must prevent catalog export");
+        require(bound->queryBound("UPDATE wp_asset_package_schema SET version=1",{}) != nullptr &&
+                adapter.resolve(uuid,request,error),"Restore package policy version");
+        require(adapter.writeRuntimePackage(rejectedPath.u8string().c_str(),{request},error),error.c_str());
+        // Observe a real policy read inside the production admission, then try
+        // independent and same-connection work while publication is still pending.
+        auto observed = make_ptr<ObservedDatabase>();
+        db->close();
+        observed->loadFromFile(catalogPath);
+        catalog->setDatabase(observed);
+        require(adapter.resolve(uuid,request,error),error.c_str());
+        auto independent = core::IApplicationManager::instance()->getFactoryManager()->make_object<IDatabase>();
+        independent->loadFromFile(catalogPath);
+        auto independentBound = dynamic_cast<IParameterizedDatabase *>(independent.get());
+        require(independentBound->queryBound("PRAGMA busy_timeout=0",{}) != nullptr,"Configure nonblocking writer probe");
+        const auto fencedPath = root / "fenced-catalog-package";
+        bool observedAdmission = false;
+        std::future<bool> sameConnection;
+        observed->afterQuery = [&](const String &statement) {
+            if(observedAdmission || statement.find("SELECT usage FROM wp_asset_package_usage") != 0) return;
+            observedAdmission = true;
+            require(!independentBound->queryBound("UPDATE wp_asset_package_usage SET usage='excluded' WHERE uuid=?",{dependencyUUID}),
+                    "Independent SQLite writers must be excluded while package admission is active");
+            std::promise<void> started;
+            auto ready = started.get_future();
+            sameConnection = std::async(std::launch::async,[&,signal=std::move(started)]() mutable {
+                signal.set_value();
+                auto result = observed->queryBound("SELECT uuid FROM resources",{});
+                return result != nullptr && fs::exists(fencedPath / "runtime.wprm");
+            });
+            ready.get();
+            require(sameConnection.wait_for(std::chrono::milliseconds(30)) == std::future_status::timeout,
+                    "Same-connection work must wait through package publication");
+        };
+        require(adapter.writeRuntimePackage(fencedPath.u8string().c_str(),{request},error),error.c_str());
+        require(observedAdmission && sameConnection.valid() && sameConnection.get(),
+                "Connection admission must remain held until the complete package is visible");
+        observed->afterQuery = {};
+        require(independentBound->queryBound("UPDATE wp_asset_package_usage SET usage='runtime' WHERE uuid=?",{dependencyUUID}) != nullptr,
+                "Independent writers must resume after package publication");
+        independent->close();
+        require(adapter.resolve(uuid,request,error),error.c_str());
+
+        auto readOnly = make_ptr<AssetDatabaseManager>();
+        require(readOnly->setProjectRoot(config.sourceRoot) && readOnly->openReadOnly(catalogPath,error),error.c_str());
+        CatalogResourceAdapter readOnlyAdapter(readOnly,resources,config.sourceRoot,mappings);
+        CatalogResourceAdapter::Request readOnlyRequest;
+        require(readOnlyAdapter.resolve(uuid,readOnlyRequest,error) &&
+                !readOnlyAdapter.writeRuntimePackage((root / "readonly-package").u8string().c_str(),{readOnlyRequest},error),
+                "Catalog export must reject read-only mutation admission explicitly");
+        readOnly->unload(nullptr);
+        write(other / "root.ctest","other service payload\n");
+        auto otherResources = std::make_shared<ResourceSystem>(registry,std::make_shared<ResourceCompilationDatabase>());
+        auto otherConfig = config;
+        otherConfig.sourceRoot = other.u8string().c_str();
+        otherConfig.compiledRoot = (root / "other-compiled").u8string().c_str();
+        require(otherResources->initialize(otherConfig,error) && otherResources->compile(request.resourceId,packaged).succeeded(),
+                "Build alternate actual source root");
+        CatalogResourceAdapter wrongService(catalog,otherResources,config.sourceRoot,mappings);
+        require(!wrongService.writeRuntimePackage((root / "wrong-source-package").u8string().c_str(),{request},error) &&
+                error.find("source root") != String::npos,"Catalog export must verify the actual ResourceSystem source root");
+        otherResources->shutdown();
+        checkedRuntime.shutdown();
         // Return to the original authoring mode for the existing contracts below.
         require( adapter.compile( request ).succeeded(), "Catalog Editor-mode selection failed" );
 

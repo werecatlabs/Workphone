@@ -6,7 +6,10 @@
 
 namespace workphone
 {
-    namespace resource { struct RuntimeResourceBinding; }
+    namespace resource
+    {
+        struct RuntimeResourceBinding;
+    }
     /**
      * Connects durable catalog identity to the existing resource compilation service.
      * Calls reject stale requests before and after work. They do not lock catalog
@@ -49,6 +52,13 @@ namespace workphone
          */
         bool runtimeBinding( const Request &request, resource::RuntimeResourceBinding &binding,
                              String &error ) const;
+        /** Export a project-only package with a catalog UUID and shipping policy
+         * check for every pinned install member. Holds catalog/SQLite mutation
+         * admission through publication. Requires a writable project catalog and
+         * the concrete ResourceSystem; unsupported subassets/media fail explicitly.
+         */
+        bool writeRuntimePackage( const String &directory, const Array<Request> &roots,
+                                  String &error ) const;
         resource::CompilationReport compile( const Request &request,
                                              const resource::CompilationOptions &options = {} ) const;
         std::shared_ptr<const resource::RuntimeResource> load( const Request &request,

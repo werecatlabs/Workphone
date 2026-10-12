@@ -14,24 +14,32 @@ namespace workphone
         bool capture( SmartPtr<AssetDatabaseManager> catalog )
         {
             clear();
-            if( !catalog ) return false;
+            if( !catalog )
+                return false;
             AssetDatabaseManager::EntryQuery query;
             query.pageSize = 1;
             auto page = catalog->queryEntries( query );
-            if( !page.succeeded ) return false;
+            if( !page.succeeded )
+                return false;
             m_catalog = catalog;
             m_instance = page.next.catalogInstance;
             return true;
         }
         bool isCurrent( SmartPtr<AssetDatabaseManager> catalog ) const
         {
-            if( !catalog || catalog != m_catalog.lock() || m_instance == 0 ) return false;
+            if( !catalog || catalog != m_catalog.lock() || m_instance == 0 )
+                return false;
             AssetDatabaseManager::EntryQuery query;
             query.pageSize = 1;
             auto page = catalog->queryEntries( query );
             return page.succeeded && page.next.catalogInstance == m_instance;
         }
-        void clear() { m_catalog = nullptr; m_instance = 0; }
+        void clear()
+        {
+            m_catalog = nullptr;
+            m_instance = 0;
+        }
+
     private:
         ObjectObserver<AssetDatabaseManager> m_catalog;
         u64 m_instance = 0;
@@ -91,9 +99,19 @@ namespace workphone
             entry = m_page.entries[index];
             return true;
         }
-        const Page &page() const { return m_page; }
-        size_t pageNumber() const { return m_cursors.size() + 1; }
-        bool hasPrevious() const { return m_page.succeeded && !m_cursors.empty(); }
+        const Page &page() const
+        {
+            return m_page;
+        }
+        size_t pageNumber() const
+        {
+            return m_cursors.size() + 1;
+        }
+        bool hasPrevious() const
+        {
+            return m_page.succeeded && !m_cursors.empty();
+        }
+
     private:
         bool sameCatalog( SmartPtr<AssetDatabaseManager> catalog ) const
         {
@@ -124,5 +142,5 @@ namespace workphone
         Page m_page;
         Array<AssetDatabaseManager::EntryCursor> m_cursors;
     };
-}
+}  // namespace workphone
 #endif
