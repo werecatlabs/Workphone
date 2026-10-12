@@ -36,12 +36,11 @@ static wp_s32 wp_softbody_demo_index( wp_s32 row, wp_s32 side, wp_s32 height )
     return row * 4 + side * 2 + height;
 }
 
-static wp_s32 wp_softbody_demo_has_beam( wp_u32 *pairs, wp_s32 pair_count,
-                                          wp_s32 node_a, wp_s32 node_b )
+static wp_s32 wp_softbody_demo_has_beam( wp_u32 *pairs, wp_s32 pair_count, wp_s32 node_a, wp_s32 node_b )
 {
     wp_s32 minimum = node_a < node_b ? node_a : node_b;
     wp_s32 maximum = node_a < node_b ? node_b : node_a;
-    wp_u32 key = ( ( wp_u32 )minimum << 16 ) | ( wp_u32 )maximum;
+    wp_u32 key = ( (wp_u32)minimum << 16 ) | (wp_u32)maximum;
     wp_s32 i;
 
     for( i = 0; i < pair_count; ++i )
@@ -55,12 +54,9 @@ static wp_s32 wp_softbody_demo_has_beam( wp_u32 *pairs, wp_s32 pair_count,
     return wp_false;
 }
 
-static void wp_softbody_demo_add_beam( wp_softbody_beam_def *beams,
-                                        wp_s32 *beam_count,
-                                        wp_u32 *pairs,
-                                        wp_s32 *pair_count,
-                                        wp_s32 node_a, wp_s32 node_b,
-                                        const wp_softbody_demo_params *params )
+static void wp_softbody_demo_add_beam( wp_softbody_beam_def *beams, wp_s32 *beam_count, wp_u32 *pairs,
+                                       wp_s32 *pair_count, wp_s32 node_a, wp_s32 node_b,
+                                       const wp_softbody_demo_params *params )
 {
     wp_s32 minimum;
     wp_s32 maximum;
@@ -73,7 +69,7 @@ static void wp_softbody_demo_add_beam( wp_softbody_beam_def *beams,
 
     minimum = node_a < node_b ? node_a : node_b;
     maximum = node_a < node_b ? node_b : node_a;
-    key = ( ( wp_u32 )minimum << 16 ) | ( wp_u32 )maximum;
+    key = ( (wp_u32)minimum << 16 ) | (wp_u32)maximum;
 
     if( wp_softbody_demo_has_beam( pairs, *pair_count, node_a, node_b ) )
     {
@@ -120,8 +116,7 @@ void wp_softbody_demo_car_init( wp_softbody_demo_car *demo, wp_softbody_vehicle 
     demo->params.break_strain = WP_SOFTBODY_DEMO_DEFAULT_BREAK_STRAIN;
 }
 
-void wp_softbody_demo_car_set_params( wp_softbody_demo_car *demo,
-                                       const wp_softbody_demo_params *params )
+void wp_softbody_demo_car_set_params( wp_softbody_demo_car *demo, const wp_softbody_demo_params *params )
 {
     if( demo == NULL || params == NULL )
     {
@@ -165,7 +160,7 @@ void wp_softbody_demo_car_build_chassis( wp_softbody_demo_car *demo )
     /* Three longitudinal sections: rear, middle and front. */
     for( row = 0; row < 3; ++row )
     {
-        wp_f32 row_alpha = ( wp_f32 )row / 2.0f;
+        wp_f32 row_alpha = (wp_f32)row / 2.0f;
         wp_f32 z = wp_lerpf( -half_length, half_length, row_alpha );
 
         for( side = 0; side < 2; ++side )
@@ -189,25 +184,25 @@ void wp_softbody_demo_car_build_chassis( wp_softbody_demo_car *demo )
     for( row = 0; row < 3; ++row )
     {
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 0, 0 ),
-                                    wp_softbody_demo_index( row, 0, 1 ), &demo->params );
+                                   wp_softbody_demo_index( row, 0, 0 ),
+                                   wp_softbody_demo_index( row, 0, 1 ), &demo->params );
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 1, 0 ),
-                                    wp_softbody_demo_index( row, 1, 1 ), &demo->params );
+                                   wp_softbody_demo_index( row, 1, 0 ),
+                                   wp_softbody_demo_index( row, 1, 1 ), &demo->params );
 
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 0, 0 ),
-                                    wp_softbody_demo_index( row, 1, 0 ), &demo->params );
+                                   wp_softbody_demo_index( row, 0, 0 ),
+                                   wp_softbody_demo_index( row, 1, 0 ), &demo->params );
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 0, 1 ),
-                                    wp_softbody_demo_index( row, 1, 1 ), &demo->params );
+                                   wp_softbody_demo_index( row, 0, 1 ),
+                                   wp_softbody_demo_index( row, 1, 1 ), &demo->params );
 
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 0, 0 ),
-                                    wp_softbody_demo_index( row, 1, 1 ), &demo->params );
+                                   wp_softbody_demo_index( row, 0, 0 ),
+                                   wp_softbody_demo_index( row, 1, 1 ), &demo->params );
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 1, 0 ),
-                                    wp_softbody_demo_index( row, 0, 1 ), &demo->params );
+                                   wp_softbody_demo_index( row, 1, 0 ),
+                                   wp_softbody_demo_index( row, 0, 1 ), &demo->params );
     }
 
     /* Connect neighbouring sections. */
@@ -220,10 +215,9 @@ void wp_softbody_demo_car_build_chassis( wp_softbody_demo_car *demo )
         {
             for( height = 0; height < 2; ++height )
             {
-                wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                            wp_softbody_demo_index( row, side, height ),
-                                            wp_softbody_demo_index( next_row, side, height ),
-                                            &demo->params );
+                wp_softbody_demo_add_beam(
+                    beams, &beam_count, pairs, &pair_count, wp_softbody_demo_index( row, side, height ),
+                    wp_softbody_demo_index( next_row, side, height ), &demo->params );
             }
         }
 
@@ -231,47 +225,39 @@ void wp_softbody_demo_car_build_chassis( wp_softbody_demo_car *demo )
         for( side = 0; side < 2; ++side )
         {
             wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                        wp_softbody_demo_index( row, side, 0 ),
-                                        wp_softbody_demo_index( next_row, side, 1 ),
-                                        &demo->params );
+                                       wp_softbody_demo_index( row, side, 0 ),
+                                       wp_softbody_demo_index( next_row, side, 1 ), &demo->params );
             wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                        wp_softbody_demo_index( row, side, 1 ),
-                                        wp_softbody_demo_index( next_row, side, 0 ),
-                                        &demo->params );
+                                       wp_softbody_demo_index( row, side, 1 ),
+                                       wp_softbody_demo_index( next_row, side, 0 ), &demo->params );
         }
 
         /* Floor and roof diagonals. */
         for( height = 0; height < 2; ++height )
         {
             wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                        wp_softbody_demo_index( row, 0, height ),
-                                        wp_softbody_demo_index( next_row, 1, height ),
-                                        &demo->params );
+                                       wp_softbody_demo_index( row, 0, height ),
+                                       wp_softbody_demo_index( next_row, 1, height ), &demo->params );
             wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                        wp_softbody_demo_index( row, 1, height ),
-                                        wp_softbody_demo_index( next_row, 0, height ),
-                                        &demo->params );
+                                       wp_softbody_demo_index( row, 1, height ),
+                                       wp_softbody_demo_index( next_row, 0, height ), &demo->params );
         }
 
         /* Full volume diagonals. */
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 0, 0 ),
-                                    wp_softbody_demo_index( next_row, 1, 1 ),
-                                    &demo->params );
+                                   wp_softbody_demo_index( row, 0, 0 ),
+                                   wp_softbody_demo_index( next_row, 1, 1 ), &demo->params );
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 1, 0 ),
-                                    wp_softbody_demo_index( next_row, 0, 1 ),
-                                    &demo->params );
+                                   wp_softbody_demo_index( row, 1, 0 ),
+                                   wp_softbody_demo_index( next_row, 0, 1 ), &demo->params );
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 0, 1 ),
-                                    wp_softbody_demo_index( next_row, 1, 0 ),
-                                    &demo->params );
+                                   wp_softbody_demo_index( row, 0, 1 ),
+                                   wp_softbody_demo_index( next_row, 1, 0 ), &demo->params );
         wp_softbody_demo_add_beam( beams, &beam_count, pairs, &pair_count,
-                                    wp_softbody_demo_index( row, 1, 1 ),
-                                    wp_softbody_demo_index( next_row, 0, 0 ),
-                                    &demo->params );
+                                   wp_softbody_demo_index( row, 1, 1 ),
+                                   wp_softbody_demo_index( next_row, 0, 0 ), &demo->params );
     }
 
-    wp_softbody_vehicle_set_definitions( demo->vehicle, nodes, WP_SOFTBODY_DEMO_NODE_COUNT,
-                                          beams, beam_count );
+    wp_softbody_vehicle_set_definitions( demo->vehicle, nodes, WP_SOFTBODY_DEMO_NODE_COUNT, beams,
+                                         beam_count );
 }

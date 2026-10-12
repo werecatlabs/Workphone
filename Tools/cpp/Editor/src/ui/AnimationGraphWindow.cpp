@@ -129,15 +129,21 @@ namespace workphone::editor
                 break;
             case WidgetId::Play:
                 if( owner->m_animator )
+                {
                     owner->m_animator->play();
+                }
                 break;
             case WidgetId::Pause:
                 if( owner->m_animator )
+                {
                     owner->m_animator->pause();
+                }
                 break;
             case WidgetId::Stop:
                 if( owner->m_animator )
+                {
                     owner->m_animator->stop();
+                }
                 break;
             case WidgetId::AddState:
                 owner->addState();
@@ -210,6 +216,7 @@ namespace workphone::editor
     {
         m_owner = owner;
     }
+
     void AnimationGraphWindow::load( SmartPtr<ISharedObject> data )
     {
         try
@@ -408,6 +415,7 @@ namespace workphone::editor
         EditorWindow::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
+
     void AnimationGraphWindow::update()
     {
         const auto selectedAnimator = findSelectedAnimator();
@@ -564,6 +572,7 @@ namespace workphone::editor
             return "Clip";
         }
     }
+
     void AnimationGraphWindow::rebuildTrees()
     {
         const auto buildTree = []( SmartPtr<ui::IUITreeCtrl> tree, const String &rootLabel,
@@ -696,6 +705,7 @@ namespace workphone::editor
         }
         return &conditions[m_selectedConditionIndex];
     }
+
     animation::AnimationGraphPoseNodeDefinition *AnimationGraphWindow::getSelectedPoseNode()
     {
         if( m_selectionKind != SelectionKind::PoseNode || m_selectedId.empty() )
@@ -729,6 +739,7 @@ namespace workphone::editor
         }
         return nullptr;
     }
+
     void AnimationGraphWindow::onSelectionChanged( WidgetId source )
     {
         switch( source )
@@ -813,41 +824,77 @@ namespace workphone::editor
     {
         const auto clearFields = [&]() {
             if( m_idText )
+            {
                 m_idText->setValue( "" );
+            }
             if( m_clipIdText )
+            {
                 m_clipIdText->setValue( "" );
+            }
             if( m_poseNodeIdText )
+            {
                 m_poseNodeIdText->setValue( "" );
+            }
             if( m_speedSlider )
+            {
                 m_speedSlider->setValue( 1.0f );
+            }
             if( m_durationSlider )
+            {
                 m_durationSlider->setValue( 0.15f );
+            }
             if( m_exitTimeSlider )
+            {
                 m_exitTimeSlider->setValue( -1.0f );
+            }
             if( m_prioritySlider )
+            {
                 m_prioritySlider->setValue( 0.0f );
+            }
             if( m_syncToggle )
+            {
                 m_syncToggle->setValue( true );
+            }
             if( m_fromStateText )
+            {
                 m_fromStateText->setValue( "" );
+            }
             if( m_toStateText )
+            {
                 m_toStateText->setValue( "" );
+            }
             if( m_parameterText )
+            {
                 m_parameterText->setValue( "" );
+            }
             if( m_isBoolToggle )
+            {
                 m_isBoolToggle->setValue( false );
+            }
             if( m_boolValueToggle )
+            {
                 m_boolValueToggle->setValue( false );
+            }
             if( m_thresholdSlider )
+            {
                 m_thresholdSlider->setValue( 0.0f );
+            }
             if( m_comparisonDropdown )
+            {
                 m_comparisonDropdown->setSelectedOption( 0 );
+            }
             if( m_nodeTypeDropdown )
+            {
                 m_nodeTypeDropdown->setSelectedOption( 0 );
+            }
             if( m_childrenText )
+            {
                 m_childrenText->setValue( "" );
+            }
             if( m_blendRangesText )
+            {
                 m_blendRangesText->setValue( "" );
+            }
             if( m_liveParamValueSlider )
             {
                 m_liveParamValueSlider->setValue( 0.0f );
@@ -872,13 +919,21 @@ namespace workphone::editor
                 break;
             }
             if( m_idText )
+            {
                 m_idText->setValue( state->id );
+            }
             if( m_clipIdText )
+            {
                 m_clipIdText->setValue( state->clipId );
+            }
             if( m_poseNodeIdText )
+            {
                 m_poseNodeIdText->setValue( state->poseNodeId );
+            }
             if( m_speedSlider )
+            {
                 m_speedSlider->setValue( state->speed );
+            }
             break;
         }
         case SelectionKind::Transition:
@@ -889,32 +944,54 @@ namespace workphone::editor
                 break;
             }
             if( m_fromStateText )
+            {
                 m_fromStateText->setValue( transition->fromState );
+            }
             if( m_toStateText )
+            {
                 m_toStateText->setValue( transition->toState );
+            }
             if( m_durationSlider )
+            {
                 m_durationSlider->setValue( transition->duration );
+            }
             if( m_exitTimeSlider )
+            {
                 m_exitTimeSlider->setValue( transition->exitTime );
+            }
             if( m_prioritySlider )
+            {
                 m_prioritySlider->setValue( static_cast<f32>( transition->priority ) );
+            }
             if( m_syncToggle )
+            {
                 m_syncToggle->setValue( transition->synchronize );
+            }
 
             if( !transition->conditions.empty() &&
                 m_selectedConditionIndex < transition->conditions.size() )
             {
                 const auto &condition = transition->conditions[m_selectedConditionIndex];
                 if( m_parameterText )
+                {
                     m_parameterText->setValue( condition.parameter );
+                }
                 if( m_isBoolToggle )
+                {
                     m_isBoolToggle->setValue( condition.isBoolean );
+                }
                 if( m_boolValueToggle )
+                {
                     m_boolValueToggle->setValue( condition.booleanValue );
+                }
                 if( m_thresholdSlider )
+                {
                     m_thresholdSlider->setValue( condition.threshold );
+                }
                 if( m_comparisonDropdown )
+                {
                     m_comparisonDropdown->setSelectedOption( static_cast<u32>( condition.comparison ) );
+                }
             }
             break;
         }
@@ -926,15 +1003,25 @@ namespace workphone::editor
                 break;
             }
             if( m_idText )
+            {
                 m_idText->setValue( node->id );
+            }
             if( m_clipIdText )
+            {
                 m_clipIdText->setValue( node->clipId );
+            }
             if( m_parameterText )
+            {
                 m_parameterText->setValue( node->parameter );
+            }
             if( m_speedSlider )
+            {
                 m_speedSlider->setValue( node->speed );
+            }
             if( m_nodeTypeDropdown )
+            {
                 m_nodeTypeDropdown->setSelectedOption( static_cast<u32>( node->type ) );
+            }
 
             String children;
             for( u32 i = 0; i < node->childNodeIds.size(); ++i )
@@ -946,7 +1033,9 @@ namespace workphone::editor
                 children += node->childNodeIds[i];
             }
             if( m_childrenText )
+            {
                 m_childrenText->setValue( children );
+            }
 
             String ranges;
             for( u32 i = 0; i < node->blendRanges.size(); ++i )
@@ -962,7 +1051,9 @@ namespace workphone::editor
                           StringUtil::toString( range.inputIndex1 );
             }
             if( m_blendRangesText )
+            {
                 m_blendRangesText->setValue( ranges );
+            }
             break;
         }
         case SelectionKind::Parameter:
@@ -973,9 +1064,13 @@ namespace workphone::editor
                 break;
             }
             if( m_idText )
+            {
                 m_idText->setValue( parameter->name );
+            }
             if( m_isBoolToggle )
+            {
                 m_isBoolToggle->setValue( parameter->isBool );
+            }
             if( m_liveParamValueSlider )
             {
                 m_liveParamValueSlider->setValue( parameter->floatValue );
@@ -992,6 +1087,7 @@ namespace workphone::editor
             break;
         }
     }
+
     void AnimationGraphWindow::applyEditorFields()
     {
         switch( m_selectionKind )

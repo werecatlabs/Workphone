@@ -87,7 +87,9 @@ static void wp_bero_simulate( wp_blade_element_rotor *r )
             wp_f32 speed = wp_vec3f_length( air_velocity );
 
             if( speed < 0.01f )
+            {
                 continue;
+            }
 
             wp_vec3f airflow_dir = wp_vec3f_normalize( air_velocity );
 
@@ -112,7 +114,9 @@ static void wp_bero_simulate( wp_blade_element_rotor *r )
 
             /* Guard against degenerate case (airflow parallel to right) */
             if( wp_vec3f_is_zero_length( lift_cross ) )
+            {
                 continue;
+            }
 
             wp_vec3f lift_dir = wp_vec3f_normalize( lift_cross );
             wp_vec3f drag_dir = wp_vec3f_negate( airflow_dir );
@@ -168,9 +172,13 @@ void wp_blade_element_rotor_init( wp_blade_element_rotor *r )
 void wp_blade_element_rotor_rebuild_derived( wp_blade_element_rotor *r )
 {
     if( r->segments_per_blade > 0 )
+    {
         r->segment_length = r->rotor_radius / (wp_f32)r->segments_per_blade;
+    }
     else
+    {
         r->segment_length = 0.0f;
+    }
 }
 
 void wp_blade_element_rotor_fixed_update( wp_blade_element_rotor *r, wp_f32 dt )

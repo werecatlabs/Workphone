@@ -970,12 +970,16 @@ namespace workphone::editor
                         {
                             auto propertiesWindow = actorWindow->getPropertiesWindow();
                             if( propertiesWindow && propertiesWindow->isLoaded() )
+                            {
                                 propertiesWindow->update();
+                            }
                         }
                         if( auto propertiesWindow = editorUI->getPropertiesWindow() )
                         {
                             if( propertiesWindow->isLoaded() )
+                            {
                                 propertiesWindow->update();
+                            }
                         }
                         auto inputWindow = editorUI->getInputManagerWindow();
                         if( inputWindow && inputWindow->isLoaded() && inputWindow->isWindowVisible() )
@@ -1205,9 +1209,13 @@ namespace workphone::editor
         String logFilePath;
 
         if( !logPath.empty() )
+        {
             logFilePath = logPath + "/" + logFileName;
+        }
         else
+        {
             logFilePath = logFileName;
+        }
 
         logManager->open( logFilePath );
 
@@ -1574,10 +1582,14 @@ namespace workphone::editor
     void EditorApplication::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
+        {
             return;
+        }
         auto manager = core::IApplicationManager::instancePtr();
         if( !manager )
+        {
             return;
+        }
         auto settings = manager->getEditorSettings();
         if( !settings )
         {
@@ -1699,7 +1711,9 @@ namespace workphone::editor
             }
         }
         else
+        {
             WP_LOG_ERROR( "Cannot resolve bundled Media folder: " + mediaCatalogError );
+        }
 
         return true;
     }

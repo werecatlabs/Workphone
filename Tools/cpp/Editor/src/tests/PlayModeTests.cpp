@@ -26,6 +26,7 @@ namespace
     {
     public:
         String pluginConfiguration;
+
     private:
         void createPlugins() override
         {
@@ -38,12 +39,17 @@ namespace
     {
     public:
         std::shared_ptr<std::atomic_bool> completed;
-        void execute() override { completed->store( true ); }
+
+        void execute() override
+        {
+            completed->store( true );
+        }
     };
 
     struct PlayModeFixture
     {
-        std::filesystem::path directory = std::filesystem::temp_directory_path() /
+        std::filesystem::path directory =
+            std::filesystem::temp_directory_path() /
             std::string( ( "lioncat-playmode-" + StringUtil::getUUID() ).c_str() );
         PlayModeTestApplication app;
         SmartPtr<core::IApplicationManager> applicationManager;
@@ -149,7 +155,9 @@ namespace
         {
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
             while( !predicate() && std::chrono::steady_clock::now() < deadline )
+            {
                 pump();
+            }
             BOOST_REQUIRE_MESSAGE( predicate(), description );
         }
 
@@ -207,10 +215,12 @@ namespace
             BOOST_CHECK_EQUAL( camera->isActive(), active );
             BOOST_REQUIRE_MESSAGE( camera->getCamera(), "Camera must have a renderer camera" );
             auto actor = camera->getActor();
-            const auto description = actor ? String( "Camera viewport missing for " ) + actor->getName() +
-                                             " (state=" + StringUtil::toString( static_cast<s32>( camera->getState() ) ) +
-                                             ", target=" + StringUtil::toString( static_cast<bool>( camera->getTargetTexture() ) ) + ")"
-                                           : String( "Camera viewport missing for unattached camera" );
+            const auto description =
+                actor ? String( "Camera viewport missing for " ) + actor->getName() +
+                            " (state=" + StringUtil::toString( static_cast<s32>( camera->getState() ) ) +
+                            ", target=" +
+                            StringUtil::toString( static_cast<bool>( camera->getTargetTexture() ) ) + ")"
+                      : String( "Camera viewport missing for unattached camera" );
             if( auto viewport = camera->getViewport() )
             {
                 BOOST_CHECK_EQUAL( viewport->isActive(), active );
@@ -231,7 +241,9 @@ namespace
             BOOST_REQUIRE_EQUAL( cameras.size(), 1u );
             // getComponent() alone misses extra cameras appended during restore.
             for( const auto &camera : cameras )
+            {
                 checkRenderedCamera( camera, active );
+            }
             BOOST_CHECK_EQUAL( cameraManager->isEditorCameraEnabled(), active );
             BOOST_CHECK( editorCamera->getTargetTexture() == cameraManager->getEditorRTT() );
         }
@@ -244,7 +256,9 @@ namespace
                 BOOST_REQUIRE( cameras[i] );
                 BOOST_CHECK( cameras[i]->isLoaded() );
                 for( size_t j = i + 1; j < cameras.size(); ++j )
+                {
                     BOOST_CHECK( cameras[i] != cameras[j] );
+                }
             }
         }
 
@@ -255,7 +269,9 @@ namespace
             BOOST_CHECK( !applicationManager->isPaused() );
             BOOST_CHECK( scene->getState() == scene::IGameScene::State::Edit );
             for( const auto &actor : scene->getActors() )
+            {
                 BOOST_CHECK( actor->getState() == scene::IGameActor::State::Edit );
+            }
             checkEditorCamera( true );
         }
 
@@ -268,7 +284,9 @@ namespace
             BOOST_CHECK( !applicationManager->isPaused() );
             BOOST_CHECK( scene->getState() == scene::IGameScene::State::Play );
             for( const auto &actor : scene->getActors() )
+            {
                 BOOST_CHECK( actor->getState() == scene::IGameActor::State::Play );
+            }
             checkEditorCamera( false );
             if( hasGameCamera )
             {
@@ -286,7 +304,9 @@ namespace
             settle();
             checkEdit();
             for( const auto &camera : scene->getComponents<scene::Camera>() )
+            {
                 checkRenderedCamera( camera, false );
+            }
             checkRegistry();
         }
 
@@ -299,9 +319,11 @@ namespace
 
     struct WorkerPlayModeFixture : PlayModeFixture
     {
-        WorkerPlayModeFixture() : PlayModeFixture( 2 ) {}
+        WorkerPlayModeFixture() : PlayModeFixture( 2 )
+        {
+        }
     };
-}
+}  // namespace
 
 BOOST_FIXTURE_TEST_CASE( play_mode, PlayModeFixture )
 {
@@ -319,7 +341,8 @@ BOOST_FIXTURE_TEST_CASE( play_stop_mode, PlayModeFixture )
     addActor( "RuntimeOnly" );
     stop();
     BOOST_CHECK( !scene->findActorByName( "RuntimeOnly" ) );
-    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 1, 2, 3 ) ).length(), 0.001f );
+    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 1, 2, 3 ) ).length(),
+                       0.001f );
     BOOST_CHECK( !originalCamera->isLoaded() );
     BOOST_CHECK( !originalActor->isLoaded() );
 }
@@ -358,7 +381,8 @@ BOOST_FIXTURE_TEST_CASE( play_mode_duplicate_requests, PlayModeFixture )
     app.stopPlayMode();
     settle();
     checkEdit();
-    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 1, 2, 3 ) ).length(), 0.001f );
+    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 1, 2, 3 ) ).length(),
+                       0.001f );
     auto restoredCamera = gameCamera();
     app.stopPlayMode();
     settle();
@@ -457,7 +481,8 @@ BOOST_FIXTURE_TEST_CASE( play_mode_saved_scene_preserves_edits, PlayModeFixture 
     child->setLocalPosition( Vector3F( 6, 7, 8 ) );
     EditorManager::getSingletonPtr()->setFileSaved( false );
     enter();
-    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 3, 4, 5 ) ).length(), 0.001f );
+    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 3, 4, 5 ) ).length(),
+                       0.001f );
     BOOST_REQUIRE( scene->findActorByName( "UnsavedParent" ) );
     gameCamera()->setFOV( 40.0f );
     gameCamera()->getActor()->setLocalPosition( Vector3F( 10, 10, 10 ) );
@@ -467,12 +492,14 @@ BOOST_FIXTURE_TEST_CASE( play_mode_saved_scene_preserves_edits, PlayModeFixture 
     BOOST_CHECK( !EditorManager::getSingletonPtr()->getFileSaved() );
     BOOST_CHECK_EQUAL( readFile( path ), diskBefore );
     BOOST_CHECK_CLOSE( gameCamera()->getFOV(), 73.0f, 0.001f );
-    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 3, 4, 5 ) ).length(), 0.001f );
+    BOOST_CHECK_SMALL( ( gameCamera()->getActor()->getLocalPosition() - Vector3F( 3, 4, 5 ) ).length(),
+                       0.001f );
     parent = scene->findActorByName( "UnsavedParent" );
     BOOST_REQUIRE( parent );
     BOOST_REQUIRE_EQUAL( parent->getChildren().size(), 1u );
     BOOST_CHECK_EQUAL( parent->getChildren()[0]->getName(), "UnsavedChild" );
-    BOOST_CHECK_SMALL( ( parent->getChildren()[0]->getLocalPosition() - Vector3F( 6, 7, 8 ) ).length(), 0.001f );
+    BOOST_CHECK_SMALL( ( parent->getChildren()[0]->getLocalPosition() - Vector3F( 6, 7, 8 ) ).length(),
+                       0.001f );
 }
 
 BOOST_FIXTURE_TEST_CASE( play_mode_unsaved_scene_cache_paths, PlayModeFixture )
@@ -550,7 +577,9 @@ BOOST_FIXTURE_TEST_CASE( play_mode_scene_data_preserves_editor_camera, PlayModeF
 {
     addCamera();
     if( !editorActor->getComponent<scene::SphericalCameraController>() )
+    {
         editorActor->addComponent<scene::SphericalCameraController>();
+    }
     const auto controller = editorActor->getComponent<scene::SphericalCameraController>();
     editorCamera->setFOV( 67.0f );
     const auto data = scene->toData();
@@ -576,7 +605,9 @@ BOOST_FIXTURE_TEST_CASE( play_mode_legacy_editor_camera_migration, PlayModeFixtu
 {
     addCamera();
     if( !editorActor->getComponent<scene::SphericalCameraController>() )
+    {
         editorActor->addComponent<scene::SphericalCameraController>();
+    }
     auto data = workphone::static_pointer_cast<Properties>( scene->toData() );
     auto legacy = workphone::static_pointer_cast<Properties>( editorActor->toData() );
     legacy->setName( ApplicationUtil::actorsStr );
@@ -597,7 +628,9 @@ BOOST_FIXTURE_TEST_CASE( play_mode_file_camera_migration, PlayModeFixture )
 {
     addCamera();
     if( !editorActor->getComponent<scene::SphericalCameraController>() )
+    {
         editorActor->addComponent<scene::SphericalCameraController>();
+    }
     for( bool legacyFormat : { false, true } )
     {
         auto data = workphone::static_pointer_cast<Properties>( scene->toData() );
@@ -608,8 +641,10 @@ BOOST_FIXTURE_TEST_CASE( play_mode_file_camera_migration, PlayModeFixture )
             data->removeChild( "editorCamera" );
             data->addChild( legacy );
         }
-        const auto path = ( directory / ( legacyFormat ? "legacy.fbscene" : "modern.fbscene" ) ).generic_string();
-        applicationManager->getFileSystem()->writeAllText( path.c_str(), DataUtil::toString( data.get(), true, DataFormat::JSON ) );
+        const auto path =
+            ( directory / ( legacyFormat ? "legacy.fbscene" : "modern.fbscene" ) ).generic_string();
+        applicationManager->getFileSystem()->writeAllText(
+            path.c_str(), DataUtil::toString( data.get(), true, DataFormat::JSON ) );
         scene->clear( true );
         scene->loadScene( path.c_str(), false );
         settle();
@@ -645,8 +680,10 @@ BOOST_FIXTURE_TEST_CASE( play_mode_worker_latest_scene_request, WorkerPlayModeFi
 {
     auto pool = applicationManager->getThreadPool();
     for( u32 index = 0; index < pool->getNumThreads(); ++index )
+    {
         BOOST_CHECK_EQUAL( static_cast<s32>( pool->getThread( index )->getThreadId() ),
                            static_cast<s32>( index ) );
+    }
     auto camera = addCamera();
     {
         auto lock = applicationManager->getTaskManager()->lockTask( TaskId::Application );
@@ -664,7 +701,9 @@ BOOST_FIXTURE_TEST_CASE( play_mode_editor_camera_data_precedence, PlayModeFixtur
     addCamera();
     addCamera( "EditorCamera" );
     if( !editorActor->getComponent<scene::SphericalCameraController>() )
+    {
         editorActor->addComponent<scene::SphericalCameraController>();
+    }
     const auto controller = editorActor->getComponent<scene::SphericalCameraController>();
     editorCamera->setFOV( 67.0f );
     auto data = workphone::static_pointer_cast<Properties>( scene->toData() );
@@ -680,7 +719,9 @@ BOOST_FIXTURE_TEST_CASE( play_mode_editor_camera_data_precedence, PlayModeFixtur
         String type;
         component->getPropertyValue( "componentType", type );
         if( type == "workphone::scene::SphericalCameraController" )
+        {
             component->setProperty( "componentType", String( "fb::scene::SphericalCameraController" ) );
+        }
         wrapper->addChild( component );
     }
     legacy->addChild( wrapper );

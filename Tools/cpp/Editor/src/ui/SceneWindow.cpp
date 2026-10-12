@@ -224,16 +224,14 @@ namespace workphone::editor
 
                 Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_CAMERA ),
                                    "Camera", "Camera" );
-                Util::addMenuItem( m_applicationAddMenu,
-                                   static_cast<s32>( MenuId::ADD_RENDER_TARGET ), "Render Target",
-                                   "Create a texture that cameras can render into" );
+                Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_RENDER_TARGET ),
+                                   "Render Target", "Create a texture that cameras can render into" );
                 Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_CAR ), "Car",
                                    "Car" );
-                Util::addMenuItem( m_applicationAddMenu,
-                                   static_cast<s32>( MenuId::ADD_HELICOPTER ), "Helicopter",
-                                   "Create a default helicopter" );
-                Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_PLANE ),
-                                   "Plane", "Create a default aircraft plane" );
+                Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_HELICOPTER ),
+                                   "Helicopter", "Create a default helicopter" );
+                Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_PLANE ), "Plane",
+                                   "Create a default aircraft plane" );
                 Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_CUBE ), "Cube",
                                    "Cube" );
                 Util::addMenuItem( m_applicationAddMenu, static_cast<s32>( MenuId::ADD_CUBE_MESH ),
@@ -346,8 +344,7 @@ namespace workphone::editor
     {
         try
         {
-            if( getLoadingState() == LoadingState::Loading ||
-                getLoadingState() == LoadingState::Loaded )
+            if( getLoadingState() == LoadingState::Loading || getLoadingState() == LoadingState::Loaded )
             {
                 return;
             }
@@ -681,7 +678,8 @@ namespace workphone::editor
             m_dataArray.clear();
 
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+            auto factoryManager =
+                applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
             auto editorManager = EditorManager::getSingletonPtr();
             auto sceneManager = applicationManager ? applicationManager->getGameManagerPtr() : nullptr;
             auto currentScene = sceneManager ? sceneManager->getCurrentScenePtr() : nullptr;
@@ -707,8 +705,8 @@ namespace workphone::editor
             rootNode->setExpanded( true );
 
             static const String sceneStr = "scene";
-            auto treeNodeData = factoryManager->make_ptr<ProjectTreeData>(
-                sceneStr, sceneStr, currentScene, currentScene );
+            auto treeNodeData = factoryManager->make_ptr<ProjectTreeData>( sceneStr, sceneStr,
+                                                                           currentScene, currentScene );
             rootNode->setNodeUserData( treeNodeData );
             m_dataArray.emplace_back( treeNodeData );
 
@@ -763,7 +761,8 @@ namespace workphone::editor
         if( object && parentNode && m_tree )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+            auto factoryManager =
+                applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
             if( !factoryManager )
             {
                 return;
@@ -899,8 +898,7 @@ namespace workphone::editor
         }
 
         auto searchable = StringUtil::make_lower( Util::getText( node ) );
-        if( auto treeData =
-                workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
+        if( auto treeData = workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
         {
             searchable += " " + StringUtil::make_lower( treeData->getObjectType() );
             if( auto actor = workphone::dynamic_pointer_cast<IGameActor>( treeData->getObjectData() ) )
@@ -1177,8 +1175,7 @@ namespace workphone::editor
         }
 
         auto itemKey = String();
-        if( auto nodeData =
-                workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
+        if( auto nodeData = workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
         {
             if( auto ownerData = nodeData->getOwnerData() )
             {
@@ -1209,7 +1206,8 @@ namespace workphone::editor
     void SceneWindow::restoreSelection()
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         auto tree = getTree();
         if( !selectionManager || !tree )
         {
@@ -1232,8 +1230,7 @@ namespace workphone::editor
         }
 
         auto isSelected = false;
-        if( auto nodeData =
-                workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
+        if( auto nodeData = workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
         {
             auto objectData = nodeData->getObjectData();
             for( const auto &selected : selection )
@@ -1315,7 +1312,8 @@ namespace workphone::editor
                                                           SmartPtr<IEvent> event )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         auto jobQueue = applicationManager ? applicationManager->getJobQueuePtr() : nullptr;
 
         if( auto owner = getOwner(); owner && applicationManager )
@@ -1381,7 +1379,8 @@ namespace workphone::editor
                 {
                     if( auto userData = node->getNodeUserData() )
                     {
-                        if( auto projectTreeData = workphone::static_pointer_cast<ProjectTreeData>( userData ) )
+                        if( auto projectTreeData =
+                                workphone::static_pointer_cast<ProjectTreeData>( userData ) )
                         {
                             if( auto actor = projectTreeData->getObjectData() )
                             {
@@ -1438,7 +1437,8 @@ namespace workphone::editor
             auto element = workphone::dynamic_pointer_cast<ui::IUIElement>( eventObject );
             if( eventValue == IEvent::handleValueChanged && element == owner->m_searchEntry )
             {
-                auto filter = arguments.empty() ? owner->m_searchEntry->getText() : arguments[0].getStr();
+                auto filter =
+                    arguments.empty() ? owner->m_searchEntry->getText() : arguments[0].getStr();
                 owner->applySearchFilter( filter );
                 return {};
             }
@@ -1781,7 +1781,8 @@ namespace workphone::editor
             try
             {
                 auto applicationManager = core::IApplicationManager::instancePtr();
-                auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+                auto factoryManager =
+                    applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
                 auto jobQueue = applicationManager ? applicationManager->getJobQueuePtr() : nullptr;
                 if( !factoryManager || !jobQueue || arguments.empty() )
                 {
@@ -2014,8 +2015,10 @@ namespace workphone::editor
             if( auto owner = getOwner() )
             {
                 auto applicationManager = core::IApplicationManager::instancePtr();
-                auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
-                auto commandManager = applicationManager ? applicationManager->getCommandManagerPtr() : nullptr;
+                auto factoryManager =
+                    applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+                auto commandManager =
+                    applicationManager ? applicationManager->getCommandManagerPtr() : nullptr;
                 if( !factoryManager || !commandManager )
                 {
                     return {};

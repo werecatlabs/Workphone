@@ -51,7 +51,9 @@ static wp_f32 wp_dcs_heli_translational_lift( const wp_dcs_helicopter *h )
     wp_f32 speed = wp_vec3f_length( h->velocity );
 
     if( speed < 10.0f )
+    {
         return 1.0f;
+    }
 
     wp_f32 t = wp_clampf( ( speed - 10.0f ) / 25.0f, 0.0f, 1.0f );
     return wp_lerpf( 1.0f, 1.4f, t );
@@ -65,7 +67,9 @@ static wp_f32 wp_dcs_heli_retreating_blade_stall( const wp_dcs_helicopter *h )
     wp_f32 forward_speed = wp_vec3f_dot( h->velocity, wp_dcs_heli_forward( h ) );
 
     if( forward_speed < 60.0f )
+    {
         return 1.0f;
+    }
 
     wp_f32 t = wp_clampf( ( forward_speed - 60.0f ) / 40.0f, 0.0f, 1.0f );
     return wp_lerpf( 1.0f, 0.5f, t );

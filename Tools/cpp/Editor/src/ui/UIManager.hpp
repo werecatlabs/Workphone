@@ -843,7 +843,7 @@ namespace workphone
 
             SmartPtr<EditorWindow> m_animationWindow;
             SmartPtr<EditorWindow> m_animationGraphWindow;
-            SmartPtr<EditorWindow> m_cutsceneWindow;            ///< Cutscene editor window.
+            SmartPtr<EditorWindow> m_cutsceneWindow;               ///< Cutscene editor window.
             SmartPtr<EditorWindow> m_soundWindow;                  ///< Sound editing window.
             SmartPtr<EditorWindow> m_particleSystemWindow;         ///< Particle system window.
             SmartPtr<EditorWindow> m_shaderWindow;                 ///< Shader editor window.
@@ -886,6 +886,3 @@ namespace workphone
 }  // namespace workphone
 
 #endif  // __UIManager_h__
-
-
-

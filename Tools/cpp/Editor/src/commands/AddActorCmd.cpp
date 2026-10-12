@@ -314,9 +314,8 @@ namespace workphone::editor
             return actor;
         };
 
-        auto createAircraftActor = [&gameManager]( const String &name,
-                                                   const Vector3<real_Num> &scale, f32 mass,
-                                                   real_Num sectionMultiplier,
+        auto createAircraftActor = [&gameManager]( const String &name, const Vector3<real_Num> &scale,
+                                                   f32 mass, real_Num sectionMultiplier,
                                                    real_Num rollwiseDamping ) {
             auto actor = gameManager->createActor();
             if( !actor )
@@ -338,8 +337,7 @@ namespace workphone::editor
             WP_ASSERT( vehicle );
             if( vehicle )
             {
-                vehicle->setVehicleType(
-                    static_cast<s32>( VehicleController::VehicleType::Aircraft ) );
+                vehicle->setVehicleType( static_cast<s32>( VehicleController::VehicleType::Aircraft ) );
                 vehicle->setMass( mass );
                 vehicle->setAerodynamicSectionMultiplier( sectionMultiplier );
                 vehicle->setRollwiseDamping( rollwiseDamping );
@@ -527,8 +525,8 @@ namespace workphone::editor
         break;
         case ActorType::Helicopter:
         {
-            return createAircraftActor( "Helicopter", Vector3<real_Num>( 1.5f, 1.0f, 3.0f ),
-                                        1200.0f, 1.25f, 2.0f );
+            return createAircraftActor( "Helicopter", Vector3<real_Num>( 1.5f, 1.0f, 3.0f ), 1200.0f,
+                                        1.25f, 2.0f );
         }
         break;
         case ActorType::Panel:
@@ -562,8 +560,8 @@ namespace workphone::editor
             return createParticleSystemActor( "Sand Particle System", actorType );
         case ActorType::Plane:
         {
-            return createAircraftActor( "Plane", Vector3<real_Num>( 1.25f, 0.75f, 4.0f ),
-                                        1000.0f, 1.0f, 0.5f );
+            return createAircraftActor( "Plane", Vector3<real_Num>( 1.25f, 0.75f, 4.0f ), 1000.0f, 1.0f,
+                                        0.5f );
         }
         break;
         case ActorType::PlaneMesh:

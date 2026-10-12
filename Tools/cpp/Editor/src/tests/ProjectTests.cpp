@@ -116,17 +116,22 @@ namespace
 {
     struct ProjectTestDirectory
     {
-        std::filesystem::path path = std::filesystem::temp_directory_path() /
+        std::filesystem::path path =
+            std::filesystem::temp_directory_path() /
             std::string( ( "lioncat-project-" + StringUtil::getUUID() ).c_str() );
 
-        ProjectTestDirectory() { std::filesystem::create_directories( path ); }
+        ProjectTestDirectory()
+        {
+            std::filesystem::create_directories( path );
+        }
+
         ~ProjectTestDirectory()
         {
             std::error_code ignored;
             std::filesystem::remove_all( path, ignored );
         }
     };
-}
+}  // namespace
 
 BOOST_AUTO_TEST_CASE( project_serialization_roundtrip_test )
 {
@@ -255,7 +260,9 @@ BOOST_AUTO_TEST_CASE( project_file_lifecycle_test )
     BOOST_CHECK( loaded.isDirty() );
     BOOST_CHECK_EQUAL( loaded.getFilePath(), project.getFilePath() );
     for( const auto &entry : std::filesystem::directory_iterator( temporary.path ) )
+    {
         BOOST_CHECK( entry.path().extension() != ".tmp" );
+    }
     loaded.setArchive( true );
     BOOST_CHECK_THROW( loaded.save(), std::runtime_error );
     BOOST_CHECK_THROW( loaded.compile(), std::runtime_error );
@@ -285,13 +292,23 @@ BOOST_AUTO_TEST_CASE( project_owner_and_unload_test )
 BOOST_AUTO_TEST_CASE( project_loaded_cache_paths_test )
 {
     ProjectTestDirectory temporary;
+
     struct ApplicationGuard
     {
         SmartPtr<core::IApplicationManager> previous = core::IApplicationManager::instance();
         SmartPtr<core::ApplicationManager> app = workphone::make_ptr<core::ApplicationManager>();
-        ApplicationGuard() { core::IApplicationManager::setInstance( app ); }
-        ~ApplicationGuard() { core::IApplicationManager::setInstance( previous ); }
+
+        ApplicationGuard()
+        {
+            core::IApplicationManager::setInstance( app );
+        }
+
+        ~ApplicationGuard()
+        {
+            core::IApplicationManager::setInstance( previous );
+        }
     } guard;
+
     const auto workingDirectory = std::filesystem::current_path();
     Project project;
     for( const auto &name : { "First Project", "Second Project" } )
@@ -304,7 +321,9 @@ BOOST_AUTO_TEST_CASE( project_loaded_cache_paths_test )
         auto selectedPath = std::filesystem::relative( file, workingDirectory );
         // Windows cannot express a C: temporary directory relative to a G: editor.
         if( selectedPath.empty() )
+        {
             selectedPath = file;
+        }
         project.loadFromFile( selectedPath.u8string() );
         BOOST_CHECK( std::filesystem::u8path( guard.app->getProjectPath().c_str() ) == directory );
         BOOST_CHECK_EQUAL( guard.app->getCachePath(), ( directory / "Cache" ).generic_u8string() + "/" );
@@ -315,7 +334,8 @@ BOOST_AUTO_TEST_CASE( project_loaded_cache_paths_test )
         const auto prefab = ApplicationUtil::getPrefabPath( "Assets/Triangle.obj" );
         BOOST_CHECK( std::filesystem::u8path( prefab.c_str() ).parent_path() == directory / "Cache" );
         const auto settings = guard.app->getSettingsPath() + "mesh.resourcedata";
-        BOOST_CHECK( std::filesystem::u8path( settings.c_str() ).parent_path() == directory / "SettingsCache" );
+        BOOST_CHECK( std::filesystem::u8path( settings.c_str() ).parent_path() ==
+                     directory / "SettingsCache" );
         BOOST_CHECK( std::filesystem::current_path() == workingDirectory );
     }
     const auto previousCache = guard.app->getCachePath();
@@ -335,9 +355,9 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
     project.create( directory.u8string() );
     project.setMediaPaths( {} );
     project.save();
-    std::ofstream( directory / "Assets/Triangle.obj" ) <<
-        "o Triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "vt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\nf 1/1/1 2/2/1 3/3/1\n";
+    std::ofstream( directory / "Assets/Triangle.obj" )
+        << "o Triangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+           "vt 0 0\nvt 1 0\nvt 0 1\nvn 0 0 1\nf 1/1/1 2/2/1 3/3/1\n";
     const auto configuration = temporary.path / "plugins.cfg";
     std::ofstream plugins( configuration );
     plugins << "PluginFolder=.\n";
@@ -350,9 +370,11 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
 #    endif
     plugins << "Plugin=WPSQLite\nPlugin=WPPhysics\nPlugin=WPAssimp\n";
     plugins.close();
+
     struct EditorGuard
     {
         EditorApplication app;
+
         ~EditorGuard()
         {
             if( auto manager = core::IApplicationManager::instance() )
@@ -363,6 +385,7 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
             app.unload( nullptr );
         }
     } guard;
+
     //guard.app.pluginConfiguration = configuration.generic_u8string().c_str();
     guard.app.setDebugMode( true );
     guard.app.setActiveThreads( 0 );
@@ -385,15 +408,20 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
     const auto prefab = ApplicationUtil::getPrefabPath( "Assets/Triangle.obj" );
     BOOST_CHECK( std::filesystem::is_regular_file( std::filesystem::u8path( prefab.c_str() ) ) );
     const auto settings = app->getSettingsPath() +
-        StringUtil::toString( StringUtil::getUUID( "Assets/Triangle.obj" ) ) + ".resourcedata";
+                          StringUtil::toString( StringUtil::getUUID( "Assets/Triangle.obj" ) ) +
+                          ".resourcedata";
     BOOST_CHECK( std::filesystem::is_regular_file( std::filesystem::u8path( settings.c_str() ) ) );
     size_t meshCount = 0;
     for( const auto &entry : std::filesystem::directory_iterator( directory / "Cache" ) )
     {
-        if( entry.path().extension() != ".fbmeshbin" ) continue;
+        if( entry.path().extension() != ".fbmeshbin" )
+        {
+            continue;
+        }
         ++meshCount;
         BOOST_REQUIRE( std::filesystem::file_size( entry.path() ) > 0 );
-        const auto relativePath = std::filesystem::relative( entry.path(), directory ).generic_u8string();
+        const auto relativePath =
+            std::filesystem::relative( entry.path(), directory ).generic_u8string();
         auto stream = app->getFileSystem()->open( relativePath, true, true, false, false, false );
         BOOST_REQUIRE( stream );
         MeshSerializer serializer;
@@ -413,10 +441,13 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
     }
     BOOST_CHECK_EQUAL( meshCount, 1u );
     for( const auto &entry : std::filesystem::directory_iterator( directory ) )
-        BOOST_CHECK( entry.path().extension() != ".prefab" && entry.path().extension() != ".resourcedata" );
+    {
+        BOOST_CHECK( entry.path().extension() != ".prefab" &&
+                     entry.path().extension() != ".resourcedata" );
+    }
 }
 
-#if defined(_WIN32)
+#    if defined( _WIN32 )
 BOOST_AUTO_TEST_CASE( project_compile_integration_test )
 {
     ProjectTestDirectory temporary;
@@ -424,7 +455,10 @@ BOOST_AUTO_TEST_CASE( project_compile_integration_test )
     Project project;
     project.create( directory.u8string() );
     auto root = std::filesystem::path( __FILE__ );
-    for( int i = 0; i < 6; ++i ) root = root.parent_path();
+    for( int i = 0; i < 6; ++i )
+    {
+        root = root.parent_path();
+    }
     std::ofstream cmake( directory / "CMakeLists.txt" );
     cmake << "cmake_minimum_required(VERSION 3.20)\n"
           << "project(ProjectPlugin LANGUAGES CXX)\n"
@@ -433,21 +467,25 @@ BOOST_AUTO_TEST_CASE( project_compile_integration_test )
           << "target_include_directories(Plugin PRIVATE \""
           << ( root / "Engine/cpp/Include" ).generic_string() << "\")\n";
     cmake.close();
+
     struct ApplicationGuard
     {
         SmartPtr<core::IApplicationManager> previous = core::IApplicationManager::instance();
         SmartPtr<core::ApplicationManager> app = workphone::make_ptr<core::ApplicationManager>();
+
         ApplicationGuard()
         {
             core::IApplicationManager::setInstance( app );
             app->setPluginManager( workphone::make_ptr<core::PluginManager>() );
         }
+
         ~ApplicationGuard()
         {
             app->getPluginManager()->unload( nullptr );
             core::IApplicationManager::setInstance( previous );
         }
     } guard;
+
     guard.app->setProjectPath( directory.u8string() );
     const auto originalDirectory = std::filesystem::current_path();
     project.compile();
@@ -474,6 +512,6 @@ BOOST_AUTO_TEST_CASE( project_compile_integration_test )
     project.unload( nullptr );
     BOOST_CHECK( !project.getPlugin() );
 }
-#endif
+#    endif
 
 #endif

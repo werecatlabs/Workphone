@@ -55,23 +55,52 @@ namespace
         int updates = 0;
         bool fail = false;
 
-        void setState( const procedural::SkyState &value ) override { state = value; }
-        const procedural::SkyState &getState() const override { return state; }
-        const procedural::SkyResults &getResults() const override { return results; }
+        void setState( const procedural::SkyState &value ) override
+        {
+            state = value;
+        }
+
+        const procedural::SkyState &getState() const override
+        {
+            return state;
+        }
+
+        const procedural::SkyResults &getResults() const override
+        {
+            return results;
+        }
+
         void update() override
         {
             ++updates;
             if( fail )
+            {
                 throw std::runtime_error( "atmosphere test failure" );
+            }
         }
-        void computeCelestialPositions( real_Num, real_Num, real_Num,
-                                       Vector3<real_Num> &, Vector3<real_Num> & ) override {}
-        procedural::Colour computeSkyColour( const Vector3<real_Num> &,
-            const Vector3<real_Num> &, real_Num, real_Num ) override { return {}; }
-        procedural::Colour computeSunColour( real_Num, real_Num ) override { return {}; }
-        procedural::Colour computeFogColour( real_Num ) override { return {}; }
+
+        void computeCelestialPositions( real_Num, real_Num, real_Num, Vector3<real_Num> &,
+                                        Vector3<real_Num> & ) override
+        {
+        }
+
+        procedural::Colour computeSkyColour( const Vector3<real_Num> &, const Vector3<real_Num> &,
+                                             real_Num, real_Num ) override
+        {
+            return {};
+        }
+
+        procedural::Colour computeSunColour( real_Num, real_Num ) override
+        {
+            return {};
+        }
+
+        procedural::Colour computeFogColour( real_Num ) override
+        {
+            return {};
+        }
     };
-}
+}  // namespace
 
 BOOST_FIXTURE_TEST_CASE( procedural_components_road_properties, ProceduralComponentFixture )
 {
@@ -119,7 +148,8 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_texture_resolution, ProceduralCom
             auto input = texture.getProperties();
             input->setProperty( "Resolution", requested[i] );
             texture.setProperties( input );
-            BOOST_CHECK_EQUAL( propertyValue<u32>( texture.getProperties(), "Resolution" ), expected[i] );
+            BOOST_CHECK_EQUAL( propertyValue<u32>( texture.getProperties(), "Resolution" ),
+                               expected[i] );
         }
     }
 }

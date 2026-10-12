@@ -10,7 +10,9 @@ WP_SCRIPT_LIB wp_script_table *wp_script_get_globals_table( wp_script_state *sta
 WP_SCRIPT_LIB wp_script_value *wp_script_get_stack_top( wp_script_state *state )
 {
     if( !state || state->sp < 0 || state->sp > STACK_MAX )
+    {
         return NULL;
+    }
     return &state->stack[state->sp];
 }
 
@@ -56,5 +58,7 @@ WP_SCRIPT_LIB void wp_script_run_from( wp_script_state *state, wp_s32 offset )
 WP_SCRIPT_LIB void wp_script_run( wp_script_state *state )
 {
     if( state )
+    {
         wp_script_run_from( state, state->compile_offset );
+    }
 }

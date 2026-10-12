@@ -187,9 +187,11 @@ namespace workphone::editor
 
     LayerDialog::UIElementListener::~UIElementListener() = default;
 
-    Parameter LayerDialog::UIElementListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter LayerDialog::UIElementListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                           const Array<Parameter> &arguments,
+                                                           SmartPtr<ISharedObject> sender,
+                                                           SmartPtr<ISharedObject> object,
+                                                           SmartPtr<IEvent> event )
     {
         auto owner = getOwner();
         if( !owner )

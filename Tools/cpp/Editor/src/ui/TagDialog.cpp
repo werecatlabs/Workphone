@@ -266,9 +266,11 @@ namespace workphone::editor
 
     TagDialog::UIElementListener::~UIElementListener() = default;
 
-    Parameter TagDialog::UIElementListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter TagDialog::UIElementListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                         const Array<Parameter> &arguments,
+                                                         SmartPtr<ISharedObject> sender,
+                                                         SmartPtr<ISharedObject> object,
+                                                         SmartPtr<IEvent> event )
     {
         auto owner = getOwner();
         if( !owner )
@@ -327,8 +329,8 @@ namespace workphone::editor
                     auto applicationManager = core::IApplicationManager::instancePtr();
                     auto selectionManager =
                         applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
-                    auto selection = selectionManager ? selectionManager->getSelection() :
-                                                        Array<SmartPtr<ISharedObject>>();
+                    auto selection = selectionManager ? selectionManager->getSelection()
+                                                      : Array<SmartPtr<ISharedObject>>();
 
                     for( auto selected : selection )
                     {
@@ -352,8 +354,8 @@ namespace workphone::editor
                     auto applicationManager = core::IApplicationManager::instancePtr();
                     auto selectionManager =
                         applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
-                    auto selection = selectionManager ? selectionManager->getSelection() :
-                                                        Array<SmartPtr<ISharedObject>>();
+                    auto selection = selectionManager ? selectionManager->getSelection()
+                                                      : Array<SmartPtr<ISharedObject>>();
 
                     for( auto selected : selection )
                     {

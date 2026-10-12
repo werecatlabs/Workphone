@@ -53,7 +53,9 @@ static wp_f32 wp_xheli_translational_lift( const wp_extreme_helicopter *h )
     wp_f32 speed = wp_vec3f_length( h->velocity );
 
     if( speed < 10.0f )
+    {
         return 1.0f;
+    }
 
     /* Lerp from 1.0 to 1.35 over the 10–30 m/s range, clamped at 1.35. */
     wp_f32 t = wp_clampf( ( speed - 10.0f ) / 20.0f, 0.0f, 1.0f );
@@ -70,7 +72,9 @@ static wp_f32 wp_xheli_vortex_ring_state( const wp_extreme_helicopter *h )
     wp_f32 vertical_speed = wp_vec3f_dot( h->velocity, world_down );
 
     if( vertical_speed > 2.0f )
+    {
         return 1.0f;
+    }
 
     if( vertical_speed < h->vortex_descent_rate && h->collective > 0.3f )
     {

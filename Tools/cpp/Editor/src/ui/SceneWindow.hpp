@@ -634,8 +634,8 @@ namespace workphone
             SmartPtr<ui::IUITreeCtrl> m_tree;         ///< Tree control
             SmartPtr<IEventListener> m_treeListener;  ///< Tree listener
 
-            SmartPtr<ui::IUIMenu> m_applicationMenu;     ///< Application menu
-            SmartPtr<ui::IUIMenu> m_applicationAddMenu;  ///< Application add menu
+            SmartPtr<ui::IUIMenu> m_applicationMenu;          ///< Application menu
+            SmartPtr<ui::IUIMenu> m_applicationAddMenu;       ///< Application add menu
             SmartPtr<ui::IUIMenu> m_applicationParticleMenu;  ///< Particle preset menu
 
             SmartPtr<IEventListener> m_menuListener;  ///< Menu listener

@@ -156,6 +156,7 @@ namespace workphone
 
         private:
             void loadEditorPreferences();
+
             class ApplicationListener : public IEventListener
             {
             public:

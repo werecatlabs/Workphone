@@ -13,7 +13,7 @@ namespace workphone
         /**
          * @class TransformWindow
          * @brief A window component that displays and allows editing of transform properties for selected objects.
-         * 
+         *
          * This window provides UI controls for viewing and modifying the transform properties (position, rotation, scale)
          * of selected objects in both local and world space. It includes toggles for enabling/disabling objects
          * and separate controls for local and world transform values.
@@ -24,7 +24,7 @@ namespace workphone
             /**
              * @class VectorListener
              * @brief Event listener class for handling vector value changes in the transform window.
-             * 
+             *
              * This class monitors changes to vector values (position, rotation, scale) and updates
              * the corresponding transform properties accordingly.
              */
@@ -105,8 +105,9 @@ namespace workphone
                 WP_CLASS_REGISTER_DECL;
 
             private:
-                scene::ITransform::Type m_type = scene::ITransform::Type::None;  ///< Type of transform being monitored
-                WeakPtr<TransformWindow> m_owner;  ///< Reference to the owner window
+                scene::ITransform::Type m_type =
+                    scene::ITransform::Type::None;   ///< Type of transform being monitored
+                WeakPtr<TransformWindow> m_owner;    ///< Reference to the owner window
                 WeakPtr<ui::IUIVector3> m_vectorUI;  ///< Reference to the vector UI component
             };
 
@@ -181,8 +182,8 @@ namespace workphone
              * @return SmartPtr to the created vector field, or nullptr on failure.
              */
             SmartPtr<ui::IUIVector3> createVectorField( SmartPtr<ui::IUIManager> ui,
-                                                       SmartPtr<ui::IUIWindow> parentWindow,
-                                                       const String &label );
+                                                        SmartPtr<ui::IUIWindow> parentWindow,
+                                                        const String &label );
 
             /**
              * @brief Creates and configures a VectorListener for a vector UI field.
@@ -201,7 +202,8 @@ namespace workphone
             void cleanupListener( SmartPtr<VectorListener> &listener,
                                   SmartPtr<ui::IUIVector3> vectorUI );
 
-            SmartPtr<ui::IUILabelTogglePair> m_actorEnabled;  ///< Toggle for enabling/disabling the actor
+            SmartPtr<ui::IUILabelTogglePair>
+                m_actorEnabled;  ///< Toggle for enabling/disabling the actor
 
             SmartPtr<ui::IUIVector3> m_localPosition;  ///< UI for local position
             SmartPtr<ui::IUIVector3> m_localRotation;  ///< UI for local rotation

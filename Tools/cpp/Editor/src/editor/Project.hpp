@@ -251,7 +251,7 @@ namespace workphone
 
             /** @brief Arbitrary project metadata. */
             SmartPtr<Properties> m_properties;
-        }; 
+        };
     }  // end namespace editor
 }  // namespace workphone
 

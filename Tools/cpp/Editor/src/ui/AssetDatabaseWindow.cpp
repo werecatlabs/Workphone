@@ -19,17 +19,23 @@ namespace workphone::editor
     void AssetDatabaseWindow::load( SmartPtr<ISharedObject> data )
     {
         if( getParentWindow() )
+        {
             return;
+        }
         auto application = core::IApplicationManager::instancePtr();
         auto ui = application ? application->getUI() : nullptr;
         if( !ui )
+        {
             return;
+        }
         setLoadingState( LoadingState::Loading );
         auto window = ui->addElementByType<ui::IUIWindow>();
         setParentWindow( window );
         window->setLabel( "Asset Database" );
         if( auto parent = getParent() )
+        {
             parent->addChild( window );
+        }
         auto listener = make_ptr<EventListener>();
         listener->setOwner( this );
         setEventListener( listener );
@@ -61,7 +67,10 @@ namespace workphone::editor
         m_shipRuntime = button( "Allow in runtime packages##CatalogShipRuntime" );
         m_shipEditorOnly = button( "Editor only##CatalogShipEditorOnly" );
         m_shipExcluded = button( "Exclude from packages##CatalogShipExcluded" );
-        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} ) control->setEnabled(false);
+        for( auto control : { m_shipRuntime, m_shipEditorOnly, m_shipExcluded } )
+        {
+            control->setEnabled( false );
+        }
         m_scanDocuments = button( "Scan project document references##CatalogDocumentScan" );
         m_reindexDocuments = button( "Reindex verified project documents##CatalogDocumentBatch" );
         m_reindexDocuments->setEnabled( false );
@@ -83,30 +92,42 @@ namespace workphone::editor
     void AssetDatabaseWindow::unload( SmartPtr<ISharedObject> data )
     {
         if( getLoadingState() == LoadingState::Unloaded )
+        {
             return;
+        }
         setLoadingState( LoadingState::Unloading );
         auto listener = getEventListener();
         if( listener )
         {
             listener->unload( nullptr );
             Array<SmartPtr<ui::IUIElement>> controls = {
-                m_tree,   m_search,  m_type,    m_refresh, m_previous,      m_next,
-                m_source, m_history, m_restore, m_reindex, m_scanDocuments, m_reindexDocuments,
-                m_shipRuntime, m_shipEditorOnly, m_shipExcluded
+                m_tree,          m_search,           m_type,        m_refresh,        m_previous,
+                m_next,          m_source,           m_history,     m_restore,        m_reindex,
+                m_scanDocuments, m_reindexDocuments, m_shipRuntime, m_shipEditorOnly, m_shipExcluded
             };
             for( auto &control : controls )
+            {
                 if( control )
+                {
                     control->removeObjectListener( listener );
+                }
+            }
             setEventListener( nullptr );
         }
         auto application = core::IApplicationManager::instancePtr();
         if( auto window = getParentWindow() )
         {
             if( auto parent = getParent() )
+            {
                 parent->removeChild( window );
+            }
             if( application )
+            {
                 if( auto ui = application->getUI() )
+                {
                     ui->removeElement( window );
+                }
+            }
             setParentWindow( nullptr );
         }
         m_tree = nullptr;
@@ -142,7 +163,9 @@ namespace workphone::editor
     SmartPtr<AssetDatabaseManager> AssetDatabaseWindow::getAssetDatabaseManager() const
     {
         if( m_showMedia )
+        {
             return m_mediaCatalog;
+        }
         auto application = core::IApplicationManager::instancePtr();
         auto resources = application ? application->getResourceDatabase() : nullptr;
         auto catalog = m_assetDatabaseManager ? m_assetDatabaseManager
@@ -155,7 +178,9 @@ namespace workphone::editor
         if( !catalog || !application || application->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( application->getProjectPath(), projectRoot, error ) ||
             projectRoot != catalog->getProjectRoot() )
+        {
             return nullptr;
+        }
         return catalog;
     }
 
@@ -164,6 +189,7 @@ namespace workphone::editor
         m_assetDatabaseManager = manager;
         refresh();
     }
+
     void AssetDatabaseWindow::setMediaCatalog( SmartPtr<AssetDatabaseManager> catalog )
     {
         if( catalog && !catalog->isReadOnly() )
@@ -178,7 +204,9 @@ namespace workphone::editor
     void AssetDatabaseWindow::refresh()
     {
         if( !m_search || !m_type )
+        {
             return;
+        }
         m_documentInventory = {};
         m_showDocuments = false;
         m_documentCanApply = false;
@@ -207,17 +235,30 @@ namespace workphone::editor
     void AssetDatabaseWindow::setWindowVisible( bool visible )
     {
         if( visible )
+        {
             refresh();
+        }
         EditorWindow::setWindowVisible( visible );
     }
 
     void AssetDatabaseWindow::populate()
     {
-        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
-            if( control ) control->setEnabled(false);
-        if(m_showOperations && !m_showMedia){populateOperations();return;}
-        if( !m_tree || !m_status || !m_details )
+        for( auto control : { m_shipRuntime, m_shipEditorOnly, m_shipExcluded } )
+        {
+            if( control )
+            {
+                control->setEnabled( false );
+            }
+        }
+        if( m_showOperations && !m_showMedia )
+        {
+            populateOperations();
             return;
+        }
+        if( !m_tree || !m_status || !m_details )
+        {
+            return;
+        }
         m_reindex->setEnabled( false );
         m_tree->clear();
         m_details->setText( "Select an asset to inspect its identity." );
@@ -227,8 +268,8 @@ namespace workphone::editor
             m_browser.clear();
             m_previous->setEnabled( false );
             m_next->setEnabled( false );
-            m_status->setText( m_showMedia ? "Bundled media catalog is unavailable. See the Editor log." :
-                                          "No active asset catalog. Open a project and refresh." );
+            m_status->setText( m_showMedia ? "Bundled media catalog is unavailable. See the Editor log."
+                                           : "No active asset catalog. Open a project and refresh." );
             return;
         }
         const auto &page = m_browser.page();
@@ -251,36 +292,66 @@ namespace workphone::editor
             root->addChild( node );
         }
         m_status->setText( String( m_showMedia ? "Bundled media (read-only) | " : "Project assets | " ) +
-            catalog->getProjectRoot() + " | Page " +
-            StringUtil::toString( m_browser.pageNumber() ) + " | " +
-            StringUtil::toString( page.entries.size() ) + " assets" );
+                           catalog->getProjectRoot() + " | Page " +
+                           StringUtil::toString( m_browser.pageNumber() ) + " | " +
+                           StringUtil::toString( page.entries.size() ) + " assets" );
     }
 
     void AssetDatabaseWindow::populateOperations()
     {
-        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
-            if( control ) control->setEnabled(false);
-        if(!m_tree || !m_status || !m_details) return;
-        m_tree->clear();m_selectedOperation=static_cast<size_t>(-1);m_restore->setEnabled(false);
-        m_details->setText("Select a journal record. Delete undo restores quarantined bytes; move/copy undo reverses that operation. Conflicting files are preserved.");
-        m_previous->setEnabled(!m_operationCursors.empty());m_next->setEnabled(m_operations.succeeded && m_operations.hasMore);
-        if(!m_operations.succeeded){m_status->setText(m_operations.error);return;}
-        auto root=m_tree->addRoot();root->setId(0);Util::setText(root,"Operation history / Recovery");
-        for(size_t i=0;i<m_operations.rows.size();++i)
+        for( auto control : { m_shipRuntime, m_shipEditorOnly, m_shipExcluded } )
         {
-            const auto &row=m_operations.rows[i];auto node=m_tree->addNode();node->setId(i+1);
-            Util::setText(node,row.source+" ["+row.kind+" / "+row.state+"]");root->addChild(node);
+            if( control )
+            {
+                control->setEnabled( false );
+            }
         }
-        m_status->setText("Project journal | "+StringUtil::toString(m_operations.rows.size())+
-            " records | Interrupted operations recover on catalog reopen. Conflicts require explicit repair.");
+        if( !m_tree || !m_status || !m_details )
+        {
+            return;
+        }
+        m_tree->clear();
+        m_selectedOperation = static_cast<size_t>( -1 );
+        m_restore->setEnabled( false );
+        m_details->setText(
+            "Select a journal record. Delete undo restores quarantined bytes; move/copy undo reverses "
+            "that operation. Conflicting files are preserved." );
+        m_previous->setEnabled( !m_operationCursors.empty() );
+        m_next->setEnabled( m_operations.succeeded && m_operations.hasMore );
+        if( !m_operations.succeeded )
+        {
+            m_status->setText( m_operations.error );
+            return;
+        }
+        auto root = m_tree->addRoot();
+        root->setId( 0 );
+        Util::setText( root, "Operation history / Recovery" );
+        for( size_t i = 0; i < m_operations.rows.size(); ++i )
+        {
+            const auto &row = m_operations.rows[i];
+            auto node = m_tree->addNode();
+            node->setId( i + 1 );
+            Util::setText( node, row.source + " [" + row.kind + " / " + row.state + "]" );
+            root->addChild( node );
+        }
+        m_status->setText( "Project journal | " + StringUtil::toString( m_operations.rows.size() ) +
+                           " records | Interrupted operations recover on catalog reopen. Conflicts "
+                           "require explicit repair." );
     }
 
     void AssetDatabaseWindow::populateDocuments()
     {
-        for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
-            if( control ) control->setEnabled(false);
+        for( auto control : { m_shipRuntime, m_shipEditorOnly, m_shipExcluded } )
+        {
+            if( control )
+            {
+                control->setEnabled( false );
+            }
+        }
         if( !m_tree || !m_details || !m_status )
+        {
             return;
+        }
         m_reindex->setEnabled( false );
         m_restore->setEnabled( false );
         m_reindexDocuments->setEnabled( m_documentCanApply && m_documentInventory.succeeded &&
@@ -327,7 +398,9 @@ namespace workphone::editor
                                                 SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         if( getLoadingState() != LoadingState::Loaded )
+        {
             return {};
+        }
         if( eventValue == IEvent::handleValueChanged && ( sender == m_search || sender == m_type ) )
         {
             // Literal searches may scan the catalog. Apply explicitly instead of
@@ -378,7 +451,9 @@ namespace workphone::editor
                 }
             }
             else if( sender == m_refresh )
+            {
                 refresh();
+            }
             else if( sender == m_source )
             {
                 m_showOperations = false;
@@ -395,15 +470,23 @@ namespace workphone::editor
                 auto catalog = getAssetDatabaseManager();
                 AssetDatabaseManager::EntrySnapshot entry;
                 String error;
-                const auto usage = sender == m_shipRuntime ? AssetPackageUsage::Runtime :
-                    sender == m_shipEditorOnly ? AssetPackageUsage::EditorOnly : AssetPackageUsage::Excluded;
+                const auto usage = sender == m_shipRuntime      ? AssetPackageUsage::Runtime
+                                   : sender == m_shipEditorOnly ? AssetPackageUsage::EditorOnly
+                                                                : AssetPackageUsage::Excluded;
                 if( m_showMedia || m_showOperations || m_showDocuments || !id ||
-                    !m_browser.select(id-1,catalog,entry) || !setAssetPackagePolicy(catalog,entry,usage,error) )
-                    m_details->setText(error.empty() ? "Refresh and select a current project file before changing shipping policy." : error);
+                    !m_browser.select( id - 1, catalog, entry ) ||
+                    !setAssetPackagePolicy( catalog, entry, usage, error ) )
+                {
+                    m_details->setText( error.empty() ? "Refresh and select a current project file "
+                                                        "before changing shipping policy."
+                                                      : error );
+                }
                 else
                 {
                     refresh();
-                    m_details->setText("Shipping policy saved. Select the asset again to inspect it. Catalog-backed package exports enforce this policy.");
+                    m_details->setText(
+                        "Shipping policy saved. Select the asset again to inspect it. Catalog-backed "
+                        "package exports enforce this policy." );
                 }
             }
             else if( sender == m_reindex )
@@ -416,7 +499,9 @@ namespace workphone::editor
                 if( m_showMedia || m_showOperations || m_showDocuments || !id ||
                     !m_browser.select( id - 1, catalog, entry ) ||
                     entry.kind != AssetDatabaseManager::EntryKind::File )
+                {
                     error = "Catalog changed. Refresh and select a project document again.";
+                }
                 else if( reindexAssetDocument( catalog, entry.path, error, m_mediaCatalog ) )
                 {
                     refresh();
@@ -456,7 +541,9 @@ namespace workphone::editor
                 if( m_showDocuments )
                 {
                     if( m_documentPage )
+                    {
                         --m_documentPage;
+                    }
                     populateDocuments();
                     return {};
                 }
@@ -486,7 +573,9 @@ namespace workphone::editor
                 if( m_showDocuments )
                 {
                     if( ( m_documentPage + 1 ) * 100 < m_documentInventory.documents.size() )
+                    {
                         ++m_documentPage;
+                    }
                     populateDocuments();
                     return {};
                 }
@@ -501,7 +590,9 @@ namespace workphone::editor
                             queryAssetOperations( getAssetDatabaseManager(), 100, m_operationAfter );
                     }
                     else
+                    {
                         m_operations = queryAssetOperations( nullptr );
+                    }
                     populateOperations();
                     return {};
                 }
@@ -566,14 +657,26 @@ namespace workphone::editor
                                                                               : "Scene object" );
                     AssetPackagePolicy policy;
                     String policyError;
-                    const bool policyReady = getAssetPackagePolicy(getAssetDatabaseManager(),entry.uuid,policy,policyError);
+                    const bool policyReady = getAssetPackagePolicy( getAssetDatabaseManager(),
+                                                                    entry.uuid, policy, policyError );
                     if( policyReady )
-                        details += "\nShipping: " + String(policy.usage == AssetPackageUsage::Runtime ? "Runtime" :
-                            policy.usage == AssetPackageUsage::EditorOnly ? "Editor only" : "Excluded") +
-                            (policy.explicitPolicy ? " (explicit)" : " (project default)");
-                    else details += "\nShipping policy: " + policyError;
-                    for( auto control : {m_shipRuntime,m_shipEditorOnly,m_shipExcluded} )
-                        control->setEnabled(policyReady && !m_showMedia && !getAssetDatabaseManager()->isReadOnly());
+                    {
+                        details +=
+                            "\nShipping: " +
+                            String( policy.usage == AssetPackageUsage::Runtime      ? "Runtime"
+                                    : policy.usage == AssetPackageUsage::EditorOnly ? "Editor only"
+                                                                                    : "Excluded" ) +
+                            ( policy.explicitPolicy ? " (explicit)" : " (project default)" );
+                    }
+                    else
+                    {
+                        details += "\nShipping policy: " + policyError;
+                    }
+                    for( auto control : { m_shipRuntime, m_shipEditorOnly, m_shipExcluded } )
+                    {
+                        control->setEnabled( policyReady && !m_showMedia &&
+                                             !getAssetDatabaseManager()->isReadOnly() );
+                    }
                     // References to bundled media are owned by project documents.
                     const auto showingMedia = m_showMedia;
                     m_showMedia = false;
@@ -582,18 +685,22 @@ namespace workphone::editor
                     const auto references = queryAssetReferences( project, entry.uuid, true,
                                                                   showingMedia ? "media" : "project" );
                     if( !references.succeeded )
+                    {
                         details += "\nReference graph: " + references.error;
+                    }
                     else
                     {
                         details += "\nIndexed saved-document users: " +
                                    StringUtil::toString( references.edges.size() ) +
                                    ( references.hasMore ? " (first page; additional users exist)" : "" );
                         for( const auto &edge : references.edges )
+                        {
                             details += "\n" + edge.sourcePath + " | " + edge.slot + " | " +
                                        edge.expectedType +
                                        ( edge.required ? " | required" : " | optional" ) + " | " +
                                        edge.sourceState +
                                        ( edge.diagnostic.empty() ? "" : " | " + edge.diagnostic );
+                        }
                         details +=
                             "\nCoverage: indexed saves only; unsaved edits and unindexed legacy "
                             "documents are not represented.";
@@ -606,20 +713,26 @@ namespace workphone::editor
     }
 
     Parameter AssetDatabaseWindow::EventListener::handleEvent( EventType eventType, hash_type eventValue,
-        const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-        SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+                                                               const Array<Parameter> &arguments,
+                                                               SmartPtr<ISharedObject> sender,
+                                                               SmartPtr<ISharedObject> object,
+                                                               SmartPtr<IEvent> event )
     {
         auto weak = m_owner;
         if( auto owner = weak.lock() )
+        {
             return owner->handleEvent( eventType, eventValue, arguments, sender, object, event );
+        }
         return {};
     }
+
     void AssetDatabaseWindow::EventListener::setOwner( SmartPtr<AssetDatabaseWindow> owner )
     {
         m_owner = owner;
     }
+
     void AssetDatabaseWindow::EventListener::unload( SmartPtr<ISharedObject> data )
     {
         m_owner = nullptr;
     }
-}
+}  // namespace workphone::editor

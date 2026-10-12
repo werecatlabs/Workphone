@@ -20,6 +20,7 @@ namespace workphone::editor::tests
             USHORT count;
             long request;
         };
+
         inline constexpr long capacity = 2000000;
         inline Record *records = nullptr;
         inline HANDLE report = INVALID_HANDLE_VALUE;
@@ -52,7 +53,9 @@ namespace workphone::editor::tests
         inline int reportHook( int, char *message, int * )
         {
             if( report == INVALID_HANDLE_VALUE )
+            {
                 return FALSE;
+            }
             write( message );
             long request = 0;
             if( records && std::sscanf( message, "{%ld}", &request ) == 1 && request > 0 &&
@@ -60,13 +63,15 @@ namespace workphone::editor::tests
             {
                 const auto &record = records[recordTail ? request % capacity : request];
                 if( record.request != request )
+                {
                     return FALSE;
+                }
                 for( USHORT frame = 0; frame < record.count; ++frame )
                 {
                     HMODULE module = nullptr;
                     if( GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                                           reinterpret_cast<LPCSTR>( record.frames[frame] ), &module ) )
+                                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                            reinterpret_cast<LPCSTR>( record.frames[frame] ), &module ) )
                     {
                         char path[MAX_PATH] = {};
                         GetModuleFileNameA( module, path, MAX_PATH );
@@ -81,37 +86,51 @@ namespace workphone::editor::tests
             }
             return FALSE;
         }
-    }
+    }  // namespace allocationDiagnostics
 
     inline void initialiseAllocationDiagnostics()
     {
         using namespace allocationDiagnostics;
         const char *path = std::getenv( "WP_EDITOR_ALLOCATION_REPORT" );
         if( !path || !*path )
+        {
             return;
+        }
         report = CreateFileA( path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
                               FILE_ATTRIBUTE_NORMAL, nullptr );
         if( report == INVALID_HANDLE_VALUE )
+        {
             return;
+        }
         records = static_cast<Record *>( VirtualAlloc( nullptr, sizeof( Record ) * capacity,
                                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE ) );
         write( "CRT allocation report: up to 2,000,000 allocation requests; 16 frames per request.\n" );
         if( const char *tail = std::getenv( "WP_EDITOR_ALLOCATION_TAIL" ) )
+        {
             recordTail = *tail == '1';
+        }
         if( recordTail )
+        {
             write( "Recording the most recent allocation requests in a ring buffer.\n" );
+        }
         if( const char *size = std::getenv( "WP_EDITOR_ALLOCATION_SIZE" ) )
+        {
             trackedSize = static_cast<size_t>( std::strtoull( size, nullptr, 10 ) );
+        }
         if( const char *request = std::getenv( "WP_EDITOR_BREAK_ALLOCATION" ) )
+        {
             _CrtSetBreakAlloc( std::strtol( request, nullptr, 10 ) );
+        }
         _CrtSetAllocHook( allocationHook );
         _CrtSetReportHook( reportHook );
         _CrtSetDbgFlag( _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF );
     }
-}
+}  // namespace workphone::editor::tests
 #else
 namespace workphone::editor::tests
 {
-    inline void initialiseAllocationDiagnostics() {}
-}
+    inline void initialiseAllocationDiagnostics()
+    {
+    }
+}  // namespace workphone::editor::tests
 #endif

@@ -74,7 +74,8 @@ namespace workphone::editor
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto sceneManager = applicationManager ? applicationManager->getGameManagerPtr() : nullptr;
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         auto scene = sceneManager ? sceneManager->getCurrentScenePtr() : nullptr;
         if( !sceneManager || !selectionManager || !scene )
         {
@@ -132,7 +133,8 @@ namespace workphone::editor
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto sceneManager = applicationManager ? applicationManager->getGameManagerPtr() : nullptr;
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         auto scene = sceneManager ? sceneManager->getCurrentScenePtr() : nullptr;
         if( !sceneManager || !selectionManager || !scene )
         {
@@ -200,7 +202,8 @@ namespace workphone::editor
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
 
         auto sceneManager = applicationManager ? applicationManager->getGameManagerPtr() : nullptr;
         auto scene = sceneManager ? sceneManager->getCurrentScenePtr() : nullptr;
@@ -256,8 +259,7 @@ namespace workphone::editor
 
                 m_actorData.push_back( selectionData );
             }
-            else if( auto component =
-                         workphone::dynamic_pointer_cast<scene::IComponent>( selected ) )
+            else if( auto component = workphone::dynamic_pointer_cast<scene::IComponent>( selected ) )
             {
                 auto componentActor = component->getActor();
                 if( componentActor && !containsActor( selectedActors, componentActor ) &&

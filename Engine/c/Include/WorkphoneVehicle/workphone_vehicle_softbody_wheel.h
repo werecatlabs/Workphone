@@ -83,15 +83,9 @@ void wp_softbody_wheel_init( wp_softbody_wheel *wheel );
  * @param callbacks      Physics callbacks for raycasting and ground-body
  *                       interaction. May be NULL to treat the ground as static.
  */
-void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
-                             wp_softbody_vehicle *vehicle,
-                             wp_vec3f chassis_right,
-                             wp_vec3f chassis_up,
-                             wp_vec3f chassis_forward,
-                             wp_f32 throttle,
-                             wp_f32 brake,
-                             wp_f32 steering_input,
-                             wp_f32 delta_time,
+void wp_softbody_wheel_step( wp_softbody_wheel *wheel, wp_softbody_vehicle *vehicle,
+                             wp_vec3f chassis_right, wp_vec3f chassis_up, wp_vec3f chassis_forward,
+                             wp_f32 throttle, wp_f32 brake, wp_f32 steering_input, wp_f32 delta_time,
                              const wp_softbody_vehicle_callbacks *callbacks );
 
 #ifdef __cplusplus

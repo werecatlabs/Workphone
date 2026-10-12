@@ -127,8 +127,6 @@ namespace workphone
 
             bool m_previewPlaying = false;
             f32 m_previewTime = 0.0f;
-
-            
         };
     }  // end namespace editor
 }  // namespace workphone

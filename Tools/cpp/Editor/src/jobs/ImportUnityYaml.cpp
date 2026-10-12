@@ -256,8 +256,9 @@ namespace workphone::editor
                         {
                             auto parentGameObjectId = gameObjectProperties->getProperty( "fileID" );
 
-                            auto parentActor = resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
-                                parentGameObjectId );
+                            auto parentActor =
+                                resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
+                                    parentGameObjectId );
                             if( parentActor )
                             {
                                 auto pComponent =
@@ -297,8 +298,9 @@ namespace workphone::editor
                         if( gameObjectProperties )
                         {
                             auto parentGameObjectId = gameObjectProperties->getProperty( "fileID" );
-                            auto parentActor = resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
-                                parentGameObjectId );
+                            auto parentActor =
+                                resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
+                                    parentGameObjectId );
                             if( parentActor )
                             {
                                 auto children = transform->getChildrenByName( "m_Children" );
@@ -312,8 +314,7 @@ namespace workphone::editor
                                         {
                                             auto actor =
                                                 resourceDatabase
-                                                    ->getObjectTypeByFileId<scene::IGameActor>(
-                                                    fileID );
+                                                    ->getObjectTypeByFileId<scene::IGameActor>( fileID );
                                             if( actor )
                                             {
                                                 parentActor->addChild( actor );
@@ -348,8 +349,9 @@ namespace workphone::editor
                         if( gameObjectProperties )
                         {
                             auto parentGameObjectId = gameObjectProperties->getProperty( "fileID" );
-                            auto parentActor = resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
-                                parentGameObjectId );
+                            auto parentActor =
+                                resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
+                                    parentGameObjectId );
                             if( parentActor )
                             {
                                 auto children = transform->getChildrenByName( "m_Children" );
@@ -362,8 +364,8 @@ namespace workphone::editor
                                         if( !StringUtil::isNullOrEmpty( fileID ) )
                                         {
                                             auto actor =
-                                                resourceDatabase->getObjectTypeByFileId<scene::IGameActor>(
-                                                    fileID );
+                                                resourceDatabase
+                                                    ->getObjectTypeByFileId<scene::IGameActor>( fileID );
                                             if( actor )
                                             {
                                                 parentActor->addChild( actor );

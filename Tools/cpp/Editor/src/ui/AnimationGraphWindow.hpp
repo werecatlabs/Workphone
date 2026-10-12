@@ -31,10 +31,8 @@ namespace workphone::editor
         {
         public:
             Parameter handleEvent( EventType eventType, hash_type eventValue,
-                                   const Array<Parameter> &arguments,
-                                   SmartPtr<ISharedObject> sender,
-                                   SmartPtr<ISharedObject> object,
-                                   SmartPtr<IEvent> event ) override;
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
 
             SmartPtr<AnimationGraphWindow> getOwner() const;
             void setOwner( SmartPtr<AnimationGraphWindow> owner );

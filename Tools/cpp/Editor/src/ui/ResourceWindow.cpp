@@ -372,9 +372,11 @@ namespace workphone::editor
 
     ResourceWindow::TreeCtrlListener::~TreeCtrlListener() = default;
 
-    Parameter ResourceWindow::TreeCtrlListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter ResourceWindow::TreeCtrlListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                             const Array<Parameter> &arguments,
+                                                             SmartPtr<ISharedObject> sender,
+                                                             SmartPtr<ISharedObject> object,
+                                                             SmartPtr<IEvent> event )
     {
         return {};
     }

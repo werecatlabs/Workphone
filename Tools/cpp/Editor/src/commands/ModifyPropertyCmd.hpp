@@ -26,6 +26,7 @@ namespace workphone
             bool wasApplied() const;
 
             WP_CLASS_REGISTER_DECL;
+
         private:
             SmartPtr<AssetDatabaseManager> activeCatalog() const;
             void markDirty();

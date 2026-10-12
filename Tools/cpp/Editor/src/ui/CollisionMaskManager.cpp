@@ -111,9 +111,8 @@ namespace workphone::editor
             return false;
         }
 
-        auto it = std::find_if( m_options.begin(), m_options.end(), [&]( const Option &option ) {
-            return option.name == optionName;
-        } );
+        auto it = std::find_if( m_options.begin(), m_options.end(),
+                                [&]( const Option &option ) { return option.name == optionName; } );
         if( it == m_options.end() )
         {
             return false;
@@ -125,9 +124,8 @@ namespace workphone::editor
 
     u32 CollisionMaskManager::getOptionIndexByMask( u32 mask ) const
     {
-        auto it = std::find_if( m_options.begin(), m_options.end(), [&]( const Option &option ) {
-            return option.mask == mask;
-        } );
+        auto it = std::find_if( m_options.begin(), m_options.end(),
+                                [&]( const Option &option ) { return option.mask == mask; } );
         if( it == m_options.end() )
         {
             return 0;
@@ -139,9 +137,8 @@ namespace workphone::editor
     u32 CollisionMaskManager::getOptionIndexByName( const String &name ) const
     {
         auto optionName = StringUtil::trim( name );
-        auto it = std::find_if( m_options.begin(), m_options.end(), [&]( const Option &option ) {
-            return option.name == optionName;
-        } );
+        auto it = std::find_if( m_options.begin(), m_options.end(),
+                                [&]( const Option &option ) { return option.name == optionName; } );
         if( it == m_options.end() )
         {
             return 0;

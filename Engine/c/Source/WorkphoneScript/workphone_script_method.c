@@ -14,8 +14,8 @@ WP_SCRIPT_LIB void wp_script_call_method( wp_script_object *object, const wp_c8 
 {
     wp_script_value result;
 
-    if( !wp_script_call_method_args( object, name, NULL, 0, &result ) && object &&
-        object->klass && object->klass->state && !object->klass->state->had_error )
+    if( !wp_script_call_method_args( object, name, NULL, 0, &result ) && object && object->klass &&
+        object->klass->state && !object->klass->state->had_error )
     {
         fprintf( stderr, "Method '%s' not found\n", name ? name : "" );
     }
@@ -36,9 +36,13 @@ WP_SCRIPT_LIB wp_s32 wp_script_call_super( wp_script_state *state, const wp_c8 *
     wp_s32 ok;
 
     if( result )
+    {
         *result = wp_script_make_nil();
+    }
     if( !state || !state->current_object || !state->current_class || !name )
+    {
         return 0;
+    }
 
     klass = state->current_class->parent;
     while( klass )

@@ -8,7 +8,9 @@ namespace workphone::editor
     {
         auto app = core::IApplicationManager::instance();
         if( !app )
+        {
             return;
+        }
         m_resources = app->getResourceDatabase();
         m_projectPath = app->getProjectPath();
         m_cachePath = app->getCachePath();
@@ -16,7 +18,9 @@ namespace workphone::editor
                         ? dynamic_pointer_cast<AssetDatabaseManager>( m_resources->getDatabaseManager() )
                         : nullptr;
         if( m_catalog && m_catalog->getDatabase() && m_catalog->getDatabase()->isLoaded() )
+        {
             m_bound = m_session.capture( m_catalog );
+        }
     }
 
     AssetImportJob::~AssetImportJob() = default;
@@ -38,8 +42,12 @@ namespace workphone::editor
         }
 
         if( m_reimport )
+        {
             resourceDatabase->reimportAssets();
+        }
         else
+        {
             resourceDatabase->importAssets();
+        }
     }
 }  // namespace workphone::editor

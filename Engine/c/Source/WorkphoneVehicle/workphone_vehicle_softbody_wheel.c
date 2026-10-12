@@ -34,10 +34,8 @@
  * Internal helpers
  * ====================================================================== */
 
-static void wp_softbody_wheel_apply_airborne_torque( wp_softbody_wheel *wheel,
-                                                      wp_f32 drive_torque,
-                                                      wp_f32 brake,
-                                                      wp_f32 delta_time )
+static void wp_softbody_wheel_apply_airborne_torque( wp_softbody_wheel *wheel, wp_f32 drive_torque,
+                                                     wp_f32 brake, wp_f32 delta_time )
 {
     wp_f32 requested_brake_torque;
     wp_f32 torque_to_stop;
@@ -93,15 +91,9 @@ void wp_softbody_wheel_init( wp_softbody_wheel *wheel )
     wheel->has_previous_length = wp_false;
 }
 
-void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
-                             wp_softbody_vehicle *vehicle,
-                             wp_vec3f chassis_right,
-                             wp_vec3f chassis_up,
-                             wp_vec3f chassis_forward,
-                             wp_f32 throttle,
-                             wp_f32 brake,
-                             wp_f32 steering_input,
-                             wp_f32 delta_time,
+void wp_softbody_wheel_step( wp_softbody_wheel *wheel, wp_softbody_vehicle *vehicle,
+                             wp_vec3f chassis_right, wp_vec3f chassis_up, wp_vec3f chassis_forward,
+                             wp_f32 throttle, wp_f32 brake, wp_f32 steering_input, wp_f32 delta_time,
                              const wp_softbody_vehicle_callbacks *callbacks )
 {
     wp_vec3f node_position;
@@ -147,8 +139,8 @@ void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
     }
 
     node_position = wp_softbody_vehicle_get_node_position( vehicle, wheel->node_index );
-    suspension_origin = wp_vec3f_add( node_position,
-                                        wp_vec3f_scale( chassis_up, wheel->suspension_top_offset ) );
+    suspension_origin =
+        wp_vec3f_add( node_position, wp_vec3f_scale( chassis_up, wheel->suspension_top_offset ) );
     maximum_cast_length = wheel->rest_length + wheel->travel;
     drive_torque = wheel->driven ? throttle * wheel->maximum_drive_torque : 0.0f;
 
@@ -161,11 +153,8 @@ void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
         return;
     }
 
-    hit = callbacks->raycast( callbacks->user_data,
-                                 suspension_origin,
-                                 wp_vec3f_negate( chassis_up ),
-                                 maximum_cast_length,
-                                 wheel->ground_mask );
+    hit = callbacks->raycast( callbacks->user_data, suspension_origin, wp_vec3f_negate( chassis_up ),
+                              maximum_cast_length, wheel->ground_mask );
 
     if( !hit.hit )
     {
@@ -186,21 +175,18 @@ void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
     }
 
     compression = wp_maxf( 0.0f, wheel->rest_length - current_length );
-    compression_speed = ( wheel->previous_length - current_length ) /
-                        wp_maxf( delta_time, WP_SOFTBODY_WHEEL_MIN_DT );
+    compression_speed =
+        ( wheel->previous_length - current_length ) / wp_maxf( delta_time, WP_SOFTBODY_WHEEL_MIN_DT );
     wheel->previous_length = current_length;
 
-    normal_load = wp_maxf( 0.0f, compression * wheel->spring_rate +
-                                compression_speed * wheel->damper_rate );
+    normal_load =
+        wp_maxf( 0.0f, compression * wheel->spring_rate + compression_speed * wheel->damper_rate );
     suspension_force = wp_vec3f_scale( chassis_up, normal_load );
 
-    steering_angle = wheel->steering
-                         ? steering_input * wheel->maximum_steering_angle
-                         : 0.0f;
+    steering_angle = wheel->steering ? steering_input * wheel->maximum_steering_angle : 0.0f;
 
     {
-        wp_quatf rotation = wp_quatf_from_axis_angle( chassis_up,
-                                                       steering_angle * WORKPHONE_DEG2RAD_F );
+        wp_quatf rotation = wp_quatf_from_axis_angle( chassis_up, steering_angle * WORKPHONE_DEG2RAD_F );
         wheel_forward = wp_quatf_rotate_vec3( rotation, chassis_forward );
     }
 
@@ -227,8 +213,8 @@ void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
         ground_velocity = callbacks->get_point_velocity( callbacks->user_data, hit.body, hit.point );
     }
 
-    relative_velocity = wp_vec3f_sub( wp_softbody_vehicle_get_node_velocity( vehicle, wheel->node_index ),
-                                       ground_velocity );
+    relative_velocity = wp_vec3f_sub(
+        wp_softbody_vehicle_get_node_velocity( vehicle, wheel->node_index ), ground_velocity );
     forward_speed = wp_vec3f_dot( relative_velocity, wheel_forward );
     lateral_speed = wp_vec3f_dot( relative_velocity, wheel_right );
 
@@ -239,8 +225,8 @@ void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
     lateral_force = -lateral_speed * wheel->cornering_stiffness;
 
     maximum_tyre_force = wheel->friction_coefficient * normal_load;
-    tyre_force_magnitude = wp_sqrtf( longitudinal_force * longitudinal_force +
-                                      lateral_force * lateral_force );
+    tyre_force_magnitude =
+        wp_sqrtf( longitudinal_force * longitudinal_force + lateral_force * lateral_force );
 
     if( tyre_force_magnitude > maximum_tyre_force && tyre_force_magnitude > WP_SOFTBODY_WHEEL_EPSILON )
     {
@@ -250,17 +236,15 @@ void wp_softbody_wheel_step( wp_softbody_wheel *wheel,
     }
 
     tyre_force = wp_vec3f_add( wp_vec3f_scale( wheel_forward, longitudinal_force ),
-                                wp_vec3f_scale( wheel_right, lateral_force ) );
+                               wp_vec3f_scale( wheel_right, lateral_force ) );
     total_force = wp_vec3f_add( suspension_force, tyre_force );
 
     wp_softbody_vehicle_add_force( vehicle, wheel->node_index, total_force );
 
     if( callbacks->add_force_at_position != NULL && hit.body != NULL )
     {
-        callbacks->add_force_at_position( callbacks->user_data,
-                                           hit.body,
-                                           hit.point,
-                                           wp_vec3f_negate( total_force ) );
+        callbacks->add_force_at_position( callbacks->user_data, hit.body, hit.point,
+                                          wp_vec3f_negate( total_force ) );
     }
 
     reaction_torque = -longitudinal_force * wheel->wheel_radius;

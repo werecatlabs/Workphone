@@ -10,31 +10,44 @@ namespace workphone::editor
     class ResourceDatabaseDialog : public EditorWindow
     {
     public:
-        enum WidgetId { Tree, AddComponent, Select, Previous, Next, Source, Count };
+        enum WidgetId
+        {
+            Tree,
+            AddComponent,
+            Select,
+            Previous,
+            Next,
+            Source,
+            Count
+        };
+
         class UIElementListener : public IEventListener
         {
         public:
             Parameter handleEvent( EventType eventType, hash_type eventValue,
-                const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
             SmartPtr<ResourceDatabaseDialog> getOwner() const;
             void setOwner( SmartPtr<ResourceDatabaseDialog> owner );
             void unload( SmartPtr<ISharedObject> data ) override;
             WP_CLASS_REGISTER_DECL;
+
         private:
             ObjectObserver<ResourceDatabaseDialog> m_owner;
         };
+
         class DragSource : public ui::IUIDragSource
         {
         public:
             Parameter handleEvent( EventType eventType, hash_type eventValue,
-                const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
             String handleDrag( const Vector2I &position, SmartPtr<ui::IUIElement> element );
             SmartPtr<ResourceDatabaseDialog> getOwner() const;
             void setOwner( SmartPtr<ResourceDatabaseDialog> owner );
             void unload( SmartPtr<ISharedObject> data ) override;
             WP_CLASS_REGISTER_DECL;
+
         private:
             ObjectObserver<ResourceDatabaseDialog> m_owner;
         };
@@ -56,9 +69,20 @@ namespace workphone::editor
         void setPropertyName( const String &name );
         void updateSelection() override;
         void setWindowVisible( bool visible ) override;
-        hash_type getResourceType() const { return m_resourceType; }
-        void setResourceType( hash_type type ) { m_resourceType = type; m_browser.clear(); }
+
+        hash_type getResourceType() const
+        {
+            return m_resourceType;
+        }
+
+        void setResourceType( hash_type type )
+        {
+            m_resourceType = type;
+            m_browser.clear();
+        }
+
         WP_CLASS_REGISTER_DECL;
+
     private:
         SmartPtr<AssetDatabaseManager> catalog() const;
         SmartPtr<AssetDatabaseManager> projectCatalog() const;
@@ -86,5 +110,5 @@ namespace workphone::editor
         SmartPtr<UIElementListener> m_uiListener;
         SmartPtr<DragSource> m_dragSource;
     };
-}
+}  // namespace workphone::editor
 #endif

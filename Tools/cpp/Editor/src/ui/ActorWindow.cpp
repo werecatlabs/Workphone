@@ -129,7 +129,8 @@ namespace workphone::editor
     void ActorWindow::updateObjectSelection( SmartPtr<ISharedObject> object )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         if( !selectionManager || !object )
         {
             return;
@@ -249,8 +250,7 @@ namespace workphone::editor
     {
         try
         {
-            if( getLoadingState() == LoadingState::Loading ||
-                getLoadingState() == LoadingState::Loaded )
+            if( getLoadingState() == LoadingState::Loading || getLoadingState() == LoadingState::Loaded )
             {
                 return;
             }
@@ -391,8 +391,7 @@ namespace workphone::editor
 
             m_configureNetworkButton = ui->addElementByType<ui::IUIButton>();
             m_configureNetworkButton->setLabel( "Add Network View" );
-            m_configureNetworkButton->setElementId(
-                static_cast<s32>( WidgetId::ConfigureNetwork ) );
+            m_configureNetworkButton->setElementId( static_cast<s32>( WidgetId::ConfigureNetwork ) );
             m_configureNetworkButton->addObjectListener( uiListener );
             actorWindow->addChild( m_configureNetworkButton );
 
@@ -495,11 +494,10 @@ namespace workphone::editor
                 m_actorWindow || m_componentWindow || m_tree || m_uiListener || m_actorEnabled ||
                 m_actorVisible || m_actorStatic || m_actorSmoothMotion || m_actorCollisionMask ||
                 m_manageCollisionMasksButton || m_actorLayerPair || m_manageLayersButton ||
-                m_actorTagsPair || m_manageTagsButton || m_addComponentButton ||
-                m_networkSummary || m_configureNetworkButton || m_removeComponentButton ||
-                m_actorNamePair || m_transformWindow ||
-                m_propertiesWindow || m_eventsWindow || m_materialWindow || m_terrainWindow ||
-                m_particleSystemWindow || m_selectedObject || m_selectedEntity ||
+                m_actorTagsPair || m_manageTagsButton || m_addComponentButton || m_networkSummary ||
+                m_configureNetworkButton || m_removeComponentButton || m_actorNamePair ||
+                m_transformWindow || m_propertiesWindow || m_eventsWindow || m_materialWindow ||
+                m_terrainWindow || m_particleSystemWindow || m_selectedObject || m_selectedEntity ||
                 m_selectionSummary || m_componentSearchEntry || getParentWindow() ||
                 !m_dataArray.empty();
 
@@ -822,7 +820,8 @@ namespace workphone::editor
             m_selectedEntity = nullptr;
 
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+            auto selectionManager =
+                applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
             if( !selectionManager )
             {
                 clearInspector( "No selection service available" );
@@ -867,9 +866,9 @@ namespace workphone::editor
                 if( selectedObject && selectedObject->isDerived<scene::IComponent>() )
                 {
                     auto typeManager = TypeManager::instance();
-                    auto componentLabel = typeManager ?
-                                              String( typeManager->getLabel( selectedObject->getTypeInfo() ) ) :
-                                              String( "Component" );
+                    auto componentLabel =
+                        typeManager ? String( typeManager->getLabel( selectedObject->getTypeInfo() ) )
+                                    : String( "Component" );
                     summary += " / " + componentLabel;
                 }
 
@@ -891,14 +890,14 @@ namespace workphone::editor
                 if( networkView )
                 {
                     auto authorityIndex = static_cast<u32>( networkView->getAuthorityMode() );
-                    auto authorityName = authorityIndex < scene::NetworkView::authorityModeNames.size() ?
-                                             scene::NetworkView::authorityModeNames[authorityIndex] :
-                                             String( "Unknown" );
+                    auto authorityName = authorityIndex < scene::NetworkView::authorityModeNames.size()
+                                             ? scene::NetworkView::authorityModeNames[authorityIndex]
+                                             : String( "Unknown" );
                     m_networkSummary->setText(
                         "Networking: View " + StringUtil::toString( networkView->getViewId() ) +
                         " | Owner " + StringUtil::toString( networkView->getOwnerId() ) + " | " +
-                        authorityName + " @ " +
-                        StringUtil::toString( networkView->getSendRate() ) + " Hz" );
+                        authorityName + " @ " + StringUtil::toString( networkView->getSendRate() ) +
+                        " Hz" );
                 }
                 else
                 {
@@ -908,8 +907,8 @@ namespace workphone::editor
 
             if( m_configureNetworkButton )
             {
-                m_configureNetworkButton->setLabel( networkView ? "Edit Network View" :
-                                                                  "Add Network View" );
+                m_configureNetworkButton->setLabel( networkView ? "Edit Network View"
+                                                                : "Add Network View" );
             }
 
             //if( m_addComponentButton )
@@ -1054,8 +1053,7 @@ namespace workphone::editor
         root->setExpanded( true );
     }
 
-    bool ActorWindow::updateComponentNodeFilter( SmartPtr<ui::IUITreeNode> node,
-                                                  const String &filter )
+    bool ActorWindow::updateComponentNodeFilter( SmartPtr<ui::IUITreeNode> node, const String &filter )
     {
         if( !node )
         {
@@ -1063,8 +1061,7 @@ namespace workphone::editor
         }
 
         auto searchable = StringUtil::make_lower( Util::getText( node ) );
-        if( auto data =
-                workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
+        if( auto data = workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) )
         {
             searchable += " " + StringUtil::make_lower( data->getObjectType() );
         }
@@ -1097,7 +1094,8 @@ namespace workphone::editor
             if( component && m_tree )
             {
                 auto applicationManager = core::IApplicationManager::instancePtr();
-                auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+                auto factoryManager =
+                    applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
                 if( !factoryManager )
                 {
                     return;
@@ -1198,7 +1196,8 @@ namespace workphone::editor
             if( object && m_tree )
             {
                 auto applicationManager = core::IApplicationManager::instancePtr();
-                auto factoryManager = applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
+                auto factoryManager =
+                    applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
                 if( !factoryManager )
                 {
                     return;
@@ -1326,7 +1325,8 @@ namespace workphone::editor
         try
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+            auto selectionManager =
+                applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
             if( !selectionManager )
             {
                 return;
@@ -1338,7 +1338,9 @@ namespace workphone::editor
             if( selection.size() != 1 )
             {
                 if( m_terrainWindow )
+                {
                     m_terrainWindow->setWindowVisible( false );
+                }
                 if( m_eventsWindow )
                 {
                     m_eventsWindow->setWindowVisible( false );
@@ -1496,7 +1498,8 @@ namespace workphone::editor
         }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         if( !selectionManager )
         {
             m_actorTagsPair->setValue( "" );
@@ -1539,7 +1542,8 @@ namespace workphone::editor
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto editorManager = EditorManager::getSingletonPtr();
         auto owner = getOwner();
-        auto selectionManager = applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
+        auto selectionManager =
+            applicationManager ? applicationManager->getSelectionManagerPtr() : nullptr;
         auto ui = editorManager ? editorManager->getUI() : nullptr;
         if( !owner || !selectionManager || !ui )
         {
@@ -1558,8 +1562,8 @@ namespace workphone::editor
         if( eventValue == IEvent::handleValueChanged &&
             ( element == owner->m_componentSearchEntry || elementId == WidgetId::ComponentSearch ) )
         {
-            auto filter = arguments.empty() ? owner->m_componentSearchEntry->getText() :
-                                              arguments[0].getStr();
+            auto filter =
+                arguments.empty() ? owner->m_componentSearchEntry->getText() : arguments[0].getStr();
             owner->applyComponentFilter( filter );
             return {};
         }
@@ -1624,8 +1628,8 @@ namespace workphone::editor
             case WidgetId::ConfigureNetwork:
             {
                 auto selection = selectionManager->getSelection();
-                auto actor = selection.size() == 1 ? getActorFromSelection( selection.front() ) :
-                                                     nullptr;
+                auto actor =
+                    selection.size() == 1 ? getActorFromSelection( selection.front() ) : nullptr;
                 if( actor )
                 {
                     auto networkView = actor->getComponent<scene::NetworkView>();
@@ -1634,8 +1638,10 @@ namespace workphone::editor
                         auto factoryManager = applicationManager->getFactoryManager();
                         auto commandManager = applicationManager->getCommandManager();
                         auto types = TypeManager::instance();
-                        auto factory = factoryManager && types ? factoryManager->getFactoryByHash(
-                            types->getHash( scene::NetworkView::typeInfo() ) ) : nullptr;
+                        auto factory = factoryManager && types
+                                           ? factoryManager->getFactoryByHash(
+                                                 types->getHash( scene::NetworkView::typeInfo() ) )
+                                           : nullptr;
                         if( factory && commandManager )
                         {
                             selectionManager->clearSelection();
@@ -1672,9 +1678,8 @@ namespace workphone::editor
                 auto namePair = owner->m_actorNamePair;
                 auto actorName = namePair->getValue();
 
-                forEachSelectedActor( [&]( SmartPtr<scene::IGameActor> actor ) {
-                    actor->setName( actorName );
-                } );
+                forEachSelectedActor(
+                    [&]( SmartPtr<scene::IGameActor> actor ) { actor->setName( actorName ); } );
 
                 ui->rebuildSceneTree();
             }
@@ -1684,9 +1689,8 @@ namespace workphone::editor
                 auto toggle = owner->m_actorEnabled;
                 auto value = toggle->getValue();
 
-                forEachSelectedActor( [&]( SmartPtr<scene::IGameActor> actor ) {
-                    actor->setEnabled( value );
-                } );
+                forEachSelectedActor(
+                    [&]( SmartPtr<scene::IGameActor> actor ) { actor->setEnabled( value ); } );
             }
             break;
             case WidgetId::Visible:
@@ -1694,9 +1698,8 @@ namespace workphone::editor
                 auto toggle = owner->m_actorVisible;
                 auto value = toggle->getValue();
 
-                forEachSelectedActor( [&]( SmartPtr<scene::IGameActor> actor ) {
-                    actor->setVisible( value );
-                } );
+                forEachSelectedActor(
+                    [&]( SmartPtr<scene::IGameActor> actor ) { actor->setVisible( value ); } );
             }
             break;
             case WidgetId::Static:
@@ -1704,9 +1707,8 @@ namespace workphone::editor
                 auto toggle = owner->m_actorStatic;
                 auto value = toggle->getValue();
 
-                forEachSelectedActor( [&]( SmartPtr<scene::IGameActor> actor ) {
-                    actor->setStatic( value );
-                } );
+                forEachSelectedActor(
+                    [&]( SmartPtr<scene::IGameActor> actor ) { actor->setStatic( value ); } );
             }
             break;
             case WidgetId::SmoothMotion:
@@ -1723,10 +1725,10 @@ namespace workphone::editor
             {
                 auto collisionMaskInput = owner->m_actorCollisionMask;
                 auto collisionMaskManager = ui ? ui->getCollisionMaskManager() : nullptr;
-                auto collisionMask = collisionMaskManager ?
-                                         collisionMaskManager->getMaskByIndex(
-                                             collisionMaskInput->getSelectedOption() ) :
-                                         u32( 0 );
+                auto collisionMask =
+                    collisionMaskManager
+                        ? collisionMaskManager->getMaskByIndex( collisionMaskInput->getSelectedOption() )
+                        : u32( 0 );
 
                 forEachSelectedActor( [&]( SmartPtr<scene::IGameActor> actor ) {
                     actor->setCollisionMask( collisionMask );
@@ -1739,13 +1741,12 @@ namespace workphone::editor
             {
                 auto layerInput = owner->m_actorLayerPair;
                 auto layerManager = ui ? ui->getLayerManager() : nullptr;
-                auto layer = layerManager ?
-                                 layerManager->getLayerByIndex( layerInput->getSelectedOption() ) :
-                                 String();
+                auto layer = layerManager
+                                 ? layerManager->getLayerByIndex( layerInput->getSelectedOption() )
+                                 : String();
 
-                forEachSelectedActor( [&]( SmartPtr<scene::IGameActor> actor ) {
-                    actor->setLayer( layer );
-                } );
+                forEachSelectedActor(
+                    [&]( SmartPtr<scene::IGameActor> actor ) { actor->setLayer( layer ); } );
 
                 owner->selectLayer( layer );
                 ui->rebuildSceneTree();
@@ -1765,8 +1766,9 @@ namespace workphone::editor
             }
 
             auto node = workphone::static_pointer_cast<ui::IUITreeNode>( arguments[0].object );
-            auto data = node ? workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() ) :
-                               nullptr;
+            auto data = node
+                            ? workphone::dynamic_pointer_cast<ProjectTreeData>( node->getNodeUserData() )
+                            : nullptr;
 
             if( data )
             {

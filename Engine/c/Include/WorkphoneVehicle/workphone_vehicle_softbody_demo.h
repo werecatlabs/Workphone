@@ -53,7 +53,7 @@ void wp_softbody_demo_car_init( wp_softbody_demo_car *demo, wp_softbody_vehicle 
  * @brief Set build parameters.
  */
 void wp_softbody_demo_car_set_params( wp_softbody_demo_car *demo,
-                                       const wp_softbody_demo_params *params );
+                                      const wp_softbody_demo_params *params );
 
 /**
  * @brief Build the node/beam definitions and apply them to the vehicle.

@@ -67,7 +67,9 @@ BOOST_AUTO_TEST_CASE( editor_repeated_lifecycle )
             auto tasks = manager->getTaskManager();
             BOOST_REQUIRE( tasks );
             for( int tick = 0; tick < 3; ++tick )
+            {
                 tasks->update();
+            }
             BOOST_CHECK( manager->isRunning() );
             BOOST_CHECK( !manager->getQuit() );
             manager->setQuit( true );
@@ -78,8 +80,8 @@ BOOST_AUTO_TEST_CASE( editor_repeated_lifecycle )
             BOOST_CHECK( !core::IApplicationManager::instance() );
 #    if defined( _WIN32 ) && WP_GRAPHICS_SYSTEM_CLAW
             WNDCLASSW windowClass = {};
-            BOOST_CHECK( !GetClassInfoW( GetModuleHandleW( nullptr ), L"WorkphoneWindowClass",
-                                        &windowClass ) );
+            BOOST_CHECK(
+                !GetClassInfoW( GetModuleHandleW( nullptr ), L"WorkphoneWindowClass", &windowClass ) );
 #    endif
         }
     }

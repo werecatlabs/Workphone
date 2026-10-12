@@ -19,8 +19,7 @@ int main( int argc, char *argv[] )
         TypeManager::setInstance( typeManager.get() );
 
         extern bool init_unit_test();
-        auto result =
-            boost::unit_test::unit_test_main( &init_unit_test, argc, argv );
+        auto result = boost::unit_test::unit_test_main( &init_unit_test, argc, argv );
 
         if( typeManager )
         {
@@ -89,7 +88,10 @@ int main( int argc, char *argv[] )
             auto app = workphone::make_ptr<editor::EditorApplication>();
 
             // Set the renderer type for the application
-            if( rendererExplicit ) app->setRendererType( rendererType );
+            if( rendererExplicit )
+            {
+                app->setRendererType( rendererType );
+            }
 
             const auto maxThreads = 12;
             const auto numThreads = (s32)Thread::hardware_concurrency();

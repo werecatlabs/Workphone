@@ -39,11 +39,11 @@ extern "C" {
  */
 typedef struct wp_softbody_raycast_hit
 {
-    wp_s32 hit;          /**< Non-zero if a hit was found. */
-    wp_vec3f point;      /**< World-space hit point. */
-    wp_vec3f normal;     /**< World-space hit normal. */
-    wp_f32 distance;     /**< Distance from the ray origin to the hit. */
-    void *body;          /**< Opaque handle to the hit rigid body, or NULL. */
+    wp_s32 hit;      /**< Non-zero if a hit was found. */
+    wp_vec3f point;  /**< World-space hit point. */
+    wp_vec3f normal; /**< World-space hit normal. */
+    wp_f32 distance; /**< Distance from the ray origin to the hit. */
+    void *body;      /**< Opaque handle to the hit rigid body, or NULL. */
 } wp_softbody_raycast_hit;
 
 /**
@@ -53,26 +53,23 @@ typedef struct wp_softbody_raycast_hit
  * matches collision_mask. The caller is responsible for ignoring colliders
  * belonging to the vehicle itself.
  */
-typedef wp_softbody_raycast_hit ( *wp_softbody_raycast_fn )( void *user_data,
-                                                              wp_vec3f origin,
-                                                              wp_vec3f direction,
-                                                              wp_f32 max_distance,
-                                                              wp_u32 collision_mask );
+typedef wp_softbody_raycast_hit ( *wp_softbody_raycast_fn )( void *user_data, wp_vec3f origin,
+                                                             wp_vec3f direction, wp_f32 max_distance,
+                                                             wp_u32 collision_mask );
 
 /**
  * @brief Optional callback for applying a collision impulse to the hit body.
  */
-typedef void ( *wp_softbody_apply_impulse_fn )( void *user_data, void *body,
-                                                wp_vec3f point, wp_vec3f impulse );
+typedef void ( *wp_softbody_apply_impulse_fn )( void *user_data, void *body, wp_vec3f point,
+                                                wp_vec3f impulse );
 
 /**
  * @brief Collision callbacks supplied to the soft-body vehicle.
  */
-typedef wp_vec3f ( *wp_softbody_get_point_velocity_fn )( void *user_data, void *body,
-                                                            wp_vec3f point );
+typedef wp_vec3f ( *wp_softbody_get_point_velocity_fn )( void *user_data, void *body, wp_vec3f point );
 
-typedef void ( *wp_softbody_add_force_at_position_fn )( void *user_data, void *body,
-                                                        wp_vec3f point, wp_vec3f force );
+typedef void ( *wp_softbody_add_force_at_position_fn )( void *user_data, void *body, wp_vec3f point,
+                                                        wp_vec3f force );
 
 typedef struct wp_softbody_vehicle_callbacks
 {
@@ -205,8 +202,8 @@ void wp_softbody_vehicle_destroy( wp_softbody_vehicle *vehicle );
  * freed by the caller after this call returns.
  */
 void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
-                                           const wp_softbody_node_def *nodes, wp_s32 node_count,
-                                           const wp_softbody_beam_def *beams, wp_s32 beam_count );
+                                          const wp_softbody_node_def *nodes, wp_s32 node_count,
+                                          const wp_softbody_beam_def *beams, wp_s32 beam_count );
 
 /**
  * @brief Install collision callbacks.
@@ -277,14 +274,12 @@ wp_s32 wp_softbody_vehicle_get_beam_count( const wp_softbody_vehicle *vehicle );
 /**
  * @brief Returns the current world-space position of a node.
  */
-wp_vec3f wp_softbody_vehicle_get_node_position( const wp_softbody_vehicle *vehicle,
-                                                wp_s32 node_index );
+wp_vec3f wp_softbody_vehicle_get_node_position( const wp_softbody_vehicle *vehicle, wp_s32 node_index );
 
 /**
  * @brief Returns the current world-space velocity of a node.
  */
-wp_vec3f wp_softbody_vehicle_get_node_velocity( const wp_softbody_vehicle *vehicle,
-                                               wp_s32 node_index );
+wp_vec3f wp_softbody_vehicle_get_node_velocity( const wp_softbody_vehicle *vehicle, wp_s32 node_index );
 
 /**
  * @brief Returns the rest local-space position of a node.
@@ -305,15 +300,13 @@ wp_vec3f wp_softbody_vehicle_get_center_of_mass( const wp_softbody_vehicle *vehi
 /**
  * @brief Derive a right/up/forward frame from four corner nodes.
  */
-void wp_softbody_vehicle_get_frame( const wp_softbody_vehicle *vehicle,
-                                     wp_s32 front_left_node, wp_s32 front_right_node,
-                                     wp_s32 rear_left_node, wp_s32 rear_right_node,
-                                     wp_vec3f *out_centre, wp_vec3f *out_right,
-                                     wp_vec3f *out_up, wp_vec3f *out_forward );
+void wp_softbody_vehicle_get_frame( const wp_softbody_vehicle *vehicle, wp_s32 front_left_node,
+                                    wp_s32 front_right_node, wp_s32 rear_left_node,
+                                    wp_s32 rear_right_node, wp_vec3f *out_centre, wp_vec3f *out_right,
+                                    wp_vec3f *out_up, wp_vec3f *out_forward );
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* WORKPHONE_VEHICLE_SOFTBODY_H */
-

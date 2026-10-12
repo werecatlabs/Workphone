@@ -92,7 +92,9 @@ void wp_propeller_fixed_update( wp_propeller *p, wp_f32 dt )
 
         wp_f32 denom = p->engine_rps * D;
         if( denom <= 1e-9f )
+        {
             denom = 1e-9f;
+        }
 
         thrust = p->throttle * p->peak_power_w * ( a + b * advanceRatio * advanceRatio ) / denom;
     }

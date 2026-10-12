@@ -103,9 +103,9 @@ namespace workphone::editor
     {
         try
         {
-            const auto hasResources =
-                getParentWindow() || getDebugWindow() || getInvoker() || getReceiver() ||
-                getScriptClass() || getEventListener() || getWindowDropTarget();
+            const auto hasResources = getParentWindow() || getDebugWindow() || getInvoker() ||
+                                      getReceiver() || getScriptClass() || getEventListener() ||
+                                      getWindowDropTarget();
 
             if( isLoaded() || hasResources )
             {

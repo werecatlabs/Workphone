@@ -50,13 +50,13 @@ void wp_softbody_car_controller_destroy( wp_softbody_car_controller *controller 
  * @brief Attach the controller to a vehicle.
  */
 void wp_softbody_car_controller_set_vehicle( wp_softbody_car_controller *controller,
-                                              wp_softbody_vehicle *vehicle );
+                                             wp_softbody_vehicle *vehicle );
 
 /**
  * @brief Use a caller-managed wheel array.
  */
 void wp_softbody_car_controller_set_wheels( wp_softbody_car_controller *controller,
-                                             wp_softbody_wheel *wheels, wp_s32 wheel_count );
+                                            wp_softbody_wheel *wheels, wp_s32 wheel_count );
 
 /**
  * @brief Allocate and configure the default four-wheel layout.
@@ -67,16 +67,15 @@ void wp_softbody_car_controller_set_default_wheels( wp_softbody_car_controller *
  * @brief Set the corner-node indices used to derive the chassis frame.
  */
 void wp_softbody_car_controller_set_frame_nodes( wp_softbody_car_controller *controller,
-                                                wp_s32 front_left, wp_s32 front_right,
-                                                wp_s32 rear_left, wp_s32 rear_right );
+                                                 wp_s32 front_left, wp_s32 front_right, wp_s32 rear_left,
+                                                 wp_s32 rear_right );
 
 /**
  * @brief Step the controller and all wheels.
  */
-void wp_softbody_car_controller_step( wp_softbody_car_controller *controller,
-                                       wp_f32 throttle, wp_f32 brake, wp_f32 steering,
-                                       wp_f32 delta_time,
-                                       const wp_softbody_vehicle_callbacks *callbacks );
+void wp_softbody_car_controller_step( wp_softbody_car_controller *controller, wp_f32 throttle,
+                                      wp_f32 brake, wp_f32 steering, wp_f32 delta_time,
+                                      const wp_softbody_vehicle_callbacks *callbacks );
 
 #ifdef __cplusplus
 }

@@ -40,7 +40,9 @@ static void wp_rotor_wake_spawn( wp_rotor_wake *w )
 
         /* Only increment count when we are filling a previously empty slot. */
         if( !p->active && w->count < w->max_particles )
+        {
             ++w->count;
+        }
 
         /* Position: random powp_s32 on the rotor disc plane */
         {
@@ -74,7 +76,9 @@ static void wp_rotor_wake_advect( wp_rotor_wake *w, wp_f32 dt )
         wp_rotor_wake_particle *p = &w->particles[i];
 
         if( !p->active )
+        {
             continue;
+        }
 
         /* Spiral vortex motion: swirl = cross(world_up, normalize(velocity)) */
         if( !wp_vec3f_is_zero_length( p->velocity ) )
@@ -110,7 +114,9 @@ static void wp_rotor_wake_accumulate_force( wp_rotor_wake *w )
         const wp_rotor_wake_particle *p = &w->particles[i];
 
         if( !p->active )
+        {
             continue;
+        }
 
         {
             wp_f32 dist = wp_vec3f_distance( w->body_position, p->position );
@@ -182,7 +188,9 @@ wp_s32 wp_rotor_wake_get_particle_count( const wp_rotor_wake *w )
 const wp_rotor_wake_particle *wp_rotor_wake_get_particles( const wp_rotor_wake *w, wp_s32 *out_capacity )
 {
     if( out_capacity )
+    {
         *out_capacity = w->max_particles;
+    }
 
     return w->particles;
 }

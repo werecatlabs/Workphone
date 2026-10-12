@@ -25,10 +25,14 @@ static wp_f32 wp_turbine_move_towards( wp_f32 current, wp_f32 target, wp_f32 max
     wp_f32 delta = target - current;
 
     if( delta < 0.0f )
+    {
         delta = -delta;
+    }
 
     if( delta <= max_delta )
+    {
         return target;
+    }
 
     return current + ( ( target > current ) ? max_delta : -max_delta );
 }

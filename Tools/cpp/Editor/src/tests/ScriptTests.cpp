@@ -36,6 +36,7 @@ namespace
         {
             return faces;
         }
+
         Array<SmartPtr<render::ITexture>> faces;
     };
 
@@ -223,11 +224,19 @@ BOOST_AUTO_TEST_CASE( editor_input_window_live_values_test )
     std::function<bool( SmartPtr<ui::IUIElement>, const String & )> containsText;
     containsText = [&containsText]( SmartPtr<ui::IUIElement> element, const String &expected ) {
         if( auto text = workphone::dynamic_pointer_cast<ui::IUIText>( element ) )
+        {
             if( text->getText() == expected )
+            {
                 return true;
+            }
+        }
         for( auto child : element->getChildren() )
+        {
             if( containsText( child, expected ) )
+            {
                 return true;
+            }
+        }
         return false;
     };
     const auto checkText = [&]( const String &expected ) {
@@ -277,8 +286,10 @@ BOOST_AUTO_TEST_CASE( editor_window_callbacks_disconnect_test )
 
     auto window = make_ptr<EditorWindow>();
     window->load( nullptr );
-    auto listener = workphone::dynamic_pointer_cast<EditorWindow::UIListener>( window->getEventListener() );
-    auto target = workphone::dynamic_pointer_cast<EditorWindow::UIDropTarget>( window->getWindowDropTarget() );
+    auto listener =
+        workphone::dynamic_pointer_cast<EditorWindow::UIListener>( window->getEventListener() );
+    auto target =
+        workphone::dynamic_pointer_cast<EditorWindow::UIDropTarget>( window->getWindowDropTarget() );
     BOOST_REQUIRE( listener );
     BOOST_REQUIRE( target );
     BOOST_CHECK( listener->getOwner() == window );
@@ -314,7 +325,7 @@ BOOST_AUTO_TEST_CASE( editor_ui_control_unload_test )
     BOOST_REQUIRE( ui->getApplication() );
     BOOST_CHECK_EQUAL( ui->getApplication()->getName(), "Lua shutdown owners retained" );
     for( const auto type : { ui::IUIButton::typeInfo(), ui::IUILabelTogglePair::typeInfo(),
-                            ui::IUIProfileWindow::typeInfo(), ui::IUIProfilerWindow::typeInfo() } )
+                             ui::IUIProfileWindow::typeInfo(), ui::IUIProfilerWindow::typeInfo() } )
     {
         BOOST_TEST_CONTEXT( "UI control type " << type )
         {
@@ -484,15 +495,22 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
 {
     struct TestProject
     {
-        std::filesystem::path path = std::filesystem::temp_directory_path() /
+        std::filesystem::path path =
+            std::filesystem::temp_directory_path() /
             ( "lioncat-material-" + std::string( StringUtil::getUUID().c_str() ) );
-        TestProject() { std::filesystem::create_directories( path / "Cache" ); }
+
+        TestProject()
+        {
+            std::filesystem::create_directories( path / "Cache" );
+        }
+
         ~TestProject()
         {
             std::error_code ignored;
             std::filesystem::remove_all( path, ignored );
         }
     } project;
+
     EditorApplicationGuard app;
     app.loadSingleThreaded();
     auto application = core::IApplicationManager::instance();
@@ -560,23 +578,30 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     projection->setSelectedOption( 3u );
     // ImGuiApplication sends dropdown selections directly to control listeners.
     for( auto listener : projection->getObjectListeners() )
+    {
         listener->handleEvent( EventType::UI, IEvent::handleSelection,
-            Array<Parameter>{ Parameter( 3u ) }, projection, projection, nullptr );
+                               Array<Parameter>{ Parameter( 3u ) }, projection, projection, nullptr );
+    }
     BOOST_CHECK_EQUAL( material->getUVProjection(), 3u );
     auto slider = workphone::dynamic_pointer_cast<ui::IUILabelSliderPair>( controls[0] );
     BOOST_REQUIRE( slider );
     slider->setValue( 0.73f );
     for( auto listener : slider->getObjectListeners() )
+    {
         listener->handleEvent( EventType::UI, IEvent::handleValueChanged,
-                              Array<Parameter>{ Parameter( 0.73f ) }, slider, slider, nullptr );
+                               Array<Parameter>{ Parameter( 0.73f ) }, slider, slider, nullptr );
+    }
     BOOST_CHECK_CLOSE( material->getRoughness(), 0.73f, 0.01f );
     auto colour = workphone::dynamic_pointer_cast<ui::IUIColourPicker>( controls[1] );
     BOOST_REQUIRE( colour );
     colour->setColour( ColourF( 0.2f, 0.4f, 0.6f, 1.0f ) );
     for( auto listener : colour->getObjectListeners() )
-        listener->handleEvent( EventType::UI, IEvent::handleValueChanged,
-                              Array<Parameter>{ Parameter( 0.2f ), Parameter( 0.4f ), Parameter( 0.6f ) },
-                              colour, colour, nullptr );
+    {
+        listener->handleEvent(
+            EventType::UI, IEvent::handleValueChanged,
+            Array<Parameter>{ Parameter( 0.2f ), Parameter( 0.4f ), Parameter( 0.6f ) }, colour, colour,
+            nullptr );
+    }
     BOOST_CHECK_CLOSE( material->getDiffuse().r, 0.2f, 0.01f );
     BOOST_CHECK_CLOSE( material->getDiffuse().g, 0.4f, 0.01f );
     BOOST_CHECK_CLOSE( material->getDiffuse().b, 0.6f, 0.01f );
@@ -586,8 +611,8 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     // Apply must dispatch its action, including values without a change event.
     slider->setValue( 0.61f );
     auto apply = controls[2];
-    application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, apply, nullptr,
-                               nullptr, false, Thread::Application_Flag );
+    application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, apply, nullptr, nullptr,
+                               false, Thread::Application_Flag );
     BOOST_CHECK_CLOSE( material->getRoughness(), 0.61f, 0.01f );
     BOOST_CHECK_CLOSE( material->getDiffuse().r, 0.2f, 0.01f );
     BOOST_CHECK_CLOSE( material->getDiffuse().g, 0.4f, 0.01f );
@@ -602,7 +627,8 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     auto component = actor->addComponent<scene::Material>();
     component->setMaterial( material );
     auto renderer = actor->addComponent<scene::MeshRenderer>();
-    auto mesh = application->getGraphicsSystem()->getGraphicsScene()
+    auto mesh = application->getGraphicsSystem()
+                    ->getGraphicsScene()
                     ->addGraphicsObjectByType<render::IGraphicsMesh>();
     renderer->setGraphicsObject( mesh );
     renderer->updateMaterials();
@@ -612,12 +638,14 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     window->updateSelection();
     slider->setValue( 0.42f );
     for( auto listener : slider->getObjectListeners() )
+    {
         listener->handleEvent( EventType::UI, IEvent::handleValueChanged,
-            Array<Parameter>{ Parameter( 0.42f ) }, slider, slider, nullptr );
+                               Array<Parameter>{ Parameter( 0.42f ) }, slider, slider, nullptr );
+    }
     BOOST_CHECK_CLOSE( mesh->getMaterial( 0 )->getRoughness(), 0.42f, 0.01f );
     slider->setValue( 0.36f );
-    application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, controls[4], nullptr,
-                               nullptr, false, Thread::Application_Flag );
+    application->triggerEvent( EventType::UI, IEvent::handleSelection, {}, controls[4], nullptr, nullptr,
+                               false, Thread::Application_Flag );
     BOOST_CHECK_CLOSE( mesh->getMaterial( 0 )->getRoughness(), 0.36f, 0.01f );
     window->setParent( nullptr );
     window->unload( nullptr );
@@ -647,7 +675,9 @@ BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
     {
         auto childWindow = workphone::dynamic_pointer_cast<ui::IUIWindow>( child );
         if( childWindow && childWindow->getLabel() == "Cubemap Texture Preview" )
+        {
             preview = childWindow;
+        }
     }
     BOOST_REQUIRE( preview );
     window->updateSelection( component );
@@ -661,7 +691,9 @@ BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
     texture->setName( "Inspector Test Cubemap" );
     Array<SmartPtr<render::ITexture>> faces;
     for( size_t i = 0; i < 6; ++i )
+    {
         faces.push_back( make_ptr<render::Texture>() );
+    }
     texture->faces = faces;
     probe->setTexture( texture );
     auto selection = application->getSelectionManager();
@@ -670,8 +702,9 @@ BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
     // The texture can become available after selection (e.g. when baking completes).
     window->update();
     BOOST_CHECK( status->getText().find( "Inspector Test Cubemap" ) != String::npos );
-    const char *labels[] = { "Front (-Z)", "Back (+Z)", "Left (-X)",
-                             "Right (+X)", "Up (+Y)", "Down (-Y)" };
+    const char *labels[] = {
+        "Front (-Z)", "Back (+Z)", "Left (-X)", "Right (+X)", "Up (+Y)", "Down (-Y)"
+    };
     Array<SmartPtr<ui::IUIImage>> images;
     for( size_t i = 0; i < 6; ++i )
     {
@@ -694,7 +727,9 @@ BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
     window->update();
     BOOST_CHECK( status->getText().find( "unavailable" ) != String::npos );
     for( auto image : images )
+    {
         BOOST_CHECK( !image->getTexture() );
+    }
     probe->setTexture( nullptr );
     window->update();
     BOOST_CHECK( status->getText().find( "No cubemap texture" ) != String::npos );
@@ -705,13 +740,17 @@ BOOST_AUTO_TEST_CASE( editor_cubemap_face_preview_test )
     window->update();
     BOOST_CHECK( !preview->isVisible() );
     for( auto image : images )
+    {
         BOOST_CHECK( !image->getTexture() );
+    }
     window->updateSelection( make_ptr<Properties>() );
     BOOST_CHECK( !preview->isVisible() );
     window->updateSelection( component );
     window->unload( nullptr );
     for( auto image : images )
+    {
         BOOST_CHECK( !image->getTexture() );
+    }
     application->getGameManager()->destroyActor( actor );
 }
 #endif

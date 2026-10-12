@@ -199,9 +199,13 @@ void wp_propeller_unit_fixed_update( wp_propeller_unit *pu, wp_f32 dt )
      * --------------------------------------------------------------- */
     wp_f32 cl = pu->cl_slope * eff_pitch;
     if( cl > pu->cl_max )
+    {
         cl = pu->cl_max;
+    }
     if( cl < pu->cl_min )
+    {
         cl = pu->cl_min;
+    }
     pu->cl = cl;
 
     /* ---------------------------------------------------------------
@@ -211,7 +215,9 @@ void wp_propeller_unit_fixed_update( wp_propeller_unit *pu, wp_f32 dt )
      * --------------------------------------------------------------- */
     wp_f32 cd;
     if( cl >= 0.0f )
+    {
         cd = pu->cd0 + pu->dcl_dcd_ratio * cl * cl;
+    }
     else
     {
         wp_f32 cl_neg = 1.4f * cl;
@@ -264,7 +270,9 @@ void wp_propeller_unit_fixed_update( wp_propeller_unit *pu, wp_f32 dt )
     {
         wp_f32 k = dt / pu->flow_settling_time;
         if( k > 1.0f )
+        {
             k = 1.0f;
+        }
 
         wp_f32 flow_x = pu->disc_flow.x;
         wp_f32 temp = flow_x * flow_x + 4.0f * thrust / ( 2.0f * rho * pu->area );
@@ -291,9 +299,13 @@ void wp_propeller_unit_fixed_update( wp_propeller_unit *pu, wp_f32 dt )
      * 11. Propeller torque = (P_ind + P_drag) / w
      * --------------------------------------------------------------- */
     if( wp_absf( pu->rotor_rps ) > 1e-6f )
+    {
         pu->prop_torque = ( pu->induced_power + pu->drag_power ) / pu->rotor_rps;
+    }
     else
+    {
         pu->prop_torque = 0.0f;
+    }
 
     /* ---------------------------------------------------------------
      * 12-13. Rotor acceleration and integration
@@ -309,14 +321,20 @@ void wp_propeller_unit_fixed_update( wp_propeller_unit *pu, wp_f32 dt )
     /* Clamp angular acceleration */
     wp_f32 max_dw = 4000.0f * dt;
     if( delta_w > max_dw )
+    {
         delta_w = max_dw;
+    }
     if( delta_w < -max_dw )
+    {
         delta_w = -max_dw;
+    }
 
     /* Integrate (prevent running backwards) */
     pu->rotor_rps = pu->rotor_rps + delta_w;
     if( pu->rotor_rps < 0.0f )
+    {
         pu->rotor_rps = 0.0f;
+    }
 
     /* Sync RPM from rad/s */
     pu->rotor_rpm = pu->rotor_rps * 60.0f / WORKPHONE_TWO_PI_F;

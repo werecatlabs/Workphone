@@ -59,9 +59,8 @@ static void wp_softbody_mesh_deformer_free_arrays( wp_softbody_mesh_deformer *de
 }
 
 static void wp_softbody_mesh_deformer_insert_nearest( wp_f32 distance, wp_s32 node_index,
-                                                       wp_f32 *best_distances,
-                                                       wp_s32 *best_indices,
-                                                       wp_s32 influence_count )
+                                                      wp_f32 *best_distances, wp_s32 *best_indices,
+                                                      wp_s32 influence_count )
 {
     wp_s32 slot;
 
@@ -112,9 +111,8 @@ static void wp_softbody_mesh_deformer_build_bindings( wp_softbody_mesh_deformer 
             wp_vec3f delta = wp_vec3f_sub( vertex, deformer->rest_node_positions[node_index] );
             wp_f32 squared_distance = wp_vec3f_length_sq( delta );
 
-            wp_softbody_mesh_deformer_insert_nearest( squared_distance, node_index,
-                                                       best_distances, best_indices,
-                                                       deformer->influence_count );
+            wp_softbody_mesh_deformer_insert_nearest( squared_distance, node_index, best_distances,
+                                                      best_indices, deformer->influence_count );
         }
 
         weight_sum = 0.0f;
@@ -168,11 +166,9 @@ void wp_softbody_mesh_deformer_destroy( wp_softbody_mesh_deformer *deformer )
 }
 
 wp_s32 wp_softbody_mesh_deformer_bind( wp_softbody_mesh_deformer *deformer,
-                                        const wp_softbody_vehicle *vehicle,
-                                        const wp_vec3f *vertices,
-                                        wp_s32 vertex_count,
-                                        wp_s32 influences_per_vertex,
-                                        wp_transform3f mesh_to_world )
+                                       const wp_softbody_vehicle *vehicle, const wp_vec3f *vertices,
+                                       wp_s32 vertex_count, wp_s32 influences_per_vertex,
+                                       wp_transform3f mesh_to_world )
 {
     wp_s32 i;
     wp_s32 node_count;
@@ -192,48 +188,41 @@ wp_s32 wp_softbody_mesh_deformer_bind( wp_softbody_mesh_deformer *deformer,
 
     node_count = wp_softbody_vehicle_get_node_count( vehicle );
 
-    deformer->influence_count = ( wp_s32 )wp_clampf( ( wp_f32 )influences_per_vertex, 1.0f,
-                                              ( wp_f32 )WP_SOFTBODY_MESH_DEFORMER_MAX_INFLUENCES );
+    deformer->influence_count = (wp_s32)wp_clampf( (wp_f32)influences_per_vertex, 1.0f,
+                                                   (wp_f32)WP_SOFTBODY_MESH_DEFORMER_MAX_INFLUENCES );
     deformer->vertex_count = vertex_count;
     deformer->node_count = node_count;
 
-    deformer->original_vertices = ( wp_vec3f * )malloc(
-        ( wp_size )vertex_count * sizeof( wp_vec3f ) );
-    deformer->deformed_vertices = ( wp_vec3f * )malloc(
-        ( wp_size )vertex_count * sizeof( wp_vec3f ) );
-    deformer->rest_node_positions = ( wp_vec3f * )malloc(
-        ( wp_size )node_count * sizeof( wp_vec3f ) );
-    deformer->current_node_positions = ( wp_vec3f * )malloc(
-        ( wp_size )node_count * sizeof( wp_vec3f ) );
-    deformer->bind_indices = ( wp_s32 * )malloc(
-        ( wp_size )vertex_count * deformer->influence_count * sizeof( wp_s32 ) );
-    deformer->bind_weights = ( wp_f32 * )malloc(
-        ( wp_size )vertex_count * deformer->influence_count * sizeof( wp_f32 ) );
+    deformer->original_vertices = (wp_vec3f *)malloc( (wp_size)vertex_count * sizeof( wp_vec3f ) );
+    deformer->deformed_vertices = (wp_vec3f *)malloc( (wp_size)vertex_count * sizeof( wp_vec3f ) );
+    deformer->rest_node_positions = (wp_vec3f *)malloc( (wp_size)node_count * sizeof( wp_vec3f ) );
+    deformer->current_node_positions = (wp_vec3f *)malloc( (wp_size)node_count * sizeof( wp_vec3f ) );
+    deformer->bind_indices =
+        (wp_s32 *)malloc( (wp_size)vertex_count * deformer->influence_count * sizeof( wp_s32 ) );
+    deformer->bind_weights =
+        (wp_f32 *)malloc( (wp_size)vertex_count * deformer->influence_count * sizeof( wp_f32 ) );
 
-    if( deformer->original_vertices == NULL ||
-        deformer->deformed_vertices == NULL ||
-        deformer->rest_node_positions == NULL ||
-        deformer->current_node_positions == NULL ||
-        deformer->bind_indices == NULL ||
-        deformer->bind_weights == NULL )
+    if( deformer->original_vertices == NULL || deformer->deformed_vertices == NULL ||
+        deformer->rest_node_positions == NULL || deformer->current_node_positions == NULL ||
+        deformer->bind_indices == NULL || deformer->bind_weights == NULL )
     {
         wp_softbody_mesh_deformer_free_arrays( deformer );
         return wp_false;
     }
 
-    memcpy( deformer->original_vertices, vertices,
-            ( wp_size )vertex_count * sizeof( wp_vec3f ) );
+    memcpy( deformer->original_vertices, vertices, (wp_size)vertex_count * sizeof( wp_vec3f ) );
 
-    world_to_mesh.position = wp_game_util_inverse_transform_point( &mesh_to_world,
-                                                                    wp_vec3f_make( 0.0f, 0.0f, 0.0f ) );
+    world_to_mesh.position =
+        wp_game_util_inverse_transform_point( &mesh_to_world, wp_vec3f_make( 0.0f, 0.0f, 0.0f ) );
     world_to_mesh.orientation = wp_quatf_conjugate( mesh_to_world.orientation );
     world_to_mesh.scale = wp_vec3f_make( 1.0f, 1.0f, 1.0f ); /* Scale inverse not used for positions. */
 
     for( i = 0; i < node_count; ++i )
     {
-        wp_vec3f node_world = wp_game_util_transform_point( &vehicle->transform,
-                                                               wp_softbody_vehicle_get_rest_local_position( vehicle, i ) );
-        deformer->rest_node_positions[i] = wp_game_util_inverse_transform_point( &mesh_to_world, node_world );
+        wp_vec3f node_world = wp_game_util_transform_point(
+            &vehicle->transform, wp_softbody_vehicle_get_rest_local_position( vehicle, i ) );
+        deformer->rest_node_positions[i] =
+            wp_game_util_inverse_transform_point( &mesh_to_world, node_world );
     }
 
     wp_softbody_mesh_deformer_build_bindings( deformer );
@@ -243,8 +232,7 @@ wp_s32 wp_softbody_mesh_deformer_bind( wp_softbody_mesh_deformer *deformer,
 }
 
 void wp_softbody_mesh_deformer_update( wp_softbody_mesh_deformer *deformer,
-                                        const wp_softbody_vehicle *vehicle,
-                                        wp_transform3f mesh_to_world )
+                                       const wp_softbody_vehicle *vehicle, wp_transform3f mesh_to_world )
 {
     wp_s32 i;
     wp_s32 vertex_index;
@@ -260,16 +248,15 @@ void wp_softbody_mesh_deformer_update( wp_softbody_mesh_deformer *deformer,
         return;
     }
 
-    world_to_mesh.position = wp_game_util_inverse_transform_point( &mesh_to_world,
-                                                                    wp_vec3f_make( 0.0f, 0.0f, 0.0f ) );
+    world_to_mesh.position =
+        wp_game_util_inverse_transform_point( &mesh_to_world, wp_vec3f_make( 0.0f, 0.0f, 0.0f ) );
     world_to_mesh.orientation = wp_quatf_conjugate( mesh_to_world.orientation );
     world_to_mesh.scale = wp_vec3f_make( 1.0f, 1.0f, 1.0f );
 
     for( i = 0; i < deformer->node_count; ++i )
     {
         deformer->current_node_positions[i] = wp_game_util_inverse_transform_point(
-            &world_to_mesh,
-            wp_softbody_vehicle_get_node_position( vehicle, i ) );
+            &world_to_mesh, wp_softbody_vehicle_get_node_position( vehicle, i ) );
     }
 
     for( vertex_index = 0; vertex_index < deformer->vertex_count; ++vertex_index )
@@ -283,13 +270,14 @@ void wp_softbody_mesh_deformer_update( wp_softbody_mesh_deformer *deformer,
             wp_s32 binding_index = vertex_index * deformer->influence_count + influence;
             wp_s32 node_index = deformer->bind_indices[binding_index];
             wp_f32 weight = deformer->bind_weights[binding_index];
-            wp_vec3f local_offset = wp_vec3f_sub( original_vertex,
-                                                   deformer->rest_node_positions[node_index] );
+            wp_vec3f local_offset =
+                wp_vec3f_sub( original_vertex, deformer->rest_node_positions[node_index] );
 
-            deformed_vertex = wp_vec3f_add( deformed_vertex,
-                                              wp_vec3f_scale( wp_vec3f_add( deformer->current_node_positions[node_index],
-                                                                            local_offset ),
-                                                              weight ) );
+            deformed_vertex = wp_vec3f_add(
+                deformed_vertex,
+                wp_vec3f_scale(
+                    wp_vec3f_add( deformer->current_node_positions[node_index], local_offset ),
+                    weight ) );
         }
 
         deformer->deformed_vertices[vertex_index] = deformed_vertex;
@@ -297,7 +285,7 @@ void wp_softbody_mesh_deformer_update( wp_softbody_mesh_deformer *deformer,
 }
 
 void wp_softbody_mesh_deformer_get_vertices( const wp_softbody_mesh_deformer *deformer,
-                                              wp_vec3f *out_vertices )
+                                             wp_vec3f *out_vertices )
 {
     if( deformer == NULL || out_vertices == NULL || !deformer->bound )
     {
@@ -305,7 +293,7 @@ void wp_softbody_mesh_deformer_get_vertices( const wp_softbody_mesh_deformer *de
     }
 
     memcpy( out_vertices, deformer->deformed_vertices,
-            ( wp_size )deformer->vertex_count * sizeof( wp_vec3f ) );
+            (wp_size)deformer->vertex_count * sizeof( wp_vec3f ) );
 }
 
 wp_s32 wp_softbody_mesh_deformer_get_vertex_count( const wp_softbody_mesh_deformer *deformer )

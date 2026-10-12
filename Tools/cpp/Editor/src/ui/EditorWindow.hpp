@@ -12,7 +12,7 @@ namespace workphone
     {
         /**
          * @brief Base class for editor windows in the user interface.
-         * 
+         *
          * The EditorWindow class provides functionality for managing editor windows, including
          * drag and drop operations, event handling, and window visibility control. It serves as
          * a base class for specialized editor windows in the application.
@@ -22,7 +22,7 @@ namespace workphone
         public:
             /**
              * @brief Listener class for handling application-level events.
-             * 
+             *
              * This class is responsible for processing application-wide events and forwarding
              * them to the owning EditorWindow instance.
              */
@@ -73,7 +73,7 @@ namespace workphone
 
             /**
              * @brief Listener class for handling UI-specific events.
-             * 
+             *
              * This class processes UI-related events and manages their propagation to the
              * owning EditorWindow instance.
              */
@@ -124,7 +124,7 @@ namespace workphone
 
             /**
              * @brief Class for handling drag operations in the editor window.
-             * 
+             *
              * This class implements the IUIDragSource interface to provide drag functionality
              * for UI elements within the editor window.
              */
@@ -183,7 +183,7 @@ namespace workphone
 
             /**
              * @brief Class for handling drop operations in the editor window.
-             * 
+             *
              * This class implements the IUIDropTarget interface to provide drop functionality
              * for UI elements within the editor window.
              */

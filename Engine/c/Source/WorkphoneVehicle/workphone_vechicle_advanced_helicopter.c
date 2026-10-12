@@ -53,7 +53,9 @@ static wp_f32 wp_aheli_translational_lift( const wp_advanced_helicopter *h )
     wp_f32 speed = wp_vec3f_length( h->velocity );
 
     if( speed < h->etl_start_speed )
+    {
         return 1.0f;
+    }
 
     /* Mathf.InverseLerp(ETLStartSpeed, ETLStartSpeed * 3, speed)
      * = clamp((speed - start) / (start*3 - start), 0, 1)

@@ -14,10 +14,14 @@ namespace workphone::editor
     void RemoveResourceCmd::undo()
     {
         if( !m_operationCatalog || m_operationId.empty() )
+        {
             return;
+        }
         auto app = core::IApplicationManager::instancePtr();
         auto resources = app ? app->getResourceDatabase() : nullptr;
-        auto active = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        auto active = resources
+                          ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                          : nullptr;
         if( active != m_operationCatalog || m_operationCatalog->getProjectRoot() != m_operationRoot )
         {
             WP_LOG_ERROR( "Cannot undo asset deletion in a different project." );
@@ -31,7 +35,9 @@ namespace workphone::editor
             return;
         }
         if( app && app->getFileSystem() )
+        {
             app->getFileSystem()->refreshPath( Path::getFilePath( m_filePath ), true );
+        }
     }
 
     void RemoveResourceCmd::redo()
@@ -43,7 +49,9 @@ namespace workphone::editor
     {
         auto app = core::IApplicationManager::instancePtr();
         if( !app )
+        {
             return;
+        }
         auto resources = app->getResourceDatabase();
         auto database = resources ? resources->getDatabaseManager() : nullptr;
         auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database );
@@ -52,14 +60,14 @@ namespace workphone::editor
             WP_LOG_ERROR( "Asset deletion requires an open project catalog." );
             return;
         }
-        if( m_operationCatalog && ( catalog != m_operationCatalog ||
-                                   catalog->getProjectRoot() != m_operationRoot ) )
+        if( m_operationCatalog &&
+            ( catalog != m_operationCatalog || catalog->getProjectRoot() != m_operationRoot ) )
         {
             WP_LOG_ERROR( "Cannot redo asset deletion in a different project." );
             return;
         }
-        const auto result = catalog->performFileOperation(
-            AssetDatabaseManager::FileOperation::Delete, m_filePath );
+        const auto result =
+            catalog->performFileOperation( AssetDatabaseManager::FileOperation::Delete, m_filePath );
         if( !result.succeeded )
         {
             WP_LOG_ERROR( "Cannot delete asset: " + result.error );
@@ -70,8 +78,11 @@ namespace workphone::editor
         m_operationId = result.operationId;
         m_operationRoot = catalog->getProjectRoot();
         if( auto fileSystem = app->getFileSystem() )
+        {
             fileSystem->refreshPath( Path::getFilePath( m_filePath ), true );
+        }
     }
+
     String RemoveResourceCmd::getFilePath() const
     {
         return m_filePath;

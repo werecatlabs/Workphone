@@ -458,8 +458,8 @@ namespace workphone::editor
                                ICON_FA_FILE " Profiler", "Profiler", ui::IUIMenuItem::Type::Normal );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::GraphicsPipelineId ),
                                "Editor Graphics", "Editor Graphics", ui::IUIMenuItem::Type::Normal );
-            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::GameGraphicsId ),
-                               "Game Graphics", "Game Graphics", ui::IUIMenuItem::Type::Normal );
+            Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::GameGraphicsId ), "Game Graphics",
+                               "Game Graphics", ui::IUIMenuItem::Type::Normal );
             Util::addMenuSeparator( windowMenu );
             Util::addMenuItem( windowMenu, static_cast<s32>( WidgetId::ObjectWindowId ),
                                ICON_FA_CUBE " Object", "Object", ui::IUIMenuItem::Type::Normal );
@@ -743,8 +743,11 @@ namespace workphone::editor
         }
 
         auto assetDatabaseWindow = factoryManager->make_ptr<AssetDatabaseWindow>();
-        if( auto resources = dynamic_pointer_cast<ResourceDatabase>( applicationManager->getResourceDatabase() ) )
+        if( auto resources =
+                dynamic_pointer_cast<ResourceDatabase>( applicationManager->getResourceDatabase() ) )
+        {
             assetDatabaseWindow->setMediaCatalog( resources->getMediaCatalog() );
+        }
         assetDatabaseWindow->setClassName( "AssetDatabase" );
         assetDatabaseWindow->load( nullptr );
         setAssetDatabaseWindow( assetDatabaseWindow );
@@ -1389,9 +1392,13 @@ namespace workphone::editor
                 const auto item = widgetID;
                 SmartPtr<ISharedObject> settings;
                 if( item == WidgetId::GraphicsPipelineId )
+                {
                     settings = applicationManager->getApplication();
+                }
                 else if( auto project = editorManager->getProject() )
+                {
                     settings = project->getGraphicsSettingsDirector();
+                }
                 if( settings )
                 {
                     auto selectionManager = applicationManager->getSelectionManager();

@@ -57,19 +57,27 @@ namespace workphone::editor
                 break;
             case WidgetId::Play:
                 if( owner->m_animator )
+                {
                     owner->m_animator->play();
+                }
                 break;
             case WidgetId::Pause:
                 if( owner->m_animator )
+                {
                     owner->m_animator->pause();
+                }
                 break;
             case WidgetId::Stop:
                 if( owner->m_animator )
+                {
                     owner->m_animator->stop();
+                }
                 break;
             case WidgetId::Rewind:
                 if( owner->m_animator )
+                {
                     owner->m_animator->setAnimationTime( 0.0f );
+                }
                 owner->syncPlaybackControls();
                 break;
             case WidgetId::AddConstraint:
@@ -513,7 +521,9 @@ namespace workphone::editor
         if( !m_animator )
         {
             if( m_timeSlider )
+            {
                 m_timeSlider->setValue( 0.0f );
+            }
             return;
         }
         if( m_timeSlider )
@@ -536,11 +546,17 @@ namespace workphone::editor
             m_timeSlider->setValue( timelineTime );
         }
         if( m_speedSlider )
+        {
             m_speedSlider->setValue( m_animator->getAnimationSpeed() );
+        }
         if( m_weightSlider )
+        {
             m_weightSlider->setValue( m_animator->getAnimationWeight() );
+        }
         if( m_loopingToggle )
+        {
             m_loopingToggle->setValue( m_animator->isLooping() );
+        }
     }
 
     void AnimationWindow::syncConstraintControls()
@@ -549,9 +565,13 @@ namespace workphone::editor
         if( !constraint )
         {
             if( m_constraintIdText )
+            {
                 m_constraintIdText->setValue( "" );
+            }
             if( m_effectorBoneText )
+            {
                 m_effectorBoneText->setValue( "" );
+            }
             return;
         }
 

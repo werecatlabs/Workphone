@@ -28,14 +28,10 @@ typedef struct wp_script_value wp_script_value;
  * output pointer keeps the declaration valid in C89 while wp_script_value is
  * still an incomplete type here.
  */
-typedef wp_s32 ( *wp_script_native_method )( wp_script_state *state,
-                                             wp_script_object *self,
-                                             const wp_script_value *args,
-                                             wp_s32 arg_count,
-                                             wp_script_value *result,
-                                             void *user_data );
-typedef void *( *wp_script_native_create )( wp_script_state *state,
-                                            wp_script_object *self,
+typedef wp_s32 ( *wp_script_native_method )( wp_script_state *state, wp_script_object *self,
+                                             const wp_script_value *args, wp_s32 arg_count,
+                                             wp_script_value *result, void *user_data );
+typedef void *( *wp_script_native_create )( wp_script_state *state, wp_script_object *self,
                                             void *user_data );
 typedef void ( *wp_script_native_destroy )( void *native_object, void *user_data );
 

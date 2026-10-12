@@ -45,9 +45,8 @@ namespace workphone::editor
             }
 
             const auto loadingState = scene->getSceneLoadingState();
-            const auto isUnsavedScene =
-                loadingState == scene::IGameScene::SceneLoadingState::None &&
-                StringUtil::isNullOrEmpty( scene->getFilePath() );
+            const auto isUnsavedScene = loadingState == scene::IGameScene::SceneLoadingState::None &&
+                                        StringUtil::isNullOrEmpty( scene->getFilePath() );
             if( !scene->isLoaded() ||
                 ( loadingState != scene::IGameScene::SceneLoadingState::Loaded && !isUnsavedScene ) )
             {

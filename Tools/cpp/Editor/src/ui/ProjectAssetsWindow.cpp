@@ -1088,10 +1088,15 @@ namespace workphone::editor
         }
 
         auto resources = applicationManager->getResourceDatabase();
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
         if( !catalog )
+        {
             return false;
-        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Copy, source, destination );
+        }
+        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Copy,
+                                                           source, destination );
         if( !result.succeeded )
         {
             WP_LOG_ERROR( "Cannot copy asset: " + result.error );
@@ -1178,10 +1183,15 @@ namespace workphone::editor
 
         auto sourceFolder = Path::getFilePath( source );
         auto resources = applicationManager->getResourceDatabase();
-        auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() ) : nullptr;
+        auto catalog =
+            resources ? dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() )
+                      : nullptr;
         if( !catalog )
+        {
             return false;
-        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Move, source, destination );
+        }
+        const auto result = catalog->performFileOperation( AssetDatabaseManager::FileOperation::Move,
+                                                           source, destination );
         if( !result.succeeded )
         {
             WP_LOG_ERROR( "Cannot move asset: " + result.error );
@@ -1242,7 +1252,7 @@ namespace workphone::editor
     }
 
     bool ProjectAssetsWindow::navigateToFolder( const String &folderPath, bool addToHistory,
-                                               bool expandNode )
+                                                bool expandNode )
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto tree = getTree();

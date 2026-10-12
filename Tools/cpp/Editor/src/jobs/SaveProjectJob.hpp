@@ -22,4 +22,4 @@ namespace workphone
     }  // namespace editor
 }  // namespace workphone
 
-#endif // SaveProjectJob_h__
+#endif  // SaveProjectJob_h__

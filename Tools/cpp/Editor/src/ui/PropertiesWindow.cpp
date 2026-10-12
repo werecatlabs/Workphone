@@ -69,7 +69,7 @@ namespace workphone::editor
             m_cubemapPreview->addChild( m_cubemapPreviewStatus );
 
             const char *faceNames[] = { "Front (-Z)", "Back (+Z)", "Left (-X)",
-                                        "Right (+X)", "Up (+Y)", "Down (-Y)" };
+                                        "Right (+X)", "Up (+Y)",   "Down (-Y)" };
             for( size_t i = 0; i < 6; ++i )
             {
                 auto panel = ui->addElementByType<ui::IUIWindow>();
@@ -130,7 +130,9 @@ namespace workphone::editor
 
             // The parent window recursively removes the preview controls from the UI manager.
             for( auto image : m_cubemapFaceImages )
+            {
                 image->setTexture( nullptr );
+            }
             m_cubemapFaceImages.clear();
             m_cubemapFacePanels.clear();
             m_cubemapPreviewStatus = nullptr;
@@ -159,10 +161,12 @@ namespace workphone::editor
         {
             auto app = core::IApplicationManager::instancePtr();
             auto selectionManager = app ? app->getSelectionManagerPtr() : nullptr;
-            auto selection = selectionManager ? selectionManager->getSelection() :
-                                               Array<SmartPtr<ISharedObject>>();
+            auto selection =
+                selectionManager ? selectionManager->getSelection() : Array<SmartPtr<ISharedObject>>();
             if( !selection.empty() )
+            {
                 object = selection.front();
+            }
         }
         updateCubemapPreview( object );
 
@@ -176,13 +180,17 @@ namespace workphone::editor
     void PropertiesWindow::updateCubemapPreview( SmartPtr<ISharedObject> object )
     {
         if( !m_cubemapPreview )
+        {
             return;
+        }
 
         auto cubemap = workphone::dynamic_pointer_cast<scene::Cubemap>( object );
         if( !cubemap )
         {
             if( auto actor = workphone::dynamic_pointer_cast<scene::IGameActor>( object ) )
+            {
                 cubemap = actor->getComponent<scene::Cubemap>();
+            }
         }
 
         auto probe = cubemap ? cubemap->getRenderCubemap() : nullptr;
@@ -193,7 +201,9 @@ namespace workphone::editor
         {
             auto face = hasFaces ? faces[i] : nullptr;
             if( m_cubemapFaceImages[i]->getTexture() != face )
+            {
                 m_cubemapFaceImages[i]->setTexture( face );
+            }
             m_cubemapFacePanels[i]->setVisible( cubemap && face != nullptr );
         }
 
@@ -201,13 +211,21 @@ namespace workphone::editor
         m_cubemapPreview->setSize( Vector2F( 0.0f, hasFaces ? 300.0f : 100.0f ) );
         auto status = String( "Cubemap Texture\nPreview\n" );
         if( !texture )
+        {
             status += "No cubemap texture.\nAssign or generate one.";
+        }
         else if( !hasFaces )
+        {
             status += "Preview unavailable\nfor this texture\nor graphics backend.";
+        }
         else
+        {
             status += texture->getName() + "\nSource faces\n(before roughness filtering)";
+        }
         if( m_cubemapPreviewStatus->getText() != status )
+        {
             m_cubemapPreviewStatus->setText( status );
+        }
     }
 
     void PropertiesWindow::updateSelection()
@@ -223,7 +241,9 @@ namespace workphone::editor
             {
                 auto selection = selectionManager->getSelection();
                 if( !selection.empty() )
+                {
                     previewObject = selection.front();
+                }
             }
             updateCubemapPreview( previewObject );
 
@@ -597,7 +617,8 @@ namespace workphone::editor
                 }
                 else if( object->isDerived<render::IGraphicsSceneNode>() )
                 {
-                    auto sceneNode = workphone::dynamic_pointer_cast<render::IGraphicsSceneNode>( object );
+                    auto sceneNode =
+                        workphone::dynamic_pointer_cast<render::IGraphicsSceneNode>( object );
 
                     auto properties = sceneNode->getProperties();
                     if( properties )
@@ -920,10 +941,13 @@ namespace workphone::editor
                                 if( auto file = dynamic_pointer_cast<FileSelection>( selected ) )
                                 {
                                     auto resources = applicationManager->getResourceDatabase();
-                                    target = resources ? resources->loadResource( file->getFilePath() ) : nullptr;
+                                    target = resources ? resources->loadResource( file->getFilePath() )
+                                                       : nullptr;
                                     if( !target )
                                     {
-                                        WP_LOG_ERROR( "Import this asset before assigning its resource references." );
+                                        WP_LOG_ERROR(
+                                            "Import this asset before assigning its resource "
+                                            "references." );
                                         return;
                                     }
                                 }
@@ -1000,7 +1024,9 @@ namespace workphone::editor
         auto resourceTypeName = propertyChanged.getAttribute( "resourceType" );
         auto resourceType = AssetReferenceChange::referenceType( resourceTypeName );
         if( isButton && resourceType != 0 )
+        {
             return propertyChanged.isReadOnly() ? 0 : resourceType;
+        }
 
         if( object->isDerived<FileSelection>() )
         {
@@ -1146,7 +1172,9 @@ namespace workphone::editor
             if( auto project = editorManager->getProject() )
             {
                 if( object == project->getGraphicsSettingsDirector() )
+                {
                     project->setDirty( true );
+                }
             }
         }
 

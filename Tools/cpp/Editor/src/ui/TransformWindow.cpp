@@ -79,8 +79,10 @@ namespace workphone::editor
                 return;
             }
 
-            m_localPositionListener = setupListener( m_localPosition, scene::ITransform::Type::LocalPosition );
-            m_localRotationListener = setupListener( m_localRotation, scene::ITransform::Type::LocalRotation );
+            m_localPositionListener =
+                setupListener( m_localPosition, scene::ITransform::Type::LocalPosition );
+            m_localRotationListener =
+                setupListener( m_localRotation, scene::ITransform::Type::LocalRotation );
             m_localScaleListener = setupListener( m_localScale, scene::ITransform::Type::LocalScale );
 
             if( getShowWorldTransform() )
@@ -91,7 +93,8 @@ namespace workphone::editor
 
                 if( !m_position || !m_rotation || !m_scale )
                 {
-                    WP_LOG_ERROR( "TransformWindow::load: failed to create world transform UI elements" );
+                    WP_LOG_ERROR(
+                        "TransformWindow::load: failed to create world transform UI elements" );
                     setLoadingState( LoadingState::None );
                     return;
                 }
@@ -119,8 +122,8 @@ namespace workphone::editor
     }
 
     SmartPtr<ui::IUIVector3> TransformWindow::createVectorField( SmartPtr<ui::IUIManager> ui,
-                                                                  SmartPtr<ui::IUIWindow> parentWindow,
-                                                                  const String &label )
+                                                                 SmartPtr<ui::IUIWindow> parentWindow,
+                                                                 const String &label )
     {
         if( !ui )
         {
@@ -145,8 +148,8 @@ namespace workphone::editor
         return vectorField;
     }
 
-    SmartPtr<TransformWindow::VectorListener> TransformWindow::setupListener( SmartPtr<ui::IUIVector3> vectorUI,
-                                                                               scene::ITransform::Type type )
+    SmartPtr<TransformWindow::VectorListener> TransformWindow::setupListener(
+        SmartPtr<ui::IUIVector3> vectorUI, scene::ITransform::Type type )
     {
         if( !vectorUI )
         {
@@ -214,7 +217,8 @@ namespace workphone::editor
             auto ui = applicationManager ? applicationManager->getUI() : nullptr;
             if( !ui )
             {
-                WP_LOG_WARNING( "TransformWindow::unload: UI manager is null, attempting listener cleanup only" );
+                WP_LOG_WARNING(
+                    "TransformWindow::unload: UI manager is null, attempting listener cleanup only" );
             }
 
             cleanupListener( m_localPositionListener, m_localPosition );
@@ -226,8 +230,7 @@ namespace workphone::editor
 
             if( ui )
             {
-                auto removeUIElement = [ui]( SmartPtr<ui::IUIVector3> &element ) mutable
-                {
+                auto removeUIElement = [ui]( SmartPtr<ui::IUIVector3> &element ) mutable {
                     if( element )
                     {
                         try
@@ -379,10 +382,10 @@ namespace workphone::editor
     }
 
     Parameter TransformWindow::VectorListener::handleEvent( EventType eventType, hash_type eventValue,
-                                                             const Array<Parameter> &arguments,
-                                                             SmartPtr<ISharedObject> sender,
-                                                             SmartPtr<ISharedObject> object,
-                                                             SmartPtr<IEvent> event )
+                                                            const Array<Parameter> &arguments,
+                                                            SmartPtr<ISharedObject> sender,
+                                                            SmartPtr<ISharedObject> object,
+                                                            SmartPtr<IEvent> event )
     {
         try
         {
@@ -410,7 +413,8 @@ namespace workphone::editor
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
-            WP_LOG_ERROR( "TransformWindow::VectorListener::handleValueChanged: application manager is null" );
+            WP_LOG_ERROR(
+                "TransformWindow::VectorListener::handleValueChanged: application manager is null" );
             return;
         }
 
@@ -430,7 +434,8 @@ namespace workphone::editor
         auto actor = transform->getActor();
         if( !actor )
         {
-            WP_LOG_WARNING( "TransformWindow::VectorListener::handleValueChanged: transform has no actor" );
+            WP_LOG_WARNING(
+                "TransformWindow::VectorListener::handleValueChanged: transform has no actor" );
             return;
         }
 
@@ -482,7 +487,8 @@ namespace workphone::editor
             break;
             default:
             {
-                WP_LOG_WARNING( "TransformWindow::VectorListener::handleValueChanged: unknown transform type" );
+                WP_LOG_WARNING(
+                    "TransformWindow::VectorListener::handleValueChanged: unknown transform type" );
             }
             break;
             }

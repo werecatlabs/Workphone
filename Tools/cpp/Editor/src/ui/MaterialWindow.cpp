@@ -156,7 +156,10 @@ namespace workphone::editor
 
                 if( m_shaderDropdown )
                 {
-                    if( m_shaderDropdownListener ) m_shaderDropdown->removeObjectListener( m_shaderDropdownListener );
+                    if( m_shaderDropdownListener )
+                    {
+                        m_shaderDropdown->removeObjectListener( m_shaderDropdownListener );
+                    }
                     ui->removeElement( m_shaderDropdown );
                     m_shaderDropdown = nullptr;
                 }
@@ -506,9 +509,11 @@ namespace workphone::editor
 
     MaterialWindow::TreeCtrlListener::~TreeCtrlListener() = default;
 
-    Parameter MaterialWindow::TreeCtrlListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter MaterialWindow::TreeCtrlListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                             const Array<Parameter> &arguments,
+                                                             SmartPtr<ISharedObject> sender,
+                                                             SmartPtr<ISharedObject> object,
+                                                             SmartPtr<IEvent> event )
     {
         if( eventValue == IEvent::handleTreeSelectionActivated )
         {
@@ -546,9 +551,11 @@ namespace workphone::editor
         m_owner = owner;
     }
 
-    Parameter MaterialWindow::DropdownListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter MaterialWindow::DropdownListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                             const Array<Parameter> &arguments,
+                                                             SmartPtr<ISharedObject> sender,
+                                                             SmartPtr<ISharedObject> object,
+                                                             SmartPtr<IEvent> event )
     {
         if( eventValue == IEvent::handleSelection )
         {
@@ -592,11 +599,11 @@ namespace workphone::editor
         /// Maps one per-parameter editor control back to the named slot it edits.
         struct ShaderParamBinding
         {
-            SmartPtr<ui::IUIElement>                   control;
-            String                                     name;
-            render::MaterialShaderParameterType        type = render::MaterialShaderParameterType::Scalar;
+            SmartPtr<ui::IUIElement> control;
+            String name;
+            render::MaterialShaderParameterType type = render::MaterialShaderParameterType::Scalar;
         };
-    }
+    }  // namespace
 
     class MaterialWindow::ShaderDropdownListener : public IEventListener
     {
@@ -606,20 +613,30 @@ namespace workphone::editor
         ShaderDropdownListener() = default;
         ~ShaderDropdownListener() override = default;
 
-        Parameter handleEvent( EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-                               SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
-                               SmartPtr<IEvent> event ) override
+        Parameter handleEvent( EventType eventType, hash_type eventValue,
+                               const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                               SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override
         {
             if( eventValue == IEvent::handleSelection )
             {
                 WP_ASSERT( m_owner );
-                if( m_owner ) m_owner->handleShaderDropdownSelection();
+                if( m_owner )
+                {
+                    m_owner->handleShaderDropdownSelection();
+                }
             }
             return {};
         }
 
-        MaterialWindow *getOwner() const { return m_owner; }
-        void setOwner( MaterialWindow *owner ) { m_owner = owner; }
+        MaterialWindow *getOwner() const
+        {
+            return m_owner;
+        }
+
+        void setOwner( MaterialWindow *owner )
+        {
+            m_owner = owner;
+        }
 
     private:
         MaterialWindow *m_owner = nullptr;
@@ -633,9 +650,9 @@ namespace workphone::editor
         ParamValueListener() = default;
         ~ParamValueListener() override = default;
 
-        Parameter handleEvent( EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-                               SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
-                               SmartPtr<IEvent> event ) override
+        Parameter handleEvent( EventType eventType, hash_type eventValue,
+                               const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                               SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override
         {
             if( eventValue == IEvent::handleValueChanged && object && m_owner )
             {
@@ -643,7 +660,8 @@ namespace workphone::editor
                 {
                     if( b.control == object )
                     {
-                        auto material = workphone::dynamic_pointer_cast<render::Material>( m_owner->getMaterial() );
+                        auto material =
+                            workphone::dynamic_pointer_cast<render::Material>( m_owner->getMaterial() );
                         if( material )
                         {
                             auto handle = material->getShaderParameters().FindParameter( b.name );
@@ -651,13 +669,24 @@ namespace workphone::editor
                             {
                                 if( b.type == render::MaterialShaderParameterType::Scalar )
                                 {
-                                    auto slider = workphone::dynamic_pointer_cast<ui::IUILabelSliderPair>( object );
-                                    if( slider ) material->getShaderParameters().SetScalar( handle, slider->getValue() );
+                                    auto slider =
+                                        workphone::dynamic_pointer_cast<ui::IUILabelSliderPair>(
+                                            object );
+                                    if( slider )
+                                    {
+                                        material->getShaderParameters().SetScalar( handle,
+                                                                                   slider->getValue() );
+                                    }
                                 }
                                 else if( b.type == render::MaterialShaderParameterType::Colour )
                                 {
-                                    auto picker = workphone::dynamic_pointer_cast<ui::IUIColourPicker>( object );
-                                    if( picker ) material->getShaderParameters().SetColour( handle, picker->getColour() );
+                                    auto picker =
+                                        workphone::dynamic_pointer_cast<ui::IUIColourPicker>( object );
+                                    if( picker )
+                                    {
+                                        material->getShaderParameters().SetColour( handle,
+                                                                                   picker->getColour() );
+                                    }
                                 }
                                 else if( b.type == render::MaterialShaderParameterType::Vector2 )
                                 {
@@ -665,7 +694,9 @@ namespace workphone::editor
                                     if( vec )
                                     {
                                         auto rv = vec->getValue();
-                                        material->getShaderParameters().SetVector2( handle, Vector2<f32>( static_cast<f32>( rv.x ), static_cast<f32>( rv.y ) ) );
+                                        material->getShaderParameters().SetVector2(
+                                            handle, Vector2<f32>( static_cast<f32>( rv.x ),
+                                                                  static_cast<f32>( rv.y ) ) );
                                     }
                                 }
                                 else if( b.type == render::MaterialShaderParameterType::Vector4 )
@@ -674,12 +705,18 @@ namespace workphone::editor
                                     if( vec )
                                     {
                                         auto rv = vec->getValue();
-                                        material->getShaderParameters().SetVector4( handle, Vector4<f32>( static_cast<f32>( rv.x ), static_cast<f32>( rv.y ), static_cast<f32>( rv.z ), static_cast<f32>( rv.w ) ) );
+                                        material->getShaderParameters().SetVector4(
+                                            handle, Vector4<f32>( static_cast<f32>( rv.x ),
+                                                                  static_cast<f32>( rv.y ),
+                                                                  static_cast<f32>( rv.z ),
+                                                                  static_cast<f32>( rv.w ) ) );
                                     }
                                 }
                                 else if( b.type == render::MaterialShaderParameterType::Texture )
                                 {
-                                    auto pathInput = workphone::dynamic_pointer_cast<ui::IUILabelTextInputPair>( object );
+                                    auto pathInput =
+                                        workphone::dynamic_pointer_cast<ui::IUILabelTextInputPair>(
+                                            object );
                                     if( pathInput )
                                     {
                                         material->setShaderTexture( b.name, pathInput->getValue() );
@@ -693,7 +730,8 @@ namespace workphone::editor
                 }
 
                 // Push the edited value into the legacy renderer path so it renders immediately.
-                auto editedMaterial = workphone::dynamic_pointer_cast<render::Material>( m_owner->getMaterial() );
+                auto editedMaterial =
+                    workphone::dynamic_pointer_cast<render::Material>( m_owner->getMaterial() );
                 if( editedMaterial )
                 {
                     editedMaterial->applyShaderParametersToRenderer();
@@ -702,16 +740,27 @@ namespace workphone::editor
             return {};
         }
 
-        void addBinding( SmartPtr<ui::IUIElement> control, const String &name, render::MaterialShaderParameterType type )
+        void addBinding( SmartPtr<ui::IUIElement> control, const String &name,
+                         render::MaterialShaderParameterType type )
         {
             ShaderParamBinding b{ control, name, type };
             m_bindings.push_back( b );
         }
 
-        void clearBindings() { m_bindings.clear(); }
+        void clearBindings()
+        {
+            m_bindings.clear();
+        }
 
-        MaterialWindow *getOwner() const { return m_owner; }
-        void setOwner( MaterialWindow *owner ) { m_owner = owner; }
+        MaterialWindow *getOwner() const
+        {
+            return m_owner;
+        }
+
+        void setOwner( MaterialWindow *owner )
+        {
+            m_owner = owner;
+        }
 
     private:
         MaterialWindow *m_owner = nullptr;
@@ -741,7 +790,7 @@ namespace workphone::editor
             Array<String> options;
             options.push_back( String( "(legacy PBR)" ) );
             u32 selectedIndex = 0;
-            auto & shaders = render::MaterialShaderRegistry::instance().getShaders();
+            auto &shaders = render::MaterialShaderRegistry::instance().getShaders();
             auto material = workphone::dynamic_pointer_cast<render::Material>( getMaterial() );
             for( size_t i = 0; i < shaders.size(); ++i )
             {
@@ -754,10 +803,16 @@ namespace workphone::editor
             m_shaderDropdown->setOptions( options );
             m_shaderDropdown->setSelectedOption( selectedIndex );
 
-            if( auto dbg = getDebugWindow() ) dbg->addChild( m_shaderDropdown );
+            if( auto dbg = getDebugWindow() )
+            {
+                dbg->addChild( m_shaderDropdown );
+            }
 
             m_shaderParamContainer = ui->addElementByType<ui::IUIWindow>();
-            if( auto dbg = getDebugWindow() ) dbg->addChild( m_shaderParamContainer );
+            if( auto dbg = getDebugWindow() )
+            {
+                dbg->addChild( m_shaderParamContainer );
+            }
 
             auto paramListener = workphone::make_ptr<ParamValueListener>();
             paramListener->setOwner( this );
@@ -773,10 +828,16 @@ namespace workphone::editor
 
     void MaterialWindow::handleShaderDropdownSelection()
     {
-        if( !m_shaderDropdown ) return;
+        if( !m_shaderDropdown )
+        {
+            return;
+        }
         auto idx = m_shaderDropdown->getSelectedOption();
         auto material = workphone::dynamic_pointer_cast<render::Material>( getMaterial() );
-        if( !material ) return;
+        if( !material )
+        {
+            return;
+        }
 
         if( idx == 0 )
         {
@@ -784,9 +845,12 @@ namespace workphone::editor
             return;
         }
 
-        auto & shaders = render::MaterialShaderRegistry::instance().getShaders();
-        if( idx - 1 >= shaders.size() ) return;
-        auto const & shader = shaders[ idx - 1 ];
+        auto &shaders = render::MaterialShaderRegistry::instance().getShaders();
+        if( idx - 1 >= shaders.size() )
+        {
+            return;
+        }
+        auto const &shader = shaders[idx - 1];
         material->setShaderParameters( shader.getParameterInfo(), shader.getShaderID() );
         if( shader.getShaderID() == "DefaultPBR" )
         {
@@ -805,22 +869,32 @@ namespace workphone::editor
         {
             ui->removeElement( m_shaderParamContainer );
             m_shaderParamContainer = ui->addElementByType<ui::IUIWindow>();
-            if( auto dbg = getDebugWindow() ) dbg->addChild( m_shaderParamContainer );
+            if( auto dbg = getDebugWindow() )
+            {
+                dbg->addChild( m_shaderParamContainer );
+            }
         }
 
-        if( auto paramListener = workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
+        if( auto paramListener =
+                workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
         {
             paramListener->clearBindings();
         }
 
         auto material = workphone::dynamic_pointer_cast<render::Material>( getMaterial() );
-        if( !material || !material->isDataDriven() ) return;
+        if( !material || !material->isDataDriven() )
+        {
+            return;
+        }
 
-        auto const & info = material->getShaderParameters().GetParameterInfo();
+        auto const &info = material->getShaderParameters().GetParameterInfo();
         for( auto const &p : info )
         {
             auto handle = material->getShaderParameters().FindParameter( p.m_name );
-            if( !handle.IsValid() ) continue;
+            if( !handle.IsValid() )
+            {
+                continue;
+            }
 
             if( p.m_type == render::MaterialShaderParameterType::Scalar )
             {
@@ -829,9 +903,16 @@ namespace workphone::editor
                 slider->setMinValue( 0.0f );
                 slider->setMaxValue( 1.0f );
                 slider->setValue( material->getShaderParameters().GetScalar( handle ) );
-                if( m_paramValueListener ) slider->addObjectListener( m_paramValueListener );
-                if( m_shaderParamContainer ) m_shaderParamContainer->addChild( slider );
-                if( auto paramListener = workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
+                if( m_paramValueListener )
+                {
+                    slider->addObjectListener( m_paramValueListener );
+                }
+                if( m_shaderParamContainer )
+                {
+                    m_shaderParamContainer->addChild( slider );
+                }
+                if( auto paramListener =
+                        workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
                 {
                     paramListener->addBinding( slider, p.m_name, p.m_type );
                 }
@@ -841,9 +922,16 @@ namespace workphone::editor
                 auto picker = ui->addElementByType<ui::IUIColourPicker>();
                 picker->setLabel( p.m_name );
                 picker->setColour( material->getShaderParameters().GetColour( handle ) );
-                if( m_paramValueListener ) picker->addObjectListener( m_paramValueListener );
-                if( m_shaderParamContainer ) m_shaderParamContainer->addChild( picker );
-                if( auto paramListener = workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
+                if( m_paramValueListener )
+                {
+                    picker->addObjectListener( m_paramValueListener );
+                }
+                if( m_shaderParamContainer )
+                {
+                    m_shaderParamContainer->addChild( picker );
+                }
+                if( auto paramListener =
+                        workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
                 {
                     paramListener->addBinding( picker, p.m_name, p.m_type );
                 }
@@ -853,10 +941,18 @@ namespace workphone::editor
                 auto vec = ui->addElementByType<ui::IUIVector2>();
                 vec->setLabel( p.m_name );
                 auto v = material->getShaderParameters().GetVector2f( handle );
-                vec->setValue( Vector2<real_Num>( static_cast<real_Num>( v.x ), static_cast<real_Num>( v.y ) ) );
-                if( m_paramValueListener ) vec->addObjectListener( m_paramValueListener );
-                if( m_shaderParamContainer ) m_shaderParamContainer->addChild( vec );
-                if( auto paramListener = workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
+                vec->setValue(
+                    Vector2<real_Num>( static_cast<real_Num>( v.x ), static_cast<real_Num>( v.y ) ) );
+                if( m_paramValueListener )
+                {
+                    vec->addObjectListener( m_paramValueListener );
+                }
+                if( m_shaderParamContainer )
+                {
+                    m_shaderParamContainer->addChild( vec );
+                }
+                if( auto paramListener =
+                        workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
                 {
                     paramListener->addBinding( vec, p.m_name, p.m_type );
                 }
@@ -866,10 +962,19 @@ namespace workphone::editor
                 auto vec = ui->addElementByType<ui::IUIVector4>();
                 vec->setLabel( p.m_name );
                 auto v = material->getShaderParameters().GetVector4f( handle );
-                vec->setValue( Vector4<real_Num>( static_cast<real_Num>( v.x ), static_cast<real_Num>( v.y ), static_cast<real_Num>( v.z ), static_cast<real_Num>( v.w ) ) );
-                if( m_paramValueListener ) vec->addObjectListener( m_paramValueListener );
-                if( m_shaderParamContainer ) m_shaderParamContainer->addChild( vec );
-                if( auto paramListener = workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
+                vec->setValue(
+                    Vector4<real_Num>( static_cast<real_Num>( v.x ), static_cast<real_Num>( v.y ),
+                                       static_cast<real_Num>( v.z ), static_cast<real_Num>( v.w ) ) );
+                if( m_paramValueListener )
+                {
+                    vec->addObjectListener( m_paramValueListener );
+                }
+                if( m_shaderParamContainer )
+                {
+                    m_shaderParamContainer->addChild( vec );
+                }
+                if( auto paramListener =
+                        workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
                 {
                     paramListener->addBinding( vec, p.m_name, p.m_type );
                 }
@@ -879,9 +984,16 @@ namespace workphone::editor
                 auto pathInput = ui->addElementByType<ui::IUILabelTextInputPair>();
                 pathInput->setLabel( p.m_name );
                 pathInput->setValue( material->getShaderTexture( p.m_name ) );
-                if( m_paramValueListener ) pathInput->addObjectListener( m_paramValueListener );
-                if( m_shaderParamContainer ) m_shaderParamContainer->addChild( pathInput );
-                if( auto paramListener = workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
+                if( m_paramValueListener )
+                {
+                    pathInput->addObjectListener( m_paramValueListener );
+                }
+                if( m_shaderParamContainer )
+                {
+                    m_shaderParamContainer->addChild( pathInput );
+                }
+                if( auto paramListener =
+                        workphone::dynamic_pointer_cast<ParamValueListener>( m_paramValueListener ) )
                 {
                     paramListener->addBinding( pathInput, p.m_name, p.m_type );
                 }
@@ -891,7 +1003,10 @@ namespace workphone::editor
                 // Matrices / buffers / samplers: read-only label for now (step 4b-ext).
                 auto label = ui->addElementByType<ui::IUIText>();
                 label->setText( p.m_name + String( "  (matrix/buffer/sampler)" ) );
-                if( m_shaderParamContainer ) m_shaderParamContainer->addChild( label );
+                if( m_shaderParamContainer )
+                {
+                    m_shaderParamContainer->addChild( label );
+                }
             }
         }
     }

@@ -48,10 +48,10 @@ namespace workphone::editor
 
     void EditorWindow::unload( SmartPtr<ISharedObject> data )
     {
-        const auto hasResources =
-            m_applicationListener || getEventListener() || getWindowDragSource() ||
-            getWindowDropTarget() || getInvoker() || getReceiver() || getScriptClass() ||
-            getDebugWindow() || getParentWindow() || !m_dataArray.empty();
+        const auto hasResources = m_applicationListener || getEventListener() || getWindowDragSource() ||
+                                  getWindowDropTarget() || getInvoker() || getReceiver() ||
+                                  getScriptClass() || getDebugWindow() || getParentWindow() ||
+                                  !m_dataArray.empty();
 
         if( getLoadingState() == LoadingState::Unloaded && !hasResources )
         {
@@ -68,8 +68,11 @@ namespace workphone::editor
                 applicationManager->removeObjectListener( applicationListener );
             }
 
-            if( auto listener = workphone::dynamic_pointer_cast<ApplicationListener>( applicationListener ) )
+            if( auto listener =
+                    workphone::dynamic_pointer_cast<ApplicationListener>( applicationListener ) )
+            {
                 listener->setOwner( nullptr );
+            }
             m_applicationListener = nullptr;
         }
 
@@ -82,11 +85,17 @@ namespace workphone::editor
         // UI controls can retain these callbacks after their editor window is
         // released. Disconnect their weak owners while this window is still alive.
         if( auto listener = workphone::dynamic_pointer_cast<UIListener>( getEventListener() ) )
+        {
             listener->setOwner( nullptr );
+        }
         if( auto source = workphone::dynamic_pointer_cast<UIDragSource>( getWindowDragSource() ) )
+        {
             source->setOwner( nullptr );
+        }
         if( auto target = workphone::dynamic_pointer_cast<UIDropTarget>( getWindowDropTarget() ) )
+        {
             target->setOwner( nullptr );
+        }
 
         GameEditor::unload( data );
 
@@ -490,9 +499,11 @@ namespace workphone::editor
     {
     }
 
-    Parameter EditorWindow::ApplicationListener::handleEvent(
-        EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    Parameter EditorWindow::ApplicationListener::handleEvent( EventType eventType, hash_type eventValue,
+                                                              const Array<Parameter> &arguments,
+                                                              SmartPtr<ISharedObject> sender,
+                                                              SmartPtr<ISharedObject> object,
+                                                              SmartPtr<IEvent> event )
     {
         if( auto owner = getOwner() )
         {

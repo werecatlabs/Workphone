@@ -10,11 +10,15 @@ static wp_c8 *wp_script_strdup( const wp_c8 *source )
     wp_c8 *copy;
 
     if( !source )
+    {
         return NULL;
+    }
     length = strlen( source ) + 1u;
     copy = (wp_c8 *)malloc( length );
     if( copy )
+    {
         memcpy( copy, source, length );
+    }
     return copy;
 }
 
@@ -26,7 +30,9 @@ static wp_s32 wp_script_parent_is_valid( wp_script_class *klass, wp_script_class
     while( parent && depth < TABLE_SIZE )
     {
         if( parent == klass )
+        {
             return 0;
+        }
         parent = parent->parent;
         depth++;
     }
@@ -39,7 +45,9 @@ static void wp_script_resolve_parents( wp_script_state *state )
     wp_script_class *parent;
 
     if( !state )
+    {
         return;
+    }
     klass = state->classes;
     while( klass )
     {
@@ -47,7 +55,9 @@ static void wp_script_resolve_parents( wp_script_state *state )
         {
             parent = wp_script_find_class( state, klass->parent_name );
             if( parent && wp_script_parent_is_valid( klass, parent ) )
+            {
                 klass->parent = parent;
+            }
         }
         klass = klass->next;
     }
@@ -58,21 +68,26 @@ WP_SCRIPT_LIB wp_script_class *wp_script_find_class( wp_script_state *state, con
     wp_script_value value;
 
     if( !state || !name )
+    {
         return NULL;
+    }
     value = wp_script_table_get( &state->globals, name );
     if( value.type != VAL_CLASS )
+    {
         return NULL;
+    }
     return value.as.klass;
 }
 
-WP_SCRIPT_LIB wp_s32 wp_script_class_set_parent( wp_script_class *klass,
-                                                 const wp_c8 *parent_name )
+WP_SCRIPT_LIB wp_s32 wp_script_class_set_parent( wp_script_class *klass, const wp_c8 *parent_name )
 {
     wp_c8 *copy;
     wp_script_class *parent;
 
     if( !klass )
+    {
         return 0;
+    }
     copy = NULL;
     parent = NULL;
     if( parent_name && parent_name[0] )
@@ -102,11 +117,15 @@ WP_SCRIPT_LIB wp_script_class *wp_script_new_class( wp_script_state *state, cons
     wp_script_class *klass;
 
     if( !state || !name || !name[0] )
+    {
         return NULL;
+    }
 
     klass = wp_script_find_class( state, name );
     if( klass )
+    {
         return klass;
+    }
 
     klass = (wp_script_class *)calloc( 1, sizeof( wp_script_class ) );
     if( !klass )
@@ -147,12 +166,13 @@ WP_SCRIPT_LIB wp_script_class *wp_script_create_class( wp_script_state *state, c
 WP_SCRIPT_LIB wp_script_object *wp_script_new_object( wp_script_state *state, wp_script_class *klass )
 {
     if( !state || !klass )
+    {
         return NULL;
+    }
     return wp_script_lua_new_object( state, klass );
 }
 
-WP_SCRIPT_LIB wp_script_value wp_script_class_get_method( wp_script_class *klass,
-                                                           const wp_c8 *name )
+WP_SCRIPT_LIB wp_script_value wp_script_class_get_method( wp_script_class *klass, const wp_c8 *name )
 {
     wp_script_value value;
     wp_s32 depth;
@@ -162,7 +182,9 @@ WP_SCRIPT_LIB wp_script_value wp_script_class_get_method( wp_script_class *klass
     {
         value = wp_script_table_get( &klass->methods, name );
         if( value.type != VAL_NIL )
+        {
             return value;
+        }
         klass = klass->parent;
         depth++;
     }
@@ -170,10 +192,12 @@ WP_SCRIPT_LIB wp_script_value wp_script_class_get_method( wp_script_class *klass
 }
 
 WP_SCRIPT_LIB wp_script_value wp_script_class_get_super_method( wp_script_class *klass,
-                                                                 const wp_c8 *name )
+                                                                const wp_c8 *name )
 {
     if( !klass )
+    {
         return wp_script_make_nil();
+    }
     return wp_script_class_get_method( klass->parent, name );
 }
 
@@ -187,16 +211,22 @@ WP_SCRIPT_LIB wp_script_class *wp_script_bind_class( wp_script_state *state, con
 
     klass = wp_script_new_class( state, name );
     if( !klass )
+    {
         return NULL;
+    }
 
     if( !wp_script_class_set_parent( klass, parent_name ) )
+    {
         return NULL;
+    }
     klass->native_create = create_fn;
     klass->native_destroy = destroy_fn;
     klass->native_user_data = user_data;
     wp_script_resolve_parents( state );
     if( !wp_script_lua_bind_class( klass ) )
+    {
         return NULL;
+    }
     return klass;
 }
 
@@ -204,7 +234,9 @@ WP_SCRIPT_LIB wp_s32 wp_script_bind_method( wp_script_class *klass, const wp_c8 
                                             wp_script_native_method method, void *user_data )
 {
     if( !klass || !name || !method )
+    {
         return 0;
+    }
     if( !wp_script_table_set( &klass->methods, name,
                               wp_script_make_native_method( method, user_data ) ) )
     {
@@ -220,13 +252,13 @@ WP_SCRIPT_LIB void *wp_script_object_get_native( const wp_script_object *object 
 }
 
 WP_SCRIPT_LIB void wp_script_object_set_native( wp_script_object *object, void *native_object,
-                                                wp_script_native_destroy destroy_fn,
-                                                void *user_data )
+                                                wp_script_native_destroy destroy_fn, void *user_data )
 {
     if( !object )
+    {
         return;
-    if( object->native_object && object->native_destroy &&
-        object->native_object != native_object )
+    }
+    if( object->native_object && object->native_destroy && object->native_object != native_object )
     {
         object->native_destroy( object->native_object, object->native_user_data );
     }

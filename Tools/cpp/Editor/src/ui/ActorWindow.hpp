@@ -14,7 +14,7 @@ namespace workphone
     {
         /**
          * @brief A window for managing actors and their components in the editor.
-         * 
+         *
          * The ActorWindow provides a user interface for viewing and manipulating actors in the scene.
          * It displays a hierarchical tree of actors and their components, allowing users to:
          * - View and edit actor properties (name, enabled state, visibility, etc.)
@@ -27,7 +27,7 @@ namespace workphone
         public:
             /**
              * @brief Event listener class for handling UI element interactions.
-             * 
+             *
              * This class processes events from UI elements within the ActorWindow,
              * such as button clicks and property changes.
              */
@@ -81,22 +81,22 @@ namespace workphone
              */
             enum class WidgetId
             {
-                Label,          ///< Label widget
-                Enabled,        ///< Enable/disable toggle
-                Visible,        ///< Visibility toggle
-                Static,         ///< Static state toggle
-                SmoothMotion,   ///< Smooth motion toggle
-                CollisionMask,  ///< Physics collision mask input
+                Label,                 ///< Label widget
+                Enabled,               ///< Enable/disable toggle
+                Visible,               ///< Visibility toggle
+                Static,                ///< Static state toggle
+                SmoothMotion,          ///< Smooth motion toggle
+                CollisionMask,         ///< Physics collision mask input
                 ManageCollisionMasks,  ///< Opens central collision mask dialog
-                Layer,          ///< Actor layer input
-                ManageLayers,   ///< Opens central layer management dialog
-                Tags,           ///< Actor tags input
-                ManageTags,     ///< Opens central tag management dialog
-                ConfigureNetwork, ///< Adds or selects the actor's NetworkView
-                ComponentSearch,///< Component hierarchy search input
-                AddComponent,   ///< Add component button
-                RemoveComponent,///< Remove component button
-                Count           ///< Total number of widgets
+                Layer,                 ///< Actor layer input
+                ManageLayers,          ///< Opens central layer management dialog
+                Tags,                  ///< Actor tags input
+                ManageTags,            ///< Opens central tag management dialog
+                ConfigureNetwork,      ///< Adds or selects the actor's NetworkView
+                ComponentSearch,       ///< Component hierarchy search input
+                AddComponent,          ///< Add component button
+                RemoveComponent,       ///< Remove component button
+                Count                  ///< Total number of widgets
             };
 
             /**
@@ -124,7 +124,7 @@ namespace workphone
 
             /**
              * @brief Builds the actor hierarchy tree view.
-             * 
+             *
              * This method populates the tree control with all actors and their components
              * in the current scene.
              */
@@ -155,7 +155,7 @@ namespace workphone
 
             /**
              * @brief Updates the current selection in the window.
-             * 
+             *
              * This method is called when the user selects a different actor or component
              * in the tree view.
              */
@@ -228,8 +228,7 @@ namespace workphone
 
             void selectCollisionMask( u32 collisionMask );
 
-            bool updateComponentNodeFilter( SmartPtr<ui::IUITreeNode> node,
-                                            const String &filter );
+            bool updateComponentNodeFilter( SmartPtr<ui::IUITreeNode> node, const String &filter );
 
             void setActorControlsEnabled( bool enabled );
 
@@ -238,31 +237,31 @@ namespace workphone
             SmartPtr<ui::IUIWindow> m_actorWindow;      ///< Main actor window container
             SmartPtr<ui::IUIWindow> m_componentWindow;  ///< Component window container
 
-            SmartPtr<ui::IUITreeCtrl> m_tree;          ///< Tree control for actor hierarchy
-            SmartPtr<IEventListener> m_uiListener;      ///< UI event listener
-            SmartPtr<ui::IUIText> m_selectionSummary;   ///< Current inspector selection summary
-            SmartPtr<ui::IUITextEntry> m_componentSearchEntry; ///< Component filter input
+            SmartPtr<ui::IUITreeCtrl> m_tree;                   ///< Tree control for actor hierarchy
+            SmartPtr<IEventListener> m_uiListener;              ///< UI event listener
+            SmartPtr<ui::IUIText> m_selectionSummary;           ///< Current inspector selection summary
+            SmartPtr<ui::IUITextEntry> m_componentSearchEntry;  ///< Component filter input
 
-            SmartPtr<ui::IUILabelTogglePair> m_actorEnabled;      ///< Actor enabled state toggle
-            SmartPtr<ui::IUILabelTogglePair> m_actorVisible;      ///< Actor visibility toggle
-            SmartPtr<ui::IUILabelTogglePair> m_actorStatic;       ///< Actor static state toggle
-            SmartPtr<ui::IUILabelTogglePair> m_actorSmoothMotion; ///< Actor smooth motion toggle
-            SmartPtr<ui::IUILabelDropdownPair> m_actorCollisionMask; ///< Actor physics collision mask
-            SmartPtr<ui::IUIButton> m_manageCollisionMasksButton;    ///< Opens collision mask dialog
-            SmartPtr<ui::IUILabelDropdownPair> m_actorLayerPair; ///< Actor layer dropdown
-            SmartPtr<ui::IUIButton> m_manageLayersButton;        ///< Opens layer dialog
-            SmartPtr<ui::IUILabelTextInputPair> m_actorTagsPair; ///< Actor tags display field
-            SmartPtr<ui::IUIButton> m_manageTagsButton;          ///< Opens tag dialog
-            SmartPtr<ui::IUIText> m_networkSummary;              ///< Actor networking status
-            SmartPtr<ui::IUIButton> m_configureNetworkButton;    ///< Adds/selects NetworkView
+            SmartPtr<ui::IUILabelTogglePair> m_actorEnabled;          ///< Actor enabled state toggle
+            SmartPtr<ui::IUILabelTogglePair> m_actorVisible;          ///< Actor visibility toggle
+            SmartPtr<ui::IUILabelTogglePair> m_actorStatic;           ///< Actor static state toggle
+            SmartPtr<ui::IUILabelTogglePair> m_actorSmoothMotion;     ///< Actor smooth motion toggle
+            SmartPtr<ui::IUILabelDropdownPair> m_actorCollisionMask;  ///< Actor physics collision mask
+            SmartPtr<ui::IUIButton> m_manageCollisionMasksButton;     ///< Opens collision mask dialog
+            SmartPtr<ui::IUILabelDropdownPair> m_actorLayerPair;      ///< Actor layer dropdown
+            SmartPtr<ui::IUIButton> m_manageLayersButton;             ///< Opens layer dialog
+            SmartPtr<ui::IUILabelTextInputPair> m_actorTagsPair;      ///< Actor tags display field
+            SmartPtr<ui::IUIButton> m_manageTagsButton;               ///< Opens tag dialog
+            SmartPtr<ui::IUIText> m_networkSummary;                   ///< Actor networking status
+            SmartPtr<ui::IUIButton> m_configureNetworkButton;         ///< Adds/selects NetworkView
 
-            SmartPtr<ui::IUIButton> m_addComponentButton;    ///< Button to add components
-            SmartPtr<ui::IUIButton> m_removeComponentButton; ///< Button to remove components
+            SmartPtr<ui::IUIButton> m_addComponentButton;     ///< Button to add components
+            SmartPtr<ui::IUIButton> m_removeComponentButton;  ///< Button to remove components
 
-            SmartPtr<ui::IUILabelTextInputPair> m_actorNamePair; ///< Actor name input field
+            SmartPtr<ui::IUILabelTextInputPair> m_actorNamePair;  ///< Actor name input field
 
-            SmartPtr<TransformWindow> m_transformWindow;     ///< Transform properties window
-            SmartPtr<PropertiesWindow> m_propertiesWindow;   ///< General properties window
+            SmartPtr<TransformWindow> m_transformWindow;    ///< Transform properties window
+            SmartPtr<PropertiesWindow> m_propertiesWindow;  ///< General properties window
             SmartPtr<EventsWindow> m_eventsWindow;          ///< Events configuration window
 
             SmartPtr<EditorWindow> m_materialWindow;        ///< Material properties window

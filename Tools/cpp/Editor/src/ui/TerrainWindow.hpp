@@ -19,15 +19,18 @@ namespace workphone
                 Parameter handleEvent( EventType, hash_type, const Array<Parameter> &,
                                        SmartPtr<ISharedObject>, SmartPtr<ISharedObject>,
                                        SmartPtr<IEvent> ) override;
+
                 void setOwner( SmartPtr<TerrainWindow> owner )
                 {
                     m_owner = owner;
                 }
+
                 WP_CLASS_REGISTER_DECL;
 
             private:
                 AtomicWeakPtr<TerrainWindow> m_owner;
             };
+
             class UIElementListener : public IEventListener
             {
             public:

@@ -23,13 +23,18 @@ namespace workphone::editor
         if( !catalog || !m_creationSession.isCurrent( catalog ) || app->getProjectPath().empty() ||
             !canonicalAssetCatalogRoot( app->getProjectPath(), root, error ) ||
             root != catalog->getProjectRoot() )
+        {
             return nullptr;
+        }
         return catalog;
     }
+
     void AddResourceCmd::redo()
     {
         if( m_undoOperationId.empty() )
+        {
             return;
+        }
         auto catalog = activeCreationCatalog();
         if( !catalog )
         {
@@ -45,8 +50,10 @@ namespace workphone::editor
         m_undoOperationId.clear();
         auto app = core::IApplicationManager::instancePtr();
         if( auto fs = app->getFileSystem() )
+        {
             fs->refreshPath( Path::getFilePath( String( m_createdFilePath ) ),
                              app->getJobQueue() != nullptr );
+        }
     }
 
     void AddResourceCmd::execute()
@@ -59,7 +66,9 @@ namespace workphone::editor
                 return;
             }
             if( !String( m_createdFilePath ).empty() )
+            {
                 return;
+            }
             auto applicationManager = core::IApplicationManager::instance();
             WP_ASSERT( applicationManager );
 
@@ -74,14 +83,20 @@ namespace workphone::editor
                                             : nullptr;
             if( !catalog || catalog->isReadOnly() || !m_creationSession.capture( catalog ) ||
                 !activeCreationCatalog() )
+            {
                 throw std::runtime_error(
                     "Asset creation requires the active writable project catalog" );
+            }
             AssetCatalogPath source;
             String error;
             if( !canonicalAssetCatalogPath( catalog->getProjectRoot(), getFilePath(), source, error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
             if( source.key == ".workphone" || source.key.find( ".workphone/" ) == 0 )
+            {
                 throw std::runtime_error( "Asset operation storage is reserved" );
+            }
             auto filePath = catalog->getProjectRoot() + "/" + source.path;
 
             SmartPtr<IResource> resource;
@@ -115,7 +130,9 @@ namespace workphone::editor
             case ResourceType::Material:
             {
                 if( !application )
+                {
                     throw std::runtime_error( "Material creation requires an application" );
+                }
                 resource = application->createDefaultMaterial();
                 WP_ASSERT( resource );
 
@@ -172,13 +189,17 @@ namespace workphone::editor
                 }
 
                 if( fileSystem->isExistingFile( newFilePath ) )
+                {
                     throw std::runtime_error( "Cannot find an unused asset filename" );
+                }
                 fileSystem->writeAllText( newFilePath, dataStr );
                 createdFilePath = newFilePath;
             }
 
             if( !fileSystem->isExistingFile( createdFilePath ) )
+            {
                 throw std::runtime_error( "Created asset file was not written" );
+            }
             m_createdFilePath = createdFilePath;
 
             if( resource )
@@ -200,7 +221,9 @@ namespace workphone::editor
     void AddResourceCmd::undo()
     {
         if( String( m_createdFilePath ).empty() || !m_undoOperationId.empty() )
+        {
             return;
+        }
         auto catalog = activeCreationCatalog();
         if( !catalog )
         {
@@ -217,8 +240,10 @@ namespace workphone::editor
         m_undoOperationId = result.operationId;
         auto app = core::IApplicationManager::instancePtr();
         if( auto fs = app->getFileSystem() )
+        {
             fs->refreshPath( Path::getFilePath( String( m_createdFilePath ) ),
                              app->getJobQueue() != nullptr );
+        }
     }
 
     String AddResourceCmd::getFilePath() const

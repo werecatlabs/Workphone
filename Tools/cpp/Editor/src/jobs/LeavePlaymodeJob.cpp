@@ -21,7 +21,7 @@ namespace workphone::editor
                 scene->removeActor( editorCamera );
             }
         }
-    }
+    }  // namespace
 
     LeavePlaymodeJob::LeavePlaymodeJob()
     {

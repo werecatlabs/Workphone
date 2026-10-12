@@ -25,6 +25,7 @@ namespace workphone::editor
         private:
             ObjectObserver<AssetDatabaseWindow> m_owner;
         };
+
         ~AssetDatabaseWindow() override;
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;

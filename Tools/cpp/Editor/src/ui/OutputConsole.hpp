@@ -11,11 +11,10 @@ namespace workphone
         class OutputConsole : public EditorWindow
         {
         public:
-
-             WP_CLASS_REGISTER_DECL;
+            WP_CLASS_REGISTER_DECL;
         };
 
     }  // namespace editor
 }  // namespace workphone
 
-#endif // OutputConsole_h__
+#endif  // OutputConsole_h__

@@ -217,8 +217,7 @@ namespace workphone::editor
 
     Parameter CollisionMaskDialog::UIElementListener::handleEvent(
         EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
-        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
-        SmartPtr<IEvent> event )
+        SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
         auto owner = getOwner();
         if( !owner )
@@ -245,7 +244,8 @@ namespace workphone::editor
             {
                 if( auto selectedNode = owner->m_tree->getSelectedTreeNode() )
                 {
-                    const auto optionIndex = maskManager->getOptionIndexByName( selectedNode->getLabel() );
+                    const auto optionIndex =
+                        maskManager->getOptionIndexByName( selectedNode->getLabel() );
                     owner->m_maskName->setValue( maskManager->getOptionNameByIndex( optionIndex ) );
                     owner->m_maskValue->setValue(
                         StringUtil::toString( maskManager->getMaskByIndex( optionIndex ) ) );
@@ -254,8 +254,8 @@ namespace workphone::editor
             break;
             case WidgetId::AddMask:
             {
-                const auto mask = parseMaskValue( owner->m_maskValue->getValue(),
-                                                  maskManager->getDefaultMask() );
+                const auto mask =
+                    parseMaskValue( owner->m_maskValue->getValue(), maskManager->getDefaultMask() );
                 maskManager->addOption( owner->m_maskName->getValue(), mask );
                 owner->m_maskValue->setValue( StringUtil::toString( mask ) );
                 owner->populate();

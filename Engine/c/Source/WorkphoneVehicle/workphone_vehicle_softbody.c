@@ -30,7 +30,7 @@
  * ====================================================================== */
 
 static wp_s32 wp_softbody_vehicle_is_valid_node_index( const wp_softbody_vehicle *vehicle,
-                                                        wp_s32 node_index )
+                                                       wp_s32 node_index )
 {
     if( vehicle == NULL || vehicle->nodes == NULL )
     {
@@ -46,7 +46,7 @@ static wp_s32 wp_softbody_vehicle_is_valid_node_index( const wp_softbody_vehicle
 }
 
 static wp_s32 wp_softbody_vehicle_is_valid_beam_index( const wp_softbody_vehicle *vehicle,
-                                                        wp_s32 beam_index )
+                                                       wp_s32 beam_index )
 {
     if( vehicle == NULL || vehicle->beams == NULL )
     {
@@ -181,8 +181,7 @@ static void wp_softbody_vehicle_solve_beams( wp_softbody_vehicle *vehicle, wp_f3
         relative_speed = wp_vec3f_dot( wp_vec3f_sub( node_b->velocity, node_a->velocity ), direction );
         spring_force = beam->stiffness * extension;
         damping_force = beam->damping * relative_speed;
-        force_magnitude = wp_clampf( spring_force + damping_force,
-                                     -vehicle->maximum_beam_force,
+        force_magnitude = wp_clampf( spring_force + damping_force, -vehicle->maximum_beam_force,
                                      vehicle->maximum_beam_force );
         force = wp_vec3f_scale( direction, force_magnitude );
 
@@ -199,8 +198,8 @@ static void wp_softbody_vehicle_solve_beams( wp_softbody_vehicle *vehicle, wp_f3
 }
 
 static void wp_softbody_vehicle_resolve_collision( wp_softbody_vehicle *vehicle,
-                                                     wp_softbody_node_state *node,
-                                                     wp_vec3f target_position, wp_f32 delta_time )
+                                                   wp_softbody_node_state *node,
+                                                   wp_vec3f target_position, wp_f32 delta_time )
 {
     wp_vec3f movement;
     wp_f32 distance;
@@ -227,11 +226,9 @@ static void wp_softbody_vehicle_resolve_collision( wp_softbody_vehicle *vehicle,
         return;
     }
 
-    hit = vehicle->callbacks.raycast( vehicle->callbacks.user_data,
-                                       node->position,
-                                       wp_vec3f_negate( direction ),
-                                       max_distance,
-                                       vehicle->collision_mask );
+    hit = vehicle->callbacks.raycast( vehicle->callbacks.user_data, node->position,
+                                      wp_vec3f_negate( direction ), max_distance,
+                                      vehicle->collision_mask );
 
     if( !hit.hit )
     {
@@ -266,12 +263,10 @@ static void wp_softbody_vehicle_resolve_collision( wp_softbody_vehicle *vehicle,
         if( vehicle->callbacks.apply_impulse != NULL && hit.body != NULL && !node->anchored )
         {
             wp_f32 node_mass = 1.0f / node->inverse_mass;
-            wp_vec3f node_impulse = wp_vec3f_scale( wp_vec3f_sub( new_velocity, old_velocity ),
-                                                     node_mass );
-            vehicle->callbacks.apply_impulse( vehicle->callbacks.user_data,
-                                                hit.body,
-                                                hit.point,
-                                                wp_vec3f_negate( node_impulse ) );
+            wp_vec3f node_impulse =
+                wp_vec3f_scale( wp_vec3f_sub( new_velocity, old_velocity ), node_mass );
+            vehicle->callbacks.apply_impulse( vehicle->callbacks.user_data, hit.body, hit.point,
+                                              wp_vec3f_negate( node_impulse ) );
         }
     }
 }
@@ -306,8 +301,8 @@ static void wp_softbody_vehicle_integrate_nodes( wp_softbody_vehicle *vehicle, w
         if( speed_squared > maximum_speed_squared )
         {
             wp_f32 inverse_speed = 1.0f / wp_sqrtf( speed_squared );
-            node->velocity = wp_vec3f_scale( node->velocity,
-                                                vehicle->maximum_node_speed * inverse_speed );
+            node->velocity =
+                wp_vec3f_scale( node->velocity, vehicle->maximum_node_speed * inverse_speed );
         }
 
         target_position = wp_vec3f_add( node->position, wp_vec3f_scale( node->velocity, delta_time ) );
@@ -369,15 +364,15 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
         return;
     }
 
-    vehicle->node_definitions = ( wp_softbody_node_def * )malloc(
-        ( wp_size )node_count * sizeof( wp_softbody_node_def ) );
+    vehicle->node_definitions =
+        (wp_softbody_node_def *)malloc( (wp_size)node_count * sizeof( wp_softbody_node_def ) );
     if( vehicle->node_definitions == NULL )
     {
         return;
     }
 
-    vehicle->nodes = ( wp_softbody_node_state * )malloc(
-        ( wp_size )node_count * sizeof( wp_softbody_node_state ) );
+    vehicle->nodes =
+        (wp_softbody_node_state *)malloc( (wp_size)node_count * sizeof( wp_softbody_node_state ) );
     if( vehicle->nodes == NULL )
     {
         free( vehicle->node_definitions );
@@ -385,8 +380,7 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
         return;
     }
 
-    vehicle->external_forces = ( wp_vec3f * )malloc(
-        ( wp_size )node_count * sizeof( wp_vec3f ) );
+    vehicle->external_forces = (wp_vec3f *)malloc( (wp_size)node_count * sizeof( wp_vec3f ) );
     if( vehicle->external_forces == NULL )
     {
         free( vehicle->nodes );
@@ -396,10 +390,8 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
         return;
     }
 
-    memcpy( vehicle->node_definitions, nodes,
-            ( wp_size )node_count * sizeof( wp_softbody_node_def ) );
-    memset( vehicle->external_forces, 0,
-            ( wp_size )node_count * sizeof( wp_vec3f ) );
+    memcpy( vehicle->node_definitions, nodes, (wp_size)node_count * sizeof( wp_softbody_node_def ) );
+    memset( vehicle->external_forces, 0, (wp_size)node_count * sizeof( wp_vec3f ) );
 
     vehicle->node_count = node_count;
 
@@ -427,10 +419,10 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
 
     if( beams != NULL && beam_count > 0 )
     {
-        vehicle->beam_definitions = ( wp_softbody_beam_def * )malloc(
-            ( wp_size )beam_count * sizeof( wp_softbody_beam_def ) );
-        vehicle->beams = ( wp_softbody_beam_state * )malloc(
-            ( wp_size )beam_count * sizeof( wp_softbody_beam_state ) );
+        vehicle->beam_definitions =
+            (wp_softbody_beam_def *)malloc( (wp_size)beam_count * sizeof( wp_softbody_beam_def ) );
+        vehicle->beams =
+            (wp_softbody_beam_state *)malloc( (wp_size)beam_count * sizeof( wp_softbody_beam_state ) );
 
         if( vehicle->beam_definitions == NULL || vehicle->beams == NULL )
         {
@@ -438,8 +430,7 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
             return;
         }
 
-        memcpy( vehicle->beam_definitions, beams,
-                ( wp_size )beam_count * sizeof( wp_softbody_beam_def ) );
+        memcpy( vehicle->beam_definitions, beams, (wp_size)beam_count * sizeof( wp_softbody_beam_def ) );
         vehicle->beam_count = beam_count;
 
         for( i = 0; i < beam_count; ++i )
@@ -458,8 +449,8 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
             beam->break_strain = definition->break_strain;
             beam->broken = wp_false;
 
-            if( beam->node_a >= 0 && beam->node_a < vehicle->node_count &&
-                beam->node_b >= 0 && beam->node_b < vehicle->node_count )
+            if( beam->node_a >= 0 && beam->node_a < vehicle->node_count && beam->node_b >= 0 &&
+                beam->node_b < vehicle->node_count )
             {
                 node_a_position = vehicle->nodes[beam->node_a].position;
                 node_b_position = vehicle->nodes[beam->node_b].position;
@@ -476,7 +467,7 @@ void wp_softbody_vehicle_set_definitions( wp_softbody_vehicle *vehicle,
 }
 
 void wp_softbody_vehicle_set_callbacks( wp_softbody_vehicle *vehicle,
-                                          wp_softbody_vehicle_callbacks callbacks )
+                                        wp_softbody_vehicle_callbacks callbacks )
 {
     if( vehicle == NULL )
     {
@@ -512,7 +503,7 @@ void wp_softbody_vehicle_step( wp_softbody_vehicle *vehicle, wp_f32 dt )
     {
         step_count = 1;
     }
-    step_delta_time = dt / ( wp_f32 )step_count;
+    step_delta_time = dt / (wp_f32)step_count;
 
     for( step = 0; step < step_count; ++step )
     {
@@ -539,8 +530,7 @@ void wp_softbody_vehicle_add_force( wp_softbody_vehicle *vehicle, wp_s32 node_in
     vehicle->external_forces[node_index] = wp_vec3f_add( vehicle->external_forces[node_index], force );
 }
 
-void wp_softbody_vehicle_add_impulse( wp_softbody_vehicle *vehicle, wp_s32 node_index,
-                                     wp_vec3f impulse )
+void wp_softbody_vehicle_add_impulse( wp_softbody_vehicle *vehicle, wp_s32 node_index, wp_vec3f impulse )
 {
     wp_softbody_node_state *node;
 
@@ -571,8 +561,7 @@ void wp_softbody_vehicle_clear_external_forces( wp_softbody_vehicle *vehicle )
         return;
     }
 
-    memset( vehicle->external_forces, 0,
-            ( wp_size )vehicle->node_count * sizeof( wp_vec3f ) );
+    memset( vehicle->external_forces, 0, (wp_size)vehicle->node_count * sizeof( wp_vec3f ) );
 }
 
 wp_s32 wp_softbody_vehicle_is_initialized( const wp_softbody_vehicle *vehicle )
@@ -605,8 +594,7 @@ wp_s32 wp_softbody_vehicle_get_beam_count( const wp_softbody_vehicle *vehicle )
     return vehicle->beam_count;
 }
 
-wp_vec3f wp_softbody_vehicle_get_node_position( const wp_softbody_vehicle *vehicle,
-                                                wp_s32 node_index )
+wp_vec3f wp_softbody_vehicle_get_node_position( const wp_softbody_vehicle *vehicle, wp_s32 node_index )
 {
     if( !wp_softbody_vehicle_is_valid_node_index( vehicle, node_index ) )
     {
@@ -621,8 +609,7 @@ wp_vec3f wp_softbody_vehicle_get_node_position( const wp_softbody_vehicle *vehic
     return vehicle->nodes[node_index].position;
 }
 
-wp_vec3f wp_softbody_vehicle_get_node_velocity( const wp_softbody_vehicle *vehicle,
-                                               wp_s32 node_index )
+wp_vec3f wp_softbody_vehicle_get_node_velocity( const wp_softbody_vehicle *vehicle, wp_s32 node_index )
 {
     if( !wp_softbody_vehicle_is_valid_node_index( vehicle, node_index ) )
     {
@@ -700,11 +687,10 @@ wp_vec3f wp_softbody_vehicle_get_center_of_mass( const wp_softbody_vehicle *vehi
     return vehicle->transform.position;
 }
 
-void wp_softbody_vehicle_get_frame( const wp_softbody_vehicle *vehicle,
-                                     wp_s32 front_left_node, wp_s32 front_right_node,
-                                     wp_s32 rear_left_node, wp_s32 rear_right_node,
-                                     wp_vec3f *out_centre, wp_vec3f *out_right,
-                                     wp_vec3f *out_up, wp_vec3f *out_forward )
+void wp_softbody_vehicle_get_frame( const wp_softbody_vehicle *vehicle, wp_s32 front_left_node,
+                                    wp_s32 front_right_node, wp_s32 rear_left_node,
+                                    wp_s32 rear_right_node, wp_vec3f *out_centre, wp_vec3f *out_right,
+                                    wp_vec3f *out_up, wp_vec3f *out_forward )
 {
     wp_vec3f front_left;
     wp_vec3f front_right;
@@ -726,8 +712,7 @@ void wp_softbody_vehicle_get_frame( const wp_softbody_vehicle *vehicle,
     right_centre = wp_vec3f_scale( wp_vec3f_add( front_right, rear_right ), 0.5f );
 
     *out_centre = wp_vec3f_scale(
-        wp_vec3f_add( wp_vec3f_add( front_left, front_right ),
-                      wp_vec3f_add( rear_left, rear_right ) ),
+        wp_vec3f_add( wp_vec3f_add( front_left, front_right ), wp_vec3f_add( rear_left, rear_right ) ),
         0.25f );
 
     *out_forward = wp_vec3f_normalize( wp_vec3f_sub( front_centre, rear_centre ) );
@@ -735,4 +720,3 @@ void wp_softbody_vehicle_get_frame( const wp_softbody_vehicle *vehicle,
     *out_up = wp_vec3f_normalize( wp_vec3f_cross( *out_forward, *out_right ) );
     *out_right = wp_vec3f_normalize( wp_vec3f_cross( *out_up, *out_forward ) );
 }
-

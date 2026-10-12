@@ -27,7 +27,9 @@ namespace workphone::editor
             if( !catalog || catalog->isReadOnly() || applicationManager->getProjectPath().empty() ||
                 !canonicalAssetCatalogRoot( applicationManager->getProjectPath(), root, error ) ||
                 root != catalog->getProjectRoot() )
+            {
                 throw std::runtime_error( "Project clean requires the active writable project catalog" );
+            }
             // Metadata, lighting and imported scene files are authored content.
             // Artifact pruning requires the generation retention/pin policy.
             catalog->optimise();

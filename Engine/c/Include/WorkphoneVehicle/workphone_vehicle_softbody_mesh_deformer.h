@@ -70,11 +70,9 @@ void wp_softbody_mesh_deformer_destroy( wp_softbody_mesh_deformer *deformer );
  * @return Non-zero on success, zero if binding failed.
  */
 wp_s32 wp_softbody_mesh_deformer_bind( wp_softbody_mesh_deformer *deformer,
-                                        const wp_softbody_vehicle *vehicle,
-                                        const wp_vec3f *vertices,
-                                        wp_s32 vertex_count,
-                                        wp_s32 influences_per_vertex,
-                                        wp_transform3f mesh_to_world );
+                                       const wp_softbody_vehicle *vehicle, const wp_vec3f *vertices,
+                                       wp_s32 vertex_count, wp_s32 influences_per_vertex,
+                                       wp_transform3f mesh_to_world );
 
 /**
  * @brief Update deformed vertex positions from the current vehicle state.
@@ -85,8 +83,8 @@ wp_s32 wp_softbody_mesh_deformer_bind( wp_softbody_mesh_deformer *deformer,
  *                      space.
  */
 void wp_softbody_mesh_deformer_update( wp_softbody_mesh_deformer *deformer,
-                                        const wp_softbody_vehicle *vehicle,
-                                        wp_transform3f mesh_to_world );
+                                       const wp_softbody_vehicle *vehicle,
+                                       wp_transform3f mesh_to_world );
 
 /**
  * @brief Copy the current deformed vertex positions into a caller-supplied
@@ -95,7 +93,7 @@ void wp_softbody_mesh_deformer_update( wp_softbody_mesh_deformer *deformer,
  * The buffer must hold at least vertex_count elements.
  */
 void wp_softbody_mesh_deformer_get_vertices( const wp_softbody_mesh_deformer *deformer,
-                                              wp_vec3f *out_vertices );
+                                             wp_vec3f *out_vertices );
 
 /**
  * @brief Return the number of bound vertices.
