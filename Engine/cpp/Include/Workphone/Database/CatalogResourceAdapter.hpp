@@ -1,11 +1,12 @@
-#ifndef WPCatalogResourceAdapter_h__
-#define WPCatalogResourceAdapter_h__
+#ifndef __WP_CatalogResourceAdapter_h__
+#define __WP_CatalogResourceAdapter_h__
 
 #include <Workphone/Database/AssetDatabaseManager.hpp>
 #include <Workphone/Interface/Resource/IResourceSystem.hpp>
 
 namespace workphone
 {
+
     /**
      * Connects durable catalog identity to the existing resource compilation service.
      * Calls reject stale requests before and after work. They do not lock catalog
@@ -56,6 +57,7 @@ namespace workphone
         String m_sourceRoot;
         Array<TypeMapping> m_mappings;
     };
+
 }  // namespace workphone
 
 #endif  // WPCatalogResourceAdapter_h__

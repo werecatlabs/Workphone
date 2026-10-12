@@ -5,6 +5,7 @@
 
 namespace workphone
 {
+
     struct AssetDocumentScanOptions
     {
         u32 maxDocuments = 10000, maxEntries = 100000, maxDepth = 64;
@@ -16,6 +17,7 @@ namespace workphone
         String path, digest, diagnostic;
         bool canReindex = false;
     };
+
     struct AssetDocumentInventorySnapshot;
 
     /** Detached report. The private snapshot binds apply to the original scan;
@@ -46,6 +48,7 @@ namespace workphone
     WPCore_API AssetDocumentInventory scanAssetDocuments(
         SmartPtr<AssetDatabaseManager> catalog, const AssetDocumentScanOptions &options = {},
         SmartPtr<AssetDatabaseManager> media = nullptr );
+
     /** Revalidate the inventory and atomically replace all verifiable graphs.
      * Catalog/session/media/file/membership changes expire the preview. Any SQL
      * or validation failure rolls back the entire batch. Blocked rows remain

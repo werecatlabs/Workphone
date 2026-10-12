@@ -1,5 +1,6 @@
 #ifndef WP_ASSET_OPERATION_BROWSER_HPP
 #define WP_ASSET_OPERATION_BROWSER_HPP
+
 #include <Workphone/Database/AssetCatalogBrowser.hpp>
 #include <Workphone/Interface/Database/IParameterizedDatabase.hpp>
 #include <Workphone/Interface/Database/IDatabase.hpp>

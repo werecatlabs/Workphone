@@ -1,5 +1,5 @@
-#ifndef CResourceDatabase_h__
-#define CResourceDatabase_h__
+#ifndef __WP_ResourceDatabase_h__
+#define __WP_ResourceDatabase_h__
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/Database/IResourceDatabase.hpp>

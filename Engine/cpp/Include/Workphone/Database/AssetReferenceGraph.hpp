@@ -5,6 +5,7 @@
 
 namespace workphone
 {
+
     struct AssetReferenceEdge
     {
         String sourcePath, slot, targetUuid, targetCatalog, expectedType;

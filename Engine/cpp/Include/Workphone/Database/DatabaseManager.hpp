@@ -1,5 +1,5 @@
-#ifndef __DatabaseManager_h__
-#define __DatabaseManager_h__
+#ifndef __WP_DatabaseManager_h__
+#define __WP_DatabaseManager_h__
 
 #include <Workphone/Interface/Database/IDatabaseManager.hpp>
 #include <Workphone/Atomics/AtomicObject.hpp>
