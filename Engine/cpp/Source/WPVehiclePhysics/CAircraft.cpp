@@ -32,28 +32,27 @@ namespace workphone::vehicle
     {
         // Stable defaults for scene-created aircraft without a model data file.
         // Z is the low-drag forward axis used by the propeller implementation.
-        m_drag = Vector3<real_Num>(0.55, 0.85,
-                                   0.08);
+        m_drag = Vector3<real_Num>( 0.55, 0.85, 0.08 );
     }
 
     CAircraft::~CAircraft() = default;
 
-    void CAircraft::load(SmartPtr<ISharedObject> data)
+    void CAircraft::load( SmartPtr<ISharedObject> data )
     {
-        if(isLoaded())
+        if( isLoaded() )
         {
             return;
         }
 
-        setLoadingState(LoadingState::Loading);
-        CAerodynamicsVehicle<IAircraft>::load(data);
-        loadFromData({});
-        setLoadingState(LoadingState::Loaded);
+        setLoadingState( LoadingState::Loading );
+        CAerodynamicsVehicle<IAircraft>::load( data );
+        loadFromData( {} );
+        setLoadingState( LoadingState::Loaded );
     }
 
-    real_Num CAircraft::getEngineRPM(int idx) const
+    real_Num CAircraft::getEngineRPM( int idx ) const
     {
-        if(idx < static_cast<s32>(m_engines.size()))
+        if( idx < static_cast<s32>( m_engines.size() ) )
         {
             const SmartPtr<IAircraftPowerUnit> engine = m_engines[idx];
             return engine->getRPM();
@@ -83,17 +82,17 @@ namespace workphone::vehicle
         //	return m_keyLeft;
         // }
 
-        if((GetAsyncKeyState(m_keyTop) & 0x8000) != 0)
+        if( ( GetAsyncKeyState( m_keyTop ) & 0x8000 ) != 0 )
         {
             return m_keyTop;
         }
 
-        if((GetAsyncKeyState(m_keyRight) & 0x8000) != 0)
+        if( ( GetAsyncKeyState( m_keyRight ) & 0x8000 ) != 0 )
         {
             return m_keyRight;
         }
 
-        if((GetAsyncKeyState(m_keyDown) & 0x8000) != 0)
+        if( ( GetAsyncKeyState( m_keyDown ) & 0x8000 ) != 0 )
         {
             return m_keyDown;
         }
@@ -134,22 +133,22 @@ namespace workphone::vehicle
     {
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto timer = applicationManager ? applicationManager->getTimerPtr() : nullptr;
-        if(!timer)
+        if( !timer )
         {
             return;
         }
 
-        const auto dt = static_cast<real_Num>(timer->getDeltaTime());
-        if(dt <= std::numeric_limits<real_Num>::epsilon())
+        const auto dt = static_cast<real_Num>( timer->getDeltaTime() );
+        if( dt <= std::numeric_limits<real_Num>::epsilon() )
         {
             return;
         }
 
-        update(timer->getTime(), dt);
+        update( timer->getTime(), dt );
         CAerodynamicsVehicle<IAircraft>::update();
     }
 
-    void CAircraft::update(const double &t, const double &fDT)
+    void CAircraft::update( const double &t, const double &fDT )
     {
 #if defined WP_PLATFORM_WIN32
         // using namespace std;
@@ -220,7 +219,7 @@ namespace workphone::vehicle
         // return;
         // WP_LOG(String("Delta: ") + StringUtil::toString(1.0 / fDT));
 
-        if(!getBody() || !m_callback)
+        if( !getBody() || !m_callback )
         {
             return;
         }
@@ -229,32 +228,32 @@ namespace workphone::vehicle
 
         auto dt = fDT;
 
-        WP_ASSERT(dt > 0.0);
+        WP_ASSERT( dt > 0.0 );
 
-        if(dt > 1.0 / 50.0)
+        if( dt > 1.0 / 50.0 )
         {
             dt = 1.0 / 50.0;
         }
 
-        WP_ASSERT(getBody());
+        WP_ASSERT( getBody() );
 
         auto controlAngles = m_callback->getControlAngles();
-        for(auto &c : m_controlSurfaces)
+        for( auto &c : m_controlSurfaces )
         {
 #if 1
             auto id = c->getSurfaceId();
-            if(id >= 0 && id < controlAngles.size())
+            if( id >= 0 && id < controlAngles.size() )
             {
                 auto angle = controlAngles[id];
-                auto angleRads = Math<real_Num>::DegToRad(angle);
-                c->setCurrentDeflection(angleRads / Math<real_Num>::half_pi());
+                auto angleRads = Math<real_Num>::DegToRad( angle );
+                c->setCurrentDeflection( angleRads / Math<real_Num>::half_pi() );
             }
 #else
             auto id = c->getSurfaceId();
-            if(id >= 0 && id < controlAngles.size())
+            if( id >= 0 && id < controlAngles.size() )
             {
                 auto angle = (real_Num)controlAngles[id];
-                c->setCurrentDeflection(angle);
+                c->setCurrentDeflection( angle );
             }
 #endif
         }
@@ -278,9 +277,9 @@ namespace workphone::vehicle
         }
 #endif
 
-        if(getDisplayDebugData())
+        if( getDisplayDebugData() )
         {
-            drawPoint(0, static_cast<s32>(1665165416554), m_cg, 0x00AFAF);
+            drawPoint( 0, static_cast<s32>( 1665165416554 ), m_cg, 0x00AFAF );
         }
 
         getAllTxData();
@@ -329,11 +328,11 @@ namespace workphone::vehicle
 
         auto steeringAngle = controlAngles[5];
 
-        for(auto &w : m_wheels)
+        for( auto &w : m_wheels )
         {
-            if(w->isSteeringWheel())
+            if( w->isSteeringWheel() )
             {
-                w->setSteeringAngle(steeringAngle);
+                w->setSteeringAngle( steeringAngle );
             }
         }
 
@@ -352,91 +351,76 @@ namespace workphone::vehicle
         //	w->update(t, dt);
         // }
 
-        updateDefaultAerodynamics(static_cast<real_Num>(dt));
-        updateDrag(t, dt);
+        updateDefaultAerodynamics( static_cast<real_Num>( dt ) );
+        updateDrag( t, dt );
 
-        if(m_callback)
+        if( m_callback )
         {
-            if(getDisplayDebugData())
+            if( getDisplayDebugData() )
             {
                 real_Num debugLineScale = 300.0;
-                auto p = m_worldTransform.transformPoint(m_cg);
+                auto p = m_worldTransform.transformPoint( m_cg );
                 // displayVector(0, 214343220, p, p + (m_force * debugLineScale * dt), 0xFF0000);
 
-                displayVector(
-                    0, 214343241, p,
-                    p + ((m_worldTransform.getOrientation() * Vector3<real_Num>::UNIT_X) *
-                         m_torque.X() * debugLineScale * static_cast<real_Num>(dt)),
-                    0xFFFF00);
-                displayVector(
-                    0, 214343242, p,
-                    p + ((m_worldTransform.getOrientation() * Vector3<real_Num>::UNIT_Y) *
-                         m_torque.Y() * debugLineScale * static_cast<real_Num>(dt)),
-                    0xFFFF00);
-                displayVector(
-                    0, 214343243, p,
-                    p + ((m_worldTransform.getOrientation() * Vector3<real_Num>::UNIT_Z) *
-                         m_torque.Z() * debugLineScale * static_cast<real_Num>(dt)),
-                    0xFFFF00);
+                displayVector( 0, 214343241, p,
+                               p + ( ( m_worldTransform.getOrientation() * Vector3<real_Num>::UNIT_X ) *
+                                     m_torque.X() * debugLineScale * static_cast<real_Num>( dt ) ),
+                               0xFFFF00 );
+                displayVector( 0, 214343242, p,
+                               p + ( ( m_worldTransform.getOrientation() * Vector3<real_Num>::UNIT_Y ) *
+                                     m_torque.Y() * debugLineScale * static_cast<real_Num>( dt ) ),
+                               0xFFFF00 );
+                displayVector( 0, 214343243, p,
+                               p + ( ( m_worldTransform.getOrientation() * Vector3<real_Num>::UNIT_Z ) *
+                                     m_torque.Z() * debugLineScale * static_cast<real_Num>( dt ) ),
+                               0xFFFF00 );
             }
         }
 
         static auto nextUpdate = 0.0;
-        if(nextUpdate < t)
+        if( nextUpdate < t )
         {
             // WP_LOG("Yaw Rate: " + StringUtil::toString(getLocalAngularVelocity().Y()));
             nextUpdate = t + 3.0;
         }
     }
 
-    void CAircraft::updateDefaultAerodynamics(real_Num dt)
+    void CAircraft::updateDefaultAerodynamics( real_Num dt )
     {
-        if(!m_wings.empty() || !getBody())
+        if( !m_wings.empty() || !getBody() )
         {
             return;
         }
 
         const auto localVelocity = getLocalLinearVelocity();
-        const auto forwardSpeed =
-            Math<real_Num>::max(0.0, -localVelocity.Z());
+        const auto forwardSpeed = Math<real_Num>::max( 0.0, -localVelocity.Z() );
         const auto dynamicPressure =
-            static_cast<real_Num>(0.5) * m_airDensity * forwardSpeed * forwardSpeed;
+            static_cast<real_Num>( 0.5 ) * m_airDensity * forwardSpeed * forwardSpeed;
 
         // A moderate fallback lift curve keeps scene-created aircraft useful
         // while detailed imported aircraft continue to use their wing sections.
-        const auto lift = Math<real_Num>::min(dynamicPressure * m_sectionMultiplier *
-                                              static_cast<real_Num>(0.35),
-                                              80000.0);
+        const auto lift = Math<real_Num>::min(
+            dynamicPressure * m_sectionMultiplier * static_cast<real_Num>( 0.35 ), 80000.0 );
 
-        const auto throttle =
-            Math<real_Num>::clamp(getChannel(m_thrChannel),
-                                  0.0, 1.0);
-        const auto thrust = throttle *
-                            Math<real_Num>::max(getMass(), 1.0) *
-                            static_cast<real_Num>(8.0);
+        const auto throttle = Math<real_Num>::clamp( getChannel( m_thrChannel ), 0.0, 1.0 );
+        const auto thrust =
+            throttle * Math<real_Num>::max( getMass(), 1.0 ) * static_cast<real_Num>( 8.0 );
 
-        addLocalForce(0, Vector3<real_Num>(0, lift, -thrust), m_cg);
+        addLocalForce( 0, Vector3<real_Num>( 0, lift, -thrust ), m_cg );
 
-        const auto roll =
-            Math<real_Num>::clamp(getChannel(m_ailChannel),
-                                  -1.0, 1.0);
-        const auto pitch =
-            Math<real_Num>::clamp(getChannel(m_eleChannel),
-                                  -1.0, 1.0);
-        const auto yaw =
-            Math<real_Num>::clamp(getChannel(m_yawChannel),
-                                  -1.0, 1.0);
+        const auto roll = Math<real_Num>::clamp( getChannel( m_ailChannel ), -1.0, 1.0 );
+        const auto pitch = Math<real_Num>::clamp( getChannel( m_eleChannel ), -1.0, 1.0 );
+        const auto yaw = Math<real_Num>::clamp( getChannel( m_yawChannel ), -1.0, 1.0 );
 
-        const auto mass = Math<real_Num>::max(getMass(), 1.0);
-        auto controlTorque = Vector3<real_Num>(pitch * mass * static_cast<real_Num>(2.5),
-                                               yaw * mass * static_cast<real_Num>(1.5),
-                                               -roll * mass * static_cast<real_Num>(3.0));
+        const auto mass = Math<real_Num>::max( getMass(), 1.0 );
+        auto controlTorque = Vector3<real_Num>( pitch * mass * static_cast<real_Num>( 2.5 ),
+                                                yaw * mass * static_cast<real_Num>( 1.5 ),
+                                                -roll * mass * static_cast<real_Num>( 3.0 ) );
 
         const auto angularVelocity = getLocalAngularVelocity();
         controlTorque -= angularVelocity * m_rollwiseDamping * mass;
-        addLocalTorque(0, controlTorque * Math<real_Num>::clamp(dt * static_cast<real_Num>(60.0),
-                                                                0.0,
-                                                                1.0));
+        addLocalTorque(
+            0, controlTorque * Math<real_Num>::clamp( dt * static_cast<real_Num>( 60.0 ), 0.0, 1.0 ) );
     }
 
     //-----------------------------------------------
@@ -446,45 +430,45 @@ namespace workphone::vehicle
     }
 
     //-----------------------------------------------
-    void CAircraft::updateDrag(const double &t, const double &dt)
+    void CAircraft::updateDrag( const double &t, const double &dt )
     {
-        WP_ASSERT(MathD::isFinite( t ));
-        WP_ASSERT(MathD::isFinite( dt ));
+        WP_ASSERT( MathD::isFinite( t ) );
+        WP_ASSERT( MathD::isFinite( dt ) );
 
         Vector3<real_Num> drag = getDrag();
-        WP_ASSERT(drag.length() < 1e8);
+        WP_ASSERT( drag.length() < 1e8 );
 
         real_Num Xcoef = drag.X();
         real_Num Ycoef = drag.Y();
         real_Num Zcoef = drag.Z();
 
-        if(!getEnablePowerUnit())
+        if( !getEnablePowerUnit() )
         {
-            Xcoef = static_cast<real_Num>(100.0);
-            Ycoef = static_cast<real_Num>(100.0);
-            Zcoef = static_cast<real_Num>(100.0);
+            Xcoef = static_cast<real_Num>( 100.0 );
+            Ycoef = static_cast<real_Num>( 100.0 );
+            Zcoef = static_cast<real_Num>( 100.0 );
         }
 
         Vector3<real_Num> modelLocalVelocity = getLocalLinearVelocity();
-        WP_ASSERT(modelLocalVelocity.length() < 1e8);
+        WP_ASSERT( modelLocalVelocity.length() < 1e8 );
 
         Vector3<real_Num> localVelocity = Vector3<real_Num>::ZERO;
         localVelocity.X() =
-            Math<real_Num>::Abs(modelLocalVelocity.X()) * modelLocalVelocity.X() * -Xcoef;
+            Math<real_Num>::Abs( modelLocalVelocity.X() ) * modelLocalVelocity.X() * -Xcoef;
         localVelocity.Y() =
-            Math<real_Num>::Abs(modelLocalVelocity.Y()) * modelLocalVelocity.Y() * -Ycoef;
+            Math<real_Num>::Abs( modelLocalVelocity.Y() ) * modelLocalVelocity.Y() * -Ycoef;
         localVelocity.Z() =
-            Math<real_Num>::Abs(modelLocalVelocity.Z()) * modelLocalVelocity.Z() * -Zcoef;
+            Math<real_Num>::Abs( modelLocalVelocity.Z() ) * modelLocalVelocity.Z() * -Zcoef;
 
         // localVelocity.X() = modelLocalVelocity.X() * 2.0 * -Xcoef;
         // localVelocity.Y() = modelLocalVelocity.Y() * 2.0 * -Ycoef;
         // localVelocity.Z() = modelLocalVelocity.Z() * 2.0 * -Zcoef;
 
-        WP_ASSERT(localVelocity.length() < 1e5);
+        WP_ASSERT( localVelocity.length() < 1e5 );
 
-        if(localVelocity.length() < 1e5)
+        if( localVelocity.length() < 1e5 )
         {
-            addLocalForce(0, localVelocity, Vector3<real_Num>::zero());
+            addLocalForce( 0, localVelocity, Vector3<real_Num>::zero() );
         }
     }
 
@@ -500,17 +484,17 @@ namespace workphone::vehicle
 
     bool CAircraft::isValid() const
     {
-        for(auto &p : m_propellers)
+        for( auto &p : m_propellers )
         {
-            if(!p->isValid())
+            if( !p->isValid() )
             {
                 return false;
             }
         }
 
-        for(auto &p : m_propellerUnits)
+        for( auto &p : m_propellerUnits )
         {
-            if(!p->isValid())
+            if( !p->isValid() )
             {
                 return false;
             }
@@ -519,7 +503,7 @@ namespace workphone::vehicle
         return m_worldTransform.isValid() && m_localTransform.isValid();
     }
 
-    void CAircraft::loadFromData(const String &data)
+    void CAircraft::loadFromData( const String &data )
     {
         try
         {
@@ -535,59 +519,59 @@ namespace workphone::vehicle
             m_properties = workphone::make_ptr<Properties>();
 
             SmartPtr<IAerodymanicsWind> wind = workphone::make_ptr<CAerodymanicsWind>();
-            setWind(wind);
+            setWind( wind );
 
             SmartPtr<CAircraft> pThis = getSharedFromThis<CAircraft>();
 
             SmartPtr<CAircraftBody> body = workphone::make_ptr<CAircraftBody>();
-            body->setParentAircraft(pThis);
-            setBody(body);
+            body->setParentAircraft( pThis );
+            setBody( body );
 
             loadProperties();
 
             bool isElectric = true;
-            if(m_properties->getPropertyValue("FlEqElectricPower", isElectric))
+            if( m_properties->getPropertyValue( "FlEqElectricPower", isElectric ) )
             {
-                setElectric(isElectric);
+                setElectric( isElectric );
             }
 
             float mass = 0.0f;
-            if(m_properties->getPropertyValue("FlEqModelMass", mass))
+            if( m_properties->getPropertyValue( "FlEqModelMass", mass ) )
             {
-                body->setMass(mass);
+                body->setMass( mass );
             }
 
             // loadDefaults();
 
-            if(!StringUtil::isNullOrEmpty(data))
+            if( !StringUtil::isNullOrEmpty( data ) )
             {
-                loadFromString(data);
+                loadFromString( data );
             }
 
-            for(auto &w : m_wings)
+            for( auto &w : m_wings )
             {
                 w->updateBodyTransform();
             }
 
-            for(auto &w : m_wings)
+            for( auto &w : m_wings )
             {
                 w->updateGeometry();
             }
 
-            for(auto &w : m_controlSurfaces)
+            for( auto &w : m_controlSurfaces )
             {
                 w->updateGeometry();
             }
         }
-        catch(std::exception &e)
+        catch( std::exception &e )
         {
-            WP_LOG_EXCEPTION(e);
+            WP_LOG_EXCEPTION( e );
         }
     }
 
-    void CAircraft::loadFromString(const String &data)
+    void CAircraft::loadFromString( const String &data )
     {
-        WP_LOG(data);
+        WP_LOG( data );
 
         m_batteryPack = nullptr;
         m_escs.clear();
@@ -1169,7 +1153,7 @@ namespace workphone::vehicle
         //}
     }
 
-    void CAircraft::reloadFromData(void *pData)
+    void CAircraft::reloadFromData( void *pData )
     {
         // std::string filePath = "fw.json";
         // std::fstream stream(filePath, std::fstream::in);
@@ -1181,53 +1165,53 @@ namespace workphone::vehicle
         // }
     }
 
-    void CAircraft::unload(SmartPtr<ISharedObject> data)
+    void CAircraft::unload( SmartPtr<ISharedObject> data )
     {
         try
         {
-            setLoadingState(LoadingState::Unloading);
+            setLoadingState( LoadingState::Unloading );
 
             m_wind = nullptr;
             m_batteryPack = nullptr;
 
-            for(auto esc : m_escs)
+            for( auto esc : m_escs )
             {
-                esc->unload(data);
+                esc->unload( data );
             }
 
-            for(auto e : m_engines)
+            for( auto e : m_engines )
             {
-                e->unload(data);
+                e->unload( data );
             }
 
-            for(auto w : m_wings)
+            for( auto w : m_wings )
             {
-                w->unload(data);
+                w->unload( data );
             }
 
-            for(auto w : m_wheels)
+            for( auto w : m_wheels )
             {
-                w->unload(data);
+                w->unload( data );
             }
 
-            for(auto c : m_controlSurfaces)
+            for( auto c : m_controlSurfaces )
             {
-                c->unload(data);
+                c->unload( data );
             }
 
-            for(auto p : m_propellers)
+            for( auto p : m_propellers )
             {
-                p->unload(data);
+                p->unload( data );
             }
 
-            for(auto p : m_propellerUnits)
+            for( auto p : m_propellerUnits )
             {
-                p->unload(data);
+                p->unload( data );
             }
 
-            for(auto p : m_propwashes)
+            for( auto p : m_propwashes )
             {
-                p->unload(data);
+                p->unload( data );
             }
 
             m_propwashes.clear();
@@ -1245,22 +1229,22 @@ namespace workphone::vehicle
             m_rigidbody = nullptr;
 
             m_callback = nullptr;
-            setLoadingState(LoadingState::Unloaded);
+            setLoadingState( LoadingState::Unloaded );
         }
-        catch(std::exception &e)
+        catch( std::exception &e )
         {
-            WP_LOG_EXCEPTION(e);
+            WP_LOG_EXCEPTION( e );
         }
     }
 
-    void CAircraft::setBody(SmartPtr<IVehicleBody> body)
+    void CAircraft::setBody( SmartPtr<IVehicleBody> body )
     {
         m_rigidbody = body;
     }
 
     void CAircraft::getAllTxData()
     {
-        if(m_callback)
+        if( m_callback )
         {
             m_channels = m_callback->getInputData();
         }
@@ -1271,7 +1255,7 @@ namespace workphone::vehicle
         return m_rollwiseDamping;
     }
 
-    void CAircraft::setRollwiseDamping(real_Num rollwiseDamping)
+    void CAircraft::setRollwiseDamping( real_Num rollwiseDamping )
     {
         m_rollwiseDamping = rollwiseDamping;
     }
@@ -1281,7 +1265,7 @@ namespace workphone::vehicle
         return true;
     }
 
-    void CAircraft::setUserControlled(bool userControlled)
+    void CAircraft::setUserControlled( bool userControlled )
     {
     }
 
@@ -1291,10 +1275,10 @@ namespace workphone::vehicle
         return body->getMass();
     }
 
-    void CAircraft::setMass(real_Num mass)
+    void CAircraft::setMass( real_Num mass )
     {
         auto body = getBodyPtr();
-        body->setMass(mass);
+        body->setMass( mass );
     }
 
     Transform3<real_Num> CAircraft::getWorldTransform() const
@@ -1307,49 +1291,49 @@ namespace workphone::vehicle
         auto p = getPosition();
         auto q = getOrientation();
 
-        WP_ASSERT(MathUtil<real_Num>::isFinite( p ));
-        WP_ASSERT(MathUtil<real_Num>::isFinite( q ));
+        WP_ASSERT( MathUtil<real_Num>::isFinite( p ) );
+        WP_ASSERT( MathUtil<real_Num>::isFinite( q ) );
 
         // p = Vector3<real_Num>::zero();
         // q = Quaternion<real_Num>::identity();
 
         // if (m_bodyTransform)
         {
-            m_bodyTransform.setPosition(p);
-            m_bodyTransform.setOrientation(q);
-            m_bodyTransform.setScale(Vector3<real_Num>::unit());
+            m_bodyTransform.setPosition( p );
+            m_bodyTransform.setOrientation( q );
+            m_bodyTransform.setScale( Vector3<real_Num>::unit() );
 
-            m_worldTransform.transformFromParent(m_bodyTransform, m_localTransform);
+            m_worldTransform.transformFromParent( m_bodyTransform, m_localTransform );
         }
 
-        if(auto body = getBody())
+        if( auto body = getBody() )
         {
-            auto cg = m_bodyTransform.transformPoint(m_cg);
-            body->setWorldCenterOfMass(cg);
+            auto cg = m_bodyTransform.transformPoint( m_cg );
+            body->setWorldCenterOfMass( cg );
         }
 
-        for(auto &e : m_engines)
+        for( auto &e : m_engines )
         {
             e->updateTransform();
         }
 
-        for(auto &w : m_wings)
+        for( auto &w : m_wings )
         {
             w->updateTransform();
         }
 
-        for(auto &c : m_controlSurfaces)
+        for( auto &c : m_controlSurfaces )
         {
             c->updateTransform();
         }
 
-        for(auto &w : m_wheels)
+        for( auto &w : m_wheels )
         {
             w->updateTransform();
         }
     }
 
-    SmartPtr<Properties> CAircraft::getMirror(SmartPtr<Properties> wingData)
+    SmartPtr<Properties> CAircraft::getMirror( SmartPtr<Properties> wingData )
     {
         //    data::aircraft_wing_data r = wingData;
         //    r.isMirror = true;
@@ -1363,7 +1347,7 @@ namespace workphone::vehicle
         return nullptr;
     }
 
-    void CAircraft::setWorldTransform(const Transform3<real_Num> &worldTransform)
+    void CAircraft::setWorldTransform( const Transform3<real_Num> &worldTransform )
     {
         m_worldTransform = worldTransform;
     }
@@ -1373,7 +1357,7 @@ namespace workphone::vehicle
         return m_localTransform;
     }
 
-    void CAircraft::setLocalTransform(const Transform3<real_Num> &localTransform)
+    void CAircraft::setLocalTransform( const Transform3<real_Num> &localTransform )
     {
         m_localTransform = localTransform;
     }
@@ -1383,7 +1367,7 @@ namespace workphone::vehicle
         return m_callback;
     }
 
-    void CAircraft::setCallback(SmartPtr<IAircraftCallback> callback)
+    void CAircraft::setCallback( SmartPtr<IAircraftCallback> callback )
     {
         m_callback = callback;
     }
@@ -1393,12 +1377,12 @@ namespace workphone::vehicle
         return m_bodyTransform;
     }
 
-    void CAircraft::setBodyTransform(Transform3<real_Num> bodyTransform)
+    void CAircraft::setBodyTransform( Transform3<real_Num> bodyTransform )
     {
         m_bodyTransform = bodyTransform;
     }
 
-    void CAircraft::setControlAngle(int id, float angle)
+    void CAircraft::setControlAngle( int id, float angle )
     {
     }
 
@@ -1407,7 +1391,7 @@ namespace workphone::vehicle
         return m_airDensity;
     }
 
-    void CAircraft::setAirDensity(real_Num airDensity)
+    void CAircraft::setAirDensity( real_Num airDensity )
     {
         m_airDensity = airDensity;
     }
@@ -1422,7 +1406,7 @@ namespace workphone::vehicle
         return m_powerChannels;
     }
 
-    void CAircraft::setPowerChannels(Array<SmartPtr<Properties>> powerChannels)
+    void CAircraft::setPowerChannels( Array<SmartPtr<Properties>> powerChannels )
     {
         m_powerChannels = powerChannels;
     }
@@ -1432,7 +1416,7 @@ namespace workphone::vehicle
         return m_emulateBattery;
     }
 
-    void CAircraft::setEmulateBattery(bool emulateBattery)
+    void CAircraft::setEmulateBattery( bool emulateBattery )
     {
         m_emulateBattery = emulateBattery;
     }
@@ -1442,7 +1426,7 @@ namespace workphone::vehicle
         return m_bIsElectric;
     }
 
-    void CAircraft::setElectric(bool bIsElectric)
+    void CAircraft::setElectric( bool bIsElectric )
     {
         m_bIsElectric = bIsElectric;
     }
@@ -1452,7 +1436,7 @@ namespace workphone::vehicle
         return m_batteryPack;
     }
 
-    void CAircraft::setBatteryPack(SmartPtr<IBatteryPack> batteryPack)
+    void CAircraft::setBatteryPack( SmartPtr<IBatteryPack> batteryPack )
     {
         m_batteryPack = batteryPack;
     }
@@ -1462,7 +1446,7 @@ namespace workphone::vehicle
         return m_enablePowerUnit;
     }
 
-    void CAircraft::setEnablePowerUnit(bool enablePowerUnit)
+    void CAircraft::setEnablePowerUnit( bool enablePowerUnit )
     {
         m_enablePowerUnit = enablePowerUnit;
     }
@@ -1472,22 +1456,22 @@ namespace workphone::vehicle
         return m_wind;
     }
 
-    void CAircraft::setWind(SmartPtr<IAerodymanicsWind> wind)
+    void CAircraft::setWind( SmartPtr<IAerodymanicsWind> wind )
     {
         m_wind = wind;
     }
 
-    void CAircraft::addPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void CAircraft::addPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        m_propellerUnits.push_back(propellerUnit);
+        m_propellerUnits.push_back( propellerUnit );
     }
 
-    void CAircraft::removePropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void CAircraft::removePropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        auto it = std::find(m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit);
-        if(it != m_propellerUnits.end())
+        auto it = std::find( m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit );
+        if( it != m_propellerUnits.end() )
         {
-            m_propellerUnits.erase(it);
+            m_propellerUnits.erase( it );
         }
     }
 
@@ -1496,26 +1480,25 @@ namespace workphone::vehicle
         return m_propellerUnits;
     }
 
-    void CAircraft::setPropellerUnits(
-        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits)
+    void CAircraft::setPropellerUnits( const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits )
     {
         m_propellerUnits = propellerUnits;
     }
 
-    void CAircraft::addWheel(SmartPtr<IWheelComponent> wheel)
+    void CAircraft::addWheel( SmartPtr<IWheelComponent> wheel )
     {
         SmartPtr<IVehicle> pThis = getSharedFromThis<IVehicle>();
 
-        wheel->setOwner(pThis);
-        m_wheels.push_back(wheel);
+        wheel->setOwner( pThis );
+        m_wheels.push_back( wheel );
     }
 
-    void CAircraft::removeWheel(SmartPtr<IWheelComponent> wheel)
+    void CAircraft::removeWheel( SmartPtr<IWheelComponent> wheel )
     {
-        auto it = std::find(m_wheels.begin(), m_wheels.end(), wheel);
-        if(it != m_wheels.end())
+        auto it = std::find( m_wheels.begin(), m_wheels.end(), wheel );
+        if( it != m_wheels.end() )
         {
-            m_wheels.erase(it);
+            m_wheels.erase( it );
         }
     }
 
@@ -1524,7 +1507,7 @@ namespace workphone::vehicle
         return m_wheels;
     }
 
-    void CAircraft::setWheels(const Array<SmartPtr<IWheelComponent>> &wheels)
+    void CAircraft::setWheels( const Array<SmartPtr<IWheelComponent>> &wheels )
     {
         m_wheels = wheels;
     }
@@ -1534,7 +1517,7 @@ namespace workphone::vehicle
         return m_sectionMultiplier;
     }
 
-    void CAircraft::setSectionMultiplier(real_Num sectionMultiplier)
+    void CAircraft::setSectionMultiplier( real_Num sectionMultiplier )
     {
         m_sectionMultiplier = sectionMultiplier;
     }
@@ -1544,32 +1527,32 @@ namespace workphone::vehicle
         return m_modelDataFilePath;
     }
 
-    void CAircraft::setModelDataFilePath(const String &modelDataFilePath)
+    void CAircraft::setModelDataFilePath( const String &modelDataFilePath )
     {
         m_modelDataFilePath = modelDataFilePath;
     }
 
     void CAircraft::reset()
     {
-        for(auto w : m_wings)
+        for( auto w : m_wings )
         {
             w->reset();
         }
 
-        for(auto c : m_controlSurfaces)
+        for( auto c : m_controlSurfaces )
         {
             c->reset();
         }
 
-        for(auto p : m_propellers)
+        for( auto p : m_propellers )
         {
             p->reset();
         }
     }
 
-    real_Num CAircraft::getThrust(int idx) const
+    real_Num CAircraft::getThrust( int idx ) const
     {
-        if(idx < m_propellerUnits.size())
+        if( idx < m_propellerUnits.size() )
         {
             auto thrust = m_propellerUnits[idx]->getThrust();
             return thrust.length();
@@ -1577,4 +1560,4 @@ namespace workphone::vehicle
 
         return 0.0;
     }
-}
+}  // namespace workphone::vehicle

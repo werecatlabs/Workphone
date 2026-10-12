@@ -14,31 +14,31 @@
 namespace workphone::vehicle
 {
     /**
-         * @brief Simple orthonormal frame-of-reference container.
-         *
-         * Holds three basis vectors (m_xAxis, m_yAxis, m_zAxis) representing a local
-         * coordinate frame. The class is intentionally lightweight and
-         * trivially-copyable so it can be used in tight loops within the
-         * physics simulation.
-         */
+     * @brief Simple orthonormal frame-of-reference container.
+     *
+     * Holds three basis vectors (m_xAxis, m_yAxis, m_zAxis) representing a local
+     * coordinate frame. The class is intentionally lightweight and
+     * trivially-copyable so it can be used in tight loops within the
+     * physics simulation.
+     */
     class FrameOfRef
     {
     public:
         FrameOfRef();
 
         /**
-             * @brief Copy constructor delegates to operator=
-             */
-        FrameOfRef(const FrameOfRef &other);
+         * @brief Copy constructor delegates to operator=
+         */
+        FrameOfRef( const FrameOfRef &other );
 
         ~FrameOfRef();
 
         /**
-             * @brief Copy assignment.
-             * @param other Frame to copy from.
-             * @return Reference to this frame after assignment.
-             */
-        FrameOfRef &operator=(const FrameOfRef &other);
+         * @brief Copy assignment.
+         * @param other Frame to copy from.
+         * @return Reference to this frame after assignment.
+         */
+        FrameOfRef &operator=( const FrameOfRef &other );
 
         /// Basis vector pointing along the local X axis
         physics_Vec m_xAxis = physics_Vec::zero();
@@ -46,7 +46,7 @@ namespace workphone::vehicle
         physics_Vec m_yAxis = physics_Vec::zero();
         /// Basis vector pointing along the local Z axis
         physics_Vec m_zAxis = physics_Vec::zero();
-    }; // FrameOfRef
-}
+    };  // FrameOfRef
+}  // namespace workphone::vehicle
 
-#endif // FrameOfRef_h__
+#endif  // FrameOfRef_h__

@@ -16,6 +16,6 @@ namespace workphone::vehicle
         physics_Num m_accelerationTime = 0.0;
         physics_Num m_speed = 0.0;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // Servo_h__
+#endif  // Servo_h__

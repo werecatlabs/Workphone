@@ -12,7 +12,7 @@ namespace workphone::physics
     private:
         Polygon2F m_polygon;
     };
-} // namespace workphone::physics
+}  // namespace workphone::physics
 
 // end namespace
 

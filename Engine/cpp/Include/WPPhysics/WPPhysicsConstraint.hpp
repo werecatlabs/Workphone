@@ -12,9 +12,9 @@ namespace workphone::physics
         ~WPPhysicsConstraint() override;
 
         void *getUserData() const override;
-        void setUserData(void *userData) override;
+        void setUserData( void *userData ) override;
 
         WP_CLASS_REGISTER_DECL;
     };
-}
+}  // namespace workphone::physics
 #endif

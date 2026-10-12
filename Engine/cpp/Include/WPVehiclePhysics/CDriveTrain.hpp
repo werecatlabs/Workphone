@@ -95,7 +95,7 @@ namespace workphone
          *
          * @param wheels Array of wheel components to connect to this drivetrain
          */
-        void setWheels(Array<SmartPtr<IWheelComponent>> wheels) override;
+        void setWheels( Array<SmartPtr<IWheelComponent>> wheels ) override;
 
         /**
          * @brief Gets the gearbox component.
@@ -109,7 +109,7 @@ namespace workphone
          *
          * @param gearBox Smart pointer to the gearbox implementation
          */
-        void setGearBox(SmartPtr<IGearBox> gearBox) override;
+        void setGearBox( SmartPtr<IGearBox> gearBox ) override;
 
         /**
          * @brief Gets the differential component.
@@ -123,7 +123,7 @@ namespace workphone
          *
          * @param differential Smart pointer to the differential implementation
          */
-        void setDifferential(SmartPtr<IDifferential> differential) override;
+        void setDifferential( SmartPtr<IDifferential> differential ) override;
 
         /**
          * @brief Gets the current throttle position (processed).
@@ -139,13 +139,13 @@ namespace workphone
          *
          * @param throttle Throttle position between 0.0 and 1.0
          */
-        void setThrottle(f32 throttle) override;
+        void setThrottle( f32 throttle ) override;
 
         /** @copydoc IDriveTrain::getBrake */
         f32 getBrake() const override;
 
         /** @copydoc IDriveTrain::setBrake */
-        void setBrake(f32 brake) override;
+        void setBrake( f32 brake ) override;
 
         /** @name Engine Orientation */
         /** @{ */
@@ -164,7 +164,7 @@ namespace workphone
          *
          * @param orientation 3D vector representing desired engine orientation
          */
-        void setEngineOrientation(const Vector3F &orientation);
+        void setEngineOrientation( const Vector3F &orientation );
         /** @} */
 
         /** @name Gear Ratios */
@@ -187,8 +187,7 @@ namespace workphone
          *
          * @param ratios Array of gear ratios
          */
-        void setGearRatios(const Array<physics_Num> &ratios);
-        /** @} */
+        void setGearRatios( const Array<physics_Num> &ratios );
 
         /** @name Final Drive */
         /** @{ */
@@ -208,7 +207,7 @@ namespace workphone
          *
          * @param ratio Final drive ratio (typically 2.5 to 4.5 for passenger vehicles)
          */
-        void setFinalDriveRatio(physics_Num ratio);
+        void setFinalDriveRatio( physics_Num ratio );
         /** @} */
 
         /** @name RPM Range */
@@ -225,7 +224,7 @@ namespace workphone
          *
          * @param rpm Minimum RPM (typically 600-1000 for passenger vehicles)
          */
-        void setMinRPM(physics_Num rpm);
+        void setMinRPM( physics_Num rpm );
 
         /**
          * @brief Gets the maximum engine RPM.
@@ -239,7 +238,7 @@ namespace workphone
          *
          * @param rpm Maximum RPM before engine damage (typically 6000-8000 for passenger vehicles)
          */
-        void setMaxRPM(physics_Num rpm);
+        void setMaxRPM( physics_Num rpm );
         /** @} */
 
         /** @name Torque Characteristics */
@@ -256,7 +255,7 @@ namespace workphone
          *
          * @param torque Peak torque in Newton-meters (Nm)
          */
-        void setMaxTorque(physics_Num torque);
+        void setMaxTorque( physics_Num torque );
 
         /**
          * @brief Gets the RPM at which maximum torque occurs.
@@ -270,7 +269,7 @@ namespace workphone
          *
          * @param rpm RPM for peak torque (typically 2000-4000 for passenger vehicles)
          */
-        void setTorqueRPM(physics_Num rpm);
+        void setTorqueRPM( physics_Num rpm );
         /** @} */
 
         /** @name Power Characteristics */
@@ -287,7 +286,7 @@ namespace workphone
          *
          * @param power Peak power in Watts
          */
-        void setMaxPower(physics_Num power);
+        void setMaxPower( physics_Num power );
 
         /**
          * @brief Gets the RPM at which maximum power occurs.
@@ -301,7 +300,7 @@ namespace workphone
          *
          * @param rpm RPM for peak power (typically 5000-7000 for passenger vehicles)
          */
-        void setPowerRPM(physics_Num rpm);
+        void setPowerRPM( physics_Num rpm );
         /** @} */
 
         /** @name Engine Inertia */
@@ -321,7 +320,7 @@ namespace workphone
          *
          * @param inertia Engine inertia in kg⋅m² (typically 0.1-1.0 for passenger vehicles)
          */
-        void setEngineInertia(physics_Num inertia);
+        void setEngineInertia( physics_Num inertia );
         /** @} */
 
         /** @name Engine Friction */
@@ -340,7 +339,7 @@ namespace workphone
          *
          * @param friction Base friction coefficient
          */
-        void setEngineBaseFriction(physics_Num friction);
+        void setEngineBaseFriction( physics_Num friction );
 
         /**
          * @brief Gets the RPM-dependent engine friction coefficient.
@@ -357,7 +356,7 @@ namespace workphone
          *
          * @param friction RPM-dependent friction coefficient
          */
-        void setEngineRPMFriction(physics_Num friction);
+        void setEngineRPMFriction( physics_Num friction );
         /** @} */
 
         /** @name Differential */
@@ -377,7 +376,7 @@ namespace workphone
          *
          * @param coefficient Lock coefficient (0.0 for open diff, 1.0 for locked diff)
          */
-        void setDifferentialLockCoefficient(physics_Num coefficient);
+        void setDifferentialLockCoefficient( physics_Num coefficient );
         /** @} */
 
         /** @name Throttle Input */
@@ -397,12 +396,12 @@ namespace workphone
          *
          * @param throttle Raw throttle input (0.0-1.0)
          */
-        void setThrottleInput(physics_Num throttle) override;
+        void setThrottleInput( physics_Num throttle ) override;
         /** @} */
 
         physics_Num getBrakeInput() const override;
 
-        void setBrakeInput(physics_Num brakeInput) override;
+        void setBrakeInput( physics_Num brakeInput ) override;
 
         /** @name Transmission Mode */
         /** @{ */
@@ -418,7 +417,7 @@ namespace workphone
          *
          * @param automatic true for automatic shifting, false for manual control
          */
-        void setAutomatic(bool automatic);
+        void setAutomatic( bool automatic );
         /** @} */
 
         /** @name Gear State */
@@ -435,7 +434,7 @@ namespace workphone
          *
          * @param gear Gear index to select
          */
-        void setGear(s32 gear);
+        void setGear( s32 gear );
         /** @} */
 
         /** @name Engine State */
@@ -452,7 +451,7 @@ namespace workphone
          *
          * @param rpm Engine RPM to set
          */
-        void setRPM(physics_Num rpm);
+        void setRPM( physics_Num rpm );
 
         /**
          * @brief Gets the current slip ratio.
@@ -466,7 +465,7 @@ namespace workphone
          *
          * @param ratio Slip ratio to set
          */
-        void setSlipRatio(physics_Num ratio);
+        void setSlipRatio( physics_Num ratio );
 
         /**
          * @brief Gets the engine angular velocity.
@@ -480,32 +479,32 @@ namespace workphone
          *
          * @param velocity Angular velocity in radians per second
          */
-        void setEngineAngularVelocity(physics_Num velocity);
+        void setEngineAngularVelocity( physics_Num velocity );
         /** @} */
 
         SmartPtr<Properties> getProperties() const override;
-        void setProperties(SmartPtr<Properties> properties) override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         physics_Num getStarterGearRatio() const;
-        void setStarterGearRatio(physics_Num starterGearRatio);
+        void setStarterGearRatio( physics_Num starterGearRatio );
 
         physics_Num getClutchThrottleRPMBoost() const;
-        void setClutchThrottleRPMBoost(physics_Num clutchThrottleRPMBoost);
+        void setClutchThrottleRPMBoost( physics_Num clutchThrottleRPMBoost );
 
         physics_Num getUpShiftThrottleRPMScale() const;
-        void setUpShiftThrottleRPMScale(physics_Num upShiftThrottleRPMScale);
+        void setUpShiftThrottleRPMScale( physics_Num upShiftThrottleRPMScale );
 
         physics_Num getUpShiftBaseRPMScale() const;
-        void setUpShiftBaseRPMScale(physics_Num upShiftBaseRPMScale);
+        void setUpShiftBaseRPMScale( physics_Num upShiftBaseRPMScale );
 
         physics_Num getDownShiftThrottleRPMScale() const;
-        void setDownShiftThrottleRPMScale(physics_Num downShiftThrottleRPMScale);
+        void setDownShiftThrottleRPMScale( physics_Num downShiftThrottleRPMScale );
 
         physics_Num getDownShiftBaseRPMScale() const;
-        void setDownShiftBaseRPMScale(physics_Num downShiftBaseRPMScale);
+        void setDownShiftBaseRPMScale( physics_Num downShiftBaseRPMScale );
 
         physics_Num getOverRevTorqueFalloff() const;
-        void setOverRevTorqueFalloff(physics_Num overRevTorqueFalloff);
+        void setOverRevTorqueFalloff( physics_Num overRevTorqueFalloff );
 
         WP_CLASS_REGISTER_DECL;
 
@@ -544,42 +543,42 @@ namespace workphone
          *
          * Default: 800 RPM (typical idle speed).
          */
-        physics_Num m_minRPM = static_cast<physics_Num>(800);
+        physics_Num m_minRPM = static_cast<physics_Num>( 800 );
 
         /**
          * @brief Maximum engine RPM (redline).
          *
          * Default: 6400 RPM (typical for passenger vehicles).
          */
-        physics_Num m_maxRPM = static_cast<physics_Num>(6400);
+        physics_Num m_maxRPM = static_cast<physics_Num>( 6400 );
 
         /**
          * @brief Maximum engine torque output.
          *
          * Peak torque in Newton-meters. Default: 664 Nm.
          */
-        physics_Num m_maxTorque = static_cast<physics_Num>(664);
+        physics_Num m_maxTorque = static_cast<physics_Num>( 664 );
 
         /**
          * @brief RPM at which maximum torque occurs.
          *
          * Default: 4000 RPM (typical for naturally aspirated engines).
          */
-        physics_Num m_torqueRPM = static_cast<physics_Num>(4000);
+        physics_Num m_torqueRPM = static_cast<physics_Num>( 4000 );
 
         /**
          * @brief Maximum engine power output.
          *
          * Peak power in Watts. Default: 317000 W (317 kW).
          */
-        physics_Num m_maxPower = static_cast<physics_Num>(317000);
+        physics_Num m_maxPower = static_cast<physics_Num>( 317000 );
 
         /**
          * @brief RPM at which maximum power occurs.
          *
          * Default: 5000 RPM (typically higher than peak torque RPM).
          */
-        physics_Num m_powerRPM = static_cast<physics_Num>(5000);
+        physics_Num m_powerRPM = static_cast<physics_Num>( 5000 );
         /** @} */
 
         /** @name Engine Dynamics */
@@ -617,7 +616,7 @@ namespace workphone
          * Controls torque transfer between wheels (0.0 = open, 1.0 = locked).
          * Default: 0.0 (open differential).
          */
-        physics_Num m_differentialLockCoefficient = static_cast<physics_Num>(0);
+        physics_Num m_differentialLockCoefficient = static_cast<physics_Num>( 0 );
         /** @} */
 
         /** @name Input State */
@@ -724,6 +723,6 @@ namespace workphone
         SmartPtr<IDifferential> m_differential;
         /** @} */
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // CarDriveTrain_h__
+#endif  // CarDriveTrain_h__

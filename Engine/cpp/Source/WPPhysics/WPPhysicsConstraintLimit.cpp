@@ -17,7 +17,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLimit::setRestitution(real_Num restitution)
+    void WPPhysicsConstraintLimit::setRestitution( real_Num restitution )
     {
     }
 
@@ -26,7 +26,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLimit::setBounceThreshold(real_Num bounceThreshold)
+    void WPPhysicsConstraintLimit::setBounceThreshold( real_Num bounceThreshold )
     {
     }
 
@@ -35,7 +35,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLimit::setStiffness(real_Num stiffness)
+    void WPPhysicsConstraintLimit::setStiffness( real_Num stiffness )
     {
     }
 
@@ -44,7 +44,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLimit::setDamping(real_Num damping)
+    void WPPhysicsConstraintLimit::setDamping( real_Num damping )
     {
     }
 
@@ -53,7 +53,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLimit::setContactDistance(real_Num contactDistance)
+    void WPPhysicsConstraintLimit::setContactDistance( real_Num contactDistance )
     {
     }
 
@@ -62,11 +62,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraintLimit::setUserData(void *userData)
+    void WPPhysicsConstraintLimit::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsConstraintLimit::setTypeInfo(u32 id)
+    void WPPhysicsConstraintLimit::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -87,4 +87,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraintLimit::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

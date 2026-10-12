@@ -26,7 +26,7 @@ namespace workphone::physics
 
     WPPhysics::~WPPhysics() = default;
 
-    void WPPhysics::load(SmartPtr<ISharedObject> data)
+    void WPPhysics::load( SmartPtr<ISharedObject> data )
     {
         FactoryUtil::addFactory<WPPhysicsManager2>();
         FactoryUtil::addFactory<WPPhysicsScene2>();
@@ -44,7 +44,7 @@ namespace workphone::physics
         FactoryUtil::addFactory<WPPhysicsTerrainShape3>();
     }
 
-    void WPPhysics::unload(SmartPtr<ISharedObject> data)
+    void WPPhysics::unload( SmartPtr<ISharedObject> data )
     {
         FactoryUtil::removeFactory<WPPhysicsTerrainShape3>();
         FactoryUtil::removeFactory<WPPhysicsMeshShape3>();
@@ -67,14 +67,14 @@ namespace workphone::physics
         return m_sPlugin;
     }
 
-    void WPPhysics::setInstance(SmartPtr<WPPhysics> plugin)
+    void WPPhysics::setInstance( SmartPtr<WPPhysics> plugin )
     {
         m_sPlugin = plugin;
     }
-}
+}  // namespace workphone::physics
 
 extern "C" {
-WP_INTERFACE_EXPORT void WP_INTERFACE_API workphone_get_version(int *major, int *minor, int *patch)
+WP_INTERFACE_EXPORT void WP_INTERFACE_API workphone_get_version( int *major, int *minor, int *patch )
 {
     *major = WP_VERSION_MAJOR;
     *minor = WP_VERSION_MINOR;
@@ -82,26 +82,26 @@ WP_INTERFACE_EXPORT void WP_INTERFACE_API workphone_get_version(int *major, int 
 }
 
 WP_INTERFACE_EXPORT void WP_INTERFACE_API
-loadPlugin(workphone::core::ApplicationManager *applicationManager)
+loadPlugin( workphone::core::ApplicationManager *applicationManager )
 {
     using namespace workphone;
     using namespace workphone::physics;
 
     auto plugin = workphone::make_ptr<WPPhysics>();
-    plugin->load(nullptr);
-    WPPhysics::setInstance(plugin);
+    plugin->load( nullptr );
+    WPPhysics::setInstance( plugin );
 }
 
 WP_INTERFACE_EXPORT void WP_INTERFACE_API
-unloadPlugin(workphone::core::ApplicationManager *applicationManager)
+unloadPlugin( workphone::core::ApplicationManager *applicationManager )
 {
     using namespace workphone;
     using namespace workphone::physics;
 
-    if(auto plugin = WPPhysics::instance())
+    if( auto plugin = WPPhysics::instance() )
     {
-        plugin->unload(nullptr);
-        WPPhysics::setInstance(nullptr);
+        plugin->unload( nullptr );
+        WPPhysics::setInstance( nullptr );
     }
 }
 }

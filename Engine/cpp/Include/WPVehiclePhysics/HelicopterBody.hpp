@@ -31,6 +31,6 @@ namespace workphone::vehicle
         real_dNum m_sideCDA = 0.0;
         real_dNum m_planCDA = 0.0;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // Body_h__
+#endif  // Body_h__

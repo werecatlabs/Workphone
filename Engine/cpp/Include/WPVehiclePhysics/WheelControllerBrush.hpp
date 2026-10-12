@@ -16,79 +16,79 @@ namespace workphone
         void update() override;
         void reset() override;
 
-        void addTorque(physics_Num torque) override;
-        void setTorque(physics_Num torque) override;
+        void addTorque( physics_Num torque ) override;
+        void setTorque( physics_Num torque ) override;
         physics_Num getTorque() const override;
 
         physics_Num getMass() const override;
-        void setMass(physics_Num mass) override;
+        void setMass( physics_Num mass ) override;
 
         physics_Num getSpringRate() const override;
-        void setSpringRate(physics_Num springRate) override;
+        void setSpringRate( physics_Num springRate ) override;
 
         physics_Num getRadius() const override;
-        void setRadius(physics_Num radius) override;
+        void setRadius( physics_Num radius ) override;
 
         physics_Num getSuspensionTravel() const override;
-        void setSuspensionTravel(physics_Num suspensionTravel) override;
+        void setSuspensionTravel( physics_Num suspensionTravel ) override;
 
         physics_Num getDamping() const override;
-        void setDamping(physics_Num damping) override;
+        void setDamping( physics_Num damping ) override;
 
         physics_Num getSuspensionDistance() const override;
-        void setSuspensionDistance(physics_Num suspensionDistance) override;
+        void setSuspensionDistance( physics_Num suspensionDistance ) override;
 
         physics_Num getSteeringAngle() const override;
-        void setSteeringAngle(physics_Num steeringAngle) override;
+        void setSteeringAngle( physics_Num steeringAngle ) override;
 
         bool isSteeringWheel() const override;
-        void setSteeringWheel(bool steeringWheel) override;
+        void setSteeringWheel( bool steeringWheel ) override;
 
         bool isPoweredWheel() const override;
-        void setPoweredWheel(bool poweredWheel) override;
+        void setPoweredWheel( bool poweredWheel ) override;
 
         physics_Num getAngularVelocity() const override;
-        void setAngularVelocity(physics_Num angularVelocity) override;
+        void setAngularVelocity( physics_Num angularVelocity ) override;
 
         physics_Num getBrake() const override;
-        void setBrake(physics_Num brake) override;
+        void setBrake( physics_Num brake ) override;
 
         TireModel getTireModel() const override;
-        void setTireModel(TireModel tireModel) override;
+        void setTireModel( TireModel tireModel ) override;
 
         physics_Num getMassFraction() const;
-        void setMassFraction(physics_Num massFraction);
+        void setMassFraction( physics_Num massFraction );
 
         physics_Num getInertia() const;
-        void setInertia(physics_Num inertia);
+        void setInertia( physics_Num inertia );
 
         physics_Num getGrip() const;
-        void setGrip(physics_Num grip) override;
-        void setContactAcceleration(physics_Num acceleration) override;
+        void setGrip( physics_Num grip ) override;
+        void setContactAcceleration( physics_Num acceleration ) override;
 
         physics_Num getStaticFrictionCoefficient() const;
-        void setStaticFrictionCoefficient(physics_Num coefficient);
+        void setStaticFrictionCoefficient( physics_Num coefficient );
 
         physics_Num getSlidingFrictionCoefficient() const;
-        void setSlidingFrictionCoefficient(physics_Num coefficient);
+        void setSlidingFrictionCoefficient( physics_Num coefficient );
 
         physics_Num getLongitudinalStiffness() const;
-        void setLongitudinalStiffness(physics_Num stiffness);
+        void setLongitudinalStiffness( physics_Num stiffness );
 
         physics_Num getLateralStiffness() const;
-        void setLateralStiffness(physics_Num stiffness);
+        void setLateralStiffness( physics_Num stiffness );
 
         physics_Num getBrakeFrictionTorque() const;
-        void setBrakeFrictionTorque(physics_Num torque);
+        void setBrakeFrictionTorque( physics_Num torque );
 
         physics_Num getHandbrake() const;
-        void setHandbrake(physics_Num handbrake);
+        void setHandbrake( physics_Num handbrake );
 
         physics_Num getHandbrakeFrictionTorque() const;
-        void setHandbrakeFrictionTorque(physics_Num torque);
+        void setHandbrakeFrictionTorque( physics_Num torque );
 
         physics_Num getRollingResistanceTorque() const;
-        void setRollingResistanceTorque(physics_Num torque);
+        void setRollingResistanceTorque( physics_Num torque );
 
         physics_Num getCompression() const override;
         physics_Num getNormalForce() const;
@@ -104,16 +104,16 @@ namespace workphone
         Vector3<physics_Num> getRoadForceVector() const;
 
         SmartPtr<Properties> getProperties() const override;
-        void setProperties(SmartPtr<Properties> properties) override;
+        void setProperties( SmartPtr<Properties> properties ) override;
 
         WP_CLASS_REGISTER_DECL;
 
     protected:
-        void updateWheel(physics_Num dt);
-        Vector3<physics_Num> calculateBrushForce(physics_Num normalForce, physics_Num dt,
-                                                 physics_Num cornerMass);
-        void integrateFreeSpin(physics_Num dt);
-        void applyAngularFriction(physics_Num torque, physics_Num dt);
+        void updateWheel( physics_Num dt );
+        Vector3<physics_Num> calculateBrushForce( physics_Num normalForce, physics_Num dt,
+                                                  physics_Num cornerMass );
+        void integrateFreeSpin( physics_Num dt );
+        void applyAngularFriction( physics_Num torque, physics_Num dt );
 
         SmartPtr<physics::IRaycastHit> m_hit;
 
@@ -161,6 +161,6 @@ namespace workphone
         bool m_isSteeringWheel = false;
         bool m_isPoweredWheel = false;
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // WheelControllerBrush_h__
+#endif  // WheelControllerBrush_h__

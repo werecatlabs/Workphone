@@ -17,12 +17,12 @@ namespace workphone::vehicle
     CAircraftWingFast::CAircraftWingFast()
     {
         m_sectionCount = 10;
-        m_wingTipWidthZeroToOne = static_cast<real_Num>(1.0);
-        m_wingTipSweep = static_cast<real_Num>(0.0);
-        m_wingTipAngle = static_cast<real_Num>(0.0);
-        m_cdOverride = static_cast<real_Num>(0.045);
+        m_wingTipWidthZeroToOne = static_cast<real_Num>( 1.0 );
+        m_wingTipSweep = static_cast<real_Num>( 0.0 );
+        m_wingTipAngle = static_cast<real_Num>( 0.0 );
+        m_cdOverride = static_cast<real_Num>( 0.045 );
 
-        m_wingArea = static_cast<real_Num>(0.0);
+        m_wingArea = static_cast<real_Num>( 0.0 );
 
         m_rootLeadingEdge = Vector3<real_Num>::zero();
         m_rootTrailingEdge = Vector3<real_Num>::zero();
@@ -30,26 +30,26 @@ namespace workphone::vehicle
         m_tipTrailingEdge = Vector3<real_Num>::zero();
         m_rootLiftPosition = Vector3<real_Num>::zero();
         m_tipLiftPosition = Vector3<real_Num>::zero();
-        m_liftLineChordPosition = static_cast<real_Num>(0.5);
+        m_liftLineChordPosition = static_cast<real_Num>( 0.5 );
 
-        m_aoa = std::array<real_Num, m_maxSections>({ 0 });
-        m_aoaPlus10 = std::array<real_Num, m_maxSections>({ 0 });
-        m_aoaMinus10 = std::array<real_Num, m_maxSections>({ 0 });
+        m_aoa = std::array<real_Num, m_maxSections>( { 0 } );
+        m_aoaPlus10 = std::array<real_Num, m_maxSections>( { 0 } );
+        m_aoaMinus10 = std::array<real_Num, m_maxSections>( { 0 } );
 
-        m_chordLengthsMinus10 = std::array<real_Num, m_maxSections>({ 0 });
-        m_chordLengthsPlus10 = std::array<real_Num, m_maxSections>({ 0 });
-        m_chordLengths = std::array<real_Num, m_maxSections>({ 0 });
+        m_chordLengthsMinus10 = std::array<real_Num, m_maxSections>( { 0 } );
+        m_chordLengthsPlus10 = std::array<real_Num, m_maxSections>( { 0 } );
+        m_chordLengths = std::array<real_Num, m_maxSections>( { 0 } );
 
-        m_re = std::array<real_Num, m_maxSections>({ 0 });
-        m_area = std::array<real_Num, m_maxSections>({ 0 });
+        m_re = std::array<real_Num, m_maxSections>( { 0 } );
+        m_area = std::array<real_Num, m_maxSections>( { 0 } );
 
-        m_totalLift = std::array<real_Num, m_maxSections>({ 0 });
-        m_totalDrag = std::array<real_Num, m_maxSections>({ 0 });
-        m_totalPitch = std::array<real_Num, m_maxSections>({ 0 });
+        m_totalLift = std::array<real_Num, m_maxSections>( { 0 } );
+        m_totalDrag = std::array<real_Num, m_maxSections>( { 0 } );
+        m_totalPitch = std::array<real_Num, m_maxSections>( { 0 } );
 
-        m_fStallControlCL = std::array<real_Num, m_maxSections>({ 0 });
-        m_fStallControlCD = std::array<real_Num, m_maxSections>({ 0 });
-        m_fStallControlCM = std::array<real_Num, m_maxSections>({ 0 });
+        m_fStallControlCL = std::array<real_Num, m_maxSections>( { 0 } );
+        m_fStallControlCD = std::array<real_Num, m_maxSections>( { 0 } );
+        m_fStallControlCM = std::array<real_Num, m_maxSections>( { 0 } );
     }
 
     CAircraftWingFast::~CAircraftWingFast()
@@ -68,51 +68,45 @@ namespace workphone::vehicle
         Vector3<real_Num> right = transform.right();
         Vector3<real_Num> forward = transform.forward();
 
-        forward = -forward; // todo
+        forward = -forward;  // todo
 
         // if (scale.X() < real_Num(0.0))
         //{
         //	right = -right;
         // }
 
-        WP_ASSERT(scale.length() > std::numeric_limits<f32>::epsilon());
+        WP_ASSERT( scale.length() > std::numeric_limits<f32>::epsilon() );
 
         // Calculate root and tip center points.
-        Vector3<real_Num> wingRootCenter =
-            p - (right * (scale.X() * static_cast<real_Num>(0.5)));
-        Vector3<real_Num> wingTipCenter =
-            p + (right * (scale.X() * static_cast<real_Num>(0.5)));
+        Vector3<real_Num> wingRootCenter = p - ( right * ( scale.X() * static_cast<real_Num>( 0.5 ) ) );
+        Vector3<real_Num> wingTipCenter = p + ( right * ( scale.X() * static_cast<real_Num>( 0.5 ) ) );
         wingTipCenter += forward * m_wingTipSweep;
 
         // Calculate corners.
-        m_rootLeadingEdge =
-            wingRootCenter + (forward * (scale.Z() * static_cast<real_Num>(0.5)));
-        m_rootTrailingEdge =
-            wingRootCenter - (forward * (scale.Z() * static_cast<real_Num>(0.5)));
+        m_rootLeadingEdge = wingRootCenter + ( forward * ( scale.Z() * static_cast<real_Num>( 0.5 ) ) );
+        m_rootTrailingEdge = wingRootCenter - ( forward * ( scale.Z() * static_cast<real_Num>( 0.5 ) ) );
         m_tipLeadingEdge =
             wingTipCenter +
-            (forward * ((scale.Z() * static_cast<real_Num>(0.5)) * m_wingTipWidthZeroToOne));
+            ( forward * ( ( scale.Z() * static_cast<real_Num>( 0.5 ) ) * m_wingTipWidthZeroToOne ) );
         m_tipTrailingEdge =
             wingTipCenter -
-            (forward * ((scale.Z() * static_cast<real_Num>(0.5)) * m_wingTipWidthZeroToOne));
+            ( forward * ( ( scale.Z() * static_cast<real_Num>( 0.5 ) ) * m_wingTipWidthZeroToOne ) );
 
         // Tweak tip corners based on the angle between them.
         Vector3<real_Num> tipTrailingEdgeToTipLeadingEdge = m_tipLeadingEdge - m_tipTrailingEdge;
         Quaternion<real_Num> rotation =
-            Quaternion<real_Num>::angleAxis(m_wingTipAngle, r * Vector3<real_Num>::UNIT_X);
+            Quaternion<real_Num>::angleAxis( m_wingTipAngle, r * Vector3<real_Num>::UNIT_X );
         tipTrailingEdgeToTipLeadingEdge = rotation * tipTrailingEdgeToTipLeadingEdge;
-        m_tipTrailingEdge =
-            wingTipCenter - (tipTrailingEdgeToTipLeadingEdge * 0.5);
-        m_tipLeadingEdge =
-            wingTipCenter + (tipTrailingEdgeToTipLeadingEdge * 0.5);
+        m_tipTrailingEdge = wingTipCenter - ( tipTrailingEdgeToTipLeadingEdge * 0.5 );
+        m_tipLeadingEdge = wingTipCenter + ( tipTrailingEdgeToTipLeadingEdge * 0.5 );
 
-        auto rootDistance = static_cast<real_Num>(0.0);
-        auto tipDistance = static_cast<real_Num>(0.0);
+        auto rootDistance = static_cast<real_Num>( 0.0 );
+        auto tipDistance = static_cast<real_Num>( 0.0 );
 
         auto attachedControlSurface = getAttachedControlSurface();
-        if(attachedControlSurface)
+        if( attachedControlSurface )
         {
-            if(!isControlSurface())
+            if( !isControlSurface() )
             {
                 rootDistance = attachedControlSurface->getRootHingeDistanceFromTrailingEdge();
                 tipDistance = attachedControlSurface->getTipHingeDistanceFromTrailingEdge();
@@ -127,39 +121,38 @@ namespace workphone::vehicle
                 tipDistance = attachedControlSurface->getTipHingeDistanceFromTrailingEdge();
 
                 auto wing = attachedControlSurface->getMainWing();
-                auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>(wing);
-                if(mainWing)
+                auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>( wing );
+                if( mainWing )
                 {
                     m_rootLeadingEdge =
                         mainWing->m_rootTrailingEdge +
-                        (mainWing->m_rootLeadingEdge - mainWing->m_rootTrailingEdge) *
-                        rootDistance;
+                        ( mainWing->m_rootLeadingEdge - mainWing->m_rootTrailingEdge ) * rootDistance;
                     m_tipLeadingEdge =
                         mainWing->m_tipTrailingEdge +
-                        (mainWing->m_tipLeadingEdge - mainWing->m_tipTrailingEdge) * tipDistance;
+                        ( mainWing->m_tipLeadingEdge - mainWing->m_tipTrailingEdge ) * tipDistance;
                 }
             }
         }
 
-        m_rootLiftPosition = m_rootTrailingEdge + ((m_rootLeadingEdge - m_rootTrailingEdge) *
-                                                   m_liftLineChordPosition);
-        m_tipLiftPosition = m_tipTrailingEdge +
-                            ((m_tipLeadingEdge - m_tipTrailingEdge) * m_liftLineChordPosition);
+        m_rootLiftPosition = m_rootTrailingEdge +
+                             ( ( m_rootLeadingEdge - m_rootTrailingEdge ) * m_liftLineChordPosition );
+        m_tipLiftPosition =
+            m_tipTrailingEdge + ( ( m_tipLeadingEdge - m_tipTrailingEdge ) * m_liftLineChordPosition );
 
         // m_localWingRight = (wingRootCenter - wingTipCenter).normaliseCopy();
-        m_localWingRight = (wingTipCenter - wingRootCenter).normaliseCopy();
+        m_localWingRight = ( wingTipCenter - wingRootCenter ).normaliseCopy();
         // m_localWingRight = transform->transformVector(m_localWingRight);
         m_localWingRight.normalise();
 
-        if(scale.X() < static_cast<real_Num>(0.0))
+        if( scale.X() < static_cast<real_Num>( 0.0 ) )
         {
             m_localWingRight = -m_localWingRight;
         }
 
         // Calculate wing area.
-        m_wingArea = calculateArea(m_rootLeadingEdge, m_tipLeadingEdge, m_tipTrailingEdge,
-                                   m_rootTrailingEdge);
-        WP_ASSERT(m_wingArea < static_cast<real_Num>( 10.0 ));
+        m_wingArea =
+            calculateArea( m_rootLeadingEdge, m_tipLeadingEdge, m_tipTrailingEdge, m_rootTrailingEdge );
+        WP_ASSERT( m_wingArea < static_cast<real_Num>( 10.0 ) );
 #else
         SmartPtr<Transform3<real_Num>> bodyTransform = getParentAircraft()->getBodyTransform();
         SmartPtr<Transform3<real_Num>> worldTransform = getWorldTransform();
@@ -170,102 +163,100 @@ namespace workphone::vehicle
         Vector3<real_Num> right = worldTransform->right();
         Vector3<real_Num> forward = worldTransform->forward();
 
-        p = bodyTransform->inverseTransformPoint(p);
+        p = bodyTransform->inverseTransformPoint( p );
         r = bodyTransform->getOrientation().inverse() * r;
 
-        right = bodyTransform->inverseTransformVector(right);
-        forward = bodyTransform->inverseTransformVector(forward);
+        right = bodyTransform->inverseTransformVector( right );
+        forward = bodyTransform->inverseTransformVector( forward );
 
-        forward = -forward; // todo
+        forward = -forward;  // todo
 
         // if (scale.X() < real_Num(0.0))
         //{
         //	right = -right;
         // }
 
-        WP_ASSERT(scale.length() > std::numeric_limits<f32>::epsilon());
+        WP_ASSERT( scale.length() > std::numeric_limits<f32>::epsilon() );
 
         // Calculate root and tip center points.
-        Vector3<real_Num> wingRootCenter = p - (right * (scale.X() * real_Num(0.5)));
-        Vector3<real_Num> wingTipCenter = p + (right * (scale.X() * real_Num(0.5)));
+        Vector3<real_Num> wingRootCenter = p - ( right * ( scale.X() * real_Num( 0.5 ) ) );
+        Vector3<real_Num> wingTipCenter = p + ( right * ( scale.X() * real_Num( 0.5 ) ) );
         wingTipCenter += forward * m_wingTipSweep;
 
         // Calculate corners.
-        m_rootLeadingEdge = wingRootCenter + (forward * (scale.Z() * real_Num(0.5)));
-        m_rootTrailingEdge = wingRootCenter - (forward * (scale.Z() * real_Num(0.5)));
+        m_rootLeadingEdge = wingRootCenter + ( forward * ( scale.Z() * real_Num( 0.5 ) ) );
+        m_rootTrailingEdge = wingRootCenter - ( forward * ( scale.Z() * real_Num( 0.5 ) ) );
         m_tipLeadingEdge =
-            wingTipCenter +
-            (forward * ((scale.Z() * real_Num(0.5)) * m_wingTipWidthZeroToOne));
+            wingTipCenter + ( forward * ( ( scale.Z() * real_Num( 0.5 ) ) * m_wingTipWidthZeroToOne ) );
         m_tipTrailingEdge =
-            wingTipCenter -
-            (forward * ((scale.Z() * real_Num(0.5)) * m_wingTipWidthZeroToOne));
+            wingTipCenter - ( forward * ( ( scale.Z() * real_Num( 0.5 ) ) * m_wingTipWidthZeroToOne ) );
 
         // Tweak tip corners based on the angle between them.
         Vector3<real_Num> tipTrailingEdgeToTipLeadingEdge = m_tipLeadingEdge - m_tipTrailingEdge;
         Quaternion<real_Num> rotation =
-            Quaternion<real_Num>::angleAxis(m_wingTipAngle, r * Vector3<real_Num>::UNIT_X);
+            Quaternion<real_Num>::angleAxis( m_wingTipAngle, r * Vector3<real_Num>::UNIT_X );
         tipTrailingEdgeToTipLeadingEdge = rotation * tipTrailingEdgeToTipLeadingEdge;
-        m_tipTrailingEdge = wingTipCenter - (tipTrailingEdgeToTipLeadingEdge * real_Num(0.5));
-        m_tipLeadingEdge = wingTipCenter + (tipTrailingEdgeToTipLeadingEdge * real_Num(0.5));
+        m_tipTrailingEdge = wingTipCenter - ( tipTrailingEdgeToTipLeadingEdge * real_Num( 0.5 ) );
+        m_tipLeadingEdge = wingTipCenter + ( tipTrailingEdgeToTipLeadingEdge * real_Num( 0.5 ) );
 
-        m_rootLiftPosition = m_rootTrailingEdge + ((m_rootLeadingEdge - m_rootTrailingEdge) *
-                                                   m_liftLineChordPosition);
-        m_tipLiftPosition = m_tipTrailingEdge +
-                            ((m_tipLeadingEdge - m_tipTrailingEdge) * m_liftLineChordPosition);
+        m_rootLiftPosition = m_rootTrailingEdge +
+                             ( ( m_rootLeadingEdge - m_rootTrailingEdge ) * m_liftLineChordPosition );
+        m_tipLiftPosition =
+            m_tipTrailingEdge + ( ( m_tipLeadingEdge - m_tipTrailingEdge ) * m_liftLineChordPosition );
 
         // m_localWingRight = (wingRootCenter - wingTipCenter).normaliseCopy();
-        m_localWingRight = (wingTipCenter - wingRootCenter).normaliseCopy();
+        m_localWingRight = ( wingTipCenter - wingRootCenter ).normaliseCopy();
         // transform->transformVector(m_localWingRight);
         m_localWingRight.normalise();
 
-        if(scale.X() < real_Num(0.0))
+        if( scale.X() < real_Num( 0.0 ) )
         {
             m_localWingRight = -m_localWingRight;
         }
 
         m_localWingRight = worldTransform->right();
-        m_localWingRight = bodyTransform->inverseTransformVector(m_localWingRight);
+        m_localWingRight = bodyTransform->inverseTransformVector( m_localWingRight );
 
         // Calculate wing area.
-        m_wingArea = calculateArea(m_rootLeadingEdge, m_tipLeadingEdge, m_tipTrailingEdge,
-                                   m_rootTrailingEdge);
-        WP_ASSERT(m_wingArea < real_Num( 10.0 ));
+        m_wingArea =
+            calculateArea( m_rootLeadingEdge, m_tipLeadingEdge, m_tipTrailingEdge, m_rootTrailingEdge );
+        WP_ASSERT( m_wingArea < real_Num( 10.0 ) );
 #endif
     }
 
-    real_Num CAircraftWingFast::calculateArea(const Vector3<real_Num> &pointA,
-                                              const Vector3<real_Num> &pointB,
-                                              const Vector3<real_Num> &pointC,
-                                              const Vector3<real_Num> &pointD)
+    real_Num CAircraftWingFast::calculateArea( const Vector3<real_Num> &pointA,
+                                               const Vector3<real_Num> &pointB,
+                                               const Vector3<real_Num> &pointC,
+                                               const Vector3<real_Num> &pointD )
     {
-        auto ab = (pointB - pointA).length();
-        auto bc = (pointC - pointB).length();
-        auto cd = (pointD - pointC).length();
-        auto da = (pointA - pointD).length();
+        auto ab = ( pointB - pointA ).length();
+        auto bc = ( pointC - pointB ).length();
+        auto cd = ( pointD - pointC ).length();
+        auto da = ( pointA - pointD ).length();
 
-        WP_ASSERT(ab < static_cast<real_Num>( 10.0 ));
-        WP_ASSERT(bc < static_cast<real_Num>( 10.0 ));
-        WP_ASSERT(cd < static_cast<real_Num>( 10.0 ));
-        WP_ASSERT(da < static_cast<real_Num>( 10.0 ));
+        WP_ASSERT( ab < static_cast<real_Num>( 10.0 ) );
+        WP_ASSERT( bc < static_cast<real_Num>( 10.0 ) );
+        WP_ASSERT( cd < static_cast<real_Num>( 10.0 ) );
+        WP_ASSERT( da < static_cast<real_Num>( 10.0 ) );
 
-        auto s = (ab + bc + cd + da) * static_cast<real_Num>(0.5);
-        WP_ASSERT(Math<real_Num>::isFinite( s ));
+        auto s = ( ab + bc + cd + da ) * static_cast<real_Num>( 0.5 );
+        WP_ASSERT( Math<real_Num>::isFinite( s ) );
 
-        auto squareArea = (s - ab) * (s - bc) * (s - cd) * (s - da);
-        WP_ASSERT(Math<real_Num>::isFinite( squareArea ));
+        auto squareArea = ( s - ab ) * ( s - bc ) * ( s - cd ) * ( s - da );
+        WP_ASSERT( Math<real_Num>::isFinite( squareArea ) );
 
-        WP_ASSERT(Math<real_Num>::isFinite( Math<real_Num>::Sqrt( squareArea ) ));
-        return Math<real_Num>::Sqrt(squareArea);
+        WP_ASSERT( Math<real_Num>::isFinite( Math<real_Num>::Sqrt( squareArea ) ) );
+        return Math<real_Num>::Sqrt( squareArea );
     }
 
-    s32 CAircraftWingFast::getDebugId(s32 section, s32 index) const
+    s32 CAircraftWingFast::getDebugId( s32 section, s32 index ) const
     {
-        if(section < m_debugIds.size())
+        if( section < m_debugIds.size() )
         {
-            if(index < m_debugIds[section].size())
+            if( index < m_debugIds[section].size() )
             {
                 int id = m_debugIds[section][index];
-                WP_ASSERT(id != 0);
+                WP_ASSERT( id != 0 );
                 return id;
             }
         }
@@ -273,9 +264,9 @@ namespace workphone::vehicle
         return 0;
     }
 
-    s32 CAircraftWingFast::getDebugId(s32 i) const
+    s32 CAircraftWingFast::getDebugId( s32 i ) const
     {
-        if(i < m_ids.size())
+        if( i < m_ids.size() )
         {
             return m_ids[i];
         }
@@ -397,7 +388,7 @@ namespace workphone::vehicle
     }
 
     Vector3<real_Num> CAircraftWingFast::calculateRelativeWind(
-        s32 sectionIndex, const Vector3<real_Num> &aerodynamicCenter, const Vector3<real_Num> &wind)
+        s32 sectionIndex, const Vector3<real_Num> &aerodynamicCenter, const Vector3<real_Num> &wind )
     {
         SmartPtr<IVehicleBody> aircraftBody = m_parent;
         auto aircraft = m_parentAircraft;
@@ -407,15 +398,14 @@ namespace workphone::vehicle
         auto localTransform = getLocalTransform();
         auto propwash = m_propWash;
 
-        Vector3<real_Num> worldAerodynamicCenter =
-            aircraftTransform.transformPoint(aerodynamicCenter);
+        Vector3<real_Num> worldAerodynamicCenter = aircraftTransform.transformPoint( aerodynamicCenter );
 
-        Vector3<real_Num> relativeWind = wind - aircraft->getPointVelocity(worldAerodynamicCenter);
+        Vector3<real_Num> relativeWind = wind - aircraft->getPointVelocity( worldAerodynamicCenter );
 
         real_Num maxVelocity = 10000.0;
-        relativeWind.X() = Math<real_Num>::clamp(relativeWind.X(), -maxVelocity, maxVelocity);
-        relativeWind.Y() = Math<real_Num>::clamp(relativeWind.Y(), -maxVelocity, maxVelocity);
-        relativeWind.Z() = Math<real_Num>::clamp(relativeWind.Z(), -maxVelocity, maxVelocity);
+        relativeWind.X() = Math<real_Num>::clamp( relativeWind.X(), -maxVelocity, maxVelocity );
+        relativeWind.Y() = Math<real_Num>::clamp( relativeWind.Y(), -maxVelocity, maxVelocity );
+        relativeWind.Z() = Math<real_Num>::clamp( relativeWind.Z(), -maxVelocity, maxVelocity );
 
         ////
 
@@ -446,11 +436,11 @@ namespace workphone::vehicle
         // Apply
         // relativeWind += localRelativeWind;
 
-        relativeWind = aircraftTransform.inverseTransformVector(relativeWind);
+        relativeWind = aircraftTransform.inverseTransformVector( relativeWind );
 
-        if(propwash != nullptr)
+        if( propwash != nullptr )
         {
-            relativeWind += propwash->getPropWash(sectionIndex);
+            relativeWind += propwash->getPropWash( sectionIndex );
 
             // if (aircraft->getDisplayDebugData())
             //{
@@ -500,19 +490,19 @@ namespace workphone::vehicle
         SmartPtr<IAerodymanicsWind> pWind = aircraft->getWind();
 
         auto wind = pWind;
-        if(!wind)
+        if( !wind )
         {
             return;
         }
 
         auto aircraftWorldPosition = aircraftTransform.getPosition();
-        auto windVector = wind->getWind(aircraftWorldPosition.Y(), 0.0);
+        auto windVector = wind->getWind( aircraftWorldPosition.Y(), 0.0 );
 
         auto attachedControlSurface = m_controlSurface;
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -527,13 +517,13 @@ namespace workphone::vehicle
         auto liftLineChordPosition = m_liftLineChordPosition;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
-            if(m_controlSurface)
+            if( m_controlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
-                    if(!m_controlSurface->isAffectedSection(sectionIdx))
+                    if( !m_controlSurface->isAffectedSection( sectionIdx ) )
                     {
                         continue;
                     }
@@ -542,14 +532,14 @@ namespace workphone::vehicle
 
             auto aerodynamicCenter = m_aerodynamicCentersMinus10[sectionIdx];
 
-            auto relativeWind = calculateRelativeWind3(sectionIdx, aerodynamicCenter, windVector);
+            auto relativeWind = calculateRelativeWind3( sectionIdx, aerodynamicCenter, windVector );
 
-            if(!aircraft->getEnablePowerUnit())
+            if( !aircraft->getEnablePowerUnit() )
             {
-                static auto w = Vector3<real_Num>(0, 0, -5);
+                static auto w = Vector3<real_Num>( 0, 0, -5 );
 
                 Quaternion<real_Num> q;
-                q.fromDegrees(m_windRotation);
+                q.fromDegrees( m_windRotation );
 
                 relativeWind = q * w;
                 // relativeWind.normalise();
@@ -574,19 +564,19 @@ namespace workphone::vehicle
         SmartPtr<IAerodymanicsWind> pWind = aircraft->getWind();
 
         auto wind = pWind;
-        if(!wind)
+        if( !wind )
         {
             return;
         }
 
         auto aircraftWorldPosition = aircraftTransform.getPosition();
-        auto windVector = wind->getWind(aircraftWorldPosition.Y(), 0.0);
+        auto windVector = wind->getWind( aircraftWorldPosition.Y(), 0.0 );
 
         auto attachedControlSurface = m_controlSurface;
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -601,13 +591,13 @@ namespace workphone::vehicle
         auto liftLineChordPosition = m_liftLineChordPosition;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
-            if(m_controlSurface)
+            if( m_controlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
-                    if(!m_controlSurface->isAffectedSection(sectionIdx))
+                    if( !m_controlSurface->isAffectedSection( sectionIdx ) )
                     {
                         continue;
                     }
@@ -616,14 +606,14 @@ namespace workphone::vehicle
 
             auto aerodynamicCenter = m_aerodynamicCentersPlus10[sectionIdx];
 
-            auto relativeWind = calculateRelativeWind3(sectionIdx, aerodynamicCenter, windVector);
+            auto relativeWind = calculateRelativeWind3( sectionIdx, aerodynamicCenter, windVector );
 
-            if(!aircraft->getEnablePowerUnit())
+            if( !aircraft->getEnablePowerUnit() )
             {
-                static auto w = Vector3<real_Num>(0, 0, -5);
+                static auto w = Vector3<real_Num>( 0, 0, -5 );
 
                 Quaternion<real_Num> q;
-                q.fromDegrees(m_windRotation);
+                q.fromDegrees( m_windRotation );
 
                 relativeWind = q * w;
                 // relativeWind.normalise();
@@ -648,19 +638,19 @@ namespace workphone::vehicle
         SmartPtr<IAerodymanicsWind> pWind = aircraft->getWind();
 
         auto wind = pWind;
-        if(!wind)
+        if( !wind )
         {
             return;
         }
 
         auto aircraftWorldPosition = aircraftTransform.getPosition();
-        auto windVector = wind->getWind(aircraftWorldPosition.Y(), 0.0);
+        auto windVector = wind->getWind( aircraftWorldPosition.Y(), 0.0 );
 
         auto attachedControlSurface = m_controlSurface;
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -675,13 +665,13 @@ namespace workphone::vehicle
         auto liftLineChordPosition = m_liftLineChordPosition;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
-            if(m_controlSurface)
+            if( m_controlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
-                    if(!m_controlSurface->isAffectedSection(sectionIdx))
+                    if( !m_controlSurface->isAffectedSection( sectionIdx ) )
                     {
                         continue;
                     }
@@ -690,14 +680,14 @@ namespace workphone::vehicle
 
             auto aerodynamicCenter = m_aerodynamicCenters[sectionIdx];
 
-            auto relativeWind = calculateRelativeWind3(sectionIdx, aerodynamicCenter, windVector);
+            auto relativeWind = calculateRelativeWind3( sectionIdx, aerodynamicCenter, windVector );
 
-            if(!aircraft->getEnablePowerUnit())
+            if( !aircraft->getEnablePowerUnit() )
             {
-                static auto w = Vector3<real_Num>(0, 0, -5);
+                static auto w = Vector3<real_Num>( 0, 0, -5 );
 
                 Quaternion<real_Num> q;
-                q.fromDegrees(m_windRotation);
+                q.fromDegrees( m_windRotation );
 
                 relativeWind = q * w;
                 // relativeWind.normalise();
@@ -711,7 +701,7 @@ namespace workphone::vehicle
     }
 
     Vector3<real_Num> CAircraftWingFast::calculateRelativeWind2(
-        s32 sectionIndex, const Vector3<real_Num> &aerodynamicCenter, const Vector3<real_Num> &wind)
+        s32 sectionIndex, const Vector3<real_Num> &aerodynamicCenter, const Vector3<real_Num> &wind )
     {
         // return Vector3<real_Num>::zero();
 
@@ -724,21 +714,20 @@ namespace workphone::vehicle
 
         auto relativeWind = wind - aircraft->getLinearVelocity();
 
-        auto worldAerodynamicCenter = aircraftTransform.transformPoint(aerodynamicCenter);
-        auto fromCOMToAerodynamicCenter =
-            worldAerodynamicCenter - aircraftBody->getWorldCenterOfMass();
+        auto worldAerodynamicCenter = aircraftTransform.transformPoint( aerodynamicCenter );
+        auto fromCOMToAerodynamicCenter = worldAerodynamicCenter - aircraftBody->getWorldCenterOfMass();
         auto angularVelocity = aircraftBody->getAngularVelocity();
 
-        auto localRelativeWind = fromCOMToAerodynamicCenter.crossProduct(angularVelocity);
+        auto localRelativeWind = fromCOMToAerodynamicCenter.crossProduct( angularVelocity );
 
         localRelativeWind *= aircraft->getRollwiseDamping();
 
         relativeWind += localRelativeWind;
-        relativeWind = aircraftTransform.inverseTransformVector(relativeWind);
+        relativeWind = aircraftTransform.inverseTransformVector( relativeWind );
 
-        if(m_propWash)
+        if( m_propWash )
         {
-            relativeWind += m_propWash->getPropWash(sectionIndex);
+            relativeWind += m_propWash->getPropWash( sectionIndex );
         }
 
         // auto correction = m_localWingRight;
@@ -754,15 +743,15 @@ namespace workphone::vehicle
         // perpChordDotRelativeWind; relativeWind -= correction;
 
         constexpr real_Num maxVelocity = 10000.0;
-        relativeWind.X() = Math<real_Num>::clamp(relativeWind.X(), -maxVelocity, maxVelocity);
-        relativeWind.Y() = Math<real_Num>::clamp(relativeWind.Y(), -maxVelocity, maxVelocity);
-        relativeWind.Z() = Math<real_Num>::clamp(relativeWind.Z(), -maxVelocity, maxVelocity);
+        relativeWind.X() = Math<real_Num>::clamp( relativeWind.X(), -maxVelocity, maxVelocity );
+        relativeWind.Y() = Math<real_Num>::clamp( relativeWind.Y(), -maxVelocity, maxVelocity );
+        relativeWind.Z() = Math<real_Num>::clamp( relativeWind.Z(), -maxVelocity, maxVelocity );
 
         return relativeWind;
     }
 
     Vector3<real_Num> CAircraftWingFast::calculateRelativeWind3(
-        s32 sectionIndex, const Vector3<real_Num> &aerodynamicCenter, const Vector3<real_Num> &wind)
+        s32 sectionIndex, const Vector3<real_Num> &aerodynamicCenter, const Vector3<real_Num> &wind )
     {
         // return Vector3<real_Num>::zero();
 
@@ -778,15 +767,15 @@ namespace workphone::vehicle
         auto fromCOMToAerodynamicCenter = aerodynamicCenter - aircraft->getCG();
         auto angularVelocity = aircraftBody->getLocalAngularVelocity();
 
-        auto localRelativeWind = fromCOMToAerodynamicCenter.crossProduct(angularVelocity);
+        auto localRelativeWind = fromCOMToAerodynamicCenter.crossProduct( angularVelocity );
 
         localRelativeWind *= aircraft->getRollwiseDamping();
 
         relativeWind += localRelativeWind;
 
-        if(m_propWash)
+        if( m_propWash )
         {
-            relativeWind += m_propWash->getPropWash(sectionIndex);
+            relativeWind += m_propWash->getPropWash( sectionIndex );
         }
 
         // auto correction = m_localWingRight;
@@ -802,20 +791,20 @@ namespace workphone::vehicle
         // perpChordDotRelativeWind; relativeWind -= correction;
 
         constexpr real_Num maxVelocity = 10000.0;
-        relativeWind.X() = Math<real_Num>::clamp(relativeWind.X(), -maxVelocity, maxVelocity);
-        relativeWind.Y() = Math<real_Num>::clamp(relativeWind.Y(), -maxVelocity, maxVelocity);
-        relativeWind.Z() = Math<real_Num>::clamp(relativeWind.Z(), -maxVelocity, maxVelocity);
+        relativeWind.X() = Math<real_Num>::clamp( relativeWind.X(), -maxVelocity, maxVelocity );
+        relativeWind.Y() = Math<real_Num>::clamp( relativeWind.Y(), -maxVelocity, maxVelocity );
+        relativeWind.Z() = Math<real_Num>::clamp( relativeWind.Z(), -maxVelocity, maxVelocity );
 
         return relativeWind;
     }
 
-    void CAircraftWingFast::update(const double &t, const double &fDT)
+    void CAircraftWingFast::update( const double &t, const double &fDT )
     {
         // SmartPtr<IVehicleBody> aircraftBody = m_parent;
         // auto aircraft = m_parentAircraft;
 
         ////const SmartPtr<Transform3<real_Num>>& aircraftTransform = aircraft->getBodyTransform();
-            ////SmartPtr<Transform3<real_Num>>& worldTransform = getWorldTransform();
+        ////SmartPtr<Transform3<real_Num>>& worldTransform = getWorldTransform();
         // const SmartPtr<Transform3<real_Num>>& localTransform = getLocalTransform();
         ////SmartPtr<Transform3<real_Num>>& localBodyTransform = getLocalBodyTransform();
         // SmartPtr<IAerodymanicsWind> pWind = aircraft->getWind();
@@ -841,7 +830,7 @@ namespace workphone::vehicle
         // auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
         ////m_windRotation.X() += 100.0 * fDT;
-            ////m_windRotation.X() = Math<real_Num>::wrap(m_windRotation.X(), -25.0, 25.0);
+        ////m_windRotation.X() = Math<real_Num>::wrap(m_windRotation.X(), -25.0, 25.0);
 
         // static real_Num angle = 45.0;
         // m_windRotation.X() = angle;
@@ -869,7 +858,7 @@ namespace workphone::vehicle
         // calculateAlphaMinus10();
 
         calculateStallControl();
-        calculateForces(fDT);
+        calculateForces( fDT );
 
         updateForcesFast();
     }
@@ -879,7 +868,7 @@ namespace workphone::vehicle
         auto rate = 1.0 / 120.0;
         auto timer = boost::make_shared<TimerBoost>();
 
-        while(getLoadingState() == LoadingState::Loaded)
+        while( getLoadingState() == LoadingState::Loaded )
         {
             auto startTime = timer->now();
             updateGeometry();
@@ -891,14 +880,14 @@ namespace workphone::vehicle
             calculateAeroProperties();
             calculateRelativeWind();
             calculateAlpha();
-            calculateForces(rate);
+            calculateForces( rate );
 
             auto endTime = timer->now();
             auto timeTaken = endTime - startTime;
             auto sleepTime = rate - timeTaken;
-            if(sleepTime > 0.0)
+            if( sleepTime > 0.0 )
             {
-                Thread::sleep(sleepTime);
+                Thread::sleep( sleepTime );
             }
         }
     }
@@ -909,7 +898,7 @@ namespace workphone::vehicle
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
         auto attachedControlSurface = m_controlSurface;
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto area = m_area[sectionIdx];
             auto chordLine = m_chordLines[sectionIdx];
@@ -921,55 +910,55 @@ namespace workphone::vehicle
             auto relativeWindNormalised = relativeWind.normaliseCopy();
             auto angleOfAttackFull = m_aoa[sectionIdx];
 
-            auto fStallControlCL = static_cast<real_Num>(0.0);
-            auto fStallControlCD = static_cast<real_Num>(0.0);
-            auto fStallControlCM = static_cast<real_Num>(0.0);
+            auto fStallControlCL = static_cast<real_Num>( 0.0 );
+            auto fStallControlCD = static_cast<real_Num>( 0.0 );
+            auto fStallControlCM = static_cast<real_Num>( 0.0 );
 
 #if defined _DEBUG
-            if(!Math<real_Num>::equals(m_stallControlCL, 0.0))
+            if( !Math<real_Num>::equals( m_stallControlCL, 0.0 ) )
             {
                 int stop = 0;
                 stop = 0;
             }
 #endif
 
-            auto chordLineDotRelWindFull = chordLine.dotProduct(-relativeWindNormalised);
-            auto aoaNormalised = Math<real_Num>::clamp(
-                angleOfAttackFull / static_cast<real_Num>(180.0), -1.0, 1.0);
+            auto chordLineDotRelWindFull = chordLine.dotProduct( -relativeWindNormalised );
+            auto aoaNormalised =
+                Math<real_Num>::clamp( angleOfAttackFull / static_cast<real_Num>( 180.0 ), -1.0, 1.0 );
 
-            if(chordLineDotRelWindFull > std::numeric_limits<real_Num>::epsilon())
+            if( chordLineDotRelWindFull > std::numeric_limits<real_Num>::epsilon() )
             {
-                if(attachedControlSurface != nullptr)
+                if( attachedControlSurface != nullptr )
                 {
-                    if(isControlSurface())
+                    if( isControlSurface() )
                     {
                         auto stallThreshold = m_controlSurface->getStallThreshold();
                         auto stallControlCL = m_controlSurface->getStallControlCL();
                         auto stallControlCD = m_controlSurface->getStallControlCD();
                         auto stallControlCM = m_controlSurface->getStallControlCM();
 
-                        if(aoaNormalised > stallThreshold)
+                        if( aoaNormalised > stallThreshold )
                         {
-                            auto range = static_cast<real_Num>(1.0) - stallThreshold;
+                            auto range = static_cast<real_Num>( 1.0 ) - stallThreshold;
                             auto fUpDotRelWind = aoaNormalised - stallThreshold;
 
-                            if(range > std::numeric_limits<real_Num>::epsilon())
+                            if( range > std::numeric_limits<real_Num>::epsilon() )
                             {
-                                fStallControlCL = (fUpDotRelWind / range) * stallControlCL;
-                                fStallControlCD = (fUpDotRelWind / range) * stallControlCD;
-                                fStallControlCM = (fUpDotRelWind / range) * stallControlCM;
+                                fStallControlCL = ( fUpDotRelWind / range ) * stallControlCL;
+                                fStallControlCD = ( fUpDotRelWind / range ) * stallControlCD;
+                                fStallControlCM = ( fUpDotRelWind / range ) * stallControlCM;
                             }
                         }
-                        else if(aoaNormalised < -stallThreshold)
+                        else if( aoaNormalised < -stallThreshold )
                         {
-                            auto range = static_cast<real_Num>(1.0) - stallThreshold;
+                            auto range = static_cast<real_Num>( 1.0 ) - stallThreshold;
                             auto fUpDotRelWind = aoaNormalised + stallThreshold;
 
-                            if(range > std::numeric_limits<real_Num>::epsilon())
+                            if( range > std::numeric_limits<real_Num>::epsilon() )
                             {
-                                fStallControlCL = (fUpDotRelWind / range) * stallControlCL;
-                                fStallControlCD = (fUpDotRelWind / range) * stallControlCD;
-                                fStallControlCM = (fUpDotRelWind / range) * stallControlCM;
+                                fStallControlCL = ( fUpDotRelWind / range ) * stallControlCL;
+                                fStallControlCD = ( fUpDotRelWind / range ) * stallControlCD;
+                                fStallControlCM = ( fUpDotRelWind / range ) * stallControlCM;
                             }
                         }
                     }
@@ -980,28 +969,28 @@ namespace workphone::vehicle
                         auto stallControlCD = m_stallControlCD;
                         auto stallControlCM = m_stallControlCM;
 
-                        if(aoaNormalised > stallThreshold)
+                        if( aoaNormalised > stallThreshold )
                         {
-                            auto range = static_cast<real_Num>(1.0) - stallThreshold;
+                            auto range = static_cast<real_Num>( 1.0 ) - stallThreshold;
                             auto fUpDotRelWind = aoaNormalised - stallThreshold;
 
-                            if(range > std::numeric_limits<real_Num>::epsilon())
+                            if( range > std::numeric_limits<real_Num>::epsilon() )
                             {
-                                fStallControlCL = (fUpDotRelWind / range) * stallControlCL;
-                                fStallControlCD = (fUpDotRelWind / range) * stallControlCD;
-                                fStallControlCM = (fUpDotRelWind / range) * stallControlCM;
+                                fStallControlCL = ( fUpDotRelWind / range ) * stallControlCL;
+                                fStallControlCD = ( fUpDotRelWind / range ) * stallControlCD;
+                                fStallControlCM = ( fUpDotRelWind / range ) * stallControlCM;
                             }
                         }
-                        else if(aoaNormalised < -stallThreshold)
+                        else if( aoaNormalised < -stallThreshold )
                         {
-                            auto range = static_cast<real_Num>(1.0) - stallThreshold;
+                            auto range = static_cast<real_Num>( 1.0 ) - stallThreshold;
                             auto fUpDotRelWind = aoaNormalised + stallThreshold;
 
-                            if(range > std::numeric_limits<real_Num>::epsilon())
+                            if( range > std::numeric_limits<real_Num>::epsilon() )
                             {
-                                fStallControlCL = (fUpDotRelWind / range) * stallControlCL;
-                                fStallControlCD = (fUpDotRelWind / range) * stallControlCD;
-                                fStallControlCM = (fUpDotRelWind / range) * stallControlCM;
+                                fStallControlCL = ( fUpDotRelWind / range ) * stallControlCL;
+                                fStallControlCD = ( fUpDotRelWind / range ) * stallControlCD;
+                                fStallControlCM = ( fUpDotRelWind / range ) * stallControlCM;
                             }
                         }
                     }
@@ -1014,7 +1003,7 @@ namespace workphone::vehicle
         }
     }
 
-    void CAircraftWingFast::calculateForces(double fDT)
+    void CAircraftWingFast::calculateForces( double fDT )
     {
         SmartPtr<IVehicleBody> aircraftBody = m_parent;
         auto aircraft = m_parentAircraft;
@@ -1030,7 +1019,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -1039,13 +1028,13 @@ namespace workphone::vehicle
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
         // Per section update.
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
-                    if(!attachedControlSurface->isAffectedSection(sectionIdx))
+                    if( !attachedControlSurface->isAffectedSection( sectionIdx ) )
                     {
                         continue;
                     }
@@ -1064,10 +1053,10 @@ namespace workphone::vehicle
             auto angleOfAttack10 = m_aoaPlus10[sectionIdx];
             auto angleOfAttackMinus10 = m_aoaMinus10[sectionIdx];
 
-            auto chordLineRelativeWindDot = chordLine.dotProduct(relativeWindNormalised);
+            auto chordLineRelativeWindDot = chordLine.dotProduct( relativeWindNormalised );
 
             ////Draw modified wing.
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
                 // if (isControlSurface())
                 //{
@@ -1076,10 +1065,10 @@ namespace workphone::vehicle
                 auto c = m_modifiedSectionC[sectionIdx];
                 auto d = m_modifiedSectionD[sectionIdx];
 
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 4 ), a, b, 0x00FF00);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 5 ), b, c, 0xFF0000);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 6 ), c, d, 0x0000FF);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 7 ), d, a, 0x00FFFF);
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 4 ), a, b, 0x00FF00 );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 5 ), b, c, 0xFF0000 );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 6 ), c, d, 0x0000FF );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 7 ), d, a, 0x00FFFF );
                 //}
                 // else
                 //{
@@ -1136,7 +1125,7 @@ namespace workphone::vehicle
             // }
 
 #if defined _DEBUG
-            if(getName().find("STAB") != std::string::npos)
+            if( getName().find( "STAB" ) != std::string::npos )
             {
                 // DEBUG_DRAW_LINE_BY_ID(getDebugId(i, 9), aerodynamicCenter, aerodynamicCenter +
                 // (relativeWind * 1.0f), 0xFF0000);
@@ -1144,7 +1133,7 @@ namespace workphone::vehicle
                 stop = 0;
             }
 
-            if(getName().find("WING") != std::string::npos)
+            if( getName().find( "WING" ) != std::string::npos )
             {
                 // DEBUG_DRAW_LINE_BY_ID(getDebugId(i, 9), aerodynamicCenter, aerodynamicCenter +
                 // (relativeWind * 1.0f), 0xFF0000);
@@ -1153,50 +1142,50 @@ namespace workphone::vehicle
             }
 #endif
 
-            auto totalLift = static_cast<real_Num>(0.0);
-            auto totalDrag = static_cast<real_Num>(0.0);
-            auto cM = static_cast<real_Num>(0.0);
+            auto totalLift = static_cast<real_Num>( 0.0 );
+            auto totalDrag = static_cast<real_Num>( 0.0 );
+            auto cM = static_cast<real_Num>( 0.0 );
 
-            auto clGroundEffectMult = static_cast<real_Num>(1.0);
-            auto cdGroundEffectMult = static_cast<real_Num>(1.0);
+            auto clGroundEffectMult = static_cast<real_Num>( 1.0 );
+            auto cdGroundEffectMult = static_cast<real_Num>( 1.0 );
 
             auto fStallControlCL = m_fStallControlCL[sectionIdx];
             auto fStallControlCD = m_fStallControlCD[sectionIdx];
             auto fStallControlCM = m_fStallControlCM[sectionIdx];
 
-            if(m_groundEffect)
+            if( m_groundEffect )
             {
                 auto a = m_modifiedSectionA[sectionIdx];
                 auto b = m_modifiedSectionB[sectionIdx];
                 auto c = m_modifiedSectionC[sectionIdx];
                 auto d = m_modifiedSectionD[sectionIdx];
 
-                m_groundEffect->getGroundEffectCoefficients(a, b, c, d, clGroundEffectMult,
-                                                            cdGroundEffectMult);
+                m_groundEffect->getGroundEffectCoefficients( a, b, c, d, clGroundEffectMult,
+                                                             cdGroundEffectMult );
             }
 
             real_Num cL = 0.0;
 
-            if(aerofoil)
+            if( aerofoil )
             {
                 auto CL = aerofoil->getCL();
                 auto CD = aerofoil->getCD();
                 auto CM = aerofoil->getCM();
 
-                auto clZero = CL->interpolate(angleOfAttackZero);
-                auto cdZero = CD->interpolate(angleOfAttackZero);
-                auto cmZero = CM->interpolate(angleOfAttackZero);
+                auto clZero = CL->interpolate( angleOfAttackZero );
+                auto cdZero = CD->interpolate( angleOfAttackZero );
+                auto cmZero = CM->interpolate( angleOfAttackZero );
 
-                auto camber = static_cast<real_Num>(0.0);
-                auto camberNormalised = static_cast<real_Num>(0.0);
-                auto fCurrentDeflection = static_cast<real_Num>(0.0);
+                auto camber = static_cast<real_Num>( 0.0 );
+                auto camberNormalised = static_cast<real_Num>( 0.0 );
+                auto fCurrentDeflection = static_cast<real_Num>( 0.0 );
 
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
                     fCurrentDeflection =
-                        m_controlSurface->getCurrentDeflection() * static_cast<real_Num>(2.0);
+                        m_controlSurface->getCurrentDeflection() * static_cast<real_Num>( 2.0 );
 
-                    if(m_controlSurface->isReversed())
+                    if( m_controlSurface->isReversed() )
                     {
                         camberNormalised = -fCurrentDeflection;
                         camber = -fCurrentDeflection;
@@ -1207,42 +1196,42 @@ namespace workphone::vehicle
                         camber = fCurrentDeflection;
                     }
 
-                    camber = fCurrentDeflection > static_cast<real_Num>(0.0)
-                                 ? Math<real_Num>::Abs(fCurrentDeflection) *
-                                   m_controlSurface->getMaxDeflectionDegrees()
-                                 : Math<real_Num>::Abs(fCurrentDeflection) *
-                                   m_controlSurface->getMinDeflectionDegrees();
+                    camber = fCurrentDeflection > static_cast<real_Num>( 0.0 )
+                                 ? Math<real_Num>::Abs( fCurrentDeflection ) *
+                                       m_controlSurface->getMaxDeflectionDegrees()
+                                 : Math<real_Num>::Abs( fCurrentDeflection ) *
+                                       m_controlSurface->getMinDeflectionDegrees();
                 }
 
                 // Use aerofoil..
                 // L = cl * a * 0.5f * r * v^2
-                WP_ASSERT(CL);
-                if(m_controlSurface && isControlSurface())
+                WP_ASSERT( CL );
+                if( m_controlSurface && isControlSurface() )
                 {
                     auto clLookup = m_controlSurface->getClLookup();
-                    auto clLookupMultiplier = clLookup->interpolate(camber);
+                    auto clLookupMultiplier = clLookup->interpolate( camber );
                     auto clMultiplier = m_controlSurface->getClMultiplier();
 
-                    cL = clZero * clMultiplier * clLookupMultiplier * static_cast<real_Num>(0.3);
+                    cL = clZero * clMultiplier * clLookupMultiplier * static_cast<real_Num>( 0.3 );
 
-                    auto clampRange = static_cast<real_Num>(180.0);
+                    auto clampRange = static_cast<real_Num>( 180.0 );
 
-                    if(fStallControlCL > std::numeric_limits<real_Num>::epsilon() ||
-                       fStallControlCL < -std::numeric_limits<real_Num>::epsilon())
+                    if( fStallControlCL > std::numeric_limits<real_Num>::epsilon() ||
+                        fStallControlCL < -std::numeric_limits<real_Num>::epsilon() )
                     {
-                        cL += ((clZero * static_cast<real_Num>(0.1)) *
-                               Math<real_Num>::Abs(fStallControlCL) *
-                               Math<real_Num>::Abs(fCurrentDeflection));
+                        cL += ( ( clZero * static_cast<real_Num>( 0.1 ) ) *
+                                Math<real_Num>::Abs( fStallControlCL ) *
+                                Math<real_Num>::Abs( fCurrentDeflection ) );
                     }
                 }
-                else if(m_controlSurface && !isControlSurface())
+                else if( m_controlSurface && !isControlSurface() )
                 {
-                    if(fStallControlCL > std::numeric_limits<real_Num>::epsilon() ||
-                       fStallControlCL < -std::numeric_limits<real_Num>::epsilon())
+                    if( fStallControlCL > std::numeric_limits<real_Num>::epsilon() ||
+                        fStallControlCL < -std::numeric_limits<real_Num>::epsilon() )
                     {
-                        cL = clZero + ((clZero * static_cast<real_Num>(0.1)) *
-                                       Math<real_Num>::Abs(fStallControlCL) *
-                                       Math<real_Num>::Abs(fCurrentDeflection));
+                        cL = clZero + ( ( clZero * static_cast<real_Num>( 0.1 ) ) *
+                                        Math<real_Num>::Abs( fStallControlCL ) *
+                                        Math<real_Num>::Abs( fCurrentDeflection ) );
                     }
                     else
                     {
@@ -1259,35 +1248,35 @@ namespace workphone::vehicle
                     cL *= m_clMultiplier;
                 }
 
-                totalLift = cL * area * static_cast<real_Num>(0.5) * airDensity *
-                            (relativeWindLength * relativeWindLength);
+                totalLift = cL * area * static_cast<real_Num>( 0.5 ) * airDensity *
+                            ( relativeWindLength * relativeWindLength );
 
                 // D = 0.5 * cd * r * (v * v) * a;
-                WP_ASSERT(CD);
+                WP_ASSERT( CD );
                 real_Num cD = 0.0;
-                if(m_controlSurface && isControlSurface())
+                if( m_controlSurface && isControlSurface() )
                 {
                     auto cdLookup = m_controlSurface->getCdLookup();
-                    auto cdLookupValue = cdLookup->interpolate(camber);
+                    auto cdLookupValue = cdLookup->interpolate( camber );
                     auto cdMultiplier = m_controlSurface->getCdMultiplier();
-                    cD = cdZero * cdMultiplier * cdLookupValue * static_cast<real_Num>(0.3);
+                    cD = cdZero * cdMultiplier * cdLookupValue * static_cast<real_Num>( 0.3 );
 
-                    if(fStallControlCD > std::numeric_limits<real_Num>::epsilon() ||
-                       fStallControlCD < -std::numeric_limits<real_Num>::epsilon())
+                    if( fStallControlCD > std::numeric_limits<real_Num>::epsilon() ||
+                        fStallControlCD < -std::numeric_limits<real_Num>::epsilon() )
                     {
-                        cD += ((cdZero * static_cast<real_Num>(0.1)) *
-                               Math<real_Num>::Abs(fStallControlCD) *
-                               Math<real_Num>::Abs(fCurrentDeflection));
+                        cD += ( ( cdZero * static_cast<real_Num>( 0.1 ) ) *
+                                Math<real_Num>::Abs( fStallControlCD ) *
+                                Math<real_Num>::Abs( fCurrentDeflection ) );
                     }
                 }
-                else if(m_controlSurface && !isControlSurface())
+                else if( m_controlSurface && !isControlSurface() )
                 {
-                    if(fStallControlCD > std::numeric_limits<real_Num>::epsilon() ||
-                       fStallControlCD < -std::numeric_limits<real_Num>::epsilon())
+                    if( fStallControlCD > std::numeric_limits<real_Num>::epsilon() ||
+                        fStallControlCD < -std::numeric_limits<real_Num>::epsilon() )
                     {
-                        cD = cdZero + ((cdZero * static_cast<real_Num>(0.1)) *
-                                       Math<real_Num>::Abs(fStallControlCD) *
-                                       Math<real_Num>::Abs(fCurrentDeflection));
+                        cD = cdZero + ( ( cdZero * static_cast<real_Num>( 0.1 ) ) *
+                                        Math<real_Num>::Abs( fStallControlCD ) *
+                                        Math<real_Num>::Abs( fCurrentDeflection ) );
                     }
                     else
                     {
@@ -1304,38 +1293,38 @@ namespace workphone::vehicle
                     cD *= m_cdMultiplier;
                 }
 
-                totalDrag = static_cast<real_Num>(0.5) * cD * airDensity *
-                            (relativeWindLength * relativeWindLength) * area;
+                totalDrag = static_cast<real_Num>( 0.5 ) * cD * airDensity *
+                            ( relativeWindLength * relativeWindLength ) * area;
 
-                WP_ASSERT(CM);
-                if(m_controlSurface && isControlSurface())
+                WP_ASSERT( CM );
+                if( m_controlSurface && isControlSurface() )
                 {
                     auto cmLookup = m_controlSurface->getCmLookup();
-                    auto cmLookupValue = cmLookup->interpolate(camber);
+                    auto cmLookupValue = cmLookup->interpolate( camber );
                     auto cmMultiplier = m_controlSurface->getCmMultiplier();
-                    cM = cmZero * cmMultiplier * cmLookupValue * static_cast<real_Num>(0.3);
+                    cM = cmZero * cmMultiplier * cmLookupValue * static_cast<real_Num>( 0.3 );
 
-                    if(fStallControlCM > std::numeric_limits<real_Num>::epsilon() ||
-                       fStallControlCM < -std::numeric_limits<real_Num>::epsilon())
+                    if( fStallControlCM > std::numeric_limits<real_Num>::epsilon() ||
+                        fStallControlCM < -std::numeric_limits<real_Num>::epsilon() )
                     {
-                        cM += ((cmZero * static_cast<real_Num>(0.1)) *
-                               Math<real_Num>::Abs(fStallControlCM) *
-                               Math<real_Num>::Abs(fCurrentDeflection));
+                        cM += ( ( cmZero * static_cast<real_Num>( 0.1 ) ) *
+                                Math<real_Num>::Abs( fStallControlCM ) *
+                                Math<real_Num>::Abs( fCurrentDeflection ) );
                     }
                 }
-                else if(m_controlSurface && !isControlSurface())
+                else if( m_controlSurface && !isControlSurface() )
                 {
                     auto cmLookup = m_controlSurface->getCmLookup();
-                    auto cmLookupValue = cmLookup->interpolate(camber);
+                    auto cmLookupValue = cmLookup->interpolate( camber );
                     auto cmMultiplier = m_controlSurface->getCmMultiplier();
                     auto delta = camberNormalised * cmMultiplier * cmLookupValue;
 
-                    if(fStallControlCM > std::numeric_limits<real_Num>::epsilon() ||
-                       fStallControlCM < -std::numeric_limits<real_Num>::epsilon())
+                    if( fStallControlCM > std::numeric_limits<real_Num>::epsilon() ||
+                        fStallControlCM < -std::numeric_limits<real_Num>::epsilon() )
                     {
-                        cM = cmZero + ((cmZero * static_cast<real_Num>(0.1)) *
-                                       Math<real_Num>::Abs(fStallControlCM) *
-                                       Math<real_Num>::Abs(fCurrentDeflection));
+                        cM = cmZero + ( ( cmZero * static_cast<real_Num>( 0.1 ) ) *
+                                        Math<real_Num>::Abs( fStallControlCM ) *
+                                        Math<real_Num>::Abs( fCurrentDeflection ) );
                     }
                     else
                     {
@@ -1350,46 +1339,46 @@ namespace workphone::vehicle
                     cM *= m_cmMultiplier;
                 }
 
-                WP_ASSERT(Math<real_Num>::Abs( totalLift ) < static_cast<real_Num>( 10000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( totalDrag ) < static_cast<real_Num>( 10000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( totalLift ) < static_cast<real_Num>( 10000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( totalDrag ) < static_cast<real_Num>( 10000.0 ) );
 
-                WP_ASSERT(Math<real_Num>::Abs( cL ) < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( cD ) < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( cM ) < static_cast<real_Num>( 1000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( cL ) < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( cD ) < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( cM ) < static_cast<real_Num>( 1000.0 ) );
             }
             else
             {
-                WP_LOG_ERROR("No airfoil assigned.");
+                WP_LOG_ERROR( "No airfoil assigned." );
 
                 // Fall back to basic l/d equations..
                 // L = cl * a * 0.5f * r * v^2
                 // Approximate Cl using the following formula - Cl = 2 * pi * angle (in radians)
-                real_Num cL = static_cast<real_Num>(2.0) * Math<real_Num>::pi() *
-                              Math<real_Num>::DegToRad(angleOfAttackZero);
+                real_Num cL = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi() *
+                              Math<real_Num>::DegToRad( angleOfAttackZero );
                 cL *= clGroundEffectMult;
 
                 real_Num r = 1.29;
                 real_Num v = relativeWind.length();
-                totalLift = cL * area * static_cast<real_Num>(0.5) * r * (v * v);
+                totalLift = cL * area * static_cast<real_Num>( 0.5 ) * r * ( v * v );
 
                 static real_Num maxLift = 1.0;
                 // totalLift = MathF::clamp(totalLift, -maxLift, maxLift);
 
                 // D = 0.5f * cd * r * v2 * a;
                 // Typical aerofoil drag co efficient is .045;
-                real_Num cD = m_cdOverride; // Typical aerofoil drag co efficient
+                real_Num cD = m_cdOverride;  // Typical aerofoil drag co efficient
                 cD *= cdGroundEffectMult;
 
-                totalDrag = static_cast<real_Num>(0.5) * cD * r * (v * v) * area;
+                totalDrag = static_cast<real_Num>( 0.5 ) * cD * r * ( v * v ) * area;
 
                 static real_Num maxDrag = 1.0;
-                totalDrag = Math<real_Num>::clamp(totalDrag, -maxDrag, maxDrag);
+                totalDrag = Math<real_Num>::clamp( totalDrag, -maxDrag, maxDrag );
 
-                cM = static_cast<real_Num>(0.0);
+                cM = static_cast<real_Num>( 0.0 );
 
-                WP_ASSERT(cL < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(cD < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(cM < static_cast<real_Num>( 1000.0 ));
+                WP_ASSERT( cL < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( cD < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( cM < static_cast<real_Num>( 1000.0 ) );
             }
 
             m_totalLift[sectionIdx] = totalLift;
@@ -1416,7 +1405,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -1432,7 +1421,7 @@ namespace workphone::vehicle
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
         // Per section update.
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto area = m_area[sectionIdx];
             auto chordLine = m_chordLines[sectionIdx];
@@ -1451,17 +1440,16 @@ namespace workphone::vehicle
             auto dragForce = Vector3<real_Num>::zero();
             auto pitchAxis = Vector3<real_Num>::zero();
 
-            if(!isControlSurface())
+            if( !isControlSurface() )
             {
                 // Build Lift vector.
-                Vector3<real_Num> liftVector =
-                    m_localWingRight.crossProduct(-relativeWindNormalised);
+                Vector3<real_Num> liftVector = m_localWingRight.crossProduct( -relativeWindNormalised );
                 liftVector.normalise();
                 // WP_ASSERT(liftForce.dotProduct(worldTransform->up()) < real_Num(-0.5));
 
                 liftForce = liftVector * totalLift;
 
-                if(aircraft->getDisplayDebugData())
+                if( aircraft->getDisplayDebugData() )
                 {
                     // if (getName().find("STAB") != std::string::npos)
                     //{
@@ -1472,13 +1460,13 @@ namespace workphone::vehicle
                     //	}
                     // }
 
-                    if(getName().find("WING") != std::string::npos)
+                    if( getName().find( "WING" ) != std::string::npos )
                     {
-                        if(aircraft->getDisplayDebugData())
+                        if( aircraft->getDisplayDebugData() )
                         {
                             DEBUG_DRAW_LOCAL_LINE_BY_ID(
                                 getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                                aerodynamicCenter + ( liftForce * debugLineScale ), 0x00FF00);
+                                aerodynamicCenter + ( liftForce * debugLineScale ), 0x00FF00 );
                         }
                     }
 
@@ -1501,18 +1489,18 @@ namespace workphone::vehicle
                 // Find wing pitching moment...
                 //  0.5 RoAir*Sqr(Flowpeed)
 
-                real_Num q = (static_cast<real_Num>(0.5) * aircraft->getAirDensity() *
-                              (relativeWind.length() * relativeWind.length()));
+                real_Num q = ( static_cast<real_Num>( 0.5 ) * aircraft->getAirDensity() *
+                               ( relativeWind.length() * relativeWind.length() ) );
                 real_Num wingPitchingMoment = cM * chordLength * q * area;
                 // Vector3<real_Num> pitchAxis = chordLine.crossProduct(liftForce.normaliseCopy());
 
                 auto liftForceNormalised = liftForce.normaliseCopy();
-                pitchAxis = liftForceNormalised.crossProduct(chordLine);
+                pitchAxis = liftForceNormalised.crossProduct( chordLine );
                 pitchAxis.normalise();
                 pitchAxis *= wingPitchingMoment;
 
-                WP_ASSERT(Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ) );
 
                 // liftForce.X() = real_Num(0.0); // todo check
                 // liftForce.Z() = real_Num(0.0); // todo check
@@ -1522,16 +1510,16 @@ namespace workphone::vehicle
                 // WP_ASSERT(localDragForce.length() < real_Num(2000.0));
                 // WP_ASSERT(localAerodynamicCenter.length() < real_Num(2.0));
 
-                if(aircraft->getEnablePowerUnit())
+                if( aircraft->getEnablePowerUnit() )
                 {
-                    aircraftBody->addLocalForceAtLocalPosition(liftForce, aerodynamicCenter);
-                    aircraftBody->addLocalForceAtLocalPosition(dragForce, aerodynamicCenter);
-                    aircraftBody->addLocalTorque(pitchAxis);
+                    aircraftBody->addLocalForceAtLocalPosition( liftForce, aerodynamicCenter );
+                    aircraftBody->addLocalForceAtLocalPosition( dragForce, aerodynamicCenter );
+                    aircraftBody->addLocalTorque( pitchAxis );
                 }
             }
             else
             {
-                if(attachedControlSurface)
+                if( attachedControlSurface )
                 {
 #if 0
                     auto mainWing = boost::static_pointer_cast<CAircraftWingFast>(
@@ -1604,20 +1592,20 @@ namespace workphone::vehicle
                     WP_ASSERT(Math<real_Num>::Abs(dragForce.Y()) < real_Num(2000.0));
 #else
                     auto wing = attachedControlSurface->getMainWing();
-                    auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>(wing);
-                    if(mainWing)
+                    auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>( wing );
+                    if( mainWing )
                     {
                         auto mainWingAerodynamicCenter = mainWing->m_aerodynamicCenters[sectionIdx];
 
                         // Build Lift vector.
                         Vector3<real_Num> liftVector =
-                            m_localWingRight.crossProduct(-relativeWindNormalised);
+                            m_localWingRight.crossProduct( -relativeWindNormalised );
                         liftVector.normalise();
                         // WP_ASSERT(liftForce.dotProduct(worldTransform->up()) < real_Num(-0.5));
 
                         liftForce = liftVector * totalLift;
 
-                        if(aircraft->getDisplayDebugData())
+                        if( aircraft->getDisplayDebugData() )
                         {
                             // if (getName().find("STAB") != std::string::npos)
                             //{
@@ -1629,14 +1617,14 @@ namespace workphone::vehicle
                             //	}
                             // }
 
-                            if(getName().find("WING") != std::string::npos)
+                            if( getName().find( "WING" ) != std::string::npos )
                             {
-                                if(aircraft->getDisplayDebugData())
+                                if( aircraft->getDisplayDebugData() )
                                 {
                                     DEBUG_DRAW_LOCAL_LINE_BY_ID(
                                         getDebugId( sectionIdx, 9 ), mainWingAerodynamicCenter,
                                         mainWingAerodynamicCenter + ( liftForce * debugLineScale ),
-                                        0x00FF00);
+                                        0x00FF00 );
                                 }
                             }
 
@@ -1660,21 +1648,21 @@ namespace workphone::vehicle
                         // Find wing pitching moment...
                         //  0.5 RoAir*Sqr(Flowpeed)
 
-                        real_Num q = (static_cast<real_Num>(0.5) * aircraft->getAirDensity() *
-                                      (relativeWind.length() * relativeWind.length()));
+                        real_Num q = ( static_cast<real_Num>( 0.5 ) * aircraft->getAirDensity() *
+                                       ( relativeWind.length() * relativeWind.length() ) );
                         real_Num wingPitchingMoment = cM * chordLength * q * area;
                         // Vector3<real_Num> pitchAxis =
                         // chordLine.crossProduct(liftForce.normaliseCopy());
 
                         auto liftForceNormalised = liftForce.normaliseCopy();
-                        pitchAxis = liftForceNormalised.crossProduct(chordLine);
+                        pitchAxis = liftForceNormalised.crossProduct( chordLine );
                         pitchAxis.normalise();
                         pitchAxis *= wingPitchingMoment;
 
-                        WP_ASSERT(Math<real_Num>::Abs( liftForce.Z() ) <
-                            static_cast<real_Num>( 2000.0 ));
-                        WP_ASSERT(Math<real_Num>::Abs( dragForce.Y() ) <
-                            static_cast<real_Num>( 2000.0 ));
+                        WP_ASSERT( Math<real_Num>::Abs( liftForce.Z() ) <
+                                   static_cast<real_Num>( 2000.0 ) );
+                        WP_ASSERT( Math<real_Num>::Abs( dragForce.Y() ) <
+                                   static_cast<real_Num>( 2000.0 ) );
 
                         // liftForce.X() = real_Num(0.0); // todo check
                         // liftForce.Z() = real_Num(0.0); // todo check
@@ -1685,13 +1673,13 @@ namespace workphone::vehicle
                         // WP_ASSERT(localAerodynamicCenter.length() < real_Num(2.0));
 #endif
 
-                        if(aircraft->getEnablePowerUnit())
+                        if( aircraft->getEnablePowerUnit() )
                         {
-                            aircraftBody->addLocalForceAtLocalPosition(liftForce,
-                                mainWingAerodynamicCenter);
-                            aircraftBody->addLocalForceAtLocalPosition(dragForce,
-                                mainWingAerodynamicCenter);
-                            aircraftBody->addLocalTorque(pitchAxis);
+                            aircraftBody->addLocalForceAtLocalPosition( liftForce,
+                                                                        mainWingAerodynamicCenter );
+                            aircraftBody->addLocalForceAtLocalPosition( dragForce,
+                                                                        mainWingAerodynamicCenter );
+                            aircraftBody->addLocalTorque( pitchAxis );
                         }
                     }
                 }
@@ -1708,7 +1696,7 @@ namespace workphone::vehicle
         auto totalPitchAxis = Vector3<real_Num>::zero();
         auto totalAerodynamicCenter = Vector3<real_Num>::zero();
 
-        for(s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx )
         {
             auto area = m_area[sectionIdx];
             auto chordLine = m_chordLines[sectionIdx];
@@ -1724,7 +1712,7 @@ namespace workphone::vehicle
             auto totalPitch = m_totalPitch[sectionIdx];
 
             // Build Lift vector.
-            auto liftVector = m_localWingRight.crossProduct(-relativeWindNormalised);
+            auto liftVector = m_localWingRight.crossProduct( -relativeWindNormalised );
             liftVector.normalise();
             // WP_ASSERT(liftForce.dotProduct(worldTransform->up()) < real_Num(-0.5));
             auto liftForce = liftVector * totalLift;
@@ -1737,18 +1725,18 @@ namespace workphone::vehicle
 
             // Find wing pitching moment...
             //  0.5 RoAir*Sqr(Flowpeed)
-            auto q = (static_cast<real_Num>(0.5) * airDensity *
-                      (relativeWindLength * relativeWindLength));
+            auto q = ( static_cast<real_Num>( 0.5 ) * airDensity *
+                       ( relativeWindLength * relativeWindLength ) );
             auto wingPitchingMoment = totalPitch * chordLength * q * area;
             // Vector3<real_Num> pitchAxis = chordLine.crossProduct(liftForce.normaliseCopy());
 
             auto liftForceNormalised = liftForce.normaliseCopy();
-            auto pitchAxis = liftForceNormalised.crossProduct(chordLine);
+            auto pitchAxis = liftForceNormalised.crossProduct( chordLine );
             pitchAxis.normalise();
             pitchAxis *= wingPitchingMoment;
 
-            WP_ASSERT(Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ));
-            WP_ASSERT(Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ));
+            WP_ASSERT( Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ) );
+            WP_ASSERT( Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ) );
 
             totalLiftForce += liftForce;
             totalDragForce += dragForce;
@@ -1805,19 +1793,19 @@ namespace workphone::vehicle
         // totalLiftForce = totalLiftForce / (real_Num)m_sectionCount;
         // totalDragForce = totalDragForce / (real_Num)m_sectionCount;
         // totalPitchAxis = totalPitchAxis / (real_Num)m_sectionCount;
-        totalAerodynamicCenter = totalAerodynamicCenter / static_cast<real_Num>(m_sectionCount);
+        totalAerodynamicCenter = totalAerodynamicCenter / static_cast<real_Num>( m_sectionCount );
 
-        if(m_parentAircraft->getEnablePowerUnit())
+        if( m_parentAircraft->getEnablePowerUnit() )
         {
-            m_parent->addLocalForceAtLocalPosition(totalLiftForce, totalAerodynamicCenter);
-            m_parent->addLocalForceAtLocalPosition(totalDragForce, totalAerodynamicCenter);
-            m_parent->addLocalTorque(totalPitchAxis);
+            m_parent->addLocalForceAtLocalPosition( totalLiftForce, totalAerodynamicCenter );
+            m_parent->addLocalForceAtLocalPosition( totalDragForce, totalAerodynamicCenter );
+            m_parent->addLocalTorque( totalPitchAxis );
         }
     }
 
     void CAircraftWingFast::calculateAlphaMinus10()
     {
-        for(s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx )
         {
             auto chordLine = m_chordLinesMinus10[sectionIdx];
             auto chordLength = m_chordLengthsMinus10[sectionIdx];
@@ -1828,31 +1816,31 @@ namespace workphone::vehicle
 
             auto upFull = m_upMinus10[sectionIdx];
 
-            auto chordLineDotRelWindFull = chordLine.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindFull = upFull.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindFull = chordLine.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindFull = upFull.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsFull =
-                Math<real_Num>::ATan2(upDotRelWindFull, chordLineDotRelWindFull);
+                Math<real_Num>::ATan2( upDotRelWindFull, chordLineDotRelWindFull );
 
-            if(isControlSurface())
+            if( isControlSurface() )
             {
                 angleOfAttackRadsFull *= m_aoaMultiplier;
             }
             else
             {
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
-                    if(m_controlSurface->isAffectedSection(sectionIdx))
+                    if( m_controlSurface->isAffectedSection( sectionIdx ) )
                     {
                         angleOfAttackRadsFull *= m_controlSurface->getAoAMultiplier();
                     }
                 }
             }
 
-            auto angleOfAttackFull = Math<real_Num>::RadToDeg(angleOfAttackRadsFull);
-            angleOfAttackFull = Math<real_Num>::clamp(
-                angleOfAttackFull, -static_cast<real_Num>(180.0), 180.0);
-            auto aoaNormalised = Math<real_Num>::clamp(
-                angleOfAttackFull / static_cast<real_Num>(180.0), -1.0, 1.0);
+            auto angleOfAttackFull = Math<real_Num>::RadToDeg( angleOfAttackRadsFull );
+            angleOfAttackFull =
+                Math<real_Num>::clamp( angleOfAttackFull, -static_cast<real_Num>( 180.0 ), 180.0 );
+            auto aoaNormalised =
+                Math<real_Num>::clamp( angleOfAttackFull / static_cast<real_Num>( 180.0 ), -1.0, 1.0 );
 
             m_aoaMinus10[sectionIdx] = angleOfAttackFull;
         }
@@ -1860,7 +1848,7 @@ namespace workphone::vehicle
 
     void CAircraftWingFast::calculateAlpha10()
     {
-        for(s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx )
         {
             auto chordLine = m_chordLinesPlus10[sectionIdx];
             auto chordLength = m_chordLengthsPlus10[sectionIdx];
@@ -1871,31 +1859,31 @@ namespace workphone::vehicle
 
             auto upFull = m_upPlus10[sectionIdx];
 
-            auto chordLineDotRelWindFull = chordLine.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindFull = upFull.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindFull = chordLine.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindFull = upFull.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsFull =
-                Math<real_Num>::ATan2(upDotRelWindFull, chordLineDotRelWindFull);
+                Math<real_Num>::ATan2( upDotRelWindFull, chordLineDotRelWindFull );
 
-            if(isControlSurface())
+            if( isControlSurface() )
             {
                 angleOfAttackRadsFull *= m_aoaMultiplier;
             }
             else
             {
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
-                    if(m_controlSurface->isAffectedSection(sectionIdx))
+                    if( m_controlSurface->isAffectedSection( sectionIdx ) )
                     {
                         angleOfAttackRadsFull *= m_controlSurface->getAoAMultiplier();
                     }
                 }
             }
 
-            auto angleOfAttackFull = Math<real_Num>::RadToDeg(angleOfAttackRadsFull);
-            angleOfAttackFull = Math<real_Num>::clamp(
-                angleOfAttackFull, -static_cast<real_Num>(180.0), 180.0);
-            auto aoaNormalised = Math<real_Num>::clamp(
-                angleOfAttackFull / static_cast<real_Num>(180.0), -1.0, 1.0);
+            auto angleOfAttackFull = Math<real_Num>::RadToDeg( angleOfAttackRadsFull );
+            angleOfAttackFull =
+                Math<real_Num>::clamp( angleOfAttackFull, -static_cast<real_Num>( 180.0 ), 180.0 );
+            auto aoaNormalised =
+                Math<real_Num>::clamp( angleOfAttackFull / static_cast<real_Num>( 180.0 ), -1.0, 1.0 );
 
             m_aoaPlus10[sectionIdx] = angleOfAttackFull;
         }
@@ -1903,7 +1891,7 @@ namespace workphone::vehicle
 
     void CAircraftWingFast::calculateAlpha()
     {
-        for(s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < m_sectionCount; ++sectionIdx )
         {
             auto chordLine = m_chordLines[sectionIdx];
             auto chordLength = m_chordLengths[sectionIdx];
@@ -1914,31 +1902,31 @@ namespace workphone::vehicle
 
             auto upFull = m_up[sectionIdx];
 
-            auto chordLineDotRelWindFull = chordLine.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindFull = upFull.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindFull = chordLine.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindFull = upFull.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsFull =
-                Math<real_Num>::ATan2(upDotRelWindFull, chordLineDotRelWindFull);
+                Math<real_Num>::ATan2( upDotRelWindFull, chordLineDotRelWindFull );
 
-            if(isControlSurface())
+            if( isControlSurface() )
             {
                 angleOfAttackRadsFull *= m_aoaMultiplier;
             }
             else
             {
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
-                    if(m_controlSurface->isAffectedSection(sectionIdx))
+                    if( m_controlSurface->isAffectedSection( sectionIdx ) )
                     {
                         angleOfAttackRadsFull *= m_controlSurface->getAoAMultiplier();
                     }
                 }
             }
 
-            auto angleOfAttackFull = Math<real_Num>::RadToDeg(angleOfAttackRadsFull);
-            angleOfAttackFull = Math<real_Num>::clamp(
-                angleOfAttackFull, -static_cast<real_Num>(180.0), 180.0);
-            auto aoaNormalised = Math<real_Num>::clamp(
-                angleOfAttackFull / static_cast<real_Num>(180.0), -1.0, 1.0);
+            auto angleOfAttackFull = Math<real_Num>::RadToDeg( angleOfAttackRadsFull );
+            angleOfAttackFull =
+                Math<real_Num>::clamp( angleOfAttackFull, -static_cast<real_Num>( 180.0 ), 180.0 );
+            auto aoaNormalised =
+                Math<real_Num>::clamp( angleOfAttackFull / static_cast<real_Num>( 180.0 ), -1.0, 1.0 );
 
             m_aoa[sectionIdx] = angleOfAttackFull;
         }
@@ -1947,14 +1935,14 @@ namespace workphone::vehicle
     void CAircraftWingFast::calculateAera()
     {
         auto sectionCount = m_sectionCount;
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             const auto a = m_modifiedSectionA[sectionIdx];
             const auto b = m_modifiedSectionB[sectionIdx];
             const auto c = m_modifiedSectionC[sectionIdx];
             const auto d = m_modifiedSectionD[sectionIdx];
 
-            m_area[sectionIdx] = calculateArea(a, b, c, d);
+            m_area[sectionIdx] = calculateArea( a, b, c, d );
         }
     }
 
@@ -1974,7 +1962,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -1989,30 +1977,28 @@ namespace workphone::vehicle
         auto liftLineChordPosition = m_liftLineChordPosition;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto a = m_modifiedSectionA[sectionIdx];
             auto b = m_modifiedSectionB[sectionIdx];
             auto c = m_modifiedSectionC[sectionIdx];
             auto d = m_modifiedSectionD[sectionIdx];
 
-            Vector3<real_Num> sectionRootLiftPositionFull =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionFull = c + ((b - c) * liftLineChordPosition);
+            Vector3<real_Num> sectionRootLiftPositionFull = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionFull = c + ( ( b - c ) * liftLineChordPosition );
 
-            auto chordLine = (a + ((b - a) * 0.5)) -
-                             (d + ((c - d) * 0.5));
+            auto chordLine = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             auto chordLength = chordLine.length();
             chordLine.normalise();
 
             Vector3<real_Num> upFull = chordLine.crossProduct(
-                (sectionTipLiftPositionFull - sectionRootLiftPositionFull).normaliseCopy());
+                ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upFull.normalise();
 
             Vector3<real_Num> localScaleFull = localTransform.getScale();
-            if(localScaleFull.X() < static_cast<real_Num>(0.0))
+            if( localScaleFull.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upFull = -upFull;
             }
@@ -2020,8 +2006,7 @@ namespace workphone::vehicle
             // Find the aerodynamic center.
             Vector3<real_Num> aerodynamicCenter =
                 sectionRootLiftPositionFull +
-                ((sectionTipLiftPositionFull - sectionRootLiftPositionFull) *
-                 0.5);
+                ( ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ) * 0.5 );
 
             m_chordLines[sectionIdx] = chordLine;
             m_chordLengths[sectionIdx] = chordLength;
@@ -2046,7 +2031,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -2061,30 +2046,28 @@ namespace workphone::vehicle
         auto liftLineChordPosition = m_liftLineChordPosition;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto a = m_modifiedSectionA10[sectionIdx];
             auto b = m_modifiedSectionB10[sectionIdx];
             auto c = m_modifiedSectionC10[sectionIdx];
             auto d = m_modifiedSectionD10[sectionIdx];
 
-            Vector3<real_Num> sectionRootLiftPositionFull =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionFull = c + ((b - c) * liftLineChordPosition);
+            Vector3<real_Num> sectionRootLiftPositionFull = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionFull = c + ( ( b - c ) * liftLineChordPosition );
 
-            auto chordLine = (a + ((b - a) * 0.5)) -
-                             (d + ((c - d) * 0.5));
+            auto chordLine = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             auto chordLength = chordLine.length();
             chordLine.normalise();
 
             Vector3<real_Num> upFull = chordLine.crossProduct(
-                (sectionTipLiftPositionFull - sectionRootLiftPositionFull).normaliseCopy());
+                ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upFull.normalise();
 
             Vector3<real_Num> localScaleFull = localTransform.getScale();
-            if(localScaleFull.X() < static_cast<real_Num>(0.0))
+            if( localScaleFull.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upFull = -upFull;
             }
@@ -2092,8 +2075,7 @@ namespace workphone::vehicle
             ////Find the aerodynamic center.
             Vector3<real_Num> aerodynamicCenter =
                 sectionRootLiftPositionFull +
-                ((sectionTipLiftPositionFull - sectionRootLiftPositionFull) *
-                 0.5);
+                ( ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ) * 0.5 );
 
             m_chordLinesPlus10[sectionIdx] = chordLine;
             m_chordLengthsPlus10[sectionIdx] = chordLength;
@@ -2118,7 +2100,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        constexpr float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        constexpr float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -2133,30 +2115,28 @@ namespace workphone::vehicle
         auto liftLineChordPosition = m_liftLineChordPosition;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto a = m_modifiedSectionAMinus10[sectionIdx];
             auto b = m_modifiedSectionBMinus10[sectionIdx];
             auto c = m_modifiedSectionCMinus10[sectionIdx];
             auto d = m_modifiedSectionDMinus10[sectionIdx];
 
-            Vector3<real_Num> sectionRootLiftPositionFull =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionFull = c + ((b - c) * liftLineChordPosition);
+            Vector3<real_Num> sectionRootLiftPositionFull = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionFull = c + ( ( b - c ) * liftLineChordPosition );
 
-            auto chordLine = (a + ((b - a) * 0.5)) -
-                             (d + ((c - d) * 0.5));
+            auto chordLine = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             auto chordLength = chordLine.length();
             chordLine.normalise();
 
             Vector3<real_Num> upFull = chordLine.crossProduct(
-                (sectionTipLiftPositionFull - sectionRootLiftPositionFull).normaliseCopy());
+                ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upFull.normalise();
 
             Vector3<real_Num> localScaleFull = localTransform.getScale();
-            if(localScaleFull.X() < static_cast<real_Num>(0.0))
+            if( localScaleFull.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upFull = -upFull;
             }
@@ -2164,8 +2144,7 @@ namespace workphone::vehicle
             ////Find the aerodynamic center.
             Vector3<real_Num> aerodynamicCenter =
                 sectionRootLiftPositionFull +
-                ((sectionTipLiftPositionFull - sectionRootLiftPositionFull) *
-                 0.5);
+                ( ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ) * 0.5 );
 
             m_chordLinesMinus10[sectionIdx] = chordLine;
             m_chordLengthsMinus10[sectionIdx] = chordLength;
@@ -2180,18 +2159,18 @@ namespace workphone::vehicle
         auto attachedControlSurface = m_controlSurface;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto a = m_sectionA[sectionIdx];
             auto b = m_sectionB[sectionIdx];
             auto c = m_sectionC[sectionIdx];
             auto d = m_sectionD[sectionIdx];
 
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
-                    attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d);
+                    attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d );
                 }
             }
 
@@ -2208,26 +2187,25 @@ namespace workphone::vehicle
         auto attachedControlSurface = m_controlSurface;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto a = m_sectionA[sectionIdx];
             auto b = m_sectionB[sectionIdx];
             auto c = m_sectionC[sectionIdx];
             auto d = m_sectionD[sectionIdx];
 
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
                     // auto angle = attachedControlSurface->isReversed() ? real_Num(-0.1) :
                     // real_Num(0.1);
-                    auto angle = static_cast<real_Num>(0.1);
-                    attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d, angle);
+                    auto angle = static_cast<real_Num>( 0.1 );
+                    attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d, angle );
                 }
                 else
                 {
-                    attachedControlSurface->modifyMainWingGeometry(sectionIdx, a, b, c, d,
-                                                                   0.1);
+                    attachedControlSurface->modifyMainWingGeometry( sectionIdx, a, b, c, d, 0.1 );
                 }
             }
 
@@ -2244,26 +2222,25 @@ namespace workphone::vehicle
         auto attachedControlSurface = m_controlSurface;
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             auto a = m_sectionA[sectionIdx];
             auto b = m_sectionB[sectionIdx];
             auto c = m_sectionC[sectionIdx];
             auto d = m_sectionD[sectionIdx];
 
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                if(isControlSurface())
+                if( isControlSurface() )
                 {
                     // auto angle = attachedControlSurface->isReversed() ? real_Num(0.1) :
                     // real_Num(-0.1);
-                    auto angle = static_cast<real_Num>(-0.1);
-                    attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d, angle);
+                    auto angle = static_cast<real_Num>( -0.1 );
+                    attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d, angle );
                 }
                 else
                 {
-                    attachedControlSurface->modifyMainWingGeometry(sectionIdx, a, b, c, d,
-                                                                   -0.1);
+                    attachedControlSurface->modifyMainWingGeometry( sectionIdx, a, b, c, d, -0.1 );
                 }
             }
 
@@ -2280,7 +2257,7 @@ namespace workphone::vehicle
 
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             // R A-----------------B (Leading edge)
             // O |                 |
@@ -2294,32 +2271,30 @@ namespace workphone::vehicle
             auto localTipLiftPosition = m_tipLiftPosition;
             auto liftLineChordPosition = m_liftLineChordPosition;
 
-            auto rootDistance = static_cast<real_Num>(0.0);
-            auto tipDistance = static_cast<real_Num>(0.0);
+            auto rootDistance = static_cast<real_Num>( 0.0 );
+            auto tipDistance = static_cast<real_Num>( 0.0 );
 
             auto attachedControlSurface = getAttachedControlSurface();
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                if(attachedControlSurface->isAffectedSection(sectionIdx))
+                if( attachedControlSurface->isAffectedSection( sectionIdx ) )
                 {
-                    if(!isControlSurface())
+                    if( !isControlSurface() )
                     {
-                        rootDistance =
-                            attachedControlSurface->getRootHingeDistanceFromTrailingEdge();
+                        rootDistance = attachedControlSurface->getRootHingeDistanceFromTrailingEdge();
                         tipDistance = attachedControlSurface->getTipHingeDistanceFromTrailingEdge();
 
                         localWingRootTrailingEdge =
                             m_rootTrailingEdge +
-                            (m_rootLeadingEdge - m_rootTrailingEdge) * rootDistance;
+                            ( m_rootLeadingEdge - m_rootTrailingEdge ) * rootDistance;
                         localWingTipTrailingEdge =
-                            m_tipTrailingEdge +
-                            (m_tipLeadingEdge - m_tipTrailingEdge) * tipDistance;
+                            m_tipTrailingEdge + ( m_tipLeadingEdge - m_tipTrailingEdge ) * tipDistance;
                     }
                     else
                     {
                         auto wing = attachedControlSurface->getMainWing();
-                        auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>(wing);
-                        if(mainWing)
+                        auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>( wing );
+                        if( mainWing )
                         {
                             localWingRootTrailingEdge = mainWing->m_rootTrailingEdge;
                             localWingTipTrailingEdge = mainWing->m_tipTrailingEdge;
@@ -2330,20 +2305,17 @@ namespace workphone::vehicle
 
             // Find points a,b,c & d for this chunk of wing.
             const Vector3<real_Num> sectionA =
-                localWingRootLeadingEdge + ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                                            static_cast<real_Num>(sectionIdx) / sectionCount);
+                localWingRootLeadingEdge + ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                                             static_cast<real_Num>( sectionIdx ) / sectionCount );
             const Vector3<real_Num> sectionB =
-                localWingRootLeadingEdge +
-                ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / sectionCount);
+                localWingRootLeadingEdge + ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                                             static_cast<real_Num>( sectionIdx + 1 ) / sectionCount );
             const Vector3<real_Num> sectionC =
-                localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / sectionCount);
+                localWingRootTrailingEdge + ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                                              static_cast<real_Num>( sectionIdx + 1 ) / sectionCount );
             const Vector3<real_Num> sectionD =
-                localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx) / sectionCount);
+                localWingRootTrailingEdge + ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                                              static_cast<real_Num>( sectionIdx ) / sectionCount );
 
             m_sectionA[sectionIdx] = sectionA;
             m_sectionB[sectionIdx] = sectionB;
@@ -2358,7 +2330,7 @@ namespace workphone::vehicle
 
         auto sectionCount = m_sectionCount * aircraft->getSectionMultiplier();
 
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             // R A-----------------B (Leading edge)
             // O |                 |
@@ -2372,32 +2344,30 @@ namespace workphone::vehicle
             auto localTipLiftPosition = m_tipLiftPosition;
             auto liftLineChordPosition = m_liftLineChordPosition;
 
-            auto rootDistance = static_cast<real_Num>(0.0);
-            auto tipDistance = static_cast<real_Num>(0.0);
+            auto rootDistance = static_cast<real_Num>( 0.0 );
+            auto tipDistance = static_cast<real_Num>( 0.0 );
 
             auto attachedControlSurface = getAttachedControlSurface();
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                if(attachedControlSurface->isAffectedSection(sectionIdx))
+                if( attachedControlSurface->isAffectedSection( sectionIdx ) )
                 {
-                    if(!isControlSurface())
+                    if( !isControlSurface() )
                     {
-                        rootDistance =
-                            attachedControlSurface->getRootHingeDistanceFromTrailingEdge();
+                        rootDistance = attachedControlSurface->getRootHingeDistanceFromTrailingEdge();
                         tipDistance = attachedControlSurface->getTipHingeDistanceFromTrailingEdge();
 
                         localWingRootTrailingEdge =
                             m_rootTrailingEdge +
-                            (m_rootLeadingEdge - m_rootTrailingEdge) * rootDistance;
+                            ( m_rootLeadingEdge - m_rootTrailingEdge ) * rootDistance;
                         localWingTipTrailingEdge =
-                            m_tipTrailingEdge +
-                            (m_tipLeadingEdge - m_tipTrailingEdge) * tipDistance;
+                            m_tipTrailingEdge + ( m_tipLeadingEdge - m_tipTrailingEdge ) * tipDistance;
                     }
                     else
                     {
                         auto wing = attachedControlSurface->getMainWing();
-                        auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>(wing);
-                        if(mainWing)
+                        auto mainWing = workphone::static_pointer_cast<CAircraftWingFast>( wing );
+                        if( mainWing )
                         {
                             localWingRootTrailingEdge = mainWing->m_rootTrailingEdge;
                             localWingTipTrailingEdge = mainWing->m_tipTrailingEdge;
@@ -2408,20 +2378,17 @@ namespace workphone::vehicle
 
             // Find points a,b,c & d for this chunk of wing.
             const Vector3<real_Num> sectionA =
-                localWingRootLeadingEdge + ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                                            static_cast<real_Num>(sectionIdx) / sectionCount);
+                localWingRootLeadingEdge + ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                                             static_cast<real_Num>( sectionIdx ) / sectionCount );
             const Vector3<real_Num> sectionB =
-                localWingRootLeadingEdge +
-                ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / sectionCount);
+                localWingRootLeadingEdge + ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                                             static_cast<real_Num>( sectionIdx + 1 ) / sectionCount );
             const Vector3<real_Num> sectionC =
-                localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / sectionCount);
+                localWingRootTrailingEdge + ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                                              static_cast<real_Num>( sectionIdx + 1 ) / sectionCount );
             const Vector3<real_Num> sectionD =
-                localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx) / sectionCount);
+                localWingRootTrailingEdge + ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                                              static_cast<real_Num>( sectionIdx ) / sectionCount );
 
             m_visualSectionA[sectionIdx] = sectionA;
             m_visualSectionB[sectionIdx] = sectionB;
@@ -2430,7 +2397,7 @@ namespace workphone::vehicle
         }
     }
 
-    void CAircraftWingFast::updateCombined(const double &t, const double &fDT)
+    void CAircraftWingFast::updateCombined( const double &t, const double &fDT )
     {
         SmartPtr<IVehicleBody> aircraftBody = m_parent;
         auto aircraft = m_parentAircraft;
@@ -2446,7 +2413,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -2457,7 +2424,7 @@ namespace workphone::vehicle
         auto localRootLiftPosition = m_rootLiftPosition;
         auto localTipLiftPosition = m_tipLiftPosition;
         auto liftLineChordPosition = m_liftLineChordPosition;
-        auto sectionCount = m_sectionCount; // *aircraft->getSectionMultiplier();
+        auto sectionCount = m_sectionCount;  // *aircraft->getSectionMultiplier();
 
         // m_windRotation.X() += 100.0 * fDT;
         // m_windRotation.X() = Math<real_Num>::wrap(m_windRotation.X(), -25.0, 25.0);
@@ -2465,11 +2432,11 @@ namespace workphone::vehicle
         static real_Num angle = 45.0;
         m_windRotation.X() = angle;
 
-        DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( 11 ), m_tipLiftPosition,
-                                    m_tipLiftPosition + ( m_localWingRight * 0.1 ), 0x000000);
+        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( 11 ), m_tipLiftPosition,
+                                     m_tipLiftPosition + ( m_localWingRight * 0.1 ), 0x000000 );
 
         // Per section update.
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             // R A-----------------B (Leading edge)
             // O |                 |
@@ -2479,20 +2446,20 @@ namespace workphone::vehicle
             // Find points a,b,c & d for this chunk of wing.
             const Vector3<real_Num> sectionA =
                 localWingRootLeadingEdge +
-                ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                 static_cast<real_Num>(sectionIdx) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                  static_cast<real_Num>( sectionIdx ) / static_cast<real_Num>( sectionCount ) );
             const Vector3<real_Num> sectionB =
                 localWingRootLeadingEdge +
-                ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                  static_cast<real_Num>( sectionIdx + 1 ) / static_cast<real_Num>( sectionCount ) );
             const Vector3<real_Num> sectionC =
                 localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                  static_cast<real_Num>( sectionIdx + 1 ) / static_cast<real_Num>( sectionCount ) );
             const Vector3<real_Num> sectionD =
                 localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                  static_cast<real_Num>( sectionIdx ) / static_cast<real_Num>( sectionCount ) );
 
             auto a = sectionA;
             auto b = sectionB;
@@ -2510,24 +2477,22 @@ namespace workphone::vehicle
             //	int stop = 0;
             //	stop = 0;
             // }
-            real_Num areaZero = calculateArea(a, b, c, d);
-            Vector3<real_Num> sectionRootLiftPositionZero =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionZero = c + ((b - c) * liftLineChordPosition);
+            real_Num areaZero = calculateArea( a, b, c, d );
+            Vector3<real_Num> sectionRootLiftPositionZero = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionZero = c + ( ( b - c ) * liftLineChordPosition );
 
-            Vector3<real_Num> chordLineZero = (a + ((b - a) * 0.5)) -
-                                              (d + ((c - d) * 0.5));
+            Vector3<real_Num> chordLineZero = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             real_Num chordLengthZero = chordLineZero.length();
             chordLineZero.normalise();
 
             Vector3<real_Num> upZero = chordLineZero.crossProduct(
-                (sectionTipLiftPositionZero - sectionRootLiftPositionZero).normaliseCopy());
+                ( sectionTipLiftPositionZero - sectionRootLiftPositionZero ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upZero.normalise();
 
             Vector3<real_Num> localScaleZero = localTransform.getScale();
-            if(localScaleZero.X() < static_cast<real_Num>(0.0))
+            if( localScaleZero.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upZero = -upZero;
             }
@@ -2535,42 +2500,39 @@ namespace workphone::vehicle
             // Find the aerodynamic center.
             Vector3<real_Num> aerodynamicCenter =
                 sectionRootLiftPositionZero +
-                ((sectionTipLiftPositionZero - sectionRootLiftPositionZero) *
-                 0.5);
+                ( ( sectionTipLiftPositionZero - sectionRootLiftPositionZero ) * 0.5 );
 
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d);
+                attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d );
             }
 
-            real_Num areaFull = calculateArea(a, b, c, d);
-            Vector3<real_Num> sectionRootLiftPositionFull =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionFull = c + ((b - c) * liftLineChordPosition);
+            real_Num areaFull = calculateArea( a, b, c, d );
+            Vector3<real_Num> sectionRootLiftPositionFull = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionFull = c + ( ( b - c ) * liftLineChordPosition );
 
-            Vector3<real_Num> chordLineFull = (a + ((b - a) * 0.5)) -
-                                              (d + ((c - d) * 0.5));
+            Vector3<real_Num> chordLineFull = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             chordLineFull.normalise();
 
             Vector3<real_Num> upFull = chordLineFull.crossProduct(
-                (sectionTipLiftPositionFull - sectionRootLiftPositionFull).normaliseCopy());
+                ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upFull.normalise();
 
             Vector3<real_Num> localScaleFull = localTransform.getScale();
-            if(localScaleFull.X() < static_cast<real_Num>(0.0))
+            if( localScaleFull.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upFull = -upFull;
             }
 
             //////Draw modified wing.
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 4 ), a, b, 0x00FF00);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 5 ), b, c, 0xFF0000);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 6 ), c, d, 0x0000FF);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 7 ), d, a, 0x00FFFF);
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 4 ), a, b, 0x00FF00 );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 5 ), b, c, 0xFF0000 );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 6 ), c, d, 0x0000FF );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 7 ), d, a, 0x00FFFF );
             }
 
             a = sectionA;
@@ -2580,13 +2542,12 @@ namespace workphone::vehicle
 
             // If we have a control surface attached update the geometry based on control surface
             // inputs.
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d,
-                                                           0.1);
+                attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d, 0.1 );
             }
 
-            real_Num area10 = calculateArea(a, b, c, d);
+            real_Num area10 = calculateArea( a, b, c, d );
 
             // WP_ASSERT(Math<real_Num>::equals(area, area2));
             // if (aircraft->getDisplayDebugData())
@@ -2598,12 +2559,11 @@ namespace workphone::vehicle
             // }
 
             // Recalculate lift positions..
-            Vector3<real_Num> sectionRootLiftPosition10 = d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPosition10 = c + ((b - c) * liftLineChordPosition);
+            Vector3<real_Num> sectionRootLiftPosition10 = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPosition10 = c + ( ( b - c ) * liftLineChordPosition );
 
             // Find the chord line.
-            Vector3<real_Num> chordLine10 = (a + ((b - a) * 0.5)) -
-                                            (d + ((c - d) * 0.5));
+            Vector3<real_Num> chordLine10 = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             real_Num chordLength10 = chordLine10.length();
             chordLine10.normalise();
 
@@ -2618,25 +2578,25 @@ namespace workphone::vehicle
             //	}
             // }
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 8 ), aerodynamicCenter,
-                                                aerodynamicCenter + chordLineFull, 0x0000FF);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 8 ), aerodynamicCenter,
+                                                 aerodynamicCenter + chordLineFull, 0x0000FF );
                 }
             }
 
-            Vector3<real_Num> windVector = wind->getWind(aerodynamicCenter.Y(), t);
+            Vector3<real_Num> windVector = wind->getWind( aerodynamicCenter.Y(), t );
             Vector3<real_Num> relativeWind =
-                calculateRelativeWind(sectionIdx, aerodynamicCenter, windVector);
+                calculateRelativeWind( sectionIdx, aerodynamicCenter, windVector );
 
-            if(!aircraft->getEnablePowerUnit())
+            if( !aircraft->getEnablePowerUnit() )
             {
-                static auto w = Vector3<real_Num>(0, 0, -5);
+                static auto w = Vector3<real_Num>( 0, 0, -5 );
 
                 Quaternion<real_Num> q;
-                q.fromDegrees(m_windRotation);
+                q.fromDegrees( m_windRotation );
 
                 relativeWind = q * w;
                 // relativeWind.normalise();
@@ -2648,20 +2608,18 @@ namespace workphone::vehicle
             // m_re[i] = aircraft->getAirDensity() * relativeWind.length() * chordLength /
             // AirViscosity;
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("STAB") != std::string::npos)
+                if( getName().find( "STAB" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 14 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( relativeWind * 1.0f ),
-                                                0xFF0000);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 14 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( relativeWind * 1.0f ), 0xFF0000 );
                 }
 
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 30 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( relativeWind * 1.0f ),
-                                                0xFF0000);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 30 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( relativeWind * 1.0f ), 0xFF0000 );
                 }
             }
 
@@ -2673,7 +2631,7 @@ namespace workphone::vehicle
             // localRelativeWind = localRelativeWind.normaliseCopy();
 
             Vector3<real_Num> up10 = chordLine10.crossProduct(
-                (sectionTipLiftPosition10 - sectionRootLiftPosition10).normaliseCopy());
+                ( sectionTipLiftPosition10 - sectionRootLiftPosition10 ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             up10.normalise();
@@ -2681,101 +2639,100 @@ namespace workphone::vehicle
             // WP_ASSERT(up.Y() > real_Num(0.0));
 
             Vector3<real_Num> localScale = localTransform.getScale();
-            if(localScale.X() < static_cast<real_Num>(0.0))
+            if( localScale.X() < static_cast<real_Num>( 0.0 ) )
             {
                 up10 = -up10;
             }
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 16 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( upFull * 1.0f ), 0xFFFF00);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 16 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( upFull * 1.0f ), 0xFFFF00 );
                 }
 
-                if(getName().find("STAB") != std::string::npos)
+                if( getName().find( "STAB" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 16 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( upFull * 1.0f ), 0xFFFFFF);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 16 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( upFull * 1.0f ), 0xFFFFFF );
                 }
             }
 
             // Find the angle of attack.
             auto relativeWindNormalised = relativeWind.normaliseCopy();
 
-            auto chordLineDotRelWind10 = chordLine10.dotProduct(-relativeWindNormalised);
-            auto upDotRelWind10 = up10.dotProduct(-relativeWindNormalised);
-            auto angleOfAttackRads10 =
-                Math<real_Num>::ATan2(upDotRelWind10, chordLineDotRelWind10);
+            auto chordLineDotRelWind10 = chordLine10.dotProduct( -relativeWindNormalised );
+            auto upDotRelWind10 = up10.dotProduct( -relativeWindNormalised );
+            auto angleOfAttackRads10 = Math<real_Num>::ATan2( upDotRelWind10, chordLineDotRelWind10 );
             angleOfAttackRads10 *= m_aoaMultiplier;
-            auto angleOfAttack10 = Math<real_Num>::RadToDeg(angleOfAttackRads10);
-            angleOfAttack10 = Math<real_Num>::clamp(
-                angleOfAttack10, -static_cast<real_Num>(180.0), 180.0);
+            auto angleOfAttack10 = Math<real_Num>::RadToDeg( angleOfAttackRads10 );
+            angleOfAttack10 =
+                Math<real_Num>::clamp( angleOfAttack10, -static_cast<real_Num>( 180.0 ), 180.0 );
 
-            auto chordLineDotRelWindZero = chordLineZero.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindZero = upZero.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindZero = chordLineZero.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindZero = upZero.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsZero =
-                Math<real_Num>::ATan2(upDotRelWindZero, chordLineDotRelWindZero);
+                Math<real_Num>::ATan2( upDotRelWindZero, chordLineDotRelWindZero );
             angleOfAttackRadsZero *= m_aoaMultiplier;
-            auto angleOfAttackZero = Math<real_Num>::RadToDeg(angleOfAttackRadsZero);
-            angleOfAttackZero = Math<real_Num>::clamp(
-                angleOfAttackZero, -static_cast<real_Num>(180.0), 180.0);
+            auto angleOfAttackZero = Math<real_Num>::RadToDeg( angleOfAttackRadsZero );
+            angleOfAttackZero =
+                Math<real_Num>::clamp( angleOfAttackZero, -static_cast<real_Num>( 180.0 ), 180.0 );
 
-            auto chordLineDotRelWindFull = chordLineFull.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindFull = upFull.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindFull = chordLineFull.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindFull = upFull.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsFull =
-                Math<real_Num>::ATan2(upDotRelWindFull, chordLineDotRelWindFull);
+                Math<real_Num>::ATan2( upDotRelWindFull, chordLineDotRelWindFull );
             angleOfAttackRadsFull *= m_aoaMultiplier;
-            auto angleOfAttackFull = Math<real_Num>::RadToDeg(angleOfAttackRadsFull);
-            angleOfAttackFull = Math<real_Num>::clamp(
-                angleOfAttackFull, -static_cast<real_Num>(180.0), 180.0);
-            auto aoaNormalised = Math<real_Num>::clamp(
-                angleOfAttackFull / static_cast<real_Num>(180.0), -1.0, 1.0);
+            auto angleOfAttackFull = Math<real_Num>::RadToDeg( angleOfAttackRadsFull );
+            angleOfAttackFull =
+                Math<real_Num>::clamp( angleOfAttackFull, -static_cast<real_Num>( 180.0 ), 180.0 );
+            auto aoaNormalised =
+                Math<real_Num>::clamp( angleOfAttackFull / static_cast<real_Num>( 180.0 ), -1.0, 1.0 );
 
-            auto fStallControlCL = static_cast<real_Num>(0.0);
-            auto fStallControlCD = static_cast<real_Num>(0.0);
-            auto fStallControlCM = static_cast<real_Num>(0.0);
+            auto fStallControlCL = static_cast<real_Num>( 0.0 );
+            auto fStallControlCD = static_cast<real_Num>( 0.0 );
+            auto fStallControlCM = static_cast<real_Num>( 0.0 );
 
 #if defined _DEBUG
-            if(!Math<real_Num>::equals(m_stallControlCL, 0.0))
+            if( !Math<real_Num>::equals( m_stallControlCL, 0.0 ) )
             {
                 int stop = 0;
                 stop = 0;
             }
 #endif
 
-            if(chordLineDotRelWindFull > std::numeric_limits<real_Num>::epsilon())
+            if( chordLineDotRelWindFull > std::numeric_limits<real_Num>::epsilon() )
             {
-                if(attachedControlSurface != nullptr)
+                if( attachedControlSurface != nullptr )
                 {
-                    if(aoaNormalised > m_stallThreshold)
+                    if( aoaNormalised > m_stallThreshold )
                     {
-                        real_Num range = static_cast<real_Num>(1.0) - m_stallThreshold;
+                        real_Num range = static_cast<real_Num>( 1.0 ) - m_stallThreshold;
                         real_Num fUpDotRelWind = aoaNormalised - m_stallThreshold;
-                        if(range > std::numeric_limits<real_Num>::epsilon())
+                        if( range > std::numeric_limits<real_Num>::epsilon() )
                         {
-                            fStallControlCL = (fUpDotRelWind / range) * m_stallControlCL;
-                            fStallControlCD = (fUpDotRelWind / range) * m_stallControlCD;
-                            fStallControlCM = (fUpDotRelWind / range) * m_stallControlCM;
+                            fStallControlCL = ( fUpDotRelWind / range ) * m_stallControlCL;
+                            fStallControlCD = ( fUpDotRelWind / range ) * m_stallControlCD;
+                            fStallControlCM = ( fUpDotRelWind / range ) * m_stallControlCM;
                         }
                     }
-                    else if(aoaNormalised < -m_stallThreshold)
+                    else if( aoaNormalised < -m_stallThreshold )
                     {
-                        real_Num range = static_cast<real_Num>(1.0) - m_stallThreshold;
+                        real_Num range = static_cast<real_Num>( 1.0 ) - m_stallThreshold;
                         real_Num fUpDotRelWind = aoaNormalised + m_stallThreshold;
-                        if(range > std::numeric_limits<real_Num>::epsilon())
+                        if( range > std::numeric_limits<real_Num>::epsilon() )
                         {
-                            fStallControlCL = (fUpDotRelWind / range) * m_stallControlCL;
-                            fStallControlCD = (fUpDotRelWind / range) * m_stallControlCD;
-                            fStallControlCM = (fUpDotRelWind / range) * m_stallControlCM;
+                            fStallControlCL = ( fUpDotRelWind / range ) * m_stallControlCL;
+                            fStallControlCD = ( fUpDotRelWind / range ) * m_stallControlCD;
+                            fStallControlCM = ( fUpDotRelWind / range ) * m_stallControlCM;
                         }
                     }
                 }
             }
 
 #if defined _DEBUG
-            if(getName().find("STAB") != std::string::npos)
+            if( getName().find( "STAB" ) != std::string::npos )
             {
                 // DEBUG_DRAW_LINE_BY_ID(getDebugId(i, 9), aerodynamicCenter, aerodynamicCenter +
                 // (relativeWind * 1.0f), 0xFF0000);
@@ -2783,7 +2740,7 @@ namespace workphone::vehicle
                 stop = 0;
             }
 
-            if(getName().find("WING") != std::string::npos)
+            if( getName().find( "WING" ) != std::string::npos )
             {
                 // DEBUG_DRAW_LINE_BY_ID(getDebugId(i, 9), aerodynamicCenter, aerodynamicCenter +
                 // (relativeWind * 1.0f), 0xFF0000);
@@ -2799,15 +2756,15 @@ namespace workphone::vehicle
             real_Num clGroundEffectMult = 1.0;
             real_Num cdGroundEffectMult = 1.0;
 
-            if(m_groundEffect)
+            if( m_groundEffect )
             {
-                m_groundEffect->getGroundEffectCoefficients(a, b, c, d, clGroundEffectMult,
-                                                            cdGroundEffectMult);
+                m_groundEffect->getGroundEffectCoefficients( a, b, c, d, clGroundEffectMult,
+                                                             cdGroundEffectMult );
             }
 
             real_Num cL = 0.0;
 
-            if(aerofoil)
+            if( aerofoil )
             {
 #if 0
                 auto CL = aerofoil->getCL();
@@ -3036,27 +2993,27 @@ namespace workphone::vehicle
                 auto CD = aerofoil->getCD();
                 auto CM = aerofoil->getCM();
 
-                auto clZero = CL->interpolate(angleOfAttackZero);
-                auto cdZero = CD->interpolate(angleOfAttackZero);
-                auto cmZero = CM->interpolate(angleOfAttackZero);
+                auto clZero = CL->interpolate( angleOfAttackZero );
+                auto cdZero = CD->interpolate( angleOfAttackZero );
+                auto cmZero = CM->interpolate( angleOfAttackZero );
 
-                auto cl10 = CL->interpolate(angleOfAttack10);
-                auto cd10 = CD->interpolate(angleOfAttack10);
-                auto cm10 = CM->interpolate(angleOfAttack10);
+                auto cl10 = CL->interpolate( angleOfAttack10 );
+                auto cd10 = CD->interpolate( angleOfAttack10 );
+                auto cm10 = CM->interpolate( angleOfAttack10 );
 
-                auto clMax = CL->interpolate(angleOfAttackFull);
-                auto cdMax = CD->interpolate(angleOfAttackFull);
-                auto cmMax = CM->interpolate(angleOfAttackFull);
+                auto clMax = CL->interpolate( angleOfAttackFull );
+                auto cdMax = CD->interpolate( angleOfAttackFull );
+                auto cmMax = CM->interpolate( angleOfAttackFull );
 
-                auto camber = static_cast<real_Num>(0.0);
-                auto camberNormalised = static_cast<real_Num>(0.0);
+                auto camber = static_cast<real_Num>( 0.0 );
+                auto camberNormalised = static_cast<real_Num>( 0.0 );
 
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
                     real_Num fCurrentDeflection =
-                        m_controlSurface->getCurrentDeflection() * static_cast<real_Num>(2.0);
+                        m_controlSurface->getCurrentDeflection() * static_cast<real_Num>( 2.0 );
 
-                    if(m_controlSurface->isReversed())
+                    if( m_controlSurface->isReversed() )
                     {
                         camberNormalised = -fCurrentDeflection;
                         camber = -fCurrentDeflection;
@@ -3067,24 +3024,24 @@ namespace workphone::vehicle
                         camber = fCurrentDeflection;
                     }
 
-                    camber = fCurrentDeflection > static_cast<real_Num>(0.0)
-                                 ? Math<real_Num>::Abs(fCurrentDeflection) *
-                                   m_controlSurface->getMaxDeflectionDegrees()
-                                 : Math<real_Num>::Abs(fCurrentDeflection) *
-                                   m_controlSurface->getMinDeflectionDegrees();
+                    camber = fCurrentDeflection > static_cast<real_Num>( 0.0 )
+                                 ? Math<real_Num>::Abs( fCurrentDeflection ) *
+                                       m_controlSurface->getMaxDeflectionDegrees()
+                                 : Math<real_Num>::Abs( fCurrentDeflection ) *
+                                       m_controlSurface->getMinDeflectionDegrees();
                 }
 
                 // Use aerofoil..
                 // L = cl * a * 0.5f * r * v^2
-                WP_ASSERT(CL);
-                if(m_controlSurface)
+                WP_ASSERT( CL );
+                if( m_controlSurface )
                 {
                     auto clLookup = m_controlSurface->getClLookup();
-                    auto clLookupMultiplier = clLookup->interpolate(camber);
+                    auto clLookupMultiplier = clLookup->interpolate( camber );
                     auto clMultiplier = m_controlSurface->getClMultiplier();
                     auto delta = camberNormalised * clMultiplier * clLookupMultiplier;
-                    cL = clZero + (cl10 - clZero) * Math<real_Num>::Abs(delta);
-                    cL += (clMax - clZero) * Math<real_Num>::Abs(fStallControlCL);
+                    cL = clZero + ( cl10 - clZero ) * Math<real_Num>::Abs( delta );
+                    cL += ( clMax - clZero ) * Math<real_Num>::Abs( fStallControlCL );
                 }
                 else
                 {
@@ -3097,22 +3054,22 @@ namespace workphone::vehicle
                 const real_Num r = aircraft->getAirDensity();
                 real_Num v = relativeWind.length();
 
-                constexpr auto maxCL = static_cast<real_Num>(2.0);
-                WP_ASSERT(cL < maxCL);
-                cL = Math<real_Num>::clamp(cL, -maxCL, maxCL);
-                totalLift = cL * areaZero * static_cast<real_Num>(0.5) * r * (v * v);
+                constexpr auto maxCL = static_cast<real_Num>( 2.0 );
+                WP_ASSERT( cL < maxCL );
+                cL = Math<real_Num>::clamp( cL, -maxCL, maxCL );
+                totalLift = cL * areaZero * static_cast<real_Num>( 0.5 ) * r * ( v * v );
 
                 // D = 0.5 * cd * r * (v * v) * a;
-                WP_ASSERT(CD);
+                WP_ASSERT( CD );
                 real_Num cD = 0.0;
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
                     auto cdLookup = m_controlSurface->getCdLookup();
-                    auto cdLookupValue = cdLookup->interpolate(camber);
+                    auto cdLookupValue = cdLookup->interpolate( camber );
                     auto cdMultiplier = m_controlSurface->getCdMultiplier();
                     auto delta = camberNormalised * cdMultiplier * cdLookupValue;
-                    cD = cdZero + (cd10 - cdZero) * Math<real_Num>::Abs(delta);
-                    cD += (cdMax - cdZero) * Math<real_Num>::Abs(fStallControlCD);
+                    cD = cdZero + ( cd10 - cdZero ) * Math<real_Num>::Abs( delta );
+                    cD += ( cdMax - cdZero ) * Math<real_Num>::Abs( fStallControlCD );
                 }
                 else
                 {
@@ -3122,20 +3079,20 @@ namespace workphone::vehicle
                 cD *= cdGroundEffectMult;
                 cD *= m_cdMultiplier;
 
-                constexpr auto maxCD = static_cast<real_Num>(2.0);
-                WP_ASSERT(cD < maxCD);
-                cD = Math<real_Num>::clamp(cD, -maxCD, maxCD);
-                totalDrag = static_cast<real_Num>(0.5) * cD * r * (v * v) * areaZero;
+                constexpr auto maxCD = static_cast<real_Num>( 2.0 );
+                WP_ASSERT( cD < maxCD );
+                cD = Math<real_Num>::clamp( cD, -maxCD, maxCD );
+                totalDrag = static_cast<real_Num>( 0.5 ) * cD * r * ( v * v ) * areaZero;
 
-                WP_ASSERT(CM);
-                if(m_controlSurface)
+                WP_ASSERT( CM );
+                if( m_controlSurface )
                 {
                     auto cmLookup = m_controlSurface->getCmLookup();
-                    auto cmLookupValue = cmLookup->interpolate(camber);
+                    auto cmLookupValue = cmLookup->interpolate( camber );
                     auto cmMultiplier = m_controlSurface->getCmMultiplier();
                     auto delta = camberNormalised * cmMultiplier * cmLookupValue;
-                    cM = cmZero + (cm10 - cmZero) * Math<real_Num>::Abs(delta);
-                    cM += (cmMax - cmZero) * Math<real_Num>::Abs(fStallControlCM);
+                    cM = cmZero + ( cm10 - cmZero ) * Math<real_Num>::Abs( delta );
+                    cM += ( cmMax - cmZero ) * Math<real_Num>::Abs( fStallControlCM );
                 }
                 else
                 {
@@ -3144,12 +3101,12 @@ namespace workphone::vehicle
 
                 cM *= m_cmMultiplier;
 
-                WP_ASSERT(Math<real_Num>::Abs( totalLift ) < static_cast<real_Num>( 10000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( totalDrag ) < static_cast<real_Num>( 10000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( totalLift ) < static_cast<real_Num>( 10000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( totalDrag ) < static_cast<real_Num>( 10000.0 ) );
 
-                WP_ASSERT(Math<real_Num>::Abs( cL ) < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( cD ) < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( cM ) < static_cast<real_Num>( 1000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( cL ) < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( cD ) < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( cM ) < static_cast<real_Num>( 1000.0 ) );
 #endif
             }
             else
@@ -3157,32 +3114,32 @@ namespace workphone::vehicle
                 // Fall back to basic l/d equations..
                 // L = cl * a * 0.5f * r * v^2
                 // Approximate Cl using the following formula - Cl = 2 * pi * angle (in radians)
-                real_Num cL = static_cast<real_Num>(2.0) * Math<real_Num>::pi() *
-                              Math<real_Num>::DegToRad(angleOfAttackFull);
+                real_Num cL = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi() *
+                              Math<real_Num>::DegToRad( angleOfAttackFull );
                 cL *= clGroundEffectMult;
 
                 real_Num r = 1.29;
                 real_Num v = relativeWind.length();
-                totalLift = cL * areaZero * static_cast<real_Num>(0.5) * r * (v * v);
+                totalLift = cL * areaZero * static_cast<real_Num>( 0.5 ) * r * ( v * v );
 
                 static real_Num maxLift = 1.0;
                 // totalLift = MathF::clamp(totalLift, -maxLift, maxLift);
 
                 // D = 0.5f * cd * r * v2 * a;
                 // Typical aerofoil drag co efficient is .045;
-                real_Num cD = m_cdOverride; // Typical aerofoil drag co efficient
+                real_Num cD = m_cdOverride;  // Typical aerofoil drag co efficient
                 cD *= cdGroundEffectMult;
 
-                totalDrag = static_cast<real_Num>(0.5) * cD * r * (v * v) * areaZero;
+                totalDrag = static_cast<real_Num>( 0.5 ) * cD * r * ( v * v ) * areaZero;
 
                 static real_Num maxDrag = 1.0;
-                totalDrag = Math<real_Num>::clamp(totalDrag, -maxDrag, maxDrag);
+                totalDrag = Math<real_Num>::clamp( totalDrag, -maxDrag, maxDrag );
 
-                cM = static_cast<real_Num>(0.0);
+                cM = static_cast<real_Num>( 0.0 );
 
-                WP_ASSERT(cL < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(cD < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(cM < static_cast<real_Num>( 1000.0 ));
+                WP_ASSERT( cL < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( cD < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( cM < static_cast<real_Num>( 1000.0 ) );
             }
 
             // real_Num fVorticity = real_Num(0.5) * chordLength * cL *
@@ -3193,42 +3150,42 @@ namespace workphone::vehicle
             // auto localRight = aircraft->getBodyTransform()->inverseTransformVector(worldRight);
             // Vector3<real_Num> liftVector = localRight.crossProduct(-relativeWind.normaliseCopy());
             Vector3<real_Num> liftVector =
-                m_localWingRight.crossProduct(-relativeWind.normaliseCopy());
+                m_localWingRight.crossProduct( -relativeWind.normaliseCopy() );
             // Vector3<real_Num> liftForce = relativeWind.normaliseCopy().crossProduct(wingRight);
             liftVector.normalise();
             // WP_ASSERT(liftForce.dotProduct(worldTransform->up()) < real_Num(-0.5));
 
-            Vector3<real_Num> liftForce = liftVector * totalLift; // *fVorticity;
+            Vector3<real_Num> liftForce = liftVector * totalLift;  // *fVorticity;
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("STAB") != std::string::npos)
+                if( getName().find( "STAB" ) != std::string::npos )
                 {
-                    if(aircraft->getDisplayDebugData())
+                    if( aircraft->getDisplayDebugData() )
                     {
-                        DEBUG_DRAW_LOCAL_LINE_BY_ID(
-                            getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                            aerodynamicCenter + ( liftForce * debugLineScale ), 0xF00000);
+                        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 9 ), aerodynamicCenter,
+                                                     aerodynamicCenter + ( liftForce * debugLineScale ),
+                                                     0xF00000 );
                     }
                 }
 
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    if(aircraft->getDisplayDebugData())
+                    if( aircraft->getDisplayDebugData() )
                     {
-                        DEBUG_DRAW_LOCAL_LINE_BY_ID(
-                            getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                            aerodynamicCenter + ( liftForce * debugLineScale ), 0x00FF00);
+                        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 9 ), aerodynamicCenter,
+                                                     aerodynamicCenter + ( liftForce * debugLineScale ),
+                                                     0x00FF00 );
                     }
                 }
 
-                if(getName().find("RUDDER") != std::string::npos)
+                if( getName().find( "RUDDER" ) != std::string::npos )
                 {
-                    if(aircraft->getDisplayDebugData())
+                    if( aircraft->getDisplayDebugData() )
                     {
-                        DEBUG_DRAW_LOCAL_LINE_BY_ID(
-                            getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                            aerodynamicCenter + ( liftForce * debugLineScale ), 0x00FF00);
+                        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 9 ), aerodynamicCenter,
+                                                     aerodynamicCenter + ( liftForce * debugLineScale ),
+                                                     0x00FF00 );
                     }
                 }
             }
@@ -3248,16 +3205,16 @@ namespace workphone::vehicle
 
             // Find wing pitching moment...
             //  0.5 RoAir*Sqr(Flowpeed)
-            real_Num q = (static_cast<real_Num>(0.5) * aircraft->getAirDensity() *
-                          (relativeWind.length() * relativeWind.length()));
+            real_Num q = ( static_cast<real_Num>( 0.5 ) * aircraft->getAirDensity() *
+                           ( relativeWind.length() * relativeWind.length() ) );
             real_Num wingPitchingMoment = cM * chordLengthZero * q * areaZero;
             // Vector3<real_Num> pitchAxis = chordLine.crossProduct(liftForce.normaliseCopy());
-            Vector3<real_Num> pitchAxis = liftForce.normaliseCopy().crossProduct(chordLineZero);
+            Vector3<real_Num> pitchAxis = liftForce.normaliseCopy().crossProduct( chordLineZero );
             pitchAxis.normalise();
             pitchAxis *= wingPitchingMoment;
 
-            WP_ASSERT(Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ));
-            WP_ASSERT(Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ));
+            WP_ASSERT( Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ) );
+            WP_ASSERT( Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ) );
 
             // liftForce.X() = real_Num(0.0); // todo check
             // liftForce.Z() = real_Num(0.0); // todo check
@@ -3267,16 +3224,16 @@ namespace workphone::vehicle
             // WP_ASSERT(localDragForce.length() < real_Num(2000.0));
             // WP_ASSERT(localAerodynamicCenter.length() < real_Num(2.0));
 
-            if(aircraft->getEnablePowerUnit())
+            if( aircraft->getEnablePowerUnit() )
             {
-                aircraftBody->addLocalForceAtLocalPosition(liftForce, aerodynamicCenter);
-                aircraftBody->addLocalForceAtLocalPosition(dragForce, aerodynamicCenter);
-                aircraftBody->addLocalTorque(pitchAxis);
+                aircraftBody->addLocalForceAtLocalPosition( liftForce, aerodynamicCenter );
+                aircraftBody->addLocalForceAtLocalPosition( dragForce, aerodynamicCenter );
+                aircraftBody->addLocalTorque( pitchAxis );
             }
         }
     }
 
-    void CAircraftWingFast::updateSeparate(const double &t, const double &fDT)
+    void CAircraftWingFast::updateSeparate( const double &t, const double &fDT )
     {
         SmartPtr<IVehicleBody> aircraftBody = m_parent;
         auto aircraft = m_parentAircraft;
@@ -3292,7 +3249,7 @@ namespace workphone::vehicle
         auto propwash = m_propWash;
         auto aerofoil = m_aerofoil;
 
-        float debugLineScale = 5.0f; // 1.0f / 30.0f;
+        float debugLineScale = 5.0f;  // 1.0f / 30.0f;
 
         s32 lineId = 0;
 
@@ -3303,7 +3260,7 @@ namespace workphone::vehicle
         auto localRootLiftPosition = m_rootLiftPosition;
         auto localTipLiftPosition = m_tipLiftPosition;
         auto liftLineChordPosition = m_liftLineChordPosition;
-        auto sectionCount = m_sectionCount; // *aircraft->getSectionMultiplier();
+        auto sectionCount = m_sectionCount;  // *aircraft->getSectionMultiplier();
 
         // m_windRotation.X() += 100.0 * fDT;
         // m_windRotation.X() = Math<real_Num>::wrap(m_windRotation.X(), -25.0, 25.0);
@@ -3311,11 +3268,11 @@ namespace workphone::vehicle
         static real_Num angle = 45.0;
         m_windRotation.X() = angle;
 
-        DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( 11 ), m_tipLiftPosition,
-                                    m_tipLiftPosition + ( m_localWingRight * 0.1 ), 0x000000);
+        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( 11 ), m_tipLiftPosition,
+                                     m_tipLiftPosition + ( m_localWingRight * 0.1 ), 0x000000 );
 
         // Per section update.
-        for(s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx)
+        for( s32 sectionIdx = 0; sectionIdx < sectionCount; ++sectionIdx )
         {
             // R A-----------------B (Leading edge)
             // O |                 |
@@ -3325,20 +3282,20 @@ namespace workphone::vehicle
             // Find points a,b,c & d for this chunk of wing.
             const Vector3<real_Num> sectionA =
                 localWingRootLeadingEdge +
-                ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                 static_cast<real_Num>(sectionIdx) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                  static_cast<real_Num>( sectionIdx ) / static_cast<real_Num>( sectionCount ) );
             const Vector3<real_Num> sectionB =
                 localWingRootLeadingEdge +
-                ((localWingTipLeadingEdge - localWingRootLeadingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipLeadingEdge - localWingRootLeadingEdge ) *
+                  static_cast<real_Num>( sectionIdx + 1 ) / static_cast<real_Num>( sectionCount ) );
             const Vector3<real_Num> sectionC =
                 localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx + 1) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                  static_cast<real_Num>( sectionIdx + 1 ) / static_cast<real_Num>( sectionCount ) );
             const Vector3<real_Num> sectionD =
                 localWingRootTrailingEdge +
-                ((localWingTipTrailingEdge - localWingRootTrailingEdge) *
-                 static_cast<real_Num>(sectionIdx) / static_cast<real_Num>(sectionCount));
+                ( ( localWingTipTrailingEdge - localWingRootTrailingEdge ) *
+                  static_cast<real_Num>( sectionIdx ) / static_cast<real_Num>( sectionCount ) );
 
             auto a = sectionA;
             auto b = sectionB;
@@ -3356,24 +3313,22 @@ namespace workphone::vehicle
             //	int stop = 0;
             //	stop = 0;
             // }
-            real_Num areaZero = calculateArea(a, b, c, d);
-            Vector3<real_Num> sectionRootLiftPositionZero =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionZero = c + ((b - c) * liftLineChordPosition);
+            real_Num areaZero = calculateArea( a, b, c, d );
+            Vector3<real_Num> sectionRootLiftPositionZero = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionZero = c + ( ( b - c ) * liftLineChordPosition );
 
-            Vector3<real_Num> chordLineZero = (a + ((b - a) * 0.5)) -
-                                              (d + ((c - d) * 0.5));
+            Vector3<real_Num> chordLineZero = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             real_Num chordLengthZero = chordLineZero.length();
             chordLineZero.normalise();
 
             Vector3<real_Num> upZero = chordLineZero.crossProduct(
-                (sectionTipLiftPositionZero - sectionRootLiftPositionZero).normaliseCopy());
+                ( sectionTipLiftPositionZero - sectionRootLiftPositionZero ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upZero.normalise();
 
             Vector3<real_Num> localScaleZero = localTransform.getScale();
-            if(localScaleZero.X() < static_cast<real_Num>(0.0))
+            if( localScaleZero.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upZero = -upZero;
             }
@@ -3381,42 +3336,39 @@ namespace workphone::vehicle
             // Find the aerodynamic center.
             Vector3<real_Num> aerodynamicCenter =
                 sectionRootLiftPositionZero +
-                ((sectionTipLiftPositionZero - sectionRootLiftPositionZero) *
-                 0.5);
+                ( ( sectionTipLiftPositionZero - sectionRootLiftPositionZero ) * 0.5 );
 
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d);
+                attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d );
             }
 
-            real_Num areaFull = calculateArea(a, b, c, d);
-            Vector3<real_Num> sectionRootLiftPositionFull =
-                d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPositionFull = c + ((b - c) * liftLineChordPosition);
+            real_Num areaFull = calculateArea( a, b, c, d );
+            Vector3<real_Num> sectionRootLiftPositionFull = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPositionFull = c + ( ( b - c ) * liftLineChordPosition );
 
-            Vector3<real_Num> chordLineFull = (a + ((b - a) * 0.5)) -
-                                              (d + ((c - d) * 0.5));
+            Vector3<real_Num> chordLineFull = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             chordLineFull.normalise();
 
             Vector3<real_Num> upFull = chordLineFull.crossProduct(
-                (sectionTipLiftPositionFull - sectionRootLiftPositionFull).normaliseCopy());
+                ( sectionTipLiftPositionFull - sectionRootLiftPositionFull ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             upFull.normalise();
 
             Vector3<real_Num> localScaleFull = localTransform.getScale();
-            if(localScaleFull.X() < static_cast<real_Num>(0.0))
+            if( localScaleFull.X() < static_cast<real_Num>( 0.0 ) )
             {
                 upFull = -upFull;
             }
 
             //////Draw modified wing.
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 4 ), a, b, 0x00FF00);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 5 ), b, c, 0xFF0000);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 6 ), c, d, 0x0000FF);
-                DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 7 ), d, a, 0x00FFFF);
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 4 ), a, b, 0x00FF00 );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 5 ), b, c, 0xFF0000 );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 6 ), c, d, 0x0000FF );
+                DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 7 ), d, a, 0x00FFFF );
             }
 
             a = sectionA;
@@ -3426,13 +3378,12 @@ namespace workphone::vehicle
 
             // If we have a control surface attached update the geometry based on control surface
             // inputs.
-            if(attachedControlSurface)
+            if( attachedControlSurface )
             {
-                attachedControlSurface->modifyWingGeometry(sectionIdx, a, b, c, d,
-                                                           0.1);
+                attachedControlSurface->modifyWingGeometry( sectionIdx, a, b, c, d, 0.1 );
             }
 
-            real_Num area10 = calculateArea(a, b, c, d);
+            real_Num area10 = calculateArea( a, b, c, d );
 
             // WP_ASSERT(Math<real_Num>::equals(area, area2));
             // if (aircraft->getDisplayDebugData())
@@ -3444,12 +3395,11 @@ namespace workphone::vehicle
             // }
 
             // Recalculate lift positions..
-            Vector3<real_Num> sectionRootLiftPosition10 = d + ((a - d) * liftLineChordPosition);
-            Vector3<real_Num> sectionTipLiftPosition10 = c + ((b - c) * liftLineChordPosition);
+            Vector3<real_Num> sectionRootLiftPosition10 = d + ( ( a - d ) * liftLineChordPosition );
+            Vector3<real_Num> sectionTipLiftPosition10 = c + ( ( b - c ) * liftLineChordPosition );
 
             // Find the chord line.
-            Vector3<real_Num> chordLine10 = (a + ((b - a) * 0.5)) -
-                                            (d + ((c - d) * 0.5));
+            Vector3<real_Num> chordLine10 = ( a + ( ( b - a ) * 0.5 ) ) - ( d + ( ( c - d ) * 0.5 ) );
             real_Num chordLength10 = chordLine10.length();
             chordLine10.normalise();
 
@@ -3464,25 +3414,25 @@ namespace workphone::vehicle
             //	}
             // }
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 8 ), aerodynamicCenter,
-                                                aerodynamicCenter + chordLineFull, 0x0000FF);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 8 ), aerodynamicCenter,
+                                                 aerodynamicCenter + chordLineFull, 0x0000FF );
                 }
             }
 
-            Vector3<real_Num> windVector = wind->getWind(aerodynamicCenter.Y(), t);
+            Vector3<real_Num> windVector = wind->getWind( aerodynamicCenter.Y(), t );
             Vector3<real_Num> relativeWind =
-                calculateRelativeWind(sectionIdx, aerodynamicCenter, windVector);
+                calculateRelativeWind( sectionIdx, aerodynamicCenter, windVector );
 
-            if(!aircraft->getEnablePowerUnit())
+            if( !aircraft->getEnablePowerUnit() )
             {
-                static auto w = Vector3<real_Num>(0, 0, -5);
+                static auto w = Vector3<real_Num>( 0, 0, -5 );
 
                 Quaternion<real_Num> q;
-                q.fromDegrees(m_windRotation);
+                q.fromDegrees( m_windRotation );
 
                 relativeWind = q * w;
                 // relativeWind.normalise();
@@ -3494,20 +3444,18 @@ namespace workphone::vehicle
             // m_re[i] = aircraft->getAirDensity() * relativeWind.length() * chordLength /
             // AirViscosity;
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("STAB") != std::string::npos)
+                if( getName().find( "STAB" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 14 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( relativeWind * 1.0f ),
-                                                0xFF0000);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 14 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( relativeWind * 1.0f ), 0xFF0000 );
                 }
 
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 30 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( relativeWind * 1.0f ),
-                                                0xFF0000);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 30 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( relativeWind * 1.0f ), 0xFF0000 );
                 }
             }
 
@@ -3519,7 +3467,7 @@ namespace workphone::vehicle
             // localRelativeWind = localRelativeWind.normaliseCopy();
 
             Vector3<real_Num> up10 = chordLine10.crossProduct(
-                (sectionTipLiftPosition10 - sectionRootLiftPosition10).normaliseCopy());
+                ( sectionTipLiftPosition10 - sectionRootLiftPosition10 ).normaliseCopy() );
             // Vector3<real_Num> up = (sectionTipLiftPosition -
             // sectionRootLiftPosition).normaliseCopy().crossProduct(chordLine);
             up10.normalise();
@@ -3527,101 +3475,100 @@ namespace workphone::vehicle
             // WP_ASSERT(up.Y() > real_Num(0.0));
 
             Vector3<real_Num> localScale = localTransform.getScale();
-            if(localScale.X() < static_cast<real_Num>(0.0))
+            if( localScale.X() < static_cast<real_Num>( 0.0 ) )
             {
                 up10 = -up10;
             }
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 16 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( upFull * 1.0f ), 0xFFFF00);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 16 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( upFull * 1.0f ), 0xFFFF00 );
                 }
 
-                if(getName().find("STAB") != std::string::npos)
+                if( getName().find( "STAB" ) != std::string::npos )
                 {
-                    DEBUG_DRAW_LOCAL_LINE_BY_ID(getDebugId( sectionIdx, 16 ), aerodynamicCenter,
-                                                aerodynamicCenter + ( upFull * 1.0f ), 0xFFFFFF);
+                    DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 16 ), aerodynamicCenter,
+                                                 aerodynamicCenter + ( upFull * 1.0f ), 0xFFFFFF );
                 }
             }
 
             // Find the angle of attack.
             auto relativeWindNormalised = relativeWind.normaliseCopy();
 
-            auto chordLineDotRelWind10 = chordLine10.dotProduct(-relativeWindNormalised);
-            auto upDotRelWind10 = up10.dotProduct(-relativeWindNormalised);
-            auto angleOfAttackRads10 =
-                Math<real_Num>::ATan2(upDotRelWind10, chordLineDotRelWind10);
+            auto chordLineDotRelWind10 = chordLine10.dotProduct( -relativeWindNormalised );
+            auto upDotRelWind10 = up10.dotProduct( -relativeWindNormalised );
+            auto angleOfAttackRads10 = Math<real_Num>::ATan2( upDotRelWind10, chordLineDotRelWind10 );
             angleOfAttackRads10 *= m_aoaMultiplier;
-            auto angleOfAttack10 = Math<real_Num>::RadToDeg(angleOfAttackRads10);
-            angleOfAttack10 = Math<real_Num>::clamp(
-                angleOfAttack10, -static_cast<real_Num>(180.0), 180.0);
+            auto angleOfAttack10 = Math<real_Num>::RadToDeg( angleOfAttackRads10 );
+            angleOfAttack10 =
+                Math<real_Num>::clamp( angleOfAttack10, -static_cast<real_Num>( 180.0 ), 180.0 );
 
-            auto chordLineDotRelWindZero = chordLineZero.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindZero = upZero.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindZero = chordLineZero.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindZero = upZero.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsZero =
-                Math<real_Num>::ATan2(upDotRelWindZero, chordLineDotRelWindZero);
+                Math<real_Num>::ATan2( upDotRelWindZero, chordLineDotRelWindZero );
             angleOfAttackRadsZero *= m_aoaMultiplier;
-            auto angleOfAttackZero = Math<real_Num>::RadToDeg(angleOfAttackRadsZero);
-            angleOfAttackZero = Math<real_Num>::clamp(
-                angleOfAttackZero, -static_cast<real_Num>(180.0), 180.0);
+            auto angleOfAttackZero = Math<real_Num>::RadToDeg( angleOfAttackRadsZero );
+            angleOfAttackZero =
+                Math<real_Num>::clamp( angleOfAttackZero, -static_cast<real_Num>( 180.0 ), 180.0 );
 
-            auto chordLineDotRelWindFull = chordLineFull.dotProduct(-relativeWindNormalised);
-            auto upDotRelWindFull = upFull.dotProduct(-relativeWindNormalised);
+            auto chordLineDotRelWindFull = chordLineFull.dotProduct( -relativeWindNormalised );
+            auto upDotRelWindFull = upFull.dotProduct( -relativeWindNormalised );
             auto angleOfAttackRadsFull =
-                Math<real_Num>::ATan2(upDotRelWindFull, chordLineDotRelWindFull);
+                Math<real_Num>::ATan2( upDotRelWindFull, chordLineDotRelWindFull );
             angleOfAttackRadsFull *= m_aoaMultiplier;
-            auto angleOfAttackFull = Math<real_Num>::RadToDeg(angleOfAttackRadsFull);
-            angleOfAttackFull = Math<real_Num>::clamp(
-                angleOfAttackFull, -static_cast<real_Num>(180.0), 180.0);
-            auto aoaNormalised = Math<real_Num>::clamp(
-                angleOfAttackFull / static_cast<real_Num>(180.0), -1.0, 1.0);
+            auto angleOfAttackFull = Math<real_Num>::RadToDeg( angleOfAttackRadsFull );
+            angleOfAttackFull =
+                Math<real_Num>::clamp( angleOfAttackFull, -static_cast<real_Num>( 180.0 ), 180.0 );
+            auto aoaNormalised =
+                Math<real_Num>::clamp( angleOfAttackFull / static_cast<real_Num>( 180.0 ), -1.0, 1.0 );
 
-            auto fStallControlCL = static_cast<real_Num>(0.0);
-            auto fStallControlCD = static_cast<real_Num>(0.0);
-            auto fStallControlCM = static_cast<real_Num>(0.0);
+            auto fStallControlCL = static_cast<real_Num>( 0.0 );
+            auto fStallControlCD = static_cast<real_Num>( 0.0 );
+            auto fStallControlCM = static_cast<real_Num>( 0.0 );
 
 #if defined _DEBUG
-            if(!Math<real_Num>::equals(m_stallControlCL, 0.0))
+            if( !Math<real_Num>::equals( m_stallControlCL, 0.0 ) )
             {
                 int stop = 0;
                 stop = 0;
             }
 #endif
 
-            if(chordLineDotRelWindFull > std::numeric_limits<real_Num>::epsilon())
+            if( chordLineDotRelWindFull > std::numeric_limits<real_Num>::epsilon() )
             {
-                if(attachedControlSurface != nullptr)
+                if( attachedControlSurface != nullptr )
                 {
-                    if(aoaNormalised > m_stallThreshold)
+                    if( aoaNormalised > m_stallThreshold )
                     {
-                        real_Num range = static_cast<real_Num>(1.0) - m_stallThreshold;
+                        real_Num range = static_cast<real_Num>( 1.0 ) - m_stallThreshold;
                         real_Num fUpDotRelWind = aoaNormalised - m_stallThreshold;
-                        if(range > std::numeric_limits<real_Num>::epsilon())
+                        if( range > std::numeric_limits<real_Num>::epsilon() )
                         {
-                            fStallControlCL = (fUpDotRelWind / range) * m_stallControlCL;
-                            fStallControlCD = (fUpDotRelWind / range) * m_stallControlCD;
-                            fStallControlCM = (fUpDotRelWind / range) * m_stallControlCM;
+                            fStallControlCL = ( fUpDotRelWind / range ) * m_stallControlCL;
+                            fStallControlCD = ( fUpDotRelWind / range ) * m_stallControlCD;
+                            fStallControlCM = ( fUpDotRelWind / range ) * m_stallControlCM;
                         }
                     }
-                    else if(aoaNormalised < -m_stallThreshold)
+                    else if( aoaNormalised < -m_stallThreshold )
                     {
-                        real_Num range = static_cast<real_Num>(1.0) - m_stallThreshold;
+                        real_Num range = static_cast<real_Num>( 1.0 ) - m_stallThreshold;
                         real_Num fUpDotRelWind = aoaNormalised + m_stallThreshold;
-                        if(range > std::numeric_limits<real_Num>::epsilon())
+                        if( range > std::numeric_limits<real_Num>::epsilon() )
                         {
-                            fStallControlCL = (fUpDotRelWind / range) * m_stallControlCL;
-                            fStallControlCD = (fUpDotRelWind / range) * m_stallControlCD;
-                            fStallControlCM = (fUpDotRelWind / range) * m_stallControlCM;
+                            fStallControlCL = ( fUpDotRelWind / range ) * m_stallControlCL;
+                            fStallControlCD = ( fUpDotRelWind / range ) * m_stallControlCD;
+                            fStallControlCM = ( fUpDotRelWind / range ) * m_stallControlCM;
                         }
                     }
                 }
             }
 
 #if defined _DEBUG
-            if(getName().find("STAB") != std::string::npos)
+            if( getName().find( "STAB" ) != std::string::npos )
             {
                 // DEBUG_DRAW_LINE_BY_ID(getDebugId(i, 9), aerodynamicCenter, aerodynamicCenter +
                 // (relativeWind * 1.0f), 0xFF0000);
@@ -3629,7 +3576,7 @@ namespace workphone::vehicle
                 stop = 0;
             }
 
-            if(getName().find("WING") != std::string::npos)
+            if( getName().find( "WING" ) != std::string::npos )
             {
                 // DEBUG_DRAW_LINE_BY_ID(getDebugId(i, 9), aerodynamicCenter, aerodynamicCenter +
                 // (relativeWind * 1.0f), 0xFF0000);
@@ -3645,15 +3592,15 @@ namespace workphone::vehicle
             real_Num clGroundEffectMult = 1.0;
             real_Num cdGroundEffectMult = 1.0;
 
-            if(m_groundEffect)
+            if( m_groundEffect )
             {
-                m_groundEffect->getGroundEffectCoefficients(a, b, c, d, clGroundEffectMult,
-                                                            cdGroundEffectMult);
+                m_groundEffect->getGroundEffectCoefficients( a, b, c, d, clGroundEffectMult,
+                                                             cdGroundEffectMult );
             }
 
             real_Num cL = 0.0;
 
-            if(aerofoil)
+            if( aerofoil )
             {
 #if 0
                 auto CL = aerofoil->getCL();
@@ -3882,27 +3829,27 @@ namespace workphone::vehicle
                 auto CD = aerofoil->getCD();
                 auto CM = aerofoil->getCM();
 
-                auto clZero = CL->interpolate(angleOfAttackZero);
-                auto cdZero = CD->interpolate(angleOfAttackZero);
-                auto cmZero = CM->interpolate(angleOfAttackZero);
+                auto clZero = CL->interpolate( angleOfAttackZero );
+                auto cdZero = CD->interpolate( angleOfAttackZero );
+                auto cmZero = CM->interpolate( angleOfAttackZero );
 
-                auto cl10 = CL->interpolate(angleOfAttack10);
-                auto cd10 = CD->interpolate(angleOfAttack10);
-                auto cm10 = CM->interpolate(angleOfAttack10);
+                auto cl10 = CL->interpolate( angleOfAttack10 );
+                auto cd10 = CD->interpolate( angleOfAttack10 );
+                auto cm10 = CM->interpolate( angleOfAttack10 );
 
-                auto clMax = CL->interpolate(angleOfAttackFull);
-                auto cdMax = CD->interpolate(angleOfAttackFull);
-                auto cmMax = CM->interpolate(angleOfAttackFull);
+                auto clMax = CL->interpolate( angleOfAttackFull );
+                auto cdMax = CD->interpolate( angleOfAttackFull );
+                auto cmMax = CM->interpolate( angleOfAttackFull );
 
-                auto camber = static_cast<real_Num>(0.0);
-                auto camberNormalised = static_cast<real_Num>(0.0);
+                auto camber = static_cast<real_Num>( 0.0 );
+                auto camberNormalised = static_cast<real_Num>( 0.0 );
 
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
                     real_Num fCurrentDeflection =
-                        m_controlSurface->getCurrentDeflection() * static_cast<real_Num>(2.0);
+                        m_controlSurface->getCurrentDeflection() * static_cast<real_Num>( 2.0 );
 
-                    if(m_controlSurface->isReversed())
+                    if( m_controlSurface->isReversed() )
                     {
                         camberNormalised = -fCurrentDeflection;
                         camber = -fCurrentDeflection;
@@ -3913,24 +3860,24 @@ namespace workphone::vehicle
                         camber = fCurrentDeflection;
                     }
 
-                    camber = fCurrentDeflection > static_cast<real_Num>(0.0)
-                                 ? Math<real_Num>::Abs(fCurrentDeflection) *
-                                   m_controlSurface->getMaxDeflectionDegrees()
-                                 : Math<real_Num>::Abs(fCurrentDeflection) *
-                                   m_controlSurface->getMinDeflectionDegrees();
+                    camber = fCurrentDeflection > static_cast<real_Num>( 0.0 )
+                                 ? Math<real_Num>::Abs( fCurrentDeflection ) *
+                                       m_controlSurface->getMaxDeflectionDegrees()
+                                 : Math<real_Num>::Abs( fCurrentDeflection ) *
+                                       m_controlSurface->getMinDeflectionDegrees();
                 }
 
                 // Use aerofoil..
                 // L = cl * a * 0.5f * r * v^2
-                WP_ASSERT(CL);
-                if(m_controlSurface)
+                WP_ASSERT( CL );
+                if( m_controlSurface )
                 {
                     auto clLookup = m_controlSurface->getClLookup();
-                    auto clLookupMultiplier = clLookup->interpolate(camber);
+                    auto clLookupMultiplier = clLookup->interpolate( camber );
                     auto clMultiplier = m_controlSurface->getClMultiplier();
                     auto delta = camberNormalised * clMultiplier * clLookupMultiplier;
-                    cL = clZero + (cl10 - clZero) * Math<real_Num>::Abs(delta);
-                    cL += (clMax - clZero) * Math<real_Num>::Abs(fStallControlCL);
+                    cL = clZero + ( cl10 - clZero ) * Math<real_Num>::Abs( delta );
+                    cL += ( clMax - clZero ) * Math<real_Num>::Abs( fStallControlCL );
                 }
                 else
                 {
@@ -3943,22 +3890,22 @@ namespace workphone::vehicle
                 const real_Num r = aircraft->getAirDensity();
                 real_Num v = relativeWind.length();
 
-                constexpr auto maxCL = static_cast<real_Num>(2.0);
-                WP_ASSERT(cL < maxCL);
-                cL = Math<real_Num>::clamp(cL, -maxCL, maxCL);
-                totalLift = cL * areaZero * static_cast<real_Num>(0.5) * r * (v * v);
+                constexpr auto maxCL = static_cast<real_Num>( 2.0 );
+                WP_ASSERT( cL < maxCL );
+                cL = Math<real_Num>::clamp( cL, -maxCL, maxCL );
+                totalLift = cL * areaZero * static_cast<real_Num>( 0.5 ) * r * ( v * v );
 
                 // D = 0.5 * cd * r * (v * v) * a;
-                WP_ASSERT(CD);
+                WP_ASSERT( CD );
                 real_Num cD = 0.0;
-                if(m_controlSurface)
+                if( m_controlSurface )
                 {
                     auto cdLookup = m_controlSurface->getCdLookup();
-                    auto cdLookupValue = cdLookup->interpolate(camber);
+                    auto cdLookupValue = cdLookup->interpolate( camber );
                     auto cdMultiplier = m_controlSurface->getCdMultiplier();
                     auto delta = camberNormalised * cdMultiplier * cdLookupValue;
-                    cD = cdZero + (cd10 - cdZero) * Math<real_Num>::Abs(delta);
-                    cD += (cdMax - cdZero) * Math<real_Num>::Abs(fStallControlCD);
+                    cD = cdZero + ( cd10 - cdZero ) * Math<real_Num>::Abs( delta );
+                    cD += ( cdMax - cdZero ) * Math<real_Num>::Abs( fStallControlCD );
                 }
                 else
                 {
@@ -3968,20 +3915,20 @@ namespace workphone::vehicle
                 cD *= cdGroundEffectMult;
                 cD *= m_cdMultiplier;
 
-                constexpr auto maxCD = static_cast<real_Num>(2.0);
-                WP_ASSERT(cD < maxCD);
-                cD = Math<real_Num>::clamp(cD, -maxCD, maxCD);
-                totalDrag = static_cast<real_Num>(0.5) * cD * r * (v * v) * areaZero;
+                constexpr auto maxCD = static_cast<real_Num>( 2.0 );
+                WP_ASSERT( cD < maxCD );
+                cD = Math<real_Num>::clamp( cD, -maxCD, maxCD );
+                totalDrag = static_cast<real_Num>( 0.5 ) * cD * r * ( v * v ) * areaZero;
 
-                WP_ASSERT(CM);
-                if(m_controlSurface)
+                WP_ASSERT( CM );
+                if( m_controlSurface )
                 {
                     auto cmLookup = m_controlSurface->getCmLookup();
-                    auto cmLookupValue = cmLookup->interpolate(camber);
+                    auto cmLookupValue = cmLookup->interpolate( camber );
                     auto cmMultiplier = m_controlSurface->getCmMultiplier();
                     auto delta = camberNormalised * cmMultiplier * cmLookupValue;
-                    cM = cmZero + (cm10 - cmZero) * Math<real_Num>::Abs(delta);
-                    cM += (cmMax - cmZero) * Math<real_Num>::Abs(fStallControlCM);
+                    cM = cmZero + ( cm10 - cmZero ) * Math<real_Num>::Abs( delta );
+                    cM += ( cmMax - cmZero ) * Math<real_Num>::Abs( fStallControlCM );
                 }
                 else
                 {
@@ -3990,12 +3937,12 @@ namespace workphone::vehicle
 
                 cM *= m_cmMultiplier;
 
-                WP_ASSERT(Math<real_Num>::Abs( totalLift ) < static_cast<real_Num>( 10000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( totalDrag ) < static_cast<real_Num>( 10000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( totalLift ) < static_cast<real_Num>( 10000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( totalDrag ) < static_cast<real_Num>( 10000.0 ) );
 
-                WP_ASSERT(Math<real_Num>::Abs( cL ) < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( cD ) < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(Math<real_Num>::Abs( cM ) < static_cast<real_Num>( 1000.0 ));
+                WP_ASSERT( Math<real_Num>::Abs( cL ) < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( cD ) < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( Math<real_Num>::Abs( cM ) < static_cast<real_Num>( 1000.0 ) );
 #endif
             }
             else
@@ -4003,32 +3950,32 @@ namespace workphone::vehicle
                 // Fall back to basic l/d equations..
                 // L = cl * a * 0.5f * r * v^2
                 // Approximate Cl using the following formula - Cl = 2 * pi * angle (in radians)
-                real_Num cL = static_cast<real_Num>(2.0) * Math<real_Num>::pi() *
-                              Math<real_Num>::DegToRad(angleOfAttackFull);
+                real_Num cL = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi() *
+                              Math<real_Num>::DegToRad( angleOfAttackFull );
                 cL *= clGroundEffectMult;
 
                 real_Num r = 1.29;
                 real_Num v = relativeWind.length();
-                totalLift = cL * areaZero * static_cast<real_Num>(0.5) * r * (v * v);
+                totalLift = cL * areaZero * static_cast<real_Num>( 0.5 ) * r * ( v * v );
 
                 static real_Num maxLift = 1.0;
                 // totalLift = MathF::clamp(totalLift, -maxLift, maxLift);
 
                 // D = 0.5f * cd * r * v2 * a;
                 // Typical aerofoil drag co efficient is .045;
-                real_Num cD = m_cdOverride; // Typical aerofoil drag co efficient
+                real_Num cD = m_cdOverride;  // Typical aerofoil drag co efficient
                 cD *= cdGroundEffectMult;
 
-                totalDrag = static_cast<real_Num>(0.5) * cD * r * (v * v) * areaZero;
+                totalDrag = static_cast<real_Num>( 0.5 ) * cD * r * ( v * v ) * areaZero;
 
                 static real_Num maxDrag = 1.0;
-                totalDrag = Math<real_Num>::clamp(totalDrag, -maxDrag, maxDrag);
+                totalDrag = Math<real_Num>::clamp( totalDrag, -maxDrag, maxDrag );
 
-                cM = static_cast<real_Num>(0.0);
+                cM = static_cast<real_Num>( 0.0 );
 
-                WP_ASSERT(cL < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(cD < static_cast<real_Num>( 1000.0 ));
-                WP_ASSERT(cM < static_cast<real_Num>( 1000.0 ));
+                WP_ASSERT( cL < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( cD < static_cast<real_Num>( 1000.0 ) );
+                WP_ASSERT( cM < static_cast<real_Num>( 1000.0 ) );
             }
 
             // real_Num fVorticity = real_Num(0.5) * chordLength * cL *
@@ -4039,42 +3986,42 @@ namespace workphone::vehicle
             // auto localRight = aircraft->getBodyTransform()->inverseTransformVector(worldRight);
             // Vector3<real_Num> liftVector = localRight.crossProduct(-relativeWind.normaliseCopy());
             Vector3<real_Num> liftVector =
-                m_localWingRight.crossProduct(-relativeWind.normaliseCopy());
+                m_localWingRight.crossProduct( -relativeWind.normaliseCopy() );
             // Vector3<real_Num> liftForce = relativeWind.normaliseCopy().crossProduct(wingRight);
             liftVector.normalise();
             // WP_ASSERT(liftForce.dotProduct(worldTransform->up()) < real_Num(-0.5));
 
-            Vector3<real_Num> liftForce = liftVector * totalLift; // *fVorticity;
+            Vector3<real_Num> liftForce = liftVector * totalLift;  // *fVorticity;
 
-            if(aircraft->getDisplayDebugData())
+            if( aircraft->getDisplayDebugData() )
             {
-                if(getName().find("STAB") != std::string::npos)
+                if( getName().find( "STAB" ) != std::string::npos )
                 {
-                    if(aircraft->getDisplayDebugData())
+                    if( aircraft->getDisplayDebugData() )
                     {
-                        DEBUG_DRAW_LOCAL_LINE_BY_ID(
-                            getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                            aerodynamicCenter + ( liftForce * debugLineScale ), 0xF00000);
+                        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 9 ), aerodynamicCenter,
+                                                     aerodynamicCenter + ( liftForce * debugLineScale ),
+                                                     0xF00000 );
                     }
                 }
 
-                if(getName().find("WING") != std::string::npos)
+                if( getName().find( "WING" ) != std::string::npos )
                 {
-                    if(aircraft->getDisplayDebugData())
+                    if( aircraft->getDisplayDebugData() )
                     {
-                        DEBUG_DRAW_LOCAL_LINE_BY_ID(
-                            getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                            aerodynamicCenter + ( liftForce * debugLineScale ), 0x00FF00);
+                        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 9 ), aerodynamicCenter,
+                                                     aerodynamicCenter + ( liftForce * debugLineScale ),
+                                                     0x00FF00 );
                     }
                 }
 
-                if(getName().find("RUDDER") != std::string::npos)
+                if( getName().find( "RUDDER" ) != std::string::npos )
                 {
-                    if(aircraft->getDisplayDebugData())
+                    if( aircraft->getDisplayDebugData() )
                     {
-                        DEBUG_DRAW_LOCAL_LINE_BY_ID(
-                            getDebugId( sectionIdx, 9 ), aerodynamicCenter,
-                            aerodynamicCenter + ( liftForce * debugLineScale ), 0x00FF00);
+                        DEBUG_DRAW_LOCAL_LINE_BY_ID( getDebugId( sectionIdx, 9 ), aerodynamicCenter,
+                                                     aerodynamicCenter + ( liftForce * debugLineScale ),
+                                                     0x00FF00 );
                     }
                 }
             }
@@ -4094,16 +4041,16 @@ namespace workphone::vehicle
 
             // Find wing pitching moment...
             //  0.5 RoAir*Sqr(Flowpeed)
-            real_Num q = (static_cast<real_Num>(0.5) * aircraft->getAirDensity() *
-                          (relativeWind.length() * relativeWind.length()));
+            real_Num q = ( static_cast<real_Num>( 0.5 ) * aircraft->getAirDensity() *
+                           ( relativeWind.length() * relativeWind.length() ) );
             real_Num wingPitchingMoment = cM * chordLengthZero * q * areaZero;
             // Vector3<real_Num> pitchAxis = chordLine.crossProduct(liftForce.normaliseCopy());
-            Vector3<real_Num> pitchAxis = liftForce.normaliseCopy().crossProduct(chordLineZero);
+            Vector3<real_Num> pitchAxis = liftForce.normaliseCopy().crossProduct( chordLineZero );
             pitchAxis.normalise();
             pitchAxis *= wingPitchingMoment;
 
-            WP_ASSERT(Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ));
-            WP_ASSERT(Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ));
+            WP_ASSERT( Math<real_Num>::Abs( liftForce.Z() ) < static_cast<real_Num>( 2000.0 ) );
+            WP_ASSERT( Math<real_Num>::Abs( dragForce.Y() ) < static_cast<real_Num>( 2000.0 ) );
 
             // liftForce.X() = real_Num(0.0); // todo check
             // liftForce.Z() = real_Num(0.0); // todo check
@@ -4113,11 +4060,11 @@ namespace workphone::vehicle
             // WP_ASSERT(localDragForce.length() < real_Num(2000.0));
             // WP_ASSERT(localAerodynamicCenter.length() < real_Num(2.0));
 
-            if(aircraft->getEnablePowerUnit())
+            if( aircraft->getEnablePowerUnit() )
             {
-                aircraftBody->addLocalForceAtLocalPosition(liftForce, aerodynamicCenter);
-                aircraftBody->addLocalForceAtLocalPosition(dragForce, aerodynamicCenter);
-                aircraftBody->addLocalTorque(pitchAxis);
+                aircraftBody->addLocalForceAtLocalPosition( liftForce, aerodynamicCenter );
+                aircraftBody->addLocalForceAtLocalPosition( dragForce, aerodynamicCenter );
+                aircraftBody->addLocalTorque( pitchAxis );
             }
         }
     }
@@ -4128,18 +4075,18 @@ namespace workphone::vehicle
     }
 
     void CAircraftWingFast::setAttachedControlSurface(
-        SmartPtr<IAircraftControlSurface> attachedControlSurface)
+        SmartPtr<IAircraftControlSurface> attachedControlSurface )
     {
         m_controlSurface = attachedControlSurface;
 
-        if(!isControlSurface())
+        if( !isControlSurface() )
         {
             auto pThis = getSharedFromThis<IAircraftWing>();
-            m_controlSurface->setMainWing(pThis);
+            m_controlSurface->setMainWing( pThis );
         }
     }
 
-    void CAircraftWingFast::load(void *pData)
+    void CAircraftWingFast::load( void *pData )
     {
         // setData( pData );
 
@@ -4231,19 +4178,19 @@ namespace workphone::vehicle
         // m_chordLines.resize(m_sectionCount);
         // m_chordLengths.resize(m_sectionCount);
 
-        setLoadingState(LoadingState::Loaded);
+        setLoadingState( LoadingState::Loaded );
 
         // m_workerThread = std::thread(&CAircraftWingFast::updateWorker, this);
     }
 
-    void CAircraftWingFast::unload(SmartPtr<ISharedObject> data)
+    void CAircraftWingFast::unload( SmartPtr<ISharedObject> data )
     {
-        setLoadingState(LoadingState::Unloading);
+        setLoadingState( LoadingState::Unloading );
         m_controlSurface = nullptr;
-        setLoadingState(LoadingState::Unloaded);
+        setLoadingState( LoadingState::Unloaded );
     }
 
-    void CAircraftWingFast::load(SmartPtr<ISharedObject> data)
+    void CAircraftWingFast::load( SmartPtr<ISharedObject> data )
     {
     }
 
@@ -4252,16 +4199,16 @@ namespace workphone::vehicle
         return m_propWash;
     }
 
-    void CAircraftWingFast::setAttachedPropWash(SmartPtr<IAircraftPropWash> attachedPropWash)
+    void CAircraftWingFast::setAttachedPropWash( SmartPtr<IAircraftPropWash> attachedPropWash )
     {
-        WP_ASSERT(m_propWash == nullptr);
+        WP_ASSERT( m_propWash == nullptr );
 
         m_propWash = attachedPropWash;
 
-        WP_ASSERT(getName().find( m_propWash->getName() ) != String::npos);
+        WP_ASSERT( getName().find( m_propWash->getName() ) != String::npos );
     }
 
-    void CAircraftWingFast::setControlSurface(bool bIsControlSurface)
+    void CAircraftWingFast::setControlSurface( bool bIsControlSurface )
     {
         m_isControlSurface = bIsControlSurface;
     }
@@ -4271,8 +4218,8 @@ namespace workphone::vehicle
         return m_useCombinedControlSurface;
     }
 
-    void CAircraftWingFast::setUserCombinedControlSurface(bool bUseCombinedControlSurface)
+    void CAircraftWingFast::setUserCombinedControlSurface( bool bUseCombinedControlSurface )
     {
         m_useCombinedControlSurface = bUseCombinedControlSurface;
     }
-}
+}  // namespace workphone::vehicle

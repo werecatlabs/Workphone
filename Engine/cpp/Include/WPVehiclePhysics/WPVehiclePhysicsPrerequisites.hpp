@@ -10,8 +10,18 @@
 namespace workphone
 {
     class CCarController;
+    class CDriveTrain;
     class CVehicleManager;
-} // namespace workphone
+    class WheelControllerPacejka;
+
+    constexpr physics_Num MinInput = static_cast<physics_Num>( -1.0 );
+    constexpr physics_Num MaxInput = static_cast<physics_Num>( 1.0 );
+    constexpr physics_Num MaxSteeringScale = static_cast<physics_Num>( 1080.0 );
+    constexpr physics_Num MaxWheelForce = static_cast<physics_Num>( 1.0e8 );
+    constexpr physics_Num MaxWheelVelocity = static_cast<physics_Num>( 1.0e5 );
+    constexpr physics_Num MaxDebugForce = static_cast<physics_Num>( 1.0e8 );
+
+}  // namespace workphone
 
 namespace workphone::vehicle
 {
@@ -51,9 +61,9 @@ namespace workphone::vehicle
     class TLinkage;
     class Lookup;
     class VehicleParam;
-    class TRotor;
+    class Rotor;
     class TRotorHead;
-    class TRotorSector;
+    class RotorSector;
     class Servo;
     class TSurface;
     class TailLinkage;
@@ -87,10 +97,10 @@ namespace workphone::vehicle
         physics_Vec m_vVal = physics_Vec::zero();
 
         String toString() const;
-    }; // TParam
-}
+    };  // TParam
+}  // namespace workphone::vehicle
 
-using namespace workphone::vehicle; // hack
+using namespace workphone::vehicle;  // hack
 
 #ifdef WP_PLATFORM_WIN32
 #    ifndef _WP_STATIC_LIB_
@@ -98,10 +108,10 @@ using namespace workphone::vehicle; // hack
 #            define WPVehiclePhysics_API __declspec( dllexport )
 #        else
 #            define WPVehiclePhysics_API __declspec( dllimport )
-#        endif // WP_EXPORT
+#        endif  // WP_EXPORT
 #    else
 #        define WPVehiclePhysics_API
-#    endif // _WP_STATIC_LIB_
+#    endif  // _WP_STATIC_LIB_
 #else
 #    define WPVehiclePhysics_API
 #endif
@@ -112,12 +122,12 @@ using namespace workphone::vehicle; // hack
 #            define WPVehiclePhysics_API __declspec( dllexport )
 #        else
 #            define WPVehiclePhysics_API __declspec( dllimport )
-#        endif // WP_EXPORT
+#        endif  // WP_EXPORT
 #    else
 #        define WPVehiclePhysics_API
-#    endif // _WP_STATIC_LIB_
+#    endif  // _WP_STATIC_LIB_
 #else
 #    define WPVehiclePhysics_API
 #endif
 
-#endif // WPVehiclePrerequisites_h__
+#endif  // WPVehiclePrerequisites_h__

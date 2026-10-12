@@ -11,5 +11,5 @@ namespace workphone::physics
         WPPhysicsSphereShape3();
         SmartPtr<IPhysicsShape3> clone() override;
     };
-}
+}  // namespace workphone::physics
 #endif

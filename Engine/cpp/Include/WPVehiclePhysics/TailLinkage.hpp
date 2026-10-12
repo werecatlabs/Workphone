@@ -16,6 +16,6 @@ namespace workphone::vehicle
         physics_Num m_rightThrow = 0.0;
         physics_Num m_output = 0.0;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // TailLinkage_h__
+#endif  // TailLinkage_h__

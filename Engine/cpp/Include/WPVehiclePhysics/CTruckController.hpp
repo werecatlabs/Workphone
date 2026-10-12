@@ -30,70 +30,70 @@ namespace workphone::vehicle
 
         void update() override;
 
-        void load(SmartPtr<ISharedObject> data) override;
-        void reload(SmartPtr<ISharedObject> data) override;
-        void unload(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void reload( SmartPtr<ISharedObject> data ) override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
-        f32 getChannel(s32 idx) const override;
-        void setChannel(s32 idx, f32 channel) override;
+        f32 getChannel( s32 idx ) const override;
+        void setChannel( s32 idx, f32 channel ) override;
 
         bool isElectric() const override;
-        void setElectric(bool bIsElectric) override;
+        void setElectric( bool bIsElectric ) override;
 
         bool getEnablePowerUnit() const override;
-        void setEnablePowerUnit(bool enablePowerUnit) override;
+        void setEnablePowerUnit( bool enablePowerUnit ) override;
 
         bool getEmulateBattery() const override;
-        void setEmulateBattery(bool emulateBattery) override;
+        void setEmulateBattery( bool emulateBattery ) override;
 
         physics_Num getAirDensity() const;
-        void setAirDensity(physics_Num airDensity);
+        void setAirDensity( physics_Num airDensity );
 
         SmartPtr<IBatteryPack> &getBatteryPack();
         const SmartPtr<IBatteryPack> &getBatteryPack() const;
-        void setBatteryPack(SmartPtr<IBatteryPack> batteryPack);
+        void setBatteryPack( SmartPtr<IBatteryPack> batteryPack );
 
         SmartPtr<IVehicleCallback> getCallback() const;
-        void setCallback(SmartPtr<IVehicleCallback> callback);
+        void setCallback( SmartPtr<IVehicleCallback> callback );
 
         SmartPtr<IAerodymanicsWind> &getWind();
         const SmartPtr<IAerodymanicsWind> &getWind() const;
-        void setWind(SmartPtr<IAerodymanicsWind> wind);
+        void setWind( SmartPtr<IAerodymanicsWind> wind );
 
-        void addWheel(SmartPtr<IWheelComponent> wheel);
-        void removeWheel(SmartPtr<IWheelComponent> wheel);
+        void addWheel( SmartPtr<IWheelComponent> wheel );
+        void removeWheel( SmartPtr<IWheelComponent> wheel );
 
         Array<SmartPtr<IWheelComponent>> getWheels() const;
-        void setWheels(Array<SmartPtr<IWheelComponent>> wheels);
+        void setWheels( Array<SmartPtr<IWheelComponent>> wheels );
 
         Vector3<physics_Num> getPosition() const override;
-        void setPosition(const Vector3<physics_Num> &position) override;
+        void setPosition( const Vector3<physics_Num> &position ) override;
 
         bool isUserControlled() const override;
-        void setUserControlled(bool userControlled) override;
+        void setUserControlled( bool userControlled ) override;
 
         physics_Num getMass() const override;
-        void setMass(physics_Num mass) override;
+        void setMass( physics_Num mass ) override;
 
         SmartPtr<IVehicleBody> getBody() const override;
 
-        void setBody(SmartPtr<IVehicleBody> body) override;
+        void setBody( SmartPtr<IVehicleBody> body ) override;
 
         Transform3<physics_Num> getWorldTransform() const override;
-        void setWorldTransform(const Transform3<physics_Num> &worldTransform) override;
+        void setWorldTransform( const Transform3<physics_Num> &worldTransform ) override;
 
         Transform3<physics_Num> getLocalTransform() const override;
-        void setLocalTransform(const Transform3<physics_Num> &localTransform) override;
+        void setLocalTransform( const Transform3<physics_Num> &localTransform ) override;
 
-        void displayLocalVector(s32 bodyId, const Vector3<physics_Num> &start,
-                                const Vector3<physics_Num> &end, u32 colour) override;
-        void displayVector(s32 bodyId, s32 id, const Vector3<physics_Num> &start,
-                           const Vector3<physics_Num> &end, u32 colour) override;
-        void displayLocalVector(s32 bodyId, s32 id, const Vector3<physics_Num> &start,
-                                const Vector3<physics_Num> &end, u32 colour) override;
+        void displayLocalVector( s32 bodyId, const Vector3<physics_Num> &start,
+                                 const Vector3<physics_Num> &end, u32 colour ) override;
+        void displayVector( s32 bodyId, s32 id, const Vector3<physics_Num> &start,
+                            const Vector3<physics_Num> &end, u32 colour ) override;
+        void displayLocalVector( s32 bodyId, s32 id, const Vector3<physics_Num> &start,
+                                 const Vector3<physics_Num> &end, u32 colour ) override;
 
         bool getDisplayDebugData() const override;
-        void setDisplayDebugData(bool displayDebugData) override;
+        void setDisplayDebugData( bool displayDebugData ) override;
 
         void openCab();
         void closeCab();
@@ -101,21 +101,20 @@ namespace workphone::vehicle
         void hoiseDown();
         void hoistUp();
 
-        void drawPoint(s32 body, s32 id, const Vector3<physics_Num> &positon, u32 color) override;
-        void drawLocalPoint(s32 body, s32 id, const Vector3<physics_Num> &positon,
-                            u32 color) override;
+        void drawPoint( s32 body, s32 id, const Vector3<physics_Num> &positon, u32 color ) override;
+        void drawLocalPoint( s32 body, s32 id, const Vector3<physics_Num> &positon, u32 color ) override;
 
-        void addForce(s32 bodyIdx, const Vector3<physics_Num> &Force,
-                      const Vector3<physics_Num> &Loc) override;
+        void addForce( s32 bodyIdx, const Vector3<physics_Num> &Force,
+                       const Vector3<physics_Num> &Loc ) override;
 
-        void addTorque(s32 bodyIdx, const Vector3<physics_Num> &Torque) override;
+        void addTorque( s32 bodyIdx, const Vector3<physics_Num> &Torque ) override;
 
-        void addLocalForce(s32 bodyIdx, const Vector3<physics_Num> &Force,
-                           const Vector3<physics_Num> &Loc) override;
+        void addLocalForce( s32 bodyIdx, const Vector3<physics_Num> &Force,
+                            const Vector3<physics_Num> &Loc ) override;
 
-        void addLocalTorque(s32 bodyIdx, const Vector3<physics_Num> &Torque) override;
+        void addLocalTorque( s32 bodyIdx, const Vector3<physics_Num> &Torque ) override;
 
-        Vector3<physics_Num> getPointVelocity(const Vector3<physics_Num> &p) override;
+        Vector3<physics_Num> getPointVelocity( const Vector3<physics_Num> &p ) override;
 
         Vector3<physics_Num> getAngularVelocity() override;
 
@@ -127,7 +126,7 @@ namespace workphone::vehicle
 
         Vector3<physics_Num> getCG() const override;
 
-        SmartPtr<IWheelComponent> getWheelController(u32 index) const override;
+        SmartPtr<IWheelComponent> getWheelController( u32 index ) const override;
 
         WP_CLASS_REGISTER_DECL;
 
@@ -154,6 +153,6 @@ namespace workphone::vehicle
         bool m_enablePowerUnit;
         bool m_emulateBattery;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // CTruckController_h__
+#endif  // CTruckController_h__

@@ -39,20 +39,19 @@ namespace workphone::vehicle
         CEMotor() = default;
         ~CEMotor() = default;
 
-        physics_Num m_motorMoI = 0.0; //
-        physics_Num m_motorKv = 0.0; // RPM/volt of the motor
-        physics_Num m_motorTi =
-            0.0; // torque constant (in N.m/A).Derived from KV and efficiency
-        physics_Num m_motorEfficiency = 0.0; // fractional efficiency
-        physics_Num m_noLoadCurrent = 0.0; // stated no-load current
-        physics_Num m_frictionFactor = 0.0; // loss factor derived from the
-        physics_Num m_motorR = 0.0; // the resistance of the motor windings
-        physics_Num m_motorRpm = 0.0; // the current motor RPM
+        physics_Num m_motorMoI = 0.0;  //
+        physics_Num m_motorKv = 0.0;   // RPM/volt of the motor
+        physics_Num m_motorTi = 0.0;   // torque constant (in N.m/A).Derived from KV and efficiency
+        physics_Num m_motorEfficiency = 0.0;  // fractional efficiency
+        physics_Num m_noLoadCurrent = 0.0;    // stated no-load current
+        physics_Num m_frictionFactor = 0.0;   // loss factor derived from the
+        physics_Num m_motorR = 0.0;           // the resistance of the motor windings
+        physics_Num m_motorRpm = 0.0;         // the current motor RPM
         physics_Num m_motorOmega = 0.0;
         physics_Num m_motorEmf = 0.0;
-        physics_Num m_motorCurrent = 0.0; // the instantanious motor current
-        physics_Num m_motorTorque = 0.0; // the instantanious motor torque
-        physics_Num m_motorAccel = 0.0; // rate of acceleration of motor:
+        physics_Num m_motorCurrent = 0.0;  // the instantanious motor current
+        physics_Num m_motorTorque = 0.0;   // the instantanious motor torque
+        physics_Num m_motorAccel = 0.0;    // rate of acceleration of motor:
         physics_Num m_motorPower = 0.0;
         physics_Num m_spragRpm = 0.0;
         physics_Num m_spragOmega = 0.0;
@@ -60,7 +59,7 @@ namespace workphone::vehicle
         physics_Num m_currentLimit = 0.0;
         // the stated motor continuous current limit
         s32 m_spragMode;
-    }; // TEMotor
-} // namespace workphone::vehicle
+    };  // TEMotor
+}  // namespace workphone::vehicle
 
-#endif // CEMotor_h__
+#endif  // CEMotor_h__

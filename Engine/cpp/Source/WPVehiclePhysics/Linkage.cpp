@@ -14,4 +14,4 @@ namespace workphone::vehicle
         m_swashEleAngle = 0.0;
         m_swashAilAngle = 0.0;
     }
-}
+}  // namespace workphone::vehicle

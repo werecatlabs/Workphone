@@ -17,20 +17,20 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintDrive::setForceLimit(real_Num forceLimit)
+    void WPPhysicsConstraintDrive::setForceLimit( real_Num forceLimit )
     {
     }
 
     D6JointDriveFlagEnum WPPhysicsConstraintDrive::getDriveFlags() const
     {
-        return static_cast<D6JointDriveFlagEnum>(0);
+        return static_cast<D6JointDriveFlagEnum>( 0 );
     }
 
-    void WPPhysicsConstraintDrive::setDriveFlags(D6JointDriveFlagEnum driveFlags)
+    void WPPhysicsConstraintDrive::setDriveFlags( D6JointDriveFlagEnum driveFlags )
     {
     }
 
-    void WPPhysicsConstraintDrive::setIsAcceleration(bool acceleration) const
+    void WPPhysicsConstraintDrive::setIsAcceleration( bool acceleration ) const
     {
     }
 
@@ -44,7 +44,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintDrive::setStiffness(real_Num stiffness)
+    void WPPhysicsConstraintDrive::setStiffness( real_Num stiffness )
     {
     }
 
@@ -53,7 +53,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintDrive::setDamping(real_Num damping)
+    void WPPhysicsConstraintDrive::setDamping( real_Num damping )
     {
     }
 
@@ -62,11 +62,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraintDrive::setUserData(void *userData)
+    void WPPhysicsConstraintDrive::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsConstraintDrive::setTypeInfo(u32 id)
+    void WPPhysicsConstraintDrive::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -87,4 +87,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraintDrive::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

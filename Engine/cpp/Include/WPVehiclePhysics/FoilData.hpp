@@ -10,13 +10,13 @@
 namespace workphone::vehicle
 {
     /**
-         * @brief Simple container for aerofoil polar data at a single angle.
-         *
-         * TFoilData stores the angle of attack and the corresponding
-         * non-dimensional coefficients (lift, drag and moment) used by the
-         * aerodynamic lookup tables. The moment coefficient is referenced to
-         * the quarter-chord (25% chord) by convention.
-         */
+     * @brief Simple container for aerofoil polar data at a single angle.
+     *
+     * TFoilData stores the angle of attack and the corresponding
+     * non-dimensional coefficients (lift, drag and moment) used by the
+     * aerodynamic lookup tables. The moment coefficient is referenced to
+     * the quarter-chord (25% chord) by convention.
+     */
     class TFoilData
     {
     public:
@@ -24,27 +24,27 @@ namespace workphone::vehicle
         TFoilData();
 
         /**
-             * @brief Angle of attack in degrees or radians depending on calling code.
-             *        (Documented units depend on the simulation configuration.)
-             */
-        f32 m_alpha; ///< Angle of attack (see project conventions for units)
+         * @brief Angle of attack in degrees or radians depending on calling code.
+         *        (Documented units depend on the simulation configuration.)
+         */
+        f32 m_alpha;  ///< Angle of attack (see project conventions for units)
 
         /**
-             * @brief Lift coefficient (Cl) at m_alpha.
-             */
+         * @brief Lift coefficient (Cl) at m_alpha.
+         */
         f32 m_cl;
 
         /**
-             * @brief Drag coefficient (Cd) at m_alpha.
-             */
+         * @brief Drag coefficient (Cd) at m_alpha.
+         */
         f32 m_cd;
 
         /**
-             * @brief Moment coefficient (Cm) at m_alpha. Moment is taken about
-             *        the 25% chord point by convention.
-             */
+         * @brief Moment coefficient (Cm) at m_alpha. Moment is taken about
+         *        the 25% chord point by convention.
+         */
         f32 m_cm;
-    }; // TFoilData
-}
+    };  // TFoilData
+}  // namespace workphone::vehicle
 
-#endif // FoilData_h__
+#endif  // FoilData_h__

@@ -17,11 +17,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraintFixed2::setUserData(void *userData)
+    void WPPhysicsConstraintFixed2::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsConstraintFixed2::setTypeInfo(u32 id)
+    void WPPhysicsConstraintFixed2::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -42,4 +42,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraintFixed2::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

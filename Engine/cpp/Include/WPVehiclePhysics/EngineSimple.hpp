@@ -24,14 +24,14 @@ namespace workphone::vehicle
         ~EngineSimple() override;
 
         float getCurrentRpm() const;
-        void setCurrentRpm(float currentRpm);
+        void setCurrentRpm( float currentRpm );
 
-        void update(const double &time, const double &deltaTime) override;
+        void update( const double &time, const double &deltaTime ) override;
 
         void updateThrust();
 
         Vector3<real_Num> getThrust() const;
-        void setThrust(Vector3<real_Num> thrust);
+        void setThrust( Vector3<real_Num> thrust );
 
     private:
         void updateOff();
@@ -77,6 +77,6 @@ namespace workphone::vehicle
 
         SmartPtr<LinearSpline1<real_Num>> m_percentageForceAppliedVsAirspeedKts;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // Engine_h__
+#endif  // Engine_h__

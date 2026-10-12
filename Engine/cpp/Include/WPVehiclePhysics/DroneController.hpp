@@ -62,6 +62,6 @@ namespace workphone::vehicle
             RawPtr<data::drone_stab_settings> m_stabSettings;
             */
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // DroneController_h__
+#endif  // DroneController_h__

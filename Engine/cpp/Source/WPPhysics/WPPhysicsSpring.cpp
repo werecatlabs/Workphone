@@ -16,7 +16,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsSpring::setStiffness(real_Num stiffness)
+    void WPPhysicsSpring::setStiffness( real_Num stiffness )
     {
     }
 
@@ -25,7 +25,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsSpring::setDamping(real_Num damping)
+    void WPPhysicsSpring::setDamping( real_Num damping )
     {
     }
 
@@ -34,11 +34,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsSpring::setUserData(void *userData)
+    void WPPhysicsSpring::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsSpring::setTypeInfo(u32 id)
+    void WPPhysicsSpring::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -59,4 +59,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsSpring::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

@@ -4,11 +4,11 @@
 
 namespace workphone::vehicle
 {
-    TRotorSector::TRotorSector() : m_secPower(0.0)
+    RotorSector::RotorSector() : m_secPower( 0.0 )
     {
-        for(auto &surface : m_arc)
+        for( auto &surface : m_arc )
         {
             surface = TSurface();
         }
     }
-}
+}  // namespace workphone::vehicle

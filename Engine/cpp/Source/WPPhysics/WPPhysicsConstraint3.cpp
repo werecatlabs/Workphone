@@ -17,7 +17,7 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraint3::setBodyA(SmartPtr<IPhysicsBody3> bodyA)
+    void WPPhysicsConstraint3::setBodyA( SmartPtr<IPhysicsBody3> bodyA )
     {
     }
 
@@ -26,40 +26,40 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraint3::setBodyB(SmartPtr<IPhysicsBody3> bodyB)
+    void WPPhysicsConstraint3::setBodyB( SmartPtr<IPhysicsBody3> bodyB )
     {
     }
 
-    void WPPhysicsConstraint3::setLocalPose(JointActorIndexEnum actor,
-                                            const Transform3<real_Num> &localPose)
+    void WPPhysicsConstraint3::setLocalPose( JointActorIndexEnum actor,
+                                             const Transform3<real_Num> &localPose )
     {
     }
 
-    Transform3<real_Num> WPPhysicsConstraint3::getLocalPose(JointActorIndexEnum actor) const
+    Transform3<real_Num> WPPhysicsConstraint3::getLocalPose( JointActorIndexEnum actor ) const
     {
         return Transform3<real_Num>();
     }
 
-    void WPPhysicsConstraint3::setConstraintFlag(ConstraintFlagEnum flag, bool value)
+    void WPPhysicsConstraint3::setConstraintFlag( ConstraintFlagEnum flag, bool value )
     {
     }
 
     ConstraintFlagEnum WPPhysicsConstraint3::getConstraintFlags() const
     {
-        return static_cast<ConstraintFlagEnum>(0);
+        return static_cast<ConstraintFlagEnum>( 0 );
     }
 
-    void WPPhysicsConstraint3::setBreakForce(real_Num force, real_Num torque)
+    void WPPhysicsConstraint3::setBreakForce( real_Num force, real_Num torque )
     {
     }
 
-    void WPPhysicsConstraint3::getBreakForce(real_Num &force, real_Num &torque) const
+    void WPPhysicsConstraint3::getBreakForce( real_Num &force, real_Num &torque ) const
     {
         force = 0.0f;
         torque = 0.0f;
     }
 
-    void WPPhysicsConstraint3::setProjectionLinearTolerance(real_Num tolerance)
+    void WPPhysicsConstraint3::setProjectionLinearTolerance( real_Num tolerance )
     {
     }
 
@@ -68,7 +68,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraint3::setProjectionAngularTolerance(real_Num tolerance)
+    void WPPhysicsConstraint3::setProjectionAngularTolerance( real_Num tolerance )
     {
     }
 
@@ -82,11 +82,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraint3::setUserData(void *userData)
+    void WPPhysicsConstraint3::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsConstraint3::setTypeInfo(u32 id)
+    void WPPhysicsConstraint3::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -107,4 +107,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraint3::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

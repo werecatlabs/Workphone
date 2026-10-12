@@ -20,10 +20,10 @@ namespace workphone::vehicle
     /* range 0..10*/
     // was an array 0..5 type for the array used for callback data exchange with Python
 
-    using TPassAPtr = float *; // type for pointer to the callback data exchange array
+    using TPassAPtr = float *;  // type for pointer to the callback data exchange array
 
     // declares a a function pointer type for the callback
-    using TProcedurePtr = void (*)(int N1, int N2, float *TP);
+    using TProcedurePtr = void ( * )( int N1, int N2, float *TP );
 
     //******************************* END of TYPE DECLARATIONS ************************************
 
@@ -78,12 +78,12 @@ namespace workphone::vehicle
     // VA[0] = Rud, VA[1] = gain, VA[2] = dt, VA[3] = yaw rate. Returns gyro out in VA[0]
 
     extern const int GET_GOVERNOR_OUTPUT;
-    extern const int GET_ENGINE_OUTPUT; // VA[0] = Thr, VA[1] = RPM. Returns VA[0] = Power (Watts)
+    extern const int GET_ENGINE_OUTPUT;  // VA[0] = Thr, VA[1] = RPM. Returns VA[0] = Power (Watts)
 
-    extern const int SET_SERVO_INPUT; // VA[0] = the servo position and sunfunc sets the channel
+    extern const int SET_SERVO_INPUT;  // VA[0] = the servo position and sunfunc sets the channel
 
     extern const int
-    RESET_GOVERNOR; // used to reset governor and load its parameters from the XML files
+        RESET_GOVERNOR;  // used to reset governor and load its parameters from the XML files
 
     extern const int GET_HELI_CTRL_INFO;
     // returns swashplate collective position, pitch angle, roll angle and tailrotor blade angle in
@@ -96,20 +96,20 @@ namespace workphone::vehicle
 
     extern const int GET_TX_CHANNELS;
     extern const int RESET_GYRO;
-    extern const int THR_CHANNEL; // Channel constants for callback #1
+    extern const int THR_CHANNEL;  // Channel constants for callback #1
 
     extern const int AIL_CHANNEL;
     extern const int ELE_CHANNEL;
     extern const int YAW_CHANNEL;
     extern const int GEAR_CHANNEL;
-    extern const int GYRO_GAIN_CHANNEL; // added to make the gyro code clearer
+    extern const int GYRO_GAIN_CHANNEL;  // added to make the gyro code clearer
 
     extern const int COL_CHANNEL;
     extern const int AUX1_CHANNEL;
-    extern const int GOV_RPM_CHANNEL; // added to make the governor code clearer
+    extern const int GOV_RPM_CHANNEL;  // added to make the governor code clearer
 
     extern const int AUX2_CHANNEL;
-    extern const int CB_MODEL; // callback constants for subFunc
+    extern const int CB_MODEL;  // callback constants for subFunc
 
     extern const int CB_ROTOR_HEAD;
 
@@ -176,7 +176,7 @@ namespace workphone::vehicle
     // extern TParam CDMultiplier;
 
     //// RotorHeadTeeterStiffness: TParam;
-        //// RotorHeadTeeterDamping: TParam;
+    //// RotorHeadTeeterDamping: TParam;
 
     // extern TParam MainGearTeeth;
     // extern TParam PinionGearTeeth;
@@ -282,7 +282,7 @@ namespace workphone::vehicle
     // extern GearTrain TheGears;
 
     ////AFoilLookup:TFoilTable; //note lookup 0 corresponds to Alpha = -Math<physics_Num>::pi(), 200
-        /// to Alpha = 0 and 400 to Alpha = Math<physics_Num>::pi()
+    /// to Alpha = 0 and 400 to Alpha = Math<physics_Num>::pi()
 
     // extern LookupArray ClimbLookup; //note 0 = -10Vt climb (i.e. descent!) 99 = zero climb.  199
     // = +10Vt climb
@@ -358,6 +358,6 @@ namespace workphone::vehicle
     // extern const int Overrun;
 
     extern void InitHeliVars();
-}
+}  // namespace workphone::vehicle
 
-#endif //  HeliVarsH
+#endif  //  HeliVarsH

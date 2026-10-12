@@ -19,18 +19,18 @@ namespace workphone
         void update() override;
         void postUpdate() override;
 
-        void addVehicle(SmartPtr<IVehicle> vehicle) override;
-        void removeVehicle(SmartPtr<IVehicle> vehicle) override;
+        void addVehicle( SmartPtr<IVehicle> vehicle ) override;
+        void removeVehicle( SmartPtr<IVehicle> vehicle ) override;
 
-        SmartPtr<IVehicle> createVehicle(hash64 type) override;
-        void destroyVehicle(SmartPtr<IVehicle> vehicle) override;
+        SmartPtr<IVehicle> createVehicle( hash64 type ) override;
+        void destroyVehicle( SmartPtr<IVehicle> vehicle ) override;
 
     protected:
         SharedPtr<Array<SmartPtr<IVehicle>>> getVehicles() const;
-        void setVehicles(SharedPtr<Array<SmartPtr<IVehicle>>> ptr);
+        void setVehicles( SharedPtr<Array<SmartPtr<IVehicle>>> ptr );
 
         AtomicSharedPtr<Array<SmartPtr<IVehicle>>> m_vehicles;
     };
-} // namespace workphone
+}  // namespace workphone
 
-#endif // CVehicleManager_h__
+#endif  // CVehicleManager_h__

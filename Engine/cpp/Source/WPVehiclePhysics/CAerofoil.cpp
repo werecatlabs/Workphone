@@ -6,9 +6,9 @@ namespace workphone::vehicle
 {
     CAerofoil::CAerofoil()
     {
-        setCL(workphone::make_ptr<LookupCurve<real_Num>>());
-        setCD(workphone::make_ptr<LookupCurve<real_Num>>());
-        setCM(workphone::make_ptr<LookupCurve<real_Num>>());
+        setCL( workphone::make_ptr<LookupCurve<real_Num>>() );
+        setCD( workphone::make_ptr<LookupCurve<real_Num>>() );
+        setCM( workphone::make_ptr<LookupCurve<real_Num>>() );
     }
 
     CAerofoil::~CAerofoil()
@@ -85,7 +85,7 @@ namespace workphone::vehicle
     //    return points;
     //}
 
-    void CAerofoil::load(const std::string &fileName)
+    void CAerofoil::load( const std::string &fileName )
     {
         //        WP_LOG( "Airfoil load" );
         //
@@ -144,7 +144,7 @@ namespace workphone::vehicle
         return m_cl;
     }
 
-    void CAerofoil::setCL(SmartPtr<LookupCurve<real_Num>> cl)
+    void CAerofoil::setCL( SmartPtr<LookupCurve<real_Num>> cl )
     {
         m_cl = cl;
     }
@@ -159,7 +159,7 @@ namespace workphone::vehicle
         return m_cd;
     }
 
-    void CAerofoil::setCD(SmartPtr<LookupCurve<real_Num>> cd)
+    void CAerofoil::setCD( SmartPtr<LookupCurve<real_Num>> cd )
     {
         m_cd = cd;
     }
@@ -174,7 +174,7 @@ namespace workphone::vehicle
         return m_cm;
     }
 
-    void CAerofoil::setCM(SmartPtr<LookupCurve<real_Num>> cm)
+    void CAerofoil::setCM( SmartPtr<LookupCurve<real_Num>> cm )
     {
         m_cm = cm;
     }
@@ -189,7 +189,7 @@ namespace workphone::vehicle
         return m_aircraft;
     }
 
-    void CAerofoil::setAircraft(SmartPtr<IAircraft> aircraft)
+    void CAerofoil::setAircraft( SmartPtr<IAircraft> aircraft )
     {
         m_aircraft = aircraft;
     }
@@ -199,8 +199,8 @@ namespace workphone::vehicle
         return m_reverseValues;
     }
 
-    void CAerofoil::setReverseValues(bool reverse)
+    void CAerofoil::setReverseValues( bool reverse )
     {
         m_reverseValues = reverse;
     }
-}
+}  // namespace workphone::vehicle

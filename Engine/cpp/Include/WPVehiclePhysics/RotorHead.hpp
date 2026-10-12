@@ -12,34 +12,34 @@
 namespace workphone::vehicle
 {
     /**
-         * @brief Represents the rotor head assembly which connects rotors to the
-         *        airframe and transmits forces/torques through the hub.
-         *
-         * The rotor head encapsulates the shaft frame of reference, the main
-         * rotor and optional flybar rotors, linkage geometry and the
-         * instantaneous forces and torques applied to the airframe. It also
-         * stores configuration constants for teetering components and a simple
-         * inflow buffer used by aerodynamic computations.
-         */
+     * @brief Represents the rotor head assembly which connects rotors to the
+     *        airframe and transmits forces/torques through the hub.
+     *
+     * The rotor head encapsulates the shaft frame of reference, the main
+     * rotor and optional flybar rotors, linkage geometry and the
+     * instantaneous forces and torques applied to the airframe. It also
+     * stores configuration constants for teetering components and a simple
+     * inflow buffer used by aerodynamic computations.
+     */
     class TRotorHead
     {
     public:
         /// Default constructor
         TRotorHead();
         /// Non-copyable: disable copy construction to avoid accidental sharing
-        TRotorHead(const TRotorHead &other) = delete;
+        TRotorHead( const TRotorHead &other ) = delete;
         /// Destructor
         ~TRotorHead();
 
         /// Frame of reference for the rotor shaft, defined by the head
-            /// orientation in the model
+        /// orientation in the model
         FrameOfRef m_shaftFrame;
 
         /// Main rotor data (blades, sectors, dynamics)
-        TRotor m_mainRotor;
+        Rotor m_mainRotor;
 
         /// Flybar (stabiliser bar) rotor data, if present
-        TRotor m_flyBar;
+        Rotor m_flyBar;
 
         /// Linkage geometry and kinematic data connecting rotor to swashplate
         TLinkage m_linkage;
@@ -61,13 +61,13 @@ namespace workphone::vehicle
         bool m_hasFlyBar = false;
 
         /**
-             * @brief Repository for inflow vectors indexed by element (1..20).
-             *
-             * The array has 21 entries with index 0 unused to allow algorithms
-             * to use 1-based indexing for blade element rows.
-             */
+         * @brief Repository for inflow vectors indexed by element (1..20).
+         *
+         * The array has 21 entries with index 0 unused to allow algorithms
+         * to use 1-based indexing for blade element rows.
+         */
         std::array<physics_Vec, 21> m_inflow;
-    }; // TRotorHead
-}
+    };  // TRotorHead
+}  // namespace workphone::vehicle
 
-#endif // RotorHead_h__
+#endif  // RotorHead_h__

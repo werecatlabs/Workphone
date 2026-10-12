@@ -17,7 +17,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLinearLimit::setValue(real_Num value)
+    void WPPhysicsConstraintLinearLimit::setValue( real_Num value )
     {
     }
 
@@ -26,7 +26,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLinearLimit::setRestitution(real_Num restitution)
+    void WPPhysicsConstraintLinearLimit::setRestitution( real_Num restitution )
     {
     }
 
@@ -35,7 +35,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLinearLimit::setBounceThreshold(real_Num bounceThreshold)
+    void WPPhysicsConstraintLinearLimit::setBounceThreshold( real_Num bounceThreshold )
     {
     }
 
@@ -44,7 +44,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLinearLimit::setStiffness(real_Num stiffness)
+    void WPPhysicsConstraintLinearLimit::setStiffness( real_Num stiffness )
     {
     }
 
@@ -53,7 +53,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLinearLimit::setDamping(real_Num damping)
+    void WPPhysicsConstraintLinearLimit::setDamping( real_Num damping )
     {
     }
 
@@ -62,7 +62,7 @@ namespace workphone::physics
         return 0.0f;
     }
 
-    void WPPhysicsConstraintLinearLimit::setContactDistance(real_Num contactDistance)
+    void WPPhysicsConstraintLinearLimit::setContactDistance( real_Num contactDistance )
     {
     }
 
@@ -71,11 +71,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraintLinearLimit::setUserData(void *userData)
+    void WPPhysicsConstraintLinearLimit::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsConstraintLinearLimit::setTypeInfo(u32 id)
+    void WPPhysicsConstraintLinearLimit::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -96,4 +96,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraintLinearLimit::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

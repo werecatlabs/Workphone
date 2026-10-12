@@ -53,7 +53,7 @@ namespace workphone::vehicle
         /**
          * @brief Copy construction is disabled.
          */
-        EngineClutchUnit(const EngineClutchUnit &other) = delete;
+        EngineClutchUnit( const EngineClutchUnit &other ) = delete;
 
         ~EngineClutchUnit();
 
@@ -67,7 +67,7 @@ namespace workphone::vehicle
          * @brief Set the crank speed in revolutions per minute (RPM).
          * @param rpm Crank speed to set (RPM).
          */
-        void setCrankRPM(physics_Num rpm);
+        void setCrankRPM( physics_Num rpm );
 
         /**
          * @brief Get the crank angular velocity in radians per second.
@@ -79,7 +79,7 @@ namespace workphone::vehicle
          * @brief Set the crank angular velocity in radians per second.
          * @param omega Angular velocity to set (rad/s).
          */
-        void setCrankOmega(physics_Num omega);
+        void setCrankOmega( physics_Num omega );
 
         /**
          * @brief Get the engine torque produced at the crank.
@@ -91,7 +91,7 @@ namespace workphone::vehicle
          * @brief Set the engine torque produced at the crank.
          * @param torque Torque value to set (N·m).
          */
-        void setEngineTorque(physics_Num torque);
+        void setEngineTorque( physics_Num torque );
 
         /**
          * @brief Engine power lookup tables.
@@ -100,7 +100,7 @@ namespace workphone::vehicle
          * perform interpolation as needed.
          */
         TPowerCurves m_powerCurves =
-            TPowerCurves({ TPowerCurve({ static_cast<physics_Num>(0.0) }) });
+            TPowerCurves( { TPowerCurve( { static_cast<physics_Num>( 0.0 ) } ) } );
 
         /**
          * @brief Peak power output (watts) at full throttle and at m_peakPowerRPM.
@@ -201,7 +201,7 @@ namespace workphone::vehicle
          * @brief Engine torque produced at the crank (N·m).
          */
         physics_Num m_engineTorque = 0.0;
-    }; // CEngineClutchUnit
-} // namespace workphone::vehicle
+    };  // CEngineClutchUnit
+}  // namespace workphone::vehicle
 
 #endif  //  EngClutchUnitH

@@ -9,22 +9,22 @@ namespace workphone::vehicle
     CAircraftControlSurface::CAircraftControlSurface()
     {
         m_reverse = false;
-        m_affectedSections.resize(20);
+        m_affectedSections.resize( 20 );
         m_controllable = true;
         m_inputController = workphone::make_ptr<InputController>();
 
         m_maxDeflectionDegrees = 30.0f;
-        setRootHingeDistanceFromTrailingEdge(0.25f);
-        setTipHingeDistanceFromTrailingEdge(0.25f);
+        setRootHingeDistanceFromTrailingEdge( 0.25f );
+        setTipHingeDistanceFromTrailingEdge( 0.25f );
 
-        setRotationAxis(Vector3<real_Num>::left());
+        setRotationAxis( Vector3<real_Num>::left() );
 
         m_initialModelRotation = Quaternion<real_Num>::identity();
-        setCurrentDeflection(0.0f);
+        setCurrentDeflection( 0.0f );
 
         m_surfaceId = 0;
 
-        for(size_t i = 0; i < m_affectedSections.size(); ++i)
+        for( size_t i = 0; i < m_affectedSections.size(); ++i )
         {
             m_affectedSections[i] = true;
         }
@@ -34,11 +34,11 @@ namespace workphone::vehicle
     {
     }
 
-    void CAircraftControlSurface::load(SmartPtr<ISharedObject> data)
+    void CAircraftControlSurface::load( SmartPtr<ISharedObject> data )
     {
     }
 
-    void CAircraftControlSurface::load(void *pData)
+    void CAircraftControlSurface::load( void *pData )
     {
         // WP_LOG( "Control Surface load" );
 
@@ -97,23 +97,23 @@ namespace workphone::vehicle
         // WP_LOG( "Control Surface loaded" );
     }
 
-    void CAircraftControlSurface::unload(SmartPtr<ISharedObject> data)
+    void CAircraftControlSurface::unload( SmartPtr<ISharedObject> data )
     {
-        if(m_mainWing)
+        if( m_mainWing )
         {
-            m_mainWing->unload(data);
+            m_mainWing->unload( data );
         }
 
-        if(m_controlWing)
+        if( m_controlWing )
         {
-            m_controlWing->unload(data);
+            m_controlWing->unload( data );
         }
 
         m_mainWing = nullptr;
         m_controlWing = nullptr;
     }
 
-    void CAircraftControlSurface::update(const double &t, const double &dt)
+    void CAircraftControlSurface::update( const double &t, const double &dt )
     {
         // if (m_controlWing)
         //{
@@ -123,7 +123,7 @@ namespace workphone::vehicle
 
     void CAircraftControlSurface::updateTransform()
     {
-        if(m_controlWing)
+        if( m_controlWing )
         {
             CAircraftAttachment::updateTransform();
             m_controlWing->updateTransform();
@@ -159,18 +159,18 @@ namespace workphone::vehicle
         return m_affectedSections;
     }
 
-    void CAircraftControlSurface::setAffectedSections(const Array<bool> &affectedSections)
+    void CAircraftControlSurface::setAffectedSections( const Array<bool> &affectedSections )
     {
         m_affectedSections = affectedSections;
     }
 
-    void CAircraftControlSurface::modifyWingGeometry(s32 SectionIndex, Vector3<real_Num> &pointA,
-                                                     Vector3<real_Num> &pointB,
-                                                     Vector3<real_Num> &pointC,
-                                                     Vector3<real_Num> &pointD)
+    void CAircraftControlSurface::modifyWingGeometry( s32 SectionIndex, Vector3<real_Num> &pointA,
+                                                      Vector3<real_Num> &pointB,
+                                                      Vector3<real_Num> &pointC,
+                                                      Vector3<real_Num> &pointD )
     {
 #if defined _DEBUG
-        if(getName().find("WING") != std::string::npos)
+        if( getName().find( "WING" ) != std::string::npos )
         {
             int stop = 0;
             stop = 0;
@@ -180,9 +180,9 @@ namespace workphone::vehicle
         auto aircraft = getParentAircraft();
         auto index = SectionIndex / aircraft->getSectionMultiplier();
 
-        if(index < static_cast<s32>(m_affectedSections.size()))
+        if( index < static_cast<s32>( m_affectedSections.size() ) )
         {
-            if(m_affectedSections[index] == true)
+            if( m_affectedSections[index] == true )
             {
                 // return;
                 // R A-----------------B (Leading edge)
@@ -193,8 +193,7 @@ namespace workphone::vehicle
                 // First step is to work out the aileron position and offset on the wing.
                 const real_Num rootHingeDistanceFromTrailingEdge =
                     getRootHingeDistanceFromTrailingEdge();
-                const real_Num tipHingeDistanceFromTrailingEdge =
-                    getTipHingeDistanceFromTrailingEdge();
+                const real_Num tipHingeDistanceFromTrailingEdge = getTipHingeDistanceFromTrailingEdge();
 
                 const Vector3<real_Num> wingRootAileronHingePos = pointA;
                 // pointD + ((pointA - pointD) * rootHingeDistanceFromTrailingEdge);
@@ -202,7 +201,7 @@ namespace workphone::vehicle
                 // pointC + ((pointB - pointC) * tipHingeDistanceFromTrailingEdge);
 
                 const Vector3<real_Num> aileronHinge =
-                    (wingTipAileronHingePos - wingRootAileronHingePos).normaliseCopy();
+                    ( wingTipAileronHingePos - wingRootAileronHingePos ).normaliseCopy();
 
                 Vector3<real_Num> rootAileronAngle = pointD - wingRootAileronHingePos;
                 Vector3<real_Num> tipAileronAngle = pointC - wingTipAileronHingePos;
@@ -212,42 +211,42 @@ namespace workphone::vehicle
 
                 const real_Num normalizedAngle = getCurrentDeflection();
                 auto fCurrentDeflection =
-                    normalizedAngle > static_cast<real_Num>(0.0)
-                        ? Math<real_Num>::Abs(normalizedAngle) * m_maxDeflectionDegrees
-                        : Math<real_Num>::Abs(normalizedAngle) * m_minDeflectionDegrees;
-                fCurrentDeflection = Math<real_Num>::DegToRad(fCurrentDeflection) * 2.0;
+                    normalizedAngle > static_cast<real_Num>( 0.0 )
+                        ? Math<real_Num>::Abs( normalizedAngle ) * m_maxDeflectionDegrees
+                        : Math<real_Num>::Abs( normalizedAngle ) * m_minDeflectionDegrees;
+                fCurrentDeflection = Math<real_Num>::DegToRad( fCurrentDeflection ) * 2.0;
 
                 // Deflect ailerons.
-                if(!isReversed())
+                if( !isReversed() )
                 {
                     auto hingeRotation =
-                        Quaternion<real_Num>::angleAxis(fCurrentDeflection, aileronHinge);
+                        Quaternion<real_Num>::angleAxis( fCurrentDeflection, aileronHinge );
                     rootAileronAngle = hingeRotation * rootAileronAngle.normaliseCopy();
                     tipAileronAngle = hingeRotation * tipAileronAngle.normaliseCopy();
                 }
                 else
                 {
                     auto hingeRotation =
-                        Quaternion<real_Num>::angleAxis(-fCurrentDeflection, aileronHinge);
+                        Quaternion<real_Num>::angleAxis( -fCurrentDeflection, aileronHinge );
                     rootAileronAngle = hingeRotation * rootAileronAngle.normaliseCopy();
                     tipAileronAngle = hingeRotation * tipAileronAngle.normaliseCopy();
                 }
 
                 // Once we know the deflection of the aileron and where are new trailing edge is, we
                 // can use this to tweak the wing chord line.
-                pointD = wingRootAileronHingePos + (rootAileronAngle.normaliseCopy() * rootLength);
-                pointC = wingTipAileronHingePos + (tipAileronAngle.normaliseCopy() * tipLength);
+                pointD = wingRootAileronHingePos + ( rootAileronAngle.normaliseCopy() * rootLength );
+                pointC = wingTipAileronHingePos + ( tipAileronAngle.normaliseCopy() * tipLength );
             }
         }
     }
 
-    void CAircraftControlSurface::modifyWingGeometry(s32 SectionIndex, Vector3<real_Num> &pointA,
-                                                     Vector3<real_Num> &pointB,
-                                                     Vector3<real_Num> &pointC,
-                                                     Vector3<real_Num> &pointD, real_Num t)
+    void CAircraftControlSurface::modifyWingGeometry( s32 SectionIndex, Vector3<real_Num> &pointA,
+                                                      Vector3<real_Num> &pointB,
+                                                      Vector3<real_Num> &pointC,
+                                                      Vector3<real_Num> &pointD, real_Num t )
     {
 #if defined _DEBUG
-        if(getName().find("WING") != std::string::npos)
+        if( getName().find( "WING" ) != std::string::npos )
         {
             int stop = 0;
             stop = 0;
@@ -257,9 +256,9 @@ namespace workphone::vehicle
         auto aircraft = getParentAircraft();
         auto index = SectionIndex / aircraft->getSectionMultiplier();
 
-        if(index < static_cast<s32>(m_affectedSections.size()))
+        if( index < static_cast<s32>( m_affectedSections.size() ) )
         {
-            if(m_affectedSections[index] == true)
+            if( m_affectedSections[index] == true )
             {
                 // return;
                 // R A-----------------B (Leading edge)
@@ -270,8 +269,7 @@ namespace workphone::vehicle
                 // First step is to work out the aileron position and offset on the wing.
                 const real_Num rootHingeDistanceFromTrailingEdge =
                     getRootHingeDistanceFromTrailingEdge();
-                const real_Num tipHingeDistanceFromTrailingEdge =
-                    getTipHingeDistanceFromTrailingEdge();
+                const real_Num tipHingeDistanceFromTrailingEdge = getTipHingeDistanceFromTrailingEdge();
 
                 const Vector3<real_Num> wingRootAileronHingePos = pointA;
                 // pointD + ((pointA - pointD) * rootHingeDistanceFromTrailingEdge);
@@ -279,7 +277,7 @@ namespace workphone::vehicle
                 // pointC + ((pointB - pointC) * tipHingeDistanceFromTrailingEdge);
 
                 const Vector3<real_Num> aileronHinge =
-                    (wingTipAileronHingePos - wingRootAileronHingePos).normaliseCopy();
+                    ( wingTipAileronHingePos - wingRootAileronHingePos ).normaliseCopy();
 
                 Vector3<real_Num> rootAileronAngle = pointD - wingRootAileronHingePos;
                 Vector3<real_Num> tipAileronAngle = pointC - wingTipAileronHingePos;
@@ -287,47 +285,46 @@ namespace workphone::vehicle
                 auto rootLength = rootAileronAngle.length();
                 auto tipLength = tipAileronAngle.length();
 
-                const real_Num normalizedAngle = ((getCurrentDeflection() + t) + 1.0) / 2.0;
+                const real_Num normalizedAngle = ( ( getCurrentDeflection() + t ) + 1.0 ) / 2.0;
                 // auto fCurrentDeflection = normalizedAngle > real_Num(0.0) ?
                 //	(Math<real_Num>::Abs(normalizedAngle) + t) * (m_maxDeflectionDegrees) :
                 //	(Math<real_Num>::Abs(normalizedAngle) + t) * (m_minDeflectionDegrees);
                 auto fCurrentDeflection =
                     m_minDeflectionDegrees +
-                    (m_maxDeflectionDegrees - m_minDeflectionDegrees) * normalizedAngle;
-                fCurrentDeflection = Math<real_Num>::DegToRad(fCurrentDeflection) * 2.0;
+                    ( m_maxDeflectionDegrees - m_minDeflectionDegrees ) * normalizedAngle;
+                fCurrentDeflection = Math<real_Num>::DegToRad( fCurrentDeflection ) * 2.0;
 
                 // Deflect ailerons.
-                if(!isReversed())
+                if( !isReversed() )
                 {
                     const Quaternion<real_Num> hingeRotation =
-                        Quaternion<real_Num>::angleAxis(fCurrentDeflection, aileronHinge);
+                        Quaternion<real_Num>::angleAxis( fCurrentDeflection, aileronHinge );
                     rootAileronAngle = hingeRotation * rootAileronAngle;
                     tipAileronAngle = hingeRotation * tipAileronAngle;
                 }
                 else
                 {
                     const Quaternion<real_Num> hingeRotation =
-                        Quaternion<real_Num>::angleAxis(-fCurrentDeflection, aileronHinge);
+                        Quaternion<real_Num>::angleAxis( -fCurrentDeflection, aileronHinge );
                     rootAileronAngle = hingeRotation * rootAileronAngle;
                     tipAileronAngle = hingeRotation * tipAileronAngle;
                 }
 
                 // Once we know the deflection of the aileron and where are new trailing edge is, we
                 // can use this to tweak the wing chord line.
-                pointD = wingRootAileronHingePos + (rootAileronAngle.normaliseCopy() * rootLength);
-                pointC = wingTipAileronHingePos + (tipAileronAngle.normaliseCopy() * tipLength);
+                pointD = wingRootAileronHingePos + ( rootAileronAngle.normaliseCopy() * rootLength );
+                pointC = wingTipAileronHingePos + ( tipAileronAngle.normaliseCopy() * tipLength );
             }
         }
     }
 
-    void CAircraftControlSurface::modifyMainWingGeometry(s32 SectionIndex,
-                                                         Vector3<real_Num> &pointA,
-                                                         Vector3<real_Num> &pointB,
-                                                         Vector3<real_Num> &pointC,
-                                                         Vector3<real_Num> &pointD, real_Num t)
+    void CAircraftControlSurface::modifyMainWingGeometry( s32 SectionIndex, Vector3<real_Num> &pointA,
+                                                          Vector3<real_Num> &pointB,
+                                                          Vector3<real_Num> &pointC,
+                                                          Vector3<real_Num> &pointD, real_Num t )
     {
 #if defined _DEBUG
-        if(getName().find("WING") != std::string::npos)
+        if( getName().find( "WING" ) != std::string::npos )
         {
             int stop = 0;
             stop = 0;
@@ -337,9 +334,9 @@ namespace workphone::vehicle
         auto aircraft = getParentAircraft();
         auto index = SectionIndex / aircraft->getSectionMultiplier();
 
-        if(index < static_cast<s32>(m_affectedSections.size()))
+        if( index < static_cast<s32>( m_affectedSections.size() ) )
         {
-            if(m_affectedSections[index] == true)
+            if( m_affectedSections[index] == true )
             {
                 // return;
                 // R A-----------------B (Leading edge)
@@ -350,8 +347,7 @@ namespace workphone::vehicle
                 // First step is to work out the aileron position and offset on the wing.
                 const real_Num rootHingeDistanceFromTrailingEdge =
                     getRootHingeDistanceFromTrailingEdge();
-                const real_Num tipHingeDistanceFromTrailingEdge =
-                    getTipHingeDistanceFromTrailingEdge();
+                const real_Num tipHingeDistanceFromTrailingEdge = getTipHingeDistanceFromTrailingEdge();
 
                 const Vector3<real_Num> wingRootAileronHingePos = pointA;
                 // pointD + ((pointA - pointD) * rootHingeDistanceFromTrailingEdge);
@@ -359,7 +355,7 @@ namespace workphone::vehicle
                 // pointC + ((pointB - pointC) * tipHingeDistanceFromTrailingEdge);
 
                 const Vector3<real_Num> aileronHinge =
-                    (wingTipAileronHingePos - wingRootAileronHingePos).normaliseCopy();
+                    ( wingTipAileronHingePos - wingRootAileronHingePos ).normaliseCopy();
 
                 Vector3<real_Num> rootAileronAngle = pointD - wingRootAileronHingePos;
                 Vector3<real_Num> tipAileronAngle = pointC - wingTipAileronHingePos;
@@ -368,31 +364,31 @@ namespace workphone::vehicle
                 auto tipLength = tipAileronAngle.length();
 
                 const real_Num normalizedAngle = getCurrentDeflection();
-                auto fCurrentDeflection = t > static_cast<real_Num>(0.0)
-                                              ? Math<real_Num>::Abs(t) * m_maxDeflectionDegrees
-                                              : Math<real_Num>::Abs(t) * m_minDeflectionDegrees;
-                fCurrentDeflection = Math<real_Num>::DegToRad(fCurrentDeflection) * 2.0;
+                auto fCurrentDeflection = t > static_cast<real_Num>( 0.0 )
+                                              ? Math<real_Num>::Abs( t ) * m_maxDeflectionDegrees
+                                              : Math<real_Num>::Abs( t ) * m_minDeflectionDegrees;
+                fCurrentDeflection = Math<real_Num>::DegToRad( fCurrentDeflection ) * 2.0;
 
                 // Deflect ailerons.
-                if(!isReversed())
+                if( !isReversed() )
                 {
                     const Quaternion<real_Num> hingeRotation =
-                        Quaternion<real_Num>::angleAxis(fCurrentDeflection, aileronHinge);
+                        Quaternion<real_Num>::angleAxis( fCurrentDeflection, aileronHinge );
                     rootAileronAngle = hingeRotation * rootAileronAngle;
                     tipAileronAngle = hingeRotation * tipAileronAngle;
                 }
                 else
                 {
                     const Quaternion<real_Num> hingeRotation =
-                        Quaternion<real_Num>::angleAxis(-fCurrentDeflection, aileronHinge);
+                        Quaternion<real_Num>::angleAxis( -fCurrentDeflection, aileronHinge );
                     rootAileronAngle = hingeRotation * rootAileronAngle;
                     tipAileronAngle = hingeRotation * tipAileronAngle;
                 }
 
                 // Once we know the deflection of the aileron and where are new trailing edge is, we
                 // can use this to tweak the wing chord line.
-                pointD = wingRootAileronHingePos + (rootAileronAngle.normaliseCopy() * rootLength);
-                pointC = wingTipAileronHingePos + (tipAileronAngle.normaliseCopy() * tipLength);
+                pointD = wingRootAileronHingePos + ( rootAileronAngle.normaliseCopy() * rootLength );
+                pointC = wingTipAileronHingePos + ( tipAileronAngle.normaliseCopy() * tipLength );
             }
         }
     }
@@ -402,7 +398,7 @@ namespace workphone::vehicle
         return m_surfaceId;
     }
 
-    void CAircraftControlSurface::setSurfaceId(s32 surfaceId)
+    void CAircraftControlSurface::setSurfaceId( s32 surfaceId )
     {
         m_surfaceId = surfaceId;
     }
@@ -412,7 +408,7 @@ namespace workphone::vehicle
         return m_inputController;
     }
 
-    void CAircraftControlSurface::setInputController(SmartPtr<InputController> inputController)
+    void CAircraftControlSurface::setInputController( SmartPtr<InputController> inputController )
     {
         m_inputController = inputController;
     }
@@ -422,7 +418,7 @@ namespace workphone::vehicle
         return m_currentDeflection;
     }
 
-    void CAircraftControlSurface::setCurrentDeflection(real_Num deflection)
+    void CAircraftControlSurface::setCurrentDeflection( real_Num deflection )
     {
         m_currentDeflection = deflection;
     }
@@ -432,7 +428,7 @@ namespace workphone::vehicle
         return m_reverse;
     }
 
-    void CAircraftControlSurface::setReversed(bool reversed)
+    void CAircraftControlSurface::setReversed( bool reversed )
     {
         m_reverse = reversed;
     }
@@ -442,7 +438,7 @@ namespace workphone::vehicle
         return m_tipHingeDistanceFromTrailingEdge;
     }
 
-    void CAircraftControlSurface::setTipHingeDistanceFromTrailingEdge(real_Num tipHingeDistance)
+    void CAircraftControlSurface::setTipHingeDistanceFromTrailingEdge( real_Num tipHingeDistance )
     {
         m_tipHingeDistanceFromTrailingEdge = tipHingeDistance;
     }
@@ -452,7 +448,7 @@ namespace workphone::vehicle
         return m_rootHingeDistanceFromTrailingEdge;
     }
 
-    void CAircraftControlSurface::setRootHingeDistanceFromTrailingEdge(real_Num rootHingeDistance)
+    void CAircraftControlSurface::setRootHingeDistanceFromTrailingEdge( real_Num rootHingeDistance )
     {
         m_rootHingeDistanceFromTrailingEdge = rootHingeDistance;
     }
@@ -462,12 +458,12 @@ namespace workphone::vehicle
         return m_rotationAxis;
     }
 
-    void CAircraftControlSurface::setRotationAxis(Vector3<real_Num> rotationAxis)
+    void CAircraftControlSurface::setRotationAxis( Vector3<real_Num> rotationAxis )
     {
         m_rotationAxis = rotationAxis;
     }
 
-    bool CAircraftControlSurface::isAffectedSection(int index) const
+    bool CAircraftControlSurface::isAffectedSection( int index ) const
     {
         return m_affectedSections[index];
     }
@@ -477,7 +473,7 @@ namespace workphone::vehicle
         return m_clLookup;
     }
 
-    void CAircraftControlSurface::setClLookup(SmartPtr<LinearSpline1<real_Num>> linearSpline1)
+    void CAircraftControlSurface::setClLookup( SmartPtr<LinearSpline1<real_Num>> linearSpline1 )
     {
         m_clLookup = linearSpline1;
     }
@@ -487,7 +483,7 @@ namespace workphone::vehicle
         return m_cdLookup;
     }
 
-    void CAircraftControlSurface::setCdLookup(SmartPtr<LinearSpline1<real_Num>> linearSpline1)
+    void CAircraftControlSurface::setCdLookup( SmartPtr<LinearSpline1<real_Num>> linearSpline1 )
     {
         m_cdLookup = linearSpline1;
     }
@@ -497,7 +493,7 @@ namespace workphone::vehicle
         return m_cmLookup;
     }
 
-    void CAircraftControlSurface::setCmLookup(SmartPtr<LinearSpline1<real_Num>> linearSpline1)
+    void CAircraftControlSurface::setCmLookup( SmartPtr<LinearSpline1<real_Num>> linearSpline1 )
     {
         m_cmLookup = linearSpline1;
     }
@@ -507,7 +503,7 @@ namespace workphone::vehicle
         return m_clMultiplier;
     }
 
-    void CAircraftControlSurface::setClMultiplier(real_Num clMultiplier)
+    void CAircraftControlSurface::setClMultiplier( real_Num clMultiplier )
     {
         m_clMultiplier = clMultiplier;
     }
@@ -517,7 +513,7 @@ namespace workphone::vehicle
         return m_cdMultiplier;
     }
 
-    void CAircraftControlSurface::setCdMultiplier(real_Num cdMultiplier)
+    void CAircraftControlSurface::setCdMultiplier( real_Num cdMultiplier )
     {
         m_cdMultiplier = cdMultiplier;
     }
@@ -527,7 +523,7 @@ namespace workphone::vehicle
         return m_cmMultiplier;
     }
 
-    void CAircraftControlSurface::setCmMultiplier(real_Num cmMultiplier)
+    void CAircraftControlSurface::setCmMultiplier( real_Num cmMultiplier )
     {
         m_cmMultiplier = cmMultiplier;
     }
@@ -537,7 +533,7 @@ namespace workphone::vehicle
         return m_minDeflectionDegrees;
     }
 
-    void CAircraftControlSurface::setMinDeflectionDegrees(real_Num minDeflectionDegrees)
+    void CAircraftControlSurface::setMinDeflectionDegrees( real_Num minDeflectionDegrees )
     {
         m_minDeflectionDegrees = minDeflectionDegrees;
     }
@@ -547,7 +543,7 @@ namespace workphone::vehicle
         return m_maxDeflectionDegrees;
     }
 
-    void CAircraftControlSurface::setMaxDeflectionDegrees(real_Num maxDeflectionDegrees)
+    void CAircraftControlSurface::setMaxDeflectionDegrees( real_Num maxDeflectionDegrees )
     {
         m_maxDeflectionDegrees = maxDeflectionDegrees;
     }
@@ -557,7 +553,7 @@ namespace workphone::vehicle
         return m_aoaMultiplier;
     }
 
-    void CAircraftControlSurface::setAoAMultiplier(real_Num aoaMultiplier)
+    void CAircraftControlSurface::setAoAMultiplier( real_Num aoaMultiplier )
     {
         m_aoaMultiplier = aoaMultiplier;
     }
@@ -567,7 +563,7 @@ namespace workphone::vehicle
         return m_mainWing;
     }
 
-    void CAircraftControlSurface::setMainWing(SmartPtr<IAircraftWing> mainWing)
+    void CAircraftControlSurface::setMainWing( SmartPtr<IAircraftWing> mainWing )
     {
         m_mainWing = mainWing;
     }
@@ -577,16 +573,16 @@ namespace workphone::vehicle
         return m_controlWing;
     }
 
-    void CAircraftControlSurface::setControlWing(SmartPtr<IAircraftWing> controlWing)
+    void CAircraftControlSurface::setControlWing( SmartPtr<IAircraftWing> controlWing )
     {
         m_controlWing = controlWing;
 
-        if(m_controlWing)
+        if( m_controlWing )
         {
-            if(m_mainWing)
+            if( m_mainWing )
             {
                 void *pData = m_mainWing->getData();
-                if(pData)
+                if( pData )
                 {
                     // m_controlWing->load(pData);
                 }
@@ -599,14 +595,14 @@ namespace workphone::vehicle
         return m_useControlWing;
     }
 
-    void CAircraftControlSurface::setUseControlWing(bool useControlWing)
+    void CAircraftControlSurface::setUseControlWing( bool useControlWing )
     {
         m_useControlWing = useControlWing;
     }
 
     void CAircraftControlSurface::updateGeometry()
     {
-        if(m_controlWing)
+        if( m_controlWing )
         {
             m_controlWing->updateGeometry();
         }
@@ -617,7 +613,7 @@ namespace workphone::vehicle
         return m_stallControlCL;
     }
 
-    void CAircraftControlSurface::setStallControlCL(real_Num stallControlCL)
+    void CAircraftControlSurface::setStallControlCL( real_Num stallControlCL )
     {
         m_stallControlCL = stallControlCL;
     }
@@ -627,7 +623,7 @@ namespace workphone::vehicle
         return m_stallControlCD;
     }
 
-    void CAircraftControlSurface::setStallControlCD(real_Num stallControlCD)
+    void CAircraftControlSurface::setStallControlCD( real_Num stallControlCD )
     {
         m_stallControlCD = stallControlCD;
     }
@@ -637,7 +633,7 @@ namespace workphone::vehicle
         return m_stallControlCM;
     }
 
-    void CAircraftControlSurface::setStallControlCM(real_Num stallControlCM)
+    void CAircraftControlSurface::setStallControlCM( real_Num stallControlCM )
     {
         m_stallControlCM = stallControlCM;
     }
@@ -647,16 +643,16 @@ namespace workphone::vehicle
         return m_stallThreshold;
     }
 
-    void CAircraftControlSurface::setStallThreshold(real_Num stallThreshold)
+    void CAircraftControlSurface::setStallThreshold( real_Num stallThreshold )
     {
         m_stallThreshold = stallThreshold;
     }
 
     void CAircraftControlSurface::reset()
     {
-        if(m_controlWing)
+        if( m_controlWing )
         {
             m_controlWing->reset();
         }
     }
-}
+}  // namespace workphone::vehicle

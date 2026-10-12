@@ -14,20 +14,20 @@ namespace workphone::physics
 
         real_Num getMass() const override;
 
-        void setMass(real_Num mass) override;
+        void setMass( real_Num mass ) override;
 
         Vector2<real_Num> getCenter() const override;
 
-        void setCenter(Vector2<real_Num> center) override;
+        void setCenter( Vector2<real_Num> center ) override;
 
         real_Num getInertia() const override;
 
-        void setInertia(real_Num inertia) override;
+        void setInertia( real_Num inertia ) override;
 
     private:
         real_Num m_mass;
         Vector2<real_Num> m_center;
         real_Num m_inertia;
     };
-} // namespace workphone::physics
+}  // namespace workphone::physics
 #endif  // IMassData2_h__

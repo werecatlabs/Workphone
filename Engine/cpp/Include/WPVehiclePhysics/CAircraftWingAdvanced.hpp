@@ -21,46 +21,46 @@ namespace workphone::vehicle
         CAircraftWingAdvanced();
         ~CAircraftWingAdvanced() override;
 
-        void load(SmartPtr<ISharedObject> data) override;
-        void load(void *pData) override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void load( void *pData ) override;
 
-        void update(const double &t, const double &dt) override;
+        void update( const double &t, const double &dt ) override;
 
-        void updateCombined(const double &t, const double &fDT);
-        void updateSeparate(const double &t, const double &fDT);
+        void updateCombined( const double &t, const double &fDT );
+        void updateSeparate( const double &t, const double &fDT );
 
         SmartPtr<IAircraftControlSurface> getAttachedControlSurface() const override;
         void setAttachedControlSurface(
-            SmartPtr<IAircraftControlSurface> attachedControlSurface) override;
+            SmartPtr<IAircraftControlSurface> attachedControlSurface ) override;
 
         SmartPtr<IAircraftPropWash> getAttachedPropWash() const override;
-        void setAttachedPropWash(SmartPtr<IAircraftPropWash> attachedPropWash) override;
+        void setAttachedPropWash( SmartPtr<IAircraftPropWash> attachedPropWash ) override;
 
         bool isControlSurface() const override;
-        void setControlSurface(bool bIsControlSurface) override;
+        void setControlSurface( bool bIsControlSurface ) override;
 
         bool useCombinedControlSurface() const override;
-        void setUserCombinedControlSurface(bool bUseCombinedControlSurface) override;
+        void setUserCombinedControlSurface( bool bUseCombinedControlSurface ) override;
 
     private:
         void updateGeometry() override;
 
-        real_Num calculateArea(const Vector3<real_Num> &pointA, const Vector3<real_Num> &pointB,
-                               const Vector3<real_Num> &pointC, const Vector3<real_Num> &pointD);
+        real_Num calculateArea( const Vector3<real_Num> &pointA, const Vector3<real_Num> &pointB,
+                                const Vector3<real_Num> &pointC, const Vector3<real_Num> &pointD );
 
-        s32 getDebugId(s32 i) const;
+        s32 getDebugId( s32 i ) const;
 
-        s32 getDebugId(s32 section, s32 index) const;
+        s32 getDebugId( s32 section, s32 index ) const;
 
         void drawGizmos();
 
-        Vector3<real_Num> calculateRelativeWind(s32 sectionIndex,
-                                                const Vector3<real_Num> &aerodynamicCenter,
-                                                const Vector3<real_Num> &wind);
-
-        Vector3<real_Num> calculateRelativeWind2(s32 sectionIndex,
+        Vector3<real_Num> calculateRelativeWind( s32 sectionIndex,
                                                  const Vector3<real_Num> &aerodynamicCenter,
-                                                 const Vector3<real_Num> &wind);
+                                                 const Vector3<real_Num> &wind );
+
+        Vector3<real_Num> calculateRelativeWind2( s32 sectionIndex,
+                                                  const Vector3<real_Num> &aerodynamicCenter,
+                                                  const Vector3<real_Num> &wind );
 
         bool m_isControlSurface = false;
         bool m_useCombinedControlSurface = true;
@@ -106,6 +106,6 @@ namespace workphone::vehicle
         /// Used to generate a unique id.
         static u32 m_idExt;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // CAircraftWingAdvanced_h__
+#endif  // CAircraftWingAdvanced_h__

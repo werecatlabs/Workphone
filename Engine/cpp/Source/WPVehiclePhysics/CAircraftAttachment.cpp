@@ -29,4 +29,4 @@ namespace workphone::vehicle
     template class CAircraftAttachment<IAircraftPropWash>;
 
     template class CAircraftAttachment<IVehicleComponent>;
-} // namespace workphone::vehicle
+}  // namespace workphone::vehicle

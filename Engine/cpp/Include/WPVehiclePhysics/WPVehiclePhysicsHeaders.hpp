@@ -16,4 +16,4 @@
 #include <WPVehiclePhysics/CAircraftPropellerUnit.hpp>
 #include <WPVehiclePhysics/CAircraftPropellerUnitSimple.hpp>
 
-#endif // WPVehicleHeaders_h__
+#endif  // WPVehicleHeaders_h__

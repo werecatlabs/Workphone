@@ -19,29 +19,29 @@ namespace workphone::vehicle
 
         bool isValid() const override;
 
-        void update(const double &t, const double &dt) override;
+        void update( const double &t, const double &dt ) override;
 
         SmartPtr<IBatteryPack> &getBatteryPack() override;
         const SmartPtr<IBatteryPack> &getBatteryPack() const override;
-        void setBatteryPack(SmartPtr<IBatteryPack> batteryPack) override;
+        void setBatteryPack( SmartPtr<IBatteryPack> batteryPack ) override;
 
         SmartPtr<IESController> &getESC() override;
         const SmartPtr<IESController> &getESC() const override;
-        void setESC(SmartPtr<IESController> esc) override;
+        void setESC( SmartPtr<IESController> esc ) override;
 
         SmartPtr<IAircraftPowerUnit> &getPowerUnit() override;
         const SmartPtr<IAircraftPowerUnit> &getPowerUnit() const override;
-        void setPowerUnit(SmartPtr<IAircraftPowerUnit> powerUnit) override;
+        void setPowerUnit( SmartPtr<IAircraftPowerUnit> powerUnit ) override;
 
         SmartPtr<IAircraftPropeller> &getPropeller() override;
         const SmartPtr<IAircraftPropeller> &getPropeller() const override;
-        void setPropeller(SmartPtr<IAircraftPropeller> propeller) override;
+        void setPropeller( SmartPtr<IAircraftPropeller> propeller ) override;
 
         Vector3<real_Num> getThrust() const override;
-        void setThrust(const Vector3<real_Num> &thrust) override;
+        void setThrust( const Vector3<real_Num> &thrust ) override;
 
         Vector3<real_Num> getPropwash() const override;
-        void setPropwash(const Vector3<real_Num> &propwash) override;
+        void setPropwash( const Vector3<real_Num> &propwash ) override;
 
     protected:
         SmartPtr<IBatteryPack> m_batteryPack;
@@ -56,6 +56,6 @@ namespace workphone::vehicle
         /// Used to generate a unique id.
         static u32 m_idExt;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // CAircraftPropellerUnitSimple_h__
+#endif  // CAircraftPropellerUnitSimple_h__

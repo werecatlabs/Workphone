@@ -13,13 +13,13 @@ namespace workphone::physics
         WPPhysicsTerrainShape3();
         ~WPPhysicsTerrainShape3() override;
 
-        void load(SmartPtr<ISharedObject> data) override;
-        void unload(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void unload( SmartPtr<ISharedObject> data ) override;
         SmartPtr<IPhysicsShape3> clone() override;
         bool isValid() const override;
 
     private:
-        void installMesh(const Array<Vector3F> &points, const Array<u32> &indices);
+        void installMesh( const Array<Vector3F> &points, const Array<u32> &indices );
 
         SmartPtr<IMeshResource> m_meshResource;
         SmartPtr<IMesh> m_mesh;
@@ -27,6 +27,6 @@ namespace workphone::physics
         Array<wp_f32> m_vertices;
         Array<wp_u32> m_indices;
     };
-} // namespace workphone::physics
+}  // namespace workphone::physics
 
 #endif

@@ -12,14 +12,14 @@ namespace workphone::physics
         ~WPPhysicsSpring() override;
 
         real_Num getStiffness() const override;
-        void setStiffness(real_Num stiffness) override;
+        void setStiffness( real_Num stiffness ) override;
         real_Num getDamping() const override;
-        void setDamping(real_Num damping) override;
+        void setDamping( real_Num damping ) override;
 
         void *getUserData() const override;
-        void setUserData(void *userData) override;
+        void setUserData( void *userData ) override;
 
         WP_CLASS_REGISTER_DECL;
     };
-}
+}  // namespace workphone::physics
 #endif
