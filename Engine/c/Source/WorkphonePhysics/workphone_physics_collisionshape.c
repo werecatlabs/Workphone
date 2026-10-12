@@ -131,12 +131,14 @@ wp_collision_shape *wp_collision_shape_create( wp_collision_shape_type type )
 
 wp_prepared_shape *wp_collision_shape_get_prepared_storage( const wp_collision_shape *shape )
 {
-    return shape ? &((wp_collision_shape *)shape)->prepared : NULL;
+    return shape ? &( (wp_collision_shape *)shape )->prepared : NULL;
 }
+
 uint64_t wp_collision_shape_get_revision( const wp_collision_shape *shape )
 {
     return shape ? shape->revision : 0;
 }
+
 uint64_t wp_collision_shape_get_lifetime_id( const wp_collision_shape *shape )
 {
     return shape ? shape->lifetime_id : 0;
@@ -333,13 +335,15 @@ void wp_collision_shape_set_mesh_data( wp_collision_shape *shape, const wp_colli
 }
 
 wp_s32 wp_collision_shape_try_set_mesh_data( wp_collision_shape *shape,
-                                            const wp_collision_mesh_data *data )
+                                             const wp_collision_mesh_data *data )
 {
     wp_triangle_mesh *candidate;
     size_t i;
     wp_f32 value;
     if( !shape || shape->type != WORKPHONE_COLLISION_SHAPE_MESH )
+    {
         return 0;
+    }
     candidate = NULL;
     if( data )
     {
@@ -347,31 +351,45 @@ wp_s32 wp_collision_shape_try_set_mesh_data( wp_collision_shape *shape,
             ( data->triangle_count && ( !data->indices || !data->vertex_count ) ) ||
             data->vertex_count > SIZE_MAX / ( sizeof( wp_f32 ) * 3u ) ||
             data->triangle_count > SIZE_MAX / ( sizeof( wp_u32 ) * 3u ) )
+        {
             return 0;
+        }
         for( i = 0; i < (size_t)data->vertex_count * 3u; ++i )
         {
             value = data->vertices[i];
             if( value != value || value > FLT_MAX || value < -FLT_MAX )
+            {
                 return 0;
+            }
         }
         for( i = 0; i < (size_t)data->triangle_count * 3u; ++i )
+        {
             if( data->indices[i] >= data->vertex_count )
+            {
                 return 0;
+            }
+        }
         if( data->triangle_count )
         {
-            candidate = wp_triangle_mesh_create( data->vertices, data->vertex_count,
-                                                  data->indices, data->triangle_count );
+            candidate = wp_triangle_mesh_create( data->vertices, data->vertex_count, data->indices,
+                                                 data->triangle_count );
             if( !candidate )
+            {
                 return 0;
+            }
             wp_triangle_mesh_set_refit_callback( candidate, invalidate_shape_bounds, shape );
         }
     }
     wp_triangle_mesh_destroy( shape->triangle_mesh );
     shape->triangle_mesh = candidate;
     if( data )
+    {
         shape->mesh_data = *data;
+    }
     else
+    {
         memset( &shape->mesh_data, 0, sizeof( wp_collision_mesh_data ) );
+    }
     invalidate_shape_bounds( shape );
     return 1;
 }
@@ -637,7 +655,7 @@ void wp_collision_shape_set_material_name( wp_collision_shape *shape, const wp_c
     }
     {
         wp_u32 i;
-        for( i = 0; i < ( wp_u32 )( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && name[i] != '\0'; ++i )
+        for( i = 0; i < (wp_u32)( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && name[i] != '\0'; ++i )
         {
             shape->material_name[i] = name[i];
         }
@@ -651,7 +669,7 @@ const wp_c8 *wp_collision_shape_get_material_name( const wp_collision_shape *sha
 }
 
 wp_physics_material *wp_collision_shape_resolve_material( const wp_collision_shape *shape,
-                                                           wp_physics_material_registry *registry )
+                                                          wp_physics_material_registry *registry )
 {
     if( !shape || !registry )
     {

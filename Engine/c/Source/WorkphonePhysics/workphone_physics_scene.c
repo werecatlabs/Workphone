@@ -30,7 +30,8 @@ typedef struct wp_contact_cache_record
     uint64_t seen_epoch, last_update_frame;
 } wp_contact_cache_record;
 
-typedef struct wp_actor_bounds_cache {
+typedef struct wp_actor_bounds_cache
+{
     uint64_t revision;
     wp_s32 valid;
     wp_s32 borrowed_vertices;
@@ -255,12 +256,14 @@ static wp_s32 shape_world_aabb( const wp_rigidbody *body, const wp_collision_sha
 {
     const wp_prepared_shape *p;
     memset( bounds, 0, sizeof( *bounds ) );
-    if ( !body || !shape || !wp_collision_shape_is_enabled( shape ) )
-        return 0;
-    if ( wp_collision_shape_get_type( shape ) == WORKPHONE_COLLISION_SHAPE_PLANE )
+    if( !body || !shape || !wp_collision_shape_is_enabled( shape ) )
     {
-        bounds->min = ( wp_vec3f ){ -FLT_MAX, -FLT_MAX, -FLT_MAX };
-        bounds->max = ( wp_vec3f ){ FLT_MAX, FLT_MAX, FLT_MAX };
+        return 0;
+    }
+    if( wp_collision_shape_get_type( shape ) == WORKPHONE_COLLISION_SHAPE_PLANE )
+    {
+        bounds->min = (wp_vec3f){ -FLT_MAX, -FLT_MAX, -FLT_MAX };
+        bounds->max = (wp_vec3f){ FLT_MAX, FLT_MAX, FLT_MAX };
         bounds->valid = 1;
         return 1;
     }
@@ -272,7 +275,7 @@ static wp_s32 shape_world_aabb( const wp_rigidbody *body, const wp_collision_sha
 }
 
 static wp_s32 body_world_aabb( const wp_rigidbody *body, wp_scene_aabb *bounds,
-                                wp_s32 *borrowed_vertices )
+                               wp_s32 *borrowed_vertices )
 {
     wp_s32 shape_index;
     if( !body || !bounds )
@@ -405,35 +408,35 @@ static wp_s32 ray_aabb( wp_vec3f start, wp_vec3f dir, wp_f32 max_dist, wp_vec3f 
     wp_f32 tmax = max_dist;
     wp_vec3f normal = vec3f_zero();
 
-#define WP_RAY_AABB_AXIS( axis ) \
-    if( fabsf( dir.axis ) < 1.0e-7f ) \
-    { \
+#define WP_RAY_AABB_AXIS( axis )                             \
+    if( fabsf( dir.axis ) < 1.0e-7f )                        \
+    {                                                        \
         if( start.axis < min.axis || start.axis > max.axis ) \
-            return 0; \
-    } \
-    else \
-    { \
-        wp_f32 inv = 1.0f / dir.axis; \
-        wp_f32 t1 = ( min.axis - start.axis ) * inv; \
-        wp_f32 t2 = ( max.axis - start.axis ) * inv; \
-        wp_f32 sign = -1.0f; \
-        if( t1 > t2 ) \
-        { \
-            wp_f32 tmp = t1; \
-            t1 = t2; \
-            t2 = tmp; \
-            sign = 1.0f; \
-        } \
-        if( t1 > tmin ) \
-        { \
-            tmin = t1; \
-            normal = vec3f_zero(); \
-            normal.axis = sign; \
-        } \
-        if( t2 < tmax ) \
-            tmax = t2; \
-        if( tmin > tmax ) \
-            return 0; \
+            return 0;                                        \
+    }                                                        \
+    else                                                     \
+    {                                                        \
+        wp_f32 inv = 1.0f / dir.axis;                        \
+        wp_f32 t1 = ( min.axis - start.axis ) * inv;         \
+        wp_f32 t2 = ( max.axis - start.axis ) * inv;         \
+        wp_f32 sign = -1.0f;                                 \
+        if( t1 > t2 )                                        \
+        {                                                    \
+            wp_f32 tmp = t1;                                 \
+            t1 = t2;                                         \
+            t2 = tmp;                                        \
+            sign = 1.0f;                                     \
+        }                                                    \
+        if( t1 > tmin )                                      \
+        {                                                    \
+            tmin = t1;                                       \
+            normal = vec3f_zero();                           \
+            normal.axis = sign;                              \
+        }                                                    \
+        if( t2 < tmax )                                      \
+            tmax = t2;                                       \
+        if( tmin > tmax )                                    \
+            return 0;                                        \
     }
 
     WP_RAY_AABB_AXIS( x )
@@ -501,28 +504,45 @@ static wp_s32 reserve_scene_actors( wp_physics_scene *scene, wp_s32 required )
     wp_f32 *sleep_time;
     wp_s32 *proxies;
     wp_actor_bounds_cache *cache;
-    if( required <= scene->actor_capacity ) return 1;
-    if( capacity < 8 ) capacity = 8;
-    while( capacity < required ) {
-        if( capacity > INT_MAX / 2 ) return 0;
+    if( required <= scene->actor_capacity )
+    {
+        return 1;
+    }
+    if( capacity < 8 )
+    {
+        capacity = 8;
+    }
+    while( capacity < required )
+    {
+        if( capacity > INT_MAX / 2 )
+        {
+            return 0;
+        }
         capacity *= 2;
     }
-    actors = (wp_rigidbody **)calloc( capacity, sizeof(*actors) );
-    sleep_time = (wp_f32 *)calloc( capacity, sizeof(*sleep_time) );
-    proxies = (wp_s32 *)malloc( (size_t)capacity * sizeof(*proxies) );
-    cache = (wp_actor_bounds_cache *)calloc( capacity, sizeof(*cache) );
-    if( !actors || !sleep_time || !proxies || !cache ) {
-        free(actors); free(sleep_time); free(proxies); free(cache);
+    actors = (wp_rigidbody **)calloc( capacity, sizeof( *actors ) );
+    sleep_time = (wp_f32 *)calloc( capacity, sizeof( *sleep_time ) );
+    proxies = (wp_s32 *)malloc( (size_t)capacity * sizeof( *proxies ) );
+    cache = (wp_actor_bounds_cache *)calloc( capacity, sizeof( *cache ) );
+    if( !actors || !sleep_time || !proxies || !cache )
+    {
+        free( actors );
+        free( sleep_time );
+        free( proxies );
+        free( cache );
         return 0;
     }
-    if( scene->actor_count ) {
-        memcpy(actors, scene->actors, scene->actor_count * sizeof(*actors));
-        memcpy(sleep_time, scene->sleep_time, scene->actor_count * sizeof(*sleep_time));
-        memcpy(proxies, scene->actor_proxies, scene->actor_count * sizeof(*proxies));
-        memcpy(cache, scene->bounds_cache, scene->actor_count * sizeof(*cache));
+    if( scene->actor_count )
+    {
+        memcpy( actors, scene->actors, scene->actor_count * sizeof( *actors ) );
+        memcpy( sleep_time, scene->sleep_time, scene->actor_count * sizeof( *sleep_time ) );
+        memcpy( proxies, scene->actor_proxies, scene->actor_count * sizeof( *proxies ) );
+        memcpy( cache, scene->bounds_cache, scene->actor_count * sizeof( *cache ) );
     }
-    free(scene->actors); free(scene->sleep_time); free(scene->actor_proxies);
-    free(scene->bounds_cache);
+    free( scene->actors );
+    free( scene->sleep_time );
+    free( scene->actor_proxies );
+    free( scene->bounds_cache );
     scene->actors = actors;
     scene->sleep_time = sleep_time;
     scene->actor_proxies = proxies;
@@ -544,8 +564,9 @@ wp_physics_scene *wp_physics_scene_create( void )
     }
 
     memset( scene, 0, sizeof( wp_physics_scene ) );
-    if( !reserve_scene_actors(scene, 1) ) {
-        free(scene);
+    if( !reserve_scene_actors( scene, 1 ) )
+    {
+        free( scene );
         return NULL;
     }
 
@@ -566,8 +587,10 @@ wp_physics_scene *wp_physics_scene_create( void )
     {
         wp_broadphase_destroy( scene->broadphase );
         wp_narrowphase_destroy( scene->narrowphase );
-        free(scene->actors); free(scene->sleep_time); free(scene->actor_proxies);
-        free(scene->bounds_cache);
+        free( scene->actors );
+        free( scene->sleep_time );
+        free( scene->actor_proxies );
+        free( scene->bounds_cache );
         free( scene );
         return NULL;
     }
@@ -596,8 +619,10 @@ void wp_physics_scene_destroy( wp_physics_scene *scene )
 
     wp_collision_cache_destroy( scene->contact_cache );
 
-    free(scene->actors); free(scene->sleep_time); free(scene->actor_proxies);
-    free(scene->bounds_cache);
+    free( scene->actors );
+    free( scene->sleep_time );
+    free( scene->actor_proxies );
+    free( scene->bounds_cache );
     free( scene );
 }
 
@@ -608,10 +633,10 @@ void wp_physics_scene_clear( wp_physics_scene *scene )
         return;
     }
 
-    memset( scene->actors, 0, scene->actor_capacity * sizeof(*scene->actors) );
-    memset( scene->sleep_time, 0, scene->actor_capacity * sizeof(*scene->sleep_time) );
-    memset( scene->bounds_cache, 0, scene->actor_capacity * sizeof(*scene->bounds_cache) );
-    memset( &scene->broadphase_stats, 0, sizeof(scene->broadphase_stats) );
+    memset( scene->actors, 0, scene->actor_capacity * sizeof( *scene->actors ) );
+    memset( scene->sleep_time, 0, scene->actor_capacity * sizeof( *scene->sleep_time ) );
+    memset( scene->bounds_cache, 0, scene->actor_capacity * sizeof( *scene->bounds_cache ) );
+    memset( &scene->broadphase_stats, 0, sizeof( scene->broadphase_stats ) );
     wp_broadphase_clear( scene->broadphase );
     wp_collision_cache_clear( scene->contact_cache );
     scene->actor_count = 0;
@@ -638,15 +663,20 @@ wp_s32 wp_physics_scene_add_actor( wp_physics_scene *scene, wp_rigidbody *body )
         }
     }
 
-    if( scene->actor_count == INT_MAX || !reserve_scene_actors(scene, scene->actor_count + 1) )
+    if( scene->actor_count == INT_MAX || !reserve_scene_actors( scene, scene->actor_count + 1 ) )
+    {
         return 0;
+    }
     /* Allocate the proxy at registration, so simulation never needs to allocate
      * tree storage or silently omit a body under memory pressure. */
     proxy = wp_broadphase_create_proxy( scene->broadphase, body, vec3f_zero(), vec3f_zero() );
-    if( proxy == WP_BROADPHASE_INVALID_PROXY ) return 0;
+    if( proxy == WP_BROADPHASE_INVALID_PROXY )
+    {
+        return 0;
+    }
     wp_broadphase_configure_proxy( scene->broadphase, proxy, 0, 0, (wp_u32)scene->actor_count );
     scene->actor_proxies[scene->actor_count] = proxy;
-    memset( &scene->bounds_cache[scene->actor_count], 0, sizeof(*scene->bounds_cache) );
+    memset( &scene->bounds_cache[scene->actor_count], 0, sizeof( *scene->bounds_cache ) );
     scene->actors[scene->actor_count] = body;
     scene->sleep_time[scene->actor_count] = 0.0f;
     ++scene->actor_count;
@@ -669,13 +699,15 @@ void wp_physics_scene_remove_actor( wp_physics_scene *scene, wp_rigidbody *body 
             wp_s32 last = scene->actor_count - 1;
             wp_s32 cache_index;
             wp_broadphase_destroy_proxy( scene->broadphase, scene->actor_proxies[i] );
-            for ( cache_index = wp_collision_cache_get_count( scene->contact_cache ) - 1;
-                  cache_index >= 0; --cache_index )
+            for( cache_index = wp_collision_cache_get_count( scene->contact_cache ) - 1;
+                 cache_index >= 0; --cache_index )
             {
                 const wp_collision_cache_entry *entry =
                     &wp_collision_cache_get_entries( scene->contact_cache )[cache_index];
-                if ( entry->body_a == body || entry->body_b == body )
+                if( entry->body_a == body || entry->body_b == body )
+                {
                     wp_collision_cache_remove_at( scene->contact_cache, cache_index );
+                }
             }
             scene->actors[i] = scene->actors[last];
             scene->sleep_time[i] = scene->sleep_time[last];
@@ -684,7 +716,7 @@ void wp_physics_scene_remove_actor( wp_physics_scene *scene, wp_rigidbody *body 
             scene->actors[last] = NULL;
             scene->sleep_time[last] = 0.0f;
             scene->actor_proxies[last] = WP_BROADPHASE_INVALID_PROXY;
-            memset( &scene->bounds_cache[last], 0, sizeof(*scene->bounds_cache) );
+            memset( &scene->bounds_cache[last], 0, sizeof( *scene->bounds_cache ) );
             --scene->actor_count;
             return;
         }
@@ -945,7 +977,8 @@ static void integrate_body( wp_rigidbody *body, wp_vec3f gravity, wp_f32 dt )
         }
 
         /* Torque is world-space; the principal inertia tensor is body-space. */
-        angular_acceleration = vec3f_add(angular_acceleration, body_apply_inverse_inertia(body, torque));
+        angular_acceleration =
+            vec3f_add( angular_acceleration, body_apply_inverse_inertia( body, torque ) );
 
         velocity = vec3f_add( velocity, vec3f_scale( acceleration, dt ) );
         angular_velocity = vec3f_add( angular_velocity, vec3f_scale( angular_acceleration, dt ) );
@@ -1552,32 +1585,38 @@ static wp_s32 can_reuse_manifold( wp_physics_scene *scene, const wp_contact_cach
     wp_s32 ai = reverse ? 1 : 0, bi = 1 - ai;
     uint64_t frequency = scene->contact_options.fixed_update_frequency;
     /* Borrowed uncooked arrays can change without a revision notification. */
-    if ( ( wp_collision_shape_get_type( sa ) == WORKPHONE_COLLISION_SHAPE_MESH &&
-           !wp_collision_shape_get_triangle_mesh( sa ) ) ||
-         ( wp_collision_shape_get_type( sb ) == WORKPHONE_COLLISION_SHAPE_MESH &&
-           !wp_collision_shape_get_triangle_mesh( sb ) ) )
-        return 0;
-    if ( r->body_ids[ai] != wp_rigidbody_get_lifetime_id( a ) ||
-         r->body_ids[bi] != wp_rigidbody_get_lifetime_id( b ) ||
-         r->shape_ids[ai] != wp_collision_shape_get_lifetime_id( sa ) ||
-         r->shape_ids[bi] != wp_collision_shape_get_lifetime_id( sb ) ||
-         r->revisions[ai] != wp_rigidbody_get_bounds_revision( a ) ||
-         r->revisions[bi] != wp_rigidbody_get_bounds_revision( b ) ||
-         r->shape_revisions[ai] != wp_collision_shape_get_revision( sa ) ||
-         r->shape_revisions[bi] != wp_collision_shape_get_revision( sb ) )
-        return 0;
-    if ( scene->contact_options.strategy == WP_CONTACT_STRATEGY_DISTANCE )
+    if( ( wp_collision_shape_get_type( sa ) == WORKPHONE_COLLISION_SHAPE_MESH &&
+          !wp_collision_shape_get_triangle_mesh( sa ) ) ||
+        ( wp_collision_shape_get_type( sb ) == WORKPHONE_COLLISION_SHAPE_MESH &&
+          !wp_collision_shape_get_triangle_mesh( sb ) ) )
     {
-        wp_vec3f delta =
-            vec3f_sub( wp_rigidbody_get_position( a ), wp_rigidbody_get_position( b ) );
-        double f = 1.0 + (double)vec3f_dot( delta, delta ) *
-                             scene->contact_options.distance_frequency_scale;
+        return 0;
+    }
+    if( r->body_ids[ai] != wp_rigidbody_get_lifetime_id( a ) ||
+        r->body_ids[bi] != wp_rigidbody_get_lifetime_id( b ) ||
+        r->shape_ids[ai] != wp_collision_shape_get_lifetime_id( sa ) ||
+        r->shape_ids[bi] != wp_collision_shape_get_lifetime_id( sb ) ||
+        r->revisions[ai] != wp_rigidbody_get_bounds_revision( a ) ||
+        r->revisions[bi] != wp_rigidbody_get_bounds_revision( b ) ||
+        r->shape_revisions[ai] != wp_collision_shape_get_revision( sa ) ||
+        r->shape_revisions[bi] != wp_collision_shape_get_revision( sb ) )
+    {
+        return 0;
+    }
+    if( scene->contact_options.strategy == WP_CONTACT_STRATEGY_DISTANCE )
+    {
+        wp_vec3f delta = vec3f_sub( wp_rigidbody_get_position( a ), wp_rigidbody_get_position( b ) );
+        double f =
+            1.0 + (double)vec3f_dot( delta, delta ) * scene->contact_options.distance_frequency_scale;
         frequency = isfinite( f ) && f > 1 ? (uint64_t)fmin( f, (double)UINT32_MAX ) : 1;
     }
-    if ( frequency < 1 )
+    if( frequency < 1 )
+    {
         frequency = 1;
+    }
     return scene->frame_count - r->last_update_frame < frequency;
 }
+
 static void swap_manifold( wp_contact_manifold *m )
 {
     wp_rigidbody *body = m->body_a;
@@ -1586,7 +1625,7 @@ static void swap_manifold( wp_contact_manifold *m )
     m->body_b = body;
     m->shape_a = m->shape_b;
     m->shape_b = shape;
-    for ( wp_s32 i = 0; i < m->contact_count; ++i )
+    for( wp_s32 i = 0; i < m->contact_count; ++i )
     {
         wp_vec3f p = m->contacts[i].position_world_on_a;
         m->contacts[i].position_world_on_a = m->contacts[i].position_world_on_b;
@@ -1594,13 +1633,16 @@ static void swap_manifold( wp_contact_manifold *m )
         m->contacts[i].normal_world_on_b = vec3f_scale( m->contacts[i].normal_world_on_b, -1 );
     }
 }
+
 static void store_manifold( wp_physics_scene *scene, wp_s32 index, const wp_contact_manifold *m )
 {
     wp_contact_cache_record *r;
-    if ( index < 0 )
-        index = wp_collision_cache_add( scene->contact_cache, m->body_a, m->shape_a, m->body_b,
-                                        m->shape_b );
-    if ( index < 0 )
+    if( index < 0 )
+    {
+        index =
+            wp_collision_cache_add( scene->contact_cache, m->body_a, m->shape_a, m->body_b, m->shape_b );
+    }
+    if( index < 0 )
     {
         ++scene->broadphase_stats.cache_failures;
         return;
@@ -1643,7 +1685,7 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
         {
             ++scene->broadphase_stats.obb_tests;
             if( !wp_body_obb_may_overlap( a, b,
-                    wp_narrowphase_get_contact_tolerance( scene->narrowphase ) ) )
+                                          wp_narrowphase_get_contact_tolerance( scene->narrowphase ) ) )
             {
                 /* Unvisited cached contacts retire at this substep epoch. */
                 ++scene->broadphase_stats.obb_rejections;
@@ -1651,59 +1693,71 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
             }
         }
     }
-    for( sa = 0; sa < wp_rigidbody_get_shape_count( body_a ); ++sa ) {
+    for( sa = 0; sa < wp_rigidbody_get_shape_count( body_a ); ++sa )
+    {
         wp_collision_shape *shape_a = wp_rigidbody_get_shape( body_a, sa );
-        for( sb = 0; sb < wp_rigidbody_get_shape_count( body_b ); ++sb ) {
+        for( sb = 0; sb < wp_rigidbody_get_shape_count( body_b ); ++sb )
+        {
             wp_collision_shape *shape_b = wp_rigidbody_get_shape( body_b, sb );
             wp_contact_manifold manifold;
             wp_s32 cache_index = -1;
             wp_contact_cache_record *record = NULL;
             wp_s32 c;
-            if( !shape_pair_filter_passes( body_a, shape_a, body_b, shape_b ) ) continue;
-            if ( ( wp_rigidbody_get_shape_count( body_a ) > 1 ||
-                   wp_rigidbody_get_shape_count( body_b ) > 1 ) &&
-                 !wp_prepared_shapes_may_overlap(
-                     wp_shape_prepare( body_a, shape_a, NULL ),
-                     wp_shape_prepare( body_b, shape_b, NULL ),
-                     wp_narrowphase_get_contact_tolerance( scene->narrowphase ) ) )
+            if( !shape_pair_filter_passes( body_a, shape_a, body_b, shape_b ) )
+            {
+                continue;
+            }
+            if( ( wp_rigidbody_get_shape_count( body_a ) > 1 ||
+                  wp_rigidbody_get_shape_count( body_b ) > 1 ) &&
+                !wp_prepared_shapes_may_overlap(
+                    wp_shape_prepare( body_a, shape_a, NULL ), wp_shape_prepare( body_b, shape_b, NULL ),
+                    wp_narrowphase_get_contact_tolerance( scene->narrowphase ) ) )
             {
                 ++scene->broadphase_stats.child_pair_rejections;
                 continue;
             }
-            if ( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS &&
-                 scene->contact_cache )
+            if( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS && scene->contact_cache )
             {
-                cache_index = wp_collision_cache_find_counted(
-                    scene->contact_cache, body_a, shape_a, body_b, shape_b,
-                    &scene->broadphase_stats.cache_probes );
-                record = (wp_contact_cache_record *)wp_collision_cache_payload(
-                    scene->contact_cache, cache_index );
+                cache_index =
+                    wp_collision_cache_find_counted( scene->contact_cache, body_a, shape_a, body_b,
+                                                     shape_b, &scene->broadphase_stats.cache_probes );
+                record = (wp_contact_cache_record *)wp_collision_cache_payload( scene->contact_cache,
+                                                                                cache_index );
             }
-            if ( record && can_reuse_manifold( scene, record, body_a, shape_a, body_b, shape_b ) )
+            if( record && can_reuse_manifold( scene, record, body_a, shape_a, body_b, shape_b ) )
             {
                 manifold = record->manifold;
-                if ( manifold.body_a != body_a )
+                if( manifold.body_a != body_a )
+                {
                     swap_manifold( &manifold );
+                }
                 wp_manifold_refresh_materials( &manifold );
                 record->seen_epoch = scene->contact_epoch;
                 ++scene->broadphase_stats.cache_hits;
             }
             else
             {
-                if ( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS )
-                    ++scene->broadphase_stats.cache_misses;
-                ++scene->broadphase_stats.narrowphase_tests;
-                if ( !wp_narrowphase_test_pair( scene->narrowphase, body_a, shape_a, body_b,
-                                                shape_b, &manifold ) )
+                if( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS )
                 {
-                    if ( cache_index >= 0 )
+                    ++scene->broadphase_stats.cache_misses;
+                }
+                ++scene->broadphase_stats.narrowphase_tests;
+                if( !wp_narrowphase_test_pair( scene->narrowphase, body_a, shape_a, body_b, shape_b,
+                                               &manifold ) )
+                {
+                    if( cache_index >= 0 )
+                    {
                         wp_collision_cache_remove_at( scene->contact_cache, cache_index );
+                    }
                     continue;
                 }
-                if ( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS )
+                if( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS )
+                {
                     store_manifold( scene, cache_index, &manifold );
+                }
             }
-            for( c = 0; c < manifold.contact_count; ++c ) {
+            for( c = 0; c < manifold.contact_count; ++c )
+            {
                 resolve_contact( body_a, shape_a, body_b, shape_b, &manifold.contacts[c],
                                  1.0f / (wp_f32)manifold.contact_count );
             }
@@ -1714,46 +1768,63 @@ static void solve_broadphase_pair( const wp_broadphase_pair *pair, void *context
 static void solve_scene_contacts( wp_physics_scene *scene )
 {
     wp_s32 i;
-    if( !scene ) return;
+    if( !scene )
+    {
+        return;
+    }
     ++scene->contact_epoch;
-    if ( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS && !scene->contact_cache )
+    if( scene->contact_options.strategy != WP_CONTACT_STRATEGY_ALWAYS && !scene->contact_cache )
     {
         scene->contact_cache =
             wp_collision_cache_create_with_payload( 64, sizeof( wp_contact_cache_record ) );
-        if ( !scene->contact_cache )
+        if( !scene->contact_cache )
+        {
             ++scene->broadphase_stats.cache_failures;
+        }
     }
     /* Body/shape mutations and cooked-mesh refits invalidate revisions even on
      * sleeping/statics. Uncooked borrowed arrays retain per-substep refresh.
      * Capture revisions before solving: positional corrections must invalidate
      * the next substep, not bless the snapshot currently stored in the tree. */
-    for( i = 0; i < scene->actor_count; ++i ) {
+    for( i = 0; i < scene->actor_count; ++i )
+    {
         wp_rigidbody *body = scene->actors[i];
         wp_actor_bounds_cache *cache = &scene->bounds_cache[i];
         uint64_t revision = wp_rigidbody_get_bounds_revision( body );
         wp_s32 enabled = wp_rigidbody_has_flag( body, WORKPHONE_RIGIDBODY_FLAG_ENABLED );
-        if( enabled ) {
-            if( cache->revision != revision || cache->borrowed_vertices ) {
+        if( enabled )
+        {
+            if( cache->revision != revision || cache->borrowed_vertices )
+            {
                 wp_scene_aabb bounds;
                 cache->valid = body_world_aabb( body, &bounds, &cache->borrowed_vertices );
                 cache->revision = revision;
                 ++scene->broadphase_stats.bounds_rebuilds;
-                if ( wp_rigidbody_get_type( body ) == WORKPHONE_RIGIDBODY_STATIC )
+                if( wp_rigidbody_get_type( body ) == WORKPHONE_RIGIDBODY_STATIC )
+                {
                     ++scene->broadphase_stats.dirty_static_updates;
+                }
                 if( cache->valid )
-                    wp_broadphase_move_proxy( scene->broadphase, scene->actor_proxies[i], bounds.min, bounds.max );
-            } else ++scene->broadphase_stats.bounds_reuses;
+                {
+                    wp_broadphase_move_proxy( scene->broadphase, scene->actor_proxies[i], bounds.min,
+                                              bounds.max );
+                }
+            }
+            else
+            {
+                ++scene->broadphase_stats.bounds_reuses;
+            }
             enabled = cache->valid;
         }
         wp_broadphase_configure_proxy( scene->broadphase, scene->actor_proxies[i], enabled,
-                                      body_inverse_mass( body ) > 0.0f, (wp_u32)i );
+                                       body_inverse_mass( body ) > 0.0f, (wp_u32)i );
     }
     wp_broadphase_visit_pairs( scene->broadphase, solve_broadphase_pair, scene );
-    for ( i = wp_collision_cache_get_count( scene->contact_cache ) - 1; i >= 0; --i )
+    for( i = wp_collision_cache_get_count( scene->contact_cache ) - 1; i >= 0; --i )
     {
         wp_contact_cache_record *r =
             (wp_contact_cache_record *)wp_collision_cache_payload( scene->contact_cache, i );
-        if ( r->seen_epoch != scene->contact_epoch )
+        if( r->seen_epoch != scene->contact_epoch )
         {
             wp_collision_cache_remove_at( scene->contact_cache, i );
             ++scene->broadphase_stats.cache_retired;
@@ -1772,8 +1843,8 @@ static void finish_simulation_step( wp_physics_scene *scene, wp_f32 dt )
             continue;
         }
 
-        if ( wp_rigidbody_get_type( body ) != WORKPHONE_RIGIDBODY_DYNAMIC ||
-             wp_rigidbody_is_sleeping( body ) )
+        if( wp_rigidbody_get_type( body ) != WORKPHONE_RIGIDBODY_DYNAMIC ||
+            wp_rigidbody_is_sleeping( body ) )
         {
             scene->sleep_time[i] = 0;
             wp_rigidbody_clear_force( body );
@@ -1948,17 +2019,23 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
     }
 
     dt = clampf_scene( dt, 0.0f, 0.25f );
-    memset( &scene->broadphase_stats, 0, sizeof(scene->broadphase_stats) );
+    memset( &scene->broadphase_stats, 0, sizeof( scene->broadphase_stats ) );
     wp_narrowphase_reset_stats( scene->narrowphase );
-    for ( wp_s32 i = 0; i < scene->actor_count; ++i )
+    for( wp_s32 i = 0; i < scene->actor_count; ++i )
     {
         wp_rigidbody_type type = wp_rigidbody_get_type( scene->actors[i] );
-        if ( type == WORKPHONE_RIGIDBODY_STATIC )
+        if( type == WORKPHONE_RIGIDBODY_STATIC )
+        {
             ++scene->broadphase_stats.static_actors;
-        else if ( type == WORKPHONE_RIGIDBODY_DYNAMIC )
+        }
+        else if( type == WORKPHONE_RIGIDBODY_DYNAMIC )
+        {
             ++scene->broadphase_stats.dynamic_actors;
-        else if ( type == WORKPHONE_RIGIDBODY_KINEMATIC )
+        }
+        else if( type == WORKPHONE_RIGIDBODY_KINEMATIC )
+        {
             ++scene->broadphase_stats.kinematic_actors;
+        }
     }
     substeps = calculate_motion_substeps( scene, dt );
     scene->broadphase_stats.collision_substeps = (wp_u32)substeps;
@@ -1969,8 +2046,10 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
         wp_s32 i;
         for( i = 0; i < scene->actor_count; ++i )
         {
-            if ( wp_rigidbody_get_type( scene->actors[i] ) != WORKPHONE_RIGIDBODY_STATIC )
+            if( wp_rigidbody_get_type( scene->actors[i] ) != WORKPHONE_RIGIDBODY_STATIC )
+            {
                 integrate_body( scene->actors[i], scene->gravity, substep_dt );
+            }
         }
 
         solve_scene_constraints( scene, substep_dt );
@@ -1984,7 +2063,7 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt )
 
 wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physics_scene *scene )
 {
-    wp_scene_broadphase_stats stats = {0};
+    wp_scene_broadphase_stats stats = { 0 };
     return scene ? scene->broadphase_stats : stats;
 }
 
@@ -1995,7 +2074,10 @@ wp_s32 wp_physics_scene_set_broadphase_simd_enabled( wp_physics_scene *scene, wp
 
 void wp_physics_scene_set_broadphase_obb_enabled( wp_physics_scene *scene, wp_s32 enabled )
 {
-    if( scene ) scene->obb_enabled = enabled != 0;
+    if( scene )
+    {
+        scene->obb_enabled = enabled != 0;
+    }
 }
 
 wp_s32 wp_physics_scene_get_broadphase_obb_enabled( const wp_physics_scene *scene )
@@ -2415,8 +2497,8 @@ void wp_physics_scene_set_user_data( wp_physics_scene *scene, void *user_data )
     scene->user_data = user_data;
 }
 
-
-void wp_physics_scene_set_spatial_partitioning( wp_physics_scene *scene, wp_spatial_partitioning_method method )
+void wp_physics_scene_set_spatial_partitioning( wp_physics_scene *scene,
+                                                wp_spatial_partitioning_method method )
 {
     if( !scene )
     {
@@ -2434,33 +2516,50 @@ wp_spatial_partitioning_method wp_physics_scene_get_spatial_partitioning( const 
     return scene->spatial_partitioning;
 }
 
-
 void wp_physics_scene_set_contact_options( wp_physics_scene *scene, const wp_contact_options *options )
 {
-    if( !scene || !options ) return;
-    if ( scene->contact_options.strategy != options->strategy )
+    if( !scene || !options )
+    {
+        return;
+    }
+    if( scene->contact_options.strategy != options->strategy )
+    {
         wp_collision_cache_clear( scene->contact_cache );
+    }
     scene->contact_options = *options;
-    if ( scene->contact_options.strategy < WP_CONTACT_STRATEGY_ALWAYS ||
-         scene->contact_options.strategy >= WP_CONTACT_STRATEGY_COUNT )
+    if( scene->contact_options.strategy < WP_CONTACT_STRATEGY_ALWAYS ||
+        scene->contact_options.strategy >= WP_CONTACT_STRATEGY_COUNT )
+    {
         scene->contact_options.strategy = WP_CONTACT_STRATEGY_ALWAYS;
-    if ( scene->contact_options.strategy == WP_CONTACT_STRATEGY_ALWAYS )
+    }
+    if( scene->contact_options.strategy == WP_CONTACT_STRATEGY_ALWAYS )
+    {
         wp_collision_cache_clear( scene->contact_cache );
+    }
 }
+
 wp_narrowphase_stats wp_physics_scene_get_narrowphase_stats( const wp_physics_scene *scene )
 {
     return wp_narrowphase_get_stats( scene ? scene->narrowphase : NULL );
 }
+
 void wp_physics_scene_set_narrowphase_timing_enabled( wp_physics_scene *scene, wp_s32 enabled )
 {
-    if(scene) wp_narrowphase_set_timing_enabled(scene->narrowphase,enabled);
+    if( scene )
+    {
+        wp_narrowphase_set_timing_enabled( scene->narrowphase, enabled );
+    }
 }
+
 wp_s32 wp_physics_scene_set_narrowphase_simd_enabled( wp_physics_scene *scene, wp_s32 enabled )
 {
     return scene ? wp_narrowphase_set_simd_enabled( scene->narrowphase, enabled ) : 0;
 }
+
 void wp_physics_scene_set_narrowphase_mesh_obb_enabled( wp_physics_scene *scene, wp_s32 enabled )
 {
-    if ( scene )
+    if( scene )
+    {
         wp_narrowphase_set_mesh_obb_enabled( scene->narrowphase, enabled );
+    }
 }

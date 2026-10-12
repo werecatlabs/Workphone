@@ -161,10 +161,13 @@ wp_f32 wp_physics_material_get_restitution( const wp_physics_material *mat );
 void wp_physics_material_set_restitution( wp_physics_material *mat, wp_f32 restitution );
 
 wp_friction_combine_mode wp_physics_material_get_friction_combine_mode( const wp_physics_material *mat );
-void wp_physics_material_set_friction_combine_mode( wp_physics_material *mat, wp_friction_combine_mode mode );
+void wp_physics_material_set_friction_combine_mode( wp_physics_material *mat,
+                                                    wp_friction_combine_mode mode );
 
-wp_restitution_combine_mode wp_physics_material_get_restitution_combine_mode( const wp_physics_material *mat );
-void wp_physics_material_set_restitution_combine_mode( wp_physics_material *mat, wp_restitution_combine_mode mode );
+wp_restitution_combine_mode wp_physics_material_get_restitution_combine_mode(
+    const wp_physics_material *mat );
+void wp_physics_material_set_restitution_combine_mode( wp_physics_material *mat,
+                                                       wp_restitution_combine_mode mode );
 
 /* -------------------------------------------------------------------------
  * Combine helpers
@@ -174,14 +177,17 @@ void wp_physics_material_set_restitution_combine_mode( wp_physics_material *mat,
  * callbacks, and editor previews can share the exact same combine logic.
  * ---------------------------------------------------------------------- */
 
-wp_f32 wp_physics_material_combine_friction( const wp_physics_material *a, const wp_physics_material *b );
-wp_f32 wp_physics_material_combine_restitution( const wp_physics_material *a, const wp_physics_material *b );
+wp_f32 wp_physics_material_combine_friction( const wp_physics_material *a,
+                                             const wp_physics_material *b );
+wp_f32 wp_physics_material_combine_restitution( const wp_physics_material *a,
+                                                const wp_physics_material *b );
 
 /** @brief Combines two raw friction coefficients with the given mode. */
 wp_f32 wp_physics_material_combine_friction_value( wp_f32 a, wp_f32 b, wp_friction_combine_mode mode );
 
 /** @brief Combines two raw restitution coefficients with the given mode. */
-wp_f32 wp_physics_material_combine_restitution_value( wp_f32 a, wp_f32 b, wp_restitution_combine_mode mode );
+wp_f32 wp_physics_material_combine_restitution_value( wp_f32 a, wp_f32 b,
+                                                      wp_restitution_combine_mode mode );
 
 #ifdef __cplusplus
 }

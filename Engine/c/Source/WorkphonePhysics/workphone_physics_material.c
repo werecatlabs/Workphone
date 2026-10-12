@@ -60,7 +60,7 @@ static void wp_mat_copy_name( wp_c8 *dst, const wp_c8 *src )
         dst[0] = '\0';
         return;
     }
-    for( i = 0; i < ( wp_u32 )( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && src[i] != '\0'; ++i )
+    for( i = 0; i < (wp_u32)( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && src[i] != '\0'; ++i )
     {
         dst[i] = src[i];
     }
@@ -277,7 +277,8 @@ wp_friction_combine_mode wp_physics_material_get_friction_combine_mode( const wp
     return mat ? mat->friction_combine_mode : WORKPHONE_FRICTION_COMBINE_AVERAGE;
 }
 
-void wp_physics_material_set_friction_combine_mode( wp_physics_material *mat, wp_friction_combine_mode mode )
+void wp_physics_material_set_friction_combine_mode( wp_physics_material *mat,
+                                                    wp_friction_combine_mode mode )
 {
     if( !mat )
     {
@@ -286,12 +287,14 @@ void wp_physics_material_set_friction_combine_mode( wp_physics_material *mat, wp
     mat->friction_combine_mode = mode;
 }
 
-wp_restitution_combine_mode wp_physics_material_get_restitution_combine_mode( const wp_physics_material *mat )
+wp_restitution_combine_mode wp_physics_material_get_restitution_combine_mode(
+    const wp_physics_material *mat )
 {
     return mat ? mat->restitution_combine_mode : WORKPHONE_RESTITUTION_COMBINE_AVERAGE;
 }
 
-void wp_physics_material_set_restitution_combine_mode( wp_physics_material *mat, wp_restitution_combine_mode mode )
+void wp_physics_material_set_restitution_combine_mode( wp_physics_material *mat,
+                                                       wp_restitution_combine_mode mode )
 {
     if( !mat )
     {
@@ -308,31 +311,32 @@ wp_f32 wp_physics_material_combine_friction_value( wp_f32 a, wp_f32 b, wp_fricti
 {
     switch( mode )
     {
-        case WORKPHONE_FRICTION_COMBINE_MIN:
-            return a < b ? a : b;
-        case WORKPHONE_FRICTION_COMBINE_MAX:
-            return a > b ? a : b;
-        case WORKPHONE_FRICTION_COMBINE_MULTIPLY:
-            return a * b;
-        case WORKPHONE_FRICTION_COMBINE_AVERAGE:
-        default:
-            return ( a + b ) * 0.5f;
+    case WORKPHONE_FRICTION_COMBINE_MIN:
+        return a < b ? a : b;
+    case WORKPHONE_FRICTION_COMBINE_MAX:
+        return a > b ? a : b;
+    case WORKPHONE_FRICTION_COMBINE_MULTIPLY:
+        return a * b;
+    case WORKPHONE_FRICTION_COMBINE_AVERAGE:
+    default:
+        return ( a + b ) * 0.5f;
     }
 }
 
-wp_f32 wp_physics_material_combine_restitution_value( wp_f32 a, wp_f32 b, wp_restitution_combine_mode mode )
+wp_f32 wp_physics_material_combine_restitution_value( wp_f32 a, wp_f32 b,
+                                                      wp_restitution_combine_mode mode )
 {
     switch( mode )
     {
-        case WORKPHONE_RESTITUTION_COMBINE_MIN:
-            return a < b ? a : b;
-        case WORKPHONE_RESTITUTION_COMBINE_MAX:
-            return a > b ? a : b;
-        case WORKPHONE_RESTITUTION_COMBINE_MULTIPLY:
-            return a * b;
-        case WORKPHONE_RESTITUTION_COMBINE_AVERAGE:
-        default:
-            return ( a + b ) * 0.5f;
+    case WORKPHONE_RESTITUTION_COMBINE_MIN:
+        return a < b ? a : b;
+    case WORKPHONE_RESTITUTION_COMBINE_MAX:
+        return a > b ? a : b;
+    case WORKPHONE_RESTITUTION_COMBINE_MULTIPLY:
+        return a * b;
+    case WORKPHONE_RESTITUTION_COMBINE_AVERAGE:
+    default:
+        return ( a + b ) * 0.5f;
     }
 }
 
@@ -358,7 +362,8 @@ wp_f32 wp_physics_material_combine_friction( const wp_physics_material *a, const
         wp_physics_material_combine_friction_value( va, vb, a->friction_combine_mode ) );
 }
 
-wp_f32 wp_physics_material_combine_restitution( const wp_physics_material *a, const wp_physics_material *b )
+wp_f32 wp_physics_material_combine_restitution( const wp_physics_material *a,
+                                                const wp_physics_material *b )
 {
     wp_f32 va;
     wp_f32 vb;

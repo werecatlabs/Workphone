@@ -222,7 +222,7 @@ void wp_collision_shape_set_mesh_data( wp_collision_shape *shape, const wp_colli
  * Shallow array ownership is identical to set_mesh_data. Call only at a physics synchronization point.
  */
 wp_s32 wp_collision_shape_try_set_mesh_data( wp_collision_shape *shape,
-                                            const wp_collision_mesh_data *data );
+                                             const wp_collision_mesh_data *data );
 
 /**
  * @brief Gets the mesh data associated with a mesh-type collision shape.
@@ -402,8 +402,8 @@ const wp_c8 *wp_collision_shape_get_material_name( const wp_collision_shape *sha
 struct wp_physics_material_registry;
 /** @brief Resolves the shape's material: its own name via the registry, else
  *         the owning body's material name, else the registry default. */
-wp_physics_material *wp_collision_shape_resolve_material( const wp_collision_shape *shape,
-                                                   struct wp_physics_material_registry *registry );
+wp_physics_material *wp_collision_shape_resolve_material(
+    const wp_collision_shape *shape, struct wp_physics_material_registry *registry );
 
 /* -------------------------------------------------------------------------
  * Native / user data

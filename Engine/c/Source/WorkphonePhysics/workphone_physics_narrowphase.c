@@ -34,8 +34,8 @@
 #include <float.h>
 #include <time.h>
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#    define WIN32_LEAN_AND_MEAN
+#    include <windows.h>
 #endif
 #include <stdlib.h>
 #include <string.h>
@@ -210,6 +210,7 @@ static wp_vec3f np_shape_position( const wp_rigidbody *body, const wp_collision_
 {
     return wp_shape_prepare( body, shape, NULL )->center;
 }
+
 static wp_quatf np_shape_orientation( const wp_rigidbody *body, const wp_collision_shape *shape )
 {
     return wp_shape_prepare( body, shape, NULL )->orientation;
@@ -261,11 +262,11 @@ static wp_vec3f np_closest_point_triangle( wp_vec3f point, wp_vec3f a, wp_vec3f 
 
     /* Degenerate triangles reduce to their three segments, avoiding 0/0 in
      * barycentric regions. Sphere/capsule contacts may legitimately touch them. */
-    if ( np_len_sq( np_cross( ab, ac ) ) <= 1.e-20f )
+    if( np_len_sq( np_cross( ab, ac ) ) <= 1.e-20f )
     {
         wp_vec3f starts[3] = { a, b, c }, ends[3] = { b, c, a }, best = a;
         wp_f32 best_distance = FLT_MAX;
-        for ( wp_s32 i = 0; i < 3; ++i )
+        for( wp_s32 i = 0; i < 3; ++i )
         {
             wp_vec3f edge = np_sub( ends[i], starts[i] );
             wp_f32 length = np_len_sq( edge );
@@ -274,7 +275,7 @@ static wp_vec3f np_closest_point_triangle( wp_vec3f point, wp_vec3f a, wp_vec3f 
                            : 0;
             wp_vec3f candidate = np_add( starts[i], np_scale( edge, t ) );
             wp_f32 distance = np_len_sq( np_sub( candidate, point ) );
-            if ( distance < best_distance )
+            if( distance < best_distance )
             {
                 best = candidate;
                 best_distance = distance;
@@ -525,16 +526,15 @@ wp_s32 wp_triangle_box_overlaps( wp_vec3f a, wp_vec3f b, wp_vec3f c, wp_vec3f ha
     triangle_normal = np_cross( edges[0], np_sub( c, a ) );
 
     /* The three box-face axes are direct coordinate bounds. */
-#define TRI_FACE( component )                                                                      \
-    if ( fminf( a.component, fminf( b.component, c.component ) ) >                                 \
-             half_extents.component + tolerance ||                                                 \
-         fmaxf( a.component, fmaxf( b.component, c.component ) ) <                                 \
-             -half_extents.component - tolerance )                                                 \
+#define TRI_FACE( component )                                                                           \
+    if( fminf( a.component, fminf( b.component, c.component ) ) > half_extents.component + tolerance || \
+        fmaxf( a.component, fmaxf( b.component, c.component ) ) < -half_extents.component - tolerance ) \
         return 0;
     TRI_FACE( x )
-    TRI_FACE( y ) TRI_FACE( z )
+    TRI_FACE( y )
+    TRI_FACE( z )
 #undef TRI_FACE
-        if ( !np_triangle_box_axis_overlaps( triangle_normal, a, b, c, half_extents, tolerance ) )
+        if( !np_triangle_box_axis_overlaps( triangle_normal, a, b, c, half_extents, tolerance ) )
     {
         return 0;
     }
@@ -582,8 +582,10 @@ static void manifold_add_contact( wp_contact_manifold *m, wp_vec3f on_a, wp_vec3
 void wp_manifold_refresh_materials( wp_contact_manifold *m )
 {
     wp_contact_point *cp;
-    if ( !m || !m->contact_count )
+    if( !m || !m->contact_count )
+    {
         return;
+    }
     cp = &m->contacts[0];
     cp->combined_friction =
         sqrtf( wp_rigidbody_get_friction( m->body_a ) * wp_rigidbody_get_friction( m->body_b ) );
@@ -611,7 +613,7 @@ void wp_manifold_refresh_materials( wp_contact_manifold *m )
         }
     }
 
-    for ( wp_s32 i = 1; i < m->contact_count; ++i )
+    for( wp_s32 i = 1; i < m->contact_count; ++i )
     {
         m->contacts[i].combined_friction = cp->combined_friction;
         m->contacts[i].combined_restitution = cp->combined_restitution;
@@ -851,63 +853,70 @@ static wp_s32 test_sphere_box( wp_vec3f sphere_center, wp_f32 radius, wp_vec3f b
 
 /* Relative-matrix SAT. Face axes need no normalization. Cross-axis tests
  * scale tolerance by length; only the selected minimum axis is normalized. */
-static wp_s32 test_box_box( const wp_prepared_shape *a, const wp_prepared_shape *b,
-                            wp_f32 tolerance, wp_contact_manifold *out )
+static wp_s32 test_box_box( const wp_prepared_shape *a, const wp_prepared_shape *b, wp_f32 tolerance,
+                            wp_contact_manifold *out )
 {
     wp_f32 r[3][3], ar[3][3], t[3], ha[3] = { a->half.x, a->half.y, a->half.z };
     wp_f32 hb[3] = { b->half.x, b->half.y, b->half.z }, minimum = FLT_MAX;
     wp_vec3f delta = np_sub( b->center, a->center ), normal = np_zero();
-    for ( wp_s32 i = 0; i < 3; ++i )
+    for( wp_s32 i = 0; i < 3; ++i )
     {
         t[i] = np_dot( delta, a->axes[i] );
-        for ( wp_s32 j = 0; j < 3; ++j )
+        for( wp_s32 j = 0; j < 3; ++j )
         {
             r[i][j] = np_dot( a->axes[i], b->axes[j] );
             ar[i][j] = fabsf( r[i][j] );
         }
     }
-    for ( wp_s32 i = 0; i < 3; ++i )
+    for( wp_s32 i = 0; i < 3; ++i )
     {
         wp_f32 distance_b = np_dot( delta, b->axes[i] );
         wp_f32 overlap_a =
             ha[i] + ar[i][0] * hb[0] + ar[i][1] * hb[1] + ar[i][2] * hb[2] - fabsf( t[i] );
         wp_f32 overlap_b =
             hb[i] + ar[0][i] * ha[0] + ar[1][i] * ha[1] + ar[2][i] * ha[2] - fabsf( distance_b );
-        if ( overlap_a < -tolerance || overlap_b < -tolerance )
+        if( overlap_a < -tolerance || overlap_b < -tolerance )
+        {
             return 0;
-        if ( overlap_a < minimum )
+        }
+        if( overlap_a < minimum )
         {
             minimum = overlap_a;
             normal = np_scale( a->axes[i], t[i] >= 0 ? 1.f : -1.f );
         }
-        if ( overlap_b < minimum )
+        if( overlap_b < minimum )
         {
             minimum = overlap_b;
             normal = np_scale( b->axes[i], distance_b >= 0 ? 1.f : -1.f );
         }
     }
-    for ( wp_s32 i = 0; i < 3; ++i )
-        for ( wp_s32 j = 0; j < 3; ++j )
+    for( wp_s32 i = 0; i < 3; ++i )
+    {
+        for( wp_s32 j = 0; j < 3; ++j )
         {
             wp_s32 i1 = ( i + 1 ) % 3, i2 = ( i + 2 ) % 3, j1 = ( j + 1 ) % 3, j2 = ( j + 2 ) % 3;
             wp_vec3f axis = np_cross( a->axes[i], b->axes[j] );
             wp_f32 length_sq = np_len_sq( axis ), length, distance, overlap;
-            if ( length_sq <= 1.e-12f )
+            if( length_sq <= 1.e-12f )
+            {
                 continue;
+            }
             length = sqrtf( length_sq );
             distance = t[i2] * r[i1][j] - t[i1] * r[i2][j];
-            overlap = ha[i1] * ar[i2][j] + ha[i2] * ar[i1][j] + hb[j1] * ar[i][j2] +
-                      hb[j2] * ar[i][j1] - fabsf( distance );
-            if ( overlap < -tolerance * length )
+            overlap = ha[i1] * ar[i2][j] + ha[i2] * ar[i1][j] + hb[j1] * ar[i][j2] + hb[j2] * ar[i][j1] -
+                      fabsf( distance );
+            if( overlap < -tolerance * length )
+            {
                 return 0;
+            }
             overlap /= length;
-            if ( overlap < minimum )
+            if( overlap < minimum )
             {
                 minimum = overlap;
-                normal =
-                    np_scale( axis, np_dot( delta, axis ) >= 0 ? 1.f / length : -1.f / length );
+                normal = np_scale( axis, np_dot( delta, axis ) >= 0 ? 1.f / length : -1.f / length );
             }
         }
+    }
     {
         wp_f32 ra = fabsf( np_dot( normal, a->axes[0] ) ) * ha[0] +
                     fabsf( np_dot( normal, a->axes[1] ) ) * ha[1] +
@@ -916,8 +925,7 @@ static wp_s32 test_box_box( const wp_prepared_shape *a, const wp_prepared_shape 
                     fabsf( np_dot( normal, b->axes[1] ) ) * hb[1] +
                     fabsf( np_dot( normal, b->axes[2] ) ) * hb[2];
         manifold_add_contact( out, np_add( a->center, np_scale( normal, ra ) ),
-                              np_sub( b->center, np_scale( normal, rb ) ), normal,
-                              fmaxf( minimum, 0 ) );
+                              np_sub( b->center, np_scale( normal, rb ) ), normal, fmaxf( minimum, 0 ) );
     }
     return 1;
 }
@@ -1039,55 +1047,66 @@ wp_f32 wp_segment_box_closest( wp_vec3f start, wp_vec3f end, wp_vec3f half, wp_v
     double d[3] = { (double)end.x - start.x, (double)end.y - start.y, (double)end.z - start.z };
     double h[3] = { half.x, half.y, half.z }, best = DBL_MAX, best_t = 0;
     wp_s32 count = 2;
-    for ( wp_s32 axis = 0; axis < 3; ++axis )
-        if ( d[axis] != 0 )
-            for ( wp_s32 sign = -1; sign <= 1; sign += 2 )
+    for( wp_s32 axis = 0; axis < 3; ++axis )
+    {
+        if( d[axis] != 0 )
+        {
+            for( wp_s32 sign = -1; sign <= 1; sign += 2 )
             {
                 double t = ( sign * h[axis] - p[axis] ) / d[axis];
-                if ( t > 0 && t < 1 )
+                if( t > 0 && t < 1 )
+                {
                     points[count++] = t;
+                }
             }
-    for ( wp_s32 i = 1; i < count; ++i )
+        }
+    }
+    for( wp_s32 i = 1; i < count; ++i )
     {
         double value = points[i];
         wp_s32 j = i;
-        while ( j && points[j - 1] > value )
+        while( j && points[j - 1] > value )
         {
             points[j] = points[j - 1];
             --j;
         }
         points[j] = value;
     }
-    for ( wp_s32 i = 0; i < count - 1; ++i )
+    for( wp_s32 i = 0; i < count - 1; ++i )
     {
-        double lo = points[i], hi = points[i + 1], mid = ( lo + hi ) * .5, aa = 0, bb = 0, t,
-               dist = 0;
-        for ( wp_s32 axis = 0; axis < 3; ++axis )
+        double lo = points[i], hi = points[i + 1], mid = ( lo + hi ) * .5, aa = 0, bb = 0, t, dist = 0;
+        for( wp_s32 axis = 0; axis < 3; ++axis )
         {
             double x = p[axis] + d[axis] * mid, offset;
-            if ( x < -h[axis] )
+            if( x < -h[axis] )
+            {
                 offset = p[axis] + h[axis];
-            else if ( x > h[axis] )
+            }
+            else if( x > h[axis] )
+            {
                 offset = p[axis] - h[axis];
+            }
             else
+            {
                 continue;
+            }
             aa += d[axis] * d[axis];
             bb += d[axis] * offset;
         }
         t = aa > 0 ? fmax( lo, fmin( hi, -bb / aa ) ) : mid;
-        for ( wp_s32 axis = 0; axis < 3; ++axis )
+        for( wp_s32 axis = 0; axis < 3; ++axis )
         {
             double x = p[axis] + d[axis] * t, e = fmax( -h[axis], fmin( h[axis], x ) ) - x;
             dist += e * e;
         }
-        if ( dist < best )
+        if( dist < best )
         {
             best = dist;
             best_t = t;
         }
     }
-    *on_segment = ( wp_vec3f ){ (wp_f32)( p[0] + d[0] * best_t ), (wp_f32)( p[1] + d[1] * best_t ),
-                                (wp_f32)( p[2] + d[2] * best_t ) };
+    *on_segment = (wp_vec3f){ (wp_f32)( p[0] + d[0] * best_t ), (wp_f32)( p[1] + d[1] * best_t ),
+                              (wp_f32)( p[2] + d[2] * best_t ) };
     return np_point_aabb_distance_sq( *on_segment, half, on_box );
 }
 
@@ -1116,8 +1135,8 @@ static wp_s32 test_capsule_box( wp_vec3f capsule_center, wp_quatf capsule_orient
     local_start = np_quat_rotate( inverse_box_orientation, np_sub( segment_start, box_center ) );
     local_end = np_quat_rotate( inverse_box_orientation, np_sub( segment_end, box_center ) );
 
-    distance_sq = wp_segment_box_closest( local_start, local_end, box_half_extents,
-                                          &on_segment_local, &on_box_local );
+    distance_sq = wp_segment_box_closest( local_start, local_end, box_half_extents, &on_segment_local,
+                                          &on_box_local );
     if( distance_sq > ( capsule_radius + tolerance ) * ( capsule_radius + tolerance ) )
     {
         return 0;
@@ -1138,13 +1157,14 @@ static wp_s32 test_capsule_box( wp_vec3f capsule_center, wp_quatf capsule_orient
         wp_f32 halves[3] = { box_half_extents.x, box_half_extents.y, box_half_extents.z };
         wp_s32 best_axis = 0, best_sign = 1, use_end = 0;
         depth = FLT_MAX;
-        for ( wp_s32 axis = 0; axis < 3; ++axis )
-            for ( wp_s32 sign = -1; sign <= 1; sign += 2 )
+        for( wp_s32 axis = 0; axis < 3; ++axis )
+        {
+            for( wp_s32 sign = -1; sign <= 1; sign += 2 )
             {
-                wp_f32 trailing = sign > 0 ? fminf( starts[axis], ends[axis] )
-                                           : fmaxf( starts[axis], ends[axis] );
+                wp_f32 trailing =
+                    sign > 0 ? fminf( starts[axis], ends[axis] ) : fmaxf( starts[axis], ends[axis] );
                 wp_f32 push = halves[axis] - sign * trailing + capsule_radius;
-                if ( push < depth )
+                if( push < depth )
                 {
                     depth = push;
                     best_axis = axis;
@@ -1152,20 +1172,21 @@ static wp_s32 test_capsule_box( wp_vec3f capsule_center, wp_quatf capsule_orient
                     use_end = sign > 0 ? ends[axis] < starts[axis] : ends[axis] > starts[axis];
                 }
             }
+        }
         on_segment_local = use_end ? local_end : local_start;
         np_point_aabb_distance_sq( on_segment_local, box_half_extents, &on_box_local );
         normal_local = np_zero();
-        if ( best_axis == 0 )
+        if( best_axis == 0 )
         {
             normal_local.x = (wp_f32)-best_sign;
             on_box_local.x = best_sign * box_half_extents.x;
         }
-        if ( best_axis == 1 )
+        if( best_axis == 1 )
         {
             normal_local.y = (wp_f32)-best_sign;
             on_box_local.y = best_sign * box_half_extents.y;
         }
-        if ( best_axis == 2 )
+        if( best_axis == 2 )
         {
             normal_local.z = (wp_f32)-best_sign;
             on_box_local.z = best_sign * box_half_extents.z;
@@ -1202,68 +1223,80 @@ typedef struct np_mesh_context
     wp_quatf relative;
 } np_mesh_context;
 
-static void mesh_contact_triangle( wp_u32 triangle, wp_vec3f a, wp_vec3f b, wp_vec3f c,
-                                   void *context )
+static void mesh_contact_triangle( wp_u32 triangle, wp_vec3f a, wp_vec3f b, wp_vec3f c, void *context )
 {
     np_mesh_context *ctx = (np_mesh_context *)context;
     wp_vec3f on_primitive, on_mesh, normal, normal_world, primitive_world, mesh_world;
     wp_f32 depth;
     (void)triangle;
     ++ctx->np->stats.tested_triangles;
-    if ( ctx->type == WORKPHONE_COLLISION_SHAPE_BOX )
+    if( ctx->type == WORKPHONE_COLLISION_SHAPE_BOX )
     {
         wp_vec3f half = ctx->primitive->half;
         wp_f32 length, signed_distance, support;
         a = np_add( ctx->offset, np_quat_rotate( ctx->relative, a ) );
         b = np_add( ctx->offset, np_quat_rotate( ctx->relative, b ) );
         c = np_add( ctx->offset, np_quat_rotate( ctx->relative, c ) );
-        if ( !wp_triangle_box_overlaps( a, b, c, half, ctx->tolerance ) )
+        if( !wp_triangle_box_overlaps( a, b, c, half, ctx->tolerance ) )
+        {
             return;
+        }
         normal = np_cross( np_sub( b, a ), np_sub( c, a ) );
         length = np_len( normal );
-        if ( length <= 1.e-8f )
+        if( length <= 1.e-8f )
+        {
             return;
+        }
         normal = np_scale( normal, 1.f / length );
         signed_distance = -np_dot( normal, a );
-        support =
-            fabsf( normal.x ) * half.x + fabsf( normal.y ) * half.y + fabsf( normal.z ) * half.z;
+        support = fabsf( normal.x ) * half.x + fabsf( normal.y ) * half.y + fabsf( normal.z ) * half.z;
         depth = support - fabsf( signed_distance );
-        if ( signed_distance >= 0 )
+        if( signed_distance >= 0 )
+        {
             normal = np_scale( normal, -1 );
+        }
         on_mesh = np_closest_point_triangle( np_zero(), a, b, c );
-        on_primitive = ( wp_vec3f ){ np_clampf( on_mesh.x, -half.x, half.x ),
-                                     np_clampf( on_mesh.y, -half.y, half.y ),
-                                     np_clampf( on_mesh.z, -half.z, half.z ) };
+        on_primitive =
+            (wp_vec3f){ np_clampf( on_mesh.x, -half.x, half.x ), np_clampf( on_mesh.y, -half.y, half.y ),
+                        np_clampf( on_mesh.z, -half.z, half.z ) };
         normal_world = np_quat_rotate( ctx->primitive->orientation, normal );
         primitive_world = np_add( ctx->primitive->center,
                                   np_quat_rotate( ctx->primitive->orientation, on_primitive ) );
-        mesh_world = np_add( ctx->primitive->center,
-                             np_quat_rotate( ctx->primitive->orientation, on_mesh ) );
+        mesh_world =
+            np_add( ctx->primitive->center, np_quat_rotate( ctx->primitive->orientation, on_mesh ) );
     }
     else
     {
         wp_vec3f on_segment, delta;
         wp_f32 distance_sq, distance, radius = ctx->primitive->radius;
-        if ( ctx->type == WORKPHONE_COLLISION_SHAPE_SPHERE )
+        if( ctx->type == WORKPHONE_COLLISION_SHAPE_SPHERE )
         {
             on_segment = ctx->center;
             on_mesh = np_closest_point_triangle( on_segment, a, b, c );
         }
         else
+        {
             np_closest_segment_triangle( ctx->start, ctx->end, a, b, c, &on_segment, &on_mesh );
+        }
         delta = np_sub( on_mesh, on_segment );
         distance_sq = np_len_sq( delta );
-        if ( distance_sq > ( radius + ctx->tolerance ) * ( radius + ctx->tolerance ) )
+        if( distance_sq > ( radius + ctx->tolerance ) * ( radius + ctx->tolerance ) )
+        {
             return;
+        }
         distance = sqrtf( distance_sq );
         depth = radius - distance;
-        if ( distance > 1.e-7f )
+        if( distance > 1.e-7f )
+        {
             normal = np_scale( delta, 1.f / distance );
+        }
         else
         {
             normal = np_normalize( np_cross( np_sub( b, a ), np_sub( c, a ) ) );
-            if ( np_dot( normal, np_sub( on_segment, a ) ) >= 0 )
+            if( np_dot( normal, np_sub( on_segment, a ) ) >= 0 )
+            {
                 normal = np_scale( normal, -1 );
+            }
         }
         on_primitive = np_add( on_segment, np_scale( normal, radius ) );
         normal_world = np_quat_rotate( ctx->mesh->orientation, normal );
@@ -1272,12 +1305,17 @@ static void mesh_contact_triangle( wp_u32 triangle, wp_vec3f a, wp_vec3f b, wp_v
         mesh_world = np_add( ctx->mesh->center, np_quat_rotate( ctx->mesh->orientation, on_mesh ) );
     }
     ++ctx->np->stats.contacts_generated;
-    if ( ctx->primitive_is_a )
+    if( ctx->primitive_is_a )
+    {
         manifold_add_mesh_contact( ctx->out, primitive_world, mesh_world, normal_world, depth );
+    }
     else
-        manifold_add_mesh_contact( ctx->out, mesh_world, primitive_world,
-                                   np_scale( normal_world, -1 ), depth );
+    {
+        manifold_add_mesh_contact( ctx->out, mesh_world, primitive_world, np_scale( normal_world, -1 ),
+                                   depth );
+    }
 }
+
 static wp_s32 test_primitive_mesh( wp_narrowphase *np, const wp_prepared_shape *primitive,
                                    wp_collision_shape_type type, const wp_rigidbody *mesh_body,
                                    const wp_collision_shape *mesh_shape, wp_f32 tolerance,
@@ -1291,8 +1329,10 @@ static wp_s32 test_primitive_mesh( wp_narrowphase *np, const wp_prepared_shape *
     wp_triangle_mesh_query_stats stats = { 0 };
     wp_vec3f extents;
     wp_f32 pad = tolerance + primitive->roundoff + prepared_mesh->roundoff;
-    if ( !data || !data->vertices || !data->indices )
+    if( !data || !data->vertices || !data->indices )
+    {
         return 0;
+    }
     ctx.np = np;
     ctx.out = out;
     ctx.primitive = primitive;
@@ -1300,8 +1340,8 @@ static wp_s32 test_primitive_mesh( wp_narrowphase *np, const wp_prepared_shape *
     ctx.type = type;
     ctx.tolerance = tolerance;
     ctx.primitive_is_a = primitive_is_a;
-    ctx.center = np_quat_rotate( prepared_mesh->inverse,
-                                 np_sub( primitive->center, prepared_mesh->center ) );
+    ctx.center =
+        np_quat_rotate( prepared_mesh->inverse, np_sub( primitive->center, prepared_mesh->center ) );
     ctx.start = np_quat_rotate( prepared_mesh->inverse,
                                 np_sub( primitive->segment_start, prepared_mesh->center ) );
     ctx.end = np_quat_rotate( prepared_mesh->inverse,
@@ -1312,61 +1352,67 @@ static wp_s32 test_primitive_mesh( wp_narrowphase *np, const wp_prepared_shape *
         np_quat_rotate( primitive->inverse, np_sub( prepared_mesh->center, primitive->center ) );
     query.center = ctx.center;
     query.simd_enabled = np->simd_enabled;
-    if ( type == WORKPHONE_COLLISION_SHAPE_SPHERE )
+    if( type == WORKPHONE_COLLISION_SHAPE_SPHERE )
     {
         query.sphere = 1;
         query.radius = primitive->radius + pad;
     }
-    else if ( type == WORKPHONE_COLLISION_SHAPE_CAPSULE )
+    else if( type == WORKPHONE_COLLISION_SHAPE_CAPSULE )
     {
         wp_f32 r = primitive->radius + pad;
         query.minimum =
-            ( wp_vec3f ){ fminf( ctx.start.x, ctx.end.x ) - r, fminf( ctx.start.y, ctx.end.y ) - r,
-                          fminf( ctx.start.z, ctx.end.z ) - r };
+            (wp_vec3f){ fminf( ctx.start.x, ctx.end.x ) - r, fminf( ctx.start.y, ctx.end.y ) - r,
+                        fminf( ctx.start.z, ctx.end.z ) - r };
         query.maximum =
-            ( wp_vec3f ){ fmaxf( ctx.start.x, ctx.end.x ) + r, fmaxf( ctx.start.y, ctx.end.y ) + r,
-                          fmaxf( ctx.start.z, ctx.end.z ) + r };
+            (wp_vec3f){ fmaxf( ctx.start.x, ctx.end.x ) + r, fmaxf( ctx.start.y, ctx.end.y ) + r,
+                        fmaxf( ctx.start.z, ctx.end.z ) + r };
     }
     else
     {
         wp_vec3f h = primitive->half;
-        for ( wp_s32 i = 0; i < 3; ++i )
+        for( wp_s32 i = 0; i < 3; ++i )
+        {
             query.axes[i] = np_quat_rotate( prepared_mesh->inverse, primitive->axes[i] );
+        }
         /* Inflate in the box basis, then enclose it in mesh-local coordinates. */
         h.x += pad;
         h.y += pad;
         h.z += pad;
         query.half = h;
-        extents = ( wp_vec3f ){ fabsf( query.axes[0].x ) * h.x + fabsf( query.axes[1].x ) * h.y +
-                                    fabsf( query.axes[2].x ) * h.z,
-                                fabsf( query.axes[0].y ) * h.x + fabsf( query.axes[1].y ) * h.y +
-                                    fabsf( query.axes[2].y ) * h.z,
-                                fabsf( query.axes[0].z ) * h.x + fabsf( query.axes[1].z ) * h.y +
-                                    fabsf( query.axes[2].z ) * h.z };
+        extents = (wp_vec3f){ fabsf( query.axes[0].x ) * h.x + fabsf( query.axes[1].x ) * h.y +
+                                  fabsf( query.axes[2].x ) * h.z,
+                              fabsf( query.axes[0].y ) * h.x + fabsf( query.axes[1].y ) * h.y +
+                                  fabsf( query.axes[2].y ) * h.z,
+                              fabsf( query.axes[0].z ) * h.x + fabsf( query.axes[1].z ) * h.y +
+                                  fabsf( query.axes[2].z ) * h.z };
         query.minimum = np_sub( ctx.center, extents );
         query.maximum = np_add( ctx.center, extents );
         query.oriented = np->mesh_obb_enabled &&
                          (double)extents.x * extents.y * extents.z > (double)h.x * h.y * h.z * 1.5;
     }
-    if ( mesh && np->acceleration_enabled )
+    if( mesh && np->acceleration_enabled )
+    {
         wp_triangle_mesh_visit( mesh, &query, mesh_contact_triangle, &ctx, &stats );
+    }
     else
     {
         ++stats.full_scan_fallbacks;
-        for ( wp_u32 i = 0; i < data->triangle_count; ++i )
+        for( wp_u32 i = 0; i < data->triangle_count; ++i )
         {
             wp_u32 ia = data->indices[i * 3], ib = data->indices[i * 3 + 1],
                    ic = data->indices[i * 3 + 2];
-            if ( ia >= data->vertex_count || ib >= data->vertex_count || ic >= data->vertex_count )
+            if( ia >= data->vertex_count || ib >= data->vertex_count || ic >= data->vertex_count )
+            {
                 continue;
+            }
             ++stats.candidates;
             mesh_contact_triangle( i,
-                                   ( wp_vec3f ){ data->vertices[ia * 3], data->vertices[ia * 3 + 1],
-                                                 data->vertices[ia * 3 + 2] },
-                                   ( wp_vec3f ){ data->vertices[ib * 3], data->vertices[ib * 3 + 1],
-                                                 data->vertices[ib * 3 + 2] },
-                                   ( wp_vec3f ){ data->vertices[ic * 3], data->vertices[ic * 3 + 1],
-                                                 data->vertices[ic * 3 + 2] },
+                                   (wp_vec3f){ data->vertices[ia * 3], data->vertices[ia * 3 + 1],
+                                               data->vertices[ia * 3 + 2] },
+                                   (wp_vec3f){ data->vertices[ib * 3], data->vertices[ib * 3 + 1],
+                                               data->vertices[ib * 3 + 2] },
+                                   (wp_vec3f){ data->vertices[ic * 3], data->vertices[ic * 3 + 1],
+                                               data->vertices[ic * 3 + 2] },
                                    &ctx );
         }
     }
@@ -1453,8 +1499,8 @@ static wp_s32 dispatch_pair( wp_narrowphase *np, wp_rigidbody *body_a, wp_collis
         /* Explicit tests may use one unattached shape at two body poses. */
         if( shape_a == shape_b )
         {
-            const wp_prepared_shape prepared_a = *wp_shape_prepare(body_a,shape_a,NULL);
-            return test_box_box(&prepared_a,wp_shape_prepare(body_b,shape_b,NULL),tol,out);
+            const wp_prepared_shape prepared_a = *wp_shape_prepare( body_a, shape_a, NULL );
+            return test_box_box( &prepared_a, wp_shape_prepare( body_b, shape_b, NULL ), tol, out );
         }
         return test_box_box( wp_shape_prepare( body_a, shape_a, NULL ),
                              wp_shape_prepare( body_b, shape_b, NULL ), tol, out );
@@ -1547,14 +1593,18 @@ static wp_s32 dispatch_pair( wp_narrowphase *np, wp_rigidbody *body_a, wp_collis
                                  wp_collision_shape_get_box_half_extents( shape_a ), tol, 0, out );
     }
 
-    if ( tb == WORKPHONE_COLLISION_SHAPE_MESH && ta != WORKPHONE_COLLISION_SHAPE_PLANE &&
-         ta != WORKPHONE_COLLISION_SHAPE_MESH )
-        return test_primitive_mesh( np, wp_shape_prepare( body_a, shape_a, NULL ), ta, body_b,
-                                    shape_b, tol, 1, out );
-    if ( ta == WORKPHONE_COLLISION_SHAPE_MESH && tb != WORKPHONE_COLLISION_SHAPE_PLANE &&
-         tb != WORKPHONE_COLLISION_SHAPE_MESH )
-        return test_primitive_mesh( np, wp_shape_prepare( body_b, shape_b, NULL ), tb, body_a,
-                                    shape_a, tol, 0, out );
+    if( tb == WORKPHONE_COLLISION_SHAPE_MESH && ta != WORKPHONE_COLLISION_SHAPE_PLANE &&
+        ta != WORKPHONE_COLLISION_SHAPE_MESH )
+    {
+        return test_primitive_mesh( np, wp_shape_prepare( body_a, shape_a, NULL ), ta, body_b, shape_b,
+                                    tol, 1, out );
+    }
+    if( ta == WORKPHONE_COLLISION_SHAPE_MESH && tb != WORKPHONE_COLLISION_SHAPE_PLANE &&
+        tb != WORKPHONE_COLLISION_SHAPE_MESH )
+    {
+        return test_primitive_mesh( np, wp_shape_prepare( body_b, shape_b, NULL ), tb, body_a, shape_a,
+                                    tol, 0, out );
+    }
 
     /* Dynamic mesh-vs-mesh response is intentionally unsupported. */
     (void)np;
@@ -1651,43 +1701,61 @@ void wp_narrowphase_set_contact_tolerance( wp_narrowphase *np, wp_f32 tolerance 
 wp_s32 wp_narrowphase_process_pairs_checked( wp_narrowphase *np, const wp_broadphase_pair *pairs,
                                              wp_s32 pair_count )
 {
-    if ( !np )
+    if( !np )
+    {
         return 0;
+    }
     np->manifold_count = np->touching_pair_count = 0;
-    if ( pair_count == 0 )
+    if( pair_count == 0 )
+    {
         return 1;
-    if ( !pairs || pair_count < 0 )
+    }
+    if( !pairs || pair_count < 0 )
+    {
         return 0;
-    for ( wp_s32 i = 0; i < pair_count; ++i )
+    }
+    for( wp_s32 i = 0; i < pair_count; ++i )
     {
         wp_rigidbody *a = pairs[i].body_a, *b = pairs[i].body_b;
-        if ( !a || !b )
+        if( !a || !b )
+        {
             continue;
-        for ( wp_s32 sa = 0; sa < wp_rigidbody_get_shape_count( a ); ++sa )
-            for ( wp_s32 sb = 0; sb < wp_rigidbody_get_shape_count( b ); ++sb )
+        }
+        for( wp_s32 sa = 0; sa < wp_rigidbody_get_shape_count( a ); ++sa )
+        {
+            for( wp_s32 sb = 0; sb < wp_rigidbody_get_shape_count( b ); ++sb )
             {
                 wp_contact_manifold manifold;
-                if ( !wp_narrowphase_test_pair( np, a, wp_rigidbody_get_shape( a, sa ), b,
-                                                wp_rigidbody_get_shape( b, sb ), &manifold ) )
+                if( !wp_narrowphase_test_pair( np, a, wp_rigidbody_get_shape( a, sa ), b,
+                                               wp_rigidbody_get_shape( b, sb ), &manifold ) )
+                {
                     continue;
-                if ( np->manifold_count == np->manifold_capacity )
+                }
+                if( np->manifold_count == np->manifold_capacity )
                 {
                     wp_s32 cap;
                     wp_contact_manifold *grown;
-                    if ( np->manifold_capacity > INT_MAX / 2 )
+                    if( np->manifold_capacity > INT_MAX / 2 )
+                    {
                         goto failed;
+                    }
                     cap = np->manifold_capacity ? np->manifold_capacity * 2 : 64;
-                    if ( (size_t)cap > SIZE_MAX / sizeof( *grown ) )
+                    if( (size_t)cap > SIZE_MAX / sizeof( *grown ) )
+                    {
                         goto failed;
-                    grown = (wp_contact_manifold *)realloc( np->manifolds,
-                                                            (size_t)cap * sizeof( *grown ) );
-                    if ( !grown )
+                    }
+                    grown =
+                        (wp_contact_manifold *)realloc( np->manifolds, (size_t)cap * sizeof( *grown ) );
+                    if( !grown )
+                    {
                         goto failed;
+                    }
                     np->manifolds = grown;
                     np->manifold_capacity = cap;
                 }
                 np->manifolds[np->manifold_count++] = manifold;
             }
+        }
     }
     np->touching_pair_count = np->manifold_count;
     return 1;
@@ -1695,8 +1763,8 @@ failed:
     np->manifold_count = np->touching_pair_count = 0;
     return 0;
 }
-void wp_narrowphase_process_pairs( wp_narrowphase *np, const wp_broadphase_pair *pairs,
-                                   wp_s32 count )
+
+void wp_narrowphase_process_pairs( wp_narrowphase *np, const wp_broadphase_pair *pairs, wp_s32 count )
 {
     (void)wp_narrowphase_process_pairs_checked( np, pairs, count );
 }
@@ -1718,37 +1786,53 @@ static uint64_t np_nanoseconds( void )
     return (uint64_t)t.tv_sec * UINT64_C( 1000000000 ) + (uint64_t)t.tv_nsec;
 #endif
 }
+
 wp_narrowphase_stats wp_narrowphase_get_stats( const wp_narrowphase *np )
 {
     wp_narrowphase_stats empty = { 0 };
     return np ? np->stats : empty;
 }
+
 void wp_narrowphase_reset_stats( wp_narrowphase *np )
 {
-    if ( np )
+    if( np )
+    {
         memset( &np->stats, 0, sizeof( np->stats ) );
+    }
 }
+
 void wp_narrowphase_set_timing_enabled( wp_narrowphase *np, wp_s32 enabled )
 {
-    if ( np )
+    if( np )
+    {
         np->timing_enabled = enabled != 0;
+    }
 }
+
 wp_s32 wp_narrowphase_set_simd_enabled( wp_narrowphase *np, wp_s32 enabled )
 {
-    if ( !np )
+    if( !np )
+    {
         return 0;
+    }
     np->simd_enabled = enabled && wp_triangle_mesh_simd_available();
     return np->simd_enabled;
 }
+
 void wp_narrowphase_set_mesh_acceleration_enabled( wp_narrowphase *np, wp_s32 enabled )
 {
-    if ( np )
+    if( np )
+    {
         np->acceleration_enabled = enabled != 0;
+    }
 }
+
 void wp_narrowphase_set_mesh_obb_enabled( wp_narrowphase *np, wp_s32 enabled )
 {
-    if ( np )
+    if( np )
+    {
         np->mesh_obb_enabled = enabled != 0;
+    }
 }
 
 wp_s32 wp_narrowphase_test_pair( wp_narrowphase *np, wp_rigidbody *body_a, wp_collision_shape *shape_a,
@@ -1764,24 +1848,32 @@ wp_s32 wp_narrowphase_test_pair( wp_narrowphase *np, wp_rigidbody *body_a, wp_co
     wp_collision_shape_type ta = wp_collision_shape_get_type( shape_a ),
                             tb = wp_collision_shape_get_type( shape_b );
     uint64_t start = 0;
-    if ( np->timing_enabled )
+    if( np->timing_enabled )
+    {
         start = np_nanoseconds();
+    }
     wp_shape_prepare( body_a, shape_a, &rebuilt_a );
     wp_shape_prepare( body_b, shape_b, &rebuilt_b );
     np->stats.prepared_rebuilds += rebuilt_a + rebuilt_b;
     np->stats.prepared_reuses += 2 - rebuilt_a - rebuilt_b;
-    if ( (unsigned)ta < 5 && (unsigned)tb < 5 )
+    if( (unsigned)ta < 5 && (unsigned)tb < 5 )
+    {
         ++np->stats.pair_calls[ta][tb];
+    }
     hit = dispatch_pair( np, body_a, shape_a, body_b, shape_b, out_manifold );
-    if ( hit )
+    if( hit )
     {
         wp_manifold_refresh_materials( out_manifold );
         np->stats.contacts_retained += out_manifold->contact_count;
-        if ( ta != WORKPHONE_COLLISION_SHAPE_MESH && tb != WORKPHONE_COLLISION_SHAPE_MESH )
+        if( ta != WORKPHONE_COLLISION_SHAPE_MESH && tb != WORKPHONE_COLLISION_SHAPE_MESH )
+        {
             np->stats.contacts_generated += out_manifold->contact_count;
+        }
     }
-    if ( np->timing_enabled && (unsigned)ta < 5 && (unsigned)tb < 5 )
+    if( np->timing_enabled && (unsigned)ta < 5 && (unsigned)tb < 5 )
+    {
         np->stats.pair_nanoseconds[ta][tb] += np_nanoseconds() - start;
+    }
     return hit;
 }
 

@@ -55,15 +55,18 @@ struct wp_physics_material_desc;
 struct wp_physics_material_database;
 typedef struct wp_physics_material_registry wp_physics_material_registry;
 
-wp_s32 wp_physics_system_register_material( wp_physics_system *sys, const struct wp_physics_material_desc *desc );
-wp_u32 wp_physics_system_register_material_database( wp_physics_system *sys, const struct wp_physics_material_database *db );
+wp_s32 wp_physics_system_register_material( wp_physics_system *sys,
+                                            const struct wp_physics_material_desc *desc );
+wp_u32 wp_physics_system_register_material_database( wp_physics_system *sys,
+                                                     const struct wp_physics_material_database *db );
 wp_s32 wp_physics_system_unregister_material( wp_physics_system *sys, const wp_c8 *name );
 void wp_physics_system_clear_materials( wp_physics_system *sys );
 wp_physics_material *wp_physics_system_get_material_by_name( wp_physics_system *sys, const wp_c8 *name );
 wp_physics_material *wp_physics_system_get_default_material( wp_physics_system *sys );
 wp_physics_material_registry *wp_physics_system_get_material_registry( wp_physics_system *sys );
 wp_u32 wp_physics_system_get_material_count( wp_physics_system *sys );
-wp_physics_material *wp_physics_system_get_material_by_index( wp_physics_system *sys, wp_u32 index, wp_c8 *out_name );
+wp_physics_material *wp_physics_system_get_material_by_index( wp_physics_system *sys, wp_u32 index,
+                                                              wp_c8 *out_name );
 
 /* -------------------------------------------------------------------------
  * System lifecycle

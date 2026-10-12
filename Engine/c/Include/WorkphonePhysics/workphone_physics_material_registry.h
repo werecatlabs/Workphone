@@ -115,11 +115,11 @@ void wp_physics_material_registry_clear( wp_physics_material_registry *reg );
  * @return The newly created material handle, or NULL on failure.
  */
 wp_physics_material *wp_physics_material_registry_register( wp_physics_material_registry *reg,
-                                                             const wp_physics_material_desc *desc );
+                                                            const wp_physics_material_desc *desc );
 
 /** @brief Registers every descriptor in a database (skips duplicates). @return count added. */
 wp_u32 wp_physics_material_registry_register_database( wp_physics_material_registry *reg,
-                                                        const wp_physics_material_database *db );
+                                                       const wp_physics_material_database *db );
 
 /** @brief Unregisters (and destroys) a material by name. Returns 1 if removed. */
 wp_s32 wp_physics_material_registry_unregister( wp_physics_material_registry *reg, const wp_c8 *name );
@@ -134,7 +134,7 @@ wp_physics_material *wp_physics_material_registry_get_default( wp_physics_materi
  * empty/unknown (so callers always get a usable handle).
  */
 wp_physics_material *wp_physics_material_registry_get_material( wp_physics_material_registry *reg,
-                                                                 const wp_c8 *name );
+                                                                const wp_c8 *name );
 
 /** @brief Like get_material but returns NULL when the name is not registered. */
 wp_physics_material *wp_physics_material_registry_find_material( wp_physics_material_registry *reg,
@@ -153,7 +153,7 @@ wp_u32 wp_physics_material_registry_get_count( wp_physics_material_registry *reg
  * @return The material handle at index, or NULL if out of range.
  */
 wp_physics_material *wp_physics_material_registry_get_by_index( wp_physics_material_registry *reg,
-                                                                 wp_u32 index, wp_c8 *out_name );
+                                                                wp_u32 index, wp_c8 *out_name );
 
 #ifdef __cplusplus
 }

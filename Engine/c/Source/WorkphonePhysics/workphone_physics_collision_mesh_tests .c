@@ -20,10 +20,16 @@ wp_s32 wp_collision_test_mesh_aabb_overlap( const wp_triangle_mesh *mesh, wp_vec
     min = wp_triangle_mesh_get_aabb_min( mesh );
     max = wp_triangle_mesh_get_aabb_max( mesh );
     if( max.x < aabb_min.x || min.x > aabb_max.x )
+    {
         return 0;
+    }
     if( max.y < aabb_min.y || min.y > aabb_max.y )
+    {
         return 0;
+    }
     if( max.z < aabb_min.z || min.z > aabb_max.z )
+    {
         return 0;
+    }
     return 1;
 }

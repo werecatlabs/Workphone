@@ -343,7 +343,7 @@ void wp_rigidbody_set_material_name( wp_rigidbody *body, const wp_c8 *name )
     }
     {
         wp_u32 i;
-        for( i = 0; i < ( wp_u32 )( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && name[i] != '\0'; ++i )
+        for( i = 0; i < (wp_u32)( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && name[i] != '\0'; ++i )
         {
             body->material_name[i] = name[i];
         }

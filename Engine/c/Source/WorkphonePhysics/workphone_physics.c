@@ -20,7 +20,6 @@
 #    define WP_PHYSICS_MAX_SCENES 8
 #endif
 
-
 typedef struct wp_physics_system
 {
     wp_vec3f gravity;
@@ -348,7 +347,8 @@ void wp_physics_system_set_user_data( wp_physics_system *sys, void *user_data )
  * Data-driven material registry accessors
  * ====================================================================== */
 
-wp_s32 wp_physics_system_register_material( wp_physics_system *sys, const wp_physics_material_desc *desc )
+wp_s32 wp_physics_system_register_material( wp_physics_system *sys,
+                                            const wp_physics_material_desc *desc )
 {
     if( !sys || !sys->material_registry || !desc )
     {
@@ -357,7 +357,8 @@ wp_s32 wp_physics_system_register_material( wp_physics_system *sys, const wp_phy
     return wp_physics_material_registry_register( sys->material_registry, desc ) != NULL;
 }
 
-wp_u32 wp_physics_system_register_material_database( wp_physics_system *sys, const wp_physics_material_database *db )
+wp_u32 wp_physics_system_register_material_database( wp_physics_system *sys,
+                                                     const wp_physics_material_database *db )
 {
     if( !sys || !sys->material_registry || !db )
     {
@@ -416,7 +417,8 @@ wp_u32 wp_physics_system_get_material_count( wp_physics_system *sys )
     return wp_physics_material_registry_get_count( sys->material_registry );
 }
 
-wp_physics_material *wp_physics_system_get_material_by_index( wp_physics_system *sys, wp_u32 index, wp_c8 *out_name )
+wp_physics_material *wp_physics_system_get_material_by_index( wp_physics_system *sys, wp_u32 index,
+                                                              wp_c8 *out_name )
 {
     if( !sys || !sys->material_registry )
     {

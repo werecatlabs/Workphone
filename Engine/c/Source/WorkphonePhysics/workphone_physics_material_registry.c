@@ -34,7 +34,7 @@ static wp_s32 wp_str_ieq( const wp_c8 *a, const wp_c8 *b )
 
 static const wp_c8 *wp_skip_ws( const wp_c8 *p )
 {
-    while( *p && isspace( (unsigned char) *p ) )
+    while( *p && isspace( (unsigned char)*p ) )
     {
         ++p;
     }
@@ -53,7 +53,7 @@ static void wp_reg_copy_name( wp_c8 *dst, const wp_c8 *src )
         dst[0] = '\0';
         return;
     }
-    for( i = 0; i < ( wp_u32 )( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && src[i] != '\0'; ++i )
+    for( i = 0; i < (wp_u32)( WP_PHYSICS_MATERIAL_MAX_NAME - 1 ) && src[i] != '\0'; ++i )
     {
         dst[i] = src[i];
     }
@@ -70,7 +70,7 @@ static void wp_trim_inplace( wp_c8 *s )
     }
     start = (wp_c8 *)wp_skip_ws( s );
     end = s + strlen( s );
-    while( end > start && isspace( (unsigned char) end[-1] ) )
+    while( end > start && isspace( (unsigned char)end[-1] ) )
     {
         --end;
     }
@@ -104,10 +104,26 @@ static wp_s32 wp_parse_friction_combine( const wp_c8 *s, wp_friction_combine_mod
     {
         return 0;
     }
-    if( wp_str_ieq( s, "average" ) )  { *out = WORKPHONE_FRICTION_COMBINE_AVERAGE;  return 1; }
-    if( wp_str_ieq( s, "min" ) )      { *out = WORKPHONE_FRICTION_COMBINE_MIN;      return 1; }
-    if( wp_str_ieq( s, "max" ) )      { *out = WORKPHONE_FRICTION_COMBINE_MAX;      return 1; }
-    if( wp_str_ieq( s, "multiply" ) ) { *out = WORKPHONE_FRICTION_COMBINE_MULTIPLY; return 1; }
+    if( wp_str_ieq( s, "average" ) )
+    {
+        *out = WORKPHONE_FRICTION_COMBINE_AVERAGE;
+        return 1;
+    }
+    if( wp_str_ieq( s, "min" ) )
+    {
+        *out = WORKPHONE_FRICTION_COMBINE_MIN;
+        return 1;
+    }
+    if( wp_str_ieq( s, "max" ) )
+    {
+        *out = WORKPHONE_FRICTION_COMBINE_MAX;
+        return 1;
+    }
+    if( wp_str_ieq( s, "multiply" ) )
+    {
+        *out = WORKPHONE_FRICTION_COMBINE_MULTIPLY;
+        return 1;
+    }
     return 0;
 }
 
@@ -117,10 +133,26 @@ static wp_s32 wp_parse_restitution_combine( const wp_c8 *s, wp_restitution_combi
     {
         return 0;
     }
-    if( wp_str_ieq( s, "average" ) )  { *out = WORKPHONE_RESTITUTION_COMBINE_AVERAGE;  return 1; }
-    if( wp_str_ieq( s, "min" ) )      { *out = WORKPHONE_RESTITUTION_COMBINE_MIN;      return 1; }
-    if( wp_str_ieq( s, "max" ) )      { *out = WORKPHONE_RESTITUTION_COMBINE_MAX;      return 1; }
-    if( wp_str_ieq( s, "multiply" ) ) { *out = WORKPHONE_RESTITUTION_COMBINE_MULTIPLY; return 1; }
+    if( wp_str_ieq( s, "average" ) )
+    {
+        *out = WORKPHONE_RESTITUTION_COMBINE_AVERAGE;
+        return 1;
+    }
+    if( wp_str_ieq( s, "min" ) )
+    {
+        *out = WORKPHONE_RESTITUTION_COMBINE_MIN;
+        return 1;
+    }
+    if( wp_str_ieq( s, "max" ) )
+    {
+        *out = WORKPHONE_RESTITUTION_COMBINE_MAX;
+        return 1;
+    }
+    if( wp_str_ieq( s, "multiply" ) )
+    {
+        *out = WORKPHONE_RESTITUTION_COMBINE_MULTIPLY;
+        return 1;
+    }
     return 0;
 }
 
@@ -196,8 +228,7 @@ wp_s32 wp_physics_material_database_add( wp_physics_material_database *db,
     return 1;
 }
 
-wp_s32 wp_physics_material_database_load_from_text( const wp_c8 *text,
-                                                    wp_physics_material_database *db )
+wp_s32 wp_physics_material_database_load_from_text( const wp_c8 *text, wp_physics_material_database *db )
 {
     const wp_c8 *cursor;
     wp_s32 parsed = 0;
@@ -250,8 +281,7 @@ wp_s32 wp_physics_material_database_load_from_text( const wp_c8 *text,
         }
 
         /* "material <name>" starts a new descriptor; flush the previous one. */
-        if( strncmp( buf, "material", 8 ) == 0 &&
-            ( buf[8] == ' ' || buf[8] == '\t' ) )
+        if( strncmp( buf, "material", 8 ) == 0 && ( buf[8] == ' ' || buf[8] == '\t' ) )
         {
             if( have_open && current.name[0] != '\0' )
             {
@@ -288,22 +318,34 @@ wp_s32 wp_physics_material_database_load_from_text( const wp_c8 *text,
         if( wp_str_ieq( key, "static_friction" ) )
         {
             wp_f32 v = 0.0f;
-            if( wp_parse_float( value, &v ) ) { current.static_friction = v; }
+            if( wp_parse_float( value, &v ) )
+            {
+                current.static_friction = v;
+            }
         }
         else if( wp_str_ieq( key, "dynamic_friction" ) )
         {
             wp_f32 v = 0.0f;
-            if( wp_parse_float( value, &v ) ) { current.dynamic_friction = v; }
+            if( wp_parse_float( value, &v ) )
+            {
+                current.dynamic_friction = v;
+            }
         }
         else if( wp_str_ieq( key, "rolling_friction" ) )
         {
             wp_f32 v = 0.0f;
-            if( wp_parse_float( value, &v ) ) { current.rolling_friction = v; }
+            if( wp_parse_float( value, &v ) )
+            {
+                current.rolling_friction = v;
+            }
         }
         else if( wp_str_ieq( key, "restitution" ) )
         {
             wp_f32 v = 0.0f;
-            if( wp_parse_float( value, &v ) ) { current.restitution = v; }
+            if( wp_parse_float( value, &v ) )
+            {
+                current.restitution = v;
+            }
         }
         else if( wp_str_ieq( key, "friction_combine" ) )
         {
@@ -433,7 +475,7 @@ void wp_physics_material_registry_clear( wp_physics_material_registry *reg )
 }
 
 wp_physics_material *wp_physics_material_registry_register( wp_physics_material_registry *reg,
-                                                             const wp_physics_material_desc *desc )
+                                                            const wp_physics_material_desc *desc )
 {
     wp_physics_material *mat;
     wp_physics_material_entry *entry;
@@ -470,7 +512,7 @@ wp_physics_material *wp_physics_material_registry_register( wp_physics_material_
 }
 
 wp_u32 wp_physics_material_registry_register_database( wp_physics_material_registry *reg,
-                                                        const wp_physics_material_database *db )
+                                                       const wp_physics_material_database *db )
 {
     wp_u32 i;
     wp_u32 added = 0;
@@ -520,7 +562,7 @@ wp_physics_material *wp_physics_material_registry_get_default( wp_physics_materi
 }
 
 wp_physics_material *wp_physics_material_registry_get_material( wp_physics_material_registry *reg,
-                                                                 const wp_c8 *name )
+                                                                const wp_c8 *name )
 {
     wp_s32 idx;
     if( !reg )
@@ -572,7 +614,7 @@ wp_u32 wp_physics_material_registry_get_count( wp_physics_material_registry *reg
 }
 
 wp_physics_material *wp_physics_material_registry_get_by_index( wp_physics_material_registry *reg,
-                                                                 wp_u32 index, wp_c8 *out_name )
+                                                                wp_u32 index, wp_c8 *out_name )
 {
     if( !reg )
     {

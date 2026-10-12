@@ -67,30 +67,35 @@ void wp_physics_scene_set_gravity( wp_physics_scene *scene, wp_vec3f gravity );
  * Spatial Partitioning
  * ====================================================================== */
 
-typedef enum wp_contact_update_strategy {
+typedef enum wp_contact_update_strategy
+{
     WP_CONTACT_STRATEGY_ALWAYS = 0,
     WP_CONTACT_STRATEGY_FIXED,
     WP_CONTACT_STRATEGY_DISTANCE,
     WP_CONTACT_STRATEGY_COUNT
 } wp_contact_update_strategy;
 
-typedef struct wp_contact_options {
+typedef struct wp_contact_options
+{
     wp_contact_update_strategy strategy;
     wp_f32 separation_threshold;
     wp_u32 fixed_update_frequency;
     wp_f32 distance_frequency_scale;
 } wp_contact_options;
+
 /* Reuse is conservative: pose/geometry changes regenerate contacts, regardless
  * of the requested interval. This never replays stale world-space contacts. */
 void wp_physics_scene_set_contact_options( wp_physics_scene *scene, const wp_contact_options *options );
 
-typedef struct wp_spatial_partitioning_options {
+typedef struct wp_spatial_partitioning_options
+{
     wp_f32 update_rate_multiplier;
     wp_f32 sleep_threshold;
     wp_u32 update_frequency;
 } wp_spatial_partitioning_options;
 
-typedef enum wp_spatial_partitioning_method {
+typedef enum wp_spatial_partitioning_method
+{
     WP_SPATIAL_PARTITION_NONE = 0,
     WP_SPATIAL_PARTITION_GRID,
     WP_SPATIAL_PARTITION_OCTREE,
@@ -101,8 +106,10 @@ typedef enum wp_spatial_partitioning_method {
 /* Scenes use the shared dynamic AABB tree (BVH) by default. Legacy NONE, GRID,
  * and OCTREE selections are retained as compatibility aliases for that tree;
  * they no longer select separate contact-generation implementations. */
-void wp_physics_scene_set_spatial_partitioning( wp_physics_scene *scene, wp_spatial_partitioning_method method );
-wp_spatial_partitioning_method wp_physics_scene_get_spatial_partitioning( const wp_physics_scene *scene );
+void wp_physics_scene_set_spatial_partitioning( wp_physics_scene *scene,
+                                                wp_spatial_partitioning_method method );
+wp_spatial_partitioning_method wp_physics_scene_get_spatial_partitioning(
+    const wp_physics_scene *scene );
 
 /* =========================================================================
  * Simulation
@@ -112,7 +119,8 @@ void wp_physics_scene_simulate( wp_physics_scene *scene, wp_f32 dt );
 wp_s32 wp_physics_scene_fetch_results( wp_physics_scene *scene, wp_s32 block );
 
 /* Counts from the most recent successful simulate call, summed over substeps. */
-typedef struct wp_scene_broadphase_stats {
+typedef struct wp_scene_broadphase_stats
+{
     uint64_t bounds_rebuilds;
     uint64_t bounds_reuses;
     uint64_t candidate_pairs;
@@ -129,6 +137,7 @@ typedef struct wp_scene_broadphase_stats {
     wp_u32 static_actors, dynamic_actors, kinematic_actors;
     uint64_t dirty_static_updates;
 } wp_scene_broadphase_stats;
+
 wp_scene_broadphase_stats wp_physics_scene_get_broadphase_stats( const wp_physics_scene *scene );
 /* Optional batched SSE2 traversal; returns 0 on targets without SSE2 support.
  * Scalar traversal is the default and is also used for dense query regions. */
@@ -197,6 +206,3 @@ void wp_physics_scene_set_user_data( wp_physics_scene *scene, void *user_data );
 #endif
 
 #endif
-
-
-

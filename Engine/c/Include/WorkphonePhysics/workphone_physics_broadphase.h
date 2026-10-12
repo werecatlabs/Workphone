@@ -92,23 +92,21 @@ void wp_broadphase_update_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f
  * become invalid on removal/clear. All selections currently use a dynamic AABB
  * tree. Bounds must be finite, ordered, and conservative for the whole body. */
 #define WP_BROADPHASE_INVALID_PROXY ( -1 )
-wp_s32 wp_broadphase_create_proxy( wp_broadphase *bp, wp_rigidbody *body,
-                                   wp_vec3f aabb_min, wp_vec3f aabb_max );
+wp_s32 wp_broadphase_create_proxy( wp_broadphase *bp, wp_rigidbody *body, wp_vec3f aabb_min,
+                                   wp_vec3f aabb_max );
 void wp_broadphase_destroy_proxy( wp_broadphase *bp, wp_s32 proxy );
-void wp_broadphase_move_proxy( wp_broadphase *bp, wp_s32 proxy,
-                               wp_vec3f aabb_min, wp_vec3f aabb_max );
+void wp_broadphase_move_proxy( wp_broadphase *bp, wp_s32 proxy, wp_vec3f aabb_min, wp_vec3f aabb_max );
 /* Default enabled=1, movable=1. Disabled proxies are omitted from pairs/queries.
  * Pairs with two immovable proxies are omitted. The order
  * key controls canonical pair order; scene users set it to the actor index. */
-void wp_broadphase_configure_proxy( wp_broadphase *bp, wp_s32 proxy,
-                                    wp_s32 enabled, wp_s32 movable, wp_u32 order );
+void wp_broadphase_configure_proxy( wp_broadphase *bp, wp_s32 proxy, wp_s32 enabled, wp_s32 movable,
+                                    wp_u32 order );
 
 typedef void ( *wp_broadphase_pair_callback )( const wp_broadphase_pair *pair, void *context );
 /* Visits exact AABB overlaps in order-key order without allocating pair storage.
  * Callbacks must not modify the broadphase. Body transforms may change: bounds
  * are a snapshot and must be synchronized before the next traversal. */
-void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback callback,
-                                void *context );
+void wp_broadphase_visit_pairs( wp_broadphase *bp, wp_broadphase_pair_callback callback, void *context );
 
 /* =========================================================================
  * Overlap pair cache

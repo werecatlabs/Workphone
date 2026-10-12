@@ -119,7 +119,7 @@ void wp_narrowphase_process_pairs( wp_narrowphase *np, const wp_broadphase_pair 
 /* Complete checked batch; allocation failure clears the batch and returns 0.
  * Empty input resets counts. The legacy void wrapper calls this implementation. */
 wp_s32 wp_narrowphase_process_pairs_checked( wp_narrowphase *np, const wp_broadphase_pair *pairs,
-                                            wp_s32 pair_count );
+                                             wp_s32 pair_count );
 
 /* =========================================================================
  * Single-pair test
@@ -147,6 +147,7 @@ wp_s32 wp_narrowphase_get_manifold_count( const wp_narrowphase *np );
  * ====================================================================== */
 
 wp_s32 wp_narrowphase_get_touching_pair_count( const wp_narrowphase *np );
+
 typedef struct wp_narrowphase_stats
 {
     uint64_t pair_calls[5][5], pair_nanoseconds[5][5];
@@ -155,6 +156,7 @@ typedef struct wp_narrowphase_stats
     uint64_t simd_batches, oriented_tests, oriented_rejections;
     uint64_t contacts_generated, contacts_retained;
 } wp_narrowphase_stats;
+
 wp_narrowphase_stats wp_narrowphase_get_stats( const wp_narrowphase *np );
 void wp_narrowphase_reset_stats( wp_narrowphase *np );
 /* Timing and SIMD are optional and disabled by default. */

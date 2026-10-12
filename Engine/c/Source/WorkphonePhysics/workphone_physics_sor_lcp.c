@@ -19,9 +19,13 @@ static wp_f32 clampf( wp_f32 v, wp_f32 lo, wp_f32 hi )
     if( lo <= hi )
     {
         if( v < lo )
+        {
             return lo;
+        }
         if( v > hi )
+        {
             return hi;
+        }
     }
     return v;
 }

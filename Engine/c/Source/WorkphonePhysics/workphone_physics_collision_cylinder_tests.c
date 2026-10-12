@@ -18,9 +18,13 @@ wp_s32 wp_collision_test_cylinder_y_sphere( wp_vec3f cylinder_center, wp_f32 rad
     wp_f32 closest_y = dy;
     wp_f32 combined = radius + sphere_radius;
     if( closest_y < -half_height )
+    {
         closest_y = -half_height;
+    }
     if( closest_y > half_height )
+    {
         closest_y = half_height;
+    }
     dy -= closest_y;
     return dx * dx + dy * dy + dz * dz <= combined * combined;
 }

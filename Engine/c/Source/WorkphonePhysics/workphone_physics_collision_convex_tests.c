@@ -43,17 +43,29 @@ wp_s32 wp_collision_test_point_convex_aabb( wp_vec3f point, const wp_vec3f *poin
     for( i = 1; i < point_count; ++i )
     {
         if( points[i].x < min.x )
+        {
             min.x = points[i].x;
+        }
         if( points[i].y < min.y )
+        {
             min.y = points[i].y;
+        }
         if( points[i].z < min.z )
+        {
             min.z = points[i].z;
+        }
         if( points[i].x > max.x )
+        {
             max.x = points[i].x;
+        }
         if( points[i].y > max.y )
+        {
             max.y = points[i].y;
+        }
         if( points[i].z > max.z )
+        {
             max.z = points[i].z;
+        }
     }
     return point.x >= min.x && point.x <= max.x && point.y >= min.y && point.y <= max.y &&
            point.z >= min.z && point.z <= max.z;
