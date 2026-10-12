@@ -12,6 +12,7 @@
 #include <Workphone/Mesh/MeshUtil.hpp>
 #include <Workphone/Scene/Systems/LODSystem.hpp>
 #include <Workphone/Physics/RaycastHit.hpp>
+#include <Workphone/Core/Properties.hpp>
 
 #if WP_GRAPHICS_SYSTEM_CLAW
 #    include <WPGraphics/ClawMesh.hpp>
@@ -254,6 +255,13 @@ namespace workphone
             m_raceScene->configurePhysics();
 
             m_raceScene->initializePresentation();
+            m_reviewStart = -1;
+            m_profileStart = 0;
+            m_profileFrames = 0;
+            m_reviewFrames = 0;
+            m_benchmarkStarted = false;
+            m_captureAttempted = false;
+            m_capturePassed = false;
             setLoadingState( LoadingState::Loaded );
         }
         catch( std::exception &e )
@@ -420,10 +428,16 @@ namespace workphone
 
             updateDebugText();
             auto app = core::IApplicationManager::instance();
-            const auto profileNow = app->getTimer()->getTimeSinceSceneLoad();
-            if( profileNow > 5 && !m_benchmarkStarted )
+            // Loading/procedural generation can take longer than the entire
+            // review interval. Warm up actual rendered frames, then measure.
+            const auto sceneTime = app->getTimer()->getTimeSinceSceneLoad();
+            if( m_reviewStart < 0 ) m_reviewStart = sceneTime;
+            const auto profileNow = std::max( 0.0, sceneTime - m_reviewStart );
+            ++m_reviewFrames;
+            if( profileNow > 5 && m_reviewFrames >= 30 && !m_benchmarkStarted )
             {
                 m_benchmarkStarted = true;
+                m_profileStart = profileNow;
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
                 if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>(
                         app->getGraphicsSystem()->getRendererPtr() ) )
@@ -431,14 +445,13 @@ namespace workphone
                         wp_renderer_get_dx11( renderer->getNativeRenderer() ) );
 #endif
             }
-            if( profileNow > 5 )
+            if( m_benchmarkStarted )
             {
-                if( m_profileStart == 0 )
-                    m_profileStart = profileNow;
                 ++m_profileFrames;
             }
             if( ( !m_capturePath.empty() || m_benchmarkSeconds > 0 ) && !m_captureAttempted &&
-                profileNow > ( m_benchmarkSeconds > 0 ? 5 + m_benchmarkSeconds : 8 ) )
+                m_benchmarkStarted && m_profileFrames >= 30 &&
+                profileNow - m_profileStart > ( m_benchmarkSeconds > 0 ? m_benchmarkSeconds : 3 ) )
             {
                 size_t treeMeshes = 0, treeImposters = 0;
                 bool treeLODValid = !m_assets.treeLODs.empty();
@@ -478,6 +491,28 @@ namespace workphone
                         " scene meshes=" + StringUtil::toString( m_assets.meshes.size() ) +
                         " textures=" + StringUtil::toString( m_assets.textures.size() ) );
                 m_captureAttempted = true;
+                bool nativeFrameValid = true;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                // Consume the completed render-task snapshot: querying the C system
+                // directly from the application task would race frame publication.
+                const auto graphicsProperties = app->getGraphicsSystem()->getProperties();
+                u32 nativeUpdates = 0, nativeRenders = 0;
+                s32 completedPasses = 0, skippedPasses = 0;
+                nativeFrameValid = graphicsProperties &&
+                    graphicsProperties->getPropertyValue( "native_update_serial", nativeUpdates ) &&
+                    graphicsProperties->getPropertyValue( "native_render_serial", nativeRenders ) &&
+                    graphicsProperties->getPropertyValue( "native_completed_passes", completedPasses ) &&
+                    graphicsProperties->getPropertyValue( "native_skipped_passes", skippedPasses ) &&
+                    nativeUpdates > 0 && nativeUpdates == nativeRenders && completedPasses > 0;
+                std::ostringstream nativeReport;
+                nativeReport << "VehicleAdvanced native frame: updates=" << nativeUpdates
+                             << " renders=" << nativeRenders << " completedPasses=" << completedPasses
+                             << " skippedPasses=" << skippedPasses
+                             << " valid=" << ( nativeFrameValid ? "true" : "false" );
+                WP_LOG( nativeReport.str() );
+                if( !nativeFrameValid )
+                    WP_LOG_ERROR( "VehicleAdvanced: expected one native update per rendered frame and an active target." );
+#endif
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
                 if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>(
                         app->getGraphicsSystem()->getRendererPtr() ) )
@@ -507,7 +542,8 @@ namespace workphone
                         "invalid." );
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
-                                  treeLODValid && vehicleLODValid && reflectionValid && windingValid;
+                                  treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
+                                  nativeFrameValid;
                 if( !vehicleLODValid )
                     WP_LOG_ERROR( "Vehicle LOD visibility validation failed." );
                 if( !treeLODValid )

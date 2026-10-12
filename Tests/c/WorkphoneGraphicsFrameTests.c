@@ -34,6 +34,9 @@ typedef struct trace_state
     int accept;
     int recursive;
     int mutation_result;
+    int delta_mutation_result;
+    int scene_mutation_result;
+    wp_u32 observed_render_serial;
     wp_f32 delta;
 } trace_state;
 
@@ -46,14 +49,19 @@ static void record(trace_state *state, char event, wp_f32 delta)
 static wp_s32 begin_pass(wp_graphics_system *system, wp_f32 delta, void *data)
 {
     trace_state *state;
+    wp_graphics_system_frame_stats stats;
     state = (trace_state *)data;
     record(state, 'B', delta);
+    if (wp_graphics_system_get_frame_stats(system, &stats))
+        state->observed_render_serial = stats.render_serial;
     if (state->recursive)
     {
         wp_graphics_system_render_frame(system, 0.75f);
         wp_graphics_system_render(system);
         wp_graphics_system_update(system);
         state->mutation_result = wp_graphics_system_set_render_passes(system, NULL, 0);
+        state->delta_mutation_result = wp_graphics_system_set_delta_time(system, 0.75f);
+        state->scene_mutation_result = wp_graphics_system_create_scene(system) != NULL;
         wp_graphics_system_destroy(system);
     }
     return state->accept;
@@ -76,6 +84,70 @@ static void legacy_frame(wp_graphics_system *system, wp_f32 delta, void *data)
 }
 static void reset_trace(trace_state *state)
 { state->count = 0; state->events[0] = '\0'; }
+
+static int split_frame_contracts(void)
+{
+    wp_graphics_system *system;
+    wp_graphics_system_render_pass pass;
+    wp_graphics_system_frame_stats stats;
+    trace_state trace;
+    memset(&trace, 0, sizeof(trace));
+    memset(&pass, 0, sizeof(pass));
+    system = wp_graphics_system_create();
+    CHECK(system != NULL);
+    CHECK(!wp_graphics_system_get_frame_stats(NULL, &stats));
+    CHECK(!wp_graphics_system_get_frame_stats(system, NULL));
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 0 && stats.render_serial == 0);
+    CHECK(stats.completed_pass_count == 0 && stats.skipped_pass_count == 0);
+    pass.begin = begin_pass;
+    pass.draw = draw_pass;
+    pass.end = end_pass;
+    pass.user_data = &trace;
+    trace.accept = 1;
+    trace.recursive = 1;
+    CHECK(wp_graphics_system_set_render_passes(system, &pass, 1));
+    CHECK(wp_graphics_system_set_delta_time(system, 0.0625f));
+    wp_graphics_system_update(system);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 1 && stats.render_serial == 0);
+    wp_graphics_system_render(system);
+    CHECK(strcmp(trace.events, "BDE") == 0);
+    CHECK(trace.observed_render_serial == 0);
+    CHECK(trace.mutation_result == 0 && trace.delta_mutation_result == 0);
+    CHECK(trace.scene_mutation_result == 0);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 1 && stats.render_serial == 1);
+    CHECK(stats.completed_pass_count == 1 && stats.skipped_pass_count == 0);
+    CHECK(stats.delta_time == 0.0625f);
+    reset_trace(&trace);
+    trace.accept = 0;
+    wp_graphics_system_render(system);
+    CHECK(strcmp(trace.events, "B") == 0);
+    CHECK(trace.observed_render_serial == 1);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 1 && stats.render_serial == 2);
+    CHECK(stats.completed_pass_count == 0 && stats.skipped_pass_count == 1);
+    trace.accept = 1;
+    reset_trace(&trace);
+    wp_graphics_system_render_frame(system, 0.0625f);
+    CHECK(strcmp(trace.events, "BDE") == 0);
+    CHECK(trace.observed_render_serial == 2);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 2 && stats.render_serial == 3);
+    CHECK(stats.completed_pass_count == 1 && stats.skipped_pass_count == 0);
+    CHECK(wp_graphics_system_set_render_passes(system, NULL, 0));
+    wp_graphics_system_set_frame_func(system, legacy_frame, &trace);
+    reset_trace(&trace);
+    wp_graphics_system_update(system);
+    wp_graphics_system_render(system);
+    CHECK(strcmp(trace.events, "L") == 0 && trace.delta == 0.0625f);
+    CHECK(wp_graphics_system_get_frame_stats(system, &stats));
+    CHECK(stats.update_serial == 3 && stats.render_serial == 4);
+    CHECK(stats.completed_pass_count == 0 && stats.skipped_pass_count == 0);
+    wp_graphics_system_destroy(system);
+    return 0;
+}
 
 int main(void)
 {
@@ -167,6 +239,7 @@ int main(void)
     wp_graphics_system_update(NULL);
     wp_graphics_system_render(NULL);
     wp_graphics_system_render_frame(NULL, 0.1f);
+    CHECK(split_frame_contracts() == 0);
     puts("native frame contracts passed");
     return 0;
 }

@@ -18,6 +18,38 @@ if(TARGET WPNetwork)
 endif()
 
 if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
+    # Keep the active wrapper/backend regression suite buildable. Retained
+    # executables cannot validate changes to the native renderer boundary.
+    foreach(graphics_contract IN ITEMS ClawRendererContract ClawDX11Target ClawProduction)
+        if(graphics_contract STREQUAL "ClawRendererContract")
+            set(graphics_target WPGraphicsClawRendererTests)
+            set(graphics_test WPGraphics.claw_text_contract)
+        elseif(graphics_contract STREQUAL "ClawDX11Target")
+            set(graphics_target WPGraphicsClawDX11TargetTests)
+            set(graphics_test WPGraphics.claw_dx11_targets)
+        else()
+            set(graphics_target WPGraphicsClawProductionTests)
+            set(graphics_test WPGraphics.claw_production_render)
+        endif()
+        if(WP_BUILD_RENDERER_DX11)
+            add_executable(${graphics_target} ${graphics_contract}Tests.cpp)
+            target_include_directories(${graphics_target} PRIVATE
+                ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include
+                ${WP_ROOT}/Engine/c/Include/WorkphoneCore
+                ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+            target_compile_definitions(${graphics_target} PRIVATE
+                WORKPHONE_INCLUDE_DEFAULT_ALLOCATOR WORKPHONE_INCLUDE_FONT_BAKING
+                WORKPHONE_INCLUDE_DEFAULT_FONT WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
+                WORKPHONE_INCLUDE_STANDARD_IO BOOST_ALL_NO_LIB)
+            target_link_libraries(${graphics_target} PRIVATE
+                WPGraphics Workphone WorkphoneGraphics WorkphoneCore WorkphonePlatform d3d11)
+            target_link_directories(${graphics_target} PRIVATE
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+            set_target_properties(${graphics_target} PROPERTIES FOLDER Tests/Cpp)
+            add_test(NAME ${graphics_test} COMMAND ${graphics_target})
+            set_tests_properties(${graphics_test} PROPERTIES LABELS "graphics;gpu" TIMEOUT 120)
+        endif()
+    endforeach()
     add_executable(ClawCubemapTests ClawCubemapTests.cpp)
     target_compile_definitions(ClawCubemapTests PRIVATE BOOST_ALL_NO_LIB)
     target_include_directories(ClawCubemapTests PRIVATE

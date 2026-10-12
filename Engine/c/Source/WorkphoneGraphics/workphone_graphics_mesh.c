@@ -7,6 +7,7 @@
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_renderer.h"
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -34,9 +35,38 @@ typedef struct wp_graphics_mesh
     void *native;
     wp_s32 is_dirty;
     wp_vertex_ptc *render_vertices;
+    wp_vertex_pntc *lit_vertices;
+    uint64_t content_generation;
 } wp_graphics_mesh;
 
 static const wp_u32 WORKPHONE_SUBMESH_INITIAL_CAP = 4u;
+/* Match the C90-compatible lifetime-ID atomics used by native physics. Meshes
+ * may be created independently by workers; mutation of each mesh is serialized. */
+#ifdef _MSC_VER
+#    include <intrin.h>
+static __declspec( align( 8 ) ) volatile __int64 wp_mesh_generation;
+static uint64_t wp_mesh_next_generation( void )
+{
+    return (uint64_t)_InterlockedIncrement64( &wp_mesh_generation );
+}
+#else
+static uint64_t wp_mesh_generation;
+static uint64_t wp_mesh_next_generation( void )
+{
+    return __atomic_add_fetch( &wp_mesh_generation, 1, __ATOMIC_RELAXED );
+}
+#endif
+static void wp_mesh_invalidate_lit( wp_graphics_mesh *mesh )
+{
+    free( mesh->lit_vertices );
+    mesh->lit_vertices = NULL;
+    mesh->content_generation = wp_mesh_next_generation();
+}
+uint64_t wp_graphics_mesh_get_content_generation( const wp_graphics_mesh *mesh )
+{
+    return mesh ? mesh->content_generation : 0;
+}
+
 
 /* =========================================================================
  * Vertex format helpers
@@ -82,6 +112,7 @@ wp_graphics_mesh *wp_graphics_mesh_create( void )
     mesh->primitive_type = WORKPHONE_PRIMITIVE_TRIANGLE_LIST;
     mesh->vertex_format = WORKPHONE_VERTEX_FORMAT_P;
     mesh->index_format = WORKPHONE_INDEX_FORMAT_UINT16;
+    wp_mesh_invalidate_lit( mesh );
 
     return mesh;
 }
@@ -97,6 +128,7 @@ void wp_graphics_mesh_destroy( wp_graphics_mesh *mesh )
     free( mesh->indices );
     free( mesh->submeshes );
     free( mesh->render_vertices );
+    free( mesh->lit_vertices );
     free( mesh );
 }
 
@@ -121,19 +153,21 @@ wp_s32 wp_graphics_mesh_set_vertices( wp_graphics_mesh *mesh, wp_vertex_format f
         return 0;
     }
 
-    copy = malloc( (wp_u32)stride * (wp_u32)count );
+    if( (size_t)count > (size_t)-1 / stride ) return 0;
+    copy = malloc( (size_t)stride * count );
     if( !copy )
     {
         return 0;
     }
 
+    memcpy( copy, data, (size_t)stride * count );
     free( mesh->vertices );
-    memcpy( copy, data, (wp_u32)stride * (wp_u32)count );
 
     mesh->vertices = copy;
     mesh->vertex_count = count;
     mesh->vertex_format = fmt;
     mesh->is_dirty = 1;
+    wp_mesh_invalidate_lit( mesh );
 
     return 1;
 }
@@ -191,19 +225,21 @@ wp_s32 wp_graphics_mesh_set_indices_u16( wp_graphics_mesh *mesh, const uint16_t 
         return 0;
     }
 
-    copy = malloc( (wp_u32)sizeof( uint16_t ) * (wp_u32)count );
+    if( (size_t)count > (size_t)-1 / sizeof( uint16_t ) ) return 0;
+    copy = malloc( sizeof( uint16_t ) * (size_t)count );
     if( !copy )
     {
         return 0;
     }
 
+    memcpy( copy, data, sizeof( uint16_t ) * (size_t)count );
     free( mesh->indices );
-    memcpy( copy, data, (wp_u32)sizeof( uint16_t ) * (wp_u32)count );
 
     mesh->indices = copy;
     mesh->index_count = count;
     mesh->index_format = WORKPHONE_INDEX_FORMAT_UINT16;
     mesh->is_dirty = 1;
+    wp_mesh_invalidate_lit( mesh );
 
     return 1;
 }
@@ -217,19 +253,21 @@ wp_s32 wp_graphics_mesh_set_indices_u32( wp_graphics_mesh *mesh, const wp_u32 *d
         return 0;
     }
 
-    copy = malloc( (wp_u32)sizeof( wp_u32 ) * (wp_u32)count );
+    if( (size_t)count > (size_t)-1 / sizeof( wp_u32 ) ) return 0;
+    copy = malloc( sizeof( wp_u32 ) * (size_t)count );
     if( !copy )
     {
         return 0;
     }
 
+    memcpy( copy, data, sizeof( wp_u32 ) * (size_t)count );
     free( mesh->indices );
-    memcpy( copy, data, (wp_u32)sizeof( wp_u32 ) * (wp_u32)count );
 
     mesh->indices = copy;
     mesh->index_count = count;
     mesh->index_format = WORKPHONE_INDEX_FORMAT_UINT32;
     mesh->is_dirty = 1;
+    wp_mesh_invalidate_lit( mesh );
 
     return 1;
 }
@@ -277,6 +315,7 @@ void wp_graphics_mesh_set_primitive_type( wp_graphics_mesh *mesh, wp_primitive_t
 
     mesh->primitive_type = type;
     mesh->is_dirty = 1;
+    wp_mesh_invalidate_lit( mesh );
 }
 
 wp_primitive_type wp_graphics_mesh_get_primitive_type( const wp_graphics_mesh *mesh )
@@ -652,3 +691,100 @@ void wp_graphics_mesh_render( wp_graphics_mesh *mesh, wp_renderer *renderer,
 }
 
 #endif
+
+/* Native format conversion and generated normals shared by all hardware views. */
+static wp_u32 wp_mesh_lit_index( const wp_graphics_mesh *mesh, wp_u32 i )
+{
+    if( !mesh->indices ) return i;
+    return mesh->index_format == WORKPHONE_INDEX_FORMAT_UINT32
+        ? ( (const wp_u32 *)mesh->indices )[i]
+        : ( (const uint16_t *)mesh->indices )[i];
+}
+const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *mesh )
+{
+    wp_vertex_pntc *vertices;
+    wp_u32 i, stride, elements, step, a, b, c, swap;
+    wp_s32 has_normals;
+    const unsigned char *source;
+    wp_vec3f ab, ac, normal;
+    double length;
+    if( !mesh || !mesh->vertices || !mesh->vertex_count ) return NULL;
+    if( mesh->lit_vertices ) return mesh->lit_vertices;
+    if( (size_t)mesh->vertex_count > (size_t)-1 / sizeof( *vertices ) ) return NULL;
+    stride = wp_vertex_format_stride( mesh->vertex_format );
+    if( !stride ) return NULL;
+    vertices = (wp_vertex_pntc *)calloc( mesh->vertex_count, sizeof( *vertices ) );
+    if( !vertices ) return NULL;
+    has_normals = mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PN ||
+        mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNT ||
+        mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNTC;
+    for( i = 0; i < mesh->vertex_count; ++i )
+    {
+        source = (const unsigned char *)mesh->vertices + (size_t)i * stride;
+        memcpy( &vertices[i].position, source, sizeof( wp_vec3f ) );
+        vertices[i].color = 0xffffffffu;
+        switch( mesh->vertex_format )
+        {
+        case WORKPHONE_VERTEX_FORMAT_PN:
+            vertices[i].normal = ( (const wp_graphics_mesh_vertex_pn *)source )->normal; break;
+        case WORKPHONE_VERTEX_FORMAT_PT:
+            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pt *)source )->uv; break;
+        case WORKPHONE_VERTEX_FORMAT_PNT:
+            vertices[i].normal = ( (const wp_graphics_mesh_vertex_pnt *)source )->normal;
+            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pnt *)source )->uv; break;
+        case WORKPHONE_VERTEX_FORMAT_PNTC:
+            vertices[i].normal = ( (const wp_graphics_mesh_vertex_pntc *)source )->normal;
+            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pntc *)source )->uv;
+            vertices[i].color = ( (const wp_graphics_mesh_vertex_pntc *)source )->color; break;
+        case WORKPHONE_VERTEX_FORMAT_PC:
+            vertices[i].color = ( (const wp_graphics_mesh_vertex_pc *)source )->color; break;
+        case WORKPHONE_VERTEX_FORMAT_PTC:
+            vertices[i].uv = ( (const wp_graphics_mesh_vertex_ptc *)source )->uv;
+            vertices[i].color = ( (const wp_graphics_mesh_vertex_ptc *)source )->color; break;
+        default: break;
+        }
+    }
+    if( !has_normals )
+    {
+        elements = mesh->indices ? mesh->index_count : mesh->vertex_count;
+        step = mesh->primitive_type == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP ? 1u : 3u;
+        if( mesh->primitive_type == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP ||
+            mesh->primitive_type == WORKPHONE_PRIMITIVE_TRIANGLE_LIST )
+        {
+            for( i = 0; elements >= 3u && i <= elements - 3u; i += step )
+            {
+                a = wp_mesh_lit_index( mesh, i ); b = wp_mesh_lit_index( mesh, i + 1u );
+                c = wp_mesh_lit_index( mesh, i + 2u );
+                if( step == 1u && ( i & 1u ) ) { swap = a; a = b; b = swap; }
+                if( a >= mesh->vertex_count || b >= mesh->vertex_count || c >= mesh->vertex_count )
+                { free( vertices ); return NULL; }
+                ab.x = vertices[b].position.x - vertices[a].position.x;
+                ab.y = vertices[b].position.y - vertices[a].position.y;
+                ab.z = vertices[b].position.z - vertices[a].position.z;
+                ac.x = vertices[c].position.x - vertices[a].position.x;
+                ac.y = vertices[c].position.y - vertices[a].position.y;
+                ac.z = vertices[c].position.z - vertices[a].position.z;
+                normal.x = ab.y * ac.z - ab.z * ac.y;
+                normal.y = ab.z * ac.x - ab.x * ac.z;
+                normal.z = ab.x * ac.y - ab.y * ac.x;
+                vertices[a].normal.x += normal.x; vertices[a].normal.y += normal.y; vertices[a].normal.z += normal.z;
+                vertices[b].normal.x += normal.x; vertices[b].normal.y += normal.y; vertices[b].normal.z += normal.z;
+                vertices[c].normal.x += normal.x; vertices[c].normal.y += normal.y; vertices[c].normal.z += normal.z;
+            }
+        }
+        for( i = 0; i < mesh->vertex_count; ++i )
+        {
+            normal = vertices[i].normal;
+            length = sqrt( (double)normal.x * normal.x + (double)normal.y * normal.y + (double)normal.z * normal.z );
+            if( length > 1.0e-6 )
+            {
+                vertices[i].normal.x = (float)( normal.x / length );
+                vertices[i].normal.y = (float)( normal.y / length );
+                vertices[i].normal.z = (float)( normal.z / length );
+            }
+            else { vertices[i].normal.x = 0.0f; vertices[i].normal.y = 1.0f; vertices[i].normal.z = 0.0f; }
+        }
+    }
+    mesh->lit_vertices = vertices;
+    return vertices;
+}

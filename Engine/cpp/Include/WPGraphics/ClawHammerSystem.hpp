@@ -220,6 +220,10 @@ namespace workphone
             SmartPtr<IProfile> m_presentationProfile;
             void publishRenderStatistics();
             mutable std::mutex m_statisticsMutex;
+            u32 m_nativeUpdateSerial = 0;
+            u32 m_nativeRenderSerial = 0;
+            u32 m_nativeCompletedPasses = 0;
+            u32 m_nativeSkippedPasses = 0;
             String m_renderStatistics;
             std::atomic<bool> m_statisticsResetRequested{ false };
             std::atomic<bool> m_statisticsSnapshotRequested{ false };

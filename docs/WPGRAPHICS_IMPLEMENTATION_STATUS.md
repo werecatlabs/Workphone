@@ -1,5 +1,66 @@
 # WPGraphics implementation status
 
+## Native frame and geometry ownership — 12 October 2026
+
+This increment advances the C90 implementation/C++17 wrapper boundary. It does
+**not** complete the graphics production plan or establish AAA visual parity.
+
+- `wp_graphics_system_render()` now preserves legacy frame callbacks, matching
+  `render_frame()`. The convenience function delegates to the same update/render
+  implementation. Registered pass order, recursion guards and mutation rejection
+  remain native. Completed-frame diagnostics expose update/render serials,
+  completed/skipped target sequences and the clamped timestep.
+- `ClawHammerSystem` drives native `update()` then `render()`. It publishes pass
+  descriptors and retained C++ contexts together, skips detached/minimized
+  targets, and publishes a mutex-protected diagnostics snapshot for Editor and
+  sample readers. Window activation retains the existing window contract.
+- Native mesh code now converts all seven vertex formats to lit vertices,
+  generates missing smooth normals and invalidates prepared data after topology,
+  vertex or index edits. Atomic content generations distinguish address reuse
+  across independently created worker meshes. Setters safely accept their own
+  buffers as inputs and check allocation-size overflow.
+- Native DX11 owns per-renderer hashed geometry caches and triangle-strip range
+  conversion. WPGraphics retains material/scene adaptation while delegating
+  vertex conversion, GPU geometry allocation, reuse and destruction to C.
+  Native clients call `wp_renderer_dx11_forget_mesh()` on the render owner before
+  destroying cached meshes for immediate GPU retirement; `ClawMesh` already
+  follows that lifecycle. Returned geometry pointers are borrowed.
+- VehicleAdvanced capture/benchmark reports native frame counters and requires
+  a completed native target with one update per render. Warmup starts on the
+  render task after loading, so procedural generation cannot consume the entire
+  measurement interval before the first frame. Loading resets review state.
+- The isolated C90 contract preset now includes mesh conversion/serialization
+  and the correctly registered frame target. Full builds use the real native
+  scene implementation. Disabled wrapper/DX11 regression targets are restored.
+
+Validation: fresh Debug builds of the modified native libraries, WPGraphics,
+three wrapper/DX11 test executables and SampleVehicleAdvanced succeed. Seven
+selected full-engine contracts pass: mesh, frame, renderer, shader, wrapper text,
+DX11 targets and production rendering. Four isolated native contracts pass in
+both Debug and RelWithDebInfo. New GPU checks compare complete offscreen pixel
+buffers from cached/native and direct reference geometry, including indexed
+lists, strips, odd-start submesh ranges, generated normals, packed colors and
+nonindexed meshes under all cull modes. Shadow pixel tests also use native cached
+geometry. Device evidence is Microsoft Basic Render Driver/WARP, feature level
+`b000`, driver `10.0.19041.7548`; this is not hardware performance certification.
+Local logs/XML are in `project_x64/graphics-native-frame-evidence/`.
+
+The inspected baseline VehicleAdvanced capture remains visibly prototype quality:
+simplified car/aero/wheel geometry, faceted repeating trees, sparse scenery,
+coarse repeating asphalt and weak lighting/reflection cues. No blind comparison
+or claim of superiority to the official
+[F1 2026 season reference](https://www.ea.com/games/f1/f1-25) is supported.
+
+Open architecture work includes native target/camera setup and presentation,
+material/environment records, render snapshots, draw-list/shadow preparation,
+texture/cubemap upload and lifetime management, and native GPU post-processing.
+Direct3D implementation remains in several C++ texture, cubemap, terrain,
+resource and renderer units. The existing software post-processing pipeline is
+not a GPU HDR/TAA/SSR implementation. The broader production, asset, physics,
+hardware performance, recovery, Editor, packaging and visual acceptance gates
+remain independent and incomplete. Full C++ RelWithDebInfo validation is not
+claimed by this increment.
+
 ## Paged foliage, authoring and cooked resources - 11 October 2026
 
 Started on `brodex` at `d393187aa` and incorporates the subsequent remote commits

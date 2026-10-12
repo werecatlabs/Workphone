@@ -61,6 +61,9 @@ target_include_directories(
             ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
 target_compile_definitions(
     WorkphoneGraphicsMeshTests PRIVATE WP_GRAPHICS_MESH_SERIALIZATION_ONLY)
+if(UNIX)
+    target_link_libraries(WorkphoneGraphicsMeshTests PRIVATE m)
+endif()
 set_target_properties(WorkphoneGraphicsMeshTests PROPERTIES FOLDER Tests/C)
 
 add_test(
@@ -124,6 +127,7 @@ add_executable(WorkphoneGraphicsFrameTests WorkphoneGraphicsFrameTests.c)
 target_include_directories(WorkphoneGraphicsFrameTests PRIVATE
     ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics
     ${WP_ROOT}/Engine/c/Include/WorkphoneCore)
-target_link_libraries(WorkphoneGraphicsFrameTests PRIVATE WorkphoneGraphics)
+target_link_libraries(WorkphoneGraphicsFrameTests PRIVATE
+    WorkphoneGraphics WorkphonePlatformWin32 WorkphoneCore)
 set_target_properties(WorkphoneGraphicsFrameTests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
 add_test(NAME WorkphoneGraphics.native_frame COMMAND WorkphoneGraphicsFrameTests)

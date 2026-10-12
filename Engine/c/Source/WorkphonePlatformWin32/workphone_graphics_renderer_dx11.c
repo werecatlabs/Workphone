@@ -28,6 +28,7 @@
 #    include "workphone_ui.h"
 #    include "workphone.h"
 #    include "workphone_graphics_renderer_dx11.h"
+#    include "workphone_graphics_mesh.h"
 #    include "workphone_graphics_dx11_pixel_shader.h"
 #    include "workphone_graphics_dx11_vertex_shader.h"
 
@@ -415,8 +416,28 @@ typedef struct wp_gpu_frame_query
     unsigned epoch;
 } wp_gpu_frame_query;
 
+enum { WP_DX11_MESH_CACHE_BUCKETS = 1024 };
+
+static unsigned wp_dx11_mesh_bucket( const wp_graphics_mesh *mesh )
+{
+    uintptr_t key = (uintptr_t)mesh;
+    return (unsigned)( ( ( key >> 4 ) ^ ( key >> 20 ) ) & ( WP_DX11_MESH_CACHE_BUCKETS - 1u ) );
+}
+
+typedef struct wp_dx11_mesh_cache
+{
+    const wp_graphics_mesh *mesh;
+    uint64_t generation;
+    wp_u32 first, count;
+    wp_geometry_dx11 *geometry;
+    struct wp_dx11_mesh_cache *next;
+} wp_dx11_mesh_cache;
+static wp_renderer_dx11 *wp_dx11_renderers = NULL;
+
 struct wp_renderer_dx11
 {
+    wp_dx11_mesh_cache *meshes[WP_DX11_MESH_CACHE_BUCKETS];
+    wp_renderer_dx11 *next_renderer;
     wp_render_statistics_dx11 statistics;
     double frame_intervals[WP_DX11_FRAME_SAMPLES];
     double interval_total, cpu_total, present_total, gpu_total;
@@ -1836,6 +1857,8 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
     r->rs_dirty = 1;
     r->bs_dirty = 1;
     r->dss_dirty = 1;
+    r->next_renderer = wp_dx11_renderers;
+    wp_dx11_renderers = r;
 
     return r;
 }
@@ -1843,8 +1866,23 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
 void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
 {
     wp_s32 i;
+    wp_renderer_dx11 **owner;
+    wp_dx11_mesh_cache *entry, *next;
     if( !r )
         return;
+    for( owner = &wp_dx11_renderers; *owner; owner = &( *owner )->next_renderer )
+    {
+        if( *owner == r ) { *owner = r->next_renderer; break; }
+    }
+    for( i = 0; i < WP_DX11_MESH_CACHE_BUCKETS; ++i )
+    {
+        for( entry = r->meshes[i]; entry; entry = next )
+        {
+            next = entry->next;
+            wp_renderer_dx11_destroy_geometry( entry->geometry );
+            free( entry );
+        }
+    }
 
     if( r->context )
         ID3D11DeviceContext_ClearState( r->context );
@@ -3191,6 +3229,95 @@ wp_geometry_dx11 *wp_renderer_dx11_create_indexed_geometry_pntc(
     geometry->index_count = index_count;
     geometry->index_format = indices_are_u32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
     ++r->statistics.geometry_creations;
+    return geometry;
+}
+
+void wp_renderer_dx11_forget_mesh( const wp_graphics_mesh *mesh )
+{
+    wp_renderer_dx11 *r;
+    wp_dx11_mesh_cache **owner, *entry;
+    for( r = wp_dx11_renderers; r; r = r->next_renderer )
+    {
+        owner = &r->meshes[wp_dx11_mesh_bucket( mesh )];
+        while( *owner )
+        {
+            entry = *owner;
+            if( entry->mesh == mesh )
+            {
+                *owner = entry->next;
+                wp_renderer_dx11_destroy_geometry( entry->geometry );
+                free( entry );
+            }
+            else owner = &entry->next;
+        }
+    }
+}
+wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *r,
+    wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count )
+{
+    wp_dx11_mesh_cache *entry, **owner;
+    const wp_vertex_pntc *vertices;
+    const void *source_indices;
+    wp_u32 *indices;
+    wp_u32 elements, vertex_count, i, a, b, c, out, output_count, swap;
+    uint64_t generation;
+    wp_s32 strip;
+    unsigned bucket;
+    wp_geometry_dx11 *geometry;
+    if( !r || !mesh ) return NULL;
+    strip = wp_graphics_mesh_get_primitive_type( mesh ) == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP;
+    if( !strip && wp_graphics_mesh_get_primitive_type( mesh ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST ) return NULL;
+    vertex_count = wp_graphics_mesh_get_vertex_count( mesh );
+    source_indices = wp_graphics_mesh_get_indices( mesh );
+    elements = source_indices ? wp_graphics_mesh_get_index_count( mesh ) : vertex_count;
+    if( first > elements || count > elements - first || count < 3u || vertex_count > INT_MAX ) return NULL;
+    if( !strip ) { first = 0; count = elements - elements % 3u; }
+    if( count < 3u || ( strip && count - 2u > (wp_u32)INT_MAX / 3u ) || ( !strip && count > INT_MAX ) ) return NULL;
+    generation = wp_graphics_mesh_get_content_generation( mesh );
+    bucket = wp_dx11_mesh_bucket( mesh );
+    for( entry = r->meshes[bucket]; entry; entry = entry->next )
+        if( entry->mesh == mesh && entry->first == first && entry->count == count && entry->generation == generation ) return entry->geometry;
+    /* Retire outdated versions, including index-only edits and address reuse. */
+    owner = &r->meshes[wp_dx11_mesh_bucket( mesh )];
+    while( *owner )
+    {
+        entry = *owner;
+        if( entry->mesh == mesh && entry->generation != generation )
+        {
+            *owner = entry->next;
+            wp_renderer_dx11_destroy_geometry( entry->geometry );
+            free( entry );
+        }
+        else owner = &entry->next;
+    }
+    vertices = wp_graphics_mesh_prepare_lit_vertices( mesh );
+    if( !vertices ) return NULL;
+    output_count = strip ? ( count - 2u ) * 3u : count;
+    if( (size_t)output_count > (size_t)-1 / sizeof( *indices ) ) return NULL;
+    indices = (wp_u32 *)malloc( (size_t)output_count * sizeof( *indices ) );
+    if( !indices ) return NULL;
+    out = 0;
+    for( i = 0; i <= count - 3u; i += strip ? 1u : 3u )
+    {
+        a = first + i; b = a + 1u; c = a + 2u;
+        if( source_indices )
+        {
+            if( wp_graphics_mesh_get_index_format( mesh ) == WORKPHONE_INDEX_FORMAT_UINT32 )
+            { a = ( (const wp_u32 *)source_indices )[a]; b = ( (const wp_u32 *)source_indices )[b]; c = ( (const wp_u32 *)source_indices )[c]; }
+            else
+            { a = ( (const uint16_t *)source_indices )[a]; b = ( (const uint16_t *)source_indices )[b]; c = ( (const uint16_t *)source_indices )[c]; }
+        }
+        if( a >= vertex_count || b >= vertex_count || c >= vertex_count ) { free( indices ); return NULL; }
+        if( strip && ( i & 1u ) ) { swap = a; a = b; b = swap; }
+        indices[out++] = a; indices[out++] = b; indices[out++] = c;
+    }
+    geometry = wp_renderer_dx11_create_indexed_geometry_pntc( r, vertices, (wp_s32)vertex_count, indices, (wp_s32)out, 1 );
+    free( indices );
+    if( !geometry ) return NULL;
+    entry = (wp_dx11_mesh_cache *)malloc( sizeof( *entry ) );
+    if( !entry ) { wp_renderer_dx11_destroy_geometry( geometry ); return NULL; }
+    entry->mesh = mesh; entry->generation = generation; entry->first = first; entry->count = count;
+    entry->geometry = geometry; entry->next = r->meshes[bucket]; r->meshes[bucket] = entry;
     return geometry;
 }
 

@@ -18,16 +18,42 @@ foreach(contract IN ITEMS Skinning ParticleSimulation)
     set_tests_properties(WPGraphics.production_${contract} PROPERTIES LABELS "graphics;headless;production" TIMEOUT 30)
 endforeach()
 
-add_executable(WorkphoneGraphicsFrameCppTests
-    ${WP_GRAPHICS_CONTRACT_ROOT}/Tests/c/WorkphoneGraphicsFrameTests.c
-    ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_system.c)
-target_include_directories(WorkphoneGraphicsFrameTests PRIVATE
-    ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneGraphics
-    ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneCore)
-target_compile_definitions(WorkphoneGraphicsFrameTests PRIVATE WP_FRAME_CONTRACT_STUB_SCENES)
-set_target_properties(WorkphoneGraphicsFrameTests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
-if(NOT MSVC)
-    target_compile_options(WorkphoneGraphicsFrameTests PRIVATE -Wall -Wextra -Werror -pedantic)
+# Exercise the native geometry conversion without linking the C++ engine or a
+# graphics device, including buffer aliasing and index-only cache invalidation.
+if(NOT TARGET WorkphoneGraphicsMeshTests)
+    add_executable(WorkphoneGraphicsMeshTests
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Tests/c/WorkphoneGraphicsMeshTests.c
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_mesh.c
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_mesh_reader.c
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_mesh_ogre_reader.c
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_mesh_writer.c)
+    target_include_directories(WorkphoneGraphicsMeshTests PRIVATE
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneGraphics
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneCore)
+    target_compile_definitions(WorkphoneGraphicsMeshTests PRIVATE WP_GRAPHICS_MESH_SERIALIZATION_ONLY)
+    set_target_properties(WorkphoneGraphicsMeshTests PROPERTIES
+        C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
+    if(UNIX)
+        target_link_libraries(WorkphoneGraphicsMeshTests PRIVATE m)
+    endif()
+    add_test(NAME WorkphoneGraphics.mesh_serializer COMMAND WorkphoneGraphicsMeshTests)
+    set_tests_properties(WorkphoneGraphics.mesh_serializer PROPERTIES LABELS "graphics;headless;mesh" TIMEOUT 30)
 endif()
-add_test(NAME WorkphoneGraphics.native_frame COMMAND WorkphoneGraphicsFrameTests)
-set_tests_properties(WorkphoneGraphics.native_frame PROPERTIES LABELS "graphics;headless;frame" TIMEOUT 30)
+
+# Full engine builds already register this contract against the real scene
+# implementation in Tests/c. Only use the stub scene boundary in isolation.
+if(NOT TARGET WorkphoneGraphicsFrameTests)
+    add_executable(WorkphoneGraphicsFrameTests
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Tests/c/WorkphoneGraphicsFrameTests.c
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_system.c)
+    target_include_directories(WorkphoneGraphicsFrameTests PRIVATE
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneGraphics
+        ${WP_GRAPHICS_CONTRACT_ROOT}/Engine/c/Include/WorkphoneCore)
+    target_compile_definitions(WorkphoneGraphicsFrameTests PRIVATE WP_FRAME_CONTRACT_STUB_SCENES)
+    set_target_properties(WorkphoneGraphicsFrameTests PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
+    if(NOT MSVC)
+        target_compile_options(WorkphoneGraphicsFrameTests PRIVATE -Wall -Wextra -Werror -pedantic)
+    endif()
+    add_test(NAME WorkphoneGraphics.native_frame COMMAND WorkphoneGraphicsFrameTests)
+    set_tests_properties(WorkphoneGraphics.native_frame PROPERTIES LABELS "graphics;headless;frame" TIMEOUT 30)
+endif()

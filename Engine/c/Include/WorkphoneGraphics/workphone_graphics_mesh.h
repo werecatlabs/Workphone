@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include "workphone_vector.h"
+#include "workphone_graphics_vertex.h"
 #include "workphone_graphics_object.h"
 
 #ifdef __cplusplus
@@ -173,6 +174,14 @@ typedef struct
  * @return Stride in bytes, or 0 if fmt is not a recognised format.
  */
 wp_u32 wp_vertex_format_stride( wp_vertex_format fmt );
+
+/** Native lit-vertex preparation. The returned mesh-owned array is valid until
+ * the next successful geometry mutation or destruction. Missing normals are
+ * generated as area-weighted smooth normals. NULL means invalid input or OOM.
+ * Call on the render owner, serialized with mesh mutation. */
+const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *mesh );
+/** Changes on every successful vertex/index/topology mutation. */
+uint64_t wp_graphics_mesh_get_content_generation( const wp_graphics_mesh *mesh );
 
 /* -------------------------------------------------------------------------
  * Lifecycle

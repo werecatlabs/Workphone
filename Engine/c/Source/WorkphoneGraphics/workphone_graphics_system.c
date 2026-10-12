@@ -34,6 +34,7 @@ struct wp_graphics_system
     wp_s32 legacy_callback;
     wp_s32 drawing_scenes;
     wp_f32 delta_time;
+    wp_graphics_system_frame_stats frame_stats;
 };
 
 /* =========================================================================
@@ -210,6 +211,15 @@ void wp_graphics_system_update( wp_graphics_system *system )
 {
     if( !system || system->rendering || system->drawing_scenes ) return;
     wp_system_update_scenes( system );
+    ++system->frame_stats.update_serial;
+}
+
+wp_s32 wp_graphics_system_get_frame_stats( const wp_graphics_system *system,
+                                          wp_graphics_system_frame_stats *stats )
+{
+    if( !system || !stats ) return 0;
+    *stats = system->frame_stats;
+    return 1;
 }
 
 wp_s32 wp_graphics_system_set_delta_time( wp_graphics_system *system, wp_f32 delta_time )
@@ -245,7 +255,8 @@ static void wp_system_render_scenes( wp_graphics_system *system )
     system->drawing_scenes = 0;
 }
 
-static void wp_system_execute_passes( wp_graphics_system *system )
+static void wp_system_execute_passes( wp_graphics_system *system,
+                                      wp_graphics_system_frame_stats *stats )
 {
     wp_s32 i;
     wp_graphics_system_render_pass *pass;
@@ -254,6 +265,7 @@ static void wp_system_execute_passes( wp_graphics_system *system )
         pass = &system->passes[i];
         if( pass->begin && !pass->begin( system, system->delta_time, pass->user_data ) )
         {
+            ++stats->skipped_pass_count;
             continue;
         }
         if( pass->draw ) pass->draw( system, system->delta_time, pass->user_data );
@@ -262,21 +274,35 @@ static void wp_system_execute_passes( wp_graphics_system *system )
         if( pass->ui ) pass->ui( system, system->delta_time, pass->user_data );
         if( pass->overlay ) pass->overlay( system, system->delta_time, pass->user_data );
         if( pass->end ) pass->end( system, system->delta_time, pass->user_data );
+        ++stats->completed_pass_count;
     }
 }
 
 void wp_graphics_system_render( wp_graphics_system *system )
 {
+    wp_graphics_system_frame_stats stats;
     if( !system || system->drawing_scenes ) return;
     if( system->rendering )
     {
         if( system->legacy_callback ) wp_system_render_scenes( system );
         return;
     }
+    stats = system->frame_stats;
+    stats.completed_pass_count = 0;
+    stats.skipped_pass_count = 0;
+    stats.delta_time = system->delta_time;
     system->rendering = 1;
-    if( system->pass_count ) wp_system_execute_passes( system );
+    if( system->pass_count ) wp_system_execute_passes( system, &stats );
+    else if( system->frame_func )
+    {
+        system->legacy_callback = 1;
+        system->frame_func( system, system->delta_time, system->frame_user_data );
+        system->legacy_callback = 0;
+    }
     else wp_system_render_scenes( system );
     system->rendering = 0;
+    ++stats.render_serial;
+    system->frame_stats = stats;
 }
 
 wp_s32 wp_graphics_system_set_render_passes( wp_graphics_system *system,
@@ -298,25 +324,8 @@ void wp_graphics_system_render_frame( wp_graphics_system *system, wp_f32 delta_t
     }
 
     wp_graphics_system_set_delta_time( system, delta_time );
-    delta_time = system->delta_time;
-    system->rendering = 1;
-    wp_system_update_scenes( system );
-
-    if( system->pass_count )
-    {
-        wp_system_execute_passes( system );
-    }
-    else if( system->frame_func )
-    {
-        system->legacy_callback = 1;
-        system->frame_func( system, delta_time, system->frame_user_data );
-        system->legacy_callback = 0;
-    }
-    else
-    {
-        wp_system_render_scenes( system );
-    }
-    system->rendering = 0;
+    wp_graphics_system_update( system );
+    wp_graphics_system_render( system );
 }
 
 void wp_graphics_system_set_frame_func( wp_graphics_system *system,

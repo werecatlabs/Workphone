@@ -27,28 +27,6 @@ namespace workphone::render
     {
         constexpr u16 k_quadIndices[] = { 0, 1, 2, 0, 2, 3 };
 
-        struct MeshVertex
-        {
-            wp_vec3f position{};
-            wp_vec3f normal{};
-            wp_vec2f uv{};
-            u32 colour = 0xFFFFFFFFu;
-            bool hasNormal = false;
-        };
-
-        struct MeshVertexCache
-        {
-            const void *source = nullptr;
-            u32 count = 0;
-            u32 stride = 0;
-            wp_vertex_format format = WORKPHONE_VERTEX_FORMAT_P;
-            Array<wp_vertex_pntc> vertices;
-            wp_geometry_dx11 *geometry = nullptr;
-            wp_renderer_dx11 *renderer = nullptr;
-        };
-
-        std::unordered_map<const wp_graphics_mesh *, MeshVertexCache> g_meshVertexCaches;
-
         struct SkyEnvironmentEntry
         {
             WeakPtr<ISky> sky;
@@ -64,254 +42,6 @@ namespace workphone::render
         // A scene may draw several skies. One shared filtered cube would be
         // invalidated by every switch between them, repeating GGX filtering.
         std::unordered_map<const ClawRendererDX11 *, SkyEnvironmentCache> g_skyEnvironmentCaches;
-
-        MeshVertex readMeshVertex( const wp_graphics_mesh *mesh, u32 index )
-        {
-            MeshVertex result;
-            const auto data = static_cast<const u8 *>( wp_graphics_mesh_get_vertices( mesh ) );
-            const auto stride = wp_graphics_mesh_get_vertex_stride( mesh );
-            if( !data || stride == 0 )
-            {
-                return result;
-            }
-
-            const auto vertex = data + static_cast<size_t>( index ) * stride;
-            std::memcpy( &result.position, vertex, sizeof( result.position ) );
-            switch( wp_graphics_mesh_get_vertex_format( mesh ) )
-            {
-            case WORKPHONE_VERTEX_FORMAT_PN:
-            {
-                const auto typed = reinterpret_cast<const wp_graphics_mesh_vertex_pn *>( vertex );
-                result.normal = typed->normal;
-                result.hasNormal = true;
-                break;
-            }
-            case WORKPHONE_VERTEX_FORMAT_PT:
-            {
-                const auto typed = reinterpret_cast<const wp_graphics_mesh_vertex_pt *>( vertex );
-                result.uv = typed->uv;
-                break;
-            }
-            case WORKPHONE_VERTEX_FORMAT_PNT:
-            {
-                const auto typed = reinterpret_cast<const wp_graphics_mesh_vertex_pnt *>( vertex );
-                result.normal = typed->normal;
-                result.uv = typed->uv;
-                result.hasNormal = true;
-                break;
-            }
-            case WORKPHONE_VERTEX_FORMAT_PNTC:
-            {
-                const auto typed = reinterpret_cast<const wp_graphics_mesh_vertex_pntc *>( vertex );
-                result.normal = typed->normal;
-                result.uv = typed->uv;
-                result.colour = typed->color;
-                result.hasNormal = true;
-                break;
-            }
-            case WORKPHONE_VERTEX_FORMAT_PC:
-                result.colour = reinterpret_cast<const wp_graphics_mesh_vertex_pc *>( vertex )->color;
-                break;
-            case WORKPHONE_VERTEX_FORMAT_PTC:
-            {
-                const auto typed = reinterpret_cast<const wp_graphics_mesh_vertex_ptc *>( vertex );
-                result.uv = typed->uv;
-                result.colour = typed->color;
-                break;
-            }
-            default:
-                break;
-            }
-            return result;
-        }
-
-        u32 readMeshIndex( const wp_graphics_mesh *mesh, u32 index )
-        {
-            const void *indices = wp_graphics_mesh_get_indices( mesh );
-            if( !indices )
-            {
-                return index;
-            }
-            return wp_graphics_mesh_get_index_format( mesh ) == WORKPHONE_INDEX_FORMAT_UINT32
-                       ? static_cast<const u32 *>( indices )[index]
-                       : static_cast<u32>( static_cast<const u16 *>( indices )[index] );
-        }
-
-        const Array<wp_vertex_pntc> &getMeshVertices( const wp_graphics_mesh *mesh )
-        {
-            auto &cache = g_meshVertexCaches[mesh];
-            const auto source = wp_graphics_mesh_get_vertices( mesh );
-            const auto count = wp_graphics_mesh_get_vertex_count( mesh );
-            const auto stride = wp_graphics_mesh_get_vertex_stride( mesh );
-            const auto format = wp_graphics_mesh_get_vertex_format( mesh );
-            if( cache.source == source && cache.count == count && cache.stride == stride &&
-                cache.format == format && cache.vertices.size() == count )
-            {
-                return cache.vertices;
-            }
-
-            cache.source = source;
-            cache.count = count;
-            cache.stride = stride;
-            cache.format = format;
-            if( cache.geometry )
-            {
-                wp_renderer_dx11_destroy_geometry( cache.geometry );
-                cache.geometry = nullptr;
-                cache.renderer = nullptr;
-            }
-            cache.vertices.resize( count );
-            bool hasNormals = true;
-            for( u32 i = 0; i < count; ++i )
-            {
-                const auto vertex = readMeshVertex( mesh, i );
-                cache.vertices[i] = { vertex.position, vertex.normal, vertex.uv, vertex.colour };
-                hasNormals = hasNormals && vertex.hasNormal;
-            }
-
-            // Position-only and position/UV meshes are valid inputs. Generate
-            // smooth normals so they still participate in the lit material path.
-            const auto topology = wp_graphics_mesh_get_primitive_type( mesh );
-            if( !hasNormals && ( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST ||
-                                 topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP ) )
-            {
-                for( auto &vertex : cache.vertices )
-                {
-                    vertex.normal = {};
-                }
-
-                const auto indexCount = wp_graphics_mesh_get_index_count( mesh );
-                const auto elementCount = indexCount > 0 ? indexCount : count;
-                const u32 step = topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP ? 1u : 3u;
-                for( u32 i = 0; i + 2 < elementCount; i += step )
-                {
-                    u32 ia = readMeshIndex( mesh, i );
-                    u32 ib = readMeshIndex( mesh, i + 1 );
-                    const u32 ic = readMeshIndex( mesh, i + 2 );
-                    if( step == 1u && ( i & 1u ) )
-                    {
-                        std::swap( ia, ib );
-                    }
-                    if( ia >= count || ib >= count || ic >= count )
-                    {
-                        continue;
-                    }
-                    const auto &a = cache.vertices[ia].position;
-                    const auto &b = cache.vertices[ib].position;
-                    const auto &c = cache.vertices[ic].position;
-                    const float abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
-                    const float acx = c.x - a.x, acy = c.y - a.y, acz = c.z - a.z;
-                    const wp_vec3f normal = { aby * acz - abz * acy, abz * acx - abx * acz,
-                                              abx * acy - aby * acx };
-                    for( const auto vertexIndex : { ia, ib, ic } )
-                    {
-                        auto &n = cache.vertices[vertexIndex].normal;
-                        n.x += normal.x;
-                        n.y += normal.y;
-                        n.z += normal.z;
-                    }
-                }
-                for( auto &vertex : cache.vertices )
-                {
-                    auto &n = vertex.normal;
-                    const float length = std::sqrt( n.x * n.x + n.y * n.y + n.z * n.z );
-                    if( length > 1.0e-6f )
-                    {
-                        n.x /= length;
-                        n.y /= length;
-                        n.z /= length;
-                    }
-                    else
-                    {
-                        n = { 0.0f, 1.0f, 0.0f };
-                    }
-                }
-            }
-            return cache.vertices;
-        }
-
-        void appendTriangle( Array<wp_vertex_pntc> &vertices, const Array<wp_vertex_pntc> &source, u32 a,
-                             u32 b, u32 c )
-        {
-            const auto vertexCount = source.size();
-            if( a >= vertexCount || b >= vertexCount || c >= vertexCount )
-            {
-                return;
-            }
-
-            for( const auto index : { a, b, c } )
-            {
-                vertices.push_back( source[index] );
-            }
-        }
-
-        wp_geometry_dx11 *getMeshGeometry( wp_renderer_dx11 *renderer, const wp_graphics_mesh *mesh,
-                                           const Array<wp_vertex_pntc> &vertices )
-        {
-            auto &cache = g_meshVertexCaches[mesh];
-            if( cache.geometry && cache.renderer != renderer )
-            {
-                wp_renderer_dx11_destroy_geometry( cache.geometry );
-                cache.geometry = nullptr;
-                cache.renderer = nullptr;
-            }
-            if( !renderer || vertices.empty() ||
-                wp_graphics_mesh_get_primitive_type( mesh ) != WORKPHONE_PRIMITIVE_TRIANGLE_LIST )
-            {
-                return nullptr;
-            }
-
-            const void *indices = wp_graphics_mesh_get_indices( mesh );
-            const auto count = indices ? wp_graphics_mesh_get_index_count( mesh )
-                                       : wp_graphics_mesh_get_vertex_count( mesh );
-            if( vertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) ||
-                count > static_cast<u32>( std::numeric_limits<wp_s32>::max() ) )
-            {
-                return nullptr;
-            }
-            if( !cache.geometry )
-            {
-                Array<u32> sequentialIndices;
-                if( !indices )
-                {
-                    sequentialIndices.resize( count );
-                    for( u32 i = 0; i < count; ++i )
-                    {
-                        sequentialIndices[i] = i;
-                    }
-                    indices = sequentialIndices.data();
-                }
-                cache.geometry = wp_renderer_dx11_create_indexed_geometry_pntc(
-                    renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ), indices,
-                    static_cast<wp_s32>( count ),
-                    !sequentialIndices.empty() ||
-                        wp_graphics_mesh_get_index_format( mesh ) == WORKPHONE_INDEX_FORMAT_UINT32 );
-                cache.renderer = cache.geometry ? renderer : nullptr;
-            }
-            return cache.geometry;
-        }
-
-        void drawLitTriangles( wp_renderer_dx11 *renderer, const Array<wp_vertex_pntc> &vertices )
-        {
-            if( !renderer || vertices.empty() ||
-                vertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
-            {
-                return;
-            }
-            Array<u32> indices( vertices.size() );
-            for( size_t i = 0; i < indices.size(); ++i )
-            {
-                indices[i] = static_cast<u32>( i );
-            }
-            if( auto geometry = wp_renderer_dx11_create_indexed_geometry_pntc(
-                    renderer, vertices.data(), static_cast<wp_s32>( vertices.size() ), indices.data(),
-                    static_cast<wp_s32>( indices.size() ), 1 ) )
-            {
-                wp_renderer_dx11_draw_geometry_pntc( renderer, geometry, 0,
-                                                     static_cast<wp_s32>( indices.size() ), 0 );
-                wp_renderer_dx11_destroy_geometry( geometry );
-            }
-        }
 
         SafeReadPtr<MaterialPassStateData> getPrimaryMaterialPassState(
             const SmartPtr<IMaterial> &material )
@@ -483,19 +213,6 @@ namespace workphone::render
         g_skyEnvironmentCaches.erase( this );
         m_environment.reset();
         m_previewEnvironment.reset();
-        const auto native = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
-        for( auto it = g_meshVertexCaches.begin(); it != g_meshVertexCaches.end(); )
-        {
-            if( it->second.renderer == native && native )
-            {
-                wp_renderer_dx11_destroy_geometry( it->second.geometry );
-                it = g_meshVertexCaches.erase( it );
-            }
-            else
-            {
-                ++it;
-            }
-        }
         if( m_renderer )
         {
             wp_renderer_destroy( m_renderer );
@@ -751,12 +468,7 @@ namespace workphone::render
 
     void ClawRendererDX11::forgetMesh( const wp_graphics_mesh *mesh )
     {
-        const auto found = g_meshVertexCaches.find( mesh );
-        if( found != g_meshVertexCaches.end() )
-        {
-            wp_renderer_dx11_destroy_geometry( found->second.geometry );
-            g_meshVertexCaches.erase( found );
-        }
+        wp_renderer_dx11_forget_mesh( mesh );
     }
 
     SmartPtr<IGraphicsCamera> ClawRendererDX11::getCamera() const
@@ -1196,13 +908,6 @@ namespace workphone::render
         const auto topology = wp_graphics_mesh_get_primitive_type( nativeMesh );
         const auto submeshCount = wp_graphics_mesh_get_submesh_count( nativeMesh );
         const auto drawCount = std::max<s32>( submeshCount, 1 );
-        const auto &meshVertices = getMeshVertices( nativeMesh );
-        if( meshVertices.empty() ||
-            meshVertices.size() > static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
-        {
-            return 0;
-        }
-
         const auto oldBlend = wp_renderer_get_blend_mode( m_renderer );
         const auto oldCull = wp_renderer_get_cull_mode( m_renderer );
         const auto oldDepthWrite = wp_renderer_get_depth_write_enabled( m_renderer );
@@ -1212,7 +917,8 @@ namespace workphone::render
         wp_renderer_set_blend_mode( m_renderer, WORKPHONE_BLEND_MODE_NONE );
 
         auto dx11 = wp_renderer_get_dx11( m_renderer );
-        const auto geometry = getMeshGeometry( dx11, nativeMesh, meshVertices );
+        const auto geometry = topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST
+            ? wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, 0, elementCount ) : nullptr;
 
         for( s32 submeshIndex = 0; submeshIndex < drawCount; ++submeshIndex )
         {
@@ -1380,55 +1086,22 @@ namespace workphone::render
             }
             else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_STRIP && count >= 3 )
             {
-                Array<wp_vertex_pntc> vertices;
-                vertices.reserve( static_cast<size_t>( count - 2u ) * 3u );
-                for( u32 i = 0; i + 2u < count; ++i )
+                if( auto stripGeometry = wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, start, count ) )
                 {
-                    auto a = readMeshIndex( nativeMesh, start + i );
-                    auto b = readMeshIndex( nativeMesh, start + i + 1u );
-                    auto c = readMeshIndex( nativeMesh, start + i + 2u );
-                    if( i & 1u )
-                    {
-                        std::swap( a, b );
-                    }
-                    appendTriangle( vertices, meshVertices, a, b, c );
-                }
-
-                if( !vertices.empty() &&
-                    vertices.size() <= static_cast<size_t>( std::numeric_limits<wp_s32>::max() ) )
-                {
-                    drawLitTriangles( dx11, vertices );
-                    m_primitiveCount += static_cast<u32>( vertices.size() / 3u );
+                    wp_renderer_dx11_draw_geometry_pntc( dx11, stripGeometry, 0,
+                        static_cast<wp_s32>( ( count - 2u ) * 3u ), 0 );
+                    m_primitiveCount += count - 2u;
                 }
             }
-            else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST )
+            else if( topology == WORKPHONE_PRIMITIVE_TRIANGLE_LIST && geometry )
             {
                 count -= count % 3u;
-                if( count == 0 )
-                {
-                    continue;
-                }
-
-                if( geometry )
+                if( count > 0 )
                 {
                     wp_renderer_dx11_draw_geometry_pntc( dx11, geometry, static_cast<wp_s32>( start ),
-                                                         static_cast<wp_s32>( count ), 0 );
+                        static_cast<wp_s32>( count ), 0 );
+                    m_primitiveCount += count / 3u;
                 }
-                else
-                {
-                    // Retry with transient geometry while retaining normals and PBR shading.
-                    Array<wp_vertex_pntc> fallback;
-                    fallback.reserve( count );
-                    for( u32 i = 0; i + 2 < count; i += 3 )
-                    {
-                        appendTriangle( fallback, meshVertices, readMeshIndex( nativeMesh, start + i ),
-                                        readMeshIndex( nativeMesh, start + i + 1 ),
-                                        readMeshIndex( nativeMesh, start + i + 2 ) );
-                    }
-                    drawLitTriangles( dx11, fallback );
-                }
-
-                m_primitiveCount += count / 3u;
             }
         }
 
@@ -1447,7 +1120,8 @@ namespace workphone::render
     bool ClawRendererDX11::prepareTerrainGeometry( const wp_graphics_mesh *mesh )
     {
         auto dx11 = m_renderer ? wp_renderer_get_dx11( m_renderer ) : nullptr;
-        return mesh && dx11 && getMeshGeometry( dx11, mesh, getMeshVertices( mesh ) );
+        return mesh && dx11 && wp_renderer_dx11_prepare_mesh_geometry( dx11, const_cast<wp_graphics_mesh *>( mesh ),
+            0, wp_graphics_mesh_get_index_count( mesh ) );
     }
 
     void ClawRendererDX11::prepareTerrain( SmartPtr<ClawTerrain> terrain,
@@ -1579,9 +1253,8 @@ namespace workphone::render
         }
         for( auto nativeMesh : tiles )
         {
-            const auto &vertices = getMeshVertices( nativeMesh );
             const auto indexCount = wp_graphics_mesh_get_index_count( nativeMesh );
-            const auto geometry = getMeshGeometry( dx11, nativeMesh, vertices );
+            const auto geometry = wp_renderer_dx11_prepare_mesh_geometry( dx11, nativeMesh, 0, indexCount );
             if( !geometry )
             {
                 continue;

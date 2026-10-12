@@ -30,6 +30,24 @@ extern "C" {
 
 typedef struct wp_graphics_system wp_graphics_system;
 
+/** Native frame diagnostics. Serial numbers wrap modulo 2^32. Pass counts
+ * describe the last completed render, excluding a rejected begin callback.
+ * Updates never reset render diagnostics. Querying from a callback returns
+ * the previous completed render; callback reentry cannot advance either serial.
+ */
+typedef struct wp_graphics_system_frame_stats
+{
+    wp_u32 update_serial;
+    wp_u32 render_serial;
+    wp_s32 completed_pass_count;
+    wp_s32 skipped_pass_count;
+    wp_f32 delta_time;
+} wp_graphics_system_frame_stats;
+
+/** Copies diagnostics without allocating. Returns zero for invalid arguments. */
+wp_s32 wp_graphics_system_get_frame_stats( const wp_graphics_system *system,
+                                          wp_graphics_system_frame_stats *stats );
+
 /**
  * @brief Callback used by the single-entry frame driver.
  *
@@ -143,7 +161,11 @@ void wp_graphics_system_update( wp_graphics_system *system );
 wp_s32 wp_graphics_system_set_delta_time( wp_graphics_system *system, wp_f32 delta_time );
 
 /**
- * @brief Executes the registered target passes, or draws all managed scenes.
+ * @brief Executes target passes, the legacy frame callback, or native scenes.
+ *
+ * Does not update scene state. Calling set_delta_time(), update(), render()
+ * executes the same native sequence as render_frame(). A render without an
+ * update is permitted for presentation-only redraws.
  * @param system Pointer to the graphics system.
  */
 void wp_graphics_system_render( wp_graphics_system *system );

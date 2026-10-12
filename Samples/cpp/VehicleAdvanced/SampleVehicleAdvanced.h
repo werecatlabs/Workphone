@@ -126,7 +126,9 @@ namespace workphone
         advanced::SceneAssets m_assets;
         SmartPtr<scene::ProceduralRaceScene> m_raceScene;
         u64 m_profileFrames = 0;
+        u64 m_reviewFrames = 0;
         f64 m_profileStart = 0;
+        f64 m_reviewStart = -1;
         float m_surfaceGrip = 1.f;
         u32 m_seed = 7;
         procedural::VehicleAppearanceQuality m_quality = procedural::VehicleAppearanceQuality::High;

@@ -152,6 +152,10 @@ namespace workphone
                 props->setProperty( "native_system_active", m_sys != nullptr );
                 props->setProperty( "vsync", getVSync() );
                 std::lock_guard<std::mutex> lock( m_statisticsMutex );
+                props->setProperty( "native_update_serial", m_nativeUpdateSerial );
+                props->setProperty( "native_render_serial", m_nativeRenderSerial );
+                props->setProperty( "native_completed_passes", m_nativeCompletedPasses );
+                props->setProperty( "native_skipped_passes", m_nativeSkippedPasses );
                 const auto split = m_renderStatistics.find( '\n' );
                 props->setProperty( "render_statistics", m_renderStatistics.substr( 0, split ) );
                 if( split != String::npos )
@@ -189,6 +193,17 @@ namespace workphone
 
         void ClawHammerSystem::publishRenderStatistics()
         {
+            // Native stats belong to the render task. Publish a cached snapshot for
+            // property readers on the editor task instead of racing the C system.
+            wp_graphics_system_frame_stats frameStats{};
+            wp_graphics_system_get_frame_stats( m_sys, &frameStats );
+            {
+                std::lock_guard<std::mutex> lock( m_statisticsMutex );
+                m_nativeUpdateSerial = frameStats.update_serial;
+                m_nativeRenderSerial = frameStats.render_serial;
+                m_nativeCompletedPasses = frameStats.completed_pass_count;
+                m_nativeSkippedPasses = frameStats.skipped_pass_count;
+            }
             if( !m_statisticsSnapshotRequested.exchange( false ) )
             {
                 return;
@@ -507,7 +522,7 @@ namespace workphone
                 }
 
                 auto applicationManager = core::IApplicationManager::instancePtr();
-                auto renderUI = applicationManager->getRenderUI();
+                auto renderUI = applicationManager ? applicationManager->getRenderUI() : nullptr;
 
                 if( renderUI )
                 {
@@ -523,17 +538,24 @@ namespace workphone
 
                 wp_f32 deltaTime = 1.0f / 60.0f;
 
-                if( auto timer = applicationManager->getTimer() )
+                if( auto timer = applicationManager ? applicationManager->getTimer() : nullptr )
                 {
                     deltaTime = static_cast<wp_f32>( timer->getDeltaTime() );
                 }
 
                 prepareFramePasses( deltaTime );
+                if( !wp_graphics_system_set_delta_time( m_sys, deltaTime ) )
+                {
+                    throw std::runtime_error( "Native graphics frame is already executing." );
+                }
                 preparation.end();
-                wp_graphics_system_render_frame( m_sys, deltaTime );
+                // The C89 system owns native update and the complete ordered frame.
+                // Keep the engine's update-only scheduling contract at this boundary.
+                wp_graphics_system_update( m_sys );
+                wp_graphics_system_render( m_sys );
                 publishRenderStatistics();
 
-                for( auto &scene : m_scenes )
+                for( auto &scene : m_scenes.snapshot() )
                 {
                     if( scene )
                     {
@@ -549,12 +571,17 @@ namespace workphone
 
         void ClawHammerSystem::prepareFramePasses( wp_f32 deltaTime )
         {
-            // The C driver copies descriptors; their retained C++ objects stay alive until
-            // synchronous rendering completes. Clear descriptors before replacing contexts.
-            wp_graphics_system_set_render_passes( m_sys, nullptr, 0 );
-            m_framePasses.clear();
+            // Publish descriptors and their retained objects together. If allocation or
+            // validation fails, the previous native descriptors still have live contexts.
+            std::vector<FramePassContext> nextFramePasses;
             auto renderer = getRenderer();
-            if( !renderer ) return;
+            if( !renderer )
+            {
+                if( !wp_graphics_system_set_render_passes( m_sys, nullptr, 0 ) )
+                    throw std::runtime_error( "Cannot clear an executing native graphics frame." );
+                m_framePasses.clear();
+                return;
+            }
             if( auto pipeline = dynamic_pointer_cast<ClawGraphicsPipeline>( m_graphicsPipeline ) )
                 pipeline->setFrameDeltaTime( deltaTime );
             if( auto textures = getTextureManager() )
@@ -569,16 +596,18 @@ namespace workphone
                     for( auto &viewport : target->getViewports() )
                     {
                         if( viewport && viewport->isActive() && viewport->getEnableSceneRender() )
-                            m_framePasses.push_back( { this, renderer, target, viewport, false } );
+                            nextFramePasses.push_back( { this, renderer, target, viewport, false } );
                     }
                 }
             }
             auto window = getDefaultWindow();
-            m_framePasses.push_back( { this, renderer, window,
+            nextFramePasses.push_back( { this, renderer, window,
                                       window ? window->getViewport( 0 ) : nullptr, true } );
+            if( nextFramePasses.size() > WP_GRAPHICS_SYSTEM_MAX_RENDER_PASSES )
+                throw std::runtime_error( "Graphics frame exceeds native render pass capacity." );
             std::vector<wp_graphics_system_render_pass> passes;
-            passes.reserve( m_framePasses.size() );
-            for( auto &context : m_framePasses )
+            passes.reserve( nextFramePasses.size() );
+            for( auto &context : nextFramePasses )
             {
                 wp_graphics_system_render_pass pass = {};
                 pass.begin = &ClawHammerSystem::beginFramePass;
@@ -593,6 +622,7 @@ namespace workphone
             if( !wp_graphics_system_set_render_passes( m_sys, passes.data(),
                                                        static_cast<wp_s32>( passes.size() ) ) )
                 throw std::runtime_error( "Native graphics frame pass registration failed." );
+            m_framePasses.swap( nextFramePasses );
         }
 
         wp_s32 ClawHammerSystem::beginFramePass( wp_graphics_system *system, wp_f32 dt, void *data )
@@ -626,12 +656,18 @@ namespace workphone
             if( owner->m_sys != system || ( pass.failed && stage != 5 ) ) return;
             auto viewport = pass.viewport;
             auto renderer = pass.renderer;
-            const bool sceneEnabled = !viewport || viewport->getEnableSceneRender();
             try
             {
+                const bool sceneEnabled = !viewport || viewport->getEnableSceneRender();
                 switch( stage )
                 {
                 case 0:
+                    // Skip detached, inactive and minimized targets before entering
+                    // begin/end/present. Keep virtual calls behind this exception barrier.
+                    if( !renderer || !pass.target ||
+                        ( !pass.window && !pass.target->isActive() ) ||
+                        pass.target->getSize().x <= 0 || pass.target->getSize().y <= 0 ||
+                        ( viewport && !viewport->isActive() ) ) return;
                     renderer->setRenderTarget( pass.target );
                     renderer->setViewport( viewport );
                     if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )

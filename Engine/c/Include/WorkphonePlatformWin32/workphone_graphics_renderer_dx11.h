@@ -34,6 +34,17 @@ typedef struct wp_renderer_dx11 wp_renderer_dx11;
 typedef struct wp_render_texture_dx11 wp_render_texture_dx11;
 typedef struct wp_geometry_dx11 wp_geometry_dx11;
 
+/* Renderer-owned immutable mesh geometry. Triangle lists cache the complete
+ * mesh; apply first/count when drawing the returned geometry. Strip ranges are
+ * converted to lists starting at zero with submesh-relative winding. Geometry is
+ * borrowed until mesh mutation, forget, or renderer destruction. All calls
+ * are serialized on the graphics render owner. Native mesh owners must call
+ * forget_mesh before destruction to release cached GPU allocations eagerly. */
+struct wp_graphics_mesh;
+wp_geometry_dx11 *wp_renderer_dx11_prepare_mesh_geometry( wp_renderer_dx11 *renderer,
+    struct wp_graphics_mesh *mesh, wp_u32 first, wp_u32 count );
+void wp_renderer_dx11_forget_mesh( const struct wp_graphics_mesh *mesh );
+
 /** Parameters consumed by the built-in forward PBR mesh shader. */
 typedef struct wp_material_dx11
 {

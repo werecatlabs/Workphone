@@ -8,12 +8,15 @@
 #include <Workphone/Graphics/TextureMipGenerator.hpp>
 #include <WorkphoneGraphics/workphone_graphics_renderer.h>
 #include <WorkphoneGraphics/workphone_graphics_object.h>
+#include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include "DX11TestEvidence.hpp"
 #include <chrono>
 #include <cstdio>
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 namespace
 {
@@ -55,8 +58,13 @@ namespace
             { {-1, 1,0}, {0,0,1}, {0,1}, 0xFFFFFFFFu }
         };
         const wp_u16 indices[] = {0,1,2,0,2,3};
-        auto *geometry = wp_renderer_dx11_create_indexed_geometry_pntc( renderer, vertices, 4, indices, 6, 0 );
-        bool ok = check( geometry != nullptr, "shadow geometry must be created" );
+        auto *nativeMesh = wp_graphics_mesh_create();
+        const bool prepared = nativeMesh && wp_graphics_mesh_set_vertices( nativeMesh,
+            WORKPHONE_VERTEX_FORMAT_PNTC, vertices, 4 ) &&
+            wp_graphics_mesh_set_indices_u16( nativeMesh, indices, 6 );
+        auto *geometry = prepared
+            ? wp_renderer_dx11_prepare_mesh_geometry( renderer, nativeMesh, 0, 6 ) : nullptr;
+        bool ok = check( geometry != nullptr, "native cached shadow geometry must be created" );
         wp_mat4f identity{};
         for( int i = 0; i < 4; ++i ) identity.m[i][i] = 1;
         wp_renderer_dx11_set_render_texture( renderer, target );
@@ -186,7 +194,8 @@ namespace
         wrapper.disableShadows(); wrapper.setCamera( nullptr );
         if( originalDepth ) originalDepth->Release();
         if( readback ) readback->Release();
-        wp_renderer_dx11_destroy_geometry( geometry );
+        wp_renderer_dx11_forget_mesh( nativeMesh );
+        wp_graphics_mesh_destroy( nativeMesh );
         wp_renderer_dx11_enable_shadow_receiving( renderer, 0 );
         wp_renderer_dx11_set_scissor_enabled( renderer, 0 );
         wp_renderer_dx11_set_render_texture( renderer, nullptr );
@@ -456,6 +465,145 @@ namespace
         wp_renderer_dx11_destroy_render_texture( target );
         return ok;
     }
+    bool testNativeMeshPixels( wp_renderer_dx11 *renderer )
+    {
+        auto *device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
+        auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );
+        auto *target = wp_renderer_dx11_create_render_texture( renderer, 32, 32 );
+        if( !check( target != nullptr, "cache equivalence target allocation" ) ) return false;
+        auto *resource = static_cast<ID3D11Texture2D *>( wp_renderer_dx11_get_render_texture_resource( target ) );
+        D3D11_TEXTURE2D_DESC desc{};
+        resource->GetDesc( &desc );
+        desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        ID3D11Texture2D *staging = nullptr;
+        bool ok = check( SUCCEEDED( device->CreateTexture2D( &desc, nullptr, &staging ) ), "cache equivalence staging allocation" );
+        const wp_vertex_pntc authored[] = {
+            {{-0.8f,-0.8f,0}, {0,0,1}, {0,0}, 0xff8040ffu},
+            {{ 0.8f,-0.8f,0}, {0,0.6f,0.8f}, {1,0}, 0x40ff80ffu},
+            {{-0.8f, 0.8f,0}, {0.6f,0,0.8f}, {0,1}, 0x8040ffffu},
+            {{ 0.8f, 0.8f,0}, {0,0,1}, {1,1}, 0xffffffffu}
+        };
+        const uint16_t strip[] = {0,1,2,3};
+        const uint16_t triangles[] = {0,1,2,2,1,3};
+        const uint16_t range[] = {1,2,3};
+        wp_mat4f identity{};
+        for( int i = 0; i < 4; ++i ) identity.m[i][i] = 1;
+        wp_renderer_dx11_set_render_texture( renderer, target );
+        wp_renderer_dx11_set_viewport( renderer, {0,0,32,32} );
+        wp_renderer_dx11_set_scissor_enabled( renderer, 0 );
+        wp_renderer_dx11_set_world_matrix( renderer, &identity );
+        wp_renderer_dx11_set_view_matrix( renderer, &identity );
+        wp_renderer_dx11_set_projection_matrix( renderer, &identity );
+        wp_renderer_dx11_set_depth_test_enabled( renderer, 0 );
+        wp_renderer_dx11_set_blend_mode( renderer, WORKPHONE_BLEND_MODE_NONE );
+        wp_renderer_dx11_set_fill_mode( renderer, WORKPHONE_FILL_MODE_SOLID );
+        wp_renderer_dx11_set_texture_native( renderer, nullptr );
+        wp_renderer_dx11_set_material_textures( renderer, nullptr );
+        wp_renderer_dx11_enable_shadow_receiving( renderer, 0 );
+        wp_renderer_dx11_set_environment( renderer, nullptr, 0 );
+        wp_material_dx11 material{};
+        material.base_color = {1,1,1,1}; material.specular_color = {0.04f,0.04f,0.04f,1};
+        material.light_color = {1,1,1,2}; material.light_direction = {0,0,-1,0};
+        material.camera_position = {0,0,2,0.1f}; material.surface = {0,0.8f,1,1};
+        material.uv_transform.z = 1; material.controls.z = -1;
+        wp_renderer_dx11_set_material( renderer, &material );
+        wp_renderer_dx11_set_clear_color( renderer, 0, 0, 0, 1 );
+        for( int mode = 0; staging && mode < 5; ++mode )
+        {
+            auto *mesh = wp_graphics_mesh_create();
+            wp_vertex_pntc reference[4];
+            std::memcpy( reference, authored, sizeof( reference ) );
+            if( mode >= 3 )
+            {
+                wp_graphics_mesh_vertex_pt source[4];
+                for( int i = 0; i < 4; ++i )
+                {
+                    source[i] = {authored[i].position, authored[i].uv};
+                    reference[i].normal = {0,0,1}; reference[i].color = 0xffffffffu;
+                }
+                ok &= wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_PT, source, 4 ) != 0;
+            }
+            else ok &= wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_PNTC, authored, 4 ) != 0;
+            const bool isStrip = mode > 0 && mode < 4;
+            if( mode != 4 ) ok &= wp_graphics_mesh_set_indices_u16( mesh, isStrip ? strip : triangles, isStrip ? 4 : 6 ) != 0;
+            wp_graphics_mesh_set_primitive_type( mesh, isStrip ? WORKPHONE_PRIMITIVE_TRIANGLE_STRIP : WORKPHONE_PRIMITIVE_TRIANGLE_LIST );
+            const wp_u32 first = mode == 2 ? 1u : 0u;
+            const wp_u32 elements = mode == 2 ? 3u : isStrip ? 4u : mode == 4 ? 4u : 6u;
+            const int drawCount = mode == 2 || mode == 4 ? 3 : 6;
+            auto *cached = wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, first, elements );
+            auto *raw = wp_renderer_dx11_create_indexed_geometry_pntc( renderer, reference, 4,
+                mode == 2 ? range : triangles, drawCount, 0 );
+            ok &= check( cached && raw, "cached and reference geometry allocation" );
+            for( int cull = 0; cached && raw && cull < 3; ++cull )
+            {
+                wp_renderer_dx11_set_cull_mode( renderer, cull == 0 ? WORKPHONE_CULL_MODE_NONE :
+                    cull == 1 ? WORKPHONE_CULL_MODE_BACK : WORKPHONE_CULL_MODE_FRONT );
+                std::vector<unsigned char> pixels[2];
+                for( int pass = 0; pass < 2; ++pass )
+                {
+                    wp_renderer_dx11_clear( renderer, WORKPHONE_CLEAR_FLAG_ALL );
+                    wp_renderer_dx11_draw_geometry_pntc( renderer, pass == 0 ? raw : cached, 0, drawCount, 0 );
+                    context->CopyResource( staging, resource );
+                    D3D11_MAPPED_SUBRESOURCE mapped{};
+                    if( SUCCEEDED( context->Map( staging, 0, D3D11_MAP_READ, 0, &mapped ) ) )
+                    {
+                        pixels[pass].resize( 32 * 32 * 4 );
+                        for( int y = 0; y < 32; ++y ) std::memcpy( pixels[pass].data() + y * 32 * 4,
+                            static_cast<const unsigned char *>( mapped.pData ) + y * mapped.RowPitch, 32 * 4 );
+                        context->Unmap( staging, 0 );
+                    }
+                    else ok &= check( false, "cache equivalence pixel readback" );
+                }
+                ok &= check( !pixels[0].empty() && pixels[0] == pixels[1], "native cache must match raw geometry pixels including winding and submesh ranges" );
+                if( cull == 0 && !pixels[0].empty() )
+                {
+                    bool visible = false;
+                    for( size_t i = 0; i < pixels[0].size(); i += 4 ) visible |= pixels[0][i] || pixels[0][i+1] || pixels[0][i+2];
+                    ok &= check( visible, "cache equivalence reference must draw visible pixels" );
+                }
+            }
+            wp_renderer_dx11_destroy_geometry( raw );
+            wp_renderer_dx11_forget_mesh( mesh ); wp_graphics_mesh_destroy( mesh );
+        }
+        if( staging ) staging->Release();
+        wp_renderer_dx11_set_render_texture( renderer, nullptr );
+        wp_renderer_dx11_destroy_render_texture( target );
+        return ok;
+    }
+
+    bool testNativeMeshCache( wp_renderer_dx11 *renderer )
+    {
+        const wp_graphics_mesh_vertex_p vertices[] = {
+            {{-1,-1,0}}, {{1,-1,0}}, {{-1,1,0}}, {{1,1,0}}
+        };
+        const uint16_t strip[] = {0,1,2,3};
+        const wp_u32 invalid[] = {0,1,9};
+        auto *mesh = wp_graphics_mesh_create();
+        if( !check( mesh != nullptr, "native mesh allocation" ) ) return false;
+        bool ok = wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 4 ) &&
+            wp_graphics_mesh_set_indices_u16( mesh, strip, 4 );
+        wp_graphics_mesh_set_primitive_type( mesh, WORKPHONE_PRIMITIVE_TRIANGLE_STRIP );
+        auto *whole = wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 0, 4 );
+        ok &= check( whole && wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 0, 4 ) == whole,
+            "native strip geometry is retained across frames" );
+        auto *range = wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 1, 3 );
+        ok &= check( range && range != whole &&
+            wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 1, 3 ) == range,
+            "submesh-relative strip conversion retains independent geometry" );
+        ok &= check( !wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 3, 3 ),
+            "native mesh cache rejects out-of-bounds draw ranges" );
+        wp_graphics_mesh_set_primitive_type( mesh, WORKPHONE_PRIMITIVE_TRIANGLE_LIST );
+        wp_graphics_mesh_set_indices_u32( mesh, invalid, 3 );
+        ok &= check( !wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 0, 3 ),
+            "index-only mutation retires cached data and rejects invalid geometry" );
+        wp_graphics_mesh_set_indices_u16( mesh, strip, 3 );
+        ok &= check( wp_renderer_dx11_prepare_mesh_geometry( renderer, mesh, 0, 3 ) != nullptr,
+            "native cache recovers after valid geometry replacement" );
+        wp_renderer_dx11_forget_mesh( mesh );
+        wp_graphics_mesh_destroy( mesh );
+        return ok;
+    }
+
 }
 
 int main()
@@ -553,6 +701,8 @@ int main()
             resizedDepth->Release();
         if( originalDepth )
             originalDepth->Release();
+        ok &= testNativeMeshCache( native );
+        ok &= testNativeMeshPixels( native );
         ok &= testShadows( renderer );
         ok &= testDrawConstants( native );
         ok &= testMipsAndFog( native );

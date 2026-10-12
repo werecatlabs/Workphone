@@ -9,6 +9,9 @@ file(GLOB_RECURSE SOURCE_FILES "../../Source/WorkphoneGraphics/*.c")
 
 add_library(WorkphoneGraphics STATIC ${HEADER_FILES} ${SOURCE_FILES})
 target_link_libraries(WorkphoneGraphics PUBLIC WorkphoneCore)
+if(UNIX)
+    target_link_libraries(WorkphoneGraphics PUBLIC m)
+endif()
 
 set_target_properties(
     WorkphoneGraphics
