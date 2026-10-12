@@ -253,8 +253,20 @@ namespace workphone::core
                 }
                 std::fprintf( stderr, "TRACE ApplicationManager scene window done\n" );
 
-                // UI elements and listeners can own script objects. Release them before closing
-                // the script manager so their unload paths still have a valid scripting runtime.
+                // Break UI links while the entire control inventory is still alive.
+                // Lua collection can otherwise destroy a parent ahead of its children.
+                if( auto ui = getUI() )
+                    ui->clear();
+
+                // Lua userdata owns strong references to pooled UI/graphics objects.
+                // Release those references while their factories and managers are alive;
+                // closing the VM after UI factory teardown accesses freed pool storage.
+                if( auto scriptManager = getScriptManager() )
+                {
+                    scriptManager->unload( nullptr );
+                    setScriptManager( nullptr );
+                }
+
                 if( auto ui = getUI() )
                 {
                     ui->unload( nullptr );
@@ -472,12 +484,6 @@ namespace workphone::core
                 // FSM listeners can hold weak references to the task manager.
                 // Keep its storage alive until the listeners have been released.
                 setTaskManager( nullptr );
-
-                if( auto scriptManager = getScriptManager() )
-                {
-                    scriptManager->unload( nullptr );
-                    setScriptManager( nullptr );
-                }
 
                 Array<SmartPtr<IPlugin>> pluginsToUnload;
                 if( auto pluginManager = getPluginManager() )

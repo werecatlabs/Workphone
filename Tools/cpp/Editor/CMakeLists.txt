@@ -1044,6 +1044,9 @@ if (WP_EDITOR_TESTS)
         editor_input_window_live_values_test
         editor_window_callbacks_disconnect_test
         editor_material_selection_visibility_test
+        editor_material_parameters_test
+        editor_material_control_events_test
+        editor_ui_control_unload_test
         editor_cubemap_face_preview_test
         procedural_components_road_properties
         procedural_components_texture_resolution
@@ -1099,6 +1102,6 @@ if (WP_EDITOR_TESTS)
         "--log_level=error" "--report_level=detailed" "--catch_system_errors=yes"
         CONFIGURATIONS Debug)
     set_tests_properties(Editor.all PROPERTIES
-        WORKING_DIRECTORY "$<TARGET_FILE_DIR:Editor>" RUN_SERIAL TRUE TIMEOUT 600
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:Editor>" RUN_SERIAL TRUE TIMEOUT 900
         LABELS "editor;lifecycle")
 endif()

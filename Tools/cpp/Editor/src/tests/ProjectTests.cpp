@@ -301,7 +301,11 @@ BOOST_AUTO_TEST_CASE( project_loaded_cache_paths_test )
         const auto file = directory / "project.fbproject";
         std::ofstream( file ) << "{\"projectVersion\":\"1.0.0\"}";
         // Resolve the selected file once, even when the selection is relative to the editor.
-        project.loadFromFile( std::filesystem::relative( file, workingDirectory ).u8string() );
+        auto selectedPath = std::filesystem::relative( file, workingDirectory );
+        // Windows cannot express a C: temporary directory relative to a G: editor.
+        if( selectedPath.empty() )
+            selectedPath = file;
+        project.loadFromFile( selectedPath.u8string() );
         BOOST_CHECK( std::filesystem::u8path( guard.app->getProjectPath().c_str() ) == directory );
         BOOST_CHECK_EQUAL( guard.app->getCachePath(), ( directory / "Cache" ).generic_u8string() + "/" );
         BOOST_CHECK_EQUAL( guard.app->getSettingsPath(),

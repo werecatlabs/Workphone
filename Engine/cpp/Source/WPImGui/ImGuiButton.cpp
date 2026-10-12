@@ -18,6 +18,7 @@ namespace workphone::ui
 
     void ImGuiButton::unload( SmartPtr<ISharedObject> data )
     {
+        ImGuiElement<IUIButton>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
 

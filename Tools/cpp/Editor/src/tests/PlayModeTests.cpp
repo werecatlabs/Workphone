@@ -4,6 +4,7 @@
 #include <editor/EditorManager.hpp>
 #include <commands/ToggleEditorCamera.hpp>
 #include <Workphone/System/Job.hpp>
+#include <Workphone/Database/AssetDatabaseManager.hpp>
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
@@ -91,8 +92,20 @@ namespace
             BOOST_REQUIRE( cameraManager->getEditorRTT() );
             // loadDebug disables the manager; test the production selection path.
             cameraManager->setEnabled( true );
-            applicationManager->setProjectPath( "" );
-            applicationManager->setCachePath( directory.generic_string().c_str() );
+            // Scene saves publish a reference graph into the project catalog.
+            // Bind a private catalog rather than inheriting the user's cache.
+            const String projectRoot( directory.generic_string().c_str() );
+            applicationManager->setProjectPath( projectRoot );
+            applicationManager->setCachePath( projectRoot + "/Cache" );
+            std::filesystem::create_directories( directory / "Cache" );
+            auto resources = applicationManager->getResourceDatabase();
+            auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() );
+            BOOST_REQUIRE( catalog );
+            catalog->unload( nullptr );
+            BOOST_REQUIRE( catalog->setProjectRoot( projectRoot ) );
+            catalog->loadFromFile( projectRoot + "/asset.db" );
+            BOOST_REQUIRE( catalog->getDatabase() );
+            BOOST_REQUIRE( catalog->getDatabase()->isLoaded() );
             scene->clear( true );
             scene->setFilePath( "" );
             scene->setLabel( "PlayModeTest" );

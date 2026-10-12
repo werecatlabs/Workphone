@@ -451,20 +451,19 @@ namespace workphone::editor
                 setPlugin( job->getPlugin() );
             }
 
-            // open project catalog
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
-            auto resourceDatabase = applicationManager->getResourceDatabasePtr();
-            WP_ASSERT( resourceDatabase );
-
-            auto dbFilePath = resourceDatabase->getFilePath();
-            auto databasePath = applicationManager->getCachePath() + "/" + dbFilePath;
-            databasePath = StringUtil::cleanupPath( databasePath );
-
-            auto projectCatolog = resourceDatabase->getDatabaseManager();
-            projectCatolog->setDatabasePath( databasePath );
-            projectCatolog->open();
+            // Metadata-only hosts do not install a resource database.
+            if( auto resourceDatabase = app->getResourceDatabase() )
+            {
+                const auto dbFilePath = resourceDatabase->getFilePath();
+                auto databasePath = Path::isPathAbsolute( dbFilePath )
+                                        ? dbFilePath : app->getCachePath() + "/" + dbFilePath;
+                auto projectCatalog = resourceDatabase->getDatabaseManager();
+                if( projectCatalog )
+                {
+                    projectCatalog->setDatabasePath( StringUtil::cleanupPath( databasePath ) );
+                    projectCatalog->open();
+                }
+            }
 
             if( auto scenes = app->getGameManager() )
             {

@@ -242,6 +242,7 @@ namespace workphone::ui
         setLoadingState( LoadingState::Unloading );
         m_data.clear();
         g_profileStates.erase( this );
+        ImGuiElement<IUIProfileWindow>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
 

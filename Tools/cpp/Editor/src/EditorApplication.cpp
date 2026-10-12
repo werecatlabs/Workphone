@@ -1,4 +1,5 @@
 #include <EditorPCH.hpp>
+#include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <EditorApplication.hpp>
 #include <commands/AddActorCmd.hpp>
 #include <commands/AddComponentCmd.hpp>
@@ -664,6 +665,10 @@ namespace workphone::editor
                 }
 
                 Application::unload( nullptr );
+
+                // Terrain consumers are gone. Join streaming workers before Windows
+                // tears down DLLs and terminates threads during process exit.
+                WorldStreamingScheduler::shutdownShared();
 
                 core::IApplicationManager::setInstance( nullptr );
 

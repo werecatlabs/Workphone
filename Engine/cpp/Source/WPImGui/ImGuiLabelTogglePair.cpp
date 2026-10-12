@@ -21,6 +21,7 @@ namespace workphone::ui
     void ImGuiLabelTogglePair::unload( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Unloading );
+        ImGuiElement<IUILabelTogglePair>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
 

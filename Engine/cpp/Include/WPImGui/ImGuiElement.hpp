@@ -754,6 +754,7 @@ namespace workphone
                 m_scriptReceiver = nullptr;
 
                 m_scriptData = nullptr;
+                this->setScriptData( nullptr );
 
                 auto children = getChildren();
                 for( auto &child : children )

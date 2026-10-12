@@ -1395,7 +1395,8 @@ function MaterialEditor:updateSelectedMaterial()
 		self.materialSettings.blendMode = safeGet(self.material, "getBlendMode", self.materialSettings.blendMode);
 		self.materialSettings.depthWrite = safeGet(self.material, "getDepthWrite", self.materialSettings.depthWrite);
 		self.materialSettings.depthTest = safeGet(self.material, "getDepthTest", self.materialSettings.depthTest);
-		self.materialSettings.cullMode = safeGet(self.material, "getCullMode", self.materialSettings.cullMode);
+		local nativeCullMode = safeGet(self.material, "getCullMode", 2);
+		self.materialSettings.cullMode = ({[2]=0, [3]=1, [1]=2})[nativeCullMode] or 0;
 		self.materialSettings.doubleSided = self.materialSettings.cullMode == 2;
 
 		local okUvTiling, uvTiling = safeCall(self.material, "getUVTiling");
@@ -1454,7 +1455,8 @@ function MaterialEditor:syncDerivedSettingsFromMaterial()
 	self.materialSettings.blendMode = safeGet(self.material, "getBlendMode", self.materialSettings.blendMode);
 	self.materialSettings.depthWrite = safeGet(self.material, "getDepthWrite", self.materialSettings.depthWrite);
 	self.materialSettings.depthTest = safeGet(self.material, "getDepthTest", self.materialSettings.depthTest);
-	self.materialSettings.cullMode = safeGet(self.material, "getCullMode", self.materialSettings.cullMode);
+	local nativeCullMode = safeGet(self.material, "getCullMode", 2);
+	self.materialSettings.cullMode = ({[2]=0, [3]=1, [1]=2})[nativeCullMode] or 0;
 	self.materialSettings.doubleSided = self.materialSettings.cullMode == 2;
 end
 
@@ -1544,9 +1546,12 @@ function MaterialEditor:applySettingToMaterial(binding, value)
 
 	if binding.key == "doubleSided" then
 		if value == true then
-			safeCall(self.material, "setCullMode", 2);
+			safeCall(self.material, "setCullMode", 1);
 		else
-			safeCall(self.material, "setCullMode", self.materialSettings.cullMode or 0);
+			local option = self.materialSettings.cullMode or 0;
+			if option == 2 then option = 0; end
+			self.materialSettings.cullMode = option;
+			safeCall(self.material, "setCullMode", ({2, 3, 1})[option + 1]);
 		end
 		return;
 	elseif binding.key == "transparent" then
@@ -1571,9 +1576,12 @@ function MaterialEditor:applySettingToMaterial(binding, value)
 		self:storeEditorSetting("transparent", self.materialSettings.transparent, "bool");
 		self:storeEditorSetting("cutout", self.materialSettings.cutout, "bool");
 		return;
-	elseif binding.key == "cullMode" and value ~= 2 then
-		self.materialSettings.doubleSided = false;
-		self:storeEditorSetting("doubleSided", false, "bool");
+	elseif binding.key == "cullMode" then
+		-- Dropdown indices are Back/Front/None; the engine uses 2/3/1.
+		self.materialSettings.doubleSided = value == 2;
+		self:storeEditorSetting("doubleSided", value == 2, "bool");
+		safeCall(self.material, "setCullMode", ({2, 3, 1})[value + 1] or 2);
+		return;
 	elseif binding.key == "uvTilingX" or binding.key == "uvTilingY" then
 		local tiling = safeVector2(self.materialSettings.uvTilingX, self.materialSettings.uvTilingY);
 		if tiling ~= nil then
@@ -1627,6 +1635,14 @@ function MaterialEditor:onSettingChanged(control, args, elementId)
 
 	self.materialSettings[binding.key] = value;
 	self:applySettingToMaterial(binding, value);
+	if binding.setterName == "setDiffuse" then
+		-- Both colour controls edit the same diffuse value. Keep Apply/Save from
+		-- overwriting it with the other control's stale value.
+		self.materialSettings.albedoColour = value;
+		self.materialSettings.metallicColour = value;
+		if self.albedoColour then safeCall(self.albedoColour, "setColour", value); end
+		if self.metallicColour then safeCall(self.metallicColour, "setColour", value); end
+	end
 
 	if binding.key == "renderMode" or
 		binding.key == "opacity" or
@@ -2004,7 +2020,7 @@ function MaterialEditor:handleEvent(parameters, results)
 			binding = self.controlBindingsById[elementId];
 		end
 
-		if binding ~= nil then
+		if binding ~= nil and binding.valueType ~= "button" then
 			self:onSettingChanged(sender, args, elementId);
 		else
 		self:handleAction(elementId);

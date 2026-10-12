@@ -168,48 +168,8 @@ namespace workphone::ui
             {
                 setLoadingState( LoadingState::Unloading );
 
-                // Hold every control alive while unload breaks child, listener and
-                // script references. Otherwise unloading one tree can reclaim a
-                // control that a later factory/index entry still refers to.
                 auto factoryManager = getFactoryManager();
-                Array<SmartPtr<ISharedObject>> controls;
-                if( factoryManager )
-                {
-                    for( auto &factory : factoryManager->getFactories() )
-                    {
-                        auto objects = factory->getInstanceObjects();
-                        controls.insert( controls.end(), objects.begin(), objects.end() );
-                    }
-                }
-                for( auto &control : controls )
-                {
-                    control->unload( data );
-                }
-
-                auto elementsByType = getElementsByType();
-                for( auto p : elementsByType )
-                {
-                    p->clear();
-                }
-
-                elementsByType.clear();
-                m_elements.clear();
-
-                if( m_uiWindow )
-                {
-                    m_uiWindow->unload( data );
-                    m_uiWindow = nullptr;
-                }
-
-                if( m_application )
-                {
-                    m_application->unload( data );
-                    m_application = nullptr;
-                }
-
-                // Releasing these references runs normal destruction and removes
-                // controls from their factory inventories before bulk teardown.
-                controls.clear();
+                clear();
                 if( factoryManager )
                 {
                     factoryManager->unload( data );
@@ -378,6 +338,30 @@ namespace workphone::ui
 
     void ImGuiManager::clear()
     {
+        // Keep controls alive together while breaking links between their trees.
+        // Factories remain alive so Lua can subsequently release its userdata.
+        Array<SmartPtr<ISharedObject>> controls;
+        if( auto factories = getFactoryManager() )
+            for( auto &factory : factories->getFactories() )
+            {
+                auto objects = factory->getInstanceObjects();
+                controls.insert( controls.end(), objects.begin(), objects.end() );
+            }
+        for( auto &control : controls )
+            control->unload( nullptr );
+        for( auto elements : getElementsByType() )
+            elements->clear();
+        m_elements.clear();
+        if( m_uiWindow )
+        {
+            m_uiWindow->unload( nullptr );
+            m_uiWindow = nullptr;
+        }
+        if( m_application )
+        {
+            m_application->unload( nullptr );
+            m_application = nullptr;
+        }
     }
 
     void ImGuiManager::reloadCurrentLayout()

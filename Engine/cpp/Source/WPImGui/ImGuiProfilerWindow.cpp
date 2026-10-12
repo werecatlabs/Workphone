@@ -168,6 +168,7 @@ namespace workphone::ui
         setLoadingState( LoadingState::Unloading );
         m_profiles.clear();
         g_windowStates.erase( this );
+        ImGuiElement<IUIProfilerWindow>::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
 

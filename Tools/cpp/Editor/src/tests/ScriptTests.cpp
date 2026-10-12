@@ -15,9 +15,11 @@
 #include <Workphone/Scene/Components/Cubemap.hpp>
 #include <Workphone/Graphics/GraphicsCubemap.hpp>
 #include <Workphone/Graphics/Texture.hpp>
+#include <Workphone/Database/AssetDatabaseManager.hpp>
 
 #include <algorithm>
 #include <functional>
+#include <filesystem>
 
 #if WP_EDITOR_TESTS
 #    include <boost/test/unit_test.hpp>
@@ -289,6 +291,54 @@ BOOST_AUTO_TEST_CASE( editor_window_callbacks_disconnect_test )
     BOOST_CHECK( !target->getOwner() );
 }
 
+BOOST_AUTO_TEST_CASE( editor_ui_control_unload_test )
+{
+    EditorApplicationGuard app;
+    app.loadSingleThreaded();
+    auto manager = core::IApplicationManager::instance();
+    BOOST_REQUIRE( manager );
+    auto ui = manager->getUI();
+    BOOST_REQUIRE( ui );
+    auto scripts = manager->getScriptManager();
+    BOOST_REQUIRE( scripts );
+    // Keep native UI owners in Lua globals until the VM closes. Shutdown must
+    // collect these before freeing the UI factory pools.
+    scripts->loadScriptFromString( R"(
+        editorShutdownWindow = IApplicationManager.instance():getUI():addElement(IUIWindow.typeInfo())
+        assert(editorShutdownWindow ~= nil)
+        editorShutdownButton = IApplicationManager.instance():getUI():addElement(IUIButton.typeInfo())
+        assert(editorShutdownButton ~= nil)
+        editorShutdownWindow:addChild(editorShutdownButton)
+        IApplicationManager.instance():getUI():getApplication():setName("Lua shutdown owners retained")
+    )" );
+    BOOST_REQUIRE( ui->getApplication() );
+    BOOST_CHECK_EQUAL( ui->getApplication()->getName(), "Lua shutdown owners retained" );
+    for( const auto type : { ui::IUIButton::typeInfo(), ui::IUILabelTogglePair::typeInfo(),
+                            ui::IUIProfileWindow::typeInfo(), ui::IUIProfilerWindow::typeInfo() } )
+    {
+        BOOST_TEST_CONTEXT( "UI control type " << type )
+        {
+            auto parent = ui->addElementByType<ui::IUIWindow>();
+            auto control = ui->addElement( type );
+            auto child = ui->addElementByType<ui::IUIText>();
+            BOOST_REQUIRE( parent );
+            BOOST_REQUIRE( control );
+            BOOST_REQUIRE( child );
+            parent->addChild( control );
+            control->addChild( child );
+            control->setScriptData( make_ptr<ISharedObject>() );
+            BOOST_REQUIRE( control->getParent() == parent );
+            control->unload( nullptr );
+            BOOST_CHECK( !control->getParent() );
+            BOOST_CHECK( control->getChildren().empty() );
+            BOOST_CHECK( !control->getScriptData() );
+            ui->removeElement( control );
+            ui->removeElement( child );
+            ui->removeElement( parent );
+        }
+    }
+}
+
 BOOST_AUTO_TEST_CASE( editor_material_selection_visibility_test )
 {
     EditorApplicationGuard app;
@@ -432,10 +482,30 @@ BOOST_AUTO_TEST_CASE( editor_material_parameters_test )
 
 BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
 {
+    struct TestProject
+    {
+        std::filesystem::path path = std::filesystem::temp_directory_path() /
+            ( "lioncat-material-" + std::string( StringUtil::getUUID().c_str() ) );
+        TestProject() { std::filesystem::create_directories( path / "Cache" ); }
+        ~TestProject()
+        {
+            std::error_code ignored;
+            std::filesystem::remove_all( path, ignored );
+        }
+    } project;
     EditorApplicationGuard app;
     app.loadSingleThreaded();
     auto application = core::IApplicationManager::instance();
-    const String materialPath = "editor-material-control-events-test.mat";
+    const String projectRoot( project.path.generic_string().c_str() );
+    application->setProjectPath( projectRoot );
+    application->setCachePath( projectRoot + "/Cache" );
+    auto resources = application->getResourceDatabase();
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( resources->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+    catalog->unload( nullptr );
+    BOOST_REQUIRE( catalog->setProjectRoot( projectRoot ) );
+    catalog->loadFromFile( projectRoot + "/asset.db" );
+    const String materialPath = projectRoot + "/editor-material-control-events-test.mat";
     auto fileSystem = application->getFileSystem();
     fileSystem->writeAllText( materialPath, R"({
         "materialType": 0, "schemes": [{"passes": [{
@@ -447,6 +517,8 @@ BOOST_AUTO_TEST_CASE( editor_material_control_events_test )
     auto material = workphone::dynamic_pointer_cast<render::IMaterial>(
         application->getGraphicsSystem()->getMaterialManager()->create( materialPath ) );
     BOOST_REQUIRE( material );
+    resources->addResource( material );
+    BOOST_REQUIRE( resources->hasResource( material ) );
     // ResourceDatabase::loadResource may return a newly allocated material.
     // The real panel must prepare it before accepting edits.
     BOOST_CHECK( !material->isLoaded() );
