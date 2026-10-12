@@ -21,12 +21,18 @@ static wp_s32 g_platform_initialised = 0;
  * ---------------------------------------------------------------------- */
 
 static const wp_audio_mgr_backend *g_platform_backend = NULL;
-const wp_audio_mgr_backend *wp_audio_mgr_get_backend( void ) { return NULL; }
+
+const wp_audio_mgr_backend *wp_audio_mgr_get_backend( void )
+{
+    return NULL;
+}
 
 static void wp_audio_mgr_init_backend( void )
 {
     if( !g_platform_backend )
+    {
         g_platform_backend = wp_audio_mgr_get_backend();
+    }
 }
 
 /* -------------------------------------------------------------------------
@@ -66,11 +72,15 @@ static wp_s32 wp_audio_mgr_grow_sounds( wp_audio_mgr *mgr )
 
     new_cap = mgr->sound_capacity * 2;
     if( new_cap < WP_AUDIO_MGR_INITIAL_SOUND_CAPACITY )
+    {
         new_cap = WP_AUDIO_MGR_INITIAL_SOUND_CAPACITY;
+    }
 
     new_sounds = (wp_audio_sound **)realloc( mgr->sounds, (wp_u32)new_cap * sizeof( wp_audio_sound * ) );
     if( !new_sounds )
+    {
         return 0;
+    }
 
     memset( new_sounds + mgr->sound_capacity, 0,
             (wp_u32)( new_cap - mgr->sound_capacity ) * sizeof( wp_audio_sound * ) );
@@ -87,12 +97,16 @@ static wp_s32 wp_audio_mgr_grow_listeners( wp_audio_mgr *mgr )
 
     new_cap = mgr->listener_capacity * 2;
     if( new_cap < WP_AUDIO_MGR_INITIAL_LISTENER_CAPACITY )
+    {
         new_cap = WP_AUDIO_MGR_INITIAL_LISTENER_CAPACITY;
+    }
 
     new_listeners =
         (wp_audio_listener **)realloc( mgr->listeners, (wp_u32)new_cap * sizeof( wp_audio_listener * ) );
     if( !new_listeners )
+    {
         return 0;
+    }
 
     memset( new_listeners + mgr->listener_capacity, 0,
             (wp_u32)( new_cap - mgr->listener_capacity ) * sizeof( wp_audio_listener * ) );
@@ -110,7 +124,9 @@ wp_audio_mgr *wp_audio_mgr_create( void )
 {
     wp_audio_mgr *mgr = (wp_audio_mgr *)malloc( sizeof( wp_audio_mgr ) );
     if( !mgr )
+    {
         return NULL;
+    }
 
     memset( mgr, 0, sizeof( wp_audio_mgr ) );
 
@@ -147,7 +163,9 @@ wp_audio_mgr *wp_audio_mgr_create( void )
 void wp_audio_mgr_destroy( wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return;
+    }
 
     wp_audio_mgr_unload( mgr );
     wp_audio_mgr_remove_all_sounds( mgr );
@@ -161,20 +179,29 @@ void wp_audio_mgr_destroy( wp_audio_mgr *mgr )
 wp_s32 wp_audio_mgr_load( wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return 0;
+    }
 
     if( mgr->loaded )
+    {
         return 1;
+    }
 
     /* Initialise platform audio backend if not already done */
     if( !g_platform_initialised )
     {
         wp_audio_mgr_init_backend();
-        if( !g_platform_backend ) return 0; /* Legacy output unavailable. */
+        if( !g_platform_backend )
+        {
+            return 0; /* Legacy output unavailable. */
+        }
         if( g_platform_backend && g_platform_backend->init )
         {
             if( !g_platform_backend->init() )
+            {
                 return 0;
+            }
         }
         g_platform_initialised = 1;
     }
@@ -186,10 +213,14 @@ wp_s32 wp_audio_mgr_load( wp_audio_mgr *mgr )
 void wp_audio_mgr_unload( wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return;
+    }
 
     if( !mgr->loaded )
+    {
         return;
+    }
 
     wp_audio_mgr_remove_all_sounds( mgr );
     wp_audio_mgr_remove_all_listeners( mgr );
@@ -208,10 +239,14 @@ void wp_audio_mgr_unload( wp_audio_mgr *mgr )
 void wp_audio_mgr_update( wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return;
+    }
 
     if( g_platform_backend && g_platform_backend->update )
+    {
         g_platform_backend->update( mgr );
+    }
 }
 
 /* =========================================================================
@@ -223,17 +258,23 @@ wp_s32 wp_audio_mgr_add_sound( wp_audio_mgr *mgr, const wp_c8 *filepath, wp_s32 
     wp_audio_sound *sound;
 
     if( !mgr || !filepath )
+    {
         return -1;
+    }
 
     if( mgr->sound_count >= mgr->sound_capacity )
     {
         if( !wp_audio_mgr_grow_sounds( mgr ) )
+        {
             return -1;
+        }
     }
 
     sound = wp_audio_sound_create();
     if( !sound )
+    {
         return -1;
+    }
 
     if( !wp_audio_sound_load( sound, filepath, loop ) )
     {
@@ -250,11 +291,15 @@ void wp_audio_mgr_remove_sound( wp_audio_mgr *mgr, wp_s32 index )
     wp_audio_sound *sound;
 
     if( !mgr || index < 0 || index >= mgr->sound_count )
+    {
         return;
+    }
 
     sound = mgr->sounds[index];
     if( sound )
+    {
         wp_audio_sound_destroy( sound );
+    }
 
     /* Swap with last to keep the array compact. */
     mgr->sounds[index] = mgr->sounds[--mgr->sound_count];
@@ -266,7 +311,9 @@ void wp_audio_mgr_remove_all_sounds( wp_audio_mgr *mgr )
     wp_s32 i;
 
     if( !mgr )
+    {
         return;
+    }
 
     for( i = 0; i < mgr->sound_count; ++i )
     {
@@ -282,7 +329,9 @@ void wp_audio_mgr_remove_all_sounds( wp_audio_mgr *mgr )
 wp_audio_sound *wp_audio_mgr_get_sound( const wp_audio_mgr *mgr, wp_s32 index )
 {
     if( !mgr || index < 0 || index >= mgr->sound_count )
+    {
         return NULL;
+    }
 
     return mgr->sounds[index];
 }
@@ -290,7 +339,9 @@ wp_audio_sound *wp_audio_mgr_get_sound( const wp_audio_mgr *mgr, wp_s32 index )
 wp_s32 wp_audio_mgr_get_sound_count( const wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return 0;
+    }
 
     return mgr->sound_count;
 }
@@ -304,20 +355,29 @@ wp_s32 wp_audio_mgr_add_listener( wp_audio_mgr *mgr, const wp_c8 *name, wp_f32 x
     wp_audio_listener *listener;
 
     if( !mgr || !name )
+    {
         return -1;
+    }
 
     if( mgr->listener_count >= mgr->listener_capacity )
     {
         if( !wp_audio_mgr_grow_listeners( mgr ) )
+        {
             return -1;
+        }
     }
 
     listener = wp_audio_listener_create();
     if( !listener )
+    {
         return -1;
+    }
 
     wp_audio_listener_set_name( listener, name );
-    { wp_vec3f position = { x, y, z }; wp_audio_listener_set_position( listener, position ); }
+    {
+        wp_vec3f position = { x, y, z };
+        wp_audio_listener_set_position( listener, position );
+    }
 
     mgr->listeners[mgr->listener_count] = listener;
     return mgr->listener_count++;
@@ -328,12 +388,17 @@ wp_audio_listener *wp_audio_mgr_find_listener( const wp_audio_mgr *mgr, const wp
     wp_s32 i;
 
     if( !mgr || !name )
+    {
         return NULL;
+    }
 
     for( i = 0; i < mgr->listener_count; ++i )
     {
-        if( mgr->listeners[i] && strcmp( (const char *)mgr->listeners[i]->name, (const char *)name ) == 0 )
+        if( mgr->listeners[i] &&
+            strcmp( (const char *)mgr->listeners[i]->name, (const char *)name ) == 0 )
+        {
             return mgr->listeners[i];
+        }
     }
 
     return NULL;
@@ -342,7 +407,9 @@ wp_audio_listener *wp_audio_mgr_find_listener( const wp_audio_mgr *mgr, const wp
 void wp_audio_mgr_remove_listener( wp_audio_mgr *mgr, wp_s32 index )
 {
     if( !mgr || index < 0 || index >= mgr->listener_count )
+    {
         return;
+    }
 
     wp_audio_listener_destroy( mgr->listeners[index] );
 
@@ -356,7 +423,9 @@ void wp_audio_mgr_remove_all_listeners( wp_audio_mgr *mgr )
     wp_s32 i;
 
     if( !mgr )
+    {
         return;
+    }
 
     for( i = 0; i < mgr->listener_count; ++i )
     {
@@ -369,7 +438,9 @@ void wp_audio_mgr_remove_all_listeners( wp_audio_mgr *mgr )
 wp_audio_listener *wp_audio_mgr_get_listener( const wp_audio_mgr *mgr, wp_s32 index )
 {
     if( !mgr || index < 0 || index >= mgr->listener_count )
+    {
         return NULL;
+    }
 
     return mgr->listeners[index];
 }
@@ -377,7 +448,9 @@ wp_audio_listener *wp_audio_mgr_get_listener( const wp_audio_mgr *mgr, wp_s32 in
 wp_s32 wp_audio_mgr_get_listener_count( const wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return 0;
+    }
 
     return mgr->listener_count;
 }
@@ -389,7 +462,9 @@ wp_s32 wp_audio_mgr_get_listener_count( const wp_audio_mgr *mgr )
 wp_f32 wp_audio_mgr_get_volume( const wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return 0.0f;
+    }
 
     return mgr->volume;
 }
@@ -397,7 +472,9 @@ wp_f32 wp_audio_mgr_get_volume( const wp_audio_mgr *mgr )
 void wp_audio_mgr_set_volume( wp_audio_mgr *mgr, wp_f32 volume )
 {
     if( !mgr )
+    {
         return;
+    }
 
     mgr->volume = volume;
 }
@@ -409,7 +486,9 @@ void wp_audio_mgr_set_volume( wp_audio_mgr *mgr, wp_f32 volume )
 wp_s32 wp_audio_mgr_is_mute( const wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return 0;
+    }
 
     return mgr->mute;
 }
@@ -417,7 +496,9 @@ wp_s32 wp_audio_mgr_is_mute( const wp_audio_mgr *mgr )
 void wp_audio_mgr_set_mute( wp_audio_mgr *mgr, wp_s32 mute )
 {
     if( !mgr )
+    {
         return;
+    }
 
     mgr->mute = mute ? 1 : 0;
 }
@@ -429,7 +510,9 @@ void wp_audio_mgr_set_mute( wp_audio_mgr *mgr, wp_s32 mute )
 void wp_audio_mgr_get_native( const wp_audio_mgr *mgr, void **pp_object )
 {
     if( !pp_object )
+    {
         return;
+    }
 
     *pp_object = mgr ? mgr->native : NULL;
 }
@@ -437,7 +520,9 @@ void wp_audio_mgr_get_native( const wp_audio_mgr *mgr, void **pp_object )
 void wp_audio_mgr_set_native( wp_audio_mgr *mgr, void *native )
 {
     if( !mgr )
+    {
         return;
+    }
 
     mgr->native = native;
 }
@@ -449,7 +534,9 @@ void wp_audio_mgr_set_native( wp_audio_mgr *mgr, void *native )
 void *wp_audio_mgr_get_user_data( const wp_audio_mgr *mgr )
 {
     if( !mgr )
+    {
         return NULL;
+    }
 
     return mgr->user_data;
 }
@@ -457,7 +544,9 @@ void *wp_audio_mgr_get_user_data( const wp_audio_mgr *mgr )
 void wp_audio_mgr_set_user_data( wp_audio_mgr *mgr, void *user_data )
 {
     if( !mgr )
+    {
         return;
+    }
 
     mgr->user_data = user_data;
 }
@@ -469,15 +558,22 @@ void wp_audio_mgr_set_user_data( wp_audio_mgr *mgr, void *user_data )
 wp_s32 wp_audio_mgr_platform_init( void )
 {
     if( g_platform_initialised )
+    {
         return 1;
+    }
 
     wp_audio_mgr_init_backend();
-    if( !g_platform_backend ) return 0;
+    if( !g_platform_backend )
+    {
+        return 0;
+    }
 
     if( g_platform_backend && g_platform_backend->init )
     {
         if( !g_platform_backend->init() )
+        {
             return 0;
+        }
     }
 
     g_platform_initialised = 1;
@@ -487,10 +583,14 @@ wp_s32 wp_audio_mgr_platform_init( void )
 void wp_audio_mgr_platform_shutdown( void )
 {
     if( !g_platform_initialised )
+    {
         return;
+    }
 
     if( g_platform_backend && g_platform_backend->shutdown )
+    {
         g_platform_backend->shutdown();
+    }
 
     g_platform_initialised = 0;
 }

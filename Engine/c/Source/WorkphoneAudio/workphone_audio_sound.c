@@ -20,7 +20,9 @@ wp_audio_sound *wp_audio_sound_create( void )
 {
     wp_audio_sound *sound = (wp_audio_sound *)malloc( sizeof( wp_audio_sound ) );
     if( !sound )
+    {
         return NULL;
+    }
 
     memset( sound, 0, sizeof( wp_audio_sound ) );
     sound->volume = 1.0f;
@@ -32,7 +34,9 @@ wp_audio_sound *wp_audio_sound_create( void )
 void wp_audio_sound_destroy( wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return;
+    }
 
     wp_audio_sound_unload( sound );
     free( sound );
@@ -45,7 +49,9 @@ void wp_audio_sound_destroy( wp_audio_sound *sound )
 wp_s32 wp_audio_sound_load( wp_audio_sound *sound, const wp_c8 *filepath, wp_s32 loop )
 {
     if( !sound || !filepath )
+    {
         return 0;
+    }
 
     /* The legacy path has no dispatch/decoder. Never advertise silent playback.
      * New clients use workphone_audio_core.h; WPAudio owns device output for now. */
@@ -57,10 +63,14 @@ wp_s32 wp_audio_sound_load( wp_audio_sound *sound, const wp_c8 *filepath, wp_s32
 void wp_audio_sound_unload( wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return;
+    }
 
     if( sound->state == WP_AUDIO_SOUND_STATE_PLAYING )
+    {
         wp_audio_sound_stop( sound );
+    }
 
     /* Platform-specific audio resource cleanup would go here. */
 
@@ -73,7 +83,9 @@ void wp_audio_sound_unload( wp_audio_sound *sound )
 wp_s32 wp_audio_sound_is_loaded( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return 0;
+    }
 
     return sound->loaded;
 }
@@ -85,7 +97,9 @@ wp_s32 wp_audio_sound_is_loaded( const wp_audio_sound *sound )
 void wp_audio_sound_play( wp_audio_sound *sound )
 {
     if( !sound || !sound->loaded )
+    {
         return;
+    }
 
     /* Platform-specific play would go here. */
 
@@ -95,7 +109,9 @@ void wp_audio_sound_play( wp_audio_sound *sound )
 void wp_audio_sound_stop( wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return;
+    }
 
     /* Platform-specific stop would go here. */
 
@@ -105,7 +121,9 @@ void wp_audio_sound_stop( wp_audio_sound *sound )
 wp_s32 wp_audio_sound_is_playing( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return 0;
+    }
 
     return sound->state == WP_AUDIO_SOUND_STATE_PLAYING ? 1 : 0;
 }
@@ -113,7 +131,9 @@ wp_s32 wp_audio_sound_is_playing( const wp_audio_sound *sound )
 wp_audio_sound_state wp_audio_sound_get_state( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return WP_AUDIO_SOUND_STATE_STOPPED;
+    }
 
     return sound->state;
 }
@@ -125,7 +145,9 @@ wp_audio_sound_state wp_audio_sound_get_state( const wp_audio_sound *sound )
 wp_f32 wp_audio_sound_get_volume( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return 0.0f;
+    }
 
     return sound->volume;
 }
@@ -133,7 +155,9 @@ wp_f32 wp_audio_sound_get_volume( const wp_audio_sound *sound )
 void wp_audio_sound_set_volume( wp_audio_sound *sound, wp_f32 volume )
 {
     if( !sound )
+    {
         return;
+    }
 
     sound->volume = volume;
 
@@ -147,7 +171,9 @@ void wp_audio_sound_set_volume( wp_audio_sound *sound, wp_f32 volume )
 wp_s32 wp_audio_sound_get_loop( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return 0;
+    }
 
     return sound->loop;
 }
@@ -155,7 +181,9 @@ wp_s32 wp_audio_sound_get_loop( const wp_audio_sound *sound )
 void wp_audio_sound_set_loop( wp_audio_sound *sound, wp_s32 loop )
 {
     if( !sound )
+    {
         return;
+    }
 
     sound->loop = loop ? 1 : 0;
 
@@ -169,7 +197,9 @@ void wp_audio_sound_set_loop( wp_audio_sound *sound, wp_s32 loop )
 const wp_c8 *wp_audio_sound_get_filepath( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return NULL;
+    }
 
     return sound->filepath;
 }
@@ -181,7 +211,9 @@ const wp_c8 *wp_audio_sound_get_filepath( const wp_audio_sound *sound )
 void wp_audio_sound_get_native( const wp_audio_sound *sound, void **pp_object )
 {
     if( !pp_object )
+    {
         return;
+    }
 
     *pp_object = sound ? sound->native : NULL;
 }
@@ -189,7 +221,9 @@ void wp_audio_sound_get_native( const wp_audio_sound *sound, void **pp_object )
 void wp_audio_sound_set_native( wp_audio_sound *sound, void *native )
 {
     if( !sound )
+    {
         return;
+    }
 
     sound->native = native;
 }
@@ -201,7 +235,9 @@ void wp_audio_sound_set_native( wp_audio_sound *sound, void *native )
 void *wp_audio_sound_get_user_data( const wp_audio_sound *sound )
 {
     if( !sound )
+    {
         return NULL;
+    }
 
     return sound->user_data;
 }
@@ -209,7 +245,9 @@ void *wp_audio_sound_get_user_data( const wp_audio_sound *sound )
 void wp_audio_sound_set_user_data( wp_audio_sound *sound, void *user_data )
 {
     if( !sound )
+    {
         return;
+    }
 
     sound->user_data = user_data;
 }

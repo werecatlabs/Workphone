@@ -41,12 +41,16 @@ static wp_s32 wp_audio_project_grow_sounds( wp_audio_project *project )
 
     new_cap = project->sound_capacity * 2;
     if( new_cap < WP_AUDIO_PROJECT_INITIAL_SOUND_CAPACITY )
+    {
         new_cap = WP_AUDIO_PROJECT_INITIAL_SOUND_CAPACITY;
+    }
 
     new_sounds =
         (wp_audio_sound **)realloc( project->sounds, (wp_u32)new_cap * sizeof( wp_audio_sound * ) );
     if( !new_sounds )
+    {
         return 0;
+    }
 
     memset( new_sounds + project->sound_capacity, 0,
             (wp_u32)( new_cap - project->sound_capacity ) * sizeof( wp_audio_sound * ) );
@@ -78,7 +82,9 @@ static void wp_audio_project_build_filepath( const wp_audio_project *project, co
 
     total = path_len;
     if( total < out_size - 1 )
+    {
         memcpy( out, project->path, total );
+    }
 
     /* Append path separator if needed. */
     if( total < out_size - 1 && project->path[total - 1] != '/' && project->path[total - 1] != '\\' )
@@ -107,7 +113,9 @@ wp_audio_project *wp_audio_project_create( void )
 {
     wp_audio_project *project = (wp_audio_project *)malloc( sizeof( wp_audio_project ) );
     if( !project )
+    {
         return NULL;
+    }
 
     memset( project, 0, sizeof( wp_audio_project ) );
 
@@ -133,7 +141,9 @@ wp_audio_project *wp_audio_project_create( void )
 void wp_audio_project_destroy( wp_audio_project *project )
 {
     if( !project )
+    {
         return;
+    }
 
     wp_audio_project_unload( project );
     wp_audio_project_remove_all_sounds( project );
@@ -145,10 +155,14 @@ void wp_audio_project_destroy( wp_audio_project *project )
 wp_s32 wp_audio_project_load( wp_audio_project *project )
 {
     if( !project )
+    {
         return 0;
+    }
 
     if( project->loaded )
+    {
         return 1;
+    }
 
     /* Platform-specific initialisation would go here. */
 
@@ -161,15 +175,21 @@ void wp_audio_project_unload( wp_audio_project *project )
     wp_s32 i;
 
     if( !project )
+    {
         return;
+    }
 
     if( !project->loaded )
+    {
         return;
+    }
 
     for( i = 0; i < project->sound_count; ++i )
     {
         if( project->sounds[i] )
+        {
             wp_audio_sound_unload( project->sounds[i] );
+        }
     }
 
     /* Platform-specific cleanup would go here. */
@@ -193,7 +213,9 @@ void wp_audio_project_update( wp_audio_project *project )
 const wp_c8 *wp_audio_project_get_name( const wp_audio_project *project )
 {
     if( !project )
+    {
         return NULL;
+    }
 
     return project->name;
 }
@@ -203,11 +225,15 @@ void wp_audio_project_set_name( wp_audio_project *project, const wp_c8 *name )
     wp_size len;
 
     if( !project || !name )
+    {
         return;
+    }
 
     len = strlen( (const char *)name );
     if( len >= WP_AUDIO_PROJECT_NAME_MAX )
+    {
         len = WP_AUDIO_PROJECT_NAME_MAX - 1;
+    }
 
     memcpy( project->name, name, len );
     project->name[len] = '\0';
@@ -220,7 +246,9 @@ void wp_audio_project_set_name( wp_audio_project *project, const wp_c8 *name )
 const wp_c8 *wp_audio_project_get_path( const wp_audio_project *project )
 {
     if( !project )
+    {
         return NULL;
+    }
 
     return project->path;
 }
@@ -230,11 +258,15 @@ void wp_audio_project_set_path( wp_audio_project *project, const wp_c8 *path )
     wp_size len;
 
     if( !project || !path )
+    {
         return;
+    }
 
     len = strlen( (const char *)path );
     if( len >= WP_AUDIO_PROJECT_PATH_MAX )
+    {
         len = WP_AUDIO_PROJECT_PATH_MAX - 1;
+    }
 
     memcpy( project->path, path, len );
     project->path[len] = '\0';
@@ -250,17 +282,23 @@ wp_s32 wp_audio_project_add_sound( wp_audio_project *project, const wp_c8 *filep
     wp_c8 full_path[WP_AUDIO_PROJECT_PATH_MAX * 2];
 
     if( !project || !filepath )
+    {
         return -1;
+    }
 
     if( project->sound_count >= project->sound_capacity )
     {
         if( !wp_audio_project_grow_sounds( project ) )
+        {
             return -1;
+        }
     }
 
     sound = wp_audio_sound_create();
     if( !sound )
+    {
         return -1;
+    }
 
     wp_audio_project_build_filepath( project, filepath, full_path, sizeof( full_path ) );
 
@@ -277,10 +315,14 @@ wp_s32 wp_audio_project_add_sound( wp_audio_project *project, const wp_c8 *filep
 void wp_audio_project_remove_sound( wp_audio_project *project, wp_s32 index )
 {
     if( !project || index < 0 || index >= project->sound_count )
+    {
         return;
+    }
 
     if( project->sounds[index] )
+    {
         wp_audio_sound_destroy( project->sounds[index] );
+    }
 
     /* Swap with last to keep the array compact. */
     project->sounds[index] = project->sounds[--project->sound_count];
@@ -292,7 +334,9 @@ void wp_audio_project_remove_all_sounds( wp_audio_project *project )
     wp_s32 i;
 
     if( !project )
+    {
         return;
+    }
 
     for( i = 0; i < project->sound_count; ++i )
     {
@@ -308,7 +352,9 @@ void wp_audio_project_remove_all_sounds( wp_audio_project *project )
 wp_audio_sound *wp_audio_project_get_sound( const wp_audio_project *project, wp_s32 index )
 {
     if( !project || index < 0 || index >= project->sound_count )
+    {
         return NULL;
+    }
 
     return project->sounds[index];
 }
@@ -316,7 +362,9 @@ wp_audio_sound *wp_audio_project_get_sound( const wp_audio_project *project, wp_
 wp_s32 wp_audio_project_get_sound_count( const wp_audio_project *project )
 {
     if( !project )
+    {
         return 0;
+    }
 
     return project->sound_count;
 }
@@ -328,7 +376,9 @@ wp_s32 wp_audio_project_get_sound_count( const wp_audio_project *project )
 wp_f32 wp_audio_project_get_volume( const wp_audio_project *project )
 {
     if( !project )
+    {
         return 0.0f;
+    }
 
     return project->volume;
 }
@@ -336,7 +386,9 @@ wp_f32 wp_audio_project_get_volume( const wp_audio_project *project )
 void wp_audio_project_set_volume( wp_audio_project *project, wp_f32 volume )
 {
     if( !project )
+    {
         return;
+    }
 
     project->volume = volume;
 }
@@ -348,7 +400,9 @@ void wp_audio_project_set_volume( wp_audio_project *project, wp_f32 volume )
 wp_s32 wp_audio_project_is_mute( const wp_audio_project *project )
 {
     if( !project )
+    {
         return 0;
+    }
 
     return project->mute;
 }
@@ -356,7 +410,9 @@ wp_s32 wp_audio_project_is_mute( const wp_audio_project *project )
 void wp_audio_project_set_mute( wp_audio_project *project, wp_s32 mute )
 {
     if( !project )
+    {
         return;
+    }
 
     project->mute = mute ? 1 : 0;
 }
@@ -368,7 +424,9 @@ void wp_audio_project_set_mute( wp_audio_project *project, wp_s32 mute )
 wp_s32 wp_audio_project_is_loaded( const wp_audio_project *project )
 {
     if( !project )
+    {
         return 0;
+    }
 
     return project->loaded;
 }
@@ -380,7 +438,9 @@ wp_s32 wp_audio_project_is_loaded( const wp_audio_project *project )
 void wp_audio_project_get_native( const wp_audio_project *project, void **pp_object )
 {
     if( !pp_object )
+    {
         return;
+    }
 
     *pp_object = project ? project->native : NULL;
 }
@@ -388,7 +448,9 @@ void wp_audio_project_get_native( const wp_audio_project *project, void **pp_obj
 void wp_audio_project_set_native( wp_audio_project *project, void *native )
 {
     if( !project )
+    {
         return;
+    }
 
     project->native = native;
 }
@@ -400,7 +462,9 @@ void wp_audio_project_set_native( wp_audio_project *project, void *native )
 void *wp_audio_project_get_user_data( const wp_audio_project *project )
 {
     if( !project )
+    {
         return NULL;
+    }
 
     return project->user_data;
 }
@@ -408,7 +472,9 @@ void *wp_audio_project_get_user_data( const wp_audio_project *project )
 void wp_audio_project_set_user_data( wp_audio_project *project, void *user_data )
 {
     if( !project )
+    {
         return;
+    }
 
     project->user_data = user_data;
 }
