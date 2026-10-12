@@ -57,6 +57,12 @@ It covers known authored extensions and existing graph owners, with explicit leg
 missing/unsupported blockers. Automatic legacy migration, other unindexed format
 families, asynchronous scale and shipping coverage remain open. Successful batch
 reindex does not certify a complete project or package closure.
+Increment 14 adds manifest-v3 durable UUID mapping and verified package-mode directory
+export through the existing ResourceSystem. Existing destinations are preserved;
+runtime UUID loads share pinned closures without authoring services. This is the
+UUID/directory-export subset of RES-018/028/030; eligibility, PackageEditor/CLI,
+typed application adoption and release certification remain open. See the
+[runtime package guide](WPRESOURCE_RUNTIME_PACKAGES.md).
 
 ### Current review summary
 

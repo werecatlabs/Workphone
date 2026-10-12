@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Database/CatalogResourceAdapter.hpp>
 #include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/System/ResourceSystem.hpp>
 
 #include <filesystem>
 #include <set>
@@ -142,6 +143,18 @@ namespace workphone
     {
         error.clear();
         return validateRequest( request, error );
+    }
+
+    bool CatalogResourceAdapter::runtimeBinding( const Request &request,
+                                                  resource::RuntimeResourceBinding &binding,
+                                                  String &error ) const
+    {
+        binding = resource::RuntimeResourceBinding();
+        error.clear();
+        if( !validateRequest( request, error ) ) return false;
+        binding.uuid = request.entry.uuid;
+        binding.resourceId = request.resourceId;
+        return true;
     }
 
     resource::CompilationReport CatalogResourceAdapter::compile(

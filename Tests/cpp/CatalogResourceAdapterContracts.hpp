@@ -168,6 +168,27 @@ namespace catalog_adapter_contracts
         require( adapter.compile( request ).status == CompilationStatus::UpToDate,
                  "Catalog bridge must reuse existing compilation metadata" );
 
+        RuntimeResourceBinding binding;
+        require( adapter.runtimeBinding( request, binding, error ) && binding.uuid == uuid &&
+                 binding.resourceId == request.resourceId,
+                 "Export bindings must retain the authored catalog UUID and exact resource identity" );
+        CompilationOptions packaged;
+        packaged.packagedBuild = true;
+        require( adapter.compile( request, packaged ).succeeded(), "Catalog package compilation failed" );
+        const auto packagePath = root / "uuid-package";
+        require( resources->writeRuntimePackage( packagePath.u8string().c_str(), { request.resourceId }, { binding }, error ),
+                 error.c_str() );
+        ResourceSystem packagedRuntime( nullptr, nullptr );
+        RuntimeResourceConfig runtimeConfig;
+        runtimeConfig.compiledRoot = packagePath.u8string().c_str();
+        runtimeConfig.manifestPath = ( packagePath / "runtime.wprm" ).u8string().c_str();
+        runtimeConfig.target = config.target;
+        require( packagedRuntime.initializeRuntime( runtimeConfig, error ) && packagedRuntime.loadUUID( uuid, error ),
+                 "Catalog UUID must load through a compiler/catalog-free package mount" );
+        auto packagedOriginal = packagedRuntime.loadUUID( uuid, error );
+        // Return to the original authoring mode for the existing contracts below.
+        require( adapter.compile( request ).succeeded(), "Catalog Editor-mode selection failed" );
+
         {
             struct RestoreWorkingDirectory
             {
@@ -246,6 +267,11 @@ namespace catalog_adapter_contracts
         compiler->duringCompile = {};
         require( !adapter.isCurrent( request, error ) && !adapter.load( request, error ),
                  "Renamed UUID must invalidate old compile and load requests" );
+        require( !adapter.runtimeBinding( request, binding, error ) && binding.uuid.empty() &&
+                 !binding.resourceId.isValid(), "Stale requests must not return exportable UUID bindings" );
+        require( packagedRuntime.loadUUID( uuid, error ) == packagedOriginal &&
+                 packagedOriginal->header.resourceId == ResourceID( "data://root.ctest" ),
+                 "Authoring rename must not change an already exported UUID package generation" );
         require( adapter.resolve( uuid, rejected, error ) &&
                      rejected.resourceId == ResourceID( "data://renamed.ctest" ) &&
                      rejected.entry.uuid == uuid,
@@ -253,6 +279,9 @@ namespace catalog_adapter_contracts
         request = rejected;
         require( adapter.compile( request ).succeeded() && adapter.load( request, error ),
                  "Renamed catalog source must compile and load through its new ID" );
+        require( adapter.runtimeBinding( request, binding, error ) && binding.uuid == uuid &&
+                 binding.resourceId == ResourceID( "data://renamed.ctest" ),
+                 "New export bindings must preserve UUID across source renames" );
         catalog->unload( nullptr );
         require( !adapter.load( request, error ), "Unloaded catalog must reject old load requests" );
         catalog->loadFromFile( catalogPath );
@@ -272,6 +301,7 @@ namespace catalog_adapter_contracts
                  "Existing uppercase-extension source must compile and load through ResourceSystem" );
 #endif
 
+        packagedRuntime.shutdown();
         resources->shutdown();
         catalog->unload( nullptr );
     }

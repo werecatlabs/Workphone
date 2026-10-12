@@ -810,6 +810,77 @@ sessions and Windows junction rejection. Automatic legacy migration, asynchronou
 scan jobs, remaining format families and complete project/package coverage remain
 open alongside the release gates below.
 
+## Increment 14: Pinned directory packages and runtime UUID maps (12 October 2026)
+
+Runtime manifest payload version 3 adds a bounded, deterministic authored UUID map
+to the existing exact install closure. Version 1/2 packages remain readable; the
+original export overload still writes version 2. Explicit bindings normalize UUID
+case, reject nil/malformed/duplicate identities, reject multiple UUIDs aliasing one
+ResourceID and reject resources outside the exported closure. Invalid export retains
+the last-good manifest; invalid input fails before runtime mount initialization.
+
+The concrete ResourceSystem exposes runtime-only UUID resolution and loading.
+Resolution/load share one operation fence across mount lifetime, use the existing
+complete-closure limits/cache and retain caller-owned generations across shutdown.
+No authoring catalog, source path guessing, compiler registry or SQLite is needed.
+CatalogResourceAdapter can capture an explicitly validated UUID binding from a
+current request. A stale request clears the result. The binding remains detached
+evidence: callers must own catalog-session admission across collection/export.
+
+writeRuntimePackage stages runtime.wprm and only its verified package-mode install
+closure in a new sibling directory. Copied container identity, hashes, sizes,
+dependencies and persistent artifact pins are validated before exclusive directory
+publication. Existing destinations, including empty directories, and source/cooked
+storage overlap fail. Normal failures remove the request-owned staging directory.
+Original artifact/index/lease/private files are not copied wholesale. Export holds
+the resource operation fence through copying and publication.
+
+See [runtime package API, compatibility and boundaries](WPRESOURCE_RUNTIME_PACKAGES.md).
+This adds the UUID/directory-export subset of RES-018/028/030. It does not close
+per-asset shipping eligibility, full authored-reference coverage, PackageEditor/CLI
+profiles, executable/plugin packaging or real shipping sample adoption. Independent
+catalog writers remain outside the resource operation fence. Process-crash staging
+recovery, quotas/cancellation, machine/power-loss durability, stronger authenticated
+digests, asynchronous residency and multi-mount policy remain open. Windows native
+validation is recorded below after the final source rebuild; Linux/macOS exclusive
+rename branches are source-only in this increment.
+
+Current-source Windows/MSVC v145 RelWithDebInfo builds passed for WPResourceTests,
+WPAssetCatalogTests, WPGraphicsCookedResourceTests, LuaRuntimeTests and Editor, with
+their required dependencies. The six-suite CTest gate passed **6/6 in 29.66 seconds**:
+
+| Suite | Time |
+|---|---|
+| WorkphoneAssets.catalog_contracts | 14.87 s |
+| WPGraphics.cooked_material_resource | 7.19 s |
+| WPLua.runtime_contracts | 0.92 s |
+| WPResourceTests | 2.35 s |
+| WPResource.writer_lease | 3.52 s |
+| WPResource.index_migration | 0.70 s |
+
+The contracts cover deterministic UUID order/case normalization, invalid/aliased/
+outside-closure identities, empty and malformed maps, old manifest compatibility,
+concurrent UUID/path cache identity, aggregate closure limits, retained generations,
+package-mode admission, exact file membership, occupied/overlapping destinations,
+corrupt inputs, failed-export staging cleanup and last-good manifest preservation.
+The relocated export loads by authored UUID with every exported file read-only and
+original source/cooked directories removed. Real catalog contracts cover binding
+capture, stale-request rejection and UUID-preserving rename beside an old package.
+
+The first build overlapped later header edits and used stale PCH declarations; an
+early retry also hit that build's PCH lock. The final builds ran sequentially after
+the original process completed. The first rebuilt catalog run exposed unused
+state-manager assertions in Material::unload during the existing headless material
+save contracts. Removing those unused dependencies repaired cleanup; the final
+six-suite run includes the existing material/prefab save and reference contracts.
+
+Build logs: project_x64/resource-package-final-build.log and
+project_x64/resource-package-validation-build.log. Regression log:
+project_x64/resource-package-final-tests.log. git diff --check passed. No Debug,
+interactive Editor acceptance, executable shipping-package launch, Linux/macOS
+runtime run, representative hardware, process-kill or power-loss certification was
+performed. The complete production plan and the remaining gates below stay open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -829,8 +900,9 @@ the same immutable resource pipeline.
    and legacy migration/remaining-format discovery; persist
    typed compile/install/platform dependency modes, invalidation and cycle policy.
    Indexed forward/reverse queries and project missing/type diagnostics now exist.
-4. Integrate typed runtime consumers and owner-thread publication throughout the
-   Editor and shipping sample; complete asynchronous session-safe jobs.
+4. Integrate the runtime UUID map and pinned directory export with typed consumers,
+   PackageEditor/CLI and owner-thread publication throughout the Editor and shipping
+   sample; enforce shipping eligibility and complete asynchronous session-safe jobs.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;
    implement domain editing, previews, full reference coverage, packaging controls and
    the declared format-family matrix.

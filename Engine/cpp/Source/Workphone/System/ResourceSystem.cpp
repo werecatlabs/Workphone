@@ -23,10 +23,19 @@
 #    include <share.h>
 #    include <fcntl.h>
 #    include <sys/stat.h>
+#    ifndef NOMINMAX
+#        define NOMINMAX
+#    endif
+#    include <Windows.h>
 #else
 #    include <unistd.h>
 #    include <fcntl.h>
 #    include <sys/file.h>
+#    if defined(__linux__)
+#        include <sys/syscall.h>
+#    elif defined(__APPLE__)
+#        include <stdio.h>
+#    endif
 #endif
 
 namespace workphone::resource
@@ -47,7 +56,36 @@ namespace workphone::resource
             Array<ResourceID> roots;
             std::map<String, CompiledResourceHeader> resources;
             std::map<String, String> artifacts;
+            std::map<String, ResourceID> bindings;
         };
+
+        bool canonicalRuntimeUUID( const String &input, String &output )
+        {
+            output.clear();
+            if( input.size() != 36 )
+                return false;
+            bool nonzero = false;
+            for( size_t index = 0; index < input.size(); ++index )
+            {
+                const auto byte = static_cast<unsigned char>( input[index] );
+                if( index == 8 || index == 13 || index == 18 || index == 23 )
+                {
+                    if( byte != '-' ) return false;
+                }
+                else
+                {
+                    if( !((byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f') ||
+                          (byte >= 'A' && byte <= 'F')) ) return false;
+                    nonzero = nonzero || byte != '0';
+                }
+            }
+            if( !nonzero ) return false;
+            output = input;
+            std::transform( output.begin(), output.end(), output.begin(), []( unsigned char byte ) {
+                return static_cast<char>( std::tolower( byte ) );
+            } );
+            return true;
+        }
 
         String encodedArtifactKey( const String &value )
         {
@@ -170,7 +208,7 @@ namespace workphone::resource
                 error = "Runtime manifest is malformed or exceeds its format limits";
                 return false;
             };
-            if( !readManifestNumber( input, version ) || (version != 1 && version != 2) ||
+            if( !readManifestNumber( input, version ) || (version != 1 && version != 2 && version != 3) ||
                 !readManifestString( input, manifest.target ) ||
                 !readManifestNumber( input, rootCount ) || rootCount == 0 ||
                 rootCount > maximumManifestResources )
@@ -202,7 +240,7 @@ namespace workphone::resource
                     return malformed();
                 header.resourceType = header.resourceId.type();
                 String artifact=header.resourceId.compiledRelativePath();
-                if( version==2 )
+                if( version>=2 )
                 {
                     ResourceID pathId;
                     if( !readManifestString(input,artifact) ||
@@ -226,6 +264,24 @@ namespace workphone::resource
                 if( !header.isValid() ||
                     !manifest.resources.emplace( header.resourceId.str(), std::move( header ) ).second )
                     return malformed();
+            }
+            if( version >= 3 )
+            {
+                u64 count = 0;
+                if( !readManifestNumber( input, count ) || count > maximumManifestResources )
+                    return malformed();
+                std::set<String> boundResources;
+                for( u64 index = 0; index < count; ++index )
+                {
+                    String uuid, canonical, id;
+                    ResourceID resource;
+                    if( !readManifestString( input, uuid ) || !canonicalRuntimeUUID( uuid, canonical ) ||
+                        !readManifestString( input, id ) || !resource.set( id ) ||
+                        !manifest.resources.count( resource.str() ) ||
+                        !boundResources.insert( resource.str() ).second ||
+                        !manifest.bindings.emplace( canonical, resource ).second )
+                        return malformed();
+                }
             }
             if( input.peek() != std::char_traits<char>::eof() )
                 return malformed();
@@ -1284,6 +1340,45 @@ namespace workphone::resource
             return result;
         }
 
+        // Caller holds operationMutex for the whole resolution/load/publication.
+        bool resolveUUID( const String &uuid, ResourceID &output, String &error ) const
+        {
+            output = ResourceID();
+            error.clear();
+            String canonical;
+            if( !initialized || !runtimeOnly )
+            {
+                error = "Runtime UUID lookup requires an initialized read-only mount";
+                return false;
+            }
+            if( !canonicalRuntimeUUID( uuid, canonical ) )
+            {
+                error = "Invalid or nil runtime resource UUID";
+                return false;
+            }
+            const auto entry = runtimeManifest.bindings.find( canonical );
+            if( entry == runtimeManifest.bindings.end() )
+            {
+                error = "UUID is not present in the runtime manifest: " + canonical;
+                return false;
+            }
+            output = entry->second;
+            return true;
+        }
+
+        std::shared_ptr<const RuntimeResource> loadClosure( const ResourceID &id, String &error )
+        {
+            std::lock_guard<std::mutex> loadLock( runtimeLoadMutex );
+            LoadRequest request;
+            request.packagedBuild = activePackagedBuild;
+            auto loaded = loadNode( id, request, error );
+            if( !loaded ) return nullptr;
+            std::unique_lock<std::shared_mutex> cacheLock( cacheMutex );
+            for( const auto &entry : request.completed )
+                runtimeCache[request.artifacts.at(entry.first)] = entry.second;
+            return loaded;
+        }
+
         std::shared_ptr<IResourceCompilerRegistry> registry;
         std::shared_ptr<IResourceCompilationDatabase> database;
         ResourceSystemConfig config;
@@ -1455,14 +1550,29 @@ namespace workphone::resource
     bool ResourceSystem::writeRuntimeManifest( const String &path, const Array<ResourceID> &roots,
                                                String &error )
     {
-        error.clear();
+        return writeRuntimeManifest( path, roots, {}, error );
+    }
+
+    bool ResourceSystem::writeRuntimeManifest( const String &path, const Array<ResourceID> &roots,
+                                               const Array<RuntimeResourceBinding> &bindings,
+                                               String &error )
+    {
         std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        return writeRuntimeManifestLocked( path, roots, bindings, error );
+    }
+
+    bool ResourceSystem::writeRuntimeManifestLocked( const String &path, const Array<ResourceID> &roots,
+                                                     const Array<RuntimeResourceBinding> &bindings,
+                                                     String &error )
+    {
+        error.clear();
         if( !m_impl->initialized || m_impl->runtimeOnly )
         {
             error = "Runtime manifests can only be exported by an initialized authoring resource system";
             return false;
         }
-        if( path.empty() || roots.empty() || roots.size() > maximumManifestResources )
+        if( path.empty() || roots.empty() || roots.size() > maximumManifestResources ||
+            bindings.size() > maximumManifestResources )
         {
             error = "A runtime manifest requires a destination and at least one valid root";
             return false;
@@ -1570,8 +1680,22 @@ namespace workphone::resource
             sortedRoots[root.str()] = root;
         }
 
+        std::set<String> boundResources;
+        for( const auto &binding : bindings )
+        {
+            String uuid;
+            if( !canonicalRuntimeUUID( binding.uuid, uuid ) || !binding.resourceId.isValid() ||
+                !manifest.resources.count( binding.resourceId.str() ) ||
+                !boundResources.insert( binding.resourceId.str() ).second ||
+                !manifest.bindings.emplace( uuid, binding.resourceId ).second )
+            {
+                error = "Runtime UUID bindings require unique non-nil UUIDs and unique resources in the install closure";
+                return false;
+            }
+        }
+
         std::ostringstream encoded( std::ios::binary );
-        writeManifestNumber( encoded, 2 );
+        writeManifestNumber( encoded, bindings.empty() ? 2 : 3 );
         bool stringsValid = writeManifestString( encoded, manifest.target );
         writeManifestNumber( encoded, sortedRoots.size() );
         for( const auto &root : sortedRoots )
@@ -1591,6 +1715,15 @@ namespace workphone::resource
                 stringsValid = writeManifestString( encoded, dependency.str() ) && stringsValid;
             if( encoded.tellp() > static_cast<std::streamoff>( maximumManifestBytes ) )
                 break;
+        }
+        if( !bindings.empty() )
+        {
+            writeManifestNumber( encoded, manifest.bindings.size() );
+            for( const auto &binding : manifest.bindings )
+            {
+                stringsValid = writeManifestString( encoded, binding.first ) && stringsValid;
+                stringsValid = writeManifestString( encoded, binding.second.str() ) && stringsValid;
+            }
         }
         const auto payload = encoded.str();
         if( !stringsValid || !encoded || payload.size() > maximumManifestBytes )
@@ -1623,6 +1756,126 @@ namespace workphone::resource
         header.payloadHash = header.sourceHash;
         header.payloadSize = payload.size();
         return CompiledResourceIO::writeAtomic( pathString( destination ), header, temporary.path, error );
+    }
+
+    bool ResourceSystem::writeRuntimePackage( const String &directory, const Array<ResourceID> &roots,
+                                              const Array<RuntimeResourceBinding> &bindings, String &error )
+    try
+    {
+        error.clear();
+        std::unique_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        if( !m_impl->initialized || m_impl->runtimeOnly || !m_impl->activePackagedBuild )
+        {
+            error = "Runtime packages require an initialized authoring system with a successful package-mode build";
+            return false;
+        }
+        if( directory.empty() || directory.find( '\0' ) != String::npos )
+        {
+            error = "A runtime package requires a valid destination directory";
+            return false;
+        }
+        std::error_code ec;
+        const auto destination = fs::weakly_canonical( fs::u8path( directory.c_str() ), ec );
+        if( ec || destination.empty() || destination == destination.root_path() ||
+            isUnderRoot( m_impl->sourceRoot, destination ) || isUnderRoot( destination, m_impl->sourceRoot ) ||
+            isUnderRoot( m_impl->compiledRoot, destination ) || isUnderRoot( destination, m_impl->compiledRoot ) )
+        {
+            error = "Runtime package destination must be separate from source and cooked storage";
+            return false;
+        }
+        const auto status = fs::symlink_status( destination, ec );
+        if( (ec && ec != std::errc::no_such_file_or_directory) || fs::exists( status ) )
+        {
+            error = "Runtime package destination already exists or cannot be inspected";
+            return false;
+        }
+        ec.clear();
+        fs::create_directories( destination.parent_path(), ec );
+        if( ec ) { error = "Cannot create runtime package parent directory"; return false; }
+
+        // Ownership starts only after exclusive directory creation. Cleanup removes
+        // only this request's staging tree; an interrupted request may leave it behind.
+        struct Staging
+        {
+            fs::path path;
+            ~Staging()
+            {
+                if( !path.empty() ) { std::error_code ignored; fs::remove_all( path, ignored ); }
+            }
+        } staging;
+        for( unsigned attempt = 0; attempt < 64; ++attempt )
+        {
+            const auto candidate = destination.parent_path() /
+                (".wp-package-" + std::to_string( std::chrono::high_resolution_clock::now().time_since_epoch().count() ) +
+                 "-" + std::to_string( payloadTemporaryCounter.fetch_add( 1 ) ));
+            if( fs::create_directory( candidate, ec ) ) { staging.path = candidate; break; }
+            if( ec && ec != std::errc::file_exists ) break;
+            ec.clear();
+        }
+        if( staging.path.empty() ) { error = "Cannot create exclusive runtime package staging directory"; return false; }
+        const auto manifestPath = staging.path / "runtime.wprm";
+        if( !writeRuntimeManifestLocked( pathString( manifestPath ), roots, bindings, error ) ) return false;
+        RuntimeManifest manifest;
+        if( !readManifest( pathString( manifestPath ), manifest, error ) ) return false;
+        std::set<String> artifactPaths;
+        for( const auto &entry : manifest.resources )
+        {
+            const auto &relative = manifest.artifacts.at( entry.first );
+            if( !artifactPaths.insert( relative ).second )
+            {
+                error = "Runtime package contains aliased artifact paths";
+                return false;
+            }
+            fs::path input;
+            if( !resolveUnderRoot( m_impl->compiledRoot, "data://" + relative, true, input, error ) ) return false;
+            const auto output = staging.path / fs::u8path( relative.c_str() );
+            fs::create_directories( output.parent_path(), ec );
+            if( !ec ) fs::copy_file( input, output, fs::copy_options::none, ec );
+            if( ec ) { error = "Cannot copy runtime package artifact: " + entry.first; return false; }
+            CompiledResourceHeader copied;
+            if( !CompiledResourceIO::validate( pathString( output ), copied, error ) ) return false;
+            if( !sameRuntimeHeader( copied, entry.second, false ) )
+            {
+                error = "Copied runtime package artifact differs from its pinned manifest: " + entry.first;
+                return false;
+            }
+            // Manifest payloads carry the closure separately; validate persistent
+            // container pins against that exact closure before publishing a package.
+            for( size_t index = 0; copied.formatVersion >= 2 && index < copied.installDependencies.size(); ++index )
+            {
+                const auto &child = copied.installDependencies[index].str();
+                const auto &pin = copied.installArtifacts[index];
+                const auto &header = manifest.resources.at( child );
+                if( pin.path != manifest.artifacts.at( child ) || pin.sourceHash != header.sourceHash ||
+                    pin.payloadHash != header.payloadHash )
+                {
+                    error = "Copied runtime package dependency pin differs from its manifest";
+                    return false;
+                }
+            }
+        }
+        // Directory rename must not replace even an empty competing destination.
+        bool published = false;
+#if defined WP_PLATFORM_WIN32
+        published = MoveFileExW( staging.path.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH ) != 0;
+#elif defined(__linux__) && defined(SYS_renameat2)
+        published = syscall( SYS_renameat2, AT_FDCWD, staging.path.c_str(), AT_FDCWD,
+                             destination.c_str(), 1 /* RENAME_NOREPLACE */ ) == 0;
+#elif defined(__APPLE__)
+        published = renamex_np( staging.path.c_str(), destination.c_str(), RENAME_EXCL ) == 0;
+#endif
+        if( !published )
+        {
+            error = "Cannot publish runtime package exclusively; destination may have appeared or filesystem lacks support";
+            return false;
+        }
+        staging.path.clear();
+        return true;
+    }
+    catch( const fs::filesystem_error &exception )
+    {
+        error = String( "Runtime package filesystem failure: " ) + exception.what();
+        return false;
     }
 
     void ResourceSystem::shutdown()
@@ -1771,16 +2024,21 @@ namespace workphone::resource
         }
         // Synchronous requests share one retained identity even when separate roots
         // are loaded concurrently. Async scheduling and residency budgets remain separate work.
-        std::lock_guard<std::mutex> loadLock( m_impl->runtimeLoadMutex );
-        Impl::LoadRequest request;
-        request.packagedBuild = m_impl->activePackagedBuild;
-        auto loaded = m_impl->loadNode( resourceId, request, error );
-        if( !loaded )
-            return nullptr;
-        std::unique_lock<std::shared_mutex> cacheLock( m_impl->cacheMutex );
-        for( const auto &entry : request.completed )
-            m_impl->runtimeCache[request.artifacts.at(entry.first)] = entry.second;
-        return loaded;
+        return m_impl->loadClosure( resourceId, error );
+    }
+
+    bool ResourceSystem::resolveRuntimeUUID( const String &uuid, ResourceID &output, String &error ) const
+    {
+        std::shared_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        return m_impl->resolveUUID( uuid, output, error );
+    }
+
+    std::shared_ptr<const RuntimeResource> ResourceSystem::loadUUID( const String &uuid, String &error )
+    {
+        std::shared_lock<std::shared_mutex> operationLock( m_impl->operationMutex );
+        ResourceID id;
+        if( !m_impl->resolveUUID( uuid, id, error ) ) return nullptr;
+        return m_impl->loadClosure( id, error );
     }
 
     std::shared_ptr<const RuntimeResource> ResourceSystem::loadPayload( const ResourceID &id, String &error, u64 maximumPayloadBytes )

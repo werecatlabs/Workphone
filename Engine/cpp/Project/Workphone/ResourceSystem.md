@@ -7,8 +7,9 @@ compiler registry, dependency metadata interface, and compiled-resource containe
 
 Resources use canonical logical paths such as `data://materials/paint.matres`. The extension is
 the resource type and must contain one to eight lowercase letters or digits. Sub-resources use
-`data://characters/hero.char:lod0.mesh`; their compiled filename is flattened to
-`characters/hero_lod0.mesh`. Absolute paths, traversal segments, and non-`data` URI schemes are
+`data://characters/hero.char:lod0.mesh`. Current artifacts use immutable, target/mode-qualified
+generation paths returned by compilation reports and pinned in manifests. The flattened
+`compiledRelativePath()` helper is for legacy version-1 runtime packages. Absolute paths, traversal segments, and non-`data` URI schemes are
 rejected.
 
 ## Registering a compiler
@@ -68,3 +69,6 @@ that root.
 The lightweight `WPResourceTests` target covers compilation, up-to-date detection, transitive
 rebuilds, install dependency loading, path traversal rejection, registry collisions, payload
 corruption, and forced repair.
+
+For directory export, durable UUID bindings, runtime-only loading and compatibility,
+see [runtime packages](../../../../docs/WPRESOURCE_RUNTIME_PACKAGES.md).

@@ -365,12 +365,6 @@ namespace workphone::render
             {
                 setLoadingState( LoadingState::Unloading );
 
-                auto applicationManager = core::IApplicationManager::instance();
-                WP_ASSERT( applicationManager );
-
-                auto stateManager = applicationManager->getStateManager();
-                WP_ASSERT( stateManager );
-
                 for( auto technique : m_techniques )
                 {
                     technique->unload( data );

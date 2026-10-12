@@ -6,6 +6,13 @@
 
 namespace workphone::resource
 {
+    /** Durable authored identity mapped to one member of a pinned install closure. */
+    struct WPCore_API RuntimeResourceBinding
+    {
+        String uuid;
+        ResourceID resourceId;
+    };
+
     /** Read-only cooked mount. Limits apply to each unique install dependency closure. */
     struct WPCore_API RuntimeResourceConfig
     {
@@ -51,6 +58,25 @@ namespace workphone::resource
          * Callers publish an immutable copy of the matching cooked files alongside it.
          */
         bool writeRuntimeManifest( const String &path, const Array<ResourceID> &roots, String &error );
+        /** Manifest v3 adds explicit UUID bindings. UUIDs use canonical dashed hex
+         * spelling (input case is normalized); nil, duplicate UUIDs, aliased resource
+         * identities and resources outside the exported closure are rejected.
+         * Unbound resources remain accessible by ResourceID. No catalog is inferred.
+         */
+        bool writeRuntimeManifest( const String &path, const Array<ResourceID> &roots,
+                                   const Array<RuntimeResourceBinding> &bindings, String &error );
+        /** Export only the verified pinned install closure and runtime.wprm to a
+         * new directory. Requires successful package-mode compilation. Stages on
+         * the destination volume, validates copied containers, then publishes the
+         * directory exclusively. Existing destinations and source/cooked overlap
+         * are rejected. Does not package executables or certify typed consumers.
+         */
+        bool writeRuntimePackage( const String &directory, const Array<ResourceID> &roots,
+                                  const Array<RuntimeResourceBinding> &bindings, String &error );
+        /** Runtime-only UUID lookup. Failure clears output; no path fallback. */
+        bool resolveRuntimeUUID( const String &uuid, ResourceID &output, String &error ) const;
+        /** Resolves and loads under one mount lifetime fence, sharing load() cache/limits. */
+        std::shared_ptr<const RuntimeResource> loadUUID( const String &uuid, String &error );
         void shutdown() override;
         bool isInitialized() const override;
 
@@ -76,6 +102,8 @@ namespace workphone::resource
         std::shared_ptr<IResourceCompilerRegistry> registry() const override;
 
     private:
+        bool writeRuntimeManifestLocked( const String &, const Array<ResourceID> &,
+                                         const Array<RuntimeResourceBinding> &, String & );
         class Impl;
         Impl *m_impl = nullptr;
     };
