@@ -16,19 +16,27 @@ namespace workphone
     namespace
     {
         SmartPtr<IDatabaseQuery> boundQuery( DatabaseManager &manager, const String &sql,
-                                            const Array<String> &values = {} )
+                                             const Array<String> &values = {} )
         {
             auto database = manager.getDatabase();
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
             return bound ? bound->queryBound( sql, values ) : nullptr;
         }
-        String readValue( DatabaseManager &manager, const String &table,
-                          const String &name, const String &fallback )
+
+        String readValue( DatabaseManager &manager, const String &table, const String &name,
+                          const String &fallback )
         {
             ScopedLock lock( &manager );
-            if( name.size() > 1024 || name.find( '\0' ) != String::npos ) return fallback;
-            auto query = boundQuery( manager, "SELECT value FROM " + table + " WHERE param=? LIMIT 2", {name} );
-            if( !query || query->eof() ) return fallback;
+            if( name.size() > 1024 || name.find( '\0' ) != String::npos )
+            {
+                return fallback;
+            }
+            auto query =
+                boundQuery( manager, "SELECT value FROM " + table + " WHERE param=? LIMIT 2", { name } );
+            if( !query || query->eof() )
+            {
+                return fallback;
+            }
             const auto value = query->getFieldValue( "value" );
             query->nextRow();
             if( !query->eof() )
@@ -38,28 +46,49 @@ namespace workphone
             }
             return value;
         }
-        void writeValue( DatabaseManager &manager, const String &table, const String &name, const String &value )
+
+        void writeValue( DatabaseManager &manager, const String &table, const String &name,
+                         const String &value )
         {
             ScopedLock lock( &manager );
-            if( name.size() > 1024 || value.size() > 1024 * 1024 ||
-                name.find( '\0' ) != String::npos || value.find( '\0' ) != String::npos )
-            { WP_LOG_ERROR( "Invalid database setting key or value." ); return; }
+            if( name.size() > 1024 || value.size() > 1024 * 1024 || name.find( '\0' ) != String::npos ||
+                value.find( '\0' ) != String::npos )
+            {
+                WP_LOG_ERROR( "Invalid database setting key or value." );
+                return;
+            }
             auto database = manager.getDatabase();
-            DatabaseConnectionLock connection( database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr );
+            DatabaseConnectionLock connection(
+                database ? dynamic_cast<ISerializedDatabase *>( database.get() ) : nullptr );
             // Savepoints compose with the caller's transaction. BEGIN IMMEDIATE
             // here would either reject nesting or commit somebody else's work.
-            if( !boundQuery( manager, "SAVEPOINT wp_key_value" ) ) return;
-            auto matches = boundQuery( manager, "SELECT count(*) AS n FROM " + table + " WHERE param=?", {name} );
+            if( !boundQuery( manager, "SAVEPOINT wp_key_value" ) )
+            {
+                return;
+            }
+            auto matches =
+                boundQuery( manager, "SELECT count(*) AS n FROM " + table + " WHERE param=?", { name } );
             bool okay = matches && !matches->eof() && matches->getFieldValueAsInt( "n" ) <= 1;
             if( okay )
-                okay = boundQuery( manager, "UPDATE " + table + " SET value=? WHERE param=?", {value,name} ) != nullptr &&
-                       boundQuery( manager, "INSERT INTO " + table + "(param,value) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM " + table + " WHERE param=?)", {name,value,name} ) != nullptr;
-            if( okay && boundQuery( manager, "RELEASE wp_key_value" ) ) return;
+            {
+                okay = boundQuery( manager, "UPDATE " + table + " SET value=? WHERE param=?",
+                                   { value, name } ) != nullptr &&
+                       boundQuery( manager,
+                                   "INSERT INTO " + table +
+                                       "(param,value) SELECT ?,? WHERE NOT EXISTS(SELECT 1 FROM " +
+                                       table + " WHERE param=?)",
+                                   { name, value, name } ) != nullptr;
+            }
+            if( okay && boundQuery( manager, "RELEASE wp_key_value" ) )
+            {
+                return;
+            }
             boundQuery( manager, "ROLLBACK TO wp_key_value" );
             boundQuery( manager, "RELEASE wp_key_value" );
             WP_LOG_ERROR( "Database setting update failed; previous values retained." );
         }
-    }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager, IDatabaseManager );
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager::QueryJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone, DatabaseManager::DMLQueryJob, Job );
@@ -300,8 +329,10 @@ namespace workphone
                 WP_LOG( "Database::load: database exists at " + filePath );
             }
 
-            if( !boundQuery( *this, "ATTACH DATABASE ? AS refdb", {filePath} ) )
+            if( !boundQuery( *this, "ATTACH DATABASE ? AS refdb", { filePath } ) )
+            {
                 WP_LOG_ERROR( "Could not attach reference database." );
+            }
         }
         catch( Exception &e )
         {
@@ -362,7 +393,8 @@ namespace workphone
             if( auto database = getDatabase() )
             {
                 auto bound = dynamic_cast<IParameterizedDatabase *>( database.get() );
-                DatabaseConnectionLock connection( dynamic_cast<ISerializedDatabase *>(database.get()) );
+                DatabaseConnectionLock connection(
+                    dynamic_cast<ISerializedDatabase *>( database.get() ) );
                 if( bound && bound->queryBound( dml, {} ) )
                 {
                     auto changes = bound->queryBound( "SELECT changes() AS affected", {} );
@@ -509,9 +541,15 @@ namespace workphone
     bool DatabaseManager::hasStateValue( const String &name )
     {
         ScopedLock lock( this );
-        if( name.size() > 1024 || name.find( '\0' ) != String::npos ) return false;
-        auto query = boundQuery( *this, "SELECT param FROM sim_states WHERE param=? LIMIT 2", {name} );
-        if( !query || query->eof() ) return false;
+        if( name.size() > 1024 || name.find( '\0' ) != String::npos )
+        {
+            return false;
+        }
+        auto query = boundQuery( *this, "SELECT param FROM sim_states WHERE param=? LIMIT 2", { name } );
+        if( !query || query->eof() )
+        {
+            return false;
+        }
         query->nextRow();
         return query->eof();
     }
@@ -570,8 +608,10 @@ namespace workphone
         executeQuery( "PRAGMA cache_size = 10000;" );
         auto journal = executeQuery( "PRAGMA journal_mode;" );
         if( journal && ( journal->getFieldValue( "journal_mode" ) == "memory" ||
-                        journal->getFieldValue( "journal_mode" ) == "off" ) )
+                         journal->getFieldValue( "journal_mode" ) == "off" ) )
+        {
             executeQuery( "PRAGMA journal_mode=DELETE;" );
+        }
         // executeQuery("PRAGMA locking_mode=EXCLUSIVE;");
         executeQuery( "PRAGMA temp_store=MEMORY;" );
         // executeQuery("PRAGMA threads = 4;");
@@ -706,14 +746,17 @@ namespace workphone
     String DatabaseManager::getResourceValue( const String &name )
     {
         ScopedLock lock( this );
-        if( name.size() > 1024 || name.find( '\0' ) != String::npos ) return name;
+        if( name.size() > 1024 || name.find( '\0' ) != String::npos )
+        {
+            return name;
+        }
 #if WP_BUILD_EDITOR_PLUGIN
         auto modelSql = String( "SELECT name FROM resourcemap WHERE name=? LIMIT 2" );
 #else
         auto modelSql = String( "SELECT name FROM refdb.resourcemap WHERE name=? LIMIT 2" );
 #endif
 
-        auto modelResult = boundQuery( *this, modelSql, {name} );
+        auto modelResult = boundQuery( *this, modelSql, { name } );
         if( modelResult )
         {
             if( !modelResult->eof() )

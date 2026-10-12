@@ -58,18 +58,21 @@ namespace workphone
     namespace
     {
         SmartPtr<IDatabaseQuery> queryResourceValues( SmartPtr<IDatabaseManager> manager,
-                                                     const String &sql,
-                                                     const Array<String> &values )
+                                                      const String &sql, const Array<String> &values )
         {
             if( !manager )
+            {
                 return nullptr;
+            }
             ScopedLock lock( manager.get() );
             auto database = manager->getDatabase();
             auto bound = database ? dynamic_cast<IParameterizedDatabase *>( database.get() ) : nullptr;
             return bound ? bound->queryBound( sql, values ) : nullptr;
         }
+
         SmartPtr<AssetDatabaseManager> catalogForUuid( const ResourceDatabase &resources,
-            const String &uuid, AssetDatabaseManager::EntrySnapshot &entry )
+                                                       const String &uuid,
+                                                       AssetDatabaseManager::EntrySnapshot &entry )
         {
             auto project = dynamic_pointer_cast<AssetDatabaseManager>( resources.getDatabaseManager() );
             auto media = resources.getMediaCatalog();
@@ -78,14 +81,24 @@ namespace workphone
             const bool inMedia = media && media->tryGetEntry( uuid, mediaEntry );
             if( inProject && inMedia )
             {
-                WP_LOG_ERROR( "Ambiguous UUID exists in both project and bundled media catalogs: " + uuid );
+                WP_LOG_ERROR( "Ambiguous UUID exists in both project and bundled media catalogs: " +
+                              uuid );
                 entry = projectEntry;
                 return nullptr;
             }
-            if( inProject ) { entry = projectEntry; return project; }
-            if( inMedia ) { entry = mediaEntry; return media; }
+            if( inProject )
+            {
+                entry = projectEntry;
+                return project;
+            }
+            if( inMedia )
+            {
+                entry = mediaEntry;
+                return media;
+            }
             return nullptr;
         }
+
         const String ReferenceObjectType = "ResourceReference";
         const String ReferenceRootUUID = "reference-root";
         const String ReferenceRootPath = "reference";
@@ -101,11 +114,15 @@ namespace workphone
             explicit ImportPump( std::shared_ptr<AssetImportQueue> queue ) : queue( std::move( queue ) )
             {
             }
+
             ~ImportPump() override
             {
                 if( !executed )
+                {
                     queue->cancel();
+                }
             }
+
             void execute() override
             {
                 executed = true;
@@ -123,12 +140,16 @@ namespace workphone
             if( nestedFile && activeImport == database )
             {
                 if( currentImportSession && currentImportSession() )
+                {
                     operation();
+                }
                 return;
             }
             auto app = core::IApplicationManager::instance();
             if( !app || app->getQuit() || !app->isRunning() || !database->isLoaded() )
+            {
                 return;
+            }
             auto owner = SmartPtr<ResourceDatabase>( database );
             auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
             const auto project = app->getProjectPath(), cache = app->getCachePath(),
@@ -136,10 +157,14 @@ namespace workphone
             auto session = std::make_shared<AssetCatalogSession>();
             const bool bound = catalog && catalog->getDatabase() && catalog->getDatabase()->isLoaded();
             if( bound && !session->capture( catalog ) )
+            {
                 return;
+            }
             if( catalog && !bound &&
                 !catalog->setProjectRoot( project.empty() ? Path::getWorkingDirectory() : project ) )
+            {
                 return;
+            }
             auto valid = [owner, catalog, project, cache, settings, session, bound]() {
                 auto current = core::IApplicationManager::instance();
                 return current && !current->getQuit() && current->isRunning() && owner->isLoaded() &&
@@ -175,13 +200,19 @@ namespace workphone
                     currentImportSession = {};
                     activeImport = nullptr;
                 } ) )
+            {
                 return;
+            }
             auto queue = app->getJobQueue();
             auto pool = app->getThreadPool();
             if( app->hasTasks() && queue && queue->isRunning() && pool && pool->getNumThreads() > 1 )
+            {
                 queue->addJob( make_ptr<ImportPump>( importQueue ) );
+            }
             else
+            {
                 importQueue->drain();
+            }
         }
 
         class ResourceCleanupJob : public Job
@@ -193,30 +224,44 @@ namespace workphone
             {
                 setPrimary( true );
             }
+
             void execute() override
             {
                 if( owner->isLoaded() )
+                {
                     if( remove )
+                    {
                         owner->removeUnusedResources();
+                    }
                     else
+                    {
                         owner->unloadUnusedResources();
+                    }
+                }
             }
 
         private:
             SmartPtr<ResourceDatabase> owner;
             bool remove;
         };
+
         bool deferResourceCleanup( ResourceDatabase *owner, bool remove )
         {
             if( Thread::getCurrentThreadId() == Thread::ThreadId::Primary )
+            {
                 return false;
+            }
             auto app = core::IApplicationManager::instance();
             auto queue = app ? app->getJobQueue() : nullptr;
             if( queue && queue->isRunning() && app->isRunning() && !app->getQuit() )
+            {
                 queue->addJob(
                     make_ptr<ResourceCleanupJob>( SmartPtr<ResourceDatabase>( owner ), remove ) );
+            }
             else
+            {
                 WP_LOG_ERROR( "Resource cleanup requires an available primary-thread job queue." );
+            }
             return true;
         }
 
@@ -599,7 +644,8 @@ namespace workphone
             {
                 if( graphicsSystem )
                 {
-                    auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
+                    auto materialManager =
+                        graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
 
                     for( auto &file : materialFiles )
                     {
@@ -627,7 +673,8 @@ namespace workphone
                 {
                     if( graphicsSystem )
                     {
-                        auto textureManager = graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
+                        auto textureManager =
+                            graphicsSystem ? graphicsSystem->getTextureManager() : nullptr;
 
                         for( auto &file : textureFiles )
                         {
@@ -695,7 +742,8 @@ namespace workphone
         auto cachePath = applicationManager->getCachePath();
 
         auto dbFilePath = getFilePath();
-        auto databasePath = Path::isPathAbsolute( dbFilePath ) ? dbFilePath : cachePath + "/" + dbFilePath;
+        auto databasePath =
+            Path::isPathAbsolute( dbFilePath ) ? dbFilePath : cachePath + "/" + dbFilePath;
         databasePath = StringUtil::cleanupPath( databasePath );
 
         assetDatabaseManager->loadFromFile( databasePath );
@@ -771,13 +819,17 @@ namespace workphone
                 if( !std::filesystem::exists( std::filesystem::u8path( ( root + "/" + path ).c_str() ),
                                               error ) &&
                     !error )
+                {
                     missing.push_back( path );
+                }
                 query->nextRow();
             }
         }
         query = nullptr;
         for( const auto &path : missing )
+        {
             assetDatabaseManager->removeResourceEntryFromPath( path );
+        }
     }
 
     void ResourceDatabase::deleteCache()
@@ -792,19 +844,27 @@ namespace workphone
                 auto folderListing = fileSystem->getFolderListing( cachePath );
 
                 if( !folderListing )
+                {
                     return;
+                }
                 String root, error;
                 if( !canonicalAssetCatalogRoot( cachePath, root, error ) )
+                {
                     return;
+                }
                 auto &files = folderListing->getFiles();
                 for( auto &file : files )
                 {
                     if( !currentImportSession || !currentImportSession() )
+                    {
                         return;
+                    }
                     auto ext = Path::getFileExtension( file );
                     AssetCatalogPath candidate;
                     if( !canonicalAssetCatalogPath( root, file, candidate, error ) )
+                    {
                         continue;
+                    }
                     auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
                     AssetCatalogPath live;
                     if( catalog &&
@@ -812,7 +872,9 @@ namespace workphone
                         ( candidate.key == live.key || candidate.key == live.key + "-wal" ||
                           candidate.key == live.key + "-shm" ||
                           candidate.key == live.key + "-journal" ) )
+                    {
                         continue;
+                    }
                     // Only known regenerable payloads are cache-owned. Catalogs, WAL/SHM,
                     // manifests, source files and unknown files must survive reimport.
                     if( ext == ".fbmeshbin" || ext == ".pxtrianglemesh" )
@@ -1435,7 +1497,8 @@ namespace workphone
                 if( type == "Material" )
                 {
                     auto graphicsSystem = applicationManager->getGraphicsSystem();
-                    auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
+                    auto materialManager =
+                        graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
 
                     auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
                     if( materialResult.first )
@@ -1488,11 +1551,17 @@ namespace workphone
 
     auto ResourceDatabase::loadResource( const UUID &id ) -> SmartPtr<IResource>
     {
-        if( id.is_nil() ) return nullptr;
+        if( id.is_nil() )
+        {
+            return nullptr;
+        }
         AssetDatabaseManager::EntrySnapshot entry;
         if( auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry ) )
         {
-            if( entry.kind != AssetDatabaseManager::EntryKind::File ) return nullptr;
+            if( entry.kind != AssetDatabaseManager::EntryKind::File )
+            {
+                return nullptr;
+            }
             if( entry.type == "script" )
             {
                 auto script = make_ptr<ScriptAsset>();
@@ -1500,12 +1569,17 @@ namespace workphone
                 script->loadFromFile( catalog->getProjectRoot() + "/" + entry.path );
                 return catalog->isEntryCurrent( entry ) ? script : nullptr;
             }
-            auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {entry.uuid} );
-            auto resource = query && !query->eof() ?
-                createOrRetrieveResource( query, true, catalog->getProjectRoot() ) : nullptr;
+            auto query =
+                queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", { entry.uuid } );
+            auto resource = query && !query->eof()
+                                ? createOrRetrieveResource( query, true, catalog->getProjectRoot() )
+                                : nullptr;
             return catalog->isEntryCurrent( entry ) ? resource : nullptr;
         }
-        if( !entry.uuid.empty() ) return nullptr; // An ambiguous authored identity cannot use the legacy fallback.
+        if( !entry.uuid.empty() )
+        {
+            return nullptr;  // An ambiguous authored identity cannot use the legacy fallback.
+        }
         auto applicationManager = core::IApplicationManager::instancePtr();
         if( !applicationManager )
         {
@@ -1531,7 +1605,10 @@ namespace workphone
         }
 
         auto properties = loadAssetProperties( id );
-        if( !properties ) return nullptr;
+        if( !properties )
+        {
+            return nullptr;
+        }
 
         auto uuid = properties->getProperty( "uuid" );
         if( StringUtil::isNullOrEmpty( uuid ) )
@@ -1628,16 +1705,22 @@ namespace workphone
     {
         auto catalog = getMediaCatalog();
         if( !catalog || path.empty() )
+        {
             return nullptr;
-        auto director = dynamic_pointer_cast<scene::ResourceDirector>(
-            catalog->getResourceEntryFromPath( path ) );
+        }
+        auto director =
+            dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( path ) );
         if( !director )
+        {
             return nullptr;
+        }
         AssetDatabaseManager::EntrySnapshot snapshot;
         const auto uuid = director->getResourceUUID();
         if( !catalog->tryGetEntry( uuid, snapshot ) ||
             snapshot.kind != AssetDatabaseManager::EntryKind::File )
+        {
             return nullptr;
+        }
         auto resource = loadResourceById( StringUtil::parseUUID( uuid ) );
         return getMediaCatalog() == catalog && catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
     }
@@ -1646,24 +1729,35 @@ namespace workphone
     {
         auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
         if( !catalog || path.empty() )
+        {
             return nullptr;
-        auto director = dynamic_pointer_cast<scene::ResourceDirector>(
-            catalog->getResourceEntryFromPath( path ) );
+        }
+        auto director =
+            dynamic_pointer_cast<scene::ResourceDirector>( catalog->getResourceEntryFromPath( path ) );
         if( !director )
-            return nullptr; // Loading never imports or invents persistent identity.
+        {
+            return nullptr;  // Loading never imports or invents persistent identity.
+        }
         const auto uuid = director->getResourceUUID();
         AssetDatabaseManager::EntrySnapshot snapshot;
         if( !catalog->tryGetEntry( uuid, snapshot ) ||
             snapshot.kind != AssetDatabaseManager::EntryKind::File )
+        {
             return nullptr;
+        }
         if( snapshot.type == "script" )
+        {
             return loadResource( StringUtil::parseUUID( uuid ) );
-        auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", {uuid} );
+        }
+        auto query = queryResourceValues( catalog, "SELECT * FROM resources WHERE uuid=?", { uuid } );
         if( !query || query->eof() )
+        {
             return nullptr;
+        }
         auto resource = createOrRetrieveResource( query, true, catalog->getProjectRoot() );
         return catalog->isEntryCurrent( snapshot ) ? resource : nullptr;
     }
+
     auto ResourceDatabase::loadDirector( const String &path ) -> SmartPtr<IBuildDirector>
     {
         auto applicationManager = core::IApplicationManager::instance();
@@ -1813,57 +1907,85 @@ namespace workphone
     {
         return loadResource( uuid );
     }
+
     void ResourceDatabase::unloadUnusedResources()
     {
         if( deferResourceCleanup( this, false ) )
+        {
             return;
+        }
         Array<SmartPtr<ISharedObject>> candidates;
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
             for( const auto &object : m_objects )
+            {
                 if( object && object->getReferences() == 1 )
+                {
                     candidates.push_back( object );
+                }
+            }
             if( m_instances )
+            {
                 for( const auto &resource : *m_instances )
+                {
                     if( resource && resource->getReferences() == 1 )
+                    {
                         candidates.push_back( resource );
+                    }
+                }
+            }
         }
         for( auto &object : candidates )
+        {
             if( object->getReferences() == 2 )
+            {
                 object->unload( nullptr );
+            }
+        }
     }
 
     void ResourceDatabase::removeUnusedResources()
     {
         if( deferResourceCleanup( this, true ) )
+        {
             return;
+        }
         Array<SmartPtr<ISharedObject>> detached;
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
             auto collect = [&]( auto &objects ) {
                 for( auto it = objects.begin(); it != objects.end(); )
+                {
                     if( *it && ( *it )->getReferences() == 1 )
                     {
                         detached.push_back( *it );
                         it = objects.erase( it );
                     }
                     else
+                    {
                         ++it;
+                    }
+                }
             };
             collect( m_objects );
             if( m_instances )
+            {
                 collect( *m_instances );
+            }
         }
         // Recheck ownership after detachment: a concurrent acquired reference
         // keeps its live resource rather than having it unloaded underneath it.
         for( auto &object : detached )
+        {
             if( object->getReferences() == 1 )
+            {
                 object->unload( nullptr );
+            }
+        }
     }
 
     auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource,
-                                                    const String &sourceRoot )
-        -> SmartPtr<IResource>
+                                                     const String &sourceRoot ) -> SmartPtr<IResource>
     {
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
@@ -1887,7 +2009,9 @@ namespace workphone
         if( type == "Material" )
         {
             if( !materialManager )
+            {
                 return nullptr;
+            }
             auto materialResult = materialManager->createOrRetrieve( uuid, path, type );
 
             auto resource = materialResult.first;
@@ -1902,7 +2026,9 @@ namespace workphone
         {
             auto meshManager = applicationManager->getMeshManager();
             if( !meshManager || ( bLoadResource && !graphicsSystem ) )
+            {
                 return nullptr;
+            }
             auto meshResult = meshManager->createOrRetrieve( uuid, path, type );
 
             auto resource = meshResult.first;
@@ -1916,7 +2042,9 @@ namespace workphone
         if( type == "Texture" )
         {
             if( !textureManager )
+            {
                 return nullptr;
+            }
             auto textureResult = textureManager->createOrRetrieve( uuid, path, type );
 
             auto resource = textureResult.first;
@@ -1930,15 +2058,23 @@ namespace workphone
         if( type == "Font" )
         {
             auto manager = graphicsSystem ? graphicsSystem->getFontManager() : nullptr;
-            if( !manager ) return nullptr;
+            if( !manager )
+            {
+                return nullptr;
+            }
             auto result = manager->createOrRetrieve( uuid, path, type ).first;
-            if( bLoadResource && result ) graphicsSystem->loadObject( result );
+            if( bLoadResource && result )
+            {
+                graphicsSystem->loadObject( result );
+            }
             return result;
         }
         if( StringUtil::contains( type, "Sound" ) )
         {
             if( !soundManager )
+            {
                 return nullptr;
+            }
             auto soundResult = soundManager->createOrRetrieve( uuid, path, type );
 
             auto resource = soundResult.first;
@@ -2171,7 +2307,7 @@ namespace workphone
 
             auto assetDatabaseManager =
                 workphone::static_pointer_cast<AssetDatabaseManager>( getDatabaseManager() );
-            
+
             auto director = assetDatabaseManager->getResourceEntryFromPath( path );
 
             auto result = createOrRetrieveFromDirector( type, path, director );
@@ -2194,17 +2330,28 @@ namespace workphone
     auto ResourceDatabase::getObject( const UUID &id ) -> SmartPtr<ISharedObject>
     {
         if( id.is_nil() )
+        {
             return nullptr;
+        }
         for( auto object : getSceneObjects() )
+        {
             if( object && object->getHandle() && object->getHandle()->getUUID() == id )
+            {
                 return object;
+            }
+        }
 
         AssetDatabaseManager::EntrySnapshot entry;
         auto catalog = catalogForUuid( *this, StringUtil::toString( id ), entry );
-        if( !catalog || entry.kind != AssetDatabaseManager::EntryKind::File ) return nullptr;
+        if( !catalog || entry.kind != AssetDatabaseManager::EntryKind::File )
+        {
+            return nullptr;
+        }
         auto application = core::IApplicationManager::instancePtr();
         if( !application )
+        {
             return nullptr;
+        }
         auto graphics = application->getGraphicsSystem();
         auto path = catalog->getProjectRoot() + "/" + entry.path;
         SmartPtr<ISharedObject> result;
@@ -2212,13 +2359,17 @@ namespace workphone
         {
             auto manager = graphics ? graphics->getMaterialManager() : nullptr;
             if( manager )
+            {
                 result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            }
         }
         else if( entry.type == "Texture" )
         {
             auto manager = graphics ? graphics->getTextureManager() : nullptr;
             if( manager )
+            {
                 result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            }
         }
         else if( entry.type == "script" )
         {
@@ -2230,17 +2381,25 @@ namespace workphone
         else if( entry.type == "Font" )
         {
             auto manager = graphics ? graphics->getFontManager() : nullptr;
-            if( manager ) result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            if( manager )
+            {
+                result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            }
         }
         else if( entry.type == "Mesh" )
         {
             auto manager = application->getMeshManager();
-            if( manager ) result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            if( manager )
+            {
+                result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            }
         }
         else if( StringUtil::contains( entry.type, "Sound" ) )
         {
             if( auto manager = application->getSoundManager() )
+            {
                 result = manager->createOrRetrieve( entry.uuid, path, entry.type ).first;
+            }
         }
         else if( auto factory = application->getFactoryManager() )
         {
@@ -2260,15 +2419,23 @@ namespace workphone
         RecursiveMutex::ScopedLock lock( m_mutex );
         if( catalog )
         {
-            if( !catalog->isReadOnly() ) return false;
-            auto marker = queryResourceValues( catalog,
-                "SELECT namespace,version FROM wp_media_catalog WHERE id=1", {} );
-            if( !marker || marker->eof() || marker->getFieldValue( "namespace" ) != "workphone.builtin.media.v1" ||
-                marker->getFieldValue( "version" ) != "1" ) return false;
+            if( !catalog->isReadOnly() )
+            {
+                return false;
+            }
+            auto marker = queryResourceValues(
+                catalog, "SELECT namespace,version FROM wp_media_catalog WHERE id=1", {} );
+            if( !marker || marker->eof() ||
+                marker->getFieldValue( "namespace" ) != "workphone.builtin.media.v1" ||
+                marker->getFieldValue( "version" ) != "1" )
+            {
+                return false;
+            }
         }
         m_mediaCatalog = catalog;
         return true;
     }
+
     SmartPtr<AssetDatabaseManager> ResourceDatabase::getMediaCatalog() const
     {
         RecursiveMutex::ScopedLock lock( m_mutex );
@@ -2282,7 +2449,10 @@ namespace workphone
             // Only fixed internal table names reach this helper.
             auto rows = queryResourceValues( db, "PRAGMA table_info(" + table + ")", {} );
             std::set<String> columns;
-            if( !rows ) throw std::runtime_error( "Cannot inspect domain schema." );
+            if( !rows )
+            {
+                throw std::runtime_error( "Cannot inspect domain schema." );
+            }
             while( !rows->eof() )
             {
                 columns.insert( rows->getFieldValue( "name" ) );
@@ -2290,78 +2460,135 @@ namespace workphone
             }
             return columns;
         }
+
         SmartPtr<Properties> readDomainTree( SmartPtr<IDatabaseManager> db, const UUID &uuid,
                                              SmartPtr<Properties> flattened )
         {
-            if( !db || uuid.is_nil() ) return nullptr;
+            if( !db || uuid.is_nil() )
+            {
+                return nullptr;
+            }
             auto connection = db->getDatabase();
-            DatabaseConnectionLock guard( connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
-            if( !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) ) return nullptr;
+            DatabaseConnectionLock guard(
+                connection ? dynamic_cast<ISerializedDatabase *>( connection.get() ) : nullptr );
+            if( !queryResourceValues( db, "SAVEPOINT wp_domain_read", {} ) )
+            {
+                return nullptr;
+            }
             try
             {
                 const auto columns = domainColumns( db, "configured_actors" );
                 if( !columns.count( "id" ) || !columns.count( "parent_id" ) )
+                {
                     throw std::runtime_error( "Domain actor schema is unsupported." );
+                }
                 const auto attributes = domainColumns( db, "attribs" );
                 const String identityColumn = columns.count( "uuid" ) ? "uuid" : "id";
-                auto identity = queryResourceValues( db, "SELECT id FROM configured_actors WHERE " + identityColumn + "=? LIMIT 2",
-                                                    {StringUtil::toString( uuid )} );
-                if( !identity || identity->eof() ) throw std::runtime_error( "Domain UUID is missing; numeric actors require an explicit UUID column." );
+                auto identity = queryResourceValues(
+                    db, "SELECT id FROM configured_actors WHERE " + identityColumn + "=? LIMIT 2",
+                    { StringUtil::toString( uuid ) } );
+                if( !identity || identity->eof() )
+                {
+                    throw std::runtime_error(
+                        "Domain UUID is missing; numeric actors require an explicit UUID column." );
+                }
                 const auto rootId = identity->getFieldValue( "id" );
                 identity->nextRow();
-                if( !identity->eof() ) throw std::runtime_error( "Domain UUID is ambiguous." );
+                if( !identity->eof() )
+                {
+                    throw std::runtime_error( "Domain UUID is ambiguous." );
+                }
                 String attributeOwner;
                 if( !attributes.empty() )
                 {
                     if( !attributes.count( "title" ) || !attributes.count( "value" ) )
+                    {
                         throw std::runtime_error( "Domain attribute schema is unsupported." );
-                    attributeOwner = attributes.count( "configured_actor_id" ) ? "configured_actor_id" :
-                                     attributes.count( "actor_id" ) ? "actor_id" : "";
-                    if( attributeOwner.empty() ) throw std::runtime_error( "Domain attributes have no supported owner column." );
+                    }
+                    attributeOwner = attributes.count( "configured_actor_id" ) ? "configured_actor_id"
+                                     : attributes.count( "actor_id" )          ? "actor_id"
+                                                                               : "";
+                    if( attributeOwner.empty() )
+                    {
+                        throw std::runtime_error( "Domain attributes have no supported owner column." );
+                    }
                 }
                 std::set<String> visited;
                 size_t bytes = 0, attributeCount = 0;
                 auto account = [&]( const String &text ) {
                     if( text.size() > 65536 || text.size() > 4u * 1024u * 1024u - bytes )
+                    {
                         throw std::runtime_error( "Domain property byte budget exceeded." );
+                    }
                     bytes += text.size();
                 };
                 std::function<SmartPtr<Properties>( const String &, size_t )> visit;
                 visit = [&]( const String &id, size_t depth ) -> SmartPtr<Properties> {
                     if( depth > 64 || visited.size() >= 4096 || !visited.insert( id ).second )
-                        throw std::runtime_error( "Domain hierarchy contains a cycle or exceeds its traversal budget." );
-                    auto row = queryResourceValues( db, "SELECT * FROM configured_actors WHERE id=? LIMIT 2", {id} );
+                    {
+                        throw std::runtime_error(
+                            "Domain hierarchy contains a cycle or exceeds its traversal budget." );
+                    }
+                    auto row = queryResourceValues(
+                        db, "SELECT * FROM configured_actors WHERE id=? LIMIT 2", { id } );
                     if( !row || row->eof() || row->getNumFields() > 256 )
-                        throw std::runtime_error( "Domain actor is missing or exceeds its field budget." );
+                    {
+                        throw std::runtime_error(
+                            "Domain actor is missing or exceeds its field budget." );
+                    }
                     auto result = make_ptr<Properties>();
                     for( u32 field = 0; field < row->getNumFields(); ++field )
                     {
                         const auto name = row->getFieldName( field );
                         const auto value = row->getFieldValue( field );
-                        account( name ); account( value );
+                        account( name );
+                        account( value );
                         result->setProperty( name, value );
                     }
                     row->nextRow();
-                    if( !row->eof() ) throw std::runtime_error( "Domain actor ID is ambiguous." );
+                    if( !row->eof() )
+                    {
+                        throw std::runtime_error( "Domain actor ID is ambiguous." );
+                    }
                     if( !attributeOwner.empty() )
                     {
-                        auto values = queryResourceValues( db, "SELECT title,value FROM attribs WHERE " + attributeOwner + "=? ORDER BY title LIMIT 4097", {id} );
-                        if( !values ) throw std::runtime_error( "Cannot read domain attributes." );
+                        auto values =
+                            queryResourceValues( db,
+                                                 "SELECT title,value FROM attribs WHERE " +
+                                                     attributeOwner + "=? ORDER BY title LIMIT 4097",
+                                                 { id } );
+                        if( !values )
+                        {
+                            throw std::runtime_error( "Cannot read domain attributes." );
+                        }
                         std::set<String> names;
                         while( !values->eof() )
                         {
                             const auto name = values->getFieldValue( "title" );
                             const auto value = values->getFieldValue( "value" );
-                            if( ++attributeCount > 4096 || name.empty() || name.size() > 256 || !names.insert( name ).second )
-                                throw std::runtime_error( "Domain attributes are ambiguous or exceed their budget." );
-                            account( name ); account( value );
+                            if( ++attributeCount > 4096 || name.empty() || name.size() > 256 ||
+                                !names.insert( name ).second )
+                            {
+                                throw std::runtime_error(
+                                    "Domain attributes are ambiguous or exceed their budget." );
+                            }
+                            account( name );
+                            account( value );
                             result->setProperty( name, value );
-                            if( depth == 0 && flattened ) flattened->setProperty( name, value );
+                            if( depth == 0 && flattened )
+                            {
+                                flattened->setProperty( name, value );
+                            }
                             values->nextRow();
                         }
                     }
-                    auto children = queryResourceValues( db, "SELECT id FROM configured_actors WHERE parent_id=? ORDER BY id LIMIT 4097", {id} );
-                    if( !children ) throw std::runtime_error( "Cannot read domain children." );
+                    auto children = queryResourceValues(
+                        db, "SELECT id FROM configured_actors WHERE parent_id=? ORDER BY id LIMIT 4097",
+                        { id } );
+                    if( !children )
+                    {
+                        throw std::runtime_error( "Cannot read domain children." );
+                    }
                     while( !children->eof() )
                     {
                         result->addChild( visit( children->getFieldValue( "id" ), depth + 1 ) );
@@ -2371,7 +2598,9 @@ namespace workphone
                 };
                 auto tree = visit( rootId, 0 );
                 if( !queryResourceValues( db, "RELEASE wp_domain_read", {} ) )
+                {
                     throw std::runtime_error( "Cannot finish domain read snapshot." );
+                }
                 return tree;
             }
             catch( const std::exception &failure )
@@ -2382,28 +2611,41 @@ namespace workphone
                 return nullptr;
             }
         }
-    }
+    }  // namespace
+
     auto ResourceDatabase::loadAssetNode( SmartPtr<IDatabaseManager> db, SmartPtr<Properties> parent,
                                           const UUID &id ) -> SmartPtr<Properties>
     {
         auto result = readDomainTree( db, id, nullptr );
-        if( result && parent ) parent->addChild( result );
+        if( result && parent )
+        {
+            parent->addChild( result );
+        }
         return result;
     }
 
     auto ResourceDatabase::loadAssetProperties( const UUID &id ) -> SmartPtr<Properties>
     {
         auto application = core::IApplicationManager::instancePtr();
-        if( !application || id.is_nil() ) return nullptr;
+        if( !application || id.is_nil() )
+        {
+            return nullptr;
+        }
         const auto path = application->getMediaPath() + "/AssetDatabase.db";
         std::error_code error;
-        if( !std::filesystem::is_regular_file( std::filesystem::u8path( path.c_str() ), error ) || error )
+        if( !std::filesystem::is_regular_file( std::filesystem::u8path( path.c_str() ), error ) ||
+            error )
+        {
             return nullptr;
+        }
         auto factory = application->getFactoryManager();
         auto backend = factory ? factory->make_object<IDatabase>() : nullptr;
         auto reader = backend ? dynamic_cast<IReadOnlyDatabase *>( backend.get() ) : nullptr;
         String diagnostic;
-        if( !reader || !reader->openReadOnly( path, diagnostic ) ) return nullptr;
+        if( !reader || !reader->openReadOnly( path, diagnostic ) )
+        {
+            return nullptr;
+        }
         auto domain = make_ptr<DatabaseManager>();
         domain->setDatabase( backend );
         auto properties = make_ptr<Properties>();
@@ -2411,7 +2653,10 @@ namespace workphone
         properties->setProperty( "asset_type", "model" );
         auto tree = readDomainTree( domain, id, properties );
         domain->close();
-        if( !tree ) return nullptr;
+        if( !tree )
+        {
+            return nullptr;
+        }
         properties->setProperty( "uuid", StringUtil::toString( id ) );
         properties->addChild( tree );
         return properties;
@@ -2456,7 +2701,9 @@ namespace workphone
         auto databasePath = applicationManager->getMediaPath() + "/AssetDatabase.db";
         auto fileSystem = applicationManager->getFileSystem();
         if( !fileSystem || !fileSystem->isExistingFile( databasePath ) )
+        {
             return objects;
+        }
         assetDatabaseManager->loadFromFile( databasePath );
 
         Array<String> referenceTables;
@@ -2621,7 +2868,9 @@ namespace workphone
                 return;
             }
             if( !currentImportSession || !currentImportSession() )
+            {
                 return;
+            }
             auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
 
             auto fileSystem = applicationManager->getFileSystemPtr();
@@ -2640,7 +2889,8 @@ namespace workphone
             auto cachePath = importCachePath;
 
             auto dbFilePath = resourceDatabase->getFilePath();
-            auto databasePath = Path::isPathAbsolute( dbFilePath ) ? dbFilePath : cachePath + "/" + dbFilePath;
+            auto databasePath =
+                Path::isPathAbsolute( dbFilePath ) ? dbFilePath : cachePath + "/" + dbFilePath;
             databasePath = StringUtil::cleanupPath( databasePath );
 
             if( !resourceDatabase->getDatabaseManager() )
@@ -2778,7 +3028,8 @@ namespace workphone
             {
                 if( graphicsSystem )
                 {
-                    auto materialManager = graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
+                    auto materialManager =
+                        graphicsSystem ? graphicsSystem->getMaterialManager() : nullptr;
                     auto material = materialManager->loadFromFile( filePath );
                     if( material )
                     {

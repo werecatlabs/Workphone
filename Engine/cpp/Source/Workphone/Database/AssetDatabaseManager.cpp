@@ -553,7 +553,7 @@ namespace workphone
         loadFromFile( getDatabasePath() );
         if( m_catalogReady )
         {
-            for( const auto& database : m_attached )
+            for( const auto &database : m_attached )
             {
                 attach( database );
             }
@@ -1404,10 +1404,10 @@ namespace workphone
                     return false;
                 }
             }
-            for( const String& table :
+            for( const String &table :
                  { String( "wp_asset_reference_documents" ), String( "wp_asset_references" ) } )
             {
-                for( const String& event :
+                for( const String &event :
                      { String( "INSERT" ), String( "UPDATE" ), String( "DELETE" ) } )
                 {
                     if( !queryCatalog( manager, "CREATE TRIGGER IF NOT EXISTS " + table + "_" + event +
@@ -1481,7 +1481,7 @@ namespace workphone
             const auto file = std::filesystem::u8path( manager.getProjectRoot().c_str() ) /
                               std::filesystem::u8path( path.c_str() );
             const auto size = std::filesystem::file_size( file );
-            if( size > static_cast<uintmax_t>(64 * 1024 * 1024) || size > budget )
+            if( size > static_cast<uintmax_t>( 64 * 1024 * 1024 ) || size > budget )
             {
                 throw std::runtime_error( "Reference source validation exceeds byte budget" );
             }
@@ -1532,7 +1532,7 @@ namespace workphone
                 {
                     throw std::runtime_error( "Cannot validate reference graph" );
                 }
-                size_t count = 0, budget = static_cast<size_t>(256 * 1024 * 1024);
+                size_t count = 0, budget = static_cast<size_t>( 256 * 1024 * 1024 );
                 while( !docs->eof() )
                 {
                     const auto key = docs->getFieldValue( "path_key" );
@@ -1684,7 +1684,7 @@ namespace workphone
             try
             {
                 if( !catalog || ( catalog->isReadOnly() && !captureOnly ) || !serialized ||
-                    bytes.empty() || bytes.size() > static_cast<size_t>(64 * 1024 * 1024) )
+                    bytes.empty() || bytes.size() > static_cast<size_t>( 64 * 1024 * 1024 ) )
                 {
                     throw std::runtime_error(
                         "Reference save requires a writable catalog, serialized data and bounded "
@@ -1909,7 +1909,7 @@ namespace workphone
             {
                 throw std::runtime_error( "Reference save was superseded or is no longer pending" );
             }
-            size_t budget = static_cast<size_t>(64 * 1024 * 1024);
+            size_t budget = static_cast<size_t>( 64 * 1024 * 1024 );
             if( referenceFileDigest( *catalog, save.sourcePath, budget ) !=
                 row->getFieldValue( "digest" ) )
             {
@@ -2060,7 +2060,7 @@ namespace workphone
         {
             namespace fs = std::filesystem;
             if( !validValue( path, 4096 ) || !serialized || bytes.empty() ||
-                bytes.size() > static_cast<size_t>(64 * 1024 * 1024) )
+                bytes.size() > static_cast<size_t>( 64 * 1024 * 1024 ) )
             {
                 throw std::runtime_error(
                     "Asset save requires a path, Properties and 1..64 MiB of serialized bytes" );
@@ -2666,7 +2666,7 @@ namespace workphone
                 throw std::runtime_error( "Reindex source is not a regular file" );
             }
             const auto size = std::filesystem::file_size( file );
-            if( !size || size > static_cast<uintmax_t>(64 * 1024 * 1024) )
+            if( !size || size > static_cast<uintmax_t>( 64 * 1024 * 1024 ) )
             {
                 throw std::runtime_error( "Reindex document exceeds byte budget" );
             }
