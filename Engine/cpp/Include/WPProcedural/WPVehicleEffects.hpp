@@ -4,12 +4,10 @@
 #include <WPProcedural/WPVehicleDamage.hpp>
 #include <WPProcedural/WPVehicleDynamics.hpp>
 #include <WPProcedural/WPVehiclePresentation.hpp>
-
+#include <Workphone/Interface/Procedural/VehicleEffectsTypes.hpp>
 #include <array>
 #include <cstdint>
 #include <vector>
-
-#include <Workphone/Interface/Procedural/VehicleEffectsTypes.hpp>
 
 namespace workphone
 {

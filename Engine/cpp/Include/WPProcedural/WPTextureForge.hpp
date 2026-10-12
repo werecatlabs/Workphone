@@ -20,7 +20,6 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include "WPProcedural/WPProceduralTextureData.hpp"
 #include "WPProcedural/WPNoise.hpp"
-
 #include <Workphone/Interface/Procedural/TextureForgeTypes.hpp>
 
 namespace workphone

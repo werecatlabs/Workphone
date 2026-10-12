@@ -2,13 +2,11 @@
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <WPProcedural/WPVehiclePhysics.hpp>
-
+#include <Workphone/Interface/Procedural/VehicleDynamicsTypes.hpp>
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
-
-#include <Workphone/Interface/Procedural/VehicleDynamicsTypes.hpp>
 
 namespace workphone
 {

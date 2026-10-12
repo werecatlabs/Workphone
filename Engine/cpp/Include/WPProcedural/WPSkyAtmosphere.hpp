@@ -19,11 +19,10 @@
 #define WPSkyAtmosphere_h__
 
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
+#include <Workphone/Interface/Procedural/SkyAtmosphereTypes.hpp>
 #include <Workphone/Math/Vector3.hpp>
 #include <Workphone/Core/ColourF.hpp>
 #include <cstdint>
-
-#include <Workphone/Interface/Procedural/SkyAtmosphereTypes.hpp>
 
 namespace workphone
 {
@@ -37,6 +36,7 @@ namespace workphone
 
             /// Set the current sky state (time of day, weather, location).
             void setState( const SkyState &state );
+
             const SkyState &getState() const
             {
                 return mState;

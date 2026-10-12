@@ -8,10 +8,9 @@
 #include <WPProcedural/RoadSegmentSpec.hpp>
 #include <WPProcedural/WPNoise.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
+#include <Workphone/Interface/Procedural/RoadSystemTypes.hpp>
 #include <Workphone/Core/Array.hpp>
 #include <Workphone/Core/Properties.hpp>
-
-#include <Workphone/Interface/Procedural/RoadSystemTypes.hpp>
 
 namespace workphone
 {

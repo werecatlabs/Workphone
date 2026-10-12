@@ -3,10 +3,8 @@
 #include <WPProcedural/WPProceduralPrerequisites.hpp>
 #include <WPProcedural/WPVehicleDamage.hpp>
 #include <WPProcedural/WPVehicleDynamics.hpp>
-
-#include <array>
-
 #include <Workphone/Interface/Procedural/VehiclePresentationTypes.hpp>
+#include <array>
 
 namespace workphone
 {

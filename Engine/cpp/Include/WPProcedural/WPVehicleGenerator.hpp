@@ -5,12 +5,10 @@
 #include <WPProcedural/WPVehicleAppearance.hpp>
 #include <WPProcedural/WPVehicleGeometry.hpp>
 #include <WPProcedural/WPVehiclePhysics.hpp>
-
+#include <Workphone/Interface/Procedural/VehicleGeneratorTypes.hpp>
 #include <cstdint>
 #include <string>
 #include <vector>
-
-#include <Workphone/Interface/Procedural/VehicleGeneratorTypes.hpp>
 
 namespace workphone
 {

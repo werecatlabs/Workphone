@@ -8,11 +8,10 @@
 #include "WPProcedural/WPProceduralPrerequisites.hpp"
 #include "WPProcedural/WPProceduralTextureData.hpp"
 #include "WPProcedural/WPVehicleGeometry.hpp"
+#include <Workphone/Interface/Procedural/VehicleAppearanceTypes.hpp>
 #include <array>
 #include <string>
 #include <vector>
-
-#include <Workphone/Interface/Procedural/VehicleAppearanceTypes.hpp>
 
 namespace workphone
 {
