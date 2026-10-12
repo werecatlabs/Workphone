@@ -27,81 +27,27 @@ namespace workphone::procedural
     class WPProcedural_API CRoadSystem : public IRoadSystem
     {
     public:
-        void setSeed( u32 seed ) override
-        {
-            mImplementation.setSeed( seed );
-        }
-        real_Num getRoadWidth( RoadClass cls ) override
-        {
-            return WPRoadSystem::getRoadWidth( cls );
-        }
-        real_Num getSidewalkWidth( RoadClass cls ) override
-        {
-            return WPRoadSystem::getSidewalkWidth( cls );
-        }
-        u32 getLaneCount( RoadClass cls ) override
-        {
-            return WPRoadSystem::getLaneCount( cls );
-        }
-        RoadSurface getDefaultSurface( RoadClass cls ) override
-        {
-            return WPRoadSystem::getDefaultSurface( cls );
-        }
-        RoadSegmentResult generateSegment( const RoadSegmentSpec &spec ) override
-        {
-            return mImplementation.generateSegment( spec );
-        }
-        IntersectionResult generateIntersection( const IntersectionSpec &spec ) override
-        {
-            return mImplementation.generateIntersection( spec );
-        }
-        IntersectionResult buildXCrossing( const IntersectionSpec &spec ) override
-        {
-            return mImplementation.buildXCrossing( spec );
-        }
-        IntersectionResult buildRoundabout( const IntersectionSpec &spec ) override
-        {
-            return mImplementation.buildRoundabout( spec );
-        }
-        IntersectionResult buildTJunction( const IntersectionSpec &spec ) override
-        {
-            return mImplementation.buildTJunction( spec );
-        }
-        IntersectionResult buildLCorner( const IntersectionSpec &spec ) override
-        {
-            return mImplementation.buildLCorner( spec );
-        }
+        void setSeed( u32 seed ) override;
+        real_Num getRoadWidth( RoadClass cls ) override;
+        real_Num getSidewalkWidth( RoadClass cls ) override;
+        u32 getLaneCount( RoadClass cls ) override;
+        RoadSurface getDefaultSurface( RoadClass cls ) override;
+        RoadSegmentResult generateSegment( const RoadSegmentSpec &spec ) override;
+        IntersectionResult generateIntersection( const IntersectionSpec &spec ) override;
+        IntersectionResult buildXCrossing( const IntersectionSpec &spec ) override;
+        IntersectionResult buildRoundabout( const IntersectionSpec &spec ) override;
+        IntersectionResult buildTJunction( const IntersectionSpec &spec ) override;
+        IntersectionResult buildLCorner( const IntersectionSpec &spec ) override;
         RoadMesh buildOldTarmacPatches( const RoadSegmentSpec &spec, real_Num width,
-                                        real_Num length ) override
-        {
-            return mImplementation.buildOldTarmacPatches( spec, width, length );
-        }
-        RoadMesh buildPotholes( const RoadSegmentSpec &spec, real_Num width, real_Num length ) override
-        {
-            return mImplementation.buildPotholes( spec, width, length );
-        }
-        RoadMesh buildManholes( const RoadSegmentSpec &spec, real_Num width, real_Num length ) override
-        {
-            return mImplementation.buildManholes( spec, width, length );
-        }
+                                        real_Num length ) override;
+        RoadMesh buildPotholes( const RoadSegmentSpec &spec, real_Num width, real_Num length ) override;
+        RoadMesh buildManholes( const RoadSegmentSpec &spec, real_Num width, real_Num length ) override;
         RoadMesh buildGullyGrates( const RoadSegmentSpec &spec, real_Num width,
-                                   real_Num length ) override
-        {
-            return mImplementation.buildGullyGrates( spec, width, length );
-        }
-        RoadMesh buildArrows( const RoadSegmentSpec &spec, real_Num width, real_Num length ) override
-        {
-            return mImplementation.buildArrows( spec, width, length );
-        }
+                                   real_Num length ) override;
+        RoadMesh buildArrows( const RoadSegmentSpec &spec, real_Num width, real_Num length ) override;
         RoadMesh buildPedestrianCrossing( const RoadSegmentSpec &spec, real_Num width,
-                                          real_Num length ) override
-        {
-            return mImplementation.buildPedestrianCrossing( spec, width, length );
-        }
-        IntersectionResult buildIntersectionApproach( const IntersectionSpec &spec ) override
-        {
-            return mImplementation.buildIntersectionApproach( spec );
-        }
+                                          real_Num length ) override;
+        IntersectionResult buildIntersectionApproach( const IntersectionSpec &spec ) override;
         WP_CLASS_REGISTER_DECL;
 
     private:
