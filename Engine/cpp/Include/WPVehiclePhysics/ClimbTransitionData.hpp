@@ -14,6 +14,6 @@ namespace workphone::vehicle
         physics_Num m_rate = 0.0;
         physics_Num m_factor = 0.0;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // ClimbTransitionData_h__
+#endif  // ClimbTransitionData_h__

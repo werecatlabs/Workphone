@@ -44,7 +44,7 @@ namespace workphone::vehicle
     {
     public:
         CFlybarlessUnit();
-        CFlybarlessUnit(const CFlybarlessUnit &vbar) = delete;
+        CFlybarlessUnit( const CFlybarlessUnit &vbar ) = delete;
 
         FrameOfRef m_frame;
         physics_Vec m_errorVector = physics_Vec::zero();
@@ -64,7 +64,7 @@ namespace workphone::vehicle
         // between shaft and vbar vector
         physics_Num m_angleLimit = 0.0;
         // Sets a limit to the angle between VBar Yaxis and shaft Yaxis in Radians
-        physics_Num m_decay = 0.0; // The time constant for the decay of the VBar-to-Shaft angle
+        physics_Num m_decay = 0.0;  // The time constant for the decay of the VBar-to-Shaft angle
         physics_Num m_stabGain = 0.0;
         physics_Num m_directMix = 0.0;
         physics_Num m_ailCommand = 0.0;
@@ -73,7 +73,7 @@ namespace workphone::vehicle
         physics_Num m_eleCommand = 0.0;
         // The exposed and filtered elevator command value derived from the elevator channel value
         // passed into the vbar unit
-        physics_Num m_ailDemand = 0.0; // This is the requested aileron rate (roll rate) in Radians/s
+        physics_Num m_ailDemand = 0.0;  // This is the requested aileron rate (roll rate) in Radians/s
         physics_Num m_eleDemand = 0.0;
         // This is the requested elevator rate (pitching rate) in Radians/s
         physics_Num m_ailFilter = 0.0;
@@ -83,7 +83,7 @@ namespace workphone::vehicle
         physics_Num m_bailCollective = 0.0;
         s32 m_bailValue = 0;
         bool m_stabilize = false;
-    }; // CFlybarlessUnit
-}
+    };  // CFlybarlessUnit
+}  // namespace workphone::vehicle
 
-#endif //  Flybarless1H
+#endif  //  Flybarless1H

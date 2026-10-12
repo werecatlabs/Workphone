@@ -11,7 +11,7 @@ namespace workphone::vehicle
         GearTrain() = default;
 
         physics_Num getEngineMainRatio() const;
-        void setEngineMainRatio(physics_Num engineMainRatio);
+        void setEngineMainRatio( physics_Num engineMainRatio );
 
         physics_Num m_mainTailRatio = 0.0;
         physics_Num m_engineTailRatio = 0.0;
@@ -28,10 +28,10 @@ namespace workphone::vehicle
         return m_engineMainRatio;
     }
 
-    inline void GearTrain::setEngineMainRatio(physics_Num engineMainRatio)
+    inline void GearTrain::setEngineMainRatio( physics_Num engineMainRatio )
     {
         m_engineMainRatio = engineMainRatio;
     }
-}
+}  // namespace workphone::vehicle
 
-#endif // GearTrain_h__
+#endif  // GearTrain_h__

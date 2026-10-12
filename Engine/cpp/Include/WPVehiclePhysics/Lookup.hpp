@@ -18,6 +18,6 @@ namespace workphone::vehicle
     };
 
     using LookupArray = std::array<Lookup, 201>;
-}
+}  // namespace workphone::vehicle
 
-#endif // Lookup_h__
+#endif  // Lookup_h__

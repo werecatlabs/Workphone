@@ -17,21 +17,21 @@ namespace workphone::physics
         ~WPPhysicsScene2() override;
 
         void *getNativeObject() const;
-        void _getObject(void **object) const override;
+        void _getObject( void **object ) const override;
         wp_physics_scene *getScene() const;
 
         void updateRigidBodies() override;
         void updateParticles() override;
-        void addRigidBody(SmartPtr<IRigidBody2> body) override;
-        void removeRigidBody(SmartPtr<IRigidBody2> body) override;
-        void addParticle(SmartPtr<IPhysicsParticle2> particle) override;
-        void removeParticle(SmartPtr<IPhysicsParticle2> particle) override;
-        void setSize(const Vector2<real_Num> &size) override;
+        void addRigidBody( SmartPtr<IRigidBody2> body ) override;
+        void removeRigidBody( SmartPtr<IRigidBody2> body ) override;
+        void addParticle( SmartPtr<IPhysicsParticle2> particle ) override;
+        void removeParticle( SmartPtr<IPhysicsParticle2> particle ) override;
+        void setSize( const Vector2<real_Num> &size ) override;
         Vector2<real_Num> getSize() const override;
-        void setGravity(const Vector2<real_Num> &gravity) override;
+        void setGravity( const Vector2<real_Num> &gravity ) override;
         Vector2<real_Num> getGravity() const override;
-        void simulate(real_Num elapsedTime);
-        void setFixedTimeStep(real_Num fixedTimeStep);
+        void simulate( real_Num elapsedTime );
+        void setFixedTimeStep( real_Num fixedTimeStep );
         real_Num getFixedTimeStep() const;
 
     private:
@@ -40,6 +40,6 @@ namespace workphone::physics
         Array<SmartPtr<IPhysicsParticle2>> m_particles;
         real_Num m_fixedTimeStep = 1.0 / 60.0;
     };
-} // namespace workphone::physics
+}  // namespace workphone::physics
 
 #endif

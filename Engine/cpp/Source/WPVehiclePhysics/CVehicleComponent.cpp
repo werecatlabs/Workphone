@@ -43,4 +43,4 @@ namespace workphone
     template class CVehicleComponent<vehicle::IAircraftPropWash>;
     template class CVehicleComponent<vehicle::IAircraftTurbineUnit>;
     template class CVehicleComponent<vehicle::IAircraftWing>;
-}
+}  // namespace workphone

@@ -11,28 +11,28 @@ namespace workphone::vehicle
     {
     }
 
-    void DroneProp::initialise(const std::string &objectID)
+    void DroneProp::initialise( const std::string &objectID )
     {
     }
 
-    void DroneProp::calcThrust(const double &dt)
+    void DroneProp::calcThrust( const double &dt )
     {
     }
 
-    void DroneProp::calcGroundEffect(const Vector3<real_Num> &position)
+    void DroneProp::calcGroundEffect( const Vector3<real_Num> &position )
     {
     }
 
-    void DroneProp::input(real_Num rpm, const double &dt)
+    void DroneProp::input( real_Num rpm, const double &dt )
     {
     }
 
     Vector3<real_Num> DroneProp::getLocalPos() const
     {
-        return Vector3<real_Num>(m_localPos.X(), m_localPos.Y(), m_localPos.Z());
+        return Vector3<real_Num>( m_localPos.X(), m_localPos.Y(), m_localPos.Z() );
     }
 
-    void DroneProp::setLocalPos(const Vector3<real_Num> &localPos)
+    void DroneProp::setLocalPos( const Vector3<real_Num> &localPos )
     {
     }
 
@@ -41,7 +41,7 @@ namespace workphone::vehicle
         return m_debugId;
     }
 
-    void DroneProp::setDebugId(int debugId)
+    void DroneProp::setDebugId( int debugId )
     {
         m_debugId = debugId;
     }
@@ -51,7 +51,7 @@ namespace workphone::vehicle
         return m_diameter;
     }
 
-    void DroneProp::setDiameter(real_Num diameter)
+    void DroneProp::setDiameter( real_Num diameter )
     {
         m_diameter = diameter;
     }
@@ -61,7 +61,7 @@ namespace workphone::vehicle
         return m_pitch;
     }
 
-    void DroneProp::setPitch(real_Num pitch)
+    void DroneProp::setPitch( real_Num pitch )
     {
         m_pitch = pitch;
     }
@@ -71,7 +71,7 @@ namespace workphone::vehicle
         return m_maxThrust;
     }
 
-    void DroneProp::setMaxThrust(real_Num maxThrust)
+    void DroneProp::setMaxThrust( real_Num maxThrust )
     {
         m_maxThrust = maxThrust;
     }
@@ -81,7 +81,7 @@ namespace workphone::vehicle
         return m_index;
     }
 
-    void DroneProp::setIndex(s32 index)
+    void DroneProp::setIndex( s32 index )
     {
         m_index = index;
     }
@@ -91,7 +91,7 @@ namespace workphone::vehicle
         return m_voMultiplier;
     }
 
-    void DroneProp::setVoMultiplier(real_Num voMultiplier)
+    void DroneProp::setVoMultiplier( real_Num voMultiplier )
     {
         m_voMultiplier = voMultiplier;
     }
@@ -101,7 +101,7 @@ namespace workphone::vehicle
         return m_groundEffectMultiplier;
     }
 
-    void DroneProp::setGroundEffectMultiplier(real_Num groundEffectMultiplier)
+    void DroneProp::setGroundEffectMultiplier( real_Num groundEffectMultiplier )
     {
         m_groundEffectMultiplier = groundEffectMultiplier;
     }
@@ -111,7 +111,7 @@ namespace workphone::vehicle
         return m_thrustMultiplier;
     }
 
-    void DroneProp::setThrustMultiplier(real_Num thrustMultiplier)
+    void DroneProp::setThrustMultiplier( real_Num thrustMultiplier )
     {
         m_thrustMultiplier = thrustMultiplier;
     }
@@ -121,7 +121,7 @@ namespace workphone::vehicle
         return m_bUseDebugPos;
     }
 
-    void DroneProp::setUseDebugPos(bool useDebugPos)
+    void DroneProp::setUseDebugPos( bool useDebugPos )
     {
         m_bUseDebugPos = useDebugPos;
     }
@@ -131,7 +131,7 @@ namespace workphone::vehicle
         return m_thrust;
     }
 
-    void DroneProp::setThrust(real_Num thrust)
+    void DroneProp::setThrust( real_Num thrust )
     {
         m_thrust = thrust;
     }
@@ -143,4 +143,4 @@ namespace workphone::vehicle
     void DroneProp::setupUserData()
     {
     }
-}
+}  // namespace workphone::vehicle

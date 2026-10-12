@@ -38,8 +38,6 @@ namespace workphone
     class CVehicleController : public T
     {
     public:
-
-
         /** Default constructor. */
         CVehicleController();
 

@@ -71,38 +71,38 @@ namespace workphone::vehicle
     {
     }
 
-    void CAircraftPropeller::load(SmartPtr<ISharedObject> data)
+    void CAircraftPropeller::load( SmartPtr<ISharedObject> data )
     {
-        auto properties = workphone::dynamic_pointer_cast<Properties>(data);
-        if(properties)
+        auto properties = workphone::dynamic_pointer_cast<Properties>( data );
+        if( properties )
         {
-            properties->getPropertyValue("FlEqPropDiameter", m_propDia);
-            properties->getPropertyValue("FlEqPropPitch", m_propPitch);
-            properties->getPropertyValue("FlEqPropNumBlades", m_propBlades);
-            properties->getPropertyValue("FlEqPropCuffChord", m_cuffChord);
-            properties->getPropertyValue("FlEqPropTipChord", m_tipChord);
-            properties->getPropertyValue("FlEqPropDensity", m_propDensity);
-            properties->getPropertyValue("FlEqPropDucted", m_ducted);
-            properties->getPropertyValue("FlEqPropFolding", m_folding);
-            properties->getPropertyValue("FlEqPropCd0", m_propCd0);
-            properties->getPropertyValue("FlEqPropClMin", m_propClMin);
-            properties->getPropertyValue("FlEqPropClMax", m_propClMax);
-            properties->getPropertyValue("FlEqPropCdbydCl2", m_dCdBydCl2);
-            properties->getPropertyValue("FlEqPropReverseRotn", m_reversed);
-            properties->getPropertyValue("FlEqPropSideThrust", m_sideThrust);
-            properties->getPropertyValue("FlEqPropDownThrust", m_downThrust);
+            properties->getPropertyValue( "FlEqPropDiameter", m_propDia );
+            properties->getPropertyValue( "FlEqPropPitch", m_propPitch );
+            properties->getPropertyValue( "FlEqPropNumBlades", m_propBlades );
+            properties->getPropertyValue( "FlEqPropCuffChord", m_cuffChord );
+            properties->getPropertyValue( "FlEqPropTipChord", m_tipChord );
+            properties->getPropertyValue( "FlEqPropDensity", m_propDensity );
+            properties->getPropertyValue( "FlEqPropDucted", m_ducted );
+            properties->getPropertyValue( "FlEqPropFolding", m_folding );
+            properties->getPropertyValue( "FlEqPropCd0", m_propCd0 );
+            properties->getPropertyValue( "FlEqPropClMin", m_propClMin );
+            properties->getPropertyValue( "FlEqPropClMax", m_propClMax );
+            properties->getPropertyValue( "FlEqPropCdbydCl2", m_dCdBydCl2 );
+            properties->getPropertyValue( "FlEqPropReverseRotn", m_reversed );
+            properties->getPropertyValue( "FlEqPropSideThrust", m_sideThrust );
+            properties->getPropertyValue( "FlEqPropDownThrust", m_downThrust );
         }
 
-        m_propDia /= static_cast<real_Num>(39.37);
-        m_propPitch /= static_cast<real_Num>(39.37);
+        m_propDia /= static_cast<real_Num>( 39.37 );
+        m_propPitch /= static_cast<real_Num>( 39.37 );
 
-        m_cuffChord /= static_cast<real_Num>(1000.0);
-        m_tipChord /= static_cast<real_Num>(1000.0);
+        m_cuffChord /= static_cast<real_Num>( 1000.0 );
+        m_tipChord /= static_cast<real_Num>( 1000.0 );
 
-        m_sideThrust *= Math<real_Num>::pi() / static_cast<real_Num>(180.0);
-        m_downThrust *= Math<real_Num>::pi() / static_cast<real_Num>(180.0);
+        m_sideThrust *= Math<real_Num>::pi() / static_cast<real_Num>( 180.0 );
+        m_downThrust *= Math<real_Num>::pi() / static_cast<real_Num>( 180.0 );
 
-        m_dClByAlpha = static_cast<real_Num>(2.0) * Math<real_Num>::pi();
+        m_dClByAlpha = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
 
         constexpr double PropDens = 1.4E3; /*density of prop material*/
         constexpr double Cdprop = 0.5;
@@ -112,40 +112,38 @@ namespace workphone::vehicle
         CAircraftPropeller &curProp = *this;
 
         curProp.m_wProp =
-            static_cast<real_Num>(0.0); // set the rotation speed non-zero to ensure running
+            static_cast<real_Num>( 0.0 );  // set the rotation speed non-zero to ensure running
         curProp.m_propChord =
-            (static_cast<real_Num>(2.0) * curProp.m_tipChord + curProp.m_cuffChord) /
-            static_cast<real_Num>(3.0);
+            ( static_cast<real_Num>( 2.0 ) * curProp.m_tipChord + curProp.m_cuffChord ) /
+            static_cast<real_Num>( 3.0 );
         // asssume the effective chord is weighted 2:1 towards the tip
         real_Num pd4 = curProp.m_propDia * curProp.m_propDia * curProp.m_propDia * curProp.m_propDia;
         // calc the 4th power of the diameter
         curProp.m_propDragPowerFactor = curProp.m_propBlades * rFixedWingLL->getAirDensity() *
                                         curProp.m_propChord * Cdprop * pd4 /
-                                        static_cast<real_Num>(128.0);
+                                        static_cast<real_Num>( 128.0 );
         // curProp.m_iProp = real_Num(0.01) * curProp.m_propBlades * PropDens * curProp.m_propChord *
         // curProp.m_propChord * curProp.m_propDia * curProp.m_propDia * curProp.m_propDia; //based
         // on abot 12% mean blade thickness
-        curProp.m_propArea = Math<real_Num>::pi() * (curProp.m_propDia * curProp.m_propDia) /
-                             static_cast<real_Num>(4.0); // the area of the prop disc
-        curProp.m_bladeArea = curProp.m_propBlades * curProp.m_propChord *
-                              static_cast<real_Num>(0.4) *
-                              curProp.m_propDia; // calculate the effective area of the prop blades
+        curProp.m_propArea = Math<real_Num>::pi() * ( curProp.m_propDia * curProp.m_propDia ) /
+                             static_cast<real_Num>( 4.0 );  // the area of the prop disc
+        curProp.m_bladeArea = curProp.m_propBlades * curProp.m_propChord * static_cast<real_Num>( 0.4 ) *
+                              curProp.m_propDia;  // calculate the effective area of the prop blades
         curProp.m_propSolRatio =
-            curProp.m_bladeArea / curProp.m_propArea; // the solidity ratio of the prop
+            curProp.m_bladeArea / curProp.m_propArea;  // the solidity ratio of the prop
         curProp.m_geomerticPitch =
-            curProp.m_propPitch /
-            (Math<real_Num>::pi() * static_cast<real_Num>(0.7) *
-             curProp.m_propDia); // calc the effective pitch angle of the prop
+            curProp.m_propPitch / ( Math<real_Num>::pi() * static_cast<real_Num>( 0.7 ) *
+                                    curProp.m_propDia );  // calc the effective pitch angle of the prop
 
         auto thrustLine = Vector3<real_Num>::zero();
-        thrustLine.X() = Math<real_Num>::Cos(m_downThrust) * Math<real_Num>::Cos(m_sideThrust);
-        thrustLine.Y() = Math<real_Num>::Sin(m_sideThrust);
-        thrustLine.Z() = Math<real_Num>::Sin(m_downThrust);
+        thrustLine.X() = Math<real_Num>::Cos( m_downThrust ) * Math<real_Num>::Cos( m_sideThrust );
+        thrustLine.Y() = Math<real_Num>::Sin( m_sideThrust );
+        thrustLine.Z() = Math<real_Num>::Sin( m_downThrust );
 
-        m_thrustLine = thrustLine.normaliseCopy(); // make it a unit vector
+        m_thrustLine = thrustLine.normaliseCopy();  // make it a unit vector
     }
 
-    void CAircraftPropeller::update(const double &time, const double &deltaTime)
+    void CAircraftPropeller::update( const double &time, const double &deltaTime )
     {
     }
 
@@ -154,7 +152,7 @@ namespace workphone::vehicle
         return m_propThrust;
     }
 
-    void CAircraftPropeller::setThrust(const Vector3<real_Num> &thrust)
+    void CAircraftPropeller::setThrust( const Vector3<real_Num> &thrust )
     {
         m_propThrust = thrust;
     }
@@ -164,21 +162,21 @@ namespace workphone::vehicle
         return m_propWash;
     }
 
-    void CAircraftPropeller::setPropwash(real_Num propwash)
+    void CAircraftPropeller::setPropwash( real_Num propwash )
     {
         m_propWash = propwash;
     }
 
     real_Num CAircraftPropeller::getThrustValue() const
     {
-        WP_ASSERT(Math<real_Num>::isFinite( m_propThrustValue ));
+        WP_ASSERT( Math<real_Num>::isFinite( m_propThrustValue ) );
         return m_propThrustValue;
     }
 
-    void CAircraftPropeller::setThrustValue(real_Num thrustValue)
+    void CAircraftPropeller::setThrustValue( real_Num thrustValue )
     {
-        WP_ASSERT(Math<real_Num>::isFinite( thrustValue ));
-        WP_ASSERT(Math<real_Num>::isFinite( m_propThrustValue ));
+        WP_ASSERT( Math<real_Num>::isFinite( thrustValue ) );
+        WP_ASSERT( Math<real_Num>::isFinite( m_propThrustValue ) );
         m_propThrustValue = thrustValue;
     }
 
@@ -187,9 +185,9 @@ namespace workphone::vehicle
         return m_wProp;
     }
 
-    void CAircraftPropeller::setRotationRate(real_Num rotationRate)
+    void CAircraftPropeller::setRotationRate( real_Num rotationRate )
     {
-        WP_ASSERT(Math<real_Num>::isFinite( rotationRate ));
+        WP_ASSERT( Math<real_Num>::isFinite( rotationRate ) );
         m_wProp = rotationRate;
     }
 
@@ -198,7 +196,7 @@ namespace workphone::vehicle
         return m_propDia;
     }
 
-    void CAircraftPropeller::setDiameter(real_Num diameter)
+    void CAircraftPropeller::setDiameter( real_Num diameter )
     {
         m_propDia = diameter;
     }
@@ -208,7 +206,7 @@ namespace workphone::vehicle
         return m_propWash;
     }
 
-    void CAircraftPropeller::propwash(const real_Num propwash)
+    void CAircraftPropeller::propwash( const real_Num propwash )
     {
         m_propWash = propwash;
     }
@@ -218,7 +216,7 @@ namespace workphone::vehicle
         return m_position;
     }
 
-    void CAircraftPropeller::setPosition(Vector3<real_Num> position)
+    void CAircraftPropeller::setPosition( Vector3<real_Num> position )
     {
         m_position = position;
     }
@@ -228,7 +226,7 @@ namespace workphone::vehicle
         return m_propThrust;
     }
 
-    void CAircraftPropeller::propThrust(Vector3<real_Num> propThrust)
+    void CAircraftPropeller::propThrust( Vector3<real_Num> propThrust )
     {
         m_propThrust = propThrust;
     }
@@ -238,7 +236,7 @@ namespace workphone::vehicle
         return m_angMomVector;
     }
 
-    void CAircraftPropeller::angMomVector(Vector3<real_Num> angMomVector)
+    void CAircraftPropeller::angMomVector( Vector3<real_Num> angMomVector )
     {
         m_angMomVector = angMomVector;
     }
@@ -248,7 +246,7 @@ namespace workphone::vehicle
         return m_reactionVector;
     }
 
-    void CAircraftPropeller::reactionVector(Vector3<real_Num> reactionVector)
+    void CAircraftPropeller::reactionVector( Vector3<real_Num> reactionVector )
     {
         m_reactionVector = reactionVector;
     }
@@ -258,7 +256,7 @@ namespace workphone::vehicle
         return m_discFlow;
     }
 
-    void CAircraftPropeller::discFlow(Vector3<real_Num> discFlow)
+    void CAircraftPropeller::discFlow( Vector3<real_Num> discFlow )
     {
         m_discFlow = discFlow;
     }
@@ -268,7 +266,7 @@ namespace workphone::vehicle
         return m_wakeRotationVector;
     }
 
-    void CAircraftPropeller::wakeRotationVector(Vector3<real_Num> wakeRotationVector)
+    void CAircraftPropeller::wakeRotationVector( Vector3<real_Num> wakeRotationVector )
     {
         m_wakeRotationVector = wakeRotationVector;
     }
@@ -278,7 +276,7 @@ namespace workphone::vehicle
         return m_propFrame;
     }
 
-    void CAircraftPropeller::propFrame(FrameOfRef propFrame)
+    void CAircraftPropeller::propFrame( FrameOfRef propFrame )
     {
         m_propFrame = propFrame;
     }
@@ -288,7 +286,7 @@ namespace workphone::vehicle
         return m_propBlades;
     }
 
-    void CAircraftPropeller::propBlades(s32 propBlades)
+    void CAircraftPropeller::propBlades( s32 propBlades )
     {
         m_propBlades = propBlades;
     }
@@ -298,7 +296,7 @@ namespace workphone::vehicle
         return m_iProp;
     }
 
-    void CAircraftPropeller::iProp(real_Num iProp)
+    void CAircraftPropeller::iProp( real_Num iProp )
     {
         m_iProp = iProp;
     }
@@ -308,7 +306,7 @@ namespace workphone::vehicle
         return m_throttleChannel;
     }
 
-    void CAircraftPropeller::throttleChannel(int throttleChannel)
+    void CAircraftPropeller::throttleChannel( int throttleChannel )
     {
         m_throttleChannel = throttleChannel;
     }
@@ -318,7 +316,7 @@ namespace workphone::vehicle
         return m_propDia;
     }
 
-    void CAircraftPropeller::propDia(real_Num propDia)
+    void CAircraftPropeller::propDia( real_Num propDia )
     {
         m_propDia = propDia;
     }
@@ -328,7 +326,7 @@ namespace workphone::vehicle
         return m_cuffChord;
     }
 
-    void CAircraftPropeller::cuffChord(real_Num cuffChord)
+    void CAircraftPropeller::cuffChord( real_Num cuffChord )
     {
         m_cuffChord = cuffChord;
     }
@@ -338,7 +336,7 @@ namespace workphone::vehicle
         return m_tipChord;
     }
 
-    void CAircraftPropeller::tipChord(real_Num tipChord)
+    void CAircraftPropeller::tipChord( real_Num tipChord )
     {
         m_tipChord = tipChord;
     }
@@ -348,7 +346,7 @@ namespace workphone::vehicle
         return m_propChord;
     }
 
-    void CAircraftPropeller::propChord(real_Num propChord)
+    void CAircraftPropeller::propChord( real_Num propChord )
     {
         m_propChord = propChord;
     }
@@ -358,7 +356,7 @@ namespace workphone::vehicle
         return m_propPitch;
     }
 
-    void CAircraftPropeller::propPitch(real_Num propPitch)
+    void CAircraftPropeller::propPitch( real_Num propPitch )
     {
         m_propPitch = propPitch;
     }
@@ -368,7 +366,7 @@ namespace workphone::vehicle
         return m_propDensity;
     }
 
-    void CAircraftPropeller::propDensity(real_Num propDensity)
+    void CAircraftPropeller::propDensity( real_Num propDensity )
     {
         m_propDensity = propDensity;
     }
@@ -378,7 +376,7 @@ namespace workphone::vehicle
         return m_geomerticPitch;
     }
 
-    void CAircraftPropeller::ppAng(real_Num ppAng)
+    void CAircraftPropeller::ppAng( real_Num ppAng )
     {
         m_geomerticPitch = ppAng;
     }
@@ -388,7 +386,7 @@ namespace workphone::vehicle
         return m_propCd0;
     }
 
-    void CAircraftPropeller::propCd0(real_Num propCd0)
+    void CAircraftPropeller::propCd0( real_Num propCd0 )
     {
         m_propCd0 = propCd0;
     }
@@ -398,7 +396,7 @@ namespace workphone::vehicle
         return m_dCdBydCl2;
     }
 
-    void CAircraftPropeller::dCdBydCl3(real_Num dCdBydCl3)
+    void CAircraftPropeller::dCdBydCl3( real_Num dCdBydCl3 )
     {
         m_dCdBydCl2 = dCdBydCl3;
     }
@@ -408,7 +406,7 @@ namespace workphone::vehicle
         return m_dClByAlpha;
     }
 
-    void CAircraftPropeller::dClByAlpha1(real_Num dClByAlpha)
+    void CAircraftPropeller::dClByAlpha1( real_Num dClByAlpha )
     {
         m_dClByAlpha = dClByAlpha;
     }
@@ -418,7 +416,7 @@ namespace workphone::vehicle
         return m_propClMax;
     }
 
-    void CAircraftPropeller::propClMax(real_Num propClMax)
+    void CAircraftPropeller::propClMax( real_Num propClMax )
     {
         m_propClMax = propClMax;
     }
@@ -428,7 +426,7 @@ namespace workphone::vehicle
         return m_propClMin;
     }
 
-    void CAircraftPropeller::propClMin(real_Num propClMin)
+    void CAircraftPropeller::propClMin( real_Num propClMin )
     {
         m_propClMin = propClMin;
     }
@@ -438,7 +436,7 @@ namespace workphone::vehicle
         return m_propCl;
     }
 
-    void CAircraftPropeller::propCl(real_Num propCl)
+    void CAircraftPropeller::propCl( real_Num propCl )
     {
         m_propCl = propCl;
     }
@@ -448,7 +446,7 @@ namespace workphone::vehicle
         return m_propCd;
     }
 
-    void CAircraftPropeller::propCd(real_Num propCd)
+    void CAircraftPropeller::propCd( real_Num propCd )
     {
         m_propCd = propCd;
     }
@@ -458,7 +456,7 @@ namespace workphone::vehicle
         return m_downThrust;
     }
 
-    void CAircraftPropeller::downThrust(real_Num downThrust)
+    void CAircraftPropeller::downThrust( real_Num downThrust )
     {
         m_downThrust = downThrust;
     }
@@ -468,21 +466,21 @@ namespace workphone::vehicle
         return m_sideThrust;
     }
 
-    void CAircraftPropeller::sideThrust(real_Num sideThrust)
+    void CAircraftPropeller::sideThrust( real_Num sideThrust )
     {
         m_sideThrust = sideThrust;
     }
 
     real_Num CAircraftPropeller::propTorque() const
     {
-        WP_ASSERT(Math<real_Num>::isFinite( m_propTorque ));
+        WP_ASSERT( Math<real_Num>::isFinite( m_propTorque ) );
         return m_propTorque;
     }
 
-    void CAircraftPropeller::propTorque(real_Num propTorque)
+    void CAircraftPropeller::propTorque( real_Num propTorque )
     {
-        WP_ASSERT(Math<real_Num>::isFinite( propTorque ));
-        WP_ASSERT(Math<real_Num>::isFinite( m_propTorque ));
+        WP_ASSERT( Math<real_Num>::isFinite( propTorque ) );
+        WP_ASSERT( Math<real_Num>::isFinite( m_propTorque ) );
         m_propTorque = propTorque;
     }
 
@@ -491,7 +489,7 @@ namespace workphone::vehicle
         return m_inputTorque;
     }
 
-    void CAircraftPropeller::inputTorque(real_Num inputTorque)
+    void CAircraftPropeller::inputTorque( real_Num inputTorque )
     {
         m_inputTorque = inputTorque;
     }
@@ -501,7 +499,7 @@ namespace workphone::vehicle
         return m_reaction;
     }
 
-    void CAircraftPropeller::reaction(real_Num reaction)
+    void CAircraftPropeller::reaction( real_Num reaction )
     {
         m_reaction = reaction;
     }
@@ -511,7 +509,7 @@ namespace workphone::vehicle
         return m_wProp;
     }
 
-    void CAircraftPropeller::wProp(real_Num wProp)
+    void CAircraftPropeller::wProp( real_Num wProp )
     {
         m_wProp = wProp;
     }
@@ -521,7 +519,7 @@ namespace workphone::vehicle
         return m_yawPFac;
     }
 
-    void CAircraftPropeller::yawPFac(real_Num yawPFac)
+    void CAircraftPropeller::yawPFac( real_Num yawPFac )
     {
         m_yawPFac = yawPFac;
     }
@@ -531,7 +529,7 @@ namespace workphone::vehicle
         return m_pitchPFac;
     }
 
-    void CAircraftPropeller::pitchPFac(real_Num pitchPFac)
+    void CAircraftPropeller::pitchPFac( real_Num pitchPFac )
     {
         m_pitchPFac = pitchPFac;
     }
@@ -541,7 +539,7 @@ namespace workphone::vehicle
         return m_yawDrag;
     }
 
-    void CAircraftPropeller::yawDrag(real_Num yawDrag)
+    void CAircraftPropeller::yawDrag( real_Num yawDrag )
     {
         m_yawDrag = yawDrag;
     }
@@ -551,7 +549,7 @@ namespace workphone::vehicle
         return m_pitchDrag;
     }
 
-    void CAircraftPropeller::pitchDrag(real_Num pitchDrag)
+    void CAircraftPropeller::pitchDrag( real_Num pitchDrag )
     {
         m_pitchDrag = pitchDrag;
     }
@@ -561,7 +559,7 @@ namespace workphone::vehicle
         return m_propWash;
     }
 
-    void CAircraftPropeller::propWash(real_Num propWash)
+    void CAircraftPropeller::propWash( real_Num propWash )
     {
         m_propWash = propWash;
     }
@@ -571,7 +569,7 @@ namespace workphone::vehicle
         return m_propThrustValue;
     }
 
-    void CAircraftPropeller::propThrustValue(real_Num propThrustValue)
+    void CAircraftPropeller::propThrustValue( real_Num propThrustValue )
     {
         m_propThrustValue = propThrustValue;
     }
@@ -581,7 +579,7 @@ namespace workphone::vehicle
         return m_propArea;
     }
 
-    void CAircraftPropeller::propArea(real_Num propArea)
+    void CAircraftPropeller::propArea( real_Num propArea )
     {
         m_propArea = propArea;
     }
@@ -591,7 +589,7 @@ namespace workphone::vehicle
         return m_bladeArea;
     }
 
-    void CAircraftPropeller::bladeArea(real_Num bladeArea)
+    void CAircraftPropeller::bladeArea( real_Num bladeArea )
     {
         m_bladeArea = bladeArea;
     }
@@ -601,7 +599,7 @@ namespace workphone::vehicle
         return m_propMoI;
     }
 
-    void CAircraftPropeller::propMoI(real_Num propMoI)
+    void CAircraftPropeller::propMoI( real_Num propMoI )
     {
         m_propMoI = propMoI;
     }
@@ -611,7 +609,7 @@ namespace workphone::vehicle
         return m_totMoI;
     }
 
-    void CAircraftPropeller::totMoI(real_Num totMoI)
+    void CAircraftPropeller::totMoI( real_Num totMoI )
     {
         m_totMoI = totMoI;
     }
@@ -621,7 +619,7 @@ namespace workphone::vehicle
         return m_angMomentum;
     }
 
-    void CAircraftPropeller::angMomentum(real_Num angMomentum)
+    void CAircraftPropeller::angMomentum( real_Num angMomentum )
     {
         m_angMomentum = angMomentum;
     }
@@ -631,7 +629,7 @@ namespace workphone::vehicle
         return m_propSolRatio;
     }
 
-    void CAircraftPropeller::propSolRatio(real_Num propSolRatio)
+    void CAircraftPropeller::propSolRatio( real_Num propSolRatio )
     {
         m_propSolRatio = propSolRatio;
     }
@@ -641,7 +639,7 @@ namespace workphone::vehicle
         return m_propDragPowerFactor;
     }
 
-    void CAircraftPropeller::propDragPowerFactor(real_Num propDragPowerFactor)
+    void CAircraftPropeller::propDragPowerFactor( real_Num propDragPowerFactor )
     {
         m_propDragPowerFactor = propDragPowerFactor;
     }
@@ -651,7 +649,7 @@ namespace workphone::vehicle
         return m_massFlow;
     }
 
-    void CAircraftPropeller::massFlow(real_Num massFlow)
+    void CAircraftPropeller::massFlow( real_Num massFlow )
     {
         m_massFlow = massFlow;
     }
@@ -661,7 +659,7 @@ namespace workphone::vehicle
         return m_wakeMoI;
     }
 
-    void CAircraftPropeller::wakeMoI(real_Num wakeMoI)
+    void CAircraftPropeller::wakeMoI( real_Num wakeMoI )
     {
         m_wakeMoI = wakeMoI;
     }
@@ -671,7 +669,7 @@ namespace workphone::vehicle
         return m_wakeRotation;
     }
 
-    void CAircraftPropeller::wakeRotation(real_Num wakeRotation)
+    void CAircraftPropeller::wakeRotation( real_Num wakeRotation )
     {
         m_wakeRotation = wakeRotation;
     }
@@ -681,7 +679,7 @@ namespace workphone::vehicle
         return m_propCLCoef;
     }
 
-    void CAircraftPropeller::propClCoef(real_Num propClCoef)
+    void CAircraftPropeller::propClCoef( real_Num propClCoef )
     {
         m_propCLCoef = propClCoef;
     }
@@ -691,7 +689,7 @@ namespace workphone::vehicle
         return m_proprThrustKg;
     }
 
-    void CAircraftPropeller::proprThrustKg(real_Num proprThrustKg)
+    void CAircraftPropeller::proprThrustKg( real_Num proprThrustKg )
     {
         m_proprThrustKg = proprThrustKg;
     }
@@ -701,7 +699,7 @@ namespace workphone::vehicle
         return m_propwashFactor;
     }
 
-    void CAircraftPropeller::propwashFactor(Array<real_Num> propwashFactor)
+    void CAircraftPropeller::propwashFactor( Array<real_Num> propwashFactor )
     {
         m_propwashFactor = propwashFactor;
     }
@@ -711,7 +709,7 @@ namespace workphone::vehicle
         return m_pWash;
     }
 
-    void CAircraftPropeller::pWash(Array<Vector3<real_Num>> pWash)
+    void CAircraftPropeller::pWash( Array<Vector3<real_Num>> pWash )
     {
         m_pWash = pWash;
     }
@@ -721,7 +719,7 @@ namespace workphone::vehicle
         return m_wakeVec;
     }
 
-    void CAircraftPropeller::wakeVec(Array<Vector3<real_Num>> wakeVec)
+    void CAircraftPropeller::wakeVec( Array<Vector3<real_Num>> wakeVec )
     {
         m_wakeVec = wakeVec;
     }
@@ -731,7 +729,7 @@ namespace workphone::vehicle
         return m_propwashFactorFus;
     }
 
-    void CAircraftPropeller::propwashFactorFus(Array<real_Num> propwashFactorFus)
+    void CAircraftPropeller::propwashFactorFus( Array<real_Num> propwashFactorFus )
     {
         m_propwashFactorFus = propwashFactorFus;
     }
@@ -741,7 +739,7 @@ namespace workphone::vehicle
         return m_pWashFus;
     }
 
-    void CAircraftPropeller::pWashFus(Array<Vector3<real_Num>> pWashFus)
+    void CAircraftPropeller::pWashFus( Array<Vector3<real_Num>> pWashFus )
     {
         m_pWashFus = pWashFus;
     }
@@ -751,7 +749,7 @@ namespace workphone::vehicle
         return m_wakeVecFus;
     }
 
-    void CAircraftPropeller::wakeVecFus(Array<Vector3<real_Num>> wakeVecFus)
+    void CAircraftPropeller::wakeVecFus( Array<Vector3<real_Num>> wakeVecFus )
     {
         m_wakeVecFus = wakeVecFus;
     }
@@ -761,7 +759,7 @@ namespace workphone::vehicle
         return m_reversed;
     }
 
-    void CAircraftPropeller::reversed(bool reversed)
+    void CAircraftPropeller::reversed( bool reversed )
     {
         m_reversed = reversed;
     }
@@ -771,7 +769,7 @@ namespace workphone::vehicle
         return m_ducted;
     }
 
-    void CAircraftPropeller::ducted(bool ducted)
+    void CAircraftPropeller::ducted( bool ducted )
     {
         m_ducted = ducted;
     }
@@ -781,7 +779,7 @@ namespace workphone::vehicle
         return m_folding;
     }
 
-    void CAircraftPropeller::folding(bool folding)
+    void CAircraftPropeller::folding( bool folding )
     {
         m_folding = folding;
     }
@@ -791,7 +789,7 @@ namespace workphone::vehicle
         return m_downThrust;
     }
 
-    void CAircraftPropeller::setDownThrust(real_Num downThrust)
+    void CAircraftPropeller::setDownThrust( real_Num downThrust )
     {
         m_downThrust = downThrust;
     }
@@ -801,57 +799,55 @@ namespace workphone::vehicle
         return m_sideThrust;
     }
 
-    void CAircraftPropeller::setSideThrust(real_Num sideThrust)
+    void CAircraftPropeller::setSideThrust( real_Num sideThrust )
     {
         m_sideThrust = sideThrust;
     }
 
     void CAircraftPropeller::reset()
     {
-        m_propChord = (static_cast<real_Num>(2.0) * m_tipChord + m_cuffChord) /
-                      static_cast<real_Num>(3.0);
+        m_propChord =
+            ( static_cast<real_Num>( 2.0 ) * m_tipChord + m_cuffChord ) / static_cast<real_Num>( 3.0 );
         // assume the effective chord is weighted 2:1 towards the tip
-        m_propMoI = static_cast<real_Num>(6.0) * m_propBlades * m_propDensity *
-                    Math<real_Num>::Pow(m_propChord, 2.0) *
-                    Math<real_Num>::Pow(m_propDia, 3.0);
+        m_propMoI = static_cast<real_Num>( 6.0 ) * m_propBlades * m_propDensity *
+                    Math<real_Num>::Pow( m_propChord, 2.0 ) * Math<real_Num>::Pow( m_propDia, 3.0 );
         // based on abot 12% mean blade thickness Checked as reasonable 11/12/2014
-        m_totMoI = m_propMoI; // to prevent a zero total MoI make it equal to the prop MoI here
+        m_totMoI = m_propMoI;  // to prevent a zero total MoI make it equal to the prop MoI here
 
-        m_propArea = Math<real_Num>::pi() * (m_propDia * m_propDia) / static_cast<real_Num>(4.0);
+        m_propArea = Math<real_Num>::pi() * ( m_propDia * m_propDia ) / static_cast<real_Num>( 4.0 );
         // the area of the prop disc
 
-        m_bladeArea = m_propBlades * m_propChord * static_cast<real_Num>(0.25) * m_propDia;
+        m_bladeArea = m_propBlades * m_propChord * static_cast<real_Num>( 0.25 ) * m_propDia;
         // calculate the effective area of the prop blades reduced to 50% of the blade length
-        m_propSolRatio = m_bladeArea / m_propArea; // the solidity ratio of the prop
+        m_propSolRatio = m_bladeArea / m_propArea;  // the solidity ratio of the prop
 
         // now calc the effective pitch angle of the prop at 75% of diameter allowing 0.035 radians
         // (2 degrees) for about 2% camber of the blade
         //  and also allowing 12% for the typical extra pitch APC etc seem to have for the geometric
         //  pitch.
-        m_geomerticPitch = static_cast<real_Num>(0.035) +
-                           static_cast<real_Num>(1.12) * m_propPitch /
-                           (Math<real_Num>::pi() * static_cast<real_Num>(0.75) * m_propDia);
+        m_geomerticPitch = static_cast<real_Num>( 0.035 ) +
+                           static_cast<real_Num>( 1.12 ) * m_propPitch /
+                               ( Math<real_Num>::pi() * static_cast<real_Num>( 0.75 ) * m_propDia );
 
         // this precalculated value now excludes the Cd as this now varies with Cl
         m_propDragPowerFactor = m_propBlades * m_parentAircraft->getAirDensity() * m_propChord *
-                                Math<real_Num>::Pow(m_propDia, 4.0) /
-                                static_cast<real_Num>(128.0);
+                                Math<real_Num>::Pow( m_propDia, 4.0 ) / static_cast<real_Num>( 128.0 );
 
         m_propFrame.m_xAxis.X() =
-            Math<real_Num>::Cos(m_downThrust) * Math<real_Num>::Cos(m_sideThrust);
+            Math<real_Num>::Cos( m_downThrust ) * Math<real_Num>::Cos( m_sideThrust );
         //
-        m_propFrame.m_xAxis.Y() = Math<real_Num>::Sin(m_sideThrust);
-        m_propFrame.m_xAxis.Z() = Math<real_Num>::Sin(m_downThrust);
+        m_propFrame.m_xAxis.Y() = Math<real_Num>::Sin( m_sideThrust );
+        m_propFrame.m_xAxis.Z() = Math<real_Num>::Sin( m_downThrust );
         m_propFrame.m_xAxis = m_propFrame.m_xAxis.normaliseCopy();
 
-        m_propFrame.m_yAxis.X() = -Math<real_Num>::Sin(m_sideThrust);
-        m_propFrame.m_yAxis.Y() = Math<real_Num>::Cos(m_sideThrust);
-        m_propFrame.m_yAxis.Z() = static_cast<real_Num>(0.0);
-        m_propFrame.m_yAxis = m_propFrame.m_yAxis.normaliseCopy(); // make it a unit vector
+        m_propFrame.m_yAxis.X() = -Math<real_Num>::Sin( m_sideThrust );
+        m_propFrame.m_yAxis.Y() = Math<real_Num>::Cos( m_sideThrust );
+        m_propFrame.m_yAxis.Z() = static_cast<real_Num>( 0.0 );
+        m_propFrame.m_yAxis = m_propFrame.m_yAxis.normaliseCopy();  // make it a unit vector
 
-        m_propFrame.m_zAxis.X() = -Math<real_Num>::Sin(m_downThrust);
-        m_propFrame.m_zAxis.Y() = static_cast<real_Num>(0.0);
-        m_propFrame.m_zAxis.Z() = Math<real_Num>::Cos(m_downThrust);
-        m_propFrame.m_zAxis = m_propFrame.m_zAxis.normaliseCopy(); // make it a unit vector
+        m_propFrame.m_zAxis.X() = -Math<real_Num>::Sin( m_downThrust );
+        m_propFrame.m_zAxis.Y() = static_cast<real_Num>( 0.0 );
+        m_propFrame.m_zAxis.Z() = Math<real_Num>::Cos( m_downThrust );
+        m_propFrame.m_zAxis = m_propFrame.m_zAxis.normaliseCopy();  // make it a unit vector
     }
-}
+}  // namespace workphone::vehicle

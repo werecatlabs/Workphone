@@ -4,7 +4,7 @@
 
 namespace workphone::physics
 {
-    void WPPhysicsMassData2::setInertia(real_Num inertia)
+    void WPPhysicsMassData2::setInertia( real_Num inertia )
     {
         m_inertia = inertia;
     }
@@ -14,7 +14,7 @@ namespace workphone::physics
         return m_inertia;
     }
 
-    void WPPhysicsMassData2::setCenter(Vector2<real_Num> center)
+    void WPPhysicsMassData2::setCenter( Vector2<real_Num> center )
     {
         m_center = center;
     }
@@ -24,7 +24,7 @@ namespace workphone::physics
         return m_center;
     }
 
-    void WPPhysicsMassData2::setMass(real_Num mass)
+    void WPPhysicsMassData2::setMass( real_Num mass )
     {
         m_mass = mass;
     }
@@ -41,4 +41,4 @@ namespace workphone::physics
     WPPhysicsMassData2::WPPhysicsMassData2()
     {
     }
-} // namespace workphone::physics
+}  // namespace workphone::physics

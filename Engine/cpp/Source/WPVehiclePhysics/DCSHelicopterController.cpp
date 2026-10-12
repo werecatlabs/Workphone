@@ -5,17 +5,17 @@
 
 namespace workphone::vehicle
 {
-    WP_CLASS_REGISTER_DERIVED(workphone::vehicle, DCSHelicopterController,
-                              CAerodynamicsVehicle<IAircraft>);
+    WP_CLASS_REGISTER_DERIVED( workphone::vehicle, DCSHelicopterController,
+                               CAerodynamicsVehicle<IAircraft> );
 
     // ===================================================================
     // Channel indices (standard CAerodynamicsVehicle layout)
     // ===================================================================
-    static constexpr s32 kThrChannel = 0; ///< Throttle      [0, 1]
-    static constexpr s32 kAilChannel = 1; ///< Roll          [-1, 1]
-    static constexpr s32 kEleChannel = 2; ///< Pitch         [-1, 1]
-    static constexpr s32 kYawChannel = 3; ///< Yaw / pedal   [-1, 1]
-    static constexpr s32 kColChannel = 5; ///< Collective    [-1, 1]
+    static constexpr s32 kThrChannel = 0;  ///< Throttle      [0, 1]
+    static constexpr s32 kAilChannel = 1;  ///< Roll          [-1, 1]
+    static constexpr s32 kEleChannel = 2;  ///< Pitch         [-1, 1]
+    static constexpr s32 kYawChannel = 3;  ///< Yaw / pedal   [-1, 1]
+    static constexpr s32 kColChannel = 5;  ///< Collective    [-1, 1]
 
     // Retreating blade stall speed band (m/s)
     static constexpr real_Num kRBSOnsetSpeed = 60.0;
@@ -47,9 +47,9 @@ namespace workphone::vehicle
         return true;
     }
 
-    void DCSHelicopterController::load(SmartPtr<ISharedObject> data)
+    void DCSHelicopterController::load( SmartPtr<ISharedObject> data )
     {
-        CAerodynamicsVehicle<IAircraft>::load(data);
+        CAerodynamicsVehicle<IAircraft>::load( data );
     }
 
     void DCSHelicopterController::update()
@@ -57,7 +57,7 @@ namespace workphone::vehicle
         CAerodynamicsVehicle<IAircraft>::update();
     }
 
-    void DCSHelicopterController::update(const double &t, const double &dt)
+    void DCSHelicopterController::update( const double &t, const double &dt )
     {
         // Clear force/torque accumulators from the previous frame.
         clearForces();
@@ -70,15 +70,15 @@ namespace workphone::vehicle
         const Vector3<real_Num> worldFwd = orientation * Vector3<real_Num>::unitZ();
         const Vector3<real_Num> worldRight = orientation * Vector3<real_Num>::unitX();
 
-        const real_Num fdt = static_cast<real_Num>(dt);
+        const real_Num fdt = static_cast<real_Num>( dt );
 
         // Run DCS-style aerodynamic subsystems in the same order as the
         // original C# FixedUpdate().
-        updateRotorRPM(fdt);
-        updateDynamicInflow(fdt);
-        updateBladeFlapping(fdt, worldFwd, worldRight);
-        applyRotorForces(worldUp, worldFwd, worldRight);
-        applyTailRotor(worldUp);
+        updateRotorRPM( fdt );
+        updateDynamicInflow( fdt );
+        updateBladeFlapping( fdt, worldFwd, worldRight );
+        applyRotorForces( worldUp, worldFwd, worldRight );
+        applyTailRotor( worldUp );
         applySAS();
 
         // Dispatch accumulated forces and torques to the physics body.
@@ -95,24 +95,22 @@ namespace workphone::vehicle
     //   rotorRPM    += accel * dt * 60;
     // ===================================================================
 
-    void DCSHelicopterController::updateRotorRPM(real_Num dt)
+    void DCSHelicopterController::updateRotorRPM( real_Num dt )
     {
-        const real_Num throttle = Math<real_Num>::clamp(
-            getChannel(kThrChannel), 0.0, 1.0);
+        const real_Num throttle = Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
 
         m_engineTorque = throttle * m_maxEngineTorque;
 
         const real_Num dragTorque = m_rotorDrag * m_rotorRPM;
         const real_Num netTorque = m_engineTorque - dragTorque;
 
-        const real_Num angularAccel = (m_rotorInertia > static_cast<real_Num>(0.0))
-                                          ? (netTorque / m_rotorInertia)
-                                          : static_cast<real_Num>(0.0);
+        const real_Num angularAccel = ( m_rotorInertia > static_cast<real_Num>( 0.0 ) )
+                                          ? ( netTorque / m_rotorInertia )
+                                          : static_cast<real_Num>( 0.0 );
 
         // Convert rad/s² to RPM/s and integrate (matching × 60 from C#).
-        m_rotorRPM += angularAccel * dt * static_cast<real_Num>(60.0);
-        m_rotorRPM =
-            Math<real_Num>::clamp(m_rotorRPM, 0.0, m_maxRotorRPM);
+        m_rotorRPM += angularAccel * dt * static_cast<real_Num>( 60.0 );
+        m_rotorRPM = Math<real_Num>::clamp( m_rotorRPM, 0.0, m_maxRotorRPM );
     }
 
     // ===================================================================
@@ -126,37 +124,35 @@ namespace workphone::vehicle
     //   inducedVelocity = Lerp(inducedVelocity, targetInduced, dt * inflowLag)
     // ===================================================================
 
-    void DCSHelicopterController::updateDynamicInflow(real_Num dt)
+    void DCSHelicopterController::updateDynamicInflow( real_Num dt )
     {
-        const real_Num two_pi = static_cast<real_Num>(2.0) * Math<real_Num>::pi();
+        const real_Num two_pi = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
 
         // Blade tip tangential speed (m/s).
-        const real_Num tipSpeed =
-            m_rotorRPM * two_pi * m_rotorRadius / static_cast<real_Num>(60.0);
+        const real_Num tipSpeed = m_rotorRPM * two_pi * m_rotorRadius / static_cast<real_Num>( 60.0 );
 
         // Effective collective pitch in radians.
-        const real_Num collectiveIn = Math<real_Num>::clamp(
-            getChannel(kColChannel), -1.0, 1.0);
+        const real_Num collectiveIn = Math<real_Num>::clamp( getChannel( kColChannel ), -1.0, 1.0 );
         const real_Num collectiveRad =
             collectiveIn * Math<real_Num>::deg_to_rad() * m_maxCollectivePitch;
 
         // Simplified thrust estimate from momentum theory:
         //   T ≈ 0.5 · � · A · v_tip² · θ
-        const real_Num thrustEstimate = static_cast<real_Num>(0.5) * m_airDensity * m_rotorArea *
+        const real_Num thrustEstimate = static_cast<real_Num>( 0.5 ) * m_airDensity * m_rotorArea *
                                         tipSpeed * tipSpeed * collectiveRad;
 
         // Momentum-theory induced velocity target:
         //   vi = sqrt(|T| / (2 · � · A))
-        const real_Num denominator = static_cast<real_Num>(2.0) * m_airDensity * m_rotorArea;
+        const real_Num denominator = static_cast<real_Num>( 2.0 ) * m_airDensity * m_rotorArea;
         real_Num targetInduced = 0.0;
-        if(denominator > static_cast<real_Num>(0.0))
-            targetInduced =
-                Math<real_Num>::Sqrt(Math<real_Num>::Abs(thrustEstimate) / denominator);
+        if( denominator > static_cast<real_Num>( 0.0 ) )
+        {
+            targetInduced = Math<real_Num>::Sqrt( Math<real_Num>::Abs( thrustEstimate ) / denominator );
+        }
 
         // First-order lag toward the momentum-theory target.
-        const real_Num alpha = Math<real_Num>::clamp(dt * m_inflowLag, 0.0,
-                                                     1.0);
-        m_inducedVelocity = m_inducedVelocity + alpha * (targetInduced - m_inducedVelocity);
+        const real_Num alpha = Math<real_Num>::clamp( dt * m_inflowLag, 0.0, 1.0 );
+        m_inducedVelocity = m_inducedVelocity + alpha * ( targetInduced - m_inducedVelocity );
     }
 
     // ===================================================================
@@ -168,24 +164,22 @@ namespace workphone::vehicle
     //   flappingOffset  = Lerp(flappingOffset, targetFlap, dt * flappingStiffness)
     // ===================================================================
 
-    void DCSHelicopterController::updateBladeFlapping(real_Num dt,
-                                                      const Vector3<real_Num> &worldFwd,
-                                                      const Vector3<real_Num> &worldRight)
+    void DCSHelicopterController::updateBladeFlapping( real_Num dt, const Vector3<real_Num> &worldFwd,
+                                                       const Vector3<real_Num> &worldRight )
     {
         const Vector3<real_Num> worldVel = getLinearVelocity();
 
         // Project world velocity onto body axes to get local components.
-        const real_Num localX = worldVel.dotProduct(worldRight); // right component
-        const real_Num localZ = worldVel.dotProduct(worldFwd); // forward component
+        const real_Num localX = worldVel.dotProduct( worldRight );  // right component
+        const real_Num localZ = worldVel.dotProduct( worldFwd );    // forward component
 
         // Flapping disc tilt in body forward/right directions (matching C#).
-        const Vector3<real_Num> targetFlap = worldFwd * (-localZ * static_cast<real_Num>(0.05)) +
-                                             worldRight * (localX * static_cast<real_Num>(0.05));
+        const Vector3<real_Num> targetFlap = worldFwd * ( -localZ * static_cast<real_Num>( 0.05 ) ) +
+                                             worldRight * ( localX * static_cast<real_Num>( 0.05 ) );
 
         // First-order convergence toward aerodynamic equilibrium.
-        const real_Num alpha = Math<real_Num>::clamp(
-            dt * m_flappingStiffness, 0.0, 1.0);
-        m_flappingOffset = m_flappingOffset + alpha * (targetFlap - m_flappingOffset);
+        const real_Num alpha = Math<real_Num>::clamp( dt * m_flappingStiffness, 0.0, 1.0 );
+        m_flappingOffset = m_flappingOffset + alpha * ( targetFlap - m_flappingOffset );
     }
 
     // ===================================================================
@@ -199,41 +193,41 @@ namespace workphone::vehicle
     //   AddTorque(-up * thrust * 0.02)
     // ===================================================================
 
-    void DCSHelicopterController::applyRotorForces(const Vector3<real_Num> &up,
-                                                   const Vector3<real_Num> &fwd,
-                                                   const Vector3<real_Num> &right)
+    void DCSHelicopterController::applyRotorForces( const Vector3<real_Num> &up,
+                                                    const Vector3<real_Num> &fwd,
+                                                    const Vector3<real_Num> &right )
     {
-        const real_Num pitchIn = getChannel(kEleChannel);
-        const real_Num rollIn = getChannel(kAilChannel);
+        const real_Num pitchIn = getChannel( kEleChannel );
+        const real_Num rollIn = getChannel( kAilChannel );
 
         // World-space vertical velocity component (positive = climbing).
-        const real_Num vy = getLinearVelocity().dotProduct(up);
+        const real_Num vy = getLinearVelocity().dotProduct( up );
 
         // Momentum-theory thrust:
         //   T = 2 · � · A · vi · (vi − vy)
-        real_Num thrust = static_cast<real_Num>(2.0) * m_airDensity * m_rotorArea *
-                          m_inducedVelocity * (m_inducedVelocity - vy);
+        real_Num thrust = static_cast<real_Num>( 2.0 ) * m_airDensity * m_rotorArea * m_inducedVelocity *
+                          ( m_inducedVelocity - vy );
 
         // Modifiers (matching C# order).
         const real_Num airspeed = getLinearVelocity().length();
-        thrust *= computeTranslationalLift(airspeed);
+        thrust *= computeTranslationalLift( airspeed );
 
-        const real_Num forwardSpeed = getLinearVelocity().dotProduct(fwd);
-        m_retreatingFactor = computeRetreatingBladeStall(forwardSpeed);
+        const real_Num forwardSpeed = getLinearVelocity().dotProduct( fwd );
+        m_retreatingFactor = computeRetreatingBladeStall( forwardSpeed );
         thrust *= m_retreatingFactor;
 
         // Rotor disc normal: body-up biased by cyclic tilt and blade flapping.
         const real_Num tiltRad = m_cyclicMaxTilt * Math<real_Num>::deg_to_rad();
         Vector3<real_Num> discNormal =
-            up + fwd * (pitchIn * tiltRad) + right * (rollIn * tiltRad) + m_flappingOffset;
+            up + fwd * ( pitchIn * tiltRad ) + right * ( rollIn * tiltRad ) + m_flappingOffset;
         discNormal.normalise();
 
         // Apply thrust along the tilted disc normal through the CG.
-        addForce(0, discNormal * thrust, getPosition());
+        addForce( 0, discNormal * thrust, getPosition() );
 
         // Reactive torque: main rotor torques the fuselage in the opposite
         // sense to rotor rotation.
-        addTorque(0, -up * (thrust * static_cast<real_Num>(0.02)));
+        addTorque( 0, -up * ( thrust * static_cast<real_Num>( 0.02 ) ) );
     }
 
     // ===================================================================
@@ -245,17 +239,17 @@ namespace workphone::vehicle
     //   AddTorque(up * (antiTorque + pedal))
     // ===================================================================
 
-    void DCSHelicopterController::applyTailRotor(const Vector3<real_Num> &up)
+    void DCSHelicopterController::applyTailRotor( const Vector3<real_Num> &up )
     {
-        const real_Num yawIn = getChannel(kYawChannel);
+        const real_Num yawIn = getChannel( kYawChannel );
 
         // Anti-torque moment from the tail rotor (proportional to main rotor speed).
-        const real_Num antiTorque = m_rotorRPM * static_cast<real_Num>(0.7);
+        const real_Num antiTorque = m_rotorRPM * static_cast<real_Num>( 0.7 );
 
         // Pilot pedal authority.
         const real_Num pedalMoment = yawIn * m_tailRotorPower;
 
-        addTorque(0, up * (antiTorque + pedalMoment));
+        addTorque( 0, up * ( antiTorque + pedalMoment ) );
     }
 
     // ===================================================================
@@ -268,7 +262,7 @@ namespace workphone::vehicle
     void DCSHelicopterController::applySAS()
     {
         const Vector3<real_Num> angVel = getAngularVelocity();
-        addTorque(0, -angVel * m_angularDamping);
+        addTorque( 0, -angVel * m_angularDamping );
     }
 
     // ===================================================================
@@ -279,16 +273,17 @@ namespace workphone::vehicle
     //   else        → Lerp(1, 1.4, (speed - 10) / 25)
     // ===================================================================
 
-    real_Num DCSHelicopterController::computeTranslationalLift(real_Num speed) const
+    real_Num DCSHelicopterController::computeTranslationalLift( real_Num speed ) const
     {
-        if(speed <= kETLOnset)
+        if( speed <= kETLOnset )
+        {
             return 1.0;
+        }
 
         const real_Num t =
-            Math<real_Num>::clamp((speed - kETLOnset) / (kETLPeak - kETLOnset),
-                                  0.0, 1.0);
+            Math<real_Num>::clamp( ( speed - kETLOnset ) / ( kETLPeak - kETLOnset ), 0.0, 1.0 );
 
-        return static_cast<real_Num>(1.0) + t * (kETLBoost - static_cast<real_Num>(1.0));
+        return static_cast<real_Num>( 1.0 ) + t * ( kETLBoost - static_cast<real_Num>( 1.0 ) );
     }
 
     // ===================================================================
@@ -299,16 +294,17 @@ namespace workphone::vehicle
     //   else               → Lerp(1, 0.5, (forwardSpeed - 60) / 40)
     // ===================================================================
 
-    real_Num DCSHelicopterController::computeRetreatingBladeStall(real_Num forwardSpeed) const
+    real_Num DCSHelicopterController::computeRetreatingBladeStall( real_Num forwardSpeed ) const
     {
-        if(forwardSpeed < kRBSOnsetSpeed)
+        if( forwardSpeed < kRBSOnsetSpeed )
+        {
             return 1.0;
+        }
 
         const real_Num t = Math<real_Num>::clamp(
-            (forwardSpeed - kRBSOnsetSpeed) / (kRBSFullSpeed - kRBSOnsetSpeed),
-            0.0, 1.0);
+            ( forwardSpeed - kRBSOnsetSpeed ) / ( kRBSFullSpeed - kRBSOnsetSpeed ), 0.0, 1.0 );
 
-        return static_cast<real_Num>(1.0) - t * static_cast<real_Num>(0.5); // 1 → 0.5
+        return static_cast<real_Num>( 1.0 ) - t * static_cast<real_Num>( 0.5 );  // 1 → 0.5
     }
 
     // ===================================================================
@@ -320,7 +316,7 @@ namespace workphone::vehicle
         return m_rotorRadius;
     }
 
-    void DCSHelicopterController::setRotorRadius(real_Num rotorRadius)
+    void DCSHelicopterController::setRotorRadius( real_Num rotorRadius )
     {
         m_rotorRadius = rotorRadius;
         m_rotorArea = Math<real_Num>::pi() * rotorRadius * rotorRadius;
@@ -336,7 +332,7 @@ namespace workphone::vehicle
         return m_rotorInertia;
     }
 
-    void DCSHelicopterController::setRotorInertia(real_Num rotorInertia)
+    void DCSHelicopterController::setRotorInertia( real_Num rotorInertia )
     {
         m_rotorInertia = rotorInertia;
     }
@@ -346,7 +342,7 @@ namespace workphone::vehicle
         return m_maxEngineTorque;
     }
 
-    void DCSHelicopterController::setMaxEngineTorque(real_Num maxEngineTorque)
+    void DCSHelicopterController::setMaxEngineTorque( real_Num maxEngineTorque )
     {
         m_maxEngineTorque = maxEngineTorque;
     }
@@ -356,7 +352,7 @@ namespace workphone::vehicle
         return m_rotorDrag;
     }
 
-    void DCSHelicopterController::setRotorDrag(real_Num rotorDrag)
+    void DCSHelicopterController::setRotorDrag( real_Num rotorDrag )
     {
         m_rotorDrag = rotorDrag;
     }
@@ -366,7 +362,7 @@ namespace workphone::vehicle
         return m_maxRotorRPM;
     }
 
-    void DCSHelicopterController::setMaxRotorRPM(real_Num maxRotorRPM)
+    void DCSHelicopterController::setMaxRotorRPM( real_Num maxRotorRPM )
     {
         m_maxRotorRPM = maxRotorRPM;
     }
@@ -385,7 +381,7 @@ namespace workphone::vehicle
         return m_airDensity;
     }
 
-    void DCSHelicopterController::setAirDensity(real_Num airDensity)
+    void DCSHelicopterController::setAirDensity( real_Num airDensity )
     {
         m_airDensity = airDensity;
     }
@@ -399,7 +395,7 @@ namespace workphone::vehicle
         return m_maxCollectivePitch;
     }
 
-    void DCSHelicopterController::setMaxCollectivePitch(real_Num maxCollectivePitch)
+    void DCSHelicopterController::setMaxCollectivePitch( real_Num maxCollectivePitch )
     {
         m_maxCollectivePitch = maxCollectivePitch;
     }
@@ -409,7 +405,7 @@ namespace workphone::vehicle
         return m_cyclicMaxTilt;
     }
 
-    void DCSHelicopterController::setCyclicMaxTilt(real_Num cyclicMaxTilt)
+    void DCSHelicopterController::setCyclicMaxTilt( real_Num cyclicMaxTilt )
     {
         m_cyclicMaxTilt = cyclicMaxTilt;
     }
@@ -423,7 +419,7 @@ namespace workphone::vehicle
         return m_inflowLag;
     }
 
-    void DCSHelicopterController::setInflowLag(real_Num inflowLag)
+    void DCSHelicopterController::setInflowLag( real_Num inflowLag )
     {
         m_inflowLag = inflowLag;
     }
@@ -442,7 +438,7 @@ namespace workphone::vehicle
         return m_flappingStiffness;
     }
 
-    void DCSHelicopterController::setFlappingStiffness(real_Num flappingStiffness)
+    void DCSHelicopterController::setFlappingStiffness( real_Num flappingStiffness )
     {
         m_flappingStiffness = flappingStiffness;
     }
@@ -461,7 +457,7 @@ namespace workphone::vehicle
         return m_tailRotorPower;
     }
 
-    void DCSHelicopterController::setTailRotorPower(real_Num tailRotorPower)
+    void DCSHelicopterController::setTailRotorPower( real_Num tailRotorPower )
     {
         m_tailRotorPower = tailRotorPower;
     }
@@ -475,7 +471,7 @@ namespace workphone::vehicle
         return m_angularDamping;
     }
 
-    void DCSHelicopterController::setAngularDamping(real_Num angularDamping)
+    void DCSHelicopterController::setAngularDamping( real_Num angularDamping )
     {
         m_angularDamping = angularDamping;
     }
@@ -498,20 +494,19 @@ namespace workphone::vehicle
         return m_rotorRPM;
     }
 
-    void DCSHelicopterController::setRPM(real_Num rpm)
+    void DCSHelicopterController::setRPM( real_Num rpm )
     {
-        m_rotorRPM = Math<real_Num>::clamp(rpm, 0.0, m_maxRotorRPM);
+        m_rotorRPM = Math<real_Num>::clamp( rpm, 0.0, m_maxRotorRPM );
     }
 
     real_Num DCSHelicopterController::getThrottle() const
     {
-        return Math<real_Num>::clamp(getChannel(kThrChannel), 0.0,
-                                     1.0);
+        return Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
     }
 
-    void DCSHelicopterController::setThrottle(real_Num throttle)
+    void DCSHelicopterController::setThrottle( real_Num throttle )
     {
-        setChannel(kThrChannel, throttle);
+        setChannel( kThrChannel, throttle );
     }
 
     real_Num DCSHelicopterController::getMoi() const
@@ -519,7 +514,7 @@ namespace workphone::vehicle
         return m_moi;
     }
 
-    void DCSHelicopterController::setMoi(real_Num moi)
+    void DCSHelicopterController::setMoi( real_Num moi )
     {
         m_moi = moi;
     }
@@ -529,7 +524,7 @@ namespace workphone::vehicle
         return m_thrustMultiplier;
     }
 
-    void DCSHelicopterController::setThrustMultiplier(real_Num thrustMultiplier)
+    void DCSHelicopterController::setThrustMultiplier( real_Num thrustMultiplier )
     {
         m_thrustMultiplier = thrustMultiplier;
     }
@@ -539,7 +534,7 @@ namespace workphone::vehicle
         return m_torqueMultiplier;
     }
 
-    void DCSHelicopterController::setTorqueMultiplier(real_Num torqueMultiplier)
+    void DCSHelicopterController::setTorqueMultiplier( real_Num torqueMultiplier )
     {
         m_torqueMultiplier = torqueMultiplier;
     }
@@ -549,22 +544,22 @@ namespace workphone::vehicle
         return m_peakPowerW;
     }
 
-    void DCSHelicopterController::setPeakPowerW(real_Num peakPowerW)
+    void DCSHelicopterController::setPeakPowerW( real_Num peakPowerW )
     {
         m_peakPowerW = peakPowerW;
     }
 
-    real_Num DCSHelicopterController::getTorque(f32 /*throttlePosition*/) const
+    real_Num DCSHelicopterController::getTorque( f32 /*throttlePosition*/ ) const
     {
         return m_engineTorque;
     }
 
-    real_Num DCSHelicopterController::getMaxTorque(u32 /*rpm*/) const
+    real_Num DCSHelicopterController::getMaxTorque( u32 /*rpm*/ ) const
     {
         return m_maxEngineTorque;
     }
 
-    real_Num DCSHelicopterController::getMinTorque(u32 /*rpm*/) const
+    real_Num DCSHelicopterController::getMinTorque( u32 /*rpm*/ ) const
     {
         return 0.0;
     }
@@ -574,12 +569,12 @@ namespace workphone::vehicle
         return m_engineTorque;
     }
 
-    real_Num DCSHelicopterController::getEngineRPM(int /*idx*/) const
+    real_Num DCSHelicopterController::getEngineRPM( int /*idx*/ ) const
     {
         return m_rotorRPM;
     }
 
-    real_Num DCSHelicopterController::getThrust(int /*idx*/) const
+    real_Num DCSHelicopterController::getThrust( int /*idx*/ ) const
     {
         return 0.0;
     }
@@ -593,7 +588,7 @@ namespace workphone::vehicle
         return m_aircraftCallback;
     }
 
-    void DCSHelicopterController::setCallback(SmartPtr<IAircraftCallback> callback)
+    void DCSHelicopterController::setCallback( SmartPtr<IAircraftCallback> callback )
     {
         m_aircraftCallback = callback;
     }
@@ -603,7 +598,7 @@ namespace workphone::vehicle
         return m_batteryPack;
     }
 
-    void DCSHelicopterController::setBatteryPack(SmartPtr<IBatteryPack> batteryPack)
+    void DCSHelicopterController::setBatteryPack( SmartPtr<IBatteryPack> batteryPack )
     {
         m_batteryPack = batteryPack;
     }
@@ -613,7 +608,7 @@ namespace workphone::vehicle
         return m_wind;
     }
 
-    void DCSHelicopterController::setWind(SmartPtr<IAerodymanicsWind> wind)
+    void DCSHelicopterController::setWind( SmartPtr<IAerodymanicsWind> wind )
     {
         m_wind = wind;
     }
@@ -623,7 +618,7 @@ namespace workphone::vehicle
         return m_bodyTransform;
     }
 
-    void DCSHelicopterController::setBodyTransform(Transform3<real_Num> bodyTransform)
+    void DCSHelicopterController::setBodyTransform( Transform3<real_Num> bodyTransform )
     {
         m_bodyTransform = bodyTransform;
     }
@@ -633,7 +628,7 @@ namespace workphone::vehicle
         return m_rollwiseDamping;
     }
 
-    void DCSHelicopterController::setRollwiseDamping(real_Num rollwiseDamping)
+    void DCSHelicopterController::setRollwiseDamping( real_Num rollwiseDamping )
     {
         m_rollwiseDamping = rollwiseDamping;
     }
@@ -642,18 +637,21 @@ namespace workphone::vehicle
     // Propeller unit management
     // ===================================================================
 
-    void DCSHelicopterController::addPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void DCSHelicopterController::addPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        if(propellerUnit)
-            m_propellerUnits.push_back(propellerUnit);
+        if( propellerUnit )
+        {
+            m_propellerUnits.push_back( propellerUnit );
+        }
     }
 
-    void DCSHelicopterController::removePropellerUnit(
-        SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void DCSHelicopterController::removePropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        auto it = std::find(m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit);
-        if(it != m_propellerUnits.end())
-            m_propellerUnits.erase(it);
+        auto it = std::find( m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit );
+        if( it != m_propellerUnits.end() )
+        {
+            m_propellerUnits.erase( it );
+        }
     }
 
     Array<SmartPtr<IAircraftPropellerUnit>> DCSHelicopterController::getPropellerUnits() const
@@ -662,7 +660,7 @@ namespace workphone::vehicle
     }
 
     void DCSHelicopterController::setPropellerUnits(
-        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits)
+        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits )
     {
         m_propellerUnits = propellerUnits;
     }
@@ -671,17 +669,21 @@ namespace workphone::vehicle
     // Wheel management
     // ===================================================================
 
-    void DCSHelicopterController::addWheel(SmartPtr<IWheelComponent> wheel)
+    void DCSHelicopterController::addWheel( SmartPtr<IWheelComponent> wheel )
     {
-        if(wheel)
-            m_wheels.push_back(wheel);
+        if( wheel )
+        {
+            m_wheels.push_back( wheel );
+        }
     }
 
-    void DCSHelicopterController::removeWheel(SmartPtr<IWheelComponent> wheel)
+    void DCSHelicopterController::removeWheel( SmartPtr<IWheelComponent> wheel )
     {
-        auto it = std::find(m_wheels.begin(), m_wheels.end(), wheel);
-        if(it != m_wheels.end())
-            m_wheels.erase(it);
+        auto it = std::find( m_wheels.begin(), m_wheels.end(), wheel );
+        if( it != m_wheels.end() )
+        {
+            m_wheels.erase( it );
+        }
     }
 
     Array<SmartPtr<IWheelComponent>> DCSHelicopterController::getWheels() const
@@ -689,7 +691,7 @@ namespace workphone::vehicle
         return m_wheels;
     }
 
-    void DCSHelicopterController::setWheels(const Array<SmartPtr<IWheelComponent>> &wheels)
+    void DCSHelicopterController::setWheels( const Array<SmartPtr<IWheelComponent>> &wheels )
     {
         m_wheels = wheels;
     }
@@ -698,7 +700,7 @@ namespace workphone::vehicle
     // Control surface / section / model path stubs
     // ===================================================================
 
-    void DCSHelicopterController::setControlAngle(s32 /*id*/, f32 /*angle*/)
+    void DCSHelicopterController::setControlAngle( s32 /*id*/, f32 /*angle*/ )
     {
         // Not used by this controller.
     }
@@ -708,7 +710,7 @@ namespace workphone::vehicle
         return m_sectionMultiplier;
     }
 
-    void DCSHelicopterController::setSectionMultiplier(real_Num sectionMultiplier)
+    void DCSHelicopterController::setSectionMultiplier( real_Num sectionMultiplier )
     {
         m_sectionMultiplier = sectionMultiplier;
     }
@@ -718,8 +720,8 @@ namespace workphone::vehicle
         return m_modelDataFilePath;
     }
 
-    void DCSHelicopterController::setModelDataFilePath(const String &filePath)
+    void DCSHelicopterController::setModelDataFilePath( const String &filePath )
     {
         m_modelDataFilePath = filePath;
     }
-}
+}  // namespace workphone::vehicle

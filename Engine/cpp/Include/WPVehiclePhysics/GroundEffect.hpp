@@ -13,13 +13,13 @@ namespace workphone::vehicle
         GroundEffect();
         ~GroundEffect() override;
 
-        void getGroundEffectCoefficients(Vector3<real_Num> PointA, Vector3<real_Num> PointB,
-                                         Vector3<real_Num> PointC, Vector3<real_Num> PointD,
-                                         real_Num &clMultiplier, real_Num &cdMultiplier);
+        void getGroundEffectCoefficients( Vector3<real_Num> PointA, Vector3<real_Num> PointB,
+                                          Vector3<real_Num> PointC, Vector3<real_Num> PointD,
+                                          real_Num &clMultiplier, real_Num &cdMultiplier );
 
         Vector3<real_Num> m_rayCastAxis;
         real_Num m_wingspan;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // GroundEffect_h__
+#endif  // GroundEffect_h__

@@ -13,29 +13,29 @@
 namespace workphone::vehicle
 {
     /**
-         * @class AdvancedHelicopterController
-         * @brief Physically-based helicopter flight controller.
-         *
-         * Simulates the principal aerodynamic subsystems of a single-main-rotor
-         * helicopter:
-         *  - Main rotor RPM integration (engine torque, rotor drag, inertia)
-         *  - Blade-pitch lift with collective and cyclic disc-tilt
-         *  - Ground effect (IGE) boost
-         *  - Effective Translational Lift (ETL / Translational Lift)
-         *  - Tail rotor anti-torque and yaw authority
-         *  - Torque reaction from the main rotor
-         *
-         * Input is read from the standard 8-channel array inherited from
-         * CAerodynamicsVehicle:
-         *  - Channel 0 (THR) – throttle  [0, 1]
-         *  - Channel 1 (AIL) – roll      [-1, 1]
-         *  - Channel 2 (ELE) – pitch     [-1, 1]
-         *  - Channel 3 (YAW) – yaw       [-1, 1]
-         *  - Channel 5 (COL) – collective[-1, 1]
-         *
-         * Forces and torques are accumulated via the CAerodynamicsVehicle helpers
-         * and dispatched to the physics body each frame.
-         */
+     * @class AdvancedHelicopterController
+     * @brief Physically-based helicopter flight controller.
+     *
+     * Simulates the principal aerodynamic subsystems of a single-main-rotor
+     * helicopter:
+     *  - Main rotor RPM integration (engine torque, rotor drag, inertia)
+     *  - Blade-pitch lift with collective and cyclic disc-tilt
+     *  - Ground effect (IGE) boost
+     *  - Effective Translational Lift (ETL / Translational Lift)
+     *  - Tail rotor anti-torque and yaw authority
+     *  - Torque reaction from the main rotor
+     *
+     * Input is read from the standard 8-channel array inherited from
+     * CAerodynamicsVehicle:
+     *  - Channel 0 (THR) – throttle  [0, 1]
+     *  - Channel 1 (AIL) – roll      [-1, 1]
+     *  - Channel 2 (ELE) – pitch     [-1, 1]
+     *  - Channel 3 (YAW) – yaw       [-1, 1]
+     *  - Channel 5 (COL) – collective[-1, 1]
+     *
+     * Forces and torques are accumulated via the CAerodynamicsVehicle helpers
+     * and dispatched to the physics body each frame.
+     */
     class WPVehiclePhysics_API AdvancedHelicopterController : public CAerodynamicsVehicle<IAircraft>
     {
     public:
@@ -48,16 +48,16 @@ namespace workphone::vehicle
 
         bool isValid() const override;
 
-        void load(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
 
         void update() override;
 
         /**
-             * @brief Physics step — integrates rotor RPM and applies all forces.
-             * @param t  Absolute simulation time (seconds).
-             * @param dt Time-step duration (seconds).
-             */
-        void update(const double &t, const double &dt);
+         * @brief Physics step — integrates rotor RPM and applies all forces.
+         * @param t  Absolute simulation time (seconds).
+         * @param dt Time-step duration (seconds).
+         */
+        void update( const double &t, const double &dt );
 
         // ---------------------------------------------------------------
         // Rotor physics parameters
@@ -65,19 +65,19 @@ namespace workphone::vehicle
 
         /** @brief Rotational inertia of the main rotor system (kg·m²). */
         real_Num getRotorInertia() const;
-        void setRotorInertia(real_Num rotorInertia);
+        void setRotorInertia( real_Num rotorInertia );
 
         /** @brief Peak torque the engine can deliver to the rotor (N·m). */
         real_Num getMaxEngineTorque() const;
-        void setMaxEngineTorque(real_Num maxEngineTorque);
+        void setMaxEngineTorque( real_Num maxEngineTorque );
 
         /** @brief Rotor angular drag coefficient (N·m·s/rad). */
         real_Num getRotorDrag() const;
-        void setRotorDrag(real_Num rotorDrag);
+        void setRotorDrag( real_Num rotorDrag );
 
         /** @brief Rotor speed ceiling (RPM). */
         real_Num getMaxRotorRPM() const;
-        void setMaxRotorRPM(real_Num maxRotorRPM);
+        void setMaxRotorRPM( real_Num maxRotorRPM );
 
         /** @brief Current main rotor speed (RPM). Read-only query. */
         real_Num getRotorRPM() const;
@@ -88,15 +88,15 @@ namespace workphone::vehicle
 
         /** @brief Effective rotor disc area (m²). */
         real_Num getRotorArea() const;
-        void setRotorArea(real_Num rotorArea);
+        void setRotorArea( real_Num rotorArea );
 
         /** @brief Ambient air density (kg/m³). Defaults to ISA sea-level 1.225. */
         real_Num getAirDensity() const override;
-        void setAirDensity(real_Num airDensity) override;
+        void setAirDensity( real_Num airDensity ) override;
 
         /** @brief Non-dimensional rotor lift coefficient. */
         real_Num getLiftCoefficient() const;
-        void setLiftCoefficient(real_Num liftCoefficient);
+        void setLiftCoefficient( real_Num liftCoefficient );
 
         // ---------------------------------------------------------------
         // Blade pitch parameters
@@ -104,11 +104,11 @@ namespace workphone::vehicle
 
         /** @brief Maximum collective blade pitch (degrees). */
         real_Num getMaxCollectivePitch() const;
-        void setMaxCollectivePitch(real_Num maxCollectivePitch);
+        void setMaxCollectivePitch( real_Num maxCollectivePitch );
 
         /** @brief Maximum cyclic disc-tilt angle from stick deflection (degrees). */
         real_Num getCyclicTiltAngle() const;
-        void setCyclicTiltAngle(real_Num cyclicTiltAngle);
+        void setCyclicTiltAngle( real_Num cyclicTiltAngle );
 
         // ---------------------------------------------------------------
         // Tail rotor
@@ -116,20 +116,20 @@ namespace workphone::vehicle
 
         /** @brief Peak side-force the tail rotor can produce (N). */
         real_Num getTailRotorForce() const;
-        void setTailRotorForce(real_Num tailRotorForce);
+        void setTailRotorForce( real_Num tailRotorForce );
 
         // ---------------------------------------------------------------
         // Ground effect
         // ---------------------------------------------------------------
 
         /**
-             * @brief AGL height below which ground-effect lift boost applies (m).
-             *
-             * The IGE boost is computed from the vehicle body's world-space Y
-             * position when no raycast provider is available.
-             */
+         * @brief AGL height below which ground-effect lift boost applies (m).
+         *
+         * The IGE boost is computed from the vehicle body's world-space Y
+         * position when no raycast provider is available.
+         */
         real_Num getGroundEffectHeight() const;
-        void setGroundEffectHeight(real_Num groundEffectHeight);
+        void setGroundEffectHeight( real_Num groundEffectHeight );
 
         // ---------------------------------------------------------------
         // Effective Translational Lift (ETL)
@@ -137,75 +137,74 @@ namespace workphone::vehicle
 
         /** @brief Airspeed at which ETL begins (m/s). */
         real_Num getETLStartSpeed() const;
-        void setETLStartSpeed(real_Num etlStartSpeed);
+        void setETLStartSpeed( real_Num etlStartSpeed );
 
         /** @brief Peak ETL lift multiplier (>= 1). */
         real_Num getETLMaxBoost() const;
-        void setETLMaxBoost(real_Num etlMaxBoost);
+        void setETLMaxBoost( real_Num etlMaxBoost );
 
         // ---------------------------------------------------------------
         // IAircraft stubs (unused subsystems return safe defaults)
         // ---------------------------------------------------------------
 
         real_Num getRPM() const;
-        void setRPM(real_Num rpm);
+        void setRPM( real_Num rpm );
 
         real_Num getThrottle() const;
-        void setThrottle(real_Num throttle);
+        void setThrottle( real_Num throttle );
 
         real_Num getMoi() const;
-        void setMoi(real_Num moi);
+        void setMoi( real_Num moi );
 
         real_Num getThrustMultiplier() const;
-        void setThrustMultiplier(real_Num thrustMultiplier);
+        void setThrustMultiplier( real_Num thrustMultiplier );
 
         real_Num getTorqueMultiplier() const;
-        void setTorqueMultiplier(real_Num torqueMultiplier);
+        void setTorqueMultiplier( real_Num torqueMultiplier );
 
         real_Num getPeakPowerW() const;
-        void setPeakPowerW(real_Num peakPowerW);
+        void setPeakPowerW( real_Num peakPowerW );
 
-        real_Num getTorque(f32 throttlePosition) const;
-        real_Num getMaxTorque(u32 rpm) const;
-        real_Num getMinTorque(u32 rpm) const;
+        real_Num getTorque( f32 throttlePosition ) const;
+        real_Num getMaxTorque( u32 rpm ) const;
+        real_Num getMinTorque( u32 rpm ) const;
         real_Num getTorque() const;
 
-        real_Num getEngineRPM(int idx) const override;
-        real_Num getThrust(int idx) const override;
+        real_Num getEngineRPM( int idx ) const override;
+        real_Num getThrust( int idx ) const override;
 
         SmartPtr<IAircraftCallback> getCallback() const override;
-        void setCallback(SmartPtr<IAircraftCallback> callback) override;
+        void setCallback( SmartPtr<IAircraftCallback> callback ) override;
 
         SmartPtr<IBatteryPack> getBatteryPack() const override;
-        void setBatteryPack(SmartPtr<IBatteryPack> batteryPack) override;
+        void setBatteryPack( SmartPtr<IBatteryPack> batteryPack ) override;
 
         SmartPtr<IAerodymanicsWind> getWind() const override;
-        void setWind(SmartPtr<IAerodymanicsWind> wind) override;
+        void setWind( SmartPtr<IAerodymanicsWind> wind ) override;
 
-        void addPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit) override;
-        void removePropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit) override;
+        void addPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit ) override;
+        void removePropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit ) override;
         Array<SmartPtr<IAircraftPropellerUnit>> getPropellerUnits() const override;
-        void setPropellerUnits(
-            const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits) override;
+        void setPropellerUnits( const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits ) override;
 
-        void addWheel(SmartPtr<IWheelComponent> wheel) override;
-        void removeWheel(SmartPtr<IWheelComponent> wheel) override;
+        void addWheel( SmartPtr<IWheelComponent> wheel ) override;
+        void removeWheel( SmartPtr<IWheelComponent> wheel ) override;
         Array<SmartPtr<IWheelComponent>> getWheels() const override;
-        void setWheels(const Array<SmartPtr<IWheelComponent>> &wheels) override;
+        void setWheels( const Array<SmartPtr<IWheelComponent>> &wheels ) override;
 
-        void setControlAngle(s32 id, f32 angle) override;
+        void setControlAngle( s32 id, f32 angle ) override;
 
         real_Num getSectionMultiplier() const override;
-        void setSectionMultiplier(real_Num sectionMultiplier) override;
+        void setSectionMultiplier( real_Num sectionMultiplier ) override;
 
         String getModelDataFilePath() const override;
-        void setModelDataFilePath(const String &filePath) override;
+        void setModelDataFilePath( const String &filePath ) override;
 
         Transform3<real_Num> getBodyTransform() const override;
-        void setBodyTransform(Transform3<real_Num> bodyTransform) override;
+        void setBodyTransform( Transform3<real_Num> bodyTransform ) override;
 
         real_Num getRollwiseDamping() const override;
-        void setRollwiseDamping(real_Num rollwiseDamping) override;
+        void setRollwiseDamping( real_Num rollwiseDamping ) override;
 
         WP_CLASS_REGISTER_DECL;
 
@@ -215,36 +214,36 @@ namespace workphone::vehicle
         // ---------------------------------------------------------------
 
         /** Integrate rotor RPM for this time-step. */
-        void updateRotorPhysics(real_Num dt);
+        void updateRotorPhysics( real_Num dt );
 
         /**
-             * Compute and accumulate main-rotor lift and cyclic forces.
-             * @param up    Body up direction in world space.
-             * @param fwd   Body forward direction in world space.
-             * @param right Body right direction in world space.
-             */
-        void applyLift(const Vector3<real_Num> &up, const Vector3<real_Num> &fwd,
-                       const Vector3<real_Num> &right);
+         * Compute and accumulate main-rotor lift and cyclic forces.
+         * @param up    Body up direction in world space.
+         * @param fwd   Body forward direction in world space.
+         * @param right Body right direction in world space.
+         */
+        void applyLift( const Vector3<real_Num> &up, const Vector3<real_Num> &fwd,
+                        const Vector3<real_Num> &right );
 
         /**
-             * Compute and accumulate tail rotor anti-torque and yaw control.
-             * @param up Body up direction in world space.
-             */
-        void applyTailRotor(const Vector3<real_Num> &up);
+         * Compute and accumulate tail rotor anti-torque and yaw control.
+         * @param up Body up direction in world space.
+         */
+        void applyTailRotor( const Vector3<real_Num> &up );
 
         /**
-             * Ground-in-effect lift multiplier.
-             * Approximated from the body world-space Y position.
-             * @return Multiplier >= 1.
-             */
+         * Ground-in-effect lift multiplier.
+         * Approximated from the body world-space Y position.
+         * @return Multiplier >= 1.
+         */
         real_Num computeGroundEffect() const;
 
         /**
-             * Effective Translational Lift multiplier.
-             * @param speed Current world-space airspeed magnitude (m/s).
-             * @return Multiplier in [1, ETLMaxBoost].
-             */
-        real_Num computeTranslationalLift(real_Num speed) const;
+         * Effective Translational Lift multiplier.
+         * @param speed Current world-space airspeed magnitude (m/s).
+         * @return Multiplier in [1, ETLMaxBoost].
+         */
+        real_Num computeTranslationalLift( real_Num speed ) const;
 
         // ---------------------------------------------------------------
         // Parameters (rotor physics)
@@ -297,6 +296,6 @@ namespace workphone::vehicle
         real_Num m_sectionMultiplier = 1.0;
         String m_modelDataFilePath;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // AdvancedHelicopterController_h__
+#endif  // AdvancedHelicopterController_h__

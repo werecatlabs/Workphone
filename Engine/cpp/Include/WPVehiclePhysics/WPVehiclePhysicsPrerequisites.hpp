@@ -61,9 +61,9 @@ namespace workphone::vehicle
     class TLinkage;
     class Lookup;
     class VehicleParam;
-    class TRotor;
+    class Rotor;
     class TRotorHead;
-    class TRotorSector;
+    class RotorSector;
     class Servo;
     class TSurface;
     class TailLinkage;

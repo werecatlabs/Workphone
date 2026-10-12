@@ -18,52 +18,52 @@ namespace workphone::vehicle
         CAircraftAttachment();
         ~CAircraftAttachment() override;
 
-        virtual void update(const double &t, const double &dt);
+        virtual void update( const double &t, const double &dt );
 
         virtual void updateGeometry() override;
 
-        virtual void load(void *pData);
-        void unload(SmartPtr<ISharedObject> data) override;
+        virtual void load( void *pData );
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         bool isValid() const override;
 
         bool isMirror() const;
-        void setMirror(bool mirror);
+        void setMirror( bool mirror );
 
         SmartPtr<CAircraftAttachment> getMirrorObject() const;
-        void setMirrorObject(SmartPtr<CAircraftAttachment> mirrorObject);
+        void setMirrorObject( SmartPtr<CAircraftAttachment> mirrorObject );
 
         virtual void updateTransform() override;
         virtual void updateBodyTransform() override;
 
         SmartPtr<IAircraft> getParentAircraft() const;
-        void setParentAircraft(SmartPtr<IAircraft> parentAircraft);
+        void setParentAircraft( SmartPtr<IAircraft> parentAircraft );
 
         SmartPtr<IVehicleBody> getParent() const;
-        void setParent(SmartPtr<IVehicleBody> parent);
+        void setParent( SmartPtr<IVehicleBody> parent );
 
         Transform3<real_Num> getWorldTransform() const override;
-        void setWorldTransform(Transform3<real_Num> worldTransform) override;
+        void setWorldTransform( Transform3<real_Num> worldTransform ) override;
 
         Transform3<real_Num> getLocalTransform() const override;
-        void setLocalTransform(Transform3<real_Num> worldTransform) override;
+        void setLocalTransform( Transform3<real_Num> worldTransform ) override;
 
         Transform3<real_Num> getLocalBodyTransform() const;
-        void setLocalBodyTransform(Transform3<real_Num> worldTransform);
+        void setLocalBodyTransform( Transform3<real_Num> worldTransform );
 
         IVehicle *getOwnerPtr() const override;
 
         virtual SmartPtr<IVehicle> getOwner() const override;
-        virtual void setOwner(SmartPtr<IVehicle> vehicle) override;
+        virtual void setOwner( SmartPtr<IVehicle> vehicle ) override;
 
         void *getData() const override;
 
-        void setData(void *data) override;
+        void setData( void *data ) override;
 
         virtual void reset() override;
 
         /** @copydoc IComponent::setState */
-        void setState(IVehicleComponent::State state);
+        void setState( IVehicleComponent::State state );
 
         /** @copydoc IComponent::setState */
         IVehicleComponent::State getState() const;
@@ -90,7 +90,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::update(const double &t, const double &dt)
+    void CAircraftAttachment<T>::update( const double &t, const double &dt )
     {
     }
 
@@ -107,12 +107,12 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::load(void *pData)
+    void CAircraftAttachment<T>::load( void *pData )
     {
     }
 
     template <class T>
-    void CAircraftAttachment<T>::unload(SmartPtr<ISharedObject> data)
+    void CAircraftAttachment<T>::unload( SmartPtr<ISharedObject> data )
     {
         m_parentAircraft = nullptr;
         m_parent = nullptr;
@@ -125,7 +125,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setMirror(bool mirror)
+    void CAircraftAttachment<T>::setMirror( bool mirror )
     {
         m_isMirror = mirror;
     }
@@ -137,7 +137,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setMirrorObject(SmartPtr<CAircraftAttachment> mirrorObject)
+    void CAircraftAttachment<T>::setMirrorObject( SmartPtr<CAircraftAttachment> mirrorObject )
     {
         m_mirrorObject = mirrorObject;
     }
@@ -147,11 +147,11 @@ namespace workphone::vehicle
     {
         auto parentTransform = getParentAircraft()->getWorldTransform();
 
-        WP_ASSERT(parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon());
-        WP_ASSERT(getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon());
+        WP_ASSERT( parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon() );
+        WP_ASSERT( getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon() );
 
-        getWorldTransform().transformFromParent(parentTransform, getLocalTransform());
-        WP_ASSERT(getWorldTransform().getScale().length() > std::numeric_limits<f32>::epsilon());
+        getWorldTransform().transformFromParent( parentTransform, getLocalTransform() );
+        WP_ASSERT( getWorldTransform().getScale().length() > std::numeric_limits<f32>::epsilon() );
     }
 
     template <class T>
@@ -159,11 +159,11 @@ namespace workphone::vehicle
     {
         auto parentTransform = getParentAircraft()->getWorldTransform();
 
-        WP_ASSERT(parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon());
-        WP_ASSERT(getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon());
+        WP_ASSERT( parentTransform.getScale().length() > std::numeric_limits<f32>::epsilon() );
+        WP_ASSERT( getLocalTransform().getScale().length() > std::numeric_limits<f32>::epsilon() );
 
-        getLocalBodyTransform().transformFromParent(parentTransform, getLocalTransform());
-        WP_ASSERT(getWorldTransform().getScale().length() > std::numeric_limits<f32>::epsilon());
+        getLocalBodyTransform().transformFromParent( parentTransform, getLocalTransform() );
+        WP_ASSERT( getWorldTransform().getScale().length() > std::numeric_limits<f32>::epsilon() );
     }
 
     template <class T>
@@ -173,7 +173,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setParentAircraft(SmartPtr<IAircraft> parentAircraft)
+    void CAircraftAttachment<T>::setParentAircraft( SmartPtr<IAircraft> parentAircraft )
     {
         m_parentAircraft = parentAircraft;
     }
@@ -185,7 +185,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setParent(SmartPtr<IVehicleBody> parent)
+    void CAircraftAttachment<T>::setParent( SmartPtr<IVehicleBody> parent )
     {
         m_parent = parent;
     }
@@ -197,7 +197,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setWorldTransform(Transform3<real_Num> worldTransform)
+    void CAircraftAttachment<T>::setWorldTransform( Transform3<real_Num> worldTransform )
     {
         m_worldTransform = worldTransform;
     }
@@ -209,7 +209,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setLocalTransform(Transform3<real_Num> localTransform)
+    void CAircraftAttachment<T>::setLocalTransform( Transform3<real_Num> localTransform )
     {
         m_localTransform = localTransform;
     }
@@ -221,7 +221,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setLocalBodyTransform(Transform3<real_Num> localTransform)
+    void CAircraftAttachment<T>::setLocalBodyTransform( Transform3<real_Num> localTransform )
     {
         m_localBodyTransform = localTransform;
     }
@@ -239,9 +239,9 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setOwner(SmartPtr<IVehicle> vehicle)
+    void CAircraftAttachment<T>::setOwner( SmartPtr<IVehicle> vehicle )
     {
-        m_parentAircraft = workphone::static_pointer_cast<IAircraft>(vehicle);
+        m_parentAircraft = workphone::static_pointer_cast<IAircraft>( vehicle );
     }
 
     template <class T>
@@ -251,7 +251,7 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setData(void *data)
+    void CAircraftAttachment<T>::setData( void *data )
     {
         m_data = data;
     }
@@ -262,15 +262,15 @@ namespace workphone::vehicle
     }
 
     template <class T>
-    void CAircraftAttachment<T>::setState(IVehicleComponent::State state)
+    void CAircraftAttachment<T>::setState( IVehicleComponent::State state )
     {
     }
 
     template <class T>
     IVehicleComponent::State CAircraftAttachment<T>::getState() const
     {
-        return static_cast<IVehicleComponent::State>(0);
+        return static_cast<IVehicleComponent::State>( 0 );
     }
-}
+}  // namespace workphone::vehicle
 
-#endif // AircraftAttachment_h__
+#endif  // AircraftAttachment_h__

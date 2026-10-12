@@ -36,7 +36,7 @@ namespace workphone::vehicle
         // InputController ThrottleController = new InputController();
         // InputController EngineStartController = new InputController();
 
-        setCurrentRpm(0.0f);
+        setCurrentRpm( 0.0f );
         // Parent = nullptr;
         m_desiredRpm = 0.0f;
 
@@ -54,23 +54,23 @@ namespace workphone::vehicle
         return m_currentRpm;
     }
 
-    void EngineSimple::setCurrentRpm(float currentRpm)
+    void EngineSimple::setCurrentRpm( float currentRpm )
     {
         m_currentRpm = currentRpm;
     }
 
-    void EngineSimple::update(const double &time, const double &deltaTime)
+    void EngineSimple::update( const double &time, const double &deltaTime )
     {
         (void)time;
 
-        if(!m_parent)
+        if( !m_parent )
         {
             m_parent = m_parentAircraft->getBody();
         }
 
-        if(m_parent)
+        if( m_parent )
         {
-            switch(m_currentEngineState)
+            switch( m_currentEngineState )
             {
             case EngineState::Off:
             {
@@ -92,8 +92,8 @@ namespace workphone::vehicle
             }
 
             // Lerp current rpm to desired rpm.
-            m_currentRpm = Math<real_Num>::lerp(m_currentRpm, m_desiredRpm,
-                                                m_rpmLerpSpeed * static_cast<real_Num>(deltaTime));
+            m_currentRpm = Math<real_Num>::lerp( m_currentRpm, m_desiredRpm,
+                                                 m_rpmLerpSpeed * static_cast<real_Num>( deltaTime ) );
 
             // Update audio based on RPM. (Doesn't matter if it's not playing i.e engine off )
             // if (null != EngineRun)
@@ -154,23 +154,23 @@ namespace workphone::vehicle
 
     void EngineSimple::updateThrust()
     {
-        if(m_parent)
+        if( m_parent )
         {
-            float forceMultiplier = (m_currentRpm - m_idleRpm) / (m_maxRpm - m_idleRpm);
-            forceMultiplier = Math<real_Num>::clamp(forceMultiplier, 0.0, 1.0);
+            float forceMultiplier = ( m_currentRpm - m_idleRpm ) / ( m_maxRpm - m_idleRpm );
+            forceMultiplier = Math<real_Num>::clamp( forceMultiplier, 0.0, 1.0 );
 
             float velocity = m_parent->getVelocity().length();
             float velocityKTS = velocity * 1.943844492f;
 
-            WP_ASSERT(m_percentageForceAppliedVsAirspeedKts);
-            float thrustPercent = m_percentageForceAppliedVsAirspeedKts->interpolate(velocityKTS) *
-                                  0.01f; // Convert to zero to one.
+            WP_ASSERT( m_percentageForceAppliedVsAirspeedKts );
+            float thrustPercent = m_percentageForceAppliedVsAirspeedKts->interpolate( velocityKTS ) *
+                                  0.01f;  // Convert to zero to one.
             thrustPercent = 0.2f;
 
             auto transform = getLocalTransform();
             m_thrust =
-                (Vector3<real_Num>::UNIT_Z * (m_forceAtMaxRpm * forceMultiplier)) * thrustPercent;
-            m_parent->addForceAtPosition(m_thrust, transform.getPosition());
+                ( Vector3<real_Num>::UNIT_Z * ( m_forceAtMaxRpm * forceMultiplier ) ) * thrustPercent;
+            m_parent->addForceAtPosition( m_thrust, transform.getPosition() );
         }
     }
 
@@ -187,9 +187,9 @@ namespace workphone::vehicle
 
     void EngineSimple::updateRunning()
     {
-        float input = 0.8f - m_parentAircraft->getChannel(CAircraft::m_thrChannel);
-        input = MathF::clamp(input, 0.0f, 1.0f);
-        m_desiredRpm = m_idleRpm + ((m_maxRpm - m_idleRpm) * input);
+        float input = 0.8f - m_parentAircraft->getChannel( CAircraft::m_thrChannel );
+        input = MathF::clamp( input, 0.0f, 1.0f );
+        m_desiredRpm = m_idleRpm + ( ( m_maxRpm - m_idleRpm ) * input );
     }
 
     Vector3<real_Num> EngineSimple::getThrust() const
@@ -197,8 +197,8 @@ namespace workphone::vehicle
         return m_thrust;
     }
 
-    void EngineSimple::setThrust(Vector3<real_Num> thrust)
+    void EngineSimple::setThrust( Vector3<real_Num> thrust )
     {
         m_thrust = thrust;
     }
-}
+}  // namespace workphone::vehicle

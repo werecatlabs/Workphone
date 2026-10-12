@@ -10,4 +10,4 @@ namespace workphone::vehicle
     TRotorHead::~TRotorHead()
     {
     }
-}
+}  // namespace workphone::vehicle

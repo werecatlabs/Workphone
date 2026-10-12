@@ -19,26 +19,26 @@ namespace workphone::vehicle
         CAircraftPropWash();
         ~CAircraftPropWash() override;
 
-        void load(SmartPtr<ISharedObject> data) override;
-        void loadFromData(void *pData);
-        void unload(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void loadFromData( void *pData );
+        void unload( SmartPtr<ISharedObject> data ) override;
 
         Vector3<real_Num> getPropWash() override;
-        Vector3<real_Num> getPropWash(s32 section) override;
+        Vector3<real_Num> getPropWash( s32 section ) override;
 
         SmartPtr<IAircraftPropellerUnit> getPropellerUnit() const override;
-        void setPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit) override;
+        void setPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit ) override;
 
         real_Num getStrength() const override;
-        void setStrength(real_Num strength) override;
+        void setStrength( real_Num strength ) override;
 
         Array<bool> &getAffectedSections() override;
         const Array<bool> &getAffectedSections() const override;
-        void setAffectedSections(const Array<bool> &affectedSections) override;
+        void setAffectedSections( const Array<bool> &affectedSections ) override;
 
         Array<float> &getSectionMultipliers() override;
         const Array<float> &getSectionMultipliers() const override;
-        void setSectionMultipliers(const Array<float> &sectionMultipliers) override;
+        void setSectionMultipliers( const Array<float> &sectionMultipliers ) override;
 
     private:
         SmartPtr<IAircraftPropellerUnit> m_propellerUnit;
@@ -50,6 +50,6 @@ namespace workphone::vehicle
         Array<bool> m_affectedSections;
         Array<real_Num> m_sectionMultipliers;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // PropWash_h__
+#endif  // PropWash_h__

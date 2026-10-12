@@ -14,7 +14,7 @@ namespace workphone::vehicle
     {
     }
 
-    void DroneMotor::initialise(const std::string &objectID)
+    void DroneMotor::initialise( const std::string &objectID )
     {
     }
 
@@ -22,7 +22,7 @@ namespace workphone::vehicle
     {
     }
 
-    void DroneMotor::input(real_Num inputValue, const double &dt)
+    void DroneMotor::input( real_Num inputValue, const double &dt )
     {
     }
 
@@ -47,7 +47,7 @@ namespace workphone::vehicle
         return m_maxTorque;
     }
 
-    void DroneMotor::setMaxTorque(real_Num maxTorque)
+    void DroneMotor::setMaxTorque( real_Num maxTorque )
     {
         m_maxTorque = maxTorque;
     }
@@ -57,7 +57,7 @@ namespace workphone::vehicle
         return m_localPos;
     }
 
-    void DroneMotor::setLocalPos(const Vector3<real_Num> &localPos)
+    void DroneMotor::setLocalPos( const Vector3<real_Num> &localPos )
     {
         m_localPos = localPos;
     }
@@ -67,7 +67,7 @@ namespace workphone::vehicle
         return m_averageMotorRPM;
     }
 
-    void DroneMotor::setAverageMotorRPM(f32 averageMotorRPM)
+    void DroneMotor::setAverageMotorRPM( f32 averageMotorRPM )
     {
         m_averageMotorRPM = averageMotorRPM;
     }
@@ -77,7 +77,7 @@ namespace workphone::vehicle
         return m_debugId;
     }
 
-    void DroneMotor::setDebugId(int debugId)
+    void DroneMotor::setDebugId( int debugId )
     {
         m_debugId = debugId;
     }
@@ -87,7 +87,7 @@ namespace workphone::vehicle
         return m_rotation;
     }
 
-    void DroneMotor::setRotation(const Quaternion<real_Num> &rotation)
+    void DroneMotor::setRotation( const Quaternion<real_Num> &rotation )
     {
         m_rotation = rotation;
     }
@@ -97,7 +97,7 @@ namespace workphone::vehicle
         return m_index;
     }
 
-    void DroneMotor::setIndex(s32 index)
+    void DroneMotor::setIndex( s32 index )
     {
         m_index = index;
     }
@@ -107,12 +107,12 @@ namespace workphone::vehicle
         return m_propReference;
     }
 
-    void DroneMotor::setPropReference(const std::string &propReference)
+    void DroneMotor::setPropReference( const std::string &propReference )
     {
         m_propReference = propReference;
     }
 
-    void DroneMotor::setProp(SmartPtr<DroneProp> prop)
+    void DroneMotor::setProp( SmartPtr<DroneProp> prop )
     {
         m_prop = prop;
     }
@@ -121,4 +121,4 @@ namespace workphone::vehicle
     {
         return m_prop;
     }
-}
+}  // namespace workphone::vehicle

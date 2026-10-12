@@ -22,67 +22,67 @@ namespace workphone::vehicle
         CAircraftWing();
         ~CAircraftWing() override;
 
-        void load(SmartPtr<ISharedObject> data) override;
-        void load(void *pData) override;
-        void unload(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void load( void *pData ) override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
-        void update(const double &t, const double &dt) override;
+        void update( const double &t, const double &dt ) override;
 
         SmartPtr<IAircraftControlSurface> getAttachedControlSurface() const override;
         void setAttachedControlSurface(
-            SmartPtr<IAircraftControlSurface> attachedControlSurface) override;
+            SmartPtr<IAircraftControlSurface> attachedControlSurface ) override;
 
         SmartPtr<IAircraftPropWash> getAttachedPropWash() const override;
-        void setAttachedPropWash(SmartPtr<IAircraftPropWash> attachedPropWash) override;
+        void setAttachedPropWash( SmartPtr<IAircraftPropWash> attachedPropWash ) override;
 
         bool isControlSurface() const override;
-        void setControlSurface(bool bIsControlSurface) override;
+        void setControlSurface( bool bIsControlSurface ) override;
 
         bool useCombinedControlSurface() const override;
-        void setUserCombinedControlSurface(bool bUseCombinedControlSurface) override;
+        void setUserCombinedControlSurface( bool bUseCombinedControlSurface ) override;
 
         void reset() override;
 
     private:
         void updateGeometry() override;
 
-        real_Num calculateArea(const Vector3<real_Num> &pointA, const Vector3<real_Num> &pointB,
-                               const Vector3<real_Num> &pointC, const Vector3<real_Num> &pointD);
+        real_Num calculateArea( const Vector3<real_Num> &pointA, const Vector3<real_Num> &pointB,
+                                const Vector3<real_Num> &pointC, const Vector3<real_Num> &pointD );
 
-        s32 getDebugId(s32 i) const;
+        s32 getDebugId( s32 i ) const;
 
-        s32 getDebugId(s32 section, s32 index) const;
+        s32 getDebugId( s32 section, s32 index ) const;
 
         void drawGizmos();
 
-        Vector3<real_Num> calculateRelativeWind(s32 sectionIndex,
-                                                const Vector3<real_Num> &aerodynamicCenter,
-                                                const Vector3<real_Num> &wind);
-
-        Vector3<real_Num> calculateRelativeWind2(s32 sectionIndex,
+        Vector3<real_Num> calculateRelativeWind( s32 sectionIndex,
                                                  const Vector3<real_Num> &aerodynamicCenter,
-                                                 const Vector3<real_Num> &wind);
+                                                 const Vector3<real_Num> &wind );
 
-        Vector3<real_Num> calculateRelativeWind3(s32 sectionIndex,
-                                                 const Vector3<real_Num> &aerodynamicCenter,
-                                                 const Vector3<real_Num> &wind);
+        Vector3<real_Num> calculateRelativeWind2( s32 sectionIndex,
+                                                  const Vector3<real_Num> &aerodynamicCenter,
+                                                  const Vector3<real_Num> &wind );
+
+        Vector3<real_Num> calculateRelativeWind3( s32 sectionIndex,
+                                                  const Vector3<real_Num> &aerodynamicCenter,
+                                                  const Vector3<real_Num> &wind );
 
         void calculateStallControl();
-        void calculateForcesSimple(double fDT);
-        void calculateForces(double t, double fDT);
+        void calculateForcesSimple( double fDT );
+        void calculateForces( double t, double fDT );
 
-        void updateForcesFast(double t, double fDT);
+        void updateForcesFast( double t, double fDT );
 
-        void calculateAlphaDebug(double t, double dt);
+        void calculateAlphaDebug( double t, double dt );
         void calculateAlpha();
         void calculateAlphaReversed();
 
         void calculateArea();
 
-        void calculateRelativeWindDebug(double dt);
+        void calculateRelativeWindDebug( double dt );
 
-        void calculateRelativeWind(double dt);
-        void calculateRelativeWindReverse(double dt);
+        void calculateRelativeWind( double dt );
+        void calculateRelativeWindReverse( double dt );
 
         void calculateAeroProperties();
 
@@ -146,9 +146,8 @@ namespace workphone::vehicle
         std::array<real_Num, m_maxSections> m_fStallControlCD;
         std::array<real_Num, m_maxSections> m_fStallControlCM;
 
-        real_Num m_liftLineAlphaStart =
-            70.0; // AOA at which transition starts
-        real_Num m_liftLineAlphaEnd = 110.0; // AOA at which transition ends
+        real_Num m_liftLineAlphaStart = 70.0;  // AOA at which transition starts
+        real_Num m_liftLineAlphaEnd = 110.0;   // AOA at which transition ends
 
         real_Num m_wingTipWidthZeroToOne = 0.0;
         real_Num m_wingTipSweep = 0.0;
@@ -192,6 +191,6 @@ namespace workphone::vehicle
     {
         return m_isControlSurface;
     }
-}
+}  // namespace workphone::vehicle
 
-#endif // CAircraftWing_h__
+#endif  // CAircraftWing_h__

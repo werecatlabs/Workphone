@@ -5,16 +5,16 @@
 
 namespace workphone::vehicle
 {
-    WP_CLASS_REGISTER_DERIVED(workphone::vehicle, HelicopterController,
-                              CAerodynamicsVehicle<IAircraft>);
+    WP_CLASS_REGISTER_DERIVED( workphone::vehicle, HelicopterController,
+                               CAerodynamicsVehicle<IAircraft> );
 
     // ===================================================================
     // Channel indices (standard CAerodynamicsVehicle layout)
     // ===================================================================
-    static constexpr s32 kThrChannel = 0; ///< Collective / throttle  [0, 1]
-    static constexpr s32 kAilChannel = 1; ///< Roll                  [-1, 1]
-    static constexpr s32 kEleChannel = 2; ///< Pitch                 [-1, 1]
-    static constexpr s32 kYawChannel = 3; ///< Yaw                   [-1, 1]
+    static constexpr s32 kThrChannel = 0;  ///< Collective / throttle  [0, 1]
+    static constexpr s32 kAilChannel = 1;  ///< Roll                  [-1, 1]
+    static constexpr s32 kEleChannel = 2;  ///< Pitch                 [-1, 1]
+    static constexpr s32 kYawChannel = 3;  ///< Yaw                   [-1, 1]
 
     // ===================================================================
     // Construction / destruction
@@ -33,9 +33,9 @@ namespace workphone::vehicle
         return true;
     }
 
-    void HelicopterController::load(SmartPtr<ISharedObject> data)
+    void HelicopterController::load( SmartPtr<ISharedObject> data )
     {
-        CAerodynamicsVehicle<IAircraft>::load(data);
+        CAerodynamicsVehicle<IAircraft>::load( data );
     }
 
     void HelicopterController::update()
@@ -43,7 +43,7 @@ namespace workphone::vehicle
         CAerodynamicsVehicle<IAircraft>::update();
     }
 
-    void HelicopterController::update(const double &t, const double &dt)
+    void HelicopterController::update( const double &t, const double &dt )
     {
         clearForces();
 
@@ -55,24 +55,22 @@ namespace workphone::vehicle
         const Vector3<real_Num> worldFwd = orientation * Vector3<real_Num>::unitZ();
         const Vector3<real_Num> worldRight = orientation * Vector3<real_Num>::unitX();
 
-        const real_Num fdt = static_cast<real_Num>(dt);
+        const real_Num fdt = static_cast<real_Num>( dt );
 
         // Engine spool simulation — mirrors C# Update() Lerp.
         // C# reference:
         //   engineThrottle = Lerp(engineThrottle, collectiveInput, dt * spoolUpSpeed)
-        const real_Num collectiveIn = Math<real_Num>::clamp(
-            getChannel(kThrChannel), 0.0, 1.0);
+        const real_Num collectiveIn = Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
 
-        const real_Num alpha = Math<real_Num>::clamp(
-            fdt * m_spoolUpSpeed, 0.0, 1.0);
+        const real_Num alpha = Math<real_Num>::clamp( fdt * m_spoolUpSpeed, 0.0, 1.0 );
 
-        m_engineThrottle = m_engineThrottle + alpha * (collectiveIn - m_engineThrottle);
+        m_engineThrottle = m_engineThrottle + alpha * ( collectiveIn - m_engineThrottle );
 
         // Run subsystems in the same order as the original C# FixedUpdate().
-        applyLift(worldUp);
-        applyTilt(worldFwd, worldRight);
-        applyYaw(worldUp);
-        applyStabilization(worldUp);
+        applyLift( worldUp );
+        applyTilt( worldFwd, worldRight );
+        applyYaw( worldUp );
+        applyStabilization( worldUp );
 
         CAerodynamicsVehicle<IAircraft>::update();
     }
@@ -85,12 +83,12 @@ namespace workphone::vehicle
     //   AddForce(transform.up * lift)
     // ===================================================================
 
-    void HelicopterController::applyLift(const Vector3<real_Num> &up)
+    void HelicopterController::applyLift( const Vector3<real_Num> &up )
     {
         const real_Num heightFactor = computeGroundEffect();
         const real_Num lift = m_engineThrottle * m_liftPower * heightFactor;
 
-        addForce(0, up * lift, getPosition());
+        addForce( 0, up * lift, getPosition() );
     }
 
     // ===================================================================
@@ -105,13 +103,11 @@ namespace workphone::vehicle
     {
         const real_Num agl = getPosition().Y();
 
-        if(agl < m_groundEffectHeight && m_groundEffectHeight > static_cast<real_Num>(0.0))
+        if( agl < m_groundEffectHeight && m_groundEffectHeight > static_cast<real_Num>( 0.0 ) )
         {
-            const real_Num t =
-                Math<real_Num>::clamp(agl / m_groundEffectHeight, 0.0,
-                                      1.0);
+            const real_Num t = Math<real_Num>::clamp( agl / m_groundEffectHeight, 0.0, 1.0 );
 
-            return static_cast<real_Num>(1.0) + (static_cast<real_Num>(1.0) - t);
+            return static_cast<real_Num>( 1.0 ) + ( static_cast<real_Num>( 1.0 ) - t );
         }
 
         return 1.0;
@@ -126,17 +122,16 @@ namespace workphone::vehicle
     //   AddTorque(pitch + roll)
     // ===================================================================
 
-    void HelicopterController::applyTilt(const Vector3<real_Num> &fwd,
-                                         const Vector3<real_Num> &right)
+    void HelicopterController::applyTilt( const Vector3<real_Num> &fwd, const Vector3<real_Num> &right )
     {
-        const real_Num pitchIn = getChannel(kEleChannel);
-        const real_Num rollIn = getChannel(kAilChannel);
+        const real_Num pitchIn = getChannel( kEleChannel );
+        const real_Num rollIn = getChannel( kAilChannel );
 
         // Negative pitch input tilts nose down (matches C# negation).
-        const Vector3<real_Num> pitchTorque = right * (-pitchIn * m_pitchForce);
-        const Vector3<real_Num> rollTorque = fwd * (rollIn * m_rollForce);
+        const Vector3<real_Num> pitchTorque = right * ( -pitchIn * m_pitchForce );
+        const Vector3<real_Num> rollTorque = fwd * ( rollIn * m_rollForce );
 
-        addTorque(0, pitchTorque + rollTorque);
+        addTorque( 0, pitchTorque + rollTorque );
     }
 
     // ===================================================================
@@ -146,10 +141,10 @@ namespace workphone::vehicle
     //   AddTorque(transform.up * yawInput * yawTorque)
     // ===================================================================
 
-    void HelicopterController::applyYaw(const Vector3<real_Num> &up)
+    void HelicopterController::applyYaw( const Vector3<real_Num> &up )
     {
-        const real_Num yawIn = getChannel(kYawChannel);
-        addTorque(0, up * (yawIn * m_yawTorque));
+        const real_Num yawIn = getChannel( kYawChannel );
+        addTorque( 0, up * ( yawIn * m_yawTorque ) );
     }
 
     // ===================================================================
@@ -160,13 +155,12 @@ namespace workphone::vehicle
     //   AddTorque(torque * stabilization)
     // ===================================================================
 
-    void HelicopterController::applyStabilization(const Vector3<real_Num> &up)
+    void HelicopterController::applyStabilization( const Vector3<real_Num> &up )
     {
-        const Vector3<real_Num> worldUp(0.0, 1.0,
-                                        0.0);
+        const Vector3<real_Num> worldUp( 0.0, 1.0, 0.0 );
 
-        const Vector3<real_Num> restoringTorque = up.crossProduct(worldUp);
-        addTorque(0, restoringTorque * m_stabilization);
+        const Vector3<real_Num> restoringTorque = up.crossProduct( worldUp );
+        addTorque( 0, restoringTorque * m_stabilization );
     }
 
     // ===================================================================
@@ -178,7 +172,7 @@ namespace workphone::vehicle
         return m_enginePower;
     }
 
-    void HelicopterController::setEnginePower(real_Num enginePower)
+    void HelicopterController::setEnginePower( real_Num enginePower )
     {
         m_enginePower = enginePower;
     }
@@ -188,7 +182,7 @@ namespace workphone::vehicle
         return m_spoolUpSpeed;
     }
 
-    void HelicopterController::setSpoolUpSpeed(real_Num spoolUpSpeed)
+    void HelicopterController::setSpoolUpSpeed( real_Num spoolUpSpeed )
     {
         m_spoolUpSpeed = spoolUpSpeed;
     }
@@ -207,7 +201,7 @@ namespace workphone::vehicle
         return m_liftPower;
     }
 
-    void HelicopterController::setLiftPower(real_Num liftPower)
+    void HelicopterController::setLiftPower( real_Num liftPower )
     {
         m_liftPower = liftPower;
     }
@@ -217,7 +211,7 @@ namespace workphone::vehicle
         return m_groundEffectHeight;
     }
 
-    void HelicopterController::setGroundEffectHeight(real_Num groundEffectHeight)
+    void HelicopterController::setGroundEffectHeight( real_Num groundEffectHeight )
     {
         m_groundEffectHeight = groundEffectHeight;
     }
@@ -231,7 +225,7 @@ namespace workphone::vehicle
         return m_pitchForce;
     }
 
-    void HelicopterController::setPitchForce(real_Num pitchForce)
+    void HelicopterController::setPitchForce( real_Num pitchForce )
     {
         m_pitchForce = pitchForce;
     }
@@ -241,7 +235,7 @@ namespace workphone::vehicle
         return m_rollForce;
     }
 
-    void HelicopterController::setRollForce(real_Num rollForce)
+    void HelicopterController::setRollForce( real_Num rollForce )
     {
         m_rollForce = rollForce;
     }
@@ -255,7 +249,7 @@ namespace workphone::vehicle
         return m_yawTorque;
     }
 
-    void HelicopterController::setYawTorque(real_Num yawTorque)
+    void HelicopterController::setYawTorque( real_Num yawTorque )
     {
         m_yawTorque = yawTorque;
     }
@@ -269,7 +263,7 @@ namespace workphone::vehicle
         return m_stabilization;
     }
 
-    void HelicopterController::setStabilization(real_Num stabilization)
+    void HelicopterController::setStabilization( real_Num stabilization )
     {
         m_stabilization = stabilization;
     }
@@ -283,7 +277,7 @@ namespace workphone::vehicle
         return 0.0;
     }
 
-    void HelicopterController::setRPM(real_Num /*rpm*/)
+    void HelicopterController::setRPM( real_Num /*rpm*/ )
     {
     }
 
@@ -292,9 +286,9 @@ namespace workphone::vehicle
         return m_engineThrottle;
     }
 
-    void HelicopterController::setThrottle(real_Num throttle)
+    void HelicopterController::setThrottle( real_Num throttle )
     {
-        setChannel(kThrChannel, throttle);
+        setChannel( kThrChannel, throttle );
     }
 
     real_Num HelicopterController::getMoi() const
@@ -302,7 +296,7 @@ namespace workphone::vehicle
         return m_moi;
     }
 
-    void HelicopterController::setMoi(real_Num moi)
+    void HelicopterController::setMoi( real_Num moi )
     {
         m_moi = moi;
     }
@@ -312,7 +306,7 @@ namespace workphone::vehicle
         return m_thrustMultiplier;
     }
 
-    void HelicopterController::setThrustMultiplier(real_Num thrustMultiplier)
+    void HelicopterController::setThrustMultiplier( real_Num thrustMultiplier )
     {
         m_thrustMultiplier = thrustMultiplier;
     }
@@ -322,7 +316,7 @@ namespace workphone::vehicle
         return m_torqueMultiplier;
     }
 
-    void HelicopterController::setTorqueMultiplier(real_Num torqueMultiplier)
+    void HelicopterController::setTorqueMultiplier( real_Num torqueMultiplier )
     {
         m_torqueMultiplier = torqueMultiplier;
     }
@@ -332,22 +326,22 @@ namespace workphone::vehicle
         return m_peakPowerW;
     }
 
-    void HelicopterController::setPeakPowerW(real_Num peakPowerW)
+    void HelicopterController::setPeakPowerW( real_Num peakPowerW )
     {
         m_peakPowerW = peakPowerW;
     }
 
-    real_Num HelicopterController::getTorque(f32 /*throttlePosition*/) const
+    real_Num HelicopterController::getTorque( f32 /*throttlePosition*/ ) const
     {
         return 0.0;
     }
 
-    real_Num HelicopterController::getMaxTorque(u32 /*rpm*/) const
+    real_Num HelicopterController::getMaxTorque( u32 /*rpm*/ ) const
     {
         return 0.0;
     }
 
-    real_Num HelicopterController::getMinTorque(u32 /*rpm*/) const
+    real_Num HelicopterController::getMinTorque( u32 /*rpm*/ ) const
     {
         return 0.0;
     }
@@ -357,12 +351,12 @@ namespace workphone::vehicle
         return 0.0;
     }
 
-    real_Num HelicopterController::getEngineRPM(int /*idx*/) const
+    real_Num HelicopterController::getEngineRPM( int /*idx*/ ) const
     {
         return 0.0;
     }
 
-    real_Num HelicopterController::getThrust(int /*idx*/) const
+    real_Num HelicopterController::getThrust( int /*idx*/ ) const
     {
         return 0.0;
     }
@@ -377,7 +371,7 @@ namespace workphone::vehicle
         return m_airDensity;
     }
 
-    void HelicopterController::setAirDensity(real_Num airDensity)
+    void HelicopterController::setAirDensity( real_Num airDensity )
     {
         m_airDensity = airDensity;
     }
@@ -391,7 +385,7 @@ namespace workphone::vehicle
         return m_aircraftCallback;
     }
 
-    void HelicopterController::setCallback(SmartPtr<IAircraftCallback> callback)
+    void HelicopterController::setCallback( SmartPtr<IAircraftCallback> callback )
     {
         m_aircraftCallback = callback;
     }
@@ -401,7 +395,7 @@ namespace workphone::vehicle
         return m_batteryPack;
     }
 
-    void HelicopterController::setBatteryPack(SmartPtr<IBatteryPack> batteryPack)
+    void HelicopterController::setBatteryPack( SmartPtr<IBatteryPack> batteryPack )
     {
         m_batteryPack = batteryPack;
     }
@@ -411,7 +405,7 @@ namespace workphone::vehicle
         return m_wind;
     }
 
-    void HelicopterController::setWind(SmartPtr<IAerodymanicsWind> wind)
+    void HelicopterController::setWind( SmartPtr<IAerodymanicsWind> wind )
     {
         m_wind = wind;
     }
@@ -421,7 +415,7 @@ namespace workphone::vehicle
         return m_bodyTransform;
     }
 
-    void HelicopterController::setBodyTransform(Transform3<real_Num> bodyTransform)
+    void HelicopterController::setBodyTransform( Transform3<real_Num> bodyTransform )
     {
         m_bodyTransform = bodyTransform;
     }
@@ -431,7 +425,7 @@ namespace workphone::vehicle
         return m_rollwiseDamping;
     }
 
-    void HelicopterController::setRollwiseDamping(real_Num rollwiseDamping)
+    void HelicopterController::setRollwiseDamping( real_Num rollwiseDamping )
     {
         m_rollwiseDamping = rollwiseDamping;
     }
@@ -440,17 +434,21 @@ namespace workphone::vehicle
     // Propeller unit management
     // ===================================================================
 
-    void HelicopterController::addPropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void HelicopterController::addPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        if(propellerUnit)
-            m_propellerUnits.push_back(propellerUnit);
+        if( propellerUnit )
+        {
+            m_propellerUnits.push_back( propellerUnit );
+        }
     }
 
-    void HelicopterController::removePropellerUnit(SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void HelicopterController::removePropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        auto it = std::find(m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit);
-        if(it != m_propellerUnits.end())
-            m_propellerUnits.erase(it);
+        auto it = std::find( m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit );
+        if( it != m_propellerUnits.end() )
+        {
+            m_propellerUnits.erase( it );
+        }
     }
 
     Array<SmartPtr<IAircraftPropellerUnit>> HelicopterController::getPropellerUnits() const
@@ -459,7 +457,7 @@ namespace workphone::vehicle
     }
 
     void HelicopterController::setPropellerUnits(
-        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits)
+        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits )
     {
         m_propellerUnits = propellerUnits;
     }
@@ -468,17 +466,21 @@ namespace workphone::vehicle
     // Wheel management
     // ===================================================================
 
-    void HelicopterController::addWheel(SmartPtr<IWheelComponent> wheel)
+    void HelicopterController::addWheel( SmartPtr<IWheelComponent> wheel )
     {
-        if(wheel)
-            m_wheels.push_back(wheel);
+        if( wheel )
+        {
+            m_wheels.push_back( wheel );
+        }
     }
 
-    void HelicopterController::removeWheel(SmartPtr<IWheelComponent> wheel)
+    void HelicopterController::removeWheel( SmartPtr<IWheelComponent> wheel )
     {
-        auto it = std::find(m_wheels.begin(), m_wheels.end(), wheel);
-        if(it != m_wheels.end())
-            m_wheels.erase(it);
+        auto it = std::find( m_wheels.begin(), m_wheels.end(), wheel );
+        if( it != m_wheels.end() )
+        {
+            m_wheels.erase( it );
+        }
     }
 
     Array<SmartPtr<IWheelComponent>> HelicopterController::getWheels() const
@@ -486,7 +488,7 @@ namespace workphone::vehicle
         return m_wheels;
     }
 
-    void HelicopterController::setWheels(const Array<SmartPtr<IWheelComponent>> &wheels)
+    void HelicopterController::setWheels( const Array<SmartPtr<IWheelComponent>> &wheels )
     {
         m_wheels = wheels;
     }
@@ -495,7 +497,7 @@ namespace workphone::vehicle
     // Control surface / section / model path stubs
     // ===================================================================
 
-    void HelicopterController::setControlAngle(s32 /*id*/, f32 /*angle*/)
+    void HelicopterController::setControlAngle( s32 /*id*/, f32 /*angle*/ )
     {
     }
 
@@ -504,7 +506,7 @@ namespace workphone::vehicle
         return m_sectionMultiplier;
     }
 
-    void HelicopterController::setSectionMultiplier(real_Num sectionMultiplier)
+    void HelicopterController::setSectionMultiplier( real_Num sectionMultiplier )
     {
         m_sectionMultiplier = sectionMultiplier;
     }
@@ -514,8 +516,8 @@ namespace workphone::vehicle
         return m_modelDataFilePath;
     }
 
-    void HelicopterController::setModelDataFilePath(const String &filePath)
+    void HelicopterController::setModelDataFilePath( const String &filePath )
     {
         m_modelDataFilePath = filePath;
     }
-}
+}  // namespace workphone::vehicle

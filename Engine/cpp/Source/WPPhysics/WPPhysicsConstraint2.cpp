@@ -17,7 +17,7 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraint2::setBodyA(SmartPtr<IPhysicsBody2D> bodyA)
+    void WPPhysicsConstraint2::setBodyA( SmartPtr<IPhysicsBody2D> bodyA )
     {
     }
 
@@ -26,7 +26,7 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraint2::setBodyB(SmartPtr<IPhysicsBody2D> bodyB)
+    void WPPhysicsConstraint2::setBodyB( SmartPtr<IPhysicsBody2D> bodyB )
     {
     }
 
@@ -35,11 +35,11 @@ namespace workphone::physics
         return nullptr;
     }
 
-    void WPPhysicsConstraint2::setUserData(void *userData)
+    void WPPhysicsConstraint2::setUserData( void *userData )
     {
     }
 
-    void WPPhysicsConstraint2::setTypeInfo(u32 id)
+    void WPPhysicsConstraint2::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -60,4 +60,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraint2::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

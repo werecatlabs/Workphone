@@ -49,6 +49,7 @@ namespace workphone::vehicle
 
     const double RPMToOmega = Math<double>::pi() / 30.0;
     const double OmegaToRPM = 30.0 / Math<double>::pi();
+
     // const int Locked = 2;
     // const int Overrun = 3;
 
@@ -62,15 +63,15 @@ namespace workphone::vehicle
 
     String VehicleParam::toString() const
     {
-        return this->m_name + " " + StringUtil::toString(m_bVal) + " " +
-               StringUtil::toString(m_iVal) + " " + StringUtil::toString(m_sVal) + " " +
-               StringUtil::toString(m_vVal.x) + ", " + StringUtil::toString(m_vVal.y) + ", " +
-               StringUtil::toString(m_vVal.z);
+        return this->m_name + " " + StringUtil::toString( m_bVal ) + " " +
+               StringUtil::toString( m_iVal ) + " " + StringUtil::toString( m_sVal ) + " " +
+               StringUtil::toString( m_vVal.x ) + ", " + StringUtil::toString( m_vVal.y ) + ", " +
+               StringUtil::toString( m_vVal.z );
     }
 
     ClimbTransitionData::ClimbTransitionData()
     {
-        m_rate = static_cast<physics_Num>(0.0);
-        m_factor = static_cast<physics_Num>(0.0);
+        m_rate = static_cast<physics_Num>( 0.0 );
+        m_factor = static_cast<physics_Num>( 0.0 );
     }
-}
+}  // namespace workphone::vehicle

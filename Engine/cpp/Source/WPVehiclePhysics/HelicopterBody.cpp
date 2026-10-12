@@ -10,4 +10,4 @@ namespace workphone::vehicle
     HelicopterBody::HelicopterBody() = default;
 
     HelicopterBody::~HelicopterBody() = default;
-}
+}  // namespace workphone::vehicle

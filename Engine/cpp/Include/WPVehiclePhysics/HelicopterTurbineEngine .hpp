@@ -9,44 +9,43 @@
 namespace workphone::vehicle
 {
     /**
-         * @class HelicopterTurbineEngine
-         * @brief Two-spool turboshaft engine simulation for helicopter applications.
-         *
-         * Models a turboshaft powerplant with the following subsystems, executed in
-         * order each physics step (mirroring the original C# FixedUpdate sequence):
-         *
-         * **Fuel Control**
-         *   A first-order lag filters the raw throttle demand toward the commanded
-         *   fuel flow (`fuelResponse`, 1/s). This represents the hydromechanical
-         *   fuel control unit (FCU) response time.
-         *
-         * **Spool Dynamics**
-         *   - *N1 (Gas Generator)* – spools toward `fuelFlow × maxN1` at rate
-         *     `n1Accel` (%/s). Represents the compressor/combustion turbine shaft.
-         *   - *N2 (Power Turbine)* – tracks N1 at rate `n2Accel` (%/s). Drives
-         *     the main gearbox through `gearRatio`.
-         *
-         * **Governor**
-         *   A proportional rotor-speed governor compares the actual rotor RPM
-         *   (written each frame via `setRotorRPM()`) against `targetRotorRPM` and
-         *   trims `fuelFlow` by `governorGain × error × dt` to maintain constant
-         *   rotor head speed, as is standard on all turbine helicopters.
-         *
-         * **Temperature**
-         *   Inter-turbine temperature (ITT) is estimated as `fuelFlow × 900 °C`
-         *   with a first-order lag. If ITT exceeds `maxTemp`, fuel flow is
-         *   automatically reduced by 10 % per step to simulate the over-temperature
-         *   protection / power-available limit.
-         *
-         * **Torque Output**
-         *   Output shaft torque is: `outputTorque = (N2 / maxN2) × maxTorque`
-         *
-         * The component derives from `CAircraftAttachment<IVehicleComponent>` so it
-         * can be owned by any `IVehicleBody` and queried for world/local transforms.
-         * Call `update(t, dt)` from the owning vehicle controller's physics step.
-         */
-    class WPVehiclePhysics_API HelicopterTurbineEngine
-        : public CAircraftAttachment<IVehicleComponent>
+     * @class HelicopterTurbineEngine
+     * @brief Two-spool turboshaft engine simulation for helicopter applications.
+     *
+     * Models a turboshaft powerplant with the following subsystems, executed in
+     * order each physics step (mirroring the original C# FixedUpdate sequence):
+     *
+     * **Fuel Control**
+     *   A first-order lag filters the raw throttle demand toward the commanded
+     *   fuel flow (`fuelResponse`, 1/s). This represents the hydromechanical
+     *   fuel control unit (FCU) response time.
+     *
+     * **Spool Dynamics**
+     *   - *N1 (Gas Generator)* – spools toward `fuelFlow × maxN1` at rate
+     *     `n1Accel` (%/s). Represents the compressor/combustion turbine shaft.
+     *   - *N2 (Power Turbine)* – tracks N1 at rate `n2Accel` (%/s). Drives
+     *     the main gearbox through `gearRatio`.
+     *
+     * **Governor**
+     *   A proportional rotor-speed governor compares the actual rotor RPM
+     *   (written each frame via `setRotorRPM()`) against `targetRotorRPM` and
+     *   trims `fuelFlow` by `governorGain × error × dt` to maintain constant
+     *   rotor head speed, as is standard on all turbine helicopters.
+     *
+     * **Temperature**
+     *   Inter-turbine temperature (ITT) is estimated as `fuelFlow × 900 °C`
+     *   with a first-order lag. If ITT exceeds `maxTemp`, fuel flow is
+     *   automatically reduced by 10 % per step to simulate the over-temperature
+     *   protection / power-available limit.
+     *
+     * **Torque Output**
+     *   Output shaft torque is: `outputTorque = (N2 / maxN2) × maxTorque`
+     *
+     * The component derives from `CAircraftAttachment<IVehicleComponent>` so it
+     * can be owned by any `IVehicleBody` and queried for world/local transforms.
+     * Call `update(t, dt)` from the owning vehicle controller's physics step.
+     */
+    class WPVehiclePhysics_API HelicopterTurbineEngine : public CAircraftAttachment<IVehicleComponent>
     {
     public:
         HelicopterTurbineEngine();
@@ -56,34 +55,34 @@ namespace workphone::vehicle
         // Lifecycle
         // ------------------------------------------------------------------
 
-        void load(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
 
         /**
-             * @brief Advance the engine simulation by one physics step.
-             *
-             * Runs all five subsystems in order:
-             *   1. UpdateFuelSystem
-             *   2. UpdateSpoolDynamics
-             *   3. UpdateGovernor
-             *   4. UpdateTemperature
-             *   5. ComputeOutputTorque
-             *
-             * @param t  Absolute simulation time (seconds).
-             * @param dt Time-step duration (seconds).
-             */
-        void update(const double &t, const double &dt) override;
+         * @brief Advance the engine simulation by one physics step.
+         *
+         * Runs all five subsystems in order:
+         *   1. UpdateFuelSystem
+         *   2. UpdateSpoolDynamics
+         *   3. UpdateGovernor
+         *   4. UpdateTemperature
+         *   5. ComputeOutputTorque
+         *
+         * @param t  Absolute simulation time (seconds).
+         * @param dt Time-step duration (seconds).
+         */
+        void update( const double &t, const double &dt ) override;
 
         // ------------------------------------------------------------------
         // Throttle input (written by owning controller each frame)
         // ------------------------------------------------------------------
 
         /**
-             * @brief Set normalised throttle demand [0, 1].
-             *
-             * Equivalent to `Input.GetAxis("Jump")` in the original C# class.
-             * Call this once per frame before `update()`.
-             */
-        void setThrottleInput(real_Num throttle);
+         * @brief Set normalised throttle demand [0, 1].
+         *
+         * Equivalent to `Input.GetAxis("Jump")` in the original C# class.
+         * Call this once per frame before `update()`.
+         */
+        void setThrottleInput( real_Num throttle );
 
         /** @brief Current normalised throttle demand [0, 1]. */
         real_Num getThrottleInput() const;
@@ -93,12 +92,12 @@ namespace workphone::vehicle
         // ------------------------------------------------------------------
 
         /**
-             * @brief Provide the actual main rotor RPM to the governor.
-             *
-             * Must be updated each physics step so the governor can trim fuel
-             * flow to maintain `targetRotorRPM`.
-             */
-        void setRotorRPM(real_Num rpm);
+         * @brief Provide the actual main rotor RPM to the governor.
+         *
+         * Must be updated each physics step so the governor can trim fuel
+         * flow to maintain `targetRotorRPM`.
+         */
+        void setRotorRPM( real_Num rpm );
 
         /** @brief Last rotor RPM value supplied to the governor. */
         real_Num getRotorRPM() const;
@@ -108,10 +107,10 @@ namespace workphone::vehicle
         // ------------------------------------------------------------------
 
         /**
-             * @brief Computed output shaft torque from the last physics step (N·m).
-             *
-             * Formula: `(N2 / maxN2) × maxTorque`
-             */
+         * @brief Computed output shaft torque from the last physics step (N·m).
+         *
+         * Formula: `(N2 / maxN2) × maxTorque`
+         */
         real_Num getOutputTorque() const;
 
         /** @brief Current gas generator spool speed (N1, %). */
@@ -132,27 +131,27 @@ namespace workphone::vehicle
 
         /** @brief Maximum gas generator spool speed (%). Default: 100. */
         real_Num getMaxN1() const;
-        void setMaxN1(real_Num maxN1);
+        void setMaxN1( real_Num maxN1 );
 
         /** @brief Maximum power turbine spool speed (%). Default: 100. */
         real_Num getMaxN2() const;
-        void setMaxN2(real_Num maxN2);
+        void setMaxN2( real_Num maxN2 );
 
         /** @brief N1 spool-up/down rate (%/s). Default: 15. */
         real_Num getN1Accel() const;
-        void setN1Accel(real_Num n1Accel);
+        void setN1Accel( real_Num n1Accel );
 
         /** @brief N2 spool-up/down rate (%/s). Default: 8. */
         real_Num getN2Accel() const;
-        void setN2Accel(real_Num n2Accel);
+        void setN2Accel( real_Num n2Accel );
 
         /**
-             * @brief Fuel control lag coefficient (1/s). Default: 2.
-             *
-             * Higher values give faster fuel flow response.
-             */
+         * @brief Fuel control lag coefficient (1/s). Default: 2.
+         *
+         * Higher values give faster fuel flow response.
+         */
         real_Num getFuelResponse() const;
-        void setFuelResponse(real_Num fuelResponse);
+        void setFuelResponse( real_Num fuelResponse );
 
         // ------------------------------------------------------------------
         // Governor parameters
@@ -160,15 +159,15 @@ namespace workphone::vehicle
 
         /** @brief Target main rotor head speed (RPM). Default: 400. */
         real_Num getTargetRotorRPM() const;
-        void setTargetRotorRPM(real_Num targetRotorRPM);
+        void setTargetRotorRPM( real_Num targetRotorRPM );
 
         /**
-             * @brief Governor proportional gain. Default: 0.015.
-             *
-             * Fuel correction per RPM error per second: `correction = error × gain`.
-             */
+         * @brief Governor proportional gain. Default: 0.015.
+         *
+         * Fuel correction per RPM error per second: `correction = error × gain`.
+         */
         real_Num getGovernorGain() const;
-        void setGovernorGain(real_Num governorGain);
+        void setGovernorGain( real_Num governorGain );
 
         // ------------------------------------------------------------------
         // Transmission parameters
@@ -176,24 +175,24 @@ namespace workphone::vehicle
 
         /** @brief N2-to-rotor gear ratio. Default: 25. */
         real_Num getGearRatio() const;
-        void setGearRatio(real_Num gearRatio);
+        void setGearRatio( real_Num gearRatio );
 
         /** @brief Peak available output shaft torque (N·m). Default: 7000. */
         real_Num getMaxTorque() const;
-        void setMaxTorque(real_Num maxTorque);
+        void setMaxTorque( real_Num maxTorque );
 
         // ------------------------------------------------------------------
         // Engine limits
         // ------------------------------------------------------------------
 
         /**
-             * @brief Maximum permissible ITT (°C). Default: 850.
-             *
-             * When temperature exceeds this threshold the over-temperature
-             * protection trims fuel flow by 10 % per physics step.
-             */
+         * @brief Maximum permissible ITT (°C). Default: 850.
+         *
+         * When temperature exceeds this threshold the over-temperature
+         * protection trims fuel flow by 10 % per physics step.
+         */
         real_Num getMaxTemp() const;
-        void setMaxTemp(real_Num maxTemp);
+        void setMaxTemp( real_Num maxTemp );
 
         WP_CLASS_REGISTER_DECL;
 
@@ -203,16 +202,16 @@ namespace workphone::vehicle
         // ------------------------------------------------------------------
 
         /** First-order lag fuel flow toward throttle demand. */
-        void updateFuelSystem(real_Num dt);
+        void updateFuelSystem( real_Num dt );
 
         /** MoveTowards spool dynamics for N1 and N2. */
-        void updateSpoolDynamics(real_Num dt);
+        void updateSpoolDynamics( real_Num dt );
 
         /** Proportional governor trims fuel flow to maintain target rotor RPM. */
-        void updateGovernor(real_Num dt);
+        void updateGovernor( real_Num dt );
 
         /** Estimate ITT; apply over-temperature fuel cut if limit exceeded. */
-        void updateTemperature(real_Num dt);
+        void updateTemperature( real_Num dt );
 
         /** Derive output torque from N2 fraction. */
         void computeOutputTorque();
@@ -248,6 +247,6 @@ namespace workphone::vehicle
         real_Num m_temperature = 0.0;
         real_Num m_outputTorque = 0.0;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // HelicopterTurbineEngine_h__
+#endif  // HelicopterTurbineEngine_h__

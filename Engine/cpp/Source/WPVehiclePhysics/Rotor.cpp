@@ -4,7 +4,7 @@
 
 namespace workphone::vehicle
 {
-    TRotor::TRotor() : m_section("")
+    Rotor::Rotor() : m_section( "" )
     {
         m_blades = 0;
         m_minRad = 0.0;
@@ -25,27 +25,27 @@ namespace workphone::vehicle
         m_ailAngle = 0.0;
         m_totalAngleLimit = 0.0f;
 
-        for(auto &sector : m_sector)
+        for( auto &sector : m_sector )
         {
-            sector = TRotorSector();
+            sector = RotorSector();
         }
 
-        for(auto &groundEffect : m_groundEffect)
+        for( auto &groundEffect : m_groundEffect )
         {
             groundEffect = 0.0;
         }
 
-        for(auto &groundDistance : m_groundDistance)
+        for( auto &groundDistance : m_groundDistance )
         {
             groundDistance = 0.0;
         }
 
-        setCw(true);
+        setCw( true );
     }
 
-    TRotor::~TRotor()
+    Rotor::~Rotor()
     {
         int stop = 0;
         stop = 0;
     }
-}
+}  // namespace workphone::vehicle

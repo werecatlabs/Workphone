@@ -10,9 +10,9 @@ namespace workphone::physics
     namespace
     {
         /* Map the C++ D6AxisEnum to the C89 wp_d6_axis. */
-        wp_d6_axis toWpAxis(D6AxisEnum axis)
+        wp_d6_axis toWpAxis( D6AxisEnum axis )
         {
-            switch(axis)
+            switch( axis )
             {
             case D6AxisEnum::eX:
                 return WORKPHONE_D6_AXIS_X;
@@ -32,9 +32,9 @@ namespace workphone::physics
         }
 
         /* Map the C89 wp_d6_motion back to the C++ D6MotionEnum. */
-        D6MotionEnum fromWpMotion(wp_d6_motion motion)
+        D6MotionEnum fromWpMotion( wp_d6_motion motion )
         {
-            switch(motion)
+            switch( motion )
             {
             case WORKPHONE_D6_MOTION_LIMITED:
                 return D6MotionEnum::eLIMITED;
@@ -47,9 +47,9 @@ namespace workphone::physics
         }
 
         /* Map the C++ D6MotionEnum to the C89 wp_d6_motion. */
-        wp_d6_motion toWpMotion(D6MotionEnum type)
+        wp_d6_motion toWpMotion( D6MotionEnum type )
         {
-            switch(type)
+            switch( type )
             {
             case D6MotionEnum::eLIMITED:
                 return WORKPHONE_D6_MOTION_LIMITED;
@@ -62,9 +62,9 @@ namespace workphone::physics
         }
 
         /* Map the C++ D6DriveEnum to the C89 wp_d6_drive. */
-        wp_d6_drive toWpDrive(D6DriveEnum index)
+        wp_d6_drive toWpDrive( D6DriveEnum index )
         {
-            switch(index)
+            switch( index )
             {
             case D6DriveEnum::eX:
                 return WORKPHONE_D6_DRIVE_X;
@@ -84,15 +84,15 @@ namespace workphone::physics
         }
 
         /* Convert a JointActorIndexEnum to the C89 actor index (0 or 1). */
-        wp_s32 toActorIndex(JointActorIndexEnum actor)
+        wp_s32 toActorIndex( JointActorIndexEnum actor )
         {
             return actor == JointActorIndexEnum::eACTOR1 ? 1 : 0;
         }
 
         /* Translate a C++ ConstraintFlagEnum bit into the matching C89 flag bit. */
-        wp_u32 toWpConstraintFlag(ConstraintFlagEnum flag)
+        wp_u32 toWpConstraintFlag( ConstraintFlagEnum flag )
         {
-            switch(flag)
+            switch( flag )
             {
             case ConstraintFlagEnum::eBROKEN:
                 return WORKPHONE_CONSTRAINT_FLAG_BROKEN;
@@ -118,28 +118,28 @@ namespace workphone::physics
         }
 
         /* Retrieve the raw wp_rigidbody* from an IPhysicsBody3, if any. */
-        wp_rigidbody *bodyToWp(const SmartPtr<IPhysicsBody3> &body)
+        wp_rigidbody *bodyToWp( const SmartPtr<IPhysicsBody3> &body )
         {
-            if(!body)
+            if( !body )
             {
                 return nullptr;
             }
             void *raw = nullptr;
-            body->_getObject(&raw);
-            return static_cast<wp_rigidbody *>(raw);
+            body->_getObject( &raw );
+            return static_cast<wp_rigidbody *>( raw );
         }
-    } // namespace
+    }  // namespace
 
     WPPhysicsConstraintD6::WPPhysicsConstraintD6()
     {
-        m_constraint = wp_constraint_create(WORKPHONE_CONSTRAINT_D6);
+        m_constraint = wp_constraint_create( WORKPHONE_CONSTRAINT_D6 );
     }
 
     WPPhysicsConstraintD6::~WPPhysicsConstraintD6()
     {
-        if(m_constraint)
+        if( m_constraint )
         {
-            wp_constraint_destroy(m_constraint);
+            wp_constraint_destroy( m_constraint );
             m_constraint = nullptr;
         }
     }
@@ -150,39 +150,40 @@ namespace workphone::physics
     }
 
     /* ----------------------------------------------------------------- *
-         * IConstraintD6
-         * ----------------------------------------------------------------- */
+     * IConstraintD6
+     * ----------------------------------------------------------------- */
 
-    void WPPhysicsConstraintD6::setDrivePosition(const Transform3<real_Num> &pose)
+    void WPPhysicsConstraintD6::setDrivePosition( const Transform3<real_Num> &pose )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        wp_constraint_set_drive_position(m_constraint, WPPhysicsUtil::toWp(pose.getPosition()));
-        wp_constraint_set_drive_orientation(m_constraint, WPPhysicsUtil::toWp(pose.getOrientation()));
+        wp_constraint_set_drive_position( m_constraint, WPPhysicsUtil::toWp( pose.getPosition() ) );
+        wp_constraint_set_drive_orientation( m_constraint,
+                                             WPPhysicsUtil::toWp( pose.getOrientation() ) );
     }
 
     Transform3<real_Num> WPPhysicsConstraintD6::getDrivePosition() const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return Transform3<real_Num>();
         }
         return Transform3<real_Num>(
-            WPPhysicsUtil::fromWp(wp_constraint_get_drive_position(m_constraint)),
-            WPPhysicsUtil::fromWp(wp_constraint_get_drive_orientation(m_constraint)));
+            WPPhysicsUtil::fromWp( wp_constraint_get_drive_position( m_constraint ) ),
+            WPPhysicsUtil::fromWp( wp_constraint_get_drive_orientation( m_constraint ) ) );
     }
 
-    void WPPhysicsConstraintD6::setDrive(D6DriveEnum index, SmartPtr<IConstraintDrive> drive)
+    void WPPhysicsConstraintD6::setDrive( D6DriveEnum index, SmartPtr<IConstraintDrive> drive )
     {
-        const auto cIndex = toWpDrive(index);
-        if(cIndex >= 0 && cIndex < WORKPHONE_D6_DRIVE_COUNT)
+        const auto cIndex = toWpDrive( index );
+        if( cIndex >= 0 && cIndex < WORKPHONE_D6_DRIVE_COUNT )
         {
-            m_drives[static_cast<int>(cIndex)] = drive;
+            m_drives[static_cast<int>( cIndex )] = drive;
         }
 
-        if(!m_constraint || !drive)
+        if( !m_constraint || !drive )
         {
             return;
         }
@@ -192,24 +193,24 @@ namespace workphone::physics
         desc.damping = drive->getDamping();
         desc.force_limit = drive->getForceLimit();
         desc.is_acceleration = drive->isAcceleration() ? 1 : 0;
-        wp_constraint_set_drive(m_constraint, cIndex, desc);
+        wp_constraint_set_drive( m_constraint, cIndex, desc );
     }
 
-    SmartPtr<IConstraintDrive> WPPhysicsConstraintD6::getDrive(D6DriveEnum index) const
+    SmartPtr<IConstraintDrive> WPPhysicsConstraintD6::getDrive( D6DriveEnum index ) const
     {
-        const auto cIndex = toWpDrive(index);
-        if(cIndex >= 0 && cIndex < WORKPHONE_D6_DRIVE_COUNT)
+        const auto cIndex = toWpDrive( index );
+        if( cIndex >= 0 && cIndex < WORKPHONE_D6_DRIVE_COUNT )
         {
-            return m_drives[static_cast<int>(cIndex)];
+            return m_drives[static_cast<int>( cIndex )];
         }
         return nullptr;
     }
 
-    void WPPhysicsConstraintD6::setLinearLimit(SmartPtr<IConstraintLinearLimit> limit)
+    void WPPhysicsConstraintD6::setLinearLimit( SmartPtr<IConstraintLinearLimit> limit )
     {
         m_linearLimit = limit;
 
-        if(!m_constraint || !limit)
+        if( !m_constraint || !limit )
         {
             return;
         }
@@ -221,7 +222,7 @@ namespace workphone::physics
         cLimit.stiffness = limit->getStiffness();
         cLimit.damping = limit->getDamping();
         cLimit.contact_distance = limit->getContactDistance();
-        wp_constraint_set_linear_limit(m_constraint, cLimit);
+        wp_constraint_set_linear_limit( m_constraint, cLimit );
     }
 
     SmartPtr<IConstraintLinearLimit> WPPhysicsConstraintD6::getLinearLimit() const
@@ -229,39 +230,39 @@ namespace workphone::physics
         return m_linearLimit;
     }
 
-    void WPPhysicsConstraintD6::setMotion(D6AxisEnum axis, D6MotionEnum type)
+    void WPPhysicsConstraintD6::setMotion( D6AxisEnum axis, D6MotionEnum type )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        wp_constraint_set_motion(m_constraint, toWpAxis(axis), toWpMotion(type));
+        wp_constraint_set_motion( m_constraint, toWpAxis( axis ), toWpMotion( type ) );
     }
 
-    D6MotionEnum WPPhysicsConstraintD6::getMotion(D6AxisEnum axis) const
+    D6MotionEnum WPPhysicsConstraintD6::getMotion( D6AxisEnum axis ) const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return D6MotionEnum::eLOCKED;
         }
-        return fromWpMotion(wp_constraint_get_motion(m_constraint, toWpAxis(axis)));
+        return fromWpMotion( wp_constraint_get_motion( m_constraint, toWpAxis( axis ) ) );
     }
 
     /* ----------------------------------------------------------------- *
-         * IPhysicsConstraint3
-         * ----------------------------------------------------------------- */
+     * IPhysicsConstraint3
+     * ----------------------------------------------------------------- */
 
     SmartPtr<IPhysicsBody3> WPPhysicsConstraintD6::getBodyA() const
     {
         return m_bodyA;
     }
 
-    void WPPhysicsConstraintD6::setBodyA(SmartPtr<IPhysicsBody3> bodyA)
+    void WPPhysicsConstraintD6::setBodyA( SmartPtr<IPhysicsBody3> bodyA )
     {
         m_bodyA = bodyA;
-        if(m_constraint)
+        if( m_constraint )
         {
-            wp_constraint_set_body_a(m_constraint, bodyToWp(bodyA));
+            wp_constraint_set_body_a( m_constraint, bodyToWp( bodyA ) );
         }
     }
 
@@ -270,147 +271,143 @@ namespace workphone::physics
         return m_bodyB;
     }
 
-    void WPPhysicsConstraintD6::setBodyB(SmartPtr<IPhysicsBody3> bodyB)
+    void WPPhysicsConstraintD6::setBodyB( SmartPtr<IPhysicsBody3> bodyB )
     {
         m_bodyB = bodyB;
-        if(m_constraint)
+        if( m_constraint )
         {
-            wp_constraint_set_body_b(m_constraint, bodyToWp(bodyB));
+            wp_constraint_set_body_b( m_constraint, bodyToWp( bodyB ) );
         }
     }
 
-    void WPPhysicsConstraintD6::setLocalPose(JointActorIndexEnum actor,
-                                             const Transform3<real_Num> &localPose)
+    void WPPhysicsConstraintD6::setLocalPose( JointActorIndexEnum actor,
+                                              const Transform3<real_Num> &localPose )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        const auto idx = toActorIndex(actor);
-        wp_constraint_set_local_position(m_constraint, idx,
-                                         WPPhysicsUtil::toWp(localPose.getPosition()));
-        wp_constraint_set_local_orientation(m_constraint, idx,
-                                            WPPhysicsUtil::toWp(localPose.getOrientation()));
+        const auto idx = toActorIndex( actor );
+        wp_constraint_set_local_position( m_constraint, idx,
+                                          WPPhysicsUtil::toWp( localPose.getPosition() ) );
+        wp_constraint_set_local_orientation( m_constraint, idx,
+                                             WPPhysicsUtil::toWp( localPose.getOrientation() ) );
     }
 
-    Transform3<real_Num> WPPhysicsConstraintD6::getLocalPose(JointActorIndexEnum actor) const
+    Transform3<real_Num> WPPhysicsConstraintD6::getLocalPose( JointActorIndexEnum actor ) const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return Transform3<real_Num>();
         }
-        const auto idx = toActorIndex(actor);
+        const auto idx = toActorIndex( actor );
         return Transform3<real_Num>(
-            WPPhysicsUtil::fromWp(wp_constraint_get_local_position(m_constraint, idx)),
-            WPPhysicsUtil::fromWp(wp_constraint_get_local_orientation(m_constraint, idx)));
+            WPPhysicsUtil::fromWp( wp_constraint_get_local_position( m_constraint, idx ) ),
+            WPPhysicsUtil::fromWp( wp_constraint_get_local_orientation( m_constraint, idx ) ) );
     }
 
-    void WPPhysicsConstraintD6::setConstraintFlag(ConstraintFlagEnum flag, bool value)
+    void WPPhysicsConstraintD6::setConstraintFlag( ConstraintFlagEnum flag, bool value )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        wp_constraint_set_flag(m_constraint, toWpConstraintFlag(flag), value ? 1 : 0);
+        wp_constraint_set_flag( m_constraint, toWpConstraintFlag( flag ), value ? 1 : 0 );
     }
 
     ConstraintFlagEnum WPPhysicsConstraintD6::getConstraintFlags() const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
-            return static_cast<ConstraintFlagEnum>(0);
+            return static_cast<ConstraintFlagEnum>( 0 );
         }
-        return static_cast<ConstraintFlagEnum>(wp_constraint_get_flags(m_constraint));
+        return static_cast<ConstraintFlagEnum>( wp_constraint_get_flags( m_constraint ) );
     }
 
-    void WPPhysicsConstraintD6::setBreakForce(real_Num force, real_Num torque)
+    void WPPhysicsConstraintD6::setBreakForce( real_Num force, real_Num torque )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        wp_constraint_set_break_force(m_constraint,
-                                      force,
-                                      torque);
+        wp_constraint_set_break_force( m_constraint, force, torque );
     }
 
-    void WPPhysicsConstraintD6::getBreakForce(real_Num &force, real_Num &torque) const
+    void WPPhysicsConstraintD6::getBreakForce( real_Num &force, real_Num &torque ) const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             force = 0.0f;
             torque = 0.0f;
             return;
         }
-        force = wp_constraint_get_break_force(m_constraint);
-        torque = wp_constraint_get_break_torque(m_constraint);
+        force = wp_constraint_get_break_force( m_constraint );
+        torque = wp_constraint_get_break_torque( m_constraint );
     }
 
-    void WPPhysicsConstraintD6::setProjectionLinearTolerance(real_Num tolerance)
+    void WPPhysicsConstraintD6::setProjectionLinearTolerance( real_Num tolerance )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        wp_constraint_set_projection_linear_tolerance(m_constraint,
-                                                      tolerance);
+        wp_constraint_set_projection_linear_tolerance( m_constraint, tolerance );
     }
 
     real_Num WPPhysicsConstraintD6::getProjectionLinearTolerance() const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return 0.0f;
         }
-        return wp_constraint_get_projection_linear_tolerance(m_constraint);
+        return wp_constraint_get_projection_linear_tolerance( m_constraint );
     }
 
-    void WPPhysicsConstraintD6::setProjectionAngularTolerance(real_Num tolerance)
+    void WPPhysicsConstraintD6::setProjectionAngularTolerance( real_Num tolerance )
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return;
         }
-        wp_constraint_set_projection_angular_tolerance(m_constraint,
-                                                       tolerance);
+        wp_constraint_set_projection_angular_tolerance( m_constraint, tolerance );
     }
 
     real_Num WPPhysicsConstraintD6::getProjectionAngularTolerance() const
     {
-        if(!m_constraint)
+        if( !m_constraint )
         {
             return 0.0f;
         }
-        return wp_constraint_get_projection_angular_tolerance(m_constraint);
+        return wp_constraint_get_projection_angular_tolerance( m_constraint );
     }
 
     /* ----------------------------------------------------------------- *
-         * ISharedObject / user data
-         * ----------------------------------------------------------------- */
+     * ISharedObject / user data
+     * ----------------------------------------------------------------- */
 
     void *WPPhysicsConstraintD6::getUserData() const
     {
-        if(m_constraint)
+        if( m_constraint )
         {
-            return wp_constraint_get_user_data(m_constraint);
+            return wp_constraint_get_user_data( m_constraint );
         }
         return m_userData;
     }
 
-    void WPPhysicsConstraintD6::setUserData(void *userData)
+    void WPPhysicsConstraintD6::setUserData( void *userData )
     {
         m_userData = userData;
-        if(m_constraint)
+        if( m_constraint )
         {
-            wp_constraint_set_user_data(m_constraint, userData);
+            wp_constraint_set_user_data( m_constraint, userData );
         }
     }
 
     /* ----------------------------------------------------------------- *
-         * Class registration support
-         * ----------------------------------------------------------------- */
+     * Class registration support
+     * ----------------------------------------------------------------- */
 
-    void WPPhysicsConstraintD6::setTypeInfo(u32 id)
+    void WPPhysicsConstraintD6::setTypeInfo( u32 id )
     {
         sTypeInfo = id;
     }
@@ -431,4 +428,4 @@ namespace workphone::physics
     }
 
     u32 WPPhysicsConstraintD6::sTypeInfo = 0;
-}
+}  // namespace workphone::physics

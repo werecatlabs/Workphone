@@ -17,102 +17,101 @@ namespace workphone::vehicle
         CAircraftControlSurface();
         ~CAircraftControlSurface() override;
 
-        void load(SmartPtr<ISharedObject> data) override;
-        void load(void *pData) override;
-        void unload(SmartPtr<ISharedObject> data) override;
+        void load( SmartPtr<ISharedObject> data ) override;
+        void load( void *pData ) override;
+        void unload( SmartPtr<ISharedObject> data ) override;
 
-        void update(const double &t, const double &dt) override;
+        void update( const double &t, const double &dt ) override;
 
         void updateTransform() override;
 
-        void modifyWingGeometry(s32 SectionIndex, Vector3<real_Num> &pointA,
-                                Vector3<real_Num> &pointB, Vector3<real_Num> &pointC,
-                                Vector3<real_Num> &pointD) override;
+        void modifyWingGeometry( s32 SectionIndex, Vector3<real_Num> &pointA, Vector3<real_Num> &pointB,
+                                 Vector3<real_Num> &pointC, Vector3<real_Num> &pointD ) override;
 
-        void modifyMainWingGeometry(s32 SectionIndex, Vector3<real_Num> &pointA,
-                                    Vector3<real_Num> &pointB, Vector3<real_Num> &pointC,
-                                    Vector3<real_Num> &pointD, real_Num t) override;
-        void modifyWingGeometry(s32 SectionIndex, Vector3<real_Num> &pointA,
-                                Vector3<real_Num> &pointB, Vector3<real_Num> &pointC,
-                                Vector3<real_Num> &pointD, real_Num t) override;
+        void modifyMainWingGeometry( s32 SectionIndex, Vector3<real_Num> &pointA,
+                                     Vector3<real_Num> &pointB, Vector3<real_Num> &pointC,
+                                     Vector3<real_Num> &pointD, real_Num t ) override;
+        void modifyWingGeometry( s32 SectionIndex, Vector3<real_Num> &pointA, Vector3<real_Num> &pointB,
+                                 Vector3<real_Num> &pointC, Vector3<real_Num> &pointD,
+                                 real_Num t ) override;
 
         s32 getSurfaceId() const override;
-        void setSurfaceId(s32 surfaceId) override;
+        void setSurfaceId( s32 surfaceId ) override;
 
         SmartPtr<InputController> getInputController() const;
-        void setInputController(SmartPtr<InputController> inputController);
+        void setInputController( SmartPtr<InputController> inputController );
 
         real_Num getCurrentDeflection() const override;
-        void setCurrentDeflection(real_Num deflection) override;
+        void setCurrentDeflection( real_Num deflection ) override;
 
         bool isReversed() const override;
-        void setReversed(bool reversed) override;
+        void setReversed( bool reversed ) override;
 
         real_Num getTipHingeDistanceFromTrailingEdge() const override;
-        void setTipHingeDistanceFromTrailingEdge(real_Num tipHingeDistance) override;
+        void setTipHingeDistanceFromTrailingEdge( real_Num tipHingeDistance ) override;
 
         real_Num getRootHingeDistanceFromTrailingEdge() const override;
-        void setRootHingeDistanceFromTrailingEdge(real_Num rootHingeDistance) override;
+        void setRootHingeDistanceFromTrailingEdge( real_Num rootHingeDistance ) override;
 
         Vector3<real_Num> getRotationAxis() const;
-        void setRotationAxis(Vector3<real_Num> rotationAxis);
+        void setRotationAxis( Vector3<real_Num> rotationAxis );
 
         Array<bool> &getAffectedSections() override;
         const Array<bool> &getAffectedSections() const override;
-        void setAffectedSections(const Array<bool> &affectedSections) override;
+        void setAffectedSections( const Array<bool> &affectedSections ) override;
 
-        bool isAffectedSection(int index) const override;
+        bool isAffectedSection( int index ) const override;
 
         SmartPtr<LinearSpline1<real_Num>> getClLookup() const override;
-        void setClLookup(SmartPtr<LinearSpline1<real_Num>> linearSpline1) override;
+        void setClLookup( SmartPtr<LinearSpline1<real_Num>> linearSpline1 ) override;
 
         SmartPtr<LinearSpline1<real_Num>> getCdLookup() const override;
-        void setCdLookup(SmartPtr<LinearSpline1<real_Num>> linearSpline1) override;
+        void setCdLookup( SmartPtr<LinearSpline1<real_Num>> linearSpline1 ) override;
 
         SmartPtr<LinearSpline1<real_Num>> getCmLookup() const override;
-        void setCmLookup(SmartPtr<LinearSpline1<real_Num>> linearSpline1) override;
+        void setCmLookup( SmartPtr<LinearSpline1<real_Num>> linearSpline1 ) override;
 
         real_Num getClMultiplier() const override;
-        void setClMultiplier(real_Num clMultiplier) override;
+        void setClMultiplier( real_Num clMultiplier ) override;
 
         real_Num getCdMultiplier() const override;
-        void setCdMultiplier(real_Num cdMultiplier) override;
+        void setCdMultiplier( real_Num cdMultiplier ) override;
 
         real_Num getCmMultiplier() const override;
-        void setCmMultiplier(real_Num cmMultiplier) override;
+        void setCmMultiplier( real_Num cmMultiplier ) override;
 
         real_Num getMinDeflectionDegrees() const override;
-        void setMinDeflectionDegrees(real_Num minDeflectionDegrees) override;
+        void setMinDeflectionDegrees( real_Num minDeflectionDegrees ) override;
 
         real_Num getMaxDeflectionDegrees() const override;
-        void setMaxDeflectionDegrees(real_Num maxDeflectionDegrees) override;
+        void setMaxDeflectionDegrees( real_Num maxDeflectionDegrees ) override;
 
         real_Num getAoAMultiplier() const override;
 
-        void setAoAMultiplier(real_Num aoaMultiplier) override;
+        void setAoAMultiplier( real_Num aoaMultiplier ) override;
 
         SmartPtr<IAircraftWing> getMainWing() const override;
-        void setMainWing(SmartPtr<IAircraftWing> mainWing) override;
+        void setMainWing( SmartPtr<IAircraftWing> mainWing ) override;
 
         SmartPtr<IAircraftWing> getControlWing() const override;
-        void setControlWing(SmartPtr<IAircraftWing> controlWing) override;
+        void setControlWing( SmartPtr<IAircraftWing> controlWing ) override;
 
         bool useControlWing() const;
-        void setUseControlWing(bool useControlWing);
+        void setUseControlWing( bool useControlWing );
 
         void updateGeometry() override;
 
         real_Num getStallControlCL() const override;
-        void setStallControlCL(real_Num stallControlCL) override;
+        void setStallControlCL( real_Num stallControlCL ) override;
 
         real_Num getStallControlCD() const override;
-        void setStallControlCD(real_Num stallControlCD) override;
+        void setStallControlCD( real_Num stallControlCD ) override;
 
         real_Num getStallControlCM() const override;
-        void setStallControlCM(real_Num stallControlCM) override;
+        void setStallControlCM( real_Num stallControlCM ) override;
 
         real_Num getStallThreshold() const override;
-        void setStallThreshold(real_Num stallThreshold) override;
+        void setStallThreshold( real_Num stallThreshold ) override;
 
         void reset() override;
 
@@ -154,6 +153,6 @@ namespace workphone::vehicle
 
         Array<bool> m_affectedSections;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // ControlSurface_h__
+#endif  // ControlSurface_h__

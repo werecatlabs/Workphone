@@ -5,17 +5,17 @@
 
 namespace workphone::vehicle
 {
-    WP_CLASS_REGISTER_DERIVED(workphone::vehicle, ExtremeHelicopterController,
-                              CAerodynamicsVehicle<IAircraft>);
+    WP_CLASS_REGISTER_DERIVED( workphone::vehicle, ExtremeHelicopterController,
+                               CAerodynamicsVehicle<IAircraft> );
 
     // ===================================================================
     // Channel indices (standard CAerodynamicsVehicle layout)
     // ===================================================================
-    static constexpr s32 kThrChannel = 0; ///< Throttle      [0, 1]
-    static constexpr s32 kAilChannel = 1; ///< Roll          [-1, 1]
-    static constexpr s32 kEleChannel = 2; ///< Pitch         [-1, 1]
-    static constexpr s32 kYawChannel = 3; ///< Yaw / pedal   [-1, 1]
-    static constexpr s32 kColChannel = 5; ///< Collective    [-1, 1]
+    static constexpr s32 kThrChannel = 0;  ///< Throttle      [0, 1]
+    static constexpr s32 kAilChannel = 1;  ///< Roll          [-1, 1]
+    static constexpr s32 kEleChannel = 2;  ///< Pitch         [-1, 1]
+    static constexpr s32 kYawChannel = 3;  ///< Yaw / pedal   [-1, 1]
+    static constexpr s32 kColChannel = 5;  ///< Collective    [-1, 1]
 
     // Translational lift speed band (m/s)  — matching C#: 10 → 30 m/s, 1 → 1.35
     static constexpr real_Num kETLOnset = 10.0;
@@ -49,9 +49,9 @@ namespace workphone::vehicle
         return true;
     }
 
-    void ExtremeHelicopterController::load(SmartPtr<ISharedObject> data)
+    void ExtremeHelicopterController::load( SmartPtr<ISharedObject> data )
     {
-        CAerodynamicsVehicle<IAircraft>::load(data);
+        CAerodynamicsVehicle<IAircraft>::load( data );
     }
 
     void ExtremeHelicopterController::update()
@@ -59,7 +59,7 @@ namespace workphone::vehicle
         CAerodynamicsVehicle<IAircraft>::update();
     }
 
-    void ExtremeHelicopterController::update(const double &t, const double &dt)
+    void ExtremeHelicopterController::update( const double &t, const double &dt )
     {
         clearForces();
 
@@ -71,13 +71,13 @@ namespace workphone::vehicle
         const Vector3<real_Num> worldFwd = orientation * Vector3<real_Num>::unitZ();
         const Vector3<real_Num> worldRight = orientation * Vector3<real_Num>::unitX();
 
-        const real_Num fdt = static_cast<real_Num>(dt);
+        const real_Num fdt = static_cast<real_Num>( dt );
 
         // Run subsystems in the same order as the original C# FixedUpdate().
-        updateRotorRPM(fdt);
+        updateRotorRPM( fdt );
         calculateInducedVelocity();
-        applyMainRotorForces(worldUp, worldFwd, worldRight);
-        applyTailRotor(worldUp);
+        applyMainRotorForces( worldUp, worldFwd, worldRight );
+        applyTailRotor( worldUp );
 
         CAerodynamicsVehicle<IAircraft>::update();
     }
@@ -92,23 +92,21 @@ namespace workphone::vehicle
     //   rotorRPM    += angularAccel * dt * 60
     // ===================================================================
 
-    void ExtremeHelicopterController::updateRotorRPM(real_Num dt)
+    void ExtremeHelicopterController::updateRotorRPM( real_Num dt )
     {
-        const real_Num throttle = Math<real_Num>::clamp(
-            getChannel(kThrChannel), 0.0, 1.0);
+        const real_Num throttle = Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
 
         m_engineTorque = throttle * m_maxEngineTorque;
 
         const real_Num dragTorque = m_rotorDragCoeff * m_rotorRPM;
         const real_Num netTorque = m_engineTorque - dragTorque;
 
-        const real_Num angularAccel = (m_rotorInertia > static_cast<real_Num>(0.0))
-                                          ? (netTorque / m_rotorInertia)
-                                          : static_cast<real_Num>(0.0);
+        const real_Num angularAccel = ( m_rotorInertia > static_cast<real_Num>( 0.0 ) )
+                                          ? ( netTorque / m_rotorInertia )
+                                          : static_cast<real_Num>( 0.0 );
 
-        m_rotorRPM += angularAccel * dt * static_cast<real_Num>(60.0);
-        m_rotorRPM =
-            Math<real_Num>::clamp(m_rotorRPM, 0.0, m_maxRotorRPM);
+        m_rotorRPM += angularAccel * dt * static_cast<real_Num>( 60.0 );
+        m_rotorRPM = Math<real_Num>::clamp( m_rotorRPM, 0.0, m_maxRotorRPM );
     }
 
     // ===================================================================
@@ -124,27 +122,25 @@ namespace workphone::vehicle
 
     void ExtremeHelicopterController::calculateInducedVelocity()
     {
-        const real_Num two_pi = static_cast<real_Num>(2.0) * Math<real_Num>::pi();
+        const real_Num two_pi = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
 
-        const real_Num collectiveIn = Math<real_Num>::clamp(
-            getChannel(kColChannel), -1.0, 1.0);
+        const real_Num collectiveIn = Math<real_Num>::clamp( getChannel( kColChannel ), -1.0, 1.0 );
 
         const real_Num collectiveRad =
             collectiveIn * Math<real_Num>::deg_to_rad() * m_maxCollectivePitch;
 
         const real_Num liftCoeff = m_bladeLiftSlope * collectiveRad;
 
-        const real_Num tipSpeed =
-            m_rotorRPM * two_pi * m_rotorRadius / static_cast<real_Num>(60.0);
+        const real_Num tipSpeed = m_rotorRPM * two_pi * m_rotorRadius / static_cast<real_Num>( 60.0 );
 
-        const real_Num thrustGuess = static_cast<real_Num>(0.5) * m_airDensity * m_rotorArea *
-                                     tipSpeed * tipSpeed * liftCoeff;
+        const real_Num thrustGuess =
+            static_cast<real_Num>( 0.5 ) * m_airDensity * m_rotorArea * tipSpeed * tipSpeed * liftCoeff;
 
-        const real_Num denominator = static_cast<real_Num>(2.0) * m_airDensity * m_rotorArea;
+        const real_Num denominator = static_cast<real_Num>( 2.0 ) * m_airDensity * m_rotorArea;
         m_inducedVelocity =
-            (denominator > static_cast<real_Num>(0.0))
-                ? Math<real_Num>::Sqrt(Math<real_Num>::Abs(thrustGuess) / denominator)
-                : static_cast<real_Num>(0.0);
+            ( denominator > static_cast<real_Num>( 0.0 ) )
+                ? Math<real_Num>::Sqrt( Math<real_Num>::Abs( thrustGuess ) / denominator )
+                : static_cast<real_Num>( 0.0 );
     }
 
     // ===================================================================
@@ -158,44 +154,41 @@ namespace workphone::vehicle
     //   AddTorque(-up * thrust * 0.015)
     // ===================================================================
 
-    void ExtremeHelicopterController::applyMainRotorForces(const Vector3<real_Num> &up,
-                                                           const Vector3<real_Num> &fwd,
-                                                           const Vector3<real_Num> &right)
+    void ExtremeHelicopterController::applyMainRotorForces( const Vector3<real_Num> &up,
+                                                            const Vector3<real_Num> &fwd,
+                                                            const Vector3<real_Num> &right )
     {
-        const real_Num pitchIn = getChannel(kEleChannel);
-        const real_Num rollIn = getChannel(kAilChannel);
+        const real_Num pitchIn = getChannel( kEleChannel );
+        const real_Num rollIn = getChannel( kAilChannel );
 
-        const real_Num collectiveIn = Math<real_Num>::clamp(
-            getChannel(kColChannel), -1.0, 1.0);
+        const real_Num collectiveIn = Math<real_Num>::clamp( getChannel( kColChannel ), -1.0, 1.0 );
 
-        const real_Num two_pi = static_cast<real_Num>(2.0) * Math<real_Num>::pi();
+        const real_Num two_pi = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
 
-        const real_Num tipSpeed =
-            m_rotorRPM * two_pi * m_rotorRadius / static_cast<real_Num>(60.0);
+        const real_Num tipSpeed = m_rotorRPM * two_pi * m_rotorRadius / static_cast<real_Num>( 60.0 );
 
         const real_Num collectiveRad =
             collectiveIn * Math<real_Num>::deg_to_rad() * m_maxCollectivePitch;
 
         const real_Num liftCoeff = m_bladeLiftSlope * collectiveRad;
 
-        real_Num thrust = static_cast<real_Num>(0.5) * m_airDensity * m_rotorArea * tipSpeed *
-                          tipSpeed * liftCoeff;
+        real_Num thrust =
+            static_cast<real_Num>( 0.5 ) * m_airDensity * m_rotorArea * tipSpeed * tipSpeed * liftCoeff;
 
         // Apply modifiers (matching C# order).
         thrust *= computeGroundEffect();
-        thrust *= computeTranslationalLift(getLinearVelocity().length());
-        thrust *= computeVortexRingState(collectiveIn);
+        thrust *= computeTranslationalLift( getLinearVelocity().length() );
+        thrust *= computeVortexRingState( collectiveIn );
 
         // Rotor disc tilt from cyclic input.
         const real_Num tiltRad = m_cyclicTiltMax * Math<real_Num>::deg_to_rad();
-        Vector3<real_Num> discNormal =
-            up + fwd * (pitchIn * tiltRad) + right * (rollIn * tiltRad);
+        Vector3<real_Num> discNormal = up + fwd * ( pitchIn * tiltRad ) + right * ( rollIn * tiltRad );
         discNormal.normalise();
 
-        addForce(0, discNormal * thrust, getPosition());
+        addForce( 0, discNormal * thrust, getPosition() );
 
         // Reactive torque from main rotor.
-        addTorque(0, -up * (thrust * static_cast<real_Num>(0.015)));
+        addTorque( 0, -up * ( thrust * static_cast<real_Num>( 0.015 ) ) );
     }
 
     // ===================================================================
@@ -207,14 +200,14 @@ namespace workphone::vehicle
     //   AddTorque(up * (antiTorque + pedalForce))
     // ===================================================================
 
-    void ExtremeHelicopterController::applyTailRotor(const Vector3<real_Num> &up)
+    void ExtremeHelicopterController::applyTailRotor( const Vector3<real_Num> &up )
     {
-        const real_Num yawIn = getChannel(kYawChannel);
+        const real_Num yawIn = getChannel( kYawChannel );
 
-        const real_Num antiTorque = m_rotorRPM * static_cast<real_Num>(0.6);
+        const real_Num antiTorque = m_rotorRPM * static_cast<real_Num>( 0.6 );
         const real_Num pedalMoment = yawIn * m_tailRotorPower;
 
-        addTorque(0, up * (antiTorque + pedalMoment));
+        addTorque( 0, up * ( antiTorque + pedalMoment ) );
     }
 
     // ===================================================================
@@ -225,16 +218,17 @@ namespace workphone::vehicle
     //   else        → Lerp(1, 1.35, (speed - 10) / 20)
     // ===================================================================
 
-    real_Num ExtremeHelicopterController::computeTranslationalLift(real_Num speed) const
+    real_Num ExtremeHelicopterController::computeTranslationalLift( real_Num speed ) const
     {
-        if(speed <= kETLOnset)
+        if( speed <= kETLOnset )
+        {
             return 1.0;
+        }
 
         const real_Num t =
-            Math<real_Num>::clamp((speed - kETLOnset) / (kETLPeak - kETLOnset),
-                                  0.0, 1.0);
+            Math<real_Num>::clamp( ( speed - kETLOnset ) / ( kETLPeak - kETLOnset ), 0.0, 1.0 );
 
-        return static_cast<real_Num>(1.0) + t * (kETLBoost - static_cast<real_Num>(1.0));
+        return static_cast<real_Num>( 1.0 ) + t * ( kETLBoost - static_cast<real_Num>( 1.0 ) );
     }
 
     // ===================================================================
@@ -249,14 +243,12 @@ namespace workphone::vehicle
     {
         const real_Num agl = getPosition().Y();
 
-        if(agl < m_groundEffectHeight && m_groundEffectHeight > static_cast<real_Num>(0.0))
+        if( agl < m_groundEffectHeight && m_groundEffectHeight > static_cast<real_Num>( 0.0 ) )
         {
-            const real_Num t =
-                Math<real_Num>::clamp(agl / m_groundEffectHeight, 0.0,
-                                      1.0);
+            const real_Num t = Math<real_Num>::clamp( agl / m_groundEffectHeight, 0.0, 1.0 );
 
             // Mirrors C# formula: 1 + (1 − distance/height)
-            return static_cast<real_Num>(1.0) + (static_cast<real_Num>(1.0) - t);
+            return static_cast<real_Num>( 1.0 ) + ( static_cast<real_Num>( 1.0 ) - t );
         }
 
         return 1.0;
@@ -272,30 +264,30 @@ namespace workphone::vehicle
     //   else → 1
     // ===================================================================
 
-    real_Num ExtremeHelicopterController::computeVortexRingState(real_Num collectiveIn) const
+    real_Num ExtremeHelicopterController::computeVortexRingState( real_Num collectiveIn ) const
     {
         // Positive downward speed = descending (dot with world-down = -worldUp).
-        const Vector3<real_Num> worldVel; //= getLinearVelocity();
+        const Vector3<real_Num> worldVel;  //= getLinearVelocity();
         const auto &orientation = getWorldTransform().getOrientation();
         const Vector3<real_Num> worldUp = orientation * Vector3<real_Num>::unitY();
 
         // verticalSpeed > 0 means descending (matching Unity's Vector3.down dot).
-        const real_Num verticalSpeed = -worldVel.dotProduct(worldUp);
+        const real_Num verticalSpeed = -worldVel.dotProduct( worldUp );
 
-        if(verticalSpeed <= kVRSDownwardOnset)
+        if( verticalSpeed <= kVRSDownwardOnset )
         {
-            const_cast<ExtremeHelicopterController *>(this)->m_vrsActive = false;
+            const_cast<ExtremeHelicopterController *>( this )->m_vrsActive = false;
             return 1.0;
         }
 
         // Check steep powered descent triggering VRS.
-        if(verticalSpeed > -m_vortexDescentRate && collectiveIn > kVRSCollectiveThreshold)
+        if( verticalSpeed > -m_vortexDescentRate && collectiveIn > kVRSCollectiveThreshold )
         {
-            const_cast<ExtremeHelicopterController *>(this)->m_vrsActive = true;
+            const_cast<ExtremeHelicopterController *>( this )->m_vrsActive = true;
             return kVRSThrustFactor;
         }
 
-        const_cast<ExtremeHelicopterController *>(this)->m_vrsActive = false;
+        const_cast<ExtremeHelicopterController *>( this )->m_vrsActive = false;
         return 1.0;
     }
 
@@ -308,7 +300,7 @@ namespace workphone::vehicle
         return m_rotorRadius;
     }
 
-    void ExtremeHelicopterController::setRotorRadius(real_Num rotorRadius)
+    void ExtremeHelicopterController::setRotorRadius( real_Num rotorRadius )
     {
         m_rotorRadius = rotorRadius;
         m_rotorArea = Math<real_Num>::pi() * rotorRadius * rotorRadius;
@@ -324,7 +316,7 @@ namespace workphone::vehicle
         return m_rotorInertia;
     }
 
-    void ExtremeHelicopterController::setRotorInertia(real_Num rotorInertia)
+    void ExtremeHelicopterController::setRotorInertia( real_Num rotorInertia )
     {
         m_rotorInertia = rotorInertia;
     }
@@ -334,7 +326,7 @@ namespace workphone::vehicle
         return m_maxEngineTorque;
     }
 
-    void ExtremeHelicopterController::setMaxEngineTorque(real_Num maxEngineTorque)
+    void ExtremeHelicopterController::setMaxEngineTorque( real_Num maxEngineTorque )
     {
         m_maxEngineTorque = maxEngineTorque;
     }
@@ -344,7 +336,7 @@ namespace workphone::vehicle
         return m_rotorDragCoeff;
     }
 
-    void ExtremeHelicopterController::setRotorDragCoeff(real_Num rotorDragCoeff)
+    void ExtremeHelicopterController::setRotorDragCoeff( real_Num rotorDragCoeff )
     {
         m_rotorDragCoeff = rotorDragCoeff;
     }
@@ -354,7 +346,7 @@ namespace workphone::vehicle
         return m_maxRotorRPM;
     }
 
-    void ExtremeHelicopterController::setMaxRotorRPM(real_Num maxRotorRPM)
+    void ExtremeHelicopterController::setMaxRotorRPM( real_Num maxRotorRPM )
     {
         m_maxRotorRPM = maxRotorRPM;
     }
@@ -373,7 +365,7 @@ namespace workphone::vehicle
         return m_airDensity;
     }
 
-    void ExtremeHelicopterController::setAirDensity(real_Num airDensity)
+    void ExtremeHelicopterController::setAirDensity( real_Num airDensity )
     {
         m_airDensity = airDensity;
     }
@@ -383,7 +375,7 @@ namespace workphone::vehicle
         return m_bladeLiftSlope;
     }
 
-    void ExtremeHelicopterController::setBladeLiftSlope(real_Num bladeLiftSlope)
+    void ExtremeHelicopterController::setBladeLiftSlope( real_Num bladeLiftSlope )
     {
         m_bladeLiftSlope = bladeLiftSlope;
     }
@@ -397,7 +389,7 @@ namespace workphone::vehicle
         return m_maxCollectivePitch;
     }
 
-    void ExtremeHelicopterController::setMaxCollectivePitch(real_Num maxCollectivePitch)
+    void ExtremeHelicopterController::setMaxCollectivePitch( real_Num maxCollectivePitch )
     {
         m_maxCollectivePitch = maxCollectivePitch;
     }
@@ -407,7 +399,7 @@ namespace workphone::vehicle
         return m_cyclicTiltMax;
     }
 
-    void ExtremeHelicopterController::setCyclicTiltMax(real_Num cyclicTiltMax)
+    void ExtremeHelicopterController::setCyclicTiltMax( real_Num cyclicTiltMax )
     {
         m_cyclicTiltMax = cyclicTiltMax;
     }
@@ -421,7 +413,7 @@ namespace workphone::vehicle
         return m_tailRotorPower;
     }
 
-    void ExtremeHelicopterController::setTailRotorPower(real_Num tailRotorPower)
+    void ExtremeHelicopterController::setTailRotorPower( real_Num tailRotorPower )
     {
         m_tailRotorPower = tailRotorPower;
     }
@@ -435,7 +427,7 @@ namespace workphone::vehicle
         return m_groundEffectHeight;
     }
 
-    void ExtremeHelicopterController::setGroundEffectHeight(real_Num groundEffectHeight)
+    void ExtremeHelicopterController::setGroundEffectHeight( real_Num groundEffectHeight )
     {
         m_groundEffectHeight = groundEffectHeight;
     }
@@ -449,7 +441,7 @@ namespace workphone::vehicle
         return m_vortexDescentRate;
     }
 
-    void ExtremeHelicopterController::setVortexDescentRate(real_Num vortexDescentRate)
+    void ExtremeHelicopterController::setVortexDescentRate( real_Num vortexDescentRate )
     {
         m_vortexDescentRate = vortexDescentRate;
     }
@@ -477,20 +469,19 @@ namespace workphone::vehicle
         return m_rotorRPM;
     }
 
-    void ExtremeHelicopterController::setRPM(real_Num rpm)
+    void ExtremeHelicopterController::setRPM( real_Num rpm )
     {
-        m_rotorRPM = Math<real_Num>::clamp(rpm, 0.0, m_maxRotorRPM);
+        m_rotorRPM = Math<real_Num>::clamp( rpm, 0.0, m_maxRotorRPM );
     }
 
     real_Num ExtremeHelicopterController::getThrottle() const
     {
-        return Math<real_Num>::clamp(getChannel(kThrChannel), 0.0,
-                                     1.0);
+        return Math<real_Num>::clamp( getChannel( kThrChannel ), 0.0, 1.0 );
     }
 
-    void ExtremeHelicopterController::setThrottle(real_Num throttle)
+    void ExtremeHelicopterController::setThrottle( real_Num throttle )
     {
-        setChannel(kThrChannel, throttle);
+        setChannel( kThrChannel, throttle );
     }
 
     real_Num ExtremeHelicopterController::getMoi() const
@@ -498,7 +489,7 @@ namespace workphone::vehicle
         return m_moi;
     }
 
-    void ExtremeHelicopterController::setMoi(real_Num moi)
+    void ExtremeHelicopterController::setMoi( real_Num moi )
     {
         m_moi = moi;
     }
@@ -508,7 +499,7 @@ namespace workphone::vehicle
         return m_thrustMultiplier;
     }
 
-    void ExtremeHelicopterController::setThrustMultiplier(real_Num thrustMultiplier)
+    void ExtremeHelicopterController::setThrustMultiplier( real_Num thrustMultiplier )
     {
         m_thrustMultiplier = thrustMultiplier;
     }
@@ -518,7 +509,7 @@ namespace workphone::vehicle
         return m_torqueMultiplier;
     }
 
-    void ExtremeHelicopterController::setTorqueMultiplier(real_Num torqueMultiplier)
+    void ExtremeHelicopterController::setTorqueMultiplier( real_Num torqueMultiplier )
     {
         m_torqueMultiplier = torqueMultiplier;
     }
@@ -528,22 +519,22 @@ namespace workphone::vehicle
         return m_peakPowerW;
     }
 
-    void ExtremeHelicopterController::setPeakPowerW(real_Num peakPowerW)
+    void ExtremeHelicopterController::setPeakPowerW( real_Num peakPowerW )
     {
         m_peakPowerW = peakPowerW;
     }
 
-    real_Num ExtremeHelicopterController::getTorque(f32 /*throttlePosition*/) const
+    real_Num ExtremeHelicopterController::getTorque( f32 /*throttlePosition*/ ) const
     {
         return m_engineTorque;
     }
 
-    real_Num ExtremeHelicopterController::getMaxTorque(u32 /*rpm*/) const
+    real_Num ExtremeHelicopterController::getMaxTorque( u32 /*rpm*/ ) const
     {
         return m_maxEngineTorque;
     }
 
-    real_Num ExtremeHelicopterController::getMinTorque(u32 /*rpm*/) const
+    real_Num ExtremeHelicopterController::getMinTorque( u32 /*rpm*/ ) const
     {
         return 0.0;
     }
@@ -553,12 +544,12 @@ namespace workphone::vehicle
         return m_engineTorque;
     }
 
-    real_Num ExtremeHelicopterController::getEngineRPM(int /*idx*/) const
+    real_Num ExtremeHelicopterController::getEngineRPM( int /*idx*/ ) const
     {
         return m_rotorRPM;
     }
 
-    real_Num ExtremeHelicopterController::getThrust(int /*idx*/) const
+    real_Num ExtremeHelicopterController::getThrust( int /*idx*/ ) const
     {
         return 0.0;
     }
@@ -572,7 +563,7 @@ namespace workphone::vehicle
         return m_aircraftCallback;
     }
 
-    void ExtremeHelicopterController::setCallback(SmartPtr<IAircraftCallback> callback)
+    void ExtremeHelicopterController::setCallback( SmartPtr<IAircraftCallback> callback )
     {
         m_aircraftCallback = callback;
     }
@@ -582,7 +573,7 @@ namespace workphone::vehicle
         return m_batteryPack;
     }
 
-    void ExtremeHelicopterController::setBatteryPack(SmartPtr<IBatteryPack> batteryPack)
+    void ExtremeHelicopterController::setBatteryPack( SmartPtr<IBatteryPack> batteryPack )
     {
         m_batteryPack = batteryPack;
     }
@@ -592,7 +583,7 @@ namespace workphone::vehicle
         return m_wind;
     }
 
-    void ExtremeHelicopterController::setWind(SmartPtr<IAerodymanicsWind> wind)
+    void ExtremeHelicopterController::setWind( SmartPtr<IAerodymanicsWind> wind )
     {
         m_wind = wind;
     }
@@ -602,7 +593,7 @@ namespace workphone::vehicle
         return m_bodyTransform;
     }
 
-    void ExtremeHelicopterController::setBodyTransform(Transform3<real_Num> bodyTransform)
+    void ExtremeHelicopterController::setBodyTransform( Transform3<real_Num> bodyTransform )
     {
         m_bodyTransform = bodyTransform;
     }
@@ -612,7 +603,7 @@ namespace workphone::vehicle
         return m_rollwiseDamping;
     }
 
-    void ExtremeHelicopterController::setRollwiseDamping(real_Num rollwiseDamping)
+    void ExtremeHelicopterController::setRollwiseDamping( real_Num rollwiseDamping )
     {
         m_rollwiseDamping = rollwiseDamping;
     }
@@ -621,19 +612,22 @@ namespace workphone::vehicle
     // Propeller unit management
     // ===================================================================
 
-    void ExtremeHelicopterController::addPropellerUnit(
-        SmartPtr<IAircraftPropellerUnit> propellerUnit)
+    void ExtremeHelicopterController::addPropellerUnit( SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        if(propellerUnit)
-            m_propellerUnits.push_back(propellerUnit);
+        if( propellerUnit )
+        {
+            m_propellerUnits.push_back( propellerUnit );
+        }
     }
 
     void ExtremeHelicopterController::removePropellerUnit(
-        SmartPtr<IAircraftPropellerUnit> propellerUnit)
+        SmartPtr<IAircraftPropellerUnit> propellerUnit )
     {
-        auto it = std::find(m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit);
-        if(it != m_propellerUnits.end())
-            m_propellerUnits.erase(it);
+        auto it = std::find( m_propellerUnits.begin(), m_propellerUnits.end(), propellerUnit );
+        if( it != m_propellerUnits.end() )
+        {
+            m_propellerUnits.erase( it );
+        }
     }
 
     Array<SmartPtr<IAircraftPropellerUnit>> ExtremeHelicopterController::getPropellerUnits() const
@@ -642,7 +636,7 @@ namespace workphone::vehicle
     }
 
     void ExtremeHelicopterController::setPropellerUnits(
-        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits)
+        const Array<SmartPtr<IAircraftPropellerUnit>> &propellerUnits )
     {
         m_propellerUnits = propellerUnits;
     }
@@ -651,17 +645,21 @@ namespace workphone::vehicle
     // Wheel management
     // ===================================================================
 
-    void ExtremeHelicopterController::addWheel(SmartPtr<IWheelComponent> wheel)
+    void ExtremeHelicopterController::addWheel( SmartPtr<IWheelComponent> wheel )
     {
-        if(wheel)
-            m_wheels.push_back(wheel);
+        if( wheel )
+        {
+            m_wheels.push_back( wheel );
+        }
     }
 
-    void ExtremeHelicopterController::removeWheel(SmartPtr<IWheelComponent> wheel)
+    void ExtremeHelicopterController::removeWheel( SmartPtr<IWheelComponent> wheel )
     {
-        auto it = std::find(m_wheels.begin(), m_wheels.end(), wheel);
-        if(it != m_wheels.end())
-            m_wheels.erase(it);
+        auto it = std::find( m_wheels.begin(), m_wheels.end(), wheel );
+        if( it != m_wheels.end() )
+        {
+            m_wheels.erase( it );
+        }
     }
 
     Array<SmartPtr<IWheelComponent>> ExtremeHelicopterController::getWheels() const
@@ -669,7 +667,7 @@ namespace workphone::vehicle
         return m_wheels;
     }
 
-    void ExtremeHelicopterController::setWheels(const Array<SmartPtr<IWheelComponent>> &wheels)
+    void ExtremeHelicopterController::setWheels( const Array<SmartPtr<IWheelComponent>> &wheels )
     {
         m_wheels = wheels;
     }
@@ -678,7 +676,7 @@ namespace workphone::vehicle
     // Control surface / section / model path stubs
     // ===================================================================
 
-    void ExtremeHelicopterController::setControlAngle(s32 /*id*/, f32 /*angle*/)
+    void ExtremeHelicopterController::setControlAngle( s32 /*id*/, f32 /*angle*/ )
     {
         // Not used by this controller.
     }
@@ -688,7 +686,7 @@ namespace workphone::vehicle
         return m_sectionMultiplier;
     }
 
-    void ExtremeHelicopterController::setSectionMultiplier(real_Num sectionMultiplier)
+    void ExtremeHelicopterController::setSectionMultiplier( real_Num sectionMultiplier )
     {
         m_sectionMultiplier = sectionMultiplier;
     }
@@ -698,8 +696,8 @@ namespace workphone::vehicle
         return m_modelDataFilePath;
     }
 
-    void ExtremeHelicopterController::setModelDataFilePath(const String &filePath)
+    void ExtremeHelicopterController::setModelDataFilePath( const String &filePath )
     {
         m_modelDataFilePath = filePath;
     }
-}
+}  // namespace workphone::vehicle

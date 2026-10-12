@@ -8,4 +8,4 @@ namespace workphone::vehicle
     CBatteryPack::CBatteryPack() = default;
 
     CBatteryPack::~CBatteryPack() = default;
-}
+}  // namespace workphone::vehicle

@@ -7,8 +7,8 @@
 
 namespace workphone::vehicle
 {
-    WP_CLASS_REGISTER_DERIVED(workphone::vehicle, BladeElementRotor,
-                              CAircraftAttachment<IVehicleComponent>);
+    WP_CLASS_REGISTER_DERIVED( workphone::vehicle, BladeElementRotor,
+                               CAircraftAttachment<IVehicleComponent> );
 
     // ===================================================================
     // Construction
@@ -16,7 +16,7 @@ namespace workphone::vehicle
 
     BladeElementRotor::BladeElementRotor()
     {
-        m_segmentLength = m_rotorRadius / static_cast<real_Num>(m_segmentsPerBlade);
+        m_segmentLength = m_rotorRadius / static_cast<real_Num>( m_segmentsPerBlade );
     }
 
     BladeElementRotor::~BladeElementRotor() = default;
@@ -25,23 +25,27 @@ namespace workphone::vehicle
     // Lifecycle
     // ===================================================================
 
-    void BladeElementRotor::load(SmartPtr<ISharedObject> data)
+    void BladeElementRotor::load( SmartPtr<ISharedObject> data )
     {
         // Recompute the cached segment length whenever parameters are loaded.
-        if(m_segmentsPerBlade > 0)
-            m_segmentLength = m_rotorRadius / static_cast<real_Num>(m_segmentsPerBlade);
+        if( m_segmentsPerBlade > 0 )
+        {
+            m_segmentLength = m_rotorRadius / static_cast<real_Num>( m_segmentsPerBlade );
+        }
     }
 
-    void BladeElementRotor::update(const double &t, const double &dt)
+    void BladeElementRotor::update( const double &t, const double &dt )
     {
         m_totalForce = Vector3<real_Num>::zero();
         m_totalTorque = Vector3<real_Num>::zero();
 
-        if(m_rotorRPM < static_cast<real_Num>(0.01))
+        if( m_rotorRPM < static_cast<real_Num>( 0.01 ) )
+        {
             return;
+        }
 
         // Angular velocity (rad/s): ω = RPM × 2π / 60
-        const real_Num omega = m_rotorRPM * Math<real_Num>::two_pi() / static_cast<real_Num>(60.0);
+        const real_Num omega = m_rotorRPM * Math<real_Num>::two_pi() / static_cast<real_Num>( 60.0 );
 
         // Body-space axes from the attachment world transform.
         const auto &worldTransform = getWorldTransform();
@@ -50,15 +54,15 @@ namespace workphone::vehicle
         const Vector3<real_Num> worldUp = orientation * Vector3<real_Num>::unitY();
         const Vector3<real_Num> worldRight = orientation * Vector3<real_Num>::unitX();
 
-        simulateRotor(omega, worldUp, worldRight);
+        simulateRotor( omega, worldUp, worldRight );
 
         // Apply accumulated results to the parent physics body.
         auto body = getParent();
-        if(body)
+        if( body )
         {
             const Vector3<real_Num> hubWorldPos = worldTransform.getPosition();
-            body->addForceAtPosition(m_totalForce, hubWorldPos);
-            body->addTorque(m_totalTorque);
+            body->addForceAtPosition( m_totalForce, hubWorldPos );
+            body->addTorque( m_totalTorque );
         }
     }
 
@@ -66,16 +70,18 @@ namespace workphone::vehicle
     // Core blade element integration
     // ===================================================================
 
-    void BladeElementRotor::simulateRotor(real_Num omega, const Vector3<real_Num> &worldUp,
-                                          const Vector3<real_Num> &worldRight)
+    void BladeElementRotor::simulateRotor( real_Num omega, const Vector3<real_Num> &worldUp,
+                                           const Vector3<real_Num> &worldRight )
     {
         const auto &worldTransform = getWorldTransform();
         const auto orientation = worldTransform.getOrientation();
         auto body = getParent();
 
         // Refresh cached segment length in case parameters changed at runtime.
-        if(m_segmentsPerBlade > 0)
-            m_segmentLength = m_rotorRadius / static_cast<real_Num>(m_segmentsPerBlade);
+        if( m_segmentsPerBlade > 0 )
+        {
+            m_segmentLength = m_rotorRadius / static_cast<real_Num>( m_segmentsPerBlade );
+        }
 
         const real_Num twoPi = Math<real_Num>::two_pi();
         const real_Num degToRad = Math<real_Num>::deg_to_rad();
@@ -84,69 +90,69 @@ namespace workphone::vehicle
         // The per-segment area (chord × segmentLength) is factored out of the
         // lift/drag magnitude expressions and multiplied in once below.
         const real_Num area = m_chordLength * m_segmentLength;
-        const real_Num halfRhoArea = static_cast<real_Num>(0.5) * m_airDensity * area;
+        const real_Num halfRhoArea = static_cast<real_Num>( 0.5 ) * m_airDensity * area;
 
         // Cyclic pitch amplitude in degrees (physical deflection).
         const real_Num cyclicXDeg = m_cyclicInput.X() * m_cyclicPitchMax;
         const real_Num cyclicYDeg = m_cyclicInput.Y() * m_cyclicPitchMax;
 
-        for(s32 blade = 0; blade < m_bladeCount; ++blade)
+        for( s32 blade = 0; blade < m_bladeCount; ++blade )
         {
             // Azimuth angle of this blade (radians), evenly spaced around the disc.
             const real_Num psi =
-                static_cast<real_Num>(blade) * twoPi / static_cast<real_Num>(m_bladeCount);
+                static_cast<real_Num>( blade ) * twoPi / static_cast<real_Num>( m_bladeCount );
 
             // Rotation quaternion that places the blade along the rotor X axis
             // at azimuth ψ (rotating around the body-local Y/up axis).
             const Quaternion<real_Num> bladeRot =
-                Quaternion<real_Num>::angleAxis(psi, Vector3<real_Num>::unitY());
+                Quaternion<real_Num>::angleAxis( psi, Vector3<real_Num>::unitY() );
 
             // First-harmonic cyclic pitch variation:
             //   pitch(ψ) = collective + cyclicX·sin(ψ) + cyclicY·cos(ψ)
-            const real_Num pitchDeg = m_collectivePitch +
-                                      cyclicXDeg * std::sin(psi) +
-                                      cyclicYDeg * std::cos(psi);
-            const real_Num alpha = pitchDeg * degToRad; // angle of attack (rad)
+            const real_Num pitchDeg =
+                m_collectivePitch + cyclicXDeg * std::sin( psi ) + cyclicYDeg * std::cos( psi );
+            const real_Num alpha = pitchDeg * degToRad;  // angle of attack (rad)
 
             // Section aerodynamic coefficients.
             const real_Num Cl = m_liftSlope * alpha;
-            const real_Num Cd = m_dragCoeff + Cl * Cl * static_cast<real_Num>(0.02);
+            const real_Num Cd = m_dragCoeff + Cl * Cl * static_cast<real_Num>( 0.02 );
 
-            for(s32 seg = 1; seg <= m_segmentsPerBlade; ++seg)
+            for( s32 seg = 1; seg <= m_segmentsPerBlade; ++seg )
             {
                 // Radial station of this segment.
-                const real_Num radius = static_cast<real_Num>(seg) * m_segmentLength;
+                const real_Num radius = static_cast<real_Num>( seg ) * m_segmentLength;
 
                 // Local position of the segment centre in attachment space —
                 // blade extends along X, rotated to azimuth ψ around Y.
-                const Vector3<real_Num> localPos =
-                    bladeRot * Vector3<real_Num>(radius, 0.0,
-                                                 0.0);
+                const Vector3<real_Num> localPos = bladeRot * Vector3<real_Num>( radius, 0.0, 0.0 );
 
                 // World-space position of this segment.
                 const Vector3<real_Num> worldPos =
-                    worldTransform.getPosition() + (orientation * localPos);
+                    worldTransform.getPosition() + ( orientation * localPos );
 
                 // Tangential velocity due to rotor rotation:
                 //   v_tan = ω × r  (in the rotor plane, perpendicular to the blade radius)
                 // In the local rotor frame the rotation axis is Y, so the tangential
                 // direction for a segment at (r,0,0) is (0,0,−r·ω) before azimuth rotation.
                 const Vector3<real_Num> localTangential =
-                    bladeRot * Vector3<real_Num>(0.0,
-                                                 0.0, -radius * omega);
+                    bladeRot * Vector3<real_Num>( 0.0, 0.0, -radius * omega );
                 const Vector3<real_Num> tangentialVelWorld = orientation * localTangential;
 
                 // Body velocity at this world point (accounts for translation + rotation).
                 Vector3<real_Num> bodyPointVel = Vector3<real_Num>::zero();
-                if(body)
-                    bodyPointVel = body->getPointVelocity(worldPos);
+                if( body )
+                {
+                    bodyPointVel = body->getPointVelocity( worldPos );
+                }
 
                 // Total air velocity seen by the section.
                 const Vector3<real_Num> airVelocity = tangentialVelWorld + bodyPointVel;
                 const real_Num speed = airVelocity.length();
 
-                if(speed < static_cast<real_Num>(0.01))
+                if( speed < static_cast<real_Num>( 0.01 ) )
+                {
                     continue;
+                }
 
                 const Vector3<real_Num> airflowDir = airVelocity / speed;
 
@@ -158,7 +164,7 @@ namespace workphone::vehicle
 
                 // Lift direction: perpendicular to airflow, in the plane containing
                 // airflow and the blade span (right axis).
-                Vector3<real_Num> liftDir = airflowDir.crossProduct(worldRight).normaliseCopy();
+                Vector3<real_Num> liftDir = airflowDir.crossProduct( worldRight ).normaliseCopy();
 
                 // Drag direction opposes relative airflow.
                 const Vector3<real_Num> dragDir = -airflowDir;
@@ -170,7 +176,7 @@ namespace workphone::vehicle
                 // Torque = r × F, where r is the segment position relative to the hub.
                 // Use the local (attachment-frame) position so the torque is about the hub.
                 const Vector3<real_Num> worldLocalPos = orientation * localPos;
-                m_totalTorque += worldLocalPos.crossProduct(segForce);
+                m_totalTorque += worldLocalPos.crossProduct( segForce );
             }
         }
     }
@@ -198,7 +204,7 @@ namespace workphone::vehicle
         return m_bladeCount;
     }
 
-    void BladeElementRotor::setBladeCount(s32 bladeCount)
+    void BladeElementRotor::setBladeCount( s32 bladeCount )
     {
         m_bladeCount = bladeCount;
     }
@@ -208,11 +214,13 @@ namespace workphone::vehicle
         return m_segmentsPerBlade;
     }
 
-    void BladeElementRotor::setSegmentsPerBlade(s32 segmentsPerBlade)
+    void BladeElementRotor::setSegmentsPerBlade( s32 segmentsPerBlade )
     {
         m_segmentsPerBlade = segmentsPerBlade;
-        if(m_segmentsPerBlade > 0)
-            m_segmentLength = m_rotorRadius / static_cast<real_Num>(m_segmentsPerBlade);
+        if( m_segmentsPerBlade > 0 )
+        {
+            m_segmentLength = m_rotorRadius / static_cast<real_Num>( m_segmentsPerBlade );
+        }
     }
 
     real_Num BladeElementRotor::getRotorRadius() const
@@ -220,11 +228,13 @@ namespace workphone::vehicle
         return m_rotorRadius;
     }
 
-    void BladeElementRotor::setRotorRadius(real_Num rotorRadius)
+    void BladeElementRotor::setRotorRadius( real_Num rotorRadius )
     {
         m_rotorRadius = rotorRadius;
-        if(m_segmentsPerBlade > 0)
-            m_segmentLength = m_rotorRadius / static_cast<real_Num>(m_segmentsPerBlade);
+        if( m_segmentsPerBlade > 0 )
+        {
+            m_segmentLength = m_rotorRadius / static_cast<real_Num>( m_segmentsPerBlade );
+        }
     }
 
     real_Num BladeElementRotor::getChordLength() const
@@ -232,7 +242,7 @@ namespace workphone::vehicle
         return m_chordLength;
     }
 
-    void BladeElementRotor::setChordLength(real_Num chordLength)
+    void BladeElementRotor::setChordLength( real_Num chordLength )
     {
         m_chordLength = chordLength;
     }
@@ -246,7 +256,7 @@ namespace workphone::vehicle
         return m_airDensity;
     }
 
-    void BladeElementRotor::setAirDensity(real_Num airDensity)
+    void BladeElementRotor::setAirDensity( real_Num airDensity )
     {
         m_airDensity = airDensity;
     }
@@ -256,7 +266,7 @@ namespace workphone::vehicle
         return m_liftSlope;
     }
 
-    void BladeElementRotor::setLiftSlope(real_Num liftSlope)
+    void BladeElementRotor::setLiftSlope( real_Num liftSlope )
     {
         m_liftSlope = liftSlope;
     }
@@ -266,7 +276,7 @@ namespace workphone::vehicle
         return m_dragCoeff;
     }
 
-    void BladeElementRotor::setDragCoeff(real_Num dragCoeff)
+    void BladeElementRotor::setDragCoeff( real_Num dragCoeff )
     {
         m_dragCoeff = dragCoeff;
     }
@@ -280,7 +290,7 @@ namespace workphone::vehicle
         return m_rotorRPM;
     }
 
-    void BladeElementRotor::setRotorRPM(real_Num rotorRPM)
+    void BladeElementRotor::setRotorRPM( real_Num rotorRPM )
     {
         m_rotorRPM = rotorRPM;
     }
@@ -290,7 +300,7 @@ namespace workphone::vehicle
         return m_collectivePitch;
     }
 
-    void BladeElementRotor::setCollectivePitch(real_Num collectivePitch)
+    void BladeElementRotor::setCollectivePitch( real_Num collectivePitch )
     {
         m_collectivePitch = collectivePitch;
     }
@@ -300,7 +310,7 @@ namespace workphone::vehicle
         return m_cyclicInput;
     }
 
-    void BladeElementRotor::setCyclicInput(const Vector2<real_Num> &cyclicInput)
+    void BladeElementRotor::setCyclicInput( const Vector2<real_Num> &cyclicInput )
     {
         m_cyclicInput = cyclicInput;
     }
@@ -310,8 +320,8 @@ namespace workphone::vehicle
         return m_cyclicPitchMax;
     }
 
-    void BladeElementRotor::setCyclicPitchMax(real_Num cyclicPitchMax)
+    void BladeElementRotor::setCyclicPitchMax( real_Num cyclicPitchMax )
     {
         m_cyclicPitchMax = cyclicPitchMax;
     }
-}
+}  // namespace workphone::vehicle

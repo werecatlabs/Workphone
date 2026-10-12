@@ -18,43 +18,43 @@ namespace workphone::vehicle
 
         bool isValid() const override;
 
-        void update(const double &t, const double &dt) override;
+        void update( const double &t, const double &dt ) override;
 
         SmartPtr<IBatteryPack> &getBatteryPack() override;
         const SmartPtr<IBatteryPack> &getBatteryPack() const override;
-        void setBatteryPack(SmartPtr<IBatteryPack> batteryPack) override;
+        void setBatteryPack( SmartPtr<IBatteryPack> batteryPack ) override;
 
         SmartPtr<IESController> &getESC() override;
         const SmartPtr<IESController> &getESC() const override;
-        void setESC(SmartPtr<IESController> esc) override;
+        void setESC( SmartPtr<IESController> esc ) override;
 
         SmartPtr<IAircraftPowerUnit> &getPowerUnit() override;
         const SmartPtr<IAircraftPowerUnit> &getPowerUnit() const override;
-        void setPowerUnit(SmartPtr<IAircraftPowerUnit> powerUnit) override;
+        void setPowerUnit( SmartPtr<IAircraftPowerUnit> powerUnit ) override;
 
         SmartPtr<IAircraftPropeller> &getPropeller() override;
         const SmartPtr<IAircraftPropeller> &getPropeller() const override;
-        void setPropeller(SmartPtr<IAircraftPropeller> propeller) override;
+        void setPropeller( SmartPtr<IAircraftPropeller> propeller ) override;
 
         real_Num getFlowSettlingTime() const;
-        void setFlowSettlingTime(real_Num flowSettlingTime);
+        void setFlowSettlingTime( real_Num flowSettlingTime );
 
         Vector3<real_Num> getThrust() const override;
-        void setThrust(const Vector3<real_Num> &thrust) override;
+        void setThrust( const Vector3<real_Num> &thrust ) override;
 
         Vector3<real_Num> getPropwash() const override;
-        void setPropwash(const Vector3<real_Num> &propwash) override;
+        void setPropwash( const Vector3<real_Num> &propwash ) override;
 
     protected:
-        void ePropellerSimple(const double &t, const double &dt);
-        void ePropellerOld(const double &t, const double &dt);
-        void ePropellerNew(const double &t, const double &dt);
-        void propellerNitro(const double &dt);
+        void ePropellerSimple( const double &t, const double &dt );
+        void ePropellerOld( const double &t, const double &dt );
+        void ePropellerNew( const double &t, const double &dt );
+        void propellerNitro( const double &dt );
 
-        void escCutoutControl(SmartPtr<IESController> pESC, float dt);
+        void escCutoutControl( SmartPtr<IESController> pESC, float dt );
 
-        float lookupSlope(float angle);
-        float lookupCdSlope(float angle);
+        float lookupSlope( float angle );
+        float lookupCdSlope( float angle );
 
         SmartPtr<IBatteryPack> m_batteryPack;
         SmartPtr<IESController> m_esc;
@@ -118,6 +118,6 @@ namespace workphone::vehicle
         /// Used to generate a unique id.
         static u32 m_idExt;
     };
-}
+}  // namespace workphone::vehicle
 
-#endif // CAircraftPropellerUnit_h__
+#endif  // CAircraftPropellerUnit_h__

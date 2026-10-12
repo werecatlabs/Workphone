@@ -22,10 +22,10 @@ namespace workphone::vehicle
         physics_Num m_dCdByAlpha = 0.0;
         physics_Num m_cm = 0.0;
         physics_Num m_dCmByAlpha = 0.0;
-    }; // TFoilLookup
+    };  // TFoilLookup
 
     /* range 0..400*/
     using TFoilTable = std::array<TFoilLookup, 401>;
-}
+}  // namespace workphone::vehicle
 
-#endif // FoilLookup_h__
+#endif  // FoilLookup_h__

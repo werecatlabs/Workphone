@@ -14,66 +14,66 @@
 namespace workphone::vehicle
 {
     /**
-         * @brief Models a rotor assembly including geometry, dynamics and
-         *        aerodynamic lookup data.
-         *
-         * TRotor stores per-rotor properties (blade geometry, inertial
-         * properties, operational state) and results (forces, moments,
-         * per-sector data). Many members are public for efficient, POD-style
-         * access within performance-critical simulation loops.
-         */
-    class TRotor
+     * @brief Models a rotor assembly including geometry, dynamics and
+     *        aerodynamic lookup data.
+     *
+     * TRotor stores per-rotor properties (blade geometry, inertial
+     * properties, operational state) and results (forces, moments,
+     * per-sector data). Many members are public for efficient, POD-style
+     * access within performance-critical simulation loops.
+     */
+    class Rotor
     {
     public:
         /// Default constructor
-        TRotor();
+        Rotor();
 
         /// Non-copyable: disable copy construction to avoid accidental sharing
-        TRotor(const TRotor &other) = delete;
+        Rotor( const Rotor &other ) = delete;
 
         /// Destructor
-        ~TRotor();
+        ~Rotor();
 
         /**
-             * @brief Access the aerofoil lookup table used by this rotor.
-             * @return Modifiable reference to the TFoilTable.
-             */
+         * @brief Access the aerofoil lookup table used by this rotor.
+         * @return Modifiable reference to the TFoilTable.
+         */
         TFoilTable &getAFoilLookup();
 
         /**
-             * @brief Const access to the aerofoil lookup table.
-             * @return Const reference to the TFoilTable.
-             */
+         * @brief Const access to the aerofoil lookup table.
+         * @return Const reference to the TFoilTable.
+         */
         const TFoilTable &getAFoilLookup() const;
 
         /**
-             * @brief Replace the aerofoil lookup table for this rotor.
-             * @param foilLookup Table to use for CL/CD lookups.
-             */
-        void setAFoilLookup(const TFoilTable &foilLookup);
+         * @brief Replace the aerofoil lookup table for this rotor.
+         * @param foilLookup Table to use for CL/CD lookups.
+         */
+        void setAFoilLookup( const TFoilTable &foilLookup );
 
         const String &getSection() const;
-        void setSection(const String &sectionName);
+        void setSection( const String &sectionName );
 
         /**
-             * @brief Get the current rotor angular velocity (rad/s).
-             */
+         * @brief Get the current rotor angular velocity (rad/s).
+         */
         real_dNum getOmega() const;
 
         /**
-             * @brief Set the rotor angular velocity (rad/s).
-             */
-        void setOmega(const real_dNum &angularVelocity);
+         * @brief Set the rotor angular velocity (rad/s).
+         */
+        void setOmega( const real_dNum &angularVelocity );
 
         /**
-             * @brief Returns true if rotor rotates clockwise (viewed from above).
-             */
+         * @brief Returns true if rotor rotates clockwise (viewed from above).
+         */
         bool isCw() const;
 
         /**
-             * @brief Set the rotor rotation direction flag.
-             */
-        void setCw(bool isClockwise);
+         * @brief Set the rotor rotation direction flag.
+         */
+        void setCw( bool isClockwise );
 
         /* Frame vectors that define the rotor axes. */
         FrameOfRef m_frame;
@@ -97,95 +97,95 @@ namespace workphone::vehicle
         s32 m_blades = 0;
 
         /* Geometry: radial positions and chord lengths. */
-        real_dNum m_minRad = 0.0; ///< Inner (cuff) radius
-        real_dNum m_maxRad = 0.0; ///< Outer (tip) radius
-        real_dNum m_cuffChord = 0.0; ///< Chord at cuff
-        real_dNum m_tipChord = 0.0; ///< Chord at tip
+        real_dNum m_minRad = 0.0;     ///< Inner (cuff) radius
+        real_dNum m_maxRad = 0.0;     ///< Outer (tip) radius
+        real_dNum m_cuffChord = 0.0;  ///< Chord at cuff
+        real_dNum m_tipChord = 0.0;   ///< Chord at tip
 
         /* Blade twist (cuff angle relative to tip). */
         real_dNum m_twist = 0.0;
 
         /* Inertial properties of individual blades. */
-        real_dNum m_bladeWeight = 0.0; ///< Mass or weight of single blade
-        real_dNum m_radOfGyr = 0.0; ///< Radius of gyration about hub
+        real_dNum m_bladeWeight = 0.0;  ///< Mass or weight of single blade
+        real_dNum m_radOfGyr = 0.0;     ///< Radius of gyration about hub
 
         /* Rotor orientation and control inputs. */
-        real_dNum m_cone = 0.0; ///< Coning angle (rad, + = upwards)
-        real_dNum m_collective = 0.0; ///< Collective pitch (rad)
-        real_dNum m_ailCyclic = 0.0; ///< Aileron cyclic input (rad)
-        real_dNum m_eleCyclic = 0.0; ///< Elevator cyclic input (rad)
+        real_dNum m_cone = 0.0;        ///< Coning angle (rad, + = upwards)
+        real_dNum m_collective = 0.0;  ///< Collective pitch (rad)
+        real_dNum m_ailCyclic = 0.0;   ///< Aileron cyclic input (rad)
+        real_dNum m_eleCyclic = 0.0;   ///< Elevator cyclic input (rad)
 
         /* Dynamics and state. */
-        real_dNum m_momentOfInertia = 0.0; ///< Moment of inertia about hub
-        real_dNum m_angularMomentum = 0.0; ///< Angular momentum about hub
+        real_dNum m_momentOfInertia = 0.0;  ///< Moment of inertia about hub
+        real_dNum m_angularMomentum = 0.0;  ///< Angular momentum about hub
 
         /* Head deflections relative to mainshaft (body sign convention). */
-        real_dNum m_eleAngle = 0.0; ///< Longitudinal head tilt (+ nose down)
-        real_dNum m_ailAngle = 0.0; ///< Lateral head tilt (+ roll right)
+        real_dNum m_eleAngle = 0.0;  ///< Longitudinal head tilt (+ nose down)
+        real_dNum m_ailAngle = 0.0;  ///< Lateral head tilt (+ roll right)
 
         /* Limits and operational parameters. */
-        real_dNum m_totalAngleLimit = 0.0; ///< Cyclic+collective angle limit (rad)
-        real_dNum m_omega = 0.0; ///< Rotation rate (rad/s)
-        bool m_isCw = true; ///< Rotation direction flag
+        real_dNum m_totalAngleLimit = 0.0;  ///< Cyclic+collective angle limit (rad)
+        real_dNum m_omega = 0.0;            ///< Rotation rate (rad/s)
+        bool m_isCw = true;                 ///< Rotation direction flag
 
         /* Ground effect and per-sector data (1-based indices: 1..4). */
-        std::array<physics_Num, 5> m_groundEffect; ///< Per-sector ground effect values
-        std::array<physics_Num, 5> m_groundDistance; ///< Per-sector ground distances
-        std::array<TRotorSector, 5> m_sector; ///< Per-sector rotor data
+        std::array<physics_Num, 5> m_groundEffect;    ///< Per-sector ground effect values
+        std::array<physics_Num, 5> m_groundDistance;  ///< Per-sector ground distances
+        std::array<RotorSector, 5> m_sector;          ///< Per-sector rotor data
 
         /* Aerodynamic lookup and identification. */
-        String m_section; ///< Name of aerofoil section (for CL/CD lookup)
-        TFoilTable m_aFoilLookup; ///< Aerofoil lookup table used for this rotor
-    }; // TRotor
+        String m_section;          ///< Name of aerofoil section (for CL/CD lookup)
+        TFoilTable m_aFoilLookup;  ///< Aerofoil lookup table used for this rotor
+    };  // TRotor
 
-    inline const TFoilTable &TRotor::getAFoilLookup() const
+    inline const TFoilTable &Rotor::getAFoilLookup() const
     {
         return m_aFoilLookup;
     }
 
-    inline TFoilTable &TRotor::getAFoilLookup()
+    inline TFoilTable &Rotor::getAFoilLookup()
     {
         return m_aFoilLookup;
     }
 
-    inline void TRotor::setAFoilLookup(const TFoilTable &foilLookup)
+    inline void Rotor::setAFoilLookup( const TFoilTable &foilLookup )
     {
         m_aFoilLookup = foilLookup;
     }
 
-    inline const String &TRotor::getSection() const
+    inline const String &Rotor::getSection() const
     {
         return m_section;
     }
 
-    inline void TRotor::setSection(const String &sectionName)
+    inline void Rotor::setSection( const String &sectionName )
     {
         m_section = sectionName;
     }
 
-    inline real_dNum TRotor::getOmega() const
+    inline real_dNum Rotor::getOmega() const
     {
-        WP_ASSERT(Math<real_dNum>::isFinite( m_omega ));
+        WP_ASSERT( Math<real_dNum>::isFinite( m_omega ) );
         return m_omega;
     }
 
-    inline void TRotor::setOmega(const real_dNum &angularVelocity)
+    inline void Rotor::setOmega( const real_dNum &angularVelocity )
     {
-        WP_ASSERT(Math<real_dNum>::isFinite( angularVelocity ));
-        WP_ASSERT(Math<real_dNum>::isFinite( m_omega ));
+        WP_ASSERT( Math<real_dNum>::isFinite( angularVelocity ) );
+        WP_ASSERT( Math<real_dNum>::isFinite( m_omega ) );
         m_omega = angularVelocity;
     }
 
-    inline bool TRotor::isCw() const
+    inline bool Rotor::isCw() const
     {
         return false;
         // return m_isCw;
     }
 
-    inline void TRotor::setCw(bool isClockwise)
+    inline void Rotor::setCw( bool isClockwise )
     {
         m_isCw = isClockwise;
     }
-}
+}  // namespace workphone::vehicle
 
-#endif // Rotor_h__
+#endif  // Rotor_h__
