@@ -14,16 +14,20 @@ WORKPHONE_LIB void *wp_create_panel( struct wp_context *ctx )
     struct wp_page_element *elem;
     elem = wp_create_page_element( ctx );
     if( !elem )
+    {
         return 0;
+    }
     wp_zero_struct( *elem );
     return &elem->data.pan;
 }
+
 WORKPHONE_LIB void wp_free_panel( struct wp_context *ctx, struct wp_panel *pan )
 {
     union wp_page_data *pd = WORKPHONE_CONTAINER_OF( pan, union wp_page_data, pan );
     struct wp_page_element *pe = WORKPHONE_CONTAINER_OF( pd, struct wp_page_element, data );
     wp_free_page_element( ctx, pe );
 }
+
 WORKPHONE_LIB wp_bool wp_panel_has_header( wp_flags flags, const wp_c8 *title )
 {
     wp_bool active = 0;
@@ -32,8 +36,9 @@ WORKPHONE_LIB wp_bool wp_panel_has_header( wp_flags flags, const wp_c8 *title )
     active = active && !( flags & WORKPHONE_WINDOW_HIDDEN ) && title;
     return active;
 }
+
 WORKPHONE_LIB struct wp_vec2f wp_panel_get_padding( const struct wp_style *style,
-                                                   enum wp_panel_type type )
+                                                    enum wp_panel_type type )
 {
     switch( type )
     {
@@ -54,6 +59,7 @@ WORKPHONE_LIB struct wp_vec2f wp_panel_get_padding( const struct wp_style *style
         return style->window.menu_padding;
     }
 }
+
 WORKPHONE_LIB wp_f32 wp_panel_get_border( const struct wp_style *style, wp_flags flags,
                                           enum wp_panel_type type )
 {
@@ -79,8 +85,11 @@ WORKPHONE_LIB wp_f32 wp_panel_get_border( const struct wp_style *style, wp_flags
         }
     }
     else
+    {
         return 0;
+    }
 }
+
 WORKPHONE_LIB struct wp_color wp_panel_get_border_color( const struct wp_style *style,
                                                          enum wp_panel_type type )
 {
@@ -103,14 +112,17 @@ WORKPHONE_LIB struct wp_color wp_panel_get_border_color( const struct wp_style *
         return style->window.menu_border_color;
     }
 }
+
 WORKPHONE_LIB wp_bool wp_panel_is_sub( enum wp_panel_type type )
 {
     return ( (wp_s32)type & (wp_s32)WORKPHONE_PANEL_SET_SUB ) ? 1 : 0;
 }
+
 WORKPHONE_LIB wp_bool wp_panel_is_nonblock( enum wp_panel_type type )
 {
     return ( (wp_s32)type & (wp_s32)WORKPHONE_PANEL_SET_NONBLOCK ) ? 1 : 0;
 }
+
 WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title,
                                       enum wp_panel_type panel_type )
 {
@@ -128,7 +140,9 @@ WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
     wp_zero( ctx->current->layout, sizeof( *ctx->current->layout ) );
     if( ( ctx->current->flags & WORKPHONE_WINDOW_HIDDEN ) ||
         ( ctx->current->flags & WORKPHONE_WINDOW_CLOSED ) )
@@ -169,7 +183,9 @@ WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title
             header.h += 2.0f * style->window.header.label_padding.y;
         }
         else
+        {
             header.h = panel_padding.y;
+        }
 
         /* window movement by dragging */
         left_mouse_down = in->mouse.buttons[WORKPHONE_BUTTON_LEFT].down;
@@ -198,7 +214,9 @@ WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title
         layout->bounds = wp_shrink_make_rect( layout->bounds, layout->border );
     }
     else
+    {
         layout->border = 0;
+    }
     layout->at_y = layout->bounds.y;
     layout->at_x = layout->bounds.x;
     layout->max_x = 0;
@@ -213,12 +231,16 @@ WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title
     layout->row.height = panel_padding.y;
     layout->has_scrolling = wp_true;
     if( !( win->flags & WORKPHONE_WINDOW_NO_SCROLLBAR ) )
+    {
         layout->bounds.w -= scrollbar_size.x;
+    }
     if( !wp_panel_is_nonblock( panel_type ) )
     {
         layout->footer_height = 0;
         if( !( win->flags & WORKPHONE_WINDOW_NO_SCROLLBAR ) || win->flags & WORKPHONE_WINDOW_SCALABLE )
+        {
             layout->footer_height = scrollbar_size.y;
+        }
         layout->bounds.h -= layout->footer_height;
     }
 
@@ -337,9 +359,11 @@ WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title
                                          WORKPHONE_BUTTON_DEFAULT, &style->window.header.minimize_button,
                                          in, style->font ) &&
                     !( win->flags & WORKPHONE_WINDOW_ROM ) )
+                {
                     layout->flags = ( layout->flags & WORKPHONE_WINDOW_MINIMIZED )
                                         ? layout->flags & (wp_flags)~WORKPHONE_WINDOW_MINIMIZED
                                         : layout->flags | WORKPHONE_WINDOW_MINIMIZED;
+                }
             }
         }
 
@@ -396,6 +420,7 @@ WORKPHONE_LIB wp_bool wp_panel_begin( struct wp_context *ctx, const wp_c8 *title
     return !( layout->flags & WORKPHONE_WINDOW_HIDDEN ) &&
            !( layout->flags & WORKPHONE_WINDOW_MINIMIZED );
 }
+
 WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
 {
     struct wp_input *in;
@@ -411,7 +436,9 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     window = ctx->current;
     layout = window->layout;
@@ -421,7 +448,9 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
              ? 0
              : &ctx->input;
     if( !wp_panel_is_sub( layout->type ) )
+    {
         wp_push_scissor( out, wp_null_rect );
+    }
 
     /* cache configuration data */
     scrollbar_size = style->window.scrollbar_size;
@@ -436,7 +465,9 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
         /* update panel height to fit dynamic growth */
         struct wp_rect empty_space;
         if( layout->at_y < ( layout->bounds.y + layout->bounds.h ) )
+        {
             layout->bounds.h = layout->at_y - layout->bounds.y;
+        }
 
         /* fill top empty space */
         empty_space.x = window->bounds.x;
@@ -458,7 +489,9 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
         empty_space.w = panel_padding.x + layout->border;
         empty_space.h = layout->bounds.h;
         if( *layout->offset_y == 0 && !( layout->flags & WORKPHONE_WINDOW_NO_SCROLLBAR ) )
+        {
             empty_space.w += scrollbar_size.x;
+        }
         wp_fill_rect( out, empty_space, 0, style->window.background );
 
         /* fill bottom empty space */
@@ -491,9 +524,13 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
             struct wp_window *root_window = window;
             struct wp_panel *root_panel = window->layout;
             while( root_panel->parent )
+            {
                 root_panel = root_panel->parent;
+            }
             while( root_window->parent )
+            {
                 root_window = root_window->parent;
+            }
 
             /* only allow scrolling if parent window is active */
             scroll_has_scrolling = wp_false;
@@ -523,9 +560,13 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
             scroll_has_scrolling = ( window == ctx->active ) && layout->has_scrolling;
             if( in && ( in->mouse.scroll_delta.y > 0 || in->mouse.scroll_delta.x > 0 ) &&
                 scroll_has_scrolling )
+            {
                 window->scrolled = wp_true;
+            }
             else
+            {
                 window->scrolled = wp_false;
+            }
         }
 
         {
@@ -545,7 +586,9 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
                                               &ctx->style.scrollv, in, style->font );
             *layout->offset_y = (wp_u32)scroll_offset;
             if( in && scroll_has_scrolling )
+            {
                 in->mouse.scroll_delta.y = 0;
+            }
         }
         {
             /* horizontal scrollbar */
@@ -574,12 +617,18 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
         wp_s32 is_window_hovered = wp_window_is_hovered( ctx );
         wp_s32 any_item_active = ( ctx->last_widget_state & WORKPHONE_WIDGET_STATE_MODIFIED );
         if( ( !has_input && is_window_hovered ) || ( !is_window_hovered && !any_item_active ) )
+        {
             window->scrollbar_hiding_timer += ctx->delta_time_seconds;
+        }
         else
+        {
             window->scrollbar_hiding_timer = 0;
+        }
     }
     else
+    {
         window->scrollbar_hiding_timer = 0;
+    }
 
     /* window border */
     if( layout->flags & WORKPHONE_WINDOW_BORDER )
@@ -606,17 +655,25 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
         scaler.h = scrollbar_size.y;
         scaler.y = layout->bounds.y + layout->bounds.h;
         if( layout->flags & WORKPHONE_WINDOW_SCALE_LEFT )
+        {
             scaler.x = layout->bounds.x - panel_padding.x * 0.5f;
+        }
         else
+        {
             scaler.x = layout->bounds.x + layout->bounds.w + panel_padding.x;
+        }
         if( layout->flags & WORKPHONE_WINDOW_NO_SCROLLBAR )
+        {
             scaler.x -= scaler.w;
+        }
 
         /* draw scaler */
         {
             const struct wp_style_item *item = &style->window.scaler;
             if( item->type == WORKPHONE_STYLE_ITEM_IMAGE )
+            {
                 wp_draw_image( out, scaler, &item->data.image, wp_white );
+            }
             else
             {
                 if( layout->flags & WORKPHONE_WINDOW_SCALE_LEFT )
@@ -682,10 +739,14 @@ WORKPHONE_LIB void wp_panel_end( struct wp_context *ctx )
     {
         /* window is hidden so clear command buffer  */
         if( layout->flags & WORKPHONE_WINDOW_HIDDEN )
+        {
             wp_command_buffer_reset( &window->buffer );
+        }
         /* window is visible and not tab */
         else
+        {
             wp_finish( ctx, window );
+        }
     }
 
     /* WORKPHONE_WINDOW_REMOVE_ROM flag was set so remove WORKPHONE_WINDOW_ROM */

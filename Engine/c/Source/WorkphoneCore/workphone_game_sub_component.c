@@ -26,7 +26,9 @@ void wp_game_sub_component_destroy( wp_game_sub_component *sub )
 {
     wp_u32 i;
     for( i = 0; i < sub->num_children; ++i )
+    {
         sub->children[i] = NULL;
+    }
     sub->num_children = 0;
 
     sub->parent_component = NULL;
@@ -107,12 +109,16 @@ wp_s32 wp_game_sub_component_add_child( wp_game_sub_component *sub, wp_game_sub_
 {
     wp_u32 i;
     if( !child || sub->num_children >= WP_SUB_COMPONENT_MAX_CHILDREN )
+    {
         return 0;
+    }
 
     for( i = 0; i < sub->num_children; ++i )
     {
         if( sub->children[i] == child )
+        {
             return 0;
+        }
     }
 
     child->parent = sub;
@@ -124,7 +130,9 @@ wp_s32 wp_game_sub_component_remove_child( wp_game_sub_component *sub, wp_game_s
 {
     wp_u32 i;
     if( !child )
+    {
         return 0;
+    }
 
     for( i = 0; i < sub->num_children; ++i )
     {
@@ -133,7 +141,9 @@ wp_s32 wp_game_sub_component_remove_child( wp_game_sub_component *sub, wp_game_s
             child->parent = NULL;
             sub->num_children--;
             for( ; i < sub->num_children; ++i )
+            {
                 sub->children[i] = sub->children[i + 1];
+            }
             sub->children[sub->num_children] = NULL;
             return 1;
         }
@@ -144,7 +154,9 @@ wp_s32 wp_game_sub_component_remove_child( wp_game_sub_component *sub, wp_game_s
 wp_game_sub_component *wp_game_sub_component_get_child( const wp_game_sub_component *sub, wp_u32 index )
 {
     if( index >= sub->num_children )
+    {
         return NULL;
+    }
     return sub->children[index];
 }
 

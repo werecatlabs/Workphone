@@ -167,7 +167,9 @@ void wp_vehicle_component_update_transform( wp_vehicle_component *vc,
     }
 
     if( vc->vc_callbacks.on_update_transform )
+    {
         vc->vc_callbacks.on_update_transform( vc );
+    }
 }
 
 void wp_vehicle_component_update_body_transform( wp_vehicle_component *vc,
@@ -180,13 +182,17 @@ void wp_vehicle_component_update_body_transform( wp_vehicle_component *vc,
     }
 
     if( vc->vc_callbacks.on_update_body_transform )
+    {
         vc->vc_callbacks.on_update_body_transform( vc );
+    }
 }
 
 void wp_vehicle_component_update_geometry( wp_vehicle_component *vc )
 {
     if( vc->vc_callbacks.on_update_geometry )
+    {
         vc->vc_callbacks.on_update_geometry( vc );
+    }
 }
 
 /* =========================================================================
@@ -196,7 +202,9 @@ void wp_vehicle_component_update_geometry( wp_vehicle_component *vc )
 void wp_vehicle_component_reset( wp_vehicle_component *vc )
 {
     if( vc->vc_callbacks.on_reset )
+    {
         vc->vc_callbacks.on_reset( vc );
+    }
 }
 
 /* =========================================================================

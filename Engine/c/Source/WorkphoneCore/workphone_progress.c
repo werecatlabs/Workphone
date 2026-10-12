@@ -9,12 +9,16 @@ wp_size wp_progress_behavior( wp_flags *state, struct wp_input *in, struct wp_re
 
     wp_widget_state_reset( state );
     if( !in || !modifiable )
+    {
         return value;
+    }
     left_mouse_down = in && in->mouse.buttons[WORKPHONE_BUTTON_LEFT].down;
     left_mouse_click_in_cursor =
         in && wp_input_has_mouse_click_down_in_rect( in, WORKPHONE_BUTTON_LEFT, cursor, wp_true );
     if( wp_input_is_mouse_hovering_rect( in, r ) )
+    {
         *state = WORKPHONE_WIDGET_STATE_HOVERED;
+    }
 
     if( in && left_mouse_down && left_mouse_click_in_cursor )
     {
@@ -28,11 +32,16 @@ wp_size wp_progress_behavior( wp_flags *state, struct wp_input *in, struct wp_re
     }
     /* set progressbar widget state */
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, r ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, r ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
     return value;
 }
+
 WORKPHONE_LIB void wp_draw_progress( struct wp_command_buffer *out, wp_flags state,
                                      const struct wp_style_progress *style, const struct wp_rect *bounds,
                                      const struct wp_rect *scursor, wp_size value, wp_size max )
@@ -98,6 +107,7 @@ WORKPHONE_LIB void wp_draw_progress( struct wp_command_buffer *out, wp_flags sta
         break;
     }
 }
+
 WORKPHONE_LIB wp_size wp_do_progress( wp_flags *state, struct wp_command_buffer *out,
                                       struct wp_rect bounds, wp_size value, wp_size max,
                                       wp_bool modifiable, const struct wp_style_progress *style,
@@ -110,7 +120,9 @@ WORKPHONE_LIB wp_size wp_do_progress( wp_flags *state, struct wp_command_buffer 
     WORKPHONE_ASSERT( style );
     WORKPHONE_ASSERT( out );
     if( !out || !style )
+    {
         return 0;
+    }
 
     /* calculate progressbar cursor */
     cursor.w = WORKPHONE_MAX( bounds.w, 2 * style->padding.x + 2 * style->border );
@@ -126,12 +138,17 @@ WORKPHONE_LIB wp_size wp_do_progress( wp_flags *state, struct wp_command_buffer 
 
     /* draw progressbar */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_progress( out, *state, style, &bounds, &cursor, value, max );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return prog_value;
 }
+
 WORKPHONE_API wp_bool wp_progress( struct wp_context *ctx, wp_size *cur, wp_size max,
                                    wp_bool is_modifyable )
 {
@@ -149,14 +166,18 @@ WORKPHONE_API wp_bool wp_progress( struct wp_context *ctx, wp_size *cur, wp_size
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout || !cur )
+    {
         return 0;
+    }
 
     win = ctx->current;
     style = &ctx->style;
     layout = win->layout;
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
 
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
@@ -167,6 +188,7 @@ WORKPHONE_API wp_bool wp_progress( struct wp_context *ctx, wp_size *cur, wp_size
                            &style->progress, in );
     return ( *cur != old_value );
 }
+
 WORKPHONE_API wp_size wp_prog( struct wp_context *ctx, wp_size cur, wp_size max, wp_bool modifyable )
 {
     wp_progress( ctx, &cur, max, modifyable );

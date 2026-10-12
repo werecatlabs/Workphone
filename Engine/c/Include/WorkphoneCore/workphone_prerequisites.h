@@ -79,9 +79,9 @@ struct wp_user_font;
  * defining this to vsnprintf instead since `vsprintf` is basically
  * unbelievable unsafe and should *NEVER* be used. But I have to support
  * it since C89 only provides this unsafe version. */
-#    if ( defined( __STDC_VERSION__ ) && ( __STDC_VERSION__ >= 199901L ) ) || \
-        ( defined( __cplusplus ) && ( __cplusplus >= 201103L ) ) || \
-        ( defined( _POSIX_C_SOURCE ) && ( _POSIX_C_SOURCE >= 200112L ) ) || \
+#    if ( defined( __STDC_VERSION__ ) && ( __STDC_VERSION__ >= 199901L ) ) ||                    \
+        ( defined( __cplusplus ) && ( __cplusplus >= 201103L ) ) ||                              \
+        ( defined( _POSIX_C_SOURCE ) && ( _POSIX_C_SOURCE >= 200112L ) ) ||                      \
         ( defined( _XOPEN_SOURCE ) && ( _XOPEN_SOURCE >= 500 ) ) || defined( _ISOC99_SOURCE ) || \
         defined( _BSD_SOURCE )
 #        define WORKPHONE_VSNPRINTF( s, n, f, a ) vsnprintf( s, n, f, a )
@@ -132,10 +132,10 @@ WORKPHONE_LIB wp_s32 wp_text_clamp( const struct wp_user_font *font, const wp_c8
                                     wp_f32 space, wp_s32 *glyphs, wp_f32 *text_width, wp_rune *sep_list,
                                     wp_s32 sep_count );
 WORKPHONE_LIB struct wp_vec2f wp_text_calculate_text_bounds( const struct wp_user_font *font,
-                                                            const wp_c8 *begin, wp_s32 byte_len,
-                                                            wp_f32 row_height, const wp_c8 **remaining,
-                                                            struct wp_vec2f *out_offset, wp_s32 *glyphs,
-                                                            wp_s32 op );
+                                                             const wp_c8 *begin, wp_s32 byte_len,
+                                                             wp_f32 row_height, const wp_c8 **remaining,
+                                                             struct wp_vec2f *out_offset, wp_s32 *glyphs,
+                                                             wp_s32 op );
 #ifdef WORKPHONE_INCLUDE_STANDARD_VARARGS
 WORKPHONE_LIB wp_s32 wp_strfmt( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args );
 #endif
@@ -179,7 +179,7 @@ WORKPHONE_LIB void *wp_buffer_realloc( struct wp_buffer *b, wp_size capacity, wp
 #endif
 
 #define WORKPHONE_ALIGN_PTR( x, mask ) \
-    ( WORKPHONE_UINT_TO_PTR( \
+    ( WORKPHONE_UINT_TO_PTR(           \
         ( WORKPHONE_PTR_TO_UINT( (wp_byte *)( x ) + ( mask - 1 ) ) & ~( mask - 1 ) ) ) )
 #define WORKPHONE_ALIGN_PTR_BACK( x, mask ) \
     ( WORKPHONE_UINT_TO_PTR( ( WORKPHONE_PTR_TO_UINT( (wp_byte *)( x ) ) & ~( mask - 1 ) ) ) )
@@ -239,7 +239,7 @@ WORKPHONE_LIB void *wp_buffer_realloc( struct wp_buffer *b, wp_size capacity, wp
 #    define WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS 16
 #endif
 
-#define WORKPHONE_PANEL_SET_POPUP \
+#define WORKPHONE_PANEL_SET_POPUP                                                  \
     ( WORKPHONE_PANEL_POPUP | WORKPHONE_PANEL_CONTEXTUAL | WORKPHONE_PANEL_COMBO | \
       WORKPHONE_PANEL_MENU | WORKPHONE_PANEL_TOOLTIP )
 
@@ -299,21 +299,21 @@ WORKPHONE_LIB void *wp_buffer_realloc( struct wp_buffer *b, wp_size capacity, wp
         ( (type *)( (void *)( (wp_byte *)( ptr ) - WORKPHONE_OFFSETOF( type, member ) ) ) )
 #endif
 
-#define WORKPHONE_VALUE_PAGE_CAPACITY \
+#define WORKPHONE_VALUE_PAGE_CAPACITY                                              \
     ( ( ( WORKPHONE_MAX( sizeof( struct wp_window ), sizeof( struct wp_panel ) ) / \
-          sizeof( wp_u32 ) ) ) / \
+          sizeof( wp_u32 ) ) ) /                                                   \
       2 )
 
 #define WORKPHONE_CONFIGURATION_STACK_TYPE( prefix, name, type ) \
-    struct wp_config_stack_##name##_element \
-    { \
-        prefix##_##type *address; \
-        prefix##_##type old_value; \
+    struct wp_config_stack_##name##_element                      \
+    {                                                            \
+        prefix##_##type *address;                                \
+        prefix##_##type old_value;                               \
     }
-#define WORKPHONE_CONFIG_STACK( type, size ) \
-    struct wp_config_stack_##type \
-    { \
-        int head; \
+#define WORKPHONE_CONFIG_STACK( type, size )                    \
+    struct wp_config_stack_##type                               \
+    {                                                           \
+        int head;                                               \
         struct wp_config_stack_##type##_element elements[size]; \
     }
 
@@ -358,8 +358,3 @@ enum wp_window_flags
 };
 
 #endif  // workphone_prerequisites_h__
-
-
-
-
-

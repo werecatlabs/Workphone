@@ -42,7 +42,9 @@ wp_s32 wp_range_count( const wp_rune *range )
     const wp_rune *iter = range;
     WORKPHONE_ASSERT( range );
     if( !range )
+    {
         return 0;
+    }
     while( *( iter++ ) != 0 )
         ;
     return ( iter == range ) ? 0 : (wp_s32)( ( iter - range ) / 2 );
@@ -112,7 +114,9 @@ void wp_font_baker_memory( wp_size *temp, wp_s32 *glyph_count, struct wp_font_co
         do
         {
             if( !i->range )
+            {
                 iter->range = wp_font_default_glyph_ranges();
+            }
             range_count = wp_range_count( i->range );
             total_range_count += range_count;
             *glyph_count += wp_range_glyph_count( i->range, range_count );
@@ -132,7 +136,9 @@ struct wp_font_baker *wp_font_baker( void *memory, wp_s32 glyph_count, wp_s32 co
 {
     struct wp_font_baker *baker;
     if( !memory )
+    {
         return 0;
+    }
     /* setup baker inside a memory block  */
     baker = (struct wp_font_baker *)WORKPHONE_ALIGN_PTR( memory, wp_baker_align );
     baker->build = (struct wp_font_bake_data *)WORKPHONE_ALIGN_PTR( ( baker + 1 ), wp_build_align );
@@ -166,7 +172,9 @@ wp_s32 wp_font_bake_pack( struct wp_font_baker *baker, wp_size *image_memory, wp
     WORKPHONE_ASSERT( alloc );
 
     if( !image_memory || !width || !height || !config_list || !count )
+    {
         return wp_false;
+    }
     for( config_iter = config_list; config_iter; config_iter = config_iter->next )
     {
         it = config_iter;
@@ -188,7 +196,9 @@ wp_s32 wp_font_bake_pack( struct wp_font_baker *baker, wp_size *image_memory, wp
 
             if( !stbtt_InitFont( font_info, (const wp_u8 *)it->ttf_blob,
                                  stbtt_GetFontOffsetForIndex( (const wp_u8 *)it->ttf_blob, 0 ) ) )
+            {
                 return wp_false;
+            }
         } while( ( it = it->n ) != config_iter );
     }
     *height = 0;
@@ -266,7 +276,9 @@ wp_s32 wp_font_bake_pack( struct wp_font_baker *baker, wp_size *image_memory, wp
                 for( i = 0; i < n; ++i )
                 {
                     if( tmp->rects[i].was_packed )
+                    {
                         *height = WORKPHONE_MAX( *height, tmp->rects[i].y + tmp->rects[i].h );
+                    }
                 }
             } while( ( it = it->n ) != config_iter );
         }
@@ -296,7 +308,9 @@ void wp_font_bake( struct wp_font_baker *baker, void *image_memory, wp_s32 width
     WORKPHONE_ASSERT( font_count );
     WORKPHONE_ASSERT( glyphs_count );
     if( !image_memory || !width || !height || !config_list || !font_count || !glyphs || !glyphs_count )
+    {
         return;
+    }
 
     /* second font pass: render glyphs */
     wp_zero( image_memory, (wp_size)( (wp_size)width * (wp_size)height ) );
@@ -396,7 +410,9 @@ void wp_font_bake( struct wp_font_baker *baker, void *image_memory, wp_s32 width
                     }
                     glyph->xadvance = ( pc->xadvance + cfg->spacing.x );
                     if( cfg->pixel_snap )
+                    {
                         glyph->xadvance = (wp_f32)(wp_s32)( glyph->xadvance + 0.5f );
+                    }
                     glyph_count++;
                 }
             }
@@ -421,7 +437,9 @@ void wp_font_bake_custom_data( void *img_memory, wp_s32 img_width, wp_s32 img_he
     WORKPHONE_ASSERT( texture_data_mask );
     WORKPHONE_UNUSED( tex_height );
     if( !img_memory || !img_width || !img_height || !texture_data_mask )
+    {
         return;
+    }
 
     pixels = (wp_byte *)img_memory;
     for( y = 0, n = 0; y < tex_height; ++y )
@@ -447,12 +465,16 @@ void wp_font_bake_convert( void *out_memory, wp_s32 img_width, wp_s32 img_height
     WORKPHONE_ASSERT( img_width );
     WORKPHONE_ASSERT( img_height );
     if( !out_memory || !in_memory || !img_height || !img_width )
+    {
         return;
+    }
 
     dst = (wp_rune *)out_memory;
     src = (const wp_byte *)in_memory;
     for( n = (wp_s32)( img_width * img_height ); n > 0; n-- )
+    {
         *dst++ = ( (wp_rune)( *src++ ) << 24 ) | 0x00FFFFFF;
+    }
 }
 
 wp_f32 wp_font_text_width( wp_handle handle, wp_f32 height, const wp_c8 *text, wp_s32 len )
@@ -467,17 +489,23 @@ wp_f32 wp_font_text_width( wp_handle handle, wp_f32 height, const wp_c8 *text, w
     WORKPHONE_ASSERT( font );
     WORKPHONE_ASSERT( font->glyphs );
     if( !font || !text || !len )
+    {
         return 0;
+    }
 
     scale = height / font->info.height;
     glyph_len = text_len = wp_utf_decode( text, &unicode, (wp_s32)len );
     if( !glyph_len )
+    {
         return 0;
+    }
     while( text_len <= (wp_s32)len && glyph_len )
     {
         const struct wp_font_glyph *g;
         if( unicode == WORKPHONE_UTF_INVALID )
+        {
             break;
+        }
 
         /* query currently drawn glyph information */
         g = wp_font_find_glyph( font, unicode );
@@ -505,7 +533,9 @@ void wp_font_query_font_glyph( wp_handle handle, wp_f32 height, struct wp_user_f
     WORKPHONE_ASSERT( font );
     WORKPHONE_ASSERT( font->glyphs );
     if( !font || !glyph )
+    {
         return;
+    }
 
     scale = height / font->info.height;
     g = wp_font_find_glyph( font, codepoint );
@@ -530,7 +560,9 @@ const struct wp_font_glyph *wp_font_find_glyph( const struct wp_font *font, wp_r
     WORKPHONE_ASSERT( font->glyphs );
     WORKPHONE_ASSERT( font->info.ranges );
     if( !font || !font->glyphs )
+    {
         return 0;
+    }
 
     glyph = font->fallback;
     iter = font->config;
@@ -543,7 +575,9 @@ const struct wp_font_glyph *wp_font_find_glyph( const struct wp_font *font, wp_r
             wp_rune t = iter->range[( i * 2 ) + 1];
             wp_s32 diff = (wp_s32)( ( t - f ) + 1 );
             if( unicode >= f && unicode <= t )
+            {
                 return &font->glyphs[( (wp_rune)total_glyphs + ( unicode - f ) )];
+            }
             total_glyphs += diff;
         }
     } while( ( iter = iter->n ) != font->config );
@@ -559,7 +593,9 @@ void wp_font_init( struct wp_font *font, wp_f32 pixel_height, wp_rune fallback_c
     WORKPHONE_ASSERT( glyphs );
     WORKPHONE_ASSERT( baked_font );
     if( !font || !glyphs || !baked_font )
+    {
         return;
+    }
 
     baked = *baked_font;
     font->fallback = 0;
@@ -846,7 +882,9 @@ void wp__match( wp_u8 *data, wp_u32 length )
         return;
     }
     while( length-- )
+    {
         *wp__dout++ = *data++;
+    }
 }
 
 void wp__lit( wp_u8 *data, wp_u32 length )
@@ -875,32 +913,50 @@ wp_u8 *wp_decompress_token( wp_u8 *i )
     if( *i >= 0x20 )
     { /* use fewer if's for cases that expand small */
         if( *i >= 0x80 )
+        {
             wp__match( wp__dout - i[1] - 1, (unsigned int)i[0] - 0x80 + 1 ), i += 2;
+        }
         else if( *i >= 0x40 )
+        {
             wp__match( wp__dout - ( wp__in2( 0 ) - 0x4000 + 1 ), (unsigned int)i[2] + 1 ), i += 3;
+        }
         else /* *i >= 0x20 */
+        {
             wp__lit( i + 1, (unsigned int)i[0] - 0x20 + 1 ), i += 1 + ( i[0] - 0x20 + 1 );
+        }
     }
     else
     { /* more ifs for cases that expand large, since overhead is amortized */
         if( *i >= 0x18 )
+        {
             wp__match( wp__dout - (unsigned int)( wp__in3( 0 ) - 0x180000 + 1 ),
                        (unsigned int)i[3] + 1 ),
                 i += 4;
+        }
         else if( *i >= 0x10 )
+        {
             wp__match( wp__dout - (unsigned int)( wp__in3( 0 ) - 0x100000 + 1 ),
                        (unsigned int)wp__in2( 3 ) + 1 ),
                 i += 5;
+        }
         else if( *i >= 0x08 )
+        {
             wp__lit( i + 2, (unsigned int)wp__in2( 0 ) - 0x0800 + 1 ),
                 i += 2 + ( wp__in2( 0 ) - 0x0800 + 1 );
+        }
         else if( *i == 0x07 )
+        {
             wp__lit( i + 3, (unsigned int)wp__in2( 1 ) + 1 ), i += 3 + ( wp__in2( 1 ) + 1 );
+        }
         else if( *i == 0x06 )
+        {
             wp__match( wp__dout - (unsigned int)( wp__in3( 1 ) + 1 ), i[4] + 1u ), i += 5;
+        }
         else if( *i == 0x04 )
+        {
             wp__match( wp__dout - (unsigned int)( wp__in3( 1 ) + 1 ), (unsigned int)wp__in2( 4 ) + 1u ),
                 i += 6;
+        }
     }
     return i;
 }
@@ -952,9 +1008,13 @@ wp_u32 wp_decompress( wp_u8 *output, wp_u8 *i, wp_u32 length )
 {
     wp_u32 olen;
     if( wp__in4( 0 ) != 0x57bC0000 )
+    {
         return 0;
+    }
     if( wp__in4( 4 ) != 0 )
+    {
         return 0; /* error! stream is > 4GB */
+    }
     olen = wp_decompress_length( i );
     wp__barrier2 = i;
     wp__barrier3 = i + length;
@@ -973,9 +1033,13 @@ wp_u32 wp_decompress( wp_u8 *output, wp_u8 *i, wp_u32 length )
             {
                 WORKPHONE_ASSERT( wp__dout == output + olen );
                 if( wp__dout != output + olen )
+                {
                     return 0;
+                }
                 if( wp_adler32( 1, output, olen ) != (unsigned int)wp__in4( 2 ) )
+                {
                     return 0;
+                }
                 return olen;
             }
             else
@@ -986,7 +1050,9 @@ wp_u32 wp_decompress( wp_u8 *output, wp_u8 *i, wp_u32 length )
         }
         WORKPHONE_ASSERT( wp__dout <= output + olen );
         if( wp__dout > output + olen )
+        {
             return 0;
+        }
     }
 }
 
@@ -1042,7 +1108,9 @@ void wp_font_atlas_init_default( struct wp_font_atlas *atlas )
 {
     WORKPHONE_ASSERT( atlas );
     if( !atlas )
+    {
         return;
+    }
     wp_zero_struct( *atlas );
     atlas->temporary.userdata.ptr = 0;
     atlas->temporary.alloc = wp_malloc;
@@ -1058,7 +1126,9 @@ void wp_font_atlas_init( struct wp_font_atlas *atlas, const struct wp_allocator 
     WORKPHONE_ASSERT( atlas );
     WORKPHONE_ASSERT( alloc );
     if( !atlas || !alloc )
+    {
         return;
+    }
     wp_zero_struct( *atlas );
     atlas->permanent = *alloc;
     atlas->temporary = *alloc;
@@ -1071,7 +1141,9 @@ void wp_font_atlas_init_custom( struct wp_font_atlas *atlas, const struct wp_all
     WORKPHONE_ASSERT( permanent );
     WORKPHONE_ASSERT( temporary );
     if( !atlas || !permanent || !temporary )
+    {
         return;
+    }
     wp_zero_struct( *atlas );
     atlas->permanent = *permanent;
     atlas->temporary = *temporary;
@@ -1084,7 +1156,9 @@ void wp_font_atlas_begin( struct wp_font_atlas *atlas )
     WORKPHONE_ASSERT( atlas->permanent.alloc && atlas->permanent.free );
     if( !atlas || !atlas->permanent.alloc || !atlas->permanent.free || !atlas->temporary.alloc ||
         !atlas->temporary.free )
+    {
         return;
+    }
     if( atlas->glyphs )
     {
         atlas->permanent.free( atlas->permanent.userdata, atlas->glyphs );
@@ -1116,7 +1190,9 @@ struct wp_font *wp_font_atlas_add( struct wp_font_atlas *atlas, const struct wp_
     if( !atlas || !config || !config->ttf_blob || !config->ttf_size || config->size <= 0.0f ||
         !atlas->permanent.alloc || !atlas->permanent.free || !atlas->temporary.alloc ||
         !atlas->temporary.free )
+    {
         return 0;
+    }
 
     /* allocate font config  */
     cfg = (struct wp_font_config *)atlas->permanent.alloc( atlas->permanent.userdata, 0,
@@ -1137,7 +1213,9 @@ struct wp_font *wp_font_atlas_add( struct wp_font_atlas *atlas, const struct wp_
         {
             struct wp_font_config *i = atlas->config;
             while( i->next )
+            {
                 i = i->next;
+            }
             i->next = cfg;
             cfg->next = 0;
         }
@@ -1147,7 +1225,9 @@ struct wp_font *wp_font_atlas_add( struct wp_font_atlas *atlas, const struct wp_
         WORKPHONE_ASSERT( font );
         wp_zero( font, sizeof( *font ) );
         if( !font )
+        {
             return 0;
+        }
         font->config = cfg;
 
         /* insert font into list */
@@ -1160,7 +1240,9 @@ struct wp_font *wp_font_atlas_add( struct wp_font_atlas *atlas, const struct wp_
         {
             struct wp_font *i = atlas->fonts;
             while( i->next )
+            {
                 i = i->next;
+            }
             i->next = font;
             font->next = 0;
         }
@@ -1212,7 +1294,9 @@ struct wp_font *wp_font_atlas_add_from_memory( struct wp_font_atlas *atlas, void
     WORKPHONE_ASSERT( atlas->permanent.free );
     if( !atlas || !atlas->temporary.alloc || !atlas->temporary.free || !memory || !size ||
         !atlas->permanent.alloc || !atlas->permanent.free )
+    {
         return 0;
+    }
 
     cfg = ( config ) ? *config : wp_font_config( height );
     cfg.ttf_blob = memory;
@@ -1238,10 +1322,14 @@ WORKPHONE_API struct wp_font *wp_font_atlas_add_from_file( struct wp_font_atlas 
     WORKPHONE_ASSERT( atlas->permanent.free );
 
     if( !atlas || !file_path )
+    {
         return 0;
+    }
     memory = wp_file_load( file_path, &size, &atlas->permanent );
     if( !memory )
+    {
         return 0;
+    }
 
     cfg = ( config ) ? *config : wp_font_config( height );
     cfg.ttf_blob = memory;
@@ -1271,13 +1359,17 @@ WORKPHONE_API struct wp_font *wp_font_atlas_add_compressed( struct wp_font_atlas
     WORKPHONE_ASSERT( compressed_size );
     if( !atlas || !compressed_data || !atlas->temporary.alloc || !atlas->temporary.free ||
         !atlas->permanent.alloc || !atlas->permanent.free )
+    {
         return 0;
+    }
 
     decompressed_size = wp_decompress_length( (wp_u8 *)compressed_data );
     decompressed_data = atlas->permanent.alloc( atlas->permanent.userdata, 0, decompressed_size );
     WORKPHONE_ASSERT( decompressed_data );
     if( !decompressed_data )
+    {
         return 0;
+    }
     wp_decompress( (wp_u8 *)decompressed_data, (wp_u8 *)compressed_data, (unsigned int)compressed_size );
 
     cfg = ( config ) ? *config : wp_font_config( height );
@@ -1306,13 +1398,17 @@ WORKPHONE_API struct wp_font *wp_font_atlas_add_compressed_base85( struct wp_fon
     WORKPHONE_ASSERT( data_base85 );
     if( !atlas || !data_base85 || !atlas->temporary.alloc || !atlas->temporary.free ||
         !atlas->permanent.alloc || !atlas->permanent.free )
+    {
         return 0;
+    }
 
     compressed_size = ( ( (wp_s32)wp_strlen( data_base85 ) + 4 ) / 5 ) * 4;
     compressed_data = atlas->temporary.alloc( atlas->temporary.userdata, 0, (wp_size)compressed_size );
     WORKPHONE_ASSERT( compressed_data );
     if( !compressed_data )
+    {
         return 0;
+    }
     wp_decode_85( (wp_u8 *)compressed_data, (const wp_u8 *)data_base85 );
     font =
         wp_font_atlas_add_compressed( atlas, compressed_data, (wp_size)compressed_size, height, config );
@@ -1354,23 +1450,31 @@ WORKPHONE_API const void *wp_font_atlas_bake( struct wp_font_atlas *atlas, wp_s3
     WORKPHONE_ASSERT( height );
     if( !atlas || !width || !height || !atlas->temporary.alloc || !atlas->temporary.free ||
         !atlas->permanent.alloc || !atlas->permanent.free )
+    {
         return 0;
+    }
 
 #    ifdef WORKPHONE_INCLUDE_DEFAULT_FONT
     /* no font added so just use default font */
     if( !atlas->font_num )
+    {
         atlas->default_font = wp_font_atlas_add_default( atlas, 13.0f, 0 );
+    }
 #    endif
     WORKPHONE_ASSERT( atlas->font_num );
     if( !atlas->font_num )
+    {
         return 0;
+    }
 
     /* allocate temporary baker memory required for the baking process */
     wp_font_baker_memory( &tmp_size, &atlas->glyph_count, atlas->config, atlas->font_num );
     tmp = atlas->temporary.alloc( atlas->temporary.userdata, 0, tmp_size );
     WORKPHONE_ASSERT( tmp );
     if( !tmp )
+    {
         goto failed;
+    }
     WORKPHONE_MEMSET( tmp, 0, tmp_size );
 
     /* allocate glyph memory for all fonts */
@@ -1379,20 +1483,26 @@ WORKPHONE_API const void *wp_font_atlas_bake( struct wp_font_atlas *atlas, wp_s3
         atlas->permanent.userdata, 0, sizeof( struct wp_font_glyph ) * (wp_size)atlas->glyph_count );
     WORKPHONE_ASSERT( atlas->glyphs );
     if( !atlas->glyphs )
+    {
         goto failed;
+    }
 
     /* pack all glyphs into a tight fit space */
     atlas->custom.w = ( WORKPHONE_CURSOR_DATA_W * 2 ) + 1;
     atlas->custom.h = WORKPHONE_CURSOR_DATA_H + 1;
     if( !wp_font_bake_pack( baker, &img_size, width, height, &atlas->custom, atlas->config,
                             atlas->font_num, &atlas->temporary ) )
+    {
         goto failed;
+    }
 
     /* allocate memory for the baked image font atlas */
     atlas->pixel = atlas->temporary.alloc( atlas->temporary.userdata, 0, img_size );
     WORKPHONE_ASSERT( atlas->pixel );
     if( !atlas->pixel )
+    {
         goto failed;
+    }
 
     /* bake glyphs and custom white pixel into image */
     wp_font_bake( baker, atlas->pixel, *width, *height, atlas->glyphs, atlas->glyph_count, atlas->config,
@@ -1407,7 +1517,9 @@ WORKPHONE_API const void *wp_font_atlas_bake( struct wp_font_atlas *atlas, wp_s3
             atlas->temporary.alloc( atlas->temporary.userdata, 0, (wp_size)( *width * *height * 4 ) );
         WORKPHONE_ASSERT( img_rgba );
         if( !img_rgba )
+        {
             goto failed;
+        }
         wp_font_bake_convert( img_rgba, *width, *height, atlas->pixel );
         atlas->temporary.free( atlas->temporary.userdata, atlas->pixel );
         atlas->pixel = img_rgba;
@@ -1453,7 +1565,9 @@ WORKPHONE_API const void *wp_font_atlas_bake( struct wp_font_atlas *atlas, wp_s3
 failed:
     /* error so cleanup all memory */
     if( tmp )
+    {
         atlas->temporary.free( atlas->temporary.userdata, tmp );
+    }
     if( atlas->glyphs )
     {
         atlas->permanent.free( atlas->permanent.userdata, atlas->glyphs );
@@ -1466,6 +1580,7 @@ failed:
     }
     return 0;
 }
+
 WORKPHONE_API void wp_font_atlas_end( struct wp_font_atlas *atlas, wp_handle texture,
                                       struct wp_draw_null_texture *tex_null )
 {
@@ -1476,7 +1591,9 @@ WORKPHONE_API void wp_font_atlas_end( struct wp_font_atlas *atlas, wp_handle tex
     if( !atlas )
     {
         if( !tex_null )
+        {
             return;
+        }
         tex_null->texture = texture;
         tex_null->uv = wp_make_vec2f( 0.5f, 0.5f );
     }
@@ -1496,7 +1613,9 @@ WORKPHONE_API void wp_font_atlas_end( struct wp_font_atlas *atlas, wp_handle tex
 #    endif
     }
     for( i = 0; i < WORKPHONE_CURSOR_COUNT; ++i )
+    {
         atlas->cursors[i].img.handle = texture;
+    }
 
     atlas->temporary.free( atlas->temporary.userdata, atlas->pixel );
     atlas->pixel = 0;
@@ -1507,6 +1626,7 @@ WORKPHONE_API void wp_font_atlas_end( struct wp_font_atlas *atlas, wp_handle tex
     atlas->custom.w = 0;
     atlas->custom.h = 0;
 }
+
 WORKPHONE_API void wp_font_atlas_cleanup( struct wp_font_atlas *atlas )
 {
     WORKPHONE_ASSERT( atlas );
@@ -1516,7 +1636,9 @@ WORKPHONE_API void wp_font_atlas_cleanup( struct wp_font_atlas *atlas )
     WORKPHONE_ASSERT( atlas->permanent.free );
 
     if( !atlas || !atlas->permanent.alloc || !atlas->permanent.free )
+    {
         return;
+    }
 
     if( atlas->config )
     {
@@ -1545,7 +1667,9 @@ WORKPHONE_API void wp_font_atlas_clear( struct wp_font_atlas *atlas )
     WORKPHONE_ASSERT( atlas->permanent.free );
 
     if( !atlas || !atlas->permanent.alloc || !atlas->permanent.free )
+    {
         return;
+    }
 
     if( atlas->config )
     {
@@ -1558,7 +1682,9 @@ WORKPHONE_API void wp_font_atlas_clear( struct wp_font_atlas *atlas )
                 n = i->n;
 
                 if( i->ttf_blob )
+                {
                     atlas->permanent.free( atlas->permanent.userdata, i->ttf_blob );
+                }
 
                 atlas->permanent.free( atlas->permanent.userdata, i );
             }
@@ -1566,7 +1692,9 @@ WORKPHONE_API void wp_font_atlas_clear( struct wp_font_atlas *atlas )
             next = iter->next;
 
             if( i->ttf_blob )
+            {
                 atlas->permanent.free( atlas->permanent.userdata, iter->ttf_blob );
+            }
 
             atlas->permanent.free( atlas->permanent.userdata, iter );
         }
@@ -1586,7 +1714,9 @@ WORKPHONE_API void wp_font_atlas_clear( struct wp_font_atlas *atlas )
     }
 
     if( atlas->glyphs )
+    {
         atlas->permanent.free( atlas->permanent.userdata, atlas->glyphs );
+    }
 
     wp_zero_struct( *atlas );
 }

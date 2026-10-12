@@ -112,13 +112,17 @@ void wp_game_scene_reserve_actors( wp_game_scene *scene, wp_u32 capacity )
     wp_u32 old_cap;
 
     if( capacity <= scene->actor_capacity )
+    {
         return;
+    }
 
     old_cap = scene->actor_capacity;
 
     new_actors = (wp_game_actor **)realloc( scene->actors, capacity * sizeof( wp_game_actor * ) );
     if( !new_actors )
+    {
         return;
+    }
 
     memset( new_actors + old_cap, 0, ( capacity - old_cap ) * sizeof( wp_game_actor * ) );
     scene->actors = new_actors;
@@ -134,19 +138,27 @@ wp_s32 wp_game_scene_add_actor( wp_game_scene *scene, wp_game_actor *actor )
     wp_u32 i;
 
     if( !actor )
+    {
         return 0;
+    }
 
     for( i = 0; i < scene->num_actors; ++i )
     {
         if( scene->actors[i] == actor )
+        {
             return 0;
+        }
     }
 
     if( scene->num_actors >= scene->actor_capacity )
+    {
         wp_game_scene_grow( scene );
+    }
 
     if( scene->num_actors >= scene->actor_capacity )
+    {
         return 0;
+    }
 
     scene->actors[scene->num_actors++] = actor;
     wp_game_actor_set_scene( actor, scene );
@@ -158,7 +170,9 @@ wp_s32 wp_game_scene_remove_actor( wp_game_scene *scene, wp_game_actor *actor )
     wp_u32 i;
 
     if( !actor )
+    {
         return 0;
+    }
 
     for( i = 0; i < scene->num_actors; ++i )
     {
@@ -167,7 +181,9 @@ wp_s32 wp_game_scene_remove_actor( wp_game_scene *scene, wp_game_actor *actor )
             wp_game_actor_set_scene( actor, NULL );
             scene->num_actors--;
             for( ; i < scene->num_actors; ++i )
+            {
                 scene->actors[i] = scene->actors[i + 1];
+            }
             scene->actors[scene->num_actors] = NULL;
             return 1;
         }
@@ -181,7 +197,9 @@ void wp_game_scene_remove_all_actors( wp_game_scene *scene )
     for( i = 0; i < scene->num_actors; ++i )
     {
         if( scene->actors[i] )
+        {
             wp_game_actor_set_scene( scene->actors[i], NULL );
+        }
         scene->actors[i] = NULL;
     }
     scene->num_actors = 0;
@@ -190,7 +208,9 @@ void wp_game_scene_remove_all_actors( wp_game_scene *scene )
 wp_game_actor *wp_game_scene_get_actor( const wp_game_scene *scene, wp_u32 index )
 {
     if( index >= scene->num_actors )
+    {
         return NULL;
+    }
     return scene->actors[index];
 }
 
@@ -203,7 +223,9 @@ wp_game_actor *wp_game_scene_find_actor_by_name( const wp_game_scene *scene, con
 {
     wp_u32 i;
     if( !name )
+    {
         return NULL;
+    }
     for( i = 0; i < scene->num_actors; ++i )
     {
         if( scene->actors[i] && strcmp( wp_game_actor_get_name( scene->actors[i] ), name ) == 0 )
@@ -220,7 +242,9 @@ wp_game_actor *wp_game_scene_find_actor_by_id( const wp_game_scene *scene, wp_s3
     for( i = 0; i < scene->num_actors; ++i )
     {
         if( scene->actors[i] && scene->actors[i]->id == id )
+        {
             return scene->actors[i];
+        }
     }
     return NULL;
 }

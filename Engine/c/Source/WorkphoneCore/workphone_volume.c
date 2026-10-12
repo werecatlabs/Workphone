@@ -8,7 +8,9 @@ void wp_volume_atlas_init( struct wp_volume_atlas *atlas, wp_handle texture, wp_
 {
     WORKPHONE_ASSERT( atlas );
     if( !atlas )
+    {
         return;
+    }
 
     wp_zero( atlas, sizeof( *atlas ) );
     atlas->texture = texture;
@@ -36,14 +38,18 @@ wp_bool wp_volume_atlas_is_valid( const struct wp_volume_atlas *atlas )
     if( !atlas || !atlas->texture_width || !atlas->texture_height || !atlas->slice_width ||
         !atlas->slice_height || !atlas->depth || !atlas->columns || !atlas->rows || !atlas->stride_x ||
         !atlas->stride_y )
+    {
         return wp_false;
+    }
 
     /* Reject arithmetic overflow before calculating the occupied extent. */
     if( atlas->slice_width > WORKPHONE_UINT_MAX - atlas->padding_x ||
         atlas->slice_height > WORKPHONE_UINT_MAX - atlas->padding_y ||
         atlas->columns > WORKPHONE_UINT_MAX / atlas->stride_x ||
         atlas->rows > WORKPHONE_UINT_MAX / atlas->stride_y )
+    {
         return wp_false;
+    }
 
     required_width = atlas->stride_x * atlas->columns - atlas->padding_x;
     required_height = atlas->stride_y * atlas->rows - atlas->padding_y;
@@ -61,10 +67,14 @@ wp_bool wp_volume_atlas_slice( const struct wp_volume_atlas *atlas, wp_u32 index
 
     WORKPHONE_ASSERT( out );
     if( !out )
+    {
         return wp_false;
+    }
     wp_zero( out, sizeof( *out ) );
     if( !wp_volume_atlas_is_valid( atlas ) || index >= atlas->depth )
+    {
         return wp_false;
+    }
 
     column = index % atlas->columns;
     row = index / atlas->columns;
@@ -91,11 +101,15 @@ wp_bool wp_volume_atlas_frame( const struct wp_volume_atlas *atlas, wp_u32 index
 
     WORKPHONE_ASSERT( out );
     if( !out )
+    {
         return wp_false;
+    }
     wp_zero( out, sizeof( *out ) );
     if( !wp_volume_atlas_slice( atlas, index, &slice ) || atlas->texture_width > 65535u ||
         atlas->texture_height > 65535u || atlas->slice_width > 65535u || atlas->slice_height > 65535u )
+    {
         return wp_false;
+    }
 
     *out = wp_subimage_handle( atlas->texture, (wp_u16)atlas->texture_width,
                                (wp_u16)atlas->texture_height, slice.pixels );
@@ -111,12 +125,16 @@ wp_bool wp_volume_atlas_sample_coords( const struct wp_volume_atlas *atlas, wp_v
 
     WORKPHONE_ASSERT( out );
     if( !out )
+    {
         return wp_false;
+    }
 
     wp_zero( out, sizeof( *out ) );
 
     if( !wp_volume_atlas_is_valid( atlas ) )
+    {
         return wp_false;
+    }
 
     WORKPHONE_CLAMP( volume_position.x, 0.0f, 1.0f );
     WORKPHONE_CLAMP( volume_position.y, 0.0f, 1.0f );
@@ -133,7 +151,9 @@ wp_bool wp_volume_atlas_sample_coords( const struct wp_volume_atlas *atlas, wp_v
 
     if( !wp_volume_atlas_slice( atlas, lower_index, &lower ) ||
         !wp_volume_atlas_slice( atlas, upper_index, &upper ) )
+    {
         return wp_false;
+    }
 
     out->lower_uv.x = lower.uv.x + ( lower.uv.z - lower.uv.x ) * x;
     out->lower_uv.y = lower.uv.y + ( lower.uv.w - lower.uv.y ) * y;

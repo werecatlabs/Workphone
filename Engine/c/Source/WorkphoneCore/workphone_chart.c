@@ -19,7 +19,9 @@ WORKPHONE_API wp_bool wp_chart_begin_colored( struct wp_context *ctx, enum chart
     WORKPHONE_ASSERT( ctx->current->layout );
 
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
     if( !wp_widget( &bounds, ctx ) )
     {
         wp_c8t = (struct wp_chart *)ctx->current->layout->chart;
@@ -44,7 +46,7 @@ WORKPHONE_API wp_bool wp_chart_begin_colored( struct wp_context *ctx, enum chart
     /* add first slot into wp_c8t */
     {
         struct chart_slot *slot = &wp_c8t->slots[wp_c8t->slot++];
-        slot->type = ( wp_chart_type )type;
+        slot->type = (wp_chart_type)type;
         slot->count = count;
         slot->color = wp_rgb_factor( color, style->color_factor );
         slot->highlight = highlight;
@@ -95,9 +97,13 @@ WORKPHONE_API void wp_wp_c8t_add_slot_colored( struct wp_context *ctx, const enu
     WORKPHONE_ASSERT( ctx->current->layout );
     WORKPHONE_ASSERT( ctx->current->layout->chart->slot < WORKPHONE_CHART_MAX_SLOT );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
     if( ( (struct wp_chart *)ctx->current->layout->chart )->slot >= WORKPHONE_CHART_MAX_SLOT )
+    {
         return;
+    }
 
     style = &ctx->style.chart;
 
@@ -105,7 +111,7 @@ WORKPHONE_API void wp_wp_c8t_add_slot_colored( struct wp_context *ctx, const enu
     {
         struct wp_chart *wp_c8t = (struct wp_chart *)ctx->current->layout->chart;
         struct chart_slot *slot = &wp_c8t->slots[wp_c8t->slot++];
-        slot->type = ( wp_chart_type )type;
+        slot->type = (wp_chart_type)type;
         slot->count = count;
         slot->color = wp_rgb_factor( color, style->color_factor );
         slot->highlight = highlight;
@@ -122,6 +128,7 @@ WORKPHONE_API void wp_wp_c8t_add_slot( struct wp_context *ctx, const enum chart_
     wp_wp_c8t_add_slot_colored( ctx, type, ctx->style.chart.color, ctx->style.chart.selected_color,
                                 count, min_value, max_value );
 }
+
 WORKPHONE_INTERN wp_flags wp_wp_c8t_push_line( struct wp_context *ctx, struct wp_window *win,
                                                struct wp_chart *g, wp_f32 value, wp_s32 slot )
 {
@@ -221,7 +228,9 @@ WORKPHONE_INTERN wp_flags wp_wp_c8t_push_column( const struct wp_context *ctx, s
 
     WORKPHONE_ASSERT( slot >= 0 && slot < WORKPHONE_CHART_MAX_SLOT );
     if( wp_c8t->slots[slot].index >= wp_c8t->slots[slot].count )
+    {
         return wp_false;
+    }
     if( wp_c8t->slots[slot].count )
     {
         wp_f32 padding = (wp_f32)( wp_c8t->slots[slot].count - 1 );
@@ -261,6 +270,7 @@ WORKPHONE_INTERN wp_flags wp_wp_c8t_push_column( const struct wp_context *ctx, s
     wp_c8t->slots[slot].index += 1;
     return ret;
 }
+
 WORKPHONE_API wp_flags wp_wp_c8t_push_slot( struct wp_context *ctx, wp_f32 value, wp_s32 slot )
 {
     wp_flags flags;
@@ -271,13 +281,19 @@ WORKPHONE_API wp_flags wp_wp_c8t_push_slot( struct wp_context *ctx, wp_f32 value
     WORKPHONE_ASSERT( slot >= 0 && slot < WORKPHONE_CHART_MAX_SLOT );
     WORKPHONE_ASSERT( slot < ( (struct wp_chart *)ctx->current->layout->chart )->slot );
     if( !ctx || !ctx->current || slot >= WORKPHONE_CHART_MAX_SLOT )
+    {
         return wp_false;
+    }
     if( slot >= ( (struct wp_chart *)ctx->current->layout->chart )->slot )
+    {
         return wp_false;
+    }
 
     win = ctx->current;
     if( ( (struct wp_chart *)win->layout->chart )->slot < slot )
+    {
         return wp_false;
+    }
     switch( ( (struct wp_chart *)win->layout->chart )->slots[slot].type )
     {
     case WORKPHONE_CHART_LINES:
@@ -292,10 +308,12 @@ WORKPHONE_API wp_flags wp_wp_c8t_push_slot( struct wp_context *ctx, wp_f32 value
     }
     return flags;
 }
+
 WORKPHONE_API wp_flags wp_wp_c8t_push( struct wp_context *ctx, wp_f32 value )
 {
     return wp_wp_c8t_push_slot( ctx, value, 0 );
 }
+
 WORKPHONE_API void wp_wp_c8t_end( struct wp_context *ctx )
 {
     struct wp_window *win;
@@ -304,13 +322,16 @@ WORKPHONE_API void wp_wp_c8t_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     win = ctx->current;
     wp_c8t = (struct wp_chart *)win->layout->chart;
     WORKPHONE_MEMSET( wp_c8t, 0, sizeof( *wp_c8t ) );
     return;
 }
+
 WORKPHONE_API void wp_plot( struct wp_context *ctx, enum chart_type type, const wp_f32 *values,
                             wp_s32 count, wp_s32 offset )
 {
@@ -321,7 +342,9 @@ WORKPHONE_API void wp_plot( struct wp_context *ctx, enum chart_type type, const 
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( values );
     if( !ctx || !values || !count )
+    {
         return;
+    }
 
     min_value = values[offset];
     max_value = values[offset];
@@ -334,10 +357,13 @@ WORKPHONE_API void wp_plot( struct wp_context *ctx, enum chart_type type, const 
     if( wp_wp_c8t_begin( ctx, type, count, min_value, max_value ) )
     {
         for( i = 0; i < count; ++i )
+        {
             wp_wp_c8t_push( ctx, values[i + offset] );
+        }
         wp_wp_c8t_end( ctx );
     }
 }
+
 WORKPHONE_API void wp_plot_function( struct wp_context *ctx, enum chart_type type, void *userdata,
                                      wp_f32 ( *value_getter )( void *user, wp_s32 index ), wp_s32 count,
                                      wp_s32 offset )
@@ -349,7 +375,9 @@ WORKPHONE_API void wp_plot_function( struct wp_context *ctx, enum chart_type typ
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( value_getter );
     if( !ctx || !value_getter || !count )
+    {
         return;
+    }
 
     max_value = min_value = value_getter( userdata, offset );
     for( i = 0; i < count; ++i )
@@ -362,7 +390,9 @@ WORKPHONE_API void wp_plot_function( struct wp_context *ctx, enum chart_type typ
     if( wp_wp_c8t_begin( ctx, type, count, min_value, max_value ) )
     {
         for( i = 0; i < count; ++i )
+        {
             wp_wp_c8t_push( ctx, value_getter( userdata, i + offset ) );
+        }
         wp_wp_c8t_end( ctx );
     }
 }

@@ -30,10 +30,12 @@ wp_f32 wp_minf( wp_f32 a, wp_f32 b )
 {
     return a < b ? a : b;
 }
+
 wp_f32 wp_maxf( wp_f32 a, wp_f32 b )
 {
     return a > b ? a : b;
 }
+
 wp_f32 wp_absf( wp_f32 a )
 {
     return fabsf( a );
@@ -42,9 +44,13 @@ wp_f32 wp_absf( wp_f32 a )
 wp_f32 wp_clampf( wp_f32 v, wp_f32 lo, wp_f32 hi )
 {
     if( v < lo )
+    {
         return lo;
+    }
     if( v > hi )
+    {
         return hi;
+    }
     return v;
 }
 
@@ -56,9 +62,13 @@ wp_f32 wp_lerpf( wp_f32 a, wp_f32 b, wp_f32 t )
 wp_f32 wp_signf( wp_f32 a )
 {
     if( a > 0.0f )
+    {
         return 1.0f;
+    }
     if( a < 0.0f )
+    {
         return -1.0f;
+    }
     return 0.0f;
 }
 
@@ -77,70 +87,87 @@ wp_f32 wp_floorf( wp_f32 a )
 {
     return floorf( a );
 }
+
 wp_f32 wp_ceilf( wp_f32 a )
 {
     return ceilf( a );
 }
+
 wp_f32 wp_fmodf( wp_f32 a, wp_f32 b )
 {
     return fmodf( a, b );
 }
+
 wp_f32 wp_sqrtf( wp_f32 a )
 {
     return sqrtf( a );
 }
+
 wp_f32 wp_cbrtf( wp_f32 a )
 {
     return (wp_f32)cbrt( (wp_f64)a );
 }
+
 wp_f32 wp_powf( wp_f32 a, wp_f32 b )
 {
     return powf( a, b );
 }
+
 wp_f32 wp_expf( wp_f32 a )
 {
     return expf( a );
 }
+
 wp_f32 wp_logf( wp_f32 a )
 {
     return logf( a );
 }
+
 wp_f32 wp_log2f( wp_f32 a )
 {
     return log2f( a );
 }
+
 wp_f32 wp_sinf( wp_f32 a )
 {
     return sinf( a );
 }
+
 wp_f32 wp_cosf( wp_f32 a )
 {
     return cosf( a );
 }
+
 wp_f32 wp_tanf( wp_f32 a )
 {
     return tanf( a );
 }
+
 wp_f32 wp_asinf( wp_f32 a )
 {
     return asinf( a );
 }
+
 wp_f32 wp_acosf( wp_f32 a )
 {
     return acosf( a );
 }
+
 wp_f32 wp_atanf( wp_f32 a )
 {
     return atanf( a );
 }
+
 wp_f32 wp_atan2f( wp_f32 y, wp_f32 x )
 {
     return atan2f( y, x );
 }
+
 wp_f32 wp_deg2radf( wp_f32 deg )
 {
     return deg * WORKPHONE_DEG2RAD_F;
 }
+
 wp_f32 wp_rad2degf( wp_f32 rad )
 {
     return rad * WORKPHONE_RAD2DEG_F;
@@ -165,6 +192,7 @@ wp_s32 wp_is_nanf( wp_f32 a )
 {
     return a != a ? 1 : 0;
 }
+
 wp_s32 wp_is_inff( wp_f32 a )
 {
     return ( a == a ) && ( ( a - a ) != 0.0f ) ? 1 : 0;
@@ -174,10 +202,12 @@ wp_f64 wp_mind( wp_f64 a, wp_f64 b )
 {
     return a < b ? a : b;
 }
+
 wp_f64 wp_maxd( wp_f64 a, wp_f64 b )
 {
     return a > b ? a : b;
 }
+
 wp_f64 wp_absd( wp_f64 a )
 {
     return fabs( a );
@@ -186,9 +216,13 @@ wp_f64 wp_absd( wp_f64 a )
 wp_f64 wp_clampd( wp_f64 v, wp_f64 lo, wp_f64 hi )
 {
     if( v < lo )
+    {
         return lo;
+    }
     if( v > hi )
+    {
         return hi;
+    }
     return v;
 }
 
@@ -200,9 +234,13 @@ wp_f64 wp_lerpd( wp_f64 a, wp_f64 b, wp_f64 t )
 wp_f64 wp_signd( wp_f64 a )
 {
     if( a > 0.0 )
+    {
         return 1.0;
+    }
     if( a < 0.0 )
+    {
         return -1.0;
+    }
     return 0.0;
 }
 
@@ -221,70 +259,87 @@ wp_f64 wp_floord( wp_f64 a )
 {
     return floor( a );
 }
+
 wp_f64 wp_ceild( wp_f64 a )
 {
     return ceil( a );
 }
+
 wp_f64 wp_fmodd( wp_f64 a, wp_f64 b )
 {
     return fmod( a, b );
 }
+
 wp_f64 wp_sqrtd( wp_f64 a )
 {
     return sqrt( a );
 }
+
 wp_f64 wp_cbrtd( wp_f64 a )
 {
     return cbrt( a );
 }
+
 wp_f64 wp_powd( wp_f64 a, wp_f64 b )
 {
     return pow( a, b );
 }
+
 wp_f64 wp_expd( wp_f64 a )
 {
     return exp( a );
 }
+
 wp_f64 wp_logd( wp_f64 a )
 {
     return log( a );
 }
+
 wp_f64 wp_log2d( wp_f64 a )
 {
     return log2( a );
 }
+
 wp_f64 wp_sind( wp_f64 a )
 {
     return sin( a );
 }
+
 wp_f64 wp_cosd( wp_f64 a )
 {
     return cos( a );
 }
+
 wp_f64 wp_tand( wp_f64 a )
 {
     return tan( a );
 }
+
 wp_f64 wp_asind( wp_f64 a )
 {
     return asin( a );
 }
+
 wp_f64 wp_acosd( wp_f64 a )
 {
     return acos( a );
 }
+
 wp_f64 wp_atand( wp_f64 a )
 {
     return atan( a );
 }
+
 wp_f64 wp_atan2d( wp_f64 y, wp_f64 x )
 {
     return atan2( y, x );
 }
+
 wp_f64 wp_deg2radd( wp_f64 deg )
 {
     return deg * WORKPHONE_DEG2RAD;
 }
+
 wp_f64 wp_rad2degd( wp_f64 rad )
 {
     return rad * WORKPHONE_RAD2DEG;
@@ -309,6 +364,7 @@ wp_s32 wp_is_nand( wp_f64 a )
 {
     return a != a ? 1 : 0;
 }
+
 wp_s32 wp_is_infd( wp_f64 a )
 {
     return ( a == a ) && ( ( a - a ) != 0.0 ) ? 1 : 0;
@@ -318,11 +374,13 @@ wp_f32 wp_inv_sqrt( wp_f32 n )
 {
     wp_f32 x2;
     const wp_f32 threehalfs = 1.5f;
+
     union
     {
         wp_u32 i;
         wp_f32 f;
     } conv = { 0 };
+
     conv.f = n;
     x2 = n * 0.5f;
     conv.i = 0x5f375A84 - ( conv.i >> 1 );
@@ -387,7 +445,9 @@ wp_f32 wp_atan2( wp_f32 y, wp_f32 x )
 
     wp_f32 a;
     if( y == 0.0 && x == 0.0 )
+    {
         return 0.0f;
+    }
     a = ( ay > ax ) ? WORKPHONE_PI_HALF - wp_atan( ax / ay ) : wp_atan( ay / ax );
 
     switch( signs )
@@ -425,7 +485,9 @@ wp_f64 wp_pow( wp_f64 x, wp_s32 n )
     while( n > 0 )
     {
         if( ( n & 1 ) == 1 )
+        {
             r *= x;
+        }
         n /= 2;
         x *= x;
     }
@@ -473,7 +535,9 @@ wp_s32 wp_log10( wp_f64 n )
         exp++;
     }
     if( neg )
+    {
         exp = -exp;
+    }
     return exp;
 }
 
@@ -573,10 +637,12 @@ struct wp_vec2f wp_make_vec2i( wp_s32 x, wp_s32 y )
     ret.y = (wp_f32)y;
     return ret;
 }
+
 struct wp_vec2f wp_make_vec2v( const wp_f32 *v )
 {
     return wp_make_vec2( v[0], v[1] );
 }
+
 struct wp_vec2f wp_make_vec2iv( const wp_s32 *v )
 {
     return wp_make_vec2i( v[0], v[1] );

@@ -22,7 +22,9 @@ static enum wp_fsm_return_type wp_fsm_notify_listeners( wp_fsm *fsm, wp_u32 stat
         {
             enum wp_fsm_return_type ret = l->callback( l->user_data, state, event );
             if( ret != WP_FSM_RETURN_OK )
+            {
                 return ret;
+            }
         }
     }
     return WP_FSM_RETURN_OK;
@@ -72,10 +74,14 @@ void wp_fsm_update( wp_fsm *fsm, wp_f64 dt )
 void wp_fsm_update_state( wp_fsm *fsm )
 {
     if( fsm->current_state == fsm->new_state )
+    {
         return;
+    }
 
     if( !( fsm->flags & WP_FSM_FLAG_ALLOW_STATE_CHANGE ) )
+    {
         return;
+    }
 
     if( fsm->num_listeners > 0 )
     {
@@ -121,9 +127,13 @@ wp_s32 wp_fsm_get_flag( const wp_fsm *fsm, wp_u32 flag )
 void wp_fsm_set_flag( wp_fsm *fsm, wp_u32 flag, wp_s32 value )
 {
     if( value )
+    {
         fsm->flags |= flag;
+    }
     else
+    {
         fsm->flags &= ~flag;
+    }
 }
 
 /* =========================================================================
@@ -148,7 +158,9 @@ wp_u8 wp_fsm_get_new_state( const wp_fsm *fsm )
 void wp_fsm_set_new_state( wp_fsm *fsm, wp_s32 state, wp_s32 change_now )
 {
     if( !( fsm->flags & WP_FSM_FLAG_ALLOW_STATE_CHANGE ) )
+    {
         return;
+    }
 
     fsm->new_state = (wp_u8)state;
     fsm->flags |= WP_FSM_FLAG_PENDING;
@@ -223,9 +235,13 @@ wp_s32 wp_fsm_get_auto_change_state( const wp_fsm *fsm )
 void wp_fsm_set_auto_change_state( wp_fsm *fsm, wp_s32 auto_change )
 {
     if( auto_change )
+    {
         fsm->flags |= WP_FSM_FLAG_AUTO_CHANGE_STATE;
+    }
     else
+    {
         fsm->flags &= ~WP_FSM_FLAG_AUTO_CHANGE_STATE;
+    }
 }
 
 /* =========================================================================
@@ -240,9 +256,13 @@ wp_s32 wp_fsm_get_allow_state_change( const wp_fsm *fsm )
 void wp_fsm_set_allow_state_change( wp_fsm *fsm, wp_s32 allow )
 {
     if( allow )
+    {
         fsm->flags |= WP_FSM_FLAG_ALLOW_STATE_CHANGE;
+    }
     else
+    {
         fsm->flags &= ~WP_FSM_FLAG_ALLOW_STATE_CHANGE;
+    }
 }
 
 /* =========================================================================
@@ -257,9 +277,13 @@ wp_s32 wp_fsm_is_state_change_complete( const wp_fsm *fsm )
 void wp_fsm_set_state_change_complete( wp_fsm *fsm, wp_s32 complete )
 {
     if( complete )
+    {
         fsm->flags |= WP_FSM_FLAG_STATE_CHANGE_COMPLETE;
+    }
     else
+    {
         fsm->flags &= ~WP_FSM_FLAG_STATE_CHANGE_COMPLETE;
+    }
 }
 
 /* =========================================================================
@@ -283,7 +307,9 @@ void wp_fsm_set_priority( wp_fsm *fsm, wp_s32 priority )
 wp_s32 wp_fsm_add_listener( wp_fsm *fsm, wp_fsm_listener_fn callback, void *user_data )
 {
     if( fsm->num_listeners >= WP_FSM_MAX_LISTENERS )
+    {
         return -1;
+    }
 
     fsm->listeners[fsm->num_listeners].callback = callback;
     fsm->listeners[fsm->num_listeners].user_data = user_data;
@@ -300,7 +326,9 @@ wp_s32 wp_fsm_remove_listener( wp_fsm *fsm, wp_fsm_listener_fn callback, void *u
         {
             wp_u32 last = fsm->num_listeners - 1;
             if( i != last )
+            {
                 fsm->listeners[i] = fsm->listeners[last];
+            }
 
             fsm->listeners[last].callback = NULL;
             fsm->listeners[last].user_data = NULL;

@@ -9,21 +9,29 @@ void *wp_mem_alloc( wp_u32 size )
 {
     /* Reject zero allocations */
     if( size == 0 )
+    {
         return NULL;
+    }
 
     /* Prevent absurd allocations (DoS protection) */
     if( size > SAFE_MALLOC_MAX )
+    {
         return NULL;
+    }
 
     /* Prevent overflow edge cases */
     if( size > SIZE_MAX - 16 )
+    {
         return NULL;
+    }
 
     void *p = malloc( size );
 
     /* Allocation failure check */
     if( p == NULL )
+    {
         return NULL;
+    }
 
     return p;
 }
@@ -31,7 +39,9 @@ void *wp_mem_alloc( wp_u32 size )
 void wp_mem_free( void *p )
 {
     if( p == NULL )
+    {
         return;
+    }
 
     free( p );
 }
@@ -40,21 +50,29 @@ void *wp_calloc( wp_u32 count, wp_u32 size )
 {
     /* Reject zero-sized allocations */
     if( count == 0 || size == 0 )
+    {
         return NULL;
+    }
 
     /* Prevent integer overflow */
     if( count > SIZE_MAX / size )
+    {
         return NULL;
+    }
 
     wp_u32 total = count * size;
 
     /* DoS protection */
     if( total > SAFE_CALLOC_MAX )
+    {
         return NULL;
+    }
 
     void *p = wp_mem_alloc( total );
     if( !p )
+    {
         return NULL;
+    }
 
     /* Zero initialize */
     memset( p, 0, total );
@@ -66,7 +84,9 @@ wp_u32 wp_strnlen( const wp_c8 *s, wp_u32 maxlen )
 {
     wp_u32 i = 0;
     while( i < maxlen && s[i] )
+    {
         i++;
+    }
 
     return i;
 }
@@ -76,7 +96,9 @@ wp_c8 *wp_strdup( const wp_c8 *s )
     wp_u32 len = (wp_u32)strlen( s ) + 1;
     wp_c8 *p = wp_mem_alloc( len );
     if( p )
+    {
         memcpy( p, s, len );
+    }
 
     return p;
 }
@@ -86,7 +108,9 @@ wp_c8 *wp_strndup( const wp_c8 *s, wp_u32 n )
     wp_u32 len = (wp_u32)wp_strnlen( s, n );
     wp_c8 *p = wp_mem_alloc( len + 1 );
     if( !p )
+    {
         return 0;
+    }
 
     memcpy( p, s, len );
     p[len] = '\0';
@@ -97,21 +121,29 @@ void *wp_mem_alloc( wp_u32 size )
 {
     /* Reject zero allocations */
     if( size == 0 )
+    {
         return NULL;
+    }
 
     /* Prevent absurd allocations (DoS protection) */
     if( size > SAFE_MALLOC_MAX )
+    {
         return NULL;
+    }
 
     /* Prevent overflow edge cases */
     if( size > SIZE_MAX - 16 )
+    {
         return NULL;
+    }
 
     void *p = malloc( size );
 
     /* Allocation failure check */
     if( p == NULL )
+    {
         return NULL;
+    }
 
     return p;
 }
@@ -119,7 +151,9 @@ void *wp_mem_alloc( wp_u32 size )
 void wp_mem_free( void *p )
 {
     if( p == NULL )
+    {
         return;
+    }
 
     free( p );
 }
@@ -127,20 +161,28 @@ void wp_mem_free( void *p )
 void *wp_memcpy( void *dest, const void *src, wp_u32 n )
 {
     if( dest == NULL || src == NULL )
+    {
         return NULL;
+    }
 
     if( dest == src || n == 0 )
+    {
         return dest;
+    }
 
     wp_u8 *d = dest;
     const wp_c8 *s = src;
 
     /* Detect overlap */
     if( ( d < s + n ) && ( s < d + n ) )
+    {
         return NULL; /* unsafe for memcpy */
+    }
 
     for( wp_u32 i = 0; i < n; i++ )
+    {
         d[i] = s[i];
+    }
 
     return dest;
 }
@@ -149,21 +191,29 @@ void *wp_calloc( wp_u32 count, wp_u32 size )
 {
     /* Reject zero-sized allocations */
     if( count == 0 || size == 0 )
+    {
         return NULL;
+    }
 
     /* Prevent integer overflow */
     if( count > SIZE_MAX / size )
+    {
         return NULL;
+    }
 
     wp_u32 total = count * size;
 
     /* DoS protection */
     if( total > SAFE_CALLOC_MAX )
+    {
         return NULL;
+    }
 
     void *p = wp_mem_alloc( total );
     if( !p )
+    {
         return NULL;
+    }
 
     /* Zero initialize */
     wp_memset( p, 0, total );
@@ -174,14 +224,18 @@ void *wp_calloc( wp_u32 count, wp_u32 size )
 wp_s32 wp_strnlen( const wp_c8 *s, wp_u32 maxlen )
 {
     if( s == NULL )
+    {
         return 0;
+    }
 
     wp_s32 i = 0;
 
     while( i < maxlen )
     {
         if( s[i] == '\0' )
+        {
             break;
+        }
 
         i++;
     }
@@ -193,7 +247,9 @@ wp_c8 *wp_strdup( const wp_c8 *s )
 {
     /* Validate input */
     if( s == NULL )
+    {
         return NULL;
+    }
 
     size_t len = 0;
 
@@ -203,7 +259,9 @@ wp_c8 *wp_strdup( const wp_c8 *s )
         wp_c8 c = s[len];
 
         if( c == '\0' )
+        {
             break;
+        }
 
         len++;
     }
@@ -211,21 +269,29 @@ wp_c8 *wp_strdup( const wp_c8 *s )
     /* If we hit the limit without finding a terminator,
        treat as suspicious input */
     if( len == SAFE_STR_MAX )
+    {
         return NULL;
+    }
 
     /* Overflow protection */
     if( len >= SIZE_MAX - 1 )
+    {
         return NULL;
+    }
 
     wp_s32 alloc_size = len + 1;
 
     wp_c8 *out = (wp_c8 *)wp_mem_alloc( alloc_size );
     if( out == NULL )
+    {
         return NULL;
+    }
 
     /* Copy byte-by-byte */
     for( size_t i = 0; i < len; i++ )
+    {
         out[i] = s[i];
+    }
 
     /* Ensure null termination */
     out[len] = '\0';
@@ -237,18 +303,24 @@ wp_c8 *wp_strndup( const wp_c8 *s, wp_u32 n )
 {
     /* Prevent absurd limits */
     if( n > SAFE_STR_MAX )
+    {
         n = SAFE_STR_MAX;
+    }
 
     /* Check for NULL input */
     if( s == NULL )
+    {
         return NULL;
+    }
 
     /* If n is zero return empty string */
     if( n == 0 )
     {
         wp_c8 *empty = (wp_c8 *)wp_mem_alloc( 1 );
         if( !empty )
+        {
             return NULL;
+        }
         empty[0] = '\0';
         return empty;
     }
@@ -256,16 +328,22 @@ wp_c8 *wp_strndup( const wp_c8 *s, wp_u32 n )
     /* Find length up to n safely */
     wp_u32 len = 0;
     while( len < n && s[len] != '\0' )
+    {
         len++;
+    }
 
     /* Prevent overflow in allocation */
     if( len >= WORKPHONE_UINT_MAX )
+    {
         return NULL;
+    }
 
     /* Allocate memory */
     wp_c8 *out = (wp_c8 *)wp_mem_alloc( len + 1 );
     if( !out )
+    {
         return NULL;
+    }
 
     /* Copy byte-by-byte (avoids memcpy surprises) */
     for( wp_s32 i = 0; i < (wp_s32)len; i++ )
@@ -284,6 +362,7 @@ wp_bool wp_is_lower( wp_s32 c )
 {
     return ( c >= 'a' && c <= 'z' ) || ( c >= 0xE0 && c <= 0xFF );
 }
+
 wp_bool wp_is_upper( wp_s32 c )
 {
     return ( c >= 'A' && c <= 'Z' ) || ( c >= 0xC0 && c <= 0xDF );
@@ -305,18 +384,20 @@ void *wp_memcopy( void *dst0, const void *src0, wp_size length )
     wp_c8 *dst = (wp_c8 *)dst0;
     const wp_c8 *src = (const wp_c8 *)src0;
     if( length == 0 || dst == src )
+    {
         goto done;
+    }
 
 #define wp_word int
 #define wp_wsize sizeof( wp_word )
 #define wp_wmask ( wp_wsize - 1 )
 #define WORKPHONE_TLOOP( s ) \
-    if( t ) \
+    if( t )                  \
     WORKPHONE_TLOOP1( s )
 #define WORKPHONE_TLOOP1( s ) \
-    do \
-    { \
-        s; \
+    do                        \
+    {                         \
+        s;                    \
     } while( --t )
 
     if( dst < src )
@@ -325,9 +406,13 @@ void *wp_memcopy( void *dst0, const void *src0, wp_size length )
         if( ( t | (wp_ptr)dst ) & wp_wmask )
         {
             if( ( t ^ (wp_ptr)dst ) & wp_wmask || length < wp_wsize )
+            {
                 t = length;
+            }
             else
+            {
                 t = wp_wsize - ( t & wp_wmask );
+            }
             length -= t;
             WORKPHONE_TLOOP1( *dst++ = *src++ );
         }
@@ -345,9 +430,13 @@ void *wp_memcopy( void *dst0, const void *src0, wp_size length )
         if( ( t | (wp_ptr)dst ) & wp_wmask )
         {
             if( ( t ^ (wp_ptr)dst ) & wp_wmask || length <= wp_wsize )
+            {
                 t = length;
+            }
             else
+            {
                 t &= wp_wmask;
+            }
             length -= t;
             WORKPHONE_TLOOP1( *--dst = *--src );
         }
@@ -376,13 +465,17 @@ void *wp_memset( void *ptr, wp_s32 c0, wp_size size )
     wp_size t = 0;
 
     if( !ptr )
+    {
         return ptr;
+    }
 
     if( ( c = (wp_byte)c0 ) != 0 )
     {
         c = ( c << 8 ) | c; /* at least 16-bits  */
         if( sizeof( wp_u32 ) > 2 )
+        {
             c = ( c << 16 ) | c; /* at least 32-bits*/
+        }
     }
 
     /* too small of a word count */
@@ -390,7 +483,9 @@ void *wp_memset( void *ptr, wp_s32 c0, wp_size size )
     if( size < 3 * wp_wsize )
     {
         while( size-- )
+        {
             *dst++ = (wp_byte)c0;
+        }
         return ptr;
     }
 
@@ -444,7 +539,9 @@ wp_u32 wp_strlen( const wp_c8 *str )
 
     wp_u32 count = 0;
     while( str[count] != '\0' )
+    {
         count++;
+    }
     return count;
 }
 
@@ -466,11 +563,15 @@ wp_s32 wp_strtoi( const wp_c8 *str, wp_c8 **endptr )
 
     WORKPHONE_ASSERT( str );
     if( !str )
+    {
         return 0;
+    }
 
     /* skip whitespace */
     while( *p == ' ' )
+    {
         p++;
+    }
     if( *p == '-' )
     {
         neg = -1;
@@ -482,7 +583,9 @@ wp_s32 wp_strtoi( const wp_c8 *str, wp_c8 **endptr )
         p++;
     }
     if( endptr )
+    {
         *endptr = (wp_c8 *)p;
+    }
     return neg * value;
 }
 
@@ -496,11 +599,15 @@ wp_f64 wp_strtod( const wp_c8 *str, wp_c8 **endptr )
 
     WORKPHONE_ASSERT( str );
     if( !str )
+    {
         return 0;
+    }
 
     /* skip whitespace */
     while( *p == ' ' )
+    {
         p++;
+    }
     if( *p == '-' )
     {
         neg = -1.0;
@@ -537,22 +644,34 @@ wp_f64 wp_strtod( const wp_c8 *str, wp_c8 **endptr )
             p++;
         }
         else
+        {
             div = wp_false;
+        }
 
         for( pow = 0; *p; p++ )
+        {
             pow = pow * 10 + (wp_s32)( *p - '0' );
+        }
 
         for( m = 1.0, i = 0; i < pow; i++ )
+        {
             m *= 10.0;
+        }
 
         if( div )
+        {
             value /= m;
+        }
         else
+        {
             value *= m;
+        }
     }
     number = value * neg;
     if( endptr )
+    {
         *endptr = (wp_c8 *)p;
+    }
     return number;
 }
 
@@ -579,13 +698,17 @@ wp_s32 wp_stricmp( const wp_c8 *s1, const wp_c8 *s2 )
             {
                 d += ( 'a' - 'A' );
                 if( !d )
+                {
                     break;
+                }
             }
             if( c2 <= 'Z' && c2 >= 'A' )
             {
                 d -= ( 'a' - 'A' );
                 if( !d )
+                {
                     break;
+                }
             }
             return ( ( d >= 0 ) << 1 ) - 1;
         }
@@ -602,7 +725,9 @@ wp_s32 wp_stricmpn( const wp_c8 *s1, const wp_c8 *s2, wp_s32 n )
         c1 = *s1++;
         c2 = *s2++;
         if( !n-- )
+        {
             return 0;
+        }
 
         d = c1 - c2;
         while( d )
@@ -611,13 +736,17 @@ wp_s32 wp_stricmpn( const wp_c8 *s1, const wp_c8 *s2, wp_s32 n )
             {
                 d += ( 'a' - 'A' );
                 if( !d )
+                {
                     break;
+                }
             }
             if( c2 <= 'Z' && c2 >= 'A' )
             {
                 d -= ( 'a' - 'A' );
                 if( !d )
+                {
                     break;
+                }
             }
             return ( ( d >= 0 ) << 1 ) - 1;
         }
@@ -628,13 +757,21 @@ wp_s32 wp_stricmpn( const wp_c8 *s1, const wp_c8 *s2, wp_s32 n )
 wp_s32 wp_str_match_here( const wp_c8 *regexp, const wp_c8 *text )
 {
     if( regexp[0] == '\0' )
+    {
         return 1;
+    }
     if( regexp[1] == '*' )
+    {
         return wp_str_match_star( regexp[0], regexp + 2, text );
+    }
     if( regexp[0] == '$' && regexp[1] == '\0' )
+    {
         return *text == '\0';
+    }
     if( *text != '\0' && ( regexp[0] == '.' || regexp[0] == *text ) )
+    {
         return wp_str_match_here( regexp + 1, text + 1 );
+    }
     return 0;
 }
 
@@ -643,7 +780,9 @@ wp_s32 wp_str_match_star( wp_s32 c, const wp_c8 *regexp, const wp_c8 *text )
     do
     { /* a '* matches zero or more instances */
         if( wp_str_match_here( regexp, text ) )
+        {
             return 1;
+        }
     } while( *text != '\0' && ( *text++ == c || c == '.' ) );
     return 0;
 }
@@ -657,11 +796,15 @@ wp_s32 wp_strfilter( const wp_c8 *text, const wp_c8 *regexp )
     $    matches the end of the input string
     *    matches zero or more occurrences of the previous wp_c8acter*/
     if( regexp[0] == '^' )
+    {
         return wp_str_match_here( regexp + 1, text );
+    }
     do
     { /* must look even if string is empty */
         if( wp_str_match_here( regexp, text ) )
+        {
             return 1;
+        }
     } while( *text++ != '\0' );
     return 0;
 }
@@ -703,7 +846,9 @@ wp_s32 wp_strmatch_fuzzy_text( const wp_c8 *str, wp_s32 str_len, const wp_c8 *pa
     WORKPHONE_ASSERT( str );
     WORKPHONE_ASSERT( pattern );
     if( !str || !str_len || !pattern )
+    {
         return 0;
+    }
     while( str_iter < str_len )
     {
         const wp_c8 pattern_letter = *pattern_iter;
@@ -733,33 +878,45 @@ wp_s32 wp_strmatch_fuzzy_text( const wp_c8 *str, wp_s32 str_len, const wp_c8 *pa
                 wp_s32 count = (wp_s32)( &str[str_iter] - str );
                 wp_s32 penalty = WORKPHONE_LEADING_LETTER_PENALTY * count;
                 if( penalty < WORKPHONE_MAX_LEADING_LETTER_PENALTY )
+                {
                     penalty = WORKPHONE_MAX_LEADING_LETTER_PENALTY;
+                }
 
                 score += penalty;
             }
 
             /* apply bonus for consecutive bonuses */
             if( prev_matched )
+            {
                 new_score += WORKPHONE_ADJACENCY_BONUS;
+            }
 
             /* apply bonus for matches after a separator */
             if( prev_separator )
+            {
                 new_score += WORKPHONE_SEPARATOR_BONUS;
+            }
 
             /* apply bonus across camel case boundaries */
             if( prev_lower && wp_is_upper( str_letter ) )
+            {
                 new_score += WORKPHONE_CAMEL_BONUS;
+            }
 
             /* update pattern iter IFF the next pattern letter was matched */
             if( next_match )
+            {
                 ++pattern_iter;
+            }
 
             /* update best letter in str which may be for a "next" letter or a rematch */
             if( new_score >= best_letter_score )
             {
                 /* apply penalty for now skipped letter */
                 if( best_letter != 0 )
+                {
                     score += WORKPHONE_UNMATCHED_LETTER_PENALTY;
+                }
 
                 best_letter = &str[str_iter];
                 best_letter_score = new_score;
@@ -781,14 +938,20 @@ wp_s32 wp_strmatch_fuzzy_text( const wp_c8 *str, wp_s32 str_len, const wp_c8 *pa
 
     /* apply score for last match */
     if( best_letter )
+    {
         score += best_letter_score;
+    }
 
     /* did not match full pattern */
     if( *pattern_iter != '\0' )
+    {
         return wp_false;
+    }
 
     if( out_score )
+    {
         *out_score = score;
+    }
     return wp_true;
 }
 
@@ -815,7 +978,9 @@ wp_s32 wp_string_wp_f32_limit( wp_c8 *string, wp_s32 prec )
             break;
         }
         if( dot > 0 )
+        {
             dot++;
+        }
         c++;
     }
     return (wp_s32)( c - string );
@@ -856,7 +1021,9 @@ wp_c8 *wp_itoa( wp_c8 *s, long n )
     }
     s[i] = 0;
     if( s[0] == '-' )
+    {
         ++s;
+    }
 
     wp_strrev_ascii( s );
     return s;
@@ -871,7 +1038,9 @@ wp_c8 *wp_dtoa( wp_c8 *s, wp_f64 n )
 
     WORKPHONE_ASSERT( s );
     if( !s )
+    {
         return 0;
+    }
 
     if( n == 0.0 )
     {
@@ -882,19 +1051,25 @@ wp_c8 *wp_dtoa( wp_c8 *s, wp_f64 n )
 
     neg = ( n < 0 );
     if( neg )
+    {
         n = -n;
+    }
 
     /* calculate magnitude */
     m = wp_log10( n );
     useExp = ( m >= 14 || ( neg && m >= 9 ) || m <= -9 );
     if( neg )
+    {
         *( c++ ) = '-';
+    }
 
     /* set up for scientific notation */
     if( useExp )
     {
         if( m < 0 )
+        {
             m -= 1;
+        }
         n = n / (wp_f64)wp_pow( 10.0, m );
         m1 = m;
         m = 0;
@@ -916,7 +1091,9 @@ wp_c8 *wp_dtoa( wp_c8 *s, wp_f64 n )
             *( c++ ) = (wp_c8)( '0' + (wp_c8)digit );
         }
         if( m == 0 && n > 0 )
+        {
             *( c++ ) = '.';
+        }
         m--;
     }
 
@@ -964,6 +1141,7 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
         WORKPHONE_ARG_TYPE_DEFAULT,
         WORKPHONE_ARG_TYPE_LONG
     };
+
     enum wp_arg_flags
     {
         WORKPHONE_ARG_FLAG_LEFT = 0x01,
@@ -986,31 +1164,49 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
     WORKPHONE_ASSERT( buf );
     WORKPHONE_ASSERT( buf_size );
     if( !buf || !buf_size || !fmt )
+    {
         return 0;
+    }
     for( iter = fmt; *iter && len < buf_size; iter++ )
     {
         /* copy all non-format wp_c8acters */
         while( *iter && ( *iter != '%' ) && ( len < buf_size ) )
+        {
             buf[len++] = *iter++;
+        }
         if( !( *iter ) || len >= buf_size )
+        {
             break;
+        }
         iter++;
 
         /* flag arguments */
         while( *iter )
         {
             if( *iter == '-' )
+            {
                 flag |= WORKPHONE_ARG_FLAG_LEFT;
+            }
             else if( *iter == '+' )
+            {
                 flag |= WORKPHONE_ARG_FLAG_PLUS;
+            }
             else if( *iter == ' ' )
+            {
                 flag |= WORKPHONE_ARG_FLAG_SPACE;
+            }
             else if( *iter == '#' )
+            {
                 flag |= WORKPHONE_ARG_FLAG_NUM;
+            }
             else if( *iter == '0' )
+            {
                 flag |= WORKPHONE_ARG_FLAG_ZERO;
+            }
             else
+            {
                 break;
+            }
             iter++;
         }
 
@@ -1021,9 +1217,13 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             wp_c8 *end;
             width = wp_strtoi( iter, &end );
             if( end == iter )
+            {
                 width = -1;
+            }
             else
+            {
                 iter = end;
+            }
         }
         else if( *iter == '*' )
         {
@@ -1046,9 +1246,13 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
                 wp_c8 *end;
                 precision = wp_strtoi( iter, &end );
                 if( end == iter )
+                {
                     precision = -1;
+                }
                 else
+                {
                     iter = end;
+                }
             }
         }
 
@@ -1061,7 +1265,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
                 iter++;
             }
             else
+            {
                 arg_type = WORKPHONE_ARG_TYPE_SHORT;
+            }
             iter++;
         }
         else if( *iter == 'l' )
@@ -1070,7 +1276,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             iter++;
         }
         else
+        {
             arg_type = WORKPHONE_ARG_TYPE_DEFAULT;
+        }
 
         /* specifier */
         if( *iter == '%' )
@@ -1079,7 +1287,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             WORKPHONE_ASSERT( precision == WORKPHONE_DEFAULT );
             WORKPHONE_ASSERT( width == WORKPHONE_DEFAULT );
             if( len < buf_size )
+            {
                 buf[len++] = '%';
+            }
         }
         else if( *iter == 's' )
         {
@@ -1090,9 +1300,13 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             WORKPHONE_ASSERT( precision == WORKPHONE_DEFAULT );
             WORKPHONE_ASSERT( width == WORKPHONE_DEFAULT );
             if( str == buf )
+            {
                 return -1;
+            }
             while( str && *str && len < buf_size )
+            {
                 buf[len++] = *str++;
+            }
         }
         else if( *iter == 'n' )
         {
@@ -1102,7 +1316,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             WORKPHONE_ASSERT( precision == WORKPHONE_DEFAULT );
             WORKPHONE_ASSERT( width == WORKPHONE_DEFAULT );
             if( n )
+            {
                 *n = len;
+            }
         }
         else if( *iter == 'c' || *iter == 'i' || *iter == 'd' )
         {
@@ -1115,22 +1331,34 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
 
             /* retrieve correct value type */
             if( arg_type == WORKPHONE_ARG_TYPE_CHAR )
+            {
                 value = (wp_c8)va_arg( args, wp_s32 );
+            }
             else if( arg_type == WORKPHONE_ARG_TYPE_SHORT )
+            {
                 value = (signed short)va_arg( args, wp_s32 );
+            }
             else if( arg_type == WORKPHONE_ARG_TYPE_LONG )
+            {
                 value = va_arg( args, signed long );
+            }
             else if( *iter == 'c' )
+            {
                 value = (wp_u8)va_arg( args, wp_s32 );
+            }
             else
+            {
                 value = va_arg( args, wp_s32 );
+            }
 
             /* convert number to string */
             wp_itoa( number_buffer, value );
             num_len = wp_strlen( number_buffer );
             padding = WORKPHONE_MAX( cur_width - WORKPHONE_MAX( cur_precision, num_len ), 0 );
             if( ( flag & WORKPHONE_ARG_FLAG_PLUS ) || ( flag & WORKPHONE_ARG_FLAG_SPACE ) )
+            {
                 padding = WORKPHONE_MAX( padding - 1, 0 );
+            }
 
             /* fill left padding up to a total of `width` wp_c8acters */
             if( !( flag & WORKPHONE_ARG_FLAG_LEFT ) )
@@ -1138,17 +1366,25 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
                 while( padding-- > 0 && ( len < buf_size ) )
                 {
                     if( ( flag & WORKPHONE_ARG_FLAG_ZERO ) && ( precision == WORKPHONE_DEFAULT ) )
+                    {
                         buf[len++] = '0';
+                    }
                     else
+                    {
                         buf[len++] = ' ';
+                    }
                 }
             }
 
             /* copy string value representation into buffer */
             if( ( flag & WORKPHONE_ARG_FLAG_PLUS ) && value >= 0 && len < buf_size )
+            {
                 buf[len++] = '+';
+            }
             else if( ( flag & WORKPHONE_ARG_FLAG_SPACE ) && value >= 0 && len < buf_size )
+            {
                 buf[len++] = ' ';
+            }
 
             /* fill up to precision number of digits with '0' */
             num_print = WORKPHONE_MAX( cur_precision, num_len );
@@ -1161,13 +1397,17 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             /* copy string value representation into buffer */
             num_iter = number_buffer;
             while( precision && *num_iter && len < buf_size )
+            {
                 buf[len++] = *num_iter++;
+            }
 
             /* fill right padding up to width wp_c8acters */
             if( flag & WORKPHONE_ARG_FLAG_LEFT )
             {
                 while( ( padding-- > 0 ) && ( len < buf_size ) )
+                {
                     buf[len++] = ' ';
+                }
             }
         }
         else if( *iter == 'o' || *iter == 'x' || *iter == 'X' || *iter == 'u' )
@@ -1186,27 +1426,39 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
 
             /* retrieve correct value type */
             if( arg_type == WORKPHONE_ARG_TYPE_CHAR )
+            {
                 value = (wp_u8)va_arg( args, wp_s32 );
+            }
             else if( arg_type == WORKPHONE_ARG_TYPE_SHORT )
+            {
                 value = (unsigned short)va_arg( args, wp_s32 );
+            }
             else if( arg_type == WORKPHONE_ARG_TYPE_LONG )
+            {
                 value = va_arg( args, unsigned long );
+            }
             else
+            {
                 value = va_arg( args, wp_u32 );
+            }
 
             do
             {
                 /* convert decimal number into hex/oct number */
                 wp_s32 digit = output_format[value % base];
                 if( num_len < WORKPHONE_MAX_NUMBER_BUFFER )
+                {
                     number_buffer[num_len++] = (wp_c8)digit;
+                }
                 value /= base;
             } while( value > 0 );
 
             num_print = WORKPHONE_MAX( cur_precision, num_len );
             padding = WORKPHONE_MAX( cur_width - WORKPHONE_MAX( cur_precision, num_len ), 0 );
             if( flag & WORKPHONE_ARG_FLAG_NUM )
+            {
                 padding = WORKPHONE_MAX( padding - 1, 0 );
+            }
 
             /* fill left padding up to a total of `width` wp_c8acters */
             if( !( flag & WORKPHONE_ARG_FLAG_LEFT ) )
@@ -1214,9 +1466,13 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
                 while( ( padding-- > 0 ) && ( len < buf_size ) )
                 {
                     if( ( flag & WORKPHONE_ARG_FLAG_ZERO ) && ( precision == WORKPHONE_DEFAULT ) )
+                    {
                         buf[len++] = '0';
+                    }
                     else
+                    {
                         buf[len++] = ' ';
+                    }
                 }
             }
 
@@ -1248,7 +1504,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             while( num_len > 0 )
             {
                 if( precision && ( len < buf_size ) )
+                {
                     buf[len++] = number_buffer[num_len - 1];
+                }
                 num_len--;
             }
 
@@ -1256,7 +1514,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             if( flag & WORKPHONE_ARG_FLAG_LEFT )
             {
                 while( ( padding-- > 0 ) && ( len < buf_size ) )
+                {
                     buf[len++] = ' ';
+                }
             }
         }
         else if( *iter == 'f' )
@@ -1276,13 +1536,17 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             /* calculate padding */
             num_iter = number_buffer;
             while( *num_iter && *num_iter != '.' )
+            {
                 num_iter++;
+            }
 
             prefix = ( *num_iter == '.' ) ? (wp_s32)( num_iter - number_buffer ) + 1 : 0;
             padding = WORKPHONE_MAX(
                 cur_width - ( prefix + WORKPHONE_MIN( cur_precision, num_len - prefix ) ), 0 );
             if( ( flag & WORKPHONE_ARG_FLAG_PLUS ) || ( flag & WORKPHONE_ARG_FLAG_SPACE ) )
+            {
                 padding = WORKPHONE_MAX( padding - 1, 0 );
+            }
 
             /* fill left padding up to a total of `width` wp_c8acters */
             if( !( flag & WORKPHONE_ARG_FLAG_LEFT ) )
@@ -1290,28 +1554,44 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
                 while( padding-- > 0 && ( len < buf_size ) )
                 {
                     if( flag & WORKPHONE_ARG_FLAG_ZERO )
+                    {
                         buf[len++] = '0';
+                    }
                     else
+                    {
                         buf[len++] = ' ';
+                    }
                 }
             }
 
             /* copy string value representation into buffer */
             num_iter = number_buffer;
             if( ( flag & WORKPHONE_ARG_FLAG_PLUS ) && ( value >= 0 ) && ( len < buf_size ) )
+            {
                 buf[len++] = '+';
+            }
             else if( ( flag & WORKPHONE_ARG_FLAG_SPACE ) && ( value >= 0 ) && ( len < buf_size ) )
+            {
                 buf[len++] = ' ';
+            }
             while( *num_iter )
             {
                 if( dot )
+                {
                     frac_len++;
+                }
                 if( len < buf_size )
+                {
                     buf[len++] = *num_iter;
+                }
                 if( *num_iter == '.' )
+                {
                     dot = 1;
+                }
                 if( frac_len >= cur_precision )
+                {
                     break;
+                }
                 num_iter++;
             }
 
@@ -1324,7 +1604,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
                     dot = 1;
                 }
                 if( len < buf_size )
+                {
                     buf[len++] = '0';
+                }
                 frac_len++;
             }
 
@@ -1332,7 +1614,9 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
             if( flag & WORKPHONE_ARG_FLAG_LEFT )
             {
                 while( ( padding-- > 0 ) && ( len < buf_size ) )
+                {
                     buf[len++] = ' ';
+                }
             }
         }
         else
@@ -1346,13 +1630,16 @@ wp_s32 wp_vsnprintf( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args
     result = ( len >= buf_size ) ? -1 : len;
     return result;
 }
+
 wp_s32 wp_strfmt( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args )
 {
     wp_s32 result = -1;
     WORKPHONE_ASSERT( buf );
     WORKPHONE_ASSERT( buf_size );
     if( !buf || !buf_size || !fmt )
+    {
         return 0;
+    }
 #ifdef WORKPHONE_INCLUDE_STANDARD_IO
     result = WORKPHONE_VSNPRINTF( buf, (wp_size)buf_size, fmt, args );
     result = ( result >= buf_size ) ? -1 : result;
@@ -1362,6 +1649,7 @@ wp_s32 wp_strfmt( wp_c8 *buf, wp_s32 buf_size, const wp_c8 *fmt, va_list args )
 #endif
     return result;
 }
+
 wp_hash wp_murmur_hash( const void *key, wp_s32 len, wp_hash seed )
 {
 /* 32-Bit MurmurHash3: https://code.google.com/p/smhasher/wiki/MurmurHash3*/
@@ -1382,7 +1670,9 @@ wp_hash wp_murmur_hash( const void *key, wp_s32 len, wp_hash seed )
 
     /* body */
     if( !key )
+    {
         return 0;
+    }
     for( i = 0; i < nblocks; ++i, keyptr += bsize )
     {
         k1ptr = (wp_byte *)&k1;
@@ -1443,11 +1733,15 @@ wp_c8 *wp_file_load( const wp_c8 *path, wp_size *siz, const struct wp_allocator 
     WORKPHONE_ASSERT( siz );
     WORKPHONE_ASSERT( alloc );
     if( !path || !siz || !alloc )
+    {
         return 0;
+    }
 
     fd = fopen( path, "rb" );
     if( !fd )
+    {
         return 0;
+    }
     fseek( fd, 0, SEEK_END );
     ret = ftell( fd );
     if( ret < 0 )
@@ -1495,7 +1789,9 @@ WORKPHONE_LIB wp_s32 wp_text_clamp( const struct wp_user_font *font, const wp_c8
         for( i = 0; i < sep_count; ++i )
         {
             if( unicode != sep_list[i] )
+            {
                 continue;
+            }
             sep_width = last_width = width;
             sep_g = g + 1;
             sep_len = len;
@@ -1523,11 +1819,12 @@ WORKPHONE_LIB wp_s32 wp_text_clamp( const struct wp_user_font *font, const wp_c8
         return ( !sep_len ) ? len : sep_len;
     }
 }
+
 WORKPHONE_LIB struct wp_vec2f wp_text_calculate_text_bounds( const struct wp_user_font *font,
-                                                            const wp_c8 *begin, wp_s32 byte_len,
-                                                            wp_f32 row_height, const wp_c8 **remaining,
-                                                            struct wp_vec2f *out_offset, wp_s32 *glyphs,
-                                                            wp_s32 op )
+                                                             const wp_c8 *begin, wp_s32 byte_len,
+                                                             wp_f32 row_height, const wp_c8 **remaining,
+                                                             struct wp_vec2f *out_offset, wp_s32 *glyphs,
+                                                             wp_s32 op )
 {
     wp_f32 line_height = row_height;
     struct wp_vec2f text_size = wp_make_vec2f( 0, 0 );
@@ -1538,11 +1835,15 @@ WORKPHONE_LIB struct wp_vec2f wp_text_calculate_text_bounds( const struct wp_use
     wp_rune unicode = 0;
     wp_s32 text_len = 0;
     if( !begin || byte_len <= 0 || !font )
+    {
         return wp_make_vec2f( 0, row_height );
+    }
 
     glyph_len = wp_utf_decode( begin, &unicode, byte_len );
     if( !glyph_len )
+    {
         return text_size;
+    }
     glyph_width = font->width( font->userdata, font->height, begin, glyph_len );
 
     *glyphs = 0;
@@ -1555,7 +1856,9 @@ WORKPHONE_LIB struct wp_vec2f wp_text_calculate_text_bounds( const struct wp_use
             line_width = 0;
             *glyphs += 1;
             if( op == WORKPHONE_STOP_ON_NEW_LINE )
+            {
                 break;
+            }
 
             text_len++;
             glyph_len = wp_utf_decode( begin + text_len, &unicode, byte_len - text_len );
@@ -1579,12 +1882,20 @@ WORKPHONE_LIB struct wp_vec2f wp_text_calculate_text_bounds( const struct wp_use
     }
 
     if( text_size.x < line_width )
+    {
         text_size.x = line_width;
+    }
     if( out_offset )
+    {
         *out_offset = wp_make_vec2f( line_width, text_size.y + line_height );
+    }
     if( line_width > 0 || text_size.y == 0.0f )
+    {
         text_size.y += line_height;
+    }
     if( remaining )
+    {
         *remaining = begin + text_len;
+    }
     return text_size;
 }

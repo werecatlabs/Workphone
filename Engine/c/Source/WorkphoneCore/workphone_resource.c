@@ -22,7 +22,9 @@ wp_resource *wp_resource_create( void )
 {
     wp_resource *resource = (wp_resource *)wp_mem_alloc( sizeof( wp_resource ) );
     if( !resource )
+    {
         return NULL;
+    }
 
     memset( resource, 0, sizeof( wp_resource ) );
     resource->id = wp_resource_next_id++;
@@ -46,10 +48,14 @@ wp_resource *wp_resource_create( void )
 void wp_resource_destroy( wp_resource *resource )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( resource->state == WP_RESOURCE_STATE_LOADED )
+    {
         wp_resource_unload( resource );
+    }
 
     resource->data = NULL;
     resource->data_size = 0;
@@ -69,7 +75,9 @@ void wp_resource_destroy( wp_resource *resource )
 void wp_resource_add_ref( wp_resource *resource )
 {
     if( !resource )
+    {
         return;
+    }
 
     resource->ref_count++;
 }
@@ -77,13 +85,19 @@ void wp_resource_add_ref( wp_resource *resource )
 void wp_resource_release( wp_resource *resource )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( resource->ref_count > 0 )
+    {
         resource->ref_count--;
+    }
 
     if( resource->ref_count == 0 && !( resource->flags & WP_RESOURCE_FLAG_KEEP_ALIVE ) )
+    {
         wp_resource_unload( resource );
+    }
 }
 
 wp_s32 wp_resource_get_ref_count( const wp_resource *resource )
@@ -98,10 +112,14 @@ wp_s32 wp_resource_get_ref_count( const wp_resource *resource )
 void wp_resource_load( wp_resource *resource )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( resource->state == WP_RESOURCE_STATE_LOADED )
+    {
         return;
+    }
 
     resource->state = WP_RESOURCE_STATE_LOADING;
 
@@ -118,15 +136,21 @@ void wp_resource_load( wp_resource *resource )
 void wp_resource_unload( wp_resource *resource )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( resource->state != WP_RESOURCE_STATE_LOADED && resource->state != WP_RESOURCE_STATE_FAILED )
+    {
         return;
+    }
 
     resource->state = WP_RESOURCE_STATE_UNLOADING;
 
     if( resource->unload_fn )
+    {
         resource->unload_fn( resource, resource->unload_fn_user_data );
+    }
 
     resource->data = NULL;
     resource->data_size = 0;
@@ -140,7 +164,9 @@ void wp_resource_unload( wp_resource *resource )
 void wp_resource_set_load_fn( wp_resource *resource, wp_resource_load_fn fn, void *user_data )
 {
     if( !resource )
+    {
         return;
+    }
 
     resource->load_fn = fn;
     resource->load_fn_user_data = user_data;
@@ -149,7 +175,9 @@ void wp_resource_set_load_fn( wp_resource *resource, wp_resource_load_fn fn, voi
 void wp_resource_set_unload_fn( wp_resource *resource, wp_resource_unload_fn fn, void *user_data )
 {
     if( !resource )
+    {
         return;
+    }
 
     resource->unload_fn = fn;
     resource->unload_fn_user_data = user_data;
@@ -167,7 +195,9 @@ wp_s32 wp_resource_get_id( const wp_resource *resource )
 void wp_resource_set_id( wp_resource *resource, wp_s32 id )
 {
     if( resource )
+    {
         resource->id = id;
+    }
 }
 
 /* =========================================================================
@@ -182,7 +212,9 @@ wp_resource_type wp_resource_get_type( const wp_resource *resource )
 void wp_resource_set_type( wp_resource *resource, wp_resource_type type )
 {
     if( resource )
+    {
         resource->type = type;
+    }
 }
 
 /* =========================================================================
@@ -197,7 +229,9 @@ wp_resource_state wp_resource_get_state( const wp_resource *resource )
 void wp_resource_set_state( wp_resource *resource, wp_resource_state state )
 {
     if( resource )
+    {
         resource->state = state;
+    }
 }
 
 /* =========================================================================
@@ -212,7 +246,9 @@ wp_u32 wp_resource_get_flags( const wp_resource *resource )
 void wp_resource_set_flags( wp_resource *resource, wp_u32 flags )
 {
     if( resource )
+    {
         resource->flags = flags;
+    }
 }
 
 wp_s32 wp_resource_get_flag( const wp_resource *resource, wp_u32 flag )
@@ -223,12 +259,18 @@ wp_s32 wp_resource_get_flag( const wp_resource *resource, wp_u32 flag )
 void wp_resource_set_flag( wp_resource *resource, wp_u32 flag, wp_s32 value )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( value )
+    {
         resource->flags |= flag;
+    }
     else
+    {
         resource->flags &= ~flag;
+    }
 }
 
 /* =========================================================================
@@ -243,7 +285,9 @@ const wp_c8 *wp_resource_get_path( const wp_resource *resource )
 void wp_resource_set_path( wp_resource *resource, const wp_c8 *path )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( path )
     {
@@ -268,7 +312,9 @@ const wp_c8 *wp_resource_get_name( const wp_resource *resource )
 void wp_resource_set_name( wp_resource *resource, const wp_c8 *name )
 {
     if( !resource )
+    {
         return;
+    }
 
     if( name )
     {
@@ -293,7 +339,9 @@ void *wp_resource_get_data( const wp_resource *resource )
 void wp_resource_set_data( wp_resource *resource, void *data, wp_u32 size )
 {
     if( !resource )
+    {
         return;
+    }
 
     resource->data = data;
     resource->data_size = size;
@@ -316,7 +364,9 @@ void *wp_resource_get_user_data( const wp_resource *resource )
 void wp_resource_set_user_data( wp_resource *resource, void *user_data )
 {
     if( resource )
+    {
         resource->user_data = user_data;
+    }
 }
 
 /* =========================================================================

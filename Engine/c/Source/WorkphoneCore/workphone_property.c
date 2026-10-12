@@ -21,7 +21,9 @@ void wp_drag_behavior( wp_flags *state, const struct wp_input *in, struct wp_rec
 
     wp_widget_state_reset( state );
     if( wp_input_is_mouse_hovering_rect( in, drag ) )
+    {
         *state = WORKPHONE_WIDGET_STATE_HOVERED;
+    }
 
     if( left_mouse_down && left_mouse_click_in_cursor )
     {
@@ -51,10 +53,15 @@ void wp_drag_behavior( wp_flags *state, const struct wp_input *in, struct wp_rec
         *state = WORKPHONE_WIDGET_STATE_ACTIVE;
     }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, drag ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, drag ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
 }
+
 WORKPHONE_LIB void wp_property_behavior( wp_flags *ws, const struct wp_input *in,
                                          struct wp_rect property, struct wp_rect label,
                                          struct wp_rect edit, struct wp_rect empty, wp_s32 *state,
@@ -64,19 +71,28 @@ WORKPHONE_LIB void wp_property_behavior( wp_flags *ws, const struct wp_input *in
     if( in && *state == WORKPHONE_PROPERTY_DEFAULT )
     {
         if( wp_button_behavior( ws, edit, in, WORKPHONE_BUTTON_DEFAULT ) )
+        {
             *state = WORKPHONE_PROPERTY_EDIT;
+        }
         else if( wp_input_is_mouse_click_down_in_rect( in, WORKPHONE_BUTTON_LEFT, label, wp_true ) )
+        {
             *state = WORKPHONE_PROPERTY_DRAG;
+        }
         else if( wp_input_is_mouse_click_down_in_rect( in, WORKPHONE_BUTTON_LEFT, empty, wp_true ) )
+        {
             *state = WORKPHONE_PROPERTY_DRAG;
+        }
     }
     if( *state == WORKPHONE_PROPERTY_DRAG )
     {
         wp_drag_behavior( ws, in, property, variant, inc_per_pixel );
         if( !( *ws & WORKPHONE_WIDGET_STATE_ACTIVED ) )
+        {
             *state = WORKPHONE_PROPERTY_DEFAULT;
+        }
     }
 }
+
 WORKPHONE_LIB void wp_draw_property( struct wp_command_buffer *out,
                                      const struct wp_style_property *style, const struct wp_rect *bounds,
                                      const struct wp_rect *label, wp_flags state, const wp_c8 *name,
@@ -133,6 +149,7 @@ WORKPHONE_LIB void wp_draw_property( struct wp_command_buffer *out,
         wp_widget_text( out, *label, name, len, &text, WORKPHONE_TEXT_CENTERED, font );
     }
 }
+
 WORKPHONE_INTERN void wp_property_save( struct wp_property_variant *variant, wp_c8 *buffer, wp_s32 len )
 {
     buffer[len] = '\0';
@@ -159,6 +176,7 @@ WORKPHONE_INTERN void wp_property_save( struct wp_property_variant *variant, wp_
         break;
     }
 }
+
 WORKPHONE_LIB void wp_do_property( wp_flags *ws, struct wp_command_buffer *out, struct wp_rect property,
                                    const wp_c8 *name, struct wp_property_variant *variant,
                                    wp_f32 inc_per_pixel, wp_c8 *buffer, wp_s32 *len, wp_s32 *state,
@@ -255,10 +273,14 @@ WORKPHONE_LIB void wp_do_property( wp_flags *ws, struct wp_command_buffer *out, 
 
     /* draw property */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_property( out, style, &property, &label, *ws, name, name_len, font );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
 
     /* execute right button  */
     if( wp_do_button_symbol( ws, out, left, style->sym_left, behavior, &style->dec_button, in, font ) )
@@ -313,7 +335,9 @@ WORKPHONE_LIB void wp_do_property( wp_flags *ws, struct wp_command_buffer *out, 
         active = 0;
     }
     else
+    {
         active = ( *state == WORKPHONE_PROPERTY_EDIT );
+    }
 
     /* execute and run text edit field */
     wp_textedit_clear_state( text_edit, WORKPHONE_TEXT_EDIT_SINGLE_LINE, filters[filter] );
@@ -336,7 +360,9 @@ WORKPHONE_LIB void wp_do_property( wp_flags *ws, struct wp_command_buffer *out, 
     *select_begin = text_edit->select_start;
     *select_end = text_edit->select_end;
     if( text_edit->active && wp_input_is_key_pressed( in, WORKPHONE_KEY_ENTER ) )
+    {
         text_edit->active = wp_false;
+    }
 
     if( active && !text_edit->active )
     {
@@ -345,6 +371,7 @@ WORKPHONE_LIB void wp_do_property( wp_flags *ws, struct wp_command_buffer *out, 
         wp_property_save( variant, buffer, *len );
     }
 }
+
 WORKPHONE_LIB struct wp_property_variant wp_property_variant_int( wp_s32 value, wp_s32 min_value,
                                                                   wp_s32 max_value, wp_s32 step )
 {
@@ -356,6 +383,7 @@ WORKPHONE_LIB struct wp_property_variant wp_property_variant_int( wp_s32 value, 
     result.step.i = step;
     return result;
 }
+
 WORKPHONE_LIB struct wp_property_variant wp_property_variant_wp_f32( wp_f32 value, wp_f32 min_value,
                                                                      wp_f32 max_value, wp_f32 step )
 {
@@ -367,6 +395,7 @@ WORKPHONE_LIB struct wp_property_variant wp_property_variant_wp_f32( wp_f32 valu
     result.step.f = step;
     return result;
 }
+
 WORKPHONE_LIB struct wp_property_variant wp_property_variant_wp_f64( wp_f64 value, wp_f64 min_value,
                                                                      wp_f64 max_value, wp_f64 step )
 {
@@ -378,6 +407,7 @@ WORKPHONE_LIB struct wp_property_variant wp_property_variant_wp_f64( wp_f64 valu
     result.step.d = step;
     return result;
 }
+
 WORKPHONE_LIB void wp_property( struct wp_context *ctx, const wp_c8 *name,
                                 struct wp_property_variant *variant, wp_f32 inc_per_pixel,
                                 const enum wp_property_filter filter )
@@ -412,14 +442,18 @@ WORKPHONE_LIB void wp_property( struct wp_context *ctx, const wp_c8 *name,
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
     style = &ctx->style;
     s = wp_widget( &bounds, ctx );
     if( !s )
+    {
         return;
+    }
 
     /* calculate hash from name */
     if( name[0] == '#' )
@@ -428,7 +462,9 @@ WORKPHONE_LIB void wp_property( struct wp_context *ctx, const wp_c8 *name,
         name++; /* special number hash */
     }
     else
+    {
         hash = wp_murmur_hash( name, (wp_s32)wp_strlen( name ), 42 );
+    }
 
     /* check if property is previously hot */
     if( win->property.prev_state == WORKPHONE_PROPERTY_EDIT && hash == win->property.prev_name )
@@ -511,6 +547,7 @@ WORKPHONE_LIB void wp_property( struct wp_context *ctx, const wp_c8 *name,
         win->edit.active = wp_false;
     }
 }
+
 WORKPHONE_API void wp_property_int( struct wp_context *ctx, const wp_c8 *name, wp_s32 min, wp_s32 *val,
                                     wp_s32 max, wp_s32 step, wp_f32 inc_per_pixel )
 {
@@ -520,11 +557,14 @@ WORKPHONE_API void wp_property_int( struct wp_context *ctx, const wp_c8 *name, w
     WORKPHONE_ASSERT( val );
 
     if( !ctx || !ctx->current || !name || !val )
+    {
         return;
+    }
     variant = wp_property_variant_int( *val, min, max, step );
     wp_property( ctx, name, &variant, inc_per_pixel, WORKPHONE_FILTER_INT );
     *val = variant.value.i;
 }
+
 WORKPHONE_API void wp_property_wp_f32( struct wp_context *ctx, const wp_c8 *name, wp_f32 min,
                                        wp_f32 *val, wp_f32 max, wp_f32 step, wp_f32 inc_per_pixel )
 {
@@ -534,11 +574,14 @@ WORKPHONE_API void wp_property_wp_f32( struct wp_context *ctx, const wp_c8 *name
     WORKPHONE_ASSERT( val );
 
     if( !ctx || !ctx->current || !name || !val )
+    {
         return;
+    }
     variant = wp_property_variant_wp_f32( *val, min, max, step );
     wp_property( ctx, name, &variant, inc_per_pixel, WORKPHONE_FILTER_FLOAT );
     *val = variant.value.f;
 }
+
 WORKPHONE_API void wp_property_wp_f64( struct wp_context *ctx, const wp_c8 *name, wp_f64 min,
                                        wp_f64 *val, wp_f64 max, wp_f64 step, wp_f32 inc_per_pixel )
 {
@@ -548,11 +591,14 @@ WORKPHONE_API void wp_property_wp_f64( struct wp_context *ctx, const wp_c8 *name
     WORKPHONE_ASSERT( val );
 
     if( !ctx || !ctx->current || !name || !val )
+    {
         return;
+    }
     variant = wp_property_variant_wp_f64( *val, min, max, step );
     wp_property( ctx, name, &variant, inc_per_pixel, WORKPHONE_FILTER_FLOAT );
     *val = variant.value.d;
 }
+
 WORKPHONE_API wp_s32 wp_propertyi( struct wp_context *ctx, const wp_c8 *name, wp_s32 min, wp_s32 val,
                                    wp_s32 max, wp_s32 step, wp_f32 inc_per_pixel )
 {
@@ -561,12 +607,15 @@ WORKPHONE_API wp_s32 wp_propertyi( struct wp_context *ctx, const wp_c8 *name, wp
     WORKPHONE_ASSERT( name );
 
     if( !ctx || !ctx->current || !name )
+    {
         return val;
+    }
     variant = wp_property_variant_int( val, min, max, step );
     wp_property( ctx, name, &variant, inc_per_pixel, WORKPHONE_FILTER_INT );
     val = variant.value.i;
     return val;
 }
+
 WORKPHONE_API wp_f32 wp_propertyf( struct wp_context *ctx, const wp_c8 *name, wp_f32 min, wp_f32 val,
                                    wp_f32 max, wp_f32 step, wp_f32 inc_per_pixel )
 {
@@ -575,12 +624,15 @@ WORKPHONE_API wp_f32 wp_propertyf( struct wp_context *ctx, const wp_c8 *name, wp
     WORKPHONE_ASSERT( name );
 
     if( !ctx || !ctx->current || !name )
+    {
         return val;
+    }
     variant = wp_property_variant_wp_f32( val, min, max, step );
     wp_property( ctx, name, &variant, inc_per_pixel, WORKPHONE_FILTER_FLOAT );
     val = variant.value.f;
     return val;
 }
+
 WORKPHONE_API wp_f64 wp_propertyd( struct wp_context *ctx, const wp_c8 *name, wp_f64 min, wp_f64 val,
                                    wp_f64 max, wp_f64 step, wp_f32 inc_per_pixel )
 {
@@ -589,7 +641,9 @@ WORKPHONE_API wp_f64 wp_propertyd( struct wp_context *ctx, const wp_c8 *name, wp
     WORKPHONE_ASSERT( name );
 
     if( !ctx || !ctx->current || !name )
+    {
         return val;
+    }
     variant = wp_property_variant_wp_f64( val, min, max, step );
     wp_property( ctx, name, &variant, inc_per_pixel, WORKPHONE_FILTER_FLOAT );
     val = variant.value.d;

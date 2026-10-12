@@ -16,54 +16,84 @@ WORKPHONE_API wp_bool wp_filter_default( const struct wp_text_edit *box, wp_rune
     WORKPHONE_UNUSED( box );
     return wp_true;
 }
+
 WORKPHONE_API wp_bool wp_filter_ascii( const struct wp_text_edit *box, wp_rune unicode )
 {
     WORKPHONE_UNUSED( box );
     if( unicode > 128 )
+    {
         return wp_false;
+    }
     else
+    {
         return wp_true;
+    }
 }
+
 WORKPHONE_API wp_bool wp_filter_wp_f32( const struct wp_text_edit *box, wp_rune unicode )
 {
     WORKPHONE_UNUSED( box );
     if( ( unicode < '0' || unicode > '9' ) && unicode != '.' && unicode != '-' )
+    {
         return wp_false;
+    }
     else
+    {
         return wp_true;
+    }
 }
+
 WORKPHONE_API wp_bool wp_filter_decimal( const struct wp_text_edit *box, wp_rune unicode )
 {
     WORKPHONE_UNUSED( box );
     if( ( unicode < '0' || unicode > '9' ) && unicode != '-' )
+    {
         return wp_false;
+    }
     else
+    {
         return wp_true;
+    }
 }
+
 WORKPHONE_API wp_bool wp_filter_hex( const struct wp_text_edit *box, wp_rune unicode )
 {
     WORKPHONE_UNUSED( box );
     if( ( unicode < '0' || unicode > '9' ) && ( unicode < 'a' || unicode > 'f' ) &&
         ( unicode < 'A' || unicode > 'F' ) )
+    {
         return wp_false;
+    }
     else
+    {
         return wp_true;
+    }
 }
+
 WORKPHONE_API wp_bool wp_filter_oct( const struct wp_text_edit *box, wp_rune unicode )
 {
     WORKPHONE_UNUSED( box );
     if( unicode < '0' || unicode > '7' )
+    {
         return wp_false;
+    }
     else
+    {
         return wp_true;
+    }
 }
+
 WORKPHONE_API wp_bool wp_filter_binary( const struct wp_text_edit *box, wp_rune unicode )
 {
     WORKPHONE_UNUSED( box );
     if( unicode != '0' && unicode != '1' )
+    {
         return wp_false;
+    }
     else
+    {
         return wp_true;
+    }
 }
 
 /* ===============================================================
@@ -81,7 +111,9 @@ WORKPHONE_LIB void wp_edit_draw_text( struct wp_command_buffer *out, const struc
     WORKPHONE_ASSERT( font );
     WORKPHONE_ASSERT( style );
     if( !text || !byte_len || !out || !style )
+    {
         return;
+    }
 
     {
         wp_s32 glyph_len = 0;
@@ -103,7 +135,9 @@ WORKPHONE_LIB void wp_edit_draw_text( struct wp_command_buffer *out, const struc
 
         glyph_len = wp_utf_decode( text + text_len, &unicode, byte_len - text_len );
         if( !glyph_len )
+        {
             return;
+        }
         while( ( text_len < byte_len ) && glyph_len )
         {
             if( unicode == '\n' )
@@ -115,10 +149,14 @@ WORKPHONE_LIB void wp_edit_draw_text( struct wp_command_buffer *out, const struc
                 label.w = line_width;
                 label.x = pos_x;
                 if( !line_count )
+                {
                     label.x += x_offset;
+                }
 
                 if( is_selected ) /* selection needs to draw different background color */
+                {
                     wp_fill_rect( out, label, 0, background );
+                }
                 wp_widget_text( out, label, line, (wp_s32)( ( text + text_len ) - line ), &txt,
                                 WORKPHONE_TEXT_CENTERED, font );
 
@@ -151,15 +189,20 @@ WORKPHONE_LIB void wp_edit_draw_text( struct wp_command_buffer *out, const struc
             label.w = line_width;
             label.x = pos_x;
             if( !line_count )
+            {
                 label.x += x_offset;
+            }
 
             if( is_selected )
+            {
                 wp_fill_rect( out, label, 0, background );
+            }
             wp_widget_text( out, label, line, (wp_s32)( ( text + text_len ) - line ), &txt,
                             WORKPHONE_TEXT_LEFT, font );
         }
     }
 }
+
 WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *out, struct wp_rect bounds,
                                    wp_flags flags, wp_plugin_filter filter, struct wp_text_edit *edit,
                                    const struct wp_style_edit *style, struct wp_input *in,
@@ -179,7 +222,9 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
     WORKPHONE_ASSERT( out );
     WORKPHONE_ASSERT( style );
     if( !state || !out || !style )
+    {
         return ret;
+    }
 
     /* visible text area calculation */
     area.x = bounds.x + style->padding.x + style->border;
@@ -187,7 +232,9 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
     area.w = bounds.w - ( 2.0f * style->padding.x + 2 * style->border );
     area.h = bounds.h - ( 2.0f * style->padding.y + 2 * style->border );
     if( flags & WORKPHONE_EDIT_MULTILINE )
+    {
         area.w = WORKPHONE_MAX( 0, area.w - style->scrollbar_size.x );
+    }
     row_height = ( flags & WORKPHONE_EDIT_MULTILINE ) ? font->height + style->row_padding : area.h;
 
     /* calculate clipping rectangle */
@@ -214,7 +261,9 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
         wp_textedit_clear_state( edit, type, filter );
         edit->scrollbar = oldscrollbar;
         if( flags & WORKPHONE_EDIT_AUTO_SELECT )
+        {
             select_all = wp_true;
+        }
         if( flags & WORKPHONE_EDIT_GOTO_END_ON_ACTIVATE )
         {
             edit->cursor = edit->string.len;
@@ -222,15 +271,23 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
         }
     }
     else if( !edit->active )
+    {
         edit->mode = WORKPHONE_TEXT_EDIT_MODE_VIEW;
+    }
     if( flags & WORKPHONE_EDIT_READ_ONLY )
+    {
         edit->mode = WORKPHONE_TEXT_EDIT_MODE_VIEW;
+    }
     else if( flags & WORKPHONE_EDIT_ALWAYS_INSERT_MODE )
+    {
         edit->mode = WORKPHONE_TEXT_EDIT_MODE_INSERT;
+    }
 
     ret = ( edit->active ) ? WORKPHONE_EDIT_ACTIVE : WORKPHONE_EDIT_INACTIVE;
     if( prev_state != edit->active )
+    {
         ret |= ( edit->active ) ? WORKPHONE_EDIT_ACTIVATED : WORKPHONE_EDIT_DEACTIVATED;
+    }
 
     /* handle user input */
     if( edit->active && in )
@@ -270,7 +327,9 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
             for( i = 0; i < WORKPHONE_KEY_MAX; ++i )
             {
                 if( i == WORKPHONE_KEY_ENTER || i == WORKPHONE_KEY_TAB )
+                {
                     continue; /* special case */
+                }
                 if( wp_input_is_key_pressed( in, (enum wp_keys)i ) )
                 {
                     wp_textedit_key( edit, (enum wp_keys)i, shift_mod, font, row_height );
@@ -297,11 +356,17 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
         {
             cursor_follow = wp_true;
             if( flags & WORKPHONE_EDIT_CTRL_ENTER_NEWLINE && shift_mod )
+            {
                 wp_textedit_text( edit, "\n", 1 );
+            }
             else if( flags & WORKPHONE_EDIT_SIG_ENTER )
+            {
                 ret |= WORKPHONE_EDIT_COMMITED;
+            }
             else
+            {
                 wp_textedit_text( edit, "\n", 1 );
+            }
         }
 
         /* cut & copy handler */
@@ -320,7 +385,9 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
                 wp_s32 end = WORKPHONE_MAX( b, e );
                 text = wp_str_at_const( &edit->string, begin, &unicode, &glyph_len );
                 if( edit->clip.copy )
+                {
                     edit->clip.copy( edit->clip.userdata, text, end - begin );
+                }
                 if( cut && !( flags & WORKPHONE_EDIT_READ_ONLY ) )
                 {
                     wp_textedit_cut( edit );
@@ -352,12 +419,18 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
 
     /* set widget state */
     if( edit->active )
+    {
         *state = WORKPHONE_WIDGET_STATE_ACTIVE;
+    }
     else
+    {
         wp_widget_state_reset( state );
+    }
 
     if( is_hovered )
+    {
         *state |= WORKPHONE_WIDGET_STATE_HOVERED;
+    }
 
     /* DRAW EDIT */
     {
@@ -367,11 +440,17 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
         { /* select background colors/images  */
             const struct wp_style_item *background;
             if( *state & WORKPHONE_WIDGET_STATE_ACTIVED )
+            {
                 background = &style->active;
+            }
             else if( *state & WORKPHONE_WIDGET_STATE_HOVER )
+            {
                 background = &style->hover;
+            }
             else
+            {
                 background = &style->normal;
+            }
 
             /* draw background frame */
             switch( background->type )
@@ -526,14 +605,20 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
                         /* horizontal scroll */
                         const wp_f32 scroll_increment = area.w * 0.25f;
                         if( cursor_pos.x < edit->scrollbar.x )
+                        {
                             edit->scrollbar.x =
                                 (wp_f32)(wp_s32)WORKPHONE_MAX( 0.0f, cursor_pos.x - scroll_increment );
+                        }
                         if( cursor_pos.x >= edit->scrollbar.x + area.w )
+                        {
                             edit->scrollbar.x = (wp_f32)(wp_s32)WORKPHONE_MAX(
                                 0.0f, cursor_pos.x - area.w + scroll_increment );
+                        }
                     }
                     else
+                    {
                         edit->scrollbar.x = 0;
+                    }
 
                     if( flags & WORKPHONE_EDIT_MULTILINE )
                     {
@@ -541,12 +626,18 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
                          * cursor leaves the visible area, and then only just enough
                          * to keep it visible */
                         if( cursor_pos.y < edit->scrollbar.y )
+                        {
                             edit->scrollbar.y = WORKPHONE_MAX( 0.0f, cursor_pos.y );
+                        }
                         if( cursor_pos.y > edit->scrollbar.y + area.h - row_height )
+                        {
                             edit->scrollbar.y = edit->scrollbar.y + row_height;
+                        }
                     }
                     else
+                    {
                         edit->scrollbar.y = 0;
+                    }
                 }
 
                 /* scrollbar widget */
@@ -618,9 +709,13 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
                     cursor_text_color = style->cursor_text_normal;
                 }
                 if( background->type == WORKPHONE_STYLE_ITEM_IMAGE )
+                {
                     background_color = wp_rgba( 0, 0, 0, 0 );
+                }
                 else
+                {
                     background_color = background->data.color;
+                }
 
                 cursor_color = wp_rgb_factor( cursor_color, style->color_factor );
                 cursor_text_color = wp_rgb_factor( cursor_text_color, style->color_factor );
@@ -744,9 +839,13 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
                 text_color = style->text_normal;
             }
             if( background->type == WORKPHONE_STYLE_ITEM_IMAGE )
+            {
                 background_color = wp_rgba( 0, 0, 0, 0 );
+            }
             else
+            {
                 background_color = background->data.color;
+            }
 
             background_color = wp_rgb_factor( background_color, style->color_factor );
             text_color = wp_rgb_factor( text_color, style->color_factor );
@@ -758,6 +857,7 @@ WORKPHONE_LIB wp_flags wp_do_edit( wp_flags *state, struct wp_command_buffer *ou
     }
     return ret;
 }
+
 WORKPHONE_API void wp_edit_focus( struct wp_context *ctx, wp_flags flags )
 {
     wp_hash hash;
@@ -766,27 +866,35 @@ WORKPHONE_API void wp_edit_focus( struct wp_context *ctx, wp_flags flags )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     win = ctx->current;
     hash = win->edit.seq;
     win->edit.active = wp_true;
     win->edit.name = hash;
     if( flags & WORKPHONE_EDIT_ALWAYS_INSERT_MODE )
+    {
         win->edit.mode = WORKPHONE_TEXT_EDIT_MODE_INSERT;
+    }
 }
+
 WORKPHONE_API void wp_edit_unfocus( struct wp_context *ctx )
 {
     struct wp_window *win;
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     win = ctx->current;
     win->edit.active = wp_false;
     win->edit.name = 0;
 }
+
 WORKPHONE_API wp_flags wp_edit_string( struct wp_context *ctx, wp_flags flags, wp_c8 *memory,
                                        wp_s32 *len, wp_s32 max, wp_plugin_filter filter )
 {
@@ -799,7 +907,9 @@ WORKPHONE_API wp_flags wp_edit_string( struct wp_context *ctx, wp_flags flags, w
     WORKPHONE_ASSERT( memory );
     WORKPHONE_ASSERT( len );
     if( !ctx || !memory || !len )
+    {
         return 0;
+    }
 
     filter = ( !filter ) ? wp_filter_default : filter;
     win = ctx->current;
@@ -813,9 +923,13 @@ WORKPHONE_API wp_flags wp_edit_string( struct wp_context *ctx, wp_flags flags, w
     if( win->edit.active && hash == win->edit.name )
     {
         if( flags & WORKPHONE_EDIT_NO_CURSOR )
+        {
             edit->cursor = wp_utf_len( memory, *len );
+        }
         else
+        {
             edit->cursor = win->edit.cursor;
+        }
         if( !( flags & WORKPHONE_EDIT_SELECTABLE ) )
         {
             edit->select_start = win->edit.cursor;
@@ -832,7 +946,9 @@ WORKPHONE_API wp_flags wp_edit_string( struct wp_context *ctx, wp_flags flags, w
         edit->active = wp_true;
     }
     else
+    {
         edit->active = wp_false;
+    }
 
     max = WORKPHONE_MAX( 1, max );
     *len = WORKPHONE_MIN( *len, max - 1 );
@@ -853,6 +969,7 @@ WORKPHONE_API wp_flags wp_edit_string( struct wp_context *ctx, wp_flags flags, w
     }
     return state;
 }
+
 WORKPHONE_API wp_flags wp_edit_buffer( struct wp_context *ctx, wp_flags flags, struct wp_text_edit *edit,
                                        wp_plugin_filter filter )
 {
@@ -873,15 +990,21 @@ WORKPHONE_API wp_flags wp_edit_buffer( struct wp_context *ctx, wp_flags flags, s
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     style = &ctx->style;
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return state;
+    }
     else if( state == WORKPHONE_WIDGET_DISABLED )
+    {
         flags |= WORKPHONE_EDIT_READ_ONLY;
+    }
     in = ( win->layout->flags & WORKPHONE_WINDOW_ROM ) ? 0 : &ctx->input;
 
     /* check if edit is currently hot item */
@@ -889,18 +1012,24 @@ WORKPHONE_API wp_flags wp_edit_buffer( struct wp_context *ctx, wp_flags flags, s
     if( win->edit.active && hash == win->edit.name )
     {
         if( flags & WORKPHONE_EDIT_NO_CURSOR )
+        {
             edit->cursor = edit->string.len;
+        }
         if( !( flags & WORKPHONE_EDIT_SELECTABLE ) )
         {
             edit->select_start = edit->cursor;
             edit->select_end = edit->cursor;
         }
         if( flags & WORKPHONE_EDIT_CLIPBOARD )
+        {
             edit->clip = ctx->clip;
+        }
         edit->active = (wp_u8)win->edit.active;
     }
     else
+    {
         edit->active = wp_false;
+    }
     edit->mode = win->edit.mode;
 
     filter = ( !filter ) ? wp_filter_default : filter;
@@ -910,7 +1039,9 @@ WORKPHONE_API wp_flags wp_edit_buffer( struct wp_context *ctx, wp_flags flags, s
                             &style->edit, in, style->font );
 
     if( ctx->last_widget_state & WORKPHONE_WIDGET_STATE_HOVER )
+    {
         ctx->style.cursor_active = ctx->style.cursors[WORKPHONE_CURSOR_TEXT];
+    }
     if( edit->active && prev_state != edit->active )
     {
         /* current edit is now hot */
@@ -924,6 +1055,7 @@ WORKPHONE_API wp_flags wp_edit_buffer( struct wp_context *ctx, wp_flags flags, s
     }
     return ret_flags;
 }
+
 WORKPHONE_API wp_flags wp_edit_string_zero_terminated( struct wp_context *ctx, wp_flags flags,
                                                        wp_c8 *buffer, wp_s32 max,
                                                        wp_plugin_filter filter )

@@ -39,13 +39,17 @@ void wp_draw_symbol( struct wp_command_buffer *out, enum wp_symbol_type type, st
         {
             wp_fill_rect( out, content, 0, foreground );
             if( type == WORKPHONE_SYMBOL_RECT_OUTLINE )
+            {
                 wp_fill_rect( out, wp_shrink_rect( content, border_width ), 0, background );
+            }
         }
         else
         {
             wp_fill_circle( out, content, foreground );
             if( type == WORKPHONE_SYMBOL_CIRCLE_OUTLINE )
+            {
                 wp_fill_circle( out, wp_shrink_rect( content, 1 ), background );
+            }
         }
     }
     break;
@@ -94,12 +98,16 @@ wp_bool wp_button_behavior( wp_flags *state, struct wp_rect r, const struct wp_i
     wp_s32 ret = 0;
     wp_widget_state_reset( state );
     if( !i )
+    {
         return 0;
+    }
     if( wp_input_is_mouse_hovering_rect( i, r ) )
     {
         *state = WORKPHONE_WIDGET_STATE_HOVER;
         if( wp_input_is_mouse_down( i, WORKPHONE_BUTTON_LEFT ) )
+        {
             *state = WORKPHONE_WIDGET_STATE_ACTIVE;
+        }
         if( wp_input_has_mouse_click_in_button_rect( i, WORKPHONE_BUTTON_LEFT, r ) )
         {
             ret = ( behavior != WORKPHONE_BUTTON_DEFAULT )
@@ -113,9 +121,13 @@ wp_bool wp_button_behavior( wp_flags *state, struct wp_rect r, const struct wp_i
         }
     }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( i, r ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( i, r ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
     return ret;
 }
 
@@ -124,11 +136,17 @@ const struct wp_style_item *wp_draw_button( struct wp_command_buffer *out, const
 {
     const struct wp_style_item *background;
     if( state & WORKPHONE_WIDGET_STATE_HOVER )
+    {
         background = &style->hover;
+    }
     else if( state & WORKPHONE_WIDGET_STATE_ACTIVED )
+    {
         background = &style->active;
+    }
     else
+    {
         background = &style->normal;
+    }
 
     switch( background->type )
     {
@@ -149,6 +167,7 @@ const struct wp_style_item *wp_draw_button( struct wp_command_buffer *out, const
     }
     return background;
 }
+
 WORKPHONE_LIB wp_bool wp_do_button( wp_flags *state, struct wp_command_buffer *out, struct wp_rect r,
                                     const struct wp_style_button *style, const struct wp_input *in,
                                     enum wp_button_behavior behavior, struct wp_rect *content )
@@ -158,7 +177,9 @@ WORKPHONE_LIB wp_bool wp_do_button( wp_flags *state, struct wp_command_buffer *o
     WORKPHONE_ASSERT( state );
     WORKPHONE_ASSERT( out );
     if( !out || !style )
+    {
         return wp_false;
+    }
 
     /* calculate button content space */
     content->x = r.x + style->padding.x + style->border + style->rounding;
@@ -185,15 +206,25 @@ void wp_draw_button_text( struct wp_command_buffer *out, const struct wp_rect *b
 
     /* select correct colors/images */
     if( background->type == WORKPHONE_STYLE_ITEM_COLOR )
+    {
         text.background = background->data.color;
+    }
     else
+    {
         text.background = style->text_background;
+    }
     if( state & WORKPHONE_WIDGET_STATE_HOVER )
+    {
         text.text = style->text_hover;
+    }
     else if( state & WORKPHONE_WIDGET_STATE_ACTIVED )
+    {
         text.text = style->text_active;
+    }
     else
+    {
         text.text = style->text_normal;
+    }
 
     text.text = wp_rgb_factor( text.text, style->color_factor_text );
 
@@ -215,14 +246,20 @@ wp_bool wp_do_button_text( wp_flags *state, struct wp_command_buffer *out, struc
     WORKPHONE_ASSERT( string );
     WORKPHONE_ASSERT( font );
     if( !out || !style || !font || !string )
+    {
         return wp_false;
+    }
 
     ret = wp_do_button( state, out, bounds, style, in, behavior, &content );
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_button_text( out, &bounds, &content, *state, style, string, len, align, font );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return ret;
 }
 
@@ -237,16 +274,26 @@ void wp_draw_button_symbol( struct wp_command_buffer *out, const struct wp_rect 
     /* select correct colors/images */
     background = wp_draw_button( out, bounds, state, style );
     if( background->type == WORKPHONE_STYLE_ITEM_COLOR )
+    {
         bg = background->data.color;
+    }
     else
+    {
         bg = style->text_background;
+    }
 
     if( state & WORKPHONE_WIDGET_STATE_HOVER )
+    {
         sym = style->text_hover;
+    }
     else if( state & WORKPHONE_WIDGET_STATE_ACTIVED )
+    {
         sym = style->text_active;
+    }
     else
+    {
         sym = style->text_normal;
+    }
 
     sym = wp_rgb_factor( sym, style->color_factor_text );
     wp_draw_symbol( out, type, *content, bg, sym, 1, font );
@@ -265,14 +312,20 @@ wp_bool wp_do_button_symbol( wp_flags *state, struct wp_command_buffer *out, str
     WORKPHONE_ASSERT( font );
     WORKPHONE_ASSERT( out );
     if( !out || !style || !font || !state )
+    {
         return wp_false;
+    }
 
     ret = wp_do_button( state, out, bounds, style, in, behavior, &content );
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_button_symbol( out, &bounds, &content, *state, style, symbol, font );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return ret;
 }
 
@@ -295,7 +348,9 @@ wp_bool wp_do_button_image( wp_flags *state, struct wp_command_buffer *out, stru
     WORKPHONE_ASSERT( style );
     WORKPHONE_ASSERT( out );
     if( !out || !style || !state )
+    {
         return wp_false;
+    }
 
     ret = wp_do_button( state, out, bounds, style, in, b, &content );
     content.x += style->image_padding.x;
@@ -304,10 +359,14 @@ wp_bool wp_do_button_image( wp_flags *state, struct wp_command_buffer *out, stru
     content.h -= 2 * style->image_padding.y;
 
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_button_image( out, &bounds, &content, *state, style, &img );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return ret;
 }
 
@@ -323,9 +382,13 @@ void wp_draw_button_text_symbol( struct wp_command_buffer *out, const struct wp_
     /* select correct background colors/images */
     background = wp_draw_button( out, bounds, state, style );
     if( background->type == WORKPHONE_STYLE_ITEM_COLOR )
+    {
         text.background = background->data.color;
+    }
     else
+    {
         text.background = style->text_background;
+    }
 
     /* select correct text colors */
     if( state & WORKPHONE_WIDGET_STATE_HOVER )
@@ -366,7 +429,9 @@ wp_bool wp_do_button_text_symbol( wp_flags *state, struct wp_command_buffer *out
     WORKPHONE_ASSERT( font );
 
     if( !out || !style || !font )
+    {
         return wp_false;
+    }
 
     ret = wp_do_button( state, out, bounds, style, in, behavior, &content );
     tri.y = content.y + ( content.h / 2 ) - font->height / 2;
@@ -379,16 +444,22 @@ wp_bool wp_do_button_text_symbol( wp_flags *state, struct wp_command_buffer *out
         tri.x = WORKPHONE_MAX( tri.x, 0 );
     }
     else
+    {
         tri.x = content.x + 2 * style->padding.x;
+    }
 
     /* draw button */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
 
     wp_draw_button_text_symbol( out, &bounds, &content, &tri, *state, style, str, len, symbol, font );
-    
+
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
 
     return ret;
 }
@@ -404,15 +475,25 @@ void wp_draw_button_text_image( struct wp_command_buffer *out, const struct wp_r
 
     /* select correct colors */
     if( background->type == WORKPHONE_STYLE_ITEM_COLOR )
+    {
         text.background = background->data.color;
+    }
     else
+    {
         text.background = style->text_background;
+    }
     if( state & WORKPHONE_WIDGET_STATE_HOVER )
+    {
         text.text = style->text_hover;
+    }
     else if( state & WORKPHONE_WIDGET_STATE_ACTIVED )
+    {
         text.text = style->text_active;
+    }
     else
+    {
         text.text = style->text_normal;
+    }
 
     text.text = wp_rgb_factor( text.text, style->color_factor_text );
     text.padding = wp_make_vec2f( 0, 0 );
@@ -435,7 +516,9 @@ wp_bool wp_do_button_text_image( wp_flags *state, struct wp_command_buffer *out,
     WORKPHONE_ASSERT( out );
 
     if( !out || !font || !style || !str )
+    {
         return wp_false;
+    }
 
     ret = wp_do_button( state, out, bounds, style, in, behavior, &content );
     icon.y = bounds.y + style->padding.y;
@@ -446,7 +529,9 @@ wp_bool wp_do_button_text_image( wp_flags *state, struct wp_command_buffer *out,
         icon.x = WORKPHONE_MAX( icon.x, 0 );
     }
     else
+    {
         icon.x = bounds.x + 2 * style->padding.x;
+    }
 
     icon.x += style->image_padding.x;
     icon.y += style->image_padding.y;
@@ -454,12 +539,16 @@ wp_bool wp_do_button_text_image( wp_flags *state, struct wp_command_buffer *out,
     icon.h -= 2 * style->image_padding.y;
 
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
 
     wp_draw_button_text_image( out, &bounds, &content, &icon, *state, style, str, len, font, &img );
-    
+
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
 
     return ret;
 }
@@ -469,9 +558,11 @@ void wp_button_set_behavior( struct wp_context *ctx, enum wp_button_behavior beh
     WORKPHONE_ASSERT( ctx );
 
     if( !ctx )
+    {
         return;
+    }
 
-    ctx->button_behavior = ( wp_button_behavior_enum )behavior;
+    ctx->button_behavior = (wp_button_behavior_enum)behavior;
 }
 
 wp_bool wp_button_push_behavior( struct wp_context *ctx, wp_button_behavior_enum behavior )
@@ -481,17 +572,21 @@ wp_bool wp_button_push_behavior( struct wp_context *ctx, wp_button_behavior_enum
 
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
 
     button_stack = &ctx->stacks.button_behaviors;
     WORKPHONE_ASSERT( button_stack->head < (wp_s32)WORKPHONE_LEN( button_stack->elements ) );
     if( button_stack->head >= (wp_s32)WORKPHONE_LEN( button_stack->elements ) )
+    {
         return 0;
+    }
 
     element = &button_stack->elements[button_stack->head++];
     element->address = &ctx->button_behavior;
     element->old_value = ctx->button_behavior;
-    ctx->button_behavior = ( wp_button_behavior_enum )behavior;
+    ctx->button_behavior = (wp_button_behavior_enum)behavior;
     return 1;
 }
 
@@ -502,12 +597,16 @@ wp_bool wp_button_pop_behavior( struct wp_context *ctx )
 
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
 
     button_stack = &ctx->stacks.button_behaviors;
     WORKPHONE_ASSERT( button_stack->head > 0 );
     if( button_stack->head < 1 )
+    {
         return 0;
+    }
 
     element = &button_stack->elements[--button_stack->head];
     *element->address = element->old_value;
@@ -529,14 +628,18 @@ wp_bool wp_button_text_styled( struct wp_context *ctx, const struct wp_style_but
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !style || !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     layout = win->layout;
     state = wp_widget( &bounds, ctx );
 
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -549,7 +652,9 @@ wp_bool wp_button_text( struct wp_context *ctx, const wp_c8 *title, wp_s32 len )
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
     return wp_button_text_styled( ctx, &ctx->style.button, title, len );
 }
 
@@ -580,14 +685,18 @@ wp_bool wp_button_color( struct wp_context *ctx, struct wp_color color )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     layout = win->layout;
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -617,13 +726,17 @@ wp_bool wp_button_symbol_styled( struct wp_context *ctx, const struct wp_style_b
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     layout = win->layout;
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -636,7 +749,9 @@ wp_bool wp_button_symbol( struct wp_context *ctx, enum wp_symbol_type symbol )
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
     return wp_button_symbol_styled( ctx, &ctx->style.button, symbol );
 }
 
@@ -654,14 +769,18 @@ wp_bool wp_button_image_styled( struct wp_context *ctx, const struct wp_style_bu
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     layout = win->layout;
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -674,7 +793,9 @@ wp_bool wp_button_image( struct wp_context *ctx, struct wp_image img )
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
     return wp_button_image_styled( ctx, &ctx->style.button, img );
 }
 
@@ -693,14 +814,18 @@ wp_bool wp_button_symbol_text_styled( struct wp_context *ctx, const struct wp_st
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     layout = win->layout;
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -714,7 +839,9 @@ wp_bool wp_button_symbol_text( struct wp_context *ctx, enum wp_symbol_type symbo
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
     return wp_button_symbol_text_styled( ctx, &ctx->style.button, symbol, text, len, align );
 }
 
@@ -744,14 +871,18 @@ wp_bool wp_button_image_text_styled( struct wp_context *ctx, const struct wp_sty
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     layout = win->layout;
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0

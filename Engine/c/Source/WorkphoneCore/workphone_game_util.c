@@ -20,13 +20,17 @@ wp_game_component *wp_game_util_actor_find_component( const wp_game_actor *actor
     wp_u32 i;
 
     if( !actor )
+    {
         return NULL;
+    }
 
     for( i = 0; i < actor->num_components; ++i )
     {
         wp_game_component *comp = actor->components[i];
         if( comp && comp->type == type )
+        {
             return comp;
+        }
     }
 
     return NULL;
@@ -38,14 +42,18 @@ wp_u32 wp_game_util_actor_collect_components( const wp_game_actor *actor, enum w
     wp_u32 i, count;
 
     if( !actor || !out_buf || buf_cap == 0 )
+    {
         return 0;
+    }
 
     count = 0;
     for( i = 0; i < actor->num_components && count < buf_cap; ++i )
     {
         wp_game_component *comp = actor->components[i];
         if( comp && comp->type == type )
+        {
             out_buf[count++] = comp;
+        }
     }
 
     return count;
@@ -58,7 +66,9 @@ wp_u32 wp_game_util_actor_collect_components( const wp_game_actor *actor, enum w
 wp_f32 wp_game_util_actor_distance_sq( const wp_game_actor *a, const wp_game_actor *b )
 {
     if( !a || !b )
+    {
         return 0.0f;
+    }
 
     return wp_vec3f_distance_sq( a->world_transform.position, b->world_transform.position );
 }
@@ -66,7 +76,9 @@ wp_f32 wp_game_util_actor_distance_sq( const wp_game_actor *a, const wp_game_act
 wp_f32 wp_game_util_actor_distance( const wp_game_actor *a, const wp_game_actor *b )
 {
     if( !a || !b )
+    {
         return 0.0f;
+    }
 
     return wp_vec3f_distance( a->world_transform.position, b->world_transform.position );
 }
@@ -80,13 +92,17 @@ wp_game_actor *wp_game_util_scene_find_actor_by_tag( const wp_game_scene *scene,
     wp_u32 i;
 
     if( !scene || !tag )
+    {
         return NULL;
+    }
 
     for( i = 0; i < scene->num_actors; ++i )
     {
         wp_game_actor *actor = scene->actors[i];
         if( actor && wp_game_actor_has_tag( actor, tag ) )
+        {
             return actor;
+        }
     }
 
     return NULL;
@@ -98,14 +114,18 @@ wp_u32 wp_game_util_scene_collect_actors_by_tag( const wp_game_scene *scene, con
     wp_u32 i, count;
 
     if( !scene || !tag || !out_buf || buf_cap == 0 )
+    {
         return 0;
+    }
 
     count = 0;
     for( i = 0; i < scene->num_actors && count < buf_cap; ++i )
     {
         wp_game_actor *actor = scene->actors[i];
         if( actor && wp_game_actor_has_tag( actor, tag ) )
+        {
             out_buf[count++] = actor;
+        }
     }
 
     return count;
@@ -117,13 +137,17 @@ wp_game_actor *wp_game_util_scene_find_actor_by_component( const wp_game_scene *
     wp_u32 i;
 
     if( !scene )
+    {
         return NULL;
+    }
 
     for( i = 0; i < scene->num_actors; ++i )
     {
         wp_game_actor *actor = scene->actors[i];
         if( actor && wp_game_util_actor_find_component( actor, type ) )
+        {
             return actor;
+        }
     }
 
     return NULL;
@@ -134,14 +158,18 @@ wp_u32 wp_game_util_scene_count_actors_by_tag( const wp_game_scene *scene, const
     wp_u32 i, count;
 
     if( !scene || !tag )
+    {
         return 0;
+    }
 
     count = 0;
     for( i = 0; i < scene->num_actors; ++i )
     {
         wp_game_actor *actor = scene->actors[i];
         if( actor && wp_game_actor_has_tag( actor, tag ) )
+        {
             ++count;
+        }
     }
 
     return count;
@@ -180,7 +208,9 @@ wp_vec3f wp_game_util_transform_point( const wp_transform3f *t, wp_vec3f local_p
     wp_vec3f scaled;
 
     if( !t )
+    {
         return local_point;
+    }
 
     /* Scale, then rotate, then translate. */
     scaled.x = local_point.x * t->scale.x;
@@ -193,7 +223,9 @@ wp_vec3f wp_game_util_transform_point( const wp_transform3f *t, wp_vec3f local_p
 wp_vec3f wp_game_util_transform_direction( const wp_transform3f *t, wp_vec3f local_dir )
 {
     if( !t )
+    {
         return local_dir;
+    }
 
     return wp_quatf_rotate_vec3( t->orientation, local_dir );
 }
@@ -204,7 +236,9 @@ wp_vec3f wp_game_util_inverse_transform_point( const wp_transform3f *t, wp_vec3f
     wp_quatf inv;
 
     if( !t )
+    {
         return world_point;
+    }
 
     inv = wp_quatf_conjugate( t->orientation );
     delta = wp_vec3f_sub( world_point, t->position );
@@ -222,7 +256,9 @@ wp_vec3f wp_game_util_inverse_transform_point( const wp_transform3f *t, wp_vec3f
 wp_vec3f wp_game_util_inverse_transform_direction( const wp_transform3f *t, wp_vec3f world_dir )
 {
     if( !t )
+    {
         return world_dir;
+    }
 
     return wp_quatf_rotate_vec3( wp_quatf_conjugate( t->orientation ), world_dir );
 }

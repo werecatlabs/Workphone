@@ -14,7 +14,9 @@ WORKPHONE_LIB void wp_widget_text( struct wp_command_buffer *o, struct wp_rect b
     WORKPHONE_ASSERT( o );
     WORKPHONE_ASSERT( t );
     if( !o || !t )
+    {
         return;
+    }
 
     b.h = WORKPHONE_MAX( b.h, 2 * t->padding.y );
 
@@ -24,10 +26,14 @@ WORKPHONE_LIB void wp_widget_text( struct wp_command_buffer *o, struct wp_rect b
     /* use top-left alignment by default */
     if( !( a &
            ( WORKPHONE_TEXT_ALIGN_LEFT | WORKPHONE_TEXT_ALIGN_CENTERED | WORKPHONE_TEXT_ALIGN_RIGHT ) ) )
+    {
         a |= WORKPHONE_TEXT_ALIGN_LEFT;
+    }
     if( !( a &
            ( WORKPHONE_TEXT_ALIGN_TOP | WORKPHONE_TEXT_ALIGN_MIDDLE | WORKPHONE_TEXT_ALIGN_BOTTOM ) ) )
+    {
         a |= WORKPHONE_TEXT_ALIGN_TOP;
+    }
 
     /* align in x-axis */
     if( a & WORKPHONE_TEXT_ALIGN_LEFT )
@@ -42,7 +48,9 @@ WORKPHONE_LIB void wp_widget_text( struct wp_command_buffer *o, struct wp_rect b
         label.x = WORKPHONE_MAX( b.x + t->padding.x, label.x );
         label.w = WORKPHONE_MIN( b.x + b.w, label.x + label.w );
         if( label.w >= label.x )
+        {
             label.w -= label.x;
+        }
     }
     else if( a & WORKPHONE_TEXT_ALIGN_RIGHT )
     {
@@ -70,6 +78,7 @@ WORKPHONE_LIB void wp_widget_text( struct wp_command_buffer *o, struct wp_rect b
 
     wp_draw_text( o, label, (const wp_c8 *)string, len, f, t->background, t->text );
 }
+
 WORKPHONE_LIB void wp_widget_text_wrap( struct wp_command_buffer *o, struct wp_rect b,
                                         const wp_c8 *string, wp_s32 len, const struct wp_text *t,
                                         const struct wp_user_font *f )
@@ -85,7 +94,9 @@ WORKPHONE_LIB void wp_widget_text_wrap( struct wp_command_buffer *o, struct wp_r
     WORKPHONE_ASSERT( o );
     WORKPHONE_ASSERT( t );
     if( !o || !t )
+    {
         return;
+    }
 
     text.padding = wp_make_vec2f( 0, 0 );
     text.background = t->background;
@@ -105,7 +116,9 @@ WORKPHONE_LIB void wp_widget_text_wrap( struct wp_command_buffer *o, struct wp_r
     while( done < len )
     {
         if( !fitting || line.y + line.h >= ( b.y + b.h ) )
+        {
             break;
+        }
         wp_widget_text( o, line, &string[done], fitting, &text, WORKPHONE_TEXT_LEFT, f );
         done += fitting;
         line.y += f->height + 2 * t->padding.y;
@@ -113,6 +126,7 @@ WORKPHONE_LIB void wp_widget_text_wrap( struct wp_command_buffer *o, struct wp_r
                                  WORKPHONE_LEN( seperator ) );
     }
 }
+
 WORKPHONE_API void wp_text_colored( struct wp_context *ctx, const wp_c8 *str, wp_s32 len,
                                     wp_flags alignment, struct wp_color color )
 {
@@ -127,7 +141,9 @@ WORKPHONE_API void wp_text_colored( struct wp_context *ctx, const wp_c8 *str, wp
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -140,6 +156,7 @@ WORKPHONE_API void wp_text_colored( struct wp_context *ctx, const wp_c8 *str, wp
     text.text = wp_rgb_factor( color, style->text.color_factor );
     wp_widget_text( &win->buffer, bounds, str, len, &text, alignment, style->font );
 }
+
 WORKPHONE_API void wp_text_wrap_colored( struct wp_context *ctx, const wp_c8 *str, wp_s32 len,
                                          struct wp_color color )
 {
@@ -154,7 +171,9 @@ WORKPHONE_API void wp_text_wrap_colored( struct wp_context *ctx, const wp_c8 *st
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -176,6 +195,7 @@ WORKPHONE_API void wp_labelf_colored( struct wp_context *ctx, wp_flags flags, st
     wp_labelfv_colored( ctx, flags, color, fmt, args );
     va_end( args );
 }
+
 WORKPHONE_API void wp_labelf_colored_wrap( struct wp_context *ctx, struct wp_color color,
                                            const wp_c8 *fmt, ... )
 {
@@ -184,6 +204,7 @@ WORKPHONE_API void wp_labelf_colored_wrap( struct wp_context *ctx, struct wp_col
     wp_labelfv_colored_wrap( ctx, color, fmt, args );
     va_end( args );
 }
+
 WORKPHONE_API void wp_labelf( struct wp_context *ctx, wp_flags flags, const wp_c8 *fmt, ... )
 {
     va_list args;
@@ -191,6 +212,7 @@ WORKPHONE_API void wp_labelf( struct wp_context *ctx, wp_flags flags, const wp_c
     wp_labelfv( ctx, flags, fmt, args );
     va_end( args );
 }
+
 WORKPHONE_API void wp_labelf_wrap( struct wp_context *ctx, const wp_c8 *fmt, ... )
 {
     va_list args;
@@ -198,6 +220,7 @@ WORKPHONE_API void wp_labelf_wrap( struct wp_context *ctx, const wp_c8 *fmt, ...
     wp_labelfv_wrap( ctx, fmt, args );
     va_end( args );
 }
+
 WORKPHONE_API void wp_labelfv_colored( struct wp_context *ctx, wp_flags flags, struct wp_color color,
                                        const wp_c8 *fmt, va_list args )
 {
@@ -232,29 +255,35 @@ WORKPHONE_API void wp_value_bool( struct wp_context *ctx, const wp_c8 *prefix, w
 {
     wp_labelf( ctx, WORKPHONE_TEXT_LEFT, "%s: %s", prefix, ( ( value ) ? "true" : "false" ) );
 }
+
 WORKPHONE_API void wp_value_int( struct wp_context *ctx, const wp_c8 *prefix, wp_s32 value )
 {
     wp_labelf( ctx, WORKPHONE_TEXT_LEFT, "%s: %d", prefix, value );
 }
+
 WORKPHONE_API void wp_value_uint( struct wp_context *ctx, const wp_c8 *prefix, wp_u32 value )
 {
     wp_labelf( ctx, WORKPHONE_TEXT_LEFT, "%s: %u", prefix, value );
 }
+
 WORKPHONE_API void wp_value_wp_f32( struct wp_context *ctx, const wp_c8 *prefix, wp_f32 value )
 {
     wp_f64 wp_f64_value = (wp_f64)value;
     wp_labelf( ctx, WORKPHONE_TEXT_LEFT, "%s: %.3f", prefix, wp_f64_value );
 }
+
 WORKPHONE_API void wp_value_color_byte( struct wp_context *ctx, const wp_c8 *p, struct wp_color c )
 {
     wp_labelf( ctx, WORKPHONE_TEXT_LEFT, "%s: (%d, %d, %d, %d)", p, c.r, c.g, c.b, c.a );
 }
+
 WORKPHONE_API void wp_value_color_wp_f32( struct wp_context *ctx, const wp_c8 *p, struct wp_color color )
 {
     wp_f64 c[4];
     wp_color_dv( c, color );
     wp_labelf( ctx, WORKPHONE_TEXT_LEFT, "%s: (%.2f, %.2f, %.2f, %.2f)", p, c[0], c[1], c[2], c[3] );
 }
+
 WORKPHONE_API void wp_value_color_hex( struct wp_context *ctx, const wp_c8 *prefix,
                                        struct wp_color color )
 {
@@ -267,29 +296,38 @@ WORKPHONE_API void wp_text( struct wp_context *ctx, const wp_c8 *str, wp_s32 len
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return;
+    }
     wp_text_colored( ctx, str, len, alignment, ctx->style.text.color );
 }
+
 WORKPHONE_API void wp_text_wrap( struct wp_context *ctx, const wp_c8 *str, wp_s32 len )
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return;
+    }
     wp_text_wrap_colored( ctx, str, len, ctx->style.text.color );
 }
+
 WORKPHONE_API void wp_label( struct wp_context *ctx, const wp_c8 *str, wp_flags alignment )
 {
     wp_text( ctx, str, wp_strlen( str ), alignment );
 }
+
 WORKPHONE_API void wp_label_colored( struct wp_context *ctx, const wp_c8 *str, wp_flags align,
                                      struct wp_color color )
 {
     wp_text_colored( ctx, str, wp_strlen( str ), align, color );
 }
+
 WORKPHONE_API void wp_label_wrap( struct wp_context *ctx, const wp_c8 *str )
 {
     wp_text_wrap( ctx, str, wp_strlen( str ) );
 }
+
 WORKPHONE_API void wp_label_colored_wrap( struct wp_context *ctx, const wp_c8 *str,
                                           struct wp_color color )
 {

@@ -11,7 +11,9 @@ WORKPHONE_API void wp_contextual_close( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
     wp_popup_close( ctx );
 }
 
@@ -32,12 +34,16 @@ WORKPHONE_API wp_bool wp_contextual_begin( struct wp_context *ctx, wp_flags flag
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     ++win->popup.con_count;
     if( ctx->current != ctx->active )
+    {
         return 0;
+    }
 
     /* check if currently active contextual is active */
     popup = win->popup.win;
@@ -47,11 +53,17 @@ WORKPHONE_API wp_bool wp_contextual_begin( struct wp_context *ctx, wp_flags flag
     {
         is_clicked = wp_input_mouse_clicked( in, WORKPHONE_BUTTON_RIGHT, trigger_bounds );
         if( win->popup.active_con && win->popup.con_count != win->popup.active_con )
+        {
             return 0;
+        }
         if( !is_open && win->popup.active_con )
+        {
             win->popup.active_con = 0;
+        }
         if( ( !is_open && !is_clicked ) )
+        {
             return 0;
+        }
 
         /* calculate contextual position on click */
         win->popup.active_con = win->popup.con_count;
@@ -73,17 +85,22 @@ WORKPHONE_API wp_bool wp_contextual_begin( struct wp_context *ctx, wp_flags flag
         ret = wp_nonblock_begin( ctx, flags | WORKPHONE_WINDOW_NO_SCROLLBAR, body, null_rect,
                                  WORKPHONE_PANEL_CONTEXTUAL );
         if( ret )
+        {
             win->popup.type = WORKPHONE_PANEL_CONTEXTUAL;
+        }
         else
         {
             win->popup.active_con = 0;
             win->popup.type = WORKPHONE_PANEL_NONE;
             if( win->popup.win )
+            {
                 win->popup.win->flags = 0;
+            }
         }
     }
     return ret;
 }
+
 WORKPHONE_API wp_bool wp_contextual_item_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len,
                                                wp_flags alignment )
 {
@@ -98,13 +115,17 @@ WORKPHONE_API wp_bool wp_contextual_item_text( struct wp_context *ctx, const wp_
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     style = &ctx->style;
     state = wp_widget_fitting( &bounds, ctx, style->contextual_button.padding );
     if( !state )
+    {
         return wp_false;
+    }
 
     in =
         ( state == WORKPHONE_WIDGET_ROM || win->layout->flags & WORKPHONE_WINDOW_ROM ) ? 0 : &ctx->input;
@@ -116,11 +137,13 @@ WORKPHONE_API wp_bool wp_contextual_item_text( struct wp_context *ctx, const wp_
     }
     return wp_false;
 }
+
 WORKPHONE_API wp_bool wp_contextual_item_label( struct wp_context *ctx, const wp_c8 *label,
                                                 wp_flags align )
 {
     return wp_contextual_item_text( ctx, label, wp_strlen( label ), align );
 }
+
 WORKPHONE_API wp_bool wp_contextual_item_image_text( struct wp_context *ctx, struct wp_image img,
                                                      const wp_c8 *text, wp_s32 len, wp_flags align )
 {
@@ -135,13 +158,17 @@ WORKPHONE_API wp_bool wp_contextual_item_image_text( struct wp_context *ctx, str
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     style = &ctx->style;
     state = wp_widget_fitting( &bounds, ctx, style->contextual_button.padding );
     if( !state )
+    {
         return wp_false;
+    }
 
     in =
         ( state == WORKPHONE_WIDGET_ROM || win->layout->flags & WORKPHONE_WINDOW_ROM ) ? 0 : &ctx->input;
@@ -153,11 +180,13 @@ WORKPHONE_API wp_bool wp_contextual_item_image_text( struct wp_context *ctx, str
     }
     return wp_false;
 }
+
 WORKPHONE_API wp_bool wp_contextual_item_image_label( struct wp_context *ctx, struct wp_image img,
                                                       const wp_c8 *label, wp_flags align )
 {
     return wp_contextual_item_image_text( ctx, img, label, wp_strlen( label ), align );
 }
+
 WORKPHONE_API wp_bool wp_contextual_item_symbol_text( struct wp_context *ctx, enum wp_symbol_type symbol,
                                                       const wp_c8 *text, wp_s32 len, wp_flags align )
 {
@@ -172,13 +201,17 @@ WORKPHONE_API wp_bool wp_contextual_item_symbol_text( struct wp_context *ctx, en
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     win = ctx->current;
     style = &ctx->style;
     state = wp_widget_fitting( &bounds, ctx, style->contextual_button.padding );
     if( !state )
+    {
         return wp_false;
+    }
 
     in =
         ( state == WORKPHONE_WIDGET_ROM || win->layout->flags & WORKPHONE_WINDOW_ROM ) ? 0 : &ctx->input;
@@ -191,12 +224,14 @@ WORKPHONE_API wp_bool wp_contextual_item_symbol_text( struct wp_context *ctx, en
     }
     return wp_false;
 }
+
 WORKPHONE_API wp_bool wp_contextual_item_symbol_label( struct wp_context *ctx,
                                                        enum wp_symbol_type symbol, const wp_c8 *text,
                                                        wp_flags align )
 {
     return wp_contextual_item_symbol_text( ctx, symbol, text, wp_strlen( text ), align );
 }
+
 WORKPHONE_API void wp_contextual_end( struct wp_context *ctx )
 {
     struct wp_window *popup;
@@ -204,7 +239,9 @@ WORKPHONE_API void wp_contextual_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     popup = ctx->current;
     panel = popup->layout;
@@ -230,11 +267,15 @@ WORKPHONE_API void wp_contextual_end( struct wp_context *ctx )
             wp_s32 pressed = wp_input_is_mouse_pressed( &ctx->input, WORKPHONE_BUTTON_LEFT );
             wp_s32 in_body = wp_input_is_mouse_hovering_rect( &ctx->input, body );
             if( pressed && in_body )
+            {
                 popup->flags |= WORKPHONE_WINDOW_HIDDEN;
+            }
         }
     }
     if( popup->flags & WORKPHONE_WINDOW_HIDDEN )
+    {
         popup->seq = 0;
+    }
     wp_popup_end( ctx );
     return;
 }

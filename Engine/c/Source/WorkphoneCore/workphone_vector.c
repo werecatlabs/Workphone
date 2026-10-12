@@ -16,14 +16,17 @@ static wp_f32 wp_minf( wp_f32 a, wp_f32 b )
 {
     return a < b ? a : b;
 }
+
 static wp_f32 wp_maxf( wp_f32 a, wp_f32 b )
 {
     return a > b ? a : b;
 }
+
 static wp_f64 wp_mind( wp_f64 a, wp_f64 b )
 {
     return a < b ? a : b;
 }
+
 static wp_f64 wp_maxd( wp_f64 a, wp_f64 b )
 {
     return a > b ? a : b;
@@ -102,7 +105,9 @@ wp_vec2f wp_vec2f_normalize( wp_vec2f a )
 {
     wp_f32 len = wp_vec2f_length( a );
     if( len > WORKPHONE_EPSILON_F )
+    {
         return wp_vec2f_divf( a, len );
+    }
     return a;
 }
 
@@ -264,7 +269,9 @@ wp_vec3f wp_vec3f_normalize( wp_vec3f a )
 {
     wp_f32 len = wp_vec3f_length( a );
     if( len > WORKPHONE_EPSILON_F )
+    {
         return wp_vec3f_divf( a, len );
+    }
     return a;
 }
 
@@ -483,7 +490,9 @@ wp_vec4f wp_vec4f_normalize( wp_vec4f a )
 {
     wp_f32 len = wp_vec4f_length( a );
     if( len > WORKPHONE_EPSILON_F )
+    {
         return wp_vec4f_divf( a, len );
+    }
     return a;
 }
 
@@ -637,7 +646,9 @@ wp_vec2d wp_vec2d_normalize( wp_vec2d a )
 {
     wp_f64 len = wp_vec2d_length( a );
     if( len > WORKPHONE_EPSILON_D )
+    {
         return wp_vec2d_divd( a, len );
+    }
     return a;
 }
 
@@ -799,7 +810,9 @@ wp_vec3d wp_vec3d_normalize( wp_vec3d a )
 {
     wp_f64 len = wp_vec3d_length( a );
     if( len > WORKPHONE_EPSILON_D )
+    {
         return wp_vec3d_divd( a, len );
+    }
     return a;
 }
 
@@ -1018,7 +1031,9 @@ wp_vec4d wp_vec4d_normalize( wp_vec4d a )
 {
     wp_f64 len = wp_vec4d_length( a );
     if( len > WORKPHONE_EPSILON_D )
+    {
         return wp_vec4d_divd( a, len );
+    }
     return a;
 }
 

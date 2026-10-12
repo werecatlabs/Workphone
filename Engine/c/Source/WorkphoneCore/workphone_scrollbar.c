@@ -16,14 +16,18 @@ wp_f32 wp_scrollbar_behavior( wp_flags *state, struct wp_input *in, wp_s32 has_s
 
     wp_widget_state_reset( state );
     if( !in )
+    {
         return scroll_offset;
+    }
 
     left_mouse_down = in->mouse.buttons[WORKPHONE_BUTTON_LEFT].down;
     left_mouse_clicked = in->mouse.buttons[WORKPHONE_BUTTON_LEFT].clicked;
     left_mouse_click_in_cursor =
         wp_input_has_mouse_click_down_in_rect( in, WORKPHONE_BUTTON_LEFT, *cursor, wp_true );
     if( wp_input_is_mouse_hovering_rect( in, *scroll ) )
+    {
         *state = WORKPHONE_WIDGET_STATE_HOVERED;
+    }
 
     scroll_delta = ( o == WORKPHONE_VERTICAL ) ? in->mouse.scroll_delta.y : in->mouse.scroll_delta.x;
     if( left_mouse_down && left_mouse_click_in_cursor && !left_mouse_clicked )
@@ -56,9 +60,13 @@ wp_f32 wp_scrollbar_behavior( wp_flags *state, struct wp_input *in, wp_s32 has_s
     {
         /* scroll page up by click on empty space or shortcut */
         if( o == WORKPHONE_VERTICAL )
+        {
             scroll_offset = WORKPHONE_MAX( 0, scroll_offset - scroll->h );
+        }
         else
+        {
             scroll_offset = WORKPHONE_MAX( 0, scroll_offset - scroll->w );
+        }
     }
     else if( ( wp_input_is_key_pressed( in, WORKPHONE_KEY_SCROLL_DOWN ) && o == WORKPHONE_VERTICAL &&
                has_scrolling ) ||
@@ -66,9 +74,13 @@ wp_f32 wp_scrollbar_behavior( wp_flags *state, struct wp_input *in, wp_s32 has_s
     {
         /* scroll page down by click on empty space or shortcut */
         if( o == WORKPHONE_VERTICAL )
+        {
             scroll_offset = WORKPHONE_MIN( scroll_offset + scroll->h, target - scroll->h );
+        }
         else
+        {
             scroll_offset = WORKPHONE_MIN( scroll_offset + scroll->w, target - scroll->w );
+        }
     }
     else if( has_scrolling )
     {
@@ -77,29 +89,42 @@ wp_f32 wp_scrollbar_behavior( wp_flags *state, struct wp_input *in, wp_s32 has_s
             /* update cursor by mouse scrolling */
             scroll_offset = scroll_offset + scroll_step * ( -scroll_delta );
             if( o == WORKPHONE_VERTICAL )
+            {
                 scroll_offset = WORKPHONE_CLAMP( 0, scroll_offset, target - scroll->h );
+            }
             else
+            {
                 scroll_offset = WORKPHONE_CLAMP( 0, scroll_offset, target - scroll->w );
+            }
         }
         else if( wp_input_is_key_pressed( in, WORKPHONE_KEY_SCROLL_START ) )
         {
             /* update cursor to the beginning  */
             if( o == WORKPHONE_VERTICAL )
+            {
                 scroll_offset = 0;
+            }
         }
         else if( wp_input_is_key_pressed( in, WORKPHONE_KEY_SCROLL_END ) )
         {
             /* update cursor to the end */
             if( o == WORKPHONE_VERTICAL )
+            {
                 scroll_offset = target - scroll->h;
+            }
         }
     }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, *scroll ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, *scroll ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
     return scroll_offset;
 }
+
 WORKPHONE_LIB void wp_draw_scrollbar( struct wp_command_buffer *out, wp_flags state,
                                       const struct wp_style_scrollbar *style,
                                       const struct wp_rect *bounds, const struct wp_rect *scroll )
@@ -155,6 +180,7 @@ WORKPHONE_LIB void wp_draw_scrollbar( struct wp_command_buffer *out, wp_flags st
         break;
     }
 }
+
 WORKPHONE_LIB wp_f32 wp_do_scrollbarv( wp_flags *state, struct wp_command_buffer *out,
                                        struct wp_rect scroll, wp_s32 has_scrolling, wp_f32 offset,
                                        wp_f32 target, wp_f32 step, wp_f32 button_pixel_inc,
@@ -174,12 +200,16 @@ WORKPHONE_LIB wp_f32 wp_do_scrollbarv( wp_flags *state, struct wp_command_buffer
     WORKPHONE_ASSERT( style );
     WORKPHONE_ASSERT( state );
     if( !out || !style )
+    {
         return 0;
+    }
 
     scroll.w = WORKPHONE_MAX( scroll.w, 1 );
     scroll.h = WORKPHONE_MAX( scroll.h, 0 );
     if( target <= scroll.h )
+    {
         return 0;
+    }
 
     /* optional scrollbar buttons */
     if( style->show_buttons )
@@ -199,13 +229,17 @@ WORKPHONE_LIB wp_f32 wp_do_scrollbarv( wp_flags *state, struct wp_command_buffer
         button.y = scroll.y;
         if( wp_do_button_symbol( &ws, out, button, style->dec_symbol, WORKPHONE_BUTTON_REPEATER,
                                  &style->dec_button, in, font ) )
+        {
             offset = offset - scroll_step;
+        }
 
         /* increment button */
         button.y = scroll.y + scroll.h - button.h;
         if( wp_do_button_symbol( &ws, out, button, style->inc_symbol, WORKPHONE_BUTTON_REPEATER,
                                  &style->inc_button, in, font ) )
+        {
             offset = offset + scroll_step;
+        }
 
         scroll.y = scroll.y + button.h;
         scroll.h = scroll_h;
@@ -244,12 +278,17 @@ WORKPHONE_LIB wp_f32 wp_do_scrollbarv( wp_flags *state, struct wp_command_buffer
 
     /* draw scrollbar */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_scrollbar( out, *state, style, &scroll, &cursor );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return scroll_offset;
 }
+
 WORKPHONE_LIB wp_f32 wp_do_scrollbarh( wp_flags *state, struct wp_command_buffer *out,
                                        struct wp_rect scroll, wp_s32 has_scrolling, wp_f32 offset,
                                        wp_f32 target, wp_f32 step, wp_f32 button_pixel_inc,
@@ -268,13 +307,17 @@ WORKPHONE_LIB wp_f32 wp_do_scrollbarh( wp_flags *state, struct wp_command_buffer
     WORKPHONE_ASSERT( out );
     WORKPHONE_ASSERT( style );
     if( !out || !style )
+    {
         return 0;
+    }
 
     /* scrollbar background */
     scroll.h = WORKPHONE_MAX( scroll.h, 1 );
     scroll.w = WORKPHONE_MAX( scroll.w, 2 * scroll.h );
     if( target <= scroll.w )
+    {
         return 0;
+    }
 
     /* optional scrollbar buttons */
     if( style->show_buttons )
@@ -293,13 +336,17 @@ WORKPHONE_LIB wp_f32 wp_do_scrollbarh( wp_flags *state, struct wp_command_buffer
         button.x = scroll.x;
         if( wp_do_button_symbol( &ws, out, button, style->dec_symbol, WORKPHONE_BUTTON_REPEATER,
                                  &style->dec_button, in, font ) )
+        {
             offset = offset - scroll_step;
+        }
 
         /* increment button */
         button.x = scroll.x + scroll.w - button.w;
         if( wp_do_button_symbol( &ws, out, button, style->inc_symbol, WORKPHONE_BUTTON_REPEATER,
                                  &style->inc_button, in, font ) )
+        {
             offset = offset + scroll_step;
+        }
 
         scroll.x = scroll.x + button.w;
         scroll.w = scroll_w;
@@ -337,9 +384,13 @@ WORKPHONE_LIB wp_f32 wp_do_scrollbarh( wp_flags *state, struct wp_command_buffer
 
     /* draw scrollbar */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_scrollbar( out, *state, style, &scroll, &cursor );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return scroll_offset;
 }

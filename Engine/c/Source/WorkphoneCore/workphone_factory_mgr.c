@@ -21,7 +21,9 @@ static wp_s32 s_entries_grow( wp_factory_mgr *mgr )
     wp_factory_entry *buf =
         (wp_factory_entry *)realloc( mgr->entries, new_cap * sizeof( wp_factory_entry ) );
     if( !buf )
+    {
         return 0;
+    }
 
     memset( buf + mgr->entry_capacity, 0, WP_FACTORY_MGR_ENTRY_GROW * sizeof( wp_factory_entry ) );
     mgr->entries = buf;
@@ -35,7 +37,9 @@ static wp_s32 s_prefabs_grow( wp_factory_mgr *mgr )
     wp_game_prefab **buf =
         (wp_game_prefab **)realloc( mgr->prefabs, new_cap * sizeof( wp_game_prefab * ) );
     if( !buf )
+    {
         return 0;
+    }
 
     memset( buf + mgr->prefab_capacity, 0, WP_FACTORY_MGR_PREFAB_GROW * sizeof( wp_game_prefab * ) );
     mgr->prefabs = buf;
@@ -47,12 +51,16 @@ static wp_factory_entry *s_find_entry( const wp_factory_mgr *mgr, const wp_c8 *n
 {
     wp_u32 i;
     if( !name )
+    {
         return NULL;
+    }
 
     for( i = 0; i < mgr->num_entries; ++i )
     {
         if( strncmp( mgr->entries[i].name, name, WP_FACTORY_MGR_MAX_NAME ) == 0 )
+        {
             return &mgr->entries[i];
+        }
     }
     return NULL;
 }
@@ -61,12 +69,16 @@ static wp_game_prefab *s_find_prefab( const wp_factory_mgr *mgr, const wp_c8 *na
 {
     wp_u32 i;
     if( !name )
+    {
         return NULL;
+    }
 
     for( i = 0; i < mgr->num_prefabs; ++i )
     {
         if( mgr->prefabs[i] && strncmp( mgr->prefabs[i]->name, name, WP_PREFAB_MAX_NAME ) == 0 )
+        {
             return mgr->prefabs[i];
+        }
     }
     return NULL;
 }
@@ -78,7 +90,9 @@ static wp_game_prefab *s_find_prefab( const wp_factory_mgr *mgr, const wp_c8 *na
 void wp_factory_mgr_init( wp_factory_mgr *mgr )
 {
     if( !mgr )
+    {
         return;
+    }
 
     memset( mgr, 0, sizeof( *mgr ) );
 
@@ -99,7 +113,9 @@ void wp_factory_mgr_init( wp_factory_mgr *mgr )
 void wp_factory_mgr_destroy( wp_factory_mgr *mgr )
 {
     if( !mgr )
+    {
         return;
+    }
 
     free( mgr->entries );
     mgr->entries = NULL;
@@ -148,7 +164,9 @@ wp_game_actor *wp_factory_mgr_create_named_actor( wp_factory_mgr *mgr, const wp_
 void wp_factory_mgr_destroy_actor( wp_factory_mgr *mgr, wp_game_actor *actor )
 {
     if( mgr )
+    {
         wp_factory_destroy_actor( &mgr->factory, actor );
+    }
 }
 
 /* =========================================================================
@@ -163,7 +181,9 @@ wp_game_component *wp_factory_mgr_create_component( wp_factory_mgr *mgr, enum wp
 void wp_factory_mgr_destroy_component( wp_factory_mgr *mgr, wp_game_component *comp )
 {
     if( mgr )
+    {
         wp_factory_destroy_component( &mgr->factory, comp );
+    }
 }
 
 /* =========================================================================
@@ -179,7 +199,9 @@ wp_resource *wp_factory_mgr_create_resource( wp_factory_mgr *mgr, wp_resource_ty
 void wp_factory_mgr_destroy_resource( wp_factory_mgr *mgr, wp_resource *resource )
 {
     if( mgr )
+    {
         wp_factory_destroy_resource( &mgr->factory, resource );
+    }
 }
 
 /* =========================================================================
@@ -192,7 +214,9 @@ wp_s32 wp_factory_mgr_register_creator( wp_factory_mgr *mgr, const wp_c8 *name,
     wp_factory_entry *entry;
 
     if( !mgr || !name || !creator )
+    {
         return 0;
+    }
 
     /* Replace existing entry if the name is already registered. */
     entry = s_find_entry( mgr, name );
@@ -207,7 +231,9 @@ wp_s32 wp_factory_mgr_register_creator( wp_factory_mgr *mgr, const wp_c8 *name,
     if( mgr->num_entries >= mgr->entry_capacity )
     {
         if( !s_entries_grow( mgr ) )
+        {
             return 0;
+        }
     }
 
     entry = &mgr->entries[mgr->num_entries++];
@@ -223,7 +249,9 @@ void wp_factory_mgr_unregister_creator( wp_factory_mgr *mgr, const wp_c8 *name )
     wp_u32 i;
 
     if( !mgr || !name )
+    {
         return;
+    }
 
     for( i = 0; i < mgr->num_entries; ++i )
     {
@@ -242,11 +270,15 @@ wp_game_actor *wp_factory_mgr_create( wp_factory_mgr *mgr, const wp_c8 *name )
     wp_factory_entry *entry;
 
     if( !mgr || !name )
+    {
         return NULL;
+    }
 
     entry = s_find_entry( mgr, name );
     if( !entry )
+    {
         return NULL;
+    }
 
     return entry->creator( mgr, entry->user_data );
 }
@@ -263,16 +295,22 @@ wp_s32 wp_factory_mgr_has_creator( const wp_factory_mgr *mgr, const wp_c8 *name 
 wp_s32 wp_factory_mgr_register_prefab( wp_factory_mgr *mgr, wp_game_prefab *prefab )
 {
     if( !mgr || !prefab )
+    {
         return 0;
+    }
 
     /* Reject duplicates. */
     if( s_find_prefab( mgr, prefab->name ) )
+    {
         return 0;
+    }
 
     if( mgr->num_prefabs >= mgr->prefab_capacity )
     {
         if( !s_prefabs_grow( mgr ) )
+        {
             return 0;
+        }
     }
 
     mgr->prefabs[mgr->num_prefabs++] = prefab;
@@ -284,7 +322,9 @@ void wp_factory_mgr_unregister_prefab( wp_factory_mgr *mgr, const wp_c8 *name )
     wp_u32 i;
 
     if( !mgr || !name )
+    {
         return;
+    }
 
     for( i = 0; i < mgr->num_prefabs; ++i )
     {
@@ -308,11 +348,15 @@ wp_game_actor *wp_factory_mgr_instantiate( wp_factory_mgr *mgr, const wp_c8 *nam
     wp_game_prefab *prefab;
 
     if( !mgr || !name )
+    {
         return NULL;
+    }
 
     prefab = s_find_prefab( mgr, name );
     if( !prefab )
+    {
         return NULL;
+    }
 
     return wp_factory_instantiate_prefab( &mgr->factory, prefab );
 }
@@ -334,5 +378,7 @@ void *wp_factory_mgr_get_user_data( const wp_factory_mgr *mgr )
 void wp_factory_mgr_set_user_data( wp_factory_mgr *mgr, void *user_data )
 {
     if( mgr )
+    {
         mgr->user_data = user_data;
+    }
 }

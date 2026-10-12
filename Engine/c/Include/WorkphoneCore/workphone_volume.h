@@ -42,9 +42,8 @@ struct wp_volume_sample_coords
 };
 
 WORKPHONE_API void wp_volume_atlas_init( struct wp_volume_atlas *, wp_handle texture,
-                                         wp_u32 texture_width, wp_u32 texture_height,
-                                         wp_u32 slice_width, wp_u32 slice_height,
-                                         wp_u32 depth, wp_u32 columns, wp_u32 rows,
+                                         wp_u32 texture_width, wp_u32 texture_height, wp_u32 slice_width,
+                                         wp_u32 slice_height, wp_u32 depth, wp_u32 columns, wp_u32 rows,
                                          wp_u32 padding_x, wp_u32 padding_y );
 WORKPHONE_API wp_bool wp_volume_atlas_is_valid( const struct wp_volume_atlas * );
 WORKPHONE_API wp_bool wp_volume_atlas_slice( const struct wp_volume_atlas *, wp_u32 index,

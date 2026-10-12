@@ -114,7 +114,9 @@ void wp_camera_component_init( wp_camera_component *cam )
     wp_component_callbacks cb;
 
     if( !cam )
+    {
         return;
+    }
 
     memset( cam, 0, sizeof( *cam ) );
 
@@ -147,7 +149,9 @@ void wp_camera_component_init( wp_camera_component *cam )
 void wp_camera_component_destroy( wp_camera_component *cam )
 {
     if( !cam )
+    {
         return;
+    }
 
     wp_game_component_destroy( &cam->base );
 }
@@ -159,7 +163,9 @@ void wp_camera_component_destroy( wp_camera_component *cam )
 void wp_camera_component_update( wp_camera_component *cam, wp_f64 dt )
 {
     if( !cam )
+    {
         return;
+    }
 
     wp_game_component_update( &cam->base, dt );
 }
@@ -171,7 +177,9 @@ void wp_camera_component_update( wp_camera_component *cam, wp_f64 dt )
 void wp_camera_component_set_projection( wp_camera_component *cam, enum wp_camera_projection projection )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->projection = projection;
     s_recompute_projection( cam );
@@ -189,11 +197,15 @@ enum wp_camera_projection wp_camera_component_get_projection( const wp_camera_co
 void wp_camera_component_set_fov_y( wp_camera_component *cam, wp_f32 fov_y )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->fov_y = fov_y;
     if( cam->projection == WP_CAMERA_PROJECTION_PERSPECTIVE )
+    {
         s_recompute_projection( cam );
+    }
 }
 
 wp_f32 wp_camera_component_get_fov_y( const wp_camera_component *cam )
@@ -204,11 +216,15 @@ wp_f32 wp_camera_component_get_fov_y( const wp_camera_component *cam )
 void wp_camera_component_set_aspect( wp_camera_component *cam, wp_f32 aspect )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->aspect = aspect;
     if( cam->projection == WP_CAMERA_PROJECTION_PERSPECTIVE )
+    {
         s_recompute_projection( cam );
+    }
 }
 
 wp_f32 wp_camera_component_get_aspect( const wp_camera_component *cam )
@@ -223,7 +239,9 @@ wp_f32 wp_camera_component_get_aspect( const wp_camera_component *cam )
 void wp_camera_component_set_near_clip( wp_camera_component *cam, wp_f32 near_clip )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->near_clip = near_clip;
     s_recompute_projection( cam );
@@ -237,7 +255,9 @@ wp_f32 wp_camera_component_get_near_clip( const wp_camera_component *cam )
 void wp_camera_component_set_far_clip( wp_camera_component *cam, wp_f32 far_clip )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->far_clip = far_clip;
     s_recompute_projection( cam );
@@ -255,12 +275,16 @@ wp_f32 wp_camera_component_get_far_clip( const wp_camera_component *cam )
 void wp_camera_component_set_ortho_size( wp_camera_component *cam, wp_f32 width, wp_f32 height )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->ortho_width = width;
     cam->ortho_height = height;
     if( cam->projection == WP_CAMERA_PROJECTION_ORTHOGRAPHIC )
+    {
         s_recompute_projection( cam );
+    }
 }
 
 wp_f32 wp_camera_component_get_ortho_width( const wp_camera_component *cam )
@@ -280,7 +304,9 @@ wp_f32 wp_camera_component_get_ortho_height( const wp_camera_component *cam )
 void wp_camera_component_set_primary( wp_camera_component *cam, wp_s32 primary )
 {
     if( cam )
+    {
         cam->is_primary = primary;
+    }
 }
 
 wp_s32 wp_camera_component_is_primary( const wp_camera_component *cam )
@@ -295,7 +321,9 @@ wp_s32 wp_camera_component_is_primary( const wp_camera_component *cam )
 void wp_camera_component_set_position( wp_camera_component *cam, wp_vec3f position )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->position = position;
     s_recompute_view( cam );
@@ -313,7 +341,9 @@ wp_vec3f wp_camera_component_get_position( const wp_camera_component *cam )
 void wp_camera_component_set_orientation( wp_camera_component *cam, wp_quatf orientation )
 {
     if( !cam )
+    {
         return;
+    }
 
     cam->orientation = orientation;
     s_recompute_view( cam );
@@ -329,7 +359,9 @@ void wp_camera_component_look_at( wp_camera_component *cam, wp_vec3f target, wp_
     wp_vec3f forward, right, up;
 
     if( !cam )
+    {
         return;
+    }
 
     forward = wp_vec3f_normalize( wp_vec3f_sub( target, cam->position ) );
     right = wp_vec3f_normalize( wp_vec3f_cross( forward, world_up ) );
@@ -356,7 +388,9 @@ const wp_mat4f *wp_camera_component_get_projection_matrix( const wp_camera_compo
 void wp_camera_component_get_view_projection( const wp_camera_component *cam, wp_mat4f *out )
 {
     if( !cam || !out )
+    {
         return;
+    }
 
     wp_mat4f_mul( out, &cam->projection_matrix, &cam->view_matrix );
 }

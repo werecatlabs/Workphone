@@ -55,11 +55,17 @@ WORKPHONE_LIB wp_bool wp_color_picker_behavior( wp_flags *state, const struct wp
     }
     /* set color picker widget state */
     if( wp_input_is_mouse_hovering_rect( in, *bounds ) )
+    {
         *state = WORKPHONE_WIDGET_STATE_HOVERED;
+    }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, *bounds ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, *bounds ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
     return value_changed;
 }
 
@@ -145,7 +151,9 @@ WORKPHONE_LIB wp_bool wp_do_color_picker( wp_flags *state, struct wp_command_buf
     WORKPHONE_ASSERT( state );
     WORKPHONE_ASSERT( font );
     if( !out || !col || !state || !font )
+    {
         return ret;
+    }
 
     bar_w = font->height;
     bounds.x += padding.x;
@@ -190,14 +198,18 @@ WORKPHONE_API wp_bool wp_color_pick( struct wp_context *ctx, struct wp_colorf *c
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout || !color )
+    {
         return 0;
+    }
 
     win = ctx->current;
     config = &ctx->style;
     layout = win->layout;
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return 0;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0

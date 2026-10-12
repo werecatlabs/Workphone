@@ -5,7 +5,7 @@
 
 struct wp_draw_null_texture
 {
-    wp_handle texture; /**!< texture handle to a texture with a white pixel */
+    wp_handle texture;  /**!< texture handle to a texture with a white pixel */
     struct wp_vec2f uv; /**!< coordinates to a white pixel in the texture  */
 };
 
@@ -155,7 +155,7 @@ WORKPHONE_API void wp_draw_list_setup( struct wp_draw_list *, const struct wp_co
                                        enum wp_anti_aliasing shape_aa );
 
 /* drawing */
-#define wp_draw_list_foreach( cmd, can, b ) \
+#define wp_draw_list_foreach( cmd, can, b )                     \
     for( ( cmd ) = wp__draw_list_begin( can, b ); ( cmd ) != 0; \
          ( cmd ) = wp__draw_list_next( cmd, b, can ) )
 
@@ -205,10 +205,11 @@ WORKPHONE_API void wp_draw_list_path_clear( struct wp_draw_list * );
 WORKPHONE_API void wp_draw_list_path_line_to( struct wp_draw_list *, struct wp_vec2f pos );
 WORKPHONE_API void wp_draw_list_path_arc_to_fast( struct wp_draw_list *, struct wp_vec2f center,
                                                   wp_f32 radius, int a_min, int a_max );
-WORKPHONE_API void wp_draw_list_path_arc_to( struct wp_draw_list *, struct wp_vec2f center, wp_f32 radius,
-                                             wp_f32 a_min, wp_f32 a_max, unsigned int segments );
-WORKPHONE_API void wp_draw_list_path_rect_to( struct wp_draw_list *, struct wp_vec2f a, struct wp_vec2f b,
-                                              wp_f32 rounding );
+WORKPHONE_API void wp_draw_list_path_arc_to( struct wp_draw_list *, struct wp_vec2f center,
+                                             wp_f32 radius, wp_f32 a_min, wp_f32 a_max,
+                                             unsigned int segments );
+WORKPHONE_API void wp_draw_list_path_rect_to( struct wp_draw_list *, struct wp_vec2f a,
+                                              struct wp_vec2f b, wp_f32 rounding );
 WORKPHONE_API void wp_draw_list_path_curve_to( struct wp_draw_list *, struct wp_vec2f p2,
                                                struct wp_vec2f p3, struct wp_vec2f p4,
                                                unsigned int num_segments );
@@ -228,8 +229,9 @@ WORKPHONE_API void wp_draw_list_stroke_circle( struct wp_draw_list *, struct wp_
                                                wp_f32 radius, struct wp_color, unsigned int segs,
                                                wp_f32 thickness );
 WORKPHONE_API void wp_draw_list_stroke_curve( struct wp_draw_list *, struct wp_vec2f p0,
-                                              struct wp_vec2f cp0, struct wp_vec2f cp1, struct wp_vec2f p1,
-                                              struct wp_color, unsigned int segments, wp_f32 thickness );
+                                              struct wp_vec2f cp0, struct wp_vec2f cp1,
+                                              struct wp_vec2f p1, struct wp_color, unsigned int segments,
+                                              wp_f32 thickness );
 WORKPHONE_API void wp_draw_list_stroke_poly_line( struct wp_draw_list *, const struct wp_vec2f *pnts,
                                                   const unsigned int cnt, struct wp_color,
                                                   enum wp_draw_list_stroke, wp_f32 thickness,
@@ -241,10 +243,10 @@ WORKPHONE_API void wp_draw_list_fill_rect( struct wp_draw_list *, struct wp_rect
 WORKPHONE_API void wp_draw_list_fill_rect_multi_color( struct wp_draw_list *, struct wp_rect rect,
                                                        struct wp_color left, struct wp_color top,
                                                        struct wp_color bottom, struct wp_color right );
-WORKPHONE_API void wp_draw_list_fill_triangle( struct wp_draw_list *, struct wp_vec2f a, struct wp_vec2f b,
-                                               struct wp_vec2f c, struct wp_color );
-WORKPHONE_API void wp_draw_list_fill_circle( struct wp_draw_list *, struct wp_vec2f center, wp_f32 radius,
-                                             struct wp_color col, unsigned int segs );
+WORKPHONE_API void wp_draw_list_fill_triangle( struct wp_draw_list *, struct wp_vec2f a,
+                                               struct wp_vec2f b, struct wp_vec2f c, struct wp_color );
+WORKPHONE_API void wp_draw_list_fill_circle( struct wp_draw_list *, struct wp_vec2f center,
+                                             wp_f32 radius, struct wp_color col, unsigned int segs );
 WORKPHONE_API void wp_draw_list_fill_poly_convex( struct wp_draw_list *, const struct wp_vec2f *points,
                                                   const unsigned int count, struct wp_color,
                                                   enum wp_anti_aliasing );

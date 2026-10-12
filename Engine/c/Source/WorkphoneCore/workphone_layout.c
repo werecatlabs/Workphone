@@ -11,7 +11,9 @@ void wp_layout_set_min_row_height( struct wp_context *ctx, wp_f32 height )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -27,7 +29,9 @@ void wp_layout_reset_min_row_height( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -67,7 +71,9 @@ void wp_panel_layout( const struct wp_context *ctx, struct wp_window *win, wp_f3
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     /* prefetch some configuration data */
     layout = win->layout;
@@ -90,9 +96,13 @@ void wp_panel_layout( const struct wp_context *ctx, struct wp_window *win, wp_f3
     layout->at_y += layout->row.height;
     layout->row.columns = cols;
     if( height == 0.0f )
+    {
         layout->row.height = WORKPHONE_MAX( height, layout->row.min_height ) + item_spacing.y;
+    }
     else
+    {
         layout->row.height = height + item_spacing.y;
+    }
 
     layout->row.item_offset = 0;
     if( layout->flags & WORKPHONE_WINDOW_DYNAMIC )
@@ -116,14 +126,20 @@ void wp_row_layout( struct wp_context *ctx, enum wp_layout_format fmt, wp_f32 he
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     wp_panel_layout( ctx, win, height, cols );
     if( fmt == WORKPHONE_DYNAMIC )
+    {
         win->layout->row.type = WORKPHONE_LAYOUT_DYNAMIC_FIXED;
+    }
     else
+    {
         win->layout->row.type = WORKPHONE_LAYOUT_STATIC_FIXED;
+    }
 
     win->layout->row.ratio = 0;
     win->layout->row.filled = 0;
@@ -137,7 +153,9 @@ wp_f32 wp_layout_ratio_from_pixel( const struct wp_context *ctx, wp_f32 pixel_wi
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( pixel_width );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
     win = ctx->current;
     return WORKPHONE_CLAMP( 0.0f, pixel_width / win->bounds.x, 1.0f );
 }
@@ -162,15 +180,21 @@ void wp_layout_row_begin( struct wp_context *ctx, enum wp_layout_format fmt, wp_
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
     wp_panel_layout( ctx, win, row_height, cols );
     if( fmt == WORKPHONE_DYNAMIC )
+    {
         layout->row.type = WORKPHONE_LAYOUT_DYNAMIC_ROW;
+    }
     else
+    {
         layout->row.type = WORKPHONE_LAYOUT_STATIC_ROW;
+    }
 
     layout->row.ratio = 0;
     layout->row.filled = 0;
@@ -188,7 +212,9 @@ void wp_layout_row_push( struct wp_context *ctx, wp_f32 ratio_or_width )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -196,20 +222,30 @@ void wp_layout_row_push( struct wp_context *ctx, wp_f32 ratio_or_width )
                       layout->row.type == WORKPHONE_LAYOUT_DYNAMIC_ROW );
     if( layout->row.type != WORKPHONE_LAYOUT_STATIC_ROW &&
         layout->row.type != WORKPHONE_LAYOUT_DYNAMIC_ROW )
+    {
         return;
+    }
 
     if( layout->row.type == WORKPHONE_LAYOUT_DYNAMIC_ROW )
     {
         wp_f32 ratio = ratio_or_width;
         if( ( ratio + layout->row.filled ) > 1.0f )
+        {
             return;
+        }
         if( ratio > 0.0f )
+        {
             layout->row.item_width = WORKPHONE_SATURATE( ratio );
+        }
         else
+        {
             layout->row.item_width = 1.0f - layout->row.filled;
+        }
     }
     else
+    {
         layout->row.item_width = ratio_or_width;
+    }
 }
 
 void wp_layout_row_end( struct wp_context *ctx )
@@ -221,7 +257,9 @@ void wp_layout_row_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -229,7 +267,9 @@ void wp_layout_row_end( struct wp_context *ctx )
                       layout->row.type == WORKPHONE_LAYOUT_DYNAMIC_ROW );
     if( layout->row.type != WORKPHONE_LAYOUT_STATIC_ROW &&
         layout->row.type != WORKPHONE_LAYOUT_DYNAMIC_ROW )
+    {
         return;
+    }
     layout->row.item_width = 0;
     layout->row.item_offset = 0;
 }
@@ -246,7 +286,9 @@ void wp_layout_row( struct wp_context *ctx, enum wp_layout_format fmt, wp_f32 he
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -259,9 +301,13 @@ void wp_layout_row( struct wp_context *ctx, enum wp_layout_format fmt, wp_f32 he
         for( i = 0; i < cols; ++i )
         {
             if( ratio[i] < 0.0f )
+            {
                 n_undef++;
+            }
             else
+            {
                 r += ratio[i];
+            }
         }
         r = WORKPHONE_SATURATE( 1.0f - r );
         layout->row.type = WORKPHONE_LAYOUT_DYNAMIC;
@@ -289,7 +335,9 @@ void wp_layout_row_template_begin( struct wp_context *ctx, wp_f32 height )
     WORKPHONE_ASSERT( ctx->current->layout );
 
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -317,7 +365,9 @@ void wp_layout_row_template_push_dynamic( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current->layout );
 
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -326,10 +376,14 @@ void wp_layout_row_template_push_dynamic( struct wp_context *ctx )
     WORKPHONE_ASSERT( layout->row.columns < WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS );
 
     if( layout->row.type != WORKPHONE_LAYOUT_TEMPLATE )
+    {
         return;
+    }
 
     if( layout->row.columns >= WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS )
+    {
         return;
+    }
 
     layout->row.templates[layout->row.columns++] = -1.0f;
 }
@@ -344,7 +398,9 @@ void wp_layout_row_template_push_variable( struct wp_context *ctx, wp_f32 min_wi
     WORKPHONE_ASSERT( ctx->current->layout );
 
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -353,10 +409,14 @@ void wp_layout_row_template_push_variable( struct wp_context *ctx, wp_f32 min_wi
     WORKPHONE_ASSERT( layout->row.columns < WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS );
 
     if( layout->row.type != WORKPHONE_LAYOUT_TEMPLATE )
+    {
         return;
+    }
 
     if( layout->row.columns >= WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS )
+    {
         return;
+    }
 
     layout->row.templates[layout->row.columns++] = -min_width;
 }
@@ -370,16 +430,22 @@ void wp_layout_row_template_push_static( struct wp_context *ctx, wp_f32 width )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
     WORKPHONE_ASSERT( layout->row.type == WORKPHONE_LAYOUT_TEMPLATE );
     WORKPHONE_ASSERT( layout->row.columns < WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS );
     if( layout->row.type != WORKPHONE_LAYOUT_TEMPLATE )
+    {
         return;
+    }
     if( layout->row.columns >= WORKPHONE_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS )
+    {
         return;
+    }
     layout->row.templates[layout->row.columns++] = width;
 }
 
@@ -399,13 +465,17 @@ void wp_layout_row_template_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
     WORKPHONE_ASSERT( layout->row.type == WORKPHONE_LAYOUT_TEMPLATE );
     if( layout->row.type != WORKPHONE_LAYOUT_TEMPLATE )
+    {
         return;
+    }
     for( i = 0; i < layout->row.columns; ++i )
     {
         wp_f32 width = layout->row.templates[i];
@@ -434,7 +504,9 @@ void wp_layout_row_template_end( struct wp_context *ctx )
         wp_f32 var_width = ( WORKPHONE_MAX( space - min_fixed_width, 0.0f ) ) / (wp_f32)variable_count;
         wp_s32 enough_space = var_width >= max_variable_width;
         if( !enough_space )
+        {
             var_width = ( WORKPHONE_MAX( space - total_fixed_width, 0 ) ) / (wp_f32)min_variable_count;
+        }
         for( i = 0; i < layout->row.columns; ++i )
         {
             wp_f32 *width = &layout->row.templates[i];
@@ -455,15 +527,21 @@ void wp_layout_space_begin( struct wp_context *ctx, enum wp_layout_format fmt, w
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
     wp_panel_layout( ctx, win, height, widget_count );
     if( fmt == WORKPHONE_STATIC )
+    {
         layout->row.type = WORKPHONE_LAYOUT_STATIC_FREE;
+    }
     else
+    {
         layout->row.type = WORKPHONE_LAYOUT_DYNAMIC_FREE;
+    }
 
     layout->row.ratio = 0;
     layout->row.filled = 0;
@@ -480,7 +558,9 @@ void wp_layout_space_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -499,7 +579,9 @@ void wp_layout_space_push( struct wp_context *ctx, struct wp_rect rect )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -633,7 +715,9 @@ void wp_layout_widget_space( struct wp_rect *bounds, const struct wp_context *ct
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -720,7 +804,9 @@ void wp_layout_widget_space( struct wp_rect *bounds, const struct wp_context *ct
         item_offset = layout->row.item_offset;
         item_spacing = (wp_f32)layout->row.index * spacing.x;
         if( modify )
+        {
             layout->row.item_offset += item_width;
+        }
     }
     break;
     case WORKPHONE_LAYOUT_STATIC_FREE:
@@ -729,7 +815,9 @@ void wp_layout_widget_space( struct wp_rect *bounds, const struct wp_context *ct
         bounds->x = layout->at_x + layout->row.item.x;
         bounds->w = layout->row.item.w;
         if( ( ( bounds->x + bounds->w ) > layout->max_x ) && modify )
+        {
             layout->max_x = ( bounds->x + bounds->w );
+        }
         bounds->x -= (wp_f32)*layout->offset_x;
         bounds->y = layout->at_y + layout->row.item.y;
         bounds->y -= (wp_f32)*layout->offset_y;
@@ -743,7 +831,9 @@ void wp_layout_widget_space( struct wp_rect *bounds, const struct wp_context *ct
         item_width = layout->row.ratio[layout->row.index];
         item_offset = layout->row.item_offset;
         if( modify )
+        {
             layout->row.item_offset += item_width;
+        }
     }
     break;
     case WORKPHONE_LAYOUT_TEMPLATE:
@@ -757,7 +847,9 @@ void wp_layout_widget_space( struct wp_rect *bounds, const struct wp_context *ct
         item_width = w + WORKPHONE_FRAC( item_offset );
         item_spacing = (wp_f32)layout->row.index * spacing.x;
         if( modify )
+        {
             layout->row.item_offset += w;
+        }
     }
     break;
 #undef WORKPHONE_FRAC
@@ -772,7 +864,9 @@ void wp_layout_widget_space( struct wp_rect *bounds, const struct wp_context *ct
     bounds->y = layout->at_y - (wp_f32)*layout->offset_y;
     bounds->x = layout->at_x + item_offset + item_spacing;
     if( ( ( bounds->x + bounds->w ) > layout->max_x ) && modify )
+    {
         layout->max_x = bounds->x + bounds->w;
+    }
     bounds->x -= (wp_f32)*layout->offset_x;
 }
 
@@ -785,13 +879,17 @@ void wp_panel_alloc_space( struct wp_rect *bounds, const struct wp_context *ctx 
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     /* check if the end of the row has been hit and begin new row if so */
     win = ctx->current;
     layout = win->layout;
     if( layout->row.index >= layout->row.columns )
+    {
         wp_panel_alloc_row( ctx, win );
+    }
 
     /* calculate widget position and size */
     wp_layout_widget_space( bounds, ctx, win, wp_true );

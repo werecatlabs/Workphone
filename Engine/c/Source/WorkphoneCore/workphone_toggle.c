@@ -13,11 +13,16 @@ wp_bool wp_toggle_behavior( const struct wp_input *in, struct wp_rect select, wp
         active = !active;
     }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, select ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, select ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
     return active;
 }
+
 void wp_draw_checkbox( struct wp_command_buffer *out, wp_flags state,
                        const struct wp_style_toggle *style, wp_bool active, const struct wp_rect *label,
                        const struct wp_rect *selector, const struct wp_rect *cursors,
@@ -62,15 +67,21 @@ void wp_draw_checkbox( struct wp_command_buffer *out, wp_flags state,
                       wp_rgb_factor( background->data.color, style->color_factor ) );
     }
     else
+    {
         wp_draw_image( out, *selector, &background->data.image,
                        wp_rgb_factor( wp_white, style->color_factor ) );
+    }
     if( active )
     {
         if( cursor->type == WORKPHONE_STYLE_ITEM_IMAGE )
+        {
             wp_draw_image( out, *cursors, &cursor->data.image,
                            wp_rgb_factor( wp_white, style->color_factor ) );
+        }
         else
+        {
             wp_fill_rect( out, *cursors, 0, cursor->data.color );
+        }
     }
 }
 
@@ -117,15 +128,21 @@ void wp_draw_option( struct wp_command_buffer *out, wp_flags state, const struct
                         wp_rgb_factor( background->data.color, style->color_factor ) );
     }
     else
+    {
         wp_draw_image( out, *selector, &background->data.image,
                        wp_rgb_factor( wp_white, style->color_factor ) );
+    }
     if( active )
     {
         if( cursor->type == WORKPHONE_STYLE_ITEM_IMAGE )
+        {
             wp_draw_image( out, *cursors, &cursor->data.image,
                            wp_rgb_factor( wp_white, style->color_factor ) );
+        }
         else
+        {
             wp_fill_circle( out, *cursors, cursor->data.color );
+        }
     }
 }
 
@@ -145,7 +162,9 @@ wp_bool wp_do_toggle( wp_flags *state, struct wp_command_buffer *out, struct wp_
     WORKPHONE_ASSERT( out );
     WORKPHONE_ASSERT( font );
     if( !out || !style || !font || !active )
+    {
         return 0;
+    }
 
     r.w = WORKPHONE_MAX( r.w, font->height + 2 * style->padding.x );
     r.h = WORKPHONE_MAX( r.h, font->height + 2 * style->padding.y );
@@ -213,7 +232,9 @@ wp_bool wp_do_toggle( wp_flags *state, struct wp_command_buffer *out, struct wp_
 
     /* draw selector */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     if( type == WORKPHONE_TOGGLE_CHECK )
     {
         wp_draw_checkbox( out, *state, style, *active, &label, &select, &cursor, str, len, font,
@@ -225,7 +246,9 @@ wp_bool wp_do_toggle( wp_flags *state, struct wp_command_buffer *out, struct wp_
                         text_alignment );
     }
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return ( was_active != *active );
 }
 
@@ -248,7 +271,9 @@ wp_bool wp_check_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return active;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -256,7 +281,9 @@ wp_bool wp_check_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return active;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -266,6 +293,7 @@ wp_bool wp_check_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp
                   WORKPHONE_TEXT_LEFT );
     return active;
 }
+
 wp_bool wp_check_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp_bool active,
                              wp_flags widget_alignment, wp_flags text_alignment )
 {
@@ -281,7 +309,9 @@ wp_bool wp_check_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 l
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return active;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -289,7 +319,9 @@ wp_bool wp_check_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 l
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return active;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -299,6 +331,7 @@ wp_bool wp_check_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 l
                   text_alignment );
     return active;
 }
+
 wp_u32 wp_check_flags_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp_u32 flags,
                             wp_u32 value )
 {
@@ -306,14 +339,21 @@ wp_u32 wp_check_flags_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 le
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( text );
     if( !ctx || !text )
+    {
         return flags;
+    }
     old_active = (wp_s32)( ( flags & value ) & value );
     if( wp_check_text( ctx, text, len, old_active ) )
+    {
         flags |= value;
+    }
     else
+    {
         flags &= ~value;
+    }
     return flags;
 }
+
 wp_bool wp_checkbox_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp_bool *active )
 {
     wp_s32 old_val;
@@ -321,11 +361,14 @@ wp_bool wp_checkbox_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len,
     WORKPHONE_ASSERT( text );
     WORKPHONE_ASSERT( active );
     if( !ctx || !text || !active )
+    {
         return 0;
+    }
     old_val = *active;
     *active = wp_check_text( ctx, text, len, *active );
     return old_val != *active;
 }
+
 wp_bool wp_checkbox_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp_bool *active,
                                 wp_flags widget_alignment, wp_flags text_alignment )
 {
@@ -334,11 +377,14 @@ wp_bool wp_checkbox_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s3
     WORKPHONE_ASSERT( text );
     WORKPHONE_ASSERT( active );
     if( !ctx || !text || !active )
+    {
         return 0;
+    }
     old_val = *active;
     *active = wp_check_text_align( ctx, text, len, *active, widget_alignment, text_alignment );
     return old_val != *active;
 }
+
 wp_bool wp_checkbox_flags_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp_u32 *flags,
                                 wp_u32 value )
 {
@@ -347,19 +393,26 @@ wp_bool wp_checkbox_flags_text( struct wp_context *ctx, const wp_c8 *text, wp_s3
     WORKPHONE_ASSERT( text );
     WORKPHONE_ASSERT( flags );
     if( !ctx || !text || !flags )
+    {
         return 0;
+    }
 
     active = (wp_s32)( ( *flags & value ) & value );
     if( wp_checkbox_text( ctx, text, len, &active ) )
     {
         if( active )
+        {
             *flags |= value;
+        }
         else
+        {
             *flags &= ~value;
+        }
         return 1;
     }
     return 0;
 }
+
 wp_bool wp_check_label( struct wp_context *ctx, const wp_c8 *label, wp_bool active )
 {
     return wp_check_text( ctx, label, wp_strlen( label ), active );
@@ -374,6 +427,7 @@ wp_bool wp_checkbox_label( struct wp_context *ctx, const wp_c8 *label, wp_bool *
 {
     return wp_checkbox_text( ctx, label, wp_strlen( label ), active );
 }
+
 wp_bool wp_checkbox_label_align( struct wp_context *ctx, const wp_c8 *label, wp_bool *active,
                                  wp_flags widget_alignment, wp_flags text_alignment )
 {
@@ -401,7 +455,9 @@ wp_bool wp_option_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, w
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return is_active;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -409,7 +465,9 @@ wp_bool wp_option_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, w
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return (wp_s32)state;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -435,7 +493,9 @@ wp_bool wp_option_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return is_active;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -443,7 +503,9 @@ wp_bool wp_option_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return (wp_s32)state;
+    }
     in = ( state == WORKPHONE_WIDGET_ROM || state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -461,7 +523,9 @@ wp_bool wp_radio_text( struct wp_context *ctx, const wp_c8 *text, wp_s32 len, wp
     WORKPHONE_ASSERT( text );
     WORKPHONE_ASSERT( active );
     if( !ctx || !text || !active )
+    {
         return 0;
+    }
     old_value = *active;
     *active = wp_option_text( ctx, text, len, old_value );
     return old_value != *active;
@@ -475,7 +539,9 @@ wp_bool wp_radio_text_align( struct wp_context *ctx, const wp_c8 *text, wp_s32 l
     WORKPHONE_ASSERT( text );
     WORKPHONE_ASSERT( active );
     if( !ctx || !text || !active )
+    {
         return 0;
+    }
     old_value = *active;
     *active = wp_option_text_align( ctx, text, len, old_value, widget_alignment, text_alignment );
     return old_value != *active;

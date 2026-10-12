@@ -7,38 +7,38 @@ void wp_style_default( struct wp_context *ctx )
     wp_style_from_table( ctx, 0 );
 }
 
-#define WORKPHONE_COLOR_MAP( WORKPHONE_COLOR ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_TEXT, 175, 175, 175, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_WINDOW, 45, 45, 45, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_HEADER, 40, 40, 40, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_BORDER, 65, 65, 65, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_BUTTON, 50, 50, 50, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_BUTTON_HOVER, 40, 40, 40, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_BUTTON_ACTIVE, 35, 35, 35, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_TOGGLE, 100, 100, 100, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_TOGGLE_HOVER, 120, 120, 120, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_TOGGLE_CURSOR, 45, 45, 45, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SELECT, 45, 45, 45, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SELECT_ACTIVE, 35, 35, 35, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER, 38, 38, 38, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER_CURSOR, 100, 100, 100, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER_CURSOR_HOVER, 120, 120, 120, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER_CURSOR_ACTIVE, 150, 150, 150, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_PROPERTY, 38, 38, 38, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_EDIT, 38, 38, 38, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_EDIT_CURSOR, 175, 175, 175, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_COMBO, 45, 45, 45, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_CHART, 120, 120, 120, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_CHART_COLOR, 45, 45, 45, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_CHART_COLOR_HIGHLIGHT, 255, 0, 0, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR, 40, 40, 40, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR_CURSOR, 100, 100, 100, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR_CURSOR_HOVER, 120, 120, 120, 255 ) \
+#define WORKPHONE_COLOR_MAP( WORKPHONE_COLOR )                                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_TEXT, 175, 175, 175, 255 )                    \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_WINDOW, 45, 45, 45, 255 )                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_HEADER, 40, 40, 40, 255 )                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_BORDER, 65, 65, 65, 255 )                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_BUTTON, 50, 50, 50, 255 )                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_BUTTON_HOVER, 40, 40, 40, 255 )               \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_BUTTON_ACTIVE, 35, 35, 35, 255 )              \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_TOGGLE, 100, 100, 100, 255 )                  \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_TOGGLE_HOVER, 120, 120, 120, 255 )            \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_TOGGLE_CURSOR, 45, 45, 45, 255 )              \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SELECT, 45, 45, 45, 255 )                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SELECT_ACTIVE, 35, 35, 35, 255 )              \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER, 38, 38, 38, 255 )                     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER_CURSOR, 100, 100, 100, 255 )           \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER_CURSOR_HOVER, 120, 120, 120, 255 )     \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SLIDER_CURSOR_ACTIVE, 150, 150, 150, 255 )    \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_PROPERTY, 38, 38, 38, 255 )                   \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_EDIT, 38, 38, 38, 255 )                       \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_EDIT_CURSOR, 175, 175, 175, 255 )             \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_COMBO, 45, 45, 45, 255 )                      \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_CHART, 120, 120, 120, 255 )                   \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_CHART_COLOR, 45, 45, 45, 255 )                \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_CHART_COLOR_HIGHLIGHT, 255, 0, 0, 255 )       \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR, 40, 40, 40, 255 )                  \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR_CURSOR, 100, 100, 100, 255 )        \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR_CURSOR_HOVER, 120, 120, 120, 255 )  \
     WORKPHONE_COLOR( WORKPHONE_COLOR_SCROLLBAR_CURSOR_ACTIVE, 150, 150, 150, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_TAB_HEADER, 40, 40, 40, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB, 38, 38, 38, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB_CURSOR, 100, 100, 100, 255 ) \
-    WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB_CURSOR_HOVER, 120, 120, 120, 255 ) \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_TAB_HEADER, 40, 40, 40, 255 )                 \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB, 38, 38, 38, 255 )                       \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB_CURSOR, 100, 100, 100, 255 )             \
+    WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB_CURSOR_HOVER, 120, 120, 120, 255 )       \
     WORKPHONE_COLOR( WORKPHONE_COLOR_KNOB_CURSOR_ACTIVE, 150, 150, 150, 255 )
 
 WORKPHONE_GLOBAL const struct wp_color wp_default_color_style[WORKPHONE_COLOR_COUNT] = {
@@ -64,6 +64,7 @@ struct wp_style_item wp_style_item_color( struct wp_color col )
     i.data.color = col;
     return i;
 }
+
 struct wp_style_item wp_style_item_image( struct wp_image img )
 {
     struct wp_style_item i;
@@ -108,7 +109,9 @@ void wp_style_from_table( struct wp_context *ctx, const struct wp_color *table )
 
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return;
+    }
     style = &ctx->style;
     table = ( !table ) ? wp_default_color_style : table;
 
@@ -726,12 +729,16 @@ void wp_style_set_font( struct wp_context *ctx, const struct wp_user_font *font 
     WORKPHONE_ASSERT( ctx );
 
     if( !ctx )
+    {
         return;
+    }
     style = &ctx->style;
     style->font = font;
     ctx->stacks.fonts.head = 0;
     if( ctx->current )
+    {
         wp_layout_reset_min_row_height( ctx );
+    }
 }
 
 wp_bool wp_style_push_font( struct wp_context *ctx, const struct wp_user_font *font )
@@ -741,12 +748,16 @@ wp_bool wp_style_push_font( struct wp_context *ctx, const struct wp_user_font *f
 
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
 
     font_stack = &ctx->stacks.fonts;
     WORKPHONE_ASSERT( font_stack->head < (wp_s32)WORKPHONE_LEN( font_stack->elements ) );
     if( font_stack->head >= (wp_s32)WORKPHONE_LEN( font_stack->elements ) )
+    {
         return 0;
+    }
 
     element = &font_stack->elements[font_stack->head++];
     element->address = &ctx->style.font;
@@ -762,52 +773,56 @@ wp_bool wp_style_pop_font( struct wp_context *ctx )
 
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
 
     font_stack = &ctx->stacks.fonts;
     WORKPHONE_ASSERT( font_stack->head > 0 );
     if( font_stack->head < 1 )
+    {
         return 0;
+    }
 
     element = &font_stack->elements[--font_stack->head];
     *element->address = element->old_value;
     return 1;
 }
 
-#define WORKPHONE_STYLE_PUSH_IMPLEMENATION( name, prefix, type, stack ) \
+#define WORKPHONE_STYLE_PUSH_IMPLEMENATION( name, prefix, type, stack )                             \
     wp_style_push_##name( struct wp_context *ctx, prefix##_##type *address, prefix##_##type value ) \
-    { \
-        struct wp_config_stack_##name *type_stack; \
-        struct wp_config_stack_##name##_element *element; \
-        WORKPHONE_ASSERT( ctx ); \
-        if( !ctx ) \
-            return 0; \
-        type_stack = &ctx->stacks.stack; \
-        WORKPHONE_ASSERT( type_stack->head < (wp_s32)WORKPHONE_LEN( type_stack->elements ) ); \
-        if( type_stack->head >= (wp_s32)WORKPHONE_LEN( type_stack->elements ) ) \
-            return 0; \
-        element = &type_stack->elements[type_stack->head++]; \
-        element->address = address; \
-        element->old_value = *address; \
-        *address = value; \
-        return 1; \
+    {                                                                                               \
+        struct wp_config_stack_##name *type_stack;                                                  \
+        struct wp_config_stack_##name##_element *element;                                           \
+        WORKPHONE_ASSERT( ctx );                                                                    \
+        if( !ctx )                                                                                  \
+            return 0;                                                                               \
+        type_stack = &ctx->stacks.stack;                                                            \
+        WORKPHONE_ASSERT( type_stack->head < (wp_s32)WORKPHONE_LEN( type_stack->elements ) );       \
+        if( type_stack->head >= (wp_s32)WORKPHONE_LEN( type_stack->elements ) )                     \
+            return 0;                                                                               \
+        element = &type_stack->elements[type_stack->head++];                                        \
+        element->address = address;                                                                 \
+        element->old_value = *address;                                                              \
+        *address = value;                                                                           \
+        return 1;                                                                                   \
     }
 
-#define WORKPHONE_STYLE_POP_IMPLEMENATION( type, stack ) \
-    wp_style_pop_##type( struct wp_context *ctx ) \
-    { \
-        struct wp_config_stack_##type *type_stack; \
-        struct wp_config_stack_##type##_element *element; \
-        WORKPHONE_ASSERT( ctx ); \
-        if( !ctx ) \
-            return 0; \
-        type_stack = &ctx->stacks.stack; \
-        WORKPHONE_ASSERT( type_stack->head > 0 ); \
-        if( type_stack->head < 1 ) \
-            return 0; \
+#define WORKPHONE_STYLE_POP_IMPLEMENATION( type, stack )     \
+    wp_style_pop_##type( struct wp_context *ctx )            \
+    {                                                        \
+        struct wp_config_stack_##type *type_stack;           \
+        struct wp_config_stack_##type##_element *element;    \
+        WORKPHONE_ASSERT( ctx );                             \
+        if( !ctx )                                           \
+            return 0;                                        \
+        type_stack = &ctx->stacks.stack;                     \
+        WORKPHONE_ASSERT( type_stack->head > 0 );            \
+        if( type_stack->head < 1 )                           \
+            return 0;                                        \
         element = &type_stack->elements[--type_stack->head]; \
-        *element->address = element->old_value; \
-        return 1; \
+        *element->address = element->old_value;              \
+        return 1;                                            \
     }
 
 wp_bool WORKPHONE_STYLE_PUSH_IMPLEMENATION( style_item, struct wp, style_item, style_items )
@@ -827,7 +842,9 @@ wp_bool wp_style_set_cursor( struct wp_context *ctx, enum wp_cursor_type c )
     struct wp_style *style;
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
     style = &ctx->style;
     if( style->cursors[c] )
     {
@@ -855,7 +872,9 @@ void wp_style_load_cursor( struct wp_context *ctx, enum wp_cursor_type cursor,
     WORKPHONE_ASSERT( ctx );
 
     if( !ctx )
+    {
         return;
+    }
 
     style = &ctx->style;
     style->cursors[cursor] = c;
@@ -869,11 +888,15 @@ void wp_style_load_all_cursors( struct wp_context *ctx, const struct wp_cursor *
     WORKPHONE_ASSERT( ctx );
 
     if( !ctx )
+    {
         return;
+    }
 
     style = &ctx->style;
     for( i = 0; i < WORKPHONE_CURSOR_COUNT; ++i )
+    {
         style->cursors[i] = &cursors[i];
+    }
 
     style->cursor_visible = wp_true;
 }

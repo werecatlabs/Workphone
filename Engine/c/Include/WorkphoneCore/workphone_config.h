@@ -54,15 +54,16 @@
 #    define WORKPHONE_CHART_MAX_SLOT 4
 #endif
 
-#define WORKPHONE_VALUE_PAGE_CAPACITY \
+#define WORKPHONE_VALUE_PAGE_CAPACITY                                              \
     ( ( ( WORKPHONE_MAX( sizeof( struct wp_window ), sizeof( struct wp_panel ) ) / \
-          sizeof( wp_u32 ) ) ) / \
+          sizeof( wp_u32 ) ) ) /                                                   \
       2 )
 
 #ifdef __cplusplus
 extern "C++" {
 template <typename T>
 struct wp_alignof;
+
 template <typename T, int size_diff>
 struct wp_helper
 {
@@ -71,6 +72,7 @@ struct wp_helper
         value = size_diff
     };
 };
+
 template <typename T>
 struct wp_helper<T, 0>
 {
@@ -79,6 +81,7 @@ struct wp_helper<T, 0>
         value = wp_alignof<T>::value
     };
 };
+
 template <typename T>
 struct wp_alignof
 {
@@ -87,6 +90,7 @@ struct wp_alignof
         T x;
         char c;
     };
+
     enum
     {
         diff = sizeof( Big ) - sizeof( T ),
@@ -97,16 +101,16 @@ struct wp_alignof
 #    define WORKPHONE_ALIGNOF( t ) ( wp_alignof<t>::value )
 #else
 #    define WORKPHONE_ALIGNOF( t ) \
-        WORKPHONE_OFFSETOF( \
-            struct { \
-                char c; \
-                t _h; \
-            }, \
+        WORKPHONE_OFFSETOF(        \
+            struct {               \
+                char c;            \
+                t _h;              \
+            },                     \
             _h )
 
 #endif
 
-#define WORKPHONE_CONTAINER_OF( ptr, type, member ) \
+#define WORKPHONE_CONTAINER_OF( ptr, type, member )                        \
     (type *)( (void *)( (char *)( 1 ? ( ptr ) : &( (type *)0 )->member ) - \
                         WORKPHONE_OFFSETOF( type, member ) ) )
 

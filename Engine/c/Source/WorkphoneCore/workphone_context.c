@@ -9,12 +9,16 @@ WORKPHONE_INTERN void wp_setup( struct wp_context *ctx, const struct wp_user_fon
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return;
+    }
     wp_zero_struct( *ctx );
     wp_style_default( ctx );
     ctx->seq = 1;
     if( font )
+    {
         ctx->style.font = font;
+    }
 #ifdef WORKPHONE_INCLUDE_VERTEX_BUFFER_OUTPUT
     wp_draw_list_init( &ctx->draw_list );
 #endif
@@ -34,19 +38,24 @@ WORKPHONE_API wp_bool wp_init_fixed( struct wp_context *ctx, void *memory, wp_si
 {
     WORKPHONE_ASSERT( memory );
     if( !memory )
+    {
         return 0;
+    }
     wp_setup( ctx, font );
     wp_buffer_init_fixed( &ctx->memory, memory, size );
     ctx->use_pool = wp_false;
     return 1;
 }
+
 WORKPHONE_API wp_bool wp_init_custom( struct wp_context *ctx, struct wp_buffer *cmds,
                                       struct wp_buffer *pool, const struct wp_user_font *font )
 {
     WORKPHONE_ASSERT( cmds );
     WORKPHONE_ASSERT( pool );
     if( !cmds || !pool )
+    {
         return 0;
+    }
 
     wp_setup( ctx, font );
     ctx->memory = *cmds;
@@ -64,12 +73,15 @@ WORKPHONE_API wp_bool wp_init_custom( struct wp_context *ctx, struct wp_buffer *
     ctx->use_pool = wp_true;
     return 1;
 }
+
 WORKPHONE_API wp_bool wp_init( struct wp_context *ctx, const struct wp_allocator *alloc,
                                const struct wp_user_font *font )
 {
     WORKPHONE_ASSERT( alloc );
     if( !alloc )
+    {
         return 0;
+    }
     wp_setup( ctx, font );
     wp_buffer_init( &ctx->memory, alloc, WORKPHONE_DEFAULT_COMMAND_BUFFER_SIZE );
     wp_pool_init( &ctx->pool, alloc, WORKPHONE_POOL_DEFAULT_CAPACITY );
@@ -80,20 +92,28 @@ WORKPHONE_API wp_bool wp_init( struct wp_context *ctx, const struct wp_allocator
 WORKPHONE_API void wp_set_user_data( struct wp_context *ctx, wp_handle handle )
 {
     if( !ctx )
+    {
         return;
+    }
     ctx->userdata = handle;
     if( ctx->current )
+    {
         ctx->current->buffer.userdata = handle;
+    }
 }
 #endif
 WORKPHONE_API void wp_free( struct wp_context *ctx )
 {
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return;
+    }
     wp_buffer_free( &ctx->memory );
     if( ctx->use_pool )
+    {
         wp_pool_free( &ctx->pool );
+    }
 
     wp_zero( &ctx->input, sizeof( ctx->input ) );
     wp_zero( &ctx->style, sizeof( ctx->style ) );
@@ -108,6 +128,7 @@ WORKPHONE_API void wp_free( struct wp_context *ctx )
     ctx->freelist = 0;
     ctx->count = 0;
 }
+
 WORKPHONE_API void wp_clear( struct wp_context *ctx )
 {
     struct wp_window *iter;
@@ -115,11 +136,17 @@ WORKPHONE_API void wp_clear( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
 
     if( !ctx )
+    {
         return;
+    }
     if( ctx->use_pool )
+    {
         wp_buffer_clear( &ctx->memory );
+    }
     else
+    {
         wp_buffer_reset( &ctx->memory, WORKPHONE_BUFFER_FRONT );
+    }
 
     ctx->build = 0;
     ctx->memory.calls = 0;
@@ -145,9 +172,13 @@ WORKPHONE_API void wp_clear( struct wp_context *ctx )
             ctx->active = iter->prev;
             ctx->end = iter->prev;
             if( !ctx->end )
+            {
                 ctx->begin = 0;
+            }
             if( ctx->active )
+            {
                 ctx->active->flags &= ~(unsigned)WORKPHONE_WINDOW_ROM;
+            }
         }
         /* free unused popup windows */
         if( iter->popup.win && iter->popup.win->seq != ctx->seq )
@@ -167,7 +198,9 @@ WORKPHONE_API void wp_clear( struct wp_context *ctx )
                     wp_zero( it, sizeof( union wp_page_data ) );
                     wp_free_table( ctx, it );
                     if( it == iter->tables )
+                    {
                         iter->tables = n;
+                    }
                 }
                 it = n;
             }
@@ -181,34 +214,43 @@ WORKPHONE_API void wp_clear( struct wp_context *ctx )
             iter = next;
         }
         else
+        {
             iter = iter->next;
+        }
     }
     ctx->seq++;
 }
+
 WORKPHONE_LIB void wp_start_buffer( struct wp_context *ctx, struct wp_command_buffer *buffer )
 {
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( buffer );
     if( !ctx || !buffer )
+    {
         return;
+    }
     buffer->begin = ctx->memory.allocated;
     buffer->end = buffer->begin;
     buffer->last = buffer->begin;
     buffer->clip = wp_null_rect;
 }
+
 WORKPHONE_LIB void wp_start( struct wp_context *ctx, struct wp_window *win )
 {
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( win );
     wp_start_buffer( ctx, &win->buffer );
 }
+
 WORKPHONE_LIB void wp_start_popup( struct wp_context *ctx, struct wp_window *win )
 {
     struct wp_popup_buffer *buf;
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( win );
     if( !ctx || !win )
+    {
         return;
+    }
 
     /* save buffer fill state for popup */
     buf = &win->popup.buf;
@@ -218,26 +260,33 @@ WORKPHONE_LIB void wp_start_popup( struct wp_context *ctx, struct wp_window *win
     buf->last = buf->begin;
     buf->active = wp_true;
 }
+
 WORKPHONE_LIB void wp_finish_popup( struct wp_context *ctx, struct wp_window *win )
 {
     struct wp_popup_buffer *buf;
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( win );
     if( !ctx || !win )
+    {
         return;
+    }
 
     buf = &win->popup.buf;
     buf->last = win->buffer.last;
     buf->end = win->buffer.end;
 }
+
 WORKPHONE_LIB void wp_finish_buffer( struct wp_context *ctx, struct wp_command_buffer *buffer )
 {
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( buffer );
     if( !ctx || !buffer )
+    {
         return;
+    }
     buffer->end = ctx->memory.allocated;
 }
+
 WORKPHONE_LIB void wp_finish( struct wp_context *ctx, struct wp_window *win )
 {
     struct wp_popup_buffer *buf;
@@ -247,16 +296,21 @@ WORKPHONE_LIB void wp_finish( struct wp_context *ctx, struct wp_window *win )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( win );
     if( !ctx || !win )
+    {
         return;
+    }
     wp_finish_buffer( ctx, &win->buffer );
     if( !win->popup.buf.active )
+    {
         return;
+    }
 
     buf = &win->popup.buf;
     memory = ctx->memory.memory.ptr;
     parent_last = wp_ptr_add( struct wp_command, memory, buf->parent );
     parent_last->next = buf->end;
 }
+
 WORKPHONE_LIB void wp_build( struct wp_context *ctx )
 {
     struct wp_window *it = 0;
@@ -265,7 +319,9 @@ WORKPHONE_LIB void wp_build( struct wp_context *ctx )
 
     /* draw cursor overlay */
     if( !ctx->style.cursor_active )
+    {
         ctx->style.cursor_active = ctx->style.cursors[WORKPHONE_CURSOR_ARROW];
+    }
     if( ctx->style.cursor_active && !ctx->input.mouse.grabbed && ctx->style.cursor_visible )
     {
         struct wp_rect mouse_bounds;
@@ -289,15 +345,21 @@ WORKPHONE_LIB void wp_build( struct wp_context *ctx )
         struct wp_window *next = it->next;
         if( it->buffer.last == it->buffer.begin || ( it->flags & WORKPHONE_WINDOW_HIDDEN ) ||
             it->seq != ctx->seq )
+        {
             goto cont;
+        }
 
         cmd = wp_ptr_add( struct wp_command, buffer, it->buffer.last );
         while( next && ( ( next->buffer.last == next->buffer.begin ) ||
                          ( next->flags & WORKPHONE_WINDOW_HIDDEN ) || next->seq != ctx->seq ) )
+        {
             next = next->next; /* skip empty command buffers */
+        }
 
         if( next )
+        {
             cmd->next = next->buffer.begin;
+        }
     cont:
         it = next;
     }
@@ -308,7 +370,9 @@ WORKPHONE_LIB void wp_build( struct wp_context *ctx )
         struct wp_window *next = it->next;
         struct wp_popup_buffer *buf;
         if( !it->popup.buf.active )
+        {
             goto skip;
+        }
 
         buf = &it->popup.buf;
         cmd->next = buf->begin;
@@ -321,20 +385,29 @@ WORKPHONE_LIB void wp_build( struct wp_context *ctx )
     {
         /* append overlay commands */
         if( ctx->overlay.end != ctx->overlay.begin )
+        {
             cmd->next = ctx->overlay.begin;
+        }
         else
+        {
             cmd->next = ctx->memory.allocated;
+        }
     }
 }
+
 WORKPHONE_API const struct wp_command *wp__begin( struct wp_context *ctx )
 {
     struct wp_window *iter;
     wp_byte *buffer;
     WORKPHONE_ASSERT( ctx );
     if( !ctx )
+    {
         return 0;
+    }
     if( !ctx->count )
+    {
         return 0;
+    }
 
     buffer = (wp_byte *)ctx->memory.memory.ptr;
     if( !ctx->build )
@@ -345,9 +418,13 @@ WORKPHONE_API const struct wp_command *wp__begin( struct wp_context *ctx )
     iter = ctx->begin;
     while( iter && ( ( iter->buffer.begin == iter->buffer.end ) ||
                      ( iter->flags & WORKPHONE_WINDOW_HIDDEN ) || iter->seq != ctx->seq ) )
+    {
         iter = iter->next;
+    }
     if( !iter )
+    {
         return 0;
+    }
     return wp_ptr_add_const( struct wp_command, buffer, iter->buffer.begin );
 }
 
@@ -357,9 +434,13 @@ WORKPHONE_API const struct wp_command *wp__next( struct wp_context *ctx, const s
     const struct wp_command *next;
     WORKPHONE_ASSERT( ctx );
     if( !ctx || !cmd || !ctx->count )
+    {
         return 0;
+    }
     if( cmd->next >= ctx->memory.allocated )
+    {
         return 0;
+    }
     buffer = (wp_byte *)ctx->memory.memory.ptr;
     next = wp_ptr_add_const( struct wp_command, buffer, cmd->next );
     return next;

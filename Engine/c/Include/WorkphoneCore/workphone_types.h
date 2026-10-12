@@ -273,10 +273,10 @@ typedef enum wp_fill_mode
  */
 typedef enum wp_blend_mode
 {
-    WORKPHONE_BLEND_MODE_NONE = 0,     /**< No blending; fragments overwrite the framebuffer. */
-    WORKPHONE_BLEND_MODE_ALPHA = 1,    /**< Standard alpha blending: out = src*a + dst*(1-a).  */
-    WORKPHONE_BLEND_MODE_ADDITIVE = 2, /**< Additive:  out = src*a + dst.                      */
-    WORKPHONE_BLEND_MODE_MULTIPLY = 3, /**< Multiply:  out = src * dst.                        */
+    WORKPHONE_BLEND_MODE_NONE = 0,         /**< No blending; fragments overwrite the framebuffer. */
+    WORKPHONE_BLEND_MODE_ALPHA = 1,        /**< Standard alpha blending: out = src*a + dst*(1-a).  */
+    WORKPHONE_BLEND_MODE_ADDITIVE = 2,     /**< Additive:  out = src*a + dst.                      */
+    WORKPHONE_BLEND_MODE_MULTIPLY = 3,     /**< Multiply:  out = src * dst.                        */
     WORKPHONE_BLEND_MODE_PREMULTIPLIED = 4 /**< Premultiplied alpha: src + dst*(1-a).           */
 } wp_blend_mode;
 

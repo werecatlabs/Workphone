@@ -18,8 +18,8 @@ struct wp_user_font_glyph
 {
     struct wp_vec2f uv[2];  /**!< texture coordinates */
     struct wp_vec2f offset; /**!< offset between top left and glyph */
-    wp_f32 width, height;  /**!< size of the glyph  */
-    wp_f32 xadvance;       /**!< offset to the next glyph */
+    wp_f32 width, height;   /**!< size of the glyph  */
+    wp_f32 xadvance;        /**!< offset to the next glyph */
 };
 #    endif
 
@@ -43,6 +43,7 @@ enum wp_font_coord_type
 };
 
 struct wp_font;
+
 struct wp_baked_font
 {
     wp_f32 height;         /**!< height of the font  */
@@ -70,9 +71,9 @@ struct wp_font_config
 
     wp_f32 size; /**!< baked pixel height of the font */
     enum wp_font_coord_type
-        coord_type;         /**!< texture coordinate format with either pixel or UV coordinates */
+        coord_type;          /**!< texture coordinate format with either pixel or UV coordinates */
     struct wp_vec2f spacing; /**!< extra pixel spacing between glyphs  */
-    const wp_rune *range;   /**!< list of unicode ranges (2 values per range, zero terminated) */
+    const wp_rune *range;    /**!< list of unicode ranges (2 values per range, zero terminated) */
     struct wp_baked_font
         *font;              /**!< font to setup in the baking process: NOTE: not needed for font atlas */
     wp_rune fallback_glyph; /**!< fallback glyph to use if a given rune is not found */

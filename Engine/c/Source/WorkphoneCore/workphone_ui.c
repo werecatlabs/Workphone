@@ -54,7 +54,9 @@ void wp_ui_layout_row_static( wp_s32 height, wp_s32 width, wp_s32 columns )
     g_ui_ctx.layout_row_height = height;
     g_ui_ctx.layout_row_columns = columns;
     for( wp_s32 i = 0; i < columns; ++i )
+    {
         g_ui_ctx.layout_row_widths[i] = width;
+    }
     g_ui_ctx.layout_row_index = 0;
 }
 
@@ -64,7 +66,9 @@ void wp_ui_layout_row_dynamic( wp_s32 height, wp_s32 columns )
     g_ui_ctx.layout_row_columns = columns;
     wp_s32 col_width = g_ui_win.w / columns;
     for( wp_s32 i = 0; i < columns; ++i )
+    {
         g_ui_ctx.layout_row_widths[i] = col_width;
+    }
     g_ui_ctx.layout_row_index = 0;
 }
 
@@ -78,7 +82,9 @@ void wp_ui_layout_row_begin( wp_s32 height, wp_s32 columns )
 void wp_ui_layout_row_push( wp_s32 width )
 {
     if( g_ui_ctx.layout_row_index < 8 )
+    {
         g_ui_ctx.layout_row_widths[g_ui_ctx.layout_row_index++] = width;
+    }
 }
 
 void wp_ui_layout_row_end()

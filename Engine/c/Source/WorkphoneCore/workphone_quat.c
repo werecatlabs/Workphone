@@ -120,7 +120,9 @@ void wp_quatf_to_axis_angle( wp_quatf q, wp_vec3f *out_axis, wp_f32 *out_angle )
         }
     }
     if( out_angle )
+    {
         *out_angle = angle;
+    }
 }
 
 wp_quatf wp_quatf_slerp( wp_quatf a, wp_quatf b, wp_f32 t )
@@ -260,7 +262,9 @@ void wp_quatd_to_axis_angle( wp_quatd q, wp_vec3d *out_axis, wp_f64 *out_angle )
         }
     }
     if( out_angle )
+    {
         *out_angle = angle;
+    }
 }
 
 wp_quatd wp_quatd_slerp( wp_quatd a, wp_quatd b, wp_f64 t )

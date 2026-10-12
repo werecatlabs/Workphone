@@ -15,10 +15,14 @@ void wp_pool_free( struct wp_pool *pool )
 {
     struct wp_page *iter;
     if( !pool )
+    {
         return;
+    }
     iter = pool->pages;
     if( pool->type == WORKPHONE_BUFFER_FIXED )
+    {
         return;
+    }
     while( iter )
     {
         struct wp_page *next = iter->next;
@@ -32,7 +36,9 @@ void wp_pool_init_fixed( struct wp_pool *pool, void *memory, wp_size size )
     wp_zero( pool, sizeof( *pool ) );
     WORKPHONE_ASSERT( size >= sizeof( struct wp_page ) );
     if( size < sizeof( struct wp_page ) )
+    {
         return;
+    }
     /* first wp_page_element is embedded in wp_page, additional elements follow in adjacent space */
     pool->capacity =
         (unsigned)( 1 + ( size - sizeof( struct wp_page ) ) / sizeof( struct wp_page_element ) );
@@ -51,7 +57,9 @@ struct wp_page_element *wp_pool_alloc( struct wp_pool *pool )
         {
             WORKPHONE_ASSERT( pool->pages );
             if( !pool->pages )
+            {
                 return 0;
+            }
             WORKPHONE_ASSERT( pool->pages->size < pool->capacity );
             return 0;
         }

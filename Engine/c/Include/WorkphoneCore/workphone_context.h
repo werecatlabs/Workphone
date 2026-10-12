@@ -43,6 +43,7 @@ WORKPHONE_CONFIGURATION_STACK_TYPE( wp, vec2, vec2f );
 WORKPHONE_CONFIGURATION_STACK_TYPE( wp, flags, flags );
 WORKPHONE_CONFIGURATION_STACK_TYPE( struct wp, color, color );
 WORKPHONE_CONFIGURATION_STACK_TYPE( const struct wp, user_font, user_font * );
+
 //WORKPHONE_CONFIGURATION_STACK_TYPE( enum wp, button_behavior, button_behavior );
 
 struct wp_config_stack_button_behavior_element
@@ -57,6 +58,7 @@ WORKPHONE_CONFIG_STACK( vec2, WORKPHONE_VECTOR_STACK_SIZE );
 WORKPHONE_CONFIG_STACK( flags, WORKPHONE_FLAGS_STACK_SIZE );
 WORKPHONE_CONFIG_STACK( color, WORKPHONE_COLOR_STACK_SIZE );
 WORKPHONE_CONFIG_STACK( user_font, WORKPHONE_FONT_STACK_SIZE );
+
 //WORKPHONE_CONFIG_STACK( button_behavior, WORKPHONE_BUTTON_BEHAVIOR_STACK_SIZE );
 
 struct wp_config_stack_button_behavior

@@ -42,10 +42,14 @@ void wp_game_component_destroy( wp_game_component *comp )
 {
     wp_u32 i;
     if( comp->callbacks.on_destroy )
+    {
         comp->callbacks.on_destroy( comp );
+    }
 
     for( i = 0; i < comp->num_sub_components; ++i )
+    {
         comp->sub_components[i] = NULL;
+    }
     comp->num_sub_components = 0;
 
     comp->actor = NULL;
@@ -98,7 +102,9 @@ void wp_game_component_set_state( wp_game_component *comp, enum wp_component_sta
 {
     comp->state = state;
     if( comp->callbacks.on_state_changed )
+    {
         comp->callbacks.on_state_changed( comp, state );
+    }
 }
 
 /* =========================================================================
@@ -115,7 +121,9 @@ void wp_game_component_set_flags( wp_game_component *comp, wp_u32 flags )
     comp->previous_flags = comp->flags;
     comp->flags = flags;
     if( comp->callbacks.on_flags_changed )
+    {
         comp->callbacks.on_flags_changed( comp, comp->previous_flags );
+    }
 }
 
 wp_s32 wp_game_component_get_flag( const wp_game_component *comp, wp_u32 flag )
@@ -127,11 +135,17 @@ void wp_game_component_set_flag( wp_game_component *comp, wp_u32 flag, wp_s32 va
 {
     comp->previous_flags = comp->flags;
     if( value )
+    {
         comp->flags |= flag;
+    }
     else
+    {
         comp->flags &= ~flag;
+    }
     if( comp->callbacks.on_flags_changed )
+    {
         comp->callbacks.on_flags_changed( comp, comp->previous_flags );
+    }
 }
 
 /* =========================================================================
@@ -149,12 +163,16 @@ void wp_game_component_set_enabled( wp_game_component *comp, wp_s32 enabled )
     if( enabled )
     {
         if( comp->callbacks.on_enable )
+        {
             comp->callbacks.on_enable( comp );
+        }
     }
     else
     {
         if( comp->callbacks.on_disable )
+        {
             comp->callbacks.on_disable( comp );
+        }
     }
 }
 
@@ -200,11 +218,15 @@ wp_s32 wp_game_component_add_sub_component( wp_game_component *comp, wp_game_com
 {
     wp_u32 i;
     if( !sub || comp->num_sub_components >= WP_COMPONENT_MAX_SUB_COMPONENTS )
+    {
         return 0;
+    }
     for( i = 0; i < comp->num_sub_components; ++i )
     {
         if( comp->sub_components[i] == sub )
+        {
             return 0;
+        }
     }
     comp->sub_components[comp->num_sub_components++] = sub;
     return 1;
@@ -214,14 +236,18 @@ wp_s32 wp_game_component_remove_sub_component( wp_game_component *comp, wp_game_
 {
     wp_u32 i;
     if( !sub )
+    {
         return 0;
+    }
     for( i = 0; i < comp->num_sub_components; ++i )
     {
         if( comp->sub_components[i] == sub )
         {
             comp->num_sub_components--;
             for( ; i < comp->num_sub_components; ++i )
+            {
                 comp->sub_components[i] = comp->sub_components[i + 1];
+            }
             comp->sub_components[comp->num_sub_components] = NULL;
             return 1;
         }
@@ -233,10 +259,14 @@ wp_s32 wp_game_component_remove_sub_component_by_index( wp_game_component *comp,
 {
     wp_u32 i;
     if( index >= comp->num_sub_components )
+    {
         return 0;
+    }
     comp->num_sub_components--;
     for( i = index; i < comp->num_sub_components; ++i )
+    {
         comp->sub_components[i] = comp->sub_components[i + 1];
+    }
     comp->sub_components[comp->num_sub_components] = NULL;
     return 1;
 }
@@ -244,7 +274,9 @@ wp_s32 wp_game_component_remove_sub_component_by_index( wp_game_component *comp,
 wp_game_component *wp_game_component_get_sub_component( const wp_game_component *comp, wp_u32 index )
 {
     if( index >= comp->num_sub_components )
+    {
         return NULL;
+    }
     return comp->sub_components[index];
 }
 
@@ -274,16 +306,22 @@ wp_component_callbacks wp_game_component_get_callbacks( const wp_game_component 
 void wp_game_component_update( wp_game_component *comp, wp_f64 dt )
 {
     if( !( comp->flags & WP_COMPONENT_FLAG_ENABLED ) )
+    {
         return;
+    }
 
     if( comp->callbacks.on_update )
+    {
         comp->callbacks.on_update( comp, dt );
+    }
 }
 
 void wp_game_component_update_transform( wp_game_component *comp )
 {
     if( comp->callbacks.on_transform_updated )
+    {
         comp->callbacks.on_transform_updated( comp );
+    }
 }
 
 void wp_game_component_update_flags( wp_game_component *comp, wp_u32 flags )
@@ -292,7 +330,9 @@ void wp_game_component_update_flags( wp_game_component *comp, wp_u32 flags )
     comp->previous_flags = old_flags;
     comp->flags = flags;
     if( comp->callbacks.on_flags_changed )
+    {
         comp->callbacks.on_flags_changed( comp, old_flags );
+    }
 }
 
 /* =========================================================================

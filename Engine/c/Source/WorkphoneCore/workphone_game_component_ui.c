@@ -89,9 +89,13 @@ wp_s32 wp_ui_component_get_ui_flag( const wp_ui_component *ui, wp_u8 flag )
 void wp_ui_component_set_ui_flag( wp_ui_component *ui, wp_u8 flag, wp_s32 value )
 {
     if( value )
+    {
         ui->ui_flags |= flag;
+    }
     else
+    {
         ui->ui_flags &= (wp_u8)~flag;
+    }
 }
 
 /* =========================================================================
@@ -235,61 +239,81 @@ void wp_ui_component_set_element_listener( wp_ui_component *ui, void *listener )
 void wp_ui_component_update_dimensions( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_dimensions )
+    {
         ui->ui_callbacks.on_update_dimensions( ui );
+    }
 }
 
 void wp_ui_component_update_materials( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_materials )
+    {
         ui->ui_callbacks.on_update_materials( ui );
+    }
 }
 
 void wp_ui_component_update_transform( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_transform )
+    {
         ui->ui_callbacks.on_update_transform( ui );
+    }
 }
 
 void wp_ui_component_update_visibility( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_visibility )
+    {
         ui->ui_callbacks.on_update_visibility( ui );
+    }
 }
 
 void wp_ui_component_update_order( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_order )
+    {
         ui->ui_callbacks.on_update_order( ui );
+    }
 }
 
 void wp_ui_component_update_flags( wp_ui_component *ui, wp_u32 old_flags )
 {
     if( ui->ui_callbacks.on_update_flags )
+    {
         ui->ui_callbacks.on_update_flags( ui, old_flags );
+    }
 }
 
 void wp_ui_component_update_colour( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_colour )
+    {
         ui->ui_callbacks.on_update_colour( ui );
+    }
 }
 
 void wp_ui_component_update_element_state( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_update_element_state )
+    {
         ui->ui_callbacks.on_update_element_state( ui );
+    }
 }
 
 void wp_ui_component_setup_canvas( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_setup_canvas )
+    {
         ui->ui_callbacks.on_setup_canvas( ui );
+    }
 }
 
 void wp_ui_component_create_ui( wp_ui_component *ui )
 {
     if( ui->ui_callbacks.on_create_ui )
+    {
         ui->ui_callbacks.on_create_ui( ui );
+    }
 }
 
 /* =========================================================================
@@ -299,10 +323,14 @@ void wp_ui_component_create_ui( wp_ui_component *ui )
 wp_s32 wp_ui_component_handle_input( wp_ui_component *ui, void *event )
 {
     if( !wp_ui_component_get_handle_input_events( ui ) )
+    {
         return 0;
+    }
 
     if( ui->ui_callbacks.on_handle_input )
+    {
         return ui->ui_callbacks.on_handle_input( ui, event );
+    }
 
     return 0;
 }

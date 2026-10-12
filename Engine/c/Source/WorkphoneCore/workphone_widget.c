@@ -9,7 +9,9 @@ struct wp_rect wp_widget_bounds( const struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return wp_make_rect( 0, 0, 0, 0 );
+    }
     wp_layout_peek( &bounds, ctx );
     return bounds;
 }
@@ -20,7 +22,9 @@ struct wp_vec2f wp_widget_position( const struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return wp_make_vec2f( 0, 0 );
+    }
 
     wp_layout_peek( &bounds, ctx );
     return wp_make_vec2f( bounds.x, bounds.y );
@@ -32,7 +36,9 @@ struct wp_vec2f wp_widget_size( const struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return wp_make_vec2f( 0, 0 );
+    }
 
     wp_layout_peek( &bounds, ctx );
     return wp_make_vec2f( bounds.w, bounds.h );
@@ -44,7 +50,9 @@ wp_f32 wp_widget_width( const struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return 0;
+    }
 
     wp_layout_peek( &bounds, ctx );
     return bounds.w;
@@ -56,7 +64,9 @@ wp_f32 wp_widget_height( const struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return 0;
+    }
 
     wp_layout_peek( &bounds, ctx );
     return bounds.h;
@@ -72,7 +82,9 @@ wp_bool wp_widget_is_hovered( const struct wp_context *ctx )
     if( !ctx || !ctx->current || !ctx->current->layout ||
         ( ctx->active != ctx->current &&
           !( (wp_s32)ctx->current->layout->type & (wp_s32)WORKPHONE_PANEL_SET_POPUP ) ) )
+    {
         return 0;
+    }
 
     c = ctx->current->layout->clip;
     c.x = (wp_f32)( (wp_s32)c.x );
@@ -83,7 +95,9 @@ wp_bool wp_widget_is_hovered( const struct wp_context *ctx )
     wp_layout_peek( &bounds, ctx );
     wp_unify( &v, &c, bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h );
     if( !WORKPHONE_INTERSECT( c.x, c.y, c.w, c.h, bounds.x, bounds.y, bounds.w, bounds.h ) )
+    {
         return 0;
+    }
     return wp_input_is_mouse_hovering_rect( &ctx->input, bounds );
 }
 
@@ -97,7 +111,9 @@ wp_bool wp_widget_is_mouse_clicked( const struct wp_context *ctx, enum wp_button
     if( !ctx || !ctx->current || !ctx->current->layout ||
         ( ctx->active != ctx->current &&
           !( (wp_s32)ctx->current->layout->type & (wp_s32)WORKPHONE_PANEL_SET_POPUP ) ) )
+    {
         return 0;
+    }
 
     c = ctx->current->layout->clip;
     c.x = (wp_f32)( (wp_s32)c.x );
@@ -108,7 +124,9 @@ wp_bool wp_widget_is_mouse_clicked( const struct wp_context *ctx, enum wp_button
     wp_layout_peek( &bounds, ctx );
     wp_unify( &v, &c, bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h );
     if( !WORKPHONE_INTERSECT( c.x, c.y, c.w, c.h, bounds.x, bounds.y, bounds.w, bounds.h ) )
+    {
         return 0;
+    }
     return wp_input_mouse_clicked( &ctx->input, btn, bounds );
 }
 
@@ -122,7 +140,9 @@ wp_bool wp_widget_has_mouse_click_down( const struct wp_context *ctx, enum wp_bu
     if( !ctx || !ctx->current || !ctx->current->layout ||
         ( ctx->active != ctx->current &&
           !( (wp_s32)ctx->current->layout->type & (wp_s32)WORKPHONE_PANEL_SET_POPUP ) ) )
+    {
         return 0;
+    }
 
     c = ctx->current->layout->clip;
     c.x = (wp_f32)( (wp_s32)c.x );
@@ -133,7 +153,9 @@ wp_bool wp_widget_has_mouse_click_down( const struct wp_context *ctx, enum wp_bu
     wp_layout_peek( &bounds, ctx );
     wp_unify( &v, &c, bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h );
     if( !WORKPHONE_INTERSECT( c.x, c.y, c.w, c.h, bounds.x, bounds.y, bounds.w, bounds.h ) )
+    {
         return 0;
+    }
     return wp_input_has_mouse_click_down_in_rect( &ctx->input, btn, bounds, down );
 }
 
@@ -148,7 +170,9 @@ enum wp_widget_layout_states wp_widget( struct wp_rect *bounds, const struct wp_
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return WORKPHONE_WIDGET_INVALID;
+    }
 
     /* allocate space and check if the widget needs to be updated and drawn */
     wp_panel_alloc_space( bounds, ctx );
@@ -179,11 +203,17 @@ enum wp_widget_layout_states wp_widget( struct wp_rect *bounds, const struct wp_
 
     wp_unify( &v, &c, bounds->x, bounds->y, bounds->x + bounds->w, bounds->y + bounds->h );
     if( !WORKPHONE_INTERSECT( c.x, c.y, c.w, c.h, bounds->x, bounds->y, bounds->w, bounds->h ) )
+    {
         return WORKPHONE_WIDGET_INVALID;
+    }
     if( win->widgets_disabled )
+    {
         return WORKPHONE_WIDGET_DISABLED;
+    }
     if( !WORKPHONE_INBOX( in->mouse.pos.x, in->mouse.pos.y, v.x, v.y, v.w, v.h ) )
+    {
         return WORKPHONE_WIDGET_ROM;
+    }
     return WORKPHONE_WIDGET_VALID;
 }
 
@@ -198,7 +228,9 @@ enum wp_widget_layout_states wp_widget_fitting( struct wp_rect *bounds, const st
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return WORKPHONE_WIDGET_INVALID;
+    }
 
     state = wp_widget( bounds, ctx );
     return state;
@@ -215,7 +247,9 @@ void wp_spacing( struct wp_context *ctx, wp_s32 cols )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     /* spacing over row boundaries */
     win = ctx->current;
@@ -225,7 +259,9 @@ void wp_spacing( struct wp_context *ctx, wp_s32 cols )
     if( rows )
     {
         for( i = 0; i < rows; ++i )
+        {
             wp_panel_alloc_row( ctx, win );
+        }
         cols = index;
     }
     /* non table layout need to allocate space */
@@ -233,7 +269,9 @@ void wp_spacing( struct wp_context *ctx, wp_s32 cols )
         layout->row.type != WORKPHONE_LAYOUT_STATIC_FIXED )
     {
         for( i = 0; i < cols; ++i )
+        {
             wp_panel_alloc_space( &none, ctx );
+        }
     }
     layout->row.index = index;
 }
@@ -241,9 +279,13 @@ void wp_spacing( struct wp_context *ctx, wp_s32 cols )
 void wp_widget_state_reset( wp_flags *state )
 {
     if( *state & WORKPHONE_WIDGET_STATE_MODIFIED )
+    {
         *state = WORKPHONE_WIDGET_STATE_INACTIVE | WORKPHONE_WIDGET_STATE_MODIFIED;
+    }
     else
+    {
         *state = WORKPHONE_WIDGET_STATE_INACTIVE;
+    }
 }
 
 void wp_widget_disable_begin( struct wp_context *ctx )
@@ -255,7 +297,9 @@ void wp_widget_disable_begin( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
 
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -320,7 +364,9 @@ void wp_widget_disable_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
 
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     win = ctx->current;
     style = &ctx->style;

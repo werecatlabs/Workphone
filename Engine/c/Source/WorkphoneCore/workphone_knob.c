@@ -63,12 +63,17 @@ wp_f32 wp_knob_behavior( wp_flags *state, struct wp_input *in, struct wp_rect bo
         knob_value = WORKPHONE_CLAMP( knob_min, knob_value, knob_max );
     }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, bounds ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, bounds ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
 
     return knob_value;
 }
+
 WORKPHONE_LIB void wp_draw_knob( struct wp_command_buffer *out, wp_flags state,
                                  const struct wp_style_knob *style, const struct wp_rect *bounds,
                                  wp_f32 min, wp_f32 value, wp_f32 max, enum wp_heading zero_direction,
@@ -150,7 +155,9 @@ WORKPHONE_LIB void wp_draw_knob( struct wp_command_buffer *out, wp_flags state,
         /* apply zero angle */
         angle += direction_rads[zero_direction];
         if( angle > WORKPHONE_PI * 2.0f )
+        {
             angle -= WORKPHONE_PI * 2.0f;
+        }
 
         cursor_start.x = bounds->x + half_circle_size + ( angle > WORKPHONE_PI );
         cursor_start.y = bounds->y + half_circle_size +
@@ -168,6 +175,7 @@ WORKPHONE_LIB void wp_draw_knob( struct wp_command_buffer *out, wp_flags state,
                         wp_rgb_factor( cursor, style->color_factor ) );
     }
 }
+
 WORKPHONE_LIB wp_f32 wp_do_knob( wp_flags *state, struct wp_command_buffer *out, struct wp_rect bounds,
                                  wp_f32 min, wp_f32 val, wp_f32 max, wp_f32 step,
                                  enum wp_heading zero_direction, wp_f32 dead_zone_percent,
@@ -182,7 +190,9 @@ WORKPHONE_LIB wp_f32 wp_do_knob( wp_flags *state, struct wp_command_buffer *out,
     WORKPHONE_ASSERT( style );
     WORKPHONE_ASSERT( out );
     if( !out || !style )
+    {
         return 0;
+    }
 
     /* remove padding from knob bounds */
     bounds.y = bounds.y + style->padding.y;
@@ -209,13 +219,18 @@ WORKPHONE_LIB wp_f32 wp_do_knob( wp_flags *state, struct wp_command_buffer *out,
 
     /* draw knob */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_knob( out, *state, style, &bounds, knob_min, knob_value, knob_max, zero_direction,
                   dead_zone_percent );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return knob_value;
 }
+
 WORKPHONE_API wp_bool wp_knob_wp_f32( struct wp_context *ctx, wp_f32 min_value, wp_f32 *value,
                                       wp_f32 max_value, wp_f32 value_step,
                                       enum wp_heading zero_direction, wp_f32 dead_zone_degrees )
@@ -236,7 +251,9 @@ WORKPHONE_API wp_bool wp_knob_wp_f32( struct wp_context *ctx, wp_f32 min_value, 
     WORKPHONE_ASSERT( value );
     WORKPHONE_ASSERT( WORKPHONE_BETWEEN( dead_zone_degrees, 0.0f, 360.0f ) );
     if( !ctx || !ctx->current || !ctx->current->layout || !value )
+    {
         return ret;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -244,7 +261,9 @@ WORKPHONE_API wp_bool wp_knob_wp_f32( struct wp_context *ctx, wp_f32 min_value, 
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return ret;
+    }
     in =
         ( state == WORKPHONE_WIDGET_DISABLED || layout->flags & WORKPHONE_WINDOW_ROM ) ? 0 : &ctx->input;
 
@@ -254,6 +273,7 @@ WORKPHONE_API wp_bool wp_knob_wp_f32( struct wp_context *ctx, wp_f32 min_value, 
 
     return ( old_value > *value || old_value < *value );
 }
+
 WORKPHONE_API wp_bool wp_knob_int( struct wp_context *ctx, wp_s32 min, wp_s32 *val, wp_s32 max,
                                    wp_s32 step, enum wp_heading zero_direction,
                                    wp_f32 dead_zone_degrees )

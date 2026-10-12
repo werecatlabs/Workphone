@@ -291,7 +291,7 @@ WORKPHONE_API struct wp_rect wp_layout_space_bounds( const struct wp_context *ct
  * \returns transformed `wp_vec2f` in screen space coordinates
  */
 WORKPHONE_API struct wp_vec2f wp_layout_space_to_screen( const struct wp_context *ctx,
-                                                        struct wp_vec2f vec );
+                                                         struct wp_vec2f vec );
 
 /**
  * # # wp_layout_space_to_local
@@ -308,7 +308,7 @@ WORKPHONE_API struct wp_vec2f wp_layout_space_to_screen( const struct wp_context
  * \returns transformed `wp_vec2f` in layout space coordinates
  */
 WORKPHONE_API struct wp_vec2f wp_layout_space_to_local( const struct wp_context *ctx,
-                                                       struct wp_vec2f vec );
+                                                        struct wp_vec2f vec );
 
 /**
  * # # wp_layout_space_rect_to_screen

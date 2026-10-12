@@ -21,7 +21,9 @@ struct wp_page_element *wp_create_page_element( struct wp_context *ctx )
         elem = wp_pool_alloc( &ctx->pool );
         WORKPHONE_ASSERT( elem );
         if( !elem )
+        {
             return 0;
+        }
     }
     else
     {
@@ -32,13 +34,16 @@ struct wp_page_element *wp_create_page_element( struct wp_context *ctx )
                                                           align );
         WORKPHONE_ASSERT( elem );
         if( !elem )
+        {
             return 0;
+        }
     }
     wp_zero_struct( *elem );
     elem->next = 0;
     elem->prev = 0;
     return elem;
 }
+
 WORKPHONE_LIB void wp_liwp_page_element_into_freelist( struct wp_context *ctx,
                                                        struct wp_page_element *elem )
 {
@@ -53,6 +58,7 @@ WORKPHONE_LIB void wp_liwp_page_element_into_freelist( struct wp_context *ctx,
         ctx->freelist = elem;
     }
 }
+
 WORKPHONE_LIB void wp_free_page_element( struct wp_context *ctx, struct wp_page_element *elem )
 {
     /* we have a pool so just add to free list */
@@ -66,9 +72,13 @@ WORKPHONE_LIB void wp_free_page_element( struct wp_context *ctx, struct wp_page_
         void *elem_end = (void *)( elem + 1 );
         void *buffer_end = (wp_byte *)ctx->memory.memory.ptr + ctx->memory.size;
         if( elem_end == buffer_end )
+        {
             ctx->memory.size -= sizeof( struct wp_page_element );
+        }
         else
+        {
             wp_liwp_page_element_into_freelist( ctx, elem );
+        }
     }
 }
 

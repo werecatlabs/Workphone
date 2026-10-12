@@ -88,6 +88,7 @@ typedef int stbrp_coord;
 // Mostly for internal use, but this is the maximum supported coordinate value.
 
 STBRP_DEF int stbrp_pack_rects( stbrp_context *context, stbrp_rect *rects, int num_rects );
+
 // Assign packed locations to rectangles. The rectangles are of type
 // 'stbrp_rect' defined below, stored in the array 'rects', and there
 // are 'num_rects' many of them.
@@ -154,6 +155,7 @@ STBRP_DEF void stbrp_setup_allow_out_of_mem( stbrp_context *context, int allow_o
 // If you call init again, this will be reset to the default (false).
 
 STBRP_DEF void stbrp_setup_heuristic( stbrp_context *context, int heuristic );
+
 // Optionally select which packing heuristic the library should use. Different
 // heuristics will produce better/worse results for different data sets.
 // If you call init again, this will be reset to the default.
@@ -242,11 +244,13 @@ STBRP_DEF void stbrp_setup_heuristic( stbrp_context *context, int heuristic )
 STBRP_DEF void stbrp_setup_allow_out_of_mem( stbrp_context *context, int allow_out_of_mem )
 {
     if( allow_out_of_mem )
+    {
         // if it's ok to run out of memory, then don't bother aligning them;
         // this gives better packing, but may fail due to OOM (even though
         // the rectangles easily fit). @TODO a smarter approach would be to only
         // quantize once we've hit OOM, then we could get rid of this parameter.
         context->align = 1;
+    }
     else
     {
         // if it's not ok to run out of memory, then quantize the widths
@@ -266,7 +270,9 @@ STBRP_DEF void stbrp_init_target( stbrp_context *context, int width, int height,
     int i;
 
     for( i = 0; i < num_nodes - 1; ++i )
+    {
         nodes[i].next = &nodes[i + 1];
+    }
     nodes[i].next = NULL;
     context->init_mode = STBRP__INIT_skyline;
     context->heuristic = STBRP_HEURISTIC_Skyline_default;
@@ -322,16 +328,22 @@ static int stbrp__skyline_find_min_y( stbrp_context *c, stbrp_node *first, int x
             min_y = node->y;
             // the first time through, visited_width might be reduced
             if( node->x < x0 )
+            {
                 visited_width += node->next->x - x0;
+            }
             else
+            {
                 visited_width += node->next->x - node->x;
+            }
         }
         else
         {
             // add waste area
             int under_width = node->next->x - node->x;
             if( under_width + visited_width > width )
+            {
                 under_width = width - visited_width;
+            }
             waste_area += under_width * ( min_y - node->y );
             visited_width += under_width;
         }
@@ -426,7 +438,9 @@ static stbrp__findresult stbrp__skyline_find_best_pos( stbrp_context *c, int wid
         prev = &c->active_head;
         // find first node that's admissible
         while( tail->x < width )
+        {
             tail = tail->next;
+        }
         while( tail )
         {
             int xpos = tail->x - width;
@@ -519,7 +533,9 @@ static stbrp__findresult stbrp__skyline_pack_rectangle( stbrp_context *context, 
     node->next = cur;
 
     if( cur->x < res.x + width )
+    {
         cur->x = (stbrp_coord)( res.x + width );
+    }
 
 #    ifdef _DEBUG
     cur = context->active_head;
@@ -556,9 +572,13 @@ static int STBRP__CDECL rect_height_compare( const void *a, const void *b )
     const stbrp_rect *p = (const stbrp_rect *)a;
     const stbrp_rect *q = (const stbrp_rect *)b;
     if( p->h > q->h )
+    {
         return -1;
+    }
     if( p->h < q->h )
+    {
         return 1;
+    }
     return ( p->w > q->w ) ? -1 : ( p->w < q->w );
 }
 
@@ -611,7 +631,9 @@ STBRP_DEF int stbrp_pack_rects( stbrp_context *context, stbrp_rect *rects, int n
     {
         rects[i].was_packed = !( rects[i].x == STBRP__MAXVAL && rects[i].y == STBRP__MAXVAL );
         if( !rects[i].was_packed )
+        {
             all_rects_packed = 0;
+        }
     }
 
     // return the all_rects_packed status

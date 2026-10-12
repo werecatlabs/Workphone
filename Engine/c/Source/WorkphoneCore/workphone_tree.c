@@ -34,7 +34,9 @@ wp_s32 wp_tree_state_base( struct wp_context *ctx, enum wp_tree_type type, struc
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     /* cache some data */
     win = ctx->current;
@@ -73,30 +75,42 @@ wp_s32 wp_tree_state_base( struct wp_context *ctx, enum wp_tree_type type, struc
         }
     }
     else
+    {
         text.background = style->window.background;
+    }
 
     /* update node state */
     in = ( !( layout->flags & WORKPHONE_WINDOW_ROM ) ) ? &ctx->input : 0;
     in = ( in && widget_state == WORKPHONE_WIDGET_VALID ) ? &ctx->input : 0;
     if( wp_button_behavior( &ws, header, in, WORKPHONE_BUTTON_DEFAULT ) )
+    {
         *state = ( *state == WORKPHONE_MAXIMIZED ) ? WORKPHONE_MINIMIZED : WORKPHONE_MAXIMIZED;
+    }
 
     /* select correct button style */
     if( *state == WORKPHONE_MAXIMIZED )
     {
         symbol = style->tab.sym_maximize;
         if( type == WORKPHONE_TREE_TAB )
+        {
             button = &style->tab.tab_maximize_button;
+        }
         else
+        {
             button = &style->tab.node_maximize_button;
+        }
     }
     else
     {
         symbol = style->tab.sym_minimize;
         if( type == WORKPHONE_TREE_TAB )
+        {
             button = &style->tab.tab_minimize_button;
+        }
         else
+        {
             button = &style->tab.node_minimize_button;
+        }
     }
 
     { /* draw triangle button */
@@ -137,8 +151,11 @@ wp_s32 wp_tree_state_base( struct wp_context *ctx, enum wp_tree_type type, struc
         return wp_true;
     }
     else
+    {
         return wp_false;
+    }
 }
+
 wp_s32 wp_tree_base( struct wp_context *ctx, enum wp_tree_type type, struct wp_image *img,
                      const wp_c8 *title, enum wp_collapse_states initial_state, const wp_c8 *hash,
                      wp_s32 len, wp_s32 line )
@@ -155,7 +172,9 @@ wp_s32 wp_tree_base( struct wp_context *ctx, enum wp_tree_type type, struct wp_i
         tree_hash = wp_murmur_hash( title, (wp_s32)title_len, (wp_hash)line );
     }
     else
+    {
         tree_hash = wp_murmur_hash( hash, len, (wp_hash)line );
+    }
     state = wp_find_value( win, tree_hash );
     if( !state )
     {
@@ -164,17 +183,20 @@ wp_s32 wp_tree_base( struct wp_context *ctx, enum wp_tree_type type, struct wp_i
     }
     return wp_tree_state_base( ctx, type, img, title, (enum wp_collapse_states *)state );
 }
+
 WORKPHONE_API wp_bool wp_tree_state_push( struct wp_context *ctx, enum wp_tree_type type,
                                           const wp_c8 *title, enum wp_collapse_states *state )
 {
     return wp_tree_state_base( ctx, type, 0, title, state );
 }
+
 WORKPHONE_API wp_bool wp_tree_state_image_push( struct wp_context *ctx, enum wp_tree_type type,
                                                 struct wp_image img, const wp_c8 *title,
                                                 enum wp_collapse_states *state )
 {
     return wp_tree_state_base( ctx, type, &img, title, state );
 }
+
 WORKPHONE_API void wp_tree_state_pop( struct wp_context *ctx )
 {
     struct wp_window *win = 0;
@@ -184,7 +206,9 @@ WORKPHONE_API void wp_tree_state_pop( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     layout = win->layout;
@@ -193,12 +217,14 @@ WORKPHONE_API void wp_tree_state_pop( struct wp_context *ctx )
     WORKPHONE_ASSERT( layout->row.tree_depth );
     layout->row.tree_depth--;
 }
+
 WORKPHONE_API wp_bool wp_tree_push_hashed( struct wp_context *ctx, enum wp_tree_type type,
                                            const wp_c8 *title, enum wp_collapse_states initial_state,
                                            const wp_c8 *hash, wp_s32 len, wp_s32 line )
 {
     return wp_tree_base( ctx, type, 0, title, initial_state, hash, len, line );
 }
+
 WORKPHONE_API wp_bool wp_tree_image_push_hashed( struct wp_context *ctx, enum wp_tree_type type,
                                                  struct wp_image img, const wp_c8 *title,
                                                  enum wp_collapse_states initial_state,
@@ -206,10 +232,12 @@ WORKPHONE_API wp_bool wp_tree_image_push_hashed( struct wp_context *ctx, enum wp
 {
     return wp_tree_base( ctx, type, &img, title, initial_state, hash, len, seed );
 }
+
 WORKPHONE_API void wp_tree_pop( struct wp_context *ctx )
 {
     wp_tree_state_pop( ctx );
 }
+
 wp_s32 wp_tree_element_image_push_hashed_base( struct wp_context *ctx, enum wp_tree_type type,
                                                struct wp_image *img, const wp_c8 *title,
                                                wp_s32 title_len, enum wp_collapse_states *state,
@@ -239,7 +267,9 @@ wp_s32 wp_tree_element_image_push_hashed_base( struct wp_context *ctx, enum wp_t
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return 0;
+    }
 
     /* cache some data */
     win = ctx->current;
@@ -288,17 +318,25 @@ wp_s32 wp_tree_element_image_push_hashed_base( struct wp_context *ctx, enum wp_t
     {
         symbol = style->tab.sym_maximize;
         if( type == WORKPHONE_TREE_TAB )
+        {
             button = &style->tab.tab_maximize_button;
+        }
         else
+        {
             button = &style->tab.node_maximize_button;
+        }
     }
     else
     {
         symbol = style->tab.sym_minimize;
         if( type == WORKPHONE_TREE_TAB )
+        {
             button = &style->tab.tab_minimize_button;
+        }
         else
+        {
             button = &style->tab.node_minimize_button;
+        }
     }
     { /* draw triangle button */
         sym.w = sym.h = style->font->height;
@@ -306,7 +344,9 @@ wp_s32 wp_tree_element_image_push_hashed_base( struct wp_context *ctx, enum wp_t
         sym.x = header.x + style->tab.padding.x;
         if( wp_do_button_symbol( &ws, &win->buffer, sym, symbol, WORKPHONE_BUTTON_DEFAULT, button, in,
                                  style->font ) )
+        {
             *state = ( *state == WORKPHONE_MAXIMIZED ) ? WORKPHONE_MINIMIZED : WORKPHONE_MAXIMIZED;
+        }
     }
 
     /* draw label */
@@ -330,8 +370,10 @@ wp_s32 wp_tree_element_image_push_hashed_base( struct wp_context *ctx, enum wp_t
                                     selected, img, &style->selectable, in, style->font );
         }
         else
+        {
             wp_do_selectable( &dummy, &win->buffer, label, title, title_len, WORKPHONE_TEXT_LEFT,
                               selected, &style->selectable, in, style->font );
+        }
     }
     /* increase x-axis cursor widget position pointer */
     if( *state == WORKPHONE_MAXIMIZED )
@@ -343,8 +385,11 @@ wp_s32 wp_tree_element_image_push_hashed_base( struct wp_context *ctx, enum wp_t
         return wp_true;
     }
     else
+    {
         return wp_false;
+    }
 }
+
 wp_s32 wp_tree_element_base( struct wp_context *ctx, enum wp_tree_type type, struct wp_image *img,
                              const wp_c8 *title, enum wp_collapse_states initial_state,
                              wp_bool *selected, const wp_c8 *hash, wp_s32 len, wp_s32 line )
@@ -361,7 +406,9 @@ wp_s32 wp_tree_element_base( struct wp_context *ctx, enum wp_tree_type type, str
         tree_hash = wp_murmur_hash( title, (wp_s32)title_len, (wp_hash)line );
     }
     else
+    {
         tree_hash = wp_murmur_hash( hash, len, (wp_hash)line );
+    }
     state = wp_find_value( win, tree_hash );
     if( !state )
     {
@@ -371,6 +418,7 @@ wp_s32 wp_tree_element_base( struct wp_context *ctx, enum wp_tree_type type, str
     return wp_tree_element_image_push_hashed_base( ctx, type, img, title, wp_strlen( title ),
                                                    (enum wp_collapse_states *)state, selected );
 }
+
 WORKPHONE_API wp_bool wp_tree_element_push_hashed( struct wp_context *ctx, enum wp_tree_type type,
                                                    const wp_c8 *title,
                                                    enum wp_collapse_states initial_state,
@@ -379,6 +427,7 @@ WORKPHONE_API wp_bool wp_tree_element_push_hashed( struct wp_context *ctx, enum 
 {
     return wp_tree_element_base( ctx, type, 0, title, initial_state, selected, hash, len, seed );
 }
+
 WORKPHONE_API wp_bool wp_tree_element_image_push_hashed( struct wp_context *ctx, enum wp_tree_type type,
                                                          struct wp_image img, const wp_c8 *title,
                                                          enum wp_collapse_states initial_state,
@@ -387,6 +436,7 @@ WORKPHONE_API wp_bool wp_tree_element_image_push_hashed( struct wp_context *ctx,
 {
     return wp_tree_element_base( ctx, type, &img, title, initial_state, selected, hash, len, seed );
 }
+
 WORKPHONE_API void wp_tree_element_pop( struct wp_context *ctx )
 {
     wp_tree_state_pop( ctx );

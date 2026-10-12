@@ -14,7 +14,9 @@ void wp_draw_list_init( struct wp_draw_list *list )
     wp_size i = 0;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     wp_zero( list, sizeof( *list ) );
     for( i = 0; i < WORKPHONE_LEN( list->circle_vtx ); ++i )
     {
@@ -34,7 +36,9 @@ void wp_draw_list_setup( struct wp_draw_list *canvas, const struct wp_convert_co
     WORKPHONE_ASSERT( vertices );
     WORKPHONE_ASSERT( elements );
     if( !canvas || !config || !cmds || !vertices || !elements )
+    {
         return;
+    }
 
     canvas->buffer = cmds;
     canvas->config = *config;
@@ -61,7 +65,9 @@ const struct wp_draw_command *wp__draw_list_begin( const struct wp_draw_list *ca
 
     WORKPHONE_ASSERT( buffer );
     if( !buffer || !buffer->size || !canvas->cmd_count )
+    {
         return 0;
+    }
 
     memory = (wp_byte *)buffer->memory.ptr;
     offset = buffer->memory.size - canvas->cmd_offset;
@@ -80,7 +86,9 @@ const struct wp_draw_command *wp__draw_list_end( const struct wp_draw_list *canv
     WORKPHONE_ASSERT( buffer );
     WORKPHONE_ASSERT( canvas );
     if( !buffer || !canvas )
+    {
         return 0;
+    }
 
     memory = (wp_byte *)buffer->memory.ptr;
     size = buffer->memory.size;
@@ -98,11 +106,15 @@ const struct wp_draw_command *wp__draw_list_next( const struct wp_draw_command *
     WORKPHONE_ASSERT( buffer );
     WORKPHONE_ASSERT( canvas );
     if( !cmd || !buffer || !canvas )
+    {
         return 0;
+    }
 
     end = wp__draw_list_end( canvas, buffer );
     if( cmd <= end )
+    {
         return 0;
+    }
     return ( cmd - 1 );
 }
 
@@ -112,10 +124,12 @@ struct wp_vec2f *wp_draw_list_alloc_path( struct wp_draw_list *list, wp_s32 coun
     WORKPHONE_STORAGE const wp_size point_align = sizeof( struct wp_vec2f );
     WORKPHONE_STORAGE const wp_size point_size = sizeof( struct wp_vec2f );
     points = (struct wp_vec2f *)wp_buffer_alloc( list->buffer, WORKPHONE_BUFFER_FRONT,
-                                                point_size * (wp_size)count, point_align );
+                                                 point_size * (wp_size)count, point_align );
 
     if( !points )
+    {
         return 0;
+    }
     if( !list->path_offset )
     {
         void *memory = wp_buffer_memory( list->buffer );
@@ -148,7 +162,9 @@ struct wp_draw_command *wp_draw_list_push_command( struct wp_draw_list *list, st
                                                      cmd_align );
 
     if( !cmd )
+    {
         return 0;
+    }
     if( !list->cmd_count )
     {
         wp_byte *memory = (wp_byte *)wp_buffer_memory( list->buffer );
@@ -186,7 +202,9 @@ void wp_draw_list_add_clip( struct wp_draw_list *list, struct wp_rect rect )
 {
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     if( !list->cmd_count )
     {
         wp_draw_list_push_command( list, rect, list->config.tex_null.texture );
@@ -195,7 +213,9 @@ void wp_draw_list_add_clip( struct wp_draw_list *list, struct wp_rect rect )
     {
         struct wp_draw_command *prev = wp_draw_list_command_last( list );
         if( prev->elem_count == 0 )
+        {
             prev->clip_rect = rect;
+        }
         wp_draw_list_push_command( list, rect, prev->texture );
     }
 }
@@ -204,7 +224,9 @@ void wp_draw_list_push_image( struct wp_draw_list *list, wp_handle texture )
 {
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     if( !list->cmd_count )
     {
         wp_draw_list_push_command( list, wp_null_rect, texture );
@@ -241,11 +263,15 @@ void *wp_draw_list_alloc_vertices( struct wp_draw_list *list, wp_size count )
     void *vtx;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return 0;
+    }
     vtx = wp_buffer_alloc( list->vertices, WORKPHONE_BUFFER_FRONT, list->config.vertex_size * count,
                            list->config.vertex_alignment );
     if( !vtx )
+    {
         return 0;
+    }
     list->vertex_count += (unsigned int)count;
 
     /* This assert triggers because your are drawing a lot of stuff and nuklear
@@ -258,9 +284,11 @@ void *wp_draw_list_alloc_vertices( struct wp_draw_list *list, wp_size count )
      * instead of specifying `GL_UNSIGNED_SHORT` you have to define `GL_UNSIGNED_INT`.
      * Sorry for the inconvenience. */
     if( sizeof( wp_draw_index ) == 2 )
+    {
         WORKPHONE_ASSERT( ( list->vertex_count < WORKPHONE_USHORT_MAX &&
                             "To many vertices for 16-bit vertex indices. Please read comment above on "
                             "how to solve this problem" ) );
+    }
     return vtx;
 }
 
@@ -272,12 +300,16 @@ wp_draw_index *wp_draw_list_alloc_elements( struct wp_draw_list *list, wp_size c
     WORKPHONE_STORAGE const wp_size elem_size = sizeof( wp_draw_index );
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return 0;
+    }
 
     ids = (wp_draw_index *)wp_buffer_alloc( list->elements, WORKPHONE_BUFFER_FRONT, elem_size * count,
                                             elem_align );
     if( !ids )
+    {
         return 0;
+    }
     cmd = wp_draw_list_command_last( list );
     list->element_count += (unsigned int)count;
     cmd->elem_count += (unsigned int)count;
@@ -298,7 +330,9 @@ void wp_draw_vertex_color( void *attr, const wp_f32 *vals, enum wp_draw_vertex_l
     WORKPHONE_ASSERT( format >= WORKPHONE_FORMAT_COLOR_BEGIN );
     WORKPHONE_ASSERT( format <= WORKPHONE_FORMAT_COLOR_END );
     if( format < WORKPHONE_FORMAT_COLOR_BEGIN || format > WORKPHONE_FORMAT_COLOR_END )
+    {
         return;
+    }
 
     val[0] = WORKPHONE_SATURATE( vals[0] );
     val[1] = WORKPHONE_SATURATE( vals[1] );
@@ -394,7 +428,9 @@ void wp_draw_vertex_element( void *dst, const wp_f32 *values, wp_s32 value_count
     /* if this triggers you tried to provide a color format for a value */
     WORKPHONE_ASSERT( format < WORKPHONE_FORMAT_COLOR_BEGIN );
     if( format >= WORKPHONE_FORMAT_COLOR_BEGIN && format <= WORKPHONE_FORMAT_COLOR_END )
+    {
         return;
+    }
     for( value_index = 0; value_index < value_count; ++value_index )
     {
         switch( format )
@@ -505,12 +541,16 @@ void wp_draw_list_stroke_poly_line( struct wp_draw_list *list, const struct wp_v
     struct wp_colorf col_trans;
     WORKPHONE_ASSERT( list );
     if( !list || points_count < 2 )
+    {
         return;
+    }
 
     color.a = (wp_byte)( (wp_f32)color.a * list->config.global_alpha );
     count = points_count;
     if( !closed )
+    {
         count = points_count - 1;
+    }
     thick_line = thickness > 1.0f;
 
 #    ifdef WORKPHONE_INCLUDE_COMMAND_USERDATA
@@ -543,16 +583,20 @@ void wp_draw_list_stroke_poly_line( struct wp_draw_list *list, const struct wp_v
         wp_size size;
         struct wp_vec2f *normals, *temp;
         if( !vtx || !ids )
+        {
             return;
+        }
 
         /* temporary allocate normals + points */
         vertex_offset = (wp_size)( (wp_byte *)vtx - (wp_byte *)list->vertices->memory.ptr );
         wp_buffer_mark( list->vertices, WORKPHONE_BUFFER_FRONT );
         size = pnt_size * ( ( thick_line ) ? 5 : 3 ) * points_count;
-        normals =
-            (struct wp_vec2f *)wp_buffer_alloc( list->vertices, WORKPHONE_BUFFER_FRONT, size, pnt_align );
+        normals = (struct wp_vec2f *)wp_buffer_alloc( list->vertices, WORKPHONE_BUFFER_FRONT, size,
+                                                      pnt_align );
         if( !normals )
+        {
             return;
+        }
         temp = normals + points_count;
 
         /* make sure vertex pointer is still correct */
@@ -568,9 +612,13 @@ void wp_draw_list_stroke_poly_line( struct wp_draw_list *list, const struct wp_v
             /* vec2 inverted length  */
             len = wp_vec2_len_sqr( diff );
             if( len != 0.0f )
+            {
                 len = wp_inv_sqrt( len );
+            }
             else
+            {
                 len = 1.0f;
+            }
 
             diff = wp_vec2_muls( diff, len );
             normals[i1].x = diff.y;
@@ -578,7 +626,9 @@ void wp_draw_list_stroke_poly_line( struct wp_draw_list *list, const struct wp_v
         }
 
         if( !closed )
+        {
             normals[points_count - 1] = normals[points_count - 2];
+        }
 
         if( !thick_line )
         {
@@ -735,7 +785,9 @@ void wp_draw_list_stroke_poly_line( struct wp_draw_list *list, const struct wp_v
         void *vtx = wp_draw_list_alloc_vertices( list, vtx_count );
         wp_draw_index *ids = wp_draw_list_alloc_elements( list, idx_count );
         if( !vtx || !ids )
+        {
             return;
+        }
 
         for( i1 = 0; i1 < count; ++i1 )
         {
@@ -750,9 +802,13 @@ void wp_draw_list_stroke_poly_line( struct wp_draw_list *list, const struct wp_v
             /* vec2 inverted length  */
             len = wp_vec2_len_sqr( diff );
             if( len != 0.0f )
+            {
                 len = wp_inv_sqrt( len );
+            }
             else
+            {
                 len = 1.0f;
+            }
             diff = wp_vec2_muls( diff, len );
 
             /* add vertices */
@@ -788,7 +844,9 @@ void wp_draw_list_fill_poly_convex( struct wp_draw_list *list, const struct wp_v
     WORKPHONE_STORAGE const wp_size pnt_size = sizeof( struct wp_vec2f );
     WORKPHONE_ASSERT( list );
     if( !list || points_count < 3 )
+    {
         return;
+    }
 
 #    ifdef WORKPHONE_INCLUDE_COMMAND_USERDATA
     wp_draw_list_push_userdata( list, list->userdata );
@@ -820,16 +878,20 @@ void wp_draw_list_fill_poly_convex( struct wp_draw_list *list, const struct wp_v
         wp_u32 vtx_inner_idx = (unsigned int)( index + 0 );
         wp_u32 vtx_outer_idx = (unsigned int)( index + 1 );
         if( !vtx || !ids )
+        {
             return;
+        }
 
         /* temporary allocate normals */
         vertex_offset = (wp_size)( (wp_byte *)vtx - (wp_byte *)list->vertices->memory.ptr );
         wp_buffer_mark( list->vertices, WORKPHONE_BUFFER_FRONT );
         size = pnt_size * points_count;
-        normals =
-            (struct wp_vec2f *)wp_buffer_alloc( list->vertices, WORKPHONE_BUFFER_FRONT, size, pnt_align );
+        normals = (struct wp_vec2f *)wp_buffer_alloc( list->vertices, WORKPHONE_BUFFER_FRONT, size,
+                                                      pnt_align );
         if( !normals )
+        {
             return;
+        }
         vtx = (void *)( (wp_byte *)list->vertices->memory.ptr + vertex_offset );
 
         /* add elements */
@@ -851,9 +913,13 @@ void wp_draw_list_fill_poly_convex( struct wp_draw_list *list, const struct wp_v
             /* vec2 inverted length  */
             wp_f32 len = wp_vec2_len_sqr( diff );
             if( len != 0.0f )
+            {
                 len = wp_inv_sqrt( len );
+            }
             else
+            {
                 len = 1.0f;
+            }
 
             diff = wp_vec2_muls( diff, len );
 
@@ -903,9 +969,13 @@ void wp_draw_list_fill_poly_convex( struct wp_draw_list *list, const struct wp_v
         wp_draw_index *ids = wp_draw_list_alloc_elements( list, idx_count );
 
         if( !vtx || !ids )
+        {
             return;
+        }
         for( i = 0; i < vtx_count; ++i )
+        {
             vtx = wp_draw_vertex( vtx, &list->config, points[i], list->config.tex_null.uv, col );
+        }
         for( i = 2; i < points_count; ++i )
         {
             ids[0] = (wp_draw_index)index;
@@ -920,7 +990,9 @@ void wp_draw_list_path_clear( struct wp_draw_list *list )
 {
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     wp_buffer_reset( list->buffer, WORKPHONE_BUFFER_FRONT );
     list->path_count = 0;
     list->path_offset = 0;
@@ -932,17 +1004,25 @@ void wp_draw_list_path_line_to( struct wp_draw_list *list, struct wp_vec2f pos )
     struct wp_draw_command *cmd = 0;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     if( !list->cmd_count )
+    {
         wp_draw_list_add_clip( list, wp_null_rect );
+    }
 
     cmd = wp_draw_list_command_last( list );
     if( cmd && cmd->texture.ptr != list->config.tex_null.texture.ptr )
+    {
         wp_draw_list_push_image( list, list->config.tex_null.texture );
+    }
 
     points = wp_draw_list_alloc_path( list, 1 );
     if( !points )
+    {
         return;
+    }
     points[0] = pos;
 }
 
@@ -952,7 +1032,9 @@ void wp_draw_list_path_arc_to_fast( struct wp_draw_list *list, struct wp_vec2f c
     wp_s32 a = 0;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     if( a_min <= a_max )
     {
         for( a = a_min; a <= a_max; a++ )
@@ -971,9 +1053,13 @@ void wp_draw_list_path_arc_to( struct wp_draw_list *list, struct wp_vec2f center
     wp_u32 i = 0;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     if( radius == 0.0f )
+    {
         return;
+    }
 
     /*  This algorithm for arc drawing relies on these two trigonometric identities[1]:
             sin(a + b) = sin(a) * cos(b) + cos(a) * sin(b)
@@ -1021,7 +1107,9 @@ void wp_draw_list_path_rect_to( struct wp_draw_list *list, struct wp_vec2f a, st
     wp_f32 r;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     r = rounding;
     r = WORKPHONE_MIN( r, ( ( b.x - a.x ) < 0 ) ? -( b.x - a.x ) : ( b.x - a.x ) );
     r = WORKPHONE_MIN( r, ( ( b.y - a.y ) < 0 ) ? -( b.y - a.y ) : ( b.y - a.y ) );
@@ -1052,7 +1140,9 @@ void wp_draw_list_path_curve_to( struct wp_draw_list *list, struct wp_vec2f p2, 
     WORKPHONE_ASSERT( list );
     WORKPHONE_ASSERT( list->path_count );
     if( !list || !list->path_count )
+    {
         return;
+    }
     num_segments = WORKPHONE_MAX( num_segments, 1 );
 
     p1 = wp_draw_list_path_last( list );
@@ -1076,7 +1166,9 @@ void wp_draw_list_path_fill( struct wp_draw_list *list, struct wp_color color )
     struct wp_vec2f *points;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     points = (struct wp_vec2f *)wp_buffer_memory( list->buffer );
     wp_draw_list_fill_poly_convex( list, points, list->path_count, color, list->config.shape_AA );
     wp_draw_list_path_clear( list );
@@ -1088,7 +1180,9 @@ void wp_draw_list_path_stroke( struct wp_draw_list *list, struct wp_color color,
     struct wp_vec2f *points;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     points = (struct wp_vec2f *)wp_buffer_memory( list->buffer );
     wp_draw_list_stroke_poly_line( list, points, list->path_count, color, closed, thickness,
                                    list->config.line_AA );
@@ -1100,7 +1194,9 @@ void wp_draw_list_stroke_line( struct wp_draw_list *list, struct wp_vec2f a, str
 {
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     if( list->line_AA == WORKPHONE_ANTI_ALIASING_ON )
     {
         wp_draw_list_path_line_to( list, a );
@@ -1119,7 +1215,9 @@ void wp_draw_list_fill_rect( struct wp_draw_list *list, struct wp_rect rect, str
 {
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
 
     if( list->line_AA == WORKPHONE_ANTI_ALIASING_ON )
     {
@@ -1139,7 +1237,9 @@ void wp_draw_list_stroke_rect( struct wp_draw_list *list, struct wp_rect rect, s
 {
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     if( list->line_AA == WORKPHONE_ANTI_ALIASING_ON )
     {
         wp_draw_list_path_rect_to( list, wp_make_vec2f( rect.x, rect.y ),
@@ -1170,14 +1270,18 @@ void wp_draw_list_fill_rect_multi_color( struct wp_draw_list *list, struct wp_re
 
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
 
     wp_draw_list_push_image( list, list->config.tex_null.texture );
     index = (wp_draw_index)list->vertex_count;
     vtx = wp_draw_list_alloc_vertices( list, 4 );
     idx = wp_draw_list_alloc_elements( list, 6 );
     if( !vtx || !idx )
+    {
         return;
+    }
 
     idx[0] = (wp_draw_index)( index + 0 );
     idx[1] = (wp_draw_index)( index + 1 );
@@ -1195,35 +1299,44 @@ void wp_draw_list_fill_rect_multi_color( struct wp_draw_list *list, struct wp_re
     vtx = wp_draw_vertex( vtx, &list->config, wp_make_vec2f( rect.x, rect.y + rect.h ),
                           list->config.tex_null.uv, col_bottom );
 }
+
 void wp_draw_list_fill_triangle( struct wp_draw_list *list, struct wp_vec2f a, struct wp_vec2f b,
                                  struct wp_vec2f c, struct wp_color col )
 {
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     wp_draw_list_path_line_to( list, a );
     wp_draw_list_path_line_to( list, b );
     wp_draw_list_path_line_to( list, c );
     wp_draw_list_path_fill( list, col );
 }
+
 void wp_draw_list_stroke_triangle( struct wp_draw_list *list, struct wp_vec2f a, struct wp_vec2f b,
                                    struct wp_vec2f c, struct wp_color col, wp_f32 thickness )
 {
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     wp_draw_list_path_line_to( list, a );
     wp_draw_list_path_line_to( list, b );
     wp_draw_list_path_line_to( list, c );
     wp_draw_list_path_stroke( list, col, WORKPHONE_STROKE_CLOSED, thickness );
 }
+
 void wp_draw_list_fill_circle( struct wp_draw_list *list, struct wp_vec2f center, wp_f32 radius,
                                struct wp_color col, wp_u32 segs )
 {
     wp_f32 a_max;
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     a_max = WORKPHONE_PI * 2.0f * ( (wp_f32)segs - 1.0f ) / (wp_f32)segs;
     wp_draw_list_path_arc_to( list, center, radius, 0.0f, a_max, segs );
     wp_draw_list_path_fill( list, col );
@@ -1235,7 +1348,9 @@ void wp_draw_list_stroke_circle( struct wp_draw_list *list, struct wp_vec2f cent
     wp_f32 a_max;
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     a_max = WORKPHONE_PI * 2.0f * ( (wp_f32)segs - 1.0f ) / (wp_f32)segs;
     wp_draw_list_path_arc_to( list, center, radius, 0.0f, a_max, segs );
     wp_draw_list_path_stroke( list, col, WORKPHONE_STROKE_CLOSED, thickness );
@@ -1247,7 +1362,9 @@ void wp_draw_list_stroke_curve( struct wp_draw_list *list, struct wp_vec2f p0, s
 {
     WORKPHONE_ASSERT( list );
     if( !list || !col.a )
+    {
         return;
+    }
     wp_draw_list_path_line_to( list, p0 );
     wp_draw_list_path_curve_to( list, cp0, cp1, p1, segments );
     wp_draw_list_path_stroke( list, col, WORKPHONE_STROKE_OPEN, thickness );
@@ -1267,7 +1384,9 @@ void wp_draw_list_push_rect_uv( struct wp_draw_list *list, struct wp_vec2f a, st
     wp_draw_index index;
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
 
     wp_color_fv( &col.r, color );
     uvb = wp_make_vec2f( uvc.x, uva.y );
@@ -1279,7 +1398,9 @@ void wp_draw_list_push_rect_uv( struct wp_draw_list *list, struct wp_vec2f a, st
     vtx = wp_draw_list_alloc_vertices( list, 4 );
     idx = wp_draw_list_alloc_elements( list, 6 );
     if( !vtx || !idx )
+    {
         return;
+    }
 
     idx[0] = (wp_draw_index)( index + 0 );
     idx[1] = (wp_draw_index)( index + 1 );
@@ -1299,7 +1420,9 @@ void wp_draw_list_add_image( struct wp_draw_list *list, struct wp_image texture,
 {
     WORKPHONE_ASSERT( list );
     if( !list )
+    {
         return;
+    }
     /* push new command with given texture */
     wp_draw_list_push_image( list, texture.handle );
     if( wp_image_is_subimage( &texture ) )
@@ -1315,9 +1438,11 @@ void wp_draw_list_add_image( struct wp_draw_list *list, struct wp_image texture,
                                    color );
     }
     else
+    {
         wp_draw_list_push_rect_uv( list, wp_make_vec2f( rect.x, rect.y ),
                                    wp_make_vec2f( rect.x + rect.w, rect.y + rect.h ),
                                    wp_make_vec2f( 0.0f, 0.0f ), wp_make_vec2f( 1.0f, 1.0f ), color );
+    }
 }
 
 void wp_draw_list_add_text( struct wp_draw_list *list, const struct wp_user_font *font,
@@ -1334,16 +1459,22 @@ void wp_draw_list_add_text( struct wp_draw_list *list, const struct wp_user_font
 
     WORKPHONE_ASSERT( list );
     if( !list || !len || !text )
+    {
         return;
+    }
     if( !WORKPHONE_INTERSECT( rect.x, rect.y, rect.w, rect.h, list->clip_rect.x, list->clip_rect.y,
                               list->clip_rect.w, list->clip_rect.h ) )
+    {
         return;
+    }
 
     wp_draw_list_push_image( list, font->texture );
     x = rect.x;
     glyph_len = wp_utf_decode( text, &unicode, len );
     if( !glyph_len )
+    {
         return;
+    }
 
     /* draw every glyph image */
     fg.a = (wp_byte)( (wp_f32)fg.a * list->config.global_alpha );
@@ -1352,7 +1483,9 @@ void wp_draw_list_add_text( struct wp_draw_list *list, const struct wp_user_font
         wp_f32 gx, gy, gh, gw;
         wp_f32 wp_c8_width = 0;
         if( unicode == WORKPHONE_UTF_INVALID )
+        {
             break;
+        }
 
         /* query currently drawn glyph information */
         next_glyph_len = wp_utf_decode( text + text_len + glyph_len, &next, (wp_s32)len - text_len );
@@ -1389,7 +1522,9 @@ wp_flags wp_convert( struct wp_context *ctx, struct wp_buffer *cmds, struct wp_b
     WORKPHONE_ASSERT( config->vertex_layout );
     WORKPHONE_ASSERT( config->vertex_size );
     if( !ctx || !cmds || !vertices || !elements || !config || !config->vertex_layout )
+    {
         return WORKPHONE_CONVERT_INVALID_PARAM;
+    }
 
     wp_draw_list_setup( &ctx->draw_list, config, cmds, vertices, elements, config->line_AA,
                         config->shape_AA );

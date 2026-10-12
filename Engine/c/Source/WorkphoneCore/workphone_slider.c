@@ -37,13 +37,20 @@ wp_f32 wp_slider_behavior( wp_flags *state, struct wp_rect *logical_cursor,
 
     /* slider widget state */
     if( wp_input_is_mouse_hovering_rect( in, bounds ) )
+    {
         *state = WORKPHONE_WIDGET_STATE_HOVERED;
+    }
     if( *state & WORKPHONE_WIDGET_STATE_HOVER && !wp_input_is_mouse_prev_hovering_rect( in, bounds ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_ENTERED;
+    }
     else if( wp_input_is_mouse_prev_hovering_rect( in, bounds ) )
+    {
         *state |= WORKPHONE_WIDGET_STATE_LEFT;
+    }
     return slider_value;
 }
+
 WORKPHONE_LIB void wp_draw_slider( struct wp_command_buffer *out, wp_flags state,
                                    const struct wp_style_slider *style, const struct wp_rect *bounds,
                                    const struct wp_rect *visual_cursor, wp_f32 min, wp_f32 value,
@@ -117,11 +124,16 @@ WORKPHONE_LIB void wp_draw_slider( struct wp_command_buffer *out, wp_flags state
 
     /* draw cursor */
     if( cursor->type == WORKPHONE_STYLE_ITEM_IMAGE )
+    {
         wp_draw_image( out, *visual_cursor, &cursor->data.image,
                        wp_rgb_factor( wp_white, style->color_factor ) );
+    }
     else
+    {
         wp_fill_circle( out, *visual_cursor, wp_rgb_factor( cursor->data.color, style->color_factor ) );
+    }
 }
+
 WORKPHONE_LIB wp_f32 wp_do_slider( wp_flags *state, struct wp_command_buffer *out, struct wp_rect bounds,
                                    wp_f32 min, wp_f32 val, wp_f32 max, wp_f32 step,
                                    const struct wp_style_slider *style, struct wp_input *in,
@@ -140,7 +152,9 @@ WORKPHONE_LIB wp_f32 wp_do_slider( wp_flags *state, struct wp_command_buffer *ou
     WORKPHONE_ASSERT( style );
     WORKPHONE_ASSERT( out );
     if( !out || !style )
+    {
         return 0;
+    }
 
     /* remove padding from slider bounds */
     bounds.x = bounds.x + style->padding.x;
@@ -163,13 +177,17 @@ WORKPHONE_LIB wp_f32 wp_do_slider( wp_flags *state, struct wp_command_buffer *ou
         button.x = bounds.x;
         if( wp_do_button_symbol( &ws, out, button, style->dec_symbol, WORKPHONE_BUTTON_DEFAULT,
                                  &style->dec_button, in, font ) )
+        {
             val -= step;
+        }
 
         /* increment button */
         button.x = ( bounds.x + bounds.w ) - button.w;
         if( wp_do_button_symbol( &ws, out, button, style->inc_symbol, WORKPHONE_BUTTON_DEFAULT,
                                  &style->inc_button, in, font ) )
+        {
             val += step;
+        }
 
         bounds.x = bounds.x + button.w + style->spacing.x;
         bounds.w = bounds.w - ( 2 * button.w + 2 * style->spacing.x );
@@ -206,12 +224,17 @@ WORKPHONE_LIB wp_f32 wp_do_slider( wp_flags *state, struct wp_command_buffer *ou
 
     /* draw slider */
     if( style->draw_begin )
+    {
         style->draw_begin( out, style->userdata );
+    }
     wp_draw_slider( out, *state, style, &bounds, &visual_cursor, slider_min, slider_value, slider_max );
     if( style->draw_end )
+    {
         style->draw_end( out, style->userdata );
+    }
     return slider_value;
 }
+
 WORKPHONE_API wp_bool wp_slider_float( struct wp_context *ctx, wp_f32 min_value, wp_f32 *value,
                                        wp_f32 max_value, wp_f32 value_step )
 {
@@ -230,7 +253,9 @@ WORKPHONE_API wp_bool wp_slider_float( struct wp_context *ctx, wp_f32 min_value,
     WORKPHONE_ASSERT( ctx->current->layout );
     WORKPHONE_ASSERT( value );
     if( !ctx || !ctx->current || !ctx->current->layout || !value )
+    {
         return ret;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -238,7 +263,9 @@ WORKPHONE_API wp_bool wp_slider_float( struct wp_context *ctx, wp_f32 min_value,
 
     state = wp_widget( &bounds, ctx );
     if( !state )
+    {
         return ret;
+    }
     in = ( /*state == WORKPHONE_WIDGET_ROM || */ state == WORKPHONE_WIDGET_DISABLED ||
            layout->flags & WORKPHONE_WINDOW_ROM )
              ? 0
@@ -249,12 +276,14 @@ WORKPHONE_API wp_bool wp_slider_float( struct wp_context *ctx, wp_f32 min_value,
                            max_value, value_step, &style->slider, in, style->font );
     return ( old_value > *value || old_value < *value );
 }
+
 WORKPHONE_API wp_f32 wp_slide_wp_f32( struct wp_context *ctx, wp_f32 min, wp_f32 val, wp_f32 max,
                                       wp_f32 step )
 {
     wp_slider_float( ctx, min, &val, max, step );
     return val;
 }
+
 WORKPHONE_API wp_s32 wp_slide_int( struct wp_context *ctx, wp_s32 min, wp_s32 val, wp_s32 max,
                                    wp_s32 step )
 {
@@ -262,6 +291,7 @@ WORKPHONE_API wp_s32 wp_slide_int( struct wp_context *ctx, wp_s32 min, wp_s32 va
     wp_slider_float( ctx, (wp_f32)min, &value, (wp_f32)max, (wp_f32)step );
     return (wp_s32)value;
 }
+
 WORKPHONE_API wp_bool wp_slider_int( struct wp_context *ctx, wp_s32 min, wp_s32 *val, wp_s32 max,
                                      wp_s32 step )
 {

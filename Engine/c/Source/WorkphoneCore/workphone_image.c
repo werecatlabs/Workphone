@@ -86,11 +86,13 @@ struct wp_image wp_image_id( wp_s32 id )
     s.region[3] = 0;
     return s;
 }
+
 wp_bool wp_image_is_subimage( const struct wp_image *img )
 {
     WORKPHONE_ASSERT( img );
     return !( img->w == 0 && img->h == 0 );
 }
+
 void wp_image( struct wp_context *ctx, struct wp_image img )
 {
     struct wp_window *win;
@@ -100,13 +102,18 @@ void wp_image( struct wp_context *ctx, struct wp_image img )
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     if( !wp_widget( &bounds, ctx ) )
+    {
         return;
+    }
     wp_draw_image( &win->buffer, bounds, &img, wp_white );
 }
+
 void wp_image_color( struct wp_context *ctx, struct wp_image img, struct wp_color col )
 {
     struct wp_window *win;
@@ -116,10 +123,14 @@ void wp_image_color( struct wp_context *ctx, struct wp_image img, struct wp_colo
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout )
+    {
         return;
+    }
 
     win = ctx->current;
     if( !wp_widget( &bounds, ctx ) )
+    {
         return;
+    }
     wp_draw_image( &win->buffer, bounds, &img, col );
 }

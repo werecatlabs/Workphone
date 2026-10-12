@@ -112,7 +112,9 @@ static void s_component_destroy( wp_game_component *comp )
 void wp_factory_init( wp_factory *f )
 {
     if( !f )
+    {
         return;
+    }
 
     memset( f, 0, sizeof( *f ) );
     f->next_actor_id = 1;
@@ -124,13 +126,17 @@ void wp_factory_init_with_db( wp_factory *f, wp_resource_database *db )
 {
     wp_factory_init( f );
     if( f )
+    {
         f->res_db = db;
+    }
 }
 
 void wp_factory_destroy( wp_factory *f )
 {
     if( !f )
+    {
         return;
+    }
 
     f->res_db = NULL;
     f->user_data = NULL;
@@ -145,11 +151,15 @@ wp_game_actor *wp_factory_create_actor( wp_factory *f )
     wp_game_actor *actor;
 
     if( !f )
+    {
         return NULL;
+    }
 
     actor = (wp_game_actor *)malloc( sizeof( wp_game_actor ) );
     if( !actor )
+    {
         return NULL;
+    }
 
     wp_game_actor_init_with_id( actor, s_next_id( f ) );
     return actor;
@@ -159,7 +169,9 @@ wp_game_actor *wp_factory_create_named_actor( wp_factory *f, const wp_c8 *name )
 {
     wp_game_actor *actor = wp_factory_create_actor( f );
     if( actor && name )
+    {
         wp_game_actor_set_name( actor, name );
+    }
     return actor;
 }
 
@@ -170,7 +182,9 @@ void wp_factory_destroy_actor( wp_factory *f, wp_game_actor *actor )
     (void)f;
 
     if( !actor )
+    {
         return;
+    }
 
     /* Destroy and free every attached component. */
     for( i = 0; i < actor->num_components; ++i )
@@ -195,11 +209,15 @@ wp_game_actor *wp_factory_clone_actor( wp_factory *f, const wp_game_actor *src )
     wp_u32 i;
 
     if( !f || !src )
+    {
         return NULL;
+    }
 
     dst = (wp_game_actor *)malloc( sizeof( wp_game_actor ) );
     if( !dst )
+    {
         return NULL;
+    }
 
     /* Copy all fields from source. */
     memcpy( dst, src, sizeof( wp_game_actor ) );
@@ -215,7 +233,9 @@ wp_game_actor *wp_factory_clone_actor( wp_factory *f, const wp_game_actor *src )
     for( i = 0; i < dst->num_components; ++i )
     {
         if( dst->components[i] )
+        {
             dst->components[i]->actor = dst;
+        }
     }
 
     return dst;
@@ -233,12 +253,16 @@ wp_game_component *wp_factory_create_component( wp_factory *f, enum wp_component
     (void)f;
 
     if( type >= WP_COMPONENT_TYPE_COUNT )
+    {
         return NULL;
+    }
 
     size = s_component_size( type );
     comp = (wp_game_component *)malloc( size );
     if( !comp )
+    {
         return NULL;
+    }
 
     memset( comp, 0, size );
     s_component_init( comp, type );
@@ -250,7 +274,9 @@ void wp_factory_destroy_component( wp_factory *f, wp_game_component *comp )
     (void)f;
 
     if( !comp )
+    {
         return;
+    }
 
     s_component_destroy( comp );
     free( comp );
@@ -264,7 +290,9 @@ wp_resource *wp_factory_create_resource( wp_factory *f, wp_resource_type type, c
                                          const wp_c8 *path )
 {
     if( !f || !f->res_db )
+    {
         return NULL;
+    }
 
     return wp_resource_db_create( f->res_db, type, name, path );
 }
@@ -272,7 +300,9 @@ wp_resource *wp_factory_create_resource( wp_factory *f, wp_resource_type type, c
 void wp_factory_destroy_resource( wp_factory *f, wp_resource *resource )
 {
     if( !f || !f->res_db || !resource )
+    {
         return;
+    }
 
     wp_resource_db_remove_by_id( f->res_db, resource->id );
 }
@@ -286,11 +316,15 @@ wp_game_actor *wp_factory_instantiate_prefab( wp_factory *f, wp_game_prefab *pre
     wp_game_actor *actor;
 
     if( !f || !prefab )
+    {
         return NULL;
+    }
 
     actor = wp_game_prefab_create_actor( prefab );
     if( !actor )
+    {
         return NULL;
+    }
 
     /* Assign a factory-managed id so the actor fits into the normal id space. */
     actor->id = s_next_id( f );
@@ -314,5 +348,7 @@ wp_resource_database *wp_factory_get_resource_db( const wp_factory *f )
 void wp_factory_set_resource_db( wp_factory *f, wp_resource_database *db )
 {
     if( f )
+    {
         f->res_db = db;
+    }
 }

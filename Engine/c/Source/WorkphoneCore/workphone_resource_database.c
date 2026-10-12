@@ -74,19 +74,25 @@ void wp_resource_db_reserve( wp_resource_database *db, wp_u32 capacity )
     wp_u32 old_cap;
 
     if( capacity <= db->capacity )
+    {
         return;
+    }
 
     old_cap = db->capacity;
 
     new_resources = (wp_resource **)realloc( db->resources, capacity * sizeof( wp_resource * ) );
     if( !new_resources )
+    {
         return;
+    }
     memset( new_resources + old_cap, 0, ( capacity - old_cap ) * sizeof( wp_resource * ) );
     db->resources = new_resources;
 
     new_active = (wp_u32 *)realloc( db->active, capacity * sizeof( wp_u32 ) );
     if( !new_active )
+    {
         return;
+    }
     memset( new_active + old_cap, 0, ( capacity - old_cap ) * sizeof( wp_u32 ) );
     db->active = new_active;
 
@@ -113,7 +119,9 @@ wp_s32 wp_resource_db_add( wp_resource_database *db, wp_resource *resource )
     wp_u32 first_new;
 
     if( !resource )
+    {
         return -1;
+    }
 
     for( i = 0; i < db->capacity; ++i )
     {
@@ -129,7 +137,9 @@ wp_s32 wp_resource_db_add( wp_resource_database *db, wp_resource *resource )
     first_new = db->capacity;
     wp_resource_db_grow( db );
     if( db->capacity <= first_new )
+    {
         return -1;
+    }
 
     db->resources[first_new] = resource;
     db->active[first_new] = 1;
@@ -145,13 +155,19 @@ wp_resource *wp_resource_db_create( wp_resource_database *db, wp_resource_type t
 
     resource = wp_resource_create();
     if( !resource )
+    {
         return NULL;
+    }
 
     wp_resource_set_type( resource, type );
     if( name )
+    {
         wp_resource_set_name( resource, name );
+    }
     if( path )
+    {
         wp_resource_set_path( resource, path );
+    }
 
     index = wp_resource_db_add( db, resource );
     if( index < 0 )
@@ -166,9 +182,13 @@ wp_resource *wp_resource_db_create( wp_resource_database *db, wp_resource_type t
 void wp_resource_db_remove( wp_resource_database *db, wp_u32 index )
 {
     if( index >= db->capacity )
+    {
         return;
+    }
     if( !db->active[index] )
+    {
         return;
+    }
 
     wp_resource_destroy( db->resources[index] );
     db->resources[index] = NULL;
@@ -196,7 +216,9 @@ void wp_resource_db_remove_by_id( wp_resource_database *db, wp_s32 id )
 wp_resource *wp_resource_db_get( const wp_resource_database *db, wp_u32 index )
 {
     if( index >= db->capacity )
+    {
         return NULL;
+    }
     return db->active[index] ? db->resources[index] : NULL;
 }
 
@@ -206,7 +228,9 @@ wp_resource *wp_resource_db_find_by_id( const wp_resource_database *db, wp_s32 i
     for( i = 0; i < db->capacity; ++i )
     {
         if( db->active[i] && db->resources[i]->id == id )
+        {
             return db->resources[i];
+        }
     }
     return NULL;
 }
@@ -215,11 +239,15 @@ wp_resource *wp_resource_db_find_by_path( const wp_resource_database *db, const 
 {
     wp_u32 i;
     if( !path )
+    {
         return NULL;
+    }
     for( i = 0; i < db->capacity; ++i )
     {
         if( db->active[i] && strcmp( db->resources[i]->path, path ) == 0 )
+        {
             return db->resources[i];
+        }
     }
     return NULL;
 }
@@ -228,11 +256,15 @@ wp_resource *wp_resource_db_find_by_name( const wp_resource_database *db, const 
 {
     wp_u32 i;
     if( !name )
+    {
         return NULL;
+    }
     for( i = 0; i < db->capacity; ++i )
     {
         if( db->active[i] && strcmp( db->resources[i]->name, name ) == 0 )
+        {
             return db->resources[i];
+        }
     }
     return NULL;
 }
@@ -261,7 +293,9 @@ void wp_resource_db_load_all( wp_resource_database *db )
     for( i = 0; i < db->capacity; ++i )
     {
         if( db->active[i] )
+        {
             wp_resource_load( db->resources[i] );
+        }
     }
 }
 
@@ -271,7 +305,9 @@ void wp_resource_db_unload_all( wp_resource_database *db )
     for( i = 0; i < db->capacity; ++i )
     {
         if( db->active[i] )
+        {
             wp_resource_unload( db->resources[i] );
+        }
     }
 }
 
@@ -281,6 +317,8 @@ void wp_resource_db_purge_by_type( wp_resource_database *db, wp_resource_type ty
     for( i = 0; i < db->capacity; ++i )
     {
         if( db->active[i] && db->resources[i]->type == type )
+        {
             wp_resource_db_remove( db, i );
+        }
     }
 }

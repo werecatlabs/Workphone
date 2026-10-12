@@ -93,6 +93,8 @@ void wp_game_prefab_set_create_fn( wp_game_prefab *prefab, wp_prefab_create_acto
 struct wp_game_actor *wp_game_prefab_create_actor( wp_game_prefab *prefab )
 {
     if( prefab->create_fn )
+    {
         return prefab->create_fn( prefab, prefab->create_fn_user_data );
+    }
     return NULL;
 }

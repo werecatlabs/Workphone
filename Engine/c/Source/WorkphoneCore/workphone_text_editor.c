@@ -36,6 +36,7 @@ WORKPHONE_INTERN wp_f32 wp_textedit_get_width( const struct wp_text_edit *edit, 
     const wp_c8 *str = wp_str_at_const( &edit->string, line_start + wp_c8_id, &unicode, &len );
     return font->width( font->userdata, font->height, str, len );
 }
+
 WORKPHONE_INTERN void wp_textedit_layout_row( struct wp_text_edit_row *r, struct wp_text_edit *edit,
                                               wp_s32 line_start_id, wp_f32 row_height,
                                               const struct wp_user_font *font )
@@ -58,6 +59,7 @@ WORKPHONE_INTERN void wp_textedit_layout_row( struct wp_text_edit_row *r, struct
     r->ymax = size.y;
     r->num_wp_c8s = glyphs;
 }
+
 WORKPHONE_INTERN wp_s32 wp_textedit_locate_coord( struct wp_text_edit *edit, wp_f32 x, wp_f32 y,
                                                   const struct wp_user_font *font, wp_f32 row_height )
 {
@@ -75,13 +77,19 @@ WORKPHONE_INTERN wp_s32 wp_textedit_locate_coord( struct wp_text_edit *edit, wp_
     {
         wp_textedit_layout_row( &r, edit, i, row_height, font );
         if( r.num_wp_c8s <= 0 )
+        {
             return n;
+        }
 
         if( i == 0 && y < base_y + r.ymin )
+        {
             return 0;
+        }
 
         if( y < base_y + r.ymax )
+        {
             break;
+        }
 
         i += r.num_wp_c8s;
         base_y += r.baseline_y_delta;
@@ -89,11 +97,15 @@ WORKPHONE_INTERN wp_s32 wp_textedit_locate_coord( struct wp_text_edit *edit, wp_
 
     /* below all text, return 'after' last wp_c8acter */
     if( i >= n )
+    {
         return n;
+    }
 
     /* check if it's before the beginning of the line */
     if( x < r.x0 )
+    {
         return i;
+    }
 
     /* check if it's before the end of the line */
     if( x < r.x1 )
@@ -107,9 +119,13 @@ WORKPHONE_INTERN wp_s32 wp_textedit_locate_coord( struct wp_text_edit *edit, wp_
             if( x < prev_x + w )
             {
                 if( x < prev_x + w / 2 )
+                {
                     return k + i;
+                }
                 else
+                {
                     return k + i + 1;
+                }
             }
             prev_x += w;
         }
@@ -119,10 +135,15 @@ WORKPHONE_INTERN wp_s32 wp_textedit_locate_coord( struct wp_text_edit *edit, wp_
     /* if the last wp_c8acter is a newline, return that.
      * otherwise return 'after' the last wp_c8acter */
     if( wp_str_rune_at( &edit->string, i + r.num_wp_c8s - 1 ) == '\n' )
+    {
         return i + r.num_wp_c8s - 1;
+    }
     else
+    {
         return i + r.num_wp_c8s;
+    }
 }
+
 WORKPHONE_LIB void wp_textedit_click( struct wp_text_edit *state, wp_f32 x, wp_f32 y,
                                       const struct wp_user_font *font, wp_f32 row_height )
 {
@@ -133,6 +154,7 @@ WORKPHONE_LIB void wp_textedit_click( struct wp_text_edit *state, wp_f32 x, wp_f
     state->select_end = state->cursor;
     state->has_preferred_x = 0;
 }
+
 WORKPHONE_LIB void wp_textedit_drag( struct wp_text_edit *state, wp_f32 x, wp_f32 y,
                                      const struct wp_user_font *font, wp_f32 row_height )
 {
@@ -140,9 +162,12 @@ WORKPHONE_LIB void wp_textedit_drag( struct wp_text_edit *state, wp_f32 x, wp_f3
      * to the clicked location */
     wp_s32 p = wp_textedit_locate_coord( state, x, y, font, row_height );
     if( state->select_start == state->select_end )
+    {
         state->select_start = state->cursor;
+    }
     state->cursor = state->select_end = p;
 }
+
 WORKPHONE_INTERN void wp_textedit_find_wp_c8pos( struct wp_text_find *find, struct wp_text_edit *state,
                                                  wp_s32 n, wp_s32 single_line,
                                                  const struct wp_user_font *font, wp_f32 row_height )
@@ -191,7 +216,9 @@ WORKPHONE_INTERN void wp_textedit_find_wp_c8pos( struct wp_text_find *find, stru
     {
         wp_textedit_layout_row( &r, state, i, row_height, font );
         if( n < i + r.num_wp_c8s )
+        {
             break;
+        }
         prev_start = i;
         i += r.num_wp_c8s;
         find->y += r.baseline_y_delta;
@@ -205,8 +232,11 @@ WORKPHONE_INTERN void wp_textedit_find_wp_c8pos( struct wp_text_find *find, stru
     /* now scan to find xpos */
     find->x = r.x0;
     for( i = 0; first + i < n; ++i )
+    {
         find->x += wp_textedit_get_width( state, first, i, font );
+    }
 }
+
 WORKPHONE_INTERN void wp_textedit_clamp( struct wp_text_edit *state )
 {
     /* make the selection/cursor state valid if client altered the string */
@@ -214,16 +244,25 @@ WORKPHONE_INTERN void wp_textedit_clamp( struct wp_text_edit *state )
     if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
     {
         if( state->select_start > n )
+        {
             state->select_start = n;
+        }
         if( state->select_end > n )
+        {
             state->select_end = n;
+        }
         /* if clamping forced them to be equal, move the cursor to match */
         if( state->select_start == state->select_end )
+        {
             state->cursor = state->select_start;
+        }
     }
     if( state->cursor > n )
+    {
         state->cursor = n;
+    }
 }
+
 WORKPHONE_API void wp_textedit_delete( struct wp_text_edit *state, wp_s32 where, wp_s32 len )
 {
     /* delete wp_c8acters while updating undo */
@@ -231,6 +270,7 @@ WORKPHONE_API void wp_textedit_delete( struct wp_text_edit *state, wp_s32 where,
     wp_str_delete_runes( &state->string, where, len );
     state->has_preferred_x = 0;
 }
+
 WORKPHONE_API void wp_textedit_delete_selection( struct wp_text_edit *state )
 {
     /* delete the section */
@@ -250,6 +290,7 @@ WORKPHONE_API void wp_textedit_delete_selection( struct wp_text_edit *state )
         state->has_preferred_x = 0;
     }
 }
+
 WORKPHONE_INTERN void wp_textedit_sortselection( struct wp_text_edit *state )
 {
     /* canonicalize the selection so start <= end */
@@ -260,6 +301,7 @@ WORKPHONE_INTERN void wp_textedit_sortselection( struct wp_text_edit *state )
         state->select_start = temp;
     }
 }
+
 WORKPHONE_INTERN void wp_textedit_move_to_first( struct wp_text_edit *state )
 {
     /* move cursor to first wp_c8acter of selection */
@@ -271,6 +313,7 @@ WORKPHONE_INTERN void wp_textedit_move_to_first( struct wp_text_edit *state )
         state->has_preferred_x = 0;
     }
 }
+
 WORKPHONE_INTERN void wp_textedit_move_to_last( struct wp_text_edit *state )
 {
     /* move cursor to last wp_c8acter of selection */
@@ -283,20 +326,26 @@ WORKPHONE_INTERN void wp_textedit_move_to_last( struct wp_text_edit *state )
         state->has_preferred_x = 0;
     }
 }
+
 WORKPHONE_INTERN wp_s32 wp_is_word_boundary( struct wp_text_edit *state, wp_s32 idx )
 {
     wp_s32 len;
     wp_rune c;
     if( idx < 0 )
+    {
         return 1;
+    }
     if( !wp_str_at_rune( &state->string, idx, &c, &len ) )
+    {
         return 1;
+    }
 #ifndef WORKPHONE_IS_WORD_BOUNDARY
     return ( c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v' || c == 0x3000 );
 #else
     return WORKPHONE_IS_WORD_BOUNDARY( c );
 #endif
 }
+
 WORKPHONE_INTERN wp_s32 wp_textedit_move_to_word_previous( struct wp_text_edit *state )
 {
     wp_s32 c = state->cursor - 1;
@@ -318,6 +367,7 @@ WORKPHONE_INTERN wp_s32 wp_textedit_move_to_word_previous( struct wp_text_edit *
 
     return c;
 }
+
 WORKPHONE_INTERN wp_s32 wp_textedit_move_to_word_next( struct wp_text_edit *state )
 {
     const wp_s32 len = state->string.len;
@@ -339,19 +389,27 @@ WORKPHONE_INTERN wp_s32 wp_textedit_move_to_word_next( struct wp_text_edit *stat
 
     return c;
 }
+
 WORKPHONE_INTERN void wp_textedit_prep_selection_at_cursor( struct wp_text_edit *state )
 {
     /* update selection and cursor to match each other */
     if( !WORKPHONE_TEXT_HAS_SELECTION( state ) )
+    {
         state->select_start = state->select_end = state->cursor;
+    }
     else
+    {
         state->cursor = state->select_end;
+    }
 }
+
 WORKPHONE_API wp_bool wp_textedit_cut( struct wp_text_edit *state )
 {
     /* API cut: delete selection */
     if( state->mode == WORKPHONE_TEXT_EDIT_MODE_VIEW )
+    {
         return 0;
+    }
     if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
     {
         wp_textedit_delete_selection( state ); /* implicitly clamps */
@@ -360,13 +418,16 @@ WORKPHONE_API wp_bool wp_textedit_cut( struct wp_text_edit *state )
     }
     return 0;
 }
+
 WORKPHONE_API wp_bool wp_textedit_paste( struct wp_text_edit *state, wp_c8 const *ctext, wp_s32 len )
 {
     /* API paste: replace existing selection with passed-in text */
     wp_s32 glyphs;
     const wp_c8 *text = (const wp_c8 *)ctext;
     if( state->mode == WORKPHONE_TEXT_EDIT_MODE_VIEW )
+    {
         return 0;
+    }
 
     /* if there's a selection, the paste should delete it */
     wp_textedit_clamp( state );
@@ -383,10 +444,13 @@ WORKPHONE_API wp_bool wp_textedit_paste( struct wp_text_edit *state, wp_c8 const
     }
     /* remove the undo since we didn't actually insert the wp_c8acters */
     if( state->undo.undo_point )
+    {
         --state->undo.undo_point;
+    }
 
     return 0;
 }
+
 WORKPHONE_API void wp_textedit_text( struct wp_text_edit *state, const wp_c8 *text, wp_s32 total_len )
 {
     wp_rune unicode;
@@ -396,20 +460,28 @@ WORKPHONE_API void wp_textedit_text( struct wp_text_edit *state, const wp_c8 *te
     WORKPHONE_ASSERT( state );
     WORKPHONE_ASSERT( text );
     if( !text || !total_len || state->mode == WORKPHONE_TEXT_EDIT_MODE_VIEW )
+    {
         return;
+    }
 
     glyph_len = wp_utf_decode( text, &unicode, total_len );
     while( ( text_len < total_len ) && glyph_len )
     {
         /* don't insert a backward delete, just process the event */
         if( unicode == 127 )
+        {
             goto next;
+        }
         /* can't add newline in single-line mode */
         if( unicode == '\n' && state->single_line )
+        {
             goto next;
+        }
         /* filter incoming text */
         if( state->filter && !state->filter( state, unicode ) )
+        {
             goto next;
+        }
 
         if( !WORKPHONE_TEXT_HAS_SELECTION( state ) && state->cursor < state->string.len )
         {
@@ -439,6 +511,7 @@ WORKPHONE_API void wp_textedit_text( struct wp_text_edit *state, const wp_c8 *te
         glyph_len = wp_utf_decode( text + text_len, &unicode, total_len - text_len );
     }
 }
+
 WORKPHONE_LIB void wp_textedit_key( struct wp_text_edit *state, enum wp_keys key, wp_s32 shift_mod,
                                     const struct wp_user_font *font, wp_f32 row_height )
 {
@@ -488,7 +561,9 @@ retry:
             wp_textedit_prep_selection_at_cursor( state );
             /* move selection left */
             if( state->select_end > 0 )
+            {
                 --state->select_end;
+            }
             state->cursor = state->select_end;
             state->has_preferred_x = 0;
         }
@@ -497,9 +572,13 @@ retry:
             /* if currently there's a selection,
              * move cursor to start of selection */
             if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+            {
                 wp_textedit_move_to_first( state );
+            }
             else if( state->cursor > 0 )
+            {
                 --state->cursor;
+            }
             state->has_preferred_x = 0;
         }
         break;
@@ -519,9 +598,13 @@ retry:
             /* if currently there's a selection,
              * move cursor to end of selection */
             if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+            {
                 wp_textedit_move_to_last( state );
+            }
             else
+            {
                 ++state->cursor;
+            }
             wp_textedit_clamp( state );
             state->has_preferred_x = 0;
         }
@@ -531,7 +614,9 @@ retry:
         if( shift_mod )
         {
             if( !WORKPHONE_TEXT_HAS_SELECTION( state ) )
+            {
                 wp_textedit_prep_selection_at_cursor( state );
+            }
             state->cursor = wp_textedit_move_to_word_previous( state );
             state->select_end = state->cursor;
             wp_textedit_clamp( state );
@@ -539,7 +624,9 @@ retry:
         else
         {
             if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+            {
                 wp_textedit_move_to_first( state );
+            }
             else
             {
                 state->cursor = wp_textedit_move_to_word_previous( state );
@@ -552,7 +639,9 @@ retry:
         if( shift_mod )
         {
             if( !WORKPHONE_TEXT_HAS_SELECTION( state ) )
+            {
                 wp_textedit_prep_selection_at_cursor( state );
+            }
             state->cursor = wp_textedit_move_to_word_next( state );
             state->select_end = state->cursor;
             wp_textedit_clamp( state );
@@ -560,7 +649,9 @@ retry:
         else
         {
             if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+            {
                 wp_textedit_move_to_last( state );
+            }
             else
             {
                 state->cursor = wp_textedit_move_to_word_next( state );
@@ -583,9 +674,13 @@ retry:
         }
 
         if( sel )
+        {
             wp_textedit_prep_selection_at_cursor( state );
+        }
         else if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+        {
             wp_textedit_move_to_last( state );
+        }
 
         /* compute current position of cursor powp_s32 */
         wp_textedit_clamp( state );
@@ -607,7 +702,9 @@ retry:
                 wp_f32 dx = wp_textedit_get_width( state, start, i, font );
                 x += dx;
                 if( x > goal_x )
+                {
                     break;
+                }
                 ++state->cursor;
             }
             wp_textedit_clamp( state );
@@ -615,7 +712,9 @@ retry:
             state->has_preferred_x = 1;
             state->preferred_x = goal_x;
             if( sel )
+            {
                 state->select_end = state->cursor;
+            }
         }
     }
     break;
@@ -634,9 +733,13 @@ retry:
         }
 
         if( sel )
+        {
             wp_textedit_prep_selection_at_cursor( state );
+        }
         else if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+        {
             wp_textedit_move_to_first( state );
+        }
 
         /* compute current position of cursor powp_s32 */
         wp_textedit_clamp( state );
@@ -658,7 +761,9 @@ retry:
                 wp_f32 dx = wp_textedit_get_width( state, find.prev_first, i, font );
                 x += dx;
                 if( x > goal_x )
+                {
                     break;
+                }
                 ++state->cursor;
             }
             wp_textedit_clamp( state );
@@ -666,30 +771,42 @@ retry:
             state->has_preferred_x = 1;
             state->preferred_x = goal_x;
             if( sel )
+            {
                 state->select_end = state->cursor;
+            }
         }
     }
     break;
 
     case WORKPHONE_KEY_DEL:
         if( state->mode == WORKPHONE_TEXT_EDIT_MODE_VIEW )
+        {
             break;
+        }
         if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+        {
             wp_textedit_delete_selection( state );
+        }
         else
         {
             wp_s32 n = state->string.len;
             if( state->cursor < n )
+            {
                 wp_textedit_delete( state, state->cursor, 1 );
+            }
         }
         state->has_preferred_x = 0;
         break;
 
     case WORKPHONE_KEY_BACKSPACE:
         if( state->mode == WORKPHONE_TEXT_EDIT_MODE_VIEW )
+        {
             break;
+        }
         if( WORKPHONE_TEXT_HAS_SELECTION( state ) )
+        {
             wp_textedit_delete_selection( state );
+        }
         else
         {
             wp_textedit_clamp( state );
@@ -739,7 +856,9 @@ retry:
             wp_textedit_clamp( state );
             wp_textedit_prep_selection_at_cursor( state );
             if( state->string.len && state->cursor == state->string.len )
+            {
                 --state->cursor;
+            }
             wp_textedit_find_wp_c8pos( &find, state, state->cursor, state->single_line, font,
                                        row_height );
             state->cursor = state->select_end = find.first_wp_c8;
@@ -749,7 +868,9 @@ retry:
         {
             struct wp_text_find find;
             if( state->string.len && state->cursor == state->string.len )
+            {
                 --state->cursor;
+            }
             wp_textedit_clamp( state );
             wp_textedit_move_to_first( state );
             wp_textedit_find_wp_c8pos( &find, state, state->cursor, state->single_line, font,
@@ -772,7 +893,9 @@ retry:
             state->has_preferred_x = 0;
             state->cursor = find.first_wp_c8 + find.length;
             if( find.length > 0 && wp_str_rune_at( &state->string, state->cursor - 1 ) == '\n' )
+            {
                 --state->cursor;
+            }
             state->select_end = state->cursor;
         }
         else
@@ -786,7 +909,9 @@ retry:
             state->has_preferred_x = 0;
             state->cursor = find.first_wp_c8 + find.length;
             if( find.length > 0 && wp_str_rune_at( &state->string, state->cursor - 1 ) == '\n' )
+            {
                 --state->cursor;
+            }
         }
     }
     break;
@@ -815,7 +940,9 @@ WORKPHONE_INTERN void wp_textedit_discard_undo( struct wp_text_undo_state *state
             for( i = 0; i < state->undo_point; ++i )
             {
                 if( state->undo_rec[i].char_storage >= 0 )
+                {
                     state->undo_rec[i].char_storage = (short)( state->undo_rec[i].char_storage - n );
+                }
             }
         }
         --state->undo_point;
@@ -854,8 +981,10 @@ WORKPHONE_INTERN void wp_textedit_discard_redo( struct wp_text_undo_state *state
         ++state->redo_point;
         num = (wp_size)( WORKPHONE_TEXTEDIT_UNDOSTATECOUNT - state->redo_char_point );
         if( num )
+        {
             WORKPHONE_MEMCPY( state->undo_rec + state->redo_char_point - 1,
                               state->undo_rec + state->redo_point, num * sizeof( state->undo_rec[0] ) );
+        }
     }
 }
 
@@ -868,7 +997,9 @@ WORKPHONE_INTERN struct wp_text_undo_record *wp_textedit_create_undo_record(
     /* if we have no free records, we have to make room,
      * by sliding the existing records down */
     if( state->undo_point == WORKPHONE_TEXTEDIT_UNDOSTATECOUNT )
+    {
         wp_textedit_discard_undo( state );
+    }
 
     /* if the wp_c8acters to store won't possibly fit in the buffer,
      * we can't undo */
@@ -882,7 +1013,9 @@ WORKPHONE_INTERN struct wp_text_undo_record *wp_textedit_create_undo_record(
     /* if we don't have enough free wp_c8acters in the buffer,
      * we have to make room */
     while( state->undo_char_point + numwp_c8s > WORKPHONE_TEXTEDIT_UNDOCHARCOUNT )
+    {
         wp_textedit_discard_undo( state );
+    }
     return &state->undo_rec[state->undo_point++];
 }
 
@@ -891,7 +1024,9 @@ WORKPHONE_INTERN wp_rune *wp_textedit_createundo( struct wp_text_undo_state *sta
 {
     struct wp_text_undo_record *r = wp_textedit_create_undo_record( state, insert_len );
     if( r == 0 )
+    {
         return 0;
+    }
 
     r->where = pos;
     r->insert_length = (short)insert_len;
@@ -915,7 +1050,9 @@ WORKPHONE_API void wp_textedit_undo( struct wp_text_edit *state )
     struct wp_text_undo_state *s = &state->undo;
     struct wp_text_undo_record u, *r;
     if( s->undo_point == 0 )
+    {
         return;
+    }
 
     /* we need to do two things: apply the undo record, and create a redo record */
     u = s->undo_rec[s->undo_point - 1];
@@ -952,7 +1089,9 @@ WORKPHONE_API void wp_textedit_undo( struct wp_text_edit *state )
                 wp_textedit_discard_redo( s );
                 /* should never happen: */
                 if( s->redo_char_point == WORKPHONE_TEXTEDIT_UNDOSTATECOUNT )
+                {
                     return;
+                }
             }
 
             r = &s->undo_rec[s->redo_char_point - 1];
@@ -961,7 +1100,9 @@ WORKPHONE_API void wp_textedit_undo( struct wp_text_edit *state )
 
             /* now save the wp_c8acters */
             for( i = 0; i < u.delete_length; ++i )
+            {
                 s->undo_char[r->char_storage + i] = wp_str_rune_at( &state->string, u.where + i );
+            }
         }
         /* now we can carry out the deletion */
         wp_str_delete_runes( &state->string, u.where, u.delete_length );
@@ -986,7 +1127,9 @@ WORKPHONE_API void wp_textedit_redo( struct wp_text_edit *state )
     struct wp_text_undo_state *s = &state->undo;
     struct wp_text_undo_record *u, r;
     if( s->redo_char_point == WORKPHONE_TEXTEDIT_UNDOSTATECOUNT )
+    {
         return;
+    }
 
     /* we need to do two things: apply the redo record, and create an undo record */
     u = &s->undo_rec[s->undo_point];
@@ -1034,11 +1177,13 @@ WORKPHONE_API void wp_textedit_redo( struct wp_text_edit *state )
     s->undo_point++;
     s->redo_point++;
 }
+
 WORKPHONE_INTERN void wp_textedit_makeundo_insert( struct wp_text_edit *state, wp_s32 where,
                                                    wp_s32 length )
 {
     wp_textedit_createundo( &state->undo, where, 0, length );
 }
+
 WORKPHONE_INTERN void wp_textedit_makeundo_delete( struct wp_text_edit *state, wp_s32 where,
                                                    wp_s32 length )
 {
@@ -1047,9 +1192,12 @@ WORKPHONE_INTERN void wp_textedit_makeundo_delete( struct wp_text_edit *state, w
     if( p )
     {
         for( i = 0; i < length; ++i )
+        {
             p[i] = wp_str_rune_at( &state->string, where + i );
+        }
     }
 }
+
 WORKPHONE_INTERN void wp_textedit_makeundo_replace( struct wp_text_edit *state, wp_s32 where,
                                                     wp_s32 old_length, wp_s32 new_length )
 {
@@ -1058,9 +1206,12 @@ WORKPHONE_INTERN void wp_textedit_makeundo_replace( struct wp_text_edit *state, 
     if( p )
     {
         for( i = 0; i < old_length; ++i )
+        {
             p[i] = wp_str_rune_at( &state->string, where + i );
+        }
     }
 }
+
 WORKPHONE_LIB void wp_textedit_clear_state( struct wp_text_edit *state, enum wp_text_edit_type type,
                                             wp_plugin_filter filter )
 {
@@ -1080,23 +1231,29 @@ WORKPHONE_LIB void wp_textedit_clear_state( struct wp_text_edit *state, enum wp_
     state->filter = filter;
     state->scrollbar = wp_make_vec2f( 0, 0 );
 }
+
 WORKPHONE_API void wp_textedit_init_fixed( struct wp_text_edit *state, void *memory, wp_size size )
 {
     WORKPHONE_ASSERT( state );
     WORKPHONE_ASSERT( memory );
     if( !state || !memory || !size )
+    {
         return;
+    }
     WORKPHONE_MEMSET( state, 0, sizeof( struct wp_text_edit ) );
     wp_textedit_clear_state( state, WORKPHONE_TEXT_EDIT_SINGLE_LINE, 0 );
     wp_str_init_fixed( &state->string, memory, size );
 }
+
 WORKPHONE_API void wp_textedit_init( struct wp_text_edit *state, const struct wp_allocator *alloc,
                                      wp_size size )
 {
     WORKPHONE_ASSERT( state );
     WORKPHONE_ASSERT( alloc );
     if( !state || !alloc )
+    {
         return;
+    }
     WORKPHONE_MEMSET( state, 0, sizeof( struct wp_text_edit ) );
     wp_textedit_clear_state( state, WORKPHONE_TEXT_EDIT_SINGLE_LINE, 0 );
     wp_str_init( &state->string, alloc, size );
@@ -1106,7 +1263,9 @@ WORKPHONE_API void wp_textedit_init_default( struct wp_text_edit *state )
 {
     WORKPHONE_ASSERT( state );
     if( !state )
+    {
         return;
+    }
     WORKPHONE_MEMSET( state, 0, sizeof( struct wp_text_edit ) );
     wp_textedit_clear_state( state, WORKPHONE_TEXT_EDIT_SINGLE_LINE, 0 );
     wp_str_init_default( &state->string );
@@ -1118,10 +1277,13 @@ WORKPHONE_API void wp_textedit_select_all( struct wp_text_edit *state )
     state->select_start = 0;
     state->select_end = state->string.len;
 }
+
 WORKPHONE_API void wp_textedit_free( struct wp_text_edit *state )
 {
     WORKPHONE_ASSERT( state );
     if( !state )
+    {
         return;
+    }
     wp_str_free( &state->string );
 }

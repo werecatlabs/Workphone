@@ -45,7 +45,7 @@ WORKPHONE_LIB void *wp_create_panel( struct wp_context *ctx );
 WORKPHONE_LIB void wp_free_panel( struct wp_context *, struct wp_panel *pan );
 WORKPHONE_LIB wp_bool wp_panel_has_header( wp_flags flags, const wp_c8 *title );
 WORKPHONE_LIB struct wp_vec2f wp_panel_get_padding( const struct wp_style *style,
-                                                   enum wp_panel_type type );
+                                                    enum wp_panel_type type );
 WORKPHONE_LIB wp_f32 wp_panel_get_border( const struct wp_style *style, wp_flags flags,
                                           enum wp_panel_type type );
 WORKPHONE_LIB struct wp_color wp_panel_get_border_color( const struct wp_style *style,

@@ -27,6 +27,7 @@ struct wp_nine_slice
 struct wp_style_item
 {
     enum wp_style_item_type type;
+
     union
     {
         struct wp_color color;
@@ -34,6 +35,7 @@ struct wp_style_item
         struct wp_nine_slice slice;
     } data;
 };
+
 struct wp_style_text
 {
     struct wp_color color;

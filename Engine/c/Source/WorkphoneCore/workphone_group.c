@@ -25,7 +25,9 @@ wp_bool wp_group_scrolled_offset_begin( struct wp_context *ctx, wp_u32 *x_offset
         }
     }
     if( win->flags & WORKPHONE_WINDOW_ROM )
+    {
         flags |= WORKPHONE_WINDOW_ROM;
+    }
 
     /* initialize a fake window to create the panel from */
     wp_zero( &panel, sizeof( panel ) );
@@ -52,12 +54,17 @@ wp_bool wp_group_scrolled_offset_begin( struct wp_context *ctx, wp_u32 *x_offset
         wp_flags f = panel.layout->flags;
         wp_group_scrolled_end( ctx );
         if( f & WORKPHONE_WINDOW_CLOSED )
+        {
             return WORKPHONE_WINDOW_CLOSED;
+        }
         if( f & WORKPHONE_WINDOW_MINIMIZED )
+        {
             return WORKPHONE_WINDOW_MINIMIZED;
+        }
     }
     return 1;
 }
+
 WORKPHONE_API void wp_group_scrolled_end( struct wp_context *ctx )
 {
     struct wp_window *win;
@@ -71,7 +78,9 @@ WORKPHONE_API void wp_group_scrolled_end( struct wp_context *ctx )
     WORKPHONE_ASSERT( ctx );
     WORKPHONE_ASSERT( ctx->current );
     if( !ctx || !ctx->current )
+    {
         return;
+    }
 
     /* make sure wp_group_begin was called correctly */
     WORKPHONE_ASSERT( ctx->current );
@@ -121,11 +130,13 @@ WORKPHONE_API void wp_group_scrolled_end( struct wp_context *ctx )
     g->bounds = pan.bounds;
     return;
 }
+
 WORKPHONE_API wp_bool wp_group_scrolled_begin( struct wp_context *ctx, struct wp_scroll *scroll,
                                                const wp_c8 *title, wp_flags flags )
 {
     return wp_group_scrolled_offset_begin( ctx, &scroll->x, &scroll->y, title, flags );
 }
+
 WORKPHONE_API wp_bool wp_group_begin_titled( struct wp_context *ctx, const wp_c8 *id, const wp_c8 *title,
                                              wp_flags flags )
 {
@@ -140,7 +151,9 @@ WORKPHONE_API wp_bool wp_group_begin_titled( struct wp_context *ctx, const wp_c8
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout || !id )
+    {
         return 0;
+    }
 
     /* find persistent group scrollbar value */
     win = ctx->current;
@@ -155,21 +168,28 @@ WORKPHONE_API wp_bool wp_group_begin_titled( struct wp_context *ctx, const wp_c8
         WORKPHONE_ASSERT( x_offset );
         WORKPHONE_ASSERT( y_offset );
         if( !x_offset || !y_offset )
+        {
             return 0;
+        }
         *x_offset = *y_offset = 0;
     }
     else
+    {
         y_offset = wp_find_value( win, id_hash + 1 );
+    }
     return wp_group_scrolled_offset_begin( ctx, x_offset, y_offset, title, flags );
 }
+
 WORKPHONE_API wp_bool wp_group_begin( struct wp_context *ctx, const wp_c8 *title, wp_flags flags )
 {
     return wp_group_begin_titled( ctx, title, title, flags );
 }
+
 WORKPHONE_API void wp_group_end( struct wp_context *ctx )
 {
     wp_group_scrolled_end( ctx );
 }
+
 WORKPHONE_API void wp_group_get_scroll( struct wp_context *ctx, const wp_c8 *id, wp_u32 *x_offset,
                                         wp_u32 *y_offset )
 {
@@ -184,7 +204,9 @@ WORKPHONE_API void wp_group_get_scroll( struct wp_context *ctx, const wp_c8 *id,
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout || !id )
+    {
         return;
+    }
 
     /* find persistent group scrollbar value */
     win = ctx->current;
@@ -199,16 +221,25 @@ WORKPHONE_API void wp_group_get_scroll( struct wp_context *ctx, const wp_c8 *id,
         WORKPHONE_ASSERT( x_offset_ptr );
         WORKPHONE_ASSERT( y_offset_ptr );
         if( !x_offset_ptr || !y_offset_ptr )
+        {
             return;
+        }
         *x_offset_ptr = *y_offset_ptr = 0;
     }
     else
+    {
         y_offset_ptr = wp_find_value( win, id_hash + 1 );
+    }
     if( x_offset )
+    {
         *x_offset = *x_offset_ptr;
+    }
     if( y_offset )
+    {
         *y_offset = *y_offset_ptr;
+    }
 }
+
 WORKPHONE_API void wp_group_set_scroll( struct wp_context *ctx, const wp_c8 *id, wp_u32 x_offset,
                                         wp_u32 y_offset )
 {
@@ -223,7 +254,9 @@ WORKPHONE_API void wp_group_set_scroll( struct wp_context *ctx, const wp_c8 *id,
     WORKPHONE_ASSERT( ctx->current );
     WORKPHONE_ASSERT( ctx->current->layout );
     if( !ctx || !ctx->current || !ctx->current->layout || !id )
+    {
         return;
+    }
 
     /* find persistent group scrollbar value */
     win = ctx->current;
@@ -238,11 +271,15 @@ WORKPHONE_API void wp_group_set_scroll( struct wp_context *ctx, const wp_c8 *id,
         WORKPHONE_ASSERT( x_offset_ptr );
         WORKPHONE_ASSERT( y_offset_ptr );
         if( !x_offset_ptr || !y_offset_ptr )
+        {
             return;
+        }
         *x_offset_ptr = *y_offset_ptr = 0;
     }
     else
+    {
         y_offset_ptr = wp_find_value( win, id_hash + 1 );
+    }
     *x_offset_ptr = x_offset;
     *y_offset_ptr = y_offset;
 }

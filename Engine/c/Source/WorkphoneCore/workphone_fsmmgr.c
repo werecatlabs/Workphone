@@ -73,19 +73,25 @@ void wp_fsm_mgr_reserve( wp_fsm_manager *mgr, wp_u32 capacity )
     wp_u32 old_cap;
 
     if( capacity <= mgr->capacity )
+    {
         return;
+    }
 
     old_cap = mgr->capacity;
 
     new_fsms = (wp_fsm *)realloc( mgr->fsms, capacity * sizeof( wp_fsm ) );
     if( !new_fsms )
+    {
         return;
+    }
     memset( new_fsms + old_cap, 0, ( capacity - old_cap ) * sizeof( wp_fsm ) );
     mgr->fsms = new_fsms;
 
     new_active = (wp_u32 *)realloc( mgr->active, capacity * sizeof( wp_u32 ) );
     if( !new_active )
+    {
         return;
+    }
     memset( new_active + old_cap, 0, ( capacity - old_cap ) * sizeof( wp_u32 ) );
     mgr->active = new_active;
 
@@ -141,10 +147,14 @@ wp_s32 wp_fsm_mgr_create_fsm( wp_fsm_manager *mgr )
 void wp_fsm_mgr_destroy_fsm( wp_fsm_manager *mgr, wp_u32 id )
 {
     if( id >= mgr->capacity )
+    {
         return;
+    }
 
     if( !mgr->active[id] )
+    {
         return;
+    }
 
     wp_fsm_destroy( &mgr->fsms[id] );
     mgr->active[id] = 0;
@@ -158,10 +168,14 @@ void wp_fsm_mgr_destroy_fsm( wp_fsm_manager *mgr, wp_u32 id )
 wp_fsm *wp_fsm_mgr_get_fsm( const wp_fsm_manager *mgr, wp_u32 id )
 {
     if( id >= mgr->capacity )
+    {
         return NULL;
+    }
 
     if( !mgr->active[id] )
+    {
         return NULL;
+    }
 
     return &mgr->fsms[id];
 }
@@ -174,7 +188,9 @@ wp_u32 wp_fsm_mgr_get_num_fsms( const wp_fsm_manager *mgr )
 wp_s32 wp_fsm_mgr_is_active( const wp_fsm_manager *mgr, wp_u32 id )
 {
     if( id >= mgr->capacity )
+    {
         return 0;
+    }
 
     return mgr->active[id] != 0;
 }
@@ -214,10 +230,14 @@ void wp_fsm_mgr_change_states( wp_fsm_manager *mgr )
 void wp_fsm_mgr_change_state( wp_fsm_manager *mgr, wp_u32 id )
 {
     if( id >= mgr->capacity )
+    {
         return;
+    }
 
     if( !mgr->active[id] )
+    {
         return;
+    }
 
     wp_fsm_update_state( &mgr->fsms[id] );
 }

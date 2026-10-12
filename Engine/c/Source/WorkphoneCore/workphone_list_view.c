@@ -24,7 +24,9 @@ WORKPHONE_API wp_bool wp_list_view_begin( struct wp_context *ctx, struct wp_list
     WORKPHONE_ASSERT( view );
     WORKPHONE_ASSERT( title );
     if( !ctx || !view || !title )
+    {
         return 0;
+    }
 
     win = ctx->current;
     style = &ctx->style;
@@ -43,11 +45,15 @@ WORKPHONE_API wp_bool wp_list_view_begin( struct wp_context *ctx, struct wp_list
         WORKPHONE_ASSERT( x_offset );
         WORKPHONE_ASSERT( y_offset );
         if( !x_offset || !y_offset )
+        {
             return 0;
+        }
         *x_offset = *y_offset = 0;
     }
     else
+    {
         y_offset = wp_find_value( win, title_hash + 1 );
+    }
     view->scroll_value = *y_offset;
     view->scroll_pointer = y_offset;
 
@@ -64,6 +70,7 @@ WORKPHONE_API wp_bool wp_list_view_begin( struct wp_context *ctx, struct wp_list
     view->ctx = ctx;
     return result;
 }
+
 WORKPHONE_API void wp_list_view_end( struct wp_list_view *view )
 {
     struct wp_context *ctx;
@@ -74,7 +81,9 @@ WORKPHONE_API void wp_list_view_end( struct wp_list_view *view )
     WORKPHONE_ASSERT( view->ctx );
     WORKPHONE_ASSERT( view->scroll_pointer );
     if( !view || !view->ctx )
+    {
         return;
+    }
 
     ctx = view->ctx;
     win = ctx->current;

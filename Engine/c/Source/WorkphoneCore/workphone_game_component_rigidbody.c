@@ -27,7 +27,9 @@ static void s_push_actor_transform( wp_rigidbody_component *rc )
     wp_transform3f world;
 
     if( !rc->body || !rc->base.actor )
+    {
         return;
+    }
 
     world = rc->base.actor->world_transform;
     wp_rigidbody_set_position( rc->body, world.position );
@@ -39,7 +41,9 @@ static void s_pull_body_transform( wp_rigidbody_component *rc )
     wp_transform3f *world;
 
     if( !rc->body || !rc->base.actor )
+    {
         return;
+    }
 
     world = &rc->base.actor->world_transform;
     world->position = wp_rigidbody_get_position( rc->body );
@@ -47,7 +51,9 @@ static void s_pull_body_transform( wp_rigidbody_component *rc )
 
     /* local_transform mirrors world when there is no parent */
     if( !rc->base.actor->parent )
+    {
         rc->base.actor->local_transform = *world;
+    }
 }
 
 static void s_apply_properties( wp_rigidbody_component *rc )
@@ -55,7 +61,9 @@ static void s_apply_properties( wp_rigidbody_component *rc )
     wp_u32 flags;
 
     if( !rc->body )
+    {
         return;
+    }
 
     wp_rigidbody_set_mass( rc->body, rc->mass );
     wp_rigidbody_set_linear_damping( rc->body, rc->linear_damping );
@@ -66,14 +74,22 @@ static void s_apply_properties( wp_rigidbody_component *rc )
     flags = wp_rigidbody_get_flags( rc->body );
 
     if( rc->use_gravity )
+    {
         flags |= WORKPHONE_RIGIDBODY_FLAG_GRAVITY;
+    }
     else
+    {
         flags &= ~WORKPHONE_RIGIDBODY_FLAG_GRAVITY;
+    }
 
     if( wp_game_component_is_enabled( &rc->base ) )
+    {
         flags |= WORKPHONE_RIGIDBODY_FLAG_ENABLED;
+    }
     else
+    {
         flags &= ~WORKPHONE_RIGIDBODY_FLAG_ENABLED;
+    }
 
     wp_rigidbody_set_flags( rc->body, flags );
 }
@@ -91,7 +107,9 @@ static void s_on_create( wp_game_component *comp )
         wp_rigidbody_type t = rc->is_kinematic ? WORKPHONE_RIGIDBODY_KINEMATIC : rc->body_type;
         rc->body = wp_rigidbody_create( t );
         if( rc->body )
+        {
             wp_rigidbody_set_user_data( rc->body, rc );
+        }
     }
 
     s_apply_properties( rc );
@@ -115,10 +133,14 @@ static void s_on_update( wp_game_component *comp, wp_f64 dt )
     (void)dt;
 
     if( !rc->body )
+    {
         return;
+    }
 
     if( rc->body_type == WORKPHONE_RIGIDBODY_DYNAMIC && !rc->is_kinematic )
+    {
         s_pull_body_transform( rc );
+    }
 }
 
 static void s_on_enable( wp_game_component *comp )
@@ -126,7 +148,9 @@ static void s_on_enable( wp_game_component *comp )
     wp_rigidbody_component *rc = (wp_rigidbody_component *)comp;
 
     if( rc->body )
+    {
         wp_rigidbody_set_flag( rc->body, WORKPHONE_RIGIDBODY_FLAG_ENABLED, 1 );
+    }
 }
 
 static void s_on_disable( wp_game_component *comp )
@@ -134,7 +158,9 @@ static void s_on_disable( wp_game_component *comp )
     wp_rigidbody_component *rc = (wp_rigidbody_component *)comp;
 
     if( rc->body )
+    {
         wp_rigidbody_set_flag( rc->body, WORKPHONE_RIGIDBODY_FLAG_ENABLED, 0 );
+    }
 }
 
 static void s_on_transform_updated( wp_game_component *comp )
@@ -184,7 +210,9 @@ static void s_init_common( wp_rigidbody_component *rc, wp_rigidbody_type body_ty
 void wp_rigidbody_component_init( wp_rigidbody_component *rc )
 {
     if( !rc )
+    {
         return;
+    }
 
     s_init_common( rc, WORKPHONE_RIGIDBODY_DYNAMIC );
 }
@@ -192,7 +220,9 @@ void wp_rigidbody_component_init( wp_rigidbody_component *rc )
 void wp_rigidbody_component_init_with_type( wp_rigidbody_component *rc, wp_rigidbody_type body_type )
 {
     if( !rc )
+    {
         return;
+    }
 
     s_init_common( rc, body_type );
 }
@@ -200,7 +230,9 @@ void wp_rigidbody_component_init_with_type( wp_rigidbody_component *rc, wp_rigid
 void wp_rigidbody_component_destroy( wp_rigidbody_component *rc )
 {
     if( !rc )
+    {
         return;
+    }
 
     wp_game_component_destroy( &rc->base );
 }
@@ -212,7 +244,9 @@ void wp_rigidbody_component_destroy( wp_rigidbody_component *rc )
 void wp_rigidbody_component_update( wp_rigidbody_component *rc, wp_f64 dt )
 {
     if( !rc )
+    {
         return;
+    }
 
     wp_game_component_update( &rc->base, dt );
 }
@@ -220,7 +254,9 @@ void wp_rigidbody_component_update( wp_rigidbody_component *rc, wp_f64 dt )
 void wp_rigidbody_component_sync_to_physics( wp_rigidbody_component *rc )
 {
     if( !rc )
+    {
         return;
+    }
 
     s_push_actor_transform( rc );
 }
@@ -228,7 +264,9 @@ void wp_rigidbody_component_sync_to_physics( wp_rigidbody_component *rc )
 void wp_rigidbody_component_sync_from_physics( wp_rigidbody_component *rc )
 {
     if( !rc )
+    {
         return;
+    }
 
     s_pull_body_transform( rc );
 }
@@ -250,7 +288,9 @@ wp_rigidbody_type wp_rigidbody_component_get_body_type( const wp_rigidbody_compo
 void wp_rigidbody_component_set_body_type( wp_rigidbody_component *rc, wp_rigidbody_type type )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->body_type = type;
     rc->is_kinematic = ( type == WORKPHONE_RIGIDBODY_KINEMATIC ) ? 1 : 0;
@@ -276,11 +316,15 @@ void wp_rigidbody_component_set_body_type( wp_rigidbody_component *rc, wp_rigidb
 void wp_rigidbody_component_set_mass( wp_rigidbody_component *rc, wp_f32 mass )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->mass = mass;
     if( rc->body )
+    {
         wp_rigidbody_set_mass( rc->body, mass );
+    }
 }
 
 wp_f32 wp_rigidbody_component_get_mass( const wp_rigidbody_component *rc )
@@ -295,11 +339,15 @@ wp_f32 wp_rigidbody_component_get_mass( const wp_rigidbody_component *rc )
 void wp_rigidbody_component_set_linear_damping( wp_rigidbody_component *rc, wp_f32 damping )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->linear_damping = damping;
     if( rc->body )
+    {
         wp_rigidbody_set_linear_damping( rc->body, damping );
+    }
 }
 
 wp_f32 wp_rigidbody_component_get_linear_damping( const wp_rigidbody_component *rc )
@@ -310,11 +358,15 @@ wp_f32 wp_rigidbody_component_get_linear_damping( const wp_rigidbody_component *
 void wp_rigidbody_component_set_angular_damping( wp_rigidbody_component *rc, wp_f32 damping )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->angular_damping = damping;
     if( rc->body )
+    {
         wp_rigidbody_set_angular_damping( rc->body, damping );
+    }
 }
 
 wp_f32 wp_rigidbody_component_get_angular_damping( const wp_rigidbody_component *rc )
@@ -329,11 +381,15 @@ wp_f32 wp_rigidbody_component_get_angular_damping( const wp_rigidbody_component 
 void wp_rigidbody_component_set_use_gravity( wp_rigidbody_component *rc, wp_s32 enabled )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->use_gravity = enabled;
     if( rc->body )
+    {
         wp_rigidbody_set_flag( rc->body, WORKPHONE_RIGIDBODY_FLAG_GRAVITY, enabled );
+    }
 }
 
 wp_s32 wp_rigidbody_component_get_use_gravity( const wp_rigidbody_component *rc )
@@ -346,10 +402,14 @@ void wp_rigidbody_component_set_kinematic( wp_rigidbody_component *rc, wp_s32 ki
     wp_rigidbody_type new_type;
 
     if( !rc )
+    {
         return;
+    }
 
     if( rc->is_kinematic == kinematic )
+    {
         return;
+    }
 
     rc->is_kinematic = kinematic;
     new_type = kinematic ? WORKPHONE_RIGIDBODY_KINEMATIC : WORKPHONE_RIGIDBODY_DYNAMIC;
@@ -368,7 +428,9 @@ wp_s32 wp_rigidbody_component_is_kinematic( const wp_rigidbody_component *rc )
 void wp_rigidbody_component_set_linear_velocity( wp_rigidbody_component *rc, wp_vec3f v )
 {
     if( rc && rc->body )
+    {
         wp_rigidbody_set_linear_velocity( rc->body, v );
+    }
 }
 
 wp_vec3f wp_rigidbody_component_get_linear_velocity( const wp_rigidbody_component *rc )
@@ -379,7 +441,9 @@ wp_vec3f wp_rigidbody_component_get_linear_velocity( const wp_rigidbody_componen
     zero.z = 0.0f;
 
     if( !rc || !rc->body )
+    {
         return zero;
+    }
 
     return wp_rigidbody_get_linear_velocity( rc->body );
 }
@@ -387,7 +451,9 @@ wp_vec3f wp_rigidbody_component_get_linear_velocity( const wp_rigidbody_componen
 void wp_rigidbody_component_set_angular_velocity( wp_rigidbody_component *rc, wp_vec3f v )
 {
     if( rc && rc->body )
+    {
         wp_rigidbody_set_angular_velocity( rc->body, v );
+    }
 }
 
 wp_vec3f wp_rigidbody_component_get_angular_velocity( const wp_rigidbody_component *rc )
@@ -398,7 +464,9 @@ wp_vec3f wp_rigidbody_component_get_angular_velocity( const wp_rigidbody_compone
     zero.z = 0.0f;
 
     if( !rc || !rc->body )
+    {
         return zero;
+    }
 
     return wp_rigidbody_get_angular_velocity( rc->body );
 }
@@ -410,19 +478,25 @@ wp_vec3f wp_rigidbody_component_get_angular_velocity( const wp_rigidbody_compone
 void wp_rigidbody_component_add_force( wp_rigidbody_component *rc, wp_vec3f force, wp_force_mode mode )
 {
     if( rc && rc->body )
+    {
         wp_rigidbody_add_force( rc->body, force, mode );
+    }
 }
 
 void wp_rigidbody_component_add_torque( wp_rigidbody_component *rc, wp_vec3f torque, wp_force_mode mode )
 {
     if( rc && rc->body )
+    {
         wp_rigidbody_add_torque( rc->body, torque, mode );
+    }
 }
 
 void wp_rigidbody_component_clear_forces( wp_rigidbody_component *rc )
 {
     if( !rc || !rc->body )
+    {
         return;
+    }
 
     wp_rigidbody_clear_force( rc->body );
     wp_rigidbody_clear_torque( rc->body );
@@ -440,13 +514,17 @@ wp_s32 wp_rigidbody_component_is_sleeping( const wp_rigidbody_component *rc )
 void wp_rigidbody_component_wake_up( wp_rigidbody_component *rc )
 {
     if( rc && rc->body )
+    {
         wp_rigidbody_wake_up( rc->body );
+    }
 }
 
 void wp_rigidbody_component_put_to_sleep( wp_rigidbody_component *rc )
 {
     if( rc && rc->body )
+    {
         wp_rigidbody_put_to_sleep( rc->body );
+    }
 }
 
 /* =========================================================================
@@ -456,11 +534,15 @@ void wp_rigidbody_component_put_to_sleep( wp_rigidbody_component *rc )
 void wp_rigidbody_component_set_collision_type( wp_rigidbody_component *rc, wp_u32 type )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->collision_type = type;
     if( rc->body )
+    {
         wp_rigidbody_set_collision_type( rc->body, type );
+    }
 }
 
 wp_u32 wp_rigidbody_component_get_collision_type( const wp_rigidbody_component *rc )
@@ -471,11 +553,15 @@ wp_u32 wp_rigidbody_component_get_collision_type( const wp_rigidbody_component *
 void wp_rigidbody_component_set_collision_mask( wp_rigidbody_component *rc, wp_u32 mask )
 {
     if( !rc )
+    {
         return;
+    }
 
     rc->collision_mask = mask;
     if( rc->body )
+    {
         wp_rigidbody_set_collision_mask( rc->body, mask );
+    }
 }
 
 wp_u32 wp_rigidbody_component_get_collision_mask( const wp_rigidbody_component *rc )
@@ -491,7 +577,9 @@ void wp_rigidbody_component_set_callbacks( wp_rigidbody_component *rc,
                                            wp_rigidbody_component_callbacks cbs )
 {
     if( rc )
+    {
         rc->rb_callbacks = cbs;
+    }
 }
 
 /* =========================================================================
@@ -506,5 +594,7 @@ void *wp_rigidbody_component_get_user_data( const wp_rigidbody_component *rc )
 void wp_rigidbody_component_set_user_data( wp_rigidbody_component *rc, void *user_data )
 {
     if( rc )
+    {
         rc->rb_user_data = user_data;
+    }
 }
