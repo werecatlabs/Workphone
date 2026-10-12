@@ -10,6 +10,8 @@ This increment advances the C90 implementation/C++17 wrapper boundary. It does
   implementation. Registered pass order, recursion guards and mutation rejection
   remain native. Completed-frame diagnostics expose update/render serials,
   completed/skipped target sequences and the clamped timestep.
+  Completion counters describe callback dispatch, not successful GPU draws;
+  visual output and backend failures require separate checks.
 - `ClawHammerSystem` drives native `update()` then `render()`. It publishes pass
   descriptors and retained C++ contexts together, skips detached/minimized
   targets, and publishes a mutex-protected diagnostics snapshot for Editor and
@@ -31,6 +33,10 @@ This increment advances the C90 implementation/C++17 wrapper boundary. It does
   measurement interval before the first frame. Warmup and measurement each
   require at least 30 rendered sample updates as well as their elapsed-time
   threshold. Loading resets review state.
+- VehicleAdvanced reuses the existing foliage plant generator for four stable
+  branching tree variants. Each near tree uses 548 triangles; far impostors use
+  the matching variant in a shared atlas. Existing patch batching, LOD and
+  collision paths are retained.
 - The isolated C90 contract preset now includes mesh conversion/serialization
   and the correctly registered frame target. Full builds use the real native
   scene implementation. Disabled wrapper/DX11 regression targets are restored.
@@ -46,6 +52,25 @@ nonindexed meshes under all cull modes. Shadow pixel tests also use native cache
 geometry. Device evidence is Microsoft Basic Render Driver/WARP, feature level
 `b000`, driver `10.0.19041.7548`; this is not hardware performance certification.
 Local logs/XML are in `project_x64/graphics-native-frame-evidence/`.
+
+The workspace art inventory, including ignored/cooked resources and the media
+SQLite catalog, contains two bundled meshes and four textures, but no production
+car, track, foliage, racing PBR sets or HDR environment suitable for the requested
+comparison. Existing procedural geometry and generators are therefore reused;
+no external art has been substituted.
+
+Fresh final sample evidence is `canopy-car.bmp`, `canopy.stdout.log` and
+`canopy.stderr.log` in that directory. Native diagnostics report 59 updates,
+59 renders, one dispatched target sequence and no skipped sequences; generated
+mesh winding validation passes for 121,826 triangles and the process exits 0.
+The 29-frame measurement
+reports mean 207.971 ms and p95 221.204 ms, so this run does not establish a
+shipping frame budget. Startup emits three rejected particle-timestep warnings
+and the audio device cannot open; effects/audio acceptance is not claimed.
+The visual review rejected the first sparse canopy, then rebuilt and captured
+denser overlapping boughs. The final crowns read more clearly as trees, but the
+overall car, materials, lighting, track detail and aliasing still fail the
+requested AAA visual gate. No blind commercial-reference test was performed.
 
 The inspected baseline VehicleAdvanced capture remains visibly prototype quality:
 simplified car/aero/wheel geometry, faceted repeating trees, sparse scenery,

@@ -265,12 +265,12 @@ namespace workphone::scene::race
                     }
                     // The source's textured leaf cards provide seeded clump
                     // positions/orientations. The sample's opaque palette has
-                    // no leaf atlas, so represent each clump with three pointed
+                    // no leaf atlas, so represent each clump with five
                     // overlapping sprigs instead of rendering solid rectangles.
                     // This keeps real silhouette gaps without alpha overdraw.
                     for( u32 first = woodVertices; first + 3u < source.positions.size(); first += 4u )
                     {
-                        const auto centre = taper( ( source.positions[first] + source.positions[first + 1u] ) * .5f );
+                        auto centre = taper( ( source.positions[first] + source.positions[first + 1u] ) * .5f );
                         auto radial = Vector3F( centre.x, 0, centre.z );
                         radial.normalise();
                         auto cardRight = source.positions[first + 1u] - source.positions[first];
@@ -278,19 +278,34 @@ namespace workphone::scene::race
                         auto direction = radial * .8f + cardRight * .45f;
                         direction.normalise();
                         const float phase = float( render::foliageStableHash( recipe.seed + first ) >> 40 ) / 16777216.f;
-                        for( int sprig = -1; sprig <= 1; ++sprig )
+                        // Boughs must cover the branch interior rather than
+                        // attaching tiny leaves only to its extreme tip. Their
+                        // overlapping lobes build crown mass while retaining
+                        // a broken, seeded outer silhouette and tier gaps.
+                        centre.x *= .55f;
+                        centre.z *= .55f;
+                        centre.y += ( phase - .5f ) * .055f;
+                        const float crownScale = 1.f - .65f * centre.y;
+                        auto bounded = []( Vector3F point ) {
+                            const float radius = std::hypot( point.x, point.z );
+                            if( radius > .27f ) { point.x *= .27f / radius; point.z *= .27f / radius; }
+                            return point;
+                        };
+                        for( int sprig = -2; sprig <= 2; ++sprig )
                         {
-                            const float angle = sprig * .65f;
+                            const float angle = sprig * .55f;
                             const auto axis = Vector3F( direction.x * std::cos( angle ) - direction.z * std::sin( angle ),
                                 -.015f + .045f * phase, direction.x * std::sin( angle ) + direction.z * std::cos( angle ) );
-                            const auto tip = centre + axis * ( .065f + .025f * phase );
-                            const auto middle = centre + ( tip - centre ) * .57f + Vector3F( 0, .025f, 0 );
+                            const auto tip = bounded( centre + axis * ( .20f + .06f * phase ) * crownScale );
+                            const auto middle = centre + ( tip - centre ) * .57f + Vector3F( 0, .055f, 0 );
                             auto across = Vector3F( -axis.z, .35f * sprig, axis.x );
                             across.normalise();
-                            across *= .018f + .009f * phase;
-                            auto normal = ( middle + across - centre ).crossProduct( tip - centre );
+                            across *= ( .045f + .020f * phase ) * crownScale;
+                            const auto left = bounded( middle + across );
+                            const auto right = bounded( middle - across );
+                            auto normal = ( left - centre ).crossProduct( tip - centre );
                             normal.normalise();
-                            needles.quad( centre, middle + across, tip, middle - across, normal );
+                            needles.quad( centre, left, tip, right, normal );
                         }
                     }
                 }
