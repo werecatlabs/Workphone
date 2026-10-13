@@ -28,6 +28,7 @@
 #include <cstdio>
 
 #include "workphone_graphics_renderer_dx11.h"
+#include "workphone_graphics_renderer.h"
 #include "workphone_graphics_system.h"
 
 namespace workphone
@@ -714,10 +715,10 @@ namespace workphone
                     }
                     break;
                 case 5:
-                    if( pass.pipelineStarted && owner->m_graphicsPipeline )
+                    if( pass.pipelineStarted )
                     {
                         pass.pipelineStarted = false;
-                        try { owner->m_graphicsPipeline->endFrame(); }
+                        try { owner->endGraphicsPipelineFrame( renderer ); }
                         catch( ... ) { WP_LOG_ERROR( "Failed to close graphics pipeline frame." ); }
                     }
                     if( pass.begun )
@@ -772,7 +773,18 @@ namespace workphone
                 return false;
             }
 
-            // The C89 pipeline currently consumes and presents the software framebuffer.
+            // The native C backend owns linear scene storage and the GPU filmic resolve.
+            // The C89 frame driver calls this adapter before scene draw and ends it
+            // in the effects stage, leaving display UI outside tone mapping.
+            if( auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
+            {
+                if( renderer->getRenderTarget() != getDefaultWindow() || !renderer->getCamera() ||
+                    !m_graphicsPipeline->getHdrSettings().m_enableAgxToneMapping ) return false;
+                return wp_renderer_dx11_begin_hdr_scene(
+                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ), 1.0f ) != 0;
+            }
+
+            // The CPU pipeline consumes and presents the software framebuffer.
             // Do not resize or advance its temporal history for unrelated render textures.
             if( renderer->getRenderTarget() != getDefaultWindow() ||
                 !dynamic_pointer_cast<ClawRendererSoftware>( renderer ) )
@@ -818,6 +830,12 @@ namespace workphone
 
         void ClawHammerSystem::endGraphicsPipelineFrame( SmartPtr<IRenderer> renderer )
         {
+            if( auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer ) )
+            {
+                wp_renderer_dx11_end_hdr_scene(
+                    wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() ) );
+                return;
+            }
             if( !renderer || !m_graphicsPipeline || !m_graphicsPipeline->isInitialized() )
             {
                 return;

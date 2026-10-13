@@ -1,6 +1,8 @@
 #include "FrameCapture.h"
 #include "ReviewEvidence.h"
 #include <Workphone/Workphone.hpp>
+#include <cmath>
+#include <limits>
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
 #    include <WPGraphics/ClawRendererDX11.hpp>
 #    include <workphone_graphics_renderer.h>
@@ -119,6 +121,67 @@ namespace workphone::advanced
                << ",\"height\":" << desc.Height << ",\"mips\":" << sourceMips << ",\"finite\":"
                << ( finite ? "true" : "false" ) << ",\"peakRadiance\":" << peak << ",\"hdrPresent\":"
                << ( valid ? "true" : "false" ) << "}";
+        return report.str();
+#else
+        return "null";
+#endif
+    }
+
+    std::string captureLinearSceneEvidence( void *textureView, bool &valid )
+    {
+        valid = false;
+#if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
+        using Microsoft::WRL::ComPtr;
+        if( !textureView ) return "{\"available\":false}";
+        auto view = static_cast<ID3D11ShaderResourceView *>( textureView );
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv{}; view->GetDesc( &srv );
+        if( srv.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ||
+            srv.Format != DXGI_FORMAT_R16G16B16A16_FLOAT || srv.Texture2D.MostDetailedMip != 0 )
+            return "{\"available\":false}";
+        ComPtr<ID3D11Resource> resource; view->GetResource( &resource );
+        ComPtr<ID3D11Texture2D> source;
+        if( FAILED( resource.As( &source ) ) ) return "{\"available\":false}";
+        D3D11_TEXTURE2D_DESC desc{}; source->GetDesc( &desc );
+        if( !desc.Width || !desc.Height || desc.Width > 8192 || desc.Height > 8192 ||
+            desc.ArraySize != 1 || desc.SampleDesc.Count != 1 ) return "{\"available\":false}";
+        ComPtr<ID3D11Device> device; source->GetDevice( &device );
+        auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
+        auto renderer = dynamic_cast<render::ClawRendererDX11 *>( graphics->getRendererPtr() );
+        if( !renderer || device.Get() != wp_renderer_get_dx11_device( renderer->getNativeRenderer() ) )
+            return "{\"available\":false}";
+        ComPtr<ID3D11DeviceContext> context; device->GetImmediateContext( &context );
+        desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ; desc.MiscFlags = 0;
+        ComPtr<ID3D11Texture2D> staging;
+        if( FAILED( device->CreateTexture2D( &desc, nullptr, &staging ) ) ) return "{\"available\":false}";
+        context->CopyResource( staging.Get(), source.Get() );
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if( FAILED( context->Map( staging.Get(), 0, D3D11_MAP_READ, 0, &mapped ) ) )
+            return "{\"available\":false}";
+        const auto half = []( u16 bits ) {
+            const int exponent = ( bits >> 10 ) & 31, fraction = bits & 1023;
+            const float value = exponent == 0 ? std::ldexp( float( fraction ), -24 ) :
+                exponent == 31 ? ( fraction ? std::numeric_limits<float>::quiet_NaN() :
+                    std::numeric_limits<float>::infinity() ) : std::ldexp( float( fraction + 1024 ), exponent - 25 );
+            return bits & 0x8000 ? -value : value;
+        };
+        bool finite = true; float peak = 0;
+        for( UINT y = 0; y < desc.Height; ++y )
+        {
+            const auto row = reinterpret_cast<const u16 *>( static_cast<const u8 *>( mapped.pData ) + y * mapped.RowPitch );
+            for( UINT x = 0; x < desc.Width; ++x ) for( UINT channel = 0; channel < 3; ++channel )
+            {
+                const auto value = half( row[x * 4 + channel] );
+                finite = finite && std::isfinite( value ) && value >= 0;
+                if( std::isfinite( value ) ) peak = std::max( peak, value );
+            }
+        }
+        context->Unmap( staging.Get(), 0 );
+        valid = finite;
+        std::ostringstream report;
+        report << "{\"available\":true,\"format\":\"RGBA16F\",\"width\":" << desc.Width
+               << ",\"height\":" << desc.Height << ",\"finite\":" << ( finite ? "true" : "false" )
+               << ",\"peakRadiance\":" << peak << ",\"radianceAboveOne\":" << ( peak > 1 ? "true" : "false" ) << "}";
         return report.str();
 #else
         return "null";

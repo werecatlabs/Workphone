@@ -47,6 +47,11 @@
  * Embedded HLSL sources
  * ====================================================================== */
 
+/* Draw-owned transfer control; zero/unbound preserves the direct legacy path. */
+#define WP_HDR_OUTPUT_HLSL \
+    "cbuffer SceneOutput : register(b5) { float4 scene_output; };\n" \
+    "float3 sceneDecode(float3 c) { c=max(c,0.0); return lerp(c/12.92,pow((c+0.055)/1.055,2.4),step(0.04045,c)); }\n"
+
 /* ---- position + colour (pc) vertex shader ----------------------------- */
 static const wp_c8 s_vs_pc_src[] =
     "cbuffer Transform : register(b0) { row_major float4x4 mvp; };\n"
@@ -66,9 +71,9 @@ static const wp_c8 s_vs_pc_src[] =
     "}\n";
 
 /* ---- shared pixel shader ---------------------------------------------- */
-static const wp_c8 s_ps_src[] =
+static const wp_c8 s_ps_src[] = WP_HDR_OUTPUT_HLSL
     "struct PS_IN { float4 pos : SV_POSITION; float4 color : COLOR; };\n"
-    "float4 ps_main(PS_IN i) : SV_TARGET { return i.color; }\n";
+    "float4 ps_main(PS_IN i) : SV_TARGET { return float4(scene_output.x>0.5 ? sceneDecode(i.color.rgb) : i.color.rgb,i.color.a); }\n";
 
 /* ---- position + texcoord + colour (ptc) vertex shader ----------------- */
 static const wp_c8 s_vs_ptc_src[] =
@@ -92,14 +97,16 @@ static const wp_c8 s_vs_ptc_src[] =
     "}\n";
 
 /* ---- position + texcoord + colour pixel shader ------------------------ */
-static const wp_c8 s_ps_ptc_src[] =
+static const wp_c8 s_ps_ptc_src[] = WP_HDR_OUTPUT_HLSL
     "Texture2D tex : register(t0);\n"
     "SamplerState tex_sampler : register(s0);\n"
     "struct PS_IN { float4 pos : SV_POSITION; float2 uv : TEXCOORD0;\n"
     "               float4 color : COLOR; };\n"
     "float4 ps_main(PS_IN i) : SV_TARGET\n"
     "{\n"
-    "    return tex.Sample(tex_sampler, i.uv) * i.color;\n"
+    "    float4 t=tex.Sample(tex_sampler,i.uv);\n"
+    "    if(scene_output.x>0.5) { if(scene_output.z<0.5) t.rgb=sceneDecode(t.rgb); return t*float4(sceneDecode(i.color.rgb),i.color.a); }\n"
+    "    return t * i.color;\n"
     "}\n";
 
 /* ---- lit position + normal + texcoord + colour shaders --------------- */
@@ -125,7 +132,7 @@ static const wp_c8 s_vs_pntc_src[] =
     "  float((i.color >> 16u) & 255u), float((i.color >> 8u) & 255u),\n"
     "  float(i.color & 255u)) / 255.0; return o; }\n";
 
-static const wp_c8 s_ps_pntc_src[] =
+static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     "Texture2D shadow_tex : register(t8); SamplerComparisonState shadow_sampler : register(s2);\n"
     "cbuffer Shadow : register(b2) { row_major float4x4 light_matrix; float4 shadow_controls; };\n"
     "float shadowVisibility(float3 position, float ndl) {\n"
@@ -259,7 +266,7 @@ static const wp_c8 s_ps_pntc_src[] =
     " float3 emission = emissive_color.rgb;\n"
     " if (map_flags.w > 0.5) { float3 e=emission_tex.Sample(tex_sampler, i.uv).rgb;\n"
     "     emission *= extra_map_flags.w > 0.5 ? e : decode_srgb(e); }\n"
-    " if (uv_transform.z < 0.5) { float3 c = pow(max(albedo + emission, 0.0), 1.0 / 2.2);\n"
+    " if (uv_transform.z < 0.5) { float3 c = scene_output.x>0.5 ? max(albedo+emission,0.0) : pow(max(albedo + emission, 0.0), 1.0 / 2.2);\n"
     "     return float4(controls.w > 0.5 ? c * alpha : c, alpha); }\n"
     " float metalness = saturate(surface.x);\n"
     " float roughness = clamp(surface.y, 0.045, 1.0);\n"
@@ -333,8 +340,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "         fog_params.x < 2.5 ? 1.0 - exp(-pow(fog_params.y * distanceToEye, 2.0)) :\n"
     "         (distanceToEye - fog_params.z) / max(fog_params.w - fog_params.z, 0.001);\n"
     "     color = lerp(color, max(fog_color.rgb, 0.0), saturate(amount)); }\n"
-    " color = max(color, 0.0); color = color / (color + 1.0);\n"
-    " color = pow(color, 1.0 / 2.2);\n"
+    " color = max(color, 0.0); if(scene_output.x<0.5) { color = color / (color + 1.0); color = pow(color, 1.0 / 2.2); }\n"
     " return float4(controls.w > 0.5 ? color * alpha : color, alpha); }\n";
 
 /* The pixel interface is identical to scalar PNTC, including alpha/shadows.
@@ -463,6 +469,27 @@ struct wp_renderer_dx11
     ID3D11DeviceContext *context;
     IDXGISwapChain *swap_chain;
 
+
+    /* Scene-linear HDR staging and output state, owned by the render thread. */
+    ID3D11Texture2D *hdr_texture;
+    ID3D11RenderTargetView *hdr_target;
+    ID3D11ShaderResourceView *hdr_view;
+    ID3D11VertexShader *hdr_vs;
+    ID3D11PixelShader *hdr_ps;
+    ID3D11Buffer *hdr_output_cb;
+    ID3D11RasterizerState *hdr_raster;
+    ID3D11DepthStencilState *hdr_depth;
+    ID3D11BlendState *hdr_blend;
+    ID3D11RenderTargetView *hdr_saved_target;
+    ID3D11DepthStencilView *hdr_saved_depth;
+    D3D11_VIEWPORT hdr_saved_viewports[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+    D3D11_RECT hdr_saved_scissors[D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE];
+    UINT hdr_viewport_count, hdr_scissor_count, hdr_width, hdr_height;
+    wp_s32 hdr_active, hdr_target_srgb;
+    wp_f32 hdr_exposure;
+    wp_u64 hdr_completed_frames;
+    wp_vec4f hdr_output_values;
+    wp_s32 hdr_output_valid;
     /* Render targets */
     ID3D11RenderTargetView *rt_view;
     ID3D11RenderTargetView *active_rt_view;
@@ -1438,6 +1465,25 @@ static wp_s32 wp_renderer_dx11_upload_constants( wp_renderer_dx11 *r, ID3D11Buff
     return 1;
 }
 
+static wp_f32 wp_renderer_dx11_view_samples_linear( ID3D11ShaderResourceView *view );
+static void wp_renderer_dx11_bind_output( wp_renderer_dx11 *r, wp_f32 texture_linear )
+{
+    wp_vec4f controls;
+    if( !r->hdr_output_cb ) return;
+    controls.x = r->hdr_active ? 1.0f : 0.0f;
+    controls.y = r->hdr_exposure;
+    controls.z = texture_linear;
+    controls.w = r->hdr_target_srgb ? 1.0f : 0.0f;
+    if( !r->hdr_output_valid || memcmp( &controls, &r->hdr_output_values, sizeof( controls ) ) )
+    {
+        ID3D11DeviceContext_UpdateSubresource( r->context, (ID3D11Resource *)r->hdr_output_cb,
+                                             0, NULL, &controls, 0, 0 );
+        r->hdr_output_values = controls;
+        r->hdr_output_valid = 1;
+    }
+    ID3D11DeviceContext_PSSetConstantBuffers( r->context, 5, 1, &r->hdr_output_cb );
+}
+
 static wp_s32 wp_renderer_dx11_upload_mvp( wp_renderer_dx11 *r )
 {
     wp_transform_constants_dx11 constants;
@@ -1445,6 +1491,7 @@ static wp_s32 wp_renderer_dx11_upload_mvp( wp_renderer_dx11 *r )
     if( !r || !r->cb_transform )
         return 0;
 
+    wp_renderer_dx11_bind_output( r, r->hdr_output_values.z );
     /*
      * Re-uploading an unchanged transform creates needless synchronization work,
      * particularly with the WARP driver. Matrix setters mark the cache dirty, so
@@ -1869,6 +1916,279 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
     return r;
 }
 
+/* GPU tone mapping follows wp_hdr_tonemap_agx's current rational filmic policy.
+ * This is not a claim to implement a complete colour-management AgX transform. */
+static const char wp_hdr_composite_vs[] =
+    "struct O { float4 p:SV_POSITION; }; O main(uint id:SV_VertexID) { O o;"
+    " float2 uv=float2((id<<1)&2,id&2); o.p=float4(uv*float2(2,-2)+float2(-1,1),0,1); return o; }";
+static const char wp_hdr_composite_ps[] =
+    "cbuffer SceneOutput:register(b5) { float4 scene_output; }; Texture2D scene:register(t0);"
+    "float4 main(float4 p:SV_POSITION):SV_TARGET {"
+    " float3 c=max(scene.Load(int3(int2(p.xy),0)).rgb,0.0)*scene_output.y;"
+    " c=saturate((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14));"
+    " if(scene_output.w<0.5) c=lerp(12.92*c,1.055*pow(c,1.0/2.4)-0.055,step(0.0031308,c));"
+    " return float4(c,1); }";
+
+static wp_s32 wp_renderer_dx11_prepare_hdr( wp_renderer_dx11 *r, UINT width, UINT height )
+{
+    ID3D11Texture2D *texture = NULL;
+    ID3D11RenderTargetView *target = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    ID3D11VertexShader *vs = NULL;
+    ID3D11PixelShader *ps = NULL;
+    ID3D11Buffer *cb = NULL;
+    ID3D11RasterizerState *raster = NULL;
+    ID3D11DepthStencilState *depth = NULL;
+    ID3D11BlendState *blend = NULL;
+    ID3DBlob *blob = NULL;
+    D3D11_TEXTURE2D_DESC td;
+    D3D11_BUFFER_DESC bd;
+    D3D11_RASTERIZER_DESC rd;
+    D3D11_DEPTH_STENCIL_DESC dd;
+    D3D11_BLEND_DESC blend_desc;
+    UINT support = 0;
+    wp_s32 replace_target = !r->hdr_texture || r->hdr_width != width || r->hdr_height != height;
+    if( FAILED( ID3D11Device_CheckFormatSupport( r->device, DXGI_FORMAT_R16G16B16A16_FLOAT, &support ) ) ||
+        ( support & ( D3D11_FORMAT_SUPPORT_RENDER_TARGET | D3D11_FORMAT_SUPPORT_SHADER_LOAD ) ) !=
+        ( D3D11_FORMAT_SUPPORT_RENDER_TARGET | D3D11_FORMAT_SUPPORT_SHADER_LOAD ) ) return 0;
+    if( replace_target )
+    {
+        memset( &td, 0, sizeof( td ) );
+        td.Width = width; td.Height = height; td.MipLevels = 1; td.ArraySize = 1;
+        td.Format = DXGI_FORMAT_R16G16B16A16_FLOAT; td.SampleDesc.Count = 1;
+        td.Usage = D3D11_USAGE_DEFAULT;
+        td.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        if( FAILED( ID3D11Device_CreateTexture2D( r->device, &td, NULL, &texture ) ) ||
+            FAILED( ID3D11Device_CreateRenderTargetView( r->device, (ID3D11Resource *)texture, NULL, &target ) ) ||
+            FAILED( ID3D11Device_CreateShaderResourceView( r->device, (ID3D11Resource *)texture, NULL, &view ) ) ) goto fail;
+    }
+    if( !r->hdr_vs )
+    {
+        if( FAILED( wp_renderer_dx11_compile_shader( wp_hdr_composite_vs, "main", "vs_4_0", &blob ) ) ) goto fail;
+        if( FAILED( ID3D11Device_CreateVertexShader( r->device, ID3D10Blob_GetBufferPointer( blob ),
+                            ID3D10Blob_GetBufferSize( blob ), NULL, &vs ) ) ) goto fail;
+        ID3D10Blob_Release( blob ); blob = NULL;
+        if( FAILED( wp_renderer_dx11_compile_shader( wp_hdr_composite_ps, "main", "ps_4_0", &blob ) ) ) goto fail;
+        if( FAILED( ID3D11Device_CreatePixelShader( r->device, ID3D10Blob_GetBufferPointer( blob ),
+                            ID3D10Blob_GetBufferSize( blob ), NULL, &ps ) ) ) goto fail;
+        ID3D10Blob_Release( blob ); blob = NULL;
+        memset( &bd, 0, sizeof( bd ) ); bd.ByteWidth = sizeof( wp_vec4f );
+        bd.Usage = D3D11_USAGE_DEFAULT; bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        if( FAILED( ID3D11Device_CreateBuffer( r->device, &bd, NULL, &cb ) ) ) goto fail;
+        memset( &rd, 0, sizeof( rd ) ); rd.FillMode = D3D11_FILL_SOLID;
+        rd.CullMode = D3D11_CULL_NONE; rd.DepthClipEnable = TRUE; rd.ScissorEnable = TRUE;
+        if( FAILED( ID3D11Device_CreateRasterizerState( r->device, &rd, &raster ) ) ) goto fail;
+        memset( &dd, 0, sizeof( dd ) ); dd.DepthFunc = D3D11_COMPARISON_ALWAYS;
+        if( FAILED( ID3D11Device_CreateDepthStencilState( r->device, &dd, &depth ) ) ) goto fail;
+        memset( &blend_desc, 0, sizeof( blend_desc ) );
+        blend_desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+        if( FAILED( ID3D11Device_CreateBlendState( r->device, &blend_desc, &blend ) ) ) goto fail;
+    }
+    /* Commit only a complete candidate. Failed resize leaves the last usable set. */
+    if( replace_target )
+    {
+        if( r->hdr_view ) ID3D11ShaderResourceView_Release( r->hdr_view );
+        if( r->hdr_target ) ID3D11RenderTargetView_Release( r->hdr_target );
+        if( r->hdr_texture ) ID3D11Texture2D_Release( r->hdr_texture );
+        r->hdr_texture = texture; r->hdr_target = target; r->hdr_view = view;
+        r->hdr_width = width; r->hdr_height = height;
+    }
+    if( vs )
+    {
+        r->hdr_vs = vs; r->hdr_ps = ps; r->hdr_output_cb = cb;
+        r->hdr_raster = raster; r->hdr_depth = depth; r->hdr_blend = blend;
+    }
+    return 1;
+fail:
+    if( blob ) ID3D10Blob_Release( blob );
+    if( texture ) ID3D11Texture2D_Release( texture );
+    if( target ) ID3D11RenderTargetView_Release( target );
+    if( view ) ID3D11ShaderResourceView_Release( view );
+    if( vs ) ID3D11VertexShader_Release( vs );
+    if( ps ) ID3D11PixelShader_Release( ps );
+    if( cb ) ID3D11Buffer_Release( cb );
+    if( raster ) ID3D11RasterizerState_Release( raster );
+    if( depth ) ID3D11DepthStencilState_Release( depth );
+    if( blend ) ID3D11BlendState_Release( blend );
+    return 0;
+}
+
+wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *r, wp_f32 exposure )
+{
+    ID3D11RenderTargetView *targets[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+    ID3D11DepthStencilView *depth = NULL;
+    ID3D11Resource *resource = NULL;
+    ID3D11Texture2D *texture = NULL;
+    D3D11_RENDER_TARGET_VIEW_DESC vd;
+    D3D11_TEXTURE2D_DESC td;
+    ID3D11ShaderResourceView *bound_views[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+    ID3D11ShaderResourceView *bound_view = NULL;
+    ID3D11Resource *bound_resource = NULL;
+    UINT i;
+    wp_s32 valid = 1;
+    const float black[4] = { 0, 0, 0, 0 };
+    if( !r || r->hdr_active || r->shadow_pass || !_finite( exposure ) || exposure <= 0.0f ) return 0;
+    memset( targets, 0, sizeof( targets ) );
+    ID3D11DeviceContext_OMGetRenderTargets( r->context, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, targets, &depth );
+    if( !targets[0] ) valid = 0;
+    for( i = 1; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i ) if( targets[i] ) valid = 0;
+    if( valid )
+    {
+        ID3D11RenderTargetView_GetDesc( targets[0], &vd );
+        if( vd.ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D || vd.Texture2D.MipSlice != 0 ||
+            ( vd.Format != DXGI_FORMAT_R8G8B8A8_UNORM && vd.Format != DXGI_FORMAT_R8G8B8A8_UNORM_SRGB &&
+              vd.Format != DXGI_FORMAT_B8G8R8A8_UNORM && vd.Format != DXGI_FORMAT_B8G8R8A8_UNORM_SRGB ) ) valid = 0;
+        ID3D11RenderTargetView_GetResource( targets[0], &resource );
+        if( !resource || FAILED( ID3D11Resource_QueryInterface( resource, &IID_ID3D11Texture2D, (void **)&texture ) ) ) valid = 0;
+        if( texture )
+        {
+            ID3D11Texture2D_GetDesc( texture, &td );
+            if( td.ArraySize != 1 || td.SampleDesc.Count != 1 || !td.Width || !td.Height ) valid = 0;
+        }
+    }
+    if( valid && depth )
+    {
+        ID3D11Resource *depth_resource = NULL;
+        ID3D11Texture2D *depth_texture = NULL;
+        D3D11_TEXTURE2D_DESC depth_desc;
+        D3D11_DEPTH_STENCIL_VIEW_DESC depth_view;
+        ID3D11DepthStencilView_GetDesc( depth, &depth_view );
+        if( depth_view.ViewDimension != D3D11_DSV_DIMENSION_TEXTURE2D || depth_view.Texture2D.MipSlice != 0 ) valid = 0;
+        ID3D11DepthStencilView_GetResource( depth, &depth_resource );
+        if( !depth_resource || FAILED( ID3D11Resource_QueryInterface( depth_resource,
+            &IID_ID3D11Texture2D, (void **)&depth_texture ) ) ) valid = 0;
+        if( depth_texture )
+        {
+            ID3D11Texture2D_GetDesc( depth_texture, &depth_desc );
+            if( depth_desc.Width != td.Width || depth_desc.Height != td.Height ||
+                depth_desc.SampleDesc.Count != 1 || depth_desc.ArraySize != 1 ) valid = 0;
+            ID3D11Texture2D_Release( depth_texture );
+        }
+        if( depth_resource ) ID3D11Resource_Release( depth_resource );
+    }
+    /* A still-bound borrowed HDR view must not be silently displaced by OM binding. */
+    if( valid && r->hdr_texture )
+    {
+        ID3D11DeviceContext_PSGetShaderResources( r->context, 0,
+            D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, bound_views );
+        for( i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i )
+        {
+            bound_view = bound_views[i];
+            if( bound_view )
+            {
+                ID3D11ShaderResourceView_GetResource( bound_view, &bound_resource );
+                if( bound_resource == (ID3D11Resource *)r->hdr_texture ) valid = 0;
+                if( bound_resource ) ID3D11Resource_Release( bound_resource );
+                ID3D11ShaderResourceView_Release( bound_view );
+                bound_view = NULL; bound_resource = NULL;
+            }
+        }
+    }
+    if( valid ) valid = wp_renderer_dx11_prepare_hdr( r, td.Width, td.Height );
+    if( texture ) ID3D11Texture2D_Release( texture );
+    if( resource ) ID3D11Resource_Release( resource );
+    if( !valid )
+    {
+        for( i = 0; i < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i )
+            if( targets[i] ) ID3D11RenderTargetView_Release( targets[i] );
+        if( depth ) ID3D11DepthStencilView_Release( depth );
+        return 0;
+    }
+    r->hdr_saved_target = targets[0]; r->hdr_saved_depth = depth;
+    r->hdr_viewport_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+    r->hdr_scissor_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+    ID3D11DeviceContext_RSGetViewports( r->context, &r->hdr_viewport_count, r->hdr_saved_viewports );
+    ID3D11DeviceContext_RSGetScissorRects( r->context, &r->hdr_scissor_count, r->hdr_saved_scissors );
+    r->hdr_target_srgb = vd.Format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB || vd.Format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+    r->hdr_exposure = exposure < .01f ? .01f : ( exposure > 64.0f ? 64.0f : exposure );
+    r->hdr_active = 1;
+    r->active_rt_view = r->hdr_target; r->active_ds_view = depth;
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->hdr_target, depth );
+    ID3D11DeviceContext_ClearRenderTargetView( r->context, r->hdr_target, black );
+    wp_renderer_dx11_bind_output( r, 0 );
+    r->pntc_bindings_valid = 0;
+    return 1;
+}
+
+void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *r )
+{
+    ID3D11RasterizerState *raster = NULL;
+    ID3D11DepthStencilState *depth = NULL;
+    ID3D11BlendState *blend = NULL;
+    ID3D11VertexShader *vs = NULL;
+    ID3D11PixelShader *ps = NULL;
+    ID3D11InputLayout *layout = NULL;
+    ID3D11ShaderResourceView *view = NULL, *empty_view = NULL;
+    D3D11_PRIMITIVE_TOPOLOGY topology;
+    UINT stencil = 0, mask = 0;
+    float factors[4];
+    D3D11_RECT full;
+    if( !r || !r->hdr_active ) return;
+    if( r->shadow_pass ) wp_renderer_dx11_end_shadow_map( r );
+    ID3D11DeviceContext_RSGetState( r->context, &raster );
+    ID3D11DeviceContext_OMGetDepthStencilState( r->context, &depth, &stencil );
+    ID3D11DeviceContext_OMGetBlendState( r->context, &blend, factors, &mask );
+    ID3D11DeviceContext_VSGetShader( r->context, &vs, NULL, NULL );
+    ID3D11DeviceContext_PSGetShader( r->context, &ps, NULL, NULL );
+    ID3D11DeviceContext_IAGetInputLayout( r->context, &layout );
+    ID3D11DeviceContext_IAGetPrimitiveTopology( r->context, &topology );
+    ID3D11DeviceContext_PSGetShaderResources( r->context, 0, 1, &view );
+    r->hdr_active = 0;
+    r->active_rt_view = r->hdr_saved_target; r->active_ds_view = r->hdr_saved_depth;
+    ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->hdr_saved_target, r->hdr_saved_depth );
+    ID3D11DeviceContext_RSSetViewports( r->context, r->hdr_viewport_count, r->hdr_saved_viewports );
+    full.left = 0; full.top = 0; full.right = (LONG)r->hdr_width; full.bottom = (LONG)r->hdr_height;
+    ID3D11DeviceContext_RSSetScissorRects( r->context, 1, &full );
+    ID3D11DeviceContext_RSSetState( r->context, r->hdr_raster );
+    ID3D11DeviceContext_OMSetDepthStencilState( r->context, r->hdr_depth, 0 );
+    ID3D11DeviceContext_OMSetBlendState( r->context, r->hdr_blend, NULL, 0xffffffffu );
+    wp_renderer_dx11_bind_output( r, 1 );
+    ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &r->hdr_view );
+    ID3D11DeviceContext_IASetInputLayout( r->context, NULL );
+    ID3D11DeviceContext_IASetPrimitiveTopology( r->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+    ID3D11DeviceContext_VSSetShader( r->context, r->hdr_vs, NULL, 0 );
+    ID3D11DeviceContext_PSSetShader( r->context, r->hdr_ps, NULL, 0 );
+    ID3D11DeviceContext_Draw( r->context, 3, 0 );
+    ++r->statistics.draws; ++r->statistics.triangles;
+    ++r->hdr_completed_frames;
+    ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &empty_view );
+    ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &view );
+    ID3D11DeviceContext_RSSetState( r->context, raster );
+    ID3D11DeviceContext_OMSetDepthStencilState( r->context, depth, stencil );
+    ID3D11DeviceContext_OMSetBlendState( r->context, blend, factors, mask );
+    ID3D11DeviceContext_RSSetScissorRects( r->context, r->hdr_scissor_count, r->hdr_saved_scissors );
+    ID3D11DeviceContext_VSSetShader( r->context, vs, NULL, 0 );
+    ID3D11DeviceContext_PSSetShader( r->context, ps, NULL, 0 );
+    ID3D11DeviceContext_IASetInputLayout( r->context, layout );
+    ID3D11DeviceContext_IASetPrimitiveTopology( r->context, topology );
+    if( raster ) ID3D11RasterizerState_Release( raster );
+    if( depth ) ID3D11DepthStencilState_Release( depth );
+    if( blend ) ID3D11BlendState_Release( blend );
+    if( vs ) ID3D11VertexShader_Release( vs );
+    if( ps ) ID3D11PixelShader_Release( ps );
+    if( layout ) ID3D11InputLayout_Release( layout );
+    if( view ) ID3D11ShaderResourceView_Release( view );
+    ID3D11RenderTargetView_Release( r->hdr_saved_target ); r->hdr_saved_target = NULL;
+    if( r->hdr_saved_depth ) ID3D11DepthStencilView_Release( r->hdr_saved_depth );
+    r->hdr_saved_depth = NULL;
+    r->pntc_bindings_valid = 0;
+    r->rs_dirty = r->bs_dirty = r->dss_dirty = 1;
+    wp_renderer_dx11_bind_output( r, 0 );
+}
+
+wp_s32 wp_renderer_dx11_is_hdr_scene_active( const wp_renderer_dx11 *r )
+{
+    return r ? r->hdr_active : 0;
+}
+wp_u64 wp_renderer_dx11_get_hdr_completed_frames( const wp_renderer_dx11 *r )
+{
+    return r ? r->hdr_completed_frames : 0;
+}
+void *wp_renderer_dx11_get_hdr_scene_view( const wp_renderer_dx11 *r )
+{
+    return r ? r->hdr_view : NULL;
+}
+
 void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
 {
     wp_s32 i;
@@ -1892,6 +2212,18 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
 
     if( r->context )
         ID3D11DeviceContext_ClearState( r->context );
+    if( r->hdr_saved_target ) ID3D11RenderTargetView_Release( r->hdr_saved_target );
+    if( r->hdr_saved_depth ) ID3D11DepthStencilView_Release( r->hdr_saved_depth );
+    if( r->hdr_view ) ID3D11ShaderResourceView_Release( r->hdr_view );
+    if( r->hdr_target ) ID3D11RenderTargetView_Release( r->hdr_target );
+    if( r->hdr_texture ) ID3D11Texture2D_Release( r->hdr_texture );
+    if( r->hdr_vs ) ID3D11VertexShader_Release( r->hdr_vs );
+    if( r->hdr_ps ) ID3D11PixelShader_Release( r->hdr_ps );
+    if( r->hdr_output_cb ) ID3D11Buffer_Release( r->hdr_output_cb );
+    if( r->hdr_raster ) ID3D11RasterizerState_Release( r->hdr_raster );
+    if( r->hdr_depth ) ID3D11DepthStencilState_Release( r->hdr_depth );
+    if( r->hdr_blend ) ID3D11BlendState_Release( r->hdr_blend );
+
     for( i = 0; i < WP_DX11_GPU_QUERY_COUNT; ++i )
     {
         wp_gpu_frame_query *q = &r->gpu_queries[i];
@@ -2672,6 +3004,7 @@ static void dx11_draw_vertices( wp_renderer_dx11 *r, const void *vertex_data, wp
             r->ptc_external_texture_view
                 ? r->ptc_external_texture_view
                 : ( r->ptc_texture_view ? r->ptc_texture_view : r->ptc_white_texture_view );
+        wp_renderer_dx11_bind_output( r, wp_renderer_dx11_view_samples_linear( texture_view ) );
         ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_ptc );
         ID3D11DeviceContext_VSSetShader( r->context, r->vs_ptc, NULL, 0 );
         ID3D11DeviceContext_PSSetShader( r->context, r->ps_ptc, NULL, 0 );
@@ -2738,6 +3071,7 @@ static wp_s32 dx11_prepare_indexed( wp_renderer_dx11 *r, const void *vertex_data
             r->ptc_external_texture_view
                 ? r->ptc_external_texture_view
                 : ( r->ptc_texture_view ? r->ptc_texture_view : r->ptc_white_texture_view );
+        wp_renderer_dx11_bind_output( r, wp_renderer_dx11_view_samples_linear( texture_view ) );
         ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_ptc );
         ID3D11DeviceContext_VSSetShader( r->context, r->vs_ptc, NULL, 0 );
         ID3D11DeviceContext_PSSetShader( r->context, r->ps_ptc, NULL, 0 );
@@ -2775,6 +3109,7 @@ static void dx11_draw_prepared_indexed( wp_renderer_dx11 *r, wp_s32 index_start,
             r->ptc_external_texture_view
                 ? r->ptc_external_texture_view
                 : ( r->ptc_texture_view ? r->ptc_texture_view : r->ptc_white_texture_view );
+        wp_renderer_dx11_bind_output( r, wp_renderer_dx11_view_samples_linear( texture_view ) );
         ID3D11DeviceContext_PSSetShaderResources( r->context, 0, 1, &texture_view );
     }
 
@@ -3370,6 +3705,7 @@ void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *r,
             ? r->ptc_external_texture_view
             : ( r->ptc_texture_view ? r->ptc_texture_view : r->ptc_white_texture_view );
 
+    wp_renderer_dx11_bind_output( r, wp_renderer_dx11_view_samples_linear( texture_view ) );
     ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_ptc );
     ID3D11DeviceContext_VSSetShader( r->context, r->vs_ptc, NULL, 0 );
     ID3D11DeviceContext_PSSetShader( r->context, r->ps_ptc, NULL, 0 );

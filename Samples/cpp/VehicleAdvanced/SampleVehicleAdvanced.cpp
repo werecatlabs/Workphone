@@ -441,6 +441,7 @@ namespace workphone
             {
                 m_benchmarkStarted = true;
                 m_profileStart = profileNow;
+                bool linearSceneValid = true;
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
                 if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>(
                         app->getGraphicsSystem()->getRendererPtr() ) )
@@ -590,8 +591,23 @@ namespace workphone
                            << " transformUploadsPerFrame=" << stats.transform_uploads / frames
                            << " stateBindingsPerFrame=" << stats.state_bindings / frames;
                     WP_LOG( report.str() );
-                    evidence << ",\n  \"lightingOutputPath\": \"dx11-fixed-reinhard\""
-                             << ",\n  \"hdrPostPipelineActive\": false"
+                    const auto native = wp_renderer_get_dx11( renderer->getNativeRenderer() );
+                    const auto hdrPasses = wp_renderer_dx11_get_hdr_completed_frames( native );
+                    const auto pipeline = app->getGraphicsSystem()->getGraphicsPipeline();
+                    const bool hdrRequested = pipeline && pipeline->getHdrSettings().m_enableAgxToneMapping;
+                    const bool hdrActive = hdrRequested && hdrPasses > 0;
+                    if( hdrRequested )
+                    {
+                        evidence << ",\n  \"linearScene\": " << advanced::captureLinearSceneEvidence(
+                            wp_renderer_dx11_get_hdr_scene_view( native ), linearSceneValid );
+                        linearSceneValid = linearSceneValid && hdrActive;
+                        if( !linearSceneValid ) WP_LOG_ERROR( "VehicleAdvanced: native HDR scene resolve/readback validation failed." );
+                    }
+                    evidence << ",\n  \"lightingOutputPath\": \""
+                             << ( hdrActive ? "dx11-native-hdr-filmic" : "dx11-fixed-reinhard" ) << "\""
+                             << ",\n  \"hdrPostPipelineActive\": " << ( hdrActive ? "true" : "false" )
+                             << ",\n  \"hdrCompletedPassesLifetime\": " << hdrPasses
+                             << ",\n  \"hdrExposure\": 1.0,\n  \"autoExposureActive\": false"
                              << ",\n  \"dx11\": {\"frames\": " << stats.frames
                              << ", \"intervalSamples\": " << stats.interval_samples
                              << ", \"gpuSamples\": " << stats.gpu_samples
@@ -638,7 +654,7 @@ namespace workphone
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
-                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid;
+                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid && linearSceneValid;
                 evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
                          << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
                          << "  \"limits\": \"Control replay is physics-tick based; settings and source hashes are recorded by the capture runner. Timings do not certify image quality.\"\n}\n";

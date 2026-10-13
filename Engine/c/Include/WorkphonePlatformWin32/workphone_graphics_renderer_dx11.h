@@ -34,6 +34,19 @@ typedef struct wp_renderer_dx11 wp_renderer_dx11;
 typedef struct wp_render_texture_dx11 wp_render_texture_dx11;
 typedef struct wp_geometry_dx11 wp_geometry_dx11;
 
+/* GPU scene-linear RGBA16F staging for a single non-MSAA 2D UNORM/sRGB output.
+ * Render-owner calls only. Begin rejects invalid/nested requests without changing
+ * bindings. Positive finite manual exposure is clamped to .01..64. End composites
+ * the native HDR filmic policy once and restores the saved output/depth/viewport.
+ * The returned SRV is borrowed until a successful resize or renderer destruction;
+ * clients must not leave it bound when beginning another scene. No CPU readback. */
+wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *renderer, wp_f32 exposure );
+void wp_renderer_dx11_end_hdr_scene( wp_renderer_dx11 *renderer );
+wp_s32 wp_renderer_dx11_is_hdr_scene_active( const wp_renderer_dx11 *renderer );
+void *wp_renderer_dx11_get_hdr_scene_view( const wp_renderer_dx11 *renderer );
+/* Lifetime successful GPU resolves; independent of resettable frame statistics. */
+wp_u64 wp_renderer_dx11_get_hdr_completed_frames( const wp_renderer_dx11 *renderer );
+
 /* Renderer-owned immutable mesh geometry. Triangle lists cache the complete
  * mesh; apply first/count when drawing the returned geometry. Strip ranges are
  * converted to lists starting at zero with submesh-relative winding. Geometry is
