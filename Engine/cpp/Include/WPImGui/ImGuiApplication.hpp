@@ -137,6 +137,10 @@ namespace workphone
 
             Vector2I m_currentMousePosition;
 
+            WeakPtr<IUIRenderWindow> m_scenePickWindow;
+            Vector2F m_scenePickStart;
+            bool m_scenePickSuppressed = false;
+
             Vector2I m_size;
 
             f32 m_camDistance = 8.f;

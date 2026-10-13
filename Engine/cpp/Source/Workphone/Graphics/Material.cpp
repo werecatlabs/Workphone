@@ -1319,7 +1319,13 @@ namespace workphone::render
                 if( editorFloatProperties )
                 {
                     for( const auto &property : editorFloatProperties->getPropertiesAsArray() )
+                    {
                         setEditorFloat( property.getName(), property.getValueAsFloat() );
+                        if( property.getName() == "specular" )
+                        {
+                            setSpecularAmount( property.getValueAsFloat() );
+                        }
+                    }
                 }
                 if( editorUIntProperties )
                 {

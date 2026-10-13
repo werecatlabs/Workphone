@@ -24,6 +24,24 @@ namespace workphone::render
         const String MaterialTypeDataStr = String( "materialType" );
         constexpr u32 LightingEnabledFlag = 1u << 19u;
 
+        void restoreSpecularAmount( const Properties &properties, MaterialPass &pass )
+        {
+            // The editor slider updates both the scalar setting and the legacy
+            // colour consumed by renderers. Restore that same colour after the
+            // legacy fields, otherwise a saved slider value only updates the UI.
+            if( auto editor = properties.getChild( EditorSettingsStr ) )
+            {
+                if( auto floats = editor->getChild( EditorFloatsStr ) )
+                {
+                    f32 amount;
+                    if( floats->getPropertyValue( "specular", amount ) )
+                    {
+                        pass.setSpecular( ColourF( amount, amount, amount, 1.0f ) );
+                    }
+                }
+            }
+        }
+
         void writePassState( Properties &properties, const MaterialPassStateData &state )
         {
             properties.setProperty(
@@ -1393,6 +1411,7 @@ namespace workphone::render
         auto specular = getSpecular();
         properties->getPropertyValue( specularStr, specular );
         setSpecular( specular );
+        restoreSpecularAmount( *properties, *this );
 
         auto tint = getTint();
         properties->getPropertyValue( tintStr, tint );
