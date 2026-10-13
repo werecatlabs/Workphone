@@ -174,17 +174,70 @@ namespace workphone
         tabView->setTabPosition( static_cast<scene::TabView::TabPosition>( position ) );
     }
 
+    String _getUiHorizontalAlignmentString( lua_Integer alignment )
+    {
+        return scene::UiUtil::getHorizontalAlignmentString(
+            static_cast<HorizontalAlignment>( alignment ) );
+    }
+
+    lua_Integer _getUiHorizontalAlignment( const String &str )
+    {
+        return static_cast<lua_Integer>( scene::UiUtil::getHorizontalAlignment( str ) );
+    }
+
+    String _getUiVerticalAlignmentString( lua_Integer alignment )
+    {
+        return scene::UiUtil::getVerticalAlignmentString(
+            static_cast<VerticalAlignment>( alignment ) );
+    }
+
+    lua_Integer _getUiVerticalAlignment( const String &str )
+    {
+        return static_cast<lua_Integer>( scene::UiUtil::getVerticalAlignment( str ) );
+    }
+
     void bindComponentUI( lua_State *L )
     {
         using namespace scene;
         using namespace luabind;
 
         module( L )[class_<UiUtil>( "UiUtil" )
-                        .def( "createSlider", &UiUtil::createSlider )
-                        .def( "createSliderVertical", &UiUtil::createSliderVertical )
-                        .def( "createScrollbar", &UiUtil::createScrollbar )
-                        .def( "createScrollbarVertical", &UiUtil::createScrollbarVertical )
-                        .def( "createScrollview", &UiUtil::createScrollview )];
+                        .scope[def( "getHorizontalAlignmentString", _getUiHorizontalAlignmentString ),
+                               def( "getHorizontalAlignment", _getUiHorizontalAlignment ),
+                               def( "getHorizontalAlignmentTypesString",
+                                    &UiUtil::getHorizontalAlignmentTypesString ),
+                               def( "getVerticalAlignmentString", _getUiVerticalAlignmentString ),
+                               def( "getVerticalAlignment", _getUiVerticalAlignment ),
+                               def( "getVerticalAlignmentTypesString",
+                                    &UiUtil::getVerticalAlignmentTypesString ),
+                               def( "createText", &UiUtil::createText ),
+                               def( "createButton", &UiUtil::createButton ),
+                               def( "createDropdown", &UiUtil::createDropdown ),
+                               def( "createPanel", &UiUtil::createPanel ),
+                               def( "createSlider", &UiUtil::createSlider ),
+                               def( "createSliderVertical", &UiUtil::createSliderVertical ),
+                               def( "createScrollbar", &UiUtil::createScrollbar ),
+                               def( "createScrollbarVertical", &UiUtil::createScrollbarVertical ),
+                               def( "createScrollview", &UiUtil::createScrollview )]];
+
+        object uiUtil = globals( L )[ "UiUtil" ];
+        uiUtil[ "directionNames" ] = UiUtil::directionNames;
+        uiUtil[ "verticalAlignmentTypes" ] = UiUtil::verticalAlignmentTypes;
+        uiUtil[ "horizontalAlignmentTypes" ] = UiUtil::horizontalAlignmentTypes;
+        uiUtil[ "directionStr" ] = UiUtil::directionStr;
+        uiUtil[ "handleStr" ] = UiUtil::handleStr;
+        uiUtil[ "backgroundStr" ] = UiUtil::backgroundStr;
+        uiUtil[ "fillStr" ] = UiUtil::fillStr;
+        uiUtil[ "scrollValueStr" ] = UiUtil::scrollValueStr;
+        uiUtil[ "sliderValueStr" ] = UiUtil::sliderValueStr;
+        uiUtil[ "topStr" ] = UiUtil::topStr;
+        uiUtil[ "centerStr" ] = UiUtil::centerStr;
+        uiUtil[ "bottomStr" ] = UiUtil::bottomStr;
+        uiUtil[ "leftStr" ] = UiUtil::leftStr;
+        uiUtil[ "rightStr" ] = UiUtil::rightStr;
+        uiUtil[ "dropDownNameStr" ] = UiUtil::dropDownNameStr;
+        uiUtil[ "optionStr" ] = UiUtil::optionStr;
+        uiUtil[ "panelStr" ] = UiUtil::panelStr;
 
         // UIComponent binding
         module( L )[class_<UIComponent, Component, SmartPtr<UIComponent>>( "UIComponent" )
