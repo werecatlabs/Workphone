@@ -19,6 +19,12 @@ namespace workphone::render
 
     ITexture::~ITexture() = default;
 
+    bool ITexture::copyLinearFloatData( const Array<f32> &, const Vector2I &, String &error )
+    {
+        error = "Linear float texture upload is unsupported by this backend.";
+        return false;
+    }
+
     Array<SmartPtr<ITexture>> ITexture::getCubemapFaces() const
     {
         return {};

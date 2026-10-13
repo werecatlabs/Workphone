@@ -57,12 +57,12 @@ namespace cooked_terrain_contracts
     {
     public:
         Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
-        ColourTransferTexture( ID3D11Device *device, bool srgb )
+        ColourTransferTexture( ID3D11Device *device, bool srgb, bool linearFloat = false )
         {
             D3D11_TEXTURE2D_DESC desc{};
             desc.Width = desc.Height = 4;
             desc.MipLevels = desc.ArraySize = 1;
-            desc.Format = DXGI_FORMAT_B8G8R8A8_TYPELESS;
+            desc.Format = linearFloat ? DXGI_FORMAT_R32G32B32A32_FLOAT : DXGI_FORMAT_B8G8R8A8_TYPELESS;
             desc.SampleDesc.Count = 1;
             desc.Usage = D3D11_USAGE_IMMUTABLE;
             desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -72,11 +72,18 @@ namespace cooked_terrain_contracts
                 pixels[i] = pixels[i + 1] = pixels[i + 2] = 128;
                 pixels[i + 3] = 255;
             }
-            D3D11_SUBRESOURCE_DATA data{ pixels.data(), 16, 64 };
+            std::array<float, 64> linearPixels{};
+            for( size_t i = 0; i < linearPixels.size(); i += 4 )
+            {
+                linearPixels[i] = linearPixels[i + 1] = linearPixels[i + 2] = .2158605f;
+                linearPixels[i + 3] = 1;
+            }
+            D3D11_SUBRESOURCE_DATA data{ linearFloat ? static_cast<const void *>( linearPixels.data() ) : pixels.data(),
+                linearFloat ? 64u : 16u, linearFloat ? 256u : 64u };
             Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
             require( SUCCEEDED( device->CreateTexture2D( &desc, &data, &texture ) ), "Colour transfer source must allocate" );
             D3D11_SHADER_RESOURCE_VIEW_DESC srv{};
-            srv.Format = srgb ? DXGI_FORMAT_B8G8R8A8_UNORM_SRGB : DXGI_FORMAT_B8G8R8A8_UNORM;
+            srv.Format = linearFloat ? DXGI_FORMAT_R32G32B32A32_FLOAT : srgb ? DXGI_FORMAT_B8G8R8A8_UNORM_SRGB : DXGI_FORMAT_B8G8R8A8_UNORM;
             srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
             srv.Texture2D.MipLevels = 1;
             require( SUCCEEDED( device->CreateShaderResourceView( texture.Get(), &srv, &view ) ), "Colour transfer view must allocate" );
@@ -90,6 +97,7 @@ namespace cooked_terrain_contracts
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) );
         auto encoded = make_ptr<ColourTransferTexture>( device, false );
         auto hardwareDecoded = make_ptr<ColourTransferTexture>( device, true );
+        auto linearFloat = make_ptr<ColourTransferTexture>( device, false, true );
         TerrainData data;
         data.dimensions = { 5, 5 };
         data.spacing = { .5f, .5f };
@@ -116,6 +124,7 @@ namespace cooked_terrain_contracts
         {
             const auto software = draw( encoded, projection );
             const auto hardware = draw( hardwareDecoded, projection );
+            const auto floating = draw( linearFloat, projection );
             require( software.size() == 128 * 128 * 4 && hardware.size() == software.size(), "Colour transfer readback extent changed" );
             const size_t centre = ( 64 * 128 + 64 ) * 4;
             for( size_t channel = 0; channel < 3; ++channel )
@@ -126,6 +135,8 @@ namespace cooked_terrain_contracts
                                  unsigned( projection ), channel, a, b );
                 require( std::abs( a - b ) <= 2,
                          "Mid-grey terrain must shade equivalently through UNORM and hardware-SRGB views with nonwhite tint" );
+                require( floating.size() == software.size() && std::abs( int( floating[centre + channel] ) - b ) <= 2,
+                         "Linear float terrain colour must bypass encoded-colour decoding" );
                 const float tint[] = { .35f, .70f, .90f };
                 const float linearGrey = std::pow( ( 128.f / 255.f + .055f ) / 1.055f, 2.4f );
                 // Terrain tint follows the existing authoring colour convention:

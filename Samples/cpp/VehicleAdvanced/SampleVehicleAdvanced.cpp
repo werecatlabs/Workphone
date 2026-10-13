@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <cmath>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>
 #include <Workphone/Mesh/MeshUtil.hpp>
@@ -20,6 +21,7 @@
 #    include <workphone_graphics_renderer.h>
 #    include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #    include <WPGraphics/ClawSceneNode.hpp>
+#    include <WPGraphics/ClawScene.hpp>
 #    include <workphone_graphics_object.h>
 #endif
 
@@ -519,6 +521,11 @@ namespace workphone
                          << ",\n  \"sceneMeshes\": " << m_assets.meshes.size()
                          << ",\n  \"sceneTextures\": " << m_assets.textures.size();
                 evidence << ",\n  \"device\": " << advanced::captureDeviceEvidence();
+                void *reflectionView = nullptr;
+                if( m_assets.reflectionTexture ) m_assets.reflectionTexture->getTextureFinal( &reflectionView );
+                bool radianceValid = false;
+                evidence << ",\n  \"reflectionRadiance\": " << advanced::captureRadianceEvidence( reflectionView, radianceValid );
+                if( !radianceValid ) WP_LOG_ERROR( "VehicleAdvanced: HDR reflection readback did not confirm finite radiance above one." );
                 evidence << ",\n  \"foliageWorldEnabled\": " << ( m_foliageWorldEnabled ? "true" : "false" );
                 bool foliageValid = !m_foliageWorldEnabled;
                 if( m_assets.foliageTerrain )
@@ -583,7 +590,9 @@ namespace workphone
                            << " transformUploadsPerFrame=" << stats.transform_uploads / frames
                            << " stateBindingsPerFrame=" << stats.state_bindings / frames;
                     WP_LOG( report.str() );
-                    evidence << ",\n  \"dx11\": {\"frames\": " << stats.frames
+                    evidence << ",\n  \"lightingOutputPath\": \"dx11-fixed-reinhard\""
+                             << ",\n  \"hdrPostPipelineActive\": false"
+                             << ",\n  \"dx11\": {\"frames\": " << stats.frames
                              << ", \"intervalSamples\": " << stats.interval_samples
                              << ", \"gpuSamples\": " << stats.gpu_samples
                              << ", \"meanIntervalMs\": " << stats.interval_ms
@@ -599,6 +608,28 @@ namespace workphone
                              << ", \"geometryCreations\": " << stats.geometry_creations << "}";
                 }
 #endif
+                bool sunlightValid = true;
+#if WP_GRAPHICS_SYSTEM_CLAW
+                if( auto scene = dynamic_pointer_cast<render::ClawScene>(
+                        app->getGraphicsSystem()->getGraphicsScene() ) )
+                {
+                    const auto light = scene->getPrimaryDirectionalLight();
+                    sunlightValid = light && light == m_assets.sun;
+                    if( light )
+                    {
+                        const auto direction = light->getDerivedDirection();
+                        const auto power = light->getPowerScale();
+                        sunlightValid = sunlightValid && std::isfinite( direction.x ) &&
+                            std::isfinite( direction.y ) && std::isfinite( direction.z ) &&
+                            direction.lengthSquared() > .99f && std::isfinite( power ) && power > 0;
+                        evidence << ",\n  \"primarySun\": {\"matchesProceduralSky\": "
+                                 << ( sunlightValid ? "true" : "false" ) << ", \"power\": " << power
+                                 << ", \"direction\": [" << direction.x << ", " << direction.y
+                                 << ", " << direction.z << "]}";
+                    }
+                    if( !sunlightValid ) WP_LOG_ERROR( "VehicleAdvanced: primary sunlight does not match the generated sky." );
+                }
+#endif
                 const bool reflectionValid = advanced::validateReflection( m_assets );
                 if( !reflectionValid )
                     WP_LOG_ERROR(
@@ -607,7 +638,7 @@ namespace workphone
                 const bool windingValid = checkSceneWinding( m_assets );
                 m_capturePassed = ( m_capturePath.empty() || advanced::captureFrame( m_capturePath ) ) &&
                                   treeLODValid && vehicleLODValid && reflectionValid && windingValid &&
-                                  nativeFrameValid && foliageValid;
+                                  nativeFrameValid && foliageValid && radianceValid && sunlightValid;
                 evidence << ",\n  \"validationPassed\": " << ( m_capturePassed ? "true" : "false" )
                          << ",\n  \"visualAcceptance\": \"unreviewed\",\n"
                          << "  \"limits\": \"Control replay is physics-tick based; settings and source hashes are recorded by the capture runner. Timings do not certify image quality.\"\n}\n";
@@ -1357,6 +1388,12 @@ namespace workphone
         if( !m_raceScene->regenerate() )
             throw std::runtime_error( m_raceScene->getGenerationError() );
         m_assets = m_raceScene->getAssets();
+#if WP_GRAPHICS_SYSTEM_CLAW
+        if( auto scene = dynamic_pointer_cast<render::ClawScene>(
+                applicationManager->getGraphicsSystem()->getGraphicsScene() ) )
+            if( !scene->setPrimaryDirectionalLight( m_assets.sun ) )
+                throw std::runtime_error( "Cannot select the procedural sky's sunlight." );
+#endif
         for( auto &group : m_assets.treeLODs ) group->setForcedLOD( m_forcedLOD );
         if( m_assets.foliageTerrain )
         {

@@ -35,7 +35,7 @@ namespace workphone::scene
                 m.indices.push_back( index );
         }
         void cylinder( render::FoliageMeshData &mesh, Vector3F start, Vector3F end, float radius,
-                       u32 sides )
+                       u32 sides, float endScale = .6f )
         {
             auto axis = end - start;
             axis.normalise();
@@ -51,8 +51,98 @@ namespace workphone::scene
                 auto b = ( right * std::cos( 2 * pi * ( side + 1 ) / sides ) +
                            front * std::sin( 2 * pi * ( side + 1 ) / sides ) ) *
                          radius;
-                quad( mesh, start + a, start + b, end + b * .6f, end + a * .6f );
+                quad( mesh, start + a, start + b, end + b * endScale, end + a * endScale );
             }
+        }
+        void broadleafMesh( const FoliagePlantRecipe &recipe, render::FoliageMeshData &mesh, u32 lod )
+        {
+            const u64 seed = recipe.seed;
+            const u32 sides = 8 - lod * 2;
+            const float h = recipe.height, radius = recipe.radius;
+            const Vector3F crown( 0, h * .67f, 0 );
+            const auto trunkPoint = [&]( float t ) {
+                return Vector3F( radius * .055f * std::sin( t * 2.1f + unit( seed + 812 ) ),
+                                 h * t, radius * .045f * std::sin( t * 2.8f ) );
+            };
+            // A continuous tapered leader; the clear lower bole is never a pole
+            // extending out of the top of the foliage.
+            const u32 trunkSegments = lod == 0 ? 5u : 3u;
+            for( u32 segment = 0; segment < trunkSegments; ++segment )
+            {
+                const float t0 = .82f * segment / trunkSegments;
+                const float t1 = .82f * ( segment + 1 ) / trunkSegments;
+                const float a = recipe.trunkRadius * ( 1 - .88f * t0 / .82f );
+                const float b = recipe.trunkRadius * ( 1 - .88f * t1 / .82f );
+                cylinder( mesh, trunkPoint( t0 ), trunkPoint( t1 ), a, sides, b / a );
+            }
+            const u32 branchStride = 1u << lod;
+            for( u32 branch = 0; branch < recipe.branches; branch += branchStride )
+            {
+                const float t = ( branch + .5f ) / recipe.branches;
+                const float yaw = branch * 2.39996323f + unit( seed + 41 ) * 2 * pi;
+                const Vector3F radial( std::cos( yaw ), 0, std::sin( yaw ) );
+                const float reach = radius * ( .60f + .30f * std::sin( pi * t ) );
+                const Vector3F base = trunkPoint( .28f + .39f * t );
+                const Vector3F elbow = base + radial * reach * .50f + Vector3F( 0, h * .09f, 0 );
+                const Vector3F tip = radial * reach + Vector3F( 0, h * ( .47f + .38f * t ), 0 );
+                const float thickness = recipe.trunkRadius * ( .39f - .16f * t );
+                cylinder( mesh, base, elbow, thickness, std::max( 3u, sides - 2 ), .68f );
+                cylinder( mesh, elbow, tip, thickness * .68f, std::max( 3u, sides - 2 ), .18f );
+                if( lod < 2 )
+                {
+                    // Secondary forks rise into foliage instead of long exposed
+                    // horizontal spokes ending in a single enormous leaf card.
+                    const Vector3F tangent( -radial.z, 0, radial.x );
+                    for( float sign : { -1.f, 1.f } )
+                    {
+                        const auto fork = tip + tangent * radius * .19f * sign + Vector3F( 0, h * .055f, 0 );
+                        cylinder( mesh, elbow, fork, thickness * .40f, 3, .14f );
+                    }
+                }
+            }
+            mesh.sections.push_back( { 0, u32( mesh.indices.size() ), 0 } );
+            const u32 leafStart = u32( mesh.indices.size() );
+            const u32 clusters = std::max( 64u, recipe.branches * 12u );
+            const u32 clusterStride = 1u << lod;
+            const u32 cardsPerCluster = lod == 0 ? 3u : 2u;
+            for( u32 cluster = 0; cluster < clusters; cluster += clusterStride )
+            {
+                const u64 key = seed * 701u + u64( cluster ) * 8191u;
+                // A low-discrepancy ellipsoid fills the crown volume. Every LOD
+                // uses a stable subset of the same clusters, including interior
+                // sprays, rather than recomputing a sparse ring of branch tips.
+                const float y = 2 * unit( key + 1 ) - 1;
+                const float yaw = cluster * 2.39996323f + unit( seed + 18 ) * 2 * pi;
+                const float ring = std::sqrt( std::max( 0.f, 1 - y * y ) );
+                const float fill = .58f + .42f * std::cbrt( unit( key + 3 ) );
+                auto centre = crown + Vector3F( std::cos( yaw ) * radius * ring * fill,
+                                                y * h * .29f, std::sin( yaw ) * radius * ring * fill );
+                const float size = radius * ( .30f + .14f * unit( key + 7 ) ) * ( 1 + .22f * lod );
+                // Keep leaf sprays compact relative to height even for squat shrubs.
+                const float cardHeight = std::min( size * 1.18f, h * .18f );
+                centre.y = std::max( h * .30f + cardHeight * .5f,
+                                    std::min( h - cardHeight * .5f, centre.y ) );
+                auto crownNormal = centre - crown + Vector3F( 0, h * .12f, 0 );
+                if( crownNormal.lengthSquared() < .000001f ) crownNormal = { 0, 1, 0 };
+                crownNormal.normalise();
+                for( u32 card = 0; card < cardsPerCluster; ++card )
+                {
+                    const float angle = yaw + card * pi / cardsPerCluster + unit( key + 11 ) * .6f;
+                    const float pitch = ( unit( key + 19 + card ) - .5f ) * 2.35f;
+                    const Vector3F right( std::cos( angle ), 0, std::sin( angle ) );
+                    const Vector3F up( -std::sin( angle ) * std::sin( pitch ), std::cos( pitch ),
+                                       std::cos( angle ) * std::sin( pitch ) );
+                    const auto halfRight = right * size * .5f;
+                    const auto halfUp = up * cardHeight * .5f;
+                    const u32 first = u32( mesh.positions.size() );
+                    quad( mesh, centre - halfRight - halfUp, centre + halfRight - halfUp,
+                          centre + halfRight + halfUp, centre - halfRight + halfUp );
+                    // Rounded crown normals avoid obvious flat billboard lighting.
+                    for( u32 vertex = first; vertex < first + 4; ++vertex )
+                        mesh.normals[vertex] = crownNormal;
+                }
+            }
+            mesh.sections.push_back( { leafStart, u32( mesh.indices.size() ) - leafStart, 1 } );
         }
         void bounds( render::FoliageSpecies &species )
         {
@@ -94,38 +184,23 @@ namespace workphone::scene
             for( u32 lod = 0; lod < 3; ++lod )
             {
                 auto &mesh = species.lods[lod];
-                const u32 branches = std::max( 1u, r.branches >> lod ), sides = 8 - lod * 2;
-                Array<Vector3F> tips;
                 if( !grass )
                 {
-                    cylinder( mesh, {}, { 0, r.height, 0 }, r.trunkRadius, sides );
-                    for( u32 i = 0; i < branches; ++i )
-                    {
-                        const auto yaw = unit( u64( r.seed ) * 31 + i * ( 1u << lod ) ) * 2 * pi;
-                        const auto y =
-                            r.height * ( .25f + .6f * float( i + 1 ) / float( branches + 1 ) );
-                        auto tip = Vector3F( std::cos( yaw ) * r.radius,
-                                             std::min( r.height, y + r.height * .1f ),
-                                             std::sin( yaw ) * r.radius );
-                        cylinder( mesh, { 0, y, 0 }, tip, r.trunkRadius * .4f,
-                                  std::max( 3u, sides / 2 ) );
-                        tips.push_back( tip );
-                    }
-                    species.lods[lod].sections.push_back( { 0, u32( mesh.indices.size() ), 0 } );
+                    broadleafMesh( r, mesh, lod );
+                    continue;
                 }
+                const u32 branches = std::max( 1u, r.branches >> lod );
                 const auto leafStart = u32( mesh.indices.size() );
-                const auto cards = grass ? branches : std::max( 2u, branches * ( 3 - lod ) );
+                const auto cards = branches;
                 for( u32 i = 0; i < cards; ++i )
                 {
                     const auto yaw = unit( u64( r.seed ) * 17 + i * ( 1u << lod ) ) * 2 * pi;
                     auto right = Vector3F( std::cos( yaw ), 0, std::sin( yaw ) );
-                    const float halfWidth = grass ? r.radius / std::sqrt( float( branches ) )
-                                                  : r.radius * .35f * ( 1 + .3f * lod );
-                    auto centre = grass ? Vector3F( std::cos( yaw ) * r.radius * unit( i + r.seed ), 0,
-                                                    std::sin( yaw ) * r.radius * unit( i + r.seed ) )
-                                        : tips[i % tips.size()];
+                    const float halfWidth = r.radius / std::sqrt( float( branches ) );
+                    auto centre = Vector3F( std::cos( yaw ) * r.radius * unit( i + r.seed ), 0,
+                                            std::sin( yaw ) * r.radius * unit( i + r.seed ) );
                     const float cardHeight =
-                        grass ? r.height * ( .7f + .3f * unit( i + 71 * r.seed ) ) : r.height * .3f;
+                        r.height * ( .7f + .3f * unit( i + 71 * r.seed ) );
                     const auto up = Vector3F( 0, cardHeight, 0 );
                     // Real textured cards, generated independently at each LOD. The stable seed
                     // controls the near/mid clump; UVs cover the configured cutout atlas slot.

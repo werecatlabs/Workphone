@@ -51,6 +51,11 @@ namespace workphone
 
             void clear() override;
 
+            /** Select a scene-owned sun without changing other lights. Null restores fallback. */
+            bool setPrimaryDirectionalLight( SmartPtr<IGraphicsLight> light );
+            /** Visible preferred member, otherwise the first visible Claw directional light. */
+            SmartPtr<IGraphicsLight> getPrimaryDirectionalLight() const;
+
             SmartPtr<ISharedObject> addGraphicsObjectByTypeId( hash_type id ) override;
             bool removeGraphicsObject( SmartPtr<ISharedObject> object ) override;
             SmartPtr<IGraphicsSceneNode> addSceneNode( const String &name ) override;
@@ -153,6 +158,8 @@ namespace workphone
             wp_graphics_scene *m_scene;
 
             ConcurrentArray<SmartPtr<IGraphicsLight>> m_lights;
+            WeakPtr<IGraphicsLight> m_primaryDirectionalLight;
+            mutable std::mutex m_primaryLightMutex;
 
             time_interval m_nextCullTime = 0.0;
 

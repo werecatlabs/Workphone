@@ -2496,7 +2496,7 @@ void wp_renderer_dx11_set_environment( wp_renderer_dx11 *r, void *view, wp_f32 m
     r->material_dirty = 1;
 }
 
-static wp_f32 wp_renderer_dx11_view_is_srgb( ID3D11ShaderResourceView *view );
+static wp_f32 wp_renderer_dx11_view_samples_linear( ID3D11ShaderResourceView *view );
 
 static wp_s32 wp_renderer_dx11_stage_terrain_material( wp_renderer_dx11 *r,
     const wp_terrain_material_dx11 *material, void *const *views, wp_s32 apply )
@@ -2545,7 +2545,7 @@ static wp_s32 wp_renderer_dx11_stage_terrain_material( wp_renderer_dx11 *r,
             D3D11_SHADER_RESOURCE_VIEW_DESC desc;
             candidate[i] = (ID3D11ShaderResourceView *)views[i];
             if( i % 3 == 0 && i < 12 )
-                value.height[i / 3].z = wp_renderer_dx11_view_is_srgb( candidate[i] );
+                value.height[i / 3].z = wp_renderer_dx11_view_samples_linear( candidate[i] );
             if( !candidate[i] ) continue;
             ID3D11ShaderResourceView_GetDevice( candidate[i], &device );
             if( device != r->device ) { if( device ) ID3D11Device_Release( device ); return 0; }
@@ -3387,7 +3387,7 @@ void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *r,
                                      (INT)base_vertex );
 }
 
-static wp_f32 wp_renderer_dx11_view_is_srgb( ID3D11ShaderResourceView *view )
+static wp_f32 wp_renderer_dx11_view_samples_linear( ID3D11ShaderResourceView *view )
 {
     D3D11_SHADER_RESOURCE_VIEW_DESC desc;
     if( !view ) return 0.0f;
@@ -3401,6 +3401,8 @@ static wp_f32 wp_renderer_dx11_view_is_srgb( ID3D11ShaderResourceView *view )
     case DXGI_FORMAT_BC2_UNORM_SRGB:
     case DXGI_FORMAT_BC3_UNORM_SRGB:
     case DXGI_FORMAT_BC7_UNORM_SRGB:
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+    case DXGI_FORMAT_R32G32B32A32_FLOAT:
         return 1.0f;
     default: return 0.0f;
     }
@@ -3428,13 +3430,13 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
     texture_view = r->ptc_external_texture_view ? r->ptc_external_texture_view
                                                  : r->ptc_white_texture_view;
     {
-        const wp_f32 colour_srgb = wp_renderer_dx11_view_is_srgb( texture_view );
-        const wp_f32 emission_srgb = wp_renderer_dx11_view_is_srgb( r->material_texture_views[3] );
-        if( r->material.extra_map_flags.z != colour_srgb ||
-            r->material.extra_map_flags.w != emission_srgb )
+        const wp_f32 colour_linear = wp_renderer_dx11_view_samples_linear( texture_view );
+        const wp_f32 emission_linear = wp_renderer_dx11_view_samples_linear( r->material_texture_views[3] );
+        if( r->material.extra_map_flags.z != colour_linear ||
+            r->material.extra_map_flags.w != emission_linear )
         {
-            r->material.extra_map_flags.z = colour_srgb;
-            r->material.extra_map_flags.w = emission_srgb;
+            r->material.extra_map_flags.z = colour_linear;
+            r->material.extra_map_flags.w = emission_linear;
             r->material_dirty = 1;
         }
     }

@@ -278,7 +278,11 @@ namespace workphone
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
-            m_lights.clear();
+            {
+                std::lock_guard<std::mutex> lock( m_primaryLightMutex );
+                m_primaryDirectionalLight = nullptr;
+                m_lights.clear();
+            }
 
             // Release C++ wrappers while their scene-owned C nodes are still valid.
             GraphicsScene::clear();
@@ -415,9 +419,14 @@ namespace workphone
             {
                 auto light = factoryManager->make_ptr<ClawLight>();
                 light->setCreator( this );
-                graphicsSystem->loadObject( light, true );
+                // Native lights contain CPU scene data only. Initialize before returning:
+                // configuring an unloaded GraphicsLight otherwise silently loses settings.
+                light->load( nullptr );
                 m_graphicsObjects.push_back( light );
-                m_lights.push_back( light );
+                {
+                    std::lock_guard<std::mutex> lock( m_primaryLightMutex );
+                    m_lights.push_back( light );
+                }
                 return light;
             }
             if( id == IGraphicsMesh::typeInfo() )
@@ -515,10 +524,14 @@ namespace workphone
             {
                 auto graphicsObject = workphone::static_pointer_cast<IGraphicsObject>( object );
                 graphicsObject->setCreator( this );
-                graphicsSystem->loadObject( graphicsObject, true );
+                if( auto nativeLight = dynamic_pointer_cast<ClawLight>( graphicsObject ) )
+                    nativeLight->load( nullptr );
+                else
+                    graphicsSystem->loadObject( graphicsObject, true );
 
                 if( auto light = dynamic_pointer_cast<IGraphicsLight>( graphicsObject ) )
                 {
+                    std::lock_guard<std::mutex> lock( m_primaryLightMutex );
                     m_lights.push_back( light );
                 }
 
@@ -545,6 +558,41 @@ namespace workphone
             return object;
         }
 
+        bool ClawScene::setPrimaryDirectionalLight( SmartPtr<IGraphicsLight> light )
+        {
+            std::lock_guard<std::mutex> lock( m_primaryLightMutex );
+            if( !light )
+            {
+                m_primaryDirectionalLight = nullptr;
+                return true;
+            }
+            const auto lights = m_lights.snapshot();
+            if( !dynamic_pointer_cast<ClawLight>( light ) ||
+                light->getType() != LightTypes::LT_DIRECTIONAL ||
+                std::find( lights.begin(), lights.end(), light ) == lights.end() )
+                return false;
+            m_primaryDirectionalLight = light;
+            return true;
+        }
+
+        SmartPtr<IGraphicsLight> ClawScene::getPrimaryDirectionalLight() const
+        {
+            std::lock_guard<std::mutex> lock( m_primaryLightMutex );
+            const auto lights = m_lights.snapshot();
+            const auto preferred = m_primaryDirectionalLight.lock();
+            const auto visibleDirectional = []( const SmartPtr<IGraphicsLight> &light ) {
+                return light && dynamic_pointer_cast<ClawLight>( light ) && light->isVisible() &&
+                       light->getType() == LightTypes::LT_DIRECTIONAL;
+            };
+            if( visibleDirectional( preferred ) &&
+                std::find( lights.begin(), lights.end(), preferred ) != lights.end() )
+                return preferred;
+            for( const auto &light : lights )
+                if( visibleDirectional( light ) )
+                    return light;
+            return nullptr;
+        }
+
         bool ClawScene::removeGraphicsObject( SmartPtr<ISharedObject> object )
         {
             if( !GraphicsScene::removeGraphicsObject( object ) )
@@ -553,6 +601,9 @@ namespace workphone
             }
             if( auto light = dynamic_pointer_cast<IGraphicsLight>( object ) )
             {
+                std::lock_guard<std::mutex> lock( m_primaryLightMutex );
+                if( m_primaryDirectionalLight.lock() == light )
+                    m_primaryDirectionalLight = nullptr;
                 m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
             }
             return true;
@@ -820,27 +871,19 @@ namespace workphone
                                  : ~u32( 0 ) ) &
                         ( rawRenderer->getViewport() ? rawRenderer->getViewport()->getVisibilityMask()
                                                      : ~u32( 0 ) );
-                    const auto objects = m_lights.snapshot();
                     // The forward shader supports one directional light. Configure it once
                     // for both terrain and meshes, rather than using the renderer's preview sun.
                     Vector3F lightDirection( 0.0f, -1.0f, 0.0f );
                     ColourF lightColour = ColourF::White;
                     f32 lightIntensity = 0.0f;
                     bool lightCastsShadows = false;
-                    for( const auto &object : objects )
+                    if( auto light = getPrimaryDirectionalLight() )
                     {
-                        if( auto light = dynamic_pointer_cast<ClawLight>( object ) )
-                        {
-                            if( light->isVisible() && light->getType() == LightTypes::LT_DIRECTIONAL )
-                            {
-                                const auto direction = light->getDerivedDirection();
-                                lightDirection = Vector3F( direction.X(), direction.Y(), direction.Z() );
-                                lightColour = light->getDiffuseColour();
-                                lightIntensity = light->getPowerScale();
-                                lightCastsShadows = light->getCastShadows();
-                                break;
-                            }
-                        }
+                        const auto direction = light->getDerivedDirection();
+                        lightDirection = Vector3F( direction.X(), direction.Y(), direction.Z() );
+                        lightColour = light->getDiffuseColour();
+                        lightIntensity = light->getPowerScale();
+                        lightCastsShadows = light->getCastShadows();
                     }
                     dx11Renderer->setSceneLighting( getAmbientLight(), lightDirection, lightColour,
                                                     lightIntensity );

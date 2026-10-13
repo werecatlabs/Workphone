@@ -63,6 +63,68 @@ namespace workphone::advanced
 #endif
     }
 
+    std::string captureRadianceEvidence( void *textureView, bool &valid )
+    {
+        valid = false;
+#if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
+        using Microsoft::WRL::ComPtr;
+        auto view = static_cast<ID3D11ShaderResourceView *>( textureView );
+        if( !view ) return "{\"available\":false}";
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv{};
+        view->GetDesc( &srv );
+        ComPtr<ID3D11Resource> resource;
+        view->GetResource( &resource );
+        ComPtr<ID3D11Texture2D> source;
+        if( FAILED( resource.As( &source ) ) || srv.ViewDimension != D3D11_SRV_DIMENSION_TEXTURECUBE ||
+            srv.Format != DXGI_FORMAT_R32G32B32A32_FLOAT || srv.TextureCube.MostDetailedMip != 0 ) return "{\"available\":false}";
+        D3D11_TEXTURE2D_DESC desc{};
+        source->GetDesc( &desc );
+        if( desc.ArraySize != 6 || desc.Width > 2048 || desc.Height > 2048 ) return "{\"available\":false}";
+        ComPtr<ID3D11Device> device;
+        source->GetDevice( &device );
+        auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
+        auto renderer = dynamic_cast<render::ClawRendererDX11 *>( graphics->getRendererPtr() );
+        if( !renderer || device.Get() != wp_renderer_get_dx11_device( renderer->getNativeRenderer() ) ) return "{\"available\":false}";
+        ComPtr<ID3D11DeviceContext> context;
+        device->GetImmediateContext( &context );
+        const auto sourceMips = desc.MipLevels;
+        desc.MipLevels = 1;
+        desc.Usage = D3D11_USAGE_STAGING;
+        desc.BindFlags = desc.MiscFlags = 0;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Texture2D> staging;
+        if( FAILED( device->CreateTexture2D( &desc, nullptr, &staging ) ) ) return "{\"available\":false}";
+        float peak = 0;
+        bool finite = true;
+        for( UINT face = 0; face < 6; ++face )
+        {
+            context->CopySubresourceRegion( staging.Get(), face, 0, 0, 0, source.Get(), face * sourceMips, nullptr );
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            if( FAILED( context->Map( staging.Get(), face, D3D11_MAP_READ, 0, &mapped ) ) ) return "{\"available\":false}";
+            for( UINT y = 0; y < desc.Height; ++y )
+            {
+                const auto row = reinterpret_cast<const float *>( static_cast<const unsigned char *>( mapped.pData ) + y * mapped.RowPitch );
+                for( UINT x = 0; x < desc.Width; ++x ) for( UINT channel = 0; channel < 3; ++channel )
+                {
+                    const auto value = row[x * 4 + channel];
+                    finite = finite && std::isfinite( value ) && value >= 0;
+                    if( std::isfinite( value ) ) peak = std::max( peak, value );
+                }
+            }
+            context->Unmap( staging.Get(), face );
+        }
+        valid = finite && peak > 1;
+        std::ostringstream report;
+        report << "{\"available\":true,\"format\":" << unsigned( srv.Format ) << ",\"width\":" << desc.Width
+               << ",\"height\":" << desc.Height << ",\"mips\":" << sourceMips << ",\"finite\":"
+               << ( finite ? "true" : "false" ) << ",\"peakRadiance\":" << peak << ",\"hdrPresent\":"
+               << ( valid ? "true" : "false" ) << "}";
+        return report.str();
+#else
+        return "null";
+#endif
+    }
+
     bool captureFrame( const std::string &path )
     {
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )

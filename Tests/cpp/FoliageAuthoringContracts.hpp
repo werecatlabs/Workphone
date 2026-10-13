@@ -8,8 +8,9 @@
 #include <stdexcept>
 #include <thread>
 #include <atomic>
+#include <limits>
 
-inline void runFoliageAuthoringContracts()
+inline void runFoliageAuthoringContracts( bool plantGeometryOnly = false )
 {
     using namespace workphone;
     using namespace workphone::scene;
@@ -20,9 +21,109 @@ inline void runFoliageAuthoringContracts()
     require( generateFoliagePlant( plant, tree, error ), error.c_str() );
     require( tree.lods[0].indices.size() > tree.lods[1].indices.size() && tree.lods[1].indices.size() > tree.lods[2].indices.size(), "Plant LODs independently reduce topology." );
     require( tree.materials[1].albedo == "fixture/leaf-cutout" && !tree.lods[2].uvs.empty(), "Generated leaf cards retain the texture resource and UVs." );
+    const auto checkTreeGeometry = [&]( const render::FoliageSpecies &value ) {
+        size_t previous = std::numeric_limits<size_t>::max();
+        for( const auto &mesh : value.lods )
+        {
+            require( mesh.indices.size() < previous && mesh.indices.size() % 3 == 0,
+                     "Each tree LOD must strictly reduce complete triangle topology." );
+            previous = mesh.indices.size();
+            require( mesh.positions.size() <= render::foliageMaximumMeshVertices &&
+                     mesh.indices.size() <= render::foliageMaximumMeshIndices,
+                     "Tree recipe must stay within species mesh budgets." );
+            require( mesh.sections.size() == 2 && mesh.sections[0].material == 0 &&
+                     mesh.sections[1].material == 1 && mesh.sections[0].firstIndex == 0 &&
+                     mesh.sections[0].indexCount == mesh.sections[1].firstIndex &&
+                     size_t( mesh.sections[1].firstIndex ) + mesh.sections[1].indexCount == mesh.indices.size(),
+                     "Tree bark and leaf material sections must partition every LOD." );
+            require( mesh.positions.size() == mesh.normals.size() && mesh.positions.size() == mesh.uvs.size(),
+                     "Tree LOD vertex attributes must have equal extents." );
+            bool crownNormalUp = false, crownNormalSide = false;
+            for( size_t vertex = 0; vertex < mesh.positions.size(); ++vertex )
+            {
+                const auto p = mesh.positions[vertex], n = mesh.normals[vertex];
+                const auto uv = mesh.uvs[vertex];
+                require( std::isfinite( p.x ) && std::isfinite( p.y ) && std::isfinite( p.z ) &&
+                         std::isfinite( n.x ) && std::isfinite( n.y ) && std::isfinite( n.z ) &&
+                         std::isfinite( uv.x ) && std::isfinite( uv.y ) && std::abs( n.lengthSquared() - 1.f ) < .0001f,
+                         "Every tree position, UV and unit lighting normal must remain finite." );
+                require( p.x >= value.boundsMinimum.x && p.x <= value.boundsMaximum.x &&
+                         p.y >= value.boundsMinimum.y && p.y <= value.boundsMaximum.y &&
+                         p.z >= value.boundsMinimum.z && p.z <= value.boundsMaximum.z,
+                         "Tree bounds must contain every LOD vertex." );
+            }
+            for( size_t index = 0; index < mesh.indices.size(); index += 3 )
+            {
+                const auto a = mesh.indices[index], b = mesh.indices[index + 1], c = mesh.indices[index + 2];
+                require( a < mesh.positions.size() && b < mesh.positions.size() && c < mesh.positions.size(),
+                         "Tree triangle indices must reference valid vertices." );
+                require( ( mesh.positions[b] - mesh.positions[a] ).crossProduct( mesh.positions[c] - mesh.positions[a] ).lengthSquared() > 1.e-16f,
+                         "Tree taper and leaf cards must not generate degenerate triangles." );
+                if( index >= mesh.sections[1].firstIndex )
+                {
+                    const auto n = mesh.normals[a];
+                    crownNormalUp |= n.y > .5f;
+                    crownNormalSide |= std::abs( n.x ) > .5f || std::abs( n.z ) > .5f;
+                }
+            }
+            require( crownNormalUp && crownNormalSide && mesh.sections[1].indexCount >= 64 * 6,
+                     "Reduced tree crowns must retain dense foliage with rounded lighting normals." );
+        }
+    };
+    checkTreeGeometry( tree );
+    render::FoliageSpecies repeated;
+    require( generateFoliagePlant( plant, repeated, error ), error.c_str() );
+    for( size_t lod = 0; lod < 3; ++lod )
+    {
+        const auto &a = tree.lods[lod], &b = repeated.lods[lod];
+        require( a.positions.size() == b.positions.size() && a.indices.size() == b.indices.size(),
+                 "Seeded tree generation must repeat topology exactly." );
+        for( size_t vertex = 0; vertex < a.positions.size(); ++vertex )
+            require( a.positions[vertex] == b.positions[vertex] && a.normals[vertex] == b.normals[vertex] && a.uvs[vertex] == b.uvs[vertex],
+                     "Seeded tree generation must repeat positions, normals and UVs exactly." );
+        for( size_t index = 0; index < a.indices.size(); ++index )
+            require( a.indices[index] == b.indices[index], "Seeded tree generation must repeat indices exactly." );
+    }
+    auto denseRecipe = plant;
+    denseRecipe.branches = 128;
+    denseRecipe.seed = 0xffffffffu;
+    denseRecipe.wind.amplitude = .15f;
+    denseRecipe.wind.bendStart = 1;
+    denseRecipe.wind.bendEnd = 4;
+    render::FoliageSpecies dense;
+    require( generateFoliagePlant( denseRecipe, dense, error ), error.c_str() );
+    checkTreeGeometry( dense );
+    require( dense.lods[0].positions.size() <= 28000 && dense.lods[0].indices.size() / 3 <= 14000 &&
+             dense.lods[0].indices.size() > tree.lods[0].indices.size(),
+             "Maximum branch recipe must retain the reviewed near-tree geometry budget." );
+    require( dense.wind.amplitude == denseRecipe.wind.amplitude && dense.wind.bendStart == 1 && dense.wind.bendEnd == 4,
+             "Generated crowns must retain authored height-derived wind weights." );
     plant.speciesId = "fixture/grass"; plant.kind = render::FoliageKind::Grass; plant.height = .8f; plant.radius = .4f;
     require( generateFoliagePlant( plant, grass, error ), error.c_str() );
-    const Array<std::shared_ptr<const render::FoliageSpecies>> species = { std::make_shared<const render::FoliageSpecies>( tree ), std::make_shared<const render::FoliageSpecies>( grass ) };
+    for( size_t lod = 0; lod < 3; ++lod )
+        require( grass.lods[lod].positions.size() == ( 16u >> lod ) * 4 &&
+                 grass.lods[lod].indices.size() == ( 16u >> lod ) * 6 && grass.lods[lod].sections.size() == 1 &&
+                 grass.lods[lod].sections[0].material == 1,
+                 "Broadleaf improvements must preserve existing grass card topology." );
+    if( plantGeometryOnly ) return;
+    // Population persistence/concurrency tests need species identity and bounds, not
+    // thousands of repeated hero-tree vertices in each JSON round trip.
+    auto placementTree = tree;
+    for( auto &mesh : placementTree.lods )
+    {
+        const auto source = mesh;
+        mesh = {};
+        for( size_t i = 0; i < 3; ++i )
+        {
+            const auto vertex = source.indices[i];
+            mesh.positions.push_back( source.positions[vertex] );
+            mesh.normals.push_back( source.normals[vertex] );
+            mesh.uvs.push_back( source.uvs[vertex] );
+        }
+        mesh.indices = { 0, 1, 2 };
+        mesh.sections = { { 0, 3, 0 } };
+    }
+    const Array<std::shared_ptr<const render::FoliageSpecies>> species = { std::make_shared<const render::FoliageSpecies>( placementTree ), std::make_shared<const render::FoliageSpecies>( grass ) };
     auto data = std::make_shared<render::TerrainData>(); data->dimensions = { 17, 17 }; data->origin = { -8, -8 }; data->heights.assign( 289, 0 );
     FoliagePlacementRecipe recipe; recipe.pageSize = 8; recipe.candidateSpacing = 2; recipe.seed = 0xf1234567;
     FoliagePlacementRule rule; rule.density = 1; rule.minimumSpacing = 2.5f; recipe.rules = { rule };

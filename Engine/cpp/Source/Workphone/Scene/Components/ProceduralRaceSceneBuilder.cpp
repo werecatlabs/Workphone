@@ -55,6 +55,24 @@ namespace workphone::scene::race
                                       : std::array<u32, 6>{ 0, 2, 1, 0, 3, 2 } )
                     indices.push_back( base + i );
             }
+            void beam( Vector3F a, Vector3F b, float radius )
+            {
+                auto axis = b - a;
+                if( axis.lengthSquared() < 1e-8f || radius <= 0 )
+                    return;
+                axis.normalise();
+                auto u = axis.crossProduct( std::abs( axis.y ) > .9f
+                                               ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 ) );
+                u.normalise();
+                const auto v = axis.crossProduct( u );
+                const auto ur = u * radius, vr = v * radius;
+                quad( a + ur - vr, b + ur - vr, b + ur + vr, a + ur + vr, u );
+                quad( a - ur + vr, b - ur + vr, b - ur - vr, a - ur - vr, -u );
+                quad( a + ur + vr, b + ur + vr, b - ur + vr, a - ur + vr, v );
+                quad( a - ur - vr, b - ur - vr, b + ur - vr, a + ur - vr, -v );
+                quad( a - ur - vr, a + ur - vr, a + ur + vr, a - ur + vr, -axis );
+                quad( b - ur - vr, b + ur - vr, b + ur + vr, b - ur + vr, axis );
+            }
             void box( Vector3F p, Vector3F size )
             {
                 auto lo = p - size * 0.5f, hi = p + size * 0.5f;
@@ -109,6 +127,20 @@ namespace workphone::scene::race
                 std::swap( bgra[i], bgra[i + 2] );
             texture->copyData( bgra.data(), Vector2I( buffer.width, buffer.height ) );
             assets.textureBytes += buffer.sizeBytes();
+            assets.textures.push_back( texture );
+            return texture;
+        }
+        SmartPtr<render::ITexture> uploadLinearRadiance( SceneAssets &assets,
+                                                       const Array<f32> &rgba, Vector2I size )
+        {
+            auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
+            const auto name = assets.resourcePrefix + "/radiance/" + StringUtil::toString( assets.textures.size() );
+            auto texture = graphics->getTextureManager()->createManual( name, "General", 2,
+                size.x, size.y, 1, 0, 0 );
+            String error;
+            if( !texture || !texture->copyLinearFloatData( rgba, size, error ) )
+                throw std::runtime_error( ( String( "Cannot stage HDR reflection face: " ) + error ).c_str() );
+            assets.textureBytes += rgba.size() * sizeof( f32 );
             assets.textures.push_back( texture );
             return texture;
         }
@@ -642,13 +674,45 @@ namespace workphone::scene::race
             mesh( assets, "Start finish black", checkerDark, dark );
             mesh( assets, "Start finish white", checkerWhite, white );
             Geometry gantry, pits, pitApron, pitTrim, pitRoof, pitGlazing, pitLouvers;
-            gantry.box( { -8, 3, 3 }, { .6f, 6, .6f } );
-            gantry.box( { 8, 3, 3 }, { .6f, 6, .6f } );
-            gantry.box( { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
+            // Open galvanized truss: the braced structure reads at driving scale without
+            // the opaque full-height pillars obscuring the venue and horizon.
+            for( float x : { -8.f, 8.f } )
+            {
+                for( float dx : { -.2f, .2f } )
+                    for( float dz : { -.2f, .2f } )
+                        gantry.beam( { x + dx, .15f, 3 + dz }, { x + dx, 5.95f, 3 + dz }, .045f );
+                for( int level = 0; level < 7; ++level )
+                {
+                    const float y = .15f + level * .8f, top = y + .8f;
+                    for( float side : { -.2f, .2f } )
+                    {
+                        gantry.beam( { x - .2f, y, 3 + side }, { x + .2f, y, 3 + side }, .025f );
+                        gantry.beam( { x + side, y, 2.8f }, { x + side, y, 3.2f }, .025f );
+                        const float start = level % 2 ? -.2f : .2f;
+                        gantry.beam( { x + start, y, 3 + side }, { x - start, top, 3 + side }, .022f );
+                        gantry.beam( { x + side, y, 3 + start }, { x + side, top, 3 - start }, .022f );
+                    }
+                }
+            }
+            for( float y : { 5.25f, 5.95f } )
+                for( float z : { 2.8f, 3.2f } )
+                    gantry.beam( { -8.2f, y, z }, { 8.2f, y, z }, .045f );
+            for( int panel = 0; panel <= 10; ++panel )
+            {
+                const float x = -8 + panel * 1.6f;
+                for( float z : { 2.8f, 3.2f } )
+                {
+                    gantry.beam( { x, 5.25f, z }, { x, 5.95f, z }, .025f );
+                    if( panel < 10 )
+                        gantry.beam( { x, panel % 2 ? 5.95f : 5.25f, z },
+                                     { x + 1.6f, panel % 2 ? 5.25f : 5.95f, z }, .025f );
+                }
+                gantry.beam( { x, 5.95f, 2.8f }, { x, 5.95f, 3.2f }, .025f );
+            }
             staticBox( assets, "Gantry left post", { -8, 3, 3 }, { .6f, 6, .6f } );
             staticBox( assets, "Gantry right post", { 8, 3, 3 }, { .6f, 6, .6f } );
             staticBox( assets, "Gantry overhead beam", { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
-            mesh( assets, "Start gantry", gantry, dark );
+            mesh( assets, "Start gantry", gantry, steel );
             // A continuous service apron grounds the garages and avoids six isolated boxes.
             pitApron.quad( { -35, .006f, -68 }, { -14, .006f, -68 },
                            { -14, .006f, -6 }, { -35, .006f, -6 }, { 0, 1, 0 },
@@ -792,17 +856,19 @@ namespace workphone::scene::race
                 }
             }
             // Keep the track and all authored tree positions on the flat contact plane.
-            // Outside that footprint, a continuous ridge replaces overlapping cone silhouettes.
+            // The ridge returns to the ground before the square mesh boundary: a raised
+            // outer tile edge otherwise becomes an artificial straight skyline under fog.
             const auto height = [seed]( float x, float z ) {
                 const float radius = std::hypot( x - 80, z + 25 );
-                const float t = std::clamp( ( radius - 300 ) / 160, 0.f, 1.f );
+                const float t = std::clamp( ( radius - 300 ) / 140, 0.f, 1.f );
+                const float outer = std::clamp( ( 600 - radius ) / 160, 0.f, 1.f );
                 const float phase = float( seed % 1000 ) * .073f;
                 return -.15f +
-                       t * t * ( 3 - 2 * t ) *
-                           ( 58 + 19 * std::sin( x * .009f + phase ) +
-                             13 * std::cos( z * .012f - phase ) + 8 * std::sin( ( x + z ) * .018f ) );
+                       t * t * ( 3 - 2 * t ) * outer * outer * ( 3 - 2 * outer ) *
+                           ( 32 + 11 * std::sin( x * .015f + phase ) +
+                             7 * std::cos( z * .020f - phase ) + 4 * std::sin( ( x + z ) * .037f ) );
             };
-            const int grid = quality == VehicleAppearanceQuality::Preview ? 24 : 32;
+            const int grid = quality == VehicleAppearanceQuality::Preview ? 32 : 96;
             for( int z = 0; z <= grid; ++z )
                 for( int x = 0; x <= grid; ++x )
                 {
@@ -817,6 +883,11 @@ namespace workphone::scene::race
                     hills.uv.push_back( { px * .08f, pz * .08f, 0 } );
                     if( x < grid && z < grid )
                     {
+                        const float step = 1280.f / grid;
+                        const float radius = std::hypot( px + step * .5f - 80, pz + step * .5f + 25 );
+                        const float halfDiagonal = step * .707107f;
+                        if( radius + halfDiagonal <= 300 || radius - halfDiagonal >= 600 )
+                            continue;
                         const u32 a = z * ( grid + 1 ) + x, b = a + 1;
                         const u32 c = a + grid + 1, d = c + 1;
                         for( auto index : { a, c, d, a, d, b } )
@@ -1220,7 +1291,7 @@ namespace workphone::scene::race
             for( int face = 0; face < 6; ++face )
             {
                 TextureBuffer texture( 256, 256 );
-                TextureBuffer reflectionFace( 256, 256 );
+                Array<f32> reflectionFace( 256 * 256 * 4 );
                 for( u32 y = 0; y < texture.height; ++y )
                     for( u32 x = 0; x < texture.width; ++x )
                     {
@@ -1240,6 +1311,12 @@ namespace workphone::scene::race
                         c.r = .06f + .35f * haze + c.r * .15f + glow * .6f;
                         c.g = .22f + .35f * haze + c.g * .15f + glow * .55f;
                         c.b = .58f + .24f * haze + c.b * .15f + glow * .4f;
+                        // Keep the solar core as radiance in the reflection source.
+                        // The visible LDR sky clips its display value; the probe does not.
+                        const float solarCore = std::pow( std::max( 0.f, dir.dotProduct( result.sunDir ) ), 2048.f );
+                        c.r += solarCore * 16.f;
+                        c.g += solarCore * 14.f;
+                        c.b += solarCore * 10.f;
                         auto reflectionColour = c;
                         if( dir.y < 0 )
                         {
@@ -1257,7 +1334,7 @@ namespace workphone::scene::race
                             reflectionColour.b = c.b * ( 1 - horizon ) + reflectionColour.b * horizon;
                         }
                         auto pixel = texture.pixel( x, y );
-                        auto reflectedPixel = reflectionFace.pixel( x, y );
+                        auto reflectedPixel = reflectionFace.data() + ( size_t( y ) * texture.width + x ) * 4;
                         for( size_t channel = 0; channel < 3; ++channel )
                         {
                             float value = channel == 0 ? c.r : channel == 1 ? c.g : c.b;
@@ -1266,16 +1343,14 @@ namespace workphone::scene::race
                             const float reflectedValue = channel == 0   ? reflectionColour.r
                                                          : channel == 1 ? reflectionColour.g
                                                                         : reflectionColour.b;
-                            reflectedPixel[channel] = u8( std::clamp(
-                                std::pow( std::max( reflectedValue, 0.f ), 1.f / 2.2f ) * 255.f, 0.f,
-                                255.f ) );
+                            reflectedPixel[channel] = std::max( reflectedValue, 0.f );
                         }
                         pixel[3] = 255;
-                        reflectedPixel[3] = 255;
+                        reflectedPixel[3] = 1;
                     }
                 auto skyTexture = upload( assets, texture );
                 faces.push_back( skyTexture );
-                reflectionFaces.push_back( upload( assets, reflectionFace ) );
+                reflectionFaces.push_back( uploadLinearRadiance( assets, reflectionFace, { 256, 256 } ) );
             }
             auto skyObject = graphicsScene->addGraphicsObjectByType<render::ISky>();
             assets.sky = skyObject;
@@ -1338,16 +1413,16 @@ namespace workphone::scene::race
                 ColourF( fogRadiance( .41f + horizon.r * .15f ), fogRadiance( .57f + horizon.g * .15f ),
                          fogRadiance( .82f + horizon.b * .15f ), 1 ),
                 .0007f, 180, 800 );
-            // Keep the host scene's lights; reuse its directional lighting if present.
-            for( auto light : graphicsScene->getGraphicsObjectsByType<render::IGraphicsLight>() )
-                if( light->getType() == LightTypes::LT_DIRECTIONAL && light->isVisible() )
-                    return;
+            // Own the sky's matching sun. The showcase explicitly selects this light;
+            // existing host lighting remains available to the scene's fallback policy.
             auto sun = graphicsScene->addGraphicsObjectByType<render::IGraphicsLight>();
+            if( !sun ) throw std::runtime_error( "Cannot create procedural sunlight." );
             assets.sun = sun;
             sun->setType( LightTypes::LT_DIRECTIONAL );
             sun->setDirection( -result.sunDir );
             sun->setDiffuseColour( ColourF( 1, .96f, .88f, 1 ) );
             sun->setPowerScale( 1.8f );
+            sun->setCastShadows( true );
             sun->setVisible( true );
         }
     }  // namespace

@@ -50,6 +50,67 @@ static std::array<float, 4> cubePixel( ID3D11Device *device, ID3D11DeviceContext
     staging->Release();
     return value;
 }
+static void floatTextureContracts()
+{
+    using namespace workphone;
+    using namespace workphone::render;
+    claw_texture_mip_contracts::Fixture fixture;
+    fixture.initialize();
+    auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+    auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) );
+    auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+    ClawTexture texture;
+    Array<f32> radiance{ 4.0f, 2.0f, 0.25f, 1.0f, 8.0f, 0.5f, 3.0f, 1.0f,
+                         0.1f, 6.0f, 1.5f, 1.0f, 12.0f, 0.125f, 2.0f, 1.0f };
+    String error;
+    // Exercise the public ITexture virtual bridge used by the sample sky.
+    ITexture &textureInterface = texture;
+    require( textureInterface.copyLinearFloatData( radiance, { 2, 2 }, error ), "HDR texture bridge must accept finite linear radiance" );
+    auto *view = static_cast<ID3D11ShaderResourceView *>( texture.getNativeTextureView( native ) );
+    require( view != nullptr, "HDR texture bridge must upload on the explicit render owner" );
+    D3D11_SHADER_RESOURCE_VIEW_DESC viewDescription{};
+    view->GetDesc( &viewDescription );
+    require( viewDescription.Format == DXGI_FORMAT_R32G32B32A32_FLOAT,
+             "HDR texture bridge must retain an RGBA32F native view" );
+    const auto checkRadiance = [&]( ID3D11ShaderResourceView *uploaded ) {
+        for( unsigned y = 0; y < 2; ++y ) for( unsigned x = 0; x < 2; ++x )
+        {
+            const auto value = cubePixel( device, context, uploaded, 0, 0, x, y );
+            for( unsigned c = 0; c < 4; ++c )
+                require( std::abs( value[c] - radiance[( y * 2 + x ) * 4 + c] ) < 0.000001f,
+                         "HDR upload/reupload must retain exact unclipped linear radiance" );
+        }
+    };
+    checkRadiance( view );
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> retained = view;
+    const auto reject = [&]( const Array<f32> &invalid, const Vector2I &size ) {
+        require( !textureInterface.copyLinearFloatData( invalid, size, error ) && !error.empty(),
+                 "Malformed HDR input must fail with a diagnostic" );
+        require( texture.getNativeTextureView( native ) == retained.Get(),
+                 "Malformed HDR input must preserve the last good GPU view" );
+        checkRadiance( retained.Get() );
+    };
+    auto invalid = radiance;
+    invalid.pop_back();
+    reject( invalid, { 2, 2 } );
+    reject( radiance, { 0, 2 } );
+    invalid = radiance;
+    invalid[3] = std::numeric_limits<f32>::quiet_NaN();
+    reject( invalid, { 2, 2 } );
+    invalid = radiance;
+    invalid[5] = std::numeric_limits<f32>::infinity();
+    reject( invalid, { 2, 2 } );
+    invalid = radiance;
+    invalid[0] = -0.01f;
+    reject( invalid, { 2, 2 } );
+    texture.unload( nullptr );
+    texture.load( nullptr );
+    auto *reloaded = static_cast<ID3D11ShaderResourceView *>( texture.getNativeTextureView( native ) );
+    require( reloaded && reloaded != retained.Get(), "HDR unload/load must recreate the retained float texture" );
+    checkRadiance( reloaded );
+    std::printf( "HDR sample texture bridge: RGBA32F radiance >1, invalid-input retention and unload/load reupload PASS\n" );
+}
+
 int main()
 {
     HWND window = CreateWindowExW( 0, L"STATIC", L"PBR test", WS_OVERLAPPED, 0, 0, 32, 32, nullptr,
@@ -65,6 +126,7 @@ int main()
     try
     {
         claw_texture_mip_contracts::run();
+        floatTextureContracts();
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
         require( recordDX11TestDevice( device ), "DX11 device evidence must be available" );
         auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );

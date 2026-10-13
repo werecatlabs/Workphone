@@ -212,6 +212,8 @@ namespace workphone::render
     SmartPtr<IGraphicsObject> ClawLight::clone( const String &name ) const
     {
         auto light = workphone::make_ptr<ClawLight>();
+        // The native CPU light must exist before copying properties.
+        light->load( nullptr );
         light->setType( getType() );
         light->setDiffuseColour( getDiffuseColour() );
         light->setSpecularColour( getSpecularColour() );
@@ -224,6 +226,7 @@ namespace workphone::render
         light->setVisible( isVisible() );
         light->setCastShadows( getCastShadows() );
         light->setVisibilityFlags( getVisibilityFlags() );
+        light->setPosition( getPosition() );
         return light;
     }
 

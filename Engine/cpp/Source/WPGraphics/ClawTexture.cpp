@@ -21,12 +21,15 @@
 #include <limits>
 #include <mutex>
 #include <unordered_map>
+#include <cmath>
+#include <d3d11.h>
 
 namespace
 {
     struct ClawTextureData
     {
         workphone::Array<workphone::u8> pixels;
+        workphone::Array<workphone::f32> floatPixels;
         workphone::Array<workphone::render::TextureMipLevel> cookedLevels;
         std::vector<workphone::u8> ddsBytes;
         workphone::String cookedProfile;
@@ -173,6 +176,7 @@ namespace
             }
             data.pixels.clear();
             data.cookedLevels.clear();
+            data.floatPixels.clear();
             data.pixelSize = { 0, 0 };
             data.sourcePath = filePath;
             data.decodeAttempted = true;
@@ -271,7 +275,7 @@ namespace
             std::scoped_lock lock( g_textureMutex );
             auto found = g_textureData.find( texture );
             if( found != g_textureData.end() &&
-                ( !found->second.pixels.empty() || !found->second.cookedLevels.empty() ||
+                ( !found->second.pixels.empty() || !found->second.floatPixels.empty() || !found->second.cookedLevels.empty() ||
                   !found->second.ddsBytes.empty() ) )
             {
                 return true;
@@ -306,7 +310,7 @@ namespace
 
         auto &data = found->second;
         const auto previousView = data.device == device ? data.textureView : nullptr;
-        if( ( data.pixels.empty() && data.cookedLevels.empty() && data.ddsBytes.empty() ) ||
+        if( ( data.pixels.empty() && data.floatPixels.empty() && data.cookedLevels.empty() && data.ddsBytes.empty() ) ||
             ( !data.uploadPending && data.attemptedRenderer == dx11 && data.attemptedDevice == device ) )
         {
             return previousView;
@@ -319,7 +323,27 @@ namespace
         try
         {
             void *candidate = nullptr;
-            if( !data.ddsBytes.empty() )
+            if( !data.floatPixels.empty() )
+            {
+                D3D11_TEXTURE2D_DESC desc{};
+                desc.Width = data.pixelSize.x;
+                desc.Height = data.pixelSize.y;
+                desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
+                desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+                desc.Usage = D3D11_USAGE_IMMUTABLE;
+                desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+                const D3D11_SUBRESOURCE_DATA pixels{ data.floatPixels.data(), desc.Width * 16u, 0 };
+                ID3D11Texture2D *texture = nullptr;
+                auto nativeDevice = static_cast<ID3D11Device *>( device );
+                if( SUCCEEDED( nativeDevice->CreateTexture2D( &desc, &pixels, &texture ) ) )
+                {
+                    ID3D11ShaderResourceView *view = nullptr;
+                    const auto created = nativeDevice->CreateShaderResourceView( texture, nullptr, &view );
+                    texture->Release();
+                    if( SUCCEEDED( created ) ) candidate = view;
+                }
+            }
+            else if( !data.ddsBytes.empty() )
             {
                 candidate = uploadDds( dx11, data.ddsBytes );
             }
@@ -413,15 +437,17 @@ namespace workphone
                     // Authored properties outlive decoded pixels and GPU residency.
                     const auto settings = found->second.mipSettings;
                     auto cookedLevels = std::move( found->second.cookedLevels );
+                    auto floatPixels = std::move( found->second.floatPixels );
                     auto ddsBytes = std::move( found->second.ddsBytes );
                     auto profile = std::move( found->second.cookedProfile );
                     const auto dimensions = found->second.pixelSize;
                     found->second = ClawTextureData{};
                     found->second.mipSettings = settings;
                     found->second.cookedLevels = std::move( cookedLevels );
+                    found->second.floatPixels = std::move( floatPixels );
                     found->second.ddsBytes = std::move( ddsBytes );
                     found->second.cookedProfile = std::move( profile );
-                    if( !found->second.ddsBytes.empty() )
+                    if( !found->second.ddsBytes.empty() || !found->second.floatPixels.empty() )
                     {
                         found->second.pixelSize = dimensions;
                     }
@@ -456,6 +482,7 @@ namespace workphone
                 Array<u8> pixels( byteCount );
                 std::memcpy( pixels.data(), data, byteCount );
                 textureData.pixels = std::move( pixels );
+                textureData.floatPixels.clear();
                 textureData.cookedLevels.clear();
                 textureData.ddsBytes.clear();
                 textureData.cookedProfile.clear();
@@ -466,6 +493,48 @@ namespace workphone
             if( auto renderTarget = getRenderTarget() )
             {
                 renderTarget->setSize( size );
+            }
+        }
+
+        bool ClawTexture::copyLinearFloatData( const Array<f32> &rgba, const Vector2I &size,
+                                               String &error )
+        {
+            error.clear();
+            if( size.x <= 0 || size.y <= 0 || size.x > 16384 || size.y > 16384 ||
+                u64( size.x ) * u64( size.y ) * 16 > graphicsTextureByteLimit ||
+                u64( size.x ) * u64( size.y ) * 4 != rgba.size() || getRenderTarget() ||
+                ( getUsageFlags() & static_cast<u32>( TextureUsage::TU_RENDERTARGET ) ) )
+            {
+                error = "Linear float texture requires bounded sampled RGBA dimensions and exact pixel count.";
+                return false;
+            }
+            for( size_t i = 0; i < rgba.size(); ++i )
+                if( !std::isfinite( rgba[i] ) || rgba[i] < 0 || ( i % 4 == 3 && rgba[i] > 1 ) )
+                {
+                    error = "Linear float texture requires finite nonnegative RGB and alpha in [0,1].";
+                    return false;
+                }
+            try
+            {
+                auto candidate = rgba;
+                std::scoped_lock lock( g_textureMutex );
+                auto &data = g_textureData[this];
+                data.floatPixels.swap( candidate );
+                data.pixels.clear();
+                data.cookedLevels.clear();
+                data.ddsBytes.clear();
+                data.cookedProfile.clear();
+                data.sourcePath.clear();
+                data.decodeAttempted = true;
+                data.pixelSize = size;
+                data.uploadPending = true;
+                m_size = size;
+                return true;
+            }
+            catch( const std::exception &e )
+            {
+                error = String( "Linear float texture staging failed: " ) + e.what();
+                return false;
             }
         }
 
@@ -495,6 +564,11 @@ namespace workphone
                     return {};
                 }
                 const auto &data = found->second;
+                if( !data.floatPixels.empty() )
+                {
+                    error = "BGRA8 CPU snapshots cannot represent retained linear HDR pixels.";
+                    return {};
+                }
                 if( !data.ddsBytes.empty() )
                 {
                     error =
@@ -582,6 +656,7 @@ namespace workphone
                     data.ddsBytes.clear();
                     data.cookedProfile.clear();
                     data.pixels.clear();
+                    data.floatPixels.clear();
                     data.sourcePath.clear();
                     data.decodeAttempted = true;
                     data.mipSettings = settings;
@@ -642,6 +717,7 @@ namespace workphone
                 data.ddsBytes.swap( retained );
                 data.cookedLevels.clear();
                 data.pixels.clear();
+                data.floatPixels.clear();
                 data.sourcePath.clear();
                 data.cookedProfile.swap( profile );
                 data.mipSettings = input.mipSettings;

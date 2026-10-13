@@ -58,7 +58,7 @@ typedef struct wp_material_dx11
     wp_vec4f uv_transform;      /* uv offset x/y, lighting enabled, rotation degrees */
     wp_vec4f controls;          /* normal strength, AO strength, alpha cutoff (-1 disables), premultiply */
     wp_vec4f map_flags;         /* normal, metallic, roughness, emission textures present */
-    wp_vec4f extra_map_flags;   /* AO, opacity present; albedo/emission hardware sRGB decode (draw-owned) */
+    wp_vec4f extra_map_flags;   /* AO, opacity present; albedo/emission samples already linear (draw-owned) */
     wp_vec4f texture_sources;   /* editor metallic, roughness, AO, opacity channel selectors */
     wp_vec4f projection;        /* mode: mesh/world box/object box/world XZ/XY/YZ/screen; scale, unused x2 */
     wp_vec4f ambient_color;     /* rgb ambient radiance; w enables RGB instead of legacy scalar */
@@ -79,7 +79,7 @@ typedef struct wp_terrain_material_dx11
     wp_vec4f tint[4];
     wp_vec4f surface[4]; /* UV scale x/y, roughness multiplier, metallic multiplier */
     wp_vec4f maps[4]; /* albedo present, normal present, ORM present, normal strength */
-    wp_vec4f height[4]; /* ORM-alpha height scale, bias; view-owned hardware sRGB decode; reserved */
+    wp_vec4f height[4]; /* ORM-alpha height scale, bias; view-owned linear albedo samples; reserved */
     wp_vec4f appearance; /* projection 0 planar/1 triplanar, sharpness, height blend, transition */
     wp_vec4f detail; /* UV scale x/y, normal strength, detail texture present */
     wp_vec4f macro; /* local cycles/metre, strength, seed low/high 16-bit halves */

@@ -1,4 +1,5 @@
 #include "ClawFoliageContracts.hpp"
+#include "ClawPrimaryLightContracts.hpp"
 #include "ClawFoliageSceneContracts.hpp"
 #include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
@@ -335,6 +336,7 @@ int main()
     ok &= claw_scene_node_transform_contracts::run();
     ok &= claw_material_pass_lifetime_contracts::run();
     ok &= testLightDirection();
+    ok &= claw_primary_light_contracts::run();
     auto window = make_ptr<TestWindow>();
     window->handle = CreateWindowExW(0,L"STATIC",L"Claw production regression",WS_OVERLAPPEDWINDOW,
         0,0,128,128,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);

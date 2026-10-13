@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 #include <utility>
 
@@ -173,6 +174,54 @@ namespace workphone
                 float top;
             };
 
+            template <class Station>
+            std::vector<Station> refineStations( const std::vector<Station> &stations,
+                                                 std::uint32_t steps,
+                                                 std::initializer_list<float Station::*> fields )
+            {
+                if( steps <= 1 || stations.size() < 2 ) return stations;
+                const auto slope = [&]( std::size_t i, float Station::*field ) {
+                    const auto delta = [&]( std::size_t j ) {
+                        return ( stations[j + 1].*field - stations[j].*field ) /
+                               ( stations[j + 1].z - stations[j].z );
+                    };
+                    if( i == 0 ) return delta( 0 );
+                    if( i + 1 == stations.size() ) return delta( i - 1 );
+                    const float before = delta( i - 1 ), after = delta( i );
+                    if( before * after <= 0 ) return 0.f;
+                    const float h0 = stations[i].z - stations[i - 1].z;
+                    const float h1 = stations[i + 1].z - stations[i].z;
+                    const float w0 = 2 * h1 + h0, w1 = h1 + 2 * h0;
+                    return ( w0 + w1 ) / ( w0 / before + w1 / after );
+                };
+                std::vector<Station> refined;
+                refined.reserve( ( stations.size() - 1 ) * steps + 1 );
+                for( std::size_t i = 0; i + 1 < stations.size(); ++i )
+                {
+                    const float distance = stations[i + 1].z - stations[i].z;
+                    for( std::uint32_t step = 0; step < steps; ++step )
+                    {
+                        const float t = float( step ) / steps, t2 = t * t, t3 = t2 * t;
+                        auto station = stations[i];
+                        station.z += distance * t;
+                        for( auto field : fields )
+                        {
+                            const float a = stations[i].*field, b = stations[i + 1].*field;
+                            // Shape-preserving Hermite slopes keep widths/height extrema
+                            // bounded while removing long planar reflection patches.
+                            station.*field = clampF( ( 2 * t3 - 3 * t2 + 1 ) * a +
+                                ( t3 - 2 * t2 + t ) * distance * slope( i, field ) +
+                                ( -2 * t3 + 3 * t2 ) * b +
+                                ( t3 - t2 ) * distance * slope( i + 1, field ),
+                                std::min( a, b ), std::max( a, b ) );
+                        }
+                        refined.push_back( station );
+                    }
+                }
+                refined.push_back( stations.back() );
+                return refined;
+            }
+
             void loftBody( Builder &b, const std::vector<BodyStation> &stations, std::uint32_t radial )
             {
                 radial = std::max<std::uint32_t>( 8u, radial );
@@ -193,7 +242,7 @@ namespace workphone
                         float x = std::copysign( std::pow( std::abs( ca ), 0.58f ), ca ) * s.halfWidth;
                         float y = cy + std::copysign( std::pow( std::abs( sa ), 0.72f ), sa ) * hh;
                         if( sa > 0.0f )
-                            y -= s.shoulder *
+                            y -= s.shoulder * std::sin( kPi * sa ) *
                                  std::pow( std::abs( x ) / std::max( s.halfWidth, 0.01f ), 2.2f );
                         if( sa < 0.0f )
                             x *= 0.72f + 0.28f * ( 1.0f + sa );  // genuine lower-body undercut
@@ -235,31 +284,60 @@ namespace workphone
                 }
             }
 
-            void loftPod( Builder &b, const std::vector<PodStation> &stations, std::uint32_t radial )
+            Vector3F podPoint( const PodStation &s, float u )
+            {
+                const float sa = std::sin( u * kTwoPi ), ca = std::cos( u * kTwoPi );
+                float x = s.centreX + std::copysign( std::pow( std::abs( ca ), .62f ), ca ) * s.halfWidth;
+                float y = .5f * ( s.bottom + s.top ) +
+                    std::copysign( std::pow( std::abs( sa ), .72f ), sa ) * .5f * ( s.top - s.bottom );
+                if( sa > 0 ) y -= std::min( .045f, ( s.top - s.bottom ) * .16f ) * std::sin( kPi * sa );
+                if( sa < 0 ) x = s.centreX + ( x - s.centreX ) * ( .74f + .26f * ( 1 + sa ) );
+                return { x, y, s.z };
+            }
+
+            void inletLip( Builder &paint, Builder &cavity, const PodStation &station,
+                           std::uint32_t radial, float depth )
+            {
+                const auto innerPoint = [&]( std::uint32_t col, float z ) {
+                    auto p = podPoint( station, float( col ) / radial );
+                    p.x = station.centreX + ( p.x - station.centreX ) * .83f;
+                    const float cy = .5f * ( station.bottom + station.top );
+                    p.y = cy + ( p.y - cy ) * .72f;
+                    p.z = z;
+                    return p;
+                };
+                const float backZ = station.z + depth;
+                const auto centre = cavity.vertex( { station.centreX,
+                    .5f * ( station.bottom + station.top ), backZ }, { .5f, .5f } );
+                for( std::uint32_t col = 0; col < radial; ++col )
+                {
+                    const auto a = podPoint( station, float( col ) / radial );
+                    const auto b = podPoint( station, float( col + 1 ) / radial );
+                    const auto ia = innerPoint( col, station.z ), ib = innerPoint( col + 1, station.z );
+                    const auto ba = innerPoint( col, backZ ), bb = innerPoint( col + 1, backZ );
+                    paint.quad( a, ia, ib, b );
+                    cavity.quad( ia, ba, bb, ib );
+                    const auto va = cavity.vertex( ba, { float( col ) / radial, 0 } );
+                    const auto vb = cavity.vertex( bb, { float( col + 1 ) / radial, 1 } );
+                    cavity.triangle( centre, vb, va );
+                }
+            }
+
+            void loftPod( Builder &b, const std::vector<PodStation> &stations, std::uint32_t radial,
+                          bool closeFront = true )
             {
                 const auto base = static_cast<std::uint32_t>( b.mesh.vertices.size() );
                 const std::uint32_t cols = radial + 1u;
                 for( std::size_t row = 0; row < stations.size(); ++row )
                 {
                     const PodStation &s = stations[row];
-                    const float cy = 0.5f * ( s.bottom + s.top );
-                    const float hh = 0.5f * ( s.top - s.bottom );
                     for( std::uint32_t col = 0; col <= radial; ++col )
                     {
                         const float u = static_cast<float>( col ) / radial;
-                        const float a = u * kTwoPi;
-                        const float sa = std::sin( a );
-                        const float ca = std::cos( a );
-                        float x = s.centreX + ca * s.halfWidth;
-                        float y = cy + std::copysign( std::pow( std::abs( sa ), 0.72f ), sa ) * hh;
-                        // Downwash shoulder and coke-bottle floor undercut.
-                        if( sa > 0.0f )
-                            y -= 0.07f * std::pow( std::abs( ca ), 2.0f );
-                        if( sa < 0.0f )
-                            x = s.centreX + ( x - s.centreX ) * ( 0.74f + 0.26f * ( 1.0f + sa ) );
-                        b.vertex( Vector3F( x, y, s.z ),
+                        const auto p = podPoint( s, u );
+                        b.vertex( p,
                                   Vector2F( u, static_cast<float>( row ) / ( stations.size() - 1u ) ),
-                                  Vector3F( 0, clampF( ( 0.30f - y ) * 2.0f, 0.0f, 1.0f ), 0.22f ) );
+                                  Vector3F( 0, clampF( ( 0.30f - p.y ) * 2.0f, 0.0f, 1.0f ), 0.22f ) );
                     }
                 }
                 for( std::uint32_t row = 0; row + 1u < stations.size(); ++row )
@@ -270,14 +348,14 @@ namespace workphone
                         b.triangle( a, a + 1u, d );
                         b.triangle( a + 1u, d + 1u, d );
                     }
-                const auto front = b.vertex( Vector3F( stations.front().centreX,
-                    ( stations.front().bottom + stations.front().top ) * 0.5f, stations.front().z ), Vector2F( 0.5f, 0.5f ) );
+                const auto front = closeFront ? b.vertex( Vector3F( stations.front().centreX,
+                    ( stations.front().bottom + stations.front().top ) * 0.5f, stations.front().z ), Vector2F( 0.5f, 0.5f ) ) : 0u;
                 const auto rear = b.vertex( Vector3F( stations.back().centreX,
                     ( stations.back().bottom + stations.back().top ) * 0.5f, stations.back().z ), Vector2F( 0.5f, 0.5f ) );
                 const auto rearBase = base + static_cast<std::uint32_t>( stations.size() - 1 ) * cols;
                 for( std::uint32_t col = 0; col < radial; ++col )
                 {
-                    b.triangle( front, base + col + 1, base + col );
+                    if( closeFront ) b.triangle( front, base + col + 1, base + col );
                     b.triangle( rear, rearBase + col, rearBase + col + 1 );
                 }
             }
@@ -427,28 +505,72 @@ namespace workphone
             void addAirfoil( Builder &builder, float span, float chord, float height,
                              float z, float rise, std::uint32_t subdivisions )
             {
-                // An elliptical leading edge and tapered trailing edge give the
-                // wing a readable highlight instead of a rectangular slab.
-                const std::uint32_t rows = subdivisions;
+                const std::uint32_t rows = std::max<std::uint32_t>( 2u, subdivisions );
+                const std::uint32_t spans = rows >= 12u ? 10u : ( rows >= 6u ? 6u : 4u );
+                const std::uint32_t columns = spans + 1u;
+                const bool front = z < 0.0f;
+                const auto profile = [&]( float u, float sign, float x ) {
+                    const float edge = std::abs( x ) / ( span * 0.5f );
+                    const float edgeSquared = edge * edge;
+                    const float localChord = chord * ( 1.0f - ( front ? 0.13f : 0.06f ) * edgeSquared );
+                    const float thickness = localChord *
+                        ( 0.003f + 0.10f * std::sqrt( std::max( 0.0f, u ) ) * ( 1.0f - u ) );
+                    const float centreBlend = std::max( 0.0f, 1.0f - edgeSquared * 4.0f );
+                    const float gull = ( front ? 0.04f : 0.012f ) * centreBlend * centreBlend;
+                    const float twist = ( front ? 0.012f : 0.005f ) * edgeSquared * u;
+                    const float camber = rise * u + localChord * 0.09f * std::sin( kPi * u );
+                    const float sweep = 0.055f * edgeSquared;
+                    return Vector3F( x, height + gull + twist + camber + sign * thickness,
+                                     z + localChord * ( u - 0.5f ) + sweep );
+                };
+                // Share vertices within each smooth skin. The separate closures preserve
+                // crisp perimeter normals without a hard shading seam at every chord strip.
+                for( int skin = 0; skin < 2; ++skin )
+                {
+                    const float sign = skin == 0 ? 1.0f : -1.0f;
+                    const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
+                    for( std::uint32_t row = 0; row <= rows; ++row )
+                        for( std::uint32_t col = 0; col <= spans; ++col )
+                        {
+                            const float u = static_cast<float>( row ) / rows;
+                            const float v = static_cast<float>( col ) / spans;
+                            builder.vertex( profile( u, sign, span * ( v - 0.5f ) ), Vector2F( v, u ) );
+                        }
+                    for( std::uint32_t row = 0; row < rows; ++row )
+                        for( std::uint32_t col = 0; col < spans; ++col )
+                        {
+                            const auto a = base + row * columns + col;
+                            const auto d = a + columns;
+                            if( skin == 0 )
+                            {
+                                builder.triangle( a, d, d + 1u );
+                                builder.triangle( a, d + 1u, a + 1u );
+                            }
+                            else
+                            {
+                                builder.triangle( a, d + 1u, d );
+                                builder.triangle( a, a + 1u, d + 1u );
+                            }
+                        }
+                }
+                const float left = -span * 0.5f, right = span * 0.5f;
                 for( std::uint32_t row = 0; row < rows; ++row )
                 {
                     const float u0 = static_cast<float>( row ) / rows;
-                    const float u1 = static_cast<float>( row + 1 ) / rows;
-                    auto profile = [&]( float u, float sign, float x ) {
-                        const float thickness = chord * ( 0.003f + 0.10f * std::sqrt( std::max( 0.0f, u ) ) * ( 1.0f - u ) );
-                        const float camber = rise * u + chord * 0.09f * std::sin( kPi * u );
-                        const float sweep = 0.055f * std::pow( std::abs( x ) / ( span * 0.5f ), 2.0f );
-                        return Vector3F( x, height + camber + sign * thickness, z + chord * ( u - 0.5f ) + sweep );
-                    };
-                    const float left = -span * 0.5f, right = span * 0.5f;
-                    builder.quad( profile( u0, 1, left ), profile( u1, 1, left ), profile( u1, 1, right ), profile( u0, 1, right ) );
-                    builder.quad( profile( u0, -1, right ), profile( u1, -1, right ), profile( u1, -1, left ), profile( u0, -1, left ) );
-                    builder.quad( profile( u0, -1, left ), profile( u1, -1, left ), profile( u1, 1, left ), profile( u0, 1, left ) );
-                    builder.quad( profile( u0, 1, right ), profile( u1, 1, right ), profile( u1, -1, right ), profile( u0, -1, right ) );
-                    if( row == 0 )
-                        builder.quad( profile( u0, -1, left ), profile( u0, 1, left ), profile( u0, 1, right ), profile( u0, -1, right ) );
-                    if( row + 1 == rows )
-                        builder.quad( profile( u1, -1, right ), profile( u1, 1, right ), profile( u1, 1, left ), profile( u1, -1, left ) );
+                    const float u1 = static_cast<float>( row + 1u ) / rows;
+                    builder.quad( profile( u0, -1, left ), profile( u1, -1, left ),
+                                  profile( u1, 1, left ), profile( u0, 1, left ) );
+                    builder.quad( profile( u0, 1, right ), profile( u1, 1, right ),
+                                  profile( u1, -1, right ), profile( u0, -1, right ) );
+                }
+                for( std::uint32_t col = 0; col < spans; ++col )
+                {
+                    const float x0 = span * ( static_cast<float>( col ) / spans - 0.5f );
+                    const float x1 = span * ( static_cast<float>( col + 1u ) / spans - 0.5f );
+                    builder.quad( profile( 0, -1, x0 ), profile( 0, 1, x0 ),
+                                  profile( 0, 1, x1 ), profile( 0, -1, x1 ) );
+                    builder.quad( profile( 1, -1, x1 ), profile( 1, 1, x1 ),
+                                  profile( 1, 1, x0 ), profile( 1, -1, x0 ) );
                 }
             }
 
@@ -465,9 +587,11 @@ namespace workphone
                 lod.suggestedScreenCoverage = level == 0 ? 0.32f : ( level == 1 ? 0.085f : 0.0f );
 
                 Builder paint( "body_paint", VehicleMaterial::Paint );
+                Builder carbonMatte( "aero_carbon_matte", VehicleMaterial::CarbonMatte );
+                const auto loftSteps = level == 0 ? 6u : ( level == 1 ? 3u : 1u );
                 const std::vector<BodyStation> stations = {
-                    { -cfg.bodyLength * 0.54f, 0.025f, 0.18f, 0.27f, 0.00f },
-                    { -cfg.bodyLength * 0.48f, 0.13f, 0.16f, 0.36f, 0.01f },
+                    { -cfg.bodyLength * 0.54f, 0.075f, 0.21f, 0.30f, 0.00f },
+                    { -cfg.bodyLength * 0.48f, 0.15f, 0.18f, 0.37f, 0.01f },
                     { frontZ - 0.28f, 0.22f, 0.15f, 0.46f, 0.025f },
                     { frontZ + 0.34f, 0.31f, 0.14f, 0.58f, 0.04f },
                     { -0.38f, 0.36f, 0.13f, 0.80f, 0.035f },
@@ -475,42 +599,42 @@ namespace workphone
                     { 0.76f, 0.36f, 0.11f, 0.88f, 0.04f },
                     { rearZ - 0.30f, 0.32f, 0.12f, 0.71f, 0.04f },
                     { rearZ + 0.33f, 0.32f, 0.16f, 0.58f, 0.05f },
-                    { cfg.bodyLength * 0.47f, 0.09f, 0.22f, 0.37f, 0.01f }
+                    { std::max( cfg.bodyLength * 0.47f, rearZ + .55f ), 0.09f, 0.22f, 0.37f, 0.01f }
                 };
-                loftBody( paint, stations, bodyRadial );
+                loftBody( paint, refineStations( stations, loftSteps,
+                    { &BodyStation::halfWidth, &BodyStation::bottom, &BodyStation::top, &BodyStation::shoulder } ), bodyRadial );
                 // Independent continuously lofted sidepods preserve the inlet lip,
                 // downwash shoulder and rear coke-bottle taper in every LOD.
                 for( int side : { -1, 1 } )
                 {
                     const float sign = static_cast<float>( side );
-                    const std::vector<PodStation> pods = { { 0.06f, sign * 0.43f, 0.12f, 0.22f, 0.63f },
-                                                           { 0.26f, sign * 0.52f, 0.26f, 0.15f, 0.70f },
+                    const std::vector<PodStation> pods = { { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
+                                                           { 0.26f, sign * 0.60f, 0.27f, 0.25f, 0.70f },
                                                            { 0.62f, sign * 0.55f, 0.30f, 0.13f, 0.66f },
                                                            { 1.03f, sign * 0.50f, 0.27f, 0.13f, 0.59f },
                                                            { 1.44f, sign * 0.39f, 0.19f, 0.14f,
                                                              0.52f } };
-                    loftPod( paint, pods, std::max<std::uint32_t>( 8u, bodyRadial / 2u ) );
+                    const auto podRadial = std::max<std::uint32_t>( 12u, bodyRadial * 3u / 4u );
+                    loftPod( paint, refineStations( pods, loftSteps,
+                        { &PodStation::centreX, &PodStation::halfWidth, &PodStation::bottom, &PodStation::top } ),
+                        podRadial, false );
+                    inletLip( paint, carbonMatte, pods.front(), podRadial, .16f );
                 }
                 const std::vector<PodStation> airbox = {
                     { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
                     { 0.54f, 0.0f, 0.14f, 0.80f, 1.22f },
                     { 0.83f, 0.0f, 0.13f, 0.79f, 1.16f },
-                    { 1.27f, 0.0f, 0.07f, 0.65f, 0.99f },
+                    { .83f + ( rearZ - .17f - .83f ) * .65f, 0.0f, 0.07f, 0.65f, 0.99f },
                     { rearZ - 0.17f, 0.0f, 0.025f, 0.57f, 0.74f }
                 };
-                loftPod( paint, airbox, std::max<std::uint32_t>( 8u, bodyRadial / 2u ) );
+                loftPod( paint, refineStations( airbox, loftSteps,
+                    { &PodStation::centreX, &PodStation::halfWidth, &PodStation::bottom, &PodStation::top } ),
+                    std::max<std::uint32_t>( 8u, bodyRadial / 2u ), false );
+                inletLip( paint, carbonMatte, airbox.front(),
+                    std::max<std::uint32_t>( 8u, bodyRadial / 2u ), .14f );
                 paint.finalise();
                 lod.sections.push_back( std::move( paint.mesh ) );
 
-                Builder carbonMatte( "aero_carbon_matte", VehicleMaterial::CarbonMatte );
-                for( int side : { -1, 1 } )
-                {
-                    const float cx = static_cast<float>( side ) * 0.43f;
-                    carbonMatte.quad(
-                        Vector3F( cx - 0.105f, 0.25f, 0.055f ), Vector3F( cx - 0.105f, 0.59f, 0.055f ),
-                        Vector3F( cx + 0.105f, 0.59f, 0.055f ), Vector3F( cx + 0.105f, 0.25f, 0.055f ),
-                        Vector3F( 0, 0.18f, 0.70f ) );
-                }
                 carbonMatte.box( Vector3F( 0, 0.105f, 0.35f ), Vector3F( 1.86f, 0.075f, 3.34f ),
                                  Vector3F( 0.08f, 0.32f, 0.42f ) );
                 const auto wingSteps = level == 0 ? 14u : ( level == 1 ? 8u : 4u );
@@ -533,17 +657,41 @@ namespace workphone
                                  Vector3F( 0.035f, 0.74f, 0.48f ) );
                 carbonGloss.box( Vector3F( 0.56f, 0.61f, rearZ + 0.35f ),
                                  Vector3F( 0.035f, 0.74f, 0.48f ) );
-                if( level < 2 && cfg.includeFineDetails )
+                // The halo is primary silhouette geometry in every LOD.
                 {
-                    const std::uint32_t haloSides = level == 0 ? 10u : 6u;
-                    addRod( carbonMatte, Vector3F( 0, 0.60f, -0.33f ), Vector3F( 0, 0.98f, -0.22f ),
+                    const std::uint32_t haloSides = level == 0 ? 10u : ( level == 1 ? 6u : 4u );
+                    const std::uint32_t haloSteps = level == 0 ? 20u : ( level == 1 ? 12u : 8u );
+                    addRod( carbonMatte, Vector3F( 0, 0.60f, -0.33f ), Vector3F( 0, 0.98f, -0.27f ),
                             0.026f, haloSides );
-                    addRod( carbonMatte, Vector3F( 0, 0.98f, -0.22f ), Vector3F( -0.34f, 0.82f, 0.43f ),
-                            0.028f, haloSides );
-                    addRod( carbonMatte, Vector3F( 0, 0.98f, -0.22f ), Vector3F( 0.34f, 0.82f, 0.43f ),
-                            0.028f, haloSides );
+                    const auto base = static_cast<std::uint32_t>( carbonMatte.mesh.vertices.size() );
+                    const auto columns = haloSides + 1;
+                    for( std::uint32_t row = 0; row <= haloSteps; ++row )
+                    {
+                        const float t = float( row ) / haloSteps, angle = t * kPi;
+                        const Vector3F centre( -.34f * std::cos( angle ), .82f + .16f * std::sin( angle ),
+                                                .43f - .70f * std::sin( angle ) );
+                        const auto axis = normalised( Vector3F( .34f * std::sin( angle ),
+                            .16f * std::cos( angle ), -.70f * std::cos( angle ) ) );
+                        const auto side = normalised( axis.crossProduct( Vector3F( 0, 1, 0 ) ) );
+                        const auto up = side.crossProduct( axis );
+                        for( std::uint32_t col = 0; col <= haloSides; ++col )
+                        {
+                            const float u = float( col ) / haloSides;
+                            carbonMatte.vertex( centre + side * ( .028f * std::cos( u * kTwoPi ) ) +
+                                up * ( .028f * std::sin( u * kTwoPi ) ), { u, t } );
+                        }
+                    }
+                    for( std::uint32_t row = 0; row < haloSteps; ++row )
+                        for( std::uint32_t col = 0; col < haloSides; ++col )
+                        {
+                            const auto a = base + row * columns + col, d = a + columns;
+                            carbonMatte.triangle( a, d, a + 1 );
+                            carbonMatte.triangle( a + 1, d, d + 1 );
+                        }
                 }
-                carbonMatte.box( Vector3F( 0, 0.67f, 0.10f ), Vector3F( 0.45f, 0.035f, 0.85f ) );
+                carbonMatte.box( Vector3F( 0, 0.52f, 0.10f ), Vector3F( 0.45f, 0.035f, 0.85f ) );
+                for( int side : { -1, 1 } )
+                    carbonMatte.box( { side * .215f, .635f, .10f }, { .025f, .23f, .85f } );
                 carbonMatte.box( Vector3F( 0, 0.80f, 0.43f ), Vector3F( 0.33f, 0.25f, 0.12f ) );
                 for( int side : { -1, 1 } )
                     addRod( carbonMatte, Vector3F( side * 0.27f, 0.79f, -0.34f ),

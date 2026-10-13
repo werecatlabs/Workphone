@@ -134,6 +134,13 @@ namespace workphone
              */
             virtual void setUsageFlags( u32 usageFlags ) = 0;
 
+            /** Stage RGBA32F linear pixels without quantization. Invalid input preserves
+             * existing contents; unsupported backends return false. GPU upload occurs
+             * on the backend's render-owner path, as with copyData. Appended to retain
+             * the ordering of existing texture interface methods. */
+            virtual bool copyLinearFloatData( const Array<f32> &rgba, const Vector2I &size,
+                                              String &error );
+
             WP_CLASS_REGISTER_DECL;
         };
     }  // end namespace render
