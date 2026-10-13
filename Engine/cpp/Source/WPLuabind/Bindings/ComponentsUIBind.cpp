@@ -1,5 +1,8 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/Bindings/ComponentBind.hpp>
+#include <WPLuabind/SmartPtrConverter.hpp>
+#include <WPLuabind/ParamConverter.hpp>
+#include <WPLuabind/StringConverter.hpp>
 #include <Workphone/Workphone.hpp>
 #include <luabind/luabind.hpp>
 
