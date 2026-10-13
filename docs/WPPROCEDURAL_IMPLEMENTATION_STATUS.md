@@ -57,7 +57,30 @@ The fresh Debug rebuild and both targeted CTest checks pass: `WPProcedural.servi
 
 `ClawMaterialResource::stageRuntime` shares the typed validation and GPU construction path with authoring, but publishes an immutable loaded generation without requiring a source catalog or compiler. The passing package contract constructs and draws a fresh three-map GPU material while the source directory is hidden, rather than relying only on the previously retained authoring material. It also rejects missing runtime resources and mismatched package modes. This proves the material-level source-free GPU path; it does not certify a source-free racing scene package. No full P2 completion is claimed: Editor/swatch/sample equivalence and visual acceptance remain to be proven.
 
-Next colour-space audit: the native DX11 shader applies a `pow(...,2.2)` colour decode while sRGB DDS profiles use hardware sRGB views. A mid-grey render comparison is needed to determine and repair double decoding; existing saturated red/green fixtures do not establish calibrated colour equivalence. The current multi-map tests establish channel routing and effects, not this colour calibration gate.
+### Colour transfer repair — 13 October 2026
+
+A real mid-grey draw regression confirmed double colour decoding: tinted BGRA UNORM produced RGB 66/66/66 while identical BGRA sRGB produced 37/37/38. The native PNTC shader now uses the bound SRV's actual format to distinguish hardware sRGB decoding from encoded UNORM samples. Encoded albedo/emission uses the piecewise sRGB transfer; hardware-decoded samples are used directly. Colour and vertex tint decode independently. Alpha, normal and ORM remain data. The draw owns the transfer flags, and unchanged material submission preserves them to avoid forcing repeated constant-buffer uploads.
+
+The rebuilt `WPGraphics.cooked_material_resource` suite passes in 14.04 seconds, including the prior multimap/source-free checks. With a 0.6 colour tint and the fixture's controlled lighting:
+
+| Draw | BGRA UNORM | BGRA sRGB | BC1/BC3 sRGB |
+|---|---|---|---|
+| Mid-grey albedo RGB | 65/65/65 | 65/65/65 | 66/66/67 |
+| Mid-grey emission RGB | 97/97/98 | 97/97/98 | 100/99/100 |
+
+The compressed profiles remain within the declared four-code-value tolerance. Emission testing also exposed `Material::setTexture` requiring an authoring resource database for an already-created texture. That path now permits direct texture assignment without a database and no longer loads an unused `panel.png` resource; the source-free fixture exercises it. This repair covers ordinary/instanced PNTC albedo and emission. Terrain layer colour, environment maps, HDR/exposure and final output transfer still need their own calibration and regression evidence.
+
+The fresh `artifacts/procedural/colour-transfer-20261013/car.bmp` was inspected after rebuilding. Capture runner and structural validation pass, with 58 replay inputs applied. The short WARP run reports 143.956 ms mean and 159.949 ms P95 over 29 frames. Ordinary generated UNORM materials retain their appearance with the corrected transfer; the controlled DDS tests establish the sRGB fix. The scene remains prototype quality, with flat venue/terrain treatment and visibly repeated foliage. This is a colour correctness increment, not an AAA visual acceptance result.
+
+### Terrain and environment colour — 13 October 2026
+
+A new production-terrain draw fixture reproduced double decoding with nonwhite tint: the same mid-grey texture gave red 37 through UNORM and 28 through sRGB. Terrain staging now derives each albedo layer's decode flag from its actual view format, independently of normal strength. Both planar and triplanar paths decode colour/tint consistently. The analytic fixture also exposed two-sided raster state flipping the terrain's upward lighting normal into the ground; heightfield lighting now preserves the authored surface normal. Snow tint follows the same sRGB decode convention.
+
+`ClawCubemap` accepts encoded RGBA/BGRA8 UNORM/sRGB faces and linear RGBA16F/32F faces, at the selected 2D SRV mip, up to 2048 pixels per dimension. Float radiance is preserved above one through the GGX roughness levels; encoded byte faces use the piecewise sRGB transfer. Unsupported views, foreign devices, nonfinite/negative source radiance and nonfinite filtered output fail before replacing the previous cube. Context/device identity is checked, including the cached-view path.
+
+Fresh Debug targets build. `WPGraphics.cooked_material_resource` passes in 14.20 seconds, including matching planar/triplanar UNORM/sRGB draws with nonwhite tint and the expected lighting result. `WPGraphics.cubemap_pbr` passes after the selected-mip test in 10.76 seconds: orientation, filtering, caching, PBR draw, encoded sRGB equivalence, half/full-float radiance (2/.5/.125 at smooth and rough levels), selected source mip and invalid-source retention. The racing sample still generates 8-bit reflection source faces; this increment proves native HDR cubemap input, not an HDR racing environment or final exposure/lighting calibration.
+
+The rebuilt `artifacts/procedural/terrain-environment-20261013/car.bmp` was inspected. Capture/structural checks pass; WARP mean/P95 are 151.517/176.166 ms over 29 frames. This view remains visibly prototype quality. The sample's foliage carrier is all-hole terrain and its meadow is a separate mesh, so the dedicated production-terrain GPU fixture supplies terrain lighting evidence. The sample's native reflection input still traverses `ClawTextureManager::createManual`/`copyData`, which currently assumes 8-bit storage and ignores the requested manual format. A typed float upload path is required before claiming HDR radiance reaches the racing reflection probe.
 
 The rebuilt sample capture at `artifacts/procedural/pbr-runtime-20261013/car.bmp` was inspected. Native frame, geometry/LOD and foliage checks pass; the report records 58 applied replay ticks and no failed foliage pages. Mean/P95 intervals are 141.912/169.678 ms over 29 frames on Microsoft Basic Render Driver/WARP. The sample still uses its direct generated-material path; the separate GPU contract proves cooked/package rendering. The image remains prototype quality and does not demonstrate commercial-reference parity or a hardware performance pass.
 

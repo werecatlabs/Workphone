@@ -399,12 +399,11 @@ namespace workphone::render
             WP_ASSERT( factoryManager );
 
             static const auto defaultTextureName = String( "checker.png" );
-            static const auto whiteTextureName = String( "panel.png" );
-
-            auto defaultTexture = resourceDatabase->loadResource( defaultTextureName );
-            auto whiteTexture = resourceDatabase->loadResource( whiteTextureName );
-
-            if( defaultTexture == texture )
+            // A manually supplied GPU texture does not require an authoring database
+            // (runtime packages and generated textures may have no source assets).
+            auto defaultTexture = resourceDatabase
+                ? resourceDatabase->loadResource( defaultTextureName ) : nullptr;
+            if( defaultTexture && defaultTexture == texture )
             {
                 texture = nullptr;
             }

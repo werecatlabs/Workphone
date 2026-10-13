@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <vector>
+#include <limits>
 
 namespace workphone::render
 {
@@ -118,14 +119,35 @@ namespace workphone::render
             {
                 return false;
             }
-            D3D11_TEXTURE2D_DESC desc;
-            source->GetDesc( &desc );
-            const bool bgra = desc.Format == DXGI_FORMAT_B8G8R8A8_UNORM;
-            if( !bgra && desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM )
+            D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc{};
+            view->GetDesc( &viewDesc );
+            if( viewDesc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D )
             {
                 source->Release();
                 return false;
             }
+            D3D11_TEXTURE2D_DESC desc;
+            source->GetDesc( &desc );
+            ID3D11Device *sourceDevice = nullptr;
+            source->GetDevice( &sourceDevice );
+            const bool sameDevice = sourceDevice == device;
+            if( sourceDevice ) sourceDevice->Release();
+            if( !sameDevice ) { source->Release(); return false; }
+            const auto format = viewDesc.Format;
+            const bool bgra = format == DXGI_FORMAT_B8G8R8A8_UNORM || format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+            const bool rgba = format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+            const bool floats = format == DXGI_FORMAT_R32G32B32A32_FLOAT;
+            const bool halves = format == DXGI_FORMAT_R16G16B16A16_FLOAT;
+            const auto mip = viewDesc.Texture2D.MostDetailedMip;
+            if( (!bgra && !rgba && !floats && !halves) || desc.ArraySize != 1 ||
+                desc.SampleDesc.Count != 1 || mip >= desc.MipLevels )
+            {
+                source->Release();
+                return false;
+            }
+            desc.Width = std::max( 1u, desc.Width >> mip );
+            desc.Height = std::max( 1u, desc.Height >> mip );
+            if( desc.Width > 2048 || desc.Height > 2048 ) { source->Release(); return false; }
             desc.MipLevels = 1;
             desc.ArraySize = 1;
             desc.BindFlags = 0;
@@ -137,7 +159,7 @@ namespace workphone::render
                 source->Release();
                 return false;
             }
-            context->CopySubresourceRegion( staging, 0, 0, 0, 0, source, 0, nullptr );
+            context->CopySubresourceRegion( staging, 0, 0, 0, 0, source, mip, nullptr );
             source->Release();
             D3D11_MAPPED_SUBRESOURCE mapped;
             if( FAILED( context->Map( staging, 0, D3D11_MAP_READ, 0, &mapped ) ) )
@@ -148,20 +170,44 @@ namespace workphone::render
             face.width = desc.Width;
             face.height = desc.Height;
             face.pixels.resize( size_t( desc.Width ) * desc.Height );
+            const auto decode = []( float c ) { return c <= .04045f ? c / 12.92f : std::pow( ( c + .055f ) / 1.055f, 2.4f ); };
+            const auto half = []( unsigned short bits ) {
+                const unsigned exponent = ( bits >> 10 ) & 31, fraction = bits & 1023;
+                const float magnitude = exponent == 0 ? std::ldexp( float( fraction ), -24 )
+                    : exponent == 31 ? ( fraction ? std::numeric_limits<float>::quiet_NaN() : std::numeric_limits<float>::infinity() )
+                    : std::ldexp( 1.f + fraction / 1024.f, int( exponent ) - 15 );
+                return bits & 32768 ? -magnitude : magnitude;
+            };
+            bool valid = true;
             for( unsigned y = 0; y < desc.Height; ++y )
             {
                 for( unsigned x = 0; x < desc.Width; ++x )
                 {
-                    const auto p =
-                        static_cast<const unsigned char *>( mapped.pData ) + y * mapped.RowPitch + x * 4;
-                    face.pixels[y * desc.Width + x] = { std::pow( p[bgra ? 2 : 0] / 255.0f, 2.2f ),
-                                                        std::pow( p[1] / 255.0f, 2.2f ),
-                                                        std::pow( p[bgra ? 0 : 2] / 255.0f, 2.2f ) };
+                    const auto row = static_cast<const unsigned char *>( mapped.pData ) + y * mapped.RowPitch;
+                    V value;
+                    if( floats )
+                    {
+                        const auto p = reinterpret_cast<const float *>( row ) + x * 4;
+                        value = { p[0], p[1], p[2] };
+                    }
+                    else if( halves )
+                    {
+                        const auto p = reinterpret_cast<const unsigned short *>( row ) + x * 4;
+                        value = { half( p[0] ), half( p[1] ), half( p[2] ) };
+                    }
+                    else
+                    {
+                        const auto p = row + x * 4;
+                        value = { decode( p[bgra ? 2 : 0] / 255.f ), decode( p[1] / 255.f ), decode( p[bgra ? 0 : 2] / 255.f ) };
+                    }
+                    valid = valid && std::isfinite( value.x ) && std::isfinite( value.y ) && std::isfinite( value.z ) &&
+                        value.x >= 0 && value.y >= 0 && value.z >= 0;
+                    face.pixels[y * desc.Width + x] = value;
                 }
             }
             context->Unmap( staging, 0 );
             staging->Release();
-            return true;
+            return valid;
         }
     }  // namespace
 
@@ -194,9 +240,18 @@ namespace workphone::render
         {
             return false;
         }
+        ID3D11Device *contextDevice = nullptr;
+        context->GetDevice( &contextDevice );
+        const bool sameDevice = contextDevice == device;
+        if( contextDevice ) contextDevice->Release();
+        if( !sameDevice ) return false;
         if( m_view && views == m_faces )
         {
-            return true;
+            ID3D11Device *cubeDevice = nullptr;
+            m_view->GetDevice( &cubeDevice );
+            const bool current = cubeDevice == device;
+            if( cubeDevice ) cubeDevice->Release();
+            return current;
         }
         std::array<Face, 6> faces;
         const bool hasFaces =
@@ -279,6 +334,8 @@ namespace workphone::render
                         output[offset + 1] = sum.y / weight;
                         output[offset + 2] = sum.z / weight;
                         output[offset + 3] = 1;
+                        if( !std::isfinite( output[offset] ) || !std::isfinite( output[offset + 1] ) ||
+                            !std::isfinite( output[offset + 2] ) ) return false;
                     }
                 }
                 data[index].pSysMem = output.data();

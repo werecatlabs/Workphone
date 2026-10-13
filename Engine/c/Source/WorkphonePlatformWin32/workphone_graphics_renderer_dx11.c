@@ -152,6 +152,8 @@ static const wp_c8 s_ps_pntc_src[] =
     " float4 terrain_tint[4]; float4 terrain_surface[4]; float4 terrain_maps[4]; float4 terrain_height[4];\n"
     " float4 terrain_appearance; float4 terrain_detail_params; float4 terrain_macro; float4 terrain_macro_tint;\n"
     " float4 terrain_weather; float4 terrain_snow; float4 terrain_snow_tint; };\n"
+    "float3 decode_srgb(float3 c) { c=max(c,0.0);\n"
+    " return lerp(c/12.92,pow((c+0.055)/1.055,2.4),step(0.04045,c)); }\n"
     "float3 terrainMapNormal(float3 position,float3 n,float2 uv,float3 mapped) {\n"
     " float3 dp1=ddx(position),dp2=ddy(position); float2 duv1=ddx(uv),duv2=ddy(uv);\n"
     " float3 p2=cross(dp2,n),p1=cross(n,dp1);\n"
@@ -162,7 +164,7 @@ static const wp_c8 s_ps_pntc_src[] =
     " float4 tint,float4 params,float4 flags,float4 height,out float3 albedo,out float3 normal,out float4 orm) {\n"
     " float2 uv = plane * params.xy;\n"
     " float3 colour = flags.x > 0.5 ? a.Sample(terrain_sampler, uv).rgb : 1.0;\n"
-    " albedo = pow(max(colour * tint.rgb, 0.0), 2.2);\n"
+    " albedo = (height.z > 0.5 ? colour : decode_srgb(colour)) * decode_srgb(tint.rgb);\n"
     " normal = flags.y > 0.5 ? n.Sample(terrain_sampler, uv).xyz * 2.0 - 1.0 : float3(0,0,1);\n"
     " normal.xy *= flags.w; normal = normalize(normal + float3(0,0,1e-6));\n"
     " if(terrain_detail_params.w>0.5 && terrain_detail_params.z>0.0) { float3 detail=terrain_detail.Sample(terrain_sampler,plane*terrain_detail_params.xy).xyz*2.0-1.0;\n"
@@ -220,8 +222,11 @@ static const wp_c8 s_ps_pntc_src[] =
     "float4 ps_main(PS_IN i, bool front : SV_IsFrontFace) : SV_TARGET {\n"
     " i.uv = materialUV(i);\n"
     " float4 sampled = tex.Sample(tex_sampler, i.uv);\n"
-    " float3 albedo = pow(max(sampled.rgb * base_color.rgb * i.color.rgb, 0.0), 2.2);\n"
-    " float3 terrainNormal = normalize(front ? i.normal : -i.normal), terrainOrm = float3(1,1,0);\n"
+    " float3 colourSample = extra_map_flags.z > 0.5 ? sampled.rgb : decode_srgb(sampled.rgb);\n"
+    " float3 albedo = colourSample * decode_srgb(base_color.rgb) * decode_srgb(i.color.rgb);\n"
+    // Heightfields have an authored upward surface normal. Their two-sided raster
+    // submission must not flip lighting into the ground based on front-face state.
+    " float3 terrainNormal = normalize(i.normal), terrainOrm = float3(1,1,0);\n"
     " if (terrain_controls.x > 0.5) {\n"
     "   float4 weights = terrain_controls.y > 0.5 ? max(terrain_control.Sample(terrain_control_sampler, i.object_pos.xz * terrain_transform.zw + terrain_transform.xy), 0.0) : float4(1,0,0,0);\n"
     "   float total = dot(weights, 1.0); weights = total > 1e-8 ? weights / total : float4(1,0,0,0);\n"
@@ -240,7 +245,7 @@ static const wp_c8 s_ps_pntc_src[] =
     "   float2 masks=terrain_snow.y>0.5 ? saturate(terrain_masks.Sample(terrain_control_sampler,i.object_pos.xz*terrain_transform.zw+terrain_transform.xy).rg) : 1.0;\n"
     "   float wet=terrain_weather.x*masks.x,snow=terrain_weather.w*masks.y;\n"
     "   albedo*=1.0-wet*terrain_weather.y; terrainOrm.y=lerp(terrainOrm.y,min(terrainOrm.y,terrain_weather.z),wet);\n"
-    "   albedo=lerp(albedo,pow(terrain_snow_tint.rgb,2.2),snow); terrainOrm.yz=lerp(terrainOrm.yz,float2(terrain_snow.x,0),snow);\n"
+    "   albedo=lerp(albedo,decode_srgb(terrain_snow_tint.rgb),snow); terrainOrm.yz=lerp(terrainOrm.yz,float2(terrain_snow.x,0),snow);\n"
     "   terrainNormal=normalize(lerp(terrainNormal,normalize(front ? i.normal : -i.normal),snow));\n"
     " }\n"
     " float alpha = base_color.a * i.color.a;\n"
@@ -252,7 +257,8 @@ static const wp_c8 s_ps_pntc_src[] =
     " if (controls.z >= 0.0) clip(alpha - controls.z);\n"
     " if (shadow_controls.y > 0.5) { clip(alpha - 0.001); return 0.0; }\n"
     " float3 emission = emissive_color.rgb;\n"
-    " if (map_flags.w > 0.5) emission *= pow(max(emission_tex.Sample(tex_sampler, i.uv).rgb, 0.0), 2.2);\n"
+    " if (map_flags.w > 0.5) { float3 e=emission_tex.Sample(tex_sampler, i.uv).rgb;\n"
+    "     emission *= extra_map_flags.w > 0.5 ? e : decode_srgb(e); }\n"
     " if (uv_transform.z < 0.5) { float3 c = pow(max(albedo + emission, 0.0), 1.0 / 2.2);\n"
     "     return float4(controls.w > 0.5 ? c * alpha : c, alpha); }\n"
     " float metalness = saturate(surface.x);\n"
@@ -2467,6 +2473,11 @@ void wp_renderer_dx11_set_material( wp_renderer_dx11 *r,
     wp_material_dx11 resolved;
     if( !r || !material ) return;
     resolved = *material;
+    // Transfer flags belong to bound SRVs, not caller-authored material state.
+    // Preserve them here so submitting an unchanged material does not force a
+    // constant-buffer upload on every sRGB draw; bind_geometry refreshes on change.
+    resolved.extra_map_flags.z = r->material.extra_map_flags.z;
+    resolved.extra_map_flags.w = r->material.extra_map_flags.w;
     resolved.environment.x = r->environment_view ? 1.0f : 0.0f;
     resolved.environment.y = r->environment_max_lod;
     if( memcmp( &r->material, &resolved, sizeof( resolved ) ) == 0 ) return;
@@ -2484,6 +2495,8 @@ void wp_renderer_dx11_set_environment( wp_renderer_dx11 *r, void *view, wp_f32 m
     r->material.environment.y = max_lod;
     r->material_dirty = 1;
 }
+
+static wp_f32 wp_renderer_dx11_view_is_srgb( ID3D11ShaderResourceView *view );
 
 static wp_s32 wp_renderer_dx11_stage_terrain_material( wp_renderer_dx11 *r,
     const wp_terrain_material_dx11 *material, void *const *views, wp_s32 apply )
@@ -2531,6 +2544,8 @@ static wp_s32 wp_renderer_dx11_stage_terrain_material( wp_renderer_dx11 *r,
             ID3D11Device *device = NULL;
             D3D11_SHADER_RESOURCE_VIEW_DESC desc;
             candidate[i] = (ID3D11ShaderResourceView *)views[i];
+            if( i % 3 == 0 && i < 12 )
+                value.height[i / 3].z = wp_renderer_dx11_view_is_srgb( candidate[i] );
             if( !candidate[i] ) continue;
             ID3D11ShaderResourceView_GetDevice( candidate[i], &device );
             if( device != r->device ) { if( device ) ID3D11Device_Release( device ); return 0; }
@@ -3372,6 +3387,25 @@ void wp_renderer_dx11_draw_geometry_ptc( wp_renderer_dx11 *r,
                                      (INT)base_vertex );
 }
 
+static wp_f32 wp_renderer_dx11_view_is_srgb( ID3D11ShaderResourceView *view )
+{
+    D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+    if( !view ) return 0.0f;
+    ID3D11ShaderResourceView_GetDesc( view, &desc );
+    switch( desc.Format )
+    {
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+    case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
+    case DXGI_FORMAT_BC1_UNORM_SRGB:
+    case DXGI_FORMAT_BC2_UNORM_SRGB:
+    case DXGI_FORMAT_BC3_UNORM_SRGB:
+    case DXGI_FORMAT_BC7_UNORM_SRGB:
+        return 1.0f;
+    default: return 0.0f;
+    }
+}
+
 static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
                                           const wp_geometry_dx11 *geometry,
                                           wp_s32 index_start, wp_s32 index_count,
@@ -3389,6 +3423,21 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
     wp_renderer_dx11_apply_state( r );
     if( !wp_renderer_dx11_upload_mvp( r ) )
         return 0;
+    // Derive transfer ownership from the views actually used by this draw. These
+    // flags must be refreshed even when the same material switches texture views.
+    texture_view = r->ptc_external_texture_view ? r->ptc_external_texture_view
+                                                 : r->ptc_white_texture_view;
+    {
+        const wp_f32 colour_srgb = wp_renderer_dx11_view_is_srgb( texture_view );
+        const wp_f32 emission_srgb = wp_renderer_dx11_view_is_srgb( r->material_texture_views[3] );
+        if( r->material.extra_map_flags.z != colour_srgb ||
+            r->material.extra_map_flags.w != emission_srgb )
+        {
+            r->material.extra_map_flags.z = colour_srgb;
+            r->material.extra_map_flags.w = emission_srgb;
+            r->material_dirty = 1;
+        }
+    }
     if( r->material_dirty )
     {
         if( !wp_renderer_dx11_upload_constants( r, r->cb_material, &r->material, sizeof( r->material ) ) )

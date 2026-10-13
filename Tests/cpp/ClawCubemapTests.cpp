@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
+#include <limits>
 
 using workphone::render::ClawCubemap;
 static void require( bool condition, const char *message )
@@ -92,7 +93,7 @@ int main()
         {
             const auto center = cubePixel( device, context, cube.getView(), f, 0, 64, 64 );
             require(
-                std::abs( center[0] - std::pow( ( 32 + skyFace[f] * 32 ) / 255.0f, 2.2f ) ) < 0.001f,
+                std::abs( center[0] - std::pow( ( ( 32 + skyFace[f] * 32 ) / 255.0f + .055f ) / 1.055f, 2.4f ) ) < 0.001f,
                 "face order / linear color" );
             const auto left = cubePixel( device, context, cube.getView(), f, 0, 0, 64 );
             const auto right = cubePixel( device, context, cube.getView(), f, 0, 127, 64 );
@@ -239,7 +240,91 @@ int main()
         const auto rough = cubePixel( device, context, cube.getView(), 2, 7, 0, 0 );
         require( std::isfinite( rough[0] ) && std::abs( smooth[0] - rough[0] ) > 0.02f,
                  "fallback varies with roughness" );
-        std::puts( "Cubemap orientation, filtering, caching and PBR GPU checks passed." );
+        // GPU readback returns encoded bytes for both UNORM and sRGB views;
+        // floating-point faces are already linear radiance and may exceed one.
+        for( const auto format : { DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                                  DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R32G32B32A32_FLOAT } )
+        {
+            const bool hdr = format == DXGI_FORMAT_R16G16B16A16_FLOAT || format == DXGI_FORMAT_R32G32B32A32_FLOAT;
+            const unsigned char encoded[] = { 128, 64, 192, 255 };
+            const unsigned short half[] = { 0x4000, 0x3800, 0x3000, 0x3c00 }; // 2, .5, .125, 1
+            const float linear[] = { 2, .5f, .125f, 1 };
+            D3D11_TEXTURE2D_DESC faceDesc{};
+            faceDesc.Width = faceDesc.Height = faceDesc.MipLevels = faceDesc.ArraySize = 1;
+            faceDesc.SampleDesc.Count = 1;
+            faceDesc.Format = format;
+            faceDesc.Usage = D3D11_USAGE_IMMUTABLE;
+            faceDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            D3D11_SUBRESOURCE_DATA source{};
+            source.pSysMem = format == DXGI_FORMAT_R16G16B16A16_FLOAT ? static_cast<const void *>( half )
+                : format == DXGI_FORMAT_R32G32B32A32_FLOAT ? static_cast<const void *>( linear ) : encoded;
+            source.SysMemPitch = hdr ? format == DXGI_FORMAT_R16G16B16A16_FLOAT ? 8 : 16 : 4;
+            std::array<ID3D11ShaderResourceView *, 6> colourViews{};
+            for( auto &view : colourViews )
+            {
+                ID3D11Texture2D *faceTexture = nullptr;
+                require( SUCCEEDED( device->CreateTexture2D( &faceDesc, &source, &faceTexture ) ), "radiance face texture" );
+                const auto created = device->CreateShaderResourceView( faceTexture, nullptr, &view );
+                faceTexture->Release();
+                require( SUCCEEDED( created ), "radiance face view" );
+            }
+            require( cube.update( device, context, colourViews ), "sRGB/HDR radiance faces must build" );
+            const float expected[] = { hdr ? 2.f : .2158605f, hdr ? .5f : .0512695f, hdr ? .125f : .5271151f };
+            for( const unsigned mip : { 0u, 7u } )
+            {
+                const auto value = cubePixel( device, context, cube.getView(), 0, mip, 0, 0 );
+                for( unsigned channel = 0; channel < 3; ++channel )
+                    require( std::abs( value[channel] - expected[channel] ) < .001f,
+                             "environment prefilter must preserve exact linear HDR/decoded sRGB radiance" );
+            }
+            if( format == DXGI_FORMAT_R32G32B32A32_FLOAT )
+            {
+                const float invalid[] = { std::numeric_limits<float>::quiet_NaN(), 1, 1, 1 };
+                source.pSysMem = invalid;
+                ID3D11Texture2D *invalidTexture = nullptr;
+                ID3D11ShaderResourceView *invalidView = nullptr;
+                require( SUCCEEDED( device->CreateTexture2D( &faceDesc, &source, &invalidTexture ) ), "invalid radiance fixture" );
+                require( SUCCEEDED( device->CreateShaderResourceView( invalidTexture, nullptr, &invalidView ) ), "invalid radiance view" );
+                invalidTexture->Release();
+                auto invalidFaces = colourViews;
+                invalidFaces[0] = invalidView;
+                const auto retained = cube.getView();
+                require( !cube.update( device, context, invalidFaces ) && cube.getView() == retained,
+                         "Nonfinite environment must preserve previous filtered cube" );
+                invalidView->Release();
+            }
+            for( auto view : colourViews ) view->Release();
+        }
+        // Respect the SRV's selected source mip rather than always reading resource mip zero.
+        {
+            const float base[] = { 16,16,16,1, 16,16,16,1, 16,16,16,1, 16,16,16,1 };
+            const float selected[] = { 2,.5f,.125f,1 };
+            D3D11_TEXTURE2D_DESC desc{};
+            desc.Width = desc.Height = desc.MipLevels = 2;
+            desc.ArraySize = desc.SampleDesc.Count = 1;
+            desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+            desc.Usage = D3D11_USAGE_IMMUTABLE;
+            desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            const D3D11_SUBRESOURCE_DATA data[] = { {base,32,64}, {selected,16,16} };
+            ID3D11Texture2D *texture = nullptr;
+            require( SUCCEEDED( device->CreateTexture2D( &desc, data, &texture ) ), "selected mip source" );
+            D3D11_SHADER_RESOURCE_VIEW_DESC srv{};
+            srv.Format = desc.Format;
+            srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            srv.Texture2D.MostDetailedMip = srv.Texture2D.MipLevels = 1;
+            ID3D11ShaderResourceView *view = nullptr;
+            const auto created = device->CreateShaderResourceView( texture, &srv, &view );
+            texture->Release();
+            require( SUCCEEDED( created ), "selected mip view" );
+            std::array<ID3D11ShaderResourceView *, 6> selectedFaces{};
+            selectedFaces.fill( view );
+            require( cube.update( device, context, selectedFaces ), "selected mip cube" );
+            const auto value = cubePixel( device, context, cube.getView(), 0, 0, 0, 0 );
+            require( std::abs( value[0] - 2.f ) < .001f && std::abs( value[1] - .5f ) < .001f,
+                     "Environment must prefilter the view's selected mip" );
+            view->Release();
+        }
+        std::puts( "Cubemap orientation, filtering, caching, linear HDR/sRGB, selected mip and PBR GPU checks passed." );
     }
     catch( const std::exception &e )
     {

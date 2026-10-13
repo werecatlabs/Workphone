@@ -829,6 +829,62 @@ namespace
             nativeResources->shutdown();
         }
         std::cout << "PASS: six Windows DDS profiles, native formats, compressed draw and source-free retained reupload\n";
+        // Saturated primary colours cannot expose a second sRGB decode. Constant
+        // mid-grey must shade equivalently through encoded UNORM and sRGB views.
+        std::array<unsigned char, 18 + 4 * 4 * 4> greyBytes{};
+        greyBytes[2] = 2;
+        greyBytes[12] = greyBytes[14] = 4;
+        greyBytes[16] = 32;
+        greyBytes[17] = 0x28;
+        for( size_t i = 18; i < greyBytes.size(); i += 4 )
+        {
+            greyBytes[i] = greyBytes[i + 1] = greyBytes[i + 2] = 128;
+            greyBytes[i + 3] = 255;
+        }
+        {
+            std::ofstream greyFile( fixture.source / "albedo.tga", std::ios::binary | std::ios::trunc );
+            greyFile.write( reinterpret_cast<const char *>( greyBytes.data() ), greyBytes.size() );
+            require( greyFile.good(), "Mid-grey colour fixture must be writable" );
+        }
+        std::array<unsigned, 4> reference{};
+        std::array<unsigned, 4> emissionReference{};
+        bool firstColourProfile = true;
+        for( const char *profile : { "windows-dx11-dds-bgra8-v1", "windows-dx11-dds-bgra8-srgb-v1",
+                                    "windows-dx11-dds-bc1-srgb-v1", "windows-dx11-dds-bc3-srgb-v1" } )
+        {
+            auto colourResources = std::make_shared<ResourceSystem>( fixture.resources->registry(),
+                std::make_shared<ResourceCompilationDatabase>() );
+            ResourceSystemConfig colourConfig;
+            colourConfig.sourceRoot = sourceRoot;
+            colourConfig.compiledRoot = pathText( fixture.folder / "compiled" );
+            colourConfig.target = profile;
+            require( colourResources->initialize( colourConfig, error ), error );
+            ClawMaterialResource colourPublisher( fixture.catalog, colourResources, sourceRoot,
+                fixture.mappings, fixture.graphics.renderer, profile, true );
+            auto grey = colourPublisher.stage( fixture.uuid, error, true );
+            require( grey && colourPublisher.publish( grey, error ), error );
+            grey->material()->setDiffuse( ColourF( .6f, .6f, .6f, 1 ) );
+            const auto pixel = requireDraw( fixture, grey, false, true, 2 );
+            std::cout << "Mid-grey profile " << profile << ": " << pixel[0] << ',' << pixel[1] << ',' << pixel[2] << '\n';
+            if( firstColourProfile ) { reference = pixel; }
+            else for( size_t channel = 0; channel < 3; ++channel )
+                require( std::abs( int( pixel[channel] ) - int( reference[channel] ) ) <= 4,
+                         "sRGB and encoded UNORM mid-grey draws must match without double decoding" );
+            grey->material()->setDiffuse( ColourF::Black );
+            grey->material()->setEmissive( ColourF( .6f, .6f, .6f, 1 ) );
+            grey->material()->setEmissionEnabled( true );
+            grey->material()->setEditorFloat( "emissionIntensity", 1 );
+            grey->material()->setTexture( grey->texture(), 13 );
+            const auto emissionPixel = requireDraw( fixture, grey, false, true, 2 );
+            std::cout << "Mid-grey emission " << profile << ": " << emissionPixel[0] << ',' << emissionPixel[1] << ',' << emissionPixel[2] << '\n';
+            if( firstColourProfile ) { emissionReference = emissionPixel; firstColourProfile = false; }
+            else for( size_t channel = 0; channel < 3; ++channel )
+                require( std::abs( int( emissionPixel[channel] ) - int( emissionReference[channel] ) ) <= 4,
+                         "sRGB and encoded UNORM emission draws must match without double decoding" );
+            require( colourPublisher.unload( error ), error );
+            colourResources->shutdown();
+        }
+        writeImage( fixture.source / "albedo.tga", false );
 
         writeImage( fixture.source / "albedo.tga", true );
         auto green = publisher.stage( fixture.uuid, error, true );

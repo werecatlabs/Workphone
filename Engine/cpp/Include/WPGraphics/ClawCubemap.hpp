@@ -12,6 +12,9 @@ namespace workphone::render
 {
     /** Linear HDR environment with GGX-filtered roughness levels.
      * Faces use the sky's front/back/left/right/up/down order and UV orientation.
+     * Accepts encoded RGBA/BGRA8 UNORM/sRGB and linear RGBA16F/32F 2D views,
+     * up to 2048 pixels per dimension at the selected mip. Nonfinite/negative
+     * radiance and unsupported views fail without replacing the previous cube.
      * An empty face set builds a neutral studio environment for material previews. */
     class WPGraphics_API ClawCubemap
     {

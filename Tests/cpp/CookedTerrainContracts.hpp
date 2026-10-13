@@ -4,6 +4,7 @@
 #include <WPGraphics/Resources/TerrainResource.hpp>
 #include <WPGraphics/Resources/GraphicsResourceCompiler.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
+#include <Workphone/Graphics/Texture.hpp>
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <WPSQLite/ResourceCompilationDatabase.hpp>
 #include <filesystem>
@@ -50,6 +51,98 @@ namespace cooked_terrain_contracts
         out.write( reinterpret_cast<const char *>( bytes.data() ), bytes.size() );
         require( out.good(), "Terrain fixture TGA write failed" );
     }
+    // Identical encoded pixels exposed through two legal native SRV formats.
+    // This catches both missing decode on UNORM and double decode on SRGB views.
+    class ColourTransferTexture : public Texture
+    {
+    public:
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> view;
+        ColourTransferTexture( ID3D11Device *device, bool srgb )
+        {
+            D3D11_TEXTURE2D_DESC desc{};
+            desc.Width = desc.Height = 4;
+            desc.MipLevels = desc.ArraySize = 1;
+            desc.Format = DXGI_FORMAT_B8G8R8A8_TYPELESS;
+            desc.SampleDesc.Count = 1;
+            desc.Usage = D3D11_USAGE_IMMUTABLE;
+            desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+            std::array<u8, 64> pixels{};
+            for( size_t i = 0; i < pixels.size(); i += 4 )
+            {
+                pixels[i] = pixels[i + 1] = pixels[i + 2] = 128;
+                pixels[i + 3] = 255;
+            }
+            D3D11_SUBRESOURCE_DATA data{ pixels.data(), 16, 64 };
+            Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
+            require( SUCCEEDED( device->CreateTexture2D( &desc, &data, &texture ) ), "Colour transfer source must allocate" );
+            D3D11_SHADER_RESOURCE_VIEW_DESC srv{};
+            srv.Format = srgb ? DXGI_FORMAT_B8G8R8A8_UNORM_SRGB : DXGI_FORMAT_B8G8R8A8_UNORM;
+            srv.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+            srv.Texture2D.MipLevels = 1;
+            require( SUCCEEDED( device->CreateShaderResourceView( texture.Get(), &srv, &view ) ), "Colour transfer view must allocate" );
+        }
+        void getTextureFinal( void **value ) const override { if( value ) *value = view.Get(); }
+    };
+
+    inline void colourTransfer( ClawRendererDX11 &renderer )
+    {
+        auto native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) );
+        auto encoded = make_ptr<ColourTransferTexture>( device, false );
+        auto hardwareDecoded = make_ptr<ColourTransferTexture>( device, true );
+        TerrainData data;
+        data.dimensions = { 5, 5 };
+        data.spacing = { .5f, .5f };
+        data.origin = { -1, -1 };
+        data.heights.assign( 25, 0 );
+        for( auto &layer : data.layers )
+        {
+            layer.albedo = "mid-grey";
+            layer.tint = { .35f, .70f, .90f, 1 };
+        }
+        renderer.setSceneLighting( ColourF::White, { 0, -1, 0 }, ColourF::White, 0 );
+        renderer.setSceneFog( 0, ColourF::Black, 0, 0, 1 );
+        auto terrain = make_ptr<ClawTerrain>();
+        String error;
+        const auto draw = [&]( SmartPtr<ITexture> texture, TerrainProjection projection ) {
+            data.appearance.projection = projection;
+            require( terrain->applyCookedTerrain( data,
+                [texture]( const String &, String & ) { return texture; }, error ), error );
+            renderer.clear( ColourF::Black );
+            renderer.renderTerrain( terrain );
+            return claw_foliage_contracts::pixels( native );
+        };
+        for( auto projection : { TerrainProjection::Planar, TerrainProjection::Triplanar } )
+        {
+            const auto software = draw( encoded, projection );
+            const auto hardware = draw( hardwareDecoded, projection );
+            require( software.size() == 128 * 128 * 4 && hardware.size() == software.size(), "Colour transfer readback extent changed" );
+            const size_t centre = ( 64 * 128 + 64 ) * 4;
+            for( size_t channel = 0; channel < 3; ++channel )
+            {
+                const int a = software[centre + channel], b = hardware[centre + channel];
+                if( std::abs( a - b ) > 2 )
+                    std::printf( "Terrain colour transfer mismatch: projection=%u channel=%zu UNORM=%d SRGB=%d\n",
+                                 unsigned( projection ), channel, a, b );
+                require( std::abs( a - b ) <= 2,
+                         "Mid-grey terrain must shade equivalently through UNORM and hardware-SRGB views with nonwhite tint" );
+                const float tint[] = { .35f, .70f, .90f };
+                const float linearGrey = std::pow( ( 128.f / 255.f + .055f ) / 1.055f, 2.4f );
+                // Terrain tint follows the existing authoring colour convention:
+                // its encoded RGB is decoded independently from the texture.
+                const float linearTint = std::pow( ( tint[channel] + .055f ) / 1.055f, 2.4f );
+                const float radiance = linearGrey * linearTint * .96f;
+                const int expected = int( 255.f * std::pow( radiance / ( 1.f + radiance ), 1.f / 2.2f ) + .5f );
+                if( std::abs( b - expected ) > 6 )
+                    std::printf( "Terrain analytic mismatch: projection=%u channel=%zu actual=%d expected=%d\n", unsigned( projection ), channel, b, expected );
+                require( std::abs( b - expected ) <= 6,
+                         "Terrain tint must multiply linear albedo before lighting and display encoding" );
+            }
+        }
+        terrain->unload( nullptr );
+        std::printf( "Terrain colour transfer: mid-grey UNORM/SRGB, nonwhite tint, planar/triplanar PASS\n" );
+    }
+
     inline void run( ClawRendererDX11 &renderer, const fs::path &parent )
     {
         struct Scope
@@ -380,6 +473,7 @@ namespace cooked_terrain_contracts
                      budgetBefore.used[size_t(StreamMemoryClass::SourceCpu)] &&
                      scheduler->stats().used[gpuClass] == beforeUpload.used[gpuClass],
                  "last cooked texture/terrain destruction must release shared decode/source/GPU budgets" );
+        colourTransfer( renderer );
         runtime.shutdown();
     }
 }  // namespace cooked_terrain_contracts
