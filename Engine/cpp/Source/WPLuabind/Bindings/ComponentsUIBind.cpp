@@ -1,32 +1,6 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/Bindings/ComponentBind.hpp>
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Scene/Components/UI/Button.hpp>
-#include <Workphone/Scene/Components/ComponentEvent.hpp>
-#include <Workphone/Scene/Components/ComponentEventListener.hpp>
-#include <Workphone/Scene/Components/UI/Dropdown.hpp>
-#include <Workphone/Scene/Components/UI/GridLayout.hpp>
-#include <Workphone/Scene/Components/UI/HorizontalLayout.hpp>
-#include <Workphone/Scene/Components/UI/Image.hpp>
-#include <Workphone/Scene/Components/UI/InputField.hpp>
-#include <Workphone/Scene/Components/UI/Layout.hpp>
-#include <Workphone/Scene/Components/UI/LayoutContainer.hpp>
-#include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
-#include <Workphone/Scene/Components/UI/ScrollBar.hpp>
-#include <Workphone/Scene/Components/UI/ScrollView.hpp>
-#include <Workphone/Scene/Components/UI/Slider.hpp>
-#include <Workphone/Scene/Components/UI/TabItem.hpp>
-#include <Workphone/Scene/Components/UI/TabPage.hpp>
-#include <Workphone/Scene/Components/UI/TabView.hpp>
-#include <Workphone/Scene/Components/UI/TableCell.hpp>
-#include <Workphone/Scene/Components/UI/TableLayout.hpp>
-#include <Workphone/Scene/Components/UI/Text.hpp>
-#include <Workphone/Scene/Components/UI/Thumbnail.hpp>
-#include <Workphone/Scene/Components/UI/Toggle.hpp>
-#include <Workphone/Scene/Components/UI/ToggleGroup.hpp>
-#include <Workphone/Scene/Components/UI/ToolTip.hpp>
-#include <Workphone/Scene/Components/UI/UIComponent.hpp>
-#include <Workphone/Scene/Components/UI/VerticalLayout.hpp>
 #include <luabind/luabind.hpp>
 
 namespace workphone
@@ -204,6 +178,13 @@ namespace workphone
     {
         using namespace scene;
         using namespace luabind;
+
+        module( L )[class_<UiUtil>( "UiUtil" )
+                        .def( "createSlider", &UiUtil::createSlider )
+                        .def( "createSliderVertical", &UiUtil::createSliderVertical )
+                        .def( "createScrollbar", &UiUtil::createScrollbar )
+                        .def( "createScrollbarVertical", &UiUtil::createScrollbarVertical )
+                        .def( "createScrollview", &UiUtil::createScrollview )];
 
         // UIComponent binding
         module( L )[class_<UIComponent, Component, SmartPtr<UIComponent>>( "UIComponent" )
@@ -604,6 +585,7 @@ namespace workphone
                         .def( "setActiveTabIndex", &TabPage::setActiveTabIndex )
                         .def( "getActiveTab", &TabPage::getActiveTab )
                         .scope[def( "typeInfo", TabPage::typeInfo )]];
+
         module( L )[class_<TabView, UIComponent, SmartPtr<TabView>>( "UITabViewComponent" )
                         .def( "addTabPage", &TabView::addTabPage )
                         .def( "removeTabPage",
