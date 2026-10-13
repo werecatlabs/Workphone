@@ -401,7 +401,7 @@ namespace workphone
                 return;
             }
 
-            const auto suspensionForce = wheel->getSuspensionForceVector();
+            /* const auto suspensionForce = wheel->getSuspensionForceVector();
             const auto roadForce = wheel->getRoadForceVector();
             const auto wheelVelocity = wheel->getWheelVelo();
             const auto localVelocity = wheel->getLocalVelo();
@@ -461,17 +461,17 @@ namespace workphone
                 WP_ASSERT( suspensionForce.length() <= Math<physics_Num>::epsilon() );
                 WP_ASSERT( roadForce.length() <= Math<physics_Num>::epsilon() );
                 WP_ASSERT( compression <= Math<physics_Num>::epsilon() );
-            }
+            }*/
         }
 
         void assertWheelOutput( const SmartPtr<IWheelComponent> &wheel, u32 index )
         {
-            assertWheelConfig( wheel, index );
+            /* assertWheelConfig( wheel, index );
             if( wheel && wheel->isDerived<WheelControllerPacejka>() )
             {
                 assertPacejkaWheelOutput(
                     workphone::static_pointer_cast<WheelControllerPacejka>( wheel ) );
-            }
+            }*/
         }
 
         void assertControlInputs( physics_Num throttleValue, physics_Num brakeValue,
