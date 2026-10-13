@@ -235,7 +235,7 @@ namespace workphone::render
                             {
                                 // Seed the freshly-created state record with the
                                 // MaterialPass member defaults so existing callers see the
-                                // documented default values (metalness 0.5, roughness 0.01, etc.)
+                                // documented default values (metalness 0, roughness 0.5, etc.)
                                 // rather than MaterialPassStateData's raw defaults.
                                 stateData->metalness = m_metalness;
                                 stateData->roughness = m_roughness;

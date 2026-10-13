@@ -56,7 +56,7 @@ BOOST_AUTO_TEST_CASE( materialpass_default_construction )
     checkColour( pass->getTint(), ColourF::White );
 
     // Default PBR properties from MaterialPass.hpp.
-    BOOST_TEST( pass->getMetalness() == 0.5f, boost::test_tools::tolerance( 0.0001f ) );
+    BOOST_TEST( pass->getMetalness() == 0.0f, boost::test_tools::tolerance( 0.0001f ) );
     BOOST_TEST( pass->getRoughness() == 0.5f, boost::test_tools::tolerance( 0.0001f ) );
 
     // Default transparency/cutout states
@@ -248,8 +248,8 @@ BOOST_AUTO_TEST_CASE( materialpass_metalness_set_get )
     auto pass = makeMaterialPass();
     BOOST_REQUIRE( pass );
 
-    // Default is 0.5f
-    BOOST_TEST( pass->getMetalness() == 0.5f, boost::test_tools::tolerance( 0.0001f ) );
+    // Default is a dielectric surface.
+    BOOST_TEST( pass->getMetalness() == 0.0f, boost::test_tools::tolerance( 0.0001f ) );
 
     // Set various metalness values
     pass->setMetalness( 0.0f );

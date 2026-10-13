@@ -41,6 +41,9 @@ namespace workphone
             bool importMaterialColours = true;
             bool importPbrProperties = true;
             bool useFallbackTextureNames = false;
+            // Some legacy OBJ exports write d=0 for every surface. Disable to retain
+            // deliberately fully transparent OBJ materials; partial alpha is preserved.
+            bool recoverZeroOpacityObjMaterials = true;
         };
 
         /**

@@ -5,6 +5,8 @@
 #    include <boost/test/unit_test.hpp>
 #endif
 #include <WPAssimp/TexturePathResolver.hpp>
+#include <WPAssimp/MaterialImportDefaults.hpp>
+#include <limits>
 #include <chrono>
 #include <fstream>
 
@@ -41,6 +43,26 @@ namespace
 }
 
 BOOST_AUTO_TEST_SUITE( AssimpTexturePathTests )
+
+BOOST_AUTO_TEST_CASE( legacy_obj_zero_opacity_recovery_is_scoped_and_optional )
+{
+    BOOST_CHECK( workphone::detail::recoverObjMaterialOpacity( 0.0f, true, true ) );
+    BOOST_CHECK( !workphone::detail::recoverObjMaterialOpacity( 0.0f, true, false ) );
+    BOOST_CHECK( !workphone::detail::recoverObjMaterialOpacity( 0.0f, false, true ) );
+    BOOST_CHECK( !workphone::detail::recoverObjMaterialOpacity( 0.4f, true, true ) );
+    BOOST_CHECK( !workphone::detail::recoverObjMaterialOpacity( 1.0f, true, true ) );
+}
+
+BOOST_AUTO_TEST_CASE( imported_material_factors_preserve_authored_values_and_sanitize_invalid_values )
+{
+    using workphone::detail::materialUnitFactor;
+    BOOST_CHECK_EQUAL( materialUnitFactor( 0.0f, 1.0f ), 0.0f );
+    BOOST_CHECK_EQUAL( materialUnitFactor( 0.4f, 1.0f ), 0.4f );
+    BOOST_CHECK_EQUAL( materialUnitFactor( -2.0f, 0.5f ), 0.0f );
+    BOOST_CHECK_EQUAL( materialUnitFactor( 2.0f, 0.5f ), 1.0f );
+    BOOST_CHECK_EQUAL( materialUnitFactor( std::numeric_limits<float>::quiet_NaN(), 1.0f ), 1.0f );
+    BOOST_CHECK_EQUAL( materialUnitFactor( std::numeric_limits<float>::infinity(), 0.5f ), 0.5f );
+}
 
 BOOST_AUTO_TEST_CASE( model_relative_texture_precedes_project_relative_texture )
 {
