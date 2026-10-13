@@ -45,7 +45,8 @@ int main()
         require( !scene::pickMeshTriangles( Ray3<real_Num>( { 0, 0, 0 }, { 0, 0, 0 } ),
                      world, triangle, indices, nearest ), "zero-length ray is safe" );
 
-        Matrix4<real_Num> view, projection;
+        auto view = Matrix4<real_Num>::identity();
+        Matrix4<real_Num> projection;
         projection.makePerspective( real_Num( 1.0 ), real_Num( 1.5 ), real_Num( 0.1 ), real_Num( 100 ) );
         Ray3<real_Num> cameraRay;
         real_Num range;

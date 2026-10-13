@@ -2370,7 +2370,8 @@ namespace workphone::ui
                                     ImGui::IsMouseDown( ImGuiMouseButton_Right ) ||
                                     ImGui::IsMouseDown( ImGuiMouseButton_Middle ) ||
                                     ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
-                                    !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows );
+                                    ( !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) &&
+                                      !ImGui::IsMouseClicked( ImGuiMouseButton_Left ) );
                                 if( ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
                                 {
                                     const auto dx = mouse.x - m_scenePickStart.x;
@@ -2404,6 +2405,9 @@ namespace workphone::ui
                                                 selectionManager->addSelectedObject( actor );
                                             }
                                         }
+                                        applicationManager->triggerEvent(
+                                            EventType::UI, StringUtil::getHash( "sceneActorPicked" ), {},
+                                            renderWindow, actor, nullptr, false, Thread::Application_Flag );
                                     }
                                     m_scenePickWindow = nullptr;
                                 }
