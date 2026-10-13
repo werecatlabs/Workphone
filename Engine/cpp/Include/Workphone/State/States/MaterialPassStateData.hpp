@@ -53,7 +53,7 @@ namespace workphone
 
         f32 metalness = 0.0f;
         f32 roughness = 0.5f;
-        f32 specular = 0.5f;
+        f32 specular = 0.05f;
         f32 normalStrength = 1.0f;
         f32 aoStrength = 1.0f;
         f32 heightScale = 0.02f;
