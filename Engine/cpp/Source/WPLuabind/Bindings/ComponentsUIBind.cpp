@@ -322,6 +322,8 @@ namespace workphone
 
         // UIComponent binding
         module( L )[class_<UIComponent, Component, SmartPtr<UIComponent>>( "UIComponent" )
+                        .def( "getUseNativeUI", &UIComponent::getUseNativeUI )
+                        .def( "setUseNativeUI", &UIComponent::setUseNativeUI )
                         .def( "load", &UIComponent::load )
                         .def( "unload", &UIComponent::unload )
                         .def( "getElementListener", &UIComponent::getElementListener )

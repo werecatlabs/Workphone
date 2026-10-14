@@ -39,7 +39,7 @@ services/factories throw `std::runtime_error`. Failed composite construction rel
 ## Factory coverage
 
 - Text and buttons, including positioned `createButtonEx`.
-- Dropdowns with a wired trigger and empty or caller-provided ordered options; no sample options are added. Factory dropdowns use composed scene controls, including on renderers without a native dropdown widget.
+- Dropdowns with empty or caller-provided ordered options; no sample options are added. They support backend combo widgets and a composed button/options panel.
 - Images, panels, input fields, toggles, thumbnails, and tooltips.
 - Horizontal/vertical sliders and scrollbars with wired Background, Fill, and Handle actors.
 - Vertical scroll views with Content and a linked ScrollBar.
@@ -102,3 +102,24 @@ and rollback after a missing component factory. `script_uiutil_factory_contracts
 `ScriptTests.cpp` exercises the Lua tables, factories, placement, and invalid inputs. These contracts
 do not replace a rendered UI/input smoke test in the Editor, particularly for clipping, native
 widget appearance, focus, pointer interaction, and specialized container population.
+
+## Backend widgets and scene controls
+
+`UIComponent::getUseNativeUI()` / `setUseNativeUI(bool)` selects the active backend widget for
+Button, Slider, and Dropdown when true (the default), or the composed scene representation when
+false. For WPGraphics, the backend is the WorkphoneCore fork of Nuklear. Primitive Image/Text
+parts still draw through that backend. Other components retain their existing rendering paths.
+
+```cpp
+auto volume = UiUtil::createSlider("Volume", nullptr, "", false);
+volume->getComponent<Slider>()->setUseNativeUI(false); // scene track/fill/handle
+```
+
+Both representations preserve the component value/selection and callbacks. Changing modes hides
+the previous representation. The `useNativeUI` property is serialized and exposed through Lua.
+Claw provides combo, horizontal slider, and vertical slider adapters. Its layout draw pass clips
+scroll-content drawing and hit testing to the viewport, including nested scroll views.
+
+`SampleGame` contains a visual showcase of both modes, text entry, toggles, and a scrollable list.
+Run `SampleGame.exe` with its binary directory as the working directory so the sample plugin
+configuration and assets resolve. The sample sources are in `Samples/cpp/Game`.

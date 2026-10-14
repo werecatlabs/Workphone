@@ -4,6 +4,7 @@
 #include <WPGraphics/UI/ClawUICursor.hpp>
 #include <WPGraphics/UI/ClawUIBar.hpp>
 #include <WPGraphics/UI/ClawUIElement.hpp>
+#include <WPGraphics/UI/ClawUIControls.hpp>
 #include <WPGraphics/UI/ClawUIElementBar.hpp>
 #include <WPGraphics/UI/ClawUIButton.hpp>
 #include <WPGraphics/UI/ClawUICheckBox.hpp>
@@ -487,6 +488,14 @@ namespace workphone::ui
         if( type == IUIButton::typeInfo() )
         {
             element = workphone::make_ptr<ClawUIButton>();
+        }
+        else if( type == IUIDropdown::typeInfo() )
+        {
+            element = workphone::make_ptr<ClawUIDropdown>();
+        }
+        else if( type == IUISlider::typeInfo() )
+        {
+            element = workphone::make_ptr<ClawUISlider>();
         }
         else if( type == IUICheckbox::typeInfo() )
         {

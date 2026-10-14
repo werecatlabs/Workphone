@@ -34,6 +34,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <vector>
+#include <type_traits>
 
 namespace workphone::scene
 {
@@ -166,7 +167,7 @@ namespace workphone::scene
                     throw;
                 }
                 actor->setName( name );
-                add<LayoutTransform>( actor );
+                add<LayoutTransform>( actor )->setAnchor( Vector2<real_Num>( 0.5f, 0.5f ) );
                 UiUtil::setRect( actor, 0, 0, width, height );
                 UiUtil::setAlignment( actor, HorizontalAlignment::CENTER, VerticalAlignment::CENTER );
                 if( parent )
@@ -247,7 +248,17 @@ namespace workphone::scene
             {
                 UiUtil::setAlignment( part,
                                       vertical ? HorizontalAlignment::CENTER : HorizontalAlignment::LEFT,
-                                      vertical ? VerticalAlignment::BOTTOM : VerticalAlignment::CENTER );
+                                      vertical ? VerticalAlignment::TOP : VerticalAlignment::CENTER );
+                part->getComponent<LayoutTransform>()->setAnchor(
+                    vertical ? Vector2<real_Num>( 0.5f, 1.0f ) : Vector2<real_Num>( 0.0f, 0.5f ) );
+            }
+            if constexpr( std::is_same_v<T, Slider> )
+            {
+                handle->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0.5f, 0.5f ) );
+            }
+            else
+            {
+                control->setUseNativeUI( false );
             }
             background->getComponent<Image>()->setColour( ColourF( 0.3f, 0.3f, 0.3f, 1.0f ) );
             fill->getComponent<Image>()->setColour( ColourF::Blue );
@@ -407,6 +418,8 @@ namespace workphone::scene
         auto dropdown = builder.add<Dropdown>( actor );
         dropdown->setLabel( label );
         auto trigger = builder.make( "Dropdown Button", 300, 60, actor );
+        setAlignment( trigger, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        trigger->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
         auto button = builder.add<Button>( trigger );
         button->setLabel( label );
         button->setCascadeInput( false );
@@ -512,13 +525,16 @@ namespace workphone::scene
         UiBuilder builder( addToScene );
         auto actor = builder.make( hint.empty() ? String( "ScrollView" ) : hint, 300, 200 );
         auto view = builder.add<ScrollView>( actor );
+        view->setUseNativeUI( false );
         view->setLabel( label );
         auto content = builder.make( "Content", 270, 200, actor );
         setAlignment( content, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        content->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
         view->setContentPanel( content->getComponent<LayoutTransform>() );
         auto scrollbar = makeTrack<ScrollBar>( builder, "ScrollBar", "", true, actor );
         setRect( scrollbar, 270, 0, 30, 200 );
         setAlignment( scrollbar, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        scrollbar->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
         view->setScrollBar( scrollbar->getComponent<ScrollBar>() );
         view->updateScrollBar();
         return builder.finish( actor );
@@ -570,9 +586,11 @@ namespace workphone::scene
             image->setTextureName( textureName );
         }
         setAlignment( imageActor, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        imageActor->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
         thumbnail->setThumb( image );
         auto textActor = builder.make( "Text", 100, 30, actor );
         setAlignment( textActor, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        textActor->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
         setRect( textActor, 0, 100, 100, 30 );
         auto text = builder.add<Text>( textActor );
         text->setText( label );

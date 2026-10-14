@@ -1046,6 +1046,7 @@ BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
     auto dropdownActor = UiUtil::createDropdownWithOptions( "Quality", { "Low", "High" }, false );
     window->addChild( dropdownActor );
     auto dropdown = dropdownActor->getComponent<Dropdown>();
+    dropdown->setUseNativeUI( false );
     UiUtil::loadHierarchy( window );
     auto trigger = dropdown->getButton();
     BOOST_REQUIRE( trigger );
@@ -1087,4 +1088,80 @@ BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
     auto buttonFsm = button->getFsm();
     UiUtil::loadHierarchy( window );
     BOOST_CHECK( button->getFsm() == buttonFsm );
+    button->setUseNativeUI( false );
+    BOOST_REQUIRE( button->getImage() );
+    BOOST_REQUIRE( button->getText() );
+    BOOST_CHECK( !button->getElement()->isVisible() );
+    BOOST_CHECK( button->getImage()->getActor()->isEnabled() );
+    button->setUseNativeUI( true );
+    BOOST_CHECK( button->getElement()->isVisible() );
+    BOOST_CHECK( !button->getImage()->getActor()->isEnabled() );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Native controls", true );
+    auto dropdownActor = UiUtil::createDropdownWithOptions( "Quality", { "Low", "High" }, false );
+    window->addChild( dropdownActor );
+    auto sliderActor = UiUtil::createSlider( "Volume", nullptr, "", false );
+    window->addChild( sliderActor );
+    UiUtil::loadHierarchy( window );
+    auto dropdown = dropdownActor->getComponent<Dropdown>();
+    auto slider = sliderActor->getComponent<Slider>();
+    auto nativeDropdown = workphone::dynamic_pointer_cast<ui::IUIDropdown>( dropdown->getElement() );
+    auto nativeSlider = workphone::dynamic_pointer_cast<ui::IUISlider>( slider->getElement() );
+    BOOST_REQUIRE( nativeDropdown );
+    BOOST_REQUIRE( nativeSlider );
+    BOOST_REQUIRE_EQUAL( nativeDropdown->getOptions().size(), 2 );
+    BOOST_CHECK( dropdown->getUseNativeUI() );
+    BOOST_CHECK( !dropdown->getButton()->getActor()->isEnabled() );
+    BOOST_CHECK( !slider->getBackground()->isEnabled() );
+    auto previousTask = Thread::getCurrentTask();
+
+    struct RestoreTask
+    {
+        TaskId task;
+
+        ~RestoreTask()
+        {
+            Thread::setCurrentTask( task );
+        }
+    } restore{ previousTask };
+
+    Thread::setCurrentTask( TaskId::Application );
+    nativeDropdown->setSelectedOption( 1 );
+    dropdown->getElementListener()->handleEvent( EventType::UI, IEvent::SELECT_HASH, {}, nativeDropdown,
+                                                 nullptr, nullptr );
+    BOOST_CHECK_EQUAL( dropdown->getLabel(), "High" );
+    nativeSlider->setValue( 0.8f );
+    slider->getElementListener()->handleEvent( EventType::UI, IEvent::CHANGED_STATE_HASH, {},
+                                               nativeSlider, nullptr, nullptr );
+    BOOST_CHECK_CLOSE( slider->getValue(), 0.8f, 0.001f );
+    Thread::setCurrentTask( previousTask );
+    slider->setUseNativeUI( false );
+    BOOST_CHECK( slider->getBackground()->isEnabled() );
+    BOOST_CHECK( !nativeSlider->isVisible() );
+    slider->updateVisibility();
+    BOOST_CHECK( !nativeSlider->isVisible() );
+    slider->setUseNativeUI( true );
+    BOOST_CHECK( nativeSlider->isVisible() );
+    BOOST_CHECK( !slider->getBackground()->isEnabled() );
+    auto properties = slider->getProperties();
+    properties->setProperty( "useNativeUI", false );
+    slider->setProperties( properties );
+    BOOST_CHECK( !slider->getUseNativeUI() );
+    BOOST_CHECK( !nativeSlider->isVisible() );
+    dropdown->setUseNativeUI( false );
+    BOOST_CHECK( !nativeDropdown->isVisible() );
+    BOOST_CHECK( dropdown->getButton()->getActor()->isEnabled() );
+    dropdown->setOpen( true );
+    BOOST_REQUIRE( dropdown->getContent() );
+    dropdown->setUseNativeUI( true );
+    BOOST_CHECK( nativeDropdown->isVisible() );
+    BOOST_CHECK( !dropdown->getContent()->isEnabled() );
 }

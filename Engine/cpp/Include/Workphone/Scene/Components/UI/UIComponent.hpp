@@ -406,12 +406,13 @@ namespace workphone
             /** Enables automatic layout rectangle drawing when a 2D renderer is configured. */
             void setDebugDrawEnabled( bool enabled );
 
-            /** @brief Gets whether to use native UI rendering or custom rendering. */
+            /** @brief Gets whether to use the active UI backend's widget or scene composition. */
             bool getUseNativeUI() const;
 
-            /** @brief Sets whether to use native UI rendering or custom rendering. 
-            * Native ui will use the ui provided by the platform, 
-            * while custom rendering will use the engine's rendering system. */
+            /** @brief Selects the active backend widget (including Claw/Nuklear) when true,
+             * or the control's composed scene representation when false. Primitive Image/Text
+             * rendering still uses the active backend. Supported by Button, Slider and Dropdown;
+             * other components retain their existing rendering path. Persisted in properties. */
             void setUseNativeUI( bool useNativeUI );
 
             WP_CLASS_REGISTER_DECL;

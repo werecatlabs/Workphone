@@ -1,4 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Scene/Components/UI/Button.hpp>
+#include <Workphone/Scene/Components/UI/Slider.hpp>
+#include <Workphone/Scene/Components/UI/Dropdown.hpp>
 #include <Workphone/Scene/Components/UI/UIComponent.hpp>
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
@@ -197,6 +200,7 @@ namespace workphone::scene
             properties->setProperty( showLabelStr, showLabel );
             properties->setProperty( autoCalculateOrderStr, autoCalculateOrder );
             properties->setProperty( labelStr, label );
+            properties->setProperty( "useNativeUI", getUseNativeUI() );
             properties->setProperty( labelActorStr, m_labelActor.load() );
             properties->setProperty( editorWindowBorderSizeStr, editorWindowBorderSize );
 
@@ -261,6 +265,9 @@ namespace workphone::scene
         setHandleInputEvents( handleInputEvents );
         setShowLabel( showLabel );
         setAutoCalculateOrder( autoCalculateOrder );
+        auto useNativeUI = getUseNativeUI();
+        properties->getPropertyValue( "useNativeUI", useNativeUI );
+        setUseNativeUI( useNativeUI );
         setEditorWindowBorderSize( editorWindowBorderSize );
 
         if( properties->isButtonPressed( updateTransformStr ) )
@@ -1097,6 +1104,12 @@ namespace workphone::scene
         {
             auto enabled = isEnabled() && actor->isEnabledInScene();
             auto visible = applicationManager->isPlaying() ? enabled : enabled && actor->isVisible();
+            if( !getUseNativeUI() &&
+                ( isDerived<Button>() || isDerived<Slider>() || isDerived<Dropdown>() ) )
+            {
+                enabled = false;
+                visible = false;
+            }
 
             if( auto element = getElement() )
             {
@@ -1414,7 +1427,15 @@ namespace workphone::scene
 
     void UIComponent::setUseNativeUI( bool useNativeUI )
     {
+        if( m_useNativeUI == useNativeUI )
+        {
+            return;
+        }
         m_useNativeUI = useNativeUI;
+        if( isLoaded() )
+        {
+            updateElementState();
+        }
     }
 
     bool UIComponent::getUseNativeUI() const
