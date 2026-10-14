@@ -14,10 +14,10 @@ end
 function Splash:update()
 	local applicationManager = IApplicationManager.instance();
     local timer = applicationManager:getTimer();
-    local sceneManager = applicationManager:getGameManager();
+    local gameManager = applicationManager:getGameManager();
 
     if timer:getTimeSinceLevelLoad() > self.loadDelay then
-		sceneManager:loadScene(self.sceneToLoad, true);
+		gameManager:loadScene(self.sceneToLoad, true);
 	end
 end
 
@@ -39,4 +39,14 @@ function Splash:setProperties(parameters)
 end
 
 function Splash:generate()
+	local applicationManager = IApplicationManager.instance();
+	local gameManager = applicationManager:getGameManager();
+
+	local actor = component:getActor();
+	
+	local panelActor = gameManager:createActor();
+	panelActor:addComponent("Image");
+	
+	local textActor = gameManager:createActor();
+	textActor:addComponent("Text");
 end
