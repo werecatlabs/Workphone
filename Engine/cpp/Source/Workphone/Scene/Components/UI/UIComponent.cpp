@@ -33,21 +33,23 @@ namespace workphone::scene
         class UIEventJob final : public EventJob
         {
         public:
-            explicit UIEventJob( SmartPtr<IEventListener> listener ) : m_listener( listener ) {}
+            explicit UIEventJob( SmartPtr<IEventListener> listener ) : m_listener( listener )
+            {
+            }
 
             void execute() override
             {
                 if( auto listener = m_listener.lock() )
                 {
-                    listener->handleEvent( getEventType(), getEventValue(), getArguments(),
-                                           getSender(), getObject(), getEvent() );
+                    listener->handleEvent( getEventType(), getEventValue(), getArguments(), getSender(),
+                                           getObject(), getEvent() );
                 }
             }
 
         private:
             WeakPtr<IEventListener> m_listener;
         };
-    }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, UIComponent, Component );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, UIComponent::UIElementListener, IEventListener );
@@ -1117,16 +1119,13 @@ namespace workphone::scene
 
     void UIComponent::updateVisibility()
     {
-        ScopedLock lock( this );
-
         auto applicationManager = core::IApplicationManager::instance();
 
-        if( auto actor = getActorPtr() )
+        if( auto actor = getActor() )
         {
             auto enabled = isEnabled() && actor->isEnabledInScene();
             auto visible = applicationManager->isPlaying() ? enabled : enabled && actor->isVisible();
-            if( !getUseNativeUI() &&
-                ( isDerived<Button>() || isDerived<Slider>() || isDerived<Dropdown>() ) )
+            if( !getUseNativeUI() )
             {
                 enabled = false;
                 visible = false;
@@ -1138,11 +1137,6 @@ namespace workphone::scene
                 element->setVisible( visible, false );
             }
         }
-
-        //if( auto canvas = getCanvas() )
-        //{
-        //    canvas->updateVisibility();
-        //}
     }
 
     void UIComponent::updateElementState()

@@ -170,9 +170,14 @@ namespace workphone::scene
                     throw;
                 }
                 actor->setName( name );
-                add<LayoutTransform>( actor )->setAnchor( Vector2<real_Num>( 0.5f, 0.5f ) );
+
+                auto anchor = Vector2<real_Num>( 0.5f, 0.5f );
+                auto layoutTransform = add<LayoutTransform>( actor );
+                layoutTransform->setAnchor( anchor );
+
                 UiUtil::setRect( actor, 0, 0, width, height );
                 UiUtil::setAlignment( actor, HorizontalAlignment::CENTER, VerticalAlignment::CENTER );
+                
                 if( parent )
                 {
                     parent->addChild( actor );

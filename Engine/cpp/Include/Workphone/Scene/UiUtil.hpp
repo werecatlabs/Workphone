@@ -8,6 +8,7 @@
 
 namespace workphone::scene
 {
+
     /** Scene UI factories and placement helpers.
      *
      * Call on the scene's owning thread with a loaded game manager and registered component

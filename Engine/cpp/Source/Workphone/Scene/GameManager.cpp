@@ -629,15 +629,13 @@ namespace workphone::scene
     {
         if( isLoaded() )
         {
-            ScopedLoadLock loadLock( this );
-
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
             auto timer = applicationManager->getTimerPtr();
             WP_ASSERT( timer );
 
-            if( auto scene = getCurrentScenePtr() )
+            if( auto scene = getCurrentScene() )
             {
                 scene->update();
             }

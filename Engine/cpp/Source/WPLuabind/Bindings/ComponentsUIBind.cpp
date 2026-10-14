@@ -260,6 +260,13 @@ namespace workphone
         using namespace scene;
         using namespace luabind;
 
+        /*module( L )[class_<HorizontalAlignment>( "HorizontalAlignment" )
+        .enum_<u32>( "HorizontalAlignment" )
+            .value( "LEFT", HorizontalAlignment::LEFT )
+            .value( "CENTER", HorizontalAlignment::CENTER )
+            .value( "RIGHT", HorizontalAlignment::RIGHT )
+            .value( "CUSTOM", HorizontalAlignment::CUSTOM );*/
+
         module(
             L )[class_<UiUtil>( "UiUtil" )
                     .scope[def( "getHorizontalAlignmentString", _getUiHorizontalAlignmentString ),
@@ -273,7 +280,8 @@ namespace workphone
                            def( "createText", &UiUtil::createText ),
                            def( "createButton", &UiUtil::createButton ),
                            def( "createButtonEx", &UiUtil::createButtonEx ),
-                           def( "setRect", &UiUtil::setRect ), def( "setAlignment", _setUiAlignment ),
+                           def( "setRect", &UiUtil::setRect ), 
+                           def( "setAlignment", _setUiAlignment ),
                            def( "loadHierarchy", &UiUtil::loadHierarchy ),
                            def( "createDropdown", &UiUtil::createDropdown ),
                            def( "createDropdownWithOptions", _createUiDropdownWithOptions ),

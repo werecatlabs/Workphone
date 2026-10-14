@@ -1,5 +1,5 @@
 include("UIDialog.lua")
-if not UICanvas then include("UICanvas.lua") end
+include("UICanvas.lua") 
 
 class 'StartMenu' (UIDialog)
 

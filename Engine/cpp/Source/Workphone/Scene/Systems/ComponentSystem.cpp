@@ -235,8 +235,6 @@ namespace workphone::scene
 
     void ComponentSystem::addDirtyComponent( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
-
         auto it = std::find( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() );
         if( it == m_dirtyComponents.end() )
         {
@@ -248,8 +246,6 @@ namespace workphone::scene
 
     void ComponentSystem::removeDirtyComponent( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
-
         m_dirtyComponents.erase(
             std::remove( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() ),
             m_dirtyComponents.end() );
