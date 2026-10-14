@@ -117,8 +117,10 @@ volume->getComponent<Slider>()->setUseNativeUI(false); // scene track/fill/handl
 
 Both representations preserve the component value/selection and callbacks. Changing modes hides
 the previous representation. The `useNativeUI` property is serialized and exposed through Lua.
-Claw provides combo, horizontal slider, and vertical slider adapters. Its layout draw pass clips
-scroll-content drawing and hit testing to the viewport, including nested scroll views.
+Claw provides combo, horizontal slider, and vertical slider adapters. Native events are queued
+onto the application task before scene callbacks run. Its layout draw pass clips scroll-content
+drawing and backend hit testing to the viewport, including nested scroll views. Scene controls
+also reject pointer presses outside their scroll viewport while allowing captured releases.
 
 `SampleGame` contains a visual showcase of both modes, text entry, toggles, and a scrollable list.
 Run `SampleGame.exe` with its binary directory as the working directory so the sample plugin

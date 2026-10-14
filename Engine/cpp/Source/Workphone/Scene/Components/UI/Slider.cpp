@@ -551,7 +551,7 @@ namespace workphone::scene
         {
             if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( sender ) )
             {
-                setValue( slider->getValue() );
+                setValue( arguments.empty() ? slider->getValue() : arguments[0].getF32() );
                 m_isDragging = slider->isDragging();
                 if( m_callbackFunction )
                 {

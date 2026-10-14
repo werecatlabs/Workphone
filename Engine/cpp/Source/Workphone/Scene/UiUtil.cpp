@@ -433,6 +433,7 @@ namespace workphone::scene
         setAlignment( trigger, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
         trigger->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
         auto button = builder.add<Button>( trigger );
+        button->setUseNativeUI( false );
         button->setLabel( label );
         button->setCascadeInput( false );
         dropdown->setButton( button );

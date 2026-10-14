@@ -27,6 +27,27 @@
 
 namespace workphone::scene
 {
+    namespace
+    {
+        // Reuse EventJob's shutdown cleanup while targeting just this weak scene listener.
+        class UIEventJob final : public EventJob
+        {
+        public:
+            explicit UIEventJob( SmartPtr<IEventListener> listener ) : m_listener( listener ) {}
+
+            void execute() override
+            {
+                if( auto listener = m_listener.lock() )
+                {
+                    listener->handleEvent( getEventType(), getEventValue(), getArguments(),
+                                           getSender(), getObject(), getEvent() );
+                }
+            }
+
+        private:
+            WeakPtr<IEventListener> m_listener;
+        };
+    }
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, UIComponent, Component );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, UIComponent::UIElementListener, IEventListener );
@@ -1466,8 +1487,11 @@ namespace workphone::scene
             return {};
         }
 
-        auto sceneManager = applicationManager->getGameManager();
-        auto scene = sceneManager->getCurrentScene();
+        auto owner = getOwner();
+        if( !owner || !owner->isLoaded() )
+        {
+            return {};
+        }
 
         auto taskManager = applicationManager->getTaskManager();
         if( !taskManager )
@@ -1480,7 +1504,6 @@ namespace workphone::scene
 
         if( task == TaskId::Application )
         {
-            auto owner = getOwner();
             auto actors = owner->getActorListeners();
             for( auto actor : actors )
             {
@@ -1509,6 +1532,17 @@ namespace workphone::scene
                                                     event );
                 }
             }
+        }
+        else if( applicationTask )
+        {
+            auto job = workphone::make_ptr<UIEventJob>( this );
+            job->setEventType( eventType );
+            job->setEventValue( eventValue );
+            job->setArguments( arguments );
+            job->setSender( sender );
+            job->setObject( object );
+            job->setEvent( event );
+            applicationTask->addJob( job );
         }
 
         return {};

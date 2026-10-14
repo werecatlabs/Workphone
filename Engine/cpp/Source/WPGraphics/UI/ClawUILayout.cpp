@@ -14,10 +14,10 @@ namespace workphone::ui
         // Scene UI elements share one immediate-mode window. Restrict widgets belonging to
         // scroll content without clipping the viewport's sibling scrollbar or popup controls.
         wp_rect contentClip( SmartPtr<IUIElement> element, wp_rect clip, wp_rect rootBounds,
-                             SmartPtr<scene::LayoutTransform> rootTransform )
+                             Vector2I referenceSize )
         {
             auto owner = workphone::dynamic_pointer_cast<scene::UIComponent>( element->getOwner() );
-            if( !owner || !rootTransform )
+            if( !owner )
             {
                 return clip;
             }
@@ -26,14 +26,12 @@ namespace workphone::ui
             {
                 return clip;
             }
-            auto rootPosition = rootTransform->getAbsolutePosition();
-            auto rootSize = rootTransform->getAbsoluteSize();
-            if( rootSize.x <= 0 || rootSize.y <= 0 )
+            if( referenceSize.x <= 0 || referenceSize.y <= 0 )
             {
                 return clip;
             }
-            auto scaleX = rootBounds.w / static_cast<f32>( rootSize.x );
-            auto scaleY = rootBounds.h / static_cast<f32>( rootSize.y );
+            auto scaleX = rootBounds.w / static_cast<f32>( referenceSize.x );
+            auto scaleY = rootBounds.h / static_cast<f32>( referenceSize.y );
             for( auto parent = actor->getParent(); parent; parent = parent->getParent() )
             {
                 auto view = parent->getComponent<scene::ScrollView>();
@@ -59,15 +57,15 @@ namespace workphone::ui
                 auto position = transform->getAbsolutePosition();
                 auto size = transform->getAbsoluteSize();
                 auto left = MathF::max(
-                    clip.x, rootBounds.x + static_cast<f32>( position.x - rootPosition.x ) * scaleX );
+                    clip.x, rootBounds.x + static_cast<f32>( position.x ) * scaleX );
                 auto top = MathF::max(
-                    clip.y, rootBounds.y + static_cast<f32>( position.y - rootPosition.y ) * scaleY );
+                    clip.y, rootBounds.y + static_cast<f32>( position.y ) * scaleY );
                 auto right = MathF::min(
                     clip.x + clip.w,
-                    rootBounds.x + static_cast<f32>( position.x - rootPosition.x + size.x ) * scaleX );
+                    rootBounds.x + static_cast<f32>( position.x + size.x ) * scaleX );
                 auto bottom = MathF::min(
                     clip.y + clip.h,
-                    rootBounds.y + static_cast<f32>( position.y - rootPosition.y + size.y ) * scaleY );
+                    rootBounds.y + static_cast<f32>( position.y + size.y ) * scaleY );
                 clip = { left, top, MathF::max( 0.0f, right - left ), MathF::max( 0.0f, bottom - top ) };
             }
             return clip;
@@ -166,8 +164,10 @@ namespace workphone::ui
             wp_layout_space_begin( ctx, WORKPHONE_STATIC, bounds.h, 1024 );
 
             auto owner = workphone::dynamic_pointer_cast<scene::UIComponent>( getOwner() );
-            auto actor = owner ? owner->getActor() : nullptr;
-            auto transform = actor ? actor->getComponent<scene::LayoutTransform>() : nullptr;
+            auto layout = workphone::dynamic_pointer_cast<scene::Layout>( owner );
+            auto referenceSize = layout ? layout->getReferenceSize() : Vector2I( 1920, 1080 );
+            wp_rect viewportBounds;
+            ClawUtil::calculateBounds( Vector2F::zero(), Vector2F( 1, 1 ), &viewportBounds );
 
             for( auto child : m_children )
             {
@@ -176,9 +176,15 @@ namespace workphone::ui
                     auto *panel = ctx->current->layout;
                     auto *canvas = wp_window_get_canvas( ctx );
                     auto previousClip = panel->clip;
-                    auto clip = contentClip( child, previousClip, bounds, transform );
+                    auto clip = contentClip( child, previousClip, viewportBounds, referenceSize );
                     if( clip.w <= 0 || clip.h <= 0 )
                     {
+                        continue;
+                    }
+                    if( clip.x == previousClip.x && clip.y == previousClip.y &&
+                        clip.w == previousClip.w && clip.h == previousClip.h )
+                    {
+                        child->update();
                         continue;
                     }
                     panel->clip = clip;

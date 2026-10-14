@@ -643,6 +643,7 @@ namespace workphone::scene
 
                     if( auto button = buttonActor->getComponent<Button>() )
                     {
+                        button->setUseNativeUI( false );
                         button->setNormalColour( m_optionButtonColour );
                     }
 
@@ -796,6 +797,14 @@ namespace workphone::scene
             }
             element->setOptions( options );
             element->setLabel( getLabel() );
+            for( u32 index = 0; index < options.size(); ++index )
+            {
+                if( options[index] == getLabel() )
+                {
+                    element->setSelectedOption( index );
+                    break;
+                }
+            }
             updateVisibility();
         }
         if( m_button )
@@ -829,8 +838,15 @@ namespace workphone::scene
         {
             if( auto dropdown = workphone::dynamic_pointer_cast<ui::IUIDropdown>( sender ) )
             {
-                auto options = dropdown->getOptions();
-                auto selected = dropdown->getSelectedOption();
+                Array<String> options;
+                for( auto option : m_options )
+                {
+                    if( option )
+                    {
+                        options.push_back( option->text.str() );
+                    }
+                }
+                auto selected = arguments.empty() ? dropdown->getSelectedOption() : arguments[0].getU32();
                 if( selected < options.size() )
                 {
                     setLabel( options[selected] );

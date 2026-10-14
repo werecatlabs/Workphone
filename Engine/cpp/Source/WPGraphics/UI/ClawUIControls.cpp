@@ -12,13 +12,14 @@ namespace workphone::ui
 
     namespace
     {
-        void notifyControlChange( IUIElement *element, hash_type event )
+        void notifyControlChange( IUIElement *element, hash_type event,
+                                  const Array<Parameter> &arguments = {} )
         {
             for( auto listener : element->getObjectListeners() )
             {
                 if( listener )
                 {
-                    listener->handleEvent( EventType::UI, event, {}, element, nullptr, nullptr );
+                    listener->handleEvent( EventType::UI, event, arguments, element, nullptr, nullptr );
                 }
             }
         }
@@ -75,7 +76,7 @@ namespace workphone::ui
                 {
                     m_selected = static_cast<u32>( i );
                     setLabel( m_options[i] );
-                    notifyControlChange( this, IEvent::SELECT_HASH );
+                    notifyControlChange( this, IEvent::SELECT_HASH, { Parameter( m_selected ) } );
                 }
             }
             wp_combo_end( ctx );
@@ -232,7 +233,7 @@ namespace workphone::ui
         }
         if( previous != m_value )
         {
-            notifyControlChange( this, IEvent::handleValueChanged );
+            notifyControlChange( this, IEvent::handleValueChanged, { Parameter( m_value ) } );
         }
         drawWorkphoneChildren( ctx );
     }

@@ -1053,9 +1053,9 @@ BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
     auto triggerProperties = trigger->getProperties();
     triggerProperties->setButtonPressed( UIComponent::createUIStr, true );
     trigger->setProperties( triggerProperties );
-    BOOST_REQUIRE( trigger->getElement() );
+    BOOST_REQUIRE( trigger->getText() );
     BOOST_CHECK_EQUAL( dropdown->getLabel(), "Quality" );
-    BOOST_CHECK_EQUAL( trigger->getElement()->getLabel(), "Quality" );
+    BOOST_CHECK_EQUAL( trigger->getText()->getText(), "Quality" );
     dropdown->setOpen( true );
     BOOST_REQUIRE( dropdown->getContent() );
     BOOST_REQUIRE( dropdown->getPanel() );
@@ -1164,4 +1164,31 @@ BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
     dropdown->setUseNativeUI( true );
     BOOST_CHECK( nativeDropdown->isVisible() );
     BOOST_CHECK( !dropdown->getContent()->isEnabled() );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_composed_button_added_during_play )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Live controls", true );
+    UiUtil::loadHierarchy( window );
+    window->setState( IGameActor::State::Play, true );
+    auto actor = UiUtil::createButton( "Live button", false );
+    auto button = actor->getComponent<Button>();
+    button->setUseNativeUI( false );
+    window->addChild( actor );
+    UiUtil::loadHierarchy( window );
+    BOOST_REQUIRE( button->getImage() );
+    BOOST_REQUIRE( button->getText() );
+    BOOST_CHECK_EQUAL( button->getText()->getText(), "Live button" );
+    BOOST_CHECK_EQUAL( actor->getChildren().size(), 2 );
+    UiUtil::loadHierarchy( window );
+    BOOST_CHECK_EQUAL( actor->getChildren().size(), 2 );
+    UiUtil::setAlignment( actor, HorizontalAlignment::RIGHT, VerticalAlignment::BOTTOM );
+    BOOST_CHECK( actor->getComponent<LayoutTransform>()->getAnchor() == Vector2<real_Num>( 1, 0 ) );
+    UiUtil::setAlignment( actor, HorizontalAlignment::CUSTOM, VerticalAlignment::CUSTOM );
+    BOOST_CHECK( actor->getComponent<LayoutTransform>()->getAnchor() == Vector2<real_Num>( 1, 0 ) );
 }
