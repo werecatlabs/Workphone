@@ -250,7 +250,7 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_vehicle_properties, ProceduralCom
 {
     scene::ProceduralVehicle vehicle;
     auto input = vehicle.getProperties();
-    BOOST_CHECK( vehicle.getConfig().physicsPreset == procedural::VehiclePhysicsPreset::HelicopterLittleBird );
+    BOOST_CHECK( vehicle.getConfig().physicsPreset == procedural::VehiclePhysicsPreset::Warbird );
     input->setProperty( "Seed", u32( 456 ) );
     input->setProperty( "Physics Preset", String( "GT" ) );
     input->setProperty( "Appearance Quality", String( "High" ) );
@@ -275,7 +275,7 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_helicopter_preset_properties, Pro
 {
     scene::ProceduralVehicle vehicle;
     auto input = vehicle.getProperties();
-    BOOST_CHECK_EQUAL( propertyValue<String>( input, "Physics Preset" ), "Helicopter - Little Bird" );
+    input->setProperty( "Physics Preset", String( "Helicopter - Little Bird" ) );
     input->setProperty( "Main Rotor Blades", u32( 6 ) );
     input->setProperty( "Tail Rotor Blades", u32( 4 ) );
     input->setProperty( "Main Rotor Radius", real_Num( 4.5 ) );
@@ -288,6 +288,22 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_helicopter_preset_properties, Pro
     input->setProperty( "Main Rotor Blades", u32( 99 ) );
     vehicle.setProperties( input );
     BOOST_CHECK_EQUAL( vehicle.getConfig().geometry.mainRotorBlades, 8u );
+}
+
+BOOST_FIXTURE_TEST_CASE( procedural_components_warbird_properties, ProceduralComponentFixture )
+{
+    scene::ProceduralVehicle vehicle;
+    auto input = vehicle.getProperties();
+    BOOST_CHECK_EQUAL( propertyValue<String>( input, "Physics Preset" ), "Plane - Warbird" );
+    input->setProperty( "Wing Span", real_Num( 12.0 ) );
+    input->setProperty( "Propeller Blades", u32( 3 ) );
+    input->setProperty( "Landing Gear Down", false );
+    vehicle.setProperties( input );
+    auto output = vehicle.getProperties();
+    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Physics Preset" ), "Plane - Warbird" );
+    BOOST_CHECK_EQUAL( propertyValue<u32>( output, "Propeller Blades" ), 3u );
+    BOOST_CHECK_CLOSE( vehicle.getConfig().geometry.wingSpan, 12.0f, .01f );
+    BOOST_CHECK( !vehicle.getConfig().geometry.landingGearDown );
 }
 
 BOOST_FIXTURE_TEST_CASE( procedural_components_detached_meshes, ProceduralComponentFixture )

@@ -1045,6 +1045,167 @@ namespace workphone
                 }
                 return lod;
             }
+            VehicleLOD buildWarbirdLOD( const VehicleGeometryConfig &cfg, std::uint32_t level )
+            {
+                VehicleLOD lod;
+                lod.level = level;
+                lod.suggestedScreenCoverage = level == 0 ? .32f : ( level == 1 ? .085f : 0.0f );
+                const float scale = cfg.bodyLength / 9.8f;
+                const float width = cfg.bodyWidth / 1.2f;
+                const unsigned radial = level == 0 ? 40u : ( level == 1 ? 24u : 12u );
+                Builder hull( "warbird_fuselage", VehicleMaterial::Paint );
+                Builder wings( "warbird_wings", VehicleMaterial::Paint );
+                Builder tail( "warbird_tail", VehicleMaterial::Paint );
+                Builder canopy( "warbird_canopy", VehicleMaterial::Glass );
+                Builder trim( "warbird_details", VehicleMaterial::CarbonMatte );
+                Builder propeller( "warbird_propeller", VehicleMaterial::CarbonMatte );
+                Builder gear( "warbird_landing_gear", VehicleMaterial::Suspension );
+                Builder tyres( "warbird_tyres", VehicleMaterial::Tyre );
+                struct Station { float z, halfWidth, y, height; };
+                auto loft = [&]( Builder &builder, const Array<Station> &stations ) {
+                    const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
+                    for( const auto &station : stations )
+                        for( unsigned col = 0; col <= radial; ++col )
+                        {
+                            const float angle = kTwoPi * col / radial;
+                            builder.vertex( { station.halfWidth * width * std::cos( angle ),
+                                ( station.y + station.height * std::sin( angle ) ) * scale,
+                                station.z * scale }, { float( col ) / radial,
+                                ( station.z + 4.8f ) / 9.5f } );
+                        }
+                    const unsigned columns = radial + 1;
+                    for( unsigned row = 0; row + 1 < stations.size(); ++row )
+                        for( unsigned col = 0; col < radial; ++col )
+                        {
+                            const auto a = base + row * columns + col, d = a + columns;
+                            builder.triangle( a, a + 1, d );
+                            builder.triangle( a + 1, d + 1, d );
+                        }
+                    for( bool front : { true, false } )
+                    {
+                        const auto &station = front ? stations.front() : stations.back();
+                        const auto centre = builder.vertex( { 0, station.y * scale, station.z * scale }, { .5f, .5f } );
+                        const auto ring = front ? base : base + ( stations.size() - 1 ) * columns;
+                        for( unsigned col = 0; col < radial; ++col )
+                            if( front ) builder.triangle( centre, ring + col + 1, ring + col );
+                            else builder.triangle( centre, ring + col, ring + col + 1 );
+                    }
+                };
+                loft( hull, { { -4.0f, .40f, 1.90f, .43f }, { -3.5f, .52f, 1.9f, .55f },
+                    { -2.1f, .60f, 1.9f, .64f }, { -.8f, .58f, 1.85f, .65f },
+                    { .8f, .49f, 1.8f, .55f }, { 2.6f, .26f, 1.85f, .34f },
+                    { 3.8f, .12f, 1.9f, .19f }, { 4.7f, .035f, 1.9f, .05f } } );
+                loft( hull, { { -4.8f, .025f, 1.9f, .025f }, { -4.55f, .23f, 1.9f, .23f },
+                             { -4.02f, .40f, 1.9f, .40f } } );
+                loft( canopy, { { -.95f, .03f, 2.32f, .03f }, { -.60f, .38f, 2.48f, .38f },
+                               { .15f, .43f, 2.49f, .47f }, { .85f, .32f, 2.36f, .33f },
+                               { 1.35f, .03f, 2.23f, .03f } } );
+                // Closed elliptical planform surfaces with a thin airfoil section.
+                auto face = []( Builder &b, Vector3F a, Vector3F c, Vector3F d, Vector3F e, Vector3F outward ) {
+                    if( ( c - a ).crossProduct( d - a ).dotProduct( outward ) < 0 )
+                        b.quad( a, e, d, c );
+                    else b.quad( a, c, d, e );
+                };
+                auto wing = [&]( Builder &builder, float span, float chord, float z, float y, float rise ) {
+                    const unsigned spans = level == 0 ? 24u : ( level == 1 ? 14u : 8u );
+                    const unsigned chords = level == 0 ? 12u : ( level == 1 ? 8u : 4u );
+                    for( int side : { -1, 1 } )
+                    {
+                        auto point = [&]( unsigned row, unsigned col, int upper ) {
+                            const float t = float( row ) / spans, q = float( col ) / chords;
+                            const float localChord = chord * std::sqrt( std::max( .015f, 1 - t * t ) );
+                            const float thickness = .005f + chord * .045f * std::sin( q * kPi ) * ( 1 - .65f * t );
+                            return Vector3F( side * ( .20f * width + ( span * .5f - .20f * width ) * t ),
+                                ( y + rise * t + upper * thickness ) * scale,
+                                ( z + .32f * t + ( q - .45f ) * localChord ) * scale );
+                        };
+                        for( unsigned row = 0; row < spans; ++row )
+                        {
+                            for( unsigned col = 0; col < chords; ++col )
+                                for( int upper : { -1, 1 } )
+                                    face( builder, point( row, col, upper ), point( row + 1, col, upper ),
+                                        point( row + 1, col + 1, upper ), point( row, col + 1, upper ), { 0, float( upper ), 0 } );
+                            for( unsigned col : { 0u, chords } )
+                                face( builder, point( row, col, -1 ), point( row + 1, col, -1 ),
+                                    point( row + 1, col, 1 ), point( row, col, 1 ), { 0, 0, col == 0 ? -1.0f : 1.0f } );
+                        }
+                        for( unsigned row : { 0u, spans } )
+                            for( unsigned col = 0; col < chords; ++col )
+                                face( builder, point( row, col, -1 ), point( row, col + 1, -1 ),
+                                    point( row, col + 1, 1 ), point( row, col, 1 ),
+                                    { float( side ) * ( row == 0 ? -1.0f : 1.0f ), 0, 0 } );
+                    }
+                };
+                wing( wings, cfg.wingSpan, 2.65f, -.55f, 1.37f, .36f );
+                wing( tail, cfg.wingSpan * .32f, 1.25f, 3.65f, 1.92f, .06f );
+                // Rounded vertical tail, using the same loft in a rotated local frame.
+                Builder fin( "fin", VehicleMaterial::Paint );
+                loft( fin, { { 0, .025f, 0, .025f }, { .35f, .07f, .04f, .62f },
+                             { 1.05f, .065f, .16f, .54f }, { 1.55f, .025f, .30f, .10f } } );
+                for( auto &vertex : fin.mesh.vertices )
+                {
+                    const auto p = vertex.position;
+                    vertex.position = { p.x, 1.9f * scale + p.z, 3.75f * scale + p.y };
+                }
+                // Swapping the local vertical/longitudinal axes reverses handedness.
+                for( std::size_t i = 0; i < fin.mesh.indices.size(); i += 3 )
+                    std::swap( fin.mesh.indices[i + 1], fin.mesh.indices[i + 2] );
+                const auto tailBase = static_cast<std::uint32_t>( tail.mesh.vertices.size() );
+                tail.mesh.vertices.insert( tail.mesh.vertices.end(), fin.mesh.vertices.begin(), fin.mesh.vertices.end() );
+                for( auto index : fin.mesh.indices ) tail.mesh.indices.push_back( tailBase + index );
+                const Vector3F hub( 0, 1.9f * scale, -4.04f * scale );
+                for( unsigned blade = 0; blade < cfg.propellerBlades; ++blade )
+                {
+                    const float angle = kTwoPi * blade / cfg.propellerBlades + .25f;
+                    const auto begin = propeller.mesh.vertices.size();
+                    propeller.box( hub + Vector3F( 0, ( .28f + cfg.propellerRadius ) * .5f, 0 ),
+                                   { .20f * scale, cfg.propellerRadius - .28f, .045f * scale } );
+                    for( auto i = begin; i < propeller.mesh.vertices.size(); ++i )
+                    {
+                        const auto local = propeller.mesh.vertices[i].position - hub;
+                        propeller.mesh.vertices[i].position = hub + Vector3F(
+                            local.x * std::cos( angle ) - local.y * std::sin( angle ),
+                            local.x * std::sin( angle ) + local.y * std::cos( angle ), local.z );
+                    }
+                }
+                if( cfg.landingGearDown )
+                {
+                    for( int side : { -1, 1 } )
+                    {
+                        const Vector3F centre( side * 1.35f * width, .32f * scale, -.70f * scale );
+                        addRod( gear, { side * 1.6f * width, 1.4f * scale, -.55f * scale }, centre, .045f * scale, radial / 2 );
+                        addTyre( tyres, centre, .20f * scale, .32f * scale, radial, radial / 2, side > 0, 1.0f );
+                    }
+                    const Vector3F centre( 0, 1.10f * scale, 3.95f * scale );
+                    addRod( gear, { 0, 1.75f * scale, 3.80f * scale }, centre, .035f * scale, radial / 2 );
+                    addTyre( tyres, centre, .12f * scale, .18f * scale, radial, radial / 2, false, 1.0f );
+                }
+                for( float z : { -.55f, .85f } )
+                    for( unsigned i = 0; i < radial / 2; ++i )
+                    {
+                        const float a = kPi * i / ( radial / 2 ), b = kPi * ( i + 1 ) / ( radial / 2 );
+                        const float radius = z < 0 ? .38f : .32f;
+                        const float y = z < 0 ? 2.48f : 2.36f;
+                        addRod( trim, { radius * width * std::cos( a ), ( y + radius * std::sin( a ) ) * scale, z * scale },
+                                      { radius * width * std::cos( b ), ( y + radius * std::sin( b ) ) * scale, z * scale },
+                                      .018f * scale, 6 );
+                    }
+                if( cfg.includeFineDetails && level < 2 )
+                {
+                    trim.box( { 0, 1.05f * scale, .45f * scale }, { .48f * width, .35f * scale, .85f * scale } );
+                    for( int side : { -1, 1 } )
+                        for( unsigned pipe = 0; pipe < 6; ++pipe )
+                            addRod( trim, { side * .52f * width, 2.05f * scale, ( -3.25f + pipe * .18f ) * scale },
+                                          { side * .68f * width, 2.0f * scale, ( -3.12f + pipe * .18f ) * scale }, .045f * scale, 6 );
+                }
+                for( Builder *builder : { &hull, &wings, &tail, &canopy, &trim, &propeller, &gear, &tyres } )
+                    if( builder->mesh.hasGeometry() )
+                    {
+                        builder->finalise();
+                        lod.sections.push_back( std::move( builder->mesh ) );
+                    }
+                return lod;
+            }
         }  // namespace
 
 
@@ -1061,8 +1222,13 @@ namespace workphone
             cfg.frontTyreWidth = clampF( cfg.frontTyreWidth, 0.14f, 0.55f );
             cfg.rearTyreWidth = clampF( cfg.rearTyreWidth, 0.14f, 0.65f );
             const bool helicopter = cfg.bodyStyle == VehicleBodyStyle::HelicopterLittleBird;
-            cfg.bodyLength = helicopter ? clampF( cfg.bodyLength, 5.0f, 12.0f )
+            const bool plane = cfg.bodyStyle == VehicleBodyStyle::Warbird;
+            const bool aircraft = helicopter || plane;
+            cfg.bodyLength = aircraft ? clampF( cfg.bodyLength, 5.0f, 12.0f )
                                         : clampF( cfg.bodyLength, cfg.wheelbase + .7f, 7.0f );
+            cfg.wingSpan = clampF( cfg.wingSpan, 6.0f, 18.0f );
+            cfg.propellerRadius = clampF( cfg.propellerRadius, .6f, 2.0f );
+            cfg.propellerBlades = std::clamp<std::uint32_t>( cfg.propellerBlades, 2, 5 );
             cfg.mainRotorRadius = clampF( cfg.mainRotorRadius, 1.5f, 8.0f );
             cfg.tailRotorRadius = clampF( cfg.tailRotorRadius, .25f, 1.5f );
             cfg.mainRotorBlades = std::clamp<std::uint32_t>( cfg.mainRotorBlades, 2, 8 );
@@ -1073,7 +1239,7 @@ namespace workphone
             const std::uint32_t count = cfg.generateThreeLODs ? 3u : 1u;
             result.lods.reserve( count );
             for( std::uint32_t level = 0; level < count; ++level )
-                result.lods.push_back( helicopter ? buildHelicopterLOD( cfg, level )
+                result.lods.push_back( plane ? buildWarbirdLOD( cfg, level ) : helicopter ? buildHelicopterLOD( cfg, level )
                                        : cfg.bodyStyle != VehicleBodyStyle::GrandPrix
                                            ? buildCoupeLOD( cfg, level ) : buildLOD( cfg, level ) );
 
@@ -1109,12 +1275,14 @@ namespace workphone
             const float frontZ = -cfg.wheelbase * 0.45f;
             const float rearZ = frontZ + cfg.wheelbase;
             result.centreOfMass = Vector3F( 0, 0.31f, 0.18f );
-            result.frontAxle = helicopter ? Vector3F() : Vector3F( 0, cfg.tyreRadius, frontZ );
-            result.rearAxle = helicopter ? Vector3F() : Vector3F( 0, cfg.tyreRadius, rearZ );
+            result.frontAxle = aircraft ? Vector3F() : Vector3F( 0, cfg.tyreRadius, frontZ );
+            result.rearAxle = aircraft ? Vector3F() : Vector3F( 0, cfg.tyreRadius, rearZ );
             result.cockpitEye = Vector3F( 0, cfg.bodyStyle == VehicleBodyStyle::GrandPrix ? .84f :
                                                  ( cfg.bodyStyle == VehicleBodyStyle::GT ? 1.12f : 1.04f ), .10f );
             if( helicopter )
                 result.cockpitEye = Vector3F( 0, 1.65f * cfg.bodyLength / 7.0f, -1.25f * cfg.bodyLength / 7.0f );
+            if( plane )
+                result.cockpitEye = Vector3F( 0, 2.65f * cfg.bodyLength / 9.8f, .15f * cfg.bodyLength / 9.8f );
             return result;
         }
     }  // namespace procedural

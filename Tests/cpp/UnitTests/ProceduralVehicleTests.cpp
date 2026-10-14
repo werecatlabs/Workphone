@@ -186,6 +186,48 @@ BOOST_AUTO_TEST_CASE( little_bird_helicopter_has_valid_lods_rotors_and_no_car_ru
     }
 }
 
+BOOST_AUTO_TEST_CASE( warbird_preset_has_valid_wings_canopy_propeller_and_retractable_gear )
+{
+    VehicleGenerationConfig request;
+    request.physicsPreset = VehiclePhysicsPreset::Warbird;
+    request.appearance.quality = VehicleAppearanceQuality::Preview;
+    for( bool details : { false, true } )
+        for( bool gearDown : { false, true } )
+        {
+            request.geometry.includeFineDetails = details;
+            request.geometry.generateThreeLODs = details;
+            request.geometry.landingGearDown = gearDown;
+            const auto plane = WPVehicleGenerator::generate( request );
+            for( const auto &issue : plane.issues )
+                BOOST_CHECK_MESSAGE( !issue.error, issue.component + ": " + issue.message );
+            BOOST_REQUIRE( plane.isValid() );
+            BOOST_CHECK_EQUAL( plane.contentHash, WPVehicleGenerator::generate( request ).contentHash );
+            BOOST_CHECK_EQUAL( plane.geometry.lods.size(), details ? 3u : 1u );
+            BOOST_CHECK_GT( plane.geometry.boundsMax.x - plane.geometry.boundsMin.x, 11.0f );
+            for( const auto &lod : plane.geometry.lods )
+            {
+                bool wings = false, canopy = false, propeller = false, gear = false;
+                for( const auto &section : lod.sections )
+                {
+                    wings |= section.name == "warbird_wings" && section.hasGeometry();
+                    canopy |= section.name == "warbird_canopy" && section.hasGeometry();
+                    propeller |= section.name == "warbird_propeller" && section.vertices.size() == 4u * 24u;
+                    gear |= section.name == "warbird_landing_gear" && section.hasGeometry();
+                }
+                BOOST_CHECK( wings && canopy && propeller );
+                BOOST_CHECK_EQUAL( gear, gearDown );
+            }
+            auto state = WPVehicleDynamics::reset( plane.physics );
+            VehicleDynamicsTelemetry telemetry;
+            BOOST_CHECK( !WPVehicleDynamics::stepFixed( plane.physics, {}, {}, {}, 1.0 / 120, state, telemetry ) );
+        }
+    request.geometry.propellerBlades = 3;
+    const auto variant = WPVehicleGenerator::generate( request );
+    BOOST_REQUIRE( variant.isValid() );
+    for( const auto &section : variant.geometry.lods.front().sections )
+        if( section.name == "warbird_propeller" ) BOOST_CHECK_EQUAL( section.vertices.size(), 72u );
+}
+
 BOOST_AUTO_TEST_CASE( runtime_dynamics_accelerates_brakes_and_replays_deterministically )
 {
     const VehiclePhysicsConfig physics =
