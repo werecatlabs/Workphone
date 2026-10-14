@@ -290,6 +290,43 @@ namespace workphone::scene
         return actor;
     }
 
+    SmartPtr<IGameActor> UiUtil::createButtonEx( const String &label, f32 x, f32 y, f32 width,
+                                                 f32 height, bool addToScene )
+    {
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        WP_ASSERT( applicationManager );
+        auto sceneManager = applicationManager->getGameManagerPtr();
+        auto scene = sceneManager->getCurrentScenePtr();
+        auto actor = sceneManager->createActorPtr();
+        WP_ASSERT( actor );
+        auto name = String( "Button" );
+        actor->setName( name );
+        auto size = Vector2<real_Num>( width, height );
+        auto anchor = Vector2<real_Num>( 0.5f, 0.5f );
+        auto canvasTransform = actor->addComponent<LayoutTransform>();
+        if( canvasTransform )
+        {
+            canvasTransform->setSize( size );
+            canvasTransform->setPosition( Vector2<real_Num>( x, y ) );
+            canvasTransform->setAnchor( anchor );
+            canvasTransform->setHorizontalAlignment( HorizontalAlignment::CENTER );
+            canvasTransform->setVerticalAlignment( VerticalAlignment::CENTER );
+            canvasTransform->updateAnchorFromAlignment();
+        }
+
+        auto button = actor->addComponent<Button>();
+        WP_ASSERT( button );
+        button->setCascadeInput( false );
+        button->setLabel( label );
+
+        if( addToScene )
+        {
+            scene->addActor( actor );
+        }
+
+        return actor;
+    }
+
     SmartPtr<IGameActor> UiUtil::createText( const String &label, bool addToScene )
     {
         using namespace scene;

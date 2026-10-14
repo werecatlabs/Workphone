@@ -144,6 +144,15 @@ namespace workphone
             static SmartPtr<IGameActor> createButton( const String &label, bool addToScene );
 
             /**
+             * @brief Creates a button UI actor with the specified label.
+             * @param label The button label to display.
+             * @param addToScene If true, adds the actor to the scene.
+             * @return Smart pointer to the created button actor.
+             */
+            static SmartPtr<IGameActor> createButtonEx( const String &label, f32 x, f32 y, f32 width,
+                                                        f32 height, bool addToScene );
+
+            /**
              * @brief Creates a dropdown UI actor with the specified label.
              * @param label The dropdown label to display.
              * @param addToScene If true, adds the actor to the scene.
