@@ -35,7 +35,7 @@ namespace workphone
             VehicleGeometry geometry;
             VehicleAppearanceBundle appearance;
             VehiclePhysicsConfig physics;
-            std::vector<VehicleGenerationIssue> issues;
+            Array<VehicleGenerationIssue> issues;
             std::uint64_t contentHash = 0;
 
             bool isValid() const noexcept;
