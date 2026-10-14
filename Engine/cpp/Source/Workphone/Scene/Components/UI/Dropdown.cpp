@@ -42,6 +42,7 @@ namespace workphone::scene
 
     Dropdown::Dropdown()
     {
+        setLabel( "Dropdown" );
     }
 
     Dropdown::~Dropdown()
@@ -361,14 +362,14 @@ namespace workphone::scene
 
             if( m_button )
             {
-                auto func = [this]( hash_type value ) {
-                    if( auto actor = getActorPtr() )
+                auto owner = WeakPtr<Dropdown>( this );
+                auto func = [owner]( hash_type value ) {
+                    if( auto dropdown = owner.lock() )
                     {
-                        auto enabled = isEnabled() && actor->isEnabledInScene();
-                        if( enabled )
+                        if( auto actor = dropdown->getActorPtr();
+                            actor && dropdown->isEnabled() && actor->isEnabledInScene() )
                         {
-                            m_isOpen = !m_isOpen;
-                            updateOptionsPanelVisibility();
+                            dropdown->setOpen( !dropdown->isOpen() );
                         }
                     }
                 };
@@ -479,13 +480,6 @@ namespace workphone::scene
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
-            auto application = applicationManager->getApplication();
-            if( !application )
-            {
-                WP_LOG_ERROR( "Application is null." );
-                return;
-            }
-
             if( m_content )
             {
                 m_content->destroyChildren();
@@ -502,7 +496,7 @@ namespace workphone::scene
 
             if( !m_content )
             {
-                m_content = application->createPanel( nullptr, "", false );
+                m_content = UiUtil::createPanel( nullptr, "", false );
 
                 m_content->setName( m_contentName );
                 actor->addChild( m_content );
@@ -555,7 +549,7 @@ namespace workphone::scene
 
             if( !m_panel )
             {
-                m_panel = application->createPanel( nullptr, "", false );
+                m_panel = UiUtil::createPanel( nullptr, "", false );
                 m_panel->setName( m_panelName );
                 m_content->addChild( m_panel );
 
@@ -580,10 +574,10 @@ namespace workphone::scene
                 verticalLayout = m_panel->addComponent<VerticalLayout>();
             }
 
-            auto scrollView = m_panel->getComponent<ScrollView>();
+            auto scrollView = m_content->getComponent<ScrollView>();
             if( !scrollView )
             {
-                scrollView = m_panel->addComponent<ScrollView>();
+                scrollView = m_content->addComponent<ScrollView>();
             }
 
             auto scrollbarActor = m_content->findChildByName( m_scrollbarName );
@@ -650,7 +644,7 @@ namespace workphone::scene
                     continue;
                 }
 
-                auto buttonActor = application->createButton( option->text, nullptr, "", false );
+                auto buttonActor = UiUtil::createButton( option->text, false );
                 if( buttonActor )
                 {
                     m_panel->addChild( buttonActor );
@@ -662,16 +656,22 @@ namespace workphone::scene
 
                     if( auto button = buttonActor->getComponent<Button>() )
                     {
-                        button->setCallbackFunction( [this, option]( hash_type value ) {
-                            // Update the selected text
-                            if( m_button && option )
+                        auto owner = WeakPtr<Dropdown>( this );
+                        button->setCallbackFunction( [owner, option]( hash_type value ) {
+                            auto dropdown = owner.lock();
+                            if( !dropdown )
                             {
-                                m_button->setTextStr( option->text );
+                                return;
+                            }
+                            // Update the selected text
+                            if( auto trigger = dropdown->getButton(); trigger && option )
+                            {
+                                trigger->setTextStr( option->text );
+                                dropdown->setLabel( option->text );
                             }
 
                             // Close the dropdown
-                            setOpen( false );
-                            updateOptionsPanelVisibility();
+                            dropdown->setOpen( false );
                         } );
                     }
 
@@ -690,6 +690,11 @@ namespace workphone::scene
             }
 
             verticalLayout->updateTransform();
+            auto optionHeight = 60.0f;
+            m_panel->getComponent<LayoutTransform>()->setSize(
+                Vector2<real_Num>( panelSize.x, optionHeight * static_cast<real_Num>( m_options.size() ) ) );
+            UiUtil::loadHierarchy( m_content );
+            scrollView->updateScrollBar();
 
             m_content->setFlag( IGameActor::ActorFlagHidden, true, true );
             m_panel->setFlag( IGameActor::ActorFlagDontSave, true, true );
@@ -721,12 +726,19 @@ namespace workphone::scene
 
         if( m_content )
         {
+            m_content->setFlag( IGameActor::ActorFlagHidden, !opened, true );
             m_content->setEnabled( opened );
         }
     }
 
     void Dropdown::createUI()
     {
+        // A supplied trigger selects the composed path. Renderers without a native dropdown
+        // still provide buttons, text and images, and no second native widget is created.
+        if( m_button )
+        {
+            return;
+        }
         try
         {
             auto element = getElement();
@@ -742,9 +754,13 @@ namespace workphone::scene
                 }
 
                 auto dropdown = renderUI->addElementByType<ui::IUIDropdown>();
+                if( !dropdown )
+                {
+                    return;
+                }
                 setElement( dropdown );
 
-                setLabel( "Dropdown" );
+                dropdown->setLabel( getLabel() );
 
                 updateVisibility();
             }

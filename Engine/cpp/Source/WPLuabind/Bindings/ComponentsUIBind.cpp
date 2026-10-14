@@ -179,6 +179,10 @@ namespace workphone
 
     String _getUiHorizontalAlignmentString( lua_Integer alignment )
     {
+        if( alignment < 0 || alignment >= static_cast<lua_Integer>( HorizontalAlignment::COUNT ) )
+        {
+            return {};
+        }
         return scene::UiUtil::getHorizontalAlignmentString(
             static_cast<HorizontalAlignment>( alignment ) );
     }
@@ -190,8 +194,11 @@ namespace workphone
 
     String _getUiVerticalAlignmentString( lua_Integer alignment )
     {
-        return scene::UiUtil::getVerticalAlignmentString(
-            static_cast<VerticalAlignment>( alignment ) );
+        if( alignment < 0 || alignment >= static_cast<lua_Integer>( VerticalAlignment::COUNT ) )
+        {
+            return {};
+        }
+        return scene::UiUtil::getVerticalAlignmentString( static_cast<VerticalAlignment>( alignment ) );
     }
 
     lua_Integer _getUiVerticalAlignment( const String &str )
@@ -199,48 +206,119 @@ namespace workphone
         return static_cast<lua_Integer>( scene::UiUtil::getVerticalAlignment( str ) );
     }
 
+    void _setUiAlignment( SmartPtr<scene::IGameActor> actor, lua_Integer horizontal,
+                          lua_Integer vertical )
+    {
+        if( horizontal < 0 || horizontal >= static_cast<lua_Integer>( HorizontalAlignment::COUNT ) ||
+            vertical < 0 || vertical >= static_cast<lua_Integer>( VerticalAlignment::COUNT ) )
+        {
+            throw std::invalid_argument( "UiUtil received an invalid alignment" );
+        }
+        scene::UiUtil::setAlignment( actor, static_cast<HorizontalAlignment>( horizontal ),
+                                     static_cast<VerticalAlignment>( vertical ) );
+    }
+
+    SmartPtr<scene::IGameActor> _createUiDropdownWithOptions( const String &label,
+                                                              luabind::object options, bool addToScene )
+    {
+        if( luabind::type( options ) != LUA_TTABLE )
+        {
+            throw std::invalid_argument( "UiUtil dropdown options must be a sequence of strings" );
+        }
+        size_t count = 0;
+        for( luabind::iterator it( options ), end; it != end; ++it )
+        {
+            ++count;
+        }
+        Array<String> labels;
+        labels.reserve( count );
+        for( size_t i = 1; i <= count; ++i )
+        {
+            luabind::object value = options[i];
+            if( luabind::type( value ) != LUA_TSTRING )
+            {
+                throw std::invalid_argument(
+                    "UiUtil dropdown options must be a dense sequence of strings" );
+            }
+            labels.push_back( luabind::object_cast<String>( value ) );
+        }
+        return scene::UiUtil::createDropdownWithOptions( label, labels, addToScene );
+    }
+
+    luabind::object _uiStringTable( lua_State *L, const Array<String> &strings )
+    {
+        auto table = luabind::newtable( L );
+        for( size_t i = 0; i < strings.size(); ++i )
+        {
+            table[i + 1] = strings[i];
+        }
+        return table;
+    }
+
     void bindComponentUI( lua_State *L )
     {
         using namespace scene;
         using namespace luabind;
 
-        module( L )[class_<UiUtil>( "UiUtil" )
-                        .scope[def( "getHorizontalAlignmentString", _getUiHorizontalAlignmentString ),
-                               def( "getHorizontalAlignment", _getUiHorizontalAlignment ),
-                               def( "getHorizontalAlignmentTypesString",
-                                    &UiUtil::getHorizontalAlignmentTypesString ),
-                               def( "getVerticalAlignmentString", _getUiVerticalAlignmentString ),
-                               def( "getVerticalAlignment", _getUiVerticalAlignment ),
-                               def( "getVerticalAlignmentTypesString",
-                                    &UiUtil::getVerticalAlignmentTypesString ),
-                               def( "createText", &UiUtil::createText ),
-                               def( "createButton", &UiUtil::createButton ),
-                               def( "createDropdown", &UiUtil::createDropdown ),
-                               def( "createPanel", &UiUtil::createPanel ),
-                               def( "createSlider", &UiUtil::createSlider ),
-                               def( "createSliderVertical", &UiUtil::createSliderVertical ),
-                               def( "createScrollbar", &UiUtil::createScrollbar ),
-                               def( "createScrollbarVertical", &UiUtil::createScrollbarVertical ),
-                               def( "createScrollview", &UiUtil::createScrollview )]];
+        module(
+            L )[class_<UiUtil>( "UiUtil" )
+                    .scope[def( "getHorizontalAlignmentString", _getUiHorizontalAlignmentString ),
+                           def( "getHorizontalAlignment", _getUiHorizontalAlignment ),
+                           def( "getHorizontalAlignmentTypesString",
+                                &UiUtil::getHorizontalAlignmentTypesString ),
+                           def( "getVerticalAlignmentString", _getUiVerticalAlignmentString ),
+                           def( "getVerticalAlignment", _getUiVerticalAlignment ),
+                           def( "getVerticalAlignmentTypesString",
+                                &UiUtil::getVerticalAlignmentTypesString ),
+                           def( "createText", &UiUtil::createText ),
+                           def( "createButton", &UiUtil::createButton ),
+                           def( "createButtonEx", &UiUtil::createButtonEx ),
+                           def( "setRect", &UiUtil::setRect ), def( "setAlignment", _setUiAlignment ),
+                           def( "loadHierarchy", &UiUtil::loadHierarchy ),
+                           def( "createDropdown", &UiUtil::createDropdown ),
+                           def( "createDropdownWithOptions", _createUiDropdownWithOptions ),
+                           def( "createImage", &UiUtil::createImage ),
+                           def( "createInputField", &UiUtil::createInputField ),
+                           def( "createToggle", &UiUtil::createToggle ),
+                           def( "createLayout", &UiUtil::createLayout ),
+                           def( "createHorizontalLayout", &UiUtil::createHorizontalLayout ),
+                           def( "createVerticalLayout", &UiUtil::createVerticalLayout ),
+                           def( "createGridLayout", &UiUtil::createGridLayout ),
+                           def( "createTableLayout", &UiUtil::createTableLayout ),
+                           def( "createTableCell", &UiUtil::createTableCell ),
+                           def( "createTabView", &UiUtil::createTabView ),
+                           def( "createTabPage", &UiUtil::createTabPage ),
+                           def( "createTabItem", &UiUtil::createTabItem ),
+                           def( "createToggleGroup", &UiUtil::createToggleGroup ),
+                           def( "createToolTip", &UiUtil::createToolTip ),
+                           def( "createThumbnail", &UiUtil::createThumbnail ),
+                           def( "createScrollView", &UiUtil::createScrollView ),
+                           def( "createPanel", &UiUtil::createPanel ),
+                           def( "createSlider", &UiUtil::createSlider ),
+                           def( "createSliderVertical", &UiUtil::createSliderVertical ),
+                           def( "createScrollbar", &UiUtil::createScrollbar ),
+                           def( "createScrollbarVertical", &UiUtil::createScrollbarVertical ),
+                           def( "createScrollview", &UiUtil::createScrollview )]];
 
-        object uiUtil = globals( L )[ "UiUtil" ];
-        uiUtil[ "directionNames" ] = UiUtil::directionNames;
-        uiUtil[ "verticalAlignmentTypes" ] = UiUtil::verticalAlignmentTypes;
-        uiUtil[ "horizontalAlignmentTypes" ] = UiUtil::horizontalAlignmentTypes;
-        uiUtil[ "directionStr" ] = UiUtil::directionStr;
-        uiUtil[ "handleStr" ] = UiUtil::handleStr;
-        uiUtil[ "backgroundStr" ] = UiUtil::backgroundStr;
-        uiUtil[ "fillStr" ] = UiUtil::fillStr;
-        uiUtil[ "scrollValueStr" ] = UiUtil::scrollValueStr;
-        uiUtil[ "sliderValueStr" ] = UiUtil::sliderValueStr;
-        uiUtil[ "topStr" ] = UiUtil::topStr;
-        uiUtil[ "centerStr" ] = UiUtil::centerStr;
-        uiUtil[ "bottomStr" ] = UiUtil::bottomStr;
-        uiUtil[ "leftStr" ] = UiUtil::leftStr;
-        uiUtil[ "rightStr" ] = UiUtil::rightStr;
-        uiUtil[ "dropDownNameStr" ] = UiUtil::dropDownNameStr;
-        uiUtil[ "optionStr" ] = UiUtil::optionStr;
-        uiUtil[ "panelStr" ] = UiUtil::panelStr;
+        object uiUtil = globals( L )["UiUtil"];
+        uiUtil["directionNames"] = _uiStringTable( L, UiUtil::directionNames );
+        uiUtil["verticalAlignmentTypes"] = _uiStringTable( L, UiUtil::verticalAlignmentTypes );
+        uiUtil["horizontalAlignmentTypes"] = _uiStringTable( L, UiUtil::horizontalAlignmentTypes );
+        uiUtil["directionStr"] = UiUtil::directionStr;
+        uiUtil["handleStr"] = UiUtil::handleStr;
+        uiUtil["backgroundStr"] = UiUtil::backgroundStr;
+        uiUtil["fillStr"] = UiUtil::fillStr;
+        uiUtil["scrollValueStr"] = UiUtil::scrollValueStr;
+        uiUtil["sliderValueStr"] = UiUtil::sliderValueStr;
+        uiUtil["topStr"] = UiUtil::topStr;
+        uiUtil["centerStr"] = UiUtil::centerStr;
+        uiUtil["bottomStr"] = UiUtil::bottomStr;
+        uiUtil["leftStr"] = UiUtil::leftStr;
+        uiUtil["rightStr"] = UiUtil::rightStr;
+        uiUtil["customStr"] = UiUtil::customStr;
+        uiUtil["dropDownNameStr"] = UiUtil::dropDownNameStr;
+        uiUtil["optionStr"] = UiUtil::optionStr;
+        uiUtil["panelStr"] = UiUtil::panelStr;
 
         // UIComponent binding
         module( L )[class_<UIComponent, Component, SmartPtr<UIComponent>>( "UIComponent" )

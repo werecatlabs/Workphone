@@ -45,6 +45,7 @@ namespace workphone::scene
         m_direction( Direction::Horizontal ),
         m_isDragging( false )
     {
+        setLabel( "Slider" );
     }
 
     Slider::~Slider()
@@ -476,9 +477,13 @@ namespace workphone::scene
                 }
 
                 auto slider = renderUI->addElementByType<ui::IUISlider>();
+                if( !slider )
+                {
+                    return;
+                }
                 setElement( slider );
 
-                setLabel( "Slider" );
+                slider->setLabel( getLabel() );
 
                 updateVisibility();
             }

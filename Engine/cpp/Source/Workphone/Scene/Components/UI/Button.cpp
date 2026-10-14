@@ -38,6 +38,7 @@ namespace workphone::scene
 
     Button::Button()
     {
+        setLabel( "Button" );
         ColourF normalColour = ColourF::White * 0.3f;
         ColourF highlightedColour = ColourF::White * 0.6f;
         ColourF pressedColour = ColourF::White * 0.5f;
@@ -373,8 +374,6 @@ namespace workphone::scene
                             auto button = renderUI->addElementByType<ui::IUIButton>();
                             setElement( button );
 
-                            setLabel( "Button" );
-
                             updateElementState();
                             updateVisibility();
                         }
@@ -486,15 +485,17 @@ namespace workphone::scene
             return m_text->getText();
         }
 
-        return {};
+        return getLabel();
     }
 
     void Button::setTextStr( const String &textStr )
     {
+        setLabel( textStr );
         if( m_text )
         {
             m_text->setText( textStr );
         }
+        updateElementState();
     }
 
     void Button::setImage( SmartPtr<Image> image )

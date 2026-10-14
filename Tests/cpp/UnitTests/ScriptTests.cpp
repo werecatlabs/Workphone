@@ -1,4 +1,5 @@
 #include "UnitTests.hpp"
+#include "UiUtilTestSupport.hpp"
 #include <Workphone/Workphone.hpp>
 #include <boost/test/unit_test.hpp>
 #include <cmath>
@@ -963,3 +964,71 @@ BOOST_AUTO_TEST_CASE( script_lua_manager )
         WP_LOG_EXCEPTION( e );
     }
 }
+
+#if WP_ENABLE_LUA
+BOOST_AUTO_TEST_CASE( script_uiutil_factory_contracts )
+{
+    UiUtilTestGuard guard;
+    LuaStateGuard lua;
+    auto state = lua.get();
+    BOOST_REQUIRE( state );
+    // Minimal bases keep this test independent of scene scripting internals. The UI
+    // registrations and SmartPtr/String converters below are the production bindings.
+    bindBaseObjects( state );
+    bindCore( state );
+    bindParam( state );
+    bindParamList( state );
+    bindMath( state );
+    bindString( state );
+    bindSystem( state );
+    luabind::module(
+        state )[luabind::class_<scene::IGameActor, IResource, SmartPtr<ISharedObject>>( "IActor" )
+                    .def( "getName", &scene::IGameActor::getName ),
+                luabind::class_<scene::IComponent, IResource, SmartPtr<scene::IComponent>>(
+                    "IComponent" ),
+                luabind::class_<scene::Component, scene::IComponent, SmartPtr<scene::Component>>(
+                    "Component" )];
+    bindComponentUI( state );
+    constexpr auto script = R"(
+        assert(UiUtil.directionNames[1] == "Horizontal")
+        assert(UiUtil.horizontalAlignmentTypes[4] == "Custom")
+        assert(UiUtil.customStr == "Custom")
+        assert(UiUtil.getHorizontalAlignmentString(256) == "")
+        assert(UiUtil.getVerticalAlignmentString(-256) == "")
+        assert(UiUtil.getVerticalAlignment("Custom") == 3)
+        local button = UiUtil.createButtonEx("Save", 1, 2, 100, 30, false)
+        assert(button:getName() == "Button")
+        UiUtil.setRect(button, 3, 4, 120, 40)
+        UiUtil.setAlignment(button, 0, 0)
+        assert(not pcall(UiUtil.setAlignment, button, 256, 0))
+        assert(not pcall(UiUtil.setRect, button, 0, 0, -1, 20))
+        UiUtil.loadHierarchy(button)
+        local dropdown = UiUtil.createDropdownWithOptions("Quality", {"Low", "High"}, false)
+        assert(dropdown:getName() == "Dropdown")
+        assert(not pcall(UiUtil.createDropdownWithOptions, "Bad", {"Low", 42}, false))
+        assert(not pcall(UiUtil.createDropdownWithOptions, "Bad", {[2] = "High"}, false))
+        local factories = {
+            function() return UiUtil.createImage("", false) end,
+            function() return UiUtil.createInputField("", "Name", false) end,
+            function() return UiUtil.createToggle("Enabled", true, false) end,
+            function() return UiUtil.createScrollView("Items", false) end,
+            function() return UiUtil.createLayout("Window", false) end,
+            function() return UiUtil.createHorizontalLayout("Row", false) end,
+            function() return UiUtil.createVerticalLayout("Column", false) end,
+            function() return UiUtil.createGridLayout("Grid", 2, false) end,
+            function() return UiUtil.createTableLayout("Table", false) end,
+            function() return UiUtil.createTableCell("Cell", false) end,
+            function() return UiUtil.createTabView("Tabs", false) end,
+            function() return UiUtil.createTabPage("Page", false) end,
+            function() return UiUtil.createTabItem("Tab", false) end,
+            function() return UiUtil.createToggleGroup("Group", false) end,
+            function() return UiUtil.createToolTip("Help", false) end,
+            function() return UiUtil.createThumbnail("Asset", "", false) end,
+        }
+        for _, create in ipairs(factories) do assert(create() ~= nil) end
+    )";
+    const auto status = luaL_dostring( state, script );
+    BOOST_CHECK_MESSAGE( status == LUA_OK, ( status == LUA_OK ? "" : lua_tostring( state, -1 ) ) );
+    BOOST_CHECK( guard.scene->getActors().empty() );
+}
+#endif
