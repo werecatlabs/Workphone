@@ -210,8 +210,10 @@ function SampleVehicleAdvanced:updateControls()
         brake = self.smokePhase == 3 and 1 or 0
         steering = self.smokePhase == 2 and 0.35 or 0
     end
+	
     -- Preserve full lock at low speed and cap lateral acceleration as speed increases.
-    steering = steering * math.min(1, wheelbase * 8 / (math.max(speed * speed, 1) * maxSteer))
+    steering = steering * math.min(1, wheelbase * 8 / (math.max(speed * speed * 0.25, 1) * maxSteer));
+	
     if self.trackSmokeTest and self.raceScene:isPhysicsConfigured() then
         local now = self.timer:getTime()
         self.trackSmokeStartedAt = self.trackSmokeStartedAt or now
