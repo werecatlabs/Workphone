@@ -15,6 +15,8 @@
 #ifndef WORKPHONE_GRAPHICS_RENDERER_DX11_H
 #define WORKPHONE_GRAPHICS_RENDERER_DX11_H
 
+#include "workphone_types.h"
+
 #ifdef _WIN32
 #    include <stdint.h>
 #    include "workphone_vector.h"

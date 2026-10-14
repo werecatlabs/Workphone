@@ -114,6 +114,8 @@ typedef WORKPHONE_INT16 wp_s16;
 typedef WORKPHONE_UINT16 wp_u16;
 typedef WORKPHONE_INT32 wp_s32;
 typedef WORKPHONE_UINT32 wp_u32;
+typedef long long wp_s64;
+typedef unsigned long long wp_u64;
 typedef WORKPHONE_SIZE_TYPE wp_size;
 typedef WORKPHONE_POINTER_TYPE wp_ptr;
 typedef WORKPHONE_BOOL wp_bool;
