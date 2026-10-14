@@ -33,7 +33,8 @@ namespace workphone
         {
             GrandPrix,
             GT,
-            RoadSport
+            RoadSport,
+            HelicopterLittleBird
         };
 
         enum class DrivenAxle

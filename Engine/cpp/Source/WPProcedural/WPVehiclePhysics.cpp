@@ -144,6 +144,24 @@ namespace workphone
             DeterministicRandom rng( seed ^
                                      ( 0x8d58ac26afe12e47ULL + static_cast<std::uint64_t>( preset ) ) );
 
+            if( preset == VehiclePhysicsPreset::HelicopterLittleBird )
+            {
+                // Approximate game-asset mass distribution, not certified flight data.
+                c.bodyLengthM = 7.0;
+                c.bodyWidthM = 1.5;
+                c.massElements = {
+                    box( "cabin and occupants", 440, 0, 1.35, -.90, 1.5, 1.5, 3.2 ),
+                    box( "turbine and transmission", 180, 0, 1.75, .30, .8, .65, 1.2 ),
+                    box( "fuel", 100, 0, 1.0, .05, .65, .5, .7 ),
+                    box( "tail boom and empennage", 65, 0, 1.5, 2.65, .25, .35, 3.5 ),
+                    box( "rotor assembly", 80, 0, 2.65, -.55, 4.0, .15, 4.0 ),
+                    box( "skid gear", 35, 0, .3, -.65, 1.8, .5, 2.9 )
+                };
+                c.aero.referenceAreaM2 = 2.2;
+                c.aero.dragCoefficient = .65;
+                recomputeDerivedProperties( c );
+                return c;
+            }
             if( preset == VehiclePhysicsPreset::GrandPrix )
             {
                 // Geometry is aligned with apex-gp/src/car: axles -1.62/+1.98 m,
@@ -311,15 +329,22 @@ namespace workphone
             mass.frontStaticWeightFraction =
                 axleSpan > 0.0 ? clamp( ( rearZ - mass.centreOfMass.z ) / axleSpan, 0.0, 1.0 ) : 0.5;
             c.massProperties = mass;
-            configureDrivenWheels( c );
+            if( c.preset != VehiclePhysicsPreset::HelicopterLittleBird )
+                configureDrivenWheels( c );
         }
 
         VehiclePhysicsValidation WPVehiclePhysics::validate( const VehiclePhysicsConfig &c )
         {
             VehiclePhysicsValidation result;
-            requirePositive( result, c.wheelbaseM, "wheelbase" );
-            requirePositive( result, c.frontTrackM, "front track" );
-            requirePositive( result, c.rearTrackM, "rear track" );
+            const bool helicopter = c.preset == VehiclePhysicsPreset::HelicopterLittleBird;
+            if( !helicopter )
+            {
+                requirePositive( result, c.wheelbaseM, "wheelbase" );
+                requirePositive( result, c.frontTrackM, "front track" );
+                requirePositive( result, c.rearTrackM, "rear track" );
+            }
+            requirePositive( result, c.bodyLengthM, "body length" );
+            requirePositive( result, c.bodyWidthM, "body width" );
             requirePositive( result, c.massProperties.massKg, "mass" );
             requirePositive( result, c.gravityMps2, "gravity" );
             requirePositive( result, c.massProperties.inertia.xx, "pitch inertia" );
@@ -367,6 +392,15 @@ namespace workphone
                     1.0e-6 )
                 addError( result, "derived mass properties are stale; call recomputeDerivedProperties" );
 
+            if( helicopter )
+            {
+                requirePositive( result, c.massProperties.centreOfMass.y, "centre-of-mass height" );
+                requirePositive( result, c.aero.referenceAreaM2, "aero reference area" );
+                if( !finite( c.aero.dragCoefficient ) || c.aero.dragCoefficient < 0 )
+                    addError( result, "drag coefficient must be finite and non-negative" );
+                result.warnings.push_back( "helicopter asset metadata only; flight dynamics are not implemented" );
+                return result;
+            }
             if( c.massProperties.frontStaticWeightFraction < 0.25 ||
                 c.massProperties.frontStaticWeightFraction > 0.75 )
                 addError( result, "centre of mass lies outside a credible axle load envelope" );
@@ -444,7 +478,7 @@ namespace workphone
         double WPVehiclePhysics::staticWheelLoadN( const VehiclePhysicsConfig &c, WheelCorner corner )
         {
             const std::size_t index = static_cast<std::size_t>( corner );
-            if( index >= c.wheels.size() )
+            if( c.preset == VehiclePhysicsPreset::HelicopterLittleBird || index >= c.wheels.size() )
                 return 0.0;
             const bool front = index < 2;
             const double axleFraction = front ? c.massProperties.frontStaticWeightFraction

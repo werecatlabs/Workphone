@@ -250,6 +250,7 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_vehicle_properties, ProceduralCom
 {
     scene::ProceduralVehicle vehicle;
     auto input = vehicle.getProperties();
+    BOOST_CHECK( vehicle.getConfig().physicsPreset == procedural::VehiclePhysicsPreset::HelicopterLittleBird );
     input->setProperty( "Seed", u32( 456 ) );
     input->setProperty( "Physics Preset", String( "GT" ) );
     input->setProperty( "Appearance Quality", String( "High" ) );
@@ -268,6 +269,25 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_vehicle_properties, ProceduralCom
     BOOST_CHECK_EQUAL( propertyValue<u32>( output, "LOD" ), 2u );
     BOOST_CHECK_EQUAL( propertyValue<String>( output, "Physics Preset" ), "GT" );
     BOOST_CHECK_EQUAL( propertyValue<String>( output, "Appearance Quality" ), "High" );
+}
+
+BOOST_FIXTURE_TEST_CASE( procedural_components_helicopter_preset_properties, ProceduralComponentFixture )
+{
+    scene::ProceduralVehicle vehicle;
+    auto input = vehicle.getProperties();
+    BOOST_CHECK_EQUAL( propertyValue<String>( input, "Physics Preset" ), "Helicopter - Little Bird" );
+    input->setProperty( "Main Rotor Blades", u32( 6 ) );
+    input->setProperty( "Tail Rotor Blades", u32( 4 ) );
+    input->setProperty( "Main Rotor Radius", real_Num( 4.5 ) );
+    vehicle.setProperties( input );
+    auto output = vehicle.getProperties();
+    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Physics Preset" ), "Helicopter - Little Bird" );
+    BOOST_CHECK_EQUAL( propertyValue<u32>( output, "Main Rotor Blades" ), 6u );
+    BOOST_CHECK_EQUAL( propertyValue<u32>( output, "Tail Rotor Blades" ), 4u );
+    BOOST_CHECK_CLOSE( vehicle.getConfig().geometry.mainRotorRadius, 4.5f, .01f );
+    input->setProperty( "Main Rotor Blades", u32( 99 ) );
+    vehicle.setProperties( input );
+    BOOST_CHECK_EQUAL( vehicle.getConfig().geometry.mainRotorBlades, 8u );
 }
 
 BOOST_FIXTURE_TEST_CASE( procedural_components_detached_meshes, ProceduralComponentFixture )

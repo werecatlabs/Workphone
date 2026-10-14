@@ -796,6 +796,255 @@ namespace workphone
                     lod.sections.push_back( std::move( suspension.mesh ) );
                 return lod;
             }
+            VehicleLOD buildCoupeLOD( const VehicleGeometryConfig &cfg, std::uint32_t level )
+            {
+                // Retain the established tyre, rim and brake meshes and their LOD policy.
+                auto lod = buildLOD( cfg, level );
+                lod.sections.erase( std::remove_if( lod.sections.begin(), lod.sections.end(),
+                    []( const VehicleMeshSection &section ) {
+                        return section.material != VehicleMaterial::Tyre &&
+                               section.material != VehicleMaterial::Rim &&
+                               section.material != VehicleMaterial::Brake;
+                    } ), lod.sections.end() );
+                const float front = -cfg.wheelbase * .45f;
+                const float rear = front + cfg.wheelbase;
+                const float nose = front - ( cfg.bodyLength - cfg.wheelbase ) * .52f;
+                const float tail = nose + cfg.bodyLength;
+                const float half = cfg.bodyWidth * .5f;
+                const float shoulder = std::max( .84f, cfg.tyreRadius * 2 + .12f );
+                const bool sport = cfg.bodyStyle == VehicleBodyStyle::RoadSport;
+                Builder paint( sport ? "sports_body_paint" : "gt_body_paint", VehicleMaterial::Paint );
+                Builder glass( sport ? "sports_cabin_glass" : "gt_cabin_glass", VehicleMaterial::Glass );
+                Builder aero( sport ? "sports_trim" : "gt_aero", VehicleMaterial::CarbonMatte );
+                Builder headlights( sport ? "sports_headlights" : "gt_headlights", VehicleMaterial::Headlight );
+                Builder taillights( sport ? "sports_tail_lights" : "gt_tail_lights", VehicleMaterial::TailLight );
+                // Side panels follow the wheel openings rather than covering the tyres.
+                const unsigned steps = level == 0 ? 96u : ( level == 1 ? 64u : 40u );
+                auto lowerEdge = [&]( float z ) {
+                    float y = .18f;
+                    for( float axle : { front, rear } )
+                    {
+                        const float dz = z - axle;
+                        const float radius = cfg.tyreRadius + .065f;
+                        if( std::abs( dz ) < radius )
+                            y = std::max( y, cfg.tyreRadius + std::sqrt( radius * radius - dz * dz ) );
+                    }
+                    return y;
+                };
+                for( unsigned i = 0; i < steps; ++i )
+                {
+                    const float z0 = nose + cfg.bodyLength * i / steps;
+                    const float z1 = nose + cfg.bodyLength * ( i + 1 ) / steps;
+                    for( int side : { -1, 1 } )
+                    {
+                        const float x = side * half;
+                        const Vector3F a( x, lowerEdge( z0 ), z0 ), b( x, lowerEdge( z1 ), z1 );
+                        const Vector3F c( x, shoulder, z1 ), d( x, shoulder, z0 );
+                        if( side > 0 ) paint.quad( a, d, c, b );
+                        else paint.quad( a, b, c, d );
+                    }
+                }
+                // Hood and rear deck surround a separate glazed coupe cabin.
+                paint.quad( { -half, shoulder, nose }, { -half, shoulder, -.65f },
+                            { half, shoulder, -.65f }, { half, shoulder, nose } );
+                paint.quad( { -half, shoulder, .95f }, { -half, shoulder, tail },
+                            { half, shoulder, tail }, { half, shoulder, .95f } );
+                paint.box( { 0, .44f, nose }, { cfg.bodyWidth, .52f, .10f } );
+                paint.box( { 0, .44f, tail }, { cfg.bodyWidth, .52f, .10f } );
+                const float roof = shoulder + ( sport ? .38f : .48f );
+                const float cabin = half * .72f;
+                paint.box( { 0, roof, .17f }, { cabin * 2, .055f, .94f } );
+                glass.quad( { -cabin, shoulder, -.65f }, { -cabin, roof, -.30f },
+                            { cabin, roof, -.30f }, { cabin, shoulder, -.65f } );
+                glass.quad( { -cabin, roof, .64f }, { -cabin, shoulder, .95f },
+                            { cabin, shoulder, .95f }, { cabin, roof, .64f } );
+                for( int side : { -1, 1 } )
+                {
+                    const float x = side * cabin;
+                    const Vector3F a( x, shoulder, -.65f ), b( x, shoulder, .95f );
+                    const Vector3F c( x, roof, .64f ), d( x, roof, -.30f );
+                    if( side > 0 ) glass.quad( a, d, c, b );
+                    else glass.quad( a, b, c, d );
+                    // Painted pillars and roof rails frame the glazing at every LOD.
+                    const unsigned pillarSides = level == 0 ? 8u : 4u;
+                    addRod( paint, a, d, .035f, pillarSides );
+                    addRod( paint, b, c, .035f, pillarSides );
+                    addRod( paint, c, d, .025f, pillarSides );
+                    addRod( paint, { x, shoulder, .22f }, { x, roof, .22f }, .025f, pillarSides );
+                    const float outer = side * half;
+                    if( side > 0 ) paint.quad( { x, shoulder, -.65f }, { x, shoulder, .95f },
+                        { outer, shoulder, .95f }, { outer, shoulder, -.65f } );
+                    else paint.quad( { x, shoulder, -.65f }, { outer, shoulder, -.65f },
+                        { outer, shoulder, .95f }, { x, shoulder, .95f } );
+                    if( !sport )
+                        aero.box( { side * .48f, shoulder + .20f, tail - .24f }, { .045f, .40f, .12f } );
+                    headlights.box( { side * half * .70f, .64f, nose - .06f }, { sport ? .42f : .38f, sport ? .055f : .10f, .035f } );
+                    taillights.box( { side * half * .70f, .64f, tail + .06f }, { .40f, .075f, .035f } );
+                    if( cfg.includeFineDetails && level < 2 )
+                        aero.box( { side * ( cabin + .14f ), shoulder + .25f, -.40f }, { .20f, .09f, .17f } );
+                }
+                aero.box( { 0, .38f, nose - .06f }, { cfg.bodyWidth * .58f, .22f, .035f } );
+                for( int side : { -1, 1 } )
+                    aero.box( { side * half, .18f, ( front + rear ) * .5f },
+                              { .07f, .10f, cfg.wheelbase - 2 * cfg.tyreRadius - .14f } );
+                if( cfg.includeFineDetails && level < 2 )
+                    for( int fin = -2; fin <= 2; ++fin )
+                        aero.box( { fin * .24f, .22f, tail - .20f }, { .018f, .16f, .52f } );
+                aero.box( { 0, .14f, nose + .08f }, { cfg.bodyWidth + .08f, .045f, .44f } );
+                aero.box( { 0, .16f, tail - .20f }, { cfg.bodyWidth * .85f, .06f, .52f } );
+                if( sport )
+                {
+                    // A subtle painted lip replaces the GT racing wing and pylons.
+                    paint.box( { 0, shoulder + .025f, tail - .06f },
+                               { cfg.bodyWidth * .82f, .045f, .12f } );
+                    if( cfg.includeFineDetails && level < 2 )
+                        for( int side : { -1, 1 } )
+                            aero.box( { side * .58f, .26f, tail + .07f }, { .14f, .09f, .16f } );
+                }
+                else
+                    addAirfoil( aero, cfg.bodyWidth * .94f, .34f, shoulder + .43f,
+                                tail - .24f, .03f, level == 0 ? 14u : 6u );
+                for( Builder *builder : { &paint, &glass, &aero, &headlights, &taillights } )
+                {
+                    builder->finalise();
+                    lod.sections.push_back( std::move( builder->mesh ) );
+                }
+                return lod;
+            }
+            VehicleLOD buildHelicopterLOD( const VehicleGeometryConfig &cfg, std::uint32_t level )
+            {
+                VehicleLOD lod;
+                lod.level = level;
+                lod.suggestedScreenCoverage = level == 0 ? .32f : ( level == 1 ? .085f : 0.0f );
+                const float scale = cfg.bodyLength / 7.0f;
+                const float width = cfg.bodyWidth / 1.5f;
+                const unsigned around = level == 0 ? 48u : ( level == 1 ? 28u : 16u );
+                const unsigned rows = around / 2;
+                const unsigned rodSides = level == 0 ? 12u : ( level == 1 ? 8u : 6u );
+                Builder hull( "helicopter_fuselage", VehicleMaterial::Paint );
+                Builder glazing( "helicopter_bubble_cockpit", VehicleMaterial::Glass );
+                Builder frame( "helicopter_cockpit_frame", VehicleMaterial::CarbonMatte );
+                Builder gear( "helicopter_skids", VehicleMaterial::Suspension );
+                Builder mainRotor( "helicopter_main_rotor", VehicleMaterial::CarbonMatte );
+                Builder tailRotor( "helicopter_tail_rotor", VehicleMaterial::CarbonMatte );
+                Builder lights( "helicopter_navigation_lights", VehicleMaterial::TailLight );
+                // Partition one ellipsoid into painted shell and glazing, avoiding
+                // overlapping glass/paint surfaces and zero-area polar quads.
+                auto bubble = [&]( unsigned row, unsigned col ) {
+                    const float latitude = -kPi * .5f + kPi * row / rows;
+                    const float longitude = kTwoPi * col / around;
+                    const float ring = std::cos( latitude );
+                    return Vector3F( .75f * width * ring * std::cos( longitude ),
+                                     ( 1.42f + .86f * std::sin( latitude ) ) * scale,
+                                     ( -.90f + 1.65f * ring * std::sin( longitude ) ) * scale );
+                };
+                for( unsigned row = 0; row < rows; ++row )
+                    for( unsigned col = 0; col < around; ++col )
+                    {
+                        const auto a = bubble( row, col ), b = bubble( row + 1, col );
+                        const auto c = bubble( row + 1, col + 1 ), d = bubble( row, col + 1 );
+                        const auto centre = ( a + b + c + d ) * .25f;
+                        auto &builder = centre.z < -.48f * scale && centre.y > 1.05f * scale
+                                            ? glazing : hull;
+                        if( row == 0 || row + 1 == rows )
+                        {
+                            const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
+                            if( row == 0 )
+                            {
+                                builder.vertex( a, { .5f, 0 } );
+                                builder.vertex( b, { 0, 1 } );
+                                builder.vertex( c, { 1, 1 } );
+                            }
+                            else
+                            {
+                                builder.vertex( a, { 0, 0 } );
+                                builder.vertex( b, { .5f, 1 } );
+                                builder.vertex( d, { 1, 0 } );
+                            }
+                            builder.triangle( base, base + 1, base + 2 );
+                        }
+                        else builder.quad( a, b, c, d );
+                    }
+                // Curved centre windshield bar follows the same bubble surface.
+                for( unsigned row = rows / 3; row + 1 < rows; ++row )
+                    addRod( frame, bubble( row, around * 3 / 4 ),
+                            bubble( row + 1, around * 3 / 4 ), .018f * scale, rodSides );
+                addRod( hull, { 0, 1.45f * scale, .35f * scale },
+                              { 0, 1.75f * scale, 2.8f * scale }, .14f * width, rodSides );
+                addRod( hull, { 0, 1.75f * scale, 2.8f * scale },
+                              { 0, 1.85f * scale, 4.3f * scale }, .085f * width, rodSides );
+                // T tail, vertical fin and conventional exposed anti-torque rotor.
+                hull.box( { 0, 2.18f * scale, 4.10f * scale },
+                          { .07f * width, .85f * scale, .44f * scale } );
+                hull.box( { 0, 2.52f * scale, 4.10f * scale },
+                          { 1.35f * width, .055f * scale, .38f * scale } );
+                for( int side : { -1, 1 } )
+                {
+                    const float x = side * .9f * width;
+                    addRod( gear, { x, .12f * scale, -1.9f * scale },
+                                  { x, .12f * scale, 1.15f * scale }, .045f * scale, rodSides );
+                    addRod( gear, { x, .12f * scale, -1.9f * scale },
+                                  { x, .30f * scale, -2.15f * scale }, .045f * scale, rodSides );
+                    for( float z : { -1.25f, .35f } )
+                        addRod( gear, { side * .5f * width, .77f * scale, z * scale },
+                                      { x, .12f * scale, z * scale }, .038f * scale, rodSides );
+                }
+                const Vector3F hub( 0, 2.73f * scale, -.55f * scale );
+                addRod( frame, { 0, 2.05f * scale, -.55f * scale }, hub, .065f * scale, rodSides );
+                frame.box( hub, { .36f * scale, .10f * scale, .36f * scale } );
+                for( unsigned blade = 0; blade < cfg.mainRotorBlades; ++blade )
+                {
+                    const float angle = kTwoPi * blade / cfg.mainRotorBlades + .18f;
+                    const auto begin = mainRotor.mesh.vertices.size();
+                    const float root = .22f;
+                    mainRotor.box( hub + Vector3F( ( root + cfg.mainRotorRadius ) * .5f, 0, 0 ),
+                                   { cfg.mainRotorRadius - root, .035f * scale, .20f * scale } );
+                    for( auto i = begin; i < mainRotor.mesh.vertices.size(); ++i )
+                    {
+                        auto &position = mainRotor.mesh.vertices[i].position;
+                        const auto local = position - hub;
+                        position = hub + Vector3F( local.x * std::cos( angle ) - local.z * std::sin( angle ),
+                                                   local.y,
+                                                   local.x * std::sin( angle ) + local.z * std::cos( angle ) );
+                    }
+                }
+                const Vector3F tailHub( -.29f * width, 1.85f * scale, 4.3f * scale );
+                addRod( frame, { 0, tailHub.y, tailHub.z }, tailHub, .05f * scale, rodSides );
+                for( unsigned blade = 0; blade < cfg.tailRotorBlades; ++blade )
+                {
+                    const float angle = kTwoPi * blade / cfg.tailRotorBlades + .35f;
+                    const auto begin = tailRotor.mesh.vertices.size();
+                    const float root = .08f;
+                    tailRotor.box( tailHub + Vector3F( 0, ( root + cfg.tailRotorRadius ) * .5f, 0 ),
+                                   { .025f * scale, cfg.tailRotorRadius - root, .10f * scale } );
+                    for( auto i = begin; i < tailRotor.mesh.vertices.size(); ++i )
+                    {
+                        auto &position = tailRotor.mesh.vertices[i].position;
+                        const auto local = position - tailHub;
+                        position = tailHub + Vector3F( local.x,
+                            local.y * std::cos( angle ) - local.z * std::sin( angle ),
+                            local.y * std::sin( angle ) + local.z * std::cos( angle ) );
+                    }
+                }
+                lights.box( { 0, 2.62f * scale, 4.1f * scale }, { .07f, .07f, .07f } );
+                if( cfg.includeFineDetails && level < 2 )
+                {
+                    // Exhaust, cabin seats and aerial remain optional at distance.
+                    addRod( frame, { .35f * width, 1.85f * scale, .30f * scale },
+                                  { .50f * width, 1.90f * scale, .65f * scale }, .11f * scale, rodSides );
+                    addRod( frame, { 0, .60f * scale, -.1f * scale },
+                                  { 0, .28f * scale, -.1f * scale }, .012f * scale, 6 );
+                    for( int side : { -1, 1 } )
+                        frame.box( { side * .32f * width, 1.1f * scale, -.65f * scale },
+                                   { .42f * width, .40f * scale, .38f * scale } );
+                }
+                for( Builder *builder : { &hull, &glazing, &frame, &gear, &mainRotor, &tailRotor, &lights } )
+                {
+                    builder->finalise();
+                    lod.sections.push_back( std::move( builder->mesh ) );
+                }
+                return lod;
+            }
         }  // namespace
 
 
@@ -811,14 +1060,22 @@ namespace workphone
             cfg.tyreRadius = clampF( cfg.tyreRadius, 0.22f, 0.65f );
             cfg.frontTyreWidth = clampF( cfg.frontTyreWidth, 0.14f, 0.55f );
             cfg.rearTyreWidth = clampF( cfg.rearTyreWidth, 0.14f, 0.65f );
-            cfg.bodyLength = clampF( cfg.bodyLength, cfg.wheelbase + 0.7f, 7.0f );
+            const bool helicopter = cfg.bodyStyle == VehicleBodyStyle::HelicopterLittleBird;
+            cfg.bodyLength = helicopter ? clampF( cfg.bodyLength, 5.0f, 12.0f )
+                                        : clampF( cfg.bodyLength, cfg.wheelbase + .7f, 7.0f );
+            cfg.mainRotorRadius = clampF( cfg.mainRotorRadius, 1.5f, 8.0f );
+            cfg.tailRotorRadius = clampF( cfg.tailRotorRadius, .25f, 1.5f );
+            cfg.mainRotorBlades = std::clamp<std::uint32_t>( cfg.mainRotorBlades, 2, 8 );
+            cfg.tailRotorBlades = std::clamp<std::uint32_t>( cfg.tailRotorBlades, 2, 6 );
             cfg.bodyWidth = clampF( cfg.bodyWidth, 1.2f, 2.4f );
 
             VehicleGeometry result;
             const std::uint32_t count = cfg.generateThreeLODs ? 3u : 1u;
             result.lods.reserve( count );
             for( std::uint32_t level = 0; level < count; ++level )
-                result.lods.push_back( buildLOD( cfg, level ) );
+                result.lods.push_back( helicopter ? buildHelicopterLOD( cfg, level )
+                                       : cfg.bodyStyle != VehicleBodyStyle::GrandPrix
+                                           ? buildCoupeLOD( cfg, level ) : buildLOD( cfg, level ) );
 
             // Bounds are authoritative mesh data, not nominal design dimensions.
             // Aero elements, tyre shoulders and optional details can extend beyond
@@ -852,9 +1109,12 @@ namespace workphone
             const float frontZ = -cfg.wheelbase * 0.45f;
             const float rearZ = frontZ + cfg.wheelbase;
             result.centreOfMass = Vector3F( 0, 0.31f, 0.18f );
-            result.frontAxle = Vector3F( 0, cfg.tyreRadius, frontZ );
-            result.rearAxle = Vector3F( 0, cfg.tyreRadius, rearZ );
-            result.cockpitEye = Vector3F( 0, 0.84f, 0.10f );
+            result.frontAxle = helicopter ? Vector3F() : Vector3F( 0, cfg.tyreRadius, frontZ );
+            result.rearAxle = helicopter ? Vector3F() : Vector3F( 0, cfg.tyreRadius, rearZ );
+            result.cockpitEye = Vector3F( 0, cfg.bodyStyle == VehicleBodyStyle::GrandPrix ? .84f :
+                                                 ( cfg.bodyStyle == VehicleBodyStyle::GT ? 1.12f : 1.04f ), .10f );
+            if( helicopter )
+                result.cockpitEye = Vector3F( 0, 1.65f * cfg.bodyLength / 7.0f, -1.25f * cfg.bodyLength / 7.0f );
             return result;
         }
     }  // namespace procedural

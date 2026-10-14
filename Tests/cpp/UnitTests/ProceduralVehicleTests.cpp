@@ -63,14 +63,127 @@ BOOST_AUTO_TEST_CASE( declared_bounds_contain_every_generated_lod_vertex )
             }
 }
 
-BOOST_AUTO_TEST_CASE( unsupported_closed_body_presets_fail_explicitly )
+BOOST_AUTO_TEST_CASE( gt_body_is_valid_deterministic_and_has_an_enclosed_cabin )
 {
     VehicleGenerationConfig request;
     request.appearance.quality = VehicleAppearanceQuality::Preview;
     request.physicsPreset = VehiclePhysicsPreset::GT;
 
     const GeneratedVehicle vehicle = WPVehicleGenerator::generate( request );
-    BOOST_CHECK( !vehicle.isValid() );
+    BOOST_REQUIRE( vehicle.isValid() );
+    BOOST_CHECK_EQUAL( vehicle.contentHash, WPVehicleGenerator::generate( request ).contentHash );
+    BOOST_CHECK_EQUAL( vehicle.geometry.lods.size(), 3u );
+    BOOST_CHECK_CLOSE( vehicle.physics.wheelbaseM, 2.78, .01 );
+    for( const auto &lod : vehicle.geometry.lods )
+    {
+        bool cabin = false, lights = false;
+        for( const auto &section : lod.sections )
+        {
+            cabin |= section.name == "gt_cabin_glass" && section.hasGeometry();
+            lights |= section.material == VehicleMaterial::Headlight && section.hasGeometry();
+        }
+        BOOST_CHECK( cabin );
+        BOOST_CHECK( lights );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( gt_preview_lod_has_valid_bounds_without_fine_details )
+{
+    VehicleGenerationConfig request;
+    request.physicsPreset = VehiclePhysicsPreset::GT;
+    request.appearance.quality = VehicleAppearanceQuality::Preview;
+    request.geometry.generateThreeLODs = false;
+    request.geometry.includeFineDetails = false;
+    const auto vehicle = WPVehicleGenerator::generate( request );
+    for( const auto &issue : vehicle.issues )
+        BOOST_CHECK_MESSAGE( !issue.error, issue.component + ": " + issue.message );
+    BOOST_REQUIRE( vehicle.isValid() );
+    BOOST_REQUIRE_EQUAL( vehicle.geometry.lods.size(), 1u );
+    for( const auto &section : vehicle.geometry.lods.front().sections )
+        for( const auto &vertex : section.vertices )
+        {
+            BOOST_CHECK_GE( vertex.position.x, vehicle.geometry.boundsMin.x );
+            BOOST_CHECK_LE( vertex.position.x, vehicle.geometry.boundsMax.x );
+            BOOST_CHECK_GE( vertex.position.y, vehicle.geometry.boundsMin.y );
+            BOOST_CHECK_LE( vertex.position.y, vehicle.geometry.boundsMax.y );
+            BOOST_CHECK_GE( vertex.position.z, vehicle.geometry.boundsMin.z );
+            BOOST_CHECK_LE( vertex.position.z, vehicle.geometry.boundsMax.z );
+        }
+}
+
+BOOST_AUTO_TEST_CASE( road_sports_car_has_a_lower_cabin_and_no_racing_wing )
+{
+    VehicleGenerationConfig request;
+    request.appearance.quality = VehicleAppearanceQuality::Preview;
+    request.physicsPreset = VehiclePhysicsPreset::GT;
+    const auto gt = WPVehicleGenerator::generate( request );
+    request.physicsPreset = VehiclePhysicsPreset::RoadSport;
+    for( bool details : { false, true } )
+    {
+        request.geometry.includeFineDetails = details;
+        request.geometry.generateThreeLODs = details;
+        const auto sport = WPVehicleGenerator::generate( request );
+        for( const auto &issue : sport.issues )
+            BOOST_CHECK_MESSAGE( !issue.error, issue.component + ": " + issue.message );
+        BOOST_REQUIRE( sport.isValid() );
+        BOOST_CHECK_EQUAL( sport.contentHash, WPVehicleGenerator::generate( request ).contentHash );
+        BOOST_CHECK_CLOSE( sport.physics.wheelbaseM, 2.64, .01 );
+        BOOST_CHECK_LT( sport.geometry.boundsMax.y, gt.geometry.boundsMax.y );
+        BOOST_CHECK_EQUAL( sport.geometry.lods.size(), details ? 3u : 1u );
+        for( const auto &lod : sport.geometry.lods )
+        {
+            bool cabin = false;
+            for( const auto &section : lod.sections )
+                cabin |= section.name == "sports_cabin_glass" && section.hasGeometry();
+            BOOST_CHECK( cabin );
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE( little_bird_helicopter_has_valid_lods_rotors_and_no_car_running_gear )
+{
+    VehicleGenerationConfig request;
+    request.physicsPreset = VehiclePhysicsPreset::HelicopterLittleBird;
+    request.appearance.quality = VehicleAppearanceQuality::Preview;
+    for( bool details : { false, true } )
+    {
+        request.geometry.includeFineDetails = details;
+        request.geometry.generateThreeLODs = details;
+        const auto vehicle = WPVehicleGenerator::generate( request );
+        for( const auto &issue : vehicle.issues )
+            BOOST_CHECK_MESSAGE( !issue.error, issue.component + ": " + issue.message );
+        BOOST_REQUIRE( vehicle.isValid() );
+        BOOST_CHECK_EQUAL( vehicle.contentHash, WPVehicleGenerator::generate( request ).contentHash );
+        BOOST_CHECK_EQUAL( vehicle.geometry.lods.size(), details ? 3u : 1u );
+        BOOST_CHECK_GT( vehicle.geometry.boundsMax.x - vehicle.geometry.boundsMin.x, 7.0f );
+        for( const auto &lod : vehicle.geometry.lods )
+        {
+            bool bubble = false, mainRotor = false, tailRotor = false, skids = false;
+            for( const auto &section : lod.sections )
+            {
+                bubble |= section.name == "helicopter_bubble_cockpit" && section.hasGeometry();
+                mainRotor |= section.name == "helicopter_main_rotor" && section.hasGeometry();
+                tailRotor |= section.name == "helicopter_tail_rotor" && section.hasGeometry();
+                skids |= section.name == "helicopter_skids" && section.hasGeometry();
+                BOOST_CHECK( section.material != VehicleMaterial::Tyre );
+                BOOST_CHECK( section.material != VehicleMaterial::Rim );
+            }
+            BOOST_CHECK( bubble && mainRotor && tailRotor && skids );
+        }
+        auto state = WPVehicleDynamics::reset( vehicle.physics );
+        VehicleDynamicsTelemetry telemetry;
+        BOOST_CHECK( !WPVehicleDynamics::stepFixed( vehicle.physics, {}, {}, {}, 1.0 / 120, state, telemetry ) );
+        BOOST_CHECK_EQUAL( WPVehiclePhysics::staticWheelLoadN( vehicle.physics, WheelCorner::FrontLeft ), 0.0 );
+    }
+    request.geometry.mainRotorBlades = 6;
+    request.geometry.tailRotorBlades = 4;
+    const auto variant = WPVehicleGenerator::generate( request );
+    BOOST_REQUIRE( variant.isValid() );
+    for( const auto &section : variant.geometry.lods.front().sections )
+    {
+        if( section.name == "helicopter_main_rotor" ) BOOST_CHECK_EQUAL( section.vertices.size(), 6u * 24u );
+        if( section.name == "helicopter_tail_rotor" ) BOOST_CHECK_EQUAL( section.vertices.size(), 4u * 24u );
+    }
 }
 
 BOOST_AUTO_TEST_CASE( runtime_dynamics_accelerates_brakes_and_replays_deterministically )

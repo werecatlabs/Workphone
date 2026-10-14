@@ -1,5 +1,6 @@
 #pragma once
 #include <Workphone/WorkphonePrerequisites.hpp>
+#include <Workphone/Core/Array.hpp>
 #include <Workphone/Interface/Procedural/VehicleAppearanceTypes.hpp>
 #include <Workphone/Interface/Procedural/VehicleGeometryTypes.hpp>
 #include <Workphone/Interface/Procedural/VehiclePhysicsTypes.hpp>

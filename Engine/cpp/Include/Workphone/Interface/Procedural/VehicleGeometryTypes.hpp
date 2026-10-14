@@ -70,6 +70,8 @@ namespace workphone
             bool hasGeometry() const;
         };
 
+        enum class VehicleBodyStyle : std::uint8_t { GrandPrix, GT, RoadSport, HelicopterLittleBird };
+
         struct WPCore_API VehicleGeometryConfig
         {
             std::uint32_t seed = 0x4C494F4Eu;
@@ -83,6 +85,12 @@ namespace workphone
             float bodyWidth = 2.00f;
             bool generateThreeLODs = true;
             bool includeFineDetails = true;
+            VehicleBodyStyle bodyStyle = VehicleBodyStyle::GrandPrix;
+            // Helicopter silhouette controls. Other body styles ignore these values.
+            float mainRotorRadius = 4.15f;
+            float tailRotorRadius = .68f;
+            std::uint32_t mainRotorBlades = 5;
+            std::uint32_t tailRotorBlades = 2;
         };
 
     }  // namespace procedural

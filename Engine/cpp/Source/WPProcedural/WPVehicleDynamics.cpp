@@ -139,7 +139,8 @@ namespace workphone
             bool fastConfigCheck( const VehiclePhysicsConfig &physics,
                                   const VehicleDynamicsTuning &tuning )
             {
-                return finite( physics.massProperties.massKg ) && physics.massProperties.massKg > 0.0 &&
+                return physics.preset != VehiclePhysicsPreset::HelicopterLittleBird &&
+                       finite( physics.massProperties.massKg ) && physics.massProperties.massKg > 0.0 &&
                        finite( physics.massProperties.inertia.yy ) &&
                        physics.massProperties.inertia.yy > 0.0 &&
                        !physics.drivetrain.forwardGearRatios.empty() &&

@@ -275,15 +275,32 @@ namespace workphone
 
             VehicleGeometryConfig geometryConfig = config.geometry;
             geometryConfig.seed = config.seed;
-            if( config.synchronizeFromPhysics )
+            const bool helicopter = config.physicsPreset == VehiclePhysicsPreset::HelicopterLittleBird;
+            geometryConfig.bodyStyle = helicopter ? VehicleBodyStyle::HelicopterLittleBird
+                : config.physicsPreset == VehiclePhysicsPreset::GT ? VehicleBodyStyle::GT
+                : config.physicsPreset == VehiclePhysicsPreset::RoadSport ? VehicleBodyStyle::RoadSport
+                                                                         : VehicleBodyStyle::GrandPrix;
+            if( helicopter )
+            {
+                // Helicopters have no wheelbase, tyres, or axle alignment.
+                if( config.synchronizeFromPhysics )
+                {
+                    geometryConfig.bodyLength = static_cast<float>( result.physics.bodyLengthM );
+                    geometryConfig.bodyWidth = static_cast<float>( result.physics.bodyWidthM );
+                }
+            }
+            else if( config.synchronizeFromPhysics )
                 applyPhysicsDimensions( geometryConfig, result.physics );
             else
                 applyGeometryDimensions( result.physics, geometryConfig );
             result.geometry = WPVehicleGeometry::generate( geometryConfig );
-            const float physicsFrontAxleZ =
-                static_cast<float>( 0.5 * ( result.physics.wheels[0].hubPosition.z +
-                                            result.physics.wheels[1].hubPosition.z ) );
-            translateGeometryZ( result.geometry, physicsFrontAxleZ - result.geometry.frontAxle.z );
+            if( !helicopter )
+            {
+                const float physicsFrontAxleZ =
+                    static_cast<float>( .5 * ( result.physics.wheels[0].hubPosition.z +
+                                              result.physics.wheels[1].hubPosition.z ) );
+                translateGeometryZ( result.geometry, physicsFrontAxleZ - result.geometry.frontAxle.z );
+            }
             result.geometry.centreOfMass =
                 Vector3F( static_cast<float>( result.physics.massProperties.centreOfMass.x ),
                           static_cast<float>( result.physics.massProperties.centreOfMass.y ),
@@ -464,37 +481,47 @@ namespace workphone
                               "one or more vertices lie outside declared bounds" );
             }
 
-            const double meshWheelbase = std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
-                                                   vehicle.geometry.frontAxle.z );
-            if( std::abs( meshWheelbase - vehicle.physics.wheelbaseM ) > 0.01 )
-                addIssue( issues, true, "integration",
-                          "render and physics wheelbases differ by more than 10 mm" );
-            if( vehicle.physics.preset != VehiclePhysicsPreset::GrandPrix )
-                addIssue( issues, true, "integration",
-                          "the current geometry generator authors an open-wheel Grand Prix car; "
-                          "GT and RoadSport physics presets require a different body archetype" );
-            const double hubTolerance = 0.01;
-            if( std::abs( static_cast<double>( vehicle.geometry.frontAxle.z ) -
-                          vehicle.physics.wheels[0].hubPosition.z ) > hubTolerance ||
-                std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
-                          vehicle.physics.wheels[2].hubPosition.z ) > hubTolerance )
-                addIssue( issues, true, "integration",
-                          "render and physics axle centres differ by more than 10 mm" );
-            if( std::abs( static_cast<double>( vehicle.geometry.frontAxle.y ) -
-                          vehicle.physics.wheels[0].tire.radiusM ) > hubTolerance ||
-                std::abs( static_cast<double>( vehicle.geometry.rearAxle.y ) -
-                          vehicle.physics.wheels[2].tire.radiusM ) > hubTolerance )
-                addIssue( issues, true, "integration",
-                          "render wheel radius and physics tyre radius differ by more than 10 mm" );
-            const double expectedHalfWidth =
-                0.5 * std::max( vehicle.physics.frontTrackM + vehicle.physics.wheels[0].tire.widthM,
-                                vehicle.physics.rearTrackM + vehicle.physics.wheels[2].tire.widthM );
-            if( std::abs( static_cast<double>( vehicle.geometry.boundsMax.x ) - expectedHalfWidth ) >
-                    hubTolerance ||
-                std::abs( static_cast<double>( vehicle.geometry.boundsMin.x ) + expectedHalfWidth ) >
-                    hubTolerance )
-                addIssue( issues, true, "integration",
-                          "render and physics track/tyre envelope differ by more than 10 mm" );
+            if( vehicle.physics.preset != VehiclePhysicsPreset::HelicopterLittleBird )
+            {
+                const double meshWheelbase = std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
+                                                       vehicle.geometry.frontAxle.z );
+                if( std::abs( meshWheelbase - vehicle.physics.wheelbaseM ) > 0.01 )
+                    addIssue( issues, true, "integration",
+                              "render and physics wheelbases differ by more than 10 mm" );
+                const double hubTolerance = 0.01;
+                if( std::abs( static_cast<double>( vehicle.geometry.frontAxle.z ) -
+                              vehicle.physics.wheels[0].hubPosition.z ) > hubTolerance ||
+                    std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
+                              vehicle.physics.wheels[2].hubPosition.z ) > hubTolerance )
+                    addIssue( issues, true, "integration",
+                              "render and physics axle centres differ by more than 10 mm" );
+                if( std::abs( static_cast<double>( vehicle.geometry.frontAxle.y ) -
+                              vehicle.physics.wheels[0].tire.radiusM ) > hubTolerance ||
+                    std::abs( static_cast<double>( vehicle.geometry.rearAxle.y ) -
+                              vehicle.physics.wheels[2].tire.radiusM ) > hubTolerance )
+                    addIssue( issues, true, "integration",
+                              "render wheel radius and physics tyre radius differ by more than 10 mm" );
+                // The shared tyre profile places its bead edges at 91% of nominal width.
+                const double expectedHalfWidth =
+                    0.5 * std::max( vehicle.physics.frontTrackM + .91 * vehicle.physics.wheels[0].tire.widthM,
+                                    vehicle.physics.rearTrackM + .91 * vehicle.physics.wheels[2].tire.widthM );
+                // Enclosed bodywork, mirrors and splitters may extend beyond the tyres.
+                // Compare the tyre sections themselves with the physical wheel envelope.
+                float tyreMinX = std::numeric_limits<float>::max();
+                float tyreMaxX = -std::numeric_limits<float>::max();
+                for( const auto &lod : vehicle.geometry.lods )
+                    for( const auto &section : lod.sections )
+                        if( section.material == VehicleMaterial::Tyre )
+                            for( const auto &vertex : section.vertices )
+                            {
+                                tyreMinX = std::min( tyreMinX, vertex.position.x );
+                                tyreMaxX = std::max( tyreMaxX, vertex.position.x );
+                            }
+                if( std::abs( static_cast<double>( tyreMaxX ) - expectedHalfWidth ) > hubTolerance ||
+                    std::abs( static_cast<double>( tyreMinX ) + expectedHalfWidth ) > hubTolerance )
+                    addIssue( issues, true, "integration",
+                              "render and physics track/tyre envelope differ by more than 10 mm" );
+            }
             const auto &physicalCom = vehicle.physics.massProperties.centreOfMass;
             if( std::abs( static_cast<double>( vehicle.geometry.centreOfMass.x ) - physicalCom.x ) >
                     0.001 ||
