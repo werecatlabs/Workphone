@@ -67,9 +67,11 @@ namespace workphone
     void Game::createScene()
     {
         using namespace scene;
+
         auto application = core::IApplicationManager::instance();
         auto manager = application->getGameManager();
         auto window = UiUtil::createLayout( "UiUtil showcase", true );
+
         UiUtil::setRect( window, 0, 0, 1100, 650 );
         UiUtil::setAlignment( window, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
         window->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
@@ -83,6 +85,7 @@ namespace workphone
             actor->getComponent<LayoutTransform>()->setAnchor( Vector2<real_Num>( 0, 1 ) );
             return actor;
         };
+
         auto label = [&place]( const String &text, f32 x, f32 y, f32 width = 300.0f ) {
             auto actor = place( UiUtil::createText( text, false ), x, y, width, 32 );
             actor->getComponent<Text>()->setHorizontalAlignment(
@@ -94,7 +97,12 @@ namespace workphone
         label( "UiUtil - scene UI showcase", 32, 24, 650 );
         auto statusActor = label( "Click the button to update this label", 32, 68, 500 );
         auto status = WeakPtr<Text>( statusActor->getComponent<Text>() );
+        
+        auto testBtn = UiUtil::createButton( "Test Click me", false );
+        window->addChild( testBtn );
+
         auto buttonActor = place( UiUtil::createButton( "Click me", false ), 32, 112, 260, 48 );
+        
         buttonActor->getComponent<Button>()->setCallbackFunction(
             [status, count = 0]( hash_type ) mutable {
                 if( auto text = status.lock() )
@@ -102,6 +110,7 @@ namespace workphone
                     text->setText( "Button clicks: " + StringUtil::toString( ++count ) );
                 }
             } );
+
         auto sceneButton = place( UiUtil::createButton( "Scene button", false ), 320, 112, 260, 48 );
         sceneButton->getComponent<Button>()->setUseNativeUI( false );
         sceneButton->getComponent<Button>()->setCallbackFunction( [status]( hash_type ) {
@@ -110,6 +119,7 @@ namespace workphone
                 text->setText( "Scene button clicked" );
             }
         } );
+
         label( "Text entry", 32, 184 );
         place( UiUtil::createInputField( "", "Enter your name", false ), 32, 222, 350, 48 );
         place( UiUtil::createToggle( "Enable notifications", true, false ), 32, 290, 350, 48 );

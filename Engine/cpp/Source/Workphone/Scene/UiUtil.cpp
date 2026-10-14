@@ -136,16 +136,19 @@ namespace workphone::scene
                 {
                     throw std::runtime_error( "UiUtil component factory is unavailable" );
                 }
+
                 auto component = factory->make_ptr<T>();
                 if( !component )
                 {
                     throw std::runtime_error( "UiUtil component factory is unavailable" );
                 }
+
                 actor->addComponentInstance( component );
                 if( component->getActor().get() != actor.get() || actor->getComponent<T>() != component )
                 {
                     throw std::runtime_error( "UiUtil could not attach a component" );
                 }
+
                 return component;
             }
 
@@ -407,12 +410,16 @@ namespace workphone::scene
                                                  f32 height, bool addToScene )
     {
         validateRect( x, y, width, height );
+
         UiBuilder builder( addToScene );
+
         auto actor = builder.make( "Button", width, height );
         setRect( actor, x, y, width, height );
+        
         auto button = builder.add<Button>( actor );
         button->setLabel( label );
         button->setCascadeInput( false );
+
         return builder.finish( actor );
     }
 
