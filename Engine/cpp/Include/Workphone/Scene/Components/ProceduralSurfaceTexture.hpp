@@ -10,15 +10,19 @@ namespace workphone::scene
     {
     public:
         ProceduralSurfaceTexture();
+
         ~ProceduralSurfaceTexture() override;
 
         void load( SmartPtr<ISharedObject> data ) override;
+
         void unload( SmartPtr<ISharedObject> data ) override;
 
         void update() override;
 
         bool regenerate();
+
         SmartPtr<Properties> getProperties() const override;
+
         void setProperties( SmartPtr<Properties> properties ) override;
 
         void setTextureForge( SmartPtr<procedural::ITextureForge> service );
