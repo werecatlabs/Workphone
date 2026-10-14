@@ -31,10 +31,10 @@ namespace workphone::scene
 
     ProceduralVehicle::ProceduralVehicle()
     {
-        m_config.physicsPreset = procedural::VehiclePhysicsPreset::HelicopterLittleBird;
-        m_config.geometry.bodyStyle = procedural::VehicleBodyStyle::HelicopterLittleBird;
-        m_config.geometry.bodyLength = 7.0f;
-        m_config.geometry.bodyWidth = 1.5f;
+        m_config.physicsPreset = procedural::VehiclePhysicsPreset::Warbird;
+        m_config.geometry.bodyStyle = procedural::VehicleBodyStyle::Warbird;
+        m_config.geometry.bodyLength = 9.8f;
+        m_config.geometry.bodyWidth = 1.2f;
         m_config.appearance.primary = { .12f, .15f, .10f, 1.0f };
     }
 
@@ -266,6 +266,7 @@ namespace workphone::scene
     {
         using namespace procedural;
         if( m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::HelicopterLittleBird ||
+            m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::Warbird ||
             !m_dynamics || !m_damage || !m_presentation || !m_effects ||
             !m_vehicle.geometry.hasGeometry() )
         {
@@ -348,7 +349,7 @@ namespace workphone::scene
         p->getPropertyObject( "Generated Material IDs" ).setReadOnly( true );
         p->setProperty( "Seed", m_config.seed );
         procedural_properties::setEnum( p, "Physics Preset", static_cast<s32>( m_config.physicsPreset ),
-                                        { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird" } );
+                                        { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
         procedural_properties::setEnum( p, "Appearance Quality",
                                         static_cast<s32>( m_config.appearance.quality ),
                                         { "Preview", "Standard", "High", "Cinematic" } );
@@ -364,6 +365,10 @@ namespace workphone::scene
         p->setProperty( "Tail Rotor Radius", m_config.geometry.tailRotorRadius );
         p->setProperty( "Main Rotor Blades", m_config.geometry.mainRotorBlades );
         p->setProperty( "Tail Rotor Blades", m_config.geometry.tailRotorBlades );
+        p->setProperty( "Wing Span", m_config.geometry.wingSpan );
+        p->setProperty( "Propeller Radius", m_config.geometry.propellerRadius );
+        p->setProperty( "Propeller Blades", m_config.geometry.propellerBlades );
+        p->setProperty( "Landing Gear Down", m_config.geometry.landingGearDown );
         p->setProperty( "Three LODs", m_config.geometry.generateThreeLODs );
         p->setProperty( "Fine Details", m_config.geometry.includeFineDetails );
         p->setProperty( "LOD", m_lod );
@@ -385,11 +390,11 @@ namespace workphone::scene
         s32 preset = static_cast<s32>( m_config.physicsPreset ),
             quality = static_cast<s32>( m_config.appearance.quality );
         preset = procedural_properties::getEnum( p, "Physics Preset", preset,
-                                                 { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird" } );
+                                                 { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
         quality = procedural_properties::getEnum( p, "Appearance Quality", quality,
                                                   { "Preview", "Standard", "High", "Cinematic" } );
         m_config.physicsPreset =
-            static_cast<procedural::VehiclePhysicsPreset>( std::clamp( preset, 0, 3 ) );
+            static_cast<procedural::VehiclePhysicsPreset>( std::clamp( preset, 0, 4 ) );
         m_config.appearance.quality =
             static_cast<procedural::VehicleAppearanceQuality>( std::clamp( quality, 0, 3 ) );
         p->getPropertyValue( "Texture Resolution", m_config.appearance.customMaxResolution );
@@ -410,6 +415,13 @@ namespace workphone::scene
         m_config.geometry.tailRotorRadius = std::clamp( m_config.geometry.tailRotorRadius, .25f, 1.5f );
         m_config.geometry.mainRotorBlades = std::clamp<u32>( m_config.geometry.mainRotorBlades, 2, 8 );
         m_config.geometry.tailRotorBlades = std::clamp<u32>( m_config.geometry.tailRotorBlades, 2, 6 );
+        p->getPropertyValue( "Wing Span", m_config.geometry.wingSpan );
+        p->getPropertyValue( "Propeller Radius", m_config.geometry.propellerRadius );
+        p->getPropertyValue( "Propeller Blades", m_config.geometry.propellerBlades );
+        p->getPropertyValue( "Landing Gear Down", m_config.geometry.landingGearDown );
+        m_config.geometry.wingSpan = std::clamp( m_config.geometry.wingSpan, 6.0f, 18.0f );
+        m_config.geometry.propellerRadius = std::clamp( m_config.geometry.propellerRadius, .6f, 2.0f );
+        m_config.geometry.propellerBlades = std::clamp<u32>( m_config.geometry.propellerBlades, 2, 5 );
         p->getPropertyValue( "Three LODs", m_config.geometry.generateThreeLODs );
         p->getPropertyValue( "Fine Details", m_config.geometry.includeFineDetails );
         p->getPropertyValue( "LOD", m_lod );

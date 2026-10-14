@@ -985,8 +985,8 @@ namespace workphone
                                   { x, .12f * scale, 1.15f * scale }, .045f * scale, rodSides );
                     addRod( gear, { x, .12f * scale, -1.9f * scale },
                                   { x, .30f * scale, -2.15f * scale }, .045f * scale, rodSides );
-                    for( float z : { -1.25f, .35f } )
-                        addRod( gear, { side * .5f * width, .77f * scale, z * scale },
+                    for( float z : { -1.25f, .05f } )
+                        addRod( gear, { side * .42f * width, 1.05f * scale, z * scale },
                                       { x, .12f * scale, z * scale }, .038f * scale, rodSides );
                 }
                 const Vector3F hub( 0, 2.73f * scale, -.55f * scale );

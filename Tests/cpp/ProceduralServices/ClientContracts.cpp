@@ -117,7 +117,7 @@ void checkClientContracts( SmartPtr<IFactoryManager> factories )
                                    pose ),
              "Presentation adapter failed" );
     auto effectState = effects->reset( 17 );
-    std::vector<VehicleEffectEvent> events;
+    Array<VehicleEffectEvent> events;
     require( effects->emit( {}, first.physics, state, telemetry, pose, damageTelemetry, {}, 1.0 / 120.0,
                             effectState, events ),
              "Effects adapter failed" );

@@ -276,13 +276,15 @@ namespace workphone
             VehicleGeometryConfig geometryConfig = config.geometry;
             geometryConfig.seed = config.seed;
             const bool helicopter = config.physicsPreset == VehiclePhysicsPreset::HelicopterLittleBird;
-            geometryConfig.bodyStyle = helicopter ? VehicleBodyStyle::HelicopterLittleBird
+            const bool plane = config.physicsPreset == VehiclePhysicsPreset::Warbird;
+            const bool aircraft = helicopter || plane;
+            geometryConfig.bodyStyle = plane ? VehicleBodyStyle::Warbird : helicopter ? VehicleBodyStyle::HelicopterLittleBird
                 : config.physicsPreset == VehiclePhysicsPreset::GT ? VehicleBodyStyle::GT
                 : config.physicsPreset == VehiclePhysicsPreset::RoadSport ? VehicleBodyStyle::RoadSport
                                                                          : VehicleBodyStyle::GrandPrix;
-            if( helicopter )
+            if( aircraft )
             {
-                // Helicopters have no wheelbase, tyres, or axle alignment.
+                // Aircraft do not use the car wheelbase, tyre, or axle-alignment contract.
                 if( config.synchronizeFromPhysics )
                 {
                     geometryConfig.bodyLength = static_cast<float>( result.physics.bodyLengthM );
@@ -294,7 +296,7 @@ namespace workphone
             else
                 applyGeometryDimensions( result.physics, geometryConfig );
             result.geometry = WPVehicleGeometry::generate( geometryConfig );
-            if( !helicopter )
+            if( !aircraft )
             {
                 const float physicsFrontAxleZ =
                     static_cast<float>( .5 * ( result.physics.wheels[0].hubPosition.z +
@@ -481,7 +483,8 @@ namespace workphone
                               "one or more vertices lie outside declared bounds" );
             }
 
-            if( vehicle.physics.preset != VehiclePhysicsPreset::HelicopterLittleBird )
+            if( vehicle.physics.preset != VehiclePhysicsPreset::HelicopterLittleBird &&
+                vehicle.physics.preset != VehiclePhysicsPreset::Warbird )
             {
                 const double meshWheelbase = std::abs( static_cast<double>( vehicle.geometry.rearAxle.z ) -
                                                        vehicle.geometry.frontAxle.z );

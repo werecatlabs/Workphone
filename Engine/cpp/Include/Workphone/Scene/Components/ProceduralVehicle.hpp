@@ -16,8 +16,9 @@ namespace workphone::scene
      * generation (IVehicleGenerator) from simulation (IVehicleDynamics), damage handling
      * (IVehicleDamage), presentation (IVehiclePresentation), and effects (IVehicleEffects).
      *
-     * Simulation is intended to be advanced by the client via fixed-step updates using
-     * world surface samples provided by the system.
+     * Car simulation is advanced by the client via fixed-step updates using world surface
+     * samples. The helicopter and warbird presets generate static models and mass metadata;
+     * rotor/propeller animation and flight dynamics require a separate aircraft controller.
      */
     class WPCore_API ProceduralVehicle : public ProceduralMeshComponent
     {

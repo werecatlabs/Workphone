@@ -9,7 +9,7 @@ namespace workphone
 {
     namespace procedural
     {
-        /// Engine-independent, SI-unit vehicle data generated alongside a procedural car.
+        /// Engine-independent, SI-unit vehicle data generated alongside procedural vehicles.
         /// Coordinates match WPProcedural's vehicle meshes: +X right, +Y up, -Z forward.
         struct VehiclePhysicsVector3
         {
@@ -34,7 +34,8 @@ namespace workphone
             GrandPrix,
             GT,
             RoadSport,
-            HelicopterLittleBird
+            HelicopterLittleBird, ///< Static helicopter asset metadata; no car/flight dynamics.
+            Warbird               ///< Static fixed-wing asset metadata; no flight dynamics.
         };
 
         enum class DrivenAxle

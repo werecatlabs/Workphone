@@ -140,6 +140,7 @@ namespace workphone
                                   const VehicleDynamicsTuning &tuning )
             {
                 return physics.preset != VehiclePhysicsPreset::HelicopterLittleBird &&
+                       physics.preset != VehiclePhysicsPreset::Warbird &&
                        finite( physics.massProperties.massKg ) && physics.massProperties.massKg > 0.0 &&
                        finite( physics.massProperties.inertia.yy ) &&
                        physics.massProperties.inertia.yy > 0.0 &&
