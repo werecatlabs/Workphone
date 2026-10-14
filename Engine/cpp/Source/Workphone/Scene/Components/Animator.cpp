@@ -205,7 +205,9 @@ namespace workphone::scene
     void Animator::update()
     {
         if( !isEnabled() || m_state != STATE_PLAYING )
+        {
             return;
+        }
 
         auto applicationManager = core::IApplicationManager::instance();
         SmartPtr<ITimer> timer;
@@ -250,7 +252,9 @@ namespace workphone::scene
     void Animator::play()
     {
         if( !isEnabled() )
+        {
             return;
+        }
 
         const auto wasPaused = m_state == STATE_PAUSED;
         if( !wasPaused && m_resetTimeOnPlay )
@@ -280,7 +284,9 @@ namespace workphone::scene
     void Animator::pause()
     {
         if( !isEnabled() || m_state != STATE_PLAYING )
+        {
             return;
+        }
 
         m_state = STATE_PAUSED;
         onPause();
@@ -289,7 +295,9 @@ namespace workphone::scene
     void Animator::stop()
     {
         if( !isEnabled() )
+        {
             return;
+        }
 
         m_state = STATE_STOPPED;
         if( m_resetTimeOnStop )

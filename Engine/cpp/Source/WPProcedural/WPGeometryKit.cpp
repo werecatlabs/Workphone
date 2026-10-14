@@ -180,7 +180,7 @@ namespace workphone
             ProceduralMesh mesh;
             WPNoise noise( seed );
 
-            std::vector<Vector3<real_Num>> verts;
+            Array<Vector3<real_Num>> verts;
             verts.reserve( ( latSegments + 1 ) * ( lonSegments + 1 ) );
             for( u32 lat = 0; lat <= latSegments; ++lat )
             {
@@ -302,7 +302,7 @@ namespace workphone
             ProceduralMesh mesh;
             WPNoise noise( seed );
 
-            std::vector<Vector3<real_Num>> verts;
+            Array<Vector3<real_Num>> verts;
             for( u32 lat = 0; lat <= segs; ++lat )
             {
                 real_Num theta = static_cast<real_Num>( lat ) * 3.14159265f / segs;
@@ -354,7 +354,7 @@ namespace workphone
         // ===================================================================
         // POLYPRISM
         // ===================================================================
-        ProceduralMesh WPGeometryKit::polyPrism( const std::vector<Vector2<real_Num>> &polygon,
+        ProceduralMesh WPGeometryKit::polyPrism( const Array<Vector2<real_Num>> &polygon,
                                                  real_Num depth )
         {
             ProceduralMesh mesh;
@@ -620,7 +620,7 @@ namespace workphone
         // ===================================================================
         ProceduralMesh WPGeometryKit::patch( u32 seed, real_Num radius, u32 lobes, real_Num wobble )
         {
-            std::vector<Vector2<real_Num>> polygon;
+            Array<Vector2<real_Num>> polygon;
             WPNoise noise( seed );
             for( u32 i = 0; i < lobes; ++i )
             {

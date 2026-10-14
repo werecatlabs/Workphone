@@ -96,6 +96,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            Parameter handleEvent( EventType eventType, hash_type eventValue,
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event ) override;
             /** @brief Updates the slider's handle position based on the current value and direction. */
             void updateSliderPosition();
 

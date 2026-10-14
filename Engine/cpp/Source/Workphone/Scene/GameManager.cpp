@@ -561,7 +561,9 @@ namespace workphone::scene
                                     Transform3<real_Num> renderTransform;
                                     if( getActorTransformState( actor, transformTime, smoothDeltaTime,
                                                                 renderTransform, sampledTransforms ) )
+                                    {
                                         component->updateTransform( renderTransform );
+                                    }
                                 }
                             }
                         }
@@ -582,10 +584,14 @@ namespace workphone::scene
         UnorderedMap<u32, Transform3<real_Num>> &sampledTransforms )
     {
         if( !actor || !actor->isSmoothMotion() )
+        {
             return false;
+        }
         auto transform = actor->getTransform();
         if( !transform )
+        {
             return false;
+        }
         const auto id = actor->getHandle()->getInstanceId();
         auto it = sampledTransforms.find( id );
         if( it != sampledTransforms.end() )
@@ -604,7 +610,9 @@ namespace workphone::scene
         {
             Transform3<real_Num> parentTransform;
             if( !getActorTransformState( parent, time, dt, parentTransform, sampledTransforms ) )
+            {
                 return false;
+            }
             worldTransform.transformFromParent( parentTransform, transform->getLocalTransform() );
         }
         sampledTransforms.emplace( id, worldTransform );
@@ -629,15 +637,13 @@ namespace workphone::scene
     {
         if( isLoaded() )
         {
-            ScopedLoadLock loadLock( this );
-
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
             auto timer = applicationManager->getTimerPtr();
             WP_ASSERT( timer );
 
-            if( auto scene = getCurrentScenePtr() )
+            if( auto scene = getCurrentScene() )
             {
                 scene->update();
             }
@@ -919,7 +925,9 @@ namespace workphone::scene
             }
 
             if( static_cast<size_t>( newId ) >= m_actors.size() )
+            {
                 throw std::length_error( "Actor capacity exhausted" );
+            }
             auto actor = factoryManager->make_ptr<GameActor>( newId );
 
             if( auto handle = actor->getHandle() )
@@ -1075,7 +1083,9 @@ namespace workphone::scene
                 {
                     std::lock_guard<std::mutex> historyLock( m_transformHistoryMutex );
                     for( auto &history : m_transformHistory )
+                    {
                         history.erase( static_cast<u32>( actorId ) );
+                    }
                 }
 
                 m_fsmListeners[actorId] = nullptr;
@@ -1180,10 +1190,14 @@ namespace workphone::scene
     u32 GameManager::addComponent( SmartPtr<IComponent> component )
     {
         if( !component )
+        {
             throw std::invalid_argument( "Cannot register a null component" );
+        }
         auto handle = component->getHandle();
         if( handle && handle->getUUIDAsString().empty() )
+        {
             handle->setUUID( StringUtil::getUUID() );
+        }
         const auto type = component->getTypeInfo();
         SmartPtr<IComponentSystem> system;
         m_systems.tryGet( type, system );
@@ -1192,45 +1206,61 @@ namespace workphone::scene
         {
             systemId = system->addComponent( component );
             if( systemId == std::numeric_limits<u32>::max() )
+            {
                 throw std::length_error( "Component system capacity exhausted" );
+            }
         }
         try
         {
             auto registry = m_components.writeLocked();
             auto &components = registry.emplace( type ).first->second;
             if( components.size() < size )
+            {
                 components.resize( size );
+            }
             size_t position;
             if( system )
             {
                 // System and manager must publish the same ID; removal uses the handle's ID.
                 position = systemId;
                 if( position >= components.size() )
+                {
                     components.resize( position + 1 );
+                }
                 if( components[position] && components[position] != component )
+                {
                     throw std::logic_error(
                         "Component system ID collides with an existing registration" );
+                }
             }
             else
             {
                 auto existing = std::find( components.begin(), components.end(), component );
                 if( existing != components.end() )
+                {
                     return static_cast<u32>( existing - components.begin() );
+                }
                 auto free = std::find( components.begin(), components.end(), nullptr );
                 if( free == components.end() )
+                {
                     throw std::length_error( "Component capacity exhausted" );
+                }
                 position = static_cast<size_t>( free - components.begin() );
             }
             components[position] = component;
             if( handle )
+            {
                 handle->setInstanceId( static_cast<u32>( position ) );
+            }
             return static_cast<u32>( position );
         }
         catch( ... )
         {
             // Release the registry view before entering system code.
             if( system )
+            {
                 system->removeComponent( systemId );
+            }
             throw;
         }
     }
@@ -1276,9 +1306,13 @@ namespace workphone::scene
     {
         auto systems = m_systems.writeLocked();
         if( systems.contains( id ) )
+        {
             systems.at( id ) = system;
+        }
         else
+        {
             systems.emplace( id, system );
+        }
     }
 
     void GameManager::removeSystem( u32 id )
@@ -1968,7 +2002,9 @@ namespace workphone::scene
     {
         const auto task = static_cast<u32>( Thread::getCurrentTask() );
         if( task >= static_cast<u32>( TaskId::Count ) || !std::isfinite( sample.time ) )
+        {
             return;
+        }
 
         std::lock_guard<std::mutex> lock( m_transformHistoryMutex );
         auto &history = m_transformHistory[task][id];
@@ -1977,10 +2013,14 @@ namespace workphone::scene
             history.begin(), history.end(), sample.time,
             []( const TransformSample &state, time_interval time ) { return state.time > time; } );
         if( it != history.end() && it->time == sample.time )
+        {
             return;
+        }
         history.insert( it, sample );
         if( history.size() > maxSmoothSize )
+        {
             history.resize( maxSmoothSize );
+        }
     }
 
     bool GameManager::getTransformState( u32 id, time_interval t, time_interval dt,
@@ -1988,7 +2028,9 @@ namespace workphone::scene
     {
         const auto taskIndex = static_cast<u32>( task );
         if( taskIndex >= static_cast<u32>( TaskId::Count ) || !std::isfinite( t ) )
+        {
             return false;
+        }
 
         TransformSample newer, older;
         bool interpolate = false;
@@ -2000,7 +2042,9 @@ namespace workphone::scene
             const auto &histories = m_transformHistory[taskIndex];
             auto it = histories.find( id );
             if( it == histories.end() || it->second.empty() )
+            {
                 return false;
+            }
             const auto &history = it->second;
             newer = history.front();
             if( t < history.back().time )
@@ -2051,8 +2095,10 @@ namespace workphone::scene
             std::clamp( t - newer.time, time_interval( 0 ), time_interval( 0.1 ) ) );
         auto velocity = newer.linearVelocity;
         if( !newer.hasVelocity && hasPrevious )
+        {
             velocity = ( newer.transform.getPosition() - older.transform.getPosition() ) /
                        static_cast<real_Num>( newer.time - older.time );
+        }
         transform.setPosition( newer.transform.getPosition() + velocity * elapsed );
         auto orientation = newer.transform.getOrientation();
         const auto angularSpeed = newer.angularVelocity.length();

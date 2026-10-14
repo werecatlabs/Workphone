@@ -1,6 +1,7 @@
 #pragma once
 #include <Workphone/Scene/Components/Component.hpp>
 #include <Workphone/Interface/Procedural/ITextureForge.hpp>
+
 namespace workphone::scene
 {
     /// Bakes renderer-neutral albedo, normal, ORM and height buffers from editor properties.
@@ -9,22 +10,25 @@ namespace workphone::scene
     {
     public:
         ProceduralSurfaceTexture();
+
         ~ProceduralSurfaceTexture() override;
+
         void load( SmartPtr<ISharedObject> data ) override;
+
         void unload( SmartPtr<ISharedObject> data ) override;
+
         void update() override;
+
         bool regenerate();
+
         SmartPtr<Properties> getProperties() const override;
+
         void setProperties( SmartPtr<Properties> properties ) override;
-        void setTextureForge( SmartPtr<procedural::ITextureForge> service )
-        {
-            m_service = service;
-            m_dirty = true;
-        }
-        const procedural::SurfaceBakeResult &getResult() const
-        {
-            return m_result;
-        }
+
+        void setTextureForge( SmartPtr<procedural::ITextureForge> service );
+
+        const procedural::SurfaceBakeResult &getResult() const;
+
         WP_CLASS_REGISTER_DECL;
 
     private:

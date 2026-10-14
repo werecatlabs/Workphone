@@ -51,14 +51,15 @@ namespace workphone::scene
 
     const u8 LayoutTransform::autoCalculateOrderFlag = ( 1 << 1 );
 
-    LayoutTransform::LayoutTransform() = default;
+    LayoutTransform::LayoutTransform() : m_uiComponentFlags( autoCalculateOrderFlag )
+    {
+    }
 
     LayoutTransform::~LayoutTransform() = default;
 
     void LayoutTransform::load( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Loading );
-        m_uiComponentFlags = autoCalculateOrderFlag;
         Component::load( data );
         m_layoutTransforms.reserve( 32 );
         setLoadingState( LoadingState::Loaded );

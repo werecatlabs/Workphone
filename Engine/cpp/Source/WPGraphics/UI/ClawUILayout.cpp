@@ -9,6 +9,69 @@ namespace workphone::ui
 {
     using namespace workphone::render;
 
+    namespace
+    {
+        // Scene UI elements share one immediate-mode window. Restrict widgets belonging to
+        // scroll content without clipping the viewport's sibling scrollbar or popup controls.
+        wp_rect contentClip( SmartPtr<IUIElement> element, wp_rect clip, wp_rect rootBounds,
+                             Vector2I referenceSize )
+        {
+            auto owner = workphone::dynamic_pointer_cast<scene::UIComponent>( element->getOwner() );
+            if( !owner )
+            {
+                return clip;
+            }
+            auto actor = owner->getActor();
+            if( !actor )
+            {
+                return clip;
+            }
+            if( referenceSize.x <= 0 || referenceSize.y <= 0 )
+            {
+                return clip;
+            }
+            auto scaleX = rootBounds.w / static_cast<f32>( referenceSize.x );
+            auto scaleY = rootBounds.h / static_cast<f32>( referenceSize.y );
+            for( auto parent = actor->getParent(); parent; parent = parent->getParent() )
+            {
+                auto view = parent->getComponent<scene::ScrollView>();
+                if( !view || !view->getContentPanel() )
+                {
+                    continue;
+                }
+                auto contentActor = view->getContentPanel()->getActor();
+                auto inContent = false;
+                for( auto current = actor; current && current != parent; current = current->getParent() )
+                {
+                    if( current == contentActor )
+                    {
+                        inContent = true;
+                        break;
+                    }
+                }
+                auto transform = parent->getComponent<scene::LayoutTransform>();
+                if( !inContent || !transform )
+                {
+                    continue;
+                }
+                auto position = transform->getAbsolutePosition();
+                auto size = transform->getAbsoluteSize();
+                auto left = MathF::max(
+                    clip.x, rootBounds.x + static_cast<f32>( position.x ) * scaleX );
+                auto top = MathF::max(
+                    clip.y, rootBounds.y + static_cast<f32>( position.y ) * scaleY );
+                auto right = MathF::min(
+                    clip.x + clip.w,
+                    rootBounds.x + static_cast<f32>( position.x + size.x ) * scaleX );
+                auto bottom = MathF::min(
+                    clip.y + clip.h,
+                    rootBounds.y + static_cast<f32>( position.y + size.y ) * scaleY );
+                clip = { left, top, MathF::max( 0.0f, right - left ), MathF::max( 0.0f, bottom - top ) };
+            }
+            return clip;
+        }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone, ClawUILayout, ClawUIElement<UILayout> );
 
     u32 ClawUILayout::m_nameExt = 0;
@@ -49,68 +112,7 @@ namespace workphone::ui
 
     void ClawUILayout::update()
     {
-        if( !isLoaded() || !isVisible() || !isEnabled() )
-        {
-            return;
-        }
-
-        auto applicationManager = core::IApplicationManager::instance();
-        if( !applicationManager )
-        {
-            return;
-        }
-
-        auto ui = workphone::static_pointer_cast<ui::ClawUIManager>( applicationManager->getRenderUI() );
-        if( !ui )
-        {
-            return;
-        }
-
-        auto *ctx = ui->getContext();
-        if( !ctx )
-        {
-            return;
-        }
-
-        auto position = getPosition();
-        auto size = getSize();
-
-        struct wp_rect bounds;
-        ClawUtil::calculateBounds( position, size, &bounds );
-
-        // Push the authoritative bounds every frame
-        // changes take effect even when MOVABLE/SCALABLE are active (wp_begin only
-        // uses its bounds argument as a one-time initialiser in that case).
-        wp_window_set_bounds( ctx, reinterpret_cast<const wp_c8 *>( "UIRoot" ), bounds );
-
-        auto flags = static_cast<wp_flags>( static_cast<unsigned int>( getWindowFlags() ) );
-
-        // Remove the window background fill so the layout root is fully transparent.
-        ctx->style.window.fixed_background = ClawUtil::solidItem( ColourF( 0.0f, 0.0f, 0.0f, 0.0f ) );
-        ctx->style.window.background = wp_rgba( 0, 0, 0, 0 );
-
-        // sort by order
-        std::sort( m_children.begin(), m_children.end(),
-                   []( const SmartPtr<IUIElement> &a, const SmartPtr<IUIElement> &b ) {
-                       return a->getOrder() < b->getOrder();
-                   } );
-
-        if( wp_begin( ctx, reinterpret_cast<const wp_c8 *>( "UIRoot" ), bounds, flags ) )
-        {
-            // Start free layout (no constraints)
-            wp_layout_space_begin( ctx, WORKPHONE_STATIC, bounds.h, 1024 );
-
-            for( auto child : m_children )
-            {
-                if( child && child->isLoaded() )
-                {
-                    child->update();
-                }
-            }
-
-            wp_layout_space_end( ctx );
-        }
-        wp_end( ctx );
+        ClawUIElement<UILayout>::update();
     }
 
     bool ClawUILayout::handleStateChanged( SmartPtr<IState> &state )
@@ -225,10 +227,54 @@ namespace workphone::ui
 
     void ClawUILayout::draw( struct wp_context *ctx )
     {
-        if( ctx && isVisible() && isEnabled() )
+        if( ctx && ctx->current && ctx->current->layout && isLoaded() && isVisible() && isEnabled() )
         {
             sortZOrder();
-            drawWorkphoneChildren( ctx );
+            auto owner = workphone::dynamic_pointer_cast<scene::UIComponent>( getOwner() );
+            auto layout = workphone::dynamic_pointer_cast<scene::Layout>( owner );
+            auto referenceSize = layout ? layout->getReferenceSize() : Vector2I( 1920, 1080 );
+            wp_rect viewportBounds;
+            ClawUtil::calculateBounds( Vector2F::zero(), Vector2F( 1, 1 ), &viewportBounds );
+            auto *panel = ctx->current->layout;
+            auto *canvas = wp_window_get_canvas( ctx );
+            const auto originalClip = panel->clip;
+            struct RestoreClip
+            {
+                wp_panel *panel;
+                wp_command_buffer *canvas;
+                wp_rect clip;
+
+                ~RestoreClip()
+                {
+                    panel->clip = clip;
+                    wp_push_scissor( canvas, clip );
+                }
+            } restore{ panel, canvas, originalClip };
+
+            for( auto child : m_children )
+            {
+                if( child )
+                {
+                    auto widget = dynamic_cast<IWorkphoneWidget *>( child.get() );
+                    if( !widget )
+                    {
+                        continue;
+                    }
+                    auto previousClip = panel->clip;
+                    auto clip = contentClip( child, originalClip, viewportBounds, referenceSize );
+                    if( clip.w <= 0 || clip.h <= 0 )
+                    {
+                        continue;
+                    }
+                    if( clip.x != previousClip.x || clip.y != previousClip.y ||
+                        clip.w != previousClip.w || clip.h != previousClip.h )
+                    {
+                        panel->clip = clip;
+                        wp_push_scissor( canvas, clip );
+                    }
+                    widget->draw( ctx );
+                }
+            }
         }
     }
 }  // namespace workphone::ui

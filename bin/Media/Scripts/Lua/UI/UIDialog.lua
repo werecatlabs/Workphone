@@ -105,33 +105,44 @@ function UIDialog:setShowTime(value) self.showTime = tonumber(value) or self.sho
 function UIDialog:setHideTime(value) self.hideTime = tonumber(value) or self.hideTime end
 function UIDialog:setIsShowing(value) self.isShowing = value == true end
 function UIDialog:setIsHiding(value) self.isHiding = value == true end
+
 function UIDialog:setIsMouseOver(value)
 	if value == true then return self:onMouseOver() end
 	return self:onMouseNotOver()
 end
+
 function UIDialog:setVisible(value)
 	if value == true then return self:show(true) end
 	return self:hide(true)
 end
+
 function UIDialog:setZOrder(value)
 	self.zOrder = math.floor(tonumber(value) or 0)
 	self:applyZOrder()
 end
+
 function UIDialog:setFadeSpeed(value) self.fadeSpeed = clamp(value, 0.0, 1000.0, 0.5) end
 function UIDialog:setDialogFadeTime(value) self.dialogFadeTime = clamp(value, 0.0, 60.0, 0.15) end
 function UIDialog:setFadeOnShow(value) self.fadeOnShow = value == true end
 function UIDialog:setFadeOnHide(value) self.fadeOnHide = value == true end
+
 function UIDialog:setMaxFadeAlpha(value)
 	self.maxFadeAlpha = clamp(value, 0.0, 1.0, 1.0)
 	if self.visible and not self.isShowing and not self.isHiding then self:setAlpha(self.maxFadeAlpha) end
 end
-function UIDialog:setHiddenDialog(value) self.isHiddenDialog = value == true end
+
+function UIDialog:setHiddenDialog(value) 
+	self.isHiddenDialog = value == true 
+end
+
 function UIDialog:setExcludeMouseOver(value)
 	self.isExcludeMouseOver = value == true
 	if self.isExcludeMouseOver then self:onMouseNotOver() end
 end
+
 function UIDialog:setOverrideShow(value) self.overrideShow = value == true end
 function UIDialog:setOverrideHide(value) self.overrideHide = value == true end
+
 function UIDialog:setDialogEnabled(value)
 	self.dialogEnabled = value == true
 	if not self.dialogEnabled and self.visible then self:hide(true) end
@@ -380,12 +391,16 @@ function UIDialog:onMouseOver()
 end
 
 function UIDialog:onMouseNotOver()
-	if not self.isMouseOver then return false end
+	if not self.isMouseOver then 
+		return false 
+	end
+	
 	self.isMouseOver = false
 	if self.onMouseExited then
 		local ok, errorMessage = pcall(self.onMouseExited, self)
 		if not ok then self.lastError = "Mouse-exit callback failed: " .. tostring(errorMessage) end
 	end
+	
 	return true
 end
 
@@ -394,6 +409,7 @@ function UIDialog:updateMouseOver()
 		self:onMouseNotOver()
 		return false
 	end
+	
 	local hit = nil
 	if type(self.mouseHitTest) == "function" then
 		local ok, value = pcall(self.mouseHitTest, self)
@@ -403,6 +419,7 @@ function UIDialog:updateMouseOver()
 			{ "containsPointer", "ContainsPointer", "isMouseOver", "IsMouseOver", "hitTest", "HitTest" })
 		if called then hit = value == true end
 	end
+	
 	if hit == nil then return self.isMouseOver end
 	if hit then self:onMouseOver() else self:onMouseNotOver() end
 	return hit

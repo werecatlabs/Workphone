@@ -96,7 +96,7 @@ namespace workphone
                         v.tangentSign = 1.0f;
                     }
 
-                    std::vector<Vector3F> bitangents( mesh.vertices.size(), Vector3F() );
+                    Array<Vector3F> bitangents( mesh.vertices.size(), Vector3F() );
                     for( std::size_t i = 0; i + 2 < mesh.indices.size(); i += 3 )
                     {
                         const std::uint32_t ia = mesh.indices[i];
@@ -175,7 +175,7 @@ namespace workphone
             };
 
             template <class Station>
-            std::vector<Station> refineStations( const std::vector<Station> &stations,
+            Array<Station> refineStations( const Array<Station> &stations,
                                                  std::uint32_t steps,
                                                  std::initializer_list<float Station::*> fields )
             {
@@ -194,7 +194,7 @@ namespace workphone
                     const float w0 = 2 * h1 + h0, w1 = h1 + 2 * h0;
                     return ( w0 + w1 ) / ( w0 / before + w1 / after );
                 };
-                std::vector<Station> refined;
+                Array<Station> refined;
                 refined.reserve( ( stations.size() - 1 ) * steps + 1 );
                 for( std::size_t i = 0; i + 1 < stations.size(); ++i )
                 {
@@ -222,7 +222,7 @@ namespace workphone
                 return refined;
             }
 
-            void loftBody( Builder &b, const std::vector<BodyStation> &stations, std::uint32_t radial )
+            void loftBody( Builder &b, const Array<BodyStation> &stations, std::uint32_t radial )
             {
                 radial = std::max<std::uint32_t>( 8u, radial );
                 const std::uint32_t cols = radial + 1u;
@@ -323,7 +323,7 @@ namespace workphone
                 }
             }
 
-            void loftPod( Builder &b, const std::vector<PodStation> &stations, std::uint32_t radial,
+            void loftPod( Builder &b, const Array<PodStation> &stations, std::uint32_t radial,
                           bool closeFront = true )
             {
                 const auto base = static_cast<std::uint32_t>( b.mesh.vertices.size() );
@@ -589,7 +589,7 @@ namespace workphone
                 Builder paint( "body_paint", VehicleMaterial::Paint );
                 Builder carbonMatte( "aero_carbon_matte", VehicleMaterial::CarbonMatte );
                 const auto loftSteps = level == 0 ? 6u : ( level == 1 ? 3u : 1u );
-                const std::vector<BodyStation> stations = {
+                const Array<BodyStation> stations = {
                     { -cfg.bodyLength * 0.54f, 0.075f, 0.21f, 0.30f, 0.00f },
                     { -cfg.bodyLength * 0.48f, 0.15f, 0.18f, 0.37f, 0.01f },
                     { frontZ - 0.28f, 0.22f, 0.15f, 0.46f, 0.025f },
@@ -608,7 +608,7 @@ namespace workphone
                 for( int side : { -1, 1 } )
                 {
                     const float sign = static_cast<float>( side );
-                    const std::vector<PodStation> pods = { { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
+                    const Array<PodStation> pods = { { 0.03f, sign * 0.59f, 0.205f, 0.51f, 0.65f },
                                                            { 0.26f, sign * 0.60f, 0.27f, 0.25f, 0.70f },
                                                            { 0.62f, sign * 0.55f, 0.30f, 0.13f, 0.66f },
                                                            { 1.03f, sign * 0.50f, 0.27f, 0.13f, 0.59f },
@@ -620,7 +620,7 @@ namespace workphone
                         podRadial, false );
                     inletLip( paint, carbonMatte, pods.front(), podRadial, .16f );
                 }
-                const std::vector<PodStation> airbox = {
+                const Array<PodStation> airbox = {
                     { 0.39f, 0.0f, 0.11f, 0.79f, 1.16f },
                     { 0.54f, 0.0f, 0.14f, 0.80f, 1.22f },
                     { 0.83f, 0.0f, 0.13f, 0.79f, 1.16f },

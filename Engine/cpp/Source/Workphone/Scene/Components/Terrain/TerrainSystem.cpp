@@ -62,6 +62,7 @@ namespace workphone::scene
             Transform3<real_Num> placement;
             u64 serial = 0;
             bool ready = false, detached = false;
+
             ~TerrainIntegrationNotice()
             {
                 if( ready )
@@ -75,6 +76,7 @@ namespace workphone::scene
                 }
             }
         };
+
         // Scene operations in the default backend share the manager's recursive
         // mutex. Acquire it without waiting before preparing any collision shape:
         // physics callbacks may already own that mutex and enter this source.
@@ -86,7 +88,9 @@ namespace workphone::scene
             bool acquire( bool required, String &error )
             {
                 if( !required )
+                {
                     return true;
+                }
                 const auto app = core::IApplicationManager::instancePtr();
                 manager = app ? app->getPhysicsManager() : nullptr;
                 if( !manager )
@@ -120,17 +124,25 @@ namespace workphone::scene
                 {
                     auto component = collision->getRigidBody();
                     if( !component )
+                    {
                         if( auto actor = collision->getActor() )
+                        {
                             component = actor->getComponent<Rigidbody>();
+                        }
+                    }
                     if( component )
                     {
                         body = component->getRigidStatic();
                         if( !body )
+                        {
                             body = component->getRigidDynamic();
+                        }
                     }
                 }
                 if( !body || ( previous && previous->getActor() == body ) )
+                {
                     continue;
+                }
                 auto it = std::find_if( additions.begin(), additions.end(),
                                         [&]( const auto &item ) { return item.first == body; } );
                 if( it == additions.end() )
@@ -139,7 +151,9 @@ namespace workphone::scene
                     it = additions.end() - 1;
                 }
                 else
+                {
                     ++it->second;
+                }
                 if( body->getNumShapes() > 16u || it->second > 16u - body->getNumShapes() )
                 {
                     error = "Terrain body has no free collision shape slot (maximum 16).";
@@ -153,13 +167,17 @@ namespace workphone::scene
                                               const render::TerrainData &data, String &error )
         {
             if( collisions.empty() )
+            {
                 return true;
+            }
             for( auto collision : collisions )
+            {
                 if( collision->getPosition() != Vector3<real_Num>::zero() )
                 {
                     error = "Authoritative terrain collision requires a zero center offset.";
                     return false;
                 }
+            }
             const auto cells = size_t( data.dimensions.x - 1 ) * ( data.dimensions.y - 1 );
             const auto solidCells =
                 data.holes.empty()
@@ -545,9 +563,13 @@ namespace workphone::scene
             createTerrain();
 
             if( auto app = core::IApplicationManager::instancePtr() )
+            {
                 if( auto manager = app->getGameManager() )
+                {
                     manager->registerComponentUpdate( TaskId::Physics, Thread::UpdateState::Update,
                                                       this );
+                }
+            }
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -563,8 +585,12 @@ namespace workphone::scene
         auto tasks = app ? app->getTaskManager() : nullptr;
         auto physicsLock = tasks ? tasks->lockTask( TaskId::Physics ) : TaskLock();
         if( app )
+        {
             if( auto manager = app->getGameManager() )
+            {
                 manager->unregisterAllComponent( this );
+            }
+        }
         std::lock_guard<std::recursive_mutex> foliageGuard( m_foliagePhysicsMutex );
         m_foliagePhysics.reset();
         m_foliagePhysicsManager = nullptr;
@@ -575,7 +601,9 @@ namespace workphone::scene
         {
             String strokeError;
             if( !cancelEditStroke( strokeError ) )
+            {
                 WP_LOG_WARNING( strokeError );
+            }
             if( isLoaded() )
             {
                 setLoadingState( LoadingState::Unloading );
@@ -630,18 +658,24 @@ namespace workphone::scene
     void TerrainSystem::update()
     {
         if( Thread::getCurrentTask() != TaskId::Physics )
+        {
             return;
+        }
         String foliagePending;
         refreshFoliage( foliagePending );
         std::unique_lock<std::recursive_mutex> guard( m_foliagePhysicsMutex, std::try_to_lock );
         if( !guard.owns_lock() )
+        {
             return;
+        }
         const auto terrain = dynamic_pointer_cast<render::Terrain>( getTerrain() );
         const auto active = terrain ? terrain->getActiveFoliage() : render::Terrain::ActiveFoliage{};
         String error;
         if( !prepareFoliagePhysics( active.snapshot, active.placement, error ) &&
             error != m_foliagePhysicsError )
+        {
             WP_LOG_WARNING( "Terrain foliage: " + error );
+        }
         m_foliagePhysicsError = std::move( error );
     }
 
@@ -666,7 +700,9 @@ namespace workphone::scene
             m_foliagePhysicsScene = nullptr;
             error.clear();
             if( commit )
+            {
                 commit();
+            }
             return true;
         }
         std::unique_lock<ISharedObject> physicsBoundary( *manager, std::try_to_lock );
@@ -690,7 +726,9 @@ namespace workphone::scene
             m_foliagePhysicsScene = nullptr;
             error.clear();
             if( commit )
+            {
                 commit();
+            }
             return true;
         }
         if( manager != m_foliagePhysicsManager || scene != m_foliagePhysicsScene )
@@ -701,17 +739,25 @@ namespace workphone::scene
         }
         Array<Vector3F> observers;
         if( auto graphics = app->getGraphicsSystem() )
+        {
             if( auto graphicsScene = graphics->getGraphicsScene() )
+            {
                 if( auto camera = graphicsScene->getActiveCamera() )
                 {
                     const auto p = camera->getRay( .5f, .5f ).getOrigin();
                     observers.push_back( { f32( p.x ), f32( p.y ), f32( p.z ) } );
                 }
+            }
+        }
         if( !m_foliagePhysics->setSource( snapshot, placement, error ) ||
             !m_foliagePhysics->update( observers, error ) )
+        {
             return false;
+        }
         if( commit )
+        {
             commit();
+        }
         return true;
     }
 
@@ -931,7 +977,9 @@ namespace workphone::scene
             String foliage, error;
             properties->getPropertyValue( "foliageDataV1", foliage );
             if( !importFoliageData( foliage, error ) )
+            {
                 WP_LOG_WARNING( "Terrain foliage: " + error );
+            }
         }
         Component::setProperties( properties );
 
@@ -1105,7 +1153,9 @@ namespace workphone::scene
                 hasFoliage = bool( m_foliageAuthoring );
             }
             if( hasFoliage && !generateFoliage( foliageError ) )
+            {
                 WP_LOG_WARNING( "Terrain foliage: " + foliageError );
+            }
 
             applicationManager->triggerEvent( EventType::Object, IEvent::sceneChanged,
                                               Array<Parameter>(), this, this, nullptr );
@@ -1117,7 +1167,9 @@ namespace workphone::scene
             {
                 String error;
                 if( !generateFoliage( error ) )
+                {
                     WP_LOG_WARNING( "Terrain foliage: " + error );
+                }
             }
             else if( properties->isButtonPressed( AddTreesStr ) ||
                      treeLayerProperties->isButtonPressed( AddTreesStr ) )
@@ -1163,7 +1215,9 @@ namespace workphone::scene
     void TerrainSystem::updateTransform()
     {
         if( terrainIntegrationIsNotifying( this ) )
+        {
             return;
+        }
         TerrainIntegrationNotice notice{ this };
         std::lock_guard<std::mutex> guard( m_terrainDataMutex );
         if( auto actor = getActor() )
@@ -1185,6 +1239,7 @@ namespace workphone::scene
                     return;
                 }
                 if( auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
+                {
                     if( concrete->isTerrainPublicationDeferred() )
                     {
                         // Authoring never waits for physics or rebuilds collision.
@@ -1192,6 +1247,7 @@ namespace workphone::scene
                         concrete->setWorldTransform( worldTransform );
                         return;
                     }
+                }
                 TerrainPhysicsBoundary boundary;
                 if( !boundary.acquire( !collisions.empty(), error ) )
                 {
@@ -1204,13 +1260,17 @@ namespace workphone::scene
                     return;
                 }
                 for( auto collision : collisions )
+                {
                     if( !collision->prepareTerrain( snapshot, worldTransform, error ) )
                     {
                         for( auto prepared : collisions )
+                        {
                             prepared->discardPreparedTerrain();
+                        }
                         WP_LOG_WARNING( "TerrainSystem: " + error );
                         return;
                     }
+                }
                 if( m_terrain )
                 {
                     m_terrain->setWorldTransform( worldTransform );
@@ -1218,15 +1278,21 @@ namespace workphone::scene
                     if( !concrete || concrete->getRequestedTerrainWorldTransform() != worldTransform )
                     {
                         for( auto prepared : collisions )
+                        {
                             prepared->discardPreparedTerrain();
+                        }
                         WP_LOG_WARNING( "TerrainSystem: renderer rejected terrain placement." );
                         return;
                     }
                     if( concrete->isTerrainPublicationDeferred() )
+                    {
                         return;
+                    }
                 }
                 for( auto collision : collisions )
+                {
                     collision->commitTerrain();
+                }
                 notice.source = snapshot;
                 notice.placement = worldTransform;
                 notice.ready = true;
@@ -1324,7 +1390,9 @@ namespace workphone::scene
         auto candidate = smgr->addGraphicsObjectByType<render::IGraphicsTerrain>();
         setTerrain( candidate );
         if( candidate && m_terrain != candidate )
+        {
             smgr->removeGraphicsObject( candidate );
+        }
         if( !m_terrain )
         {
             m_terrainListener = nullptr;
@@ -1621,12 +1689,16 @@ namespace workphone::scene
     void TerrainSystem::setTerrain( SmartPtr<render::IGraphicsTerrain> terrain )
     {
         if( terrainIntegrationIsNotifying( this ) )
+        {
             return;
+        }
         TerrainIntegrationNotice notice{ this };
         std::lock_guard<std::recursive_mutex> foliageGuard( m_foliagePhysicsMutex );
         std::lock_guard<std::mutex> guard( m_terrainDataMutex );
         if( m_terrain == terrain )
+        {
             return;
+        }
         if( terrain )
         {
             auto concrete = dynamic_cast<render::Terrain *>( terrain.get() );
@@ -1639,8 +1711,12 @@ namespace workphone::scene
             const auto snapshot = m_terrainData;
             auto placement = concrete->getRequestedTerrainWorldTransform();
             if( auto actor = getActor() )
+            {
                 if( auto transform = actor->getTransform() )
+                {
                     placement = transform->getWorldTransform();
+                }
+            }
             // A recreated renderer must receive the actor's existing placement even
             // when no new transform event follows attachment. Validate both source
             // and placement before touching the candidate or retiring a valid runtime.
@@ -1654,7 +1730,9 @@ namespace workphone::scene
             concrete->setWorldTransform( placement );
             notice.source = concrete->getActiveTerrainSnapshot();
             if( notice.source != m_activeTerrainData )
+            {
                 notice.source.reset();
+            }
             notice.placement = concrete->getWorldTransform();
             AtomicWeakPtr<TerrainSystem> owner( this );
             concrete->setFoliagePublicationGate(
@@ -1694,11 +1772,13 @@ namespace workphone::scene
                 } );
         }
         if( m_terrain && m_terrain != terrain )
+        {
             if( auto previous = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
             {
                 previous->setTerrainPublicationGate( {} );
                 previous->setFoliagePublicationGate( {} );
             }
+        }
         m_terrain = terrain;
         {
             std::lock_guard<std::mutex> authored( m_foliageAuthoringMutex );
@@ -1767,30 +1847,48 @@ namespace workphone::scene
         TerrainPhysicsBoundary boundary;
         Transform3<real_Num> placement;
         if( auto concrete = dynamic_cast<render::Terrain *>( m_terrain.get() ) )
+        {
             placement = concrete->getRequestedTerrainWorldTransform();
+        }
         if( auto actor = getActor() )
         {
             collisions = actor->getComponentsByType<CollisionTerrain>();
             if( !boundary.acquire( !collisions.empty(), error ) )
+            {
                 return false;
+            }
             // Initial deferred terrain has no published shape yet, but its body
             // may already be registered in a live scene waiting for that shape.
             for( auto component : actor->getComponentsByType<Rigidbody>() )
             {
                 for( auto collision : collisions )
+                {
                     if( !collision->getRigidBody() )
+                    {
                         collision->setRigidBody( component );
+                    }
+                }
                 SmartPtr<physics::IPhysicsBody3> body = component->getRigidStatic();
                 if( !body )
+                {
                     body = component->getRigidDynamic();
+                }
                 if( body )
+                {
                     if( auto scene = body->getScene() )
+                    {
                         if( std::find( scenes.begin(), scenes.end(), scene ) == scenes.end() )
+                        {
                             scenes.push_back( scene );
+                        }
+                    }
+                }
             }
         }
         if( !validateTerrainBodyCapacity( collisions, error ) )
+        {
             return false;
+        }
         for( auto collision : collisions )
         {
             if( !collision->isTerrainPrepared( snapshot, placement ) )
@@ -1799,16 +1897,24 @@ namespace workphone::scene
                 // generation was requested. Recover its candidate before entering
                 // any scene/terrain publication locks; failures leave active data intact.
                 if( !collision->prepareTerrain( snapshot, placement, error ) )
+                {
                     return false;
+                }
             }
             if( auto shape = collision->getShape() )
             {
                 // Keep intrusive shape destruction outside the publication locks.
                 retiredShapes.push_back( shape );
                 if( auto body = shape->getActor() )
+                {
                     if( auto scene = body->getScene() )
+                    {
                         if( std::find( scenes.begin(), scenes.end(), scene ) == scenes.end() )
+                        {
                             scenes.push_back( scene );
+                        }
+                    }
+                }
             }
         }
         std::sort( scenes.begin(), scenes.end(), []( const auto &a, const auto &b ) {
@@ -1829,7 +1935,9 @@ namespace workphone::scene
         const bool published = publish(
             [&] {
                 for( auto collision : collisions )
+                {
                     collision->commitTerrain();
+                }
                 m_activeTerrainData = snapshot;
             },
             error );
@@ -1853,7 +1961,9 @@ namespace workphone::scene
         {
             const auto samples = exportTerrainData();
             if( samples.empty() )
+            {
                 throw std::runtime_error( "Unable to serialize terrain height samples." );
+            }
             properties->setProperty( "terrainDataV1", samples );
             SmartPtr<FoliageAuthoring> authoring;
             {
@@ -1864,7 +1974,9 @@ namespace workphone::scene
             {
                 String foliage, error;
                 if( !authoring->serialize( foliage, error ) )
+                {
                     throw std::runtime_error( error.c_str() );
+                }
                 properties->setProperty( "foliageDataV1", foliage );
             }
         }
@@ -1885,12 +1997,16 @@ namespace workphone::scene
             return false;
         }
         if( !render::validateTerrainData( data, error ) )
+        {
             return false;
+        }
         TerrainIntegrationNotice notice{ this };
         Array<SmartPtr<CollisionTerrain>> preparedCollisions;
         const auto discard = [&] {
             for( auto collision : preparedCollisions )
+            {
                 collision->discardPreparedTerrain();
+            }
         };
         try
         {
@@ -1933,18 +2049,28 @@ namespace workphone::scene
             if( auto actor = getActor() )
             {
                 if( auto transform = actor->getTransform() )
+                {
                     placement = transform->getWorldTransform();
+                }
                 if( !render::validateTerrainPlacement( *candidate, placement, error ) )
+                {
                     return false;
+                }
                 auto collisions = actor->getComponentsByType<CollisionTerrain>();
                 if( !validateTerrainCollisionRequest( collisions, *candidate, error ) )
+                {
                     return false;
+                }
                 if( !deferred )
                 {
                     if( !boundary.acquire( !collisions.empty(), error ) )
+                    {
                         return false;
+                    }
                     if( !validateTerrainBodyCapacity( collisions, error ) )
+                    {
                         return false;
+                    }
                     for( auto collision : collisions )
                     {
                         preparedCollisions.push_back( collision );
@@ -1970,7 +2096,9 @@ namespace workphone::scene
             if( !deferred )
             {
                 for( auto collision : preparedCollisions )
+                {
                     collision->commitTerrain();
+                }
                 m_activeTerrainData = candidate;
                 notice.source = candidate;
                 notice.placement = concrete ? concrete->getWorldTransform() : placement;
@@ -2007,6 +2135,7 @@ namespace workphone::scene
         m_editStroke = std::make_unique<TerrainEditStroke>( this, commands );
         return true;
     }
+
     bool TerrainSystem::updateEditStroke( const TerrainBrush &brush, String &error )
     {
         if( !m_editStroke )
@@ -2016,6 +2145,7 @@ namespace workphone::scene
         }
         return m_editStroke->update( brush, error );
     }
+
     bool TerrainSystem::commitEditStroke( String &error )
     {
         if( !m_editStroke )
@@ -2024,17 +2154,24 @@ namespace workphone::scene
             return false;
         }
         if( !m_editStroke->commit( error ) )
+        {
             return false;
+        }
         m_editStroke.reset();
         return true;
     }
+
     bool TerrainSystem::cancelEditStroke( String &error )
     {
         error.clear();
         if( !m_editStroke )
+        {
             return true;
+        }
         if( !m_editStroke->cancel( error ) )
+        {
             return false;
+        }
         m_editStroke.reset();
         return true;
     }
@@ -2048,9 +2185,12 @@ namespace workphone::scene
     {
         std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
         if( !m_foliageAuthoring )
+        {
             m_foliageAuthoring = make_ptr<FoliageAuthoring>();
+        }
         return m_foliageAuthoring;
     }
+
     bool TerrainSystem::generateFoliage( String &error )
     {
         auto authoring = getFoliageAuthoring();
@@ -2072,11 +2212,15 @@ namespace workphone::scene
                 recipe.leaves.tint = { .18f, .4f, .12f, 1 };
                 render::FoliageSpecies data;
                 if( !generateFoliagePlant( recipe, data, error ) )
+                {
                     return false;
+                }
                 species.push_back( std::make_shared<const render::FoliageSpecies>( std::move( data ) ) );
             }
             if( !authoring->setSpecies( std::move( species ), error ) )
+            {
                 return false;
+            }
             auto recipe = authoring->getRecipe();
             FoliagePlacementRule trees;
             trees.species = 0;
@@ -2089,12 +2233,17 @@ namespace workphone::scene
             grass.minimumSpacing = .2f;
             recipe.rules = { trees, grass };
             if( !authoring->configure( recipe, error ) )
+            {
                 return false;
+            }
         }
         if( !authoring->regenerateAll( getTerrainSnapshot(), error ) )
+        {
             return false;
+        }
         return refreshFoliage( error );
     }
+
     bool TerrainSystem::refreshFoliage( String &error )
     {
         std::unique_lock<std::mutex> refresh( m_foliageRefreshMutex, std::try_to_lock );
@@ -2150,7 +2299,9 @@ namespace workphone::scene
         }
         const auto snapshot = authoring->getGroundedSnapshot( active, error );
         if( !snapshot )
+        {
             return false;
+        }
         if( snapshot->revision != authored->revision || authoring->getSnapshot() != authored )
         {
             error = "Foliage authoring changed during grounding; the next update will retry.";
@@ -2180,7 +2331,9 @@ namespace workphone::scene
             }
         }
         if( !renderer->setFoliageSnapshot( snapshot, error ) )
+        {
             return false;
+        }
         {
             std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
             if( m_foliageAuthoring == authoring )
@@ -2192,6 +2345,7 @@ namespace workphone::scene
         error.clear();
         return true;
     }
+
     String TerrainSystem::exportFoliageData() const
     {
         SmartPtr<FoliageAuthoring> authoring;
@@ -2201,14 +2355,19 @@ namespace workphone::scene
         }
         String output, error;
         if( authoring )
+        {
             authoring->serialize( output, error );
+        }
         return output;
     }
+
     bool TerrainSystem::importFoliageData( const String &json, String &error )
     {
         auto candidate = make_ptr<FoliageAuthoring>();
         if( !candidate->deserialize( json, error ) )
+        {
             return false;
+        }
         {
             std::lock_guard<std::mutex> guard( m_foliageAuthoringMutex );
             m_foliageAuthoring = candidate;
@@ -2235,7 +2394,9 @@ namespace workphone::scene
     {
         auto before = getTerrainSnapshot();
         if( before->heightScale == heightScale )
+        {
             return;
+        }
         auto candidate = *before;
         candidate.heightScale = heightScale;
         String error;
@@ -2259,7 +2420,9 @@ namespace workphone::scene
     {
         auto before = getTerrainSnapshot();
         if( before->dimensions == heightMapSize )
+        {
             return;
+        }
         if( heightMapSize.x < 2 || heightMapSize.y < 2 ||
             heightMapSize.x > static_cast<s32>( render::terrainMaximumDimension ) ||
             heightMapSize.y > static_cast<s32>( render::terrainMaximumDimension ) ||

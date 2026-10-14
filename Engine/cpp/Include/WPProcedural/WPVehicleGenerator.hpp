@@ -19,7 +19,7 @@ namespace workphone
         public:
             static GeneratedVehicle generate( const VehicleGenerationConfig &config = {} );
 
-            static std::vector<VehicleGenerationIssue> validate( const GeneratedVehicle &vehicle );
+            static Array<VehicleGenerationIssue> validate( const GeneratedVehicle &vehicle );
 
             static VehicleMaterialSlot materialSlotFor( VehicleMaterial material );
         };

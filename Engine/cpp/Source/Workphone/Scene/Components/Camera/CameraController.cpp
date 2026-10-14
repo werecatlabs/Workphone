@@ -225,15 +225,21 @@ namespace workphone::scene
         {
             auto applicationManager = core::IApplicationManager::instance();
             if( !applicationManager )
+            {
                 return;
+            }
 
             auto selectionManager = applicationManager->getSelectionManager();
             if( !selectionManager )
+            {
                 return;
+            }
 
             auto selection = selectionManager->getSelection();
             if( selection.empty() )
+            {
                 return;
+            }
 
             // Calculate bounding box of selected objects
             AABB3<real_Num> combinedBounds;
@@ -278,7 +284,9 @@ namespace workphone::scene
             {
                 auto transform = actor->getTransform();
                 if( !transform )
+                {
                     return;
+                }
 
                 // Calculate center and size of bounds
                 Vector3<real_Num> center = bounds.getCenter();
@@ -329,11 +337,15 @@ namespace workphone::scene
         {
             auto applicationManager = core::IApplicationManager::instance();
             if( !applicationManager )
+            {
                 return;
+            }
 
             auto graphicsSystem = applicationManager->getGraphicsSystem();
             if( !graphicsSystem )
+            {
                 return;
+            }
 
             if( auto actor = getActor() )
             {
@@ -398,15 +410,21 @@ namespace workphone::scene
         {
             auto applicationManager = core::IApplicationManager::instance();
             if( !applicationManager )
+            {
                 return;
+            }
 
             auto sceneManager = applicationManager->getGameManager();
             if( !sceneManager )
+            {
                 return;
+            }
 
             auto currentScene = sceneManager->getCurrentScene();
             if( !currentScene )
+            {
                 return;
+            }
 
             // Find all other camera controllers and remove main camera flag
             auto actors = currentScene->getActors();
@@ -490,7 +508,9 @@ namespace workphone::scene
 
         auto owner = getOwner();
         if( !owner )
+        {
             return {};
+        }
 
         try
         {

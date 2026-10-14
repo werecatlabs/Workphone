@@ -214,13 +214,21 @@ namespace workphone::scene
 
         // Validation and Clamping
         if( lifetime < 0.0f )
+        {
             lifetime = 0.0f;
+        }
         if( duration < 0.0f )
+        {
             duration = 0.0f;
+        }
         if( fastForwardTime < 0.0f )
+        {
             fastForwardTime = 0.0f;
+        }
         if( fastForwardInterval < 0.0f )
+        {
             fastForwardInterval = 0.0f;
+        }
 
         setTemplateName( templateName );
         setTechniqueName( techniqueName );
@@ -248,11 +256,17 @@ namespace workphone::scene
             emissionProperties->getPropertyValue( angleVarianceStr, angleVariance );
 
             if( rate < 0.0f )
+            {
                 rate = 0.0f;
+            }
             if( rateVariance < 0.0f )
+            {
                 rateVariance = 0.0f;
+            }
             if( angleVariance < 0.0f )
+            {
                 angleVariance = 0.0f;
+            }
 
             setRate( rate );
             setRateVariance( rateVariance );
@@ -271,9 +285,13 @@ namespace workphone::scene
             shapeProperties->getPropertyValue( shapeSizeVarianceStr, shapeSizeVariance );
 
             if( shapeSize < 0.0f )
+            {
                 shapeSize = 0.0f;
+            }
             if( shapeSizeVariance < 0.0f )
+            {
                 shapeSizeVariance = 0.0f;
+            }
 
             setShapeType( shapeType );
             setShapeSize( shapeSize );
@@ -744,7 +762,9 @@ namespace workphone::scene
     {
         m_fastForwardTime = Math<f32>::max( 0.0f, time );
         if( auto ps = getParticleSystem() )
+        {
             ps->setFastForward( m_fastForwardTime, m_fastForwardInterval );
+        }
     }
 
     f32 ParticleSystem::getFastForwardInterval() const
@@ -756,7 +776,9 @@ namespace workphone::scene
     {
         m_fastForwardInterval = Math<f32>::max( 0.0f, interval );
         if( auto ps = getParticleSystem() )
+        {
             ps->setFastForward( m_fastForwardTime, m_fastForwardInterval );
+        }
     }
 
     // --- Start ranges -------------------------------------------------------
@@ -794,7 +816,9 @@ namespace workphone::scene
     {
         m_scale = scale;
         if( auto ps = getParticleSystem() )
+        {
             ps->setScale( m_scale );
+        }
     }
 
     // --- Emission -----------------------------------------------------------

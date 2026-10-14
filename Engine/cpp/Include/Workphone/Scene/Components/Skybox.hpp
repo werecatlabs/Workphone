@@ -35,6 +35,7 @@ namespace workphone
             static const String swapLeftRightPropertyKey;
             static const String swapUpDownPropertyKey;
             static const String swapFrontBackPropertyKey;
+
             ///@}
 
             /**

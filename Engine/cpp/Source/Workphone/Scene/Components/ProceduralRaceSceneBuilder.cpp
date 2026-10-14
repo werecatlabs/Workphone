@@ -27,18 +27,22 @@ namespace workphone::scene::race
     {
         using namespace procedural;
         constexpr float pi = 3.14159265358979323846f;
+
         struct Geometry
         {
             Array<Vector3F> positions, normals, uv;
             Array<u32> indices;
             Array<Vector4F> tangents;
+
             void quad( Vector3F a, Vector3F b, Vector3F c, Vector3F d, Vector3F normal, float u0 = 0,
                        float u1 = 1, float v0 = 0, float v1 = 1 )
             {
                 const auto base = static_cast<u32>( positions.size() );
                 auto tangent = b - a;
                 if( tangent.lengthSquared() < 1e-8f )
+                {
                     tangent = Vector3F( 1, 0, 0 );
+                }
                 tangent.normalise();
                 for( auto p : { a, b, c, d } )
                 {
@@ -53,16 +57,21 @@ namespace workphone::scene::race
                 const auto winding = ( b - a ).crossProduct( c - a ).dotProduct( normal ) >= 0;
                 for( auto i : winding ? std::array<u32, 6>{ 0, 1, 2, 0, 2, 3 }
                                       : std::array<u32, 6>{ 0, 2, 1, 0, 3, 2 } )
+                {
                     indices.push_back( base + i );
+                }
             }
+
             void beam( Vector3F a, Vector3F b, float radius )
             {
                 auto axis = b - a;
                 if( axis.lengthSquared() < 1e-8f || radius <= 0 )
+                {
                     return;
+                }
                 axis.normalise();
-                auto u = axis.crossProduct( std::abs( axis.y ) > .9f
-                                               ? Vector3F( 1, 0, 0 ) : Vector3F( 0, 1, 0 ) );
+                auto u = axis.crossProduct( std::abs( axis.y ) > .9f ? Vector3F( 1, 0, 0 )
+                                                                     : Vector3F( 0, 1, 0 ) );
                 u.normalise();
                 const auto v = axis.crossProduct( u );
                 const auto ur = u * radius, vr = v * radius;
@@ -73,6 +82,7 @@ namespace workphone::scene::race
                 quad( a - ur - vr, a + ur - vr, a + ur + vr, a - ur + vr, -axis );
                 quad( b - ur - vr, b + ur - vr, b + ur + vr, b - ur + vr, axis );
             }
+
             void box( Vector3F p, Vector3F size )
             {
                 auto lo = p - size * 0.5f, hi = p + size * 0.5f;
@@ -90,6 +100,7 @@ namespace workphone::scene::race
                       { hi.x, hi.y, lo.z }, { 1, 0, 0 } );
             }
         };
+
         SmartPtr<render::IMaterial> material( SceneAssets &assets, ColourF colour, float roughness,
                                               float metalness = 0 )
         {
@@ -104,19 +115,24 @@ namespace workphone::scene::race
             assets.materials.push_back( m );
             return m;
         }
+
         SmartPtr<render::ITexture> upload(
             SceneAssets &assets, const TextureBuffer &buffer,
             render::TextureMipFilter filter = render::TextureMipFilter::Colour, u32 atlasColumns = 1 )
         {
             if( buffer.pixels.empty() )
+            {
                 return nullptr;
+            }
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
             auto name =
                 assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
             auto texture = graphics->getTextureManager()->createManual( name, "General", 2, buffer.width,
                                                                         buffer.height, 1, 0, 0 );
             if( !texture )
+            {
                 throw std::runtime_error( "Cannot create procedural texture." );
+            }
             auto properties = texture->getProperties();
             properties->setProperty( "mipmapFilter", static_cast<s32>( filter ) );
             properties->setProperty( "mipmapAtlasColumns", atlasColumns );
@@ -124,26 +140,34 @@ namespace workphone::scene::race
             // ClawTexture's native storage uses BGRA8, while procedural buffers use RGBA8.
             auto bgra = buffer.pixels;
             for( size_t i = 0; i < bgra.size(); i += 4 )
+            {
                 std::swap( bgra[i], bgra[i + 2] );
+            }
             texture->copyData( bgra.data(), Vector2I( buffer.width, buffer.height ) );
             assets.textureBytes += buffer.sizeBytes();
             assets.textures.push_back( texture );
             return texture;
         }
-        SmartPtr<render::ITexture> uploadLinearRadiance( SceneAssets &assets,
-                                                       const Array<f32> &rgba, Vector2I size )
+
+        SmartPtr<render::ITexture> uploadLinearRadiance( SceneAssets &assets, const Array<f32> &rgba,
+                                                         Vector2I size )
         {
             auto graphics = core::IApplicationManager::instance()->getGraphicsSystem();
-            const auto name = assets.resourcePrefix + "/radiance/" + StringUtil::toString( assets.textures.size() );
-            auto texture = graphics->getTextureManager()->createManual( name, "General", 2,
-                size.x, size.y, 1, 0, 0 );
+            const auto name =
+                assets.resourcePrefix + "/radiance/" + StringUtil::toString( assets.textures.size() );
+            auto texture = graphics->getTextureManager()->createManual( name, "General", 2, size.x,
+                                                                        size.y, 1, 0, 0 );
             String error;
             if( !texture || !texture->copyLinearFloatData( rgba, size, error ) )
-                throw std::runtime_error( ( String( "Cannot stage HDR reflection face: " ) + error ).c_str() );
+            {
+                throw std::runtime_error(
+                    ( String( "Cannot stage HDR reflection face: " ) + error ).c_str() );
+            }
             assets.textureBytes += rgba.size() * sizeof( f32 );
             assets.textures.push_back( texture );
             return texture;
         }
+
         void maps( SceneAssets &assets, SmartPtr<render::IMaterial> m, const TextureBuffer &albedo,
                    const TextureBuffer &normal, const TextureBuffer &orm )
         {
@@ -153,7 +177,9 @@ namespace workphone::scene::race
                 m->setTexture( upload( assets, albedo ), 0 );
             }
             if( !normal.pixels.empty() )
+            {
                 m->setTexture( upload( assets, normal, render::TextureMipFilter::Normal ), 1 );
+            }
             // The generated ORM is AO/Roughness/Metalness. WPGraphics' separate map slots
             // read red, so expand each channel explicitly, without applying an sRGB transfer.
             if( !orm.pixels.empty() )
@@ -178,9 +204,9 @@ namespace workphone::scene::race
                 m->setMetalness( 1 );
             }
         }
-        SmartPtr<render::IMaterial> raceAsphalt( SceneAssets &assets,
-                                               SmartPtr<ITextureForge> forge,
-                                               const SurfaceBakeParams &params, u32 seed )
+
+        SmartPtr<render::IMaterial> raceAsphalt( SceneAssets &assets, SmartPtr<ITextureForge> forge,
+                                                 const SurfaceBakeParams &params, u32 seed )
         {
             auto asphalt = forge->bakeSurface( SurfaceTag::Asphalt, params );
             // Keep the forge's seeded aggregate detail subtle at driving distance.
@@ -188,18 +214,25 @@ namespace workphone::scene::race
             for( size_t i = 0; i < asphalt.albedo.pixels.size(); i += 4 )
             {
                 for( size_t channel = 0; channel < 3; ++channel )
+                {
                     asphalt.albedo.pixels[i + channel] =
                         static_cast<u8>( 60 + asphalt.albedo.pixels[i + channel] / 6 );
+                }
                 for( size_t channel = 0; channel < 2; ++channel )
+                {
                     asphalt.normal.pixels[i + channel] = static_cast<u8>(
                         128 + ( int( asphalt.normal.pixels[i + channel] ) - 128 ) / 10 );
+                }
             }
             if( !assets.exportSourceDirectory.empty() )
             {
                 std::string error;
-                if( !texture_export::exportAsphaltSource( asphalt,
-                        std::filesystem::u8path( assets.exportSourceDirectory.c_str() ), seed, error ) )
+                if( !texture_export::exportAsphaltSource(
+                        asphalt, std::filesystem::u8path( assets.exportSourceDirectory.c_str() ), seed,
+                        error ) )
+                {
                     throw std::runtime_error( "Asphalt source export failed: " + error );
+                }
             }
             auto roadMat = material( assets, { .07f, .075f, .085f, 1 }, .9f );
             maps( assets, roadMat, asphalt.albedo, asphalt.normal, asphalt.orm );
@@ -208,12 +241,15 @@ namespace workphone::scene::race
             roadMat->setEditorFloat( "uvAniso", 8.f );
             return roadMat;
         }
+
         SmartPtr<scene::IGameActor> mesh( SceneAssets &assets, const String &name, const Geometry &g,
                                           SmartPtr<render::IMaterial> m,
                                           SmartPtr<scene::IGameActor> parent = nullptr )
         {
             if( g.indices.empty() )
+            {
                 return nullptr;
+            }
             auto app = core::IApplicationManager::instance();
             auto manager = dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
             if( !manager )
@@ -239,18 +275,24 @@ namespace workphone::scene::race
             actor->setName( name );
             assets.actors.push_back( actor );
             if( parent )
+            {
                 parent->addChild( actor );
+            }
             actor->addComponent<scene::Mesh>()->setMeshResource( resource );
             actor->addComponent<scene::MeshRenderer>();
             actor->addComponent<scene::Material>()->setMaterial( m );
             if( !parent )
+            {
                 app->getGameManager()->getCurrentScene()->addActor( actor );
+            }
             return actor;
         }
+
         Vector3F vector( const VehiclePhysicsVector3 &p )
         {
             return { float( p.x ), float( p.y ), float( p.z ) };
         }
+
         void staticBox( SceneAssets &assets, const String &name, Vector3F centre, Vector3F size,
                         QuaternionF orientation = QuaternionF::identity() )
         {
@@ -275,11 +317,14 @@ namespace workphone::scene::race
             direction.y = 0;
             const auto length = direction.length();
             if( length <= 1e-4f )
+            {
                 return;
+            }
             const auto yaw = std::atan2( direction.x, direction.z ) * 180.f / pi;
             staticBox( assets, "Guardrail beam", ( start + end ) * .5f + Vector3F( 0, .5f, 0 ),
                        { .2f, .5f, length }, QuaternionF::eulerDegrees( 0, yaw, 0 ) );
         }
+
         void pineGeometry( Geometry &trunks, Geometry &leaves, Vector3F p, float h, u32 seed = 0 )
         {
             // Reuse the engine's validated deterministic plant generator for the
@@ -299,7 +344,9 @@ namespace workphone::scene::race
                     render::FoliageSpecies species;
                     String error;
                     if( !scene::generateFoliagePlant( recipe, species, error ) )
+                    {
                         throw std::runtime_error( "Cannot generate circuit pine: " + error );
+                    }
                     const auto &source = species.lods[0];
                     auto &bark = result[variant].first;
                     auto &needles = result[variant].second;
@@ -333,14 +380,16 @@ namespace workphone::scene::race
                     // This keeps real silhouette gaps without alpha overdraw.
                     for( u32 first = woodVertices; first + 3u < source.positions.size(); first += 4u )
                     {
-                        auto centre = taper( ( source.positions[first] + source.positions[first + 1u] ) * .5f );
+                        auto centre =
+                            taper( ( source.positions[first] + source.positions[first + 1u] ) * .5f );
                         auto radial = Vector3F( centre.x, 0, centre.z );
                         radial.normalise();
                         auto cardRight = source.positions[first + 1u] - source.positions[first];
                         cardRight.normalise();
                         auto direction = radial * .8f + cardRight * .45f;
                         direction.normalise();
-                        const float phase = float( render::foliageStableHash( recipe.seed + first ) >> 40 ) / 16777216.f;
+                        const float phase =
+                            float( render::foliageStableHash( recipe.seed + first ) >> 40 ) / 16777216.f;
                         // Boughs must cover the branch interior rather than
                         // attaching tiny leaves only to its extreme tip. Their
                         // overlapping lobes build crown mass while retaining
@@ -351,16 +400,24 @@ namespace workphone::scene::race
                         const float crownScale = 1.f - .65f * centre.y;
                         auto bounded = []( Vector3F point ) {
                             const float radius = std::hypot( point.x, point.z );
-                            if( radius > .27f ) { point.x *= .27f / radius; point.z *= .27f / radius; }
+                            if( radius > .27f )
+                            {
+                                point.x *= .27f / radius;
+                                point.z *= .27f / radius;
+                            }
                             return point;
                         };
                         for( int sprig = -2; sprig <= 2; ++sprig )
                         {
                             const float angle = sprig * .55f;
-                            const auto axis = Vector3F( direction.x * std::cos( angle ) - direction.z * std::sin( angle ),
-                                -.015f + .045f * phase, direction.x * std::sin( angle ) + direction.z * std::cos( angle ) );
-                            const auto tip = bounded( centre + axis * ( .20f + .06f * phase ) * crownScale );
-                            const auto middle = centre + ( tip - centre ) * .57f + Vector3F( 0, .055f, 0 );
+                            const auto axis = Vector3F(
+                                direction.x * std::cos( angle ) - direction.z * std::sin( angle ),
+                                -.015f + .045f * phase,
+                                direction.x * std::sin( angle ) + direction.z * std::cos( angle ) );
+                            const auto tip =
+                                bounded( centre + axis * ( .20f + .06f * phase ) * crownScale );
+                            const auto middle =
+                                centre + ( tip - centre ) * .57f + Vector3F( 0, .055f, 0 );
                             auto across = Vector3F( -axis.z, .35f * sprig, axis.x );
                             across.normalise();
                             across *= ( .045f + .020f * phase ) * crownScale;
@@ -377,15 +434,24 @@ namespace workphone::scene::race
             const auto &variant = variants[seed % variants.size()];
             auto append = [&]( Geometry &target, const Geometry &source ) {
                 const auto base = static_cast<u32>( target.positions.size() );
-                for( const auto &position : source.positions ) target.positions.push_back( p + position * h );
-                target.normals.insert( target.normals.end(), source.normals.begin(), source.normals.end() );
-                target.tangents.insert( target.tangents.end(), source.tangents.begin(), source.tangents.end() );
+                for( const auto &position : source.positions )
+                {
+                    target.positions.push_back( p + position * h );
+                }
+                target.normals.insert( target.normals.end(), source.normals.begin(),
+                                       source.normals.end() );
+                target.tangents.insert( target.tangents.end(), source.tangents.begin(),
+                                        source.tangents.end() );
                 target.uv.insert( target.uv.end(), source.uv.begin(), source.uv.end() );
-                for( auto index : source.indices ) target.indices.push_back( base + index );
+                for( auto index : source.indices )
+                {
+                    target.indices.push_back( base + index );
+                }
             };
             append( trunks, variant.first );
             append( leaves, variant.second );
         }
+
         MeshImposterAtlas bakePineImposter( u32 variant )
         {
             Geometry trunks, canopy;
@@ -393,15 +459,19 @@ namespace workphone::scene::race
             Array<MeshImposterTriangle> triangles;
             auto append = [&]( const Geometry &g, ColourF colour ) {
                 for( size_t i = 0; i < g.indices.size(); i += 3 )
+                {
                     triangles.push_back( { { g.positions[g.indices[i]], g.positions[g.indices[i + 1]],
                                              g.positions[g.indices[i + 2]] },
                                            colour } );
+                }
             };
             append( trunks, { .12f, .055f, .018f, 1 } );
             append( canopy, { .18f, .32f, .13f, 1 } );
             return generateMeshImposters( triangles, { -.28f, 0, -.28f }, { .28f, 1.08f, .28f } );
         }
-        void pineImposterGeometry( Geometry &g, const MeshImposterAtlas &atlas, Vector3F p, float h, u32 variant )
+
+        void pineImposterGeometry( Geometry &g, const MeshImposterAtlas &atlas, Vector3F p, float h,
+                                   u32 variant )
         {
             for( size_t i = 0; i < atlas.views.size(); ++i )
             {
@@ -417,8 +487,10 @@ namespace workphone::scene::race
                         point( view.maximum.x, view.maximum.y ), point( view.minimum.x, view.maximum.y ),
                         view.towardCamera );
                 // Match the bake's one-pixel transparent border and top-left image origin.
-                const float u0 = ( float( variant * atlas.width + i * atlas.tileWidth ) + 1 ) / ( atlas.width * 4 );
-                const float u1 = ( float( variant * atlas.width + ( i + 1 ) * atlas.tileWidth ) - 2 ) / ( atlas.width * 4 );
+                const float u0 =
+                    ( float( variant * atlas.width + i * atlas.tileWidth ) + 1 ) / ( atlas.width * 4 );
+                const float u1 = ( float( variant * atlas.width + ( i + 1 ) * atlas.tileWidth ) - 2 ) /
+                                 ( atlas.width * 4 );
                 const float top = 1.f / atlas.height, bottom = float( atlas.height - 2 ) / atlas.height;
                 g.uv[base] = { u0, bottom, 0 };
                 g.uv[base + 1] = { u1, bottom, 0 };
@@ -426,6 +498,7 @@ namespace workphone::scene::race
                 g.uv[base + 3] = { u0, top, 0 };
             }
         }
+
         void buildCar( SceneAssets &assets, SmartPtr<scene::IGameActor> actor, u32 seed,
                        VehicleAppearanceQuality quality )
         {
@@ -433,7 +506,9 @@ namespace workphone::scene::race
             auto generator =
                 app->getFactoryManager()->createObjectFromType<IVehicleGenerator>( "IVehicleGenerator" );
             if( !generator )
+            {
                 throw std::runtime_error( "VehicleAdvanced requires WPProcedural IVehicleGenerator." );
+            }
             VehicleGenerationConfig config;
             config.seed = seed;
             config.appearance.quality = quality;
@@ -443,7 +518,9 @@ namespace workphone::scene::race
                                                         : 1024;
             assets.vehicle = generator->generate( config );
             if( !assets.vehicle.isValid() )
+            {
                 throw std::runtime_error( "Procedural vehicle generation failed." );
+            }
             const auto &appearance = assets.vehicle.appearance;
             std::array<SmartPtr<render::IMaterial>, size_t( VehicleMaterialSlot::Count )> materials;
             for( size_t i = 0; i < materials.size(); ++i )
@@ -464,7 +541,9 @@ namespace workphone::scene::race
                 m->setEmissive( { d.emissiveColor.r, d.emissiveColor.g, d.emissiveColor.b, 1 } );
                 m->setEmissionEnabled( d.emissiveIntensity > 0 );
                 if( d.doubleSided )
+                {
                     m->setCullMode( 1 );
+                }
                 materials[i] = m;
                 assets.vehicleMaterials.push_back( m );
             }
@@ -554,9 +633,13 @@ namespace workphone::scene::race
                             "LOD" + StringUtil::toString( lod ) + " " + String( section.name.c_str() ),
                             parts[i], m, rotating ? assets.wheels[i] : actor );
                         if( !assets.body && !rotating )
+                        {
                             assets.body = part;
+                        }
                         if( part )
+                        {
                             renderers.push_back( part->getComponent<scene::MeshRenderer>() );
+                        }
                     }
                 }
                 vehicleLOD->addLevel(
@@ -565,7 +648,9 @@ namespace workphone::scene::race
             }
             generator = nullptr;
         }
+
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality );
+
         void buildTrack( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
             assets.circuit = generateCircuit( seed );
@@ -573,7 +658,9 @@ namespace workphone::scene::race
             auto forge =
                 app->getFactoryManager()->createObjectFromType<ITextureForge>( "ITextureForge" );
             if( !forge )
+            {
                 throw std::runtime_error( "WPProcedural texture forge is unavailable." );
+            }
             forge->setSeed( seed );
             SurfaceBakeParams params;
             params.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
@@ -607,7 +694,9 @@ namespace workphone::scene::race
                 sampled->setEditorUInt( "uvFilter", 3 );
                 sampled->setEditorFloat( "uvAniso", 8.f );
                 if( sampled != roadMat )
+                {
                     sampled->setEditorFloat( "uvTriplanarScale", sampled == grass ? .08f : .25f );
+                }
             }
             auto steel = material( assets, { .34f, .37f, .4f, 1 }, .45f, .7f );
             auto dark = material( assets, { .015f, .025f, .035f, 1 }, .55f, .35f );
@@ -665,12 +754,16 @@ namespace workphone::scene::race
             mesh( assets, "Circuit meadow", turf, grass );
             Geometry checkerDark, checkerWhite;
             for( int x = 0; x < 12; ++x )
+            {
                 for( int z = 0; z < 2; ++z )
+                {
                     ( ( x + z ) % 2 ? checkerDark : checkerWhite )
                         .quad( { float( x - 6 ), .02f, float( z ) },
                                { float( x - 5 ), .02f, float( z ) },
                                { float( x - 5 ), .02f, float( z + 1 ) },
                                { float( x - 6 ), .02f, float( z + 1 ) }, { 0, 1, 0 } );
+                }
+            }
             mesh( assets, "Start finish black", checkerDark, dark );
             mesh( assets, "Start finish white", checkerWhite, white );
             Geometry gantry, pits, pitApron, pitTrim, pitRoof, pitGlazing, pitLouvers;
@@ -679,8 +772,12 @@ namespace workphone::scene::race
             for( float x : { -8.f, 8.f } )
             {
                 for( float dx : { -.2f, .2f } )
+                {
                     for( float dz : { -.2f, .2f } )
+                    {
                         gantry.beam( { x + dx, .15f, 3 + dz }, { x + dx, 5.95f, 3 + dz }, .045f );
+                    }
+                }
                 for( int level = 0; level < 7; ++level )
                 {
                     const float y = .15f + level * .8f, top = y + .8f;
@@ -695,8 +792,12 @@ namespace workphone::scene::race
                 }
             }
             for( float y : { 5.25f, 5.95f } )
+            {
                 for( float z : { 2.8f, 3.2f } )
+                {
                     gantry.beam( { -8.2f, y, z }, { 8.2f, y, z }, .045f );
+                }
+            }
             for( int panel = 0; panel <= 10; ++panel )
             {
                 const float x = -8 + panel * 1.6f;
@@ -704,8 +805,10 @@ namespace workphone::scene::race
                 {
                     gantry.beam( { x, 5.25f, z }, { x, 5.95f, z }, .025f );
                     if( panel < 10 )
+                    {
                         gantry.beam( { x, panel % 2 ? 5.95f : 5.25f, z },
                                      { x + 1.6f, panel % 2 ? 5.25f : 5.95f, z }, .025f );
+                    }
                 }
                 gantry.beam( { x, 5.95f, 2.8f }, { x, 5.95f, 3.2f }, .025f );
             }
@@ -714,9 +817,8 @@ namespace workphone::scene::race
             staticBox( assets, "Gantry overhead beam", { 0, 5.6f, 3 }, { 16.5f, 1, .5f } );
             mesh( assets, "Start gantry", gantry, steel );
             // A continuous service apron grounds the garages and avoids six isolated boxes.
-            pitApron.quad( { -35, .006f, -68 }, { -14, .006f, -68 },
-                           { -14, .006f, -6 }, { -35, .006f, -6 }, { 0, 1, 0 },
-                           0, 14, 0, 41.333f );
+            pitApron.quad( { -35, .006f, -68 }, { -14, .006f, -68 }, { -14, .006f, -6 },
+                           { -35, .006f, -6 }, { 0, 1, 0 }, 0, 14, 0, 41.333f );
             mesh( assets, "Pit service apron", pitApron, roadMat );
             for( int i = 0; i < 6; ++i )
             {
@@ -726,10 +828,13 @@ namespace workphone::scene::race
                 pitTrim.box( { -21.86f, 4.55f, z }, { .18f, .28f, 8 } );
                 pitGlazing.box( { -21.88f, 4.08f, z }, { .12f, .55f, 6 } );
                 for( int mullion = -1; mullion <= 1; ++mullion )
-                    pitTrim.box( { -21.78f, 4.08f, z + mullion * 2.f },
-                                 { .14f, .65f, .08f } );
+                {
+                    pitTrim.box( { -21.78f, 4.08f, z + mullion * 2.f }, { .14f, .65f, .08f } );
+                }
                 for( int slat = 1; slat < 10; ++slat )
+                {
                     pitLouvers.box( { -21.81f, slat * .32f, z }, { .08f, .035f, 6 } );
+                }
                 pits.box( { -28, 2.5f, float( -12 - i * 10 ) }, { 12, 5, 8 } );
                 staticBox( assets, "Pit garage", { -28, 2.5f, float( -12 - i * 10 ) }, { 12, 5, 8 } );
             }
@@ -749,32 +854,45 @@ namespace workphone::scene::race
                   material( assets, { .045f, .10f, .13f, 1 }, .24f, .25f ) );
             Geometry hills;
             if( assets.useFoliageWorld )
+            {
                 buildFoliageWorld( assets, seed, quality );
+            }
             else
             {
                 // Batch trees into 64-metre patches. The shared data-oriented LODSystem
                 // chooses one renderer set per patch, without per-tree update callbacks.
                 std::mt19937 rng( seed );
                 std::uniform_real_distribution<float> unit( 0, 1 );
+
                 struct TreePatch
                 {
                     Geometry trunks, leaves, imposters;
                     Array<scene::LODDetailBound> detailBounds;
                 };
+
                 std::map<std::pair<int, int>, TreePatch> patches;
-                const std::array<MeshImposterAtlas, 4> atlases = {
-                    bakePineImposter( 0 ), bakePineImposter( 1 ), bakePineImposter( 2 ), bakePineImposter( 3 ) };
+                const std::array<MeshImposterAtlas, 4> atlases = { bakePineImposter( 0 ),
+                                                                   bakePineImposter( 1 ),
+                                                                   bakePineImposter( 2 ),
+                                                                   bakePineImposter( 3 ) };
                 const auto &atlas = atlases[0];
                 // All four near silhouettes have matching far views in one twelve-
                 // column atlas. Keep the existing one-material patch batching.
                 TextureBuffer treeTexture( atlas.width * 4, atlas.height );
                 for( u32 variant = 0; variant < atlases.size(); ++variant )
+                {
                     for( u32 y = 0; y < atlas.height; ++y )
-                        std::copy_n( atlases[variant].rgba.begin() + size_t( y ) * atlas.width * 4,
-                            size_t( atlas.width ) * 4, treeTexture.pixels.begin() +
-                            ( size_t( y ) * treeTexture.width + variant * atlas.width ) * 4 );
+                    {
+                        std::copy_n(
+                            atlases[variant].rgba.begin() + size_t( y ) * atlas.width * 4,
+                            size_t( atlas.width ) * 4,
+                            treeTexture.pixels.begin() +
+                                ( size_t( y ) * treeTexture.width + variant * atlas.width ) * 4 );
+                    }
+                }
                 auto imposterMaterial = material( assets, ColourF::White, 1 );
-                auto imposterTexture = upload( assets, treeTexture, render::TextureMipFilter::Cutout, 12 );
+                auto imposterTexture =
+                    upload( assets, treeTexture, render::TextureMipFilter::Cutout, 12 );
                 imposterMaterial->setTexture( imposterTexture, 0 );
                 // Colour is already lit by the CPU bake. Keep its alpha mask in the
                 // albedo slot and supply baked colour through the PBS emission slot.
@@ -794,7 +912,8 @@ namespace workphone::scene::race
                 // IMaterial mode 1 maps to WORKPHONE_CULL_MODE_NONE in ClawUtil.
                 // Open needle sprigs and far cards remain visible from both sides.
                 nearTreeMaterial->setCullMode( 1 );
-                nearTreeMaterial->setTexture( upload( assets, palette, render::TextureMipFilter::None ), 0 );
+                nearTreeMaterial->setTexture( upload( assets, palette, render::TextureMipFilter::None ),
+                                              0 );
                 int treeCount = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
                 for( int i = 0; i < treeCount; ++i )
                 {
@@ -802,7 +921,9 @@ namespace workphone::scene::race
                     auto nearest = assets.circuit.nearest( p );
                     if( ( p - points[nearest].position ).length() < 22 ||
                         ( p.x < -15 && p.z > -85 && p.z < 15 ) )
+                    {
                         continue;
+                    }
                     float h = 4 + unit( rng ) * 7;
                     staticBox( assets, "Tree trunk", p + Vector3F( 0, h * .3f, 0 ),
                                { h * .05f, h * .6f, h * .05f } );
@@ -834,7 +955,9 @@ namespace workphone::scene::race
                         nearTrees.uv.insert( nearTrees.uv.end(), source.positions.size(),
                                              Vector3F( paletteU, .5f, 0 ) );
                         for( auto index : source.indices )
+                        {
                             nearTrees.indices.push_back( base + index );
+                        }
                     };
                     append( patch.trunks, .25f );
                     append( patch.leaves, .75f );
@@ -851,7 +974,9 @@ namespace workphone::scene::race
                     lod->addLevel( 0, { cards->getComponent<scene::MeshRenderer>() } );
                     String error;
                     if( !lod->validate( &error ) )
+                    {
                         throw std::runtime_error( "Invalid generated tree LOD group: " + error );
+                    }
                     assets.treeLODs.push_back( lod );
                 }
             }
@@ -870,6 +995,7 @@ namespace workphone::scene::race
             };
             const int grid = quality == VehicleAppearanceQuality::Preview ? 32 : 96;
             for( int z = 0; z <= grid; ++z )
+            {
                 for( int x = 0; x <= grid; ++x )
                 {
                     const float px = 80 - 640 + x * 1280.f / grid;
@@ -887,15 +1013,21 @@ namespace workphone::scene::race
                         const float radius = std::hypot( px + step * .5f - 80, pz + step * .5f + 25 );
                         const float halfDiagonal = step * .707107f;
                         if( radius + halfDiagonal <= 300 || radius - halfDiagonal >= 600 )
+                        {
                             continue;
+                        }
                         const u32 a = z * ( grid + 1 ) + x, b = a + 1;
                         const u32 c = a + grid + 1, d = c + 1;
                         for( auto index : { a, c, d, a, d, b } )
+                        {
                             hills.indices.push_back( index );
+                        }
                     }
                 }
+            }
             mesh( assets, "Distant terrain", hills, grass );
         }
+
         void buildFoliageWorld( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
             auto app = core::IApplicationManager::instance();
@@ -907,16 +1039,20 @@ namespace workphone::scene::race
             if( !assets.foliageTerrain )
             {
                 if( carrier )
+                {
                     scene->removeGraphicsObject( carrier );
+                }
                 throw std::runtime_error( "Graphics backend lacks the foliage terrain attachment." );
             }
             render::TerrainData ground;
             ground.origin = { -550, -550 };
             ground.spacing = { 1100, 1100 };
-            ground.holes = { 1 }; // Existing meadow/collision own the ground; no duplicate surface.
+            ground.holes = { 1 };  // Existing meadow/collision own the ground; no duplicate surface.
             String error;
             if( !assets.foliageTerrain->applyTerrainData( ground, error ) )
+            {
                 throw std::runtime_error( "Cannot prepare foliage attachment: " + error );
+            }
             // Each geometry card represents a small branching spray, not one giant leaf.
             // Seeded individual leaves, interior gaps and twigs retain a broken silhouette
             // through the existing alpha-coverage mip chain.
@@ -924,17 +1060,20 @@ namespace workphone::scene::race
             TextureBuffer leafAtlas( atlasSize, atlasSize );
             const auto randomLeaf = [seed]( u64 id ) {
                 return float( render::foliageStableHash( u64( seed ) ^ 0x4c454146u ^ id ) >> 40 ) /
-                    16777216.f;
+                       16777216.f;
             };
             const auto ellipse = [&]( float cx, float cy, float rx, float ry, float angle,
                                       float variation ) {
                 const float cs = std::cos( angle ), sn = std::sin( angle );
                 const float extent = std::max( rx, ry );
                 const int minX = std::max( 0, int( ( cx - extent ) * atlasSize ) - 1 );
-                const int maxX = std::min( int( atlasSize ) - 1, int( ( cx + extent ) * atlasSize ) + 1 );
+                const int maxX =
+                    std::min( int( atlasSize ) - 1, int( ( cx + extent ) * atlasSize ) + 1 );
                 const int minY = std::max( 0, int( ( cy - extent ) * atlasSize ) - 1 );
-                const int maxY = std::min( int( atlasSize ) - 1, int( ( cy + extent ) * atlasSize ) + 1 );
+                const int maxY =
+                    std::min( int( atlasSize ) - 1, int( ( cy + extent ) * atlasSize ) + 1 );
                 for( int y = minY; y <= maxY; ++y )
+                {
                     for( int x = minX; x <= maxX; ++x )
                     {
                         const float dx = ( x + .5f ) / atlasSize - cx;
@@ -945,7 +1084,9 @@ namespace workphone::scene::race
                         // Small asymmetric serrations avoid a repeating smooth oval outline.
                         const float serration = .94f + .06f * std::cos( u * 24.f );
                         if( edge > serration )
+                        {
                             continue;
+                        }
                         const float vein = std::abs( v ) < .08f ? 1.13f : 1.f;
                         const float light = ( .68f + .32f * ( 1 - edge ) ) * variation * vein;
                         const auto pixel = ( size_t( y ) * atlasSize + x ) * 4;
@@ -954,62 +1095,76 @@ namespace workphone::scene::race
                         leafAtlas.pixels[pixel + 2] = u8( 34 * light );
                         leafAtlas.pixels[pixel + 3] = 255;
                     }
+                }
             };
             const auto twig = [&]( Vector2F start, Vector2F end, float radius ) {
                 const auto delta = end - start;
                 const float squared = delta.dotProduct( delta );
                 for( u32 y = 0; y < atlasSize; ++y )
+                {
                     for( u32 x = 0; x < atlasSize; ++x )
                     {
                         const Vector2F p( ( x + .5f ) / atlasSize, ( y + .5f ) / atlasSize );
-                        const float t = std::clamp( ( p - start ).dotProduct( delta ) / squared, 0.f, 1.f );
+                        const float t =
+                            std::clamp( ( p - start ).dotProduct( delta ) / squared, 0.f, 1.f );
                         if( ( p - ( start + delta * t ) ).lengthSquared() > radius * radius )
+                        {
                             continue;
+                        }
                         const auto pixel = ( size_t( y ) * atlasSize + x ) * 4;
                         leafAtlas.pixels[pixel] = 74;
                         leafAtlas.pixels[pixel + 1] = 69;
                         leafAtlas.pixels[pixel + 2] = 29;
                         leafAtlas.pixels[pixel + 3] = 255;
                     }
+                }
             };
             twig( { .5f, .96f }, { .5f, .08f }, .004f );
             for( u32 branch = 0; branch < 7; ++branch )
+            {
                 for( int side : { -1, 1 } )
                 {
                     const Vector2F start( .5f, .22f + branch * .105f );
                     const Vector2F end( .5f + side * ( .26f + .08f * randomLeaf( branch + 71 ) ),
-                                       start.y - .13f );
+                                        start.y - .13f );
                     twig( start, end, .003f );
                     for( u32 leaf = 0; leaf < 7; ++leaf )
+                    {
                         for( int pair : { -1, 1 } )
                         {
                             const u64 id = branch * 113 + leaf * 7 + ( side + 1 ) * 19 + pair + 1;
                             const float t = .13f + leaf * .125f;
                             const auto centre = start + ( end - start ) * t;
-                            ellipse( centre.x + pair * .012f,
-                                     centre.y + pair * ( .018f + .008f * randomLeaf( id + 701 ) ),
-                                     .029f + .015f * randomLeaf( id ),
-                                     .013f + .008f * randomLeaf( id + 313 ),
-                                     side * ( -.45f + pair * .65f ),
-                                     .8f + .4f * randomLeaf( id + 991 ) );
+                            ellipse(
+                                centre.x + pair * .012f,
+                                centre.y + pair * ( .018f + .008f * randomLeaf( id + 701 ) ),
+                                .029f + .015f * randomLeaf( id ), .013f + .008f * randomLeaf( id + 313 ),
+                                side * ( -.45f + pair * .65f ), .8f + .4f * randomLeaf( id + 991 ) );
                         }
+                    }
                 }
-            const String leafTextureName = assets.resourcePrefix + "/texture/" +
-                StringUtil::toString( assets.textures.size() );
+            }
+            const String leafTextureName =
+                assets.resourcePrefix + "/texture/" + StringUtil::toString( assets.textures.size() );
             auto leafTexture = upload( assets, leafAtlas, render::TextureMipFilter::Cutout );
             // Use the registered resource identity, not a potentially empty display name
             // returned after a texture property round-trip. An empty albedo is otherwise
             // valid foliage data and silently produces opaque white leaf cards.
             leafTexture->setName( leafTextureName );
-            auto registeredLeaf = app->getGraphicsSystem()->getTextureManager()->getByName( leafTextureName );
+            auto registeredLeaf =
+                app->getGraphicsSystem()->getTextureManager()->getByName( leafTextureName );
             if( !registeredLeaf || registeredLeaf.get() != leafTexture.get() )
-                throw std::runtime_error( "Generated foliage atlas lost its registered texture identity." );
+            {
+                throw std::runtime_error(
+                    "Generated foliage atlas lost its registered texture identity." );
+            }
             auto world = std::make_shared<render::FoliageWorldData>();
             world->revision = 1;
             for( u32 variant = 0; variant < 4; ++variant )
             {
                 FoliagePlantRecipe recipe;
-                recipe.speciesId = assets.resourcePrefix + "/broadleaf/" + StringUtil::toString( variant );
+                recipe.speciesId =
+                    assets.resourcePrefix + "/broadleaf/" + StringUtil::toString( variant );
                 recipe.seed = seed ^ ( 7919u + variant * 104729u );
                 recipe.height = 6 + variant;
                 recipe.radius = 2.6f + variant * .3f;
@@ -1023,40 +1178,56 @@ namespace workphone::scene::race
                 recipe.wind.bendEnd = recipe.height;
                 auto species = std::make_shared<render::FoliageSpecies>();
                 if( !generateFoliagePlant( recipe, *species, error ) )
+                {
                     throw std::runtime_error( "Cannot generate racing foliage: " + error );
+                }
                 if( species->materials.size() != 2 || species->materials[1].albedo != leafTextureName )
+                {
                     throw std::runtime_error( "Generated foliage species lost its leaf cutout atlas." );
+                }
                 species->maximumDistance = 600;
                 species->shadowDistance = 120;
                 world->species.push_back( species );
                 for( const auto &lod : species->lods )
+                {
                     assets.triangles += lod.indices.size() / 3;
+                }
             }
             std::mt19937 random( seed );
             std::uniform_real_distribution<float> unit( 0, 1 );
             const int count = quality == VehicleAppearanceQuality::Preview ? 90 : 220;
-            auto city = assets.openCity ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute )
-                                       : OpenCityLayout{};
+            auto city = assets.openCity
+                            ? OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute )
+                            : OpenCityLayout{};
             for( int i = 0; i < count; ++i )
             {
                 Vector3F p( -100 + unit( random ) * 380, 0, -250 + unit( random ) * 440 );
                 if( assets.openCity )
                 {
                     if( city.lots.empty() )
+                    {
                         continue;
+                    }
                     const auto &lot = city.lots[size_t( i ) % city.lots.size()];
                     if( !lot.park )
+                    {
                         continue;
-                    p = { lot.x + ( unit( random ) - .5f ) * std::max( 0.f, lot.width - 6 ),
-                          .04f, lot.z + ( unit( random ) - .5f ) * std::max( 0.f, lot.depth - 6 ) };
+                    }
+                    p = { lot.x + ( unit( random ) - .5f ) * std::max( 0.f, lot.width - 6 ), .04f,
+                          lot.z + ( unit( random ) - .5f ) * std::max( 0.f, lot.depth - 6 ) };
                 }
-                else if( ( p - assets.circuit.samples[assets.circuit.nearest( p )].position ).length() < 22 ||
+                else if( ( p - assets.circuit.samples[assets.circuit.nearest( p )].position ).length() <
+                             22 ||
                          ( p.x < -15 && p.z > -85 && p.z < 15 ) )
+                {
                     continue;
+                }
                 render::FoliageInstance instance;
                 instance.id = render::foliageStableHash( ( u64( seed ) << 32 ) | u32( i + 1 ) );
                 if( !instance.id )
+                {
                     instance.id = u64( i + 1 );
+                }
                 instance.species = u32( i ) % 4;
                 instance.seed = u32( render::foliageStableHash( instance.id ) );
                 instance.position = p;
@@ -1072,19 +1243,27 @@ namespace workphone::scene::race
             }
             if( !render::validateFoliageWorld( *world, error ) ||
                 !assets.foliageTerrain->setFoliageSnapshot( world, error ) )
+            {
                 throw std::runtime_error( "Cannot publish racing foliage: " + error );
+            }
         }
+
         void buildCity( SceneAssets &assets, u32 seed, VehicleAppearanceQuality quality )
         {
             const auto city = OpenCityLayout::generate( seed, assets.cityBlocks, assets.cityRoute );
             auto app = core::IApplicationManager::instance();
             auto roads = app->getFactoryManager()->createObjectFromType<IRoadSystem>( "IRoadSystem" );
             if( !roads )
+            {
                 throw std::runtime_error( "Open city requires the WPProcedural road service." );
+            }
             roads->setSeed( seed );
-            auto forge = app->getFactoryManager()->createObjectFromType<ITextureForge>( "ITextureForge" );
+            auto forge =
+                app->getFactoryManager()->createObjectFromType<ITextureForge>( "ITextureForge" );
             if( !forge )
+            {
                 throw std::runtime_error( "Open city requires the WPProcedural texture forge." );
+            }
             forge->setSeed( seed );
             SurfaceBakeParams surfaceParams;
             surfaceParams.size = quality == VehicleAppearanceQuality::Preview ? 256 : 512;
@@ -1108,12 +1287,16 @@ namespace workphone::scene::race
                     g.tangents.push_back( { 1, 0, 0, 1 } );
                 }
                 for( auto index : source.indices )
+                {
                     g.indices.push_back( base + index );
+                }
             };
             const int half = city.blocks / 2;
             u32 segmentSeed = seed;
             for( int row = -half; row <= half; ++row )
+            {
                 for( int col = -half; col < half; ++col )
+                {
                     for( int axis = 0; axis < 2; ++axis )
                     {
                         RoadSegmentSpec spec;
@@ -1128,12 +1311,19 @@ namespace workphone::scene::race
                         const auto road = roads->generateSegment( spec );
                         append( asphalt, road.roadSurface, true );
                         for( const auto &part : road.sidewalks )
+                        {
                             append( pavement, part );
+                        }
                         for( const auto &part : road.kerbs )
+                        {
                             append( pavement, part );
+                        }
                         append( markings, road.markings );
                     }
+                }
+            }
             for( int x = -half; x <= half; ++x )
+            {
                 for( int z = -half; z <= half; ++z )
                 {
                     IntersectionSpec spec;
@@ -1144,6 +1334,7 @@ namespace workphone::scene::race
                     append( asphalt, junction.surface, true );
                     append( markings, junction.markings );
                 }
+            }
             size_t lotIndex = 0;
             for( const auto &lot : city.lots )
             {
@@ -1168,7 +1359,9 @@ namespace workphone::scene::race
                                     { lot.width, .6f, .08f } );
                 }
                 if( quality != VehicleAppearanceQuality::Preview )
+                {
                     roofs.box( { lot.x, lot.height + .55f, lot.z }, { 2.4f, .9f, 1.6f } );
+                }
                 auto collision = app->getGameManager()->createActor();
                 assets.actors.push_back( collision );
                 collision->setName( "City building collision" );
@@ -1180,19 +1373,32 @@ namespace workphone::scene::race
                 // Batched facades keep city draw calls independent of building count.
                 const float floorStep = quality == VehicleAppearanceQuality::Preview ? 6.f : 3.5f;
                 for( float y = 2; y < lot.height - 1; y += floorStep )
+                {
                     for( float x = -lot.width / 2 + 3; x < lot.width / 2 - 2; x += 4 )
+                    {
                         for( int face : { -1, 1 } )
+                        {
                             windows.box( { lot.x + x, y, lot.z + face * ( lot.depth * .5f + .03f ) },
                                          { 1.4f, 1.6f, .06f } );
+                        }
+                    }
+                }
                 for( float y = 2; y < lot.height - 1; y += floorStep )
+                {
                     for( float z = -lot.depth / 2 + 3; z < lot.depth / 2 - 2; z += 4 )
+                    {
                         for( int face : { -1, 1 } )
+                        {
                             windows.box( { lot.x + face * ( lot.width * .5f + .03f ), y, lot.z + z },
                                          { .06f, 1.6f, 1.4f } );
+                        }
+                    }
+                }
             }
             // Contain exploration within the shared collision plane.
             const float boundary = city.extent + 20;
             for( int axis = 0; axis < 2; ++axis )
+            {
                 for( int side : { -1, 1 } )
                 {
                     const Vector3F p =
@@ -1209,6 +1415,7 @@ namespace workphone::scene::race
                     wall->addComponent<Rigidbody>();
                     app->getGameManager()->getCurrentScene()->addActor( wall );
                 }
+            }
             mesh( assets, "City streets", asphalt, cityAsphalt );
             mesh( assets, "City sidewalks", pavement,
                   material( assets, { .42f, .43f, .44f, 1 }, .95f ) );
@@ -1243,7 +1450,9 @@ namespace workphone::scene::race
             ground.box( { 0, -.06f, 0 }, { city.extent * 2 + 80, .1f, city.extent * 2 + 80 } );
             mesh( assets, "City ground", ground, material( assets, { .28f, .30f, .26f, 1 }, 1 ) );
             if( assets.useFoliageWorld )
+            {
                 buildFoliageWorld( assets, seed, quality );
+            }
             assets.circuit = {};
             for( size_t i = 0; i < city.route.size(); ++i )
             {
@@ -1266,13 +1475,16 @@ namespace workphone::scene::race
             mesh( assets, "City race route arrows", arrows,
                   material( assets, { .05f, .7f, .9f, 1 }, .6f ) );
         }
+
         void buildSky( SceneAssets &assets, SmartPtr<scene::IGameActor> vehicle )
         {
             auto app = core::IApplicationManager::instance();
             auto sky =
                 app->getFactoryManager()->createObjectFromType<ISkyAtmosphere>( "ISkyAtmosphere" );
             if( !sky )
+            {
                 throw std::runtime_error( "WPProcedural atmosphere is unavailable." );
+            }
             SkyState state;
             state.timeOfDay = 15;
             state.turbidity = 2.4f;
@@ -1293,6 +1505,7 @@ namespace workphone::scene::race
                 TextureBuffer texture( 256, 256 );
                 Array<f32> reflectionFace( 256 * 256 * 4 );
                 for( u32 y = 0; y < texture.height; ++y )
+                {
                     for( u32 x = 0; x < texture.width; ++x )
                     {
                         float u = ( x + .5f ) / texture.width, v = ( y + .5f ) / texture.height;
@@ -1313,7 +1526,8 @@ namespace workphone::scene::race
                         c.b = .58f + .24f * haze + c.b * .15f + glow * .4f;
                         // Keep the solar core as radiance in the reflection source.
                         // The visible LDR sky clips its display value; the probe does not.
-                        const float solarCore = std::pow( std::max( 0.f, dir.dotProduct( result.sunDir ) ), 2048.f );
+                        const float solarCore =
+                            std::pow( std::max( 0.f, dir.dotProduct( result.sunDir ) ), 2048.f );
                         c.r += solarCore * 16.f;
                         c.g += solarCore * 14.f;
                         c.b += solarCore * 10.f;
@@ -1334,7 +1548,8 @@ namespace workphone::scene::race
                             reflectionColour.b = c.b * ( 1 - horizon ) + reflectionColour.b * horizon;
                         }
                         auto pixel = texture.pixel( x, y );
-                        auto reflectedPixel = reflectionFace.data() + ( size_t( y ) * texture.width + x ) * 4;
+                        auto reflectedPixel =
+                            reflectionFace.data() + ( size_t( y ) * texture.width + x ) * 4;
                         for( size_t channel = 0; channel < 3; ++channel )
                         {
                             float value = channel == 0 ? c.r : channel == 1 ? c.g : c.b;
@@ -1348,9 +1563,11 @@ namespace workphone::scene::race
                         pixel[3] = 255;
                         reflectedPixel[3] = 1;
                     }
+                }
                 auto skyTexture = upload( assets, texture );
                 faces.push_back( skyTexture );
-                reflectionFaces.push_back( uploadLinearRadiance( assets, reflectionFace, { 256, 256 } ) );
+                reflectionFaces.push_back(
+                    uploadLinearRadiance( assets, reflectionFace, { 256, 256 } ) );
             }
             auto skyObject = graphicsScene->addGraphicsObjectByType<render::ISky>();
             assets.sky = skyObject;
@@ -1386,7 +1603,9 @@ namespace workphone::scene::race
                 component->setEnabled( true );
                 const auto reflectionSlot = static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION );
                 for( auto &vehicleMaterial : assets.vehicleMaterials )
+                {
                     vehicleMaterial->setTexture( reflection, reflectionSlot );
+                }
                 // The actor's material also lets Cubemap manage the representative body material.
                 actor->addComponent<scene::Material>()->setMaterial( assets.vehicleMaterials.front() );
                 auto scene = app->getGameManager()->getCurrentScene();
@@ -1416,7 +1635,10 @@ namespace workphone::scene::race
             // Own the sky's matching sun. The showcase explicitly selects this light;
             // existing host lighting remains available to the scene's fallback policy.
             auto sun = graphicsScene->addGraphicsObjectByType<render::IGraphicsLight>();
-            if( !sun ) throw std::runtime_error( "Cannot create procedural sunlight." );
+            if( !sun )
+            {
+                throw std::runtime_error( "Cannot create procedural sunlight." );
+            }
             assets.sun = sun;
             sun->setType( LightTypes::LT_DIRECTIONAL );
             sun->setDirection( -result.sunDir );
@@ -1426,6 +1648,7 @@ namespace workphone::scene::race
             sun->setVisible( true );
         }
     }  // namespace
+
     size_t Circuit::nearest( const Vector3F &position ) const
     {
         size_t result = 0;
@@ -1441,6 +1664,7 @@ namespace workphone::scene::race
         }
         return result;
     }
+
     Circuit generateCircuit( u32 seed )
     {
         std::vector<Vector3F> knots = { { 0, 0, 70 },    { 0, 0, 0 },     { 0, 0, -90 },
@@ -1457,6 +1681,7 @@ namespace workphone::scene::race
         }
         std::vector<Vector3F> dense;
         for( size_t i = 0; i < knots.size(); ++i )
+        {
             for( int step = 0; step < 100; ++step )
             {
                 auto a = knots[( i + knots.size() - 1 ) % knots.size()], b = knots[i],
@@ -1466,9 +1691,12 @@ namespace workphone::scene::race
                                    ( -a + b * 3 - c * 3 + d ) * t * t * t ) *
                                  .5f );
             }
+        }
         std::vector<float> distance( dense.size() + 1, 0 );
         for( size_t i = 0; i < dense.size(); ++i )
+        {
             distance[i + 1] = distance[i] + ( dense[( i + 1 ) % dense.size()] - dense[i] ).length();
+        }
         Circuit result;
         result.length = distance.back();
         auto count = static_cast<size_t>( std::ceil( result.length / 1.5f ) );
@@ -1477,7 +1705,9 @@ namespace workphone::scene::race
         {
             float s = result.length * i / count;
             while( segment + 1 < dense.size() && distance[segment + 1] < s )
+            {
                 ++segment;
+            }
             float t = ( s - distance[segment] ) / ( distance[segment + 1] - distance[segment] );
             result.samples.push_back(
                 { dense[segment] + ( dense[( segment + 1 ) % dense.size()] - dense[segment] ) * t,
@@ -1496,9 +1726,12 @@ namespace workphone::scene::race
             result.samples[i].distance = result.length * i / count;
         }
         if( result.samples.size() < 3 || result.length < 500 )
+        {
             throw std::runtime_error( "Invalid generated circuit." );
+        }
         return result;
     }
+
     void buildScene( SceneAssets &assets, SmartPtr<scene::IGameActor> actor, u32 seed,
                      VehicleAppearanceQuality quality )
     {
@@ -1506,12 +1739,17 @@ namespace workphone::scene::race
         const auto started = std::chrono::steady_clock::now();
         buildCar( assets, actor, seed, quality );
         if( assets.openCity )
+        {
             buildCity( assets, seed, quality );
+        }
         else
+        {
             buildTrack( assets, seed, quality );
+        }
         buildSky( assets, actor );
         TextureBuffer shade( 64, 64 );
         for( u32 y = 0; y < 64; ++y )
+        {
             for( u32 x = 0; x < 64; ++x )
             {
                 auto pixel = shade.pixel( x, y );
@@ -1519,6 +1757,7 @@ namespace workphone::scene::race
                 pixel[0] = pixel[1] = pixel[2] = 0;
                 pixel[3] = u8( 130 * std::pow( std::max( 0.f, 1.f - dx * dx - dz * dz ), 2 ) );
             }
+        }
         auto shadowMaterial = material( assets, ColourF::White, 1 );
         shadowMaterial->setTexture( upload( assets, shade ), 0 );
         shadowMaterial->setTransparent( true );
@@ -1535,12 +1774,14 @@ namespace workphone::scene::race
             // Removing the old root after Editor restoration then removes all
             // scenery/colliders too, even when Lua's native references were lost.
             for( const auto &generated : assets.actors )
+            {
                 if( !generated->getParent() )
                 {
                     scene->removeActor( generated );
                     root->addChild( generated );
                     scene->registerAllUpdates( generated );
                 }
+            }
         }
 
         const auto generationMs =
@@ -1558,28 +1799,39 @@ namespace workphone::scene::race
     bool validateReflection( const SceneAssets &assets )
     {
         if( !assets.reflectionTexture )
+        {
             return true;
+        }
         auto component =
             assets.reflectionActor ? assets.reflectionActor->getComponent<scene::Cubemap>() : nullptr;
         auto probe = component ? component->getRenderCubemap() : nullptr;
         if( !component || !component->isEnabled() || !probe ||
             probe->getTexture() != assets.reflectionTexture || assets.vehicleMaterials.empty() )
+        {
             return false;
+        }
         const auto slot = static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION );
         for( const auto &material : assets.vehicleMaterials )
+        {
             if( material->getTexture( slot ) != assets.reflectionTexture )
+            {
                 return false;
+            }
+        }
         void *native = nullptr;
         assets.reflectionTexture->getTextureFinal( &native );
         return native != nullptr;
     }
+
     void validateCircuit()
     {
         for( u32 seed = 0; seed < 100; ++seed )
         {
             auto circuit = generateCircuit( seed ), repeat = generateCircuit( seed );
             if( circuit.length != repeat.length || circuit.samples.size() != repeat.samples.size() )
+            {
                 throw std::runtime_error( "Circuit generation is not deterministic." );
+            }
             const auto spacing = circuit.length / circuit.samples.size();
             for( size_t i = 0; i < circuit.samples.size(); ++i )
             {
@@ -1589,15 +1841,22 @@ namespace workphone::scene::race
                 if( a.position != repeat.samples[i].position || a.position.y != 0 ||
                     std::abs( a.right.length() - 1 ) > 1e-4f || chord < spacing * .95f ||
                     chord > spacing * 1.01f )
+                {
                     throw std::runtime_error( "Circuit closure, spacing, or frame validation failed." );
+                }
             }
             if( circuit.samples.front().position.length() > spacing ||
                 circuit.samples.front().right.x < .99f )
+            {
                 throw std::runtime_error( "Circuit spawn does not align with the start straight." );
+            }
         }
         if( generateCircuit( 7 ).samples[100].position == generateCircuit( 8 ).samples[100].position )
+        {
             throw std::runtime_error( "Seed does not alter the circuit." );
+        }
     }
+
     void configurePhysics( const SceneAssets &assets, SmartPtr<scene::IGameActor> actor )
     {
         const auto &config = assets.vehicle.physics;
@@ -1630,7 +1889,9 @@ namespace workphone::scene::race
             auto props = drive->getProperties();
             String ratios = "0,-2.5";
             for( auto ratio : config.drivetrain.forwardGearRatios )
+            {
                 ratios += "," + StringUtil::toString( ratio );
+            }
             props->setProperty( "Gear Ratios", ratios );
             props->setProperty( "Final Drive Ratio", float( config.drivetrain.finalDriveRatio ) );
             props->setProperty( "Min RPM", float( config.drivetrain.idleRpm ) );

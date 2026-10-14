@@ -42,6 +42,7 @@ namespace workphone::scene
 
     Dropdown::Dropdown()
     {
+        setLabel( "Dropdown" );
     }
 
     Dropdown::~Dropdown()
@@ -68,6 +69,7 @@ namespace workphone::scene
             }
 
             setLoadingState( LoadingState::Loaded );
+            updateElementState();
         }
         catch( std::exception &e )
         {
@@ -262,11 +264,7 @@ namespace workphone::scene
 
         m_isOpen = open;
         buildOptionsPanel();
-
-        if( m_content )
-        {
-            m_content->setEnabled( m_isOpen );
-        }
+        setOpen( open );
     }
 
     bool Dropdown::isValid() const
@@ -309,6 +307,10 @@ namespace workphone::scene
     void Dropdown::setOpen( bool open )
     {
         m_isOpen = open;
+        if( m_button || m_content )
+        {
+            updateOptionsPanelVisibility();
+        }
     }
 
     bool Dropdown::isOpen() const
@@ -361,14 +363,18 @@ namespace workphone::scene
 
             if( m_button )
             {
-                auto func = [this]( hash_type value ) {
-                    if( auto actor = getActorPtr() )
+                auto owner = WeakPtr<Dropdown>( this );
+                auto func = [owner, pButton]( hash_type value ) {
+                    if( auto dropdown = owner.lock() )
                     {
-                        auto enabled = isEnabled() && actor->isEnabledInScene();
-                        if( enabled )
+                        if( dropdown->m_button != pButton )
                         {
-                            m_isOpen = !m_isOpen;
-                            updateOptionsPanelVisibility();
+                            return;
+                        }
+                        if( auto actor = dropdown->getActorPtr();
+                            actor && dropdown->isEnabled() && actor->isEnabledInScene() )
+                        {
+                            dropdown->setOpen( !dropdown->isOpen() );
                         }
                     }
                 };
@@ -419,32 +425,9 @@ namespace workphone::scene
         return FSMReturnType::Ok;
     }
 
-    Parameter Dropdown::handleEvent( EventType eventType, hash_type eventValue,
-                                     const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
-                                     SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
-    {
-        if( eventType == EventType::UI )
-        {
-            if( eventValue == IEvent::CLICK_HASH )
-            {
-                if( auto actor = getActorPtr() )
-                {
-                    auto enabled = isEnabled() && actor->isEnabledInScene();
-                    if( enabled )
-                    {
-                        m_isOpen = !m_isOpen;
-                        updateOptionsPanelVisibility();
-                    }
-                }
-            }
-        }
-
-        return {};
-    }
-
     void Dropdown::buildOptionsPanel()
     {
-        if( auto element = getElement() )
+        if( auto element = getElement(); element && getUseNativeUI() )
         {
             auto dropdown = workphone::dynamic_pointer_cast<ui::IUIDropdown>( element );
             if( dropdown )
@@ -474,17 +457,15 @@ namespace workphone::scene
             return;
         }
 
+        if( !m_button || !m_button->getActor() )
+        {
+            return;
+        }
+
         if( auto actor = getActorPtr() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
-
-            auto application = applicationManager->getApplication();
-            if( !application )
-            {
-                WP_LOG_ERROR( "Application is null." );
-                return;
-            }
 
             if( m_content )
             {
@@ -502,12 +483,14 @@ namespace workphone::scene
 
             if( !m_content )
             {
-                m_content = application->createPanel( nullptr, "", false );
+                m_content = UiUtil::createPanel( nullptr, "", false );
 
                 m_content->setName( m_contentName );
                 actor->addChild( m_content );
 
                 auto layoutTransform = m_content->getComponent<LayoutTransform>();
+                UiUtil::setAlignment( m_content, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+                layoutTransform->setAnchor( Vector2<real_Num>( 0, 1 ) );
 
                 Vector2<real_Num> buttonPosition;
                 Vector2<real_Num> buttonSize;
@@ -555,13 +538,15 @@ namespace workphone::scene
 
             if( !m_panel )
             {
-                m_panel = application->createPanel( nullptr, "", false );
+                m_panel = UiUtil::createPanel( nullptr, "", false );
                 m_panel->setName( m_panelName );
                 m_content->addChild( m_panel );
 
                 auto layoutTransform = m_panel->getComponent<LayoutTransform>();
                 if( layoutTransform )
                 {
+                    UiUtil::setAlignment( m_panel, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+                    layoutTransform->setAnchor( Vector2<real_Num>( 0, 1 ) );
                     layoutTransform->setPosition( panelPos );
                     layoutTransform->setSize( panelSize );
                     layoutTransform->setAutoCalculateOrder( false );
@@ -580,10 +565,10 @@ namespace workphone::scene
                 verticalLayout = m_panel->addComponent<VerticalLayout>();
             }
 
-            auto scrollView = m_panel->getComponent<ScrollView>();
+            auto scrollView = m_content->getComponent<ScrollView>();
             if( !scrollView )
             {
-                scrollView = m_panel->addComponent<ScrollView>();
+                scrollView = m_content->addComponent<ScrollView>();
             }
 
             auto scrollbarActor = m_content->findChildByName( m_scrollbarName );
@@ -640,6 +625,7 @@ namespace workphone::scene
             }
 
             verticalLayout->setChildHorizontalAlignment( HorizontalAlignment::CENTER );
+            verticalLayout->setUseChildStartOffset( true );
             verticalLayout->setChildVerticalAlignment( VerticalAlignment::TOP );
 
             for( auto option : m_options )
@@ -650,28 +636,35 @@ namespace workphone::scene
                     continue;
                 }
 
-                auto buttonActor = application->createButton( option->text, nullptr, "", false );
+                auto buttonActor = UiUtil::createButton( option->text, false );
                 if( buttonActor )
                 {
                     m_panel->addChild( buttonActor );
 
                     if( auto button = buttonActor->getComponent<Button>() )
                     {
+                        button->setUseNativeUI( false );
                         button->setNormalColour( m_optionButtonColour );
                     }
 
                     if( auto button = buttonActor->getComponent<Button>() )
                     {
-                        button->setCallbackFunction( [this, option]( hash_type value ) {
-                            // Update the selected text
-                            if( m_button && option )
+                        auto owner = WeakPtr<Dropdown>( this );
+                        button->setCallbackFunction( [owner, option]( hash_type value ) {
+                            auto dropdown = owner.lock();
+                            if( !dropdown )
                             {
-                                m_button->setTextStr( option->text );
+                                return;
+                            }
+                            // Update the selected text
+                            if( auto trigger = dropdown->getButton(); trigger && option )
+                            {
+                                trigger->setTextStr( option->text );
+                                dropdown->setLabel( option->text );
                             }
 
                             // Close the dropdown
-                            setOpen( false );
-                            updateOptionsPanelVisibility();
+                            dropdown->setOpen( false );
                         } );
                     }
 
@@ -689,7 +682,41 @@ namespace workphone::scene
                 }
             }
 
+            UiUtil::loadHierarchy( m_content );
+            // Keep the entire composed popup above ordinary canvas controls, including
+            // the Image/Text parts created lazily by scene buttons during loading.
+            auto popupActors = m_content->getAllChildren();
+            popupActors.insert( popupActors.begin(), m_content );
+            auto popupOrder = contentOrder;
+            for( auto popupActor : popupActors )
+            {
+                if( auto transform = popupActor->getComponent<LayoutTransform>() )
+                {
+                    transform->setAutoCalculateOrder( false );
+                    transform->setZOrder( popupOrder++ );
+                    for( auto component : popupActor->getComponentsByType<UIComponent>() )
+                    {
+                        component->updateOrder();
+                    }
+                }
+            }
             verticalLayout->updateTransform();
+            real_Num contentHeight = 0;
+            auto children = m_panel->getChildren();
+            for( auto child : children )
+            {
+                if( auto transform = child->getComponent<LayoutTransform>() )
+                {
+                    contentHeight += transform->getSize().y + verticalLayout->getSpacing();
+                }
+            }
+            if( !children.empty() )
+            {
+                contentHeight -= verticalLayout->getSpacing();
+            }
+            m_panel->getComponent<LayoutTransform>()->setSize(
+                Vector2<real_Num>( panelSize.x, contentHeight ) );
+            scrollView->updateScrollBar();
 
             m_content->setFlag( IGameActor::ActorFlagHidden, true, true );
             m_panel->setFlag( IGameActor::ActorFlagDontSave, true, true );
@@ -721,12 +748,21 @@ namespace workphone::scene
 
         if( m_content )
         {
+            m_content->setFlag( IGameActor::ActorFlagHidden, !opened, true );
             m_content->setEnabled( opened );
+            for( auto component : m_content->getAllComponentsAndInChildren<UIComponent>() )
+            {
+                component->updateVisibility();
+            }
         }
     }
 
     void Dropdown::createUI()
     {
+        if( !getUseNativeUI() )
+        {
+            return;
+        }
         try
         {
             auto element = getElement();
@@ -742,9 +778,13 @@ namespace workphone::scene
                 }
 
                 auto dropdown = renderUI->addElementByType<ui::IUIDropdown>();
+                if( !dropdown )
+                {
+                    return;
+                }
                 setElement( dropdown );
 
-                setLabel( "Dropdown" );
+                dropdown->setLabel( getLabel() );
 
                 updateVisibility();
             }
@@ -757,6 +797,85 @@ namespace workphone::scene
 
     void Dropdown::updateElementState()
     {
+        if( getUseNativeUI() && isLoaded() && !getElement() )
+        {
+            createUI();
+        }
+        auto native = getUseNativeUI() && getElement();
+        if( auto element = workphone::dynamic_pointer_cast<ui::IUIDropdown>( getElement() ) )
+        {
+            Array<String> options;
+            for( auto option : m_options )
+            {
+                if( option )
+                {
+                    options.push_back( option->text.str() );
+                }
+            }
+            element->setOptions( options );
+            element->setLabel( getLabel() );
+            for( u32 index = 0; index < options.size(); ++index )
+            {
+                if( options[index] == getLabel() )
+                {
+                    element->setSelectedOption( index );
+                    break;
+                }
+            }
+            updateVisibility();
+        }
+        if( m_button )
+        {
+            if( auto actor = m_button->getActor() )
+            {
+                actor->setEnabled( !native );
+                m_button->updateVisibility();
+                m_button->updateTransform();
+            }
+        }
+        if( native && m_content )
+        {
+            m_content->setEnabled( false );
+        }
+    }
+
+    Parameter Dropdown::handleEvent( EventType eventType, hash_type eventValue,
+                                     const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                     SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    {
+        if( eventType == EventType::UI && eventValue == IEvent::CLICK_HASH )
+        {
+            if( auto actor = getActorPtr(); actor && isEnabled() && actor->isEnabledInScene() )
+            {
+                setOpen( !isOpen() );
+            }
+        }
+        if( eventType == EventType::UI && eventValue == IEvent::SELECT_HASH && getUseNativeUI() &&
+            sender == getElement() )
+        {
+            if( auto dropdown = workphone::dynamic_pointer_cast<ui::IUIDropdown>( sender ) )
+            {
+                Array<String> options;
+                for( auto option : m_options )
+                {
+                    if( option )
+                    {
+                        options.push_back( option->text.str() );
+                    }
+                }
+                auto selected =
+                    arguments.empty() ? dropdown->getSelectedOption() : arguments[0].getU32();
+                if( selected < options.size() )
+                {
+                    setLabel( options[selected] );
+                    if( m_button )
+                    {
+                        m_button->setTextStr( options[selected] );
+                    }
+                }
+            }
+        }
+        return UIComponent::handleEvent( eventType, eventValue, arguments, sender, object, event );
     }
 
     void Dropdown::setPanelColour( const ColourF &bgPanelColour )

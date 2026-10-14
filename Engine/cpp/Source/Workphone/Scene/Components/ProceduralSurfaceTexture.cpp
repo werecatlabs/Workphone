@@ -5,12 +5,14 @@
 #include <Workphone/Interface/IApplicationManager.hpp>
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <algorithm>
+
 namespace workphone::scene
 {
     ProceduralSurfaceTexture::ProceduralSurfaceTexture() = default;
     ProceduralSurfaceTexture::~ProceduralSurfaceTexture() = default;
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralSurfaceTexture, Component );
+
     void ProceduralSurfaceTexture::load( SmartPtr<ISharedObject> data )
     {
         Component::load( data );
@@ -18,6 +20,7 @@ namespace workphone::scene
         regenerate();
         setLoadingState( LoadingState::Loaded );
     }
+
     void ProceduralSurfaceTexture::unload( SmartPtr<ISharedObject> data )
     {
         m_result = {};
@@ -26,18 +29,24 @@ namespace workphone::scene
         Component::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
+
     void ProceduralSurfaceTexture::update()
     {
         if( Thread::getCurrentTask() == TaskId::Application && m_dirty && isEnabled() )
+        {
             regenerate();
+        }
     }
+
     bool ProceduralSurfaceTexture::regenerate()
     {
         m_dirty = false;
         auto app = core::IApplicationManager::instancePtr();
         if( !m_service && app && app->getFactoryManager() )
+        {
             m_service = app->getFactoryManager()->createObjectFromType<procedural::ITextureForge>(
                 "ITextureForge" );
+        }
         if( !m_service )
         {
             m_error = "Load the WPProcedural plugin to bake surface textures";
@@ -56,6 +65,7 @@ namespace workphone::scene
             return false;
         }
     }
+
     SmartPtr<Properties> ProceduralSurfaceTexture::getProperties() const
     {
         auto p = Component::getProperties();
@@ -74,10 +84,13 @@ namespace workphone::scene
         p->getPropertyObject( "Generation Error" ).setReadOnly( true );
         return p;
     }
+
     void ProceduralSurfaceTexture::setProperties( SmartPtr<Properties> p )
     {
         if( !p )
+        {
             return;
+        }
         Component::setProperties( p );
         p->getPropertyValue( "Seed", m_seed );
         s32 surface = procedural_properties::getEnum(
@@ -90,7 +103,9 @@ namespace workphone::scene
         // Use the next lower power of two to keep allocations bounded.
         u32 size = 16;
         while( size * 2 <= m_params.size )
+        {
             size *= 2;
+        }
         m_params.size = size;
         p->getPropertyValue( "Tile UV", m_params.tileUV );
         p->getPropertyValue( "sRGB Albedo", m_params.sRGB );
@@ -98,4 +113,16 @@ namespace workphone::scene
         p->getPropertyValue( "Detail Scale", m_params.detailScale );
         m_dirty = true;
     }
+
+    const workphone::procedural::SurfaceBakeResult &ProceduralSurfaceTexture::getResult() const
+    {
+        return m_result;
+    }
+
+    void ProceduralSurfaceTexture::setTextureForge( SmartPtr<procedural::ITextureForge> service )
+    {
+        m_service = service;
+        m_dirty = true;
+    }
+
 }  // namespace workphone::scene

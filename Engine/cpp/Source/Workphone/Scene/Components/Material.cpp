@@ -50,7 +50,9 @@ namespace workphone::scene
         try
         {
             if( isLoaded() )
+            {
                 return;
+            }
 
             setLoadingState( LoadingState::Loading );
 
@@ -225,7 +227,9 @@ namespace workphone::scene
         try
         {
             if( !properties )
+            {
                 return;
+            }
 
             SmartPtr<render::IMaterial> material;
             auto materialPath = getMaterialPath();
@@ -320,8 +324,10 @@ namespace workphone::scene
             // rather than the Editor executable's working directory.
             auto material = resourceDatabase->loadResourceByType<render::IMaterial>( materialPath );
             if( !material )
+            {
                 material =
                     resourceDatabase->createOrRetrieveByType<render::IMaterial>( materialPath ).first;
+            }
             setMaterial( material );
         }
     }
@@ -379,7 +385,9 @@ namespace workphone::scene
                 }
 
                 if( graphicsSystem && !m_material->isLoaded() )
+                {
                     graphicsSystem->loadObject( m_material );
+                }
             }
 
             updateMaterial();
@@ -482,11 +490,17 @@ namespace workphone::scene
     void Material::setMaterialObjectListener( SmartPtr<IEventListener> materialObjectListener )
     {
         if( auto previous = getMaterialObjectListener() )
+        {
             if( m_material )
+            {
                 m_material->removeObjectListener( previous );
+            }
+        }
         m_materialObjectListener = materialObjectListener;
         if( m_material && materialObjectListener )
+        {
             m_material->addObjectListener( materialObjectListener );
+        }
     }
 
     Material::MaterialStateObjectListener::MaterialStateObjectListener() = default;

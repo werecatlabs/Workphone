@@ -67,7 +67,7 @@ namespace workphone
                 real_Num depth = 1.5f;  ///< Pull-in distance
                 s32 side = 0;           ///< 0=front, 1=right, 2=back, 3=left
             };
-            std::vector<Setback> setbacks;
+            Array<Setback> setbacks;
 
             /// Per-floor room plans (optional). If absent, just wall shell is generated.
             bool generateInterior = false;
@@ -83,11 +83,11 @@ namespace workphone
         struct WPProcedural_API BuildingResult
         {
             ProceduralMesh body;
-            std::vector<ProceduralMesh> windows;
-            std::vector<ProceduralMesh> details;  // AC units, antennas, etc.
+            Array<ProceduralMesh> windows;
+            Array<ProceduralMesh> details;  // AC units, antennas, etc.
             ProceduralMesh roof;
             ProceduralMesh parapet;
-            std::vector<ProceduralMesh> interiors;
+            Array<ProceduralMesh> interiors;
             Vector3<real_Num> position;
             real_Num wallKeyVariant = 0.0f;  // [0,1] tint choice
         };

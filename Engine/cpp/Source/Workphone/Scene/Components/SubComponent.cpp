@@ -139,7 +139,9 @@ namespace workphone::scene
     {
         auto applicationManager = core::IApplicationManager::instance();
         if( !applicationManager )
+        {
             return;
+        }
 
         auto factoryManager = applicationManager->getFactoryManager();
         if( !factoryManager )
@@ -175,11 +177,17 @@ namespace workphone::scene
     void SubComponent::addChild( SmartPtr<ISubComponent> child )
     {
         if( !child )
+        {
             return;
+        }
         if( child.get() == this )
+        {
             return;
+        }
         if( std::find( m_children.begin(), m_children.end(), child ) != m_children.end() )
+        {
             return;
+        }
 
         child->setParent( this );
         m_children.push_back( child );
@@ -188,7 +196,9 @@ namespace workphone::scene
     void SubComponent::removeChild( SmartPtr<ISubComponent> child )
     {
         if( !child )
+        {
             return;
+        }
         auto it = std::find( m_children.begin(), m_children.end(), child );
         if( it != m_children.end() )
         {

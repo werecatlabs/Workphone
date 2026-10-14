@@ -2438,7 +2438,17 @@ namespace workphone::editor
     {
         auto applicationManager = core::IApplicationManager::instance();
 
-        if( eventValue == IEvent::addActor )
+        if( eventType == EventType::UI && eventValue == StringUtil::getHash( "sceneActorPicked" ) )
+        {
+            if( auto editorManager = EditorManager::getSingletonPtr() )
+            {
+                if( auto ui = editorManager->getUI() )
+                {
+                    ui->updateComponentSelection();
+                }
+            }
+        }
+        else if( eventValue == IEvent::addActor )
         {
         }
         else if( eventValue == IEvent::inputEvent )

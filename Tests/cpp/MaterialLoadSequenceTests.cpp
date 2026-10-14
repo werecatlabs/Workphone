@@ -19,6 +19,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include "workphone_graphics_material.h"
 
 namespace
 {
@@ -151,6 +152,55 @@ namespace
         }
     };
 
+    void runSpecularRestoration( Fixture &fixture )
+    {
+        // Scene loads can contain a stale legacy colour alongside the saved slider.
+        auto source = make_ptr<render::ClawMaterial>();
+        source->load( nullptr );
+        auto data = dynamic_pointer_cast<Properties>( source->toData() );
+        auto schemes = data->getChildrenByName( "schemes" );
+        require( !schemes.empty(), "specular source technique" );
+        auto passes = schemes.front()->getChildrenByName( "passes" );
+        require( !passes.empty(), "specular source pass" );
+        passes.front()->setProperty( "specular", ColourF::White );
+        passes.front()->getChild( "editorSettings" )->getChild( "floats" )
+            ->setProperty( "specular", 0.17f );
+        const auto path = fixture.root / "specular.mat";
+        std::ofstream( path ) << DataUtil::toString( data.get() );
+        auto restored = make_ptr<render::ClawMaterial>();
+        restored->setFilePath( path.generic_string().c_str() );
+        restored->load( nullptr );
+        require( restored->isLoaded(), "specular material file load" );
+        require( MathF::equals( restored->getSpecularAmount(), 0.17f ), "saved specular slider" );
+        const auto before = wp_graphics_material_get_specular( restored->getNativeMaterial() );
+        require( MathF::equals( before.r, 0.17f ) && MathF::equals( before.g, 0.17f ) &&
+                     MathF::equals( before.b, 0.17f ), "first-load native specular strength" );
+        restored->setSpecularAmount( 0.17f );
+        const auto after = wp_graphics_material_get_specular( restored->getNativeMaterial() );
+        require( MathF::equals( before.r, after.r ) && MathF::equals( before.g, after.g ) &&
+                     MathF::equals( before.b, after.b ), "slider must not repair loaded specular" );
+
+        auto rootEditor = make_ptr<Properties>();
+        rootEditor->setName( "editorSettings" );
+        auto rootFloats = make_ptr<Properties>();
+        rootFloats->setName( "floats" );
+        rootFloats->setProperty( "specular", 0.23f );
+        rootEditor->addChild( rootFloats );
+        data->addChild( rootEditor );
+        restored->fromData( data );
+        require( MathF::equals( restored->getSpecular().r, 0.23f ), "root saved specular strength" );
+
+        data->removeChild( "editorSettings" );
+        passes.front()->removeChild( "editorSettings" );
+        const auto tint = ColourF( 0.2f, 0.4f, 0.6f, 1.0f );
+        passes.front()->setProperty( "specular", tint );
+        restored->fromData( data );
+        require( restored->getSpecular() == tint, "legacy colour-only specular tint" );
+
+        restored->unload( nullptr );
+        source->unload( nullptr );
+    }
+
     void run( Fixture &fixture )
     {
         // The process working directory deliberately differs from the catalog source root.
@@ -280,8 +330,9 @@ int main()
     try
     {
         Fixture fixture;
+        runSpecularRestoration( fixture );
         run( fixture );
-        std::cout << "PASS: scene material restoration, delayed completion, replacement, load order and "
+        std::cout << "PASS: first-load specular, scene material restoration, delayed completion, replacement, load order and "
                      "retirement\n";
         return 0;
     }

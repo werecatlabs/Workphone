@@ -74,7 +74,7 @@ namespace workphone
             static ProceduralMesh rock( u32 seed, real_Num radius, u32 lod = 0, real_Num lump = 0.7f );
 
             /// Walled prism from a polygon in the XY plane, extruded along +Z by depth.
-            static ProceduralMesh polyPrism( const std::vector<Vector2<real_Num>> &polygon,
+            static ProceduralMesh polyPrism( const Array<Vector2<real_Num>> &polygon,
                                              real_Num depth );
 
             // -----------------------------------------------------------------

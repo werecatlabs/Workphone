@@ -64,7 +64,9 @@ namespace workphone::scene
                 // Reflect the tire implementation selected by the vehicle backend.
                 // Property round-trips must not send the Simple default to Brush wheels.
                 if( auto wheel = vehicleController->getWheelController( 0 ) )
+                {
                     m_tireModel = wheel->getTireModel();
+                }
                 vehicleController->setVehicleCallback( m_vehicleCallback );
                 vehicleController->setDisplayDebugData( true );
 
@@ -203,7 +205,9 @@ namespace workphone::scene
             const auto gameManager = application ? application->getGameManager() : nullptr;
             const auto sceneTask = gameManager ? gameManager->getSceneTask() : TaskId::Primary;
             if( application && task != sceneTask )
+            {
                 return;
+            }
             VehicleController::update();
 
             auto app = core::IApplicationManager::instancePtr();
@@ -212,6 +216,7 @@ namespace workphone::scene
                 ScopedLock controlsLock( this, true );
                 const bool driving = app->isPlaying() && !app->isPaused() && isEnabled();
                 if( driving && m_playerControls.load() )
+                {
                     if( auto input = app->getInputDeviceManager() )
                     {
                         const bool throttle = input->isKeyPressed( KeyCodes::KEY_KEY_W ) ||
@@ -223,7 +228,9 @@ namespace workphone::scene
                         const bool right = input->isKeyPressed( KeyCodes::KEY_KEY_D ) ||
                                            input->isKeyPressed( KeyCodes::KEY_RIGHT );
                         if( throttle || brake || left || right )
+                        {
                             m_joystickActive = false;
+                        }
                         if( !m_joystickActive.load() )
                         {
                             setThrottle( throttle ? 1.f : 0.f );
@@ -231,6 +238,7 @@ namespace workphone::scene
                             setSteering( float( right ) - float( left ) );
                         }
                     }
+                }
                 if( auto vehicle = getVehicleController() )
                 {
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ),
@@ -250,9 +258,11 @@ namespace workphone::scene
                             const auto speed = float( m_chassis->getLinearVelocity().length() );
                             const auto maxSteer = MathF::Abs( MathF::DegToRad( m_maxSteeringAngle ) );
                             if( maxSteer > 0 && wheelbase > 0 )
+                            {
                                 steering *= std::min(
                                     1.f, wheelbase * 8.f /
                                              ( std::max( speed * speed * 0.25f, 1.f ) * maxSteer ) );
+                            }
                         }
                     }
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ),
@@ -352,7 +362,9 @@ namespace workphone::scene
 
         auto vehicleController = getVehicleController();
         if( !vehicleController )
+        {
             return;
+        }
 
         // position wheels
         if( auto actor = getActor() )
@@ -1069,10 +1081,14 @@ namespace workphone::scene
     {
         auto owner = getOwner();
         if( !owner || !event )
+        {
             return false;
+        }
         ScopedLock controlsLock( owner.get(), true );
         if( !owner->m_playerControls.load() )
+        {
             return false;
+        }
         if( event->getEventType() == IInputEvent::EventType::Key )
         {
             if( auto state = event->getKeyboardState() )
@@ -1082,7 +1098,9 @@ namespace workphone::scene
                     key == u32( KeyCodes::KEY_KEY_A ) || key == u32( KeyCodes::KEY_KEY_D ) ||
                     key == u32( KeyCodes::KEY_UP ) || key == u32( KeyCodes::KEY_DOWN ) ||
                     key == u32( KeyCodes::KEY_LEFT ) || key == u32( KeyCodes::KEY_RIGHT ) )
+                {
                     owner->m_joystickActive = false;
+                }
             }
         }
         else if( event->getEventType() == IInputEvent::EventType::Joystick )
@@ -1096,9 +1114,11 @@ namespace workphone::scene
                     steering = joystick->getAxis( 0 );
                 }
                 else
+                {
                     throttle = joystick->isButtonPressed( 0 )   ? 1.f
                                : joystick->isButtonPressed( 1 ) ? -1.f
                                                                 : 0.f;
+                }
                 owner->m_joystickActive = true;
                 owner->setThrottle( std::max( throttle, 0.f ) );
                 owner->setBrake( std::max( -throttle, 0.f ) );

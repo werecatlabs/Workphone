@@ -65,7 +65,7 @@ namespace workphone
             }
 
             bool canAppend( const VehicleEffectConfig &config,
-                            const std::vector<VehicleEffectEvent> &events, std::size_t startSize )
+                            const Array<VehicleEffectEvent> &events, std::size_t startSize )
             {
                 return events.size() - startSize < config.maximumEventsPerStep;
             }
@@ -91,7 +91,7 @@ namespace workphone
             const VehicleDynamicsState &dynamics, const VehicleDynamicsTelemetry &telemetry,
             const VehiclePresentationState &presentation, const VehicleDamageTelemetry &damage,
             const VehicleEffectEnvironment &environment, double dt, VehicleEffectsState &state,
-            std::vector<VehicleEffectEvent> &events )
+            Array<VehicleEffectEvent> &events )
         {
             if( !std::isfinite( dt ) || dt <= 0.0 || dt > 0.25 ||
                 !std::isfinite( environment.wetness ) ||

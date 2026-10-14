@@ -21,7 +21,11 @@ namespace workphone::scene
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ScrollView, UIComponent );
 
     ScrollView::ScrollView() = default;
-    ScrollView::~ScrollView() = default;
+
+    ScrollView::~ScrollView()
+    {
+        setScrollBar( nullptr );
+    }
 
     void ScrollView::load( SmartPtr<ISharedObject> data )
     {
@@ -43,6 +47,8 @@ namespace workphone::scene
     void ScrollView::unload( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Unloading );
+        setScrollBar( nullptr );
+        setContentPanel( nullptr );
         UIComponent::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
@@ -72,18 +78,15 @@ namespace workphone::scene
     {
         UIComponent::setProperties( properties );
 
-        properties->getPropertyAsType<ScrollBar>( "scrollBar", m_scrollBar );
+        auto scrollBar = m_scrollBar;
+        properties->getPropertyAsType<ScrollBar>( "scrollBar", scrollBar );
+        setScrollBar( scrollBar );
         properties->getPropertyAsType<LayoutTransform>( "contentPanel", m_contentPanel );
         properties->getPropertyValue( ScrollView::lastDragPositionStr, m_lastDragPosition );
         properties->getPropertyValue( ScrollView::scrollSpeedStr, m_scrollSpeed );
         properties->getPropertyValue( ScrollView::inertiaStr, m_inertia );
         properties->getPropertyValue( ScrollView::velocityStr, m_velocity );
         properties->getPropertyValue( ScrollView::isDraggingStr, m_isDragging );
-
-        if( m_scrollBar )
-        {
-            m_scrollBar->setScrollView( this );
-        }
     }
 
     bool ScrollView::isValid() const
@@ -127,7 +130,7 @@ namespace workphone::scene
         }
         case IMouseState::Event::Moved:
         {
-            if( mouseState->isDragging() || isDragging() )
+            if( isDragging() )
             {
                 handleDrag( event );
                 return true;
@@ -222,6 +225,7 @@ namespace workphone::scene
         auto newPos = contentPanel->getPosition();
         newPos.y += scrollDelta.y * scrollSpeed;
         contentPanel->setPosition( clampToBounds( newPos ) );
+        contentPanel->updateTransform();
 
         updateScrollBar();
     }
@@ -279,6 +283,7 @@ namespace workphone::scene
         auto currentPos = contentPanel->getPosition();
         auto newPos = currentPos + Vector2<real_Num>( 0, delta.y );
         contentPanel->setPosition( clampToBounds( newPos ) );
+        contentPanel->updateTransform();
         m_lastDragPosition = position;
         updateScrollBar();
     }
@@ -294,6 +299,10 @@ namespace workphone::scene
 
     void ScrollView::setScrollBar( SmartPtr<ScrollBar> scrollBar )
     {
+        if( m_scrollBar && m_scrollBar != scrollBar && m_scrollBar->getScrollView() == this )
+        {
+            m_scrollBar->setScrollView( nullptr );
+        }
         m_scrollBar = scrollBar;
         if( m_scrollBar )
         {
@@ -330,6 +339,7 @@ namespace workphone::scene
 
             Vector2<real_Num> newPos( 0.0, -scrollValue * maxScroll );
             m_contentPanel->setPosition( clampToBounds( newPos ) );
+            m_contentPanel->updateTransform();
         }
     }
 
@@ -354,6 +364,13 @@ namespace workphone::scene
         }
 
         auto visibleSize = layoutTransform->getSize();
+
+        // A composed scrollbar is drawn by its child Images. Disable its actor as well as
+        // the component so those visuals follow the content-fit state.
+        if( auto barActor = m_scrollBar->getActor(); barActor && barActor != actor )
+        {
+            barActor->setEnabled( contentSize > visibleSize.Y() );
+        }
 
         if( contentSize <= visibleSize.Y() )
         {

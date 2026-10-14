@@ -12,12 +12,14 @@
 #include <Workphone/Math/Quaternion.hpp>
 #include <algorithm>
 #include <cmath>
+
 namespace workphone::scene
 {
     ProceduralSky::ProceduralSky() = default;
     ProceduralSky::~ProceduralSky() = default;
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralSky, Component );
+
     void ProceduralSky::load( SmartPtr<ISharedObject> data )
     {
         Component::load( data );
@@ -25,12 +27,17 @@ namespace workphone::scene
         // Apply global scene settings after actor/component deserialization.
         setLoadingState( LoadingState::Loaded );
     }
+
     void ProceduralSky::update()
     {
         if( Thread::getCurrentTask() != TaskId::Application || !isEnabled() )
+        {
             return;
+        }
         if( m_dirty && getActor() )
+        {
             regenerate();
+        }
         // A Light may create its render node after the component FSM enters Edit/Play.
         if( m_applyLighting && m_light )
         {
@@ -40,17 +47,22 @@ namespace workphone::scene
                 const auto orientation =
                     Quaternion<real_Num>::getRotationTo( Vector3<real_Num>( 0, 0, -1 ), -direction );
                 if( node->getOrientation() != orientation )
+                {
                     node->setOrientation( orientation );
+                }
             }
         }
     }
+
     bool ProceduralSky::regenerate()
     {
         m_dirty = false;
         auto app = core::IApplicationManager::instancePtr();
         if( !m_service && app && app->getFactoryManager() )
+        {
             m_service = app->getFactoryManager()->createObjectFromType<procedural::ISkyAtmosphere>(
                 "ISkyAtmosphere" );
+        }
         if( !m_service )
         {
             m_error = "Load the WPProcedural plugin to generate sky parameters";
@@ -65,12 +77,17 @@ namespace workphone::scene
             {
                 auto scene = app->getGraphicsSystem()->getGraphicsScene();
                 if( scene && m_applyLighting )
+                {
                     scene->setAmbientLight( m_results.ambientColour );
+                }
                 if( scene && m_applyFog )
+                {
                     scene->setFog( render::IGraphicsScene::FOG_EXP2, m_results.fogColour,
                                    m_results.fogDensity );
+                }
             }
             if( m_applyLighting )
+            {
                 if( auto actor = getActor() )
                 {
                     if( !m_light )
@@ -78,7 +95,9 @@ namespace workphone::scene
                         m_light = actor->getComponent<Light>();
                         m_ownsLight = !m_light;
                         if( !m_light )
+                        {
                             m_light = actor->addComponent<Light>();
+                        }
                     }
                     m_light->setLightType( LightTypes::LT_DIRECTIONAL );
                     m_light->setDiffuseColour( m_results.keyColour );
@@ -92,6 +111,7 @@ namespace workphone::scene
                             Vector3<real_Num>( 0, 0, -1 ), -direction ) );
                     }
                 }
+            }
             m_error.clear();
             return true;
         }
@@ -101,13 +121,16 @@ namespace workphone::scene
             return false;
         }
     }
+
     void ProceduralSky::unload( SmartPtr<ISharedObject> data )
     {
         if( m_ownsLight && m_light )
         {
             m_light->unload( nullptr );
             if( auto actor = getActor() )
+            {
                 actor->removeComponentInstance( m_light );
+            }
         }
         m_light = nullptr;
         m_service = nullptr;
@@ -116,6 +139,7 @@ namespace workphone::scene
         Component::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
+
     SmartPtr<Properties> ProceduralSky::getProperties() const
     {
         auto p = Component::getProperties();
@@ -133,10 +157,13 @@ namespace workphone::scene
         p->getPropertyObject( "Generation Error" ).setReadOnly( true );
         return p;
     }
+
     void ProceduralSky::setProperties( SmartPtr<Properties> p )
     {
         if( !p )
+        {
             return;
+        }
         Component::setProperties( p );
         p->getPropertyValue( "Time Of Day", m_state.timeOfDay );
         p->getPropertyValue( "Day Of Year", m_state.dayOfYear );
@@ -160,4 +187,16 @@ namespace workphone::scene
         p->getPropertyValue( "Apply Fog", m_applyFog );
         m_dirty = true;
     }
+
+    const workphone::procedural::SkyResults &ProceduralSky::getResults() const
+    {
+        return m_results;
+    }
+
+    void ProceduralSky::setAtmosphere( SmartPtr<procedural::ISkyAtmosphere> service )
+    {
+        m_service = service;
+        m_dirty = true;
+    }
+
 }  // namespace workphone::scene

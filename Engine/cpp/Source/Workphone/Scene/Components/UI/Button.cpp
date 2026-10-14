@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Scene/UiUtil.hpp>
 #include <Workphone/Scene/Components/UI/Button.hpp>
 #include <Workphone/Scene/Components/UI/Image.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
@@ -38,6 +39,7 @@ namespace workphone::scene
 
     Button::Button()
     {
+        setLabel( "Button" );
         ColourF normalColour = ColourF::White * 0.3f;
         ColourF highlightedColour = ColourF::White * 0.6f;
         ColourF pressedColour = ColourF::White * 0.5f;
@@ -100,6 +102,7 @@ namespace workphone::scene
             }
 
             setLoadingState( LoadingState::Loaded );
+            updateElementState();
         }
         catch( std::exception &e )
         {
@@ -186,6 +189,10 @@ namespace workphone::scene
 
     bool Button::handleEvent( const SmartPtr<IInputEvent> &event )
     {
+        if( getUseNativeUI() && getElement() )
+        {
+            return false;
+        }
         ScopedLock lock( this );
 
         auto applicationManager = core::IApplicationManager::instance();
@@ -215,6 +222,10 @@ namespace workphone::scene
 
                 auto mainWindow = applicationManager->getWindow();
 
+                if( !mainWindow )
+                {
+                    return false;
+                }
                 auto windowSize = mainWindow->getSize();
                 auto windowSizeF = Vector2<real_Num>( static_cast<f32>( windowSize.x ),
                                                       static_cast<f32>( windowSize.y ) );
@@ -350,6 +361,42 @@ namespace workphone::scene
 
     void Button::createUI()
     {
+        if( !getUseNativeUI() )
+        {
+            if( auto actor = getActor() )
+            {
+                auto transform = actor->getComponent<LayoutTransform>();
+                if( !transform )
+                {
+                    return;
+                }
+                auto size = transform->getSize();
+                if( !m_image )
+                {
+                    auto background = UiUtil::createImage( "", false );
+                    // Attaching to a playing actor can re-enter createUI through its FSM.
+                    m_image = background->getComponent<Image>();
+                    actor->addChild( background );
+                    UiUtil::setRect( background, 0, 0, static_cast<f32>( size.x ),
+                                     static_cast<f32>( size.y ) );
+                    m_image->setColour( m_normalColour );
+                    UiUtil::loadHierarchy( background );
+                    background->setState( actor->getState(), true );
+                }
+                if( !m_text )
+                {
+                    auto label = UiUtil::createText( getLabel(), false );
+                    m_text = label->getComponent<Text>();
+                    actor->addChild( label );
+                    UiUtil::setRect( label, 0, 0, static_cast<f32>( size.x ),
+                                     static_cast<f32>( size.y ) );
+                    m_text->setColour( ColourF::White );
+                    UiUtil::loadHierarchy( label );
+                    label->setState( actor->getState(), true );
+                }
+            }
+            return;
+        }
         try
         {
             if( auto actor = getActorPtr() )
@@ -372,8 +419,6 @@ namespace workphone::scene
                         {
                             auto button = renderUI->addElementByType<ui::IUIButton>();
                             setElement( button );
-
-                            setLabel( "Button" );
 
                             updateElementState();
                             updateVisibility();
@@ -450,10 +495,42 @@ namespace workphone::scene
 
     void Button::updateElementState()
     {
+        if( isLoaded() && ( !getUseNativeUI() || !getElement() ) )
+        {
+            createUI();
+        }
+        auto native = getUseNativeUI() && getElement();
+        for( auto part :
+             { m_image ? m_image->getActor() : nullptr, m_text ? m_text->getActor() : nullptr } )
+        {
+            if( part )
+            {
+                part->setEnabled( !native );
+                if( auto actor = getActor() )
+                {
+                    if( auto layout = actor->getComponent<LayoutTransform>() )
+                    {
+                        if( auto partLayout = part->getComponent<LayoutTransform>() )
+                        {
+                            partLayout->setSize( layout->getSize() );
+                        }
+                    }
+                }
+                for( auto component : part->getAllComponentsAndInChildren<UIComponent>() )
+                {
+                    component->updateVisibility();
+                }
+            }
+        }
         auto element = getElement();
+        if( !native && m_text )
+        {
+            m_text->setText( getLabel() );
+        }
         if( element && element->isDerived<ui::IUIButton>() )
         {
             auto button = workphone::static_pointer_cast<ui::IUIButton>( element );
+            updateVisibility();
             button->setTextSize( static_cast<f32>( m_textSize ) );
 
             auto label = getLabel();
@@ -486,15 +563,17 @@ namespace workphone::scene
             return m_text->getText();
         }
 
-        return {};
+        return getLabel();
     }
 
     void Button::setTextStr( const String &textStr )
     {
+        setLabel( textStr );
         if( m_text )
         {
             m_text->setText( textStr );
         }
+        updateElementState();
     }
 
     void Button::setImage( SmartPtr<Image> image )

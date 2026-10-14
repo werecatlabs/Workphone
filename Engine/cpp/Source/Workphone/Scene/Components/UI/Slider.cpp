@@ -45,6 +45,7 @@ namespace workphone::scene
         m_direction( Direction::Horizontal ),
         m_isDragging( false )
     {
+        setLabel( "Slider" );
     }
 
     Slider::~Slider()
@@ -61,6 +62,7 @@ namespace workphone::scene
             UIComponent::load( data );
 
             setLoadingState( LoadingState::Loaded );
+            updateElementState();
         }
         catch( std::exception &e )
         {
@@ -120,6 +122,10 @@ namespace workphone::scene
 
     bool Slider::handleEvent( const SmartPtr<IInputEvent> &event )
     {
+        if( getUseNativeUI() && getElement() )
+        {
+            return false;
+        }
         if( !event )
         {
             return false;
@@ -389,7 +395,7 @@ namespace workphone::scene
 
     auto Slider::handleComponentEvent( u32 state, FSMEvent eventType ) -> FSMReturnType
     {
-        Component::handleComponentEvent( state, eventType );
+        UIComponent::handleComponentEvent( state, eventType );
 
         switch( eventType )
         {
@@ -450,17 +456,32 @@ namespace workphone::scene
 
     bool Slider::isDragging() const
     {
+        if( getUseNativeUI() )
+        {
+            if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( getElement() ) )
+            {
+                return slider->isDragging();
+            }
+        }
         return m_isDragging;
     }
 
     void Slider::setDragging( bool dragging )
     {
         m_isDragging = dragging;
+        if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( getElement() ) )
+        {
+            slider->setDragging( dragging );
+        }
         updateElementState();
     }
 
     void Slider::createUI()
     {
+        if( !getUseNativeUI() )
+        {
+            return;
+        }
         try
         {
             auto element = getElement();
@@ -476,9 +497,13 @@ namespace workphone::scene
                 }
 
                 auto slider = renderUI->addElementByType<ui::IUISlider>();
+                if( !slider )
+                {
+                    return;
+                }
                 setElement( slider );
 
-                setLabel( "Slider" );
+                slider->setLabel( getLabel() );
 
                 updateVisibility();
             }
@@ -491,14 +516,50 @@ namespace workphone::scene
 
     void Slider::updateElementState()
     {
+        if( getUseNativeUI() && isLoaded() && !getElement() )
+        {
+            createUI();
+        }
+        const auto native = getUseNativeUI() && getElement();
+        for( auto part : { m_background, m_fill, m_handleActor } )
+        {
+            if( part )
+            {
+                part->setEnabled( !native );
+                for( auto component : part->getAllComponentsAndInChildren<UIComponent>() )
+                {
+                    component->updateVisibility();
+                }
+            }
+        }
         if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( getElement() ) )
         {
+            updateVisibility();
             slider->setMinValue( m_minValue );
             slider->setMaxValue( m_maxValue );
             slider->setValue( m_sliderValue );
             slider->setDirection( m_direction );
-            slider->setDragging( m_isDragging );
         }
+    }
+
+    Parameter Slider::handleEvent( EventType eventType, hash_type eventValue,
+                                   const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
+                                   SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
+    {
+        if( eventType == EventType::UI && eventValue == IEvent::handleValueChanged && getUseNativeUI() &&
+            sender == getElement() )
+        {
+            if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( sender ) )
+            {
+                setValue( arguments.empty() ? slider->getValue() : arguments[0].getF32() );
+                m_isDragging = slider->isDragging();
+                if( m_callbackFunction )
+                {
+                    m_callbackFunction( eventValue );
+                }
+            }
+        }
+        return UIComponent::handleEvent( eventType, eventValue, arguments, sender, object, event );
     }
 
 }  // namespace workphone::scene

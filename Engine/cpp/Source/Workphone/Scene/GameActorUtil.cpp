@@ -16,6 +16,7 @@ namespace workphone::scene
             std::unordered_map<String, SmartPtr<ISharedObject>> objects;
             Array<Pair<SmartPtr<IComponent>, SmartPtr<Properties>>> components;
         };
+
         thread_local LoadBatch *activeBatch = nullptr;
     }  // namespace
 
@@ -197,7 +198,9 @@ namespace workphone::scene
             for( const auto &component : components )
             {
                 if( !component )
+                {
                     continue;
+                }
 
                 // Many render components expose a local bounding box via getBoundingBox().
                 if( component->isDerived<Renderer>() )
@@ -228,19 +231,25 @@ namespace workphone::scene
             for( auto child : children )
             {
                 if( !child )
+                {
                     continue;
+                }
 
                 // Recursively compute child's local AABB (in child's local space).
                 const auto childLocalAABB = getActorLocalAABB( child );
                 if( !childLocalAABB.isFinite() )
+                {
                     continue;
+                }
 
                 // Transform child's local AABB into this actor's local space using the child's local transform.
                 const auto childLocalTransform = child->getLocalTransform();
                 const auto transformed = childLocalTransform.transformAABB( childLocalAABB );
 
                 if( !transformed.isFinite() )
+                {
                     continue;
+                }
 
                 if( !hasResult )
                 {
@@ -290,11 +299,15 @@ namespace workphone::scene
                 for( auto child : children )
                 {
                     if( !child )
+                    {
                         continue;
+                    }
 
                     const auto childAABB = getActorAABB( child );
                     if( !childAABB.isFinite() )
+                    {
                         continue;
+                    }
 
                     if( !hasResult )
                     {
@@ -392,7 +405,9 @@ namespace workphone::scene
             {
                 if( childActor->getName() == GameActorUtil::childStr ||
                     childActor->getName() == GameActorUtil::childrenStr )
+                {
                     addActorData( childrenData, childActor );
+                }
             }
         }
     }  // namespace
@@ -400,32 +415,46 @@ namespace workphone::scene
     SmartPtr<Properties> GameActorUtil::createInstanceData( SmartPtr<Properties> data )
     {
         if( !data )
+        {
             return nullptr;
+        }
         std::unordered_map<String, String> identities;
         std::function<void( SmartPtr<Properties> )> index = [&]( SmartPtr<Properties> object ) {
             String uuid;
             if( getDirectStringProperty( object.get(), uuidStr, uuid ) && !uuid.empty() )
             {
                 if( !identities.emplace( uuid, StringUtil::getUUID() ).second )
+                {
                     throw std::runtime_error( "Duplicate prefab UUID: " + uuid );
+                }
             }
             Array<SmartPtr<Properties>> components;
             Array<SmartPtr<Properties>> children;
             for( auto child : object->getChildren() )
             {
                 if( child->getName() == componentStr || child->getName() == componentsStr )
+                {
                     addComponentData( components, child );
+                }
                 else if( child->getName() == childStr || child->getName() == childrenStr )
+                {
                     addActorData( children, child );
+                }
             }
             for( auto component : components )
             {
                 if( getDirectStringProperty( component.get(), uuidStr, uuid ) && !uuid.empty() )
+                {
                     if( !identities.emplace( uuid, StringUtil::getUUID() ).second )
+                    {
                         throw std::runtime_error( "Duplicate prefab UUID: " + uuid );
+                    }
+                }
             }
             for( auto child : children )
+            {
                 index( child );
+            }
         };
         index( data );
         std::function<SmartPtr<Properties>( SmartPtr<Properties> )> copy =
@@ -436,7 +465,9 @@ namespace workphone::scene
                 {
                     auto found = identities.find( property.getValue() );
                     if( found != identities.end() )
+                    {
                         property.setValue( found->second );
+                    }
                     // Serialized reference arrays may arrive as plain semicolon-separated strings.
                     else if( property.getValue().find( ';' ) != String::npos )
                     {
@@ -453,12 +484,16 @@ namespace workphone::scene
                             }
                         }
                         if( changed )
+                        {
                             property.setValue( StringUtil::toString( values ) );
+                        }
                     }
                     result->setProperty( property );
                 }
                 for( auto child : source->getChildren() )
+                {
                     result->addChild( copy( child ) );
+                }
                 return result;
             };
         return copy( data );
@@ -468,45 +503,65 @@ namespace workphone::scene
                                                                 SmartPtr<IGameScene> target )
     {
         if( activeBatch )
+        {
             throw std::logic_error( "Reentrant scene loading" );
+        }
         auto concrete = workphone::dynamic_pointer_cast<GameScene>( target );
         const auto generation = concrete ? concrete->getLoadGeneration() : 0;
         auto checkCurrent = [&] {
             if( target &&
                 ( !target->isLoaded() || ( concrete && concrete->getLoadGeneration() != generation ) ) )
+            {
                 throw std::runtime_error( "Scene load cancelled during graph construction" );
+            }
         };
         LoadBatch batch;
         // Include the pinned destination's existing graph, never the global current scene.
         std::function<void( SmartPtr<IGameActor> )> indexActor = [&]( SmartPtr<IGameActor> actor ) {
             if( !actor )
+            {
                 return;
+            }
             batch.objects.emplace( actor->getHandle()->getUUIDAsString(), actor );
             for( const auto &component : actor->getComponents() )
+            {
                 batch.objects.emplace( component->getHandle()->getUUIDAsString(), component );
+            }
             for( const auto &child : actor->getChildren() )
+            {
                 indexActor( child );
+            }
         };
         if( target )
+        {
             for( const auto &actor : target->getActors() )
+            {
                 indexActor( actor );
+            }
+        }
         std::unordered_set<String> identities;
         for( const auto &entry : batch.objects )
+        {
             identities.insert( entry.first );
+        }
         auto validateIdentity = [&]( const SmartPtr<Properties> &properties ) {
             String uuid;
             if( getDirectStringProperty( properties.get(), uuidStr, uuid ) && !uuid.empty() )
             {
                 auto identity = StringUtil::toString( StringUtil::parseUUID( uuid ) );
                 if( !identities.insert( identity ).second )
+                {
                     throw std::runtime_error( "Duplicate scene UUID: " + uuid );
+                }
             }
         };
         size_t actorCount = 0;
         std::function<void( const SmartPtr<Properties> & )> validateActor =
             [&]( const SmartPtr<Properties> &properties ) {
                 if( !properties )
+                {
                     throw std::invalid_argument( "Missing actor properties" );
+                }
                 ++actorCount;
                 validateIdentity( properties );
                 Array<SmartPtr<Properties>> components;
@@ -515,31 +570,47 @@ namespace workphone::scene
                 {
                     const auto name = child->getName();
                     if( name == componentStr || name == componentsStr )
+                    {
                         addComponentData( components, child );
+                    }
                     else if( name == childStr || name == childrenStr )
+                    {
                         addActorData( children, child );
+                    }
                 }
                 for( const auto &component : components )
+                {
                     validateIdentity( component );
+                }
                 for( const auto &child : children )
+                {
                     validateActor( child );
+                }
             };
         for( const auto &properties : data )
+        {
             validateActor( properties );
+        }
         auto manager = core::IApplicationManager::instancePtr()->getGameManager();
         const auto capacity = manager->getActors().size();
         const auto used = static_cast<size_t>( manager->getNumActors() );
         if( used > capacity || actorCount > capacity - used )
+        {
             throw std::length_error( "Actor capacity exhausted before scene commit" );
+        }
         if( target )
         {
             const auto roots = target->getActors().size();
             if( roots > WP_MAX_ACTORS || data.size() > WP_MAX_ACTORS - roots )
+            {
                 throw std::length_error( "Scene root capacity exhausted before scene commit" );
+            }
         }
+
         struct Scope
         {
             Properties::ObjectResolver previous;
+
             ~Scope()
             {
                 Properties::exchangeObjectResolver( std::move( previous ) );
@@ -550,6 +621,7 @@ namespace workphone::scene
                 auto it = batch.objects.find( uuid );
                 return it == batch.objects.end() ? nullptr : it->second;
             } ) };
+
         activeBatch = &batch;
         Array<SmartPtr<IGameActor>> roots;
         try
@@ -559,7 +631,9 @@ namespace workphone::scene
                 checkCurrent();
                 auto actor = manager->createActor();
                 if( !actor )
+                {
                     throw std::runtime_error( "Actor capacity exhausted" );
+                }
                 roots.push_back( actor );
                 actor->setScene( target );
                 loadFromData( actor, properties, true );
@@ -569,7 +643,9 @@ namespace workphone::scene
                 checkCurrent();
                 manager->loadObject( entry.first, entry.second, false );
                 if( entry.first->getLoadingState() == LoadingState::Error )
+                {
                     throw std::runtime_error( "Component initialization failed" );
+                }
             }
             checkCurrent();
             return roots;
@@ -577,7 +653,9 @@ namespace workphone::scene
         catch( ... )
         {
             for( auto &actor : roots )
+            {
                 manager->destroyActor( actor );
+            }
             throw;
         }
     }
@@ -586,7 +664,9 @@ namespace workphone::scene
                                             SmartPtr<Properties> actorData )
     {
         if( !editorCamera || !actorData )
+        {
             return false;
+        }
 
         String label;
         if( !getDirectStringProperty( actorData.get(), labelStr, label ) )
@@ -594,7 +674,9 @@ namespace workphone::scene
             getDirectStringProperty( actorData.get(), nameStr, label );
         }
         if( label != editorCamera->getName() )
+        {
             return false;
+        }
 
         Array<SmartPtr<Properties>> componentsData;
         for( const auto &child : actorData->getChildren() )
@@ -617,7 +699,9 @@ namespace workphone::scene
                                                  SmartPtr<Properties> actorData )
     {
         if( !editorCamera || !actorData )
+        {
             return;
+        }
 
         // The editor actor and its components are created by the editor. Loading
         // this data as a new actor appends cameras and loses controller UI bindings.
@@ -650,7 +734,9 @@ namespace workphone::scene
             getDirectStringProperty( componentData.get(), componentTypeStr, type );
             auto typeNames = StringUtil::split( type, "::" );
             if( typeNames.empty() )
+            {
                 continue;
+            }
 
             for( auto component : components )
             {
@@ -738,7 +824,9 @@ namespace workphone::scene
                 handle->setUUID( uuid );
                 if( activeBatch &&
                     !activeBatch->objects.emplace( handle->getUUIDAsString(), actor ).second )
+                {
                     throw std::runtime_error( "Duplicate actor UUID: " + uuid );
+                }
             }
 
             if( auto transform = pActor->getTransform() )
@@ -809,7 +897,9 @@ namespace workphone::scene
                 }
 
                 if( !pComponent && activeBatch )
+                {
                     throw std::runtime_error( "Unknown component type: " + componentType );
+                }
                 if( pComponent )
                 {
                     components.emplace_back( pComponent, componentData );
@@ -823,7 +913,9 @@ namespace workphone::scene
                             if( !activeBatch->objects
                                      .emplace( pComponent->getHandle()->getUUIDAsString(), pComponent )
                                      .second )
+                            {
                                 throw std::runtime_error( "Duplicate component UUID: " + uuid );
+                            }
                         }
                     }
                 }
@@ -848,14 +940,18 @@ namespace workphone::scene
                             auto attached = pActor->getComponents();
                             if( std::find( attached.begin(), attached.end(), c.first ) ==
                                 attached.end() )
+                            {
                                 throw std::runtime_error( "Failed to attach component" );
+                            }
                         }
                     }
                 }
                 catch( std::exception &e )
                 {
                     if( activeBatch )
+                    {
                         throw;
+                    }
                     WP_LOG_EXCEPTION( e );
                 }
             }
@@ -868,15 +964,21 @@ namespace workphone::scene
                     {
                         component->setActor( pActor );
                         if( activeBatch )
+                        {
                             activeBatch->components.emplace_back( component, c.second );
+                        }
                         else
+                        {
                             gameManager->loadObject( component, c.second, false );
+                        }
                     }
                 }
                 catch( std::exception &e )
                 {
                     if( activeBatch )
+                    {
                         throw;
+                    }
                     WP_LOG_EXCEPTION( e );
                 }
             }
@@ -888,14 +990,18 @@ namespace workphone::scene
                 for( const auto &childData : properties->getChildren() )
                 {
                     if( childData->getName() == childStr || childData->getName() == childrenStr )
+                    {
                         addActorData( childrenData, childData );
+                    }
                 }
 
                 for( auto &childData : childrenData )
                 {
                     auto childActor = gameManager->createActor();
                     if( !childActor && activeBatch )
+                    {
                         throw std::runtime_error( "Actor capacity exhausted" );
+                    }
                     if( childActor )
                     {
                         pActor->addChild( childActor );
@@ -909,7 +1015,9 @@ namespace workphone::scene
         catch( std::exception &e )
         {
             if( activeBatch )
+            {
                 throw;
+            }
             WP_LOG_EXCEPTION( e );
         }
     }

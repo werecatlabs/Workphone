@@ -35,19 +35,23 @@ namespace workphone::scene
         {
             return data.layerWeights.empty() ? Vector4F( 1, 0, 0, 0 ) : data.layerWeights[index];
         }
+
         Vector2F masksAt( const render::TerrainData &data, u32 index )
         {
             return data.surfaceMasks.empty() ? Vector2F( 1, 1 ) : data.surfaceMasks[index];
         }
+
         u8 holeAt( const render::TerrainData &data, u32 index )
         {
             return data.holes.empty() ? 0 : data.holes[index];
         }
+
         bool sameGrid( const render::TerrainData &a, const render::TerrainData &b )
         {
             return a.dimensions == b.dimensions && a.spacing == b.spacing && a.origin == b.origin &&
                    a.heightScale == b.heightScale;
         }
+
         double brushWeight( const render::TerrainData &data, const TerrainBrush &brush, s32 x, s32 z,
                             bool cell = false )
         {
@@ -58,6 +62,7 @@ namespace workphone::scene
             const double t = std::max( 0.0, 1.0 - std::hypot( dx, dz ) / brush.radius );
             return t * t * ( 3 - 2 * t );
         }
+
         u32 noiseHash( u32 x )
         {
             x ^= x >> 16;
@@ -66,6 +71,7 @@ namespace workphone::scene
             x *= 0x846ca68bu;
             return x ^ ( x >> 16 );
         }
+
         bool validBrush( const TerrainBrush &brush, String &error )
         {
             const bool blended =
@@ -98,19 +104,24 @@ namespace workphone::scene
                     return false;
                 }
                 for( const auto value : brush.stamp )
+                {
                     if( !std::isfinite( value ) || value < 0 || value > 1 )
                     {
                         error = "Stamp samples must be normalized finite values.";
                         return false;
                     }
+                }
             }
             return true;
         }
+
         bool brushCandidate( const render::TerrainData &source, const TerrainBrush &brush,
                              render::TerrainData &candidate, String &error )
         {
             if( !validBrush( brush, error ) || !render::validateTerrainData( source, error ) )
+            {
                 return false;
+            }
             const bool holes =
                 brush.mode == TerrainBrushMode::Hole || brush.mode == TerrainBrushMode::FillHole;
             const bool paint = brush.mode == TerrainBrushMode::Paint ||
@@ -147,24 +158,35 @@ namespace workphone::scene
                        endZ );
             candidate = source;
             if( holes && candidate.holes.empty() )
+            {
                 candidate.holes.assign( size_t( width - 1 ) * ( depth - 1 ), 0 );
+            }
             if( paint && candidate.layerWeights.empty() )
+            {
                 candidate.layerWeights.assign( source.heights.size(), Vector4F( 1, 0, 0, 0 ) );
+            }
             if( masks && candidate.surfaceMasks.empty() )
+            {
                 candidate.surfaceMasks.assign( source.heights.size(), Vector2F( 1, 1 ) );
+            }
             size_t changed = 0;
             for( s32 z = z0; z < z1; ++z )
+            {
                 for( s32 x = x0; x < x1; ++x )
                 {
                     const double weight = brushWeight( source, brush, x, z, holes );
                     if( weight <= 0 )
+                    {
                         continue;
+                    }
                     if( holes )
                     {
                         const auto index = u32( z * ( width - 1 ) + x );
                         const u8 replacement = brush.mode == TerrainBrushMode::Hole ? 1 : 0;
                         if( candidate.holes[index] == replacement )
+                        {
                             continue;
+                        }
                         candidate.holes[index] = replacement;
                     }
                     else
@@ -172,7 +194,9 @@ namespace workphone::scene
                         const auto index = u32( z * width + x );
                         const double old = source.heights[index], localHeight = old * source.heightScale;
                         if( localHeight < brush.minHeight || localHeight > brush.maxHeight )
+                        {
                             continue;
+                        }
                         const auto xLeft = std::max( 0, x - 1 ), xRight = std::min( width - 1, x + 1 );
                         const auto zDown = std::max( 0, z - 1 ), zUp = std::min( depth - 1, z + 1 );
                         const double dx = ( double( source.heights[size_t( z ) * width + xRight] ) -
@@ -185,7 +209,9 @@ namespace workphone::scene
                                           ( ( zUp - zDown ) * double( source.spacing.y ) );
                         const double slope = std::atan( std::hypot( dx, dz ) ) * 180 / 3.141592653589793;
                         if( slope < brush.minSlope || slope > brush.maxSlope )
+                        {
                             continue;
+                        }
                         if( masks )
                         {
                             auto value = masksAt( source, index );
@@ -198,7 +224,9 @@ namespace workphone::scene
                             auto &channel = snow ? value.y : value.x;
                             channel += ( target - channel ) * f32( brush.strength * weight );
                             if( value == masksAt( source, index ) )
+                            {
                                 continue;
+                            }
                             candidate.surfaceMasks[index] = value;
                         }
                         else if( paint )
@@ -212,15 +240,21 @@ namespace workphone::scene
                                     ( target - value[brush.layer] ) * f32( brush.strength * weight );
                                 const f32 remainder = 1 - value[brush.layer];
                                 for( u32 i = 0; i < 4; ++i )
+                                {
                                     if( i != brush.layer )
+                                    {
                                         value[i] = remainder > 1.e-7f
                                                        ? value[i] * ( 1 - selected ) / remainder
                                                        : ( 1 - selected ) / 3;
+                                    }
+                                }
                                 value[brush.layer] = selected;
                                 value = render::normalizeTerrainWeights( value );
                             }
                             if( value == weightsAt( source, index ) )
+                            {
                                 continue;
+                            }
                             candidate.layerWeights[index] = value;
                         }
                         else
@@ -287,11 +321,13 @@ namespace workphone::scene
                                 double total = 0;
                                 u32 count = 0;
                                 for( s32 nz = zDown; nz <= zUp; ++nz )
+                                {
                                     for( s32 nx = xLeft; nx <= xRight; ++nx )
                                     {
                                         total += source.heights[size_t( nz ) * width + nx];
                                         ++count;
                                     }
+                                }
                                 value += ( total / count - old ) * brush.strength * weight;
                             }
                             }
@@ -303,7 +339,9 @@ namespace workphone::scene
                                 return false;
                             }
                             if( replacement == old )
+                            {
                                 continue;
+                            }
                             candidate.heights[index] = replacement;
                         }
                     }
@@ -313,14 +351,20 @@ namespace workphone::scene
                         return false;
                     }
                 }
+            }
             if( changed == 0 )
+            {
                 candidate = source;
+            }
             return true;
         }
+
         bool validErosion( const TerrainErosionRecipe &recipe, String &error )
         {
             if( !validBrush( recipe.region, error ) )
+            {
                 return false;
+            }
             if( recipe.iterations == 0 || recipe.iterations > 1024 ||
                 unsigned( recipe.mode ) > unsigned( TerrainErosionMode::Hydraulic ) ||
                 !std::isfinite( recipe.talusAngle ) || recipe.talusAngle < 0 ||
@@ -333,6 +377,7 @@ namespace workphone::scene
             }
             return true;
         }
+
         bool validGrade( const TerrainGradeRecipe &recipe, String &error )
         {
             if( recipe.points.size() < 2 || recipe.points.size() > 1024 ||
@@ -345,11 +390,13 @@ namespace workphone::scene
                 return false;
             }
             for( const auto &point : recipe.points )
+            {
                 if( !std::isfinite( point.x ) || !std::isfinite( point.y ) || !std::isfinite( point.z ) )
                 {
                     error = "Grading polyline contains nonfinite coordinates.";
                     return false;
                 }
+            }
             return true;
         }
     }  // namespace
@@ -362,6 +409,7 @@ namespace workphone::scene
         {
             T before, after;
         };
+
         AtomicWeakPtr<TerrainSystem> terrain;
         render::TerrainData grid;  // metadata only, never retains complete height/weight arrays
         std::map<u32, Change<f32>> heights;
@@ -374,62 +422,88 @@ namespace workphone::scene
         bool succeeded = false;
         String error;
         State state = State::Allocated;
+
         bool empty() const
         {
             return heights.empty() && weights.empty() && holes.empty() && masks.empty() &&
                    layers.empty() && !appearance;
         }
+
         bool capture( const render::TerrainData &before, const render::TerrainData &after )
         {
             if( !( before.appearance == after.appearance ) )
             {
                 if( !appearance )
+                {
                     appearance =
                         Change<render::TerrainAppearance>{ before.appearance, after.appearance };
+                }
                 else
+                {
                     appearance->after = after.appearance;
+                }
             }
             for( u32 i = 0; i < 4; ++i )
+            {
                 if( !( before.layers[i] == after.layers[i] ) )
                 {
                     auto found = layers.find( i );
                     if( found == layers.end() )
+                    {
                         layers.emplace(
                             i, Change<render::TerrainLayer>{ before.layers[i], after.layers[i] } );
+                    }
                     else
+                    {
                         found->second.after = after.layers[i];
+                    }
                 }
+            }
             for( u32 i = 0; i < before.heights.size(); ++i )
             {
                 if( before.heights[i] != after.heights[i] )
                 {
                     auto found = heights.find( i );
                     if( found == heights.end() )
+                    {
                         heights.emplace( i, Change<f32>{ before.heights[i], after.heights[i] } );
+                    }
                     else
+                    {
                         found->second.after = after.heights[i];
+                    }
                 }
                 if( weightsAt( before, i ) != weightsAt( after, i ) )
                 {
                     auto found = weights.find( i );
                     if( found == weights.end() )
+                    {
                         weights.emplace(
                             i, Change<Vector4F>{ weightsAt( before, i ), weightsAt( after, i ) } );
+                    }
                     else
+                    {
                         found->second.after = weightsAt( after, i );
+                    }
                 }
                 if( masksAt( before, i ) != masksAt( after, i ) )
                 {
                     auto found = masks.find( i );
                     if( found == masks.end() )
+                    {
                         masks.emplace( i,
                                        Change<Vector2F>{ masksAt( before, i ), masksAt( after, i ) } );
+                    }
                     else
+                    {
                         found->second.after = masksAt( after, i );
+                    }
                 }
                 if( heights.size() + weights.size() + holes.size() + masks.size() >
                     terrainMaximumEditSamples )
+                {
                     return false;
+                }
             }
             for( u32 i = 0; i < u32( before.dimensions.x - 1 ) * ( before.dimensions.y - 1 ); ++i )
             {
@@ -437,16 +511,23 @@ namespace workphone::scene
                 {
                     auto found = holes.find( i );
                     if( found == holes.end() )
+                    {
                         holes.emplace( i, Change<u8>{ holeAt( before, i ), holeAt( after, i ) } );
+                    }
                     else
+                    {
                         found->second.after = holeAt( after, i );
+                    }
                 }
                 if( heights.size() + weights.size() + holes.size() + masks.size() >
                     terrainMaximumEditSamples )
+                {
                     return false;
+                }
             }
             return true;
         }
+
         void apply( bool forward )
         {
             succeeded = false;
@@ -470,35 +551,45 @@ namespace workphone::scene
                 return forward ? change.after : change.before;
             };
             for( const auto &[i, change] : heights )
+            {
                 if( source->heights[i] != expected( change ) )
                 {
                     error = "Terrain height conflicts with a newer edit.";
                     return;
                 }
+            }
             for( const auto &[i, change] : weights )
+            {
                 if( weightsAt( *source, i ) != expected( change ) )
                 {
                     error = "Terrain weights conflict with a newer edit.";
                     return;
                 }
+            }
             for( const auto &[i, change] : holes )
+            {
                 if( holeAt( *source, i ) != expected( change ) )
                 {
                     error = "Terrain holes conflict with a newer edit.";
                     return;
                 }
+            }
             for( const auto &[i, change] : masks )
+            {
                 if( masksAt( *source, i ) != expected( change ) )
                 {
                     error = "Terrain surface masks conflict with a newer edit.";
                     return;
                 }
+            }
             for( const auto &[i, change] : layers )
+            {
                 if( !( source->layers[i] == expected( change ) ) )
                 {
                     error = "Terrain layer material conflicts with a newer edit.";
                     return;
                 }
+            }
             if( appearance && !( source->appearance == expected( *appearance ) ) )
             {
                 error = "Terrain appearance conflicts with a newer edit.";
@@ -506,75 +597,114 @@ namespace workphone::scene
             }
             auto candidate = *source;
             if( appearance )
+            {
                 candidate.appearance = replacement( *appearance );
+            }
             for( const auto &[i, change] : layers )
+            {
                 candidate.layers[i] = replacement( change );
+            }
             if( !masks.empty() && candidate.surfaceMasks.empty() )
+            {
                 candidate.surfaceMasks.assign( candidate.heights.size(), Vector2F( 1, 1 ) );
+            }
             for( const auto &[i, change] : masks )
+            {
                 candidate.surfaceMasks[i] = replacement( change );
+            }
             if( !forward && implicitMasksBefore &&
                 std::all_of( candidate.surfaceMasks.begin(), candidate.surfaceMasks.end(),
                              []( const Vector2F &value ) { return value == Vector2F( 1, 1 ); } ) )
+            {
                 candidate.surfaceMasks.clear();
+            }
             for( const auto &[i, change] : heights )
+            {
                 candidate.heights[i] = replacement( change );
+            }
             if( !weights.empty() && candidate.layerWeights.empty() )
+            {
                 candidate.layerWeights.assign( candidate.heights.size(), Vector4F( 1, 0, 0, 0 ) );
+            }
             for( const auto &[i, change] : weights )
+            {
                 candidate.layerWeights[i] = replacement( change );
+            }
             if( !holes.empty() && candidate.holes.empty() )
+            {
                 candidate.holes.assign(
                     size_t( candidate.dimensions.x - 1 ) * ( candidate.dimensions.y - 1 ), 0 );
+            }
             for( const auto &[i, change] : holes )
+            {
                 candidate.holes[i] = replacement( change );
+            }
             if( !forward && implicitWeightsBefore &&
                 std::all_of( candidate.layerWeights.begin(), candidate.layerWeights.end(),
                              []( const Vector4F &value ) { return value == Vector4F( 1, 0, 0, 0 ); } ) )
+            {
                 candidate.layerWeights.clear();
+            }
             if( !forward && implicitHolesBefore &&
                 std::all_of( candidate.holes.begin(), candidate.holes.end(),
                              []( u8 value ) { return value == 0; } ) )
+            {
                 candidate.holes.clear();
+            }
             succeeded = owner->applyTerrainData( candidate, error, source->revision );
         }
+
         void execute() override
         {
             if( state == State::Finished )
+            {
                 return;
+            }
             state = State::Executing;
             apply( true );
             state = State::Finished;
         }
+
         void undo() override
         {
             apply( false );
             if( !succeeded )
+            {
                 WP_LOG_WARNING( error );
+            }
         }
+
         void redo() override
         {
             apply( true );
             if( !succeeded )
+            {
                 WP_LOG_WARNING( error );
+            }
         }
+
         State getState() const override
         {
             return state;
         }
+
         void setState( State value ) override
         {
             state = value;
         }
+
         bool isPrimary() const override
         {
             return true;
         }
+
         void setPrimary( bool ) override
         {
         }
+
         WP_CLASS_REGISTER_DECL;
     };
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, TerrainHeightEdit, ICommand );
 
     namespace
@@ -594,6 +724,7 @@ namespace workphone::scene
             edit->implicitMasksBefore = source.surfaceMasks.empty();
             return edit;
         }
+
         bool commitCandidate( SmartPtr<TerrainSystem> terrain, const render::TerrainData &source,
                               const render::TerrainData &candidate, SmartPtr<ICommandManager> commands,
                               String &error )
@@ -615,7 +746,9 @@ namespace workphone::scene
                 return false;
             }
             if( !terrain->applyTerrainData( candidate, error, source.revision ) )
+            {
                 return false;
+            }
             edit->state = ICommand::State::Finished;
             commands->addCommand( edit );
             return true;
@@ -630,6 +763,7 @@ namespace workphone::scene
         u64 revision = 0;
         bool closed = false;
     };
+
     TerrainEditStroke::TerrainEditStroke( SmartPtr<TerrainSystem> terrain,
                                           SmartPtr<ICommandManager> commands ) :
         m_state( std::make_unique<State>() )
@@ -643,6 +777,7 @@ namespace workphone::scene
             m_state->edit = newEdit( terrain, *source );
         }
     }
+
     TerrainEditStroke::~TerrainEditStroke()
     {
         if( !m_state->closed )
@@ -657,6 +792,7 @@ namespace workphone::scene
             }
         }
     }
+
     bool TerrainEditStroke::update( const TerrainBrush &brush, String &error )
     {
         error.clear();
@@ -676,7 +812,9 @@ namespace workphone::scene
             }
             render::TerrainData candidate;
             if( !brushCandidate( *source, brush, candidate, error ) )
+            {
                 return false;
+            }
             auto staged = newEdit( owner, *source );
             staged->heights = m_state->edit->heights;
             staged->weights = m_state->edit->weights;
@@ -691,7 +829,9 @@ namespace workphone::scene
                 return false;
             }
             if( !owner->applyTerrainData( candidate, error, source->revision ) )
+            {
                 return false;
+            }
             m_state->edit = staged;
             m_state->revision = owner->getTerrainRevision();
             return true;
@@ -702,6 +842,7 @@ namespace workphone::scene
             return false;
         }
     }
+
     bool TerrainEditStroke::commit( String &error )
     {
         error.clear();
@@ -726,11 +867,14 @@ namespace workphone::scene
         m_state->closed = true;
         return true;
     }
+
     bool TerrainEditStroke::cancel( String &error )
     {
         error.clear();
         if( m_state->closed )
+        {
             return true;
+        }
         if( m_state->edit && !m_state->edit->empty() )
         {
             m_state->edit->apply( false );
@@ -743,11 +887,14 @@ namespace workphone::scene
         m_state->closed = true;
         return true;
     }
+
     TerrainDirtyRect TerrainEditStroke::getDirtyRect() const
     {
         TerrainDirtyRect rect;
         if( !m_state->edit )
+        {
             return rect;
+        }
         const auto add = [&]( u32 i, s32 width ) {
             s32 x = s32( i % width ), z = s32( i / width );
             if( rect.maxX < 0 )
@@ -764,15 +911,24 @@ namespace workphone::scene
             }
         };
         for( const auto &item : m_state->edit->heights )
+        {
             add( item.first, m_state->edit->grid.dimensions.x );
+        }
         for( const auto &item : m_state->edit->weights )
+        {
             add( item.first, m_state->edit->grid.dimensions.x );
+        }
         for( const auto &item : m_state->edit->masks )
+        {
             add( item.first, m_state->edit->grid.dimensions.x );
+        }
         for( const auto &item : m_state->edit->holes )
+        {
             add( item.first, m_state->edit->grid.dimensions.x - 1 );
+        }
         return rect;
     }
+
     bool applyTerrainBrush( SmartPtr<TerrainSystem> terrain, const TerrainBrush &brush,
                             SmartPtr<ICommandManager> commands, String &error )
     {
@@ -794,11 +950,16 @@ namespace workphone::scene
         auto candidate = *source;
         candidate.appearance = appearance;
         if( !render::validateTerrainData( candidate, error ) )
+        {
             return false;
+        }
         if( candidate.appearance == source->appearance )
+        {
             return true;
+        }
         return commitCandidate( terrain, *source, candidate, commands, error );
     }
+
     bool applyTerrainLayer( SmartPtr<TerrainSystem> terrain, u32 index,
                             const render::TerrainLayer &layer, SmartPtr<ICommandManager> commands,
                             String &error )
@@ -813,9 +974,13 @@ namespace workphone::scene
         auto candidate = *source;
         candidate.layers[index] = layer;
         if( !render::validateTerrainData( candidate, error ) )
+        {
             return false;
+        }
         if( candidate.layers[index] == source->layers[index] )
+        {
             return true;
+        }
         return commitCandidate( terrain, *source, candidate, commands, error );
     }
 
@@ -828,8 +993,10 @@ namespace workphone::scene
             {
                 if( path.empty() || path.find( '\0' ) != String::npos || bytes.empty() ||
                     bytes.size() > 256ull * 1024 * 1024 )
+                {
                     throw std::runtime_error(
                         "Terrain output requires a valid path and at most 256 MiB." );
+                }
                 auto destination = std::filesystem::u8path( path.c_str() );
                 temporary = destination;
                 temporary += ".tmp-" + std::string( StringUtil::getUUID().c_str() );
@@ -837,14 +1004,20 @@ namespace workphone::scene
                 file.write( bytes.data(), std::streamsize( bytes.size() ) );
                 file.flush();
                 if( !file )
+                {
                     throw std::runtime_error( "Cannot write terrain output." );
+                }
                 file.close();
                 if( !file )
+                {
                     throw std::runtime_error( "Cannot close terrain output." );
+                }
 #ifdef _WIN32
                 if( !MoveFileExW( temporary.c_str(), destination.c_str(),
                                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+                {
                     throw std::runtime_error( "Cannot atomically replace terrain output." );
+                }
 #else
                 std::filesystem::rename( temporary, destination );
 #endif
@@ -862,29 +1035,38 @@ namespace workphone::scene
                 return false;
             }
         }
+
         bool readHeightFile( const String &path, const TerrainHeightFileOptions &options,
                              Vector2I &dimensions, Array<f32> &samples, String &error )
         {
             try
             {
                 if( path.empty() || path.find( '\0' ) != String::npos )
+                {
                     throw std::runtime_error( "Height file path is invalid." );
+                }
                 const bool floating = options.encoding == TerrainHeightEncoding::RawF32LE;
                 if( unsigned( options.encoding ) > unsigned( TerrainHeightEncoding::RawF32LE ) ||
                     ( !floating && ( !std::isfinite( options.minimumHeight ) ||
                                      !std::isfinite( options.maximumHeight ) ||
                                      options.maximumHeight <= options.minimumHeight ) ) )
+                {
                     throw std::runtime_error( "Height encoding/range is invalid." );
+                }
                 std::ifstream file( std::filesystem::u8path( path.c_str() ),
                                     std::ios::binary | std::ios::ate );
                 const auto length = file ? file.tellg() : std::streampos( -1 );
                 if( length <= 0 || length > std::streamoff( 32 * 1024 * 1024 ) )
+                {
                     throw std::runtime_error( "Height file is missing, empty or exceeds 32 MiB." );
+                }
                 std::string bytes( size_t( length ), '\0' );
                 file.seekg( 0 );
                 file.read( bytes.data(), std::streamsize( bytes.size() ) );
                 if( !file )
+                {
                     throw std::runtime_error( "Height file read failed." );
+                }
                 size_t offset = 0;
                 dimensions = options.dimensions;
                 u32 maxValue = 65535;
@@ -896,56 +1078,80 @@ namespace workphone::scene
                             if( bytes[offset] == '#' )
                             {
                                 while( offset < bytes.size() && bytes[offset] != '\n' )
+                                {
                                     ++offset;
+                                }
                             }
                             else if( std::isspace( static_cast<unsigned char>( bytes[offset] ) ) )
+                            {
                                 ++offset;
+                            }
                             else
+                            {
                                 break;
+                            }
                         }
                         const auto start = offset;
                         while( offset < bytes.size() &&
                                !std::isspace( static_cast<unsigned char>( bytes[offset] ) ) &&
                                bytes[offset] != '#' )
+                        {
                             ++offset;
+                        }
                         if( offset - start > 16 )
+                        {
                             throw std::runtime_error( "PGM header token is too long." );
+                        }
                         return bytes.substr( start, offset - start );
                     };
                     if( token() != "P5" )
+                    {
                         throw std::runtime_error(
                             "Height image must be a binary PGM (P5), not a renamed file." );
+                    }
                     const auto integer = [&]( const std::string &value ) {
                         if( value.empty() ||
                             value.find_first_not_of( "0123456789" ) != std::string::npos )
+                        {
                             throw std::runtime_error( "Invalid PGM integer." );
+                        }
                         return std::stoul( value );
                     };
                     const auto width = integer( token() ), depth = integer( token() );
                     maxValue = u32( integer( token() ) );
                     if( width > render::terrainMaximumDimension ||
                         depth > render::terrainMaximumDimension || maxValue < 1 || maxValue > 65535 )
+                    {
                         throw std::runtime_error( "Unsupported PGM dimensions or precision." );
+                    }
                     dimensions = Vector2I( s32( width ), s32( depth ) );
                     if( offset >= bytes.size() ||
                         !std::isspace( static_cast<unsigned char>( bytes[offset] ) ) )
+                    {
                         throw std::runtime_error( "PGM raster separator missing." );
+                    }
                     if( bytes[offset++] == '\r' && offset < bytes.size() && bytes[offset] == '\n' )
+                    {
                         ++offset;
+                    }
                 }
                 if( dimensions.x < 2 || dimensions.y < 2 ||
                     dimensions.x > render::terrainMaximumDimension ||
                     dimensions.y > render::terrainMaximumDimension ||
                     u64( dimensions.x ) * dimensions.y > render::terrainMaximumSamples )
+                {
                     throw std::runtime_error( "Height dimensions are outside supported limits." );
+                }
                 const size_t count = size_t( dimensions.x ) * dimensions.y;
                 const size_t stride =
                     floating
                         ? 4
                         : ( options.encoding == TerrainHeightEncoding::Pgm16 && maxValue < 256 ? 1 : 2 );
                 if( bytes.size() - offset != count * stride )
+                {
                     throw std::runtime_error(
                         "Height payload length does not match dimensions/encoding." );
+                }
                 Array<f32> decoded;
                 decoded.reserve( count );
                 for( size_t i = 0; i < count; ++i )
@@ -966,13 +1172,17 @@ namespace workphone::scene
                                                 ? ( u32( value[0] ) << 8 ) | value[1]
                                                 : value[0] | ( u32( value[1] ) << 8 );
                         if( encoded > maxValue )
+                        {
                             throw std::runtime_error( "Height image sample exceeds declared maximum." );
+                        }
                         height = f32( options.minimumHeight +
                                       ( double( options.maximumHeight ) - options.minimumHeight ) *
                                           encoded / maxValue );
                     }
                     if( !std::isfinite( height ) )
+                    {
                         throw std::runtime_error( "Height file contains nonfinite samples." );
+                    }
                     decoded.push_back( height );
                 }
                 samples = std::move( decoded );
@@ -986,6 +1196,7 @@ namespace workphone::scene
             }
         }
     }  // namespace
+
     bool importTerrainHeightFile( SmartPtr<TerrainSystem> terrain, const String &path,
                                   const TerrainHeightFileOptions &options, String &error )
     {
@@ -997,7 +1208,9 @@ namespace workphone::scene
         auto source = terrain->getTerrainSnapshot();
         auto candidate = *source;
         if( !readHeightFile( path, options, candidate.dimensions, candidate.heights, error ) )
+        {
             return false;
+        }
         if( candidate.dimensions != source->dimensions )
         {
             candidate.layerWeights.clear();
@@ -1008,30 +1221,39 @@ namespace workphone::scene
         }
         return terrain->applyTerrainData( candidate, error, source->revision );
     }
+
     bool exportTerrainHeightFile( SmartPtr<TerrainSystem> terrain, const String &path,
                                   const TerrainHeightFileOptions &options, String &error )
     {
         try
         {
             if( !terrain )
+            {
                 throw std::runtime_error( "Select a terrain before exporting height data." );
+            }
             auto source = terrain->getTerrainSnapshot();
             const bool floating = options.encoding == TerrainHeightEncoding::RawF32LE;
             if( unsigned( options.encoding ) > unsigned( TerrainHeightEncoding::RawF32LE ) ||
                 ( !floating &&
                   ( !std::isfinite( options.minimumHeight ) || !std::isfinite( options.maximumHeight ) ||
                     options.maximumHeight <= options.minimumHeight ) ) )
+            {
                 throw std::runtime_error( "Height encoding/range is invalid." );
+            }
             const auto extension = std::filesystem::u8path( path.c_str() ).extension().u8string();
             if( ( options.encoding == TerrainHeightEncoding::Pgm16 && extension != ".pgm" ) ||
                 ( options.encoding != TerrainHeightEncoding::Pgm16 && extension != ".raw" &&
                   extension != ".r32" && extension != ".r16" ) )
+            {
                 throw std::runtime_error(
                     "Use .pgm for PGM images or .raw/.r16/.r32 for explicit raw encoding." );
+            }
             String bytes;
             if( options.encoding == TerrainHeightEncoding::Pgm16 )
+            {
                 bytes = "P5\n" + String( std::to_string( source->dimensions.x ).c_str() ) + " " +
                         String( std::to_string( source->dimensions.y ).c_str() ) + "\n65535\n";
+            }
             bytes.reserve( bytes.size() + source->heights.size() * ( floating ? 4 : 2 ) );
             for( const auto height : source->heights )
             {
@@ -1040,14 +1262,18 @@ namespace workphone::scene
                     u32 bits;
                     std::memcpy( &bits, &height, sizeof( bits ) );
                     for( u32 b = 0; b < 4; ++b )
+                    {
                         bytes.push_back( char( ( bits >> ( b * 8 ) ) & 255 ) );
+                    }
                 }
                 else
                 {
                     if( height < options.minimumHeight || height > options.maximumHeight )
+                    {
                         throw std::runtime_error(
                             "Height is outside the requested U16 range; adjust bounds or export raw "
                             "float." );
+                    }
                     const auto encoded = u32( std::llround(
                         ( double( height ) - options.minimumHeight ) /
                         ( double( options.maximumHeight ) - options.minimumHeight ) * 65535 ) );
@@ -1064,29 +1290,42 @@ namespace workphone::scene
             return false;
         }
     }
+
     bool exportTerrainMeshFile( SmartPtr<TerrainSystem> terrain, const String &path, String &error )
     {
         try
         {
             if( !terrain || std::filesystem::u8path( path.c_str() ).extension() != ".obj" )
+            {
                 throw std::runtime_error(
                     "Terrain mesh export requires a selected terrain and .obj output." );
+            }
             if( terrain->getTerrainSnapshot()->heights.size() > 1024ull * 1024 )
+            {
                 throw std::runtime_error(
                     "Terrain OBJ export is limited to one million vertices; export a smaller tile." );
+            }
             render::TerrainMeshData mesh;
             if( !render::buildTerrainMeshData( *terrain->getTerrainSnapshot(), mesh, error ) )
+            {
                 return false;
+            }
             std::ostringstream out;
             out.imbue( std::locale::classic() );
             out << std::setprecision( std::numeric_limits<f32>::max_digits10 )
                 << "# Workphone terrain; local metres; holes omitted\n";
             for( const auto &p : mesh.positions )
+            {
                 out << "v " << p.x << ' ' << p.y << ' ' << p.z << '\n';
+            }
             for( const auto &p : mesh.uvs )
+            {
                 out << "vt " << p.x << ' ' << p.y << '\n';
+            }
             for( const auto &p : mesh.normals )
+            {
                 out << "vn " << p.x << ' ' << p.y << ' ' << p.z << '\n';
+            }
             for( size_t i = 0; i < mesh.indices.size(); i += 3 )
             {
                 out << 'f';
@@ -1097,7 +1336,9 @@ namespace workphone::scene
                 }
                 out << '\n';
                 if( out.tellp() > std::streamoff( 256 * 1024 * 1024 ) )
+                {
                     throw std::runtime_error( "Terrain OBJ exceeds 256 MiB; export a smaller terrain." );
+                }
             }
             return writeTerrainFile( path, String( out.str().c_str() ), error );
         }
@@ -1116,32 +1357,42 @@ namespace workphone::scene
         {
             error.clear();
             if( !render::validateTerrainData( source, error ) || !validErosion( recipe, error ) )
+            {
                 return false;
+            }
             if( source.heightScale == 0 || recipe.iterations == 0 || recipe.iterations > 1024 ||
                 unsigned( recipe.mode ) > unsigned( TerrainErosionMode::Hydraulic ) ||
                 !std::isfinite( recipe.talusAngle ) || recipe.talusAngle < 0 ||
                 recipe.talusAngle >= 89 || !std::isfinite( recipe.rain ) || recipe.rain < 0 ||
                 recipe.rain > 100 || !std::isfinite( recipe.sedimentCapacity ) ||
                 recipe.sedimentCapacity < 0 || recipe.sedimentCapacity > 1 )
+            {
                 throw std::runtime_error( "Erosion parameters exceed supported ranges." );
+            }
             const auto width = source.dimensions.x, depth = source.dimensions.y;
             Array<u32> writeIndices;
             s32 firstX = width, firstZ = depth, lastX = -1, lastZ = -1;
             for( s32 z = 0; z < depth; ++z )
             {
                 if( cancelled && cancelled->load() )
+                {
                     throw std::runtime_error( "Terrain erosion cancelled before publication." );
+                }
                 for( s32 x = 0; x < width; ++x )
+                {
                     if( brushWeight( source, recipe.region, x, z ) > 0 )
                     {
                         if( writeIndices.size() >= terrainMaximumEditSamples )
+                        {
                             throw std::runtime_error( "Erosion region exceeds 65536 samples." );
+                        }
                         writeIndices.push_back( u32( z * width + x ) );
                         firstX = std::min( firstX, x );
                         firstZ = std::min( firstZ, z );
                         lastX = std::max( lastX, x );
                         lastZ = std::max( lastZ, z );
                     }
+                }
             }
             if( writeIndices.empty() )
             {
@@ -1163,23 +1414,31 @@ namespace workphone::scene
             const s32 simulationWidth = lastX - firstX + 1;
             const auto simulationCount = u64( simulationWidth ) * u64( lastZ - firstZ + 1 );
             if( simulationCount > 262144 || simulationCount * recipe.iterations > 16ull * 1024 * 1024 )
+            {
                 throw std::runtime_error(
                     "Erosion halo exceeds 262144 samples or 16 million sample iterations; reduce the "
                     "region or iteration count." );
+            }
             Array<u32> indices;
             indices.reserve( size_t( simulationCount ) );
             for( s32 z = firstZ; z <= lastZ; ++z )
             {
                 if( cancelled && cancelled->load() )
+                {
                     throw std::runtime_error( "Terrain erosion cancelled before publication." );
+                }
                 for( s32 x = firstX; x <= lastX; ++x )
+                {
                     indices.push_back( u32( z * width + x ) );
+                }
             }
             Array<double> height( indices.size() ), water( indices.size(), 0 ),
                 sediment( indices.size(), 0 ), delta( indices.size(), 0 ),
                 waterDelta( indices.size(), 0 ), sedimentDelta( indices.size(), 0 );
             for( size_t i = 0; i < indices.size(); ++i )
+            {
                 height[i] = double( source.heights[indices[i]] ) * source.heightScale;
+            }
             const auto slot = [&]( s32 x, s32 z ) {
                 return size_t( z - firstZ ) * simulationWidth + ( x - firstX );
             };
@@ -1191,7 +1450,9 @@ namespace workphone::scene
                 {
                     const s32 nx = x + offset.x, nz = z + offset.y;
                     if( nx < firstX || nz < firstZ || nx > lastX || nz > lastZ )
+                    {
                         continue;
+                    }
                     visit( slot( nx, nz ), offset.x ? source.spacing.x : source.spacing.y );
                 }
             };
@@ -1206,11 +1467,15 @@ namespace workphone::scene
                 std::fill( waterDelta.begin(), waterDelta.end(), 0 );
                 std::fill( sedimentDelta.begin(), sedimentDelta.end(), 0 );
                 if( recipe.mode == TerrainErosionMode::Hydraulic )
+                {
                     for( size_t i = 0; i < indices.size(); ++i )
+                    {
                         water[i] +=
                             recipe.rain *
                             ( 0.75 + double( noiseHash( indices[i] ^ recipe.seed ^ iteration ) ) /
                                          4294967295.0 * 0.5 );
+                    }
+                }
                 for( size_t i = 0; i < indices.size(); ++i )
                 {
                     if( ( i & 255 ) == 0 && cancelled && cancelled->load() )
@@ -1288,7 +1553,9 @@ namespace workphone::scene
                 return false;
             }
             if( !render::validateTerrainData( candidate, error ) )
+            {
                 return false;
+            }
             output = std::move( candidate );
             return true;
         }
@@ -1298,6 +1565,7 @@ namespace workphone::scene
             return false;
         }
     }
+
     bool applyTerrainErosion( SmartPtr<TerrainSystem> terrain, const TerrainErosionRecipe &recipe,
                               SmartPtr<ICommandManager> commands, String &error )
     {
@@ -1311,6 +1579,7 @@ namespace workphone::scene
         return prepareTerrainErosion( *source, recipe, candidate, nullptr, error ) &&
                commitCandidate( terrain, *source, candidate, commands, error );
     }
+
     static bool prepareTerrainGrade( render::TerrainSnapshot source, const TerrainGradeRecipe &recipe,
                                      render::TerrainData &output, String &error,
                                      const std::atomic_bool *cancelled = nullptr )
@@ -1322,24 +1591,37 @@ namespace workphone::scene
                 !std::isfinite( recipe.shoulder ) || recipe.shoulder < 0 ||
                 !std::isfinite( recipe.strength ) || recipe.strength < 0 || recipe.strength > 1 ||
                 !std::isfinite( recipe.depth ) || recipe.depth < 0 )
+            {
                 throw std::runtime_error(
                     "Grading requires a bounded finite polyline, width and blend strength." );
+            }
             for( const auto &p : recipe.points )
+            {
                 if( !std::isfinite( p.x ) || !std::isfinite( p.y ) || !std::isfinite( p.z ) )
+                {
                     throw std::runtime_error( "Grading polyline contains nonfinite coordinates." );
+                }
+            }
             auto candidate = *source;
             if( source->heights.size() * u64( recipe.points.size() - 1 ) > 16ull * 1024 * 1024 )
+            {
                 throw std::runtime_error(
                     "Grading work exceeds 16 million sample segments; split the centreline." );
+            }
             if( source->heightScale == 0 )
+            {
                 throw std::runtime_error( "Grading requires nonzero height scale." );
+            }
             size_t changed = 0;
             const double halfWidth = recipe.width * 0.5;
             for( s32 z = 0; z < source->dimensions.y; ++z )
+            {
                 for( s32 x = 0; x < source->dimensions.x; ++x )
                 {
                     if( ( x & 31 ) == 0 && cancelled && cancelled->load() )
+                    {
                         throw std::runtime_error( "Terrain grading cancelled before publication." );
+                    }
                     const double px = source->origin.x + double( x ) * source->spacing.x,
                                  pz = source->origin.y + double( z ) * source->spacing.y;
                     double distance = std::numeric_limits<double>::infinity(), target = 0;
@@ -1349,7 +1631,9 @@ namespace workphone::scene
                         const double dx = double( b.x ) - a.x, dz = double( b.z ) - a.z,
                                      length2 = dx * dx + dz * dz;
                         if( length2 <= 0 )
+                        {
                             continue;
+                        }
                         const double t =
                             std::clamp( ( ( px - a.x ) * dx + ( pz - a.z ) * dz ) / length2, 0.0, 1.0 );
                         const double d = std::hypot( px - a.x - t * dx, pz - a.z - t * dz );
@@ -1360,7 +1644,9 @@ namespace workphone::scene
                         }
                     }
                     if( distance > halfWidth + recipe.shoulder )
+                    {
                         continue;
+                    }
                     double blend = 1;
                     if( distance > halfWidth )
                     {
@@ -1368,8 +1654,10 @@ namespace workphone::scene
                         blend = 1 - t * t * ( 3 - 2 * t );
                     }
                     if( recipe.river )
+                    {
                         target -= recipe.depth *
                                   std::max( 0.0, 1 - distance * distance / ( halfWidth * halfWidth ) );
+                    }
                     const size_t index = size_t( z ) * source->dimensions.x + x;
                     candidate.heights[index] =
                         f32( source->heights[index] +
@@ -1377,11 +1665,16 @@ namespace workphone::scene
                                  recipe.strength * blend );
                     if( candidate.heights[index] != source->heights[index] &&
                         ++changed > terrainMaximumEditSamples )
+                    {
                         throw std::runtime_error(
                             "Grading affects more than 65536 samples; split the polyline." );
+                    }
                 }
+            }
             if( !render::validateTerrainData( candidate, error ) )
+            {
                 return false;
+            }
             output = std::move( candidate );
             return true;
         }
@@ -1422,18 +1715,25 @@ namespace workphone::scene
         paint.strength = 1;
         render::TerrainData candidate;
         if( !brushCandidate( source, paint, candidate, error ) )
+        {
             return false;
+        }
         for( u32 i = 0; i < candidate.heights.size(); ++i )
+        {
             candidate.heights[i] = weightsAt( candidate, i ).y;
+        }
         candidate.heightScale = 1;
         candidate.layerWeights.clear();
         candidate.holes.clear();
         auto mask = make_ptr<TerrainSystem>();
         if( !mask->applyTerrainData( candidate, error ) )
+        {
             return false;
+        }
         TerrainHeightFileOptions encoding;
         return exportTerrainHeightFile( mask, path, encoding, error );
     }
+
     bool exportTerrainErosionMask( SmartPtr<TerrainSystem> terrain, const String &path,
                                    const TerrainErosionRecipe &recipe, String &error )
     {
@@ -1445,7 +1745,9 @@ namespace workphone::scene
         auto source = terrain->getTerrainSnapshot();
         render::TerrainData candidate;
         if( !prepareTerrainErosion( *source, recipe, candidate, nullptr, error ) )
+        {
             return false;
+        }
         double maximum = 0;
         for( size_t i = 0; i < candidate.heights.size(); ++i )
         {
@@ -1460,14 +1762,20 @@ namespace workphone::scene
             maximum = std::max( maximum, delta );
         }
         if( maximum > 0 )
+        {
             for( auto &height : candidate.heights )
+            {
                 height = f32( height / maximum );
+            }
+        }
         candidate.heightScale = 1;
         candidate.layerWeights.clear();
         candidate.holes.clear();
         auto mask = make_ptr<TerrainSystem>();
         if( !mask->applyTerrainData( candidate, error ) )
+        {
             return false;
+        }
         TerrainHeightFileOptions encoding;
         return exportTerrainHeightFile( mask, path, encoding, error );
     }
@@ -1480,6 +1788,7 @@ namespace workphone::scene
             String error;
             u64 generation = 0;
         };
+
         AtomicWeakPtr<TerrainSystem> owner;
         render::TerrainSnapshot base, preview;
         Array<TerrainRecipeOperation> operations;
@@ -1487,14 +1796,18 @@ namespace workphone::scene
         std::shared_ptr<std::atomic_bool> cancelled;
         std::future<Result> worker;
     };
+
     WP_CLASS_REGISTER_DERIVED( workphone::scene, TerrainRecipeStack, ISharedObject );
+
     TerrainRecipeStack::TerrainRecipeStack() : m_state( std::make_unique<State>() )
     {
     }
+
     TerrainRecipeStack::~TerrainRecipeStack()
     {
         cancel();
     }
+
     void TerrainRecipeStack::unload( SmartPtr<ISharedObject> )
     {
         cancel();
@@ -1502,10 +1815,13 @@ namespace workphone::scene
         m_state->preview.reset();
         m_state->operations.clear();
     }
+
     void TerrainRecipeStack::cancel()
     {
         if( m_state->cancelled )
+        {
             m_state->cancelled->store( true );
+        }
         if( m_state->worker.valid() )
         {
             try
@@ -1520,6 +1836,7 @@ namespace workphone::scene
         m_state->preview.reset();
         ++m_state->generation;
     }
+
     bool TerrainRecipeStack::setBase( SmartPtr<TerrainSystem> terrain, String &error )
     {
         if( !terrain )
@@ -1541,6 +1858,7 @@ namespace workphone::scene
         error.clear();
         return true;
     }
+
     bool TerrainRecipeStack::append( const TerrainRecipeOperation &operation, String &error )
     {
         if( !m_state->base || m_state->operations.size() >= 32 )
@@ -1555,18 +1873,25 @@ namespace workphone::scene
         }
         if( operation.kind == TerrainRecipeOperation::Kind::Brush &&
             !validBrush( operation.brush, error ) )
+        {
             return false;
+        }
         if( operation.kind == TerrainRecipeOperation::Kind::Erosion &&
             !validErosion( operation.erosion, error ) )
+        {
             return false;
+        }
         if( operation.kind == TerrainRecipeOperation::Kind::Grade &&
             !validGrade( operation.grade, error ) )
+        {
             return false;
+        }
         cancel();
         m_state->operations.push_back( operation );
         error.clear();
         return true;
     }
+
     bool TerrainRecipeStack::move( u32 from, u32 to, String &error )
     {
         if( from >= m_state->operations.size() || to >= m_state->operations.size() )
@@ -1581,6 +1906,7 @@ namespace workphone::scene
         error.clear();
         return true;
     }
+
     bool TerrainRecipeStack::remove( u32 index, String &error )
     {
         if( index >= m_state->operations.size() )
@@ -1593,6 +1919,7 @@ namespace workphone::scene
         error.clear();
         return true;
     }
+
     bool TerrainRecipeStack::setEnabled( u32 index, bool enabled, String &error )
     {
         if( index >= m_state->operations.size() )
@@ -1605,29 +1932,37 @@ namespace workphone::scene
         error.clear();
         return true;
     }
+
     u32 TerrainRecipeStack::getOperationCount() const
     {
         return u32( m_state->operations.size() );
     }
+
     u64 TerrainRecipeStack::getGeneration() const
     {
         return m_state->generation;
     }
+
     bool TerrainRecipeStack::isBusy() const
     {
         return m_state->worker.valid();
     }
+
     render::TerrainSnapshot TerrainRecipeStack::getPreview() const
     {
         return m_state->preview;
     }
+
     render::TerrainSnapshot TerrainRecipeStack::getPreviewFor( SmartPtr<TerrainSystem> terrain ) const
     {
         if( !terrain || m_state->worker.valid() || m_state->owner.load().lock() != terrain ||
             terrain->getTerrainRevision() != m_state->expectedRevision )
+        {
             return {};
+        }
         return m_state->preview;
     }
+
     bool TerrainRecipeStack::requestPreview( String &error )
     {
         if( !m_state->base )
@@ -1657,7 +1992,9 @@ namespace workphone::scene
                             return result;
                         }
                         if( !operation.enabled )
+                        {
                             continue;
+                        }
                         render::TerrainData candidate;
                         bool success = false;
                         switch( operation.kind )
@@ -1676,13 +2013,19 @@ namespace workphone::scene
                             break;
                         }
                         if( !success )
+                        {
                             return result;
+                        }
                         current = std::make_shared<const render::TerrainData>( std::move( candidate ) );
                     }
                     if( cancelled->load() )
+                    {
                         result.error = "Recipe generation cancelled.";
+                    }
                     else
+                    {
                         result.data = current;
+                    }
                 }
                 catch( const std::exception &e )
                 {
@@ -1699,13 +2042,18 @@ namespace workphone::scene
             return false;
         }
     }
+
     bool TerrainRecipeStack::poll( String &error )
     {
         error.clear();
         if( !m_state->worker.valid() )
+        {
             return bool( m_state->preview );
+        }
         if( m_state->worker.wait_for( std::chrono::milliseconds( 0 ) ) != std::future_status::ready )
+        {
             return false;
+        }
         auto result = m_state->worker.get();
         if( result.generation != m_state->generation ||
             ( m_state->cancelled && m_state->cancelled->load() ) )
@@ -1721,6 +2069,7 @@ namespace workphone::scene
         m_state->preview = result.data;
         return true;
     }
+
     bool TerrainRecipeStack::commit( SmartPtr<TerrainSystem> terrain, SmartPtr<ICommandManager> commands,
                                      String &error )
     {
@@ -1735,7 +2084,9 @@ namespace workphone::scene
         if( !poll( error ) || !m_state->preview )
         {
             if( error.empty() )
+            {
                 error = "Recipe preview is not ready.";
+            }
             return false;
         }
         auto source = terrain->getTerrainSnapshot();
@@ -1750,33 +2101,50 @@ namespace workphone::scene
             const auto before = masksAt( *m_state->base, i );
             const auto after = masksAt( *m_state->preview, i );
             if( before == after )
+            {
                 continue;
+            }
             if( candidate.surfaceMasks.empty() )
+            {
                 candidate.surfaceMasks.assign( candidate.heights.size(), Vector2F( 1, 1 ) );
+            }
             if( before.x != after.x )
+            {
                 candidate.surfaceMasks[i].x = after.x;
+            }
             if( before.y != after.y )
+            {
                 candidate.surfaceMasks[i].y = after.y;
+            }
         }
         if( !commitCandidate( terrain, *source, candidate, commands, error ) )
+        {
             return false;
+        }
         m_state->expectedRevision = terrain->getTerrainRevision();
         return true;
     }
+
     String TerrainRecipeStack::serialize() const
     {
         if( !m_state->base )
+        {
             return {};
+        }
         using Json = std::unique_ptr<cJSON, decltype( &cJSON_Delete )>;
         Json root( cJSON_CreateObject(), cJSON_Delete );
         if( !root )
+        {
             return {};
+        }
         cJSON_AddStringToObject( root.get(), "format", "workphone.terrain.recipe" );
         cJSON_AddNumberToObject( root.get(), "version", 1 );
         const auto baseBytes = render::serializeTerrainData( *m_state->base );
         Json base( cJSON_Parse( baseBytes.c_str() ), cJSON_Delete );
         if( !base )
+        {
             return {};
+        }
         cJSON_AddItemToObject( root.get(), "base", base.release() );
         auto operations = cJSON_AddArrayToObject( root.get(), "operations" );
         const auto putBrush = []( cJSON *item, const TerrainBrush &brush ) {
@@ -1805,12 +2173,16 @@ namespace workphone::scene
         {
             auto item = cJSON_CreateObject();
             if( !item || !operations )
+            {
                 return {};
+            }
             cJSON_AddItemToArray( operations, item );
             cJSON_AddNumberToObject( item, "kind", unsigned( operation.kind ) );
             cJSON_AddBoolToObject( item, "enabled", operation.enabled );
             if( operation.kind == TerrainRecipeOperation::Kind::Brush )
+            {
                 putBrush( item, operation.brush );
+            }
             else if( operation.kind == TerrainRecipeOperation::Kind::Erosion )
             {
                 putBrush( item, operation.erosion.region );
@@ -1844,23 +2216,30 @@ namespace workphone::scene
         std::unique_ptr<char, decltype( &cJSON_free )> bytes( cJSON_PrintUnformatted( root.get() ),
                                                               cJSON_free );
         if( !bytes )
+        {
             return {};
+        }
         const auto length = std::char_traits<char>::length( bytes.get() );
         return length <= 32ull * 1024 * 1024 ? String( bytes.get(), length ) : String();
     }
+
     bool TerrainRecipeStack::deserialize( const String &json, SmartPtr<TerrainSystem> target,
                                           String &error )
     {
         try
         {
             if( !target || json.empty() || json.size() > 32ull * 1024 * 1024 )
+            {
                 throw std::runtime_error( "Terrain recipe requires a target and at most 32 MiB." );
+            }
             using Json = std::unique_ptr<cJSON, decltype( &cJSON_Delete )>;
             const char *end = nullptr;
             Json root( cJSON_ParseWithLengthOpts( json.c_str(), json.size() + 1, &end, 1 ),
                        cJSON_Delete );
             if( !root || end != json.c_str() + json.size() )
+            {
                 throw std::runtime_error( "Invalid recipe JSON." );
+            }
             const auto field = []( cJSON *item, const char *key ) {
                 return cJSON_GetObjectItemCaseSensitive( item, key );
             };
@@ -1868,36 +2247,50 @@ namespace workphone::scene
                 auto value = field( item, key );
                 if( !cJSON_IsNumber( value ) || !std::isfinite( value->valuedouble ) ||
                     std::abs( value->valuedouble ) > std::numeric_limits<f32>::max() )
+                {
                     throw std::runtime_error( "Invalid recipe number." );
+                }
                 return value->valuedouble;
             };
             const auto integer = [&]( cJSON *item, const char *key, u32 maximum ) {
                 auto value = num( item, key );
                 if( value < 0 || value > maximum || std::floor( value ) != value )
+                {
                     throw std::runtime_error( "Invalid recipe integer." );
+                }
                 return u32( value );
             };
             const auto boolean = [&]( cJSON *item, const char *key ) {
                 auto value = field( item, key );
                 if( !cJSON_IsBool( value ) )
+                {
                     throw std::runtime_error( "Invalid recipe boolean." );
+                }
                 return cJSON_IsTrue( value ) != 0;
             };
             auto format = field( root.get(), "format" );
             if( !cJSON_IsString( format ) ||
                 String( format->valuestring ) != "workphone.terrain.recipe" ||
                 num( root.get(), "version" ) != 1 )
+            {
                 throw std::runtime_error( "Unsupported terrain recipe format." );
+            }
             std::unique_ptr<char, decltype( &cJSON_free )> baseJson(
                 cJSON_PrintUnformatted( field( root.get(), "base" ) ), cJSON_free );
             render::TerrainData base;
             if( !baseJson || !render::deserializeTerrainData( baseJson.get(), base, error ) )
+            {
                 return false;
+            }
             if( base.heights.size() > terrainMaximumEditSamples )
+            {
                 throw std::runtime_error( "Recipe base exceeds 65536 samples." );
+            }
             auto list = field( root.get(), "operations" );
             if( !cJSON_IsArray( list ) || cJSON_GetArraySize( list ) > 32 )
+            {
                 throw std::runtime_error( "Recipe requires at most 32 operations." );
+            }
             Array<TerrainRecipeOperation> operations;
             const auto readBrush = [&]( cJSON *item, TerrainBrush &brush ) {
                 brush.mode =
@@ -1918,15 +2311,21 @@ namespace workphone::scene
                               integer( item, "stampDepth", terrainMaximumEditSamples ) );
                 auto stamp = field( item, "stamp" );
                 if( !cJSON_IsArray( stamp ) || cJSON_GetArraySize( stamp ) > terrainMaximumEditSamples )
+                {
                     throw std::runtime_error( "Invalid recipe stamp." );
+                }
                 for( auto value = stamp->child; value; value = value->next )
                 {
                     if( !cJSON_IsNumber( value ) )
+                    {
                         throw std::runtime_error( "Invalid stamp sample." );
+                    }
                     brush.stamp.push_back( f32( value->valuedouble ) );
                 }
                 if( !validBrush( brush, error ) )
+                {
                     throw std::runtime_error( error.c_str() );
+                }
             };
             for( auto item = list->child; item; item = item->next )
             {
@@ -1934,7 +2333,9 @@ namespace workphone::scene
                 operation.kind = TerrainRecipeOperation::Kind( integer( item, "kind", 2 ) );
                 operation.enabled = boolean( item, "enabled" );
                 if( operation.kind == TerrainRecipeOperation::Kind::Brush )
+                {
                     readBrush( item, operation.brush );
+                }
                 else if( operation.kind == TerrainRecipeOperation::Kind::Erosion )
                 {
                     auto &recipe = operation.erosion;
@@ -1957,14 +2358,18 @@ namespace workphone::scene
                     auto points = field( item, "points" );
                     if( !cJSON_IsArray( points ) || cJSON_GetArraySize( points ) < 6 ||
                         cJSON_GetArraySize( points ) > 3072 || cJSON_GetArraySize( points ) % 3 )
+                    {
                         throw std::runtime_error( "Invalid grading points." );
+                    }
                     Vector3F point;
                     int channel = 0;
                     for( auto value = points->child; value; value = value->next )
                     {
                         if( !cJSON_IsNumber( value ) || !std::isfinite( value->valuedouble ) ||
                             std::abs( value->valuedouble ) > std::numeric_limits<f32>::max() )
+                        {
                             throw std::runtime_error( "Invalid grading coordinate." );
+                        }
                         point[channel++] = f32( value->valuedouble );
                         if( channel == 3 )
                         {
@@ -1975,17 +2380,23 @@ namespace workphone::scene
                 }
                 if( operation.kind == TerrainRecipeOperation::Kind::Erosion &&
                     !validErosion( operation.erosion, error ) )
+                {
                     return false;
+                }
                 if( operation.kind == TerrainRecipeOperation::Kind::Grade &&
                     !validGrade( operation.grade, error ) )
+                {
                     return false;
+                }
                 operations.push_back( std::move( operation ) );
             }
             // Imported recipes may not silently overwrite a different grid or manual terrain.
             auto current = target->getTerrainSnapshot();
             if( !sameGrid( base, *current ) )
+            {
                 throw std::runtime_error(
                     "Recipe grid differs from target; import its terrain base first." );
+            }
             cancel();
             m_state->base = std::make_shared<const render::TerrainData>( std::move( base ) );
             m_state->operations = std::move( operations );
@@ -2000,6 +2411,7 @@ namespace workphone::scene
             return false;
         }
     }
+
     bool TerrainRecipeStack::save( const String &path, String &error ) const
     {
         const auto bytes = serialize();
@@ -2010,22 +2422,29 @@ namespace workphone::scene
         }
         return writeTerrainFile( path, bytes, error );
     }
+
     bool TerrainRecipeStack::load( const String &path, SmartPtr<TerrainSystem> target, String &error )
     {
         try
         {
             if( path.empty() || path.find( '\0' ) != String::npos )
+            {
                 throw std::runtime_error( "Recipe path is invalid." );
+            }
             std::ifstream file( std::filesystem::u8path( path.c_str() ),
                                 std::ios::binary | std::ios::ate );
             const auto size = file ? file.tellg() : std::streampos( -1 );
             if( size <= 0 || size > std::streamoff( 32 * 1024 * 1024 ) )
+            {
                 throw std::runtime_error( "Recipe file is missing, empty or too large." );
+            }
             String bytes( size_t( size ), '\0' );
             file.seekg( 0 );
             file.read( bytes.data(), std::streamsize( bytes.size() ) );
             if( !file )
+            {
                 throw std::runtime_error( "Recipe file read failed." );
+            }
             return deserialize( bytes, target, error );
         }
         catch( const std::exception &e )
@@ -2060,15 +2479,21 @@ namespace workphone::scene
                 stream.write( bytes.data(), static_cast<std::streamsize>( bytes.size() ) );
                 stream.flush();
                 if( !stream )
+                {
                     throw std::runtime_error( "Failed to write terrain data." );
+                }
                 stream.close();
                 if( !stream )
+                {
                     throw std::runtime_error( "Failed to close terrain data." );
+                }
             }
 #ifdef _WIN32
             if( !MoveFileExW( temporary.c_str(), destination.c_str(),
                               MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH ) )
+            {
                 throw std::runtime_error( "Failed to replace terrain data file." );
+            }
 #else
             std::filesystem::rename( temporary, destination );
 #endif

@@ -407,8 +407,8 @@ namespace workphone
 
                 // Reserve index arrays up front to avoid partial-build on allocation
                 // failure.
-                std::vector<uint32_t> top;
-                std::vector<uint32_t> bottom;
+                Array<uint32_t> top;
+                Array<uint32_t> bottom;
                 top.reserve( static_cast<size_t>( s ) );
                 bottom.reserve( static_cast<size_t>( s ) );
 

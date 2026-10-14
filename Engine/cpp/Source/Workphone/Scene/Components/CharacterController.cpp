@@ -25,6 +25,7 @@ namespace workphone
         {
             m_transform = transform;
         }
+
         Transform3<real_Num> CharacterController::getTransform() const
         {
             return m_transform;
@@ -37,6 +38,7 @@ namespace workphone
             //else
             //    m_actorFlags = static_cast<physics::ActorFlagEnum>( m_actorFlags & ~flag );
         }
+
         physics::ActorFlagEnum CharacterController::getActorFlags() const
         {
             return m_actorFlags;
@@ -46,6 +48,7 @@ namespace workphone
         {
             return m_mass;
         }
+
         void CharacterController::setMass( real_Num mass )
         {
             m_mass = mass;
@@ -55,6 +58,7 @@ namespace workphone
         {
             m_collisionType = type;
         }
+
         u32 CharacterController::getCollisionType() const
         {
             return m_collisionType;
@@ -64,6 +68,7 @@ namespace workphone
         {
             m_collisionMask = mask;
         }
+
         u32 CharacterController::getCollisionMask() const
         {
             return m_collisionMask;
@@ -74,6 +79,7 @@ namespace workphone
             auto it = m_userDataById.find( id );
             return it != m_userDataById.end() ? it->second : nullptr;
         }
+
         void CharacterController::setUserDataById( u32 id, void *userData )
         {
             m_userDataById[id] = userData;
@@ -83,6 +89,7 @@ namespace workphone
         {
             return m_userData;
         }
+
         void CharacterController::setUserData( void *userData )
         {
             m_userData = userData;
@@ -92,6 +99,7 @@ namespace workphone
         {
             return m_kinematicMode;
         }
+
         void CharacterController::setKinematicMode( bool kinematicMode )
         {
             m_kinematicMode = kinematicMode;
@@ -105,6 +113,7 @@ namespace workphone
         {
             m_position = position;
         }
+
         Vector3F CharacterController::getPosition() const
         {
             return m_position;
@@ -114,6 +123,7 @@ namespace workphone
         {
             m_orientation = orientation;
         }
+
         Quaternion<real_Num> CharacterController::getOrientation() const
         {
             return m_orientation;
@@ -123,6 +133,7 @@ namespace workphone
         {
             return m_moveSpeed;
         }
+
         void CharacterController::setMoveSpeed( f32 moveSpeed )
         {
             m_moveSpeed = moveSpeed;
@@ -132,10 +143,12 @@ namespace workphone
         {
             return m_jump;
         }
+
         void CharacterController::setJump( bool jump )
         {
             m_jump = jump;
         }
+
         bool CharacterController::isGrounded() const
         {
             return m_grounded;
@@ -145,6 +158,7 @@ namespace workphone
         {
             m_walkVector = vector;
         }
+
         void CharacterController::stop()
         {
             m_walkVector = Vector3<real_Num>();

@@ -1,7 +1,6 @@
 #pragma once
 #include <Workphone/Vehicle/VehicleAudio.h>
 #include <Workphone/Vehicle/VehicleVisualEffects.h>
-
 #include <Workphone/Atomics/AtomicTypes.hpp>
 #include <Workphone/Core/FixedArray.hpp>
 #include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
@@ -15,6 +14,7 @@
 
 namespace workphone::scene::race
 {
+
     /**
      * A single sample point along a race circuit.
      *
@@ -24,8 +24,9 @@ namespace workphone::scene::race
      */
     struct CircuitSample
     {
-        Vector3F position, right;
-        float distance = 0;
+        Vector3F position;
+        Vector3F right;
+        f32 distance = 0.0f;
     };
 
     /**
@@ -131,6 +132,7 @@ namespace workphone::scene::race
 
 namespace workphone::scene
 {
+
     class CarController;
 
     /**
@@ -248,20 +250,28 @@ namespace workphone::scene
 
         // Shared presentation lifecycle for native and Lua hosts.
         void initializePresentation();
+
         void setAudioEnabled( bool enabled );
         bool getAudioEnabled() const;
+
         void setEffectsEnabled( bool enabled );
         bool getEffectsEnabled() const;
+
         void setAutomaticPresentation( bool enabled );
+
         bool isAudioAvailable() const;
         bool isEffectsAvailable() const;
+
         u32 getParticleCount() const;
         u32 getSkidDecalCount() const;
+
         bool isRoadSurface( const Vector3F &position ) const;
+
         advanced::VehicleAudioInput sampleVehicleAudio() const;
         advanced::VehicleEffectsFrame sampleVehicleEffects() const;
         advanced::VehicleAudio &getVehicleAudio();
         advanced::VehicleVisualEffects &getVehicleVisualEffects();
+
         WP_CLASS_REGISTER_DECL;
 
     private:
@@ -297,7 +307,8 @@ namespace workphone::scene
         String m_materialExportDirectory;
 
         /** City size and selected street route used for generation. */
-        s32 m_cityBlocks = 8, m_cityRoute = 0;
+        s32 m_cityBlocks = 8;
+        s32 m_cityRoute = 0;
 
         /** Last generation error message, empty when generation succeeded. */
         String m_generationError;

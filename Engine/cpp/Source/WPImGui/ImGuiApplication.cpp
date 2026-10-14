@@ -18,6 +18,7 @@
 #include "ImGuiUtil.hpp"
 #include "imgui_internal.h"
 #include <cmath>
+#include <Workphone/Scene/ScenePicking.hpp>
 #include <vector>
 #include <algorithm>
 
@@ -1893,6 +1894,8 @@ namespace workphone::ui
             for( auto &renderWindow : renderWindows )
             {
                 bool terrainInputDispatched = false;
+                bool sceneToolActive = false;
+                bool sceneGizmoActive = false;
                 auto visible = renderWindow->isVisible();
                 if( visible )
                 {
@@ -1990,6 +1993,7 @@ namespace workphone::ui
                                 const auto &ring = reply.getArray();
                                 if( ring.empty() || !ring.front().getBool() )
                                     continue;
+                                sceneToolActive = true;
                                 ImGuizmo::Enable( false );
                                 if( !hovered )
                                     continue;
@@ -2111,6 +2115,7 @@ namespace workphone::ui
                                 {
                                     if( translateManipulator->isEnabled() && !selectedActors.empty() )
                                     {
+                                        sceneGizmoActive = true;
                                         if( Manipulate(
                                                 viewMatrix.ptr(), projectionMatrix.ptr(),
                                                 ImGuizmo::TRANSLATE,
@@ -2171,6 +2176,7 @@ namespace workphone::ui
                                 {
                                     if( rotateManipulor->isEnabled() && !selectedActors.empty() )
                                     {
+                                        sceneGizmoActive = true;
                                         if( Manipulate(
                                                 viewMatrix.ptr(), projectionMatrix.ptr(),
                                                 ImGuizmo::ROTATE,
@@ -2218,6 +2224,7 @@ namespace workphone::ui
                                 {
                                     if( scaleManipulator->isEnabled() && !selectedActors.empty() )
                                     {
+                                        sceneGizmoActive = true;
                                         if( Manipulate(
                                                 viewMatrix.ptr(), projectionMatrix.ptr(),
                                                 ImGuizmo::SCALE,
@@ -2335,6 +2342,74 @@ namespace workphone::ui
                                             }
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // Pick only the scene image, after tools have hit-tested their handles.
+                        if( renderCamera && selectionManager && sceneManager &&
+                            applicationManager->getSceneRenderWindow() == renderWindow &&
+                            !applicationManager->isPlaying() && sceneRectSize.x > 0 && sceneRectSize.y > 0 )
+                        {
+                            const auto mouse = ImGui::GetMousePos();
+                            const auto &io = ImGui::GetIO();
+                            const bool hovered = ImGui::IsWindowHovered() &&
+                                mouse.x >= sceneRectMin.x && mouse.y >= sceneRectMin.y &&
+                                mouse.x < sceneRectMin.x + sceneRectSize.x &&
+                                mouse.y < sceneRectMin.y + sceneRectSize.y;
+                            if( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+                            {
+                                m_scenePickWindow = renderWindow;
+                                m_scenePickStart = Vector2F( mouse.x, mouse.y );
+                                m_scenePickSuppressed = false;
+                            }
+                            if( m_scenePickWindow.lock() == renderWindow )
+                            {
+                                m_scenePickSuppressed = m_scenePickSuppressed || sceneToolActive ||
+                                    ( sceneGizmoActive && ( ImGuizmo::IsOver() || ImGuizmo::IsUsing() ) ) || io.KeyAlt ||
+                                    ImGui::IsMouseDown( ImGuiMouseButton_Right ) ||
+                                    ImGui::IsMouseDown( ImGuiMouseButton_Middle ) ||
+                                    ImGui::IsKeyPressed( ImGuiKey_Escape ) ||
+                                    ( !ImGui::IsWindowFocused( ImGuiFocusedFlags_RootAndChildWindows ) &&
+                                      !ImGui::IsMouseClicked( ImGuiMouseButton_Left ) );
+                                if( ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+                                {
+                                    const auto dx = mouse.x - m_scenePickStart.x;
+                                    const auto dy = mouse.y - m_scenePickStart.y;
+                                    if( hovered && !m_scenePickSuppressed && dx * dx + dy * dy <= 9.0f &&
+                                        io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] <= 9.0f )
+                                    {
+                                        auto scene = sceneManager->getCurrentScene();
+                                        Ray3<real_Num> ray;
+                                        real_Num range;
+                                        const bool validRay = workphone::scene::makeScenePickingRay(
+                                            renderCamera->getViewMatrix(), renderCamera->getProjectionMatrix(),
+                                            Vector2F( ( mouse.x - sceneRectMin.x ) / sceneRectSize.x,
+                                                      ( mouse.y - sceneRectMin.y ) / sceneRectSize.y ), ray, range );
+                                        auto actor = scene && validRay ? workphone::scene::pickSceneActor(
+                                            scene->getActors(), ray, range ) : nullptr;
+                                        if( !io.KeyCtrl && !io.KeyShift )
+                                        {
+                                            selectionManager->clearSelection();
+                                        }
+                                        if( actor )
+                                        {
+                                            const auto selection = selectionManager->getSelection();
+                                            const auto found = std::find( selection.begin(), selection.end(), actor );
+                                            if( io.KeyCtrl && found != selection.end() )
+                                            {
+                                                selectionManager->removeSelectedObject( actor );
+                                            }
+                                            else if( found == selection.end() )
+                                            {
+                                                selectionManager->addSelectedObject( actor );
+                                            }
+                                        }
+                                        applicationManager->triggerEvent(
+                                            EventType::UI, StringUtil::getHash( "sceneActorPicked" ), {},
+                                            renderWindow, actor, nullptr, false, Thread::Application_Flag );
+                                    }
+                                    m_scenePickWindow = nullptr;
                                 }
                             }
                         }

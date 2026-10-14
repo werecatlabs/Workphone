@@ -303,8 +303,6 @@ namespace workphone::scene
             return;
         }
 
-        ScopedLock gameSceneLock( gameScene );
-
         ScopedLock lock( this );
 
         auto timer = applicationManager->getTimerPtr();

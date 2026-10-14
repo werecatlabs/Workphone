@@ -28,7 +28,9 @@ namespace workphone::scene
 
         auto data = workphone::dynamic_pointer_cast<Properties>( getData() );
         if( !data )
+        {
             return nullptr;
+        }
         auto instanceData = GameActorUtil::createInstanceData( data );
         auto actors = GameActorUtil::loadSceneActors( { instanceData } );
         return actors.empty() ? nullptr : actors.front();
@@ -43,7 +45,9 @@ namespace workphone::scene
             Path::getFileExtension( path ) == ".fbscenexml" ? DataFormat::XML : DataFormat::JSON;
         if( !saveAssetDocumentText( path, properties,
                                     DataUtil::toString( properties.get(), true, format ), error ) )
+        {
             throw std::runtime_error( error.c_str() );
+        }
     }
 
     void GamePrefab::load( SmartPtr<ISharedObject> data )

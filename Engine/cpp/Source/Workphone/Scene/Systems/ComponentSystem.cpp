@@ -97,7 +97,9 @@ namespace workphone::scene
 
         WP_ASSERT( isValid() );
         if( id >= getSize() )
+        {
             return;
+        }
 
         setLoadingState( id, LoadingState::Unallocated );
         setObject( id, nullptr );
@@ -108,17 +110,25 @@ namespace workphone::scene
         ScopedLock lock( this );
 
         if( !component )
+        {
             return;
+        }
         auto handle = component->getHandle();
         if( !handle )
+        {
             return;
+        }
         auto id = handle->getInstanceId();
         if( id >= getSize() || getObject( id ) != component.get() )
+        {
             return;
+        }
 
         WP_ASSERT( isValid() );
         if( id >= getSize() )
+        {
             return;
+        }
 
         setLoadingState( id, LoadingState::Unallocated );
         setObject( id, nullptr );
@@ -235,8 +245,6 @@ namespace workphone::scene
 
     void ComponentSystem::addDirtyComponent( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
-
         auto it = std::find( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() );
         if( it == m_dirtyComponents.end() )
         {
@@ -248,8 +256,6 @@ namespace workphone::scene
 
     void ComponentSystem::removeDirtyComponent( SmartPtr<IComponent> component )
     {
-        ScopedLock lock( this );
-
         m_dirtyComponents.erase(
             std::remove( m_dirtyComponents.begin(), m_dirtyComponents.end(), component.get() ),
             m_dirtyComponents.end() );

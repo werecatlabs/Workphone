@@ -1,5 +1,6 @@
 #include <WPAssimp/WPAssimpPCH.hpp>
 #include <WPAssimp/AssimpLoader.hpp>
+#include <WPAssimp/MaterialImportDefaults.hpp>
 #include <WPAssimp/TexturePathResolver.hpp>
 #include <WPAssimp/LogStream.hpp>
 #include <WPAssimp/IOSystem.hpp>
@@ -2368,15 +2369,30 @@ namespace workphone
 
         if( m_materialImportOptions.importMaterialColours )
         {
-            aiColor4D clr( 1.0f, 1.0f, 1.0f, 1.0f );
-            if( AI_SUCCESS == aiGetMaterialColor( mat, AI_MATKEY_COLOR_DIFFUSE, &clr ) )
+            f32 opacity = 1.0f;
+            const auto hasOpacity = AI_SUCCESS == aiGetMaterialFloat( mat, AI_MATKEY_OPACITY, &opacity );
+            const auto isObj = StringUtil::make_lower( Path::getFileExtension( m_meshPath ) ) ==
+                               String( ".obj" );
+            const auto recoverOpacity = detail::recoverObjMaterialOpacity(
+                opacity, isObj, m_materialImportOptions.recoverZeroOpacityObjMaterials );
+            opacity = recoverOpacity ? 1.0f : detail::materialUnitFactor( opacity, 1.0f );
+            if( recoverOpacity )
             {
-                auto diffuse = ColourF( clr.r, clr.g, clr.b, clr.a );
-                material->setDiffuse( diffuse );
-                if( pass )
-                {
-                    pass->setDiffuse( diffuse );
-                }
+                WP_LOG_WARNING( "Recovered zero-opacity OBJ material: " +
+                                getMaterialName( mat, index ) );
+            }
+
+            aiColor4D clr( 1.0f, 1.0f, 1.0f, 1.0f );
+            aiGetMaterialColor( mat, AI_MATKEY_COLOR_DIFFUSE, &clr );
+            if( !hasOpacity )
+            {
+                opacity = detail::materialUnitFactor( clr.a, 1.0f );
+            }
+            auto diffuse = ColourF( clr.r, clr.g, clr.b, opacity );
+            material->setDiffuse( diffuse );
+            if( pass )
+            {
+                pass->setDiffuse( diffuse );
             }
 
             clr = aiColor4D( 1.0f, 1.0f, 1.0f, 1.0f );
@@ -2403,35 +2419,31 @@ namespace workphone
                 }
             }
 
-            f32 opacity = 1.0f;
-            if( AI_SUCCESS == aiGetMaterialFloat( mat, AI_MATKEY_OPACITY, &opacity ) )
+            material->setOpacity( opacity );
+            if( pass )
             {
-                material->setOpacity( opacity );
-                if( pass && opacity < 0.999f )
-                {
-                    pass->setTransparent( true );
-                }
+                pass->setTransparent( opacity < 0.999f || material->getDiffuse().a < 0.999f );
             }
         }
 
         if( m_materialImportOptions.importPbrProperties )
         {
-            f32 metalness = 0.5f;
+            f32 metalness = 0.0f;
             aiGetMaterialFloat( mat, AI_MATKEY_METALLIC_FACTOR, &metalness );
+            metalness = detail::materialUnitFactor( metalness, 0.0f );
             material->setMetalness( metalness );
             if( pass )
             {
                 pass->setMetalness( metalness );
             }
 
-            f32 roughness = 0.0f;
-            if( AI_SUCCESS == aiGetMaterialFloat( mat, AI_MATKEY_ROUGHNESS_FACTOR, &roughness ) )
+            f32 roughness = 0.5f;
+            aiGetMaterialFloat( mat, AI_MATKEY_ROUGHNESS_FACTOR, &roughness );
+            roughness = detail::materialUnitFactor( roughness, 0.5f );
+            material->setRoughness( roughness );
+            if( pass )
             {
-                material->setRoughness( roughness );
-                if( pass )
-                {
-                    pass->setRoughness( roughness );
-                }
+                pass->setRoughness( roughness );
             }
         }
 

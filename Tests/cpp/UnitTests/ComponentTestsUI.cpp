@@ -1,7 +1,11 @@
 #include "UnitTests.hpp"
 #include "TestGuard.hpp"
+#include "UiUtilTestSupport.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <boost/test/unit_test.hpp>
+#include <limits>
+#include <stdexcept>
 
 using namespace workphone;
 using namespace workphone::scene;
@@ -331,7 +335,7 @@ BOOST_AUTO_TEST_CASE( ui_dropdown_set_properties_round_trip )
 
     try
     {
-        TestGuard guard;
+        UiUtilTestGuard guard;
 
         auto applicationManager = core::IApplicationManager::instance();
         BOOST_CHECK( applicationManager );
@@ -758,4 +762,526 @@ BOOST_AUTO_TEST_CASE( ui_grid_layout )
     {
         WP_LOG_EXCEPTION( e );
     }
+}
+
+// Factory contracts run without a renderer: scene ownership and component configuration must
+// remain usable by importers, scripts, and headless tooling.
+BOOST_AUTO_TEST_SUITE( UiUtilTests )
+
+BOOST_AUTO_TEST_CASE( alignment_round_trip )
+{
+    for( u8 i = 0; i < static_cast<u8>( HorizontalAlignment::COUNT ); ++i )
+    {
+        auto alignment = static_cast<HorizontalAlignment>( i );
+        BOOST_CHECK_EQUAL( UiUtil::getHorizontalAlignmentString( alignment ),
+                           UiUtil::horizontalAlignmentTypes[i] );
+        BOOST_CHECK( UiUtil::getHorizontalAlignment(
+                         UiUtil::getHorizontalAlignmentString( alignment ) ) == alignment );
+    }
+    for( u8 i = 0; i < static_cast<u8>( VerticalAlignment::COUNT ); ++i )
+    {
+        auto alignment = static_cast<VerticalAlignment>( i );
+        BOOST_CHECK_EQUAL( UiUtil::getVerticalAlignmentString( alignment ),
+                           UiUtil::verticalAlignmentTypes[i] );
+        BOOST_CHECK( UiUtil::getVerticalAlignment( UiUtil::getVerticalAlignmentString( alignment ) ) ==
+                     alignment );
+    }
+    BOOST_CHECK_EQUAL( UiUtil::getHorizontalAlignmentTypesString(), "Left;Right;Center;Custom;" );
+    BOOST_CHECK_EQUAL( UiUtil::getVerticalAlignmentTypesString(), "Top;Bottom;Center;Custom;" );
+    BOOST_CHECK( UiUtil::getHorizontalAlignmentString( HorizontalAlignment::COUNT ).empty() );
+    BOOST_CHECK( UiUtil::getVerticalAlignmentString( static_cast<VerticalAlignment>( 255 ) ).empty() );
+    BOOST_CHECK( UiUtil::getHorizontalAlignment( "unknown" ) == HorizontalAlignment::LEFT );
+    BOOST_CHECK( UiUtil::getVerticalAlignment( "" ) == VerticalAlignment::TOP );
+}
+
+BOOST_AUTO_TEST_CASE( all_factories_honor_scene_ownership )
+{
+    UiUtilTestGuard guard;
+    const std::vector<std::function<SmartPtr<IGameActor>( bool )>> factories = {
+        []( bool publish ) { return UiUtil::createText( "Text", publish ); },
+        []( bool publish ) { return UiUtil::createButton( "Button", publish ); },
+        []( bool publish ) { return UiUtil::createButtonEx( "Button", 1, 2, 30, 40, publish ); },
+        []( bool publish ) { return UiUtil::createDropdown( "Dropdown", publish ); },
+        []( bool publish ) {
+            return UiUtil::createDropdownWithOptions( "Quality", { "Low", "High" }, publish );
+        },
+        []( bool publish ) { return UiUtil::createImage( "", publish ); },
+        []( bool publish ) { return UiUtil::createPanel( nullptr, "Panel", publish ); },
+        []( bool publish ) { return UiUtil::createSlider( "Slider", nullptr, "", publish ); },
+        []( bool publish ) { return UiUtil::createSliderVertical( "Slider", nullptr, "", publish ); },
+        []( bool publish ) { return UiUtil::createScrollbar( "Scrollbar", nullptr, "", publish ); },
+        []( bool publish ) {
+            return UiUtil::createScrollbarVertical( "Scrollbar", nullptr, "", publish );
+        },
+        []( bool publish ) { return UiUtil::createScrollview( "Scrollview", nullptr, "", publish ); },
+        []( bool publish ) { return UiUtil::createScrollView( "ScrollView", publish ); },
+        []( bool publish ) { return UiUtil::createInputField( "Value", "Hint", publish ); },
+        []( bool publish ) { return UiUtil::createToggle( "Toggle", false, publish ); },
+        []( bool publish ) { return UiUtil::createLayout( "Layout", publish ); },
+        []( bool publish ) { return UiUtil::createHorizontalLayout( "Row", publish ); },
+        []( bool publish ) { return UiUtil::createVerticalLayout( "Column", publish ); },
+        []( bool publish ) { return UiUtil::createGridLayout( "Grid", 3, publish ); },
+        []( bool publish ) { return UiUtil::createTableLayout( "Table", publish ); },
+        []( bool publish ) { return UiUtil::createTableCell( "Cell", publish ); },
+        []( bool publish ) { return UiUtil::createTabView( "Tabs", publish ); },
+        []( bool publish ) { return UiUtil::createTabPage( "Page", publish ); },
+        []( bool publish ) { return UiUtil::createTabItem( "Tab", publish ); },
+        []( bool publish ) { return UiUtil::createToggleGroup( "Group", publish ); },
+        []( bool publish ) { return UiUtil::createToolTip( "Help", publish ); },
+        []( bool publish ) { return UiUtil::createThumbnail( "Asset", "", publish ); }
+    };
+    for( auto publish : { false, true } )
+    {
+        for( size_t i = 0; i < factories.size(); ++i )
+        {
+            BOOST_TEST_CONTEXT( "factory " << i << ", publish " << publish )
+            {
+                const auto sceneCount = guard.scene->getActors().size();
+                const auto managerCount = guard.sceneManager->getNumActors();
+                auto actor = factories[i]( publish );
+                BOOST_REQUIRE( actor );
+                BOOST_CHECK( actor->getComponent<LayoutTransform>() );
+                BOOST_CHECK_EQUAL( guard.scene->getActors().size(), sceneCount + ( publish ? 1 : 0 ) );
+                BOOST_CHECK( ( actor->getScene() == guard.scene ) == publish );
+                for( auto child : actor->getChildren() )
+                {
+                    BOOST_CHECK( child->getParent() == actor );
+                    BOOST_CHECK( ( child->getScene() == guard.scene ) == publish );
+                }
+                guard.sceneManager->destroyActor( actor );
+                BOOST_CHECK_EQUAL( guard.scene->getActors().size(), sceneCount );
+                BOOST_CHECK_EQUAL( guard.sceneManager->getNumActors(), managerCount );
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE( content_and_placement )
+{
+    UiUtilTestGuard guard;
+    auto buttonActor = UiUtil::createButtonEx( "Save", 12, -7, 80, 25, false );
+    auto button = buttonActor->getComponent<Button>();
+    BOOST_REQUIRE( button );
+    BOOST_CHECK_EQUAL( button->getLabel(), "Save" );
+    BOOST_CHECK_EQUAL( button->getTextStr(), "Save" );
+    button->setTextStr( "Saved" );
+    BOOST_CHECK_EQUAL( button->getLabel(), "Saved" );
+    auto transform = buttonActor->getComponent<LayoutTransform>();
+    BOOST_CHECK_EQUAL( transform->getPosition().x, 12 );
+    BOOST_CHECK_EQUAL( transform->getPosition().y, -7 );
+    BOOST_CHECK_EQUAL( transform->getSize().x, 80 );
+    BOOST_CHECK_EQUAL( transform->getSize().y, 25 );
+    UiUtil::setAlignment( buttonActor, HorizontalAlignment::RIGHT, VerticalAlignment::BOTTOM );
+    auto anchor = transform->getAnchor();
+    auto anchorMin = transform->getAnchorMin();
+    auto anchorMax = transform->getAnchorMax();
+    BOOST_CHECK_EQUAL( anchorMin.x, 1 );
+    BOOST_CHECK_EQUAL( anchorMin.y, 0 );
+    UiUtil::setAlignment( buttonActor, HorizontalAlignment::CUSTOM, VerticalAlignment::CUSTOM );
+    BOOST_CHECK( transform->getAnchor() == anchor );
+    BOOST_CHECK( transform->getAnchorMin() == anchorMin );
+    BOOST_CHECK( transform->getAnchorMax() == anchorMax );
+
+    auto text = UiUtil::createText( "Title", false )->getComponent<Text>();
+    BOOST_CHECK_EQUAL( text->getText(), "Title" );
+    auto empty = UiUtil::createDropdown( "Choose", false )->getComponent<Dropdown>();
+    BOOST_CHECK( empty->getOptions().empty() );
+    BOOST_CHECK_EQUAL( empty->getLabel(), "Choose" );
+    auto dropdown = UiUtil::createDropdownWithOptions( "Quality", { "Low", "High" }, false )
+                        ->getComponent<Dropdown>();
+    BOOST_REQUIRE_EQUAL( dropdown->getOptions().size(), 2 );
+    BOOST_CHECK_EQUAL( dropdown->getOptions()[1]->text.str(), "High" );
+    auto input = UiUtil::createInputField( "Alice", "Name", false )->getComponent<InputField>();
+    BOOST_CHECK_EQUAL( input->getText(), "Alice" );
+    BOOST_CHECK_EQUAL( input->getPlaceholder(), "Name" );
+    auto toggle = UiUtil::createToggle( "Enabled", false, false )->getComponent<Toggle>();
+    BOOST_CHECK_EQUAL( toggle->getLabel(), "Enabled" );
+    BOOST_CHECK( !toggle->isToggled() );
+    auto thumbnail = UiUtil::createThumbnail( "Asset", "", false )->getComponent<Thumbnail>();
+    BOOST_CHECK( thumbnail->getThumb() );
+    BOOST_REQUIRE( thumbnail->getLabelText() );
+    BOOST_CHECK_EQUAL( thumbnail->getLabelText()->getText(), "Asset" );
+    auto grid = UiUtil::createGridLayout( "Grid", 5, false )->getComponent<GridLayout>();
+    BOOST_CHECK_EQUAL( grid->getColumnCount(), 5 );
+}
+
+BOOST_AUTO_TEST_CASE( track_endpoints_and_scroll_view_links )
+{
+    UiUtilTestGuard guard;
+    for( auto vertical : { false, true } )
+    {
+        auto actor = vertical
+                         ? UiUtil::createSliderVertical( "Volume", nullptr, "Volume control", false )
+                         : UiUtil::createSlider( "Volume", nullptr, "Volume control", false );
+        BOOST_CHECK_EQUAL( actor->getName(), "Volume control" );
+        auto slider = actor->getComponent<Slider>();
+        BOOST_REQUIRE( slider->getBackground() );
+        BOOST_REQUIRE( slider->getFill() );
+        BOOST_REQUIRE( slider->getHandleActor() );
+        BOOST_CHECK( slider->getDirection() ==
+                     ( vertical ? Direction::Vertical : Direction::Horizontal ) );
+        auto handle = slider->getHandleActor()->getComponent<LayoutTransform>();
+        auto fill = slider->getFill()->getComponent<LayoutTransform>();
+        BOOST_CHECK_EQUAL( vertical ? handle->getPosition().y : handle->getPosition().x, 100 );
+        for( f32 value : { 0.0f, 1.0f } )
+        {
+            slider->setValue( value );
+            BOOST_CHECK_EQUAL( vertical ? handle->getPosition().y : handle->getPosition().x,
+                               200 * value );
+            BOOST_CHECK_EQUAL( vertical ? fill->getSize().y : fill->getSize().x, 200 * value );
+        }
+        auto barActor = vertical ? UiUtil::createScrollbarVertical( "Scroll", nullptr, "", false )
+                                 : UiUtil::createScrollbar( "Scroll", nullptr, "", false );
+        auto bar = barActor->getComponent<ScrollBar>();
+        BOOST_REQUIRE( bar->getFill() );
+        bar->setScrollValue( 1.0f );
+        auto barHandle = bar->getHandleActor()->getComponent<LayoutTransform>();
+        BOOST_CHECK_EQUAL( vertical ? barHandle->getPosition().y : barHandle->getPosition().x, 150 );
+    }
+    auto view = UiUtil::createScrollView( "Items", false )->getComponent<ScrollView>();
+    auto content = view->getContentPanel();
+    auto bar = view->getScrollBar();
+    BOOST_REQUIRE( content );
+    BOOST_REQUIRE( bar );
+    BOOST_CHECK( !bar->getActor()->isEnabled() );
+    BOOST_CHECK( bar->getScrollView() == view.get() );
+    content->setSize( Vector2<real_Num>( 270, 400 ) );
+    view->updateScrollBar();
+    BOOST_CHECK( bar->isEnabled() );
+    BOOST_CHECK( bar->getActor()->isEnabled() );
+    BOOST_CHECK_EQUAL( bar->getHandleSize(), 100 );
+    bar->setScrollValue( 0.5f );
+    view->syncWithScrollBar();
+    BOOST_CHECK_EQUAL( content->getPosition().y, -100 );
+    auto replacement =
+        UiUtil::createScrollbarVertical( "Replacement", nullptr, "", false )->getComponent<ScrollBar>();
+    view->setScrollBar( replacement );
+    BOOST_CHECK( !bar->getScrollView() );
+    BOOST_CHECK( replacement->getScrollView() == view.get() );
+    view->unload( nullptr );
+    BOOST_CHECK( !replacement->getScrollView() );
+    BOOST_CHECK( !view->getContentPanel() );
+}
+
+BOOST_AUTO_TEST_CASE( invalid_arguments_do_not_allocate_or_mutate )
+{
+    UiUtilTestGuard guard;
+    const auto count = guard.sceneManager->getNumActors();
+    BOOST_CHECK_THROW( UiUtil::createButtonEx( "Bad", 0, 0, -1, 10, true ), std::invalid_argument );
+    BOOST_CHECK_THROW(
+        UiUtil::createButtonEx( "Bad", std::numeric_limits<f32>::infinity(), 0, 10, 10, false ),
+        std::invalid_argument );
+    BOOST_CHECK_THROW( UiUtil::createGridLayout( "Bad", 0, false ), std::invalid_argument );
+    BOOST_CHECK_EQUAL( guard.sceneManager->getNumActors(), count );
+    BOOST_CHECK_THROW( UiUtil::setRect( nullptr, 0, 0, 10, 10 ), std::invalid_argument );
+    auto actor = UiUtil::createButton( "Valid", false );
+    auto transform = actor->getComponent<LayoutTransform>();
+    const auto size = transform->getSize();
+    BOOST_CHECK_THROW( UiUtil::setRect( actor, 5, 10, std::numeric_limits<f32>::quiet_NaN(), 20 ),
+                       std::invalid_argument );
+    BOOST_CHECK( transform->getSize() == size );
+    BOOST_CHECK_THROW( UiUtil::setAlignment( actor, HorizontalAlignment::COUNT, VerticalAlignment::TOP ),
+                       std::invalid_argument );
+    BOOST_CHECK( transform->getHorizontalAlignment() == HorizontalAlignment::CENTER );
+}
+
+BOOST_AUTO_TEST_SUITE_END()
+
+BOOST_AUTO_TEST_CASE( uiutil_failed_composite_construction_rolls_back )
+{
+    UiUtilTestGuard guard;
+    auto factory = guard.factoryManager->getFactoryByHash(
+        TypeManager::instance()->getHash( ScrollBar::typeInfo() ) );
+    BOOST_REQUIRE( factory );
+    const auto actorCount = guard.sceneManager->getNumActors();
+    const auto sceneCount = guard.scene->getActors().size();
+
+    // Fail after allocating the root, content, and scrollbar actor. Restore the registry even
+    // when a test assertion throws, before TestGuard starts tearing down the scene.
+    struct RestoreFactory
+    {
+        SmartPtr<IFactoryManager> manager;
+        SmartPtr<IFactory> factory;
+
+        ~RestoreFactory()
+        {
+            manager->addFactory( factory );
+        }
+    } restore{ guard.factoryManager, factory };
+
+    BOOST_REQUIRE( guard.factoryManager->removeFactory( factory ) );
+    BOOST_CHECK_THROW( UiUtil::createScrollView( "Failure", true ), std::runtime_error );
+    BOOST_CHECK_EQUAL( guard.sceneManager->getNumActors(), actorCount );
+    BOOST_CHECK_EQUAL( guard.scene->getActors().size(), sceneCount );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_missing_layout_system_is_reported )
+{
+    TestGuard guard;
+    const auto count = guard.sceneManager->getNumActors();
+    BOOST_CHECK_THROW( UiUtil::createText( "No layout system", false ), std::runtime_error );
+    BOOST_CHECK_EQUAL( guard.sceneManager->getNumActors(), count );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Settings", true );
+    auto layout = window->getComponent<Layout>();
+    UiUtil::loadHierarchy( window );
+    BOOST_REQUIRE( layout->getElement() );
+    auto actor = UiUtil::createButton( "Save changes", false );
+    window->addChild( actor );
+    auto button = actor->getComponent<Button>();
+    UiUtil::loadHierarchy( window );
+    auto properties = button->getProperties();
+    properties->setButtonPressed( UIComponent::createUIStr, true );
+    button->setProperties( properties );
+    BOOST_REQUIRE( button->getElement() );
+    BOOST_CHECK_EQUAL( button->getLabel(), "Save changes" );
+    BOOST_CHECK_EQUAL( button->getElement()->getLabel(), "Save changes" );
+    auto dropdownActor = UiUtil::createDropdownWithOptions( "Quality", { "Low", "High" }, false );
+    window->addChild( dropdownActor );
+    auto dropdown = dropdownActor->getComponent<Dropdown>();
+    dropdown->setUseNativeUI( false );
+    UiUtil::loadHierarchy( window );
+    auto trigger = dropdown->getButton();
+    BOOST_REQUIRE( trigger );
+    auto triggerProperties = trigger->getProperties();
+    triggerProperties->setButtonPressed( UIComponent::createUIStr, true );
+    trigger->setProperties( triggerProperties );
+    BOOST_REQUIRE( trigger->getText() );
+    BOOST_CHECK_EQUAL( dropdown->getLabel(), "Quality" );
+    BOOST_CHECK_EQUAL( trigger->getText()->getText(), "Quality" );
+    dropdown->setOpen( true );
+    BOOST_REQUIRE( dropdown->getContent() );
+    BOOST_REQUIRE( dropdown->getPanel() );
+    BOOST_REQUIRE_EQUAL( dropdown->getPanel()->getChildren().size(), 2 );
+    auto optionActor = dropdown->getPanel()->getChildren()[1];
+    auto optionButton = optionActor->getComponent<Button>();
+    BOOST_REQUIRE( optionButton );
+    auto panelImage = dropdown->getPanel()->getComponent<scene::Image>();
+    BOOST_REQUIRE( panelImage );
+    BOOST_REQUIRE( panelImage->getElement() );
+    BOOST_REQUIRE( optionButton->getText() );
+    auto optionTextTransform = optionButton->getText()->getActor()->getComponent<LayoutTransform>();
+    BOOST_REQUIRE( optionTextTransform );
+    BOOST_CHECK( !optionTextTransform->getAutoCalculateOrder() );
+    BOOST_CHECK( panelImage->getElement()->getOrder() > button->getElement()->getOrder() );
+    BOOST_CHECK( optionTextTransform->getZOrder() >
+                 panelImage->getElement()->getOrder() );
+    BOOST_CHECK_EQUAL( optionButton->getLabel(), "High" );
+    optionButton->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+    BOOST_CHECK_EQUAL( dropdown->getLabel(), "High" );
+    BOOST_CHECK_EQUAL( trigger->getLabel(), "High" );
+    BOOST_CHECK( !dropdown->isOpen() );
+    BOOST_CHECK( !dropdown->getContent()->isEnabled() );
+    auto sliderActor = UiUtil::createSlider( "Volume", nullptr, "", false );
+    window->addChild( sliderActor );
+    UiUtil::loadHierarchy( window );
+    auto slider = sliderActor->getComponent<Slider>();
+    auto sliderProperties = slider->getProperties();
+    sliderProperties->setButtonPressed( UIComponent::createUIStr, true );
+    slider->setProperties( sliderProperties );
+    BOOST_CHECK_EQUAL( slider->getLabel(), "Volume" );
+    if( auto element = slider->getElement() )
+    {
+        BOOST_CHECK_EQUAL( element->getLabel(), "Volume" );
+    }
+    else
+    {
+        BOOST_CHECK( slider->getBackground()->getComponent<scene::Image>()->getElement() );
+    }
+    auto buttonFsm = button->getFsm();
+    UiUtil::loadHierarchy( window );
+    BOOST_CHECK( button->getFsm() == buttonFsm );
+    button->setUseNativeUI( false );
+    BOOST_REQUIRE( button->getImage() );
+    BOOST_REQUIRE( button->getText() );
+    BOOST_CHECK( !button->getElement()->isVisible() );
+    BOOST_CHECK( button->getImage()->getActor()->isEnabled() );
+    button->setUseNativeUI( true );
+    BOOST_CHECK( button->getElement()->isVisible() );
+    BOOST_CHECK( !button->getImage()->getActor()->isEnabled() );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Native controls", true );
+    auto dropdownActor = UiUtil::createDropdownWithOptions( "Quality", { "Low", "High" }, false );
+    window->addChild( dropdownActor );
+    auto sliderActor = UiUtil::createSlider( "Volume", nullptr, "", false );
+    window->addChild( sliderActor );
+    UiUtil::loadHierarchy( window );
+    auto dropdown = dropdownActor->getComponent<Dropdown>();
+    auto slider = sliderActor->getComponent<Slider>();
+    auto nativeDropdown = workphone::dynamic_pointer_cast<ui::IUIDropdown>( dropdown->getElement() );
+    auto nativeSlider = workphone::dynamic_pointer_cast<ui::IUISlider>( slider->getElement() );
+    BOOST_REQUIRE( nativeDropdown );
+    BOOST_REQUIRE( nativeSlider );
+    BOOST_REQUIRE_EQUAL( nativeDropdown->getOptions().size(), 2 );
+    BOOST_CHECK( dropdown->getUseNativeUI() );
+    BOOST_CHECK( !dropdown->getButton()->getActor()->isEnabled() );
+    BOOST_CHECK( !slider->getBackground()->isEnabled() );
+    auto previousTask = Thread::getCurrentTask();
+
+    struct RestoreTask
+    {
+        TaskId task;
+
+        ~RestoreTask()
+        {
+            Thread::setCurrentTask( task );
+        }
+    } restore{ previousTask };
+
+    Thread::setCurrentTask( TaskId::Application );
+    nativeDropdown->setSelectedOption( 1 );
+    dropdown->getElementListener()->handleEvent( EventType::UI, IEvent::SELECT_HASH, {}, nativeDropdown,
+                                                 nullptr, nullptr );
+    BOOST_CHECK_EQUAL( dropdown->getLabel(), "High" );
+    nativeSlider->setValue( 0.8f );
+    slider->getElementListener()->handleEvent( EventType::UI, IEvent::handleValueChanged, {},
+                                               nativeSlider, nullptr, nullptr );
+    BOOST_CHECK_CLOSE( slider->getValue(), 0.8f, 0.001f );
+    Thread::setCurrentTask( previousTask );
+    slider->setUseNativeUI( false );
+    BOOST_CHECK( slider->getBackground()->isEnabled() );
+    BOOST_CHECK( !nativeSlider->isVisible() );
+    slider->updateVisibility();
+    BOOST_CHECK( !nativeSlider->isVisible() );
+    slider->setUseNativeUI( true );
+    BOOST_CHECK( nativeSlider->isVisible() );
+    BOOST_CHECK( !slider->getBackground()->isEnabled() );
+    auto properties = slider->getProperties();
+    properties->setProperty( "useNativeUI", false );
+    slider->setProperties( properties );
+    BOOST_CHECK( !slider->getUseNativeUI() );
+    BOOST_CHECK( !nativeSlider->isVisible() );
+    dropdown->setUseNativeUI( false );
+    BOOST_CHECK( !nativeDropdown->isVisible() );
+    BOOST_CHECK( dropdown->getButton()->getActor()->isEnabled() );
+    dropdown->setOpen( true );
+    BOOST_REQUIRE( dropdown->getContent() );
+    dropdown->setUseNativeUI( true );
+    BOOST_CHECK( nativeDropdown->isVisible() );
+    BOOST_CHECK( !dropdown->getContent()->isEnabled() );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_scroll_input_routes_to_children )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Scroll input", true );
+    auto previousWindow = guard.applicationManager->getWindow();
+    auto inputWindow = previousWindow;
+    if( !inputWindow )
+    {
+        class InputWindow final : public render::GraphicsWindow
+        {
+        public:
+            Vector2I getSize() const override
+            {
+                return Vector2I( 1000, 1000 );
+            }
+        };
+        inputWindow = workphone::make_ptr<InputWindow>();
+        guard.applicationManager->setWindow( inputWindow );
+        guard.addCleanup( [manager = guard.applicationManager, previousWindow]() mutable {
+            manager->setWindow( previousWindow );
+        } );
+    }
+    auto layout = window->getComponent<Layout>();
+    layout->setReferenceSize( Vector2I( 1000, 1000 ) );
+    auto viewActor = UiUtil::createScrollView( "List", false );
+    window->addChild( viewActor );
+    auto view = viewActor->getComponent<ScrollView>();
+    auto content = view->getContentPanel();
+    content->setSize( Vector2<real_Num>( 280, 400 ) );
+    auto buttonActor = UiUtil::createButton( "Item", false );
+    auto button = buttonActor->getComponent<Button>();
+    button->setUseNativeUI( false );
+    content->getActor()->addChild( buttonActor );
+    UiUtil::loadHierarchy( window );
+    window->setState( IGameActor::State::Play, true );
+    auto setBounds = []( SmartPtr<IGameActor> actor, real_Num x, real_Num y,
+                         real_Num width, real_Num height ) {
+        auto transform = actor->getComponent<LayoutTransform>();
+        transform->setAbsolutePosition( Vector2<real_Num>( x, y ) );
+        transform->setAbsoluteSize( Vector2<real_Num>( width, height ) );
+    };
+    setBounds( viewActor, 100, 100, 300, 200 );
+    setBounds( buttonActor, 110, 110, 200, 50 );
+    auto bar = view->getScrollBar();
+    BOOST_REQUIRE( bar );
+    bar->getActor()->setEnabled( true );
+    setBounds( bar->getActor(), 380, 100, 20, 200 );
+    setBounds( bar->getBackground(), 380, 100, 20, 200 );
+    auto mouse = workphone::make_ptr<MouseState>();
+    mouse->setEventType( IMouseState::Event::LeftPressed );
+    mouse->setButtonPressed( IMouseState::MOUSE_LEFT, true );
+    auto event = workphone::make_ptr<InputEvent>();
+    event->setEventType( IInputEvent::EventType::Mouse );
+    event->setMouseState( mouse );
+    int clicks = 0;
+    button->setCallbackFunction( [&clicks]( hash_type ) { ++clicks; } );
+    mouse->setRelativePosition( Vector2<real_Num>( 0.15f, 0.13f ) );
+    BOOST_CHECK( layout->handleEvent( event ) );
+    BOOST_CHECK_EQUAL( clicks, 1 );
+    BOOST_CHECK( !view->isDragging() );
+    mouse->setRelativePosition( Vector2<real_Num>( 0.39f, 0.18f ) );
+    BOOST_CHECK( layout->handleEvent( event ) );
+    BOOST_CHECK_CLOSE( bar->getScrollValue(), 0.4f, 0.01f );
+    BOOST_CHECK( !view->isDragging() );
+    setBounds( buttonActor, 700, 700, 200, 50 );
+    mouse->setRelativePosition( Vector2<real_Num>( 0.75f, 0.73f ) );
+    layout->handleEvent( event );
+    BOOST_CHECK_EQUAL( clicks, 1 );
+}
+
+BOOST_AUTO_TEST_CASE( uiutil_composed_button_added_during_play )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Live controls", true );
+    auto sliderActor = UiUtil::createSlider( "Scene slider", nullptr, "", false );
+    auto slider = sliderActor->getComponent<Slider>();
+    slider->setUseNativeUI( false );
+    window->addChild( sliderActor );
+    auto barActor = UiUtil::createScrollbarVertical( "Scene scrollbar", nullptr, "", false );
+    window->addChild( barActor );
+    UiUtil::loadHierarchy( window );
+    window->setState( IGameActor::State::Play, true );
+    BOOST_CHECK( slider->getCanvas() == window->getComponent<Layout>() );
+    BOOST_CHECK( barActor->getComponent<ScrollBar>()->getCanvas() == window->getComponent<Layout>() );
+    auto actor = UiUtil::createButton( "Live button", false );
+    auto button = actor->getComponent<Button>();
+    button->setUseNativeUI( false );
+    window->addChild( actor );
+    UiUtil::loadHierarchy( window );
+    BOOST_REQUIRE( button->getImage() );
+    BOOST_REQUIRE( button->getText() );
+    BOOST_CHECK_EQUAL( button->getText()->getText(), "Live button" );
+    BOOST_CHECK_EQUAL( actor->getChildren().size(), 2 );
+    UiUtil::loadHierarchy( window );
+    BOOST_CHECK_EQUAL( actor->getChildren().size(), 2 );
+    UiUtil::setAlignment( actor, HorizontalAlignment::RIGHT, VerticalAlignment::BOTTOM );
+    BOOST_CHECK( actor->getComponent<LayoutTransform>()->getAnchor() == Vector2<real_Num>( 1, 0 ) );
+    UiUtil::setAlignment( actor, HorizontalAlignment::CUSTOM, VerticalAlignment::CUSTOM );
+    BOOST_CHECK( actor->getComponent<LayoutTransform>()->getAnchor() == Vector2<real_Num>( 1, 0 ) );
 }

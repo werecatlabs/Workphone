@@ -55,31 +55,39 @@ namespace workphone::scene
         UniformGridPartitioner( real_Num cellSize = 10.0f ) : m_cellSize( cellSize )
         {
         }
+
         void addActor( SmartPtr<IGameActor> actor ) override
         {
             if( !actor )
+            {
                 return;
+            }
             Vector3 pos = actor->getWorldTransform().getPosition();
             int x = static_cast<int>( std::floor( pos.x / m_cellSize ) );
             int y = static_cast<int>( std::floor( pos.y / m_cellSize ) );
             int z = static_cast<int>( std::floor( pos.z / m_cellSize ) );
             m_grid[{ x, y, z }].push_back( actor );
         }
+
         void removeActor( SmartPtr<IGameActor> actor ) override
         {
             if( !actor )
+            {
                 return;
+            }
             for( auto &pair : m_grid )
             {
                 auto &actors = pair.second;
                 actors.erase( std::remove( actors.begin(), actors.end(), actor ), actors.end() );
             }
         }
+
         void updateActor( SmartPtr<IGameActor> actor ) override
         {
             removeActor( actor );
             addActor( actor );
         }
+
         void queryActors( const Vector3F &position, real_Num radius,
                           Array<SmartPtr<IGameActor>> &outActors ) override
         {
@@ -99,7 +107,9 @@ namespace workphone::scene
                         if( it != m_grid.end() )
                         {
                             for( auto &actor : it->second )
+                            {
                                 outActors.push_back( actor );
+                            }
                         }
                     }
                 }
@@ -122,13 +132,21 @@ namespace workphone::scene
                 float distSq = ( cellCenter - referencePoint ).lengthSquared();
                 float targetRate = 0.0f;
                 if( distSq < config.nearDistance * config.nearDistance )
+                {
                     targetRate = config.nearUpdateRate;
+                }
                 else if( distSq < config.midDistance * config.midDistance )
+                {
                     targetRate = config.midUpdateRate;
+                }
                 else if( distSq < config.farDistance * config.farDistance )
+                {
                     targetRate = config.farUpdateRate;
+                }
                 else if( distSq < config.sleepDistance * config.sleepDistance )
+                {
                     targetRate = config.farUpdateRate * 0.1f;
+                }
                 auto &accumulator = m_cellUpdates[key];
                 accumulator += deltaTime;
                 if( targetRate > 0 && accumulator >= ( 1.0f / targetRate ) )
@@ -142,19 +160,26 @@ namespace workphone::scene
         struct GridKey
         {
             int x, y, z;
+
             bool operator<( const GridKey &other ) const
             {
                 if( x != other.x )
+                {
                     return x < other.x;
+                }
                 if( y != other.y )
+                {
                     return y < other.y;
+                }
                 return z < other.z;
             }
+
             bool operator==( const GridKey &other ) const
             {
                 return x == other.x && y == other.y && z == other.z;
             }
         };
+
         real_Num m_cellSize;
         std::map<GridKey, std::vector<SmartPtr<IGameActor>>> m_grid;
         std::map<GridKey, float> m_cellUpdates;
@@ -166,30 +191,40 @@ namespace workphone::scene
         OctreePartitioner() : m_root( std::make_unique<OctreeNode>( Vector3F( 0, 0, 0 ), 1000.0f ) )
         {
         }
+
         void addActor( SmartPtr<IGameActor> actor ) override
         {
             if( actor )
+            {
                 m_root->insert( actor );
+            }
         }
+
         void removeActor( SmartPtr<IGameActor> actor ) override
         {
             if( actor )
+            {
                 m_root->remove( actor );
+            }
         }
+
         void updateActor( SmartPtr<IGameActor> actor ) override
         {
             removeActor( actor );
             addActor( actor );
         }
+
         void queryActors( const Vector3F &position, real_Num radius,
                           Array<SmartPtr<IGameActor>> &outActors ) override
         {
             m_root->query( position, radius, outActors );
         }
+
         void clear() override
         {
             m_root = std::make_unique<OctreeNode>( Vector3F( 0, 0, 0 ), 1000.0f );
         }
+
         void update( const Vector3F &referencePoint, float deltaTime,
                      const GameScene::SpatialPartitioningConfig &config ) override
         {
@@ -218,42 +253,65 @@ namespace workphone::scene
                     return;
                 }
                 if( isLeaf )
+                {
                     subdivide();
+                }
                 children[getChildIndex( actor->getWorldTransform().getPosition() )]->insert( actor );
             }
+
             void remove( SmartPtr<IGameActor> actor )
             {
                 auto it = std::remove( actors.begin(), actors.end(), actor );
                 if( it != actors.end() )
+                {
                     actors.erase( it, actors.end() );
+                }
                 else if( !isLeaf )
+                {
                     children[getChildIndex( actor->getWorldTransform().getPosition() )]->remove( actor );
+                }
             }
+
             void query( const Vector3F &pos, real_Num radius, Array<SmartPtr<IGameActor>> &out )
             {
                 if( !intersects( pos, radius ) )
+                {
                     return;
+                }
                 for( auto &actor : actors )
+                {
                     out.push_back( actor );
+                }
                 if( !isLeaf )
                 {
                     for( int i = 0; i < 8; ++i )
+                    {
                         children[i]->query( pos, radius, out );
+                    }
                 }
             }
+
             void update( const Vector3F &referencePoint, float deltaTime,
                          const GameScene::SpatialPartitioningConfig &config )
             {
                 float distSq = ( center - referencePoint ).lengthSquared();
                 float targetRate = 0.0f;
                 if( distSq < config.nearDistance * config.nearDistance )
+                {
                     targetRate = config.nearUpdateRate;
+                }
                 else if( distSq < config.midDistance * config.midDistance )
+                {
                     targetRate = config.midUpdateRate;
+                }
                 else if( distSq < config.farDistance * config.farDistance )
+                {
                     targetRate = config.farUpdateRate;
+                }
                 else if( distSq < config.sleepDistance * config.sleepDistance )
+                {
                     targetRate = config.farUpdateRate * 0.1f;
+                }
                 updateAccumulator += deltaTime;
                 if( targetRate > 0 && updateAccumulator >= ( 1.0f / targetRate ) )
                 {
@@ -262,37 +320,60 @@ namespace workphone::scene
                 if( !isLeaf )
                 {
                     for( int i = 0; i < 8; ++i )
+                    {
                         children[i]->update( referencePoint, deltaTime, config );
+                    }
                 }
             }
+
             bool intersects( const Vector3F &pos, real_Num radius )
             {
                 real_Num distSq = 0;
                 if( pos.x < center.x - halfSize )
+                {
                     distSq += std::pow( pos.x - ( center.x - halfSize ), 2 );
+                }
                 else if( pos.x > center.x + halfSize )
+                {
                     distSq += std::pow( pos.x - ( center.x + halfSize ), 2 );
+                }
                 if( pos.y < center.y - halfSize )
+                {
                     distSq += std::pow( pos.y - ( center.y - halfSize ), 2 );
+                }
                 else if( pos.y > center.y + halfSize )
+                {
                     distSq += std::pow( pos.y - ( center.y + halfSize ), 2 );
+                }
                 if( pos.z < center.z - halfSize )
+                {
                     distSq += std::pow( pos.z - ( center.z - halfSize ), 2 );
+                }
                 else if( pos.z > center.z + halfSize )
+                {
                     distSq += std::pow( pos.z - ( center.z + halfSize ), 2 );
+                }
                 return distSq <= radius * radius;
             }
+
             int getChildIndex( const Vector3F &pos )
             {
                 int index = 0;
                 if( pos.x >= center.x )
+                {
                     index |= 1;
+                }
                 if( pos.y >= center.y )
+                {
                     index |= 2;
+                }
                 if( pos.z >= center.z )
+                {
                     index |= 4;
+                }
                 return index;
             }
+
             void subdivide()
             {
                 isLeaf = false;
@@ -306,10 +387,13 @@ namespace workphone::scene
                     children[i] = std::make_unique<OctreeNode>( nextCenter, nextHalf );
                 }
                 for( auto &actor : actors )
+                {
                     children[getChildIndex( actor->getWorldTransform().getPosition() )]->insert( actor );
+                }
                 actors.clear();
             }
         };
+
         std::unique_ptr<OctreeNode> m_root;
     };
 
@@ -466,32 +550,46 @@ namespace workphone::scene
         WP_ASSERT( data );
 
         if( !data )
+        {
             return;
+        }
         auto scenePath = StringUtil::cleanupPath( path );
         auto sceneFileExt = Path::getFileExtension( scenePath );
         if( sceneFileExt.empty() )
+        {
             scenePath += ApplicationUtil::builtinSceneExt;
+        }
         Array<u8> bytes;
         if( sceneFileExt == ApplicationUtil::builtinBinarySceneExt )
+        {
             bytes = PropertiesBinarySerializer::serialize( *static_pointer_cast<Properties>( data ) );
+        }
         else
         {
             auto format = DataFormat::JSON;
             if( sceneFileExt == ApplicationUtil::builtinXmlSceneExt )
+            {
                 format = DataFormat::XML;
+            }
             else if( sceneFileExt == ApplicationUtil::builtinUsdSceneExt )
+            {
                 throw std::runtime_error( "USD scene serialization is not implemented" );
+            }
             const auto text = DataUtil::toString( data.get(), true, format );
             bytes.resize( text.size() );
             std::copy( text.begin(), text.end(), bytes.begin() );
         }
         if( bytes.empty() )
+        {
             throw std::runtime_error( "Scene serialization returned no bytes" );
+        }
 
         String installedPath, error;
         if( !saveAssetDocument( scenePath, static_pointer_cast<Properties>( data ), bytes, installedPath,
                                 error ) )
+        {
             throw std::runtime_error( error.c_str() );
+        }
         scenePath = installedPath;
         // Publish the new path only after the serialized document and graph agree.
         setFilePath( scenePath );
@@ -575,7 +673,6 @@ namespace workphone::scene
 
     void GameScene::preUpdate()
     {
-        ScopedLock sceneLock( this );
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -595,49 +692,33 @@ namespace workphone::scene
                 auto sceneManager = applicationManager->getGameManagerPtr();
                 WP_ASSERT( sceneManager );
 
+                if( !m_editQueue.empty() )
+                {
+                    SmartPtr<IGameActor> actor;
+                    while( m_editQueue.try_pop( actor ) )
+                    {
+                        if( actor && actor->isLoaded() && getState() == State::Edit )
+                        {
+                            actor->setState( IGameActor::State::Edit );
+                        }
+                    }
+                }
+
+                if( !m_playQueue.empty() )
+                {
+                    SmartPtr<IGameActor> actor;
+                    while( m_playQueue.try_pop( actor ) )
+                    {
+                        if( actor && actor->isLoaded() && getState() == State::Play )
+                        {
+                            actor->setState( IGameActor::State::Play );
+                        }
+                    }
+                }
+
                 TryLockGuard lock( this );
                 if( lock.locked() )
                 {
-                    if( !m_editQueue.empty() )
-                    {
-                        Array<SmartPtr<IGameActor>> actors;
-                        actors.reserve( 256 );
-
-                        SmartPtr<IGameActor> actor;
-                        while( m_editQueue.try_pop( actor ) )
-                        {
-                            actors.push_back( actor );
-                        }
-
-                        for( auto &actor : actors )
-                        {
-                            if( actor && actor->isLoaded() && getState() == State::Edit )
-                            {
-                                actor->setState( IGameActor::State::Edit );
-                            }
-                        }
-                    }
-
-                    if( !m_playQueue.empty() )
-                    {
-                        Array<SmartPtr<IGameActor>> actors;
-                        actors.reserve( 256 );
-
-                        SmartPtr<IGameActor> actor;
-                        while( m_playQueue.try_pop( actor ) )
-                        {
-                            actors.push_back( actor );
-                        }
-
-                        for( auto &actor : actors )
-                        {
-                            if( actor && actor->isLoaded() && getState() == State::Play )
-                            {
-                                actor->setState( IGameActor::State::Play );
-                            }
-                        }
-                    }
-
                     auto &updateObjects = getRegisteredObjects( Thread::UpdateState::PreUpdate, task );
 
                     for( auto &actor : updateObjects )
@@ -708,7 +789,6 @@ namespace workphone::scene
 
     void GameScene::postUpdate()
     {
-        ScopedLock sceneLock( this );
         auto task = Thread::getCurrentTask();
         switch( task )
         {
@@ -771,14 +851,20 @@ namespace workphone::scene
                     actor->setScene( this );
 
                     if( m_actors.size() >= m_actors.capacity() )
+                    {
                         throw std::length_error( "Scene actor capacity exhausted" );
+                    }
                     m_actors.push_back( actor );
                     // A cancelled load leaves an empty scene available for manual editing.
                     // Publishing a new actor makes that scene ready for state updates again.
                     if( getSceneLoadingState() == SceneLoadingState::Cancelled )
+                    {
                         m_sceneLoadingState = SceneLoadingState::Loaded;
+                    }
                     if( m_partitioner )
+                    {
                         m_partitioner->addActor( actor );
+                    }
 
                     // Scene ownership includes update ownership.  In particular, loaded
                     // rigidbodies rely on their actor update to copy the simulated transform
@@ -821,7 +907,9 @@ namespace workphone::scene
             if( actor )
             {
                 if( m_partitioner )
+                {
                     m_partitioner->removeActor( actor );
+                }
 
                 unregisterAll( actor );
                 m_actors.erase( std::remove( m_actors.begin(), m_actors.end(), actor ), m_actors.end() );
@@ -1486,7 +1574,9 @@ namespace workphone::scene
         }
         // Publish completion after lighting and level callbacks have returned.
         if( state != SceneLoadingState::Loaded || generation == getLoadGeneration() )
+        {
             m_sceneLoadingState = state;
+        }
     }
 
     GameScene::SceneLoadingState GameScene::getSceneLoadingState() const

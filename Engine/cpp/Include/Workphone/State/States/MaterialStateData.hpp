@@ -25,8 +25,8 @@ namespace workphone
         FixedString<WP_MAX_PATH> filePath = "None";
         FixedString<WP_MAX_PATH> materialName;
 
-        f32 metalness = 0.5f;
-        f32 roughness = 0.01f;
+        f32 metalness = 0.0f;
+        f32 roughness = 0.5f;
     };
 
 }  // namespace workphone

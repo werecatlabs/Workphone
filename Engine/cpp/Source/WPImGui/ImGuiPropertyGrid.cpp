@@ -13,6 +13,10 @@ namespace workphone::ui
     {
         auto name = "PropertyGrid_" + StringUtil::toString( m_childWindowCount++ );
         setName( name );
+
+        setObjectFlag( OBJECT_FLAG_GARBAGE_COLLECTED, true );
+        setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
+        setObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS, true );
     }
 
     ImGuiPropertyGrid::~ImGuiPropertyGrid() = default;
@@ -170,8 +174,8 @@ namespace workphone::ui
     }
 
     void ImGuiPropertyGrid::drawPropertyTable( SmartPtr<Properties> properties,
-                                               SmartPtr<Properties> parent,
-                                               const String &category, bool uncategorized )
+                                               SmartPtr<Properties> parent, const String &category,
+                                               bool uncategorized )
     {
         ImGui::PushID( uncategorized ? "Uncategorized" : category.c_str() );
 
@@ -230,16 +234,16 @@ namespace workphone::ui
                     {
                         if( auto payload = ImGui::AcceptDragDropPayload( "_TREENODE" ) )
                         {
-                            auto data = String( static_cast<const char *>( payload->Data ),
-                                                payload->DataSize );
+                            auto data =
+                                String( static_cast<const char *>( payload->Data ), payload->DataSize );
                             auto args = Array<Parameter>( 5 );
                             args[0].setStr( data );
                             args[1].setStr( name );
                             args[2].setStr( value );
                             args[3].setObject( properties );
                             args[4].setObject( parent );
-                            dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args, this,
-                                                     this, nullptr );
+                            dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args, this, this,
+                                                     nullptr );
                         }
                         ImGui::EndDragDropTarget();
                     }
@@ -259,38 +263,34 @@ namespace workphone::ui
     {
         WP_ASSERT( propertyGrid );
 
-        auto listeners = propertyGrid->getObjectListeners();
-        for( auto &listener : listeners )
-        {
-            auto args = Array<Parameter>();
-            args.resize( 3 );
+        auto applicationManager = core::IApplicationManager::instancePtr();
 
-            args[0].setStr( name );
-            args[1].setStr( value );
-            args[2].setObject( propertyGrid->getProperties() );
+        auto args = Parameters();
+        args.resize( 3 );
 
-            listener->handleEvent( EventType::Object, IEvent::handlePropertyButtonClick, args,
-                                   propertyGrid, propertyGrid, nullptr );
-        }
+        args[0].setStr( name );
+        args[1].setStr( value );
+        args[2].setObject( propertyGrid->getProperties() );
+        applicationManager->triggerEvent( EventType::UI, IEvent::handlePropertyButtonClick, args,
+                                          propertyGrid, propertyGrid, nullptr, false,
+                                          Thread::Application_Flag );
     }
 
     void ImGuiPropertyGrid::handlePropertyChanged( SmartPtr<IUIPropertyGrid> propertyGrid,
                                                    SmartPtr<Properties> properties, const String &name,
                                                    const String &str )
     {
-        auto listeners = propertyGrid->getObjectListeners();
-        for( auto &listener : listeners )
-        {
-            auto args = Array<Parameter>();
-            args.resize( 3 );
+        auto applicationManager = core::IApplicationManager::instancePtr();
 
-            args[0].setStr( name );
-            args[1].setStr( str );
-            args[2].setObject( properties );
+        auto args = Parameters();
+        args.resize( 3 );
 
-            listener->handleEvent( EventType::Object, IEvent::handlePropertyChanged, args, propertyGrid,
-                                   propertyGrid, nullptr );
-        }
+        args[0].setStr( name );
+        args[1].setStr( str );
+        args[2].setObject( properties );
+        applicationManager->triggerEvent( EventType::UI, IEvent::handlePropertyChanged, args,
+                                          propertyGrid, propertyGrid, nullptr, false,
+                                          Thread::Application_Flag );
     }
 
     void ImGuiPropertyGrid::createProperty( SmartPtr<Properties> properties, Property &property,
@@ -354,8 +354,8 @@ namespace workphone::ui
 
             if( !enumArray.empty() )
             {
-                selectedIndex = std::max( 0, std::min( selectedIndex,
-                                                       static_cast<s32>( enumArray.size() - 1 ) ) );
+                selectedIndex =
+                    std::max( 0, std::min( selectedIndex, static_cast<s32>( enumArray.size() - 1 ) ) );
                 auto enumItems = String();
                 for( const auto &entry : enumArray )
                 {
@@ -366,8 +366,8 @@ namespace workphone::ui
 
                 if( ImGui::Combo( widgetId, &selectedIndex, enumItems.c_str() ) )
                 {
-                    commit( isNumericValue ? StringUtil::toString( selectedIndex ) :
-                                             enumArray[selectedIndex] );
+                    commit( isNumericValue ? StringUtil::toString( selectedIndex )
+                                           : enumArray[selectedIndex] );
                 }
             }
             else
@@ -464,14 +464,18 @@ namespace workphone::ui
         {
             auto oldValue = StringUtil::parseInt( value );
             auto newValue = oldValue;
-            auto step = StringUtil::isNullOrEmpty( stepAttribute ) ? 1 :
-                                                                    StringUtil::parseInt( stepAttribute );
+            auto step =
+                StringUtil::isNullOrEmpty( stepAttribute ) ? 1 : StringUtil::parseInt( stepAttribute );
             if( ImGui::InputInt( widgetId, &newValue, std::max( step, 1 ) ) && newValue != oldValue )
             {
                 if( hasMinimum )
+                {
                     newValue = std::max( newValue, StringUtil::parseInt( minAttribute ) );
+                }
                 if( hasMaximum )
+                {
                     newValue = std::min( newValue, StringUtil::parseInt( maxAttribute ) );
+                }
                 commit( StringUtil::toString( newValue ) );
             }
         }
@@ -479,15 +483,19 @@ namespace workphone::ui
         {
             auto oldValue = StringUtil::parseUInt( value );
             auto newValue = oldValue;
-            auto step = StringUtil::isNullOrEmpty( stepAttribute ) ? 1u :
-                                                                    StringUtil::parseUInt( stepAttribute );
+            auto step =
+                StringUtil::isNullOrEmpty( stepAttribute ) ? 1u : StringUtil::parseUInt( stepAttribute );
             if( ImGui::InputScalar( widgetId, ImGuiDataType_U32, &newValue, &step ) &&
                 newValue != oldValue )
             {
                 if( hasMinimum )
+                {
                     newValue = std::max( newValue, StringUtil::parseUInt( minAttribute ) );
+                }
                 if( hasMaximum )
+                {
                     newValue = std::min( newValue, StringUtil::parseUInt( maxAttribute ) );
+                }
                 commit( StringUtil::toString( newValue ) );
             }
         }
@@ -495,8 +503,9 @@ namespace workphone::ui
         {
             auto oldValue = StringUtil::parseFloat( value );
             auto newValue = oldValue;
-            auto step = StringUtil::isNullOrEmpty( stepAttribute ) ? 0.1f :
-                                                                    StringUtil::parseFloat( stepAttribute );
+            auto step = StringUtil::isNullOrEmpty( stepAttribute )
+                            ? 0.1f
+                            : StringUtil::parseFloat( stepAttribute );
             if( ImGui::InputFloat( widgetId, &newValue, step ) && newValue != oldValue )
             {
                 newValue = clampFloat( newValue );
@@ -518,8 +527,7 @@ namespace workphone::ui
             char buffer[BufferSize] = {};
             StringUtil::toBuffer( value, buffer, BufferSize );
             const auto submitted =
-                ImGui::InputText( widgetId, buffer, BufferSize,
-                                  ImGuiInputTextFlags_EnterReturnsTrue );
+                ImGui::InputText( widgetId, buffer, BufferSize, ImGuiInputTextFlags_EnterReturnsTrue );
             const auto editFinished = ImGui::IsItemDeactivatedAfterEdit();
             if( submitted || editFinished )
             {

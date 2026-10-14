@@ -11,14 +11,17 @@ namespace workphone::physics
     class IPhysicsScene3;
     class IRigidStatic3;
 }  // namespace workphone::physics
+
 namespace workphone::scene
 {
     class FoliageAuthoring;
+
     struct FoliageCollisionStats
     {
         u32 active = 0, eligible = 0, omitted = 0, visitedCells = 0;
         u64 created = 0, retired = 0, reservedBytes = 0;
     };
+
     /** Owner-thread proximity solids, independent of visual LOD and shadow distance.
      * Uses conservative trunk boxes (grass and ground cover never create solids).
      * Caller updates observers on the physics owner thread before stepping the scene.

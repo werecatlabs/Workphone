@@ -1,4 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Scene/Components/UI/Button.hpp>
+#include <Workphone/Scene/Components/UI/Slider.hpp>
+#include <Workphone/Scene/Components/UI/Dropdown.hpp>
 #include <Workphone/Scene/Components/UI/UIComponent.hpp>
 #include <Workphone/Jobs/EventJob.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
@@ -24,6 +27,29 @@
 
 namespace workphone::scene
 {
+    namespace
+    {
+        // Reuse EventJob's shutdown cleanup while targeting just this weak scene listener.
+        class UIEventJob final : public EventJob
+        {
+        public:
+            explicit UIEventJob( SmartPtr<IEventListener> listener ) : m_listener( listener )
+            {
+            }
+
+            void execute() override
+            {
+                if( auto listener = m_listener.lock() )
+                {
+                    listener->handleEvent( getEventType(), getEventValue(), getArguments(), getSender(),
+                                           getObject(), getEvent() );
+                }
+            }
+
+        private:
+            WeakPtr<IEventListener> m_listener;
+        };
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, UIComponent, Component );
     WP_CLASS_REGISTER_DERIVED( workphone::scene, UIComponent::UIElementListener, IEventListener );
@@ -142,7 +168,9 @@ namespace workphone::scene
             if( auto actor = getActorPtr() )
             {
                 if( actor->getComponent<LayoutTransform>() )
+                {
                     m_element->setSize( Vector2F( 0.0f, 0.0f ) );
+                }
             }
         }
     }
@@ -195,6 +223,7 @@ namespace workphone::scene
             properties->setProperty( showLabelStr, showLabel );
             properties->setProperty( autoCalculateOrderStr, autoCalculateOrder );
             properties->setProperty( labelStr, label );
+            properties->setProperty( "useNativeUI", getUseNativeUI() );
             properties->setProperty( labelActorStr, m_labelActor.load() );
             properties->setProperty( editorWindowBorderSizeStr, editorWindowBorderSize );
 
@@ -259,6 +288,9 @@ namespace workphone::scene
         setHandleInputEvents( handleInputEvents );
         setShowLabel( showLabel );
         setAutoCalculateOrder( autoCalculateOrder );
+        auto useNativeUI = getUseNativeUI();
+        properties->getPropertyValue( "useNativeUI", useNativeUI );
+        setUseNativeUI( useNativeUI );
         setEditorWindowBorderSize( editorWindowBorderSize );
 
         if( properties->isButtonPressed( updateTransformStr ) )
@@ -725,6 +757,10 @@ namespace workphone::scene
 
                 auto mainWindow = applicationManager->getWindow();
 
+                if( !mainWindow )
+                {
+                    return false;
+                }
                 auto windowSize = mainWindow->getSize();
                 auto windowSizeF = Vector2<real_Num>( static_cast<f32>( windowSize.x ),
                                                       static_cast<f32>( windowSize.y ) );
@@ -1087,14 +1123,17 @@ namespace workphone::scene
 
     void UIComponent::updateVisibility()
     {
-        ScopedLock lock( this );
-
         auto applicationManager = core::IApplicationManager::instance();
 
-        if( auto actor = getActorPtr() )
+        if( auto actor = getActor() )
         {
             auto enabled = isEnabled() && actor->isEnabledInScene();
             auto visible = applicationManager->isPlaying() ? enabled : enabled && actor->isVisible();
+            if( !getUseNativeUI() )
+            {
+                enabled = false;
+                visible = false;
+            }
 
             if( auto element = getElement() )
             {
@@ -1102,11 +1141,6 @@ namespace workphone::scene
                 element->setVisible( visible, false );
             }
         }
-
-        //if( auto canvas = getCanvas() )
-        //{
-        //    canvas->updateVisibility();
-        //}
     }
 
     void UIComponent::updateElementState()
@@ -1405,6 +1439,29 @@ namespace workphone::scene
         return m_layoutTransform;
     }
 
+    ColourF UIComponent::getColour() const
+    {
+        return m_colour;
+    }
+
+    void UIComponent::setUseNativeUI( bool useNativeUI )
+    {
+        if( m_useNativeUI == useNativeUI )
+        {
+            return;
+        }
+        m_useNativeUI = useNativeUI;
+        if( isLoaded() )
+        {
+            updateElementState();
+        }
+    }
+
+    bool UIComponent::getUseNativeUI() const
+    {
+        return m_useNativeUI;
+    }
+
     UIComponent::UIElementListener::UIElementListener() = default;
 
     UIComponent::UIElementListener::~UIElementListener() = default;
@@ -1428,8 +1485,11 @@ namespace workphone::scene
             return {};
         }
 
-        auto sceneManager = applicationManager->getGameManager();
-        auto scene = sceneManager->getCurrentScene();
+        auto owner = getOwner();
+        if( !owner || !owner->isLoaded() )
+        {
+            return {};
+        }
 
         auto taskManager = applicationManager->getTaskManager();
         if( !taskManager )
@@ -1442,7 +1502,6 @@ namespace workphone::scene
 
         if( task == TaskId::Application )
         {
-            auto owner = getOwner();
             auto actors = owner->getActorListeners();
             for( auto actor : actors )
             {
@@ -1471,6 +1530,19 @@ namespace workphone::scene
                                                     event );
                 }
             }
+        }
+        // Raw input is already broadcast once per task by InputDeviceManager.
+        // Forward only backend widget events; forwarding input would duplicate scene clicks.
+        else if( applicationTask && eventType == EventType::UI )
+        {
+            auto job = workphone::make_ptr<UIEventJob>( this );
+            job->setEventType( eventType );
+            job->setEventValue( eventValue );
+            job->setArguments( arguments );
+            job->setSender( sender );
+            job->setObject( object );
+            job->setEvent( event );
+            applicationTask->addJob( job );
         }
 
         return {};

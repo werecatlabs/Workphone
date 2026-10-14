@@ -17,7 +17,12 @@ namespace workphone::editor
 {
     WP_CLASS_REGISTER_DERIVED( workphone, ProjectWindow, EditorWindow );
 
-    ProjectWindow::ProjectWindow() = default;
+    ProjectWindow::ProjectWindow()
+    {
+        setObjectFlag( OBJECT_FLAG_GARBAGE_COLLECTED, true );
+        setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
+        setObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS, true );
+    }
 
     ProjectWindow::~ProjectWindow()
     {

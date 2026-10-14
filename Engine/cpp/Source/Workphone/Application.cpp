@@ -2740,7 +2740,6 @@ namespace workphone::core
         actor->setName( name );
 
         auto size = Vector2<real_Num>( 300, 60 );
-
         auto anchor = Vector2<real_Num>( 0.5f, 0.5f );
 
         auto canvasTransform = actor->addComponent<scene::LayoutTransform>();
@@ -2759,47 +2758,6 @@ namespace workphone::core
         WP_ASSERT( button );
 
         button->setCascadeInput( false );
-
-        //if( auto image = actor->addComponent<scene::Image>() )
-        //{
-        //    auto textureName = String( "rounded_filled_1024.png" );
-        //    image->setTextureName( textureName );
-
-        //    auto colour = ColourF::White * 0.3f;
-        //    colour.a = 1.0f;
-
-        //    image->setColour( colour );
-
-        //    button->setImage( image );
-        //}
-
-        //auto actorText = sceneManager->createActor();
-        //actor->addChild( actorText );
-
-        //if( auto textCanvasTransform = actorText->addComponent<scene::LayoutTransform>() )
-        //{
-        //    auto textSize = Vector2<real_Num>( 300, 60 );
-        //    textCanvasTransform->setSize( textSize );
-
-        //    textCanvasTransform->setAnchor( anchor );
-
-        //    textCanvasTransform->setHorizontalAlignment( HorizontalAlignment::CENTER );
-        //    textCanvasTransform->setVerticalAlignment( VerticalAlignment::CENTER );
-        //    textCanvasTransform->updateAnchorFromAlignment();
-        //}
-
-        //if( auto text = actorText->addComponent<scene::Text>() )
-        //{
-        //    text->setVerticalAlignment( 2 );
-        //    text->setHorizontalAlignment( 2 );
-        //    text->setText( label );
-
-        //    auto textName = String( "Text" );
-        //    actorText->setName( textName );
-
-        //    button->setText( text );
-        //    text->updateElementState();
-        //}
 
         if( addToScene )
         {

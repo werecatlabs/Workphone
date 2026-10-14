@@ -61,7 +61,9 @@ namespace workphone::scene
             try
             {
                 if( listener )
+                {
                     listener->connect( playerId );
+                }
             }
             catch( std::exception &e )
             {
@@ -78,7 +80,9 @@ namespace workphone::scene
             try
             {
                 if( listener )
+                {
                     listener->disconnect( playerId );
+                }
             }
             catch( std::exception &e )
             {
@@ -94,16 +98,22 @@ namespace workphone::scene
     void NetworkListener::addListener( SmartPtr<INetworkListener> listener )
     {
         if( !listener )
+        {
             return;
+        }
 
         if( !hasListener( listener ) )
+        {
             m_listeners.push_back( listener );
+        }
     }
 
     void NetworkListener::removeListener( SmartPtr<INetworkListener> listener )
     {
         if( !listener )
+        {
             return;
+        }
 
         // erase(const T&) removes all matching elements by value.
         m_listeners.erase( listener );

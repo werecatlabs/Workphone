@@ -72,6 +72,7 @@ namespace workphone::scene
         Array<u32> indices;  // exact full-resolution triangles; holes omitted
         AABB3F worldBounds;
     };
+
     WPCore_API bool buildTerrainNavigationInput( render::TerrainSnapshot terrain,
                                                  const Transform3<real_Num> &placement,
                                                  TerrainNavigationInput &output, String &error );
@@ -80,12 +81,14 @@ namespace workphone::scene
     {
         Vector3F start, end;
     };
+
     struct TerrainShorelineInput
     {
         render::TerrainSnapshot source;
         f32 waterLevel = 0;
         Array<TerrainShorelineSegment> segments;  // world-space intersections, not a water mesh
     };
+
     WPCore_API bool buildTerrainShorelineInput( render::TerrainSnapshot terrain,
                                                 const Transform3<real_Num> &placement,
                                                 f32 worldWaterLevel, TerrainShorelineInput &output,
@@ -96,11 +99,13 @@ namespace workphone::scene
         Vector3F position, normal;
         bool supported = false;
     };
+
     struct TerrainPathInput
     {
         render::TerrainSnapshot source;
         Array<TerrainPathPoint> points;
     };
+
     /** Ground-project caller's world-XZ road/river/prop anchors. Unsupported points are
      * explicitly marked; callers must split/reject spans over holes or outside terrain.
      */
@@ -118,6 +123,7 @@ namespace workphone::scene
         f32 waterLevel = 0;
         u32 maximumNavigationTriangles = 524288, maximumShorelineSegments = 262144;
     };
+
     struct TerrainIntegrationData
     {
         render::TerrainSnapshot source;
@@ -127,6 +133,7 @@ namespace workphone::scene
         TerrainShorelineInput shoreline;
         TerrainPathInput path;
     };
+
     using TerrainIntegrationSnapshot = std::shared_ptr<const TerrainIntegrationData>;
 
     /** Owner-thread attachment/configuration; publication automatically refreshes enabled

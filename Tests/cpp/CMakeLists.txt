@@ -167,6 +167,17 @@ if (WP_BUILD_TESTS)
     #        add_test(NAME WPGraphics.claw_production_render COMMAND WPGraphicsClawProductionTests)
     #        set_tests_properties(WPGraphics.claw_production_render PROPERTIES LABELS "graphics;gpu;production" TIMEOUT 60)
     if(WIN32 AND WP_GRAPHICS_SYSTEM_CLAW AND WP_BUILD_RENDERER_DX11 AND TARGET WPGraphics)
+            add_executable(WPScenePickingTests ScenePickingTests.cpp)
+            target_compile_definitions(WPScenePickingTests PRIVATE BOOST_ALL_NO_LIB)
+            target_include_directories(WPScenePickingTests PRIVATE
+                ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Engine/c/Include ${WP_ROOT}/Dependencies/boost
+                ${WP_ROOT}/Engine/c/Include/WorkphoneCore ${WP_ROOT}/Engine/c/Include/WorkphoneGraphics)
+            target_link_libraries(WPScenePickingTests PRIVATE Workphone)
+            target_link_directories(WPScenePickingTests PRIVATE
+                ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+            set_target_properties(WPScenePickingTests PROPERTIES FOLDER Tests/Cpp)
+            add_test(NAME WPEditor.scene_picking COMMAND WPScenePickingTests)
+            set_tests_properties(WPEditor.scene_picking PROPERTIES LABELS "editor;graphics;headless" TIMEOUT 30)
             if(WP_BUILD_RESOURCE_SYSTEM AND TARGET WPSQLite)
                 add_executable(WPMaterialLoadSequenceTests MaterialLoadSequenceTests.cpp)
                 target_compile_definitions(WPMaterialLoadSequenceTests PRIVATE BOOST_ALL_NO_LIB)

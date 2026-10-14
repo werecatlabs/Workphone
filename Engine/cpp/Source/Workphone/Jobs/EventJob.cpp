@@ -100,13 +100,13 @@ namespace workphone
 
         if( sender )
         {
-            if( sender->getObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS ) && sender->isLoaded() )
+            if( sender->getObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS ) )
             {
                 dispatch( sender->getObjectListeners() );
             }
         }
 
-        if( object && object->isLoaded() && object->getObjectFlag( OBJECT_FLAG_RECEIVE_EVENTS ) )
+        if( object && object->getObjectFlag( OBJECT_FLAG_RECEIVE_EVENTS ) )
         {
             dispatch( object->getObjectListeners() );
         }

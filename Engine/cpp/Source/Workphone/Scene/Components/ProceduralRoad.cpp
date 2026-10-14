@@ -21,7 +21,9 @@ namespace workphone::scene
         {
             auto app = core::IApplicationManager::instancePtr();
             if( !app || !app->getFactoryManager() )
+            {
                 return nullptr;
+            }
 
             return app->getFactoryManager()->make_object<T>();
         }
@@ -31,23 +33,32 @@ namespace workphone::scene
     ProceduralRoad::~ProceduralRoad() = default;
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRoad, ProceduralMeshComponent );
+
     SmartPtr<IMesh> ProceduralRoad::buildMesh()
     {
         if( !m_service )
+        {
             m_service = service<procedural::IRoadSystem>( "IRoadSystem" );
+        }
         if( !m_service )
+        {
             throw std::runtime_error( "Load the WPProcedural plugin to generate roads" );
+        }
 
         m_spec.end = m_end;
         const auto length = ( m_spec.end - m_spec.start ).length();
         if( !std::isfinite( length ) || length < 0.01 || length > 10000 )
+        {
             throw std::runtime_error( "Road length must be between 0.01 and 10000 metres" );
+        }
         m_service->setSeed( m_spec.seed );
         auto result = m_service->generateSegment( m_spec );
         auto mesh = workphone::make_ptr<workphone::Mesh>();
         auto append = [&]( const procedural::RoadMesh &layer, const String &material ) {
             if( layer.indices.empty() )
+            {
                 return;
+            }
             Array<Vector3<real_Num>> positions, normals;
             Array<Vector2<real_Num>> uvs;
             for( const auto &v : layer.vertices )
@@ -65,9 +76,13 @@ namespace workphone::scene
         };
         append( result.roadSurface, "Procedural/Road" );
         for( auto &layer : result.sidewalks )
+        {
             append( layer, "Procedural/Sidewalk" );
+        }
         for( auto &layer : result.kerbs )
+        {
             append( layer, "Procedural/Kerb" );
+        }
         append( result.markings, "Procedural/Markings" );
         append( result.dressing, "Procedural/Dressing" );
         append( result.oldTarmac, "Procedural/Road" );
@@ -79,6 +94,7 @@ namespace workphone::scene
         m_result = std::move( result );
         return mesh;
     }
+
     SmartPtr<Properties> ProceduralRoad::getProperties() const
     {
         auto p = ProceduralMeshComponent::getProperties();
@@ -95,10 +111,13 @@ namespace workphone::scene
         p->setProperty( "Dressing", m_spec.generateDressing );
         return p;
     }
+
     void ProceduralRoad::setProperties( SmartPtr<Properties> p )
     {
         if( !p )
+        {
             return;
+        }
         ProceduralMeshComponent::setProperties( p );
         p->getPropertyValue( "Seed", m_spec.seed );
         p->getPropertyValue( "Start", m_spec.start );
@@ -115,10 +134,23 @@ namespace workphone::scene
         p->getPropertyValue( "Markings", m_spec.generateMarkings );
         p->getPropertyValue( "Dressing", m_spec.generateDressing );
     }
+
     void ProceduralRoad::unload( SmartPtr<ISharedObject> data )
     {
         ProceduralMeshComponent::unload( data );
         m_service = nullptr;
         m_result = {};
     }
+
+    const workphone::procedural::RoadSegmentResult &ProceduralRoad::getResult() const
+    {
+        return m_result;
+    }
+
+    void ProceduralRoad::setRoadSystem( SmartPtr<procedural::IRoadSystem> service )
+    {
+        m_service = service;
+        requestRegeneration();
+    }
+
 }  // namespace workphone::scene

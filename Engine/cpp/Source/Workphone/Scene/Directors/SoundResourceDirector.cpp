@@ -103,16 +103,22 @@ namespace workphone::scene
     void SoundResourceDirector::setSound( SmartPtr<ISound> sound )
     {
         if( m_sound == sound )
+        {
             return;
+        }
         auto previous = m_sound;
         m_sound = sound;
         if( previous )
         {
             previous->stop();
             if( auto owner = previous->getOwner() )
+            {
                 owner->destroyResource( previous );
+            }
             else
+            {
                 previous->unload( nullptr );
+            }
         }
     }
 

@@ -68,7 +68,9 @@ namespace workphone::scene
         try
         {
             if( getLoadingState() != LoadingState::Loaded )
+            {
                 return;
+            }
 
             setLoadingState( LoadingState::Unloading );
             m_meshResource = nullptr;
@@ -109,7 +111,9 @@ namespace workphone::scene
         bool convex = m_isConvex;
         properties->getPropertyValue( isConvexStr, convex );
         if( convex != m_isConvex )
+        {
             setConvex( convex );
+        }
 
         if( meshPath != getMeshPath() )
         {
@@ -117,8 +121,10 @@ namespace workphone::scene
 
             auto ext = Path::getFileExtension( meshPath );
             if( ext == ".mesh" )
+            {
                 meshPath =
                     StringUtil::cleanupPath( StringUtil::replaceAll( meshPath, ".mesh", ".fbmeshbin" ) );
+            }
 
             setMeshPath( meshPath );
         }
@@ -144,7 +150,9 @@ namespace workphone::scene
                 if( auto meshShape = workphone::dynamic_pointer_cast<physics::IMeshShape>( shape ) )
                 {
                     if( m_meshResource )
+                    {
                         meshShape->setMeshResource( m_meshResource );
+                    }
                 }
             }
         }
@@ -312,7 +320,9 @@ namespace workphone::scene
             if( mesh )
             {
                 if( !mesh->isLoaded() )
+                {
                     mesh->load( nullptr );
+                }
 
                 shape->setMeshResource( mesh );
             }
@@ -348,7 +358,9 @@ namespace workphone::scene
         if( auto shape = getShape() )
         {
             if( auto meshShape = workphone::dynamic_pointer_cast<physics::IMeshShape>( shape ) )
+            {
                 meshShape->setConvex( m_isConvex );
+            }
         }
     }
 }  // namespace workphone::scene

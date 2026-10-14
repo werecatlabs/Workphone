@@ -998,9 +998,13 @@ namespace workphone::scene
             // materials still receive the reflection. Capture settings are unchanged.
             const auto position = getCapturePosition( *this );
             if( m_renderCubemap->getPosition() != position )
+            {
                 m_renderCubemap->setPosition( position );
+            }
             if( active )
+            {
                 syncMaterialCubemap();
+            }
             return;
         }
         if( !active )

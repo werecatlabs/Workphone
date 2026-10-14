@@ -122,6 +122,9 @@ namespace workphone
              */
             void unload( SmartPtr<ISharedObject> data ) override;
 
+            /** @copydoc ISharedObject::postUpdate */
+            void postUpdate() override;
+
             /**
              * @brief Gets the UI element listener.
              * @return A smart pointer to the UI element listener.
@@ -403,8 +406,15 @@ namespace workphone
             /** Enables automatic layout rectangle drawing when a 2D renderer is configured. */
             void setDebugDrawEnabled( bool enabled );
 
-            /** @copydoc ISharedObject::postUpdate */
-            void postUpdate() override;
+            /** @brief Gets whether to use the active UI backend's widget or scene composition. */
+            bool getUseNativeUI() const;
+
+            /** @brief Selects the active backend widget (including Claw/Nuklear) when true,
+             * or the control's composed scene representation when false. Primitive Image/Text
+             * rendering still uses the active backend. Supported by Button, Slider and Dropdown;
+             * leave other backend widgets enabled until they have a scene representation.
+             * Persisted in properties. */
+            void setUseNativeUI( bool useNativeUI );
 
             WP_CLASS_REGISTER_DECL;
 
@@ -505,12 +515,10 @@ namespace workphone
 
             // Debug-only runtime state; intentionally not serialized with component properties.
             atomic_bool m_debugDrawEnabled = false;
-        };
 
-        inline ColourF UIComponent::getColour() const
-        {
-            return m_colour;
-        }
+            // Whether to use native UI rendering or custom rendering.
+            atomic_bool m_useNativeUI = true;
+        };
 
         inline ui::IUIElement *UIComponent::getElementPtr() const
         {

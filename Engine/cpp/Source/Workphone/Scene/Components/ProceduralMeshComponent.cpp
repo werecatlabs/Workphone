@@ -11,12 +11,14 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <stdexcept>
+
 namespace workphone::scene
 {
     ProceduralMeshComponent::ProceduralMeshComponent() = default;
     ProceduralMeshComponent::~ProceduralMeshComponent() = default;
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralMeshComponent, Component );
+
     void ProceduralMeshComponent::load( SmartPtr<ISharedObject> data )
     {
         Component::load( data );
@@ -24,18 +26,25 @@ namespace workphone::scene
         // Defer until all serialized sibling components have loaded.
         setLoadingState( LoadingState::Loaded );
     }
+
     void ProceduralMeshComponent::setActor( SmartPtr<IGameActor> actor )
     {
         if( actor != getActor() && m_meshComponent )
+        {
             unload( nullptr );
+        }
         Component::setActor( actor );
         m_dirty = true;
     }
+
     void ProceduralMeshComponent::update()
     {
         if( Thread::getCurrentTask() == TaskId::Application && m_dirty && getActor() && isEnabled() )
+        {
             regenerate();
+        }
     }
+
     bool ProceduralMeshComponent::regenerate()
     {
         m_dirty = false;
@@ -48,11 +57,15 @@ namespace workphone::scene
         {
             auto generated = buildMesh();
             if( !generated )
+            {
                 throw std::runtime_error( "Generator returned no mesh" );
+            }
             auto app = core::IApplicationManager::instance();
             auto manager = workphone::dynamic_pointer_cast<MeshManager>( app->getMeshManager() );
             if( !manager )
+            {
                 throw std::runtime_error( "Mesh manager is unavailable" );
+            }
             generated->updateAABB( true );
             auto resource = workphone::make_ptr<MeshResource>();
             // A fresh name forces both render backends to reload after regeneration.
@@ -67,7 +80,9 @@ namespace workphone::scene
                 m_meshComponent = actor->getComponent<Mesh>();
                 m_ownsMesh = !m_meshComponent;
                 if( m_ownsMesh )
+                {
                     m_meshComponent = actor->addComponent<Mesh>();
+                }
                 else
                 {
                     m_previousResource = m_meshComponent->getMeshResource();
@@ -79,12 +94,16 @@ namespace workphone::scene
                 m_renderer = actor->getComponent<MeshRenderer>();
                 m_ownsRenderer = !m_renderer;
                 if( m_ownsRenderer )
+                {
                     m_renderer = actor->addComponent<MeshRenderer>();
+                }
             }
             m_meshComponent->setMeshResource( resource );
             m_renderer->setState( getState() );
             if( m_resource )
+            {
                 manager->removeMeshResource( m_resource );
+            }
             m_resource = resource;
             applyGeneratedMaterials();
             m_renderer->updateMaterials();
@@ -97,6 +116,7 @@ namespace workphone::scene
             return false;
         }
     }
+
     void ProceduralMeshComponent::unload( SmartPtr<ISharedObject> data )
     {
         if( auto actor = getActor() )
@@ -114,15 +134,25 @@ namespace workphone::scene
                     actor->removeComponentInstance( m_meshComponent );
                 }
                 else if( m_previousResource )
+                {
                     m_meshComponent->setMeshResource( m_previousResource );
+                }
                 else
+                {
                     m_meshComponent->setMeshPath( m_previousPath );
+                }
             }
         }
         if( auto app = core::IApplicationManager::instancePtr() )
+        {
             if( auto manager = workphone::dynamic_pointer_cast<MeshManager>( app->getMeshManager() ) )
+            {
                 if( m_resource )
+                {
                     manager->removeMeshResource( m_resource );
+                }
+            }
+        }
         m_resource = nullptr;
         m_previousResource = nullptr;
         m_previousPath.clear();
@@ -134,6 +164,7 @@ namespace workphone::scene
         Component::unload( data );
         setLoadingState( LoadingState::Unloaded );
     }
+
     SmartPtr<Properties> ProceduralMeshComponent::getProperties() const
     {
         auto p = Component::getProperties();
@@ -142,11 +173,29 @@ namespace workphone::scene
         p->getPropertyObject( "Generation Error" ).setReadOnly( true );
         return p;
     }
+
     void ProceduralMeshComponent::setProperties( SmartPtr<Properties> p )
     {
         if( !p )
+        {
             return;
+        }
         Component::setProperties( p );
         requestRegeneration();
     }
+
+    void ProceduralMeshComponent::applyGeneratedMaterials()
+    {
+    }
+
+    const workphone::String &ProceduralMeshComponent::getGenerationError() const
+    {
+        return m_error;
+    }
+
+    void ProceduralMeshComponent::requestRegeneration()
+    {
+        m_dirty = true;
+    }
+
 }  // namespace workphone::scene

@@ -16,24 +16,35 @@ namespace workphone::scene
     namespace
     {
         constexpr float pi = 3.14159265358979323846f;
+
         float unit( u64 seed )
         {
             return float( render::foliageStableHash( seed ) >> 40 ) / 16777216.f;
         }
+
         void quad( render::FoliageMeshData &m, Vector3F a, Vector3F b, Vector3F c, Vector3F d )
         {
             auto normal = ( b - a ).crossProduct( c - a );
             normal.normalise();
             const auto base = u32( m.positions.size() );
             for( auto p : { a, b, c, d } )
+            {
                 m.positions.push_back( p );
+            }
             for( int i = 0; i < 4; ++i )
+            {
                 m.normals.push_back( normal );
+            }
             for( auto uv : { Vector2F( 0, 1 ), Vector2F( 1, 1 ), Vector2F( 1, 0 ), Vector2F( 0, 0 ) } )
+            {
                 m.uvs.push_back( uv );
+            }
             for( auto index : { base, base + 1, base + 2, base, base + 2, base + 3 } )
+            {
                 m.indices.push_back( index );
+            }
         }
+
         void cylinder( render::FoliageMeshData &mesh, Vector3F start, Vector3F end, float radius,
                        u32 sides, float endScale = .6f )
         {
@@ -54,6 +65,7 @@ namespace workphone::scene
                 quad( mesh, start + a, start + b, end + b * endScale, end + a * endScale );
             }
         }
+
         void broadleafMesh( const FoliagePlantRecipe &recipe, render::FoliageMeshData &mesh, u32 lod )
         {
             const u64 seed = recipe.seed;
@@ -61,8 +73,8 @@ namespace workphone::scene
             const float h = recipe.height, radius = recipe.radius;
             const Vector3F crown( 0, h * .67f, 0 );
             const auto trunkPoint = [&]( float t ) {
-                return Vector3F( radius * .055f * std::sin( t * 2.1f + unit( seed + 812 ) ),
-                                 h * t, radius * .045f * std::sin( t * 2.8f ) );
+                return Vector3F( radius * .055f * std::sin( t * 2.1f + unit( seed + 812 ) ), h * t,
+                                 radius * .045f * std::sin( t * 2.8f ) );
             };
             // A continuous tapered leader; the clear lower bole is never a pole
             // extending out of the top of the foliage.
@@ -95,7 +107,8 @@ namespace workphone::scene
                     const Vector3F tangent( -radial.z, 0, radial.x );
                     for( float sign : { -1.f, 1.f } )
                     {
-                        const auto fork = tip + tangent * radius * .19f * sign + Vector3F( 0, h * .055f, 0 );
+                        const auto fork =
+                            tip + tangent * radius * .19f * sign + Vector3F( 0, h * .055f, 0 );
                         cylinder( mesh, elbow, fork, thickness * .40f, 3, .14f );
                     }
                 }
@@ -115,15 +128,18 @@ namespace workphone::scene
                 const float yaw = cluster * 2.39996323f + unit( seed + 18 ) * 2 * pi;
                 const float ring = std::sqrt( std::max( 0.f, 1 - y * y ) );
                 const float fill = .58f + .42f * std::cbrt( unit( key + 3 ) );
-                auto centre = crown + Vector3F( std::cos( yaw ) * radius * ring * fill,
-                                                y * h * .29f, std::sin( yaw ) * radius * ring * fill );
+                auto centre = crown + Vector3F( std::cos( yaw ) * radius * ring * fill, y * h * .29f,
+                                                std::sin( yaw ) * radius * ring * fill );
                 const float size = radius * ( .30f + .14f * unit( key + 7 ) ) * ( 1 + .22f * lod );
                 // Keep leaf sprays compact relative to height even for squat shrubs.
                 const float cardHeight = std::min( size * 1.18f, h * .18f );
-                centre.y = std::max( h * .30f + cardHeight * .5f,
-                                    std::min( h - cardHeight * .5f, centre.y ) );
+                centre.y =
+                    std::max( h * .30f + cardHeight * .5f, std::min( h - cardHeight * .5f, centre.y ) );
                 auto crownNormal = centre - crown + Vector3F( 0, h * .12f, 0 );
-                if( crownNormal.lengthSquared() < .000001f ) crownNormal = { 0, 1, 0 };
+                if( crownNormal.lengthSquared() < .000001f )
+                {
+                    crownNormal = { 0, 1, 0 };
+                }
                 crownNormal.normalise();
                 for( u32 card = 0; card < cardsPerCluster; ++card )
                 {
@@ -139,17 +155,21 @@ namespace workphone::scene
                           centre + halfRight + halfUp, centre - halfRight + halfUp );
                     // Rounded crown normals avoid obvious flat billboard lighting.
                     for( u32 vertex = first; vertex < first + 4; ++vertex )
+                    {
                         mesh.normals[vertex] = crownNormal;
+                    }
                 }
             }
             mesh.sections.push_back( { leafStart, u32( mesh.indices.size() ) - leafStart, 1 } );
         }
+
         void bounds( render::FoliageSpecies &species )
         {
             auto minimum = Vector3F( std::numeric_limits<f32>::max(), std::numeric_limits<f32>::max(),
                                      std::numeric_limits<f32>::max() );
             auto maximum = -minimum;
             for( const auto &mesh : species.lods )
+            {
                 for( auto p : mesh.positions )
                 {
                     minimum.x = std::min( minimum.x, p.x );
@@ -159,10 +179,12 @@ namespace workphone::scene
                     maximum.y = std::max( maximum.y, p.y );
                     maximum.z = std::max( maximum.z, p.z );
                 }
+            }
             species.boundsMinimum = minimum;
             species.boundsMaximum = maximum;
         }
     }  // namespace
+
     bool generateFoliagePlant( const FoliagePlantRecipe &r, render::FoliageSpecies &output,
                                String &error )
     {
@@ -172,8 +194,10 @@ namespace workphone::scene
                 r.height < .05f || r.height > 100 || !std::isfinite( r.radius ) || r.radius < .01f ||
                 r.radius > 50 || !std::isfinite( r.trunkRadius ) || r.trunkRadius < .005f ||
                 r.trunkRadius > r.radius || r.branches < 1 || r.branches > 128 )
+            {
                 throw std::runtime_error(
                     "Plant recipe requires finite dimensions, 1..128 branches and a species ID." );
+            }
             render::FoliageSpecies species;
             species.id = r.speciesId;
             species.kind = r.kind;
@@ -199,8 +223,7 @@ namespace workphone::scene
                     const float halfWidth = r.radius / std::sqrt( float( branches ) );
                     auto centre = Vector3F( std::cos( yaw ) * r.radius * unit( i + r.seed ), 0,
                                             std::sin( yaw ) * r.radius * unit( i + r.seed ) );
-                    const float cardHeight =
-                        r.height * ( .7f + .3f * unit( i + 71 * r.seed ) );
+                    const float cardHeight = r.height * ( .7f + .3f * unit( i + 71 * r.seed ) );
                     const auto up = Vector3F( 0, cardHeight, 0 );
                     // Real textured cards, generated independently at each LOD. The stable seed
                     // controls the near/mid clump; UVs cover the configured cutout atlas slot.
@@ -217,7 +240,9 @@ namespace workphone::scene
             }
             bounds( species );
             if( !render::validateFoliageSpecies( species, error ) )
+            {
                 return false;
+            }
             output = std::move( species );
             error.clear();
             return true;
@@ -228,6 +253,7 @@ namespace workphone::scene
             return false;
         }
     }
+
     bool importFoliageMesh( SmartPtr<IMesh> mesh, const String &id,
                             const Array<render::FoliageMaterial> &materials,
                             render::FoliageSpecies &output, String &error )
@@ -235,8 +261,10 @@ namespace workphone::scene
         try
         {
             if( !mesh || materials.empty() )
+            {
                 throw std::runtime_error(
                     "Foliage import requires CPU mesh buffers and explicit materials." );
+            }
             render::FoliageSpecies species;
             species.id = id;
             species.materials = materials;
@@ -245,13 +273,17 @@ namespace workphone::scene
             for( auto section : mesh->getSubMeshes() )
             {
                 if( !section || section->getUseSharedVertices() )
+                {
                     throw std::runtime_error(
                         "Foliage import requires resolved section-local CPU vertices." );
+                }
                 auto vb = section->getVertexBuffer();
                 auto ib = section->getIndexBuffer();
                 if( !vb || !ib || !ib->getIndexData() || !vb->getVertexDeclaration() ||
                     ib->getNumIndices() % 3 )
+                {
                     throw std::runtime_error( "Foliage import requires indexed CPU triangles." );
+                }
                 auto declaration = vb->getVertexDeclaration();
                 auto position =
                     declaration->findElementBySemantic( VertexElementSemantic::VES_POSITION );
@@ -263,17 +295,23 @@ namespace workphone::scene
                     normal->getType() != VertexElementType::VET_FLOAT3 ||
                     ( uv->getType() != VertexElementType::VET_FLOAT2 &&
                       uv->getType() != VertexElementType::VET_FLOAT3 ) )
+                {
                     throw std::runtime_error(
                         "Foliage import requires float position/normal/UV attributes." );
+                }
                 if( m.positions.size() + vb->getNumVertices() > render::foliageMaximumMeshVertices ||
                     m.indices.size() + ib->getNumIndices() > render::foliageMaximumMeshIndices ||
                     sectionIndex >= materials.size() )
+                {
                     throw std::runtime_error( "Foliage import exceeds geometry/material bounds." );
+                }
                 auto read = [&]( SmartPtr<IVertexElement> e, u32 vertex, float *out, u32 count ) {
                     auto stride = declaration->getSize( e->getSource() );
                     auto data = static_cast<const u8 *>( vb->getVertexData( e->getSource() ) );
                     if( !data || e->getOffset() + count * sizeof( float ) > stride )
+                    {
                         throw std::runtime_error( "Invalid foliage CPU vertex stream." );
+                    }
                     std::memcpy( out, data + size_t( vertex ) * stride + e->getOffset(),
                                  count * sizeof( float ) );
                 };
@@ -295,7 +333,9 @@ namespace workphone::scene
                                      ? static_cast<const u16 *>( ib->getIndexData() )[i]
                                      : static_cast<const u32 *>( ib->getIndexData() )[i];
                     if( index >= vb->getNumVertices() )
+                    {
                         throw std::runtime_error( "Foliage mesh index is outside its vertex buffer." );
+                    }
                     m.indices.push_back( base + index );
                 }
             }
@@ -305,7 +345,9 @@ namespace workphone::scene
             species.lods[2] = m;
             bounds( species );
             if( !render::validateFoliageSpecies( species, error ) )
+            {
                 return false;
+            }
             output = std::move( species );
             error.clear();
             return true;

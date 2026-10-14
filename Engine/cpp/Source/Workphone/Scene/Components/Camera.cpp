@@ -621,11 +621,15 @@ namespace workphone::scene
 
         auto sceneManager = applicationManager->getGameManagerPtr();
         if( !sceneManager )
+        {
             return;
+        }
 
         auto scene = sceneManager->getCurrentScenePtr();
         if( !scene )
+        {
             return;
+        }
 
         auto zorder = 1;
 

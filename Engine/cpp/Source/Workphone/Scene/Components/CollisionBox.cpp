@@ -85,7 +85,9 @@ namespace workphone::scene
         try
         {
             if( getLoadingState() != LoadingState::Loaded )
+            {
                 return;
+            }
 
             setLoadingState( LoadingState::Unloading );
             Collision::unload( data );
@@ -137,10 +139,14 @@ namespace workphone::scene
             case IGameActor::State::Play:
             {
                 if( !Collision::isValid() )
+                {
                     return false;
+                }
 
                 if( auto shape = getShape() )
+                {
                     return workphone::dynamic_pointer_cast<physics::IBoxShape3>( shape ) != nullptr;
+                }
 
                 return false;
             }
@@ -172,7 +178,9 @@ namespace workphone::scene
         if( auto shape = getShape() )
         {
             if( auto boxShape = workphone::dynamic_pointer_cast<physics::IBoxShape3>( shape ) )
+            {
                 return boxShape->getAABB();
+            }
         }
 
         // Fall back to an AABB built from the stored extents centred on the position offset.

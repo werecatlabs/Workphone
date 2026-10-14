@@ -43,8 +43,8 @@ namespace workphone
          */
         struct WPProcedural_API ProceduralMesh
         {
-            std::vector<ProceduralVertex> vertices;  ///< Ordered vertex data.
-            std::vector<uint32_t> indices;           ///< Triangle index list (groups of 3).
+            Array<ProceduralVertex> vertices;  ///< Ordered vertex data.
+            Array<uint32_t> indices;           ///< Triangle index list (groups of 3).
             AABB3F bounds;
             bool boundsValid = false;
 
@@ -183,7 +183,7 @@ namespace workphone
         class WPProcedural_API CompositeRule final : public ModelRule
         {
         public:
-            std::vector<std::shared_ptr<ModelRule>> children;  ///< Ordered child rules.
+            Array<std::shared_ptr<ModelRule>> children;  ///< Ordered child rules.
 
             /** Append @p rule to the child list.  Null rules are rejected. */
             void add( std::shared_ptr<ModelRule> rule );

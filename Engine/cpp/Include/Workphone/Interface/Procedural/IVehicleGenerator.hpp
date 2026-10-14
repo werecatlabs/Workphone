@@ -10,7 +10,7 @@ namespace workphone::procedural
     public:
         ~IVehicleGenerator() override;
         virtual GeneratedVehicle generate( const VehicleGenerationConfig &config = {} ) = 0;
-        virtual std::vector<VehicleGenerationIssue> validate( const GeneratedVehicle &vehicle ) = 0;
+        virtual Array<VehicleGenerationIssue> validate( const GeneratedVehicle &vehicle ) = 0;
         virtual VehicleMaterialSlot materialSlotFor( VehicleMaterial material ) = 0;
         WP_CLASS_REGISTER_DECL;
     };

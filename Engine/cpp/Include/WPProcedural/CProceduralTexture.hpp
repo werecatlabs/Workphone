@@ -18,7 +18,7 @@ namespace workphone
         {
             int width = 0;
             int height = 0;
-            std::vector<Color4> pixels;
+            Array<Color4> pixels;
 
             Color4 &at( int x, int y )
             {

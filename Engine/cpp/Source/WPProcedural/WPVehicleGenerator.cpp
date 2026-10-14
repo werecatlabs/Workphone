@@ -27,7 +27,7 @@ namespace workphone
                 return dot( v, v );
             }
 
-            void addIssue( std::vector<VehicleGenerationIssue> &issues, bool error,
+            void addIssue( Array<VehicleGenerationIssue> &issues, bool error,
                            const char *component, const std::string &message )
             {
                 issues.push_back( { error, component, message } );
@@ -339,10 +339,10 @@ namespace workphone
             return result;
         }
 
-        std::vector<VehicleGenerationIssue> WPVehicleGenerator::validate(
+        Array<VehicleGenerationIssue> WPVehicleGenerator::validate(
             const GeneratedVehicle &vehicle )
         {
-            std::vector<VehicleGenerationIssue> issues;
+            Array<VehicleGenerationIssue> issues;
             const auto appearance = WPVehicleAppearance::validate( vehicle.appearance );
             for( const auto &issue : appearance.issues )
                 addIssue( issues, issue.severity == VehicleAppearanceIssueSeverity::Error, "appearance",

@@ -61,7 +61,9 @@ namespace workphone::scene
         try
         {
             if( getLoadingState() != LoadingState::Loaded && !getShape() && !m_preparedShape )
+            {
                 return;
+            }
 
             setLoadingState( LoadingState::Unloading );
             discardPreparedTerrain();
@@ -90,7 +92,9 @@ namespace workphone::scene
     void CollisionTerrain::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
+        {
             return;
+        }
         Collision::setProperties( properties );
 
         u32 width = m_terrainWidth;
@@ -102,13 +106,19 @@ namespace workphone::scene
         properties->getPropertyValue( terrainScaleStr, scale );
 
         if( width != m_terrainWidth )
+        {
             setTerrainWidth( width );
+        }
 
         if( depth != m_terrainDepth )
+        {
             setTerrainDepth( depth );
+        }
 
         if( !MathUtil<real_Num>::equals( scale, m_terrainScale ) )
+        {
             setTerrainScale( scale );
+        }
 
         updateTransform();
     }
@@ -123,10 +133,14 @@ namespace workphone::scene
             case IGameActor::State::Play:
             {
                 if( !Collision::isValid() )
+                {
                     return false;
+                }
 
                 if( auto shape = getShape() )
+                {
                     return workphone::dynamic_pointer_cast<physics::ITerrainShape>( shape ) != nullptr;
+                }
 
                 return false;
             }
@@ -141,10 +155,12 @@ namespace workphone::scene
     void CollisionTerrain::updateTransform()
     {
         if( auto actor = getActor() )
+        {
             if( auto source = actor->getComponent<TerrainSystem>() )
             {
                 source->updateTransform();
             }
+        }
     }
 
     void CollisionTerrain::createPhysicsShape()
@@ -153,13 +169,23 @@ namespace workphone::scene
         if( !getShape() && !m_preparedShape )
         {
             if( auto actor = getActor() )
+            {
                 if( auto source = actor->getComponent<TerrainSystem>() )
+                {
                     if( auto terrain = dynamic_cast<render::Terrain *>( source->getTerrain().get() ) )
+                    {
                         if( terrain->isTerrainPublicationDeferred() )
+                        {
                             return;
+                        }
+                    }
+                }
+            }
             if( m_terrainError.empty() )
+            {
                 m_terrainError =
                     "A TerrainSystem and an available terrain physics backend are required.";
+            }
             WP_LOG_WARNING( "CollisionTerrain: " + m_terrainError );
         }
     }
@@ -173,22 +199,30 @@ namespace workphone::scene
             return false;
         };
         if( !snapshot )
+        {
             return fail( "Terrain collision has no authoritative source." );
+        }
         if( !render::validateTerrainData( *snapshot, error ) ||
             !render::validateTerrainPlacement( *snapshot, worldTransform, error ) )
+        {
             return fail( error );
+        }
         const auto cells = size_t( snapshot->dimensions.x - 1 ) * ( snapshot->dimensions.y - 1 );
         const auto solidCells = snapshot->holes.empty()
                                     ? cells
                                     : static_cast<size_t>( std::count(
                                           snapshot->holes.begin(), snapshot->holes.end(), u8( 0 ) ) );
         if( solidCells * 2 > physics::TerrainCollisionData::maximumSupportedTriangles )
+        {
             return fail(
                 "Terrain collision exceeds 524288 solid triangles; tiled collision is unavailable." );
+        }
         // Offsets would disagree with rendering and queries. Authoritative terrain
         // placement belongs exclusively to its actor, not legacy collision metadata.
         if( getPosition() != Vector3<real_Num>::zero() )
+        {
             return fail( "Authoritative terrain collision requires a zero center offset." );
+        }
         if( isTerrainPrepared( snapshot, worldTransform ) )
         {
             error.clear();
@@ -198,19 +232,25 @@ namespace workphone::scene
         const auto app = core::IApplicationManager::instancePtr();
         auto manager = app ? app->getPhysicsManager() : nullptr;
         if( !manager )
+        {
             return fail( "Terrain collision physics manager is unavailable." );
+        }
         discardPreparedTerrain();
         try
         {
             if( auto actor = getActor() )
+            {
                 setRigidBody( actor->getComponent<Rigidbody>() );
+            }
             auto source = make_ptr<physics::TerrainCollisionData>();
             source->terrain = snapshot;
             source->scale = worldTransform.getScale();
             auto types = TypeManager::instance();
             const auto shapeType = types ? types->getHash( physics::ITerrainShape::typeInfo() ) : 0;
             if( !shapeType )
+            {
                 return fail( "Terrain collision type registration is unavailable." );
+            }
             // Resource admission and native allocation may fail normally while
             // staging a replacement. The typed convenience factory asserts that
             // creation succeeded, so use the nullable factory at this boundary.
@@ -219,14 +259,18 @@ namespace workphone::scene
             if( !concrete || concrete->getTerrainSnapshot() != snapshot || !shape->isValid() )
             {
                 if( shape )
+                {
                     manager->removeCollisionShape( shape );
+                }
                 return fail( "Physics backend failed to prepare the authoritative terrain revision." );
             }
             m_preparedShape = shape;
             shape->setTrigger( isTrigger() );
             shape->setEnabled( isEnabled() );
             if( auto previous = getShape() )
+            {
                 shape->setSimulationFilterData( previous->getSimulationFilterData() );
+            }
             if( auto material = getMaterial() )
             {
                 shape->setMaterial( material );
@@ -250,23 +294,33 @@ namespace workphone::scene
     void CollisionTerrain::commitTerrain()
     {
         if( !m_preparedShape )
+        {
             return;
+        }
         auto previous = getShape();
         auto body =
             previous ? dynamic_pointer_cast<physics::IRigidBody3>( previous->getActor() ) : nullptr;
         if( !body )
+        {
             if( auto component = getRigidBody() )
             {
                 if( auto rigid = component->getRigidStatic() )
+                {
                     body = rigid;
+                }
                 else if( auto rigid = component->getRigidDynamic() )
+                {
                     body = rigid;
+                }
             }
+        }
         setShape( m_preparedShape );
         if( body )
         {
             if( previous )
+            {
                 body->removeShape( previous, false );
+            }
             else
             {
                 m_preparedShape->setCollisionType( body->getCollisionType() );
@@ -280,9 +334,15 @@ namespace workphone::scene
         // Avoid Rigidbody::updateShapes: its actor transform callback re-enters the
         // TerrainSystem publication mutex. Existing bodies retain their scene registration.
         if( previous )
+        {
             if( const auto app = core::IApplicationManager::instancePtr() )
+            {
                 if( auto manager = app->getPhysicsManager() )
+                {
                     manager->removeCollisionShape( previous );
+                }
+            }
+        }
         m_terrainSnapshot = m_preparedSnapshot;
         m_publishedTransform = m_preparedTransform;
         m_terrainWidth = static_cast<u32>( m_terrainSnapshot->dimensions.x );
@@ -295,9 +355,15 @@ namespace workphone::scene
     void CollisionTerrain::discardPreparedTerrain()
     {
         if( m_preparedShape )
+        {
             if( const auto app = core::IApplicationManager::instancePtr() )
+            {
                 if( auto manager = app->getPhysicsManager() )
+                {
                     manager->removeCollisionShape( m_preparedShape );
+                }
+            }
+        }
         m_preparedShape = nullptr;
         m_preparedSnapshot.reset();
     }
@@ -345,7 +411,9 @@ namespace workphone::scene
             case State::Play:
             {
                 if( !getShape() )
+                {
                     createPhysicsShape();
+                }
 
                 updateTransform();
                 updateRigidBody();

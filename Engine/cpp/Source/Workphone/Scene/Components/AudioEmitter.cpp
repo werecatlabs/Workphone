@@ -30,9 +30,13 @@ namespace workphone::scene
             m_instance = nullptr;
             instance->stop();
             if( auto owner = instance->getOwner() )
+            {
                 owner->destroyResource( instance );
+            }
             else
+            {
                 instance->unload( nullptr );
+            }
         }
     }
 
@@ -151,7 +155,9 @@ namespace workphone::scene
     void AudioEmitter::setSound( SmartPtr<ISound> sound )
     {
         if( m_sound != sound )
+        {
             releaseInstance();
+        }
         m_sound = sound;
     }
 
@@ -160,30 +166,42 @@ namespace workphone::scene
         if( !m_instance && m_sound )
         {
             if( auto owner = m_sound->getOwner() )
+            {
                 m_instance =
                     workphone::dynamic_pointer_cast<ISound>( owner->cloneResource( m_sound, String() ) );
+            }
             if( !m_instance )
+            {
                 WP_LOG_WARNING( "AudioEmitter: could not create an independent playback instance." );
+            }
         }
         if( m_instance )
+        {
             m_instance->play();
+        }
     }
 
     void AudioEmitter::stop()
     {
         if( m_instance )
+        {
             m_instance->stop();
+        }
     }
 
     void AudioEmitter::pause()
     {
         if( m_instance )
+        {
             m_instance->pause();
+        }
     }
 
     void AudioEmitter::unpause()
     {
         if( m_instance )
+        {
             m_instance->play();
+        }
     }
 }  // namespace workphone::scene
