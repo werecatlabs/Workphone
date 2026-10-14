@@ -39,7 +39,7 @@ services/factories throw `std::runtime_error`. Failed composite construction rel
 ## Factory coverage
 
 - Text and buttons, including positioned `createButtonEx`.
-- Dropdowns with empty or caller-provided ordered options; no sample options are added.
+- Dropdowns with a wired trigger and empty or caller-provided ordered options; no sample options are added. Factory dropdowns use composed scene controls, including on renderers without a native dropdown widget.
 - Images, panels, input fields, toggles, thumbnails, and tooltips.
 - Horizontal/vertical sliders and scrollbars with wired Background, Fill, and Handle actors.
 - Vertical scroll views with Content and a linked ScrollBar.

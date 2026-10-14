@@ -11,7 +11,8 @@ namespace workphone::scene
     /** Scene UI factories and placement helpers.
      *
      * Call on the scene's owning thread with a loaded game manager and registered component
-     * factories and LayoutTransformSystem installed (as in Application::load). Every actor includes a LayoutTransform. addToScene publishes only the root
+     * factories and LayoutTransformSystem installed (as in Application::load). Every actor includes
+     * a LayoutTransform. addToScene publishes only the root
      * after construction; otherwise the caller must parent it or add it to a scene. Detached
      * actors are still owned by the game manager: release them with destroyActor, not just reset().
      * Components follow the normal scene load/state lifecycle; factories do not force renderer
@@ -71,7 +72,7 @@ namespace workphone::scene
         static SmartPtr<IGameActor> createButton( const String &label, bool addToScene = true );
         static SmartPtr<IGameActor> createButtonEx( const String &label, f32 x, f32 y, f32 width,
                                                     f32 height, bool addToScene = true );
-        /// Empty dropdown. Its component owns the native options UI; no sample options are inserted.
+        /// Composed dropdown with a wired trigger and options panel. No sample options are inserted.
         static SmartPtr<IGameActor> createDropdown( const String &label, bool addToScene = true );
         static SmartPtr<IGameActor> createDropdownWithOptions( const String &label,
                                                                const Array<String> &options,

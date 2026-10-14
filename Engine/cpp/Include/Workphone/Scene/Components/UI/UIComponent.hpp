@@ -122,6 +122,9 @@ namespace workphone
              */
             void unload( SmartPtr<ISharedObject> data ) override;
 
+            /** @copydoc ISharedObject::postUpdate */
+            void postUpdate() override;
+
             /**
              * @brief Gets the UI element listener.
              * @return A smart pointer to the UI element listener.
@@ -403,8 +406,13 @@ namespace workphone
             /** Enables automatic layout rectangle drawing when a 2D renderer is configured. */
             void setDebugDrawEnabled( bool enabled );
 
-            /** @copydoc ISharedObject::postUpdate */
-            void postUpdate() override;
+            /** @brief Gets whether to use native UI rendering or custom rendering. */
+            bool getUseNativeUI() const;
+
+            /** @brief Sets whether to use native UI rendering or custom rendering. 
+            * Native ui will use the ui provided by the platform, 
+            * while custom rendering will use the engine's rendering system. */
+            void setUseNativeUI( bool useNativeUI );
 
             WP_CLASS_REGISTER_DECL;
 
@@ -505,12 +513,10 @@ namespace workphone
 
             // Debug-only runtime state; intentionally not serialized with component properties.
             atomic_bool m_debugDrawEnabled = false;
-        };
 
-        inline ColourF UIComponent::getColour() const
-        {
-            return m_colour;
-        }
+            // Whether to use native UI rendering or custom rendering.
+            atomic_bool m_useNativeUI = true;
+        };
 
         inline ui::IUIElement *UIComponent::getElementPtr() const
         {

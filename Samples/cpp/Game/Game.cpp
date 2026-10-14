@@ -64,6 +64,76 @@ namespace workphone
         }
     }
 
+    void Game::createScene()
+    {
+        using namespace scene;
+        auto application = core::IApplicationManager::instance();
+        auto manager = application->getGameManager();
+        auto window = UiUtil::createLayout( "UiUtil showcase", true );
+        UiUtil::setRect( window, 0, 0, 1100, 650 );
+        UiUtil::setAlignment( window, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        window->getComponent<Layout>()->setReferenceSize( Vector2I( 1280, 720 ) );
+
+        auto place = [window]( SmartPtr<IGameActor> actor, f32 x, f32 y, f32 width, f32 height ) mutable {
+            window->addChild( actor );
+            UiUtil::setRect( actor, x, y, width, height );
+            UiUtil::setAlignment( actor, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+            return actor;
+        };
+        auto label = [&place]( const String &text, f32 x, f32 y, f32 width = 300.0f ) {
+            auto actor = place( UiUtil::createText( text, false ), x, y, width, 32 );
+            actor->getComponent<Text>()->setHorizontalAlignment(
+                static_cast<u8>( HorizontalAlignment::LEFT ) );
+            return actor;
+        };
+
+        label( "UiUtil - scene UI showcase", 32, 24, 650 );
+        auto statusActor = label( "Click the button to update this label", 32, 68, 500 );
+        auto status = WeakPtr<Text>( statusActor->getComponent<Text>() );
+        auto buttonActor = place( UiUtil::createButton( "Click me", false ), 32, 112, 260, 48 );
+        buttonActor->getComponent<Button>()->setCallbackFunction(
+            [status, count = 0]( hash_type ) mutable {
+                if( auto text = status.lock() )
+                {
+                    text->setText( "Button clicks: " + StringUtil::toString( ++count ) );
+                }
+            } );
+        label( "Text entry", 32, 184 );
+        place( UiUtil::createInputField( "", "Enter your name", false ), 32, 222, 350, 48 );
+        place( UiUtil::createToggle( "Enable notifications", true, false ), 32, 290, 350, 48 );
+        label( "Volume", 32, 370 );
+        place( UiUtil::createSlider( "Volume", nullptr, "", false ), 32, 412, 200, 30 );
+        label( "Vertical slider", 420, 184, 180 );
+        place( UiUtil::createSliderVertical( "", nullptr, "", false ), 470, 230, 30, 200 );
+
+        label( "Quality dropdown", 640, 68 );
+        place( UiUtil::createDropdownWithOptions( "Choose quality", { "Low", "Medium", "High" }, false ),
+               640, 112, 300, 60 );
+        label( "Scrollable list", 640, 270 );
+        auto list = place( UiUtil::createScrollView( "Items", false ), 640, 312, 300, 200 );
+        auto view = list->getComponent<ScrollView>();
+        auto content = view->getContentPanel();
+        for( s32 i = 0; i < 10; ++i )
+        {
+            auto item = UiUtil::createText( "List item " + StringUtil::toString( i + 1 ), false );
+            content->getActor()->addChild( item );
+            UiUtil::setRect( item, 8, static_cast<f32>( i * 34 ), 240, 30 );
+            UiUtil::setAlignment( item, HorizontalAlignment::LEFT, VerticalAlignment::TOP );
+        }
+        content->setSize( Vector2<real_Num>( 270, 340 ) );
+        view->updateScrollBar();
+
+        UiUtil::loadHierarchy( window );
+        // Layout::load installs its defaults; pin this showcase after loading.
+        window->getComponent<Layout>()->setPanelFlags( PanelFlags::NO_SCROLLBAR );
+        window->setState( IGameActor::State::Play, true );
+        manager->play();
+        if( auto graphicsWindow = application->getGraphicsSystem()->getDefaultWindow() )
+        {
+            graphicsWindow->setTitle( "Workphone - UiUtil showcase" );
+        }
+    }
+
     void Game::createPlugins()
     {
         const auto configFilePath = String( "wp_plugins_samples.cfg" );

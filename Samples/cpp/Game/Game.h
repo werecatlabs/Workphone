@@ -5,7 +5,7 @@
 
 namespace workphone
 {
-    
+
     class Game : public core::Application
     {
     public:
@@ -16,8 +16,9 @@ namespace workphone
         void unload( SmartPtr<ISharedObject> data ) override;
 
     protected:
+        void createScene() override;
         void createPlugins() override;
     };
-} // end namespace fb
+}  // namespace workphone
 
 #endif  // __Game_h__

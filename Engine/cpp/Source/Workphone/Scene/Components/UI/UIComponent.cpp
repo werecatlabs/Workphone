@@ -142,7 +142,9 @@ namespace workphone::scene
             if( auto actor = getActorPtr() )
             {
                 if( actor->getComponent<LayoutTransform>() )
+                {
                     m_element->setSize( Vector2F( 0.0f, 0.0f ) );
+                }
             }
         }
     }
@@ -1403,6 +1405,21 @@ namespace workphone::scene
         }
 
         return m_layoutTransform;
+    }
+
+    ColourF UIComponent::getColour() const
+    {
+        return m_colour;
+    }
+
+    void UIComponent::setUseNativeUI( bool useNativeUI )
+    {
+        m_useNativeUI = useNativeUI;
+    }
+
+    bool UIComponent::getUseNativeUI() const
+    {
+        return m_useNativeUI;
     }
 
     UIComponent::UIElementListener::UIElementListener() = default;

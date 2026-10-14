@@ -263,11 +263,7 @@ namespace workphone::scene
 
         m_isOpen = open;
         buildOptionsPanel();
-
-        if( m_content )
-        {
-            m_content->setEnabled( m_isOpen );
-        }
+        setOpen( open );
     }
 
     bool Dropdown::isValid() const
@@ -310,6 +306,10 @@ namespace workphone::scene
     void Dropdown::setOpen( bool open )
     {
         m_isOpen = open;
+        if( m_button || m_content )
+        {
+            updateOptionsPanelVisibility();
+        }
     }
 
     bool Dropdown::isOpen() const
@@ -363,9 +363,13 @@ namespace workphone::scene
             if( m_button )
             {
                 auto owner = WeakPtr<Dropdown>( this );
-                auto func = [owner]( hash_type value ) {
+                auto func = [owner, pButton]( hash_type value ) {
                     if( auto dropdown = owner.lock() )
                     {
+                        if( dropdown->m_button != pButton )
+                        {
+                            return;
+                        }
                         if( auto actor = dropdown->getActorPtr();
                             actor && dropdown->isEnabled() && actor->isEnabledInScene() )
                         {
@@ -472,6 +476,11 @@ namespace workphone::scene
                 WP_LOG_ERROR( "Dropdown element cannot be cast to IUIDropdown; options were not set." );
             }
 
+            return;
+        }
+
+        if( !m_button || !m_button->getActor() )
+        {
             return;
         }
 
@@ -689,11 +698,23 @@ namespace workphone::scene
                 }
             }
 
-            verticalLayout->updateTransform();
-            auto optionHeight = 60.0f;
-            m_panel->getComponent<LayoutTransform>()->setSize(
-                Vector2<real_Num>( panelSize.x, optionHeight * static_cast<real_Num>( m_options.size() ) ) );
             UiUtil::loadHierarchy( m_content );
+            verticalLayout->updateTransform();
+            real_Num contentHeight = 0;
+            auto children = m_panel->getChildren();
+            for( auto child : children )
+            {
+                if( auto transform = child->getComponent<LayoutTransform>() )
+                {
+                    contentHeight += transform->getSize().y + verticalLayout->getSpacing();
+                }
+            }
+            if( !children.empty() )
+            {
+                contentHeight -= verticalLayout->getSpacing();
+            }
+            m_panel->getComponent<LayoutTransform>()->setSize(
+                Vector2<real_Num>( panelSize.x, contentHeight ) );
             scrollView->updateScrollBar();
 
             m_content->setFlag( IGameActor::ActorFlagHidden, true, true );
@@ -728,6 +749,10 @@ namespace workphone::scene
         {
             m_content->setFlag( IGameActor::ActorFlagHidden, !opened, true );
             m_content->setEnabled( opened );
+            for( auto component : m_content->getAllComponentsAndInChildren<UIComponent>() )
+            {
+                component->updateVisibility();
+            }
         }
     }
 

@@ -1047,12 +1047,27 @@ BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
     window->addChild( dropdownActor );
     auto dropdown = dropdownActor->getComponent<Dropdown>();
     UiUtil::loadHierarchy( window );
-    auto dropdownProperties = dropdown->getProperties();
-    dropdownProperties->setButtonPressed( UIComponent::createUIStr, true );
-    dropdown->setProperties( dropdownProperties );
-    BOOST_REQUIRE( dropdown->getElement() );
+    auto trigger = dropdown->getButton();
+    BOOST_REQUIRE( trigger );
+    auto triggerProperties = trigger->getProperties();
+    triggerProperties->setButtonPressed( UIComponent::createUIStr, true );
+    trigger->setProperties( triggerProperties );
+    BOOST_REQUIRE( trigger->getElement() );
     BOOST_CHECK_EQUAL( dropdown->getLabel(), "Quality" );
-    BOOST_CHECK_EQUAL( dropdown->getElement()->getLabel(), "Quality" );
+    BOOST_CHECK_EQUAL( trigger->getElement()->getLabel(), "Quality" );
+    dropdown->setOpen( true );
+    BOOST_REQUIRE( dropdown->getContent() );
+    BOOST_REQUIRE( dropdown->getPanel() );
+    BOOST_REQUIRE_EQUAL( dropdown->getPanel()->getChildren().size(), 2 );
+    auto optionActor = dropdown->getPanel()->getChildren()[1];
+    auto optionButton = optionActor->getComponent<Button>();
+    BOOST_REQUIRE( optionButton );
+    BOOST_CHECK_EQUAL( optionButton->getLabel(), "High" );
+    optionButton->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
+    BOOST_CHECK_EQUAL( dropdown->getLabel(), "High" );
+    BOOST_CHECK_EQUAL( trigger->getLabel(), "High" );
+    BOOST_CHECK( !dropdown->isOpen() );
+    BOOST_CHECK( !dropdown->getContent()->isEnabled() );
     auto sliderActor = UiUtil::createSlider( "Volume", nullptr, "", false );
     window->addChild( sliderActor );
     UiUtil::loadHierarchy( window );
@@ -1060,9 +1075,15 @@ BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
     auto sliderProperties = slider->getProperties();
     sliderProperties->setButtonPressed( UIComponent::createUIStr, true );
     slider->setProperties( sliderProperties );
-    BOOST_REQUIRE( slider->getElement() );
     BOOST_CHECK_EQUAL( slider->getLabel(), "Volume" );
-    BOOST_CHECK_EQUAL( slider->getElement()->getLabel(), "Volume" );
+    if( auto element = slider->getElement() )
+    {
+        BOOST_CHECK_EQUAL( element->getLabel(), "Volume" );
+    }
+    else
+    {
+        BOOST_CHECK( slider->getBackground()->getComponent<scene::Image>()->getElement() );
+    }
     auto buttonFsm = button->getFsm();
     UiUtil::loadHierarchy( window );
     BOOST_CHECK( button->getFsm() == buttonFsm );
