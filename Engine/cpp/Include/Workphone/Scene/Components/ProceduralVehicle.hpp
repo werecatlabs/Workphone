@@ -141,7 +141,7 @@ namespace workphone::scene
          *
          * @return const std::vector<procedural::VehicleEffectEvent>& List of effect events.
          */
-        const std::vector<procedural::VehicleEffectEvent> &getEffects() const;
+        const Array<procedural::VehicleEffectEvent> &getEffects() const;
 
         WP_CLASS_REGISTER_DECL;
 

@@ -305,7 +305,7 @@ namespace workphone::procedural
                    const VehicleDynamicsState &dynamics, const VehicleDynamicsTelemetry &telemetry,
                    const VehiclePresentationState &presentation, const VehicleDamageTelemetry &damage,
                    const VehicleEffectEnvironment &environment, double fixedDeltaSeconds,
-                   VehicleEffectsState &state, std::vector<VehicleEffectEvent> &events ) override
+                   VehicleEffectsState &state, Array<VehicleEffectEvent> &events ) override
         {
             return WPVehicleEffects::emit( config, physics, dynamics, telemetry, presentation, damage,
                                            environment, fixedDeltaSeconds, state, events );
@@ -319,7 +319,7 @@ namespace workphone::procedural
         {
             return WPVehicleGenerator::generate( config );
         }
-        std::vector<VehicleGenerationIssue> validate( const GeneratedVehicle &vehicle ) override
+        Array<VehicleGenerationIssue> validate( const GeneratedVehicle &vehicle ) override
         {
             return WPVehicleGenerator::validate( vehicle );
         }

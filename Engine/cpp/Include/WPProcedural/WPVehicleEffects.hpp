@@ -23,7 +23,7 @@ namespace workphone
                               const VehiclePresentationState &presentation,
                               const VehicleDamageTelemetry &damage,
                               const VehicleEffectEnvironment &environment, double fixedDeltaSeconds,
-                              VehicleEffectsState &state, std::vector<VehicleEffectEvent> &events );
+                              VehicleEffectsState &state, Array<VehicleEffectEvent> &events );
         };
     }  // namespace procedural
 }  // namespace workphone

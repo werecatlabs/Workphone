@@ -52,7 +52,7 @@ namespace workphone
         {
             int width = 0;               ///< Horizontal resolution in pixels.
             int height = 0;              ///< Vertical resolution in pixels.
-            std::vector<Color4> pixels;  ///< Flat row-major pixel store.
+            Array<Color4> pixels;  ///< Flat row-major pixel store.
 
             /**
              * @brief Bounds-checked pixel accessor.

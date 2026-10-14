@@ -16,7 +16,7 @@ namespace workphone::procedural
                            const VehiclePresentationState &presentation,
                            const VehicleDamageTelemetry &damage,
                            const VehicleEffectEnvironment &environment, double fixedDeltaSeconds,
-                           VehicleEffectsState &state, std::vector<VehicleEffectEvent> &events ) = 0;
+                           VehicleEffectsState &state, Array<VehicleEffectEvent> &events ) = 0;
         WP_CLASS_REGISTER_DECL;
     };
 }  // namespace workphone::procedural

@@ -212,6 +212,7 @@ namespace workphone::scene
                 component->setState( getState() );
                 m_generatedMaterials.push_back( component );
             }
+
             if( !material )
             {
                 material = workphone::dynamic_pointer_cast<render::IMaterial>(
@@ -222,6 +223,7 @@ namespace workphone::scene
                 }
                 component->setMaterial( material );
             }
+
             if( material )
             {
                 const auto &color = descriptor.fallbackBaseColor;
@@ -236,6 +238,7 @@ namespace workphone::scene
             }
             ++index;
         }
+
         while( m_generatedMaterials.size() > index )
         {
             auto component = m_generatedMaterials.back();
@@ -260,21 +263,24 @@ namespace workphone::scene
         {
             return false;
         }
+
         if( !std::isfinite( deltaSeconds ) || deltaSeconds <= 0 )
         {
             return false;
         }
+
         // Stage updates so failure leaves the published simulation state unchanged.
         auto dynamics = m_dynamicsState;
         auto damage = m_damageState;
         auto presentation = m_presentationState;
         auto effects = m_effectsState;
         VehicleDynamicsTelemetry telemetry;
-        std::vector<VehicleEffectEvent> events;
+        Array<VehicleEffectEvent> events;
         if( !m_damage->update( {}, deltaSeconds, damage ) )
         {
             return false;
         }
+
         const auto damageTelemetry = m_damage->telemetry( {}, damage );
         if( !m_dynamics->stepFixed( m_vehicle.physics, {}, input, surfaces,
                                     m_damage->dynamicsModifiers( damageTelemetry ), deltaSeconds,
@@ -282,6 +288,7 @@ namespace workphone::scene
         {
             return false;
         }
+
         VehiclePresentationInput presentationInput;
         presentationInput.throttle = input.throttle;
         if( !m_presentation->update( {}, m_vehicle.physics, dynamics, telemetry, damageTelemetry,
@@ -289,11 +296,13 @@ namespace workphone::scene
         {
             return false;
         }
+
         if( !m_effects->emit( {}, m_vehicle.physics, dynamics, telemetry, presentation, damageTelemetry,
                               {}, deltaSeconds, effects, events ) )
         {
             return false;
         }
+
         m_dynamicsState = dynamics;
         m_damageState = damage;
         m_telemetry = telemetry;
@@ -422,7 +431,7 @@ namespace workphone::scene
         m_events.clear();
     }
 
-    const std::vector<workphone::procedural::VehicleEffectEvent> &ProceduralVehicle::getEffects() const
+    const Array<workphone::procedural::VehicleEffectEvent> &ProceduralVehicle::getEffects() const
     {
         return m_events;
     }
