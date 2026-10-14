@@ -796,8 +796,7 @@ namespace workphone::scene
             }
             element->setOptions( options );
             element->setLabel( getLabel() );
-            element->setVisible( native && isVisible(), false );
-            element->setEnabled( native && isEnabled(), false );
+            updateVisibility();
         }
         if( m_button )
         {

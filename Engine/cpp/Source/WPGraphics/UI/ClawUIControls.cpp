@@ -161,9 +161,23 @@ namespace workphone::ui
         auto previous = m_value;
         if( m_direction == Direction::Horizontal )
         {
-            wp_slider_float( ctx, m_minValue, &m_value, m_maxValue,
-                             MathF::max( ( m_maxValue - m_minValue ) / 1000.0f, 0.000001f ) );
-            m_dragging = ( ctx->last_widget_state & WORKPHONE_WIDGET_STATE_ACTIVED ) != 0;
+            if( m_maxValue > m_minValue )
+            {
+                wp_slider_float( ctx, m_minValue, &m_value, m_maxValue,
+                                 MathF::max( ( m_maxValue - m_minValue ) / 1000.0f, 0.000001f ) );
+                m_dragging = ( ctx->last_widget_state & WORKPHONE_WIDGET_STATE_ACTIVED ) != 0;
+            }
+            else
+            {
+                // The backend divides by its range; render a constant value as read-only.
+                auto *panel = ctx->current->layout;
+                const auto flags = panel->flags;
+                panel->flags |= WORKPHONE_WINDOW_ROM;
+                float normalizedValue = 0.0f;
+                wp_slider_float( ctx, 0.0f, &normalizedValue, 1.0f, 0.001f );
+                panel->flags = flags;
+                m_dragging = false;
+            }
         }
         else
         {
@@ -177,7 +191,8 @@ namespace workphone::ui
             const auto interactive = state != WORKPHONE_WIDGET_INVALID &&
                                      state != WORKPHONE_WIDGET_ROM &&
                                      state != WORKPHONE_WIDGET_DISABLED &&
-                                     !( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM );
+                                     !( ctx->current->layout->flags & WORKPHONE_WINDOW_ROM ) &&
+                                     m_maxValue > m_minValue;
             const auto down = wp_input_is_mouse_down( &ctx->input, WORKPHONE_BUTTON_LEFT );
             if( !down || !interactive )
             {
@@ -217,7 +232,7 @@ namespace workphone::ui
         }
         if( previous != m_value )
         {
-            notifyControlChange( this, IEvent::CHANGED_STATE_HASH );
+            notifyControlChange( this, IEvent::handleValueChanged );
         }
         drawWorkphoneChildren( ctx );
     }

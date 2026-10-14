@@ -1139,7 +1139,7 @@ BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
                                                  nullptr, nullptr );
     BOOST_CHECK_EQUAL( dropdown->getLabel(), "High" );
     nativeSlider->setValue( 0.8f );
-    slider->getElementListener()->handleEvent( EventType::UI, IEvent::CHANGED_STATE_HASH, {},
+    slider->getElementListener()->handleEvent( EventType::UI, IEvent::handleValueChanged, {},
                                                nativeSlider, nullptr, nullptr );
     BOOST_CHECK_CLOSE( slider->getValue(), 0.8f, 0.001f );
     Thread::setCurrentTask( previousTask );

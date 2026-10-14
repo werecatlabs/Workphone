@@ -342,6 +342,18 @@ namespace workphone::scene
             throw std::invalid_argument( "UiUtil received an invalid alignment" );
         }
         auto transform = requireTransform( actor );
+        auto pivot = transform->getAnchor();
+        if( horizontal != HorizontalAlignment::CUSTOM )
+        {
+            pivot.x = horizontal == HorizontalAlignment::LEFT ? 0.0f :
+                      horizontal == HorizontalAlignment::RIGHT ? 1.0f : 0.5f;
+        }
+        if( vertical != VerticalAlignment::CUSTOM )
+        {
+            pivot.y = vertical == VerticalAlignment::TOP ? 1.0f :
+                      vertical == VerticalAlignment::BOTTOM ? 0.0f : 0.5f;
+        }
+        transform->setAnchor( pivot );
         transform->setHorizontalAlignment( horizontal );
         transform->setVerticalAlignment( vertical );
         transform->updateAnchorFromAlignment();

@@ -534,8 +534,7 @@ namespace workphone::scene
         }
         if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( getElement() ) )
         {
-            slider->setVisible( native && isVisible(), false );
-            slider->setEnabled( native && isEnabled(), false );
+            updateVisibility();
             slider->setMinValue( m_minValue );
             slider->setMaxValue( m_maxValue );
             slider->setValue( m_sliderValue );
@@ -547,7 +546,7 @@ namespace workphone::scene
                                    const Array<Parameter> &arguments, SmartPtr<ISharedObject> sender,
                                    SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        if( eventType == EventType::UI && eventValue == IEvent::CHANGED_STATE_HASH &&
+        if( eventType == EventType::UI && eventValue == IEvent::handleValueChanged &&
             getUseNativeUI() && sender == getElement() )
         {
             if( auto slider = workphone::dynamic_pointer_cast<ui::IUISlider>( sender ) )

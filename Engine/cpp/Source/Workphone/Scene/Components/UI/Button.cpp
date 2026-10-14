@@ -523,8 +523,7 @@ namespace workphone::scene
         if( element && element->isDerived<ui::IUIButton>() )
         {
             auto button = workphone::static_pointer_cast<ui::IUIButton>( element );
-            button->setVisible( native && isVisible(), false );
-            button->setEnabled( native && isEnabled(), false );
+            updateVisibility();
             button->setTextSize( static_cast<f32>( m_textSize ) );
 
             auto label = getLabel();

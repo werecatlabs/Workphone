@@ -1,11 +1,13 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/UI/Layout.hpp>
 #include <Workphone/Scene/Components/UI/LayoutTransform.hpp>
+#include <Workphone/Scene/Components/UI/ScrollView.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/ITexture.hpp>
 #include <Workphone/Interface/Input/IInputEvent.hpp>
+#include <Workphone/Interface/Input/IMouseState.hpp>
 #include <Workphone/Interface/UI/IUILayoutContainer.hpp>
 #include <Workphone/Interface/UI/IUILayoutWindow.hpp>
 #include <Workphone/Interface/UI/IUIManager.hpp>
@@ -677,13 +679,60 @@ namespace workphone::scene
 
     bool Layout::handleEvent( SmartPtr<IGameActor> actor, const SmartPtr<IInputEvent> &event )
     {
+        if( !actor || !event )
+        {
+            return false;
+        }
+        // A composed control may receive captured moves/releases outside the viewport,
+        // but a clipped control must never start a pointer interaction there.
+        const auto mouse = event->getEventType() == IInputEvent::EventType::Mouse ?
+                               event->getMouseState() : nullptr;
+        const auto pointerPress = mouse &&
+            ( mouse->getEventType() == IMouseState::Event::LeftPressed ||
+              mouse->getEventType() == IMouseState::Event::RightPressed ||
+              mouse->getEventType() == IMouseState::Event::MiddlePressed );
+        if( pointerPress && !getCanvas() )
+        {
+            setupCanvas();
+        }
         auto children = actor->getAllChildren();
         for( auto &child : children )
         {
             if( child )
             {
-                if( child->isEnabled() )
+                if( child->isEnabledInScene() && child->isVisible() )
                 {
+                    bool clipped = false;
+                    if( pointerPress )
+                    {
+                        for( auto parent = child->getParent(); parent; parent = parent->getParent() )
+                        {
+                            auto view = parent->getComponent<ScrollView>();
+                            if( !view || !view->getContentPanel() )
+                            {
+                                continue;
+                            }
+                            auto content = view->getContentPanel()->getActor();
+                            for( auto ancestor = child; ancestor && ancestor != parent;
+                                 ancestor = ancestor->getParent() )
+                            {
+                                if( ancestor == content )
+                                {
+                                    Vector2<real_Num> local;
+                                    clipped = !getLocalMousePosition( event, parent, local );
+                                    break;
+                                }
+                            }
+                            if( clipped )
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    if( clipped )
+                    {
+                        continue;
+                    }
                     ScopedLock lock( this );
 
                     auto elements = child->getComponentsByTypePtr<UIComponent>();
