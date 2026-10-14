@@ -27,22 +27,26 @@ namespace workphone::scene
         }
     }  // namespace
 
-    ProceduralVehicle::ProceduralVehicle() = default;
-    ProceduralVehicle::~ProceduralVehicle() = default;
-
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralVehicle, ProceduralMeshComponent );
+
+    ProceduralVehicle::ProceduralVehicle() = default;
+
+    ProceduralVehicle::~ProceduralVehicle() = default;
 
     SmartPtr<IMesh> ProceduralVehicle::buildMesh()
     {
         using namespace procedural;
+
         if( !m_generator )
         {
             m_generator = service<IVehicleGenerator>( "IVehicleGenerator" );
         }
+
         if( !m_generator )
         {
             throw std::runtime_error( "Load the WPProcedural plugin to generate vehicles" );
         }
+
         auto vehicle = m_generator->generate( m_config );
         if( !vehicle.isValid() )
         {
@@ -56,10 +60,12 @@ namespace workphone::scene
             }
             throw std::runtime_error( errors );
         }
+
         if( m_lod >= vehicle.geometry.lods.size() )
         {
             throw std::runtime_error( "Selected LOD does not exist" );
         }
+
         auto mesh = workphone::make_ptr<workphone::Mesh>();
         for( const auto &section : vehicle.geometry.lods[m_lod].sections )
         {
@@ -67,9 +73,11 @@ namespace workphone::scene
             {
                 continue;
             }
+
             Array<Vector3<real_Num>> positions, normals, uvs;
             Array<Vector4F> tangents;
             Array<u32> indices( section.indices.begin(), section.indices.end() );
+
             for( const auto &v : section.vertices )
             {
                 positions.emplace_back( v.position.x, v.position.y, v.position.z );
@@ -77,6 +85,7 @@ namespace workphone::scene
                 tangents.emplace_back( v.tangent.x, v.tangent.y, v.tangent.z, v.tangentSign );
                 uvs.emplace_back( v.uv.x, v.uv.y, 0 );
             }
+
             auto part = MeshUtil::createMesh( positions, normals, tangents, uvs, indices );
             for( auto sub : part->getSubMeshes() )
             {
@@ -86,41 +95,51 @@ namespace workphone::scene
                 mesh->addSubMesh( sub );
             }
         }
+
         if( !m_dynamics )
         {
             m_dynamics = service<IVehicleDynamics>( "IVehicleDynamics" );
         }
+
         if( !m_damage )
         {
             m_damage = service<IVehicleDamage>( "IVehicleDamage" );
         }
+
         if( !m_presentation )
         {
             m_presentation = service<IVehiclePresentation>( "IVehiclePresentation" );
         }
+
         if( !m_effects )
         {
             m_effects = service<IVehicleEffects>( "IVehicleEffects" );
         }
+
         if( m_dynamics )
         {
             m_dynamicsState = m_dynamics->reset( vehicle.physics );
         }
+
         if( m_damage )
         {
             m_damageState = m_damage->reset( m_config.seed );
         }
+
         if( m_presentation )
         {
             m_presentationState = m_presentation->reset( vehicle.physics );
         }
+
         if( m_effects )
         {
             m_effectsState = m_effects->reset( m_config.seed );
         }
+
         m_telemetry = {};
         m_events.clear();
         m_vehicle = std::move( vehicle );
+
         return mesh;
     }
 
@@ -132,11 +151,13 @@ namespace workphone::scene
         {
             return;
         }
+
         auto manager = app->getGraphicsSystem()->getMaterialManager();
         if( !manager )
         {
             return;
         }
+
         // Respect explicitly authored Material components on the actor.
         if( m_generatedMaterials.empty() )
         {
@@ -149,13 +170,16 @@ namespace workphone::scene
                     m_generatedMaterials.push_back( component );
                 }
             }
+
             if( m_generatedMaterials.empty() && !existing.empty() )
             {
                 return;
             }
+
             std::sort( m_generatedMaterials.begin(), m_generatedMaterials.end(),
                        []( const auto &a, const auto &b ) { return a->getIndex() < b->getIndex(); } );
         }
+
         u32 index = 0;
         for( const auto &section : m_vehicle.geometry.lods[m_lod].sections )
         {
@@ -163,6 +187,7 @@ namespace workphone::scene
             {
                 continue;
             }
+
             const auto &descriptor =
                 m_vehicle.appearance.material( m_generator->materialSlotFor( section.material ) );
             SmartPtr<Material> component;
