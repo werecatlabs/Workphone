@@ -1,7 +1,7 @@
 class 'ResourceSelect' 
 
 function ResourceSelect:__init(editorWindow, window, elementId, label)
-	print("ResourceSelect constructor called");
+	--print("ResourceSelect constructor called");
 	
 	self.editorWindow = editorWindow;
 	self.window = window;
@@ -56,7 +56,7 @@ function ResourceSelect:__init(editorWindow, window, elementId, label)
 end
 
 function ResourceSelect:__finalize()
-	print("ResourceSelect __finalize called");
+	--print("ResourceSelect __finalize called");
 
 	-- The owning editor may destroy its UI tree before ResourceSelect is
 	-- finalized.  In that case parentWindow is still a truthy userdata value,
@@ -108,7 +108,7 @@ function ResourceSelect:setMaterial(material)
 	
 	if self.material then
 		local index = self.index;
-		print("index "..index);
+		--print("index "..index);
 		
 		local texture = self.material:getTexture(index);
 		if texture then
@@ -165,7 +165,7 @@ function ResourceSelect:setIndex(index)
 end
 
 function ResourceSelect:handleEvent(parameters, results)
-	print("ResourceSelect handleEvent called");
+	--print("ResourceSelect handleEvent called");
 
 	if (parameters == nil) then 
 		print("ResourceSelect parameters nil");
@@ -191,7 +191,7 @@ function ResourceSelect:handleEvent(parameters, results)
 		return;
 	end
 
-	print("ResourceSelect "..self.deleteHash.." "..elementId);
+	--print("ResourceSelect "..self.deleteHash.." "..elementId);
 
 	if (elementId == self.deleteHash) then
 		print("ResourceSelect deleteHash");
