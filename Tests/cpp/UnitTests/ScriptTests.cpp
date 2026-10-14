@@ -203,7 +203,10 @@ namespace
         s32 callMember( const String &, const String & ) override { return 0; }
         s32 callMember( const String &, const String &, const Parameters & ) override { return 0; }
         s32 callMember( const String &, const String &, const Parameters &, Parameters & ) override { return 0; }
-        void callObjectMember( SmartPtr<ISharedObject>, const String & ) override {}
+        void callObjectMember( SmartPtr<ISharedObject>, const String &name ) override
+        {
+            luabind::call_member<void>( instance, name.c_str() );
+        }
         void callObjectMember( SmartPtr<ISharedObject>, const String &, const Parameters &, Parameters & ) override {}
         void *createInstance( const String & ) override { return nullptr; }
         void destroyInstance( void * ) override {}
@@ -272,6 +275,29 @@ namespace
         return std::getenv( "WP_RUN_INTEGRATION_TESTS" ) != nullptr;
     }
 }  // namespace
+
+#if WP_ENABLE_LUA
+BOOST_FIXTURE_TEST_CASE( script_component_generate_before_first_state_update, ComponentScriptFixture )
+{
+    manager->loadScriptFromString( R"(
+        class 'VehcileSimulatorUI' (BaseComponent)
+        function VehcileSimulatorUI:generate()
+            self.generated = (self.generated or 0) + 1
+        end
+    )" );
+    component->setClassName( "VehcileSimulatorUI" );
+    BOOST_REQUIRE( !component->getScriptData() );
+
+    component->generate();
+    BOOST_REQUIRE( component->getScriptData() );
+    BOOST_CHECK_EQUAL( manager->createdClasses.size(), 1 );
+    BOOST_CHECK_EQUAL( luabind::object_cast<int>( manager->instance["generated"] ), 1 );
+
+    component->generate();
+    BOOST_CHECK_EQUAL( manager->createdClasses.size(), 1 );
+    BOOST_CHECK_EQUAL( luabind::object_cast<int>( manager->instance["generated"] ), 2 );
+}
+#endif
 
 #if WP_ENABLE_LUA
 BOOST_FIXTURE_TEST_CASE( script_component_application_properties, ComponentScriptFixture )

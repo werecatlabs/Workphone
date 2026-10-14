@@ -524,6 +524,8 @@ namespace workphone::scene
 
     void Script::generate()
     {
+        // A dynamically added component can be called before its first FSM update.
+        createScriptData();
         if( auto invoker = getInvoker() )
         {
             invoker->callObjectMember( "generate" );

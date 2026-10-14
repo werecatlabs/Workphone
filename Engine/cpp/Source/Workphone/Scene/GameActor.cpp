@@ -1111,8 +1111,6 @@ namespace workphone::scene
             case State::Destroyed:
             case State::Edit:
             {
-                ScopedLock lock( this, true );
-
                 setObjectFlag( OBJECT_FLAG_GARBAGE_COLLECTED, true );
                 setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
                 setObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS, true );
