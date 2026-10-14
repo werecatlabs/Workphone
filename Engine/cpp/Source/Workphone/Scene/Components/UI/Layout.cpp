@@ -215,9 +215,13 @@ namespace workphone::scene
             if( properties->getPropertyValue( key, value ) )
             {
                 if( value )
+                {
                     addPanelFlag( flag );
+                }
                 else
+                {
                     removePanelFlag( flag );
+                }
             }
         };
 
@@ -685,12 +689,12 @@ namespace workphone::scene
         }
         // A composed control may receive captured moves/releases outside the viewport,
         // but a clipped control must never start a pointer interaction there.
-        const auto mouse = event->getEventType() == IInputEvent::EventType::Mouse ?
-                               event->getMouseState() : nullptr;
-        const auto pointerPress = mouse &&
-            ( mouse->getEventType() == IMouseState::Event::LeftPressed ||
-              mouse->getEventType() == IMouseState::Event::RightPressed ||
-              mouse->getEventType() == IMouseState::Event::MiddlePressed );
+        const auto mouse =
+            event->getEventType() == IInputEvent::EventType::Mouse ? event->getMouseState() : nullptr;
+        const auto pointerPress =
+            mouse && ( mouse->getEventType() == IMouseState::Event::LeftPressed ||
+                       mouse->getEventType() == IMouseState::Event::RightPressed ||
+                       mouse->getEventType() == IMouseState::Event::MiddlePressed );
         if( pointerPress && !getCanvas() )
         {
             setupCanvas();

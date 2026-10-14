@@ -485,7 +485,9 @@ namespace workphone::scene
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto scriptManager = applicationManager ? applicationManager->getScriptManager() : nullptr;
         if( scriptManager )
+        {
             scriptManager->destroyObject( this );
+        }
         setScriptData( nullptr );
         m_scriptClass = nullptr;
     }

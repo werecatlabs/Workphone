@@ -11,9 +11,8 @@
 
 namespace workphone::scene
 {
-    inline bool makeScenePickingRay( const Matrix4<real_Num> &view,
-                                     const Matrix4<real_Num> &projection, Vector2F position,
-                                     Ray3<real_Num> &ray, real_Num &maximumDistance )
+    inline bool makeScenePickingRay( const Matrix4<real_Num> &view, const Matrix4<real_Num> &projection,
+                                     Vector2F position, Ray3<real_Num> &ray, real_Num &maximumDistance )
     {
         const auto inverse = ( projection * view ).inverse();
         const auto unproject = [&]( real_Num z ) {
@@ -28,7 +27,8 @@ namespace workphone::scene
                     result[row] += inverse[row][column] * clip[column];
                 }
             }
-            return Vector3<real_Num>( result[0] / result[3], result[1] / result[3], result[2] / result[3] );
+            return Vector3<real_Num>( result[0] / result[3], result[1] / result[3],
+                                      result[2] / result[3] );
         };
         const auto nearPoint = unproject( -1 );
         const auto farPoint = unproject( 1 );
@@ -103,8 +103,8 @@ namespace workphone::scene
             const auto edge2 = transformed[indices[i + 2]] - a;
             const auto p = direction.crossProduct( edge2 );
             const auto determinant = edge1.dotProduct( p );
-            const auto tolerance = std::numeric_limits<real_Num>::epsilon() *
-                                   edge1.length() * edge2.length() * direction.length();
+            const auto tolerance = std::numeric_limits<real_Num>::epsilon() * edge1.length() *
+                                   edge2.length() * direction.length();
             if( std::abs( determinant ) <= tolerance )
             {
                 continue;
@@ -128,8 +128,7 @@ namespace workphone::scene
     }
 
     inline SmartPtr<IGameActor> pickSceneActor( const Array<SmartPtr<IGameActor>> &roots,
-                                               const Ray3<real_Num> &ray,
-                                               real_Num maximumDistance )
+                                                const Ray3<real_Num> &ray, real_Num maximumDistance )
     {
         SmartPtr<IGameActor> result;
         auto nearest = maximumDistance;
@@ -172,6 +171,6 @@ namespace workphone::scene
         }
         return result;
     }
-}
+}  // namespace workphone::scene
 
 #endif

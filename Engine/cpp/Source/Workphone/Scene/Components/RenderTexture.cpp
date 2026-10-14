@@ -103,7 +103,9 @@ namespace workphone::scene
         Component::setProperties( properties );
 
         if( !properties )
+        {
             return;
+        }
 
         auto oldWidth = m_width;
         auto oldHeight = m_height;
@@ -374,7 +376,9 @@ namespace workphone::scene
         {
             auto applicationManager = core::IApplicationManager::instance();
             if( !applicationManager )
+            {
                 return;
+            }
 
             if( auto graphicsSystem = applicationManager->getGraphicsSystem() )
             {

@@ -19,12 +19,14 @@ namespace workphone::scene
         u32 allowedLayers = 15;
         f32 minimumLayerWeight = 0, minimumMoisture = 0, maximumMoisture = 1;
     };
+
     struct FoliageExclusion
     {
         // Polygon when radius==0; a road/river polyline corridor otherwise.
         Array<Vector2F> points;
         f32 radius = 0;
     };
+
     struct FoliagePlacementRecipe
     {
         u32 version = 1, seed = 1;

@@ -1,26 +1,25 @@
 #pragma once
 #include <Workphone/Scene/Components/ProceduralMeshComponent.hpp>
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
+
 namespace workphone::scene
 {
+
     /// A local-space road segment with independently materialled render layers.
     class WPCore_API ProceduralRoad : public ProceduralMeshComponent
     {
     public:
         ProceduralRoad();
         ~ProceduralRoad() override;
+
         SmartPtr<Properties> getProperties() const override;
         void setProperties( SmartPtr<Properties> properties ) override;
+
         void unload( SmartPtr<ISharedObject> data ) override;
-        void setRoadSystem( SmartPtr<procedural::IRoadSystem> service )
-        {
-            m_service = service;
-            requestRegeneration();
-        }
-        const procedural::RoadSegmentResult &getResult() const
-        {
-            return m_result;
-        }
+
+        void setRoadSystem( SmartPtr<procedural::IRoadSystem> service );
+        const procedural::RoadSegmentResult &getResult() const;
+
         WP_CLASS_REGISTER_DECL;
 
     protected:

@@ -67,11 +67,15 @@ namespace workphone::scene
         WP_ASSERT( factoryManager );
 
         if( !prefab )
+        {
             return nullptr;
+        }
         auto prefabData = workphone::dynamic_pointer_cast<Properties>( prefab->toData() );
         auto instanceData = GameActorUtil::createInstanceData( prefabData );
         if( !instanceData )
+        {
             return nullptr;
+        }
         auto actors = GameActorUtil::loadSceneActors( { instanceData } );
         return actors.empty() ? nullptr : actors.front();
     }
@@ -208,14 +212,18 @@ namespace workphone::scene
     void GamePrefabManager::saveToFile( const String &filePath, SmartPtr<IResource> resource )
     {
         if( !resource )
+        {
             throw std::runtime_error( "Cannot save a null prefab resource" );
+        }
         auto prefab = dynamic_pointer_cast<IGamePrefab>( resource );
         auto data = prefab ? dynamic_pointer_cast<Properties>( prefab->getData() )
                            : dynamic_pointer_cast<Properties>( resource->toData() );
         String error;
         if( !saveAssetDocumentText( filePath, data,
                                     DataUtil::toString( data.get(), true, getDataFormat() ), error ) )
+        {
             throw std::runtime_error( error.c_str() );
+        }
     }
 
     SmartPtr<IResource> GamePrefabManager::loadFromFile( const String &filePath )
@@ -448,7 +456,9 @@ namespace workphone::scene
             String error;
             if( !saveAssetDocumentText( filePath, dynamic_pointer_cast<Properties>( data ), dataStr,
                                         error ) )
+            {
                 throw std::runtime_error( error.c_str() );
+            }
         }
         catch( std::exception &e )
         {

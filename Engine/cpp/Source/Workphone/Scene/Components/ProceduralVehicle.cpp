@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+
 namespace workphone::scene
 {
     namespace
@@ -19,7 +20,9 @@ namespace workphone::scene
         {
             auto app = core::IApplicationManager::instancePtr();
             if( !app || !app->getFactoryManager() )
+            {
                 return nullptr;
+            }
             return app->getFactoryManager()->createObjectFromType<T>( name );
         }
     }  // namespace
@@ -28,29 +31,42 @@ namespace workphone::scene
     ProceduralVehicle::~ProceduralVehicle() = default;
 
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralVehicle, ProceduralMeshComponent );
+
     SmartPtr<IMesh> ProceduralVehicle::buildMesh()
     {
         using namespace procedural;
         if( !m_generator )
+        {
             m_generator = service<IVehicleGenerator>( "IVehicleGenerator" );
+        }
         if( !m_generator )
+        {
             throw std::runtime_error( "Load the WPProcedural plugin to generate vehicles" );
+        }
         auto vehicle = m_generator->generate( m_config );
         if( !vehicle.isValid() )
         {
             String errors;
             for( const auto &issue : vehicle.issues )
+            {
                 if( issue.error )
+                {
                     errors += issue.component + ": " + issue.message + "\n";
+                }
+            }
             throw std::runtime_error( errors );
         }
         if( m_lod >= vehicle.geometry.lods.size() )
+        {
             throw std::runtime_error( "Selected LOD does not exist" );
+        }
         auto mesh = workphone::make_ptr<workphone::Mesh>();
         for( const auto &section : vehicle.geometry.lods[m_lod].sections )
         {
             if( !section.hasGeometry() )
+            {
                 continue;
+            }
             Array<Vector3<real_Num>> positions, normals, uvs;
             Array<Vector4F> tangents;
             Array<u32> indices( section.indices.begin(), section.indices.end() );
@@ -71,35 +87,56 @@ namespace workphone::scene
             }
         }
         if( !m_dynamics )
+        {
             m_dynamics = service<IVehicleDynamics>( "IVehicleDynamics" );
+        }
         if( !m_damage )
+        {
             m_damage = service<IVehicleDamage>( "IVehicleDamage" );
+        }
         if( !m_presentation )
+        {
             m_presentation = service<IVehiclePresentation>( "IVehiclePresentation" );
+        }
         if( !m_effects )
+        {
             m_effects = service<IVehicleEffects>( "IVehicleEffects" );
+        }
         if( m_dynamics )
+        {
             m_dynamicsState = m_dynamics->reset( vehicle.physics );
+        }
         if( m_damage )
+        {
             m_damageState = m_damage->reset( m_config.seed );
+        }
         if( m_presentation )
+        {
             m_presentationState = m_presentation->reset( vehicle.physics );
+        }
         if( m_effects )
+        {
             m_effectsState = m_effects->reset( m_config.seed );
+        }
         m_telemetry = {};
         m_events.clear();
         m_vehicle = std::move( vehicle );
         return mesh;
     }
+
     void ProceduralVehicle::applyGeneratedMaterials()
     {
         auto actor = getActor();
         auto app = core::IApplicationManager::instancePtr();
         if( !actor || !app || !app->getGraphicsSystem() )
+        {
             return;
+        }
         auto manager = app->getGraphicsSystem()->getMaterialManager();
         if( !manager )
+        {
             return;
+        }
         // Respect explicitly authored Material components on the actor.
         if( m_generatedMaterials.empty() )
         {
@@ -108,10 +145,14 @@ namespace workphone::scene
             {
                 const auto id = ";" + component->getHandle()->getUUIDAsString() + ";";
                 if( m_generatedMaterialIds.find( id ) != String::npos )
+                {
                     m_generatedMaterials.push_back( component );
+                }
             }
             if( m_generatedMaterials.empty() && !existing.empty() )
+            {
                 return;
+            }
             std::sort( m_generatedMaterials.begin(), m_generatedMaterials.end(),
                        []( const auto &a, const auto &b ) { return a->getIndex() < b->getIndex(); } );
         }
@@ -119,7 +160,9 @@ namespace workphone::scene
         for( const auto &section : m_vehicle.geometry.lods[m_lod].sections )
         {
             if( !section.hasGeometry() )
+            {
                 continue;
+            }
             const auto &descriptor =
                 m_vehicle.appearance.material( m_generator->materialSlotFor( section.material ) );
             SmartPtr<Material> component;
@@ -134,7 +177,9 @@ namespace workphone::scene
                 const String name = "ProceduralVehicle/" + StringUtil::getUUID();
                 material = workphone::dynamic_pointer_cast<render::IMaterial>( manager->create( name ) );
                 if( !material )
+                {
                     return;
+                }
                 component = actor->addComponent<Material>();
                 component->getHandle()->setUUID( StringUtil::getUUID() );
                 component->setIndex( index );
@@ -147,7 +192,9 @@ namespace workphone::scene
                 material = workphone::dynamic_pointer_cast<render::IMaterial>(
                     manager->create( "ProceduralVehicle/" + StringUtil::getUUID() ) );
                 if( !material )
+                {
                     return;
+                }
                 component->setMaterial( material );
             }
             if( material )
@@ -171,10 +218,13 @@ namespace workphone::scene
             component->unload( nullptr );
             actor->removeComponentInstance( component );
             if( material )
+            {
                 manager->destroyResource( material );
+            }
             m_generatedMaterials.pop_back();
         }
     }
+
     bool ProceduralVehicle::stepFixed( const procedural::VehicleControlInput &input,
                                        const std::array<procedural::VehicleSurfaceSample, 4> &surfaces,
                                        double deltaSeconds )
@@ -182,9 +232,13 @@ namespace workphone::scene
         using namespace procedural;
         if( !m_dynamics || !m_damage || !m_presentation || !m_effects ||
             !m_vehicle.geometry.hasGeometry() )
+        {
             return false;
+        }
         if( !std::isfinite( deltaSeconds ) || deltaSeconds <= 0 )
+        {
             return false;
+        }
         // Stage updates so failure leaves the published simulation state unchanged.
         auto dynamics = m_dynamicsState;
         auto damage = m_damageState;
@@ -193,20 +247,28 @@ namespace workphone::scene
         VehicleDynamicsTelemetry telemetry;
         std::vector<VehicleEffectEvent> events;
         if( !m_damage->update( {}, deltaSeconds, damage ) )
+        {
             return false;
+        }
         const auto damageTelemetry = m_damage->telemetry( {}, damage );
         if( !m_dynamics->stepFixed( m_vehicle.physics, {}, input, surfaces,
                                     m_damage->dynamicsModifiers( damageTelemetry ), deltaSeconds,
                                     dynamics, telemetry ) )
+        {
             return false;
+        }
         VehiclePresentationInput presentationInput;
         presentationInput.throttle = input.throttle;
         if( !m_presentation->update( {}, m_vehicle.physics, dynamics, telemetry, damageTelemetry,
                                      presentationInput, deltaSeconds, presentation ) )
+        {
             return false;
+        }
         if( !m_effects->emit( {}, m_vehicle.physics, dynamics, telemetry, presentation, damageTelemetry,
                               {}, deltaSeconds, effects, events ) )
+        {
             return false;
+        }
         m_dynamicsState = dynamics;
         m_damageState = damage;
         m_telemetry = telemetry;
@@ -215,15 +277,19 @@ namespace workphone::scene
         m_events = std::move( events );
         return true;
     }
+
     procedural::VehicleDamageEvent ProceduralVehicle::registerImpact(
         const procedural::VehicleDamageImpact &impact )
     {
         if( !m_damage || !m_vehicle.geometry.hasGeometry() )
+        {
             return {};
+        }
         auto event = m_damage->registerImpact( {}, m_vehicle.physics, impact, m_damageState );
         m_damage->applyImpactResponse( event, m_dynamicsState );
         return event;
     }
+
     SmartPtr<Properties> ProceduralVehicle::getProperties() const
     {
         auto p = ProceduralMeshComponent::getProperties();
@@ -232,7 +298,9 @@ namespace workphone::scene
         {
             ids.clear();
             for( const auto &component : m_generatedMaterials )
+            {
                 ids += ";" + component->getHandle()->getUUIDAsString() + ";";
+            }
         }
         p->setProperty( "Generated Material IDs", ids );
         p->getPropertyObject( "Generated Material IDs" ).setReadOnly( true );
@@ -258,10 +326,13 @@ namespace workphone::scene
                                  m_config.appearance.primary.b, m_config.appearance.primary.a ) );
         return p;
     }
+
     void ProceduralVehicle::setProperties( SmartPtr<Properties> p )
     {
         if( !p )
+        {
             return;
+        }
         ProceduralMeshComponent::setProperties( p );
         p->getPropertyValue( "Generated Material IDs", m_generatedMaterialIds );
         p->getPropertyValue( "Seed", m_config.seed );
@@ -294,6 +365,7 @@ namespace workphone::scene
         p->getPropertyValue( "Primary Colour", color );
         m_config.appearance.primary = { color.r, color.g, color.b, color.a };
     }
+
     void ProceduralVehicle::unload( SmartPtr<ISharedObject> data )
     {
         auto actor = getActor();
@@ -305,9 +377,13 @@ namespace workphone::scene
             auto material = component->getMaterial();
             component->unload( nullptr );
             if( actor )
+            {
                 actor->removeComponentInstance( component );
+            }
             if( manager && material )
+            {
                 manager->destroyResource( material );
+            }
         }
         m_generatedMaterials.clear();
         m_generatedMaterialIds.clear();
@@ -320,4 +396,43 @@ namespace workphone::scene
         m_vehicle = {};
         m_events.clear();
     }
+
+    const std::vector<workphone::procedural::VehicleEffectEvent> &ProceduralVehicle::getEffects() const
+    {
+        return m_events;
+    }
+
+    const workphone::procedural::VehiclePresentationState &ProceduralVehicle::getPresentationState()
+        const
+    {
+        return m_presentationState;
+    }
+
+    const workphone::procedural::VehicleDynamicsState &ProceduralVehicle::getDynamicsState() const
+    {
+        return m_dynamicsState;
+    }
+
+    const workphone::procedural::GeneratedVehicle &ProceduralVehicle::getGeneratedVehicle() const
+    {
+        return m_vehicle;
+    }
+
+    void ProceduralVehicle::setGenerator( SmartPtr<procedural::IVehicleGenerator> generator )
+    {
+        m_generator = generator;
+        requestRegeneration();
+    }
+
+    void ProceduralVehicle::setConfig( const procedural::VehicleGenerationConfig &config )
+    {
+        m_config = config;
+        requestRegeneration();
+    }
+
+    const workphone::procedural::VehicleGenerationConfig &ProceduralVehicle::getConfig() const
+    {
+        return m_config;
+    }
+
 }  // namespace workphone::scene

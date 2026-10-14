@@ -51,7 +51,9 @@ namespace workphone::scene
 
     const u8 LayoutTransform::autoCalculateOrderFlag = ( 1 << 1 );
 
-    LayoutTransform::LayoutTransform() : m_uiComponentFlags( autoCalculateOrderFlag ) {}
+    LayoutTransform::LayoutTransform() : m_uiComponentFlags( autoCalculateOrderFlag )
+    {
+    }
 
     LayoutTransform::~LayoutTransform() = default;
 

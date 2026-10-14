@@ -177,7 +177,7 @@ namespace workphone::scene
 
                 UiUtil::setRect( actor, 0, 0, width, height );
                 UiUtil::setAlignment( actor, HorizontalAlignment::CENTER, VerticalAlignment::CENTER );
-                
+
                 if( parent )
                 {
                     parent->addChild( actor );
@@ -353,13 +353,15 @@ namespace workphone::scene
         auto pivot = transform->getAnchor();
         if( horizontal != HorizontalAlignment::CUSTOM )
         {
-            pivot.x = horizontal == HorizontalAlignment::LEFT ? 0.0f :
-                      horizontal == HorizontalAlignment::RIGHT ? 1.0f : 0.5f;
+            pivot.x = horizontal == HorizontalAlignment::LEFT    ? 0.0f
+                      : horizontal == HorizontalAlignment::RIGHT ? 1.0f
+                                                                 : 0.5f;
         }
         if( vertical != VerticalAlignment::CUSTOM )
         {
-            pivot.y = vertical == VerticalAlignment::TOP ? 1.0f :
-                      vertical == VerticalAlignment::BOTTOM ? 0.0f : 0.5f;
+            pivot.y = vertical == VerticalAlignment::TOP      ? 1.0f
+                      : vertical == VerticalAlignment::BOTTOM ? 0.0f
+                                                              : 0.5f;
         }
         transform->setAnchor( pivot );
         transform->setHorizontalAlignment( horizontal );
@@ -420,7 +422,7 @@ namespace workphone::scene
 
         auto actor = builder.make( "Button", width, height );
         setRect( actor, x, y, width, height );
-        
+
         auto button = builder.add<Button>( actor );
         button->setLabel( label );
         button->setCascadeInput( false );

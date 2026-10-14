@@ -245,9 +245,13 @@ namespace workphone::scene
             auto resolveBody = [&]( SmartPtr<IGameActor> actor,
                                     SmartPtr<IComponent> comp ) -> SmartPtr<Rigidbody> {
                 if( actor )
+                {
                     return actor->getComponent<Rigidbody>();
+                }
                 if( comp )
+                {
                     return workphone::static_pointer_cast<Rigidbody>( comp );
+                }
                 return nullptr;
             };
 
@@ -406,17 +410,25 @@ namespace workphone::scene
         if( bodyA )
         {
             if( auto dyn = bodyA->getRigidDynamic() )
+            {
                 physBodyA = dyn;
+            }
             else if( auto sta = bodyA->getRigidStatic() )
+            {
                 physBodyA = sta;
+            }
         }
 
         if( bodyB )
         {
             if( auto dyn = bodyB->getRigidDynamic() )
+            {
                 physBodyB = dyn;
+            }
             else if( auto sta = bodyB->getRigidStatic() )
+            {
                 physBodyB = sta;
+            }
         }
 
         const auto breakForce = getBreakForce();

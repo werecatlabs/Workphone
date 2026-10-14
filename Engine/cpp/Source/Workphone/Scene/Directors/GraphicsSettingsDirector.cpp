@@ -25,10 +25,14 @@ namespace workphone::scene
     void GraphicsSettingsDirector::setProperties( SmartPtr<Properties> properties )
     {
         if( !properties )
+        {
             return;
+        }
         s32 api = m_renderApi;
         if( properties->getPropertyValue( "Render API", api ) && api >= 0 && api <= 1 )
+        {
             m_renderApi = api;
+        }
         m_pipeline->setProperties( properties );
     }
 

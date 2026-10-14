@@ -21,6 +21,7 @@ namespace workphone::scene
     WP_CLASS_REGISTER_DERIVED( workphone::scene, ScrollView, UIComponent );
 
     ScrollView::ScrollView() = default;
+
     ScrollView::~ScrollView()
     {
         setScrollBar( nullptr );

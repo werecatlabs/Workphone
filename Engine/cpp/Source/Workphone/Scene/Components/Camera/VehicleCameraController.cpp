@@ -73,7 +73,9 @@ namespace workphone::scene
 
             CameraController::load( data );
             if( auto actor = getActor() )
+            {
                 m_cameraTransform = actor->getWorldTransform();
+            }
 
             setLoadingState( LoadingState::Loaded );
         }
@@ -131,7 +133,9 @@ namespace workphone::scene
                 auto t = timer->getTime();
                 auto dt = timer->getDeltaTime();
                 if( dt <= 0.0 )
+                {
                     return;
+                }
 
                 auto inputDeviceManager = applicationManager->getInputDeviceManager();
 
@@ -312,15 +316,21 @@ namespace workphone::scene
                     auto t = timer->getTime();
                     auto dt = timer->getDeltaTime();
                     if( dt <= 0.0 )
+                    {
                         return;
+                    }
 
                     if( auto input = applicationManager->getInputDeviceManager() )
                     {
                         const auto scroll = input->getMouseScroll().y;
                         if( scroll > 0 )
+                        {
                             m_distance -= m_zoomSpeed * static_cast<real_dNum>( dt );
+                        }
                         else if( scroll < 0 )
+                        {
                             m_distance += m_zoomSpeed * static_cast<real_dNum>( dt );
+                        }
                         m_distance = Math<real_dNum>::clamp( m_distance, m_minDistance, m_maxDistance );
                     }
 
@@ -452,7 +462,9 @@ namespace workphone::scene
                             actorTransform->setLocalDirty( true, false );
                             actorTransform->update();
                             if( camera )
+                            {
                                 camera->updateTransform( m_cameraTransform );
+                            }
                         }
                     }
                 }

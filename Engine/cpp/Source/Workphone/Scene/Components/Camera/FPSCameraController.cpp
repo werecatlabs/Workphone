@@ -75,16 +75,22 @@ namespace workphone::scene
     void FpsCameraController::update()
     {
         if( !m_selectedCamera )
+        {
             return;
+        }
 
         // Get delta time from application timer
         auto applicationManager = core::IApplicationManager::instance();
         if( !applicationManager )
+        {
             return;
+        }
 
         auto timer = applicationManager->getTimer();
         if( !timer )
+        {
             return;
+        }
 
         real_Num dt = static_cast<real_Num>( timer->getDeltaTime() );
 
@@ -94,10 +100,14 @@ namespace workphone::scene
 
         // Forward/Backward movement
         if( m_cursorKeys[0] )  // Forward
+        {
             moveDirection += m_targetDirection;
+        }
 
         if( m_cursorKeys[1] )  // Backward
+        {
             moveDirection -= m_targetDirection;
+        }
 
         // Strafing (left/right)
         Vector3<real_Num> upVector = Vector3<real_Num>::UNIT_Y;
@@ -105,10 +115,14 @@ namespace workphone::scene
         strafeVector.normalise();
 
         if( m_cursorKeys[2] )  // Left
+        {
             position -= strafeVector * dt * m_moveSpeed * m_translationSpeed;
+        }
 
         if( m_cursorKeys[3] )  // Right
+        {
             position += strafeVector * dt * m_moveSpeed * m_translationSpeed;
+        }
 
         // Apply movement
         if( moveDirection.lengthSquared() > 0.0f )
@@ -133,7 +147,9 @@ namespace workphone::scene
     auto FpsCameraController::handleInputEvent( const SmartPtr<IInputEvent> &event ) -> bool
     {
         if( !event )
+        {
             return false;
+        }
 
         bool eventHandled = false;
 

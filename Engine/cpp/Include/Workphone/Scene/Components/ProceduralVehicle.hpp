@@ -5,6 +5,7 @@
 #include <Workphone/Interface/Procedural/IVehicleDamage.hpp>
 #include <Workphone/Interface/Procedural/IVehiclePresentation.hpp>
 #include <Workphone/Interface/Procedural/IVehicleEffects.hpp>
+
 namespace workphone::scene
 {
     /// Editor authoring component. Generates a Mesh and MeshRenderer on the same actor.
@@ -14,54 +15,33 @@ namespace workphone::scene
     public:
         ProceduralVehicle();
         ~ProceduralVehicle() override;
+
         SmartPtr<Properties> getProperties() const override;
         void setProperties( SmartPtr<Properties> properties ) override;
+
         void unload( SmartPtr<ISharedObject> data ) override;
-        const procedural::VehicleGenerationConfig &getConfig() const
-        {
-            return m_config;
-        }
-        void setConfig( const procedural::VehicleGenerationConfig &config )
-        {
-            m_config = config;
-            requestRegeneration();
-        }
-        void setGenerator( SmartPtr<procedural::IVehicleGenerator> generator )
-        {
-            m_generator = generator;
-            requestRegeneration();
-        }
-        const procedural::GeneratedVehicle &getGeneratedVehicle() const
-        {
-            return m_vehicle;
-        }
+
+        const procedural::VehicleGenerationConfig &getConfig() const;
+        void setConfig( const procedural::VehicleGenerationConfig &config );
+
+        void setGenerator( SmartPtr<procedural::IVehicleGenerator> generator );
+        const procedural::GeneratedVehicle &getGeneratedVehicle() const;
+
         bool stepFixed( const procedural::VehicleControlInput &input,
                         const std::array<procedural::VehicleSurfaceSample, 4> &surfaces,
                         double deltaSeconds );
+
         procedural::VehicleDamageEvent registerImpact( const procedural::VehicleDamageImpact &impact );
-        const procedural::VehicleDynamicsState &getDynamicsState() const
-        {
-            return m_dynamicsState;
-        }
-        const procedural::VehiclePresentationState &getPresentationState() const
-        {
-            return m_presentationState;
-        }
-        const std::vector<procedural::VehicleEffectEvent> &getEffects() const
-        {
-            return m_events;
-        }
+        const procedural::VehicleDynamicsState &getDynamicsState() const;
+        const procedural::VehiclePresentationState &getPresentationState() const;
+        const std::vector<procedural::VehicleEffectEvent> &getEffects() const;
+
         WP_CLASS_REGISTER_DECL;
 
     protected:
         SmartPtr<IMesh> buildMesh() override;
         void applyGeneratedMaterials() override;
 
-    private:
-        procedural::VehicleGenerationConfig m_config;
-        procedural::GeneratedVehicle m_vehicle;
-        u32 m_lod = 0;
-        Array<SmartPtr<Material>> m_generatedMaterials;
         String m_generatedMaterialIds;
         SmartPtr<procedural::IVehicleGenerator> m_generator;
         SmartPtr<procedural::IVehicleDynamics> m_dynamics;
@@ -73,6 +53,11 @@ namespace workphone::scene
         procedural::VehicleDamageState m_damageState;
         procedural::VehiclePresentationState m_presentationState;
         procedural::VehicleEffectsState m_effectsState;
-        std::vector<procedural::VehicleEffectEvent> m_events;
+
+        procedural::VehicleGenerationConfig m_config;
+        procedural::GeneratedVehicle m_vehicle;
+        u32 m_lod = 0;
+        Array<SmartPtr<Material>> m_generatedMaterials;
+        Array<procedural::VehicleEffectEvent> m_events;
     };
 }  // namespace workphone::scene

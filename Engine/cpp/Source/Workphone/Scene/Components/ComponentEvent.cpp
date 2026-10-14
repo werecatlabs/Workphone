@@ -103,6 +103,7 @@ namespace workphone::scene
             }
         }
     }
+
     auto ComponentEvent::getProperties() const -> SmartPtr<Properties>
     {
         return m_properties;

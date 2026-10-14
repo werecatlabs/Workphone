@@ -719,7 +719,9 @@ namespace workphone::scene
     {
         m_zOrder = zOrder;
         if( auto graphicsObject = getGraphicsObject() )
+        {
             graphicsObject->setZOrder( zOrder );
+        }
     }
 
     u32 Renderer::getVisibilityFlags() const
@@ -731,7 +733,9 @@ namespace workphone::scene
     {
         m_visibilityFlags = flags;
         if( auto graphicsObject = getGraphicsObject() )
+        {
             graphicsObject->setVisibilityFlags( flags );
+        }
     }
 
 }  // namespace workphone::scene

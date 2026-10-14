@@ -84,12 +84,14 @@ namespace workphone::scene
         RawU16LE,
         RawF32LE
     };
+
     struct TerrainHeightFileOptions
     {
         TerrainHeightEncoding encoding = TerrainHeightEncoding::Pgm16;
         Vector2I dimensions = Vector2I( 0, 0 );    // required for raw input
         f32 minimumHeight = 0, maximumHeight = 1;  // unscaled U16 range, no silent clipping
     };
+
     WPCore_API bool importTerrainHeightFile( SmartPtr<TerrainSystem> terrain, const String &path,
                                              const TerrainHeightFileOptions &options, String &error );
     WPCore_API bool exportTerrainHeightFile( SmartPtr<TerrainSystem> terrain, const String &path,
@@ -102,6 +104,7 @@ namespace workphone::scene
         Thermal,
         Hydraulic
     };
+
     struct TerrainErosionRecipe
     {
         TerrainErosionMode mode = TerrainErosionMode::Thermal;
@@ -110,6 +113,7 @@ namespace workphone::scene
         f32 talusAngle = 30, rain = 0.01f, sedimentCapacity = 0.25f;
         u32 seed = 0;
     };
+
     // Pure bounded preparation may run on a worker. Cancellation/failure leaves output untouched.
     WPCore_API bool prepareTerrainErosion( const render::TerrainData &source,
                                            const TerrainErosionRecipe &recipe,
@@ -118,12 +122,14 @@ namespace workphone::scene
     WPCore_API bool applyTerrainErosion( SmartPtr<TerrainSystem> terrain,
                                          const TerrainErosionRecipe &recipe,
                                          SmartPtr<ICommandManager> commands, String &error );
+
     struct TerrainGradeRecipe
     {
         Array<Vector3F> points;  // local metres; piecewise linear centreline elevation
         f32 width = 4, shoulder = 2, strength = 1, depth = 0;
         bool river = false;  // parabolic cross-section, bed lower by depth
     };
+
     WPCore_API bool applyTerrainGrade( SmartPtr<TerrainSystem> terrain, const TerrainGradeRecipe &recipe,
                                        SmartPtr<ICommandManager> commands, String &error );
 

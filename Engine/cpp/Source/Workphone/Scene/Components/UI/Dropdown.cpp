@@ -850,8 +850,8 @@ namespace workphone::scene
                 setOpen( !isOpen() );
             }
         }
-        if( eventType == EventType::UI && eventValue == IEvent::SELECT_HASH &&
-            getUseNativeUI() && sender == getElement() )
+        if( eventType == EventType::UI && eventValue == IEvent::SELECT_HASH && getUseNativeUI() &&
+            sender == getElement() )
         {
             if( auto dropdown = workphone::dynamic_pointer_cast<ui::IUIDropdown>( sender ) )
             {
@@ -863,7 +863,8 @@ namespace workphone::scene
                         options.push_back( option->text.str() );
                     }
                 }
-                auto selected = arguments.empty() ? dropdown->getSelectedOption() : arguments[0].getU32();
+                auto selected =
+                    arguments.empty() ? dropdown->getSelectedOption() : arguments[0].getU32();
                 if( selected < options.size() )
                 {
                     setLabel( options[selected] );

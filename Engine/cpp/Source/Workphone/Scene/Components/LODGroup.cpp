@@ -181,7 +181,9 @@ namespace workphone::scene
             if( !std::isfinite( bound.diameter ) || bound.diameter <= 0 ||
                 !std::isfinite( bound.centre.x ) || !std::isfinite( bound.centre.y ) ||
                 !std::isfinite( bound.centre.z ) )
+            {
                 continue;
+            }
             m_detailBounds.push_back( bound );
         }
         incrementRevision();

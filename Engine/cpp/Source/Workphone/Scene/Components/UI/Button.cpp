@@ -377,7 +377,8 @@ namespace workphone::scene
                     // Attaching to a playing actor can re-enter createUI through its FSM.
                     m_image = background->getComponent<Image>();
                     actor->addChild( background );
-                    UiUtil::setRect( background, 0, 0, static_cast<f32>( size.x ), static_cast<f32>( size.y ) );
+                    UiUtil::setRect( background, 0, 0, static_cast<f32>( size.x ),
+                                     static_cast<f32>( size.y ) );
                     m_image->setColour( m_normalColour );
                     UiUtil::loadHierarchy( background );
                     background->setState( actor->getState(), true );
@@ -387,7 +388,8 @@ namespace workphone::scene
                     auto label = UiUtil::createText( getLabel(), false );
                     m_text = label->getComponent<Text>();
                     actor->addChild( label );
-                    UiUtil::setRect( label, 0, 0, static_cast<f32>( size.x ), static_cast<f32>( size.y ) );
+                    UiUtil::setRect( label, 0, 0, static_cast<f32>( size.x ),
+                                     static_cast<f32>( size.y ) );
                     m_text->setColour( ColourF::White );
                     UiUtil::loadHierarchy( label );
                     label->setState( actor->getState(), true );
@@ -498,8 +500,8 @@ namespace workphone::scene
             createUI();
         }
         auto native = getUseNativeUI() && getElement();
-        for( auto part : { m_image ? m_image->getActor() : nullptr,
-                          m_text ? m_text->getActor() : nullptr } )
+        for( auto part :
+             { m_image ? m_image->getActor() : nullptr, m_text ? m_text->getActor() : nullptr } )
         {
             if( part )
             {

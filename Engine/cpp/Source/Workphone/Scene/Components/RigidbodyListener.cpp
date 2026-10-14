@@ -53,7 +53,9 @@ namespace workphone::scene
     {
         auto owner = getOwner();
         if( !owner )
+        {
             return;
+        }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );
@@ -68,7 +70,9 @@ namespace workphone::scene
 
         auto actor = owner->getActorPtr();
         if( !actor )
+        {
             return;
+        }
 
         // Hoist shared position/orientation extraction — used by both branches.
         const auto &position = t.getPosition();

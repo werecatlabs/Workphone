@@ -806,7 +806,9 @@ namespace workphone::scene
                     {
                         auto shape = collision->getShape();
                         if( !shape && dynamic_cast<CollisionTerrain *>( collision.get() ) )
+                        {
                             return;  // First terrain generation waits for its GPU/physics publication gate.
+                        }
                         WP_ASSERT( shape );
 
                         if( shape && !shape->isAttached() )
@@ -1340,15 +1342,25 @@ namespace workphone::scene
         auto objects = Component::getChildObjects();
 
         if( auto rigidDynamic = m_rigidDynamic.load() )
+        {
             objects.emplace_back( rigidDynamic );
+        }
         if( auto rigidStatic = m_rigidStatic.load() )
+        {
             objects.emplace_back( rigidStatic );
+        }
         if( auto clonedActor = m_clonedActor.load() )
+        {
             objects.emplace_back( clonedActor );
+        }
         if( auto scene = m_scene.load() )
+        {
             objects.emplace_back( scene );
+        }
         if( auto material = m_material.load() )
+        {
             objects.emplace_back( material );
+        }
 
         return objects;
     }
@@ -1484,10 +1496,16 @@ namespace workphone::scene
     void Rigidbody::updateTransform()
     {
         if( auto actor = getActor() )
+        {
             if( auto terrain = actor->getComponent<CollisionTerrain>() )
+            {
                 if( terrain->getTerrainSnapshot() &&
                     actor->getWorldTransform() != terrain->getPublishedTerrainTransform() )
+                {
                     return;  // TerrainSystem publishes validated placement and collision together.
+                }
+            }
+        }
         auto state = getState();
         switch( state )
         {

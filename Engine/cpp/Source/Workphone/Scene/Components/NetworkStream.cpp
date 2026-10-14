@@ -32,9 +32,13 @@ namespace workphone
         {
             network::requireBytes( m_position, count, m_buffer.size() );
             if( count == 0 )
+            {
                 return;
+            }
             if( !dst )
+            {
                 throw std::invalid_argument( "Network codec: null output" );
+            }
             std::memcpy( dst, m_buffer.data() + m_position, count );
             m_position += count;
         }
@@ -80,26 +84,32 @@ namespace workphone
         {
             network::read( m_buffer, m_position, value );
         }
+
         void NetworkStream::read( u8 &value )
         {
             network::read( m_buffer, m_position, value );
         }
+
         void NetworkStream::read( s16 &value )
         {
             network::read( m_buffer, m_position, value );
         }
+
         void NetworkStream::read( u16 &value )
         {
             network::read( m_buffer, m_position, value );
         }
+
         void NetworkStream::read( s32 &value )
         {
             network::read( m_buffer, m_position, value );
         }
+
         void NetworkStream::read( u32 &value )
         {
             network::read( m_buffer, m_position, value );
         }
+
         void NetworkStream::read( f32 &value )
         {
             network::read( m_buffer, m_position, value );
@@ -172,31 +182,37 @@ namespace workphone
             network::write( m_buffer, value );
             m_position = m_buffer.size();
         }
+
         void NetworkStream::write( u8 value )
         {
             network::write( m_buffer, value );
             m_position = m_buffer.size();
         }
+
         void NetworkStream::write( s16 value )
         {
             network::write( m_buffer, value );
             m_position = m_buffer.size();
         }
+
         void NetworkStream::write( u16 value )
         {
             network::write( m_buffer, value );
             m_position = m_buffer.size();
         }
+
         void NetworkStream::write( s32 value )
         {
             network::write( m_buffer, value );
             m_position = m_buffer.size();
         }
+
         void NetworkStream::write( u32 value )
         {
             network::write( m_buffer, value );
             m_position = m_buffer.size();
         }
+
         void NetworkStream::write( f32 value )
         {
             network::write( m_buffer, value );
@@ -217,7 +233,9 @@ namespace workphone
         void NetworkStream::write( const Vector2I &value )
         {
             if( m_buffer.size() > network::MaxMessageBytes - 8 )
+            {
                 throw std::length_error( "Network vector exceeds message capacity" );
+            }
             write( value.x );
             write( value.y );
         }
@@ -225,7 +243,9 @@ namespace workphone
         void NetworkStream::write( const Vector2<real_Num> &value )
         {
             if( m_buffer.size() > network::MaxMessageBytes - 8 )
+            {
                 throw std::length_error( "Network vector exceeds message capacity" );
+            }
             write( static_cast<f32>( value.x ) );
             write( static_cast<f32>( value.y ) );
         }
@@ -233,7 +253,9 @@ namespace workphone
         void NetworkStream::write( const Vector3I &value )
         {
             if( m_buffer.size() > network::MaxMessageBytes - 12 )
+            {
                 throw std::length_error( "Network vector exceeds message capacity" );
+            }
             write( value.x );
             write( value.y );
             write( value.z );
@@ -242,7 +264,9 @@ namespace workphone
         void NetworkStream::write( const Vector3<real_Num> &value )
         {
             if( m_buffer.size() > network::MaxMessageBytes - 12 )
+            {
                 throw std::length_error( "Network vector exceeds message capacity" );
+            }
             write( static_cast<f32>( value.x ) );
             write( static_cast<f32>( value.y ) );
             write( static_cast<f32>( value.z ) );

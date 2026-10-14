@@ -715,12 +715,16 @@ namespace workphone::scene
                                 defaultRequested = true;
                                 auto resources = dynamic_cast<ResourceDatabase *>( resourceDatabase );
                                 if( resources && resources->getMediaCatalog() )
+                                {
                                     defaultTexture = dynamic_pointer_cast<render::ITexture>(
                                         resources->loadMediaResource( defaultSkyboxTextureName ) );
+                                }
                                 else
+                                {
                                     defaultTexture =
                                         resourceDatabase->loadResourceByType<render::ITexture>(
                                             defaultSkyboxTextureName );
+                                }
                             }
                             texture = defaultTexture;
                         }

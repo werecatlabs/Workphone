@@ -175,7 +175,9 @@ namespace workphone::scene
     {
         m_staticFriction = Math<f32>::clamp( friction, 0.0f, 1.0f );
         if( auto mat = getMaterial() )
+        {
             mat->setStaticFriction( m_staticFriction, 0 );
+        }
     }
 
     f32 Collision::getDynamicFriction() const
@@ -187,7 +189,9 @@ namespace workphone::scene
     {
         m_dynamicFriction = Math<f32>::clamp( friction, 0.0f, 1.0f );
         if( auto mat = getMaterial() )
+        {
             mat->setDynamicFriction( m_dynamicFriction, 0 );
+        }
     }
 
     f32 Collision::getRestitution() const
@@ -199,7 +203,9 @@ namespace workphone::scene
     {
         m_restitution = Math<f32>::clamp( restitution, 0.0f, 1.0f );
         if( auto mat = getMaterial() )
+        {
             mat->setRestitution( m_restitution );
+        }
     }
 
     auto Collision::getBoundingBox() const -> AABB3<real_Num>
@@ -251,11 +257,17 @@ namespace workphone::scene
                     property.setAttribute( "category", category );
                     property.setAttribute( "description", description );
                     if( !StringUtil::isNullOrEmpty( minimum ) )
+                    {
                         property.setAttribute( "min", minimum );
+                    }
                     if( !StringUtil::isNullOrEmpty( maximum ) )
+                    {
                         property.setAttribute( "max", maximum );
+                    }
                     if( !StringUtil::isNullOrEmpty( step ) )
+                    {
                         property.setAttribute( "step", step );
+                    }
                 };
 
             setEditorMetadata( isTriggerStr, "Trigger", "Collision",
@@ -316,25 +328,39 @@ namespace workphone::scene
             properties->getPropertyValue( restitutionStr, restitution );
 
             if( trigger != isTrigger() )
+            {
                 setTrigger( trigger );
+            }
 
             if( !MathUtil<real_Num>::equals( extents, m_extents ) )
+            {
                 setExtents( extents );
+            }
 
             if( !MathUtil<real_Num>::equals( position, m_position ) )
+            {
                 setPosition( position );
+            }
 
             if( !MathUtil<real_Num>::equals( radius, m_radius ) )
+            {
                 setRadius( radius );
+            }
 
             if( !MathUtil<real_Num>::equals( staticFriction, m_staticFriction ) )
+            {
                 setStaticFriction( staticFriction );
+            }
 
             if( !MathUtil<real_Num>::equals( dynamicFriction, m_dynamicFriction ) )
+            {
                 setDynamicFriction( dynamicFriction );
+            }
 
             if( !MathUtil<real_Num>::equals( restitution, m_restitution ) )
+            {
                 setRestitution( restitution );
+            }
         }
         catch( std::exception &e )
         {

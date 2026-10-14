@@ -29,7 +29,9 @@ namespace workphone::scene
     void CameraManager::load( SmartPtr<ISharedObject> data )
     {
         if( isLoaded() )
+        {
             return;
+        }
 
         setLoadingState( LoadingState::Loading );
 
@@ -41,7 +43,9 @@ namespace workphone::scene
     void CameraManager::unload( SmartPtr<ISharedObject> data )
     {
         if( !isLoaded() )
+        {
             return;
+        }
 
         setLoadingState( LoadingState::Unloading );
 
@@ -54,7 +58,9 @@ namespace workphone::scene
     void CameraManager::update()
     {
         if( !isEnabled() )
+        {
             return;
+        }
 
         auto task = Thread::getCurrentTask();
         switch( task )
@@ -83,16 +89,22 @@ namespace workphone::scene
                     if( applicationManager->isEditorCamera() )
                     {
                         if( auto editorCamera = getEditorCameraPtr() )
+                        {
                             editorCamera->update();
+                        }
                     }
 
                     auto sceneManager = applicationManager->getGameManagerPtr();
                     if( !sceneManager )
+                    {
                         break;
+                    }
 
                     auto scene = sceneManager->getCurrentScenePtr();
                     if( !scene )
+                    {
                         break;
+                    }
 
                     auto cameras = scene->getComponents<Camera>();
                     for( auto &camera : cameras )
@@ -116,11 +128,15 @@ namespace workphone::scene
 
                     auto sceneManager = applicationManager->getGameManagerPtr();
                     if( !sceneManager )
+                    {
                         break;
+                    }
 
                     auto scene = sceneManager->getCurrentScenePtr();
                     if( !scene )
+                    {
                         break;
+                    }
 
                     auto cameras = scene->getComponents<Camera>();
                     for( auto &camera : cameras )
@@ -187,18 +203,24 @@ namespace workphone::scene
     void CameraManager::reset()
     {
         if( !isEnabled() )
+        {
             return;
+        }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         WP_ASSERT( applicationManager );
 
         auto gameManager = applicationManager->getGameManagerPtr();
         if( !gameManager )
+        {
             return;
+        }
 
         auto scene = gameManager->getCurrentScenePtr();
         if( !scene )
+        {
             return;
+        }
 
         auto cameras = scene->getComponents<Camera>();
 
@@ -346,7 +368,9 @@ namespace workphone::scene
     void CameraManager::setState( State state )
     {
         if( m_state == state )
+        {
             return;
+        }
 
         m_state = state;
 

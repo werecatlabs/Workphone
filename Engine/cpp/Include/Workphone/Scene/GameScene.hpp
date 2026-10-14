@@ -308,10 +308,12 @@ namespace workphone
              * @return The current loading state.
              */
             SceneLoadingState getSceneLoadingState() const override;
+
             u64 beginSceneLoad()
             {
                 return ++m_loadGeneration;
             }
+
             u64 getLoadGeneration() const
             {
                 return m_loadGeneration.load();
