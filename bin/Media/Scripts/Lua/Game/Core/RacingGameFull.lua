@@ -57,10 +57,20 @@ function RacingGameFull:generate()
     self:bindGeneratedScene()
     self.playerControl:enable(false)
     self.editPreview = not self.application:isPlaying()
-    local ok, failure = pcall(self.initializeGame, self)
-    if not ok then self:shutdown(); self.gameStartFailed = true; error(failure) end
-    if self.editPreview then self.menu:hide() end
-    return true
+    
+	local ok, failure = pcall(self.initializeGame, self)
+    
+	if not ok then 
+		self:shutdown(); 
+		self.gameStartFailed = true; 
+		error(failure) 
+	end
+	
+    if self.editPreview then 
+		self.menu:hide() 
+	end
+    
+	return true
 end
 
 function RacingGameFull:initializeGame()
@@ -194,6 +204,7 @@ end
 
 function RacingGameFull:startRace()
     self:unpauseSimulation()
+	
     -- Reuse the scene for retries; regenerate only when track/quality changed.
     if not self.started or self.generatedSeed ~= self.seed or self.generatedQuality ~= self.quality then
         self.rebuilding = true
@@ -202,6 +213,7 @@ function RacingGameFull:startRace()
         if not ok then error(failure) end
         self:bindGeneratedScene()
     end
+	
     SampleVehicleAdvanced.reset(self)
     self.playerCamera:selectViewport(false)
     self.progress:RestartRace()
