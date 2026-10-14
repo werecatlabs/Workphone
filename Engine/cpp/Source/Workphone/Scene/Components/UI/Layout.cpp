@@ -696,6 +696,15 @@ namespace workphone::scene
             setupCanvas();
         }
         auto children = actor->getAllChildren();
+        // Offer input to the frontmost children before scroll containers can capture it.
+        std::reverse( children.begin(), children.end() );
+        std::stable_sort( children.begin(), children.end(), []( const auto &left, const auto &right ) {
+            auto leftTransform = left ? left->template getComponent<LayoutTransform>() : nullptr;
+            auto rightTransform = right ? right->template getComponent<LayoutTransform>() : nullptr;
+            auto leftOrder = leftTransform ? leftTransform->getZOrder() : 0;
+            auto rightOrder = rightTransform ? rightTransform->getZOrder() : 0;
+            return leftOrder > rightOrder;
+        } );
         for( auto &child : children )
         {
             if( child )

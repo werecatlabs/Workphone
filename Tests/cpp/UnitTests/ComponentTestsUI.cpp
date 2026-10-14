@@ -2,6 +2,7 @@
 #include "TestGuard.hpp"
 #include "UiUtilTestSupport.hpp"
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <boost/test/unit_test.hpp>
 #include <limits>
 #include <stdexcept>
@@ -1063,6 +1064,16 @@ BOOST_AUTO_TEST_CASE( uiutil_renderer_preserves_labels )
     auto optionActor = dropdown->getPanel()->getChildren()[1];
     auto optionButton = optionActor->getComponent<Button>();
     BOOST_REQUIRE( optionButton );
+    auto panelImage = dropdown->getPanel()->getComponent<scene::Image>();
+    BOOST_REQUIRE( panelImage );
+    BOOST_REQUIRE( panelImage->getElement() );
+    BOOST_REQUIRE( optionButton->getText() );
+    auto optionTextTransform = optionButton->getText()->getActor()->getComponent<LayoutTransform>();
+    BOOST_REQUIRE( optionTextTransform );
+    BOOST_CHECK( !optionTextTransform->getAutoCalculateOrder() );
+    BOOST_CHECK( panelImage->getElement()->getOrder() > button->getElement()->getOrder() );
+    BOOST_CHECK( optionTextTransform->getZOrder() >
+                 panelImage->getElement()->getOrder() );
     BOOST_CHECK_EQUAL( optionButton->getLabel(), "High" );
     optionButton->handleEvent( EventType::UI, IEvent::CLICK_HASH, {}, nullptr, nullptr, nullptr );
     BOOST_CHECK_EQUAL( dropdown->getLabel(), "High" );
@@ -1166,6 +1177,80 @@ BOOST_AUTO_TEST_CASE( uiutil_native_controls_and_mode_properties )
     BOOST_CHECK( !dropdown->getContent()->isEnabled() );
 }
 
+BOOST_AUTO_TEST_CASE( uiutil_scroll_input_routes_to_children )
+{
+    if( skipWhenUiRuntimeUnavailable() )
+    {
+        return;
+    }
+    UiUtilTestGuard guard;
+    auto window = UiUtil::createLayout( "Scroll input", true );
+    auto previousWindow = guard.applicationManager->getWindow();
+    auto inputWindow = previousWindow;
+    if( !inputWindow )
+    {
+        class InputWindow final : public render::GraphicsWindow
+        {
+        public:
+            Vector2I getSize() const override
+            {
+                return Vector2I( 1000, 1000 );
+            }
+        };
+        inputWindow = workphone::make_ptr<InputWindow>();
+        guard.applicationManager->setWindow( inputWindow );
+        guard.addCleanup( [manager = guard.applicationManager, previousWindow]() mutable {
+            manager->setWindow( previousWindow );
+        } );
+    }
+    auto layout = window->getComponent<Layout>();
+    layout->setReferenceSize( Vector2I( 1000, 1000 ) );
+    auto viewActor = UiUtil::createScrollView( "List", false );
+    window->addChild( viewActor );
+    auto view = viewActor->getComponent<ScrollView>();
+    auto content = view->getContentPanel();
+    content->setSize( Vector2<real_Num>( 280, 400 ) );
+    auto buttonActor = UiUtil::createButton( "Item", false );
+    auto button = buttonActor->getComponent<Button>();
+    button->setUseNativeUI( false );
+    content->getActor()->addChild( buttonActor );
+    UiUtil::loadHierarchy( window );
+    window->setState( IGameActor::State::Play, true );
+    auto setBounds = []( SmartPtr<IGameActor> actor, real_Num x, real_Num y,
+                         real_Num width, real_Num height ) {
+        auto transform = actor->getComponent<LayoutTransform>();
+        transform->setAbsolutePosition( Vector2<real_Num>( x, y ) );
+        transform->setAbsoluteSize( Vector2<real_Num>( width, height ) );
+    };
+    setBounds( viewActor, 100, 100, 300, 200 );
+    setBounds( buttonActor, 110, 110, 200, 50 );
+    auto bar = view->getScrollBar();
+    BOOST_REQUIRE( bar );
+    bar->getActor()->setEnabled( true );
+    setBounds( bar->getActor(), 380, 100, 20, 200 );
+    setBounds( bar->getBackground(), 380, 100, 20, 200 );
+    auto mouse = workphone::make_ptr<MouseState>();
+    mouse->setEventType( IMouseState::Event::LeftPressed );
+    mouse->setButtonPressed( IMouseState::MOUSE_LEFT, true );
+    auto event = workphone::make_ptr<InputEvent>();
+    event->setEventType( IInputEvent::EventType::Mouse );
+    event->setMouseState( mouse );
+    int clicks = 0;
+    button->setCallbackFunction( [&clicks]( hash_type ) { ++clicks; } );
+    mouse->setRelativePosition( Vector2<real_Num>( 0.15f, 0.13f ) );
+    BOOST_CHECK( layout->handleEvent( event ) );
+    BOOST_CHECK_EQUAL( clicks, 1 );
+    BOOST_CHECK( !view->isDragging() );
+    mouse->setRelativePosition( Vector2<real_Num>( 0.39f, 0.18f ) );
+    BOOST_CHECK( layout->handleEvent( event ) );
+    BOOST_CHECK_CLOSE( bar->getScrollValue(), 0.4f, 0.01f );
+    BOOST_CHECK( !view->isDragging() );
+    setBounds( buttonActor, 700, 700, 200, 50 );
+    mouse->setRelativePosition( Vector2<real_Num>( 0.75f, 0.73f ) );
+    layout->handleEvent( event );
+    BOOST_CHECK_EQUAL( clicks, 1 );
+}
+
 BOOST_AUTO_TEST_CASE( uiutil_composed_button_added_during_play )
 {
     if( skipWhenUiRuntimeUnavailable() )
@@ -1174,8 +1259,16 @@ BOOST_AUTO_TEST_CASE( uiutil_composed_button_added_during_play )
     }
     UiUtilTestGuard guard;
     auto window = UiUtil::createLayout( "Live controls", true );
+    auto sliderActor = UiUtil::createSlider( "Scene slider", nullptr, "", false );
+    auto slider = sliderActor->getComponent<Slider>();
+    slider->setUseNativeUI( false );
+    window->addChild( sliderActor );
+    auto barActor = UiUtil::createScrollbarVertical( "Scene scrollbar", nullptr, "", false );
+    window->addChild( barActor );
     UiUtil::loadHierarchy( window );
     window->setState( IGameActor::State::Play, true );
+    BOOST_CHECK( slider->getCanvas() == window->getComponent<Layout>() );
+    BOOST_CHECK( barActor->getComponent<ScrollBar>()->getCanvas() == window->getComponent<Layout>() );
     auto actor = UiUtil::createButton( "Live button", false );
     auto button = actor->getComponent<Button>();
     button->setUseNativeUI( false );

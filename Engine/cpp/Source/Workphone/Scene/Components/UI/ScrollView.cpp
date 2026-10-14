@@ -129,7 +129,7 @@ namespace workphone::scene
         }
         case IMouseState::Event::Moved:
         {
-            if( mouseState->isDragging() || isDragging() )
+            if( isDragging() )
             {
                 handleDrag( event );
                 return true;
@@ -224,6 +224,7 @@ namespace workphone::scene
         auto newPos = contentPanel->getPosition();
         newPos.y += scrollDelta.y * scrollSpeed;
         contentPanel->setPosition( clampToBounds( newPos ) );
+        contentPanel->updateTransform();
 
         updateScrollBar();
     }
@@ -281,6 +282,7 @@ namespace workphone::scene
         auto currentPos = contentPanel->getPosition();
         auto newPos = currentPos + Vector2<real_Num>( 0, delta.y );
         contentPanel->setPosition( clampToBounds( newPos ) );
+        contentPanel->updateTransform();
         m_lastDragPosition = position;
         updateScrollBar();
     }
@@ -336,6 +338,7 @@ namespace workphone::scene
 
             Vector2<real_Num> newPos( 0.0, -scrollValue * maxScroll );
             m_contentPanel->setPosition( clampToBounds( newPos ) );
+            m_contentPanel->updateTransform();
         }
     }
 

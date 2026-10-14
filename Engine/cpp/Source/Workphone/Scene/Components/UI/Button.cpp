@@ -222,6 +222,10 @@ namespace workphone::scene
 
                 auto mainWindow = applicationManager->getWindow();
 
+                if( !mainWindow )
+                {
+                    return false;
+                }
                 auto windowSize = mainWindow->getSize();
                 auto windowSizeF = Vector2<real_Num>( static_cast<f32>( windowSize.x ),
                                                       static_cast<f32>( windowSize.y ) );

@@ -757,6 +757,10 @@ namespace workphone::scene
 
                 auto mainWindow = applicationManager->getWindow();
 
+                if( !mainWindow )
+                {
+                    return false;
+                }
                 auto windowSize = mainWindow->getSize();
                 auto windowSizeF = Vector2<real_Num>( static_cast<f32>( windowSize.x ),
                                                       static_cast<f32>( windowSize.y ) );
@@ -1527,7 +1531,9 @@ namespace workphone::scene
                 }
             }
         }
-        else if( applicationTask )
+        // Raw input is already broadcast once per task by InputDeviceManager.
+        // Forward only backend widget events; forwarding input would duplicate scene clicks.
+        else if( applicationTask && eventType == EventType::UI )
         {
             auto job = workphone::make_ptr<UIEventJob>( this );
             job->setEventType( eventType );

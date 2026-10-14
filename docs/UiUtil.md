@@ -32,7 +32,7 @@ or later scene insertion. Detached actors still occupy game-manager slots; use
 `setRect` accepts finite layout coordinates and nonnegative dimensions, including zero for collapsed
 controls. It does not automatically resize a composite's internal track/content; resize their
 `LayoutTransform`s through the control's component references when customizing a composite.
-`setAlignment` updates anchors; `CUSTOM` retains the current anchors on that axis. Invalid inputs
+`setAlignment` updates anchors and the pivot; `CUSTOM` retains both on that axis. Invalid inputs
 throw `std::invalid_argument` before modifying placement or allocating a factory actor. Missing
 services/factories throw `std::runtime_error`. Failed composite construction releases all its actors.
 
@@ -108,7 +108,8 @@ widget appearance, focus, pointer interaction, and specialized container populat
 `UIComponent::getUseNativeUI()` / `setUseNativeUI(bool)` selects the active backend widget for
 Button, Slider, and Dropdown when true (the default), or the composed scene representation when
 false. For WPGraphics, the backend is the WorkphoneCore fork of Nuklear. Primitive Image/Text
-parts still draw through that backend. Other components retain their existing rendering paths.
+parts still draw through that backend. Leave the flag true for other backend widgets until
+they have a composed scene representation.
 
 ```cpp
 auto volume = UiUtil::createSlider("Volume", nullptr, "", false);

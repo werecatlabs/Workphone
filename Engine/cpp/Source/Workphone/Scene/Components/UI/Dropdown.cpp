@@ -683,6 +683,23 @@ namespace workphone::scene
             }
 
             UiUtil::loadHierarchy( m_content );
+            // Keep the entire composed popup above ordinary canvas controls, including
+            // the Image/Text parts created lazily by scene buttons during loading.
+            auto popupActors = m_content->getAllChildren();
+            popupActors.insert( popupActors.begin(), m_content );
+            auto popupOrder = contentOrder;
+            for( auto popupActor : popupActors )
+            {
+                if( auto transform = popupActor->getComponent<LayoutTransform>() )
+                {
+                    transform->setAutoCalculateOrder( false );
+                    transform->setZOrder( popupOrder++ );
+                    for( auto component : popupActor->getComponentsByType<UIComponent>() )
+                    {
+                        component->updateOrder();
+                    }
+                }
+            }
             verticalLayout->updateTransform();
             real_Num contentHeight = 0;
             auto children = m_panel->getChildren();

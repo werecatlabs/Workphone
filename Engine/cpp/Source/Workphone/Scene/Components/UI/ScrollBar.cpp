@@ -124,6 +124,7 @@ namespace workphone::scene
 
                                 return true;
                             }
+                            return true;
                         }
                     }
                 }
@@ -289,7 +290,7 @@ namespace workphone::scene
 
     auto ScrollBar::handleComponentEvent( u32 state, FSMEvent eventType ) -> FSMReturnType
     {
-        Component::handleComponentEvent( state, eventType );
+        UIComponent::handleComponentEvent( state, eventType );
 
         switch( eventType )
         {

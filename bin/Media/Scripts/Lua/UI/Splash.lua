@@ -4,6 +4,7 @@ function Splash:__init(object)
 	BaseComponent.__init(self, object);	
 	self.sceneToLoad = "Application";
 	self.loadDelay = 3.0;
+	self.text = "";
 end
 
 function Splash:__finalize()
@@ -35,4 +36,7 @@ function Splash:setProperties(parameters)
 
 	self.sceneToLoad = properties:getPropertyAsString("sceneToLoad");
 	self.loadDelay = properties:getPropertyAsFloat("loadDelay");
+end
+
+function Splash:generate()
 end

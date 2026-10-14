@@ -412,7 +412,8 @@ namespace workphone
             /** @brief Selects the active backend widget (including Claw/Nuklear) when true,
              * or the control's composed scene representation when false. Primitive Image/Text
              * rendering still uses the active backend. Supported by Button, Slider and Dropdown;
-             * other components retain their existing rendering path. Persisted in properties. */
+             * leave other backend widgets enabled until they have a scene representation.
+             * Persisted in properties. */
             void setUseNativeUI( bool useNativeUI );
 
             WP_CLASS_REGISTER_DECL;

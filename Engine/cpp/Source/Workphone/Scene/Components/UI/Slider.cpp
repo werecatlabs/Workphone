@@ -395,7 +395,7 @@ namespace workphone::scene
 
     auto Slider::handleComponentEvent( u32 state, FSMEvent eventType ) -> FSMReturnType
     {
-        Component::handleComponentEvent( state, eventType );
+        UIComponent::handleComponentEvent( state, eventType );
 
         switch( eventType )
         {

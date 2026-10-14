@@ -59,7 +59,7 @@ namespace workphone::scene
 
         /// Set finite position and nonnegative size. Requires an existing LayoutTransform.
         static void setRect( SmartPtr<IGameActor> actor, f32 x, f32 y, f32 width, f32 height );
-        /// Updates anchors; Custom preserves that axis's current anchors.
+        /// Updates anchors and pivot; Custom preserves both on that axis.
         static void setAlignment( SmartPtr<IGameActor> actor, HorizontalAlignment horizontal,
                                   VerticalAlignment vertical );
 
@@ -73,7 +73,8 @@ namespace workphone::scene
         static SmartPtr<IGameActor> createButton( const String &label, bool addToScene = true );
         static SmartPtr<IGameActor> createButtonEx( const String &label, f32 x, f32 y, f32 width,
                                                     f32 height, bool addToScene = true );
-        /// Composed dropdown with a wired trigger and options panel. No sample options are inserted.
+        /// Backend dropdown by default, with a wired scene trigger/options path when native UI
+        /// is disabled. No sample options are inserted.
         static SmartPtr<IGameActor> createDropdown( const String &label, bool addToScene = true );
         static SmartPtr<IGameActor> createDropdownWithOptions( const String &label,
                                                                const Array<String> &options,
