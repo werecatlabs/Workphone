@@ -7,6 +7,10 @@
 
 namespace workphone::ui
 {
+#if defined( WP_PLATFORM_WIN32 ) && !defined( _WP_STATIC_LIB_ ) && !defined( WPCore_EXPORTS )
+    // This specialization is exported by Workphone.dll, as with ClawUIToggleButton.
+    extern template class core::Prototype<IUIDropdown>;
+#endif
     /** Backend dropdown using the WorkphoneCore/Nuklear combo widget. */
     class ClawUIDropdown : public ClawUIElement<IUIDropdown>
     {

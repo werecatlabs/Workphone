@@ -989,7 +989,12 @@ BOOST_AUTO_TEST_CASE( script_uiutil_factory_contracts )
                 luabind::class_<scene::Component, scene::IComponent, SmartPtr<scene::Component>>(
                     "Component" )];
     bindComponentUI( state );
+    auto modeActor = scene::UiUtil::createButton( "Mode", false );
+    luabind::globals( state )["modeControl"] = modeActor->getComponent<scene::Button>();
     constexpr auto script = R"(
+        assert(modeControl:getUseNativeUI())
+        modeControl:setUseNativeUI(false)
+        assert(not modeControl:getUseNativeUI())
         assert(UiUtil.directionNames[1] == "Horizontal")
         assert(UiUtil.horizontalAlignmentTypes[4] == "Custom")
         assert(UiUtil.customStr == "Custom")

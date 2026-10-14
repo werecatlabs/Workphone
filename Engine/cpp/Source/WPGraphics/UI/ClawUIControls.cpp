@@ -32,7 +32,7 @@ namespace workphone::ui
     void ClawUIDropdown::setOptions( const Array<String> &options )
     {
         m_options = options;
-        setSelectedOption( m_selected );
+        m_selected = m_options.empty() ? 0 : Math<u32>::min( m_selected, static_cast<u32>( m_options.size() - 1 ) );
     }
 
     void ClawUIDropdown::addOption( const String &option )
@@ -49,6 +49,10 @@ namespace workphone::ui
     {
         m_selected =
             m_options.empty() ? 0 : Math<u32>::min( selected, static_cast<u32>( m_options.size() - 1 ) );
+        if( !m_options.empty() )
+        {
+            setLabel( m_options[m_selected] );
+        }
     }
 
     void ClawUIDropdown::draw( wp_context *ctx )
