@@ -797,18 +797,31 @@ namespace workphone
                 return lod;
             }
 
-            VehicleLOD buildSportsBody( const VehicleGeometryConfig &cfg, std::uint32_t level,
-                                        VehicleLOD lod )
+            VehicleLOD buildDetailedCoupeBody( const VehicleGeometryConfig &cfg, std::uint32_t level,
+                                               VehicleLOD lod )
             {
-                Builder paint( "sports_body_paint", VehicleMaterial::Paint );
-                Builder glass( "sports_cabin_glass", VehicleMaterial::Glass );
-                Builder trim( "sports_trim", VehicleMaterial::CarbonMatte );
-                Builder lamps( "sports_headlights", VehicleMaterial::Headlight );
-                Builder tails( "sports_tail_lights", VehicleMaterial::TailLight );
-                Builder seams( "sports_panel_details", VehicleMaterial::CarbonMatte );
-                Builder metal( "sports_exhaust_and_hardware", VehicleMaterial::Rim );
-                Builder calipers( "sports_calipers", VehicleMaterial::Caliper );
-                Builder interior( "sports_cabin_interior", VehicleMaterial::CarbonMatte );
+                const bool gt = cfg.bodyStyle == VehicleBodyStyle::GT;
+                Builder paint( gt ? "gt_body_paint" : "sports_body_paint", VehicleMaterial::Paint );
+                Builder glass( gt ? "gt_cabin_glass" : "sports_cabin_glass", VehicleMaterial::Glass );
+                Builder trim( gt ? "gt_aero" : "sports_trim", VehicleMaterial::CarbonMatte );
+                Builder lamps( gt ? "gt_headlights" : "sports_headlights", VehicleMaterial::Headlight );
+                Builder tails( gt ? "gt_tail_lights" : "sports_tail_lights",
+                               VehicleMaterial::TailLight );
+                Builder seams( gt ? "gt_panel_details" : "sports_panel_details",
+                               VehicleMaterial::CarbonMatte );
+                Builder metal( gt ? "gt_exhaust_and_hardware" : "sports_exhaust_and_hardware",
+                               VehicleMaterial::Rim );
+                Builder calipers( gt ? "gt_calipers" : "sports_calipers", VehicleMaterial::Caliper );
+                Builder interior( gt ? "gt_cabin_interior" : "sports_cabin_interior",
+                                  VehicleMaterial::CarbonMatte );
+                Builder roofPanel( "gt_carbon_roof", VehicleMaterial::CarbonGloss );
+                Builder wing( "gt_rear_wing", VehicleMaterial::CarbonGloss );
+                Builder splitter( "gt_front_splitter", VehicleMaterial::CarbonMatte );
+                Builder diffuser( "gt_rear_diffuser", VehicleMaterial::CarbonMatte );
+                Builder vents( "gt_cooling_louvres", VehicleMaterial::CarbonMatte );
+                Builder cage( "gt_roll_cage", VehicleMaterial::Suspension );
+                Builder tow( "gt_tow_loops", VehicleMaterial::Caliper );
+                Builder rain( "gt_rain_light", VehicleMaterial::RainLight );
                 const bool details = cfg.includeFineDetails && level < 2;
                 const unsigned across = level == 0 ? 24u : level == 1 ? 16u : 10u;
                 const unsigned radial = level == 0 ? 16u : level == 1 ? 10u : 8u;
@@ -834,18 +847,18 @@ namespace workphone
                     }
                 };
                 // The waist, hood and rear haunches have independent curvature.
-                auto stations =
-                    refineStations<BodyStation>( { { z( 0 ), half * .84f, shoulder * .73f, 0, 0 },
-                                                   { z( .13f ), half * .97f, shoulder * .88f, 0, 0 },
-                                                   { z( .32f ), half, shoulder * .91f, 0, 0 },
-                                                   { z( .51f ), half * .94f, shoulder * .85f, 0, 0 },
-                                                   { z( .72f ), half, shoulder * .94f, 0, 0 },
-                                                   { z( .88f ), half * .99f, shoulder * .96f, 0, 0 },
-                                                   { z( 1 ), half * .88f, shoulder * .83f, 0, 0 } },
-                                                 level == 0   ? 12u
-                                                 : level == 1 ? 8u
-                                                              : 5u,
-                                                 { &BodyStation::halfWidth, &BodyStation::bottom } );
+                auto stations = refineStations<BodyStation>(
+                    { { z( 0 ), half * ( gt ? .89f : .84f ), shoulder * .73f, 0, 0 },
+                      { z( .13f ), half * ( gt ? 1.02f : .97f ), shoulder * .88f, 0, 0 },
+                      { z( .32f ), half * ( gt ? 1.035f : 1.f ), shoulder * .91f, 0, 0 },
+                      { z( .51f ), half * .94f, shoulder * .85f, 0, 0 },
+                      { z( .72f ), half * ( gt ? 1.045f : 1.f ), shoulder * .94f, 0, 0 },
+                      { z( .88f ), half * ( gt ? 1.035f : .99f ), shoulder * .96f, 0, 0 },
+                      { z( 1 ), half * ( gt ? .94f : .88f ), shoulder * .83f, 0, 0 } },
+                    level == 0   ? 12u
+                    : level == 1 ? 8u
+                                 : 5u,
+                    { &BodyStation::halfWidth, &BodyStation::bottom } );
                 auto sample = [&]( float depth ) {
                     auto next = std::upper_bound(
                         stations.begin(), stations.end(), depth,
@@ -1009,9 +1022,9 @@ namespace workphone
                                  [&]( float a, float u ) {
                                      const float depth = axle - clearance * std::cos( a );
                                      const float outerX = sample( depth ).halfWidth * .93f - .025f;
-                                     return Vector3F( side * ( outerX + ( innerX - outerX ) * u ),
-                                                      cfg.tyreRadius + ( clearance + .008f ) * std::sin( a ),
-                                                      depth );
+                                     return Vector3F(
+                                         side * ( outerX + ( innerX - outerX ) * u ),
+                                         cfg.tyreRadius + ( clearance + .008f ) * std::sin( a ), depth );
                                  },
                                  { 0, -1, 0 } );
                         const Vector3F centre( side * innerX, cfg.tyreRadius, axle );
@@ -1050,7 +1063,7 @@ namespace workphone
                     }
                 }
                 // A curved fastback: raked windshield, crowned roof, and rear glass.
-                const float roof = shoulder + .34f;
+                const float roof = shoulder + ( gt ? .43f : .34f );
                 Array<BodyStation> cabin =
                     refineStations<BodyStation>( { { z( .34f ), .73f, .025f, 0, 0 },
                                                    { z( .48f ), .62f, roof, 0, 0 },
@@ -1086,7 +1099,8 @@ namespace workphone
                     {
                         patch.push_back( cabin[i].z );
                     }
-                    surface( segment == 1 ? paint : glass, patch, across / 2, cabinTop, { 0, 1, 0 } );
+                    surface( segment == 1 ? ( gt ? roofPanel : paint ) : glass, patch, across / 2,
+                             cabinTop, { 0, 1, 0 } );
                 }
                 for( int side : { -1, 1 } )
                 {
@@ -1190,7 +1204,9 @@ namespace workphone
                         };
                         face( trim, lightPoint( a, 0 ), lightPoint( a, 2.8f ), lightPoint( b, 2.8f ),
                               lightPoint( b, 0 ), { 0, 1, 0 } );
-                        for( float blade : { .4f, 1.7f } )
+                        const std::vector<float> blades =
+                            gt ? std::vector<float>{ .3f, 1.2f, 2.1f } : std::vector<float>{ .4f, 1.7f };
+                        for( float blade : blades )
                         {
                             face( lamps, lightPoint( a, blade ) + Vector3F( 0, .004f, 0 ),
                                   lightPoint( a, blade + .35f ) + Vector3F( 0, .004f, 0 ),
@@ -1211,11 +1227,15 @@ namespace workphone
                 trim.box( { 0, .35f, tail - .025f }, { half * 1.60f, .22f, .055f } );
                 for( int side : { -1, 1 } )
                 {
-                    paint.box( { side * half * .84f, .35f, tail - .015f }, { half * .08f, .22f, .07f } );
+                    paint.box( { side * half * ( gt ? .87f : .84f ), .35f, tail - .015f },
+                               { half * ( gt ? .14f : .08f ), .22f, .07f } );
                 }
                 paint.box( { 0, .21f, tail - .02f }, { half * 1.75f, .08f, .09f } );
-                trim.box( { 0, .135f, nose + .10f }, { frontWidth * 2.05f, .035f, .32f } );
-                trim.box( { 0, .15f, tail - .22f }, { half * 1.72f, .045f, .50f } );
+                if( !gt )
+                {
+                    trim.box( { 0, .135f, nose + .10f }, { frontWidth * 2.05f, .035f, .32f } );
+                    trim.box( { 0, .15f, tail - .22f }, { half * 1.72f, .045f, .50f } );
+                }
                 for( int side : { -1, 1 } )
                 {
                     const float start = front + clearance, end = rear - clearance;
@@ -1266,33 +1286,173 @@ namespace workphone
                                 { side * track * .5f, cfg.tyreRadius, axle + cfg.tyreRadius * .37f },
                                 { .09f, cfg.tyreRadius * .40f, cfg.tyreRadius * .16f } );
                         }
-                        const float seatZ = z( .54f ), floor = skin( seatZ, 0 ).y + .02f;
-                        interior.box( { side * half * .32f, floor + .045f, seatZ },
-                                      { .35f, .09f, .37f } );
-                        interior.box( { side * half * .32f, floor + .14f, seatZ + .14f },
-                                      { .34f, .23f, .07f } );
+                        if( !gt || side < 0 )
+                        {
+                            const float seatZ = z( .54f ), floor = skin( seatZ, 0 ).y + .02f;
+                            interior.box( { side * half * .32f, floor + .045f, seatZ },
+                                          { .35f, .09f, .37f } );
+                            interior.box( { side * half * .32f, floor + .14f, seatZ + .14f },
+                                          { .34f, .23f, .07f } );
+                        }
                     }
                 }
-                if( details )
+                if( details && !gt )
                 {
                     for( int fin = -2; fin <= 2; ++fin )
                     {
                         trim.box( { fin * half * .25f, .20f, tail - .18f }, { .014f, .11f, .43f } );
                     }
                 }
-                // Integrated ducktail rather than a separate racing wing.
-                std::vector<float> lipRows{ z( .94f ), z( .975f ), tail };
-                surface( paint, lipRows, across / 2,
-                         [&]( float depth, float u ) {
-                             return skin( depth, ( 2 * u - 1 ) * .83f ) +
-                                    Vector3F( 0,
-                                              .012f + .045f * smooth( ( depth - z( .94f ) ) /
-                                                                      ( cfg.bodyLength * .06f ) ),
-                                              0 );
-                         },
-                         { 0, 1, 0 } );
+                if( !gt )
+                {
+                    // Integrated ducktail for the road car.
+                    std::vector<float> lipRows{ z( .94f ), z( .975f ), tail };
+                    surface( paint, lipRows, across / 2,
+                             [&]( float depth, float u ) {
+                                 return skin( depth, ( 2 * u - 1 ) * .83f ) +
+                                        Vector3F( 0,
+                                                  .012f + .045f * smooth( ( depth - z( .94f ) ) /
+                                                                          ( cfg.bodyLength * .06f ) ),
+                                                  0 );
+                             },
+                             { 0, 1, 0 } );
+                }
+                if( gt )
+                {
+                    // A curved splitter extends beyond the fascia with a solid
+                    // leading edge, corner fences and small twin dive planes.
+                    auto splitterPoint = [&]( float v, float u, float bottom ) {
+                        const float x = ( 2 * u - 1 ) * half * 1.07f;
+                        return Vector3F(
+                            x, .125f + .018f * v - bottom,
+                            nose - .19f + .085f * ( 2 * u - 1 ) * ( 2 * u - 1 ) + .48f * v );
+                    };
+                    surface( splitter, { 0, 1 }, across,
+                             [&]( float v, float u ) { return splitterPoint( v, u, 0 ); }, { 0, 1, 0 } );
+                    surface( splitter, { 0, 1 }, across,
+                             [&]( float v, float u ) { return splitterPoint( v, u, .025f ); },
+                             { 0, -1, 0 } );
+                    for( unsigned i = 0; i < across; ++i )
+                    {
+                        const float a = float( i ) / across, b = float( i + 1 ) / across;
+                        face( splitter, splitterPoint( 0, a, 0 ), splitterPoint( 0, b, 0 ),
+                              splitterPoint( 0, b, .025f ), splitterPoint( 0, a, .025f ), { 0, 0, -1 } );
+                    }
+                    const float wingZ = tail - .11f, wingY = roof + .08f;
+                    addAirfoil( wing, cfg.bodyWidth * 1.04f, .44f, wingY, wingZ, .055f,
+                                level == 0   ? 18u
+                                : level == 1 ? 10u
+                                             : 6u );
+                    for( int side : { -1, 1 } )
+                    {
+                        const float x = side * half * .48f;
+                        auto foot = skin( tail - .40f, side * .48f );
+                        const Vector3F knee( x, wingY + .13f, tail - .37f );
+                        // Swan-neck supports attach to the top of the wing.
+                        addRod( wing, foot, knee, .025f, radial / 2 );
+                        addRod( wing, knee, { x, wingY + .065f, wingZ }, .025f, radial / 2 );
+                        wing.box( { side * cfg.bodyWidth * .52f, wingY + .015f, wingZ + .025f },
+                                  { .020f, .20f, .55f } );
+                        splitter.box( { side * half * 1.065f, .19f, nose + .16f },
+                                      { .018f, .12f, .30f } );
+                        if( details )
+                        {
+                            for( float y : { .34f, .47f } )
+                            {
+                                const Vector3F a( side * frontWidth * .88f, y, nose + .015f );
+                                const Vector3F b( side * half * 1.06f, y + .025f, nose + .10f );
+                                const Vector3F c( side * half * 1.05f, y + .045f, nose + .36f );
+                                const Vector3F d( side * frontWidth * .97f, y + .02f, nose + .36f );
+                                face( splitter, a, b, c, d, { 0, 1, 0 } );
+                                face( splitter, a - Vector3F( 0, .012f, 0 ), b - Vector3F( 0, .012f, 0 ),
+                                      c - Vector3F( 0, .012f, 0 ), d - Vector3F( 0, .012f, 0 ),
+                                      { 0, -1, 0 } );
+                            }
+                        }
+                    }
+                    auto ramp = [&]( float v, float u ) {
+                        return Vector3F( ( 2 * u - 1 ) * half * .84f, .13f + .16f * v * v,
+                                         tail - .62f + .71f * v );
+                    };
+                    surface( diffuser, { 0, .25f, .5f, .75f, 1 }, across / 2, ramp, { 0, 1, 0 } );
+                    surface( diffuser, { 0, .25f, .5f, .75f, 1 }, across / 2,
+                             [&]( float v, float u ) { return ramp( v, u ) - Vector3F( 0, .018f, 0 ); },
+                             { 0, -1, 0 } );
+                    for( int fin = -3; fin <= 3; ++fin )
+                    {
+                        if( level == 2 && ( std::abs( fin ) % 2 ) == 1 )
+                        {
+                            continue;
+                        }
+                        const float x = fin * half * .235f;
+                        const Vector3F a( x, .11f, tail - .55f ), b( x, .11f, tail + .09f );
+                        const Vector3F c( x, .32f, tail + .09f ), d( x, .18f, tail - .55f );
+                        face( diffuser, a, b, c, d, { 1, 0, 0 } );
+                        const Vector3F offset( .012f, 0, 0 );
+                        face( diffuser, a - offset, b - offset, c - offset, d - offset, { -1, 0, 0 } );
+                        face( diffuser, c, c - offset, d - offset, d, { 0, 1, 0 } );
+                    }
+                    rain.box( { 0, .39f, tail + .018f }, { .10f, .055f, .025f } );
+                    if( details )
+                    {
+                        // Hood extractors and fender gills follow the compound
+                        // body surface, so they remain fitted after dimension changes.
+                        for( int side : { -1, 1 } )
+                        {
+                            for( bool fender : { false, true } )
+                            {
+                                const float start = fender ? front - .08f : z( .15f );
+                                const float end = fender ? front + .29f : z( .29f );
+                                const float u0 = fender ? .81f : .14f, u1 = fender ? .94f : .45f;
+                                surface( vents, { start, ( start + end ) * .5f, end }, 5,
+                                         [&]( float depth, float u ) {
+                                             return skin( depth, side * ( u0 + ( u1 - u0 ) * u ) ) +
+                                                    Vector3F( 0, .009f, 0 );
+                                         },
+                                         { 0, 1, 0 } );
+                                for( unsigned slat = 1; slat <= ( level == 0 ? 6u : 4u ); ++slat )
+                                {
+                                    const float depth =
+                                        start + ( end - start ) * slat / ( level == 0 ? 7u : 5u );
+                                    surface( vents, { depth - .009f, depth + .009f }, 5,
+                                             [&]( float row, float u ) {
+                                                 return skin( row, side * ( u0 + ( u1 - u0 ) * u ) ) +
+                                                        Vector3F( 0, row < depth ? .014f : .035f, 0 );
+                                             },
+                                             { 0, 1, 0 } );
+                                }
+                            }
+                            const float cageX = side * half * .43f;
+                            const Vector3F foot( cageX, skin( z( .57f ), 0 ).y + .01f, z( .57f ) );
+                            const Vector3F top( cageX, roof - .065f, z( .57f ) );
+                            addRod( cage, foot, top, .021f, radial / 2 );
+                            addRod( cage, top,
+                                    { side * half * .38f, skin( z( .75f ), 0 ).y + .02f, z( .75f ) },
+                                    .021f, radial / 2 );
+                            addRod( cage, top, { side * half * .43f, roof - .08f, z( .47f ) }, .021f,
+                                    radial / 2 );
+                        }
+                        addRod( cage, { -half * .43f, roof - .065f, z( .57f ) },
+                                { half * .43f, roof - .065f, z( .57f ) }, .021f, radial / 2 );
+                        for( int end : { -1, 1 } )
+                        {
+                            const Vector3F centre( end < 0 ? -half * .34f : half * .34f, .30f,
+                                                   end < 0 ? nose - .04f : tail + .09f );
+                            for( unsigned i = 0; i < radial; ++i )
+                            {
+                                const float a = kTwoPi * i / radial, b = kTwoPi * ( i + 1 ) / radial;
+                                addRod(
+                                    tow,
+                                    centre + Vector3F( .042f * std::cos( a ), .042f * std::sin( a ), 0 ),
+                                    centre + Vector3F( .042f * std::cos( b ), .042f * std::sin( b ), 0 ),
+                                    .009f, 6 );
+                            }
+                        }
+                    }
+                }
                 for( Builder *builder :
-                     { &paint, &glass, &trim, &lamps, &tails, &seams, &metal, &calipers, &interior } )
+                     { &paint, &glass, &trim, &lamps, &tails, &seams, &metal, &calipers, &interior,
+                       &roofPanel, &wing, &splitter, &diffuser, &vents, &cage, &tow, &rain } )
                 {
                     if( builder->mesh.hasGeometry() )
                     {
@@ -1315,113 +1475,9 @@ namespace workphone
                                                section.material != VehicleMaterial::Brake;
                                     } ),
                     lod.sections.end() );
-                if( cfg.bodyStyle == VehicleBodyStyle::RoadSport )
-                    return buildSportsBody( cfg, level, std::move( lod ) );
-                const float front = -cfg.wheelbase * .45f;
-                const float rear = front + cfg.wheelbase;
-                const float nose = front - ( cfg.bodyLength - cfg.wheelbase ) * .52f;
-                const float tail = nose + cfg.bodyLength;
-                const float half = cfg.bodyWidth * .5f;
-                const float shoulder = std::max( .84f, cfg.tyreRadius * 2 + .12f );
-                const bool sport = cfg.bodyStyle == VehicleBodyStyle::RoadSport;
-                Builder paint( sport ? "sports_body_paint" : "gt_body_paint", VehicleMaterial::Paint );
-                Builder glass( sport ? "sports_cabin_glass" : "gt_cabin_glass", VehicleMaterial::Glass );
-                Builder aero( sport ? "sports_trim" : "gt_aero", VehicleMaterial::CarbonMatte );
-                Builder headlights( sport ? "sports_headlights" : "gt_headlights", VehicleMaterial::Headlight );
-                Builder taillights( sport ? "sports_tail_lights" : "gt_tail_lights", VehicleMaterial::TailLight );
-                // Side panels follow the wheel openings rather than covering the tyres.
-                const unsigned steps = level == 0 ? 96u : ( level == 1 ? 64u : 40u );
-                auto lowerEdge = [&]( float z ) {
-                    float y = .18f;
-                    for( float axle : { front, rear } )
-                    {
-                        const float dz = z - axle;
-                        const float radius = cfg.tyreRadius + .065f;
-                        if( std::abs( dz ) < radius )
-                            y = std::max( y, cfg.tyreRadius + std::sqrt( radius * radius - dz * dz ) );
-                    }
-                    return y;
-                };
-                for( unsigned i = 0; i < steps; ++i )
-                {
-                    const float z0 = nose + cfg.bodyLength * i / steps;
-                    const float z1 = nose + cfg.bodyLength * ( i + 1 ) / steps;
-                    for( int side : { -1, 1 } )
-                    {
-                        const float x = side * half;
-                        const Vector3F a( x, lowerEdge( z0 ), z0 ), b( x, lowerEdge( z1 ), z1 );
-                        const Vector3F c( x, shoulder, z1 ), d( x, shoulder, z0 );
-                        if( side > 0 ) paint.quad( a, d, c, b );
-                        else paint.quad( a, b, c, d );
-                    }
-                }
-                // Hood and rear deck surround a separate glazed coupe cabin.
-                paint.quad( { -half, shoulder, nose }, { -half, shoulder, -.65f },
-                            { half, shoulder, -.65f }, { half, shoulder, nose } );
-                paint.quad( { -half, shoulder, .95f }, { -half, shoulder, tail },
-                            { half, shoulder, tail }, { half, shoulder, .95f } );
-                paint.box( { 0, .44f, nose }, { cfg.bodyWidth, .52f, .10f } );
-                paint.box( { 0, .44f, tail }, { cfg.bodyWidth, .52f, .10f } );
-                const float roof = shoulder + ( sport ? .38f : .48f );
-                const float cabin = half * .72f;
-                paint.box( { 0, roof, .17f }, { cabin * 2, .055f, .94f } );
-                glass.quad( { -cabin, shoulder, -.65f }, { -cabin, roof, -.30f },
-                            { cabin, roof, -.30f }, { cabin, shoulder, -.65f } );
-                glass.quad( { -cabin, roof, .64f }, { -cabin, shoulder, .95f },
-                            { cabin, shoulder, .95f }, { cabin, roof, .64f } );
-                for( int side : { -1, 1 } )
-                {
-                    const float x = side * cabin;
-                    const Vector3F a( x, shoulder, -.65f ), b( x, shoulder, .95f );
-                    const Vector3F c( x, roof, .64f ), d( x, roof, -.30f );
-                    if( side > 0 ) glass.quad( a, d, c, b );
-                    else glass.quad( a, b, c, d );
-                    // Painted pillars and roof rails frame the glazing at every LOD.
-                    const unsigned pillarSides = level == 0 ? 8u : 4u;
-                    addRod( paint, a, d, .035f, pillarSides );
-                    addRod( paint, b, c, .035f, pillarSides );
-                    addRod( paint, c, d, .025f, pillarSides );
-                    addRod( paint, { x, shoulder, .22f }, { x, roof, .22f }, .025f, pillarSides );
-                    const float outer = side * half;
-                    if( side > 0 ) paint.quad( { x, shoulder, -.65f }, { x, shoulder, .95f },
-                        { outer, shoulder, .95f }, { outer, shoulder, -.65f } );
-                    else paint.quad( { x, shoulder, -.65f }, { outer, shoulder, -.65f },
-                        { outer, shoulder, .95f }, { x, shoulder, .95f } );
-                    if( !sport )
-                        aero.box( { side * .48f, shoulder + .20f, tail - .24f }, { .045f, .40f, .12f } );
-                    headlights.box( { side * half * .70f, .64f, nose - .06f }, { sport ? .42f : .38f, sport ? .055f : .10f, .035f } );
-                    taillights.box( { side * half * .70f, .64f, tail + .06f }, { .40f, .075f, .035f } );
-                    if( cfg.includeFineDetails && level < 2 )
-                        aero.box( { side * ( cabin + .14f ), shoulder + .25f, -.40f }, { .20f, .09f, .17f } );
-                }
-                aero.box( { 0, .38f, nose - .06f }, { cfg.bodyWidth * .58f, .22f, .035f } );
-                for( int side : { -1, 1 } )
-                    aero.box( { side * half, .18f, ( front + rear ) * .5f },
-                              { .07f, .10f, cfg.wheelbase - 2 * cfg.tyreRadius - .14f } );
-                if( cfg.includeFineDetails && level < 2 )
-                    for( int fin = -2; fin <= 2; ++fin )
-                        aero.box( { fin * .24f, .22f, tail - .20f }, { .018f, .16f, .52f } );
-                aero.box( { 0, .14f, nose + .08f }, { cfg.bodyWidth + .08f, .045f, .44f } );
-                aero.box( { 0, .16f, tail - .20f }, { cfg.bodyWidth * .85f, .06f, .52f } );
-                if( sport )
-                {
-                    // A subtle painted lip replaces the GT racing wing and pylons.
-                    paint.box( { 0, shoulder + .025f, tail - .06f },
-                               { cfg.bodyWidth * .82f, .045f, .12f } );
-                    if( cfg.includeFineDetails && level < 2 )
-                        for( int side : { -1, 1 } )
-                            aero.box( { side * .58f, .26f, tail + .07f }, { .14f, .09f, .16f } );
-                }
-                else
-                    addAirfoil( aero, cfg.bodyWidth * .94f, .34f, shoulder + .43f,
-                                tail - .24f, .03f, level == 0 ? 14u : 6u );
-                for( Builder *builder : { &paint, &glass, &aero, &headlights, &taillights } )
-                {
-                    builder->finalise();
-                    lod.sections.push_back( std::move( builder->mesh ) );
-                }
-                return lod;
+                return buildDetailedCoupeBody( cfg, level, std::move( lod ) );
             }
+
             VehicleLOD buildHelicopterLOD( const VehicleGeometryConfig &cfg, std::uint32_t level )
             {
                 VehicleLOD lod;
