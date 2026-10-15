@@ -427,7 +427,7 @@ BOOST_AUTO_TEST_CASE( presentation_and_effect_events_are_renderer_independent_an
     VehicleEffectsState effectState = WPVehicleEffects::reset( 88 );
     VehicleEffectEnvironment environment;
     environment.wetness = 0.6;
-    std::vector<VehicleEffectEvent> events;
+    workphone::Array<VehicleEffectEvent> events;
     for( int i = 0; i < 20; ++i )
     {
         const std::size_t before = events.size();

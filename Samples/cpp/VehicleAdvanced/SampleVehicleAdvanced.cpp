@@ -441,7 +441,6 @@ namespace workphone
             {
                 m_benchmarkStarted = true;
                 m_profileStart = profileNow;
-                bool linearSceneValid = true;
 #if WP_GRAPHICS_SYSTEM_CLAW && defined( _WIN32 )
                 if( auto renderer = dynamic_cast<render::ClawRendererDX11 *>(
                         app->getGraphicsSystem()->getRendererPtr() ) )
@@ -457,6 +456,7 @@ namespace workphone
                 m_benchmarkStarted && m_profileFrames >= 30 &&
                 profileNow - m_profileStart > ( m_benchmarkSeconds > 0 ? m_benchmarkSeconds : 3 ) )
             {
+                bool linearSceneValid = true;
                 size_t treeMeshes = 0, treeImposters = 0;
                 bool treeLODValid = m_assets.useFoliageWorld || !m_assets.treeLODs.empty();
                 for( const auto &group : m_assets.treeLODs )
