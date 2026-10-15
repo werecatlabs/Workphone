@@ -295,6 +295,7 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_warbird_properties, ProceduralCom
     scene::ProceduralVehicle vehicle;
     auto input = vehicle.getProperties();
     BOOST_CHECK_EQUAL( propertyValue<String>( input, "Physics Preset" ), "Plane - Warbird" );
+    input->setProperty( "Secondary Colour", ColourF( .10f, .065f, .035f, 1 ) );
     input->setProperty( "Wing Span", real_Num( 12.0 ) );
     input->setProperty( "Propeller Blades", u32( 3 ) );
     input->setProperty( "Landing Gear Down", false );
@@ -304,6 +305,7 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_warbird_properties, ProceduralCom
     BOOST_CHECK_EQUAL( propertyValue<u32>( output, "Propeller Blades" ), 3u );
     BOOST_CHECK_CLOSE( vehicle.getConfig().geometry.wingSpan, 12.0f, .01f );
     BOOST_CHECK( !vehicle.getConfig().geometry.landingGearDown );
+    BOOST_CHECK_CLOSE( vehicle.getConfig().appearance.secondary.g, .065f, .01f );
 }
 
 BOOST_FIXTURE_TEST_CASE( procedural_components_detached_meshes, ProceduralComponentFixture )

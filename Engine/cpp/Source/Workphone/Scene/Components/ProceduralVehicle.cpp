@@ -36,6 +36,7 @@ namespace workphone::scene
         m_config.geometry.bodyLength = 9.8f;
         m_config.geometry.bodyWidth = 1.2f;
         m_config.appearance.primary = { .12f, .15f, .10f, 1.0f };
+        m_config.appearance.secondary = { .10f, .065f, .035f, 1.0f };
     }
 
     ProceduralVehicle::~ProceduralVehicle() = default;
@@ -375,6 +376,9 @@ namespace workphone::scene
         p->setProperty( "Primary Colour",
                         ColourF( m_config.appearance.primary.r, m_config.appearance.primary.g,
                                  m_config.appearance.primary.b, m_config.appearance.primary.a ) );
+        p->setProperty( "Secondary Colour",
+                        ColourF( m_config.appearance.secondary.r, m_config.appearance.secondary.g,
+                                 m_config.appearance.secondary.b, m_config.appearance.secondary.a ) );
         return p;
     }
 
@@ -430,6 +434,10 @@ namespace workphone::scene
                               m_config.appearance.primary.b, m_config.appearance.primary.a );
         p->getPropertyValue( "Primary Colour", color );
         m_config.appearance.primary = { color.r, color.g, color.b, color.a };
+        color = ColourF( m_config.appearance.secondary.r, m_config.appearance.secondary.g,
+                         m_config.appearance.secondary.b, m_config.appearance.secondary.a );
+        p->getPropertyValue( "Secondary Colour", color );
+        m_config.appearance.secondary = { color.r, color.g, color.b, color.a };
     }
 
     void ProceduralVehicle::unload( SmartPtr<ISharedObject> data )

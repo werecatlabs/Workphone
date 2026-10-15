@@ -713,6 +713,8 @@ namespace workphone
             {
             case VehicleMaterial::Paint:
                 return VehicleMaterialSlot::BodyPaint;
+            case VehicleMaterial::SecondaryPaint:
+                return VehicleMaterialSlot::SecondaryPaint;
             case VehicleMaterial::CarbonGloss:
                 return VehicleMaterialSlot::CarbonGloss;
             case VehicleMaterial::CarbonMatte:

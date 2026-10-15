@@ -389,7 +389,7 @@ namespace workphone
                 for( const auto &section : lod.sections )
                 {
                     if( static_cast<std::uint32_t>( section.material ) >
-                        static_cast<std::uint32_t>( VehicleMaterial::Suspension ) )
+                        static_cast<std::uint32_t>( VehicleMaterial::SecondaryPaint ) )
                         addIssue( issues, true, "geometry",
                                   section.name + " uses an unknown material identifier" );
                     if( !section.hasGeometry() )

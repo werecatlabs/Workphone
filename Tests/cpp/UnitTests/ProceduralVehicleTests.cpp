@@ -7,7 +7,9 @@
 #include <WPProcedural/WPVehiclePresentation.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace workphone::procedural;
 
@@ -181,8 +183,42 @@ BOOST_AUTO_TEST_CASE( little_bird_helicopter_has_valid_lods_rotors_and_no_car_ru
     BOOST_REQUIRE( variant.isValid() );
     for( const auto &section : variant.geometry.lods.front().sections )
     {
-        if( section.name == "helicopter_main_rotor" ) BOOST_CHECK_EQUAL( section.vertices.size(), 6u * 24u );
-        if( section.name == "helicopter_tail_rotor" ) BOOST_CHECK_EQUAL( section.vertices.size(), 4u * 24u );
+        if( section.name == "helicopter_main_rotor" ) BOOST_CHECK( section.hasGeometry() );
+        if( section.name == "helicopter_tail_rotor" ) BOOST_CHECK( section.hasGeometry() );
+    }
+}
+
+BOOST_AUTO_TEST_CASE( little_bird_detail_pass_preserves_silhouette_and_bounds_at_each_lod )
+{
+    VehicleGenerationConfig request;
+    request.physicsPreset = VehiclePhysicsPreset::HelicopterLittleBird;
+    request.appearance.quality = VehicleAppearanceQuality::Preview;
+    for( bool fineDetails : { false, true } )
+    {
+        request.geometry.includeFineDetails = fineDetails;
+        const auto vehicle = WPVehicleGenerator::generate( request );
+        for( const auto &issue : vehicle.issues )
+            BOOST_CHECK_MESSAGE( !issue.error, issue.component + ": " + issue.message );
+        BOOST_REQUIRE( vehicle.isValid() );
+        std::size_t previousCount = std::numeric_limits<std::size_t>::max();
+        for( const auto &lod : vehicle.geometry.lods )
+        {
+            bool cowling = false, tips = false, interior = false, vents = false;
+            std::size_t vertexCount = 0;
+            for( const auto &section : lod.sections )
+            {
+                vertexCount += section.vertices.size();
+                cowling |= section.name == "helicopter_engine_cowling" && section.hasGeometry();
+                tips |= section.name == "helicopter_rotor_tips" && section.hasGeometry();
+                interior |= section.name == "helicopter_cabin_interior" && section.hasGeometry();
+                vents |= section.name == "helicopter_vents_and_seams" && section.hasGeometry();
+            }
+            BOOST_CHECK( cowling && tips );
+            BOOST_CHECK_EQUAL( interior, fineDetails && lod.level < 2 );
+            BOOST_CHECK_EQUAL( vents, fineDetails && lod.level < 2 );
+            BOOST_CHECK_LT( vertexCount, previousCount );
+            previousCount = vertexCount;
+        }
     }
 }
 
@@ -211,7 +247,7 @@ BOOST_AUTO_TEST_CASE( warbird_preset_has_valid_wings_canopy_propeller_and_retrac
                 {
                     wings |= section.name == "warbird_wings" && section.hasGeometry();
                     canopy |= section.name == "warbird_canopy" && section.hasGeometry();
-                    propeller |= section.name == "warbird_propeller" && section.vertices.size() == 4u * 24u;
+                    propeller |= section.name == "warbird_propeller" && section.hasGeometry();
                     gear |= section.name == "warbird_landing_gear" && section.hasGeometry();
                 }
                 BOOST_CHECK( wings && canopy && propeller );
@@ -225,7 +261,45 @@ BOOST_AUTO_TEST_CASE( warbird_preset_has_valid_wings_canopy_propeller_and_retrac
     const auto variant = WPVehicleGenerator::generate( request );
     BOOST_REQUIRE( variant.isValid() );
     for( const auto &section : variant.geometry.lods.front().sections )
-        if( section.name == "warbird_propeller" ) BOOST_CHECK_EQUAL( section.vertices.size(), 72u );
+        if( section.name == "warbird_propeller" ) BOOST_CHECK( section.hasGeometry() );
+}
+
+BOOST_AUTO_TEST_CASE( warbird_detail_pass_keeps_lods_valid_and_drops_small_parts_at_distance )
+{
+    VehicleGenerationConfig request;
+    request.physicsPreset = VehiclePhysicsPreset::Warbird;
+    request.appearance.quality = VehicleAppearanceQuality::Preview;
+    request.appearance.secondary = { .10f, .065f, .035f, 1 };
+    const auto detailed = WPVehicleGenerator::generate( request );
+    BOOST_REQUIRE( detailed.isValid() );
+    auto hasSection = []( const VehicleLOD &lod, const char *name ) {
+        return std::any_of( lod.sections.begin(), lod.sections.end(), [&]( const auto &section ) {
+            return section.name == name && section.hasGeometry();
+        } );
+    };
+    for( const auto &lod : detailed.geometry.lods )
+    {
+        BOOST_CHECK( hasSection( lod, "warbird_camouflage" ) );
+        BOOST_CHECK( hasSection( lod, "warbird_markings" ) );
+        BOOST_CHECK( hasSection( lod, "warbird_propeller_tips" ) );
+        BOOST_CHECK( hasSection( lod, "warbird_wheel_hubs" ) );
+        BOOST_CHECK_EQUAL( hasSection( lod, "warbird_panel_lines" ), lod.level < 2 );
+        BOOST_CHECK_EQUAL( hasSection( lod, "warbird_cockpit" ), lod.level < 2 );
+    }
+    BOOST_CHECK( WPVehicleGenerator::materialSlotFor( VehicleMaterial::SecondaryPaint ) == VehicleMaterialSlot::SecondaryPaint );
+    request.geometry.includeFineDetails = false;
+    const auto simple = WPVehicleGenerator::generate( request );
+    BOOST_REQUIRE( simple.isValid() );
+    BOOST_CHECK( !hasSection( simple.geometry.lods.front(), "warbird_panel_lines" ) );
+    BOOST_CHECK( !hasSection( simple.geometry.lods.front(), "warbird_cockpit" ) );
+    auto vertexCount = []( const VehicleLOD &lod ) {
+        std::size_t result = 0;
+        for( const auto &section : lod.sections ) result += section.vertices.size();
+        return result;
+    };
+    BOOST_CHECK_GT( vertexCount( detailed.geometry.lods[0] ), vertexCount( detailed.geometry.lods[1] ) );
+    BOOST_CHECK_GT( vertexCount( detailed.geometry.lods[1] ), vertexCount( detailed.geometry.lods[2] ) );
+    BOOST_CHECK_GT( vertexCount( detailed.geometry.lods[0] ), vertexCount( simple.geometry.lods[0] ) );
 }
 
 BOOST_AUTO_TEST_CASE( runtime_dynamics_accelerates_brakes_and_replays_deterministically )

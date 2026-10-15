@@ -916,11 +916,11 @@ namespace workphone
                 VehicleLOD lod;
                 lod.level = level;
                 lod.suggestedScreenCoverage = level == 0 ? .32f : ( level == 1 ? .085f : 0.0f );
-                const float scale = cfg.bodyLength / 7.0f;
-                const float width = cfg.bodyWidth / 1.5f;
-                const unsigned around = level == 0 ? 48u : ( level == 1 ? 28u : 16u );
+                const float scale = cfg.bodyLength / 7.0f, width = cfg.bodyWidth / 1.5f;
+                const unsigned around = level == 0 ? 64u : ( level == 1 ? 40u : 24u );
                 const unsigned rows = around / 2;
                 const unsigned rodSides = level == 0 ? 12u : ( level == 1 ? 8u : 6u );
+                const bool details = cfg.includeFineDetails && level < 2;
                 Builder hull( "helicopter_fuselage", VehicleMaterial::Paint );
                 Builder glazing( "helicopter_bubble_cockpit", VehicleMaterial::Glass );
                 Builder frame( "helicopter_cockpit_frame", VehicleMaterial::CarbonMatte );
@@ -928,121 +928,230 @@ namespace workphone
                 Builder mainRotor( "helicopter_main_rotor", VehicleMaterial::CarbonMatte );
                 Builder tailRotor( "helicopter_tail_rotor", VehicleMaterial::CarbonMatte );
                 Builder lights( "helicopter_navigation_lights", VehicleMaterial::TailLight );
-                // Partition one ellipsoid into painted shell and glazing, avoiding
-                // overlapping glass/paint surfaces and zero-area polar quads.
+                Builder cowling( "helicopter_engine_cowling", VehicleMaterial::Paint );
+                Builder hardware( "helicopter_mechanical_details", VehicleMaterial::Suspension );
+                Builder vents( "helicopter_vents_and_seams", VehicleMaterial::CarbonMatte );
+                Builder interior( "helicopter_cabin_interior", VehicleMaterial::CarbonMatte );
+                Builder tips( "helicopter_rotor_tips", VehicleMaterial::Decal );
+                auto face = []( Builder &builder, Vector3F a, Vector3F b, Vector3F c, Vector3F d, Vector3F outward ) {
+                    if( ( b - a ).crossProduct( c - a ).dotProduct( outward ) < 0 ) builder.quad( a, d, c, b );
+                    else builder.quad( a, b, c, d );
+                };
                 auto bubble = [&]( unsigned row, unsigned col ) {
                     const float latitude = -kPi * .5f + kPi * row / rows;
                     const float longitude = kTwoPi * col / around;
-                    const float ring = std::cos( latitude );
+                    const float ring = std::cos( latitude ), nose = std::sin( longitude );
                     return Vector3F( .75f * width * ring * std::cos( longitude ),
-                                     ( 1.42f + .86f * std::sin( latitude ) ) * scale,
-                                     ( -.90f + 1.65f * ring * std::sin( longitude ) ) * scale );
+                                     ( 1.42f + .84f * std::sin( latitude ) ) * scale,
+                                     ( -.70f + ( nose < 0 ? 1.60f : 1.15f ) * ring * nose ) * scale );
                 };
+                // Material boundaries follow latitude/longitude rows exactly, so the
+                // windshield and side windows have continuous, frameable edges.
+                const unsigned sillRow = rows / 3, roofRow = rows * 5 / 6;
                 for( unsigned row = 0; row < rows; ++row )
                     for( unsigned col = 0; col < around; ++col )
                     {
                         const auto a = bubble( row, col ), b = bubble( row + 1, col );
                         const auto c = bubble( row + 1, col + 1 ), d = bubble( row, col + 1 );
-                        const auto centre = ( a + b + c + d ) * .25f;
-                        auto &builder = centre.z < -.48f * scale && centre.y > 1.05f * scale
-                                            ? glazing : hull;
+                        const bool front = col >= around / 2;
+                        const bool sideWindow = col < around / 8 || col >= around * 3 / 8;
+                        auto &builder = row >= sillRow && row < roofRow && ( front || sideWindow ) ? glazing : hull;
                         if( row == 0 || row + 1 == rows )
                         {
                             const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
-                            if( row == 0 )
-                            {
-                                builder.vertex( a, { .5f, 0 } );
-                                builder.vertex( b, { 0, 1 } );
-                                builder.vertex( c, { 1, 1 } );
-                            }
-                            else
-                            {
-                                builder.vertex( a, { 0, 0 } );
-                                builder.vertex( b, { .5f, 1 } );
-                                builder.vertex( d, { 1, 0 } );
-                            }
+                            builder.vertex( a, { 0, 0 } );
+                            builder.vertex( b, { .5f, 1 } );
+                            builder.vertex( row == 0 ? c : d, { 1, 0 } );
                             builder.triangle( base, base + 1, base + 2 );
                         }
                         else builder.quad( a, b, c, d );
                     }
-                // Curved centre windshield bar follows the same bubble surface.
-                for( unsigned row = rows / 3; row + 1 < rows; ++row )
-                    addRod( frame, bubble( row, around * 3 / 4 ),
-                            bubble( row + 1, around * 3 / 4 ), .018f * scale, rodSides );
-                addRod( hull, { 0, 1.45f * scale, .35f * scale },
-                              { 0, 1.75f * scale, 2.8f * scale }, .14f * width, rodSides );
-                addRod( hull, { 0, 1.75f * scale, 2.8f * scale },
-                              { 0, 1.85f * scale, 4.3f * scale }, .085f * width, rodSides );
-                // T tail, vertical fin and conventional exposed anti-torque rotor.
-                hull.box( { 0, 2.18f * scale, 4.10f * scale },
-                          { .07f * width, .85f * scale, .44f * scale } );
-                hull.box( { 0, 2.52f * scale, 4.10f * scale },
-                          { 1.35f * width, .055f * scale, .38f * scale } );
+                // Curved centre windshield bar, rear door posts, roof and sill rails.
+                for( unsigned col : { around * 3 / 4, around * 5 / 8, around * 7 / 8, around / 8, around * 3 / 8 } )
+                    for( unsigned row = sillRow; row < roofRow; ++row )
+                        addRod( frame, bubble( row, col ), bubble( row + 1, col ), .018f * scale, rodSides );
+                for( unsigned row : { sillRow, roofRow } )
+                    for( unsigned col = 0; col < around; ++col )
+                        addRod( frame, bubble( row, col ), bubble( row, col + 1 ), .016f * scale, rodSides );
+                const auto hullBubbleVertices = hull.mesh.vertices.size();
+                const auto glassBubbleVertices = glazing.mesh.vertices.size();
+                // A continuous tapered boom blends into the aft engine compartment.
+                Array<PodStation> boom = {
+                    { .20f * scale, 0, .24f * width, 1.27f * scale, 1.80f * scale },
+                    { .90f * scale, 0, .19f * width, 1.38f * scale, 1.83f * scale },
+                    { 2.6f * scale, 0, .11f * width, 1.60f * scale, 1.86f * scale },
+                    { 4.3f * scale, 0, .065f * width, 1.76f * scale, 1.92f * scale }
+                };
+                loftPod( hull, refineStations( boom, level == 0 ? 5u : 2u,
+                    { &PodStation::halfWidth, &PodStation::bottom, &PodStation::top } ), around / 2, true );
+                Array<PodStation> engine = {
+                    { -.40f * scale, 0, .27f * width, 1.78f * scale, 2.22f * scale },
+                    { .10f * scale, 0, .48f * width, 1.52f * scale, 2.36f * scale },
+                    { .65f * scale, 0, .43f * width, 1.42f * scale, 2.25f * scale },
+                    { 1.05f * scale, 0, .18f * width, 1.46f * scale, 1.91f * scale }
+                };
+                loftPod( cowling, refineStations( engine, level == 0 ? 6u : 3u,
+                    { &PodStation::halfWidth, &PodStation::bottom, &PodStation::top } ), around / 2, true );
+                // A swept vertical stabilizer and thin tapered T-tail replace boxes.
+                const std::array<Vector2F, 5> fin = { Vector2F( 3.80f, 1.72f ), { 4.45f, 1.76f },
+                    { 4.38f, 2.64f }, { 4.12f, 2.81f }, { 3.90f, 2.57f } };
+                for( int side : { -1, 1 } )
+                {
+                    const auto base = static_cast<std::uint32_t>( hull.mesh.vertices.size() );
+                    for( const auto &p : fin ) hull.vertex( { side * .04f * width, p.y * scale, p.x * scale }, { p.x, p.y } );
+                    for( unsigned i = 1; i + 1 < fin.size(); ++i )
+                        if( side < 0 ) hull.triangle( base, base + i, base + i + 1 );
+                        else hull.triangle( base, base + i + 1, base + i );
+                }
+                for( unsigned i = 0; i < fin.size(); ++i )
+                {
+                    const auto &p = fin[i], &q = fin[( i + 1 ) % fin.size()];
+                    hull.quad( { -.04f * width, p.y * scale, p.x * scale }, { .04f * width, p.y * scale, p.x * scale },
+                               { .04f * width, q.y * scale, q.x * scale }, { -.04f * width, q.y * scale, q.x * scale } );
+                }
+                for( int side : { -1, 1 } )
+                {
+                    face( hull, { 0, 2.54f * scale, 3.88f * scale }, { side * .74f * width, 2.55f * scale, 4.03f * scale },
+                        { side * .67f * width, 2.55f * scale, 4.37f * scale }, { 0, 2.54f * scale, 4.33f * scale }, { 0, 1, 0 } );
+                    face( hull, { 0, 2.50f * scale, 3.88f * scale }, { side * .74f * width, 2.51f * scale, 4.03f * scale },
+                        { side * .67f * width, 2.51f * scale, 4.37f * scale }, { 0, 2.50f * scale, 4.33f * scale }, { 0, -1, 0 } );
+                    const std::array<Vector3F, 4> top = { Vector3F( 0, 2.54f * scale, 3.88f * scale ),
+                        { side * .74f * width, 2.55f * scale, 4.03f * scale },
+                        { side * .67f * width, 2.55f * scale, 4.37f * scale }, { 0, 2.54f * scale, 4.33f * scale } };
+                    for( unsigned i = 0; i < top.size(); ++i )
+                    {
+                        const auto &a = top[i], &b = top[( i + 1 ) % top.size()];
+                        const auto middle = ( a + b ) * .5f;
+                        face( hull, a, b, b - Vector3F( 0, .04f * scale, 0 ), a - Vector3F( 0, .04f * scale, 0 ),
+                              { middle.x - side * .35f * width, 0, middle.z - 4.12f * scale } );
+                    }
+                }
+                // Smooth segmented skid tips and two continuous cross-tube mounts.
                 for( int side : { -1, 1 } )
                 {
                     const float x = side * .9f * width;
-                    addRod( gear, { x, .12f * scale, -1.9f * scale },
-                                  { x, .12f * scale, 1.15f * scale }, .045f * scale, rodSides );
-                    addRod( gear, { x, .12f * scale, -1.9f * scale },
-                                  { x, .30f * scale, -2.15f * scale }, .045f * scale, rodSides );
-                    for( float z : { -1.25f, .05f } )
-                        addRod( gear, { side * .42f * width, 1.05f * scale, z * scale },
-                                      { x, .12f * scale, z * scale }, .038f * scale, rodSides );
+                    const std::array<Vector3F, 5> skid = {
+                        Vector3F( x, .34f * scale, -2.0f * scale ), { x, .19f * scale, -1.90f * scale },
+                        { x, .12f * scale, -1.72f * scale }, { x, .12f * scale, 1.0f * scale },
+                        { x, .15f * scale, 1.12f * scale }
+                    };
+                    for( unsigned i = 0; i + 1 < skid.size(); ++i ) addRod( gear, skid[i], skid[i + 1], .045f * scale, rodSides );
+                    for( float z : { -1.2f, .02f } )
+                    {
+                        const Vector3F attach( side * .42f * width, 1.05f * scale, z * scale );
+                        const Vector3F knee( side * .68f * width, .54f * scale, z * scale );
+                        addRod( gear, attach, knee, .038f * scale, rodSides );
+                        addRod( gear, knee, { x, .12f * scale, z * scale }, .038f * scale, rodSides );
+                        if( details )
+                            hardware.box( { x, .16f * scale, z * scale }, { .13f * width, .10f * scale, .16f * scale } );
+                    }
+                    if( details )
+                    {
+                        frame.box( { x, .20f * scale, -.55f * scale }, { .13f * width, .045f * scale, .58f * scale } );
+                        addRod( gear, { side * .66f * width, .88f * scale, -.50f * scale },
+                                      { side * 1.02f * width, .55f * scale, -.50f * scale }, .022f * scale, 6 );
+                        addRod( gear, { side * 1.02f * width, .55f * scale, -.70f * scale },
+                                      { side * 1.02f * width, .55f * scale, -.30f * scale }, .022f * scale, 6 );
+                    }
                 }
                 const Vector3F hub( 0, 2.73f * scale, -.55f * scale );
-                addRod( frame, { 0, 2.05f * scale, -.55f * scale }, hub, .065f * scale, rodSides );
-                frame.box( hub, { .36f * scale, .10f * scale, .36f * scale } );
-                for( unsigned blade = 0; blade < cfg.mainRotorBlades; ++blade )
-                {
-                    const float angle = kTwoPi * blade / cfg.mainRotorBlades + .18f;
-                    const auto begin = mainRotor.mesh.vertices.size();
-                    const float root = .22f;
-                    mainRotor.box( hub + Vector3F( ( root + cfg.mainRotorRadius ) * .5f, 0, 0 ),
-                                   { cfg.mainRotorRadius - root, .035f * scale, .20f * scale } );
-                    for( auto i = begin; i < mainRotor.mesh.vertices.size(); ++i )
+                addRod( hardware, { 0, 2.08f * scale, -.55f * scale }, hub, .065f * scale, rodSides );
+                addRod( hardware, { 0, 2.37f * scale, -.55f * scale }, { 0, 2.46f * scale, -.55f * scale }, .17f * scale, around / 2 );
+                // Closed swept blade ribbons: a full rotor silhouette at every LOD.
+                auto rotor = [&]( Builder &builder, Vector3F centre, float radius, unsigned blades, bool main ) {
+                    const std::array<Vector2F, 5> profile = { Vector2F( 0, .045f ), { .12f, .10f },
+                        { .65f, .095f }, { .92f, .075f }, { 1, .032f } };
+                    for( unsigned blade = 0; blade < blades; ++blade )
                     {
-                        auto &position = mainRotor.mesh.vertices[i].position;
-                        const auto local = position - hub;
-                        position = hub + Vector3F( local.x * std::cos( angle ) - local.z * std::sin( angle ),
-                                                   local.y,
-                                                   local.x * std::sin( angle ) + local.z * std::cos( angle ) );
+                        const float angle = kTwoPi * blade / blades + ( main ? .18f : .35f );
+                        auto point = [&]( unsigned row, int edge, int upper ) {
+                            const float t = profile[row].x;
+                            const float r = ( main ? .23f : .08f ) + ( radius - ( main ? .23f : .08f ) ) * t;
+                            const float chord = profile[row].y * ( main ? 1.0f : .55f ) * scale;
+                            const float sweep = .12f * t * t * ( main ? 1.0f : .3f );
+                            const float h = upper * .012f * scale + edge * chord * .12f;
+                            const float lateral = edge * chord + sweep;
+                            if( main ) return centre + Vector3F( r * std::cos( angle ) - lateral * std::sin( angle ), h,
+                                                                 r * std::sin( angle ) + lateral * std::cos( angle ) );
+                            return centre + Vector3F( h, r * std::cos( angle ) - lateral * std::sin( angle ),
+                                                     r * std::sin( angle ) + lateral * std::cos( angle ) );
+                        };
+                        for( unsigned row = 0; row + 1 < profile.size(); ++row )
+                        {
+                            auto &part = row + 2 == profile.size() ? tips : builder;
+                            for( int upper : { -1, 1 } )
+                                face( part, point( row, -1, upper ), point( row + 1, -1, upper ),
+                                    point( row + 1, 1, upper ), point( row, 1, upper ), main ? Vector3F( 0, float( upper ), 0 ) : Vector3F( float( upper ), 0, 0 ) );
+                            for( int edge : { -1, 1 } )
+                                face( part, point( row, edge, -1 ), point( row, edge, 1 ), point( row + 1, edge, 1 ), point( row + 1, edge, -1 ),
+                                    main ? Vector3F( -edge * std::sin( angle ), 0, edge * std::cos( angle ) ) : Vector3F( 0, -edge * std::sin( angle ), edge * std::cos( angle ) ) );
+                        }
+                        for( unsigned row : { 0u, 4u } )
+                        {
+                            const float sign = row == 0 ? -1.0f : 1.0f;
+                            face( row == 0 ? builder : tips, point( row, -1, -1 ), point( row, 1, -1 ), point( row, 1, 1 ), point( row, -1, 1 ),
+                                main ? Vector3F( sign * std::cos( angle ), 0, sign * std::sin( angle ) ) : Vector3F( 0, sign * std::cos( angle ), sign * std::sin( angle ) ) );
+                        }
+                        if( details )
+                        {
+                            const Vector3F end = main ? centre + Vector3F( .28f * std::cos( angle ), 0, .28f * std::sin( angle ) )
+                                                     : centre + Vector3F( 0, .13f * std::cos( angle ), .13f * std::sin( angle ) );
+                            addRod( hardware, centre, end, .025f * scale, 6 );
+                            if( main ) addRod( hardware, centre + Vector3F( 0, -.25f * scale, 0 ), end, .012f * scale, 6 );
+                        }
                     }
-                }
+                };
+                rotor( mainRotor, hub, cfg.mainRotorRadius, cfg.mainRotorBlades, true );
                 const Vector3F tailHub( -.29f * width, 1.85f * scale, 4.3f * scale );
-                addRod( frame, { 0, tailHub.y, tailHub.z }, tailHub, .05f * scale, rodSides );
-                for( unsigned blade = 0; blade < cfg.tailRotorBlades; ++blade )
+                addRod( hardware, { 0, tailHub.y, tailHub.z }, tailHub, .075f * scale, rodSides );
+                rotor( tailRotor, tailHub, cfg.tailRotorRadius, cfg.tailRotorBlades, false );
+                lights.box( { 0, 2.83f * scale, 4.12f * scale }, { .07f * scale, .07f * scale, .07f * scale } );
+                if( details )
                 {
-                    const float angle = kTwoPi * blade / cfg.tailRotorBlades + .35f;
-                    const auto begin = tailRotor.mesh.vertices.size();
-                    const float root = .08f;
-                    tailRotor.box( tailHub + Vector3F( 0, ( root + cfg.tailRotorRadius ) * .5f, 0 ),
-                                   { .025f * scale, cfg.tailRotorRadius - root, .10f * scale } );
-                    for( auto i = begin; i < tailRotor.mesh.vertices.size(); ++i )
-                    {
-                        auto &position = tailRotor.mesh.vertices[i].position;
-                        const auto local = position - tailHub;
-                        position = tailHub + Vector3F( local.x,
-                            local.y * std::cos( angle ) - local.z * std::sin( angle ),
-                            local.y * std::sin( angle ) + local.z * std::cos( angle ) );
-                    }
-                }
-                lights.box( { 0, 2.62f * scale, 4.1f * scale }, { .07f, .07f, .07f } );
-                if( cfg.includeFineDetails && level < 2 )
-                {
-                    // Exhaust, cabin seats and aerial remain optional at distance.
-                    addRod( frame, { .35f * width, 1.85f * scale, .30f * scale },
-                                  { .50f * width, 1.90f * scale, .65f * scale }, .11f * scale, rodSides );
-                    addRod( frame, { 0, .60f * scale, -.1f * scale },
-                                  { 0, .28f * scale, -.1f * scale }, .012f * scale, 6 );
+                    // Engine exhaust collar, cooling louvres and access-panel seams.
+                    addRod( hardware, { .30f * width, 2.02f * scale, .55f * scale },
+                                      { .57f * width, 2.05f * scale, .86f * scale }, .12f * scale, rodSides );
+                    addRod( vents, { .55f * width, 2.05f * scale, .83f * scale },
+                                  { .59f * width, 2.055f * scale, .89f * scale }, .10f * scale, rodSides );
                     for( int side : { -1, 1 } )
-                        frame.box( { side * .32f * width, 1.1f * scale, -.65f * scale },
-                                   { .42f * width, .40f * scale, .38f * scale } );
+                    {
+                        for( unsigned i = 0; i < 6; ++i )
+                            vents.box( { side * .44f * width, 2.0f * scale, ( .12f + i * .085f ) * scale },
+                                       { .02f * width, .16f * scale, .025f * scale } );
+                        // Door handles and small hinges attach to the rear window posts.
+                        const auto handle = bubble( sillRow + 2, side > 0 ? 0 : around / 2 );
+                        addRod( hardware, handle, handle + Vector3F( 0, 0, -.13f * scale ), .012f * scale, 6 );
+                        for( float y : { 1.14f, 1.65f } )
+                            hardware.box( { side * .69f * width, y * scale, -.25f * scale }, { .045f * width, .07f * scale, .10f * scale } );
+                        interior.box( { side * .30f * width, 1.0f * scale, -.65f * scale }, { .43f * width, .13f * scale, .47f * scale } );
+                        interior.box( { side * .30f * width, 1.22f * scale, -.40f * scale }, { .43f * width, .48f * scale, .09f * scale } );
+                        addRod( interior, { side * .30f * width, .98f * scale, -.90f * scale },
+                                          { side * .30f * width, 1.25f * scale, -1.03f * scale }, .018f * scale, 6 );
+                    }
+                    interior.box( { 0, 1.20f * scale, -1.25f * scale }, { .22f * width, .48f * scale, .40f * scale } );
+                    interior.box( { 0, 1.50f * scale, -1.32f * scale }, { .57f * width, .16f * scale, .18f * scale } );
+                    addRod( vents, { 0, .60f * scale, -.1f * scale }, { 0, .28f * scale, -.1f * scale }, .012f * scale, 6 );
                 }
-                for( Builder *builder : { &hull, &glazing, &frame, &gear, &mainRotor, &tailRotor, &lights } )
-                {
-                    builder->finalise();
-                    lod.sections.push_back( std::move( builder->mesh ) );
-                }
+                for( Builder *builder : { &hull, &glazing, &frame, &gear, &mainRotor, &tailRotor, &lights,
+                                          &cowling, &hardware, &vents, &interior, &tips } )
+                    if( builder->mesh.hasGeometry() )
+                    {
+                        builder->finalise();
+                        // Analytic normals keep the bubble smooth across the independent
+                        // glass/paint sections instead of exposing a faceted latitude grid.
+                        const auto count = builder == &hull ? hullBubbleVertices : builder == &glazing ? glassBubbleVertices : 0;
+                        for( std::size_t i = 0; i < count; ++i )
+                        {
+                            auto &v = builder->mesh.vertices[i];
+                            const float rz = ( v.position.z < -.70f * scale ? 1.60f : 1.15f ) * scale;
+                            v.normal = normalised( { v.position.x / ( .75f * width * .75f * width ),
+                                ( v.position.y - 1.42f * scale ) / ( .84f * scale * .84f * scale ),
+                                ( v.position.z + .70f * scale ) / ( rz * rz ) } );
+                            v.tangent = normalised( v.tangent - v.normal * v.tangent.dotProduct( v.normal ),
+                                                    normalised( v.normal.crossProduct( { 0, 0, 1 } ), { 1, 0, 0 } ) );
+                        }
+                        lod.sections.push_back( std::move( builder->mesh ) );
+                    }
                 return lod;
             }
             VehicleLOD buildWarbirdLOD( const VehicleGeometryConfig &cfg, std::uint32_t level )
@@ -1052,7 +1161,7 @@ namespace workphone
                 lod.suggestedScreenCoverage = level == 0 ? .32f : ( level == 1 ? .085f : 0.0f );
                 const float scale = cfg.bodyLength / 9.8f;
                 const float width = cfg.bodyWidth / 1.2f;
-                const unsigned radial = level == 0 ? 40u : ( level == 1 ? 24u : 12u );
+                const unsigned radial = level == 0 ? 56u : ( level == 1 ? 32u : 16u );
                 Builder hull( "warbird_fuselage", VehicleMaterial::Paint );
                 Builder wings( "warbird_wings", VehicleMaterial::Paint );
                 Builder tail( "warbird_tail", VehicleMaterial::Paint );
@@ -1061,8 +1170,17 @@ namespace workphone
                 Builder propeller( "warbird_propeller", VehicleMaterial::CarbonMatte );
                 Builder gear( "warbird_landing_gear", VehicleMaterial::Suspension );
                 Builder tyres( "warbird_tyres", VehicleMaterial::Tyre );
+                Builder camouflage( "warbird_camouflage", VehicleMaterial::SecondaryPaint );
+                Builder markings( "warbird_markings", VehicleMaterial::Decal );
+                Builder panelLines( "warbird_panel_lines", VehicleMaterial::CarbonMatte );
+                Builder rims( "warbird_wheel_hubs", VehicleMaterial::Rim );
+                Builder hardware( "warbird_metal_details", VehicleMaterial::Rim );
+                Builder cockpit( "warbird_cockpit", VehicleMaterial::CarbonMatte );
+                Builder bladeTips( "warbird_propeller_tips", VehicleMaterial::Caliper );
                 struct Station { float z, halfWidth, y, height; };
-                auto loft = [&]( Builder &builder, const Array<Station> &stations ) {
+                auto loft = [&]( Builder &builder, const Array<Station> &controlStations ) {
+                    const auto stations = refineStations( controlStations, level == 0 ? 7u : ( level == 1 ? 4u : 2u ),
+                        { &Station::halfWidth, &Station::y, &Station::height } );
                     const auto base = static_cast<std::uint32_t>( builder.mesh.vertices.size() );
                     for( const auto &station : stations )
                         for( unsigned col = 0; col <= radial; ++col )
@@ -1091,10 +1209,35 @@ namespace workphone
                             else builder.triangle( centre, ring + col, ring + col + 1 );
                     }
                 };
-                loft( hull, { { -4.0f, .40f, 1.90f, .43f }, { -3.5f, .52f, 1.9f, .55f },
+                const Array<Station> bodyStations = { { -4.0f, .40f, 1.90f, .43f }, { -3.5f, .52f, 1.9f, .55f },
                     { -2.1f, .60f, 1.9f, .64f }, { -.8f, .58f, 1.85f, .65f },
                     { .8f, .49f, 1.8f, .55f }, { 2.6f, .26f, 1.85f, .34f },
-                    { 3.8f, .12f, 1.9f, .19f }, { 4.7f, .035f, 1.9f, .05f } } );
+                    { 3.8f, .12f, 1.9f, .19f }, { 4.7f, .035f, 1.9f, .05f } };
+                loft( hull, bodyStations );
+                const auto skinStations = refineStations( bodyStations, level == 0 ? 7u : ( level == 1 ? 4u : 2u ),
+                    { &Station::halfWidth, &Station::y, &Station::height } );
+                auto bodySkin = [&]( unsigned row, float angle, float offset ) {
+                    const auto &station = skinStations[row];
+                    return Vector3F( ( station.halfWidth * width + offset ) * std::cos( angle ),
+                        ( station.y + station.height * std::sin( angle ) ) * scale + offset * std::sin( angle ),
+                        station.z * scale );
+                };
+                // Broad flowing paint bands wrap around the engine and rear fuselage.
+                for( unsigned row = 0; row + 1 < skinStations.size(); ++row )
+                {
+                    const float z = skinStations[row].z;
+                    const float sweep0 = .55f + .35f * std::sin( z * 1.4f );
+                    const float sweep1 = .55f + .35f * std::sin( skinStations[row + 1].z * 1.4f );
+                    for( unsigned col = 0; col < radial / 3; ++col )
+                    {
+                        const float a = float( col ) / ( radial / 3 ) * 1.7f;
+                        const float c = float( col + 1 ) / ( radial / 3 ) * 1.7f;
+                        camouflage.quad( bodySkin( row, sweep0 + a, .004f * scale ),
+                            bodySkin( row, sweep0 + c, .004f * scale ),
+                            bodySkin( row + 1, sweep1 + c, .004f * scale ),
+                            bodySkin( row + 1, sweep1 + a, .004f * scale ) );
+                    }
+                }
                 loft( hull, { { -4.8f, .025f, 1.9f, .025f }, { -4.55f, .23f, 1.9f, .23f },
                              { -4.02f, .40f, 1.9f, .40f } } );
                 loft( canopy, { { -.95f, .03f, 2.32f, .03f }, { -.60f, .38f, 2.48f, .38f },
@@ -1106,21 +1249,36 @@ namespace workphone
                         b.quad( a, e, d, c );
                     else b.quad( a, c, d, e );
                 };
+                auto wingSurface = [&]( int side, float t, float q, int upper, float span, float chord,
+                                         float z, float y, float rise ) {
+                    const float localChord = chord * std::sqrt( std::max( .015f, 1 - t * t ) );
+                    const float thickness = .005f + chord * .045f * std::sin( q * kPi ) * ( 1 - .65f * t );
+                    return Vector3F( side * ( .20f * width + ( span * .5f - .20f * width ) * t ),
+                        ( y + rise * t + upper * thickness ) * scale,
+                        ( z + .32f * t + ( q - .45f ) * localChord ) * scale );
+                };
                 auto wing = [&]( Builder &builder, float span, float chord, float z, float y, float rise ) {
                     const unsigned spans = level == 0 ? 24u : ( level == 1 ? 14u : 8u );
                     const unsigned chords = level == 0 ? 12u : ( level == 1 ? 8u : 4u );
                     for( int side : { -1, 1 } )
                     {
                         auto point = [&]( unsigned row, unsigned col, int upper ) {
-                            const float t = float( row ) / spans, q = float( col ) / chords;
-                            const float localChord = chord * std::sqrt( std::max( .015f, 1 - t * t ) );
-                            const float thickness = .005f + chord * .045f * std::sin( q * kPi ) * ( 1 - .65f * t );
-                            return Vector3F( side * ( .20f * width + ( span * .5f - .20f * width ) * t ),
-                                ( y + rise * t + upper * thickness ) * scale,
-                                ( z + .32f * t + ( q - .45f ) * localChord ) * scale );
+                            return wingSurface( side, float( row ) / spans, float( col ) / chords,
+                                                upper, span, chord, z, y, rise );
                         };
                         for( unsigned row = 0; row < spans; ++row )
                         {
+                            if( &builder == &wings )
+                            {
+                                const float t0 = float( row ) / spans, t1 = float( row + 1 ) / spans;
+                                auto camoPoint = [&]( float t, float fraction ) {
+                                    const float q = .35f + .17f * std::sin( t * 9 + side ) + fraction * .32f;
+                                    return wingSurface( side, t, q, 1, span, chord, z, y, rise ) + Vector3F( 0, .006f * scale, 0 );
+                                };
+                                for( unsigned patch = 0; patch < 5; ++patch )
+                                    face( camouflage, camoPoint( t0, float( patch ) / 5 ), camoPoint( t1, float( patch ) / 5 ),
+                                        camoPoint( t1, float( patch + 1 ) / 5 ), camoPoint( t0, float( patch + 1 ) / 5 ), { 0, 1, 0 } );
+                            }
                             for( unsigned col = 0; col < chords; ++col )
                                 for( int upper : { -1, 1 } )
                                     face( builder, point( row, col, upper ), point( row + 1, col, upper ),
@@ -1154,19 +1312,37 @@ namespace workphone
                 tail.mesh.vertices.insert( tail.mesh.vertices.end(), fin.mesh.vertices.begin(), fin.mesh.vertices.end() );
                 for( auto index : fin.mesh.indices ) tail.mesh.indices.push_back( tailBase + index );
                 const Vector3F hub( 0, 1.9f * scale, -4.04f * scale );
+                const std::array<Vector2F, 7> bladeProfile = {
+                    Vector2F( .0f, .055f ), { .18f, .11f }, { .38f, .17f }, { .62f, .16f },
+                    { .82f, .115f }, { .95f, .065f }, { 1.0f, .018f }
+                };
                 for( unsigned blade = 0; blade < cfg.propellerBlades; ++blade )
                 {
                     const float angle = kTwoPi * blade / cfg.propellerBlades + .25f;
-                    const auto begin = propeller.mesh.vertices.size();
-                    propeller.box( hub + Vector3F( 0, ( .28f + cfg.propellerRadius ) * .5f, 0 ),
-                                   { .20f * scale, cfg.propellerRadius - .28f, .045f * scale } );
-                    for( auto i = begin; i < propeller.mesh.vertices.size(); ++i )
+                    auto point = [&]( unsigned row, int edge, int front ) {
+                        const auto profile = bladeProfile[row];
+                        const float radius = .25f + ( cfg.propellerRadius - .25f ) * profile.x;
+                        const float x = profile.y * edge * scale + .07f * profile.x * profile.x;
+                        const float depth = .018f * front * scale + edge * profile.y * ( .25f - .45f * profile.x ) * scale;
+                        return hub + Vector3F( x * std::cos( angle ) - radius * std::sin( angle ),
+                                               x * std::sin( angle ) + radius * std::cos( angle ), depth );
+                    };
+                    for( unsigned row = 0; row + 1 < bladeProfile.size(); ++row )
                     {
-                        const auto local = propeller.mesh.vertices[i].position - hub;
-                        propeller.mesh.vertices[i].position = hub + Vector3F(
-                            local.x * std::cos( angle ) - local.y * std::sin( angle ),
-                            local.x * std::sin( angle ) + local.y * std::cos( angle ), local.z );
+                        auto &builder = row + 2 == bladeProfile.size() ? bladeTips : propeller;
+                        for( int front : { -1, 1 } )
+                            face( builder, point( row, -1, front ), point( row, 1, front ),
+                                point( row + 1, 1, front ), point( row + 1, -1, front ), { 0, 0, float( front ) } );
+                        for( int edge : { -1, 1 } )
+                            face( builder, point( row, edge, -1 ), point( row + 1, edge, -1 ),
+                                point( row + 1, edge, 1 ), point( row, edge, 1 ),
+                                { edge * std::cos( angle ), edge * std::sin( angle ), 0 } );
                     }
+                    for( unsigned row : { 0u, 6u } )
+                        face( row == 0 ? propeller : bladeTips, point( row, -1, -1 ), point( row, -1, 1 ),
+                            point( row, 1, 1 ), point( row, 1, -1 ),
+                            { ( row == 0 ? 1.0f : -1.0f ) * std::sin( angle ),
+                              ( row == 0 ? -1.0f : 1.0f ) * std::cos( angle ), 0 } );
                 }
                 if( cfg.landingGearDown )
                 {
@@ -1175,10 +1351,22 @@ namespace workphone
                         const Vector3F centre( side * 1.35f * width, .32f * scale, -.70f * scale );
                         addRod( gear, { side * 1.6f * width, 1.4f * scale, -.55f * scale }, centre, .045f * scale, radial / 2 );
                         addTyre( tyres, centre, .20f * scale, .32f * scale, radial, radial / 2, side > 0, 1.0f );
+                        addDisc( rims, centre, centre.x + side * .103f * scale, .19f * scale, radial, side < 0 );
+                        if( cfg.includeFineDetails && level < 2 )
+                        {
+                            const Vector3F mount( side * 1.6f * width, 1.4f * scale, -.55f * scale );
+                            addRod( rims, centre + Vector3F( 0, .1f * scale, 0 ),
+                                centre + ( mount - centre ) * .6f, .025f * scale, radial / 2 );
+                            gear.box( centre + Vector3F( side * .15f * scale, .48f * scale, .04f * scale ),
+                                      { .035f * scale, .75f * scale, .24f * scale } );
+                            addRod( gear, centre + Vector3F( 0, .17f * scale, 0 ),
+                                centre + Vector3F( .1f * side, .35f * scale, .07f * scale ), .018f * scale, 6 );
+                        }
                     }
                     const Vector3F centre( 0, 1.10f * scale, 3.95f * scale );
                     addRod( gear, { 0, 1.75f * scale, 3.80f * scale }, centre, .035f * scale, radial / 2 );
                     addTyre( tyres, centre, .12f * scale, .18f * scale, radial, radial / 2, false, 1.0f );
+                    addDisc( rims, centre, -.065f * scale, .10f * scale, radial / 2, true );
                 }
                 for( float z : { -.55f, .85f } )
                     for( unsigned i = 0; i < radial / 2; ++i )
@@ -1198,7 +1386,66 @@ namespace workphone
                             addRod( trim, { side * .52f * width, 2.05f * scale, ( -3.25f + pipe * .18f ) * scale },
                                           { side * .68f * width, 2.0f * scale, ( -3.12f + pipe * .18f ) * scale }, .045f * scale, 6 );
                 }
-                for( Builder *builder : { &hull, &wings, &tail, &canopy, &trim, &propeller, &gear, &tyres } )
+                auto topWing = [&]( int side, float t, float q, float offset ) {
+                    return wingSurface( side, t, q, 1, cfg.wingSpan, 2.65f, -.55f, 1.37f, .36f ) + Vector3F( 0, offset * scale, 0 );
+                };
+                // Painted recognition rings remain present in the silhouette LODs.
+                for( int side : { -1, 1 } )
+                {
+                    const auto centre = topWing( side, .68f, .48f, .014f );
+                    const unsigned segments = level == 0 ? 48u : ( level == 1 ? 28u : 16u );
+                    auto markingPoint = [&]( float radius, float angle ) {
+                        const float x = centre.x + radius * std::cos( angle );
+                        const float z = centre.z + radius * std::sin( angle );
+                        const float t = ( std::abs( x ) - .20f * width ) / ( cfg.wingSpan * .5f - .20f * width );
+                        const float chord = 2.65f * std::sqrt( std::max( .015f, 1 - t * t ) );
+                        const float q = ( z / scale + .55f - .32f * t ) / chord + .45f;
+                        return topWing( side, t, q, .018f );
+                    };
+                    for( unsigned segment = 0; segment < segments; ++segment )
+                    {
+                        const float a = kTwoPi * segment / segments, c = kTwoPi * ( segment + 1 ) / segments;
+                        face( markings, markingPoint( .27f * scale, a ), markingPoint( .43f * scale, a ),
+                            markingPoint( .43f * scale, c ), markingPoint( .27f * scale, c ), { 0, 1, 0 } );
+                    }
+                    // Aileron/flap hinge lines and panel joints follow the curved airfoil.
+                    if( cfg.includeFineDetails && level < 2 )
+                    {
+                        const unsigned steps = level == 0 ? 32u : 16u;
+                        for( unsigned i = 0; i < steps; ++i )
+                        {
+                            const float t0 = .10f + .83f * i / steps, t1 = .10f + .83f * ( i + 1 ) / steps;
+                            addRod( panelLines, topWing( side, t0, .77f, .009f ), topWing( side, t1, .77f, .009f ), .003f * scale, 4 );
+                        }
+                        for( float t : { .18f, .46f, .70f, .91f } )
+                            for( unsigned i = 0; i < 10; ++i )
+                                addRod( panelLines, topWing( side, t, .10f + .80f * i / 10, .009f ),
+                                    topWing( side, t, .10f + .80f * ( i + 1 ) / 10, .009f ), .0025f * scale, 4 );
+                    }
+                }
+                if( cfg.includeFineDetails && level < 2 )
+                {
+                    // Recessed radiator mouth, grille slats, cockpit and gunsight.
+                    trim.box( { 0, 1.03f * scale, -.02f * scale }, { .40f * width, .23f * scale, .03f * scale } );
+                    for( unsigned slat = 0; slat < 7; ++slat )
+                        hardware.box( { ( -.17f + slat * .056f ) * width, 1.03f * scale, -.041f * scale },
+                                  { .012f * width, .20f * scale, .02f * scale } );
+                    cockpit.box( { 0, 2.32f * scale, .15f * scale }, { .44f * width, .24f * scale, .50f * scale } );
+                    cockpit.box( { 0, 2.48f * scale, .40f * scale }, { .44f * width, .45f * scale, .09f * scale } );
+                    cockpit.box( { 0, 2.49f * scale, -.45f * scale }, { .56f * width, .22f * scale, .10f * scale } );
+                    addRod( cockpit, { 0, 2.53f * scale, -.41f * scale }, { 0, 2.70f * scale, -.41f * scale }, .015f * scale, 6 );
+                    // Mast and radio aerial, attached behind the canopy.
+                    addRod( trim, { 0, 2.25f * scale, 1.50f * scale }, { 0, 2.85f * scale, 1.60f * scale }, .018f * scale, 6 );
+                    addRod( trim, { 0, 2.85f * scale, 1.60f * scale }, { 0, 3.35f * scale, 3.80f * scale }, .004f * scale, 4 );
+                    // Cowling seams and fasteners use the same refined fuselage surface.
+                    for( unsigned row = 1; row + 1 < skinStations.size(); ++row )
+                        if( row == skinStations.size() / 3 || row == skinStations.size() / 6 )
+                            for( unsigned col = 0; col < radial; ++col )
+                                addRod( panelLines, bodySkin( row, kTwoPi * col / radial, .006f * scale ),
+                                    bodySkin( row, kTwoPi * ( col + 1 ) / radial, .006f * scale ), .0025f * scale, 4 );
+                }
+                for( Builder *builder : { &hull, &wings, &tail, &canopy, &trim, &propeller, &gear, &tyres,
+                                          &camouflage, &markings, &panelLines, &rims, &hardware, &cockpit, &bladeTips } )
                     if( builder->mesh.hasGeometry() )
                     {
                         builder->finalise();

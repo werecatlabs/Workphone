@@ -26,7 +26,8 @@ namespace workphone
             Caliper,
             BrakeDuct,
             Decal,
-            Suspension
+            Suspension,
+            SecondaryPaint  ///< Uses the configurable secondary paint appearance slot.
         };
 
         struct WPCore_API VehicleVertex
