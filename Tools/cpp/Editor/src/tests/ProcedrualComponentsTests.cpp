@@ -308,6 +308,25 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_warbird_properties, ProceduralCom
     BOOST_CHECK_CLOSE( vehicle.getConfig().appearance.secondary.g, .065f, .01f );
 }
 
+BOOST_FIXTURE_TEST_CASE( procedural_components_imported_car_properties, ProceduralComponentFixture )
+{
+    scene::ProceduralVehicle vehicle;
+    auto input = vehicle.getProperties();
+    input->setProperty( "Physics Preset", String( "Road Sport" ) );
+    input->setProperty( "Car Chassis Model", String( "cars/body.glb" ) );
+    input->setProperty( "Car Wheel Model", String( "cars/wheel.glb" ) );
+    input->setProperty( "Car Livery Texture", String( "cars/livery.png" ) );
+    input->setProperty( "Car Police Lights", true );
+    input->setProperty( "Car Player Lights", false );
+    vehicle.setProperties( input );
+    const auto output = vehicle.getProperties();
+    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Car Chassis Model" ), "cars/body.glb" );
+    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Car Wheel Model" ), "cars/wheel.glb" );
+    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Car Livery Texture" ), "cars/livery.png" );
+    BOOST_CHECK( propertyValue<bool>( output, "Car Police Lights" ) );
+    BOOST_CHECK( !propertyValue<bool>( output, "Car Player Lights" ) );
+}
+
 BOOST_FIXTURE_TEST_CASE( procedural_components_detached_meshes, ProceduralComponentFixture )
 {
     scene::ProceduralRoad road;
