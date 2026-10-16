@@ -130,6 +130,12 @@ namespace workphone
             bool failed = false;
             bool begun = false;
             bool pipelineStarted = false;
+            bool nativeRtt = false;
+            bool rttInside = false;
+            bool rttCompleted = false;
+            SmartPtr<IRenderTarget> previousTarget;
+            SmartPtr<IViewport> previousViewport;
+            SmartPtr<IGraphicsCamera> previousCamera;
         };
 
         ClawHammerSystem::ClawHammerSystem() : m_sys( nullptr )
@@ -633,6 +639,7 @@ namespace workphone
             pass.failed = false;
             pass.begun = false;
             pass.pipelineStarted = false;
+            pass.nativeRtt = pass.rttInside = pass.rttCompleted = false;
             executeFramePassStage( system, dt, data, 0 );
             // Entered passes always receive end, including failed preparation.
             return pass.begun ? 1 : 0;
@@ -655,6 +662,7 @@ namespace workphone
             auto &pass = *static_cast<FramePassContext *>( data );
             auto owner = pass.owner;
             if( owner->m_sys != system || ( pass.failed && stage != 5 ) ) return;
+            if( pass.nativeRtt && pass.rttCompleted && stage >= 2 && stage <= 4 ) return;
             auto viewport = pass.viewport;
             auto renderer = pass.renderer;
             try
@@ -669,18 +677,87 @@ namespace workphone
                         ( !pass.window && !pass.target->isActive() ) ||
                         pass.target->getSize().x <= 0 || pass.target->getSize().y <= 0 ||
                         ( viewport && !viewport->isActive() ) ) return;
+                    pass.nativeRtt = !pass.window &&
+                        dynamic_pointer_cast<ClawRendererDX11>( renderer ) &&
+                        dynamic_pointer_cast<ClawRenderTarget>( pass.target );
+                    if( pass.nativeRtt )
+                    {
+                        pass.previousTarget = renderer->getRenderTarget();
+                        pass.previousViewport = renderer->getViewport();
+                        pass.previousCamera = renderer->getCamera();
+                    }
                     renderer->setRenderTarget( pass.target );
                     renderer->setViewport( viewport );
                     if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
                         renderer3->setCamera( viewport ? viewport->getCamera() : nullptr );
                     renderer->beginRender();
                     pass.begun = true;
-                    if( pass.window || ( viewport && viewport->getClearEveryFrame() ) )
-                        renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
-                    if( sceneEnabled )
-                        pass.pipelineStarted = owner->beginGraphicsPipelineFrame( renderer );
+                    if( !pass.nativeRtt )
+                    {
+                        if( pass.window || ( viewport && viewport->getClearEveryFrame() ) )
+                            renderer->clear( viewport ? viewport->getBackgroundColour() : ColourF::Black );
+                        if( sceneEnabled )
+                            pass.pipelineStarted = owner->beginGraphicsPipelineFrame( renderer );
+                    }
                     break;
                 case 1:
+                    if( pass.nativeRtt && !pass.rttInside )
+                    {
+                        auto dx11Renderer = dynamic_pointer_cast<ClawRendererDX11>( renderer );
+                        auto target = dynamic_pointer_cast<ClawRenderTarget>( pass.target );
+                        auto native = wp_renderer_get_dx11( dx11Renderer->getNativeRenderer() );
+                        auto output = target->getNativeRenderTexture( dx11Renderer->getNativeRenderer() );
+                        const auto size = target->getSize();
+                        const auto colour = viewport ? viewport->getBackgroundColour() : ColourF::Black;
+                        wp_graphics_rtt_desc desc{};
+                        desc.renderer_generation = wp_renderer_dx11_get_rtt_generation( native );
+                        desc.target_generation = wp_renderer_dx11_get_render_texture_generation( output );
+                        desc.width = size.x; desc.height = size.y;
+                        desc.viewport = wp_renderer_dx11_get_viewport( native );
+                        desc.clear_colour = desc.clear_depth = viewport && viewport->getClearEveryFrame();
+                        desc.colour[0] = colour.r; desc.colour[1] = colour.g;
+                        desc.colour[2] = colour.b; desc.colour[3] = colour.a; desc.depth = 1.0f;
+                        const auto validate = []( void *data, const wp_graphics_rtt_desc *expected ) -> wp_rtt_result {
+                            try
+                            {
+                                auto &p = *static_cast<FramePassContext *>( data );
+                                const auto actual = p.target->getSize();
+                                return !p.failed && actual.x == expected->width && actual.y == expected->height
+                                    ? WP_RTT_OK : WP_RTT_STALE;
+                            }
+                            catch( ... ) { return WP_RTT_BACKEND_FAILED; }
+                        };
+                        const auto draw = []( void *data, const wp_graphics_rtt_desc * ) -> wp_rtt_result {
+                            auto &p = *static_cast<FramePassContext *>( data );
+                            p.rttInside = true;
+                            try
+                            {
+                                if( !p.viewport || p.viewport->getEnableSceneRender() )
+                                    p.pipelineStarted = p.owner->beginGraphicsPipelineFrame( p.renderer );
+                                executeFramePassStage( p.owner->m_sys, 0.0f, data, 1 );
+                                // Close HDR even when scene submission failed; never publish it.
+                                if( p.pipelineStarted )
+                                {
+                                    p.pipelineStarted = false;
+                                    p.owner->endGraphicsPipelineFrame( p.renderer );
+                                }
+                                executeFramePassStage( p.owner->m_sys, 0.0f, data, 3 );
+                            }
+                            catch( const std::exception &e ) { p.failed = true; WP_LOG_EXCEPTION( e ); }
+                            catch( ... ) { p.failed = true; WP_LOG_ERROR( "RTT draw callback failed." ); }
+                            p.rttInside = false;
+                            return p.failed ? WP_RTT_BACKEND_FAILED : WP_RTT_OK;
+                        };
+                        const auto result = wp_renderer_dx11_execute_rtt_job(
+                            native, output, &desc, nullptr, validate, draw, &pass );
+                        pass.rttCompleted = true;
+                        if( result != WP_RTT_OK )
+                        {
+                            pass.failed = true;
+                            WP_LOG_ERROR( "Native offscreen job failed: " + std::to_string( result ) );
+                        }
+                        break;
+                    }
                     if( sceneEnabled )
                     {
                         RenderPhaseProfile timing( owner->m_sceneProfile, "Scene draw" );
@@ -726,6 +803,16 @@ namespace workphone
                         pass.begun = false;
                         RenderPhaseProfile timing( owner->m_presentationProfile, "Presentation" );
                         renderer->endRender();
+                    }
+                    if( pass.nativeRtt )
+                    {
+                        renderer->setRenderTarget( pass.previousTarget );
+                        renderer->setViewport( pass.previousViewport );
+                        if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
+                            renderer3->setCamera( pass.previousCamera );
+                        pass.previousTarget = nullptr;
+                        pass.previousViewport = nullptr;
+                        pass.previousCamera = nullptr;
                     }
                     break;
                 }

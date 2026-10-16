@@ -57,3 +57,19 @@ if(NOT TARGET WorkphoneGraphicsFrameTests)
     add_test(NAME WorkphoneGraphics.native_frame COMMAND WorkphoneGraphicsFrameTests)
     set_tests_properties(WorkphoneGraphics.native_frame PROPERTIES LABELS "graphics;headless;frame" TIMEOUT 30)
 endif()
+
+if(NOT TARGET WorkphoneGraphicsRTTJobTests)
+    add_executable(WorkphoneGraphicsRTTJobTests
+        ${CMAKE_SOURCE_DIR}/Tests/c/WorkphoneGraphicsRTTJobTests.c
+        ${CMAKE_SOURCE_DIR}/Engine/c/Source/WorkphoneGraphics/workphone_graphics_rtt_job.c)
+    target_include_directories(WorkphoneGraphicsRTTJobTests PRIVATE
+        ${CMAKE_SOURCE_DIR}/Engine/c/Include/WorkphoneCore
+        ${CMAKE_SOURCE_DIR}/Engine/c/Include/WorkphoneGraphics)
+    set_target_properties(WorkphoneGraphicsRTTJobTests PROPERTIES
+        C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF FOLDER Tests/C)
+    if(NOT MSVC)
+        target_compile_options(WorkphoneGraphicsRTTJobTests PRIVATE -Wall -Wextra -Werror -pedantic)
+    endif()
+    add_test(NAME WorkphoneGraphics.rtt_job COMMAND WorkphoneGraphicsRTTJobTests)
+    set_tests_properties(WorkphoneGraphics.rtt_job PROPERTIES LABELS "graphics;headless;rtt" TIMEOUT 30)
+endif()

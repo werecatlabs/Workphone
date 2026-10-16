@@ -275,18 +275,16 @@ namespace workphone
                 return m_nativeRenderTexture;
             }
 
+            auto candidate = wp_renderer_dx11_create_render_texture( dx11, m_size.x, m_size.y );
+            if( !candidate )
+            {
+                WP_LOG_ERROR( "ClawRenderTarget: failed to allocate the DX11 render texture; retaining previous output." );
+                return nullptr;
+            }
             releaseNativeRenderTexture();
-            m_nativeRenderTexture = wp_renderer_dx11_create_render_texture( dx11, m_size.x, m_size.y );
-            if( m_nativeRenderTexture )
-            {
-                m_nativeDevice = device;
-                m_nativeSize = m_size;
-            }
-            else
-            {
-                WP_LOG_ERROR( "ClawRenderTarget: failed to allocate the DX11 render texture." );
-            }
-
+            m_nativeRenderTexture = candidate;
+            m_nativeDevice = device;
+            m_nativeSize = m_size;
             return m_nativeRenderTexture;
         }
 

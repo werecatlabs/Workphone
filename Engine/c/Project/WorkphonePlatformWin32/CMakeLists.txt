@@ -46,7 +46,7 @@ endif()
 add_library(WorkphonePlatformWin32 STATIC ${HEADER_FILES} ${SOURCE_FILES})
 
 if (WIN32)
-    target_link_libraries(WorkphonePlatformWin32 PUBLIC d3d11 dxgi d3dcompiler dxguid)
+    target_link_libraries(WorkphonePlatformWin32 PUBLIC WorkphoneGraphics d3d11 dxgi d3dcompiler dxguid)
 endif()
 
 set_target_properties (WorkphonePlatformWin32 PROPERTIES FOLDER Engine/C)
