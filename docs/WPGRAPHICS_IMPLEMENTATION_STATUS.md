@@ -1,5 +1,21 @@
 # WPGraphics implementation status
 
+## Native filtered cubemap upload — 16 October 2026
+
+`ClawCubemap` still reads and filters source faces in C++, but sends its 48
+face/mip buffers to the native DX11 module for immutable RGBA32F cube creation.
+The native upload validates every face, mip dimension and float count before
+creating the texture and shader-resource view. Publication stays transactional:
+an invalid candidate leaves the previous cube in place. Existing face caching
+and studio fallback behavior remain in `ClawCubemap`.
+
+Validation: Debug and RelWithDebInfo `ClawCubemapTests` build, and
+`WPGraphics.cubemap_pbr` passes in both configurations,
+including face orientation, filtered mips, PBR draw readback, reuse, incomplete
+face rejection and the new native incomplete-mip rejection. This confirms the
+selected DX11 contract only; other cubemap lifetime and source-readback work
+remains in C++.
+
 ## Native RGBA32F texture upload — 16 October 2026
 
 The sampled linear-float texture path now calls a native DX11 upload API instead
