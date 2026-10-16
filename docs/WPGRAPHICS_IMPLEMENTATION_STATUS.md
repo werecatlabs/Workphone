@@ -12,7 +12,7 @@ Independent instances have independent completion, so unrelated pool work does
 not delay a completed transform job. Node edits/destruction after dispatch are safe.
 
 `workphone_graphics_cull_job.h/.c` use these matrices with copied bounds, masks,
-queue/Z order and pass policy. Results own all candidate revisions, frozen camera
+queue/Z order and pass policy. Results own all candidate and complete ancestor-path revisions, frozen camera
 and world matrices, and stable visible indices. Main views apply conservative
 frustum tests; shadow views retain admitted off-camera casters. Unknown/inverted/
 nonfinite bounds remain visible. Validation rejects scene membership/replacement,
@@ -41,7 +41,40 @@ full immutable material/resource/pass snapshots, live Editor comparison and
 representative hardware performance remain open. Terrain/foliage/particle systems
 retain their existing independent preparation paths.
 
-Validation results and commands are recorded below after the current rebuild.
+Validation: the selected full Debug build and six contracts pass:
+`WorkphoneGraphics.scene_jobs`, `renderer_contract`, `native_frame`, `rtt_job`,
+`WPGraphics.claw_dx11_targets` and `claw_production_render`. The six isolated
+C90-configured contracts also pass in Debug and RelWithDebInfo. Native tests cover
+parent/child composition, rotation and negative/nonuniform scale, shared paths,
+node destruction after dispatch, null/empty inputs, oversized counts/batches,
+depth limits, cancellation without output writes and completion independent of
+unrelated work. Cull tests cover reference ordering, masks, two views, invalid
+bounds, off-camera casters, hidden-candidate/mesh/bounds/camera/ancestor edits,
+remove/recreate, scene clear after capture, cancellation and retirement from a
+submission callback.
+
+DX11 tests compare complete pixel buffers from two camera views against the
+synchronous native scene reference, then reject stale-transform dependencies
+without changing the last complete output. The active Claw frame contract also
+uses a real material-aware mesh and rejects scene retirement after drawing.
+Device evidence: Microsoft Basic Render Driver/WARP, feature level `b000`, driver
+`10.0.19041.7802`. This proves selected headless/device contracts, not a live Editor
+preview, hardware performance gain or whole-solution certification.
+
+Reconfigure with `cmake --preset claw-contracts` and `cmake -S . -B project_x64`.
+Build the isolated targets in Debug/RelWithDebInfo; build the full Debug targets
+`WorkphoneGraphicsSceneJobTests`, `WorkphoneGraphicsRendererTests`,
+`WorkphoneGraphicsFrameTests`, `WPGraphicsClawDX11TargetTests` and
+`WPGraphicsClawProductionTests`, with normal project references enabled. The
+replacement DX12 source initially failed to link because its Windows SDK C COM
+helpers were disabled; a source-specific `COBJMACROS` CMake definition resolves
+that build failure without editing its renderer implementation. This is not DX12
+rendering certification.
+
+Evidence logs: `project_x64/build_scene_jobs_verified_debug.log`,
+`build_scene_jobs_final_order_debug.log`, `test_scene_jobs_verified_debug.log`, and
+`project_graphics_contracts/{build,test}_scene_jobs_verified_{debug,release}.log`.
+The historical RTT-only checkpoint below records the earlier validation scope.
 
 
 ## Native RTT job and DX11 execution - 16 October 2026
