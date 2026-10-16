@@ -200,6 +200,9 @@
 #include <Workphone/Scene/Components/Terrain/TerrainBlendMap.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainGrassLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainLayer.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainMasks.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
 

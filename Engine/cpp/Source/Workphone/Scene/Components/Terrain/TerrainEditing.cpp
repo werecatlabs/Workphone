@@ -2,10 +2,6 @@
 #include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainMasks.hpp>
-#include <cJSON.h>
-#include <future>
-#include <chrono>
-#include <cctype>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Interface/System/ICommand.hpp>
 #include <Workphone/Interface/System/ICommandManager.hpp>
@@ -13,6 +9,10 @@
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Core/LogManager.hpp>
+#include <cJSON.h>
+#include <future>
+#include <chrono>
+#include <cctype>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
