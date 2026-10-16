@@ -38,19 +38,21 @@
 #include <Workphone/Core/XmlUtil.hpp>
 
 // database
-#include <Workphone/Database/DatabaseManager.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Database/DatabaseManager.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 
 // graphics
+#include <Workphone/Graphics/FoliageImpostorBaker.hpp>
 #include <Workphone/Graphics/GraphicsSettings.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Graphics/GraphicsSceneNode.hpp>
+#include <Workphone/Graphics/GraphicsUtil.hpp>
+#include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Graphics/RenderTarget.hpp>
 #include <Workphone/Graphics/RenderTargetListener.hpp>
 #include <Workphone/Graphics/RenderTexture.hpp>
-#include <Workphone/Graphics/GraphicsUtil.hpp>
-#include <Workphone/Graphics/GraphicsWindow.hpp>
 
 // input
 #include <Workphone/Input/AxisData.hpp>
@@ -142,6 +144,7 @@
 #include <Workphone/Memory/SharedObjectTracker.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
 
+// physics
 #include <Workphone/Physics/RaycastHit.hpp>
 
 // scene
@@ -197,12 +200,16 @@
 #include <Workphone/Scene/Components/Camera/ThirdPersonCameraController.hpp>
 #include <Workphone/Scene/Components/Camera/VehicleCameraController.hpp>
 
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainMasks.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainBlendMap.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainGrassLayer.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainLayer.hpp>
-#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
-#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
-#include <Workphone/Scene/Components/Terrain/TerrainMasks.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainTreeLayer.hpp>
 
@@ -388,8 +395,7 @@
 #include <Workphone/System/JobQueue.hpp>
 #include <Workphone/System/JobQueueMT.hpp>
 #include <Workphone/System/JobCoroutine.hpp>
-#include <Workphone/System/ScaleManipulator.hpp>
-#include <Workphone/System/TranslateManipulator.hpp>
+#include <Workphone/System/ResourceID.hpp>
 #include <Workphone/System/RotateManipulator.hpp>
 #include <Workphone/System/RttiClassDefinition.hpp>
 #include <Workphone/System/MessageBox.hpp>
@@ -400,15 +406,14 @@
 #include <Workphone/System/ProcessManager.hpp>
 #include <Workphone/System/Profile.hpp>
 #include <Workphone/System/Profiler.hpp>
-#include <Workphone/Interface/Resource/IResourceCompiler.hpp>
-#include <Workphone/Interface/Resource/IResourceCompilerRegistry.hpp>
-#include <Workphone/Interface/Resource/IResourceSystem.hpp>
+
 #include <Workphone/System/ResourceCompilerRegistry.hpp>
 #include <Workphone/System/ResourceID.hpp>
 #include <Workphone/System/ResourceSystem.hpp>
 #include <Workphone/System/StateContext.hpp>
 #include <Workphone/System/StateQueue.hpp>
 #include <Workphone/System/StateManager.hpp>
+#include <Workphone/System/ScaleManipulator.hpp>
 #include <Workphone/System/Task.hpp>
 #include <Workphone/System/TaskManager.hpp>
 #include <Workphone/System/ThreadPool.hpp>
@@ -417,6 +422,7 @@
 #include <Workphone/System/TimerCPU.hpp>
 #include <Workphone/System/TimerMT.hpp>
 #include <Workphone/System/TimerWin32.hpp>
+#include <Workphone/System/TranslateManipulator.hpp>
 #include <Workphone/System/WaitForSeconds.hpp>
 #include <Workphone/System/WindowMessageData.hpp>
 #include <Workphone/System/WorkerThread.hpp>

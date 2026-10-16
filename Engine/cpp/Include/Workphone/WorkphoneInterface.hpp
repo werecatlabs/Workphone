@@ -255,12 +255,16 @@
 #include <Workphone/Interface/Procedural/IRoadElement.hpp>
 #include <Workphone/Interface/Procedural/ISidewalk.hpp>
 #include <Workphone/Interface/Procedural/ITerrainGenerator.hpp>
-
 #include <Workphone/Interface/Procedural/IProceduralBuilding.hpp>
 #include <Workphone/Interface/Procedural/IProceduralTexture.hpp>
 #include <Workphone/Interface/Procedural/IRoadHitPoint.hpp>
 #include <Workphone/Interface/Procedural/IRoadMeshElement.hpp>
 #include <Workphone/Interface/Procedural/IWorldGenerator.hpp>
+
+// resource
+#include <Workphone/Interface/Resource/IResourceCompiler.hpp>
+#include <Workphone/Interface/Resource/IResourceCompilerRegistry.hpp>
+#include <Workphone/Interface/Resource/IResourceSystem.hpp>
 
 // scene
 #include <Workphone/Interface/Scene/IGameActor.hpp>
@@ -338,6 +342,7 @@
 #include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Interface/System/IResourceManager.hpp>
 #include <Workphone/Interface/System/IResourceGroupManager.hpp>
+
 #include <Workphone/Interface/System/ISelectionManager.hpp>
 #include <Workphone/Interface/System/IState.hpp>
 #include <Workphone/Interface/System/IStateContext.hpp>

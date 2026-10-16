@@ -3,6 +3,14 @@
 #include <WPLuabind/StringConverter.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <Workphone/Workphone.hpp>
+
+#include <Workphone/Interface/IApplicationManager.hpp>
+#include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Interface/Scene/IGameActor.hpp>
+#include <Workphone/Interface/Scene/ITransform.hpp>
+#include <Workphone/Interface/System/IResourceManager.hpp>
+#include <Workphone/Memory/PointerUtil.hpp>
+
 #include <cmath>
 #include <sstream>
 #include <fstream>
