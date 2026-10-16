@@ -23,6 +23,9 @@ extern "C" {
  * ---------------------------------------------------------------------- */
 
 typedef struct wp_scenenode wp_scenenode;
+/* Local monotonic revision, including reparenting. Owner-thread
+ * query; node/ancestor mutation is not synchronized by this API. */
+wp_u64 wp_scenenode_get_generation( const wp_scenenode * );
 typedef struct wp_graphics_object wp_graphics_object;
 typedef struct wp_graphics_scene wp_graphics_scene;
 

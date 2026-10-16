@@ -440,6 +440,7 @@ void wp_graphics_mesh_set_local_aabb( wp_graphics_mesh *mesh, wp_aabb3f aabb )
     }
 
     mesh->local_aabb = aabb;
+    mesh->content_generation = wp_mesh_next_generation();
 }
 
 void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
@@ -463,6 +464,7 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
     data = (const wp_u8 *)mesh->vertices;
     pos = (const wp_vec3f *)data;
 
+    mesh->content_generation = wp_mesh_next_generation();
     mesh->local_aabb.min = *pos;
     mesh->local_aabb.max = *pos;
 

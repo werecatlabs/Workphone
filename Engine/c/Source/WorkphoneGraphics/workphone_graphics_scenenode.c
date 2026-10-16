@@ -4,6 +4,7 @@
  */
 
 #include "workphone_graphics_scenenode.h"
+#include "graphics_job_generation.h"
 #include "workphone_graphics_object.h"
 #include <math.h>
 #include <stdlib.h>
@@ -17,6 +18,7 @@
 
 typedef struct wp_scenenode
 {
+    wp_u64 generation;
     wp_vec3f position;
     wp_quatf orientation;
     wp_vec3f scale;
@@ -45,6 +47,7 @@ wp_scenenode *wp_scenenode_create( void )
 
     memset( node, 0, sizeof( wp_scenenode ) );
 
+    node->generation = wp_job_next_generation();
     node->orientation.w = 1.0f;
     node->scale.x = 1.0f;
     node->scale.y = 1.0f;
@@ -71,6 +74,7 @@ void wp_scenenode_destroy( wp_scenenode *node )
         if( node->children[i] )
         {
             node->children[i]->parent = NULL;
+            ++node->children[i]->generation;
         }
     }
     for( i = 0; i < node->object_count; ++i )
@@ -185,6 +189,7 @@ void wp_scenenode_add_child( wp_scenenode *node, wp_scenenode *child )
 
     node->children[node->child_count++] = child;
     child->parent = node;
+    ++child->generation;
 }
 
 void wp_scenenode_remove_child( wp_scenenode *node, wp_scenenode *child )
@@ -202,6 +207,7 @@ void wp_scenenode_remove_child( wp_scenenode *node, wp_scenenode *child )
         {
             node->children[i] = node->children[--node->child_count];
             child->parent = NULL;
+            ++child->generation;
             return;
         }
     }
@@ -232,6 +238,7 @@ void wp_scenenode_set_position( wp_scenenode *node, wp_vec3f position )
     }
 
     node->position = position;
+    ++node->generation;
 }
 
 wp_quatf wp_scenenode_get_orientation( const wp_scenenode *node )
@@ -256,6 +263,7 @@ void wp_scenenode_set_orientation( wp_scenenode *node, wp_quatf orientation )
     }
 
     node->orientation = orientation;
+    ++node->generation;
 }
 
 wp_vec3f wp_scenenode_get_scale( const wp_scenenode *node )
@@ -279,6 +287,7 @@ void wp_scenenode_set_scale( wp_scenenode *node, wp_vec3f scale )
     }
 
     node->scale = scale;
+    ++node->generation;
 }
 
 static void wp_scenenode_local_matrix( const wp_scenenode *node, wp_mat4f *matrix )
@@ -497,4 +506,9 @@ void wp_scenenode_set_native( wp_scenenode *node, void *native )
     }
 
     node->native = native;
+}
+
+wp_u64 wp_scenenode_get_generation(const wp_scenenode *node)
+{
+    return node ? node->generation : 0;
 }

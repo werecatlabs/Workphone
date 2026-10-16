@@ -92,6 +92,10 @@ namespace workphone
 
             /** Submits Claw-backed skies and meshes for the current camera pass. */
             void render( void *renderer );
+            /** Render owner: prepare CPU jobs before binding an offscreen target. */
+            bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera );
+            bool validateRenderJobs() const;
+            void discardRenderJobs();
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;
             /** Fixed-LOD batches; mutation/retirement uses the render owner thread.
@@ -174,6 +178,8 @@ namespace workphone
             SmartPtr<SceneNodeCullJob> m_cullJob;
             std::shared_ptr<const FoliageBatches> m_foliageBatches;
             mutable std::mutex m_foliageMutex;
+            struct NativeRenderJobs;
+            std::shared_ptr<NativeRenderJobs> m_nativeRenderJobs;
             struct FoliageWorldState;
             std::unique_ptr<FoliageWorldState> m_foliageWorlds;
         };

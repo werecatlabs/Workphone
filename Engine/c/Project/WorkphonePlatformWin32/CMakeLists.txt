@@ -45,6 +45,12 @@ endif()
 
 add_library(WorkphonePlatformWin32 STATIC ${HEADER_FILES} ${SOURCE_FILES})
 
+# Native DX12 uses the Windows SDK C COM helpers, just as DX11 does.
+if(WIN32)
+    set_source_files_properties("../../Source/WorkphonePlatformWin32/workphone_graphics_renderer_dx12.c"
+        PROPERTIES COMPILE_DEFINITIONS COBJMACROS)
+endif()
+
 if (WIN32)
     target_link_libraries(WorkphonePlatformWin32 PUBLIC WorkphoneGraphics d3d11 dxgi d3dcompiler dxguid)
 endif()

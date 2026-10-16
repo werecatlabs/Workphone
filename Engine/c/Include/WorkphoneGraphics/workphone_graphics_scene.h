@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include "workphone_graphics_node.h"
+#include "workphone_matrix.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,9 @@ typedef struct wp_scenenode wp_scenenode;
 typedef struct wp_graphics_object wp_graphics_object;
 typedef struct wp_camera wp_camera;
 typedef struct wp_renderer wp_renderer;
+typedef struct wp_graphics_cull_job wp_graphics_cull_job;
+typedef struct wp_graphics_cull_result wp_graphics_cull_result;
+typedef struct wp_threadpool wp_threadpool;
 
 /* -------------------------------------------------------------------------
  * Fog modes
@@ -130,7 +134,27 @@ typedef struct wp_graphics_scene
 
     /* -- Native ----------------------------------------------------------- */
     void *native;
+    wp_u64 generation;
+    wp_graphics_cull_job *cull_job;
+    wp_threadpool *transform_pool; /* borrowed; synchronous preparation drains it */
 } wp_graphics_scene;
+
+/* Scene membership/view revision. Mutation/capture/submission are owner-thread
+ * operations. Workers never dereference the scene after capture. */
+wp_u64 wp_graphics_scene_get_generation( const wp_graphics_scene * );
+void wp_graphics_scene_set_transform_pool( wp_graphics_scene *, wp_threadpool * );
+/* Owned independent per-view result; pass is 0=colour or 1=conservative shadows.
+ * A NULL result means preparation failed and the caller may use the synchronous
+ * render_with_submit reference before issuing any draws. */
+wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *, const wp_camera *,
+                                                         wp_s32 pass );
+typedef wp_s32 ( *wp_graphics_scene_snapshot_submit_func )( wp_graphics_object *, wp_renderer *,
+                                                            const wp_mat4f *, void * );
+/* Validates before and during consumption. Callbacks may not destroy the scene.
+ * Uses frozen camera/world matrices, never changes shared object visibility. */
+wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *, wp_renderer *,
+                                             const wp_graphics_cull_result *,
+                                             wp_graphics_scene_snapshot_submit_func, void * );
 
 /* =========================================================================
  * Lifecycle

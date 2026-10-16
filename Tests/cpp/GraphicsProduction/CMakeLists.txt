@@ -73,3 +73,5 @@ if(NOT TARGET WorkphoneGraphicsRTTJobTests)
     add_test(NAME WorkphoneGraphics.rtt_job COMMAND WorkphoneGraphicsRTTJobTests)
     set_tests_properties(WorkphoneGraphics.rtt_job PROPERTIES LABELS "graphics;headless;rtt" TIMEOUT 30)
 endif()
+
+include(${CMAKE_SOURCE_DIR}/Tests/c/SceneJobContracts.cmake)

@@ -3,6 +3,9 @@
 #include <WPGraphics/ClawTextureManager.hpp>
 #include <WPGraphics/ClawTexture.hpp>
 #include <WPGraphics/ClawCamera.hpp>
+#include <WPGraphics/ClawScene.hpp>
+#include <WPGraphics/ClawMesh.hpp>
+#include <WorkphoneGraphics/workphone_graphics_cull_job.h>
 #include <WorkphoneGraphics/workphone_graphics_system.h>
 #include <thread>
 #include <stdexcept>
@@ -210,10 +213,31 @@ public:
     Array<SmartPtr<ITexture>> values;
     Array<SmartPtr<ITexture>> getTextures() const override { return values; }
 };
+class SnapshotMesh : public ClawMesh {
+public:
+    SnapshotMesh() {
+        m_mesh = wp_graphics_mesh_create();
+        const wp_vertex_pntc vertices[] = {
+            {{-.5f,-.5f,-2.f},{0,0,-1},{0,0},0xFFFFFFFFu},
+            {{.5f,-.5f,-2.f},{0,0,-1},{1,0},0xFFFFFFFFu},
+            {{0,.5f,-2.f},{0,0,-1},{.5f,1},0xFFFFFFFFu}};
+        require(m_mesh && wp_graphics_mesh_set_vertices(m_mesh, WORKPHONE_VERTEX_FORMAT_PNTC, vertices, 3),
+            "Claw snapshot mesh fixture");
+    }
+};
 class Graphics : public ClawHammerSystem {
 public:
+    ~Graphics() override { removeScenes(); }
     bool fail = false;
+    bool retireSceneAfterDraw = false;
+    SmartPtr<ClawScene> nativeScene;
+    SmartPtr<ClawMesh> nativeMesh;
     unsigned draws = 0;
+    void attachScene(SmartPtr<ClawScene> scene) { nativeScene = scene; m_scenes.push_back(scene); }
+    void removeScenes() {
+        if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);
+        nativeMesh = nullptr; m_scenes.clear(); nativeScene = nullptr;
+    }
     void initialise(SmartPtr<ClawRendererDX11> renderer, SmartPtr<Textures> textures) {
         m_sys = wp_graphics_system_create(); m_renderer = renderer; m_textureManager = textures;
     }
@@ -221,7 +245,14 @@ public:
     void render() override {
         ++draws;
         auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
-        triangle(wp_renderer_get_dx11(renderer->getNativeRenderer()));
+        if(nativeScene) {
+            require(nativeScene->validateRenderJobs(), "frame must publish transform/cull dependency before draw");
+            ClawHammerSystem::render();
+            if(retireSceneAfterDraw) {
+                if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);
+                wp_graphics_scene_clear(nativeScene->getNativeScene());
+            }
+        } else triangle(wp_renderer_get_dx11(renderer->getNativeRenderer()));
         if(fail) throw std::runtime_error("injected Claw RTT scene failure");
     }
     void detach() { m_renderer = nullptr; m_textureManager = nullptr; }
@@ -234,7 +265,7 @@ public:
         ClawRendererDX11::setViewport(value);
     }
 };
-inline bool integration(SmartPtr<IGraphicsWindow> window) {
+inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene = false) {
     auto renderer = make_ptr<Renderer>(); renderer->load(window);
     require(renderer->isLoaded(), "Claw RTT integration renderer");
     auto target = make_ptr<ClawRenderTarget>(); target->setSize({32,32}); target->setActive(true);
@@ -262,6 +293,29 @@ inline bool integration(SmartPtr<IGraphicsWindow> window) {
     require(graphics.draws == 2 && pixels(output) == good && renderer->getRenderTarget() == window,
             "RTT preparation failure before begin must restore the window and preserve output");
     renderer->rejectViewport = false;
+    if(withNativeScene) {
+    // Exercise real ClawScene consumption within the active RTT frame, then make
+    // the completed draw stale before publication. Last complete output survives.
+    auto nativeScene = make_ptr<ClawScene>();
+    auto object = wp_graphics_scene_create_object(nativeScene->getNativeScene());
+    auto snapshotMesh = make_ptr<SnapshotMesh>();
+    snapshotMesh->bindNativeRenderObject(object);
+    snapshotMesh->setVisibilityFlags(~u32(0));
+    nativeScene->setEnableShadows(false);
+    graphics.nativeMesh = snapshotMesh;
+    graphics.attachScene(nativeScene);
+    graphics.fail = false;
+    graphics.frame();
+    good = pixels(output);
+    require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
+        "real ClawScene cull result must draw and be retired at frame end");
+    graphics.retireSceneAfterDraw = true;
+    viewport->setBackgroundColour(ColourF(1,0,1,1));
+    graphics.frame();
+    require(pixels(output) == good && renderer->getRenderTarget() == window,
+        "scene retirement after draw must invalidate cull dependency and retain prior RTT output");
+    graphics.removeScenes(); nativeScene = nullptr;
+    }
     const auto oldGeneration = wp_renderer_dx11_get_render_texture_generation(output);
     target->setSize({20000,20000});
     require(!target->getNativeRenderTexture(renderer->getNativeRenderer()) &&

@@ -3,6 +3,7 @@
 #include "ClawFoliageSceneContracts.hpp"
 #include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
+#include "ClawRTTJobContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
@@ -360,6 +361,10 @@ int main()
             ok &= claw_foliage_scene_contracts::run(renderer);
             ok &= claw_foliage_world_contracts::run(renderer);
             ok &= claw_animation_contracts::run(renderer);
+            try {
+                claw_foliage_scene_contracts::Fixture services;
+                ok &= claw_rtt_contracts::integration(window, true);
+            } catch(const std::exception &e) { ok &= check(false,e.what()); }
         }
         renderer.unload(nullptr);
         DestroyWindow(window->handle);

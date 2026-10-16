@@ -159,6 +159,8 @@ namespace workphone
              * @param transform World transform applied to the mesh.
              */
             void renderMesh( ClawMesh *mesh, const Matrix4F &transform );
+            /** Colour draw using the same captured view that produced its cull list. */
+            void renderMeshSnapshot( ClawMesh *, const Matrix4F &, const wp_mat4f &, const wp_mat4f & );
             /** Draw fixed-LOD instances through the same material/submesh path.
              * Returns submitted instance-sections; zero means no output. */
             u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances, u32 count );
@@ -219,7 +221,8 @@ namespace workphone
 
         private:
             u64 renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
-                                 const wp_instance_pntc_dx11 *instances, u32 instanceCount );
+                                 const wp_instance_pntc_dx11 *instances, u32 instanceCount,
+                                 const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
             void applySceneLighting( wp_material_dx11 &material ) const;
 
             /**
@@ -231,7 +234,8 @@ namespace workphone
              * @brief Apply world transform to the native rendering pipeline.
              * @param world World transformation matrix.
              */
-            void setTransforms( const Matrix4F &world );
+            void setTransforms( const Matrix4F &world, const wp_mat4f *view = nullptr,
+                                const wp_mat4f *projection = nullptr );
 
             /**
              * @brief Convert a Matrix4F to the C‑style wp_mat4f structure.

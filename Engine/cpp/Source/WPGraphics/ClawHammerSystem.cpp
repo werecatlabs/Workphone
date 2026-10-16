@@ -1,4 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
+#include <stdexcept>
+#include "workphone_graphics_cull_job.h"
 #include <WPGraphics/ClawDebug.hpp>
 #include <WPGraphics/ClawFontManager.hpp>
 #include <WPGraphics/ClawGraphicsPipeline.hpp>
@@ -137,6 +139,7 @@ namespace workphone
             SmartPtr<IRenderTarget> previousTarget;
             SmartPtr<IViewport> previousViewport;
             SmartPtr<IGraphicsCamera> previousCamera;
+            Array<SmartPtr<ClawScene>> preparedScenes;
         };
 
         ClawHammerSystem::ClawHammerSystem() : m_sys( nullptr )
@@ -644,8 +647,10 @@ namespace workphone
             executeFramePassStage( system, dt, data, 0 );
             // Restore offscreen adapter state even when binding/preparation failed
             // before the native frame driver entered this pass.
-            if( pass.failed && !pass.begun && pass.rttCaptured )
+            if( pass.failed && !pass.begun )
+            {
                 executeFramePassStage( system, dt, data, 5 );
+            }
             return pass.begun ? 1 : 0;
         }
 
@@ -691,6 +696,33 @@ namespace workphone
                         pass.previousCamera = renderer->getCamera();
                         pass.rttCaptured = true;
                     }
+                    if( sceneEnabled )
+                    {
+                        auto camera = viewport ? viewport->getCamera() : nullptr;
+                        // Resolve the pass aspect before capture, without binding its target.
+                        if(camera && viewport)
+                        {
+                            const auto size = viewport->getActualSize();
+                            if(size.X() > 0 && size.Y() > 0) camera->setAspectRatio(size.X() / size.Y());
+                        }
+                        auto cameraScene = camera ? camera->getCreator() : nullptr;
+                        for( auto &scene : owner->m_scenes.snapshot() )
+                        {
+                            if( cameraScene && scene != cameraScene )
+                            {
+                                continue;
+                            }
+                            if( auto clawScene = dynamic_pointer_cast<ClawScene>( scene ) )
+                            {
+                                pass.preparedScenes.push_back( clawScene );
+                                if( !clawScene->prepareRenderJobs( camera ) )
+                                {
+                                    throw std::runtime_error(
+                                        "Native transform/cull preparation failed." );
+                                }
+                            }
+                        }
+                    }
                     renderer->setRenderTarget( pass.target );
                     renderer->setViewport( viewport );
                     if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
@@ -727,6 +759,13 @@ namespace workphone
                             {
                                 auto &p = *static_cast<FramePassContext *>( data );
                                 const auto actual = p.target->getSize();
+                                for( auto &scene : p.preparedScenes )
+                                {
+                                    if( !scene->validateRenderJobs() )
+                                    {
+                                        return WP_RTT_STALE;
+                                    }
+                                }
                                 return !p.failed && actual.x == expected->width && actual.y == expected->height
                                     ? WP_RTT_OK : WP_RTT_STALE;
                             }
@@ -762,7 +801,19 @@ namespace workphone
                             return p.failed ? WP_RTT_BACKEND_FAILED : WP_RTT_OK;
                         };
                         const auto result = wp_renderer_dx11_execute_rtt_job(
-                            native, output, &desc, nullptr, validate, draw, &pass );
+                            native, output, &desc,
+                            []( void *data, const wp_graphics_rtt_desc * ) -> wp_rtt_result {
+                                auto &p = *static_cast<FramePassContext *>( data );
+                                for( auto &scene : p.preparedScenes )
+                                {
+                                    if( !scene->validateRenderJobs() )
+                                    {
+                                        return WP_RTT_STALE;
+                                    }
+                                }
+                                return WP_RTT_OK;
+                            },
+                            validate, draw, &pass );
                         pass.rttCompleted = true;
                         if( result != WP_RTT_OK )
                         {
@@ -805,6 +856,11 @@ namespace workphone
                     }
                     break;
                 case 5:
+                    for( auto &scene : pass.preparedScenes )
+                    {
+                        scene->discardRenderJobs();
+                    }
+                    pass.preparedScenes.clear();
                     if( pass.pipelineStarted )
                     {
                         pass.pipelineStarted = false;

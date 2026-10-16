@@ -4,6 +4,7 @@
  */
 
 #include "workphone_graphics_object.h"
+#include "graphics_job_generation.h"
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_renderer.h"
@@ -17,6 +18,7 @@
 
 typedef struct wp_graphics_object
 {
+    wp_u64 generation;
     wp_u32 flags;
     wp_u32 visibility_flags;
     wp_u32 z_order;
@@ -60,11 +62,15 @@ wp_graphics_object *wp_graphics_object_create( void )
     }
 
     memset( obj, 0, sizeof( wp_graphics_object ) );
+    obj->generation = wp_job_next_generation();
 
     obj->flags = WORKPHONE_GRAPHICS_OBJECT_FLAG_VISIBLE | WORKPHONE_GRAPHICS_OBJECT_FLAG_CAST_SHADOWS |
                  WORKPHONE_GRAPHICS_OBJECT_FLAG_RECV_SHADOWS | WORKPHONE_GRAPHICS_OBJECT_FLAG_SCENE;
+    ++obj->generation;
     obj->visibility_flags = 0xFFFFFFFFu;
+    ++obj->generation;
     obj->render_queue_group = WORKPHONE_RENDER_QUEUE_DEFAULT;
+    ++obj->generation;
 
     return obj;
 }
@@ -93,10 +99,12 @@ void wp_graphics_object_set_visible( wp_graphics_object *obj, wp_s32 visible )
     if( visible )
     {
         obj->flags |= WORKPHONE_GRAPHICS_OBJECT_FLAG_VISIBLE;
+        ++obj->generation;
     }
     else
     {
         obj->flags &= ~WORKPHONE_GRAPHICS_OBJECT_FLAG_VISIBLE;
+        ++obj->generation;
     }
 }
 
@@ -124,10 +132,12 @@ void wp_graphics_object_set_cast_shadows( wp_graphics_object *obj, wp_s32 cast )
     if( cast )
     {
         obj->flags |= WORKPHONE_GRAPHICS_OBJECT_FLAG_CAST_SHADOWS;
+        ++obj->generation;
     }
     else
     {
         obj->flags &= ~WORKPHONE_GRAPHICS_OBJECT_FLAG_CAST_SHADOWS;
+        ++obj->generation;
     }
 }
 
@@ -151,10 +161,12 @@ void wp_graphics_object_set_receive_shadows( wp_graphics_object *obj, wp_s32 rec
     if( receive )
     {
         obj->flags |= WORKPHONE_GRAPHICS_OBJECT_FLAG_RECV_SHADOWS;
+        ++obj->generation;
     }
     else
     {
         obj->flags &= ~WORKPHONE_GRAPHICS_OBJECT_FLAG_RECV_SHADOWS;
+        ++obj->generation;
     }
 }
 
@@ -180,6 +192,7 @@ void wp_graphics_object_set_visibility_flags( wp_graphics_object *obj, wp_u32 fl
     }
 
     obj->visibility_flags = flags;
+    ++obj->generation;
 }
 
 wp_u32 wp_graphics_object_get_visibility_flags( const wp_graphics_object *obj )
@@ -204,6 +217,7 @@ void wp_graphics_object_set_z_order( wp_graphics_object *obj, wp_u32 z_order )
     }
 
     obj->z_order = z_order;
+    ++obj->generation;
 }
 
 wp_u32 wp_graphics_object_get_z_order( const wp_graphics_object *obj )
@@ -224,6 +238,7 @@ void wp_graphics_object_set_render_queue_group( wp_graphics_object *obj, wp_u32 
     }
 
     obj->render_queue_group = queue_id;
+    ++obj->generation;
 }
 
 wp_u32 wp_graphics_object_get_render_queue_group( const wp_graphics_object *obj )
@@ -248,6 +263,7 @@ void wp_graphics_object_set_render_technique( wp_graphics_object *obj, wp_u32 te
     }
 
     obj->render_technique = technique;
+    ++obj->generation;
 }
 
 wp_u32 wp_graphics_object_get_render_technique( const wp_graphics_object *obj )
@@ -274,10 +290,12 @@ void wp_graphics_object_set_flag( wp_graphics_object *obj, wp_u32 flag, wp_s32 v
     if( value )
     {
         obj->flags |= flag;
+        ++obj->generation;
     }
     else
     {
         obj->flags &= ~flag;
+        ++obj->generation;
     }
 }
 
@@ -309,6 +327,7 @@ void wp_graphics_object_set_flags( wp_graphics_object *obj, wp_u32 flags )
     }
 
     obj->flags = flags;
+    ++obj->generation;
 }
 
 /* =========================================================================
@@ -336,6 +355,7 @@ void wp_graphics_object_set_local_aabb( wp_graphics_object *obj, wp_aabb3f aabb 
     }
 
     obj->local_aabb = aabb;
+    ++obj->generation;
 }
 
 /* =========================================================================
@@ -350,7 +370,9 @@ void wp_graphics_object_attach_to_parent( wp_graphics_object *obj, wp_scenenode 
     }
 
     obj->owner = parent;
+    ++obj->generation;
     obj->flags |= WORKPHONE_GRAPHICS_OBJECT_FLAG_ATTACHED;
+    ++obj->generation;
 }
 
 void wp_graphics_object_detach_from_parent( wp_graphics_object *obj, wp_scenenode *parent )
@@ -366,7 +388,9 @@ void wp_graphics_object_detach_from_parent( wp_graphics_object *obj, wp_scenenod
     }
 
     obj->owner = NULL;
+    ++obj->generation;
     obj->flags &= ~WORKPHONE_GRAPHICS_OBJECT_FLAG_ATTACHED;
+    ++obj->generation;
 }
 
 wp_s32 wp_graphics_object_is_attached( const wp_graphics_object *obj )
@@ -389,10 +413,12 @@ void wp_graphics_object_set_attached( wp_graphics_object *obj, wp_s32 attached )
     if( attached )
     {
         obj->flags |= WORKPHONE_GRAPHICS_OBJECT_FLAG_ATTACHED;
+        ++obj->generation;
     }
     else
     {
         obj->flags &= ~WORKPHONE_GRAPHICS_OBJECT_FLAG_ATTACHED;
+        ++obj->generation;
     }
 }
 
@@ -414,6 +440,7 @@ void wp_graphics_object_set_owner( wp_graphics_object *obj, wp_scenenode *node )
     }
 
     obj->owner = node;
+    ++obj->generation;
 }
 
 /* =========================================================================
@@ -438,6 +465,7 @@ void wp_graphics_object_set_creator( wp_graphics_object *obj, wp_graphics_scene 
     }
 
     obj->creator = scene;
+    ++obj->generation;
 }
 
 /* =========================================================================
@@ -461,6 +489,7 @@ void wp_graphics_object_make_dirty( wp_graphics_object *obj )
 void wp_graphics_object_set_submit_data( wp_graphics_object *obj, void *data )
 {
     if( obj ) obj->submit_data = data;
+    ++obj->generation;
 }
 
 void *wp_graphics_object_get_submit_data( const wp_graphics_object *obj )
@@ -490,6 +519,7 @@ void wp_graphics_object_set_render_func( wp_graphics_object *obj, wp_graphics_ob
     }
 
     obj->render_func = fn;
+    ++obj->generation;
 }
 
 wp_graphics_object_render_func wp_graphics_object_get_render_func( const wp_graphics_object *obj )
@@ -510,14 +540,18 @@ void wp_graphics_object_set_mesh( wp_graphics_object *obj, wp_graphics_mesh *mes
     }
 
     obj->mesh = mesh;
+    ++obj->generation;
     if( mesh )
     {
         obj->local_aabb = wp_graphics_mesh_get_local_aabb( mesh );
+        ++obj->generation;
         obj->render_func = wp_graphics_object_render_mesh;
+        ++obj->generation;
     }
     else if( obj->render_func == wp_graphics_object_render_mesh )
     {
         obj->render_func = NULL;
+        ++obj->generation;
     }
     obj->is_dirty = 1;
 }
@@ -534,10 +568,37 @@ void wp_graphics_object_set_material( wp_graphics_object *obj, wp_graphics_mater
         return;
     }
     obj->material = material;
+    ++obj->generation;
     obj->is_dirty = 1;
 }
 
 wp_graphics_material *wp_graphics_object_get_material( const wp_graphics_object *obj )
 {
     return obj ? obj->material : NULL;
+}
+
+wp_u64 wp_graphics_object_get_generation( const wp_graphics_object *obj )
+{
+    return obj ? obj->generation : 0;
+}
+
+void wp_graphics_object_render_with_world( wp_graphics_object *obj, wp_renderer *renderer,
+                                           const wp_mat4f *world )
+{
+    if( !obj || !renderer || !world )
+    {
+        return;
+    }
+    wp_renderer_set_world_matrix( renderer, world );
+    if( obj->render_func == wp_graphics_object_render_mesh )
+    {
+        if( obj->mesh )
+        {
+            wp_graphics_mesh_render( obj->mesh, renderer, obj->material );
+        }
+    }
+    else if( obj->render_func )
+    {
+        obj->render_func( obj, renderer );
+    }
 }

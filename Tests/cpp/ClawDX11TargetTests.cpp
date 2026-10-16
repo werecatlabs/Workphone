@@ -21,6 +21,7 @@
 
 
 #include "ClawRTTJobContracts.hpp"
+#include "ClawSceneJobContracts.hpp"
 
 namespace
 {
@@ -699,7 +700,7 @@ int main()
                          wp_renderer_dx11_get_device( native ) ) ),
                      "DX11 device evidence must be available" );
         auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
-        try { ok &= claw_rtt_contracts::native(native); }
+        try { ok &= claw_rtt_contracts::native(native); ok &= claw_scene_job_contracts::pixelsMatch(renderer); }
         catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.setRenderTarget( window );
         auto *originalDepth = depthTarget( context );

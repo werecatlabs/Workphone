@@ -1,5 +1,49 @@
 # WPGraphics implementation status
 
+## Native transform and cull integration - 16 October 2026
+
+`workphone_graphics_transform_job.h/.c` capture local-matrix ancestor chains on
+the owner before submitting tasks. Workers compose only copied matrices into
+private storage. `wait` publishes after a task-local completion group drains;
+cancel/destroy drain without publishing. The pool is borrowed and optional
+(NULL computes inline); failed task submission also computes inline. Capture
+rejects excessive counts, snapshots over 64 MiB and paths deeper than 257 nodes.
+Independent instances have independent completion, so unrelated pool work does
+not delay a completed transform job. Node edits/destruction after dispatch are safe.
+
+`workphone_graphics_cull_job.h/.c` use these matrices with copied bounds, masks,
+queue/Z order and pass policy. Results own all candidate revisions, frozen camera
+and world matrices, and stable visible indices. Main views apply conservative
+frustum tests; shadow views retain admitted off-camera casters. Unknown/inverted/
+nonfinite bounds remain visible. Validation rejects scene membership/replacement,
+object and mesh edits, ancestor changes, and camera matrix/mask changes before
+consumption. Hidden candidates are validated too. Scene/object/node revisions and
+mesh bounds mutation now participate in this contract. Native owner APIs must be
+used for mutation; raw destruction of borrowed resources outside their owner is
+not supported. Result destruction itself never dereferences borrowed objects.
+
+`wp_graphics_scene_render` consumes the prepared result; the synchronous
+`render_with_submit` remains its pre-draw allocation/capture failure fallback.
+`ClawScene` consumes frozen matrices for DX11 material-aware colour draws,
+conservative mesh shadows and software draws. The DX11 mesh snapshot entry point
+uses the captured view/projection rather than querying the camera for each mesh.
+`ClawHammerSystem` prepares results before begin/draw, checks them as the RTT
+dependency and again before texture publication, then retires them at pass end.
+Claw preparation failures fail the pass; no partially submitted pass is replayed.
+Clear/unload/native-scene release discard prepared jobs. CPU capture/preparation
+is synchronous in the active frame; optional pooled transforms are available
+through `wp_graphics_scene_set_transform_pool`.
+
+This is a correctness/integration tier. Ancestor chains are copied per object,
+and main/shadow snapshots are prepared separately. Generation-cached/deduplicated
+transforms, spatial acceleration, asynchronous frame scheduling, per-job profiling,
+full immutable material/resource/pass snapshots, live Editor comparison and
+representative hardware performance remain open. Terrain/foliage/particle systems
+retain their existing independent preparation paths.
+
+Validation results and commands are recorded below after the current rebuild.
+
+
 ## Native RTT job and DX11 execution - 16 October 2026
 
 `workphone_graphics_rtt_job.h/.c` now implement an opaque, synchronous C90 job
@@ -23,9 +67,9 @@ The adapter rejects stale renderer/target generations and extents, wrong-thread
 execution, recursive RTT, active HDR/shadow scopes at entry, resize/Present during
 RTT, and sampled destination hazards. Native texture/material bindings record a
 sticky hazard so unbinding before job completion cannot hide a self-reference.
-Scene/view generation and cull-result publication can be checked through callbacks;
-the Claw integration currently uses the existing synchronous scene scan, with
-retained C++ pass/target/camera references, rather than claiming frozen culling.
+Scene/view validation and completed native cull results are checked through callbacks.
+Claw now prepares transform/cull results before offscreen execution and retains
+scene/camera references through post-draw validation (see the current slice above).
 
 `ClawHammerSystem` executes offscreen scene/pipeline/UI work inside the native
 job, catches C++ exceptions before returning through C, closes active pipeline
@@ -61,7 +105,7 @@ rebuilt with project references disabled against those already-built native
 libraries. This is selected DX11 validation, not a full rebuild/certification of
 the in-progress DX12 backend or the full solution.
 
-Live Editor previews, immutable cull snapshots, queued scheduler integration,
+Live Editor previews, queued scheduler integration,
 scene-linear/HDR output, GPU completion/per-job profiling, real device-removal
 recovery, long stress and hardware performance remain open.
 

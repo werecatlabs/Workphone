@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include "workphone_vector.h"
+#include "workphone_matrix.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,6 +91,12 @@ typedef enum wp_render_queue_group
     WORKPHONE_RENDER_QUEUE_OVERLAY = 100,  /**< Rendered after scene geometry. */
     WORKPHONE_RENDER_QUEUE_UI = 200        /**< User-interface elements, rendered last. */
 } wp_render_queue_group;
+
+/* Identity/revision changes on render-input edits, including reattachment. */
+wp_u64 wp_graphics_object_get_generation( const wp_graphics_object * );
+/* Native mesh draws use this frozen world; custom callbacks receive it through
+ * renderer state and must not replace it from a mutable scene node. */
+void wp_graphics_object_render_with_world( wp_graphics_object *, wp_renderer *, const wp_mat4f * );
 
 /* -------------------------------------------------------------------------
  * Lifecycle

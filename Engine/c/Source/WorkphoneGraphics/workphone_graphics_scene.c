@@ -4,12 +4,15 @@
  */
 
 #include "workphone_graphics_scene.h"
+#include "workphone_graphics_cull_job.h"
+#include "graphics_job_generation.h"
 #include "workphone_graphics_camera.h"
 #include "workphone_graphics_scenenode.h"
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_renderer.h"
 #include <math.h>
+#include <float.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,6 +29,7 @@ static void scene_remove_node( wp_graphics_scene *scene, wp_scenenode *node )
         if( scene->nodes[i] == node )
         {
             scene->nodes[i] = scene->nodes[--scene->node_count];
+            ++scene->generation;
             return;
         }
     }
@@ -45,6 +49,7 @@ static void scene_remove_object( wp_graphics_scene *scene, wp_graphics_object *o
                 scene->objects[j - 1] = scene->objects[j];
             }
             --scene->object_count;
+            ++scene->generation;
             return;
         }
     }
@@ -106,14 +111,26 @@ static wp_s32 scene_mesh_outside_frustum( const wp_graphics_object *object,
         return 0;
     /* Read current mesh bounds: the object's copy can predate a mesh reload. */
     bounds = wp_graphics_mesh_get_local_aabb( mesh );
-    if( !( bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y &&
+    if( !( bounds.min.x >= -FLT_MAX && bounds.max.x <= FLT_MAX && bounds.min.y >= -FLT_MAX &&
+           bounds.max.y <= FLT_MAX && bounds.min.z >= -FLT_MAX && bounds.max.z <= FLT_MAX &&
+           bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y &&
            bounds.min.z <= bounds.max.z ) ||
         ( bounds.min.x == bounds.max.x && bounds.min.y == bounds.max.y &&
           bounds.min.z == bounds.max.z ) )
+    {
         return 0;
+    }
 
     wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &world );
     wp_mat4f_mul( &clip, view_projection, &world );
+    for( axis = 0; axis < 16; ++axis )
+    {
+        if( !( ( (const wp_f32 *)&clip )[axis] <= FLT_MAX &&
+               ( (const wp_f32 *)&clip )[axis] >= -FLT_MAX ) )
+        {
+            return 0;
+        }
+    }
     /* Camera matrices use -w <= x,y,z <= w (DX11 remaps z in its vertex shader).
      * Extract the planes in local space and test each box's furthest vertex.
      * This also handles parent transforms, rotations and negative scales. */
@@ -264,6 +281,7 @@ wp_graphics_scene *wp_graphics_scene_create( void )
     }
 
     memset( scene, 0, sizeof( wp_graphics_scene ) );
+    scene->generation = wp_job_next_generation();
 
     scene->visibility_mask = 0xFFFFFFFFu;
     scene->ambient_r = 0.2f;
@@ -342,6 +360,7 @@ void wp_graphics_scene_destroy( wp_graphics_scene *scene )
         return;
     }
 
+    wp_graphics_cull_job_destroy( scene->cull_job );
     scene_detach_all_objects( scene );
 
     for( i = 0; i < scene->object_count; ++i )
@@ -380,6 +399,7 @@ void wp_graphics_scene_clear( wp_graphics_scene *scene )
     }
 
     scene->object_count = 0;
+    ++scene->generation;
 
     /* Destroy all non-root nodes */
     for( i = scene->node_count - 1; i >= 0; --i )
@@ -431,6 +451,7 @@ wp_scenenode *wp_graphics_scene_create_node( wp_graphics_scene *scene )
     }
 
     scene->nodes[scene->node_count++] = node;
+    ++scene->generation;
 
     return node;
 }
@@ -503,6 +524,7 @@ wp_graphics_object *wp_graphics_scene_create_object( wp_graphics_scene *scene )
     }
 
     scene->objects[scene->object_count++] = obj;
+    ++scene->generation;
 
     return obj;
 }
@@ -543,7 +565,12 @@ void wp_graphics_scene_set_visibility_mask( wp_graphics_scene *scene, wp_u32 mas
         return;
     }
 
+    if( scene->visibility_mask == mask )
+    {
+        return;
+    }
     scene->visibility_mask = mask;
+    ++scene->generation;
 }
 
 wp_u32 wp_graphics_scene_get_visibility_mask( const wp_graphics_scene *scene )
@@ -854,7 +881,12 @@ void wp_graphics_scene_set_active_camera( wp_graphics_scene *scene, wp_camera *c
         return;
     }
 
+    if( scene->active_camera == camera )
+    {
+        return;
+    }
     scene->active_camera = camera;
+    ++scene->generation;
 }
 
 wp_camera *wp_graphics_scene_get_default_camera( const wp_graphics_scene *scene )
@@ -874,12 +906,29 @@ void wp_graphics_scene_set_default_camera( wp_graphics_scene *scene, wp_camera *
         return;
     }
 
+    if( scene->default_camera == camera )
+    {
+        return;
+    }
     scene->default_camera = camera;
+    ++scene->generation;
 }
 
 void wp_graphics_scene_render( wp_graphics_scene *scene, wp_renderer *renderer )
 {
-    wp_graphics_scene_render_with_submit( scene, renderer, NULL, NULL );
+    wp_graphics_cull_result *result;
+    if( !scene || !renderer )
+    {
+        return;
+    }
+    result = wp_graphics_scene_prepare_cull( scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+    if( !result )
+    {
+        wp_graphics_scene_render_with_submit( scene, renderer, NULL, NULL );
+        return;
+    }
+    wp_graphics_scene_render_cull_result( scene, renderer, result, NULL, NULL );
+    wp_graphics_cull_result_destroy( result );
 }
 
 void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer *renderer,
@@ -986,4 +1035,98 @@ void wp_graphics_scene_set_native( wp_graphics_scene *scene, void *native )
     }
 
     scene->native = native;
+}
+
+wp_u64 wp_graphics_scene_get_generation( const wp_graphics_scene *scene )
+{
+    return scene ? scene->generation : 0;
+}
+
+void wp_graphics_scene_set_transform_pool( wp_graphics_scene *scene, wp_threadpool *pool )
+{
+    if( !scene || scene->transform_pool == pool )
+    {
+        return;
+    }
+    wp_graphics_cull_job_destroy( scene->cull_job );
+    scene->cull_job = NULL;
+    scene->transform_pool = pool;
+}
+
+wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *scene,
+                                                         const wp_camera *camera, wp_s32 pass )
+{
+    if( !scene )
+    {
+        return NULL;
+    }
+    if( !scene->cull_job )
+    {
+        scene->cull_job = wp_graphics_cull_job_create();
+        if( !scene->cull_job )
+        {
+            return NULL;
+        }
+        if( wp_graphics_cull_job_set_threadpool( scene->cull_job, scene->transform_pool ) !=
+            WP_GRAPHICS_CULL_OK )
+        {
+            wp_graphics_cull_job_destroy( scene->cull_job );
+            scene->cull_job = NULL;
+            return NULL;
+        }
+    }
+    wp_graphics_cull_job_reset( scene->cull_job );
+    if( wp_graphics_cull_job_configure( scene->cull_job, scene, camera, (wp_graphics_cull_pass)pass,
+                                        (wp_u32)scene->generation ) != WP_GRAPHICS_CULL_OK ||
+        wp_graphics_cull_job_execute( scene->cull_job ) != WP_GRAPHICS_CULL_OK )
+    {
+        return NULL;
+    }
+    return wp_graphics_cull_job_take_result( scene->cull_job );
+}
+
+wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_renderer *renderer,
+                                             const wp_graphics_cull_result *result,
+                                             wp_graphics_scene_snapshot_submit_func submit, void *data )
+{
+    wp_s32 i;
+    wp_mat4f world, view, projection;
+    wp_graphics_object *object;
+    if( !scene || !renderer || !result )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    }
+    if( wp_graphics_cull_result_validate( result, scene,
+                                          wp_graphics_cull_result_get_scene_generation( result ) ) !=
+        WP_GRAPHICS_CULL_OK )
+    {
+        return WP_GRAPHICS_CULL_ERROR_STALE;
+    }
+    if( wp_graphics_cull_result_get_pass( result ) == WP_GRAPHICS_CULL_PASS_MAIN &&
+        wp_graphics_cull_result_get_camera_matrices( result, &view, &projection ) )
+    {
+        wp_renderer_set_view_matrix( renderer, &view );
+        wp_renderer_set_projection_matrix( renderer, &projection );
+    }
+    for( i = 0; i < wp_graphics_cull_result_get_visible_count( result ); ++i )
+    {
+        /* Callbacks may mutate membership; never dereference a retired entry. */
+        if( wp_graphics_cull_result_validate_object( result, scene, i ) != WP_GRAPHICS_CULL_OK )
+        {
+            return WP_GRAPHICS_CULL_ERROR_STALE;
+        }
+        object = wp_graphics_cull_result_get_object( result, i );
+        wp_graphics_cull_result_get_world_matrix( result, i, &world );
+        wp_renderer_set_world_matrix( renderer, &world );
+        if( !submit || !submit( object, renderer, &world, data ) )
+        {
+            if( wp_graphics_cull_result_validate_object( result, scene, i ) != WP_GRAPHICS_CULL_OK )
+            {
+                return WP_GRAPHICS_CULL_ERROR_STALE;
+            }
+            wp_graphics_object_render_with_world( object, renderer, &world );
+        }
+    }
+    return wp_graphics_cull_result_validate( result, scene,
+                                             wp_graphics_cull_result_get_scene_generation( result ) );
 }

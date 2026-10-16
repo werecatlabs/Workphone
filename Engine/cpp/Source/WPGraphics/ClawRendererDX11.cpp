@@ -789,6 +789,12 @@ namespace workphone::render
         }
     }
 
+    void ClawRendererDX11::renderMeshSnapshot( ClawMesh *mesh, const Matrix4F &world,
+                                               const wp_mat4f &view, const wp_mat4f &projection )
+    {
+        renderMeshBatch( mesh, world, nullptr, 0, &view, &projection );
+    }
+
     void ClawRendererDX11::renderMesh( ClawMesh *mesh, const Matrix4F &transform )
     {
         renderMeshBatch( mesh, transform, nullptr, 0 );
@@ -903,7 +909,9 @@ namespace workphone::render
     }
 
     u64 ClawRendererDX11::renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
-                                           const wp_instance_pntc_dx11 *instances, u32 instanceCount )
+                                           const wp_instance_pntc_dx11 *instances, u32 instanceCount,
+                                           const wp_mat4f *snapshotView,
+                                           const wp_mat4f *snapshotProjection )
     {
         auto nativeMesh = mesh ? mesh->getNativeMesh() : nullptr;
         if( !m_renderer || !mesh || !mesh->isVisible() || !nativeMesh )
@@ -920,7 +928,7 @@ namespace workphone::render
         }
 
         u64 submitted = 0;
-        setTransforms( transform );
+        setTransforms( transform, snapshotView, snapshotProjection );
         const auto topology = wp_graphics_mesh_get_primitive_type( nativeMesh );
         const auto submeshCount = wp_graphics_mesh_get_submesh_count( nativeMesh );
         const auto drawCount = std::max<s32>( submeshCount, 1 );
@@ -1416,10 +1424,18 @@ namespace workphone::render
         wp_renderer_set_depth_write_enabled( m_renderer, oldDepthWrite );
     }
 
-    void ClawRendererDX11::setTransforms( const Matrix4F &world )
+    void ClawRendererDX11::setTransforms( const Matrix4F &world, const wp_mat4f *snapshotView,
+                                          const wp_mat4f *snapshotProjection )
     {
-        auto camera = getCamera();
         const auto nativeWorld = toCMatrix( world );
+        if( !m_shadowPass && snapshotView && snapshotProjection )
+        {
+            wp_renderer_set_world_matrix( m_renderer, &nativeWorld );
+            wp_renderer_set_view_matrix( m_renderer, snapshotView );
+            wp_renderer_set_projection_matrix( m_renderer, snapshotProjection );
+            return;
+        }
+        auto camera = getCamera();
         const auto view =
             !m_shadowPass && camera ? Matrix4F( camera->getViewMatrix().ptr() ) : Matrix4F::identity();
         const auto projection = m_shadowPass ? m_shadowMatrix

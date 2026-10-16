@@ -12,6 +12,9 @@
  * invalid bounds stay visible) and a stable sort by render queue group then
  * z-order.  No shared object state is modified.
  *
+ * Scene, camera, object and mesh lifetimes are borrowed until result consumption. Destroy results before
+ * destroying the scene. Mutation/capture/validation/submission share an owner;
+ * execute alone may run on a worker. Camera and world matrices are frozen.
  * Lifecycle: IDLE -> READY (configure) -> COMPLETE | FAILED (execute).
  * Configure is rejected while READY; cancel or reset make the job
  * reconfigurable.  Execute reads only the snapshot, so it may run off the
@@ -59,6 +62,13 @@ typedef enum wp_graphics_cull_result_code
 } wp_graphics_cull_result_code;
 
 wp_graphics_cull_job *wp_graphics_cull_job_create( void );
+/* Optional borrowed pool; owner-thread capture/wait precedes culling. */
+wp_s32 wp_graphics_cull_job_set_threadpool( wp_graphics_cull_job *, wp_threadpool * );
+wp_s32 wp_graphics_cull_result_validate_object( const wp_graphics_cull_result *,
+                                                const wp_graphics_scene *, wp_s32 );
+wp_s32 wp_graphics_cull_result_get_world_matrix( const wp_graphics_cull_result *, wp_s32, wp_mat4f * );
+wp_s32 wp_graphics_cull_result_get_camera_matrices( const wp_graphics_cull_result *, wp_mat4f *,
+                                                    wp_mat4f * );
 
 /** @brief Destroys the job and its snapshot.  Results already taken stay valid. */
 void wp_graphics_cull_job_destroy( wp_graphics_cull_job *job );
@@ -106,7 +116,8 @@ wp_graphics_cull_pass wp_graphics_cull_result_get_pass( const wp_graphics_cull_r
 /**
  * @brief Checks a result at consumption time.
  * @return WP_GRAPHICS_CULL_OK if the generation matches and every object is
- *         still owned by the scene, otherwise WP_GRAPHICS_CULL_ERROR_STALE.
+ *         still owned by the scene with unchanged object, mesh and ancestor revisions, otherwise
+ * WP_GRAPHICS_CULL_ERROR_STALE.
  */
 wp_s32 wp_graphics_cull_result_validate( const wp_graphics_cull_result *result,
                                          const wp_graphics_scene *scene, wp_u32 scene_generation );

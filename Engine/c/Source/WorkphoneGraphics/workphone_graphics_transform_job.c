@@ -1,132 +1,287 @@
-﻿#include "workphone_graphics_transform_job.h"
+#include "workphone_graphics_transform_job.h"
 #include <stdlib.h>
+#include <string.h>
+#define WP_TRANSFORM_CHAIN_LIMIT 257u
+#define WP_TRANSFORM_BYTE_LIMIT ( 64u * 1024u * 1024u )
 
-#define WP_TRANSFORM_JOB_DEFAULT_BATCH 64u
+typedef struct wp_transform_path
+{
+    wp_u32 start, count;
+} wp_transform_path;
 
 typedef struct wp_transform_batch
 {
-    const wp_scenenode *const *nodes;
-    wp_mat4f *out_matrix;
-    wp_u32 count;
+    const wp_mat4f *locals;
+    const wp_transform_path *paths;
+    wp_mat4f *worlds;
+    wp_u32 start, count;
 } wp_transform_batch;
 
 struct wp_transform_job_system
 {
     wp_threadpool *pool;
-    wp_u32 batch_size;
+    wp_task_group *completion;
+    wp_u32 batch_size, count;
+    wp_u64 generation;
+    wp_mat4f *locals, *worlds, *destination;
+    wp_transform_path *paths;
     wp_transform_batch *batches;
-    wp_u32 batch_capacity;
-    wp_s32 pending;
+    wp_transform_job_status status;
 };
 
-static void wp_transform_batch_run( void *user_data )
+static void wp_transform_batch_run( void *data )
 {
-    wp_transform_batch *batch = (wp_transform_batch *)user_data;
-    wp_u32 i;
-    for( i = 0; i < batch->count; ++i )
+    wp_transform_batch *b = (wp_transform_batch *)data;
+    wp_u32 i, j, index;
+    wp_mat4f world, combined;
+    for( i = 0; i < b->count; ++i )
     {
-        wp_scenenode_get_world_matrix( batch->nodes[i], &batch->out_matrix[i] );
+        index = b->start + i;
+        wp_mat4f_identity( &world );
+        j = b->paths[index].count;
+        while( j )
+        {
+            --j;
+            wp_mat4f_mul( &combined, &world, &b->locals[b->paths[index].start + j] );
+            world = combined;
+        }
+        b->worlds[index] = world;
     }
+}
+
+static void wp_transform_release( wp_transform_job_system *s )
+{
+    free( s->locals );
+    free( s->worlds );
+    free( s->paths );
+    free( s->batches );
+    s->locals = NULL;
+    s->worlds = NULL;
+    s->paths = NULL;
+    s->batches = NULL;
+    s->count = 0;
+    s->destination = NULL;
 }
 
 wp_transform_job_system *wp_transform_job_system_create( wp_threadpool *pool, wp_u32 batch_size )
 {
-    wp_transform_job_system *system = (wp_transform_job_system *)calloc( 1, sizeof( wp_transform_job_system ) );
-    if( !system )
+    wp_transform_job_system *s = (wp_transform_job_system *)calloc( 1, sizeof( *s ) );
+    if( !s )
     {
         return NULL;
     }
-    system->pool = pool;
-    system->batch_size = batch_size ? batch_size : WP_TRANSFORM_JOB_DEFAULT_BATCH;
-    return system;
+    s->completion = wp_task_group_create();
+    if( !s->completion )
+    {
+        free( s );
+        return NULL;
+    }
+    s->pool = pool;
+    s->batch_size = batch_size ? batch_size : 64u;
+    return s;
 }
 
-void wp_transform_job_system_destroy( wp_transform_job_system *system )
+void wp_transform_job_system_wait( wp_transform_job_system *s )
 {
-    if( !system )
+    if( !s || s->status != WP_TRANSFORM_RUNNING )
     {
         return;
     }
-    wp_transform_job_system_wait( system );
-    free( system->batches );
-    free( system );
+    wp_task_group_wait( s->completion );
+    if( s->destination && s->count )
+    {
+        memcpy( s->destination, s->worlds, (size_t)s->count * sizeof( wp_mat4f ) );
+    }
+    s->status = WP_TRANSFORM_COMPLETE;
 }
 
-wp_s32 wp_transform_job_system_dispatch( wp_transform_job_system *system, const wp_scenenode *const *nodes, wp_mat4f *out_matrix, wp_u32 count )
+void wp_transform_job_system_cancel( wp_transform_job_system *s )
 {
-    wp_u32 batch_count;
-    wp_u32 i;
+    if( !s || s->status != WP_TRANSFORM_RUNNING )
+    {
+        return;
+    }
+    wp_task_group_wait( s->completion );
+    s->destination = NULL;
+    s->status = WP_TRANSFORM_CANCELLED;
+}
 
-    if( !system || system->pending || ( count > 0 && ( !nodes || !out_matrix ) ) )
+void wp_transform_job_system_destroy( wp_transform_job_system *s )
+{
+    if( !s )
+    {
+        return;
+    }
+    wp_transform_job_system_cancel( s );
+    wp_task_group_destroy( s->completion );
+    wp_transform_release( s );
+    free( s );
+}
+
+static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenenode *const *nodes,
+                                     wp_mat4f *destination, wp_u32 count, wp_u64 generation )
+{
+    const wp_scenenode *node, *chain[WP_TRANSFORM_CHAIN_LIMIT];
+    wp_mat4f *locals, *worlds;
+    wp_transform_path *paths;
+    wp_transform_batch *batches;
+    wp_u32 i, j, depth, total = 0, batch_count, start;
+    size_t bytes;
+    if( !s || s->status == WP_TRANSFORM_RUNNING || ( count && !nodes ) )
     {
         return 0;
     }
-    if( count == 0 )
+    if( count > WP_TRANSFORM_BYTE_LIMIT /
+                    ( sizeof( wp_transform_path ) + sizeof( wp_mat4f ) + sizeof( wp_transform_batch ) ) )
     {
-        return 1;
+        return 0;
     }
-
-    batch_count = ( count + system->batch_size - 1 ) / system->batch_size;
-
-    if( !system->pool || batch_count == 1 )
+    paths = count ? (wp_transform_path *)calloc( count, sizeof( *paths ) ) : NULL;
+    if( count && !paths )
     {
-        wp_transform_batch single;
-        single.nodes = nodes;
-        single.out_matrix = out_matrix;
-        single.count = count;
-        wp_transform_batch_run( &single );
-        return 1;
+        return 0;
     }
-
-    if( batch_count > system->batch_capacity )
+    for( i = 0; i < count; ++i )
     {
-        wp_transform_batch *grown = (wp_transform_batch *)realloc( system->batches, batch_count * sizeof( wp_transform_batch ) );
-        if( !grown )
+        depth = 0;
+        node = nodes[i];
+        while( node )
         {
+            if( depth == WP_TRANSFORM_CHAIN_LIMIT )
+            {
+                free( paths );
+                return 0;
+            }
+            for( j = 0; j < depth; ++j )
+            {
+                if( chain[j] == node )
+                {
+                    free( paths );
+                    return 0;
+                }
+            }
+            chain[depth++] = node;
+            node = wp_scenenode_get_parent( node );
+        }
+        if( depth > WP_TRANSFORM_BYTE_LIMIT / sizeof( wp_mat4f ) - total )
+        {
+            free( paths );
             return 0;
         }
-        system->batches = grown;
-        system->batch_capacity = batch_count;
+        paths[i].start = total;
+        paths[i].count = depth;
+        total += depth;
     }
-
-    for( i = 0; i < batch_count; ++i )
+    batch_count = count / s->batch_size + ( count % s->batch_size != 0 );
+    bytes = (size_t)total * sizeof( wp_mat4f ) +
+            (size_t)count * ( sizeof( *paths ) + sizeof( wp_mat4f ) ) +
+            (size_t)batch_count * sizeof( *batches );
+    if( bytes > WP_TRANSFORM_BYTE_LIMIT )
     {
-        wp_u32 start = i * system->batch_size;
-        wp_u32 remaining = count - start;
-        wp_transform_batch *batch = &system->batches[i];
-        batch->nodes = nodes + start;
-        batch->out_matrix = out_matrix + start;
-        batch->count = remaining < system->batch_size ? remaining : system->batch_size;
+        free( paths );
+        return 0;
     }
-
-    system->pending = 1;
-
-    for( i = 0; i < batch_count; ++i )
+    locals = total ? (wp_mat4f *)malloc( (size_t)total * sizeof( *locals ) ) : NULL;
+    worlds = count ? (wp_mat4f *)malloc( (size_t)count * sizeof( *worlds ) ) : NULL;
+    batches = batch_count ? (wp_transform_batch *)calloc( batch_count, sizeof( *batches ) ) : NULL;
+    if( ( total && !locals ) || ( count && !worlds ) || ( batch_count && !batches ) )
     {
-        if( !wp_threadpool_submit( system->pool, wp_transform_batch_run, &system->batches[i] ) )
+        free( paths );
+        free( locals );
+        free( worlds );
+        free( batches );
+        return 0;
+    }
+    /* All live hierarchy reads finish before the first task is submitted. */
+    for( i = 0; i < count; ++i )
+    {
+        node = nodes[i];
+        for( j = 0; j < paths[i].count; ++j )
         {
-            wp_transform_batch_run( &system->batches[i] );
+            wp_scenenode_get_local_matrix( node, &locals[paths[i].start + j] );
+            node = wp_scenenode_get_parent( node );
+        }
+    }
+    wp_transform_release( s );
+    s->locals = locals;
+    s->worlds = worlds;
+    s->paths = paths;
+    s->batches = batches;
+    s->destination = destination;
+    s->count = count;
+    s->generation = generation;
+    s->status = WP_TRANSFORM_RUNNING;
+    for( i = 0; i < batch_count; ++i )
+    {
+        start = i * s->batch_size;
+        batches[i].locals = locals;
+        batches[i].worlds = worlds;
+        batches[i].paths = paths;
+        batches[i].start = start;
+        batches[i].count = count - start < s->batch_size ? count - start : s->batch_size;
+        if( !wp_task_group_submit( s->completion, s->pool, wp_transform_batch_run, &batches[i] ) )
+        {
+            wp_transform_batch_run( &batches[i] );
         }
     }
     return 1;
 }
 
-void wp_transform_job_system_wait( wp_transform_job_system *system )
+wp_s32 wp_transform_job_system_dispatch( wp_transform_job_system *s, const wp_scenenode *const *nodes,
+                                         wp_mat4f *out, wp_u32 count )
 {
-    if( !system || !system->pending )
-    {
-        return;
-    }
-    wp_threadpool_wait( system->pool );
-    system->pending = 0;
-}
-
-wp_s32 wp_transform_job_system_process( wp_transform_job_system *system, const wp_scenenode *const *nodes, wp_mat4f *out_matrix, wp_u32 count )
-{
-    if( !wp_transform_job_system_dispatch( system, nodes, out_matrix, count ) )
+    if( count && !out )
     {
         return 0;
     }
-    wp_transform_job_system_wait( system );
+    return wp_transform_dispatch( s, nodes, out, count, 0 );
+}
+
+wp_s32 wp_transform_job_system_dispatch_snapshot( wp_transform_job_system *s,
+                                                  const wp_scenenode *const *nodes, wp_u32 count,
+                                                  wp_u64 generation )
+{
+    return wp_transform_dispatch( s, nodes, NULL, count, generation );
+}
+
+wp_s32 wp_transform_job_system_process( wp_transform_job_system *s, const wp_scenenode *const *nodes,
+                                        wp_mat4f *out, wp_u32 count )
+{
+    if( !wp_transform_job_system_dispatch( s, nodes, out, count ) )
+    {
+        return 0;
+    }
+    wp_transform_job_system_wait( s );
     return 1;
+}
+
+wp_transform_job_status wp_transform_job_system_get_status( const wp_transform_job_system *s )
+{
+    return s ? s->status : WP_TRANSFORM_IDLE;
+}
+
+const wp_mat4f *wp_transform_job_system_get_result( const wp_transform_job_system *s, wp_u32 *count,
+                                                    wp_u64 *generation )
+{
+    if( count )
+    {
+        *count = 0;
+    }
+    if( generation )
+    {
+        *generation = 0;
+    }
+    if( !s || s->status != WP_TRANSFORM_COMPLETE )
+    {
+        return NULL;
+    }
+    if( count )
+    {
+        *count = s->count;
+    }
+    if( generation )
+    {
+        *generation = s->generation;
+    }
+    return s->worlds;
 }

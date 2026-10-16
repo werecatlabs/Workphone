@@ -1,4 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
+#include <stdexcept>
+#include "workphone_graphics_cull_job.h"
 #include <WPGraphics/ClawScene.hpp>
 #include <WPGraphics/ClawCamera.hpp>
 #include <WPGraphics/ClawLight.hpp>
@@ -173,6 +175,7 @@ namespace workphone
 
         ClawScene::~ClawScene()
         {
+            discardRenderJobs();
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
@@ -245,6 +248,7 @@ namespace workphone
 
         void ClawScene::unload( SmartPtr<ISharedObject> data )
         {
+            discardRenderJobs();
             clearFoliageBatches();
             clearFoliageWorlds();
             if( getLoadingState() == LoadingState::Unloaded )
@@ -264,6 +268,7 @@ namespace workphone
 
         wp_graphics_scene *ClawScene::releaseNativeScene()
         {
+            discardRenderJobs();
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
@@ -275,6 +280,7 @@ namespace workphone
 
         void ClawScene::clear()
         {
+            discardRenderJobs();
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
@@ -835,6 +841,59 @@ namespace workphone
             }
         }
 
+        struct ClawScene::NativeRenderJobs
+        {
+            wp_graphics_cull_result *main = nullptr;
+            wp_graphics_cull_result *shadow = nullptr;
+            SmartPtr<IGraphicsCamera> camera;
+
+            ~NativeRenderJobs()
+            {
+                wp_graphics_cull_result_destroy( main );
+                wp_graphics_cull_result_destroy( shadow );
+            }
+        };
+
+        bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera )
+        {
+            discardRenderJobs();
+            if( !m_scene )
+            {
+                return false;
+            }
+            auto view = dynamic_pointer_cast<ClawCamera>( camera );
+            wp_graphics_scene_set_active_camera( m_scene, view ? view->getNativeCamera() : nullptr );
+            auto jobs = std::make_shared<NativeRenderJobs>();
+            jobs->camera = camera;
+            jobs->main = wp_graphics_scene_prepare_cull( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN );
+            jobs->shadow =
+                wp_graphics_scene_prepare_cull( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
+            if( !jobs->main || !jobs->shadow )
+            {
+                return false;
+            }
+            m_nativeRenderJobs = jobs;
+            return true;
+        }
+
+        bool ClawScene::validateRenderJobs() const
+        {
+            return m_scene && m_nativeRenderJobs &&
+                   wp_graphics_cull_result_validate(
+                       m_nativeRenderJobs->main, m_scene,
+                       static_cast<wp_u32>( wp_graphics_scene_get_generation( m_scene ) ) ) ==
+                       WP_GRAPHICS_CULL_OK &&
+                   wp_graphics_cull_result_validate(
+                       m_nativeRenderJobs->shadow, m_scene,
+                       static_cast<wp_u32>( wp_graphics_scene_get_generation( m_scene ) ) ) ==
+                       WP_GRAPHICS_CULL_OK;
+        }
+
+        void ClawScene::discardRenderJobs()
+        {
+            m_nativeRenderJobs.reset();
+        }
+
         void ClawScene::render( void *rendererPtr )
         {
             if( !m_scene || !rendererPtr )
@@ -859,6 +918,33 @@ namespace workphone
                 auto camera = dynamic_pointer_cast<ClawCamera>( rawRenderer->getCamera() );
                 wp_graphics_scene_set_active_camera( m_scene,
                                                      camera ? camera->getNativeCamera() : nullptr );
+
+                const bool temporaryJobs = !m_nativeRenderJobs;
+                if( temporaryJobs && !prepareRenderJobs( rawRenderer->getCamera() ) )
+                {
+                    throw std::runtime_error( "Native scene job preparation failed." );
+                }
+                auto jobs = m_nativeRenderJobs;
+
+                // Direct render callers release their snapshot even on exceptions.
+                struct JobCleanup
+                {
+                    ClawScene *scene;
+                    bool temporary;
+
+                    ~JobCleanup()
+                    {
+                        if( temporary )
+                        {
+                            scene->discardRenderJobs();
+                        }
+                    }
+                } cleanup{ this, temporaryJobs };
+
+                if( !validateRenderJobs() )
+                {
+                    throw std::runtime_error( "Stale native scene jobs." );
+                }
 
                 // Skies and terrains are C++ renderer objects and are not members of the native C
                 // scene's object list. Submit them explicitly before the native mesh scene pass.
@@ -1068,11 +1154,16 @@ namespace workphone
                             ( camera ? wp_camera_get_visibility_mask( camera->getNativeCamera() )
                                      : ~u32( 0 ) ) &
                             ( viewport ? viewport->getVisibilityMask() : ~u32( 0 ) );
-                        for( s32 i = 0; i < m_scene->object_count; ++i )
+                        for( s32 i = 0; i < wp_graphics_cull_result_get_visible_count( jobs->shadow );
+                             ++i )
                         {
-                            auto object = m_scene->objects[i];
-                            if( !object || !wp_graphics_object_is_visible( object ) ||
-                                !( wp_graphics_object_get_visibility_flags( object ) & mask ) )
+                            if( wp_graphics_cull_result_validate_object( jobs->shadow, m_scene, i ) !=
+                                WP_GRAPHICS_CULL_OK )
+                            {
+                                throw std::runtime_error( "Stale shadow draw snapshot." );
+                            }
+                            auto object = wp_graphics_cull_result_get_object( jobs->shadow, i );
+                            if( !( wp_graphics_object_get_visibility_flags( object ) & mask ) )
                             {
                                 continue;
                             }
@@ -1083,8 +1174,7 @@ namespace workphone
                                 continue;
                             }
                             wp_mat4f world;
-                            wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
-                                                           &world );
+                            wp_graphics_cull_result_get_world_matrix( jobs->shadow, i, &world );
                             dx11Renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
                         }
                         for( auto &object : terrainObjects )
@@ -1198,23 +1288,38 @@ namespace workphone
                     }
                     // Use the material-aware C++ draw path for native mesh objects while
                     // retaining the native scene's visibility filtering and queue ordering.
-                    wp_graphics_scene_render_with_submit(
-                        m_scene, nativeRenderer,
-                        []( wp_graphics_object *object, wp_renderer *, void *data ) -> wp_s32 {
-                            auto renderer = static_cast<ClawRendererDX11 *>( data );
+                    struct MeshSubmission
+                    {
+                        ClawRendererDX11 *renderer;
+                        wp_mat4f view, projection;
+                    } meshSubmission{};
+
+                    meshSubmission.renderer = dx11Renderer;
+                    wp_mat4f_identity( &meshSubmission.view );
+                    wp_mat4f_identity( &meshSubmission.projection );
+                    wp_graphics_cull_result_get_camera_matrices( jobs->main, &meshSubmission.view,
+                                                                 &meshSubmission.projection );
+                    const auto submission = wp_graphics_scene_render_cull_result(
+                        m_scene, nativeRenderer, jobs->main,
+                        []( wp_graphics_object *object, wp_renderer *, const wp_mat4f *world,
+                            void *data ) -> wp_s32 {
+                            auto &submission = *static_cast<MeshSubmission *>( data );
+                            auto renderer = submission.renderer;
                             auto mesh =
                                 static_cast<ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
                             if( !mesh )
                             {
                                 return 0;
                             }
-                            wp_mat4f world;
-                            wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ),
-                                                           &world );
-                            renderer->renderMesh( mesh, Matrix4F( world.m[0] ) );
+                            renderer->renderMeshSnapshot( mesh, Matrix4F( world->m[0] ), submission.view,
+                                                          submission.projection );
                             return 1;
                         },
-                        dx11Renderer );
+                        &meshSubmission );
+                    if( submission != WP_GRAPHICS_CULL_OK )
+                    {
+                        throw std::runtime_error( "Stale colour draw snapshot." );
+                    }
 
                     // Particle simulation is updated by GraphicsScene::update, once per
                     // simulation cycle. Each camera consumes its own immutable draw snapshot.
@@ -1266,7 +1371,11 @@ namespace workphone
                 }
                 else
                 {
-                    wp_graphics_scene_render( m_scene, nativeRenderer );
+                    if( wp_graphics_scene_render_cull_result( m_scene, nativeRenderer, jobs->main,
+                                                              nullptr, nullptr ) != WP_GRAPHICS_CULL_OK )
+                    {
+                        throw std::runtime_error( "Stale software draw snapshot." );
+                    }
                 }
             }
         }
