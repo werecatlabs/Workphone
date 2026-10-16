@@ -5285,6 +5285,7 @@ wp_rtt_result wp_renderer_dx11_execute_rtt_job(wp_renderer_dx11 *r,
     wp_rtt_result result;
     wp_s32 i;
     if(!r || !target || !desc || !draw || !(desc->depth >= 0.0f && desc->depth <= 1.0f)) return WP_RTT_INVALID;
+    if(desc->format != WP_RTT_RGBA8_UNORM || desc->colour_space != WP_RTT_LEGACY_LDR) return WP_RTT_UNSUPPORTED;
     for(i = 0; i < 4; ++i) if(!(desc->colour[i] >= -FLT_MAX && desc->colour[i] <= FLT_MAX)) return WP_RTT_INVALID;
     memset(&context, 0, sizeof(context)); memset(&ops, 0, sizeof(ops));
     context.r = r; context.target = target; context.user = user;

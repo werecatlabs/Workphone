@@ -374,7 +374,8 @@ void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *ren
 wp_render_texture_dx11 *wp_renderer_dx11_create_render_texture( wp_renderer_dx11 *renderer,
                                                                  wp_s32 width, wp_s32 height );
 void wp_renderer_dx11_destroy_render_texture( wp_render_texture_dx11 *render_texture );
-/* Synchronous, transactional RGBA8-linear offscreen job. Requires D3D11.1
+/* Synchronous, transactional RGBA8-UNORM offscreen job (legacy LDR draw policy).
+ * Scene-linear/HDR output formats are explicitly unsupported in this tier. Requires D3D11.1
  * context-state support. First begin_frame/RTT execution claims its owner thread.
  * Target/renderer stay alive throughout this call; no worker dispatch or queued
  * ownership. Resource generations must match the queries below (including extent).

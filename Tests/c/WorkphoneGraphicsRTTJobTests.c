@@ -10,7 +10,7 @@ typedef struct fixture {
     wp_graphics_rtt_ops ops;
     char order[32];
     int count, refs, retain_fail, begin_fail, draw_fail, finish_fail;
-    int pending, stale, cancel_draw, reentry_ok, published, finish_publish;
+    int pending, stale, cancel_draw, reentry_ok, published, finish_publish, finish_cancel;
     int validations;
 } fixture;
 static void mark(fixture *f, char c) { f->order[f->count++] = c; f->order[f->count] = 0; }
@@ -38,6 +38,7 @@ static wp_rtt_result draw(void *p, const wp_graphics_rtt_desc *d)
 static wp_rtt_result finish(void *p, wp_s32 publish)
 {
     fixture *f = (fixture *)p; mark(f, 'F'); f->finish_publish = publish;
+    f->finish_cancel = wp_graphics_rtt_job_cancel(f->job) == WP_RTT_BUSY;
     if(f->finish_fail) return WP_RTT_BACKEND_FAILED;
     if(publish) ++f->published;
     return WP_RTT_OK;
@@ -63,7 +64,7 @@ int main(void)
     CHECK(wp_graphics_rtt_job_status(f.job) == WP_RTT_READY && f.published == 0);
     f.pending = 0; f.count = 0;
     CHECK(wp_graphics_rtt_job_execute(f.job) == WP_RTT_OK && !strcmp(f.order, "DVBRVF"));
-    CHECK(f.reentry_ok && f.published == 1 && wp_graphics_rtt_job_status(f.job) == WP_RTT_SUCCEEDED);
+    CHECK(f.reentry_ok && f.finish_cancel && f.published == 1 && wp_graphics_rtt_job_status(f.job) == WP_RTT_SUCCEEDED);
     CHECK(wp_graphics_rtt_job_execute(f.job) == WP_RTT_INVALID);
     f.retain_fail = 1;
     CHECK(wp_graphics_rtt_job_configure(f.job, &f.desc, &f.ops, &f) == WP_RTT_BACKEND_FAILED);

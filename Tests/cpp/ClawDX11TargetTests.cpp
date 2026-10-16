@@ -19,6 +19,9 @@
 #include <cstring>
 #include <vector>
 
+
+#include "ClawRTTJobContracts.hpp"
+
 namespace
 {
     class TestWindow : public workphone::render::GraphicsWindow
@@ -696,6 +699,8 @@ int main()
                          wp_renderer_dx11_get_device( native ) ) ),
                      "DX11 device evidence must be available" );
         auto *context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+        try { ok &= claw_rtt_contracts::native(native); }
+        catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.setRenderTarget( window );
         auto *originalDepth = depthTarget( context );
         ok &= check( originalDepth != nullptr, "window depth target must be bound" );
@@ -924,6 +929,8 @@ int main()
                          std::all_of( windowPixels.begin() + windowBytes, windowPixels.end(),
                                       []( unsigned char value ) { return value == 0xA5; } ),
                      "window readback must copy complete RGBA8 pixels within capacity" );
+        try { ok &= claw_rtt_contracts::integration(window); }
+        catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.unload( nullptr );
     }
     DestroyWindow( window->handle );

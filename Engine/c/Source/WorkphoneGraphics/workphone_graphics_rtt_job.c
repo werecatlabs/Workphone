@@ -8,7 +8,7 @@ struct wp_graphics_rtt_job {
     void *context;
     wp_rtt_status status;
     wp_rtt_result result;
-    wp_s32 cancelled;
+    wp_s32 cancelled, finishing;
 };
 
 wp_graphics_rtt_job *wp_graphics_rtt_job_create(void)
@@ -67,7 +67,9 @@ wp_rtt_result wp_graphics_rtt_job_execute(wp_graphics_rtt_job *job)
         if(job->cancelled) result = WP_RTT_CANCEL;
         if(result == WP_RTT_OK) result = job->ops.validate(job->context, &job->desc);
         if(job->cancelled) result = WP_RTT_CANCEL;
+        job->finishing = 1; /* publication/restore is the non-cancellable boundary */
         finish = job->ops.finish(job->context, result == WP_RTT_OK);
+        job->finishing = 0;
         if(result == WP_RTT_OK) result = finish;
     }
     job->result = result;
@@ -79,6 +81,7 @@ wp_rtt_result wp_graphics_rtt_job_execute(wp_graphics_rtt_job *job)
 wp_rtt_result wp_graphics_rtt_job_cancel(wp_graphics_rtt_job *job)
 {
     if(!job) return WP_RTT_INVALID;
+    if(job->finishing) return WP_RTT_BUSY;
     if(job->status != WP_RTT_READY && job->status != WP_RTT_RUNNING) return WP_RTT_INVALID;
     job->cancelled = 1;
     if(job->status == WP_RTT_READY) { job->status = WP_RTT_CANCELLED; job->result = WP_RTT_CANCEL; }

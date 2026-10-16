@@ -27,7 +27,11 @@ typedef enum wp_rtt_result {
  * NOT_READY while pending, STALE/other failure when invalid. No cull job is implied.
  * Generations are supplied/checked by the resource owner, never inferred from
  * raw addresses. validate runs before binding and again before publication. */
+typedef enum wp_rtt_format { WP_RTT_RGBA8_UNORM = 0, WP_RTT_RGBA16_FLOAT = 1 } wp_rtt_format;
+typedef enum wp_rtt_colour_space { WP_RTT_LEGACY_LDR = 0, WP_RTT_SCENE_LINEAR = 1 } wp_rtt_colour_space;
 typedef struct wp_graphics_rtt_desc {
+    wp_rtt_format format;
+    wp_rtt_colour_space colour_space;
     wp_u64 renderer_generation, target_generation, scene_generation, view_generation;
     wp_s32 width, height;
     wp_viewport_i viewport;
@@ -53,7 +57,8 @@ typedef struct wp_graphics_rtt_ops {
 
 wp_graphics_rtt_job *wp_graphics_rtt_job_create(void);
 /* Single render-owner API. Reentry while RUNNING rejects mutation/destruction.
- * Cancellation from a callback is cooperative; finish(0) follows its return.
+ * Cancellation before finish is cooperative; finish(0) follows the callback.
+ * finish is the non-cancellable publication/restore boundary (cancel returns BUSY).
  * No methods are thread safe; drain synchronous execution before owner teardown. */
 wp_rtt_result wp_graphics_rtt_job_configure(wp_graphics_rtt_job *,
     const wp_graphics_rtt_desc *, const wp_graphics_rtt_ops *, void *context);
