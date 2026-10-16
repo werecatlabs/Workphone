@@ -1,5 +1,23 @@
 # WPGraphics implementation status
 
+## Bounded frame grabber capture — 16 October 2026
+
+`IGraphicsWindow` now offers a success-reporting RGBA8 capture method. Backends
+without readback support return false; `ClawWindow` forwards successful capture
+from the current DX11 back buffer. `FrameGrabberStandard::update()` asks for the
+default window, validates positive dimensions and an exact four-byte-per-pixel
+allocation, and publishes only a successful capture. It no longer treats the
+32-bit colour depth as 32 bytes per pixel. `addFrame()` and `popFrame()` now use
+a three-frame FIFO, dropping the oldest frame when full, and forward to a video
+stream only if one exists. The currently configured video stream factories
+return null, so the grabber remains usable through `popFrame()` without them.
+
+Validation: the Debug `ClawCubemapTests` build and `WPGraphics.cubemap_pbr` pass
+with a focused grabber fixture that checks failed-capture suppression, exact
+buffer size and the bounded FIFO. The Debug DX11 target contract also passes.
+RelWithDebInfo validation follows separately. Automatic render-loop scheduling,
+video encoding, and post-Present capture remain open.
+
 ## Native window back-buffer readback — 16 October 2026
 
 `ClawWindow::copyContentsToMemory()` now uses a native DX11 staging copy of the
@@ -14,8 +32,8 @@ Validation: Debug and RelWithDebInfo `WPGraphicsClawDX11TargetTests` builds and
 `WPGraphics.claw_dx11_targets` runs pass. The GPU test clears the window back
 buffer, checks captured pixels and an output guard, and verifies that a wrong
 window handle or undersized buffer causes no writes. This verifies capture
-before Present on the local DX11 device. Integration with `FrameGrabberStandard`,
-video streams and capture timing across Present remains open.
+before Present on the local DX11 device. `FrameGrabberStandard` can now queue
+successful captures; video streams and capture timing across Present remain open.
 
 ## Native offscreen target readback — 16 October 2026
 
