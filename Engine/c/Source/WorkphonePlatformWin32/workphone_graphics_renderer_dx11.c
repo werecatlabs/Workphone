@@ -13,6 +13,8 @@
 #    define WIN32_LEAN_AND_MEAN
 #    include <windows.h>
 #    include <d3d11.h>
+#    include <d3d11_1.h>
+#    include <stddef.h>
 #    include <d3dcompiler.h>
 #    include <dxgi.h>
 #    include <dxgi1_5.h>
@@ -445,9 +447,13 @@ typedef struct wp_dx11_mesh_cache
     struct wp_dx11_mesh_cache *next;
 } wp_dx11_mesh_cache;
 static wp_renderer_dx11 *wp_dx11_renderers = NULL;
+static volatile LONG64 wp_dx11_rtt_generation = 0;
 
 struct wp_renderer_dx11
 {
+    wp_u64 rtt_generation;
+    DWORD rtt_owner_thread;
+    wp_s32 rtt_active;
     wp_dx11_mesh_cache *meshes[WP_DX11_MESH_CACHE_BUCKETS];
     wp_renderer_dx11 *next_renderer;
     wp_render_statistics_dx11 statistics;
@@ -637,6 +643,9 @@ struct wp_renderer_dx11
 
 struct wp_render_texture_dx11
 {
+    wp_u64 generation;
+    wp_render_texture_dx11 *scratch;
+    ID3DDeviceContextState *rtt_state;
     ID3D11Texture2D *texture;
     ID3D11RenderTargetView *rt_view;
     ID3D11ShaderResourceView *shader_view;
@@ -1706,6 +1715,7 @@ wp_renderer_dx11 *wp_renderer_dx11_create( void *hwnd, wp_s32 width, wp_s32 heig
 
     memset( r, 0, sizeof( wp_renderer_dx11 ) );
     r->active_gpu_query = -1;
+    r->rtt_generation = (wp_u64)InterlockedIncrement64(&wp_dx11_rtt_generation);
     QueryPerformanceFrequency( &r->clock_frequency );
     r->hwnd = (HWND)hwnd;
     r->width = width;
@@ -2027,7 +2037,7 @@ wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *r, wp_f32 exposure )
     UINT i;
     wp_s32 valid = 1;
     const float black[4] = { 0, 0, 0, 0 };
-    if( !r || r->hdr_active || r->shadow_pass || !_finite( exposure ) || exposure <= 0.0f ) return 0;
+    if( !r || r->rtt_active || r->hdr_active || r->shadow_pass || !_finite( exposure ) || exposure <= 0.0f ) return 0;
     memset( targets, 0, sizeof( targets ) );
     ID3D11DeviceContext_OMGetRenderTargets( r->context, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, targets, &depth );
     if( !targets[0] ) valid = 0;
@@ -2544,6 +2554,7 @@ void wp_renderer_dx11_begin_frame( wp_renderer_dx11 *r )
     if( !r )
         return;
 
+    if(!r->rtt_owner_thread) r->rtt_owner_thread = GetCurrentThreadId();
     begin_frame_statistics( r );
     wp_renderer_dx11_invalidate_state( r );
     ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
@@ -2572,7 +2583,7 @@ wp_s32 wp_renderer_dx11_try_present( wp_renderer_dx11 *r, void *expected_hwnd, w
     LARGE_INTEGER before, after;
     HRESULT result;
     if( !r || !r->swap_chain || !expected_hwnd || r->hwnd != (HWND)expected_hwnd ||
-        r->active_rt_view != r->rt_view || r->hdr_active || r->shadow_pass )
+        !r->rt_view || r->rtt_active || r->active_rt_view != r->rt_view || r->hdr_active || r->shadow_pass )
         return 0;
     if( r->frame_measuring && r->active_gpu_query >= 0 )
     {
@@ -3557,6 +3568,7 @@ wp_render_texture_dx11 *wp_renderer_dx11_create_render_texture( wp_renderer_dx11
     if( !target )
         return NULL;
     memset( target, 0, sizeof( wp_render_texture_dx11 ) );
+    target->generation = (wp_u64)InterlockedIncrement64(&wp_dx11_rtt_generation);
     target->width = width;
     target->height = height;
 
@@ -3607,6 +3619,8 @@ void wp_renderer_dx11_destroy_render_texture( wp_render_texture_dx11 *target )
 {
     if( !target )
         return;
+    wp_renderer_dx11_destroy_render_texture(target->scratch);
+    if(target->rtt_state) ID3DDeviceContextState_Release(target->rtt_state);
     if( target->ds_view )
         ID3D11DepthStencilView_Release( target->ds_view );
     if( target->ds_texture )
@@ -5071,6 +5085,218 @@ struct wp_context *wp_renderer_dx11_init( wp_renderer_dx11 *r, wp_s32 width, wp_
     r->viewport_d3d.MaxDepth = 1.0f;
 
     return &r->ctx;
+}
+
+
+/* RTT execution uses a separate context state and scratch colour/depth. Native
+ * input caches are restored as well as the D3D bindings; subsequent native draws
+ * re-upload constants. Shader resource contents outside the destination are not
+ * transactional, and callbacks must not change resource ownership/lifetime. */
+typedef struct wp_rtt_dx11_context {
+    wp_renderer_dx11 *r;
+    wp_render_texture_dx11 *target;
+    wp_rtt_check_func dependency, validate, draw;
+    void *user;
+    ID3D11DeviceContext1 *context1;
+    ID3DDeviceContextState *previous;
+    ID3D11RenderTargetView *old_rt;
+    ID3D11DepthStencilView *old_ds;
+    unsigned char inputs[offsetof(wp_renderer_dx11, rs_cache) - offsetof(wp_renderer_dx11, clear_r)];
+    wp_material_dx11 material;
+    wp_terrain_material_dx11 terrain;
+    wp_shadow_constants_dx11 shadow;
+    ID3D11ShaderResourceView *material_views[6], *terrain_views[WP_TERRAIN_MATERIAL_VIEWS];
+    ID3D11ShaderResourceView *external, *environment;
+    ID3D11SamplerState *material_sampler;
+    wp_f32 environment_lod;
+    D3D11_VIEWPORT ui_viewport;
+    wp_s32 started;
+} wp_rtt_dx11_context;
+
+static wp_s32 wp_rtt_dx11_view_matches(ID3D11ShaderResourceView *view,
+                                      wp_render_texture_dx11 *target)
+{
+    ID3D11Resource *resource = NULL;
+    wp_s32 match;
+    if(!view) return 0;
+    ID3D11ShaderResourceView_GetResource(view, &resource);
+    match = resource == (ID3D11Resource *)target->texture ||
+            resource == (ID3D11Resource *)target->ds_texture;
+    if(resource) ID3D11Resource_Release(resource);
+    return match;
+}
+
+static wp_s32 wp_rtt_dx11_sampled(wp_renderer_dx11 *r, wp_render_texture_dx11 *target)
+{
+    ID3D11ShaderResourceView *views[D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT];
+    ID3D11UnorderedAccessView *uavs[D3D11_PS_CS_UAV_REGISTER_COUNT];
+    ID3D11Resource *resource;
+    wp_s32 stage, i, match = 0;
+    for(stage = 0; stage < 6; ++stage) {
+        memset(views, 0, sizeof(views));
+        switch(stage) {
+        case 0: ID3D11DeviceContext_VSGetShaderResources(r->context, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, views); break;
+        case 1: ID3D11DeviceContext_PSGetShaderResources(r->context, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, views); break;
+        case 2: ID3D11DeviceContext_GSGetShaderResources(r->context, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, views); break;
+        case 3: ID3D11DeviceContext_HSGetShaderResources(r->context, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, views); break;
+        case 4: ID3D11DeviceContext_DSGetShaderResources(r->context, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, views); break;
+        default: ID3D11DeviceContext_CSGetShaderResources(r->context, 0, D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, views); break;
+        }
+        for(i = 0; i < D3D11_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT; ++i) if(views[i]) {
+            if(wp_rtt_dx11_view_matches(views[i], target)) match = 1;
+            ID3D11ShaderResourceView_Release(views[i]);
+        }
+    }
+    if(ID3D11Device_GetFeatureLevel(r->device) >= D3D_FEATURE_LEVEL_11_0) {
+        for(stage = 0; stage < 2; ++stage) {
+            memset(uavs, 0, sizeof(uavs));
+            if(!stage) ID3D11DeviceContext_CSGetUnorderedAccessViews(r->context, 0, D3D11_PS_CS_UAV_REGISTER_COUNT, uavs);
+            else ID3D11DeviceContext_OMGetRenderTargetsAndUnorderedAccessViews(r->context, 0, NULL, NULL, 0, D3D11_PS_CS_UAV_REGISTER_COUNT, uavs);
+            for(i = 0; i < D3D11_PS_CS_UAV_REGISTER_COUNT; ++i) if(uavs[i]) {
+                resource = NULL;
+                ID3D11UnorderedAccessView_GetResource(uavs[i], &resource);
+                if(resource == (ID3D11Resource *)target->texture || resource == (ID3D11Resource *)target->ds_texture) match = 1;
+                if(resource) ID3D11Resource_Release(resource);
+                ID3D11UnorderedAccessView_Release(uavs[i]);
+            }
+        }
+    }
+    return match;
+}
+
+static wp_rtt_result wp_rtt_dx11_dependency(void *data, const wp_graphics_rtt_desc *desc)
+{
+    wp_rtt_dx11_context *c = (wp_rtt_dx11_context *)data;
+    return c->dependency ? c->dependency(c->user, desc) : WP_RTT_OK;
+}
+static wp_rtt_result wp_rtt_dx11_validate(void *data, const wp_graphics_rtt_desc *desc)
+{
+    wp_rtt_dx11_context *c = (wp_rtt_dx11_context *)data;
+    wp_renderer_dx11 *r = c->r;
+    ID3D11Device *device = NULL;
+    wp_s32 same;
+    if(r->rtt_owner_thread && r->rtt_owner_thread != GetCurrentThreadId()) return WP_RTT_WRONG_THREAD;
+    if(desc->renderer_generation != r->rtt_generation || desc->target_generation != c->target->generation ||
+       desc->width != c->target->width || desc->height != c->target->height) return WP_RTT_STALE;
+    ID3D11Texture2D_GetDevice(c->target->texture, &device);
+    same = device == r->device;
+    if(device) ID3D11Device_Release(device);
+    if(!same || FAILED(ID3D11Device_GetDeviceRemovedReason(r->device))) return WP_RTT_STALE;
+    if(wp_rtt_dx11_sampled(r, c->target)) return WP_RTT_HAZARD;
+    if(!c->started && (r->rtt_active || r->hdr_active || r->shadow_pass)) return WP_RTT_BUSY;
+    return c->validate ? c->validate(c->user, desc) : WP_RTT_OK;
+}
+static wp_rtt_result wp_rtt_dx11_begin(void *data, const wp_graphics_rtt_desc *desc)
+{
+    wp_rtt_dx11_context *c = (wp_rtt_dx11_context *)data;
+    wp_renderer_dx11 *r = c->r;
+    wp_render_texture_dx11 *target = c->target;
+    ID3D11Device1 *device1 = NULL;
+    D3D_FEATURE_LEVEL level;
+    HRESULT hr;
+    if((wp_u64)desc->width * (wp_u64)desc->height > (256u * 1024u * 1024u) / 8u) return WP_RTT_INVALID;
+    if(!target->scratch) {
+        target->scratch = wp_renderer_dx11_create_render_texture(r, target->width, target->height);
+        if(!target->scratch) return WP_RTT_BACKEND_FAILED;
+    }
+    hr = ID3D11DeviceContext_QueryInterface(r->context, &IID_ID3D11DeviceContext1, (void **)&c->context1);
+    if(FAILED(hr)) return WP_RTT_UNSUPPORTED;
+    if(!target->rtt_state) {
+        hr = ID3D11Device_QueryInterface(r->device, &IID_ID3D11Device1, (void **)&device1);
+        if(FAILED(hr)) return WP_RTT_UNSUPPORTED;
+        level = ID3D11Device_GetFeatureLevel(r->device);
+        hr = ID3D11Device1_CreateDeviceContextState(device1, 0, &level, 1, D3D11_SDK_VERSION,
+                                                    &IID_ID3D11Device, NULL, &target->rtt_state);
+        ID3D11Device1_Release(device1);
+        if(FAILED(hr)) return WP_RTT_UNSUPPORTED;
+    }
+    memcpy(c->inputs, &r->clear_r, sizeof(c->inputs));
+    c->ui_viewport = r->viewport_d3d;
+    c->material = r->material; c->terrain = r->terrain; c->shadow = r->shadow;
+    memcpy(c->material_views, r->material_texture_views, sizeof(c->material_views));
+    memcpy(c->terrain_views, r->terrain_views, sizeof(c->terrain_views));
+    c->external = r->ptc_external_texture_view; c->environment = r->environment_view;
+    c->environment_lod = r->environment_max_lod; c->material_sampler = r->material_sampler;
+    c->old_rt = r->active_rt_view; c->old_ds = r->active_ds_view;
+    ID3D11DeviceContext1_SwapDeviceContextState(c->context1, target->rtt_state, &c->previous);
+    c->started = 1; r->rtt_active = 1;
+    if(!r->rtt_owner_thread) r->rtt_owner_thread = GetCurrentThreadId();
+    ID3D11DeviceContext_CopyResource(r->context, (ID3D11Resource *)target->scratch->texture, (ID3D11Resource *)target->texture);
+    ID3D11DeviceContext_CopyResource(r->context, (ID3D11Resource *)target->scratch->ds_texture, (ID3D11Resource *)target->ds_texture);
+    wp_renderer_dx11_invalidate_state(r);
+    r->mvp_dirty = r->material_dirty = r->terrain_dirty = r->shadow_dirty = 1;
+    wp_renderer_dx11_set_render_texture(r, target->scratch);
+    wp_renderer_dx11_set_viewport(r, desc->viewport);
+    wp_renderer_dx11_set_clear_color(r, desc->colour[0], desc->colour[1], desc->colour[2], desc->colour[3]);
+    wp_renderer_dx11_set_clear_depth(r, desc->depth);
+    wp_renderer_dx11_clear(r, (desc->clear_colour ? WORKPHONE_CLEAR_FLAG_COLOR : 0) |
+                               (desc->clear_depth ? WORKPHONE_CLEAR_FLAG_DEPTH : 0));
+    return WP_RTT_OK;
+}
+static wp_rtt_result wp_rtt_dx11_draw(void *data, const wp_graphics_rtt_desc *desc)
+{
+    wp_rtt_dx11_context *c = (wp_rtt_dx11_context *)data;
+    return c->draw(c->user, desc);
+}
+static wp_rtt_result wp_rtt_dx11_finish(void *data, wp_s32 publish)
+{
+    wp_rtt_dx11_context *c = (wp_rtt_dx11_context *)data;
+    wp_renderer_dx11 *r = c->r;
+    wp_rtt_result result = WP_RTT_OK;
+    if(c->started) {
+        if(r->hdr_active || r->shadow_pass) {
+            publish = 0; result = WP_RTT_BACKEND_FAILED;
+            if(r->hdr_active) wp_renderer_dx11_end_hdr_scene(r);
+            else if(r->shadow_pass) wp_renderer_dx11_end_shadow_map(r);
+        }
+        if(publish) {
+            ID3D11DeviceContext_OMSetRenderTargets(r->context, 0, NULL, NULL);
+            ID3D11DeviceContext_CopyResource(r->context, (ID3D11Resource *)c->target->texture, (ID3D11Resource *)c->target->scratch->texture);
+            ID3D11DeviceContext_CopyResource(r->context, (ID3D11Resource *)c->target->ds_texture, (ID3D11Resource *)c->target->scratch->ds_texture);
+        }
+        ID3D11DeviceContext_ClearState(r->context);
+        ID3D11DeviceContext1_SwapDeviceContextState(c->context1, c->previous, NULL);
+        ID3DDeviceContextState_Release(c->previous); c->previous = NULL;
+        memcpy(&r->clear_r, c->inputs, sizeof(c->inputs)); r->viewport_d3d = c->ui_viewport;
+        r->material = c->material; r->terrain = c->terrain; r->shadow = c->shadow;
+        memcpy(r->material_texture_views, c->material_views, sizeof(c->material_views));
+        memcpy(r->terrain_views, c->terrain_views, sizeof(c->terrain_views));
+        r->ptc_external_texture_view = c->external; r->environment_view = c->environment;
+        r->environment_max_lod = c->environment_lod; r->material_sampler = c->material_sampler;
+        r->active_rt_view = c->old_rt; r->active_ds_view = c->old_ds;
+        r->mvp_dirty = r->material_dirty = r->terrain_dirty = r->shadow_dirty = 1;
+        wp_renderer_dx11_invalidate_state(r);
+        r->rtt_active = 0;
+    }
+    if(c->context1) { ID3D11DeviceContext1_Release(c->context1); c->context1 = NULL; }
+    return result;
+}
+wp_u64 wp_renderer_dx11_get_rtt_generation(const wp_renderer_dx11 *r)
+{ return r ? r->rtt_generation : 0; }
+wp_u64 wp_renderer_dx11_get_render_texture_generation(const wp_render_texture_dx11 *target)
+{ return target ? target->generation : 0; }
+wp_rtt_result wp_renderer_dx11_execute_rtt_job(wp_renderer_dx11 *r,
+    wp_render_texture_dx11 *target, const wp_graphics_rtt_desc *desc,
+    wp_rtt_check_func dependency, wp_rtt_check_func validate, wp_rtt_check_func draw, void *user)
+{
+    wp_graphics_rtt_job *job;
+    wp_graphics_rtt_ops ops;
+    wp_rtt_dx11_context context;
+    wp_rtt_result result;
+    wp_s32 i;
+    if(!r || !target || !desc || !draw || !(desc->depth >= 0.0f && desc->depth <= 1.0f)) return WP_RTT_INVALID;
+    for(i = 0; i < 4; ++i) if(!(desc->colour[i] >= -FLT_MAX && desc->colour[i] <= FLT_MAX)) return WP_RTT_INVALID;
+    memset(&context, 0, sizeof(context)); memset(&ops, 0, sizeof(ops));
+    context.r = r; context.target = target; context.user = user;
+    context.dependency = dependency; context.validate = validate; context.draw = draw;
+    ops.dependency = wp_rtt_dx11_dependency; ops.validate = wp_rtt_dx11_validate;
+    ops.begin = wp_rtt_dx11_begin; ops.draw = wp_rtt_dx11_draw; ops.finish = wp_rtt_dx11_finish;
+    job = wp_graphics_rtt_job_create();
+    if(!job) return WP_RTT_BACKEND_FAILED;
+    result = wp_graphics_rtt_job_configure(job, desc, &ops, &context);
+    if(result == WP_RTT_OK) result = wp_graphics_rtt_job_execute(job);
+    wp_graphics_rtt_job_destroy(job);
+    return result;
 }
 
 #endif /* _WIN32 */

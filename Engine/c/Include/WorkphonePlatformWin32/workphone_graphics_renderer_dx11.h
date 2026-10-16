@@ -23,6 +23,7 @@
 #    include "workphone_matrix.h"
 #    include "workphone_graphics_vertex.h"
 #    include "workphone_graphics_viewport.h"
+#    include "workphone_graphics_rtt_job.h"
 
 #    ifdef __cplusplus
 extern "C" {
@@ -373,6 +374,25 @@ void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *ren
 wp_render_texture_dx11 *wp_renderer_dx11_create_render_texture( wp_renderer_dx11 *renderer,
                                                                  wp_s32 width, wp_s32 height );
 void wp_renderer_dx11_destroy_render_texture( wp_render_texture_dx11 *render_texture );
+/* Synchronous, transactional RGBA8-linear offscreen job. Requires D3D11.1
+ * context-state support. First begin_frame/RTT execution claims its owner thread.
+ * Target/renderer stay alive throughout this call; no worker dispatch or queued
+ * ownership. Resource generations must match the queries below (including extent).
+ * Scene/view generations are checked by the supplied validate callback, if any;
+ * a NULL callback selects the existing synchronous scene path, not frozen culling.
+ * Dependency is optional but must report immutable publication before OK.
+ * No nested RTT, open HDR/shadow scope, sampled destination or mid-pass resize.
+ * Copy-on-success preserves prior colour/depth on failure. Scratch storage is
+ * reused per target, bounded to 256 MiB colour+depth. Callbacks may draw but must
+ * not destroy/rebind output resources or mutate renderer lifetime. Exceptions
+ * must be caught in the C++ adapter. No GPU completion wait is implied by OK. */
+wp_u64 wp_renderer_dx11_get_rtt_generation(const wp_renderer_dx11 *renderer);
+wp_u64 wp_renderer_dx11_get_render_texture_generation(const wp_render_texture_dx11 *target);
+wp_rtt_result wp_renderer_dx11_execute_rtt_job(wp_renderer_dx11 *renderer,
+    wp_render_texture_dx11 *target, const wp_graphics_rtt_desc *desc,
+    wp_rtt_check_func dependency, wp_rtt_check_func validate,
+    wp_rtt_check_func draw, void *context);
+
 void wp_renderer_dx11_set_render_texture( wp_renderer_dx11 *renderer,
                                           wp_render_texture_dx11 *render_texture );
 void *wp_renderer_dx11_get_render_texture_resource(
