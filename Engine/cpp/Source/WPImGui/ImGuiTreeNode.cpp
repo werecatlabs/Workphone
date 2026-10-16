@@ -5,6 +5,7 @@
 #include <WPImGui/ImGuiUtil.hpp>
 #include <Workphone/Workphone.hpp>
 #include <imgui.h>
+#include <utility>
 
 namespace workphone::ui
 {
@@ -280,29 +281,17 @@ namespace workphone::ui
 
             if( auto dragSource = tree->getDragSource() )
             {
-                if( ImGui::BeginDragDropSource( ImGuiDragDropFlags_None ) )
+                if( ImGui::IsItemActive() && ImGui::IsMouseDragging( 0 ) )
                 {
-                    tree->setDragSourceElement( treeNode );
-
-                    auto args = Array<Parameter>();
-                    args.resize( 3 );
-
-                    args[0].object = treeNode;
-                    args[1].object = nullptr;
-                    args[2].object = nullptr;
-
-                    auto retValue = dragSource->handleEvent( EventType::UI, IEvent::handleDrag, args,
-                                                             treeNode, treeNode, nullptr );
-
-                    auto &dragData = retValue.str;
-
-                    if( !StringUtil::isNullOrEmpty( dragData ) )
+                    auto imguiTree = static_cast<ImGuiTreeCtrl *>( tree.get() );
+                    auto dragData = imguiTree->getDragPayload( treeNode, dragSource );
+                    if( !StringUtil::isNullOrEmpty( dragData ) &&
+                        ImGui::BeginDragDropSource( ImGuiDragDropFlags_None ) )
                     {
                         ImGui::SetDragDropPayload( "_TREENODE", dragData.c_str(), dragData.size() );
                         ImGui::Text( "%s", label );
+                        ImGui::EndDragDropSource();
                     }
-
-                    ImGui::EndDragDropSource();
                 }
             }
 
@@ -328,8 +317,8 @@ namespace workphone::ui
                             args.emplace_back( data );
                             args.emplace_back( -1 );
 
-                            dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args, src,
-                                                     treeNode, nullptr );
+                            ImGuiTreeCtrl::queueDropEvent( dropTarget, std::move( args ), src,
+                                                           treeNode );
                         }
                     }
 
@@ -353,8 +342,9 @@ namespace workphone::ui
                             args.emplace_back( data );
                             args.emplace_back( tree->getSelectedSiblingIndex() );
 
-                            dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args, src,
-                                                     dst, nullptr );
+                            ImGuiTreeCtrl::queueDropEvent( dropTarget, std::move( args ), src,
+                                                           dst );
+                            tree->setSelectedSiblingIndex( -1 );
                         }
                     }
                 }

@@ -15,6 +15,8 @@
 #include <WPImGui/ImGuiProfilerWindow.hpp>
 #include <WPImGui/ImGuiProfileWindow.hpp>
 #include <WPImGui/ImGuiTreeCtrl.hpp>
+#include <WPImGui/ImGuiDragJob.hpp>
+#include <WPImGui/ImGuiDropJob.hpp>
 #include <WPImGui/ImGuiTreeNode.hpp>
 #include <WPImGui/ImGuiText.hpp>
 #include <WPImGui/ImGuiTextEntry.hpp>
@@ -102,6 +104,8 @@ namespace workphone::ui
             FactoryUtil::addFactory<ImGuiToggleButton>( factoryManager );
             FactoryUtil::addFactory<ImGuiToolbar>( factoryManager );
             FactoryUtil::addFactory<ImGuiTreeCtrl>( factoryManager );
+            FactoryUtil::addFactory<ImGuiDragJob>( factoryManager );
+            FactoryUtil::addFactory<ImGuiDropJob>( factoryManager );
             FactoryUtil::addFactory<ImGuiTreeNode>( factoryManager );
             FactoryUtil::addFactory<ImGuiVector2>( factoryManager );
             FactoryUtil::addFactory<ImGuiVector3>( factoryManager );

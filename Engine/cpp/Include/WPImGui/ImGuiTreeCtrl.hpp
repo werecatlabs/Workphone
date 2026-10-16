@@ -2,6 +2,7 @@
 #define __ImGuiTreeCtrl_h__
 
 #include <WPImGui/WPImGuiPrerequisites.hpp>
+#include <WPImGui/ImGuiDragJob.hpp>
 #include <WPImGui/ImGuiElement.hpp>
 #include <Workphone/Interface/UI/IUITreeCtrl.hpp>
 #include <Workphone/Core/ConcurrentArray.hpp>
@@ -32,6 +33,16 @@ namespace workphone
         class ImGuiTreeCtrl : public ImGuiElement<IUITreeCtrl>
         {
         public:
+            /** Queue a drag payload request once per gesture and return it when ready. */
+            String getDragPayload( SmartPtr<IUIElement> element,
+                                   SmartPtr<IUIDragSource> dragSource );
+
+            /** Queue a copied drop event on the application task. */
+            static void queueDropEvent( SmartPtr<IUIDropTarget> dropTarget,
+                                        Array<Parameter> arguments,
+                                        SmartPtr<ISharedObject> sender,
+                                        SmartPtr<ISharedObject> object );
+
             /**
              * @brief Internal state listener for handling state messages.
              *
@@ -345,6 +356,9 @@ namespace workphone
 
             /// Element currently being dragged (atomic smart pointer).
             AtomicSmartPtr<IUIElement> m_dragSourceElement;
+
+            /// Payload resolution for the active drag gesture.
+            SmartPtr<ImGuiDragJob> m_dragJob;
 
             /// Element currently targeted for a drop (atomic smart pointer).
             AtomicSmartPtr<IUIElement> m_dropDestinationElement;

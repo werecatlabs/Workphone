@@ -1,10 +1,12 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiTreeCtrl.hpp>
 #include <WPImGui/ImGuiTreeNode.hpp>
+#include <WPImGui/ImGuiDropJob.hpp>
 #include <Workphone/Workphone.hpp>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <functional>
+#include <utility>
 
 namespace workphone::ui
 {
@@ -92,6 +94,11 @@ namespace workphone::ui
                 m_treeNodes.clear();
 
                 m_dragSourceElement = nullptr;
+                if( m_dragJob )
+                {
+                    m_dragJob->setInterrupted( true );
+                    m_dragJob = nullptr;
+                }
                 m_dropDestinationElement = nullptr;
                 m_root = nullptr;
                 m_selectedTreeNode = nullptr;
@@ -348,6 +355,100 @@ namespace workphone::ui
         m_dragSourceElement = dragSource;
     }
 
+    String ImGuiTreeCtrl::getDragPayload( SmartPtr<IUIElement> element,
+                                         SmartPtr<IUIDragSource> dragSource )
+    {
+        if( !element || !dragSource )
+        {
+            return {};
+        }
+
+        if( m_dragJob && getDragSourceElement() != element )
+        {
+            m_dragJob->setInterrupted( true );
+            m_dragJob = nullptr;
+        }
+
+        if( !m_dragJob )
+        {
+            auto applicationManager = core::IApplicationManager::instance();
+            auto factoryManager = applicationManager ? applicationManager->getFactoryManager() : nullptr;
+            if( !factoryManager )
+            {
+                return {};
+            }
+
+            auto job = factoryManager->make_ptr<ImGuiDragJob>();
+            if( !job )
+            {
+                return {};
+            }
+
+            job->setDragSource( dragSource );
+            job->setElement( element );
+            job->setRoot( element.get() == this );
+            setDragSourceElement( element );
+            m_dragJob = job;
+
+            auto jobQueue = applicationManager->getJobQueue();
+            if( jobQueue && jobQueue->isRunning() )
+            {
+                jobQueue->addJob( job, TaskId::Application );
+            }
+            else
+            {
+                job->execute();
+                job->setState( IJob::State::Finish );
+            }
+        }
+
+        if( m_dragJob->getState() == IJob::State::Finish && !m_dragJob->isInterrupted() )
+        {
+            return m_dragJob->getPayload();
+        }
+
+        return {};
+    }
+
+    void ImGuiTreeCtrl::queueDropEvent( SmartPtr<IUIDropTarget> dropTarget,
+                                       Array<Parameter> arguments,
+                                       SmartPtr<ISharedObject> sender,
+                                       SmartPtr<ISharedObject> object )
+    {
+        if( !dropTarget )
+        {
+            return;
+        }
+
+        auto applicationManager = core::IApplicationManager::instance();
+        auto factoryManager = applicationManager ? applicationManager->getFactoryManager() : nullptr;
+        if( !factoryManager )
+        {
+            return;
+        }
+
+        auto job = factoryManager->make_ptr<ImGuiDropJob>();
+        if( !job )
+        {
+            return;
+        }
+
+        job->setDropTarget( dropTarget );
+        job->setSender( sender );
+        job->setObject( object );
+        job->setArguments( std::move( arguments ) );
+
+        auto jobQueue = applicationManager->getJobQueue();
+        if( jobQueue && jobQueue->isRunning() )
+        {
+            jobQueue->addJob( job, TaskId::Application );
+        }
+        else
+        {
+            job->execute();
+        }
+    }
+
     SmartPtr<IUIElement> ImGuiTreeCtrl::getDropDestinationElement() const
     {
         return m_dropDestinationElement;
@@ -373,6 +474,15 @@ namespace workphone::ui
         auto applicationManager = core::IApplicationManager::instance();
         auto treeCtrl = workphone::static_pointer_cast<ImGuiTreeCtrl>( element );
         //treeCtrl->setSiblingIndex( -1 );
+
+        // A control may have been hidden during the mouse release frame. A fresh press always
+        // starts a new gesture, so discard any payload left from the previous one.
+        if( ImGui::IsMouseClicked( 0 ) && treeCtrl->m_dragJob )
+        {
+            treeCtrl->m_dragJob->setInterrupted( true );
+            treeCtrl->m_dragJob = nullptr;
+            treeCtrl->setDragSourceElement( nullptr );
+        }
 
         if( auto root = treeCtrl->getRoot() )
         {
@@ -410,21 +520,17 @@ namespace workphone::ui
             {
                 if( auto dragSource = treeCtrl->getDragSource() )
                 {
-                    if( ImGui::BeginDragDropSource( ImGuiDragDropFlags_None ) )
+                    if( ImGui::IsItemActive() && ImGui::IsMouseDragging( 0 ) )
                     {
-                        auto args = Array<Parameter>();
-                        args.resize( 1 );
-
-                        args[0].object = treeCtrl;
-
-                        auto retValue = dragSource->handleEvent( EventType::UI, IEvent::handleDrag,
-                                                                 args, treeCtrl, treeCtrl, nullptr );
-
-                        auto &dataStr = retValue.str;
-
-                        ImGui::SetDragDropPayload( "_TREENODE", dataStr.c_str(), dataStr.size() );
-                        ImGui::Text( "%s", label.c_str() );
-                        ImGui::EndDragDropSource();
+                        auto dataStr = treeCtrl->getDragPayload( treeCtrl, dragSource );
+                        if( !StringUtil::isNullOrEmpty( dataStr ) &&
+                            ImGui::BeginDragDropSource( ImGuiDragDropFlags_None ) )
+                        {
+                            ImGui::SetDragDropPayload( "_TREENODE", dataStr.c_str(),
+                                                       dataStr.size() );
+                            ImGui::Text( "%s", label.c_str() );
+                            ImGui::EndDragDropSource();
+                        }
                     }
                 }
 
@@ -444,9 +550,7 @@ namespace workphone::ui
                             args[0].object = treeCtrl;
                             args[1].str = data;
 
-                            applicationManager->triggerEvent( EventType::UI, IEvent::handleDrop, args,
-                                                              dropTarget, treeCtrl, nullptr, false,
-                                                              Thread::Application_Flag );
+                            queueDropEvent( dropTarget, std::move( args ), dropTarget, treeCtrl );
                         }
 
                         ImGui::EndDragDropTarget();
@@ -520,6 +624,16 @@ namespace workphone::ui
 
                 ImGui::TreePop();
             }
+        }
+
+        if( !ImGui::IsMouseDown( 0 ) )
+        {
+            if( treeCtrl->m_dragJob )
+            {
+                treeCtrl->m_dragJob->setInterrupted( true );
+                treeCtrl->m_dragJob = nullptr;
+            }
+            treeCtrl->setDragSourceElement( nullptr );
         }
     }
 
