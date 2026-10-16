@@ -267,6 +267,7 @@ add_custom_target(VehicleAdvancedAudio
 cmake_policy(POP)
 set_target_properties(VehicleAdvancedAudio PROPERTIES FOLDER Samples)
 add_dependencies(SampleVehicleAdvanced VehicleAdvancedAudio)
+set_target_properties(VehicleAdvancedAudio PROPERTIES FOLDER Samples/cpp)
 if(TARGET WPAudio)
     add_dependencies(SampleVehicleAdvanced WPAudio)
 endif()

@@ -60,6 +60,7 @@ elseif (WP_USE_TBB)
     include_directories( ${CMAKE_SOURCE_DIR}/Dependencies/tbb/include )
 endif()
 
+include_directories(${WP_ROOT}/Dependencies/meshoptimizer)
 include_directories( ${WP_ROOT}/Dependencies/nativefiledialog/include )
 
 if (WP_USE_NGPLANT)
@@ -150,11 +151,6 @@ else ()
     add_library(Workphone SHARED ${HEADER_FILES} ${SOURCE_FILES})
 endif()
 
-add_subdirectory("${WP_ROOT}/Dependencies/meshoptimizer" "${CMAKE_CURRENT_BINARY_DIR}/meshoptimizer")
-target_link_libraries(Workphone CarVisualMeshopt)
-target_include_directories(Workphone PRIVATE "${WP_ROOT}/Dependencies/tinyusdz/src/external/jsonhpp")
-
-
 # Terrain persistence uses the already vendored cJSON parser. Keep it internal
 # to the core library and available even when optional Lua/tools are disabled.
 target_sources(Workphone PRIVATE ${WP_ROOT}/Dependencies/cJSON/cJSON.c)
@@ -182,6 +178,8 @@ if(TARGET WorkphoneGraphics)
 endif()
 
 if (NOT WP_STATIC_LIB)
+    target_link_libraries(Workphone Meshopt)
+
     if (WIN32)
         if (WP_USE_ONETBB)
             target_link_libraries(Workphone debug tbb12_debug.lib optimized tbb12.lib)

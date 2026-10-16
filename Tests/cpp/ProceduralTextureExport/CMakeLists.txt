@@ -18,7 +18,7 @@ if(NOT TARGET WPProceduralTextureExportTests)
     add_executable(WPProceduralTextureExportTests ../ProceduralTextureExportTests.cpp)
     target_include_directories(WPProceduralTextureExportTests PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../Engine/cpp/Include")
     target_compile_features(WPProceduralTextureExportTests PRIVATE cxx_std_17)
-    set_target_properties(WPProceduralTextureExportTests PROPERTIES FOLDER Tests/Procedural)
+    set_target_properties(WPProceduralTextureExportTests PROPERTIES FOLDER Tests/cpp/Procedural)
     add_test(NAME WPProcedural.texture_export
         COMMAND WPProceduralTextureExportTests "${CMAKE_CURRENT_BINARY_DIR}")
     set_tests_properties(WPProcedural.texture_export PROPERTIES LABELS "procedural;texture;contract")
