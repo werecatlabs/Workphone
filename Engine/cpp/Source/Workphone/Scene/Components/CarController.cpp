@@ -774,8 +774,21 @@ namespace workphone::scene
     auto CarController::VehicleCallback::getPointVelocity( const Vector3<real_Num> &p )
         -> Vector3<real_Num>
     {
-        auto chassis = m_owner->getChassis();
-        return chassis->getPointVelocity( p );
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        WP_ASSERT( applicationManager );
+
+        if( applicationManager->isPlaying() )
+        {
+            if( auto owner = getOwner() )
+            {
+                if( auto chassis = owner->getChassis() )
+                {
+                    return chassis->getPointVelocity( p );
+                }
+            }
+        }
+
+        return {};
     }
 
     auto CarController::VehicleCallback::castLocalRay( const Ray3<real_Num> &ray,

@@ -214,23 +214,28 @@ namespace workphone::editor
         {
             auto owner = getOwner();
             auto tree = owner->getTree();
-            auto selectedNode = tree->getSelectedTreeNode();
+            if( auto selectedNode = tree->getSelectedTreeNode() )
+            {
+                auto applicationManager = core::IApplicationManager::instancePtr();
+                WP_ASSERT( applicationManager );
 
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
+                auto factoryManager = applicationManager->getFactoryManagerPtr();
+                auto commandManager = applicationManager->getCommandManager();
 
-            auto factoryManager = applicationManager->getFactoryManagerPtr();
-            auto commandManager = applicationManager->getCommandManager();
+                auto userData = selectedNode->getNodeUserData();
+                auto projectData = workphone::static_pointer_cast<ProjectTreeData>( userData );
 
-            auto userData = selectedNode->getNodeUserData();
-            auto projectData = workphone::static_pointer_cast<ProjectTreeData>( userData );
+                auto objectData = projectData->getObjectData();
+                auto factory = workphone::static_pointer_cast<IFactory>( objectData );
 
-            auto objectData = projectData->getObjectData();
-            auto factory = workphone::static_pointer_cast<IFactory>( objectData );
-
-            auto cmd = factoryManager->make_ptr<AddComponentCmd>();
-            cmd->setFactory( factory );
-            commandManager->addCommand( cmd );
+                auto cmd = factoryManager->make_ptr<AddComponentCmd>();
+                cmd->setFactory( factory );
+                commandManager->addCommand( cmd );
+            }
+            else
+            {
+                WP_LOG_ERROR( "No tree node selected." );
+            }
         }
 
         return {};
