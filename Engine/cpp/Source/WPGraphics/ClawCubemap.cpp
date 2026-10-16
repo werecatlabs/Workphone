@@ -180,6 +180,12 @@ namespace workphone::render
             wp_dx11_cubemap_owner_get_view( m_owner ) );
     }
 
+    ID3D11ShaderResourceView *ClawCubemap::getViewForDevice( ID3D11Device *device ) const
+    {
+        auto *view = getView();
+        return wp_dx11_texture_view_matches_device( view, device ) ? view : nullptr;
+    }
+
     bool ClawCubemap::update( ID3D11Device *device, ID3D11DeviceContext *context,
                               const std::array<ID3D11ShaderResourceView *, 6> &views )
     {

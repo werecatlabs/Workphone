@@ -317,6 +317,8 @@ void wp_dx11_cubemap_owner_destroy( wp_dx11_cubemap_owner *owner );
 void *wp_dx11_cubemap_owner_get_view( const wp_dx11_cubemap_owner *owner );
 wp_s32 wp_dx11_cubemap_owner_matches( const wp_dx11_cubemap_owner *owner,
     void *device, void *const source_views[6] );
+/** Returns whether a shader view belongs to the supplied DX11 device. */
+wp_s32 wp_dx11_texture_view_matches_device( void *view, void *device );
 wp_s32 wp_dx11_device_matches_context( void *device, void *context );
 
 enum wp_dx11_face_format

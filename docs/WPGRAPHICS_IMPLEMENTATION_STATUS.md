@@ -1,5 +1,19 @@
 # WPGraphics implementation status
 
+## Cached cubemap device identity — 16 October 2026
+
+`ClawCubemapTexture` checks that its cached filtered view belongs to the
+current DX11 device before returning it. If the renderer's device changes,
+the wrapper releases the old cube and prepares a replacement from its source
+faces. The check also handles a renderer object whose address is reused across
+device creation. A null device cannot return the previous view.
+
+Validation: `WPGraphics.cubemap_pbr` creates a second DX11 device, confirms the
+cached view is rejected there, then creates and reads a replacement cubemap on
+that device. Debug and RelWithDebInfo builds and focused test runs pass. This
+does not validate full device-loss recovery in the Editor or source-face
+recreation after device loss.
+
 ## Native cubemap GPU ownership — 16 October 2026
 
 `ClawCubemap` now holds one opaque native owner for its filtered DX11 view and

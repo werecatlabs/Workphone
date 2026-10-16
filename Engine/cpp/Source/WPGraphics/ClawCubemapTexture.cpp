@@ -95,16 +95,27 @@ namespace workphone::render
         {
             return;
         }
+        auto *device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) );
+        if( !device )
+        {
+            return;
+        }
         if( m_renderer != dx11 )
         {
             m_cube.reset();
             m_renderer = dx11;
         }
+        auto *cachedView = m_cube.getView();
+        if( cachedView && !m_cube.getViewForDevice( device ) )
+        {
+            m_cube.reset();
+            cachedView = nullptr;
+        }
         // The filtered cubemap owns its GPU resource. Static material binding
         // needs no source-face lookups or repeat filtering after the first upload.
-        if( m_cube.getView() )
+        if( cachedView )
         {
-            *texture = m_cube.getView();
+            *texture = cachedView;
             return;
         }
         std::array<ID3D11ShaderResourceView *, 6> views{};
@@ -118,7 +129,7 @@ namespace workphone::render
             }
             views[i] = static_cast<ID3D11ShaderResourceView *>( view );
         }
-        if( m_cube.update( static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( dx11 ) ),
+        if( m_cube.update( device,
                            static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( dx11 ) ),
                            views ) )
         {

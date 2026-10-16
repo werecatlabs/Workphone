@@ -29,6 +29,7 @@ namespace workphone::render
         void reset();
 
         ID3D11ShaderResourceView *getView() const;
+        ID3D11ShaderResourceView *getViewForDevice( ID3D11Device *device ) const;
 
         float getMaxLod() const
         {

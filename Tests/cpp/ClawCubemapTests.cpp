@@ -1,6 +1,7 @@
 #include <WPGraphics/ClawCubemap.hpp>
 #include <windows.h>
 #include <d3d11.h>
+#include <wrl/client.h>
 #include "DX11TestEvidence.hpp"
 #include "ClawTextureMipContracts.hpp"
 #include <workphone_graphics_renderer_dx11.h>
@@ -431,6 +432,26 @@ int main()
                      "Environment must prefilter the view's selected mip" );
             view->Release();
         }
+        Microsoft::WRL::ComPtr<ID3D11Device> nextDevice;
+        Microsoft::WRL::ComPtr<ID3D11DeviceContext> nextContext;
+        require( SUCCEEDED( D3D11CreateDevice( nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0,
+                                                nullptr, 0, D3D11_SDK_VERSION,
+                                                nextDevice.GetAddressOf(), nullptr,
+                                                nextContext.GetAddressOf() ) ),
+                 "second DX11 device" );
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> previousCube = cube.getView();
+        require( cube.getViewForDevice( device ) == previousCube.Get() &&
+                     !cube.getViewForDevice( nextDevice.Get() ) &&
+                     !cube.getViewForDevice( nullptr ) &&
+                     !wp_dx11_device_matches_context( nextDevice.Get(), context ),
+                 "cached cube must be visible only on its owning device" );
+        require( cube.update( nextDevice.Get(), nextContext.Get(), {} ) &&
+                     cube.getViewForDevice( nextDevice.Get() ) == cube.getView() &&
+                     !cube.getViewForDevice( device ) && cube.getView() != previousCube.Get(),
+                 "filtered cube must be replaceable on a new device" );
+        const auto replacement = cubePixel( nextDevice.Get(), nextContext.Get(),
+                                            cube.getView(), 2, 0, 64, 64 );
+        require( std::isfinite( replacement[0] ), "replacement cube must render on its new device" );
         std::puts( "Cubemap orientation, filtering, caching, linear HDR/sRGB, selected mip and PBR GPU checks passed." );
     }
     catch( const std::exception &e )
