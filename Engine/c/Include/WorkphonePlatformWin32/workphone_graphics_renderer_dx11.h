@@ -171,6 +171,11 @@ void wp_renderer_dx11_end_frame( wp_renderer_dx11 *renderer );
  * @param vsync    Non-zero to synchronise to vertical blank.
  */
 void wp_renderer_dx11_present( wp_renderer_dx11 *renderer, wp_s32 vsync );
+/** Copies the current window back buffer before Present as top-down, packed RGBA8.
+ * expected_hwnd must match the swap chain's window. An invalid request leaves
+ * output unchanged. Front-buffer capture after Present is not supported. */
+wp_s32 wp_renderer_dx11_copy_back_buffer_rgba8(
+    wp_renderer_dx11 *renderer, void *expected_hwnd, void *output, wp_u64 output_bytes );
 
 /** Optional benchmark counters. Reset is requested from any thread and applied
  * at the next render frame. Read statistics on the render thread or under the

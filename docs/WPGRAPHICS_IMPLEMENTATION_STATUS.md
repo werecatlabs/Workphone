@@ -1,5 +1,22 @@
 # WPGraphics implementation status
 
+## Native window back-buffer readback — 16 October 2026
+
+`ClawWindow::copyContentsToMemory()` now uses a native DX11 staging copy of the
+current swap-chain back buffer. It accepts `Auto` or `Back` before Present and
+returns top-down, tightly packed RGBA8. A `Front` request is rejected because
+the presented front buffer is not available through this swap-chain path. The
+native API checks the expected window handle, texture format and dimensions,
+and caller buffer capacity before writing pixels. Offscreen and window capture
+share the same bounded row-copy implementation.
+
+Validation: Debug and RelWithDebInfo `WPGraphicsClawDX11TargetTests` builds and
+`WPGraphics.claw_dx11_targets` runs pass. The GPU test clears the window back
+buffer, checks captured pixels and an output guard, and verifies that a wrong
+window handle or undersized buffer causes no writes. This verifies capture
+before Present on the local DX11 device. Integration with `FrameGrabberStandard`,
+video streams and capture timing across Present remains open.
+
 ## Native offscreen target readback — 16 October 2026
 
 `ClawRenderTarget::copyContentsToMemory()` now copies its allocated offscreen

@@ -802,6 +802,29 @@ int main()
         ok &= check( afterPresentResize != nullptr, "resize after Present must bind a new depth target" );
         if( afterPresentResize )
             afterPresentResize->Release();
+        renderer.clear( workphone::ColourF( .75f, .25f, .5f, 1.0f ) );
+        constexpr workphone::u32 windowBytes = 800u * 600u * 4u;
+        std::vector<unsigned char> windowPixels( windowBytes + 4u, 0xA5 );
+        ok &= check( !wp_renderer_dx11_copy_back_buffer_rgba8(
+                         native, GetDesktopWindow(), windowPixels.data(), windowBytes ) &&
+                         !wp_renderer_dx11_copy_back_buffer_rgba8(
+                             native, window->handle, windowPixels.data(), windowBytes - 1u ) &&
+                         std::all_of( windowPixels.begin(), windowPixels.end(),
+                                      []( unsigned char value ) { return value == 0xA5; } ),
+                     "window readback must reject another HWND and undersized output without writes" );
+        ok &= check( wp_renderer_dx11_copy_back_buffer_rgba8(
+                         native, window->handle, windowPixels.data(), windowBytes ),
+                     "current window back buffer must support RGBA8 readback before Present" );
+        const auto windowPixelMatches = [&]( size_t offset ) {
+            return std::abs( static_cast<int>( windowPixels[offset] ) - 191 ) <= 1 &&
+                   std::abs( static_cast<int>( windowPixels[offset + 1] ) - 64 ) <= 1 &&
+                   std::abs( static_cast<int>( windowPixels[offset + 2] ) - 128 ) <= 1 &&
+                   windowPixels[offset + 3] == 255;
+        };
+        ok &= check( windowPixelMatches( 0 ) && windowPixelMatches( windowBytes - 4u ) &&
+                         std::all_of( windowPixels.begin() + windowBytes, windowPixels.end(),
+                                      []( unsigned char value ) { return value == 0xA5; } ),
+                     "window readback must copy complete RGBA8 pixels within capacity" );
         renderer.unload( nullptr );
     }
     DestroyWindow( window->handle );

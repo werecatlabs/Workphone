@@ -48,6 +48,9 @@ namespace workphone
             void setSize( const Vector2I &size ) override;
             void getWindowHandle( void *pData ) override;
             String getWindowHandleAsString() const override;
+            /** Copies the current back buffer before Present as packed RGBA8. */
+            void copyContentsToMemory( void *buffer, u32 size,
+                                       FrameBuffer bufferId = FrameBuffer::Auto ) override;
 
             /** Pump native window events. Returns false after the window closes. */
             bool messagePump();

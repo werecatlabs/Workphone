@@ -1,9 +1,13 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawWindow.hpp>
+#include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawViewport.hpp>
 #include <Workphone/Workphone.hpp>
+#include <Workphone/Interface/Graphics/IGraphicsSystem.hpp>
 #include <Workphone/System/WindowMessageData.hpp>
 #include "workphone_graphics_window.h"
+#include <workphone_graphics_renderer.h>
+#include <workphone_graphics_renderer_dx11.h>
 
 #if defined WP_PLATFORM_WIN32
 #    include <workphone_platform_window_win32.h>
@@ -337,6 +341,26 @@ namespace workphone
         {
             const auto handle = m_window ? wp_graphics_window_get_window_handle( m_window ) : nullptr;
             return handle ? StringUtil::toString( reinterpret_cast<size_t>( handle ) ) : String();
+        }
+
+        void ClawWindow::copyContentsToMemory( void *buffer, u32 size, FrameBuffer bufferId )
+        {
+            if( !buffer || !size || bufferId == FrameBuffer::Front )
+            {
+                WP_LOG_WARNING( "ClawWindow::copyContentsToMemory: invalid buffer or unsupported front-buffer request." );
+                return;
+            }
+            auto app = core::IApplicationManager::instancePtr();
+            auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
+            auto renderer = graphics
+                ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
+            auto *dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
+            void *windowHandle = nullptr;
+            getWindowHandle( &windowHandle );
+            if( !wp_renderer_dx11_copy_back_buffer_rgba8( dx11, windowHandle, buffer, size ) )
+            {
+                WP_LOG_WARNING( "ClawWindow::copyContentsToMemory: back buffer unavailable or RGBA8 buffer too small." );
+            }
         }
 
         bool ClawWindow::messagePump()
