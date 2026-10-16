@@ -305,6 +305,27 @@ typedef struct wp_texture_cube_mip_dx11
 void *wp_dx11_create_cubemap_rgba32f_native( void *device,
     const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count );
 
+enum wp_dx11_face_format
+{
+    WP_DX11_FACE_BGRA8 = 1,
+    WP_DX11_FACE_RGBA8 = 2,
+    WP_DX11_FACE_RGBA16F = 3,
+    WP_DX11_FACE_RGBA32F = 4
+};
+typedef struct wp_texture_face_readback_dx11
+{
+    void *pixels; /* tightly packed rows; release with release_texture_face_readback_native */
+    wp_u32 width, height, row_pitch, format;
+} wp_texture_face_readback_dx11;
+/** Reads the selected mip of a same-device 2D SRV, up to 2048x2048.
+ * Pass a zero-initialized output and release it before reuse. On failure the
+ * output is empty. This synchronous readback is for infrequent
+ * cubemap preparation, not the per-frame render path.
+ */
+wp_s32 wp_dx11_read_texture_face_native( void *device, void *context, void *view,
+    wp_texture_face_readback_dx11 *output );
+void wp_dx11_release_texture_face_readback_native( wp_texture_face_readback_dx11 *output );
+
 typedef struct wp_texture_encoded_mip_dx11
 {
     const void *bytes;

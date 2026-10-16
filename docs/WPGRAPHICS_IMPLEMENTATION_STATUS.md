@@ -1,5 +1,21 @@
 # WPGraphics implementation status
 
+## Native cubemap source-face readback — 16 October 2026
+
+The DX11 staging texture, selected-mip copy and mapped-row handling used by
+`ClawCubemap` now live in the native renderer. Its bounded readback API accepts
+same-device 2D shader views in BGRA8, RGBA8, RGBA16F or RGBA32F form and returns
+owned, tightly packed face bytes. C++ keeps the existing sRGB/half-float decode
+and GGX filter. Failed readback or invalid radiance still leaves the previous
+complete cubemap visible. The readback is synchronous and is used during cube
+preparation, not on each frame.
+
+Validation: Debug and RelWithDebInfo `ClawCubemapTests` build, and
+`WPGraphics.cubemap_pbr` passes in both configurations. The contract checks
+native row packing, rejection cleanup, supported face formats, orientation,
+filtered levels and PBR pixel output. This does not measure preparation cost or
+establish cubemap/device-loss recovery.
+
 ## Native filtered cubemap upload — 16 October 2026
 
 `ClawCubemap` still reads and filters source faces in C++, but sends its 48
@@ -13,8 +29,7 @@ Validation: Debug and RelWithDebInfo `ClawCubemapTests` build, and
 `WPGraphics.cubemap_pbr` passes in both configurations,
 including face orientation, filtered mips, PBR draw readback, reuse, incomplete
 face rejection and the new native incomplete-mip rejection. This confirms the
-selected DX11 contract only; other cubemap lifetime and source-readback work
-remains in C++.
+selected DX11 contract only; other cubemap lifetime work remains in C++.
 
 ## Native RGBA32F texture upload — 16 October 2026
 

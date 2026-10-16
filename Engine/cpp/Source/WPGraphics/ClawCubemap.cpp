@@ -110,67 +110,20 @@ namespace workphone::render
         bool readFace( ID3D11Device *device, ID3D11DeviceContext *context,
                        ID3D11ShaderResourceView *view, Face &face )
         {
-            ID3D11Resource *resource = nullptr;
-            ID3D11Texture2D *source = nullptr, *staging = nullptr;
-            view->GetResource( &resource );
-            const auto hr = resource->QueryInterface( __uuidof( ID3D11Texture2D ),
-                                                      reinterpret_cast<void **>( &source ) );
-            resource->Release();
-            if( FAILED( hr ) )
-            {
+            wp_texture_face_readback_dx11 readback{};
+            if( !wp_dx11_read_texture_face_native( device, context, view, &readback ) )
                 return false;
-            }
-            D3D11_SHADER_RESOURCE_VIEW_DESC viewDesc{};
-            view->GetDesc( &viewDesc );
-            if( viewDesc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D )
+            struct ReadbackGuard
             {
-                source->Release();
-                return false;
-            }
-            D3D11_TEXTURE2D_DESC desc;
-            source->GetDesc( &desc );
-            ID3D11Device *sourceDevice = nullptr;
-            source->GetDevice( &sourceDevice );
-            const bool sameDevice = sourceDevice == device;
-            if( sourceDevice ) sourceDevice->Release();
-            if( !sameDevice ) { source->Release(); return false; }
-            const auto format = viewDesc.Format;
-            const bool bgra = format == DXGI_FORMAT_B8G8R8A8_UNORM || format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-            const bool rgba = format == DXGI_FORMAT_R8G8B8A8_UNORM || format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
-            const bool floats = format == DXGI_FORMAT_R32G32B32A32_FLOAT;
-            const bool halves = format == DXGI_FORMAT_R16G16B16A16_FLOAT;
-            const auto mip = viewDesc.Texture2D.MostDetailedMip;
-            if( (!bgra && !rgba && !floats && !halves) || desc.ArraySize != 1 ||
-                desc.SampleDesc.Count != 1 || mip >= desc.MipLevels )
-            {
-                source->Release();
-                return false;
-            }
-            desc.Width = std::max( 1u, desc.Width >> mip );
-            desc.Height = std::max( 1u, desc.Height >> mip );
-            if( desc.Width > 2048 || desc.Height > 2048 ) { source->Release(); return false; }
-            desc.MipLevels = 1;
-            desc.ArraySize = 1;
-            desc.BindFlags = 0;
-            desc.MiscFlags = 0;
-            desc.Usage = D3D11_USAGE_STAGING;
-            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-            if( FAILED( device->CreateTexture2D( &desc, nullptr, &staging ) ) )
-            {
-                source->Release();
-                return false;
-            }
-            context->CopySubresourceRegion( staging, 0, 0, 0, 0, source, mip, nullptr );
-            source->Release();
-            D3D11_MAPPED_SUBRESOURCE mapped;
-            if( FAILED( context->Map( staging, 0, D3D11_MAP_READ, 0, &mapped ) ) )
-            {
-                staging->Release();
-                return false;
-            }
-            face.width = desc.Width;
-            face.height = desc.Height;
-            face.pixels.resize( size_t( desc.Width ) * desc.Height );
+                wp_texture_face_readback_dx11 &data;
+                ~ReadbackGuard() { wp_dx11_release_texture_face_readback_native( &data ); }
+            } guard{ readback };
+            face.width = readback.width;
+            face.height = readback.height;
+            face.pixels.resize( size_t( readback.width ) * readback.height );
+            const bool bgra = readback.format == WP_DX11_FACE_BGRA8;
+            const bool floats = readback.format == WP_DX11_FACE_RGBA32F;
+            const bool halves = readback.format == WP_DX11_FACE_RGBA16F;
             const auto decode = []( float c ) { return c <= .04045f ? c / 12.92f : std::pow( ( c + .055f ) / 1.055f, 2.4f ); };
             const auto half = []( unsigned short bits ) {
                 const unsigned exponent = ( bits >> 10 ) & 31, fraction = bits & 1023;
@@ -180,11 +133,12 @@ namespace workphone::render
                 return bits & 32768 ? -magnitude : magnitude;
             };
             bool valid = true;
-            for( unsigned y = 0; y < desc.Height; ++y )
+            for( unsigned y = 0; y < readback.height; ++y )
             {
-                for( unsigned x = 0; x < desc.Width; ++x )
+                for( unsigned x = 0; x < readback.width; ++x )
                 {
-                    const auto row = static_cast<const unsigned char *>( mapped.pData ) + y * mapped.RowPitch;
+                    const auto row = static_cast<const unsigned char *>( readback.pixels ) +
+                                     y * readback.row_pitch;
                     V value;
                     if( floats )
                     {
@@ -203,11 +157,9 @@ namespace workphone::render
                     }
                     valid = valid && std::isfinite( value.x ) && std::isfinite( value.y ) && std::isfinite( value.z ) &&
                         value.x >= 0 && value.y >= 0 && value.z >= 0;
-                    face.pixels[y * desc.Width + x] = value;
+                    face.pixels[y * readback.width + x] = value;
                 }
             }
-            context->Unmap( staging, 0 );
-            staging->Release();
             return valid;
         }
     }  // namespace

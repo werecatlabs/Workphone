@@ -3282,6 +3282,96 @@ void *wp_dx11_create_cubemap_rgba32f_native( void *native_device,
     return SUCCEEDED(hr) ? view : NULL;
 }
 
+wp_s32 wp_dx11_read_texture_face_native( void *native_device, void *native_context,
+    void *native_view, wp_texture_face_readback_dx11 *output )
+{
+    ID3D11Device *device = (ID3D11Device *)native_device;
+    ID3D11DeviceContext *context = (ID3D11DeviceContext *)native_context;
+    ID3D11ShaderResourceView *view = (ID3D11ShaderResourceView *)native_view;
+    ID3D11Device *owner = NULL;
+    ID3D11Resource *resource = NULL;
+    ID3D11Texture2D *source = NULL, *staging = NULL;
+    D3D11_SHADER_RESOURCE_VIEW_DESC view_desc;
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    wp_u32 format = 0, bytes_per_pixel = 0, mip, y;
+    size_t row_bytes, total_bytes;
+    unsigned char *pixels = NULL;
+    wp_s32 result = 0;
+    if( !output ) return 0;
+    memset( output, 0, sizeof(*output) );
+    if( !device || !context || !view ) return 0;
+    ID3D11DeviceContext_GetDevice( context, &owner );
+    if( owner != device ) goto cleanup;
+    ID3D11Device_Release(owner); owner = NULL;
+    ID3D11ShaderResourceView_GetResource( view, &resource );
+    if( !resource || FAILED(ID3D11Resource_QueryInterface( resource, &IID_ID3D11Texture2D,
+                                                           (void **)&source )) ) goto cleanup;
+    ID3D11ShaderResourceView_GetDesc( view, &view_desc );
+    if( view_desc.ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D ) goto cleanup;
+    ID3D11Texture2D_GetDevice( source, &owner );
+    if( owner != device ) goto cleanup;
+    ID3D11Device_Release(owner); owner = NULL;
+    ID3D11Texture2D_GetDesc( source, &desc );
+    mip = view_desc.Texture2D.MostDetailedMip;
+    if( desc.ArraySize != 1 || desc.SampleDesc.Count != 1 || mip >= desc.MipLevels ) goto cleanup;
+    switch( view_desc.Format )
+    {
+    case DXGI_FORMAT_B8G8R8A8_UNORM:
+    case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        format = WP_DX11_FACE_BGRA8; bytes_per_pixel = 4; break;
+    case DXGI_FORMAT_R8G8B8A8_UNORM:
+    case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+        format = WP_DX11_FACE_RGBA8; bytes_per_pixel = 4; break;
+    case DXGI_FORMAT_R16G16B16A16_FLOAT:
+        format = WP_DX11_FACE_RGBA16F; bytes_per_pixel = 8; break;
+    case DXGI_FORMAT_R32G32B32A32_FLOAT:
+        format = WP_DX11_FACE_RGBA32F; bytes_per_pixel = 16; break;
+    default: goto cleanup;
+    }
+    desc.Width = desc.Width >> mip ? desc.Width >> mip : 1;
+    desc.Height = desc.Height >> mip ? desc.Height >> mip : 1;
+    if( desc.Width > 2048 || desc.Height > 2048 ) goto cleanup;
+    row_bytes = (size_t)desc.Width * bytes_per_pixel;
+    total_bytes = row_bytes * desc.Height;
+    desc.MipLevels = desc.ArraySize = 1;
+    desc.BindFlags = desc.MiscFlags = 0;
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    if( FAILED(ID3D11Device_CreateTexture2D(device,&desc,NULL,&staging)) ) goto cleanup;
+    ID3D11DeviceContext_CopySubresourceRegion(context,(ID3D11Resource *)staging,0,0,0,0,
+                                               (ID3D11Resource *)source,mip,NULL);
+    if( FAILED(ID3D11DeviceContext_Map(context,(ID3D11Resource *)staging,0,
+                                       D3D11_MAP_READ,0,&mapped)) ) goto cleanup;
+    pixels = (unsigned char *)malloc(total_bytes);
+    if( pixels && mapped.RowPitch >= row_bytes )
+    {
+        for( y = 0; y < desc.Height; ++y )
+            memcpy(pixels + y * row_bytes,(const unsigned char *)mapped.pData + y * mapped.RowPitch,
+                   row_bytes);
+        output->pixels = pixels;
+        output->width = desc.Width; output->height = desc.Height;
+        output->row_pitch = (wp_u32)row_bytes; output->format = format;
+        pixels = NULL;
+        result = 1;
+    }
+    ID3D11DeviceContext_Unmap(context,(ID3D11Resource *)staging,0);
+cleanup:
+    free(pixels);
+    if( staging ) ID3D11Texture2D_Release(staging);
+    if( source ) ID3D11Texture2D_Release(source);
+    if( resource ) ID3D11Resource_Release(resource);
+    if( owner ) ID3D11Device_Release(owner);
+    return result;
+}
+
+void wp_dx11_release_texture_face_readback_native( wp_texture_face_readback_dx11 *output )
+{
+    if( !output ) return;
+    free(output->pixels);
+    memset(output,0,sizeof(*output));
+}
+
 void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *r,
     const wp_texture_encoded_mip_dx11 *levels, wp_u32 count, wp_u32 format )
 {

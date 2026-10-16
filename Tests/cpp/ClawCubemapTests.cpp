@@ -153,6 +153,18 @@ int main()
                 renderer, pixels, 4, 4, WORKPHONE_PIXEL_FORMAT_RGBA8 ) );
             require( views[f] != nullptr, "source face" );
         }
+        wp_texture_face_readback_dx11 faceReadback{};
+        require( wp_dx11_read_texture_face_native( device, context, views[0], &faceReadback ) &&
+                     faceReadback.width == 4 && faceReadback.height == 4 &&
+                     faceReadback.row_pitch == 16 && faceReadback.format == WP_DX11_FACE_RGBA8,
+                 "native source-face readback must expose packed RGBA rows" );
+        const auto *firstFacePixel = static_cast<const unsigned char *>( faceReadback.pixels );
+        require( firstFacePixel[0] == 32 && firstFacePixel[1] == 0,
+                 "native source-face readback must preserve encoded pixels" );
+        wp_dx11_release_texture_face_readback_native( &faceReadback );
+        require( !faceReadback.pixels && !wp_dx11_read_texture_face_native(
+                     device, context, nullptr, &faceReadback ),
+                 "native source-face readback must clear rejected output" );
         require( cube.update( device, context, views ), "build filtered cube" );
         const unsigned skyFace[] = { 3, 2, 4, 5, 1, 0 };
         for( unsigned f = 0; f < 6; ++f )
