@@ -35,6 +35,9 @@ namespace workphone
             SmartPtr<ui::IUIElement> getSrc() const;
             void setSrc( SmartPtr<ui::IUIElement> src );
 
+            void setActor( SmartPtr<scene::IGameActor> actor );
+            void setDestinationActor( SmartPtr<scene::IGameActor> actor );
+
             SmartPtr<ui::IUIElement> getDst() const;
             void setDst( SmartPtr<ui::IUIElement> dst );
 
@@ -58,6 +61,8 @@ namespace workphone
         private:
             Vector2I m_position = Vector2I::zero();
             SmartPtr<ui::IUIElement> m_src;
+            SmartPtr<scene::IGameActor> m_dragActor;
+            SmartPtr<scene::IGameActor> m_destinationActor;
             SmartPtr<ui::IUIElement> m_dst;
             String m_data;
             s32 m_siblingIndex = -1;

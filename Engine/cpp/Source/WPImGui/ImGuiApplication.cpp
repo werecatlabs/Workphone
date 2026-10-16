@@ -1,5 +1,6 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiApplication.hpp>
+#include <WPImGui/ImGuiDropJob.hpp>
 #include <WPImGui/WPImGuiStyle.hpp>
 #include <WPImGui/ImGuiMenuItem.hpp>
 #include <WPImGui/ImGuiMenuBar.hpp>
@@ -1287,9 +1288,8 @@ namespace workphone::ui
                                         Array<Parameter> args;
                                         args.emplace_back( data );
 
-                                        dropTarget->handleEvent(
-                                            EventType::UI, IEvent::handleDrop, args, window, window,
-                                            nullptr );
+                                        ImGuiDropJob::queue( dropTarget, std::move( args ), window,
+                                                             window );
                                     }
 
                                     ImGui::EndDragDropTarget();
@@ -2521,8 +2521,8 @@ namespace workphone::ui
 
                                             args.emplace_back( data );
 
-                                            dropTarget->handleEvent( EventType::UI, IEvent::handleDrop,
-                                                                     args, window, window, nullptr );
+                                            ImGuiDropJob::queue( dropTarget, std::move( args ),
+                                                                 window, window );
                                         }
 
                                         ImGui::EndDragDropTarget();

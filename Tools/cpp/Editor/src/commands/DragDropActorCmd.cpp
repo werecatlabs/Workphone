@@ -22,6 +22,11 @@ namespace workphone::editor
         auto gameManager = applicationManager->getGameManagerPtr();
         auto gameScene = gameManager->getCurrentScene();
 
+        if( !gameScene || ( m_actor && m_actor->getScene() != gameScene ) )
+        {
+            return;
+        }
+
         if( m_actor )
         {
             if( auto parent = m_actor->getParent() )
@@ -29,7 +34,10 @@ namespace workphone::editor
                 parent->removeChild( m_actor );
             }
 
-            gameScene->removeActor( m_actor );
+            else
+            {
+                gameScene->removeActor( m_actor );
+            }
 
             if( m_previousParent )
             {
@@ -72,156 +80,91 @@ namespace workphone::editor
         auto gameManager = applicationManager->getGameManagerPtr();
         auto gameScene = gameManager->getCurrentScene();
 
-        auto dragSrc = getSrc();
-        auto dropDst = getDst();
-
-        auto isSrcTreeNode = false;
-        auto isDstTreeNode = false;
-
-        if( dragSrc )
+        if( m_dragActor )
         {
-            isSrcTreeNode = dragSrc->isDerived<ui::IUITreeNode>();
-        }
-
-        if( dropDst )
-        {
-            isDstTreeNode = dropDst->isDerived<ui::IUITreeNode>();
-        }
-
-        if( isSrcTreeNode && isDstTreeNode )
-        {
-            auto dragSrcNode = workphone::static_pointer_cast<ui::IUITreeNode>( dragSrc );
-            auto dropDstNode = workphone::static_pointer_cast<ui::IUITreeNode>( dropDst );
-
-            auto dragSrcData = dragSrcNode->getNodeUserData();
-            auto dropDstData = dropDstNode->getNodeUserData();
-
-            if( dragSrcData && dropDstData )
+            auto destinationActor = m_destinationActor;
+            if( !gameScene || m_dragActor->getScene() != gameScene ||
+                ( destinationActor && destinationActor->getScene() != gameScene ) )
             {
-                auto dragSrcProjectData = workphone::static_pointer_cast<ProjectTreeData>( dragSrcData );
+                return;
+            }
 
-                auto dropDstProjectData = workphone::static_pointer_cast<ProjectTreeData>( dropDstData );
-
-                auto dragSrcObject = dragSrcProjectData->getObjectData();
-                auto dropDstObject = dropDstProjectData->getObjectData();
-
-                if( dragSrcObject && dropDstObject )
+            auto roots = gameScene->getActors();
+            const auto isInScene = [&roots]( SmartPtr<scene::IGameActor> actor ) {
+                while( actor && actor->getParent() )
                 {
-                    if( dragSrcObject->isDerived<scene::IGameActor>() &&
-                        dropDstObject->isDerived<scene::IGameActor>() )
-                    {
-                        auto dragSrcActor =
-                            workphone::static_pointer_cast<scene::IGameActor>( dragSrcObject );
-                        auto dropDstActor =
-                            workphone::static_pointer_cast<scene::IGameActor>( dropDstObject );
+                    actor = actor->getParent();
+                }
+                return std::find( roots.begin(), roots.end(), actor ) != roots.end();
+            };
+            if( !isInScene( m_dragActor ) ||
+                ( destinationActor && !isInScene( destinationActor ) ) )
+            {
+                return;
+            }
 
-                        auto parent = dragSrcActor->getParent();
-                        if( parent != dropDstActor )
-                        {
-                            m_actor = dragSrcActor;
-                            m_previousParent = parent;
-                            m_previousSiblingIndex = dragSrcActor->getSiblingIndex();
-
-                            if( parent )
-                            {
-                                parent->removeChild( dragSrcActor );
-                            }
-
-                            gameScene->removeActor( dragSrcActor );
-                            if( dropDstActor->getParent() == dragSrcActor )
-                            {
-                                auto srcParent = dropDstActor->getParent();
-                                if( srcParent )
-                                {
-                                    srcParent->removeChild( dropDstActor );
-                                }
-
-                                auto dstParent = dropDstActor->getParent();
-                                if( dstParent )
-                                {
-                                    dstParent->removeChild( dropDstActor );
-                                }
-
-                                auto parent = dragSrcActor->getParent();
-                                if( !parent )
-                                {
-                                    WP_ASSERT( dropDstActor->getParent() == nullptr );
-                                    gameScene->addActor( dropDstActor );
-                                }
-                                else
-                                {
-                                    parent->addChild( dropDstActor );
-                                }
-                            }
-
-                            dropDstActor->addChild( dragSrcActor );
-                        }
-                    }
+            // A parent cannot be moved into itself or any of its descendants.
+            for( auto ancestor = destinationActor; ancestor; ancestor = ancestor->getParent() )
+            {
+                if( ancestor == m_dragActor )
+                {
+                    return;
                 }
             }
-        }
-        else if( dragSrc->isDerived<ui::IUIWindow>() )
-        {
-            auto selectionManager = applicationManager->getSelectionManager();
-            auto selection = selectionManager->getSelection();
-            for( auto selected : selection )
+
+            auto previousParent = m_dragActor->getParent();
+            auto siblingIndex = getSiblingIndex();
+            if( previousParent == destinationActor &&
+                ( siblingIndex < 0 || !destinationActor ) )
             {
-                if( selected->isDerived<scene::IGameActor>() )
+                return;
+            }
+
+            m_previousParent = previousParent;
+            m_previousSiblingIndex = m_dragActor->getSiblingIndex();
+            m_actor = m_dragActor;
+
+            if( previousParent != destinationActor )
+            {
+                if( previousParent )
                 {
-                    auto actor = workphone::static_pointer_cast<scene::IGameActor>( selected );
-                    auto parent = actor->getParent();
-                    if( parent )
-                    {
-                        m_actor = actor;
-                        m_previousParent = parent;
-                        m_previousSiblingIndex = actor->getSiblingIndex();
+                    previousParent->removeChild( m_dragActor );
+                }
+                else
+                {
+                    gameScene->removeActor( m_dragActor );
+                }
 
-                        parent->removeChild( actor );
-
-                        gameScene->addActor( actor );
-                    }
+                if( destinationActor )
+                {
+                    destinationActor->addChild( m_dragActor );
+                }
+                else
+                {
+                    gameScene->addActor( m_dragActor );
                 }
             }
-        }
 
-        if( isSrcTreeNode )
-        {
-            auto dragSrcNode = workphone::static_pointer_cast<ui::IUITreeNode>( dragSrc );
-
-            auto dragSrcData = dragSrcNode->getNodeUserData();
-            if( dragSrcData )
+            if( siblingIndex >= 0 )
             {
-                auto dragSrcProjectData = workphone::static_pointer_cast<ProjectTreeData>( dragSrcData );
+                m_dragActor->setSiblingIndex( siblingIndex );
+            }
 
-                auto dragSrcObject = dragSrcProjectData->getObjectData();
-                if( dragSrcObject )
+            gameManager->makeActorTransformsDirty();
+            for( auto actor : gameScene->getActors() )
+            {
+                actor->updateOrder();
+            }
+            if( auto editorManager = EditorManager::getSingletonPtr() )
+            {
+                if( auto ui = editorManager->getUI() )
                 {
-                    if( dragSrcObject->isDerived<scene::IGameActor>() )
-                    {
-                        auto dragSrcActor =
-                            workphone::static_pointer_cast<scene::IGameActor>( dragSrcObject );
-
-                        auto siblingIndex = getSiblingIndex();
-                        if( siblingIndex >= 0 )
-                        {
-                            dragSrcActor->setSiblingIndex( siblingIndex );
-                        }
-                    }
+                    ui->rebuildSceneTree();
                 }
             }
+            return;
         }
 
-        gameManager->makeActorTransformsDirty();
-
-        auto sceneActors = gameScene->getActors();
-        for( auto actor : sceneActors )
-        {
-            actor->updateOrder();
-        }
-
-        auto editorManager = EditorManager::getSingletonPtr();
-        auto ui = editorManager->getUI();
-        ui->rebuildSceneTree();
     }
 
     Vector2I DragDropActorCmd::getPosition() const
@@ -242,6 +185,16 @@ namespace workphone::editor
     void DragDropActorCmd::setSrc( SmartPtr<ui::IUIElement> src )
     {
         m_src = src;
+    }
+
+    void DragDropActorCmd::setActor( SmartPtr<scene::IGameActor> actor )
+    {
+        m_dragActor = actor;
+    }
+
+    void DragDropActorCmd::setDestinationActor( SmartPtr<scene::IGameActor> actor )
+    {
+        m_destinationActor = actor;
     }
 
     SmartPtr<ui::IUIElement> DragDropActorCmd::getDst() const

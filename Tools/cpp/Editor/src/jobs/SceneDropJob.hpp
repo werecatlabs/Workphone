@@ -32,6 +32,9 @@ namespace workphone
 
             void setSender( SmartPtr<ui::IUIElement> sender );
 
+            SmartPtr<ui::IUIElement> getDestination() const;
+            void setDestination( SmartPtr<ui::IUIElement> destination );
+
             SmartPtr<ICommand> getDragDropActorCmd() const;
 
             void setDragDropActorCmd( SmartPtr<ICommand> dragDropActorCmd );
@@ -53,6 +56,7 @@ namespace workphone
             SmartPtr<SceneWindow> m_owner;
             SmartPtr<ui::IUITreeCtrl> m_tree;
             SmartPtr<ui::IUIElement> m_sender;
+            SmartPtr<ui::IUIElement> m_destination;
             SmartPtr<ICommand> m_dragDropActorCmd;
             String m_data;
             String m_filePath;

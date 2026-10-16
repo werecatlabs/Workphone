@@ -3,6 +3,7 @@
 #include <commands/AddActorCmd.hpp>
 #include <commands/DragDropActorCmd.hpp>
 #include <editor/EditorManager.hpp>
+#include <ui/ProjectTreeData.hpp>
 #include <ui/SceneWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
@@ -24,104 +25,81 @@ namespace workphone::editor
         try
         {
             auto text = getData();
-            auto sender = getSender();
-            auto tree = getTree();
-            auto owner = getOwner();
+            auto destination = getDestination();
 
             auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
+            if( !applicationManager )
+            {
+                return;
+            }
 
             auto factoryManager = applicationManager->getFactoryManagerPtr();
-            WP_ASSERT( factoryManager );
+            if( !factoryManager )
+            {
+                return;
+            }
 
             auto commandManager = applicationManager->getCommandManagerPtr();
-            WP_ASSERT( commandManager );
-
-            auto fileSystem = applicationManager->getFileSystemPtr();
-            WP_ASSERT( fileSystem );
 
             auto editorManager = EditorManager::getSingletonPtr();
-
-            auto uiManager = editorManager->getUI();
+            auto uiManager = editorManager ? editorManager->getUI() : nullptr;
 
             auto resourceDatabase = applicationManager->getResourceDatabase();
 
             auto sceneManager = applicationManager->getGameManager();
-            auto scene = sceneManager->getCurrentScene();
+            auto scene = sceneManager ? sceneManager->getCurrentScene() : nullptr;
+            if( !commandManager || !scene || !uiManager || StringUtil::isNullOrEmpty( text ) )
+            {
+                return;
+            }
 
             auto properties = factoryManager->make_ptr<Properties>();
             auto dataStr = String( text.c_str() );
 
             DataUtil::parse( dataStr, properties.get() );
 
+            SmartPtr<scene::IGameActor> destinationActor;
+            if( auto destinationNode = dynamic_pointer_cast<ui::IUITreeNode>( destination ) )
+            {
+                auto nodeData =
+                    dynamic_pointer_cast<ProjectTreeData>( destinationNode->getNodeUserData() );
+                destinationActor = nodeData
+                                       ? dynamic_pointer_cast<scene::IGameActor>(
+                                             nodeData->getObjectData() )
+                                       : nullptr;
+                if( !destinationActor )
+                {
+                    return;
+                }
+            }
+
             if( properties->hasProperty( resourceUUIDStr ) )
             {
                 auto resourceId = properties->getProperty( resourceUUIDStr );
                 auto iResourceId = StringUtil::parseUUID( resourceId );
 
-                auto prefabResource = resourceDatabase->loadResource( iResourceId );
-                auto prefab = workphone::static_pointer_cast<scene::IGamePrefab>( prefabResource );
+                auto prefabResource = resourceDatabase ? resourceDatabase->loadResource( iResourceId )
+                                                       : nullptr;
+                auto prefab = workphone::dynamic_pointer_cast<scene::IGamePrefab>( prefabResource );
                 if( prefab )
                 {
                     auto actor = prefab->createActor();
-                    scene->addActor( actor );
+                    if( actor )
+                    {
+                        auto cmd = factoryManager->make_ptr<AddActorCmd>();
+                        cmd->setActorType( AddActorCmd::ActorType::Actor );
+                        cmd->setActor( actor );
+                        cmd->setParent( destinationActor );
+                        cmd->setUseSelectionAsParent( false );
+                        commandManager->addCommand( cmd );
+                    }
                 }
-
-                uiManager->rebuildSceneTree();
             }
             else if( !StringUtil::isNullOrEmpty( dataStr ) )
             {
                 auto filePath = properties->getProperty( filePathStr );
 
-                auto dragSrc = tree->getDragSourceElement();
-                auto dropDst = tree->getDropDestinationElement();
-
-                if( sender && sender->isDerived<ui::IUIWindow>() )
-                {
-                    if( !StringUtil::isNullOrEmpty( filePath ) )
-                    {
-                        auto cmd = factoryManager->make_ptr<AddActorCmd>();
-                        cmd->setActorType( AddActorCmd::ActorType::Actor );
-                        cmd->setFilePath( filePath );
-                        commandManager->addCommand( cmd );
-                    }
-                    else
-                    {
-                        if( !owner->getDragDropActorCmd() )
-                        {
-                            auto cmd = factoryManager->make_ptr<DragDropActorCmd>();
-                            cmd->setPosition( Vector2I::zero() );
-                            cmd->setSrc( sender );
-                            cmd->setDst( nullptr );
-                            cmd->setData( text );
-
-                            commandManager->addCommand( cmd );
-                        }
-
-                        owner->setDragDropActorCmd( nullptr );
-                    }
-                }
-                else if( dragSrc )
-                {
-                    if( !commandManager->hasCommand( owner->getDragDropActorCmd() ) )
-                    {
-                        owner->setDragDropActorCmd( nullptr );
-                    }
-
-                    if( !owner->getDragDropActorCmd() )
-                    {
-                        auto cmd = factoryManager->make_ptr<DragDropActorCmd>();
-                        cmd->setPosition( Vector2I::zero() );
-                        cmd->setSrc( dragSrc );
-                        cmd->setDst( dropDst );
-                        cmd->setData( text );
-                        cmd->setSiblingIndex( getSiblingIndex() );
-                        owner->setDragDropActorCmd( cmd );
-
-                        commandManager->addCommand( cmd );
-                    }
-                }
-                else if( !StringUtil::isNullOrEmpty( filePath ) )
+                if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
                     auto ext = Path::getFileExtension( filePath );
                     if( ApplicationUtil::isSupportedMesh( filePath ) || ext == prefabExtStr )
@@ -129,6 +107,55 @@ namespace workphone::editor
                         auto cmd = factoryManager->make_ptr<AddActorCmd>();
                         cmd->setActorType( AddActorCmd::ActorType::Actor );
                         cmd->setFilePath( filePath );
+                        cmd->setUseSelectionAsParent( false );
+                        cmd->setParent( destinationActor );
+                        commandManager->addCommand( cmd );
+                    }
+                }
+                else if( properties->hasProperty( "actorUUID" ) )
+                {
+                    auto actorUUID = properties->getProperty( "actorUUID" );
+                    SmartPtr<scene::IGameActor> actor;
+                    auto pending = scene->getActors();
+                    while( !pending.empty() && !actor )
+                    {
+                        auto candidate = pending.back();
+                        pending.pop_back();
+                        if( !candidate )
+                        {
+                            continue;
+                        }
+
+                        auto handle = candidate->getHandle();
+                        if( handle && handle->getUUIDAsString() == actorUUID )
+                        {
+                            actor = candidate;
+                            break;
+                        }
+
+                        auto children = candidate->getChildren();
+                        pending.insert( pending.end(), children.begin(), children.end() );
+                    }
+                    if( actor )
+                    {
+                        for( auto ancestor = destinationActor; ancestor;
+                             ancestor = ancestor->getParent() )
+                        {
+                            if( ancestor == actor )
+                            {
+                                return;
+                            }
+                        }
+                        if( actor->getParent() == destinationActor &&
+                            ( getSiblingIndex() < 0 || !destinationActor ) )
+                        {
+                            return;
+                        }
+
+                        auto cmd = factoryManager->make_ptr<DragDropActorCmd>();
+                        cmd->setActor( actor );
+                        cmd->setDestinationActor( destinationActor );
+                        cmd->setSiblingIndex( getSiblingIndex() );
                         commandManager->addCommand( cmd );
                     }
                 }
@@ -168,6 +195,16 @@ namespace workphone::editor
     void SceneDropJob::setSender( SmartPtr<ui::IUIElement> sender )
     {
         m_sender = sender;
+    }
+
+    SmartPtr<ui::IUIElement> SceneDropJob::getDestination() const
+    {
+        return m_destination;
+    }
+
+    void SceneDropJob::setDestination( SmartPtr<ui::IUIElement> destination )
+    {
+        m_destination = destination;
     }
 
     SmartPtr<ICommand> SceneDropJob::getDragDropActorCmd() const

@@ -51,10 +51,12 @@ namespace workphone::editor
             if( auto parent = actor->getParent() )
             {
                 parent->removeChild( actor );
+                scene->unregisterAll( actor );
             }
-
-            scene->unregisterAll( actor );
-            scene->removeActor( actor );
+            else
+            {
+                scene->removeActor( actor );
+            }
         }
 
         uiManager->rebuildSceneTree();
@@ -127,9 +129,9 @@ namespace workphone::editor
 
         auto selection = selectionManager->getSelection();
 
-        SmartPtr<IGameActor> parent;
+        SmartPtr<IGameActor> parent = getParent();
 
-        if( !selection.empty() )
+        if( m_useSelectionAsParent && !selection.empty() )
         {
             auto selected = selection.back();
 
@@ -145,7 +147,11 @@ namespace workphone::editor
         auto scene = sceneManager->getCurrentScene();
         WP_ASSERT( scene );
 
-        auto actor = createActor();
+        auto actor = getActor();
+        if( !actor )
+        {
+            actor = createActor();
+        }
         //WP_ASSERT( actor );
 
         if( !parent )
@@ -770,6 +776,12 @@ namespace workphone::editor
     {
         RecursiveMutex::ScopedLock lock( m_mutex );
         m_parent = parent;
+    }
+
+    void AddActorCmd::setUseSelectionAsParent( bool useSelectionAsParent )
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        m_useSelectionAsParent = useSelectionAsParent;
     }
 
     AddActorCmd::ActorType AddActorCmd::getActorType() const

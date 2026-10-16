@@ -506,13 +506,11 @@ namespace workphone::ui
                                 String( static_cast<const char *>( payload->Data ), payload->DataSize );
 
                             auto args = Array<Parameter>();
-                            args.resize( 2 );
+                            args.emplace_back( data );
+                            args.emplace_back( -1 );
 
-                            args[0].object = treeCtrl;
-                            args[1].str = data;
-
-                            ImGuiDropJob::queue( dropTarget, std::move( args ), dropTarget,
-                                                 treeCtrl );
+                            ImGuiDropJob::queue( dropTarget, std::move( args ),
+                                                 treeCtrl->getDragSourceElement(), treeCtrl );
                         }
 
                         ImGui::EndDragDropTarget();

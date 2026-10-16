@@ -1783,8 +1783,7 @@ namespace workphone::editor
                 auto applicationManager = core::IApplicationManager::instancePtr();
                 auto factoryManager =
                     applicationManager ? applicationManager->getFactoryManagerPtr() : nullptr;
-                auto jobQueue = applicationManager ? applicationManager->getJobQueuePtr() : nullptr;
-                if( !factoryManager || !jobQueue || arguments.empty() )
+                if( !factoryManager || arguments.empty() )
                 {
                     return {};
                 }
@@ -1803,42 +1802,23 @@ namespace workphone::editor
 
                 auto tree = owner->m_tree;
 
-                if( !owner->getDropJob() )
+                auto dropJob = factoryManager->make_ptr<SceneDropJob>();
+                if( !dropJob )
                 {
-                    auto dropJob = factoryManager->make_ptr<SceneDropJob>();
-                    auto ownerWeak = WeakPtr<SceneWindow>( owner );
-                    auto dropJobPtr = dropJob.get();
-
-                    dropJob->setOwner( owner );
-                    dropJob->setData( text );
-                    dropJob->setSiblingIndex( siblingIndex );
-                    dropJob->setTree( tree );
-                    dropJob->setSender( sender );
-
-                    dropJob->setCallbackFunction( [ownerWeak, dropJobPtr]( int state ) -> void {
-                        if( state == static_cast<s32>( IJob::State::Finish ) )
-                        {
-                            if( auto owner = ownerWeak.lock() )
-                            {
-                                auto activeDropJob = owner->getDropJob();
-                                if( activeDropJob && activeDropJob.get() == dropJobPtr )
-                                {
-                                    owner->setDropJob( nullptr );
-                                }
-                            }
-                        }
-                    } );
-
-                    owner->setDropJob( dropJob );
-                    jobQueue->addJob( dropJob );
-                    if( dropJob->isFinished() )
-                    {
-                        if( owner->getDropJob() == dropJob )
-                        {
-                            owner->setDropJob( nullptr );
-                        }
-                    }
+                    return {};
                 }
+
+                dropJob->setOwner( owner );
+                dropJob->setData( text );
+                dropJob->setSiblingIndex( siblingIndex );
+                dropJob->setTree( tree );
+                dropJob->setSender( dynamic_pointer_cast<ui::IUIElement>( sender ) );
+                dropJob->setDestination( dynamic_pointer_cast<ui::IUIElement>( object ) );
+
+                // ImGuiDropJob already dispatches this event on the application task. Keep the
+                // source and destination captured at release, rather than reading mutable tree
+                // drag state after it has been cleared by the render task.
+                dropJob->execute();
             }
             catch( std::exception &e )
             {
