@@ -376,8 +376,8 @@ namespace workphone::editor
                 m_applicationEventListener || m_window || m_sceneWindow || m_inputTextButton ||
                 m_inputText || m_promptListener || m_searchEntry || m_tree || m_treeListener ||
                 m_applicationMenu || m_applicationAddMenu || m_applicationParticleMenu ||
-                m_menuListener || m_selectedObject || m_selectedEntity || m_dragDropActorCmd ||
-                m_dropJob || m_buildJob || getParentWindow() || !m_dataArray.empty();
+                m_menuListener || m_selectedObject || m_selectedEntity || m_buildJob ||
+                getParentWindow() || !m_dataArray.empty();
 
             if( getLoadingState() != LoadingState::Unloaded || hasResources )
             {
@@ -387,12 +387,6 @@ namespace workphone::editor
                 {
                     buildJob->setInterrupted( true );
                     setBuildJob( nullptr );
-                }
-
-                if( auto dropJob = getDropJob() )
-                {
-                    dropJob->setInterrupted( true );
-                    setDropJob( nullptr );
                 }
 
                 auto applicationManager = core::IApplicationManager::instance();
@@ -539,7 +533,6 @@ namespace workphone::editor
 
                 m_selectedObject = nullptr;
                 m_selectedEntity = nullptr;
-                m_dragDropActorCmd = nullptr;
 
                 if( auto parentWindow = getParentWindow() )
                 {
@@ -1790,12 +1783,10 @@ namespace workphone::editor
                 auto siblingIndex = arguments.size() > 1 ? arguments[1].getS32() : -1;
 
                 auto owner = getOwner();
-                if( !owner )
+                if( !owner || owner->getLoadingState() != LoadingState::Loaded )
                 {
                     return {};
                 }
-
-                auto tree = owner->m_tree;
 
                 auto dropJob = factoryManager->make_ptr<SceneDropJob>();
                 if( !dropJob )
@@ -1803,11 +1794,8 @@ namespace workphone::editor
                     return {};
                 }
 
-                dropJob->setOwner( owner );
                 dropJob->setData( text );
                 dropJob->setSiblingIndex( siblingIndex );
-                dropJob->setTree( tree );
-                dropJob->setSender( dynamic_pointer_cast<ui::IUIElement>( sender ) );
                 dropJob->setDestination( dynamic_pointer_cast<ui::IUIElement>( object ) );
 
                 // ImGuiDropJob already dispatches this event on the application task. Keep the
@@ -1925,26 +1913,6 @@ namespace workphone::editor
     void SceneWindow::setTreeState( SharedPtr<std::map<String, bool>> treeState )
     {
         m_treeState = treeState;
-    }
-
-    SmartPtr<ICommand> SceneWindow::getDragDropActorCmd() const
-    {
-        return m_dragDropActorCmd;
-    }
-
-    void SceneWindow::setDragDropActorCmd( SmartPtr<ICommand> dragDropActorCmd )
-    {
-        m_dragDropActorCmd = dragDropActorCmd;
-    }
-
-    void SceneWindow::setDropJob( SmartPtr<IJob> dropJob )
-    {
-        m_dropJob = dropJob;
-    }
-
-    SmartPtr<IJob> SceneWindow::getDropJob() const
-    {
-        return m_dropJob;
     }
 
     void SceneWindow::setBuildJob( SmartPtr<IJob> buildJob )

@@ -24,28 +24,8 @@ namespace workphone
 
             void setData( const String &data );
 
-            String getFilePath() const;
-
-            void setFilePath( const String &filePath );
-
-            SmartPtr<ui::IUIElement> getSender() const;
-
-            void setSender( SmartPtr<ui::IUIElement> sender );
-
             SmartPtr<ui::IUIElement> getDestination() const;
             void setDestination( SmartPtr<ui::IUIElement> destination );
-
-            SmartPtr<ICommand> getDragDropActorCmd() const;
-
-            void setDragDropActorCmd( SmartPtr<ICommand> dragDropActorCmd );
-
-            SmartPtr<ui::IUITreeCtrl> getTree() const;
-
-            void setTree( SmartPtr<ui::IUITreeCtrl> tree );
-
-            SmartPtr<SceneWindow> getOwner() const;
-
-            void setOwner( SmartPtr<SceneWindow> owner );
 
             s32 getSiblingIndex() const;
             void setSiblingIndex( s32 siblingIndex );
@@ -53,13 +33,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
-            SmartPtr<SceneWindow> m_owner;
-            SmartPtr<ui::IUITreeCtrl> m_tree;
-            SmartPtr<ui::IUIElement> m_sender;
             SmartPtr<ui::IUIElement> m_destination;
-            SmartPtr<ICommand> m_dragDropActorCmd;
             String m_data;
-            String m_filePath;
             s32 m_siblingIndex = -1;
         };
     }  // end namespace editor

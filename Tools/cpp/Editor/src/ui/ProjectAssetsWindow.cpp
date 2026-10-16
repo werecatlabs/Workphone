@@ -18,6 +18,19 @@
 
 namespace workphone::editor
 {
+    namespace
+    {
+        bool isWithinFolder( const String &path, const String &folder )
+        {
+            auto root = StringUtil::make_lower( StringUtil::cleanupPath( folder ) );
+            auto candidate = StringUtil::make_lower( StringUtil::cleanupPath( path ) );
+            auto prefix = root + "/";
+            return candidate == root ||
+                   ( candidate.size() >= prefix.size() &&
+                     candidate.compare( 0, prefix.size(), prefix ) == 0 );
+        }
+    }  // namespace
+
     WP_CLASS_REGISTER_DERIVED( workphone, ProjectAssetsWindow, EditorWindow );
     WP_CLASS_REGISTER_DERIVED( workphone, ProjectAssetsWindow::BuildTreeJob, Job );
     WP_CLASS_REGISTER_DERIVED( workphone, ProjectAssetsWindow::TreeCtrlListener, IEventListener );
@@ -1032,14 +1045,8 @@ namespace workphone::editor
             assetsRoot = Path::lexically_normal( projectPath );
         }
 
-        auto isInAssets = [&assetsRoot]( const String &path ) {
-            auto root = StringUtil::make_lower( StringUtil::cleanupPath( assetsRoot ) );
-            auto candidate = StringUtil::make_lower( StringUtil::cleanupPath( path ) );
-            auto prefix = root + "/";
-            return candidate == root || ( candidate.size() >= prefix.size() &&
-                                          candidate.compare( 0, prefix.size(), prefix ) == 0 );
-        };
-        if( !isInAssets( source ) || !isInAssets( target ) || !fileSystem->isExistingFolder( target ) )
+        if( !isWithinFolder( source, assetsRoot ) || !isWithinFolder( target, assetsRoot ) ||
+            !fileSystem->isExistingFolder( target ) )
         {
             WP_LOG_ERROR( "Assets can only be copied between project asset folders." );
             return false;
@@ -2283,7 +2290,35 @@ namespace workphone::editor
 
                 if( auto actor = sceneManager->getActor( actorId ) )
                 {
+                    auto handle = actor->getHandle();
+                    auto actorUUID = properties->getProperty( "actorUUID" );
+                    if( !handle || StringUtil::isNullOrEmpty( actorUUID ) ||
+                        handle->getUUIDAsString() != actorUUID ||
+                        actor->getScene() != sceneManager->getCurrentScene() )
+                    {
+                        return false;
+                    }
+
                     auto name = actor->getName();
+                    auto invalidName = StringUtil::isNullOrEmpty( name ) || name == "." ||
+                                       name == ".." || name.back() == '.' || name.back() == ' ' ||
+                                       std::any_of( name.begin(), name.end(), []( unsigned char ch ) {
+                                           return ch < 32 || ch == '/' || ch == '\\' || ch == ':' ||
+                                                  ch == '*' || ch == '?' || ch == '"' || ch == '<' ||
+                                                  ch == '>' || ch == '|';
+                                       } );
+                    auto baseName = StringUtil::make_lower( name.substr( 0, name.find( '.' ) ) );
+                    auto reservedName = baseName == "con" || baseName == "prn" ||
+                                        baseName == "aux" || baseName == "nul" ||
+                                        ( baseName.size() == 4 &&
+                                          ( baseName.compare( 0, 3, "com" ) == 0 ||
+                                            baseName.compare( 0, 3, "lpt" ) == 0 ) &&
+                                          baseName[3] >= '1' && baseName[3] <= '9' );
+                    if( invalidName || reservedName )
+                    {
+                        WP_LOG_ERROR( "Cannot create a prefab from an invalid actor name." );
+                        return false;
+                    }
 
                     if( StringUtil::isNullOrEmpty( targetPath ) )
                     {
@@ -2295,8 +2330,31 @@ namespace workphone::editor
                         }
                     }
 
+                    auto projectPath = applicationManager->getProjectPath();
+                    targetPath = Path::isPathAbsolute( targetPath )
+                                     ? Path::lexically_normal( targetPath )
+                                     : Path::lexically_normal( projectPath, targetPath );
+                    auto assetsRoot = Path::lexically_normal( projectPath, "Assets" );
+                    if( !fileSystem->isExistingFolder( assetsRoot ) )
+                    {
+                        assetsRoot = Path::lexically_normal( projectPath );
+                    }
+                    if( !fileSystem->isExistingFolder( targetPath ) ||
+                        !isWithinFolder( targetPath, assetsRoot ) )
+                    {
+                        WP_LOG_ERROR( "Prefabs can only be saved in project asset folders." );
+                        return false;
+                    }
+
                     auto prefabFilePath = targetPath + "/" + name + ".prefab";
                     prefabFilePath = StringUtil::cleanupPath( prefabFilePath );
+
+                    if( fileSystem->isExistingFile( prefabFilePath ) ||
+                        fileSystem->isExistingFolder( prefabFilePath ) )
+                    {
+                        WP_LOG_ERROR( "A prefab already exists at: " + prefabFilePath );
+                        return false;
+                    }
 
                     prefabManager->savePrefab( prefabFilePath, actor );
                     owner->refreshFolders( { targetPath } );

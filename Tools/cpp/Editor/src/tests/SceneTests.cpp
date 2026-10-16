@@ -343,6 +343,38 @@ BOOST_AUTO_TEST_CASE( actor_dragdrop_test )
             BOOST_CHECK( !parent->getParent() );
             BOOST_CHECK( dragged->getParent() == parent );
 
+            auto secondChild = gameManager->createActor();
+            auto thirdChild = gameManager->createActor();
+            BOOST_REQUIRE( secondChild );
+            BOOST_REQUIRE( thirdChild );
+            parent->addChild( secondChild );
+            parent->addChild( thirdChild );
+
+            auto reorderChild = workphone::make_ptr<DragDropActorCmd>();
+            reorderChild->setActor( dragged );
+            reorderChild->setDestinationActor( parent );
+            reorderChild->setSiblingIndex( 3 );  // Drop after the last child.
+            reorderChild->execute();
+            BOOST_CHECK( parent->getChildren().back() == dragged );
+            reorderChild->undo();
+            BOOST_CHECK( parent->getChildren().front() == dragged );
+
+            auto secondRoot = gameManager->createActor();
+            auto thirdRoot = gameManager->createActor();
+            BOOST_REQUIRE( secondRoot );
+            BOOST_REQUIRE( thirdRoot );
+            scene->addActor( secondRoot );
+            scene->addActor( thirdRoot );
+            auto rootsBefore = scene->getActors();
+
+            auto reorderRoot = workphone::make_ptr<DragDropActorCmd>();
+            reorderRoot->setActor( parent );
+            reorderRoot->setSiblingIndex( static_cast<s32>( rootsBefore.size() ) );
+            reorderRoot->execute();
+            BOOST_CHECK( scene->getActors().back() == parent );
+            reorderRoot->undo();
+            BOOST_CHECK( scene->getActors() == rootsBefore );
+
             applicationManager->setQuit( true );
             applicationManager->setRunning( false );
         }

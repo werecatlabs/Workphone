@@ -75,6 +75,7 @@ namespace workphone
             void setParent( SmartPtr<scene::IGameActor> parent );
 
             void setUseSelectionAsParent( bool useSelectionAsParent );
+            void setExpectedScene( SmartPtr<scene::IGameScene> scene );
 
             ActorType getActorType() const;
             void setActorType( ActorType actorType );
@@ -90,6 +91,8 @@ namespace workphone
             AtomicSmartPtr<scene::IGameActor> m_actor;
             AtomicSmartPtr<scene::IGameActor> m_parent;
             bool m_useSelectionAsParent = true;
+            WeakPtr<scene::IGameScene> m_expectedScene;
+            bool m_hasExpectedScene = false;
             AtomicValue<ActorType> m_actorType = ActorType::EmptyActor;
             AtomicObject<String> m_filePath;
         };

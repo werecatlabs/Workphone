@@ -45,6 +45,10 @@ namespace workphone::editor
 
         auto sceneManager = applicationManager->getGameManager();
         auto scene = sceneManager->getCurrentScene();
+        if( !scene || ( m_hasExpectedScene && m_expectedScene.lock() != scene ) )
+        {
+            return;
+        }
 
         if( auto actor = getActor() )
         {
@@ -76,6 +80,10 @@ namespace workphone::editor
 
         auto sceneManager = applicationManager->getGameManager();
         auto scene = sceneManager->getCurrentScene();
+        if( !scene || ( m_hasExpectedScene && m_expectedScene.lock() != scene ) )
+        {
+            return;
+        }
 
         if( auto actor = getActor() )
         {
@@ -145,7 +153,10 @@ namespace workphone::editor
         WP_ASSERT( sceneManager );
 
         auto scene = sceneManager->getCurrentScene();
-        WP_ASSERT( scene );
+        if( !scene || ( m_hasExpectedScene && m_expectedScene.lock() != scene ) )
+        {
+            return;
+        }
 
         auto actor = getActor();
         if( !actor )
@@ -782,6 +793,13 @@ namespace workphone::editor
     {
         RecursiveMutex::ScopedLock lock( m_mutex );
         m_useSelectionAsParent = useSelectionAsParent;
+    }
+
+    void AddActorCmd::setExpectedScene( SmartPtr<scene::IGameScene> scene )
+    {
+        RecursiveMutex::ScopedLock lock( m_mutex );
+        m_expectedScene = scene;
+        m_hasExpectedScene = true;
     }
 
     AddActorCmd::ActorType AddActorCmd::getActorType() const

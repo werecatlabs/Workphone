@@ -258,7 +258,7 @@ namespace workphone::ui
                     ImGui::GetWindowDrawList()->AddLine(
                         startPos, endPos, ImGui::GetColorU32( ImGuiCol_DragDropTarget ), 2.0f );
 
-                    tree->setSelectedSiblingIndex( siblingIndex );
+                    tree->setSelectedSiblingIndex( siblingIndex + 1 );
 
                     tree->setDropDestinationElement( treeNode->getParent() );
                 }

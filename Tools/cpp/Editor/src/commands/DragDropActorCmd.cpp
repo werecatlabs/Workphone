@@ -7,6 +7,24 @@
 
 namespace workphone::editor
 {
+    namespace
+    {
+        void moveRootActorToIndex( SmartPtr<scene::IGameScene> scene,
+                                   SmartPtr<scene::IGameActor> actor, s32 index )
+        {
+            auto actors = scene->getActors();
+            auto it = std::find( actors.begin(), actors.end(), actor );
+            if( it == actors.end() )
+            {
+                return;
+            }
+
+            actors.erase( it );
+            auto insertionIndex = std::min( static_cast<size_t>( index ), actors.size() );
+            actors.insert( actors.begin() + insertionIndex, actor );
+            scene->setActors( actors );
+        }
+    }  // namespace
 
     WP_CLASS_REGISTER_DERIVED( workphone::editor, DragDropActorCmd, Command );
 
@@ -29,28 +47,37 @@ namespace workphone::editor
 
         if( m_actor )
         {
-            if( auto parent = m_actor->getParent() )
+            if( m_actor->getParent() != m_previousParent )
             {
-                parent->removeChild( m_actor );
-            }
+                if( auto parent = m_actor->getParent() )
+                {
+                    parent->removeChild( m_actor );
+                }
+                else
+                {
+                    gameScene->removeActor( m_actor );
+                }
 
-            else
-            {
-                gameScene->removeActor( m_actor );
-            }
-
-            if( m_previousParent )
-            {
-                m_previousParent->addChild( m_actor );
-            }
-            else
-            {
-                gameScene->addActor( m_actor );
+                if( m_previousParent )
+                {
+                    m_previousParent->addChild( m_actor );
+                }
+                else
+                {
+                    gameScene->addActor( m_actor );
+                }
             }
 
             if( m_previousSiblingIndex >= 0 )
             {
-                m_actor->setSiblingIndex( m_previousSiblingIndex );
+                if( m_previousParent )
+                {
+                    m_actor->setSiblingIndex( m_previousSiblingIndex );
+                }
+                else
+                {
+                    moveRootActorToIndex( gameScene, m_actor, m_previousSiblingIndex );
+                }
             }
         }
 
@@ -114,14 +141,25 @@ namespace workphone::editor
 
             auto previousParent = m_dragActor->getParent();
             auto siblingIndex = getSiblingIndex();
+            auto previousSiblingIndex = m_dragActor->getSiblingIndex();
+            if( !previousParent )
+            {
+                auto it = std::find( roots.begin(), roots.end(), m_dragActor );
+                previousSiblingIndex = static_cast<s32>( it - roots.begin() );
+            }
+            if( previousParent == destinationActor && siblingIndex >= 0 &&
+                previousSiblingIndex < siblingIndex )
+            {
+                --siblingIndex;
+            }
             if( previousParent == destinationActor &&
-                ( siblingIndex < 0 || !destinationActor ) )
+                ( siblingIndex < 0 || siblingIndex == previousSiblingIndex ) )
             {
                 return;
             }
 
             m_previousParent = previousParent;
-            m_previousSiblingIndex = m_dragActor->getSiblingIndex();
+            m_previousSiblingIndex = previousSiblingIndex;
             m_actor = m_dragActor;
 
             if( previousParent != destinationActor )
@@ -147,7 +185,20 @@ namespace workphone::editor
 
             if( siblingIndex >= 0 )
             {
-                m_dragActor->setSiblingIndex( siblingIndex );
+                if( destinationActor )
+                {
+                    auto children = destinationActor->getChildren();
+                    if( !children.empty() )
+                    {
+                        auto targetIndex = std::min( static_cast<size_t>( siblingIndex ),
+                                                     children.size() - 1 );
+                        m_dragActor->setSiblingIndex( static_cast<s32>( targetIndex ) );
+                    }
+                }
+                else
+                {
+                    moveRootActorToIndex( gameScene, m_dragActor, siblingIndex );
+                }
             }
 
             gameManager->makeActorTransformsDirty();

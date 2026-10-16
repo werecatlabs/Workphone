@@ -525,30 +525,6 @@ namespace workphone
             void setTreeState( SharedPtr<std::map<String, bool>> treeState );
 
             /**
-             * @brief Gets the drag and drop actor command.
-             * @return The drag and drop actor command.
-             */
-            SmartPtr<ICommand> getDragDropActorCmd() const;
-
-            /**
-             * @brief Sets the drag and drop actor command.
-             * @param dragDropActorCmd The drag and drop actor command.
-             */
-            void setDragDropActorCmd( SmartPtr<ICommand> dragDropActorCmd );
-
-            /**
-             * @brief Gets the drop job.
-             * @return The drop job.
-             */
-            SmartPtr<IJob> getDropJob() const;
-
-            /**
-             * @brief Sets the drop job.
-             * @param dropJob The drop job to set.
-             */
-            void setDropJob( SmartPtr<IJob> dropJob );
-
-            /**
              * @brief Gets the build job.
              * @return The build job.
              */
@@ -616,7 +592,6 @@ namespace workphone
             RecursiveMutex m_buildTreeMutex;  ///< Mutex for building tree operations
             RecursiveMutex m_treeStateMutex;  ///< Mutex for tree state operations
 
-            SmartPtr<IJob> m_dropJob;   ///< Job for handling drops
             SmartPtr<IJob> m_buildJob;  ///< Job for building operations
 
             SmartPtr<ui::IUIWindow> m_window;       ///< Main window
@@ -642,8 +617,6 @@ namespace workphone
 
             SmartPtr<ISharedObject> m_selectedObject;  ///< Selected object
             SmartPtr<ISharedObject> m_selectedEntity;  ///< Selected entity
-
-            SmartPtr<ICommand> m_dragDropActorCmd;  ///< Drag and drop actor command
 
             time_interval m_nodeSelectTime = 0.0;  ///< Node selection time
 

@@ -4,7 +4,6 @@
 #include <commands/DragDropActorCmd.hpp>
 #include <editor/EditorManager.hpp>
 #include <ui/ProjectTreeData.hpp>
-#include <ui/SceneWindow.hpp>
 #include <ui/UIManager.hpp>
 #include <Workphone/Workphone.hpp>
 
@@ -63,11 +62,9 @@ namespace workphone::editor
             {
                 auto nodeData =
                     dynamic_pointer_cast<ProjectTreeData>( destinationNode->getNodeUserData() );
-                destinationActor = nodeData
-                                       ? dynamic_pointer_cast<scene::IGameActor>(
-                                             nodeData->getObjectData() )
-                                       : nullptr;
-                if( !destinationActor )
+                auto target = nodeData ? nodeData->getObjectData() : nullptr;
+                destinationActor = dynamic_pointer_cast<scene::IGameActor>( target );
+                if( !destinationActor && target.get() != scene.get() )
                 {
                     return;
                 }
@@ -91,6 +88,7 @@ namespace workphone::editor
                         cmd->setActor( actor );
                         cmd->setParent( destinationActor );
                         cmd->setUseSelectionAsParent( false );
+                        cmd->setExpectedScene( scene );
                         commandManager->addCommand( cmd );
                     }
                 }
@@ -109,6 +107,7 @@ namespace workphone::editor
                         cmd->setFilePath( filePath );
                         cmd->setUseSelectionAsParent( false );
                         cmd->setParent( destinationActor );
+                        cmd->setExpectedScene( scene );
                         commandManager->addCommand( cmd );
                     }
                 }
@@ -146,8 +145,7 @@ namespace workphone::editor
                                 return;
                             }
                         }
-                        if( actor->getParent() == destinationActor &&
-                            ( getSiblingIndex() < 0 || !destinationActor ) )
+                        if( actor->getParent() == destinationActor && getSiblingIndex() < 0 )
                         {
                             return;
                         }
@@ -177,26 +175,6 @@ namespace workphone::editor
         m_data = data;
     }
 
-    String SceneDropJob::getFilePath() const
-    {
-        return m_filePath;
-    }
-
-    void SceneDropJob::setFilePath( const String &filePath )
-    {
-        m_filePath = filePath;
-    }
-
-    SmartPtr<ui::IUIElement> SceneDropJob::getSender() const
-    {
-        return m_sender;
-    }
-
-    void SceneDropJob::setSender( SmartPtr<ui::IUIElement> sender )
-    {
-        m_sender = sender;
-    }
-
     SmartPtr<ui::IUIElement> SceneDropJob::getDestination() const
     {
         return m_destination;
@@ -205,36 +183,6 @@ namespace workphone::editor
     void SceneDropJob::setDestination( SmartPtr<ui::IUIElement> destination )
     {
         m_destination = destination;
-    }
-
-    SmartPtr<ICommand> SceneDropJob::getDragDropActorCmd() const
-    {
-        return m_dragDropActorCmd;
-    }
-
-    void SceneDropJob::setDragDropActorCmd( SmartPtr<ICommand> dragDropActorCmd )
-    {
-        m_dragDropActorCmd = dragDropActorCmd;
-    }
-
-    SmartPtr<ui::IUITreeCtrl> SceneDropJob::getTree() const
-    {
-        return m_tree;
-    }
-
-    void SceneDropJob::setTree( SmartPtr<ui::IUITreeCtrl> tree )
-    {
-        m_tree = tree;
-    }
-
-    SmartPtr<SceneWindow> SceneDropJob::getOwner() const
-    {
-        return m_owner;
-    }
-
-    void SceneDropJob::setOwner( SmartPtr<SceneWindow> owner )
-    {
-        m_owner = owner;
     }
 
     s32 SceneDropJob::getSiblingIndex() const
