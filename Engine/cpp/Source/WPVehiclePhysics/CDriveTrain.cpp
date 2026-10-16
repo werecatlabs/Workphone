@@ -622,7 +622,7 @@ namespace workphone
             WP_ASSERT( isFiniteValue( upShiftRPM ) );
             WP_ASSERT( isFiniteValue( downShiftRPM ) );
 
-            if( m_rpm >= upShiftRPM )
+            if( m_gear >= 2 && m_rpm >= upShiftRPM )
             {
                 shiftUp();
             }

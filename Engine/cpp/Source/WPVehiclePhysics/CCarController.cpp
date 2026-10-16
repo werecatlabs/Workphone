@@ -141,11 +141,14 @@ namespace workphone
             steeringValue =
                 Math<physics_Num>::clamp( steeringChannel, -1.0, 1.0 ) * getPlaySteeringScale();
 
-            if( m_keyboardInput && inputManager->isKeyPressed( KeyCodes::KEY_UP ) )
+            const auto currentDriveTrain = getDriveTrain();
+            const bool reverseGear = currentDriveTrain && currentDriveTrain->getGear() == 1;
+            if( m_keyboardInput && !reverseGear && inputManager->isKeyPressed( KeyCodes::KEY_UP ) )
             {
                 throttleValue = 1.0;
             }
-            else if( m_keyboardInput && inputManager->isKeyPressed( KeyCodes::KEY_DOWN ) )
+            else if( m_keyboardInput && !reverseGear &&
+                     inputManager->isKeyPressed( KeyCodes::KEY_DOWN ) )
             {
                 brakeValue = 1.0;
             }

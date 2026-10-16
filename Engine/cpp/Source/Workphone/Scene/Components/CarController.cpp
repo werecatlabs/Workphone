@@ -17,6 +17,7 @@
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
 #include <Workphone/Interface/System/ITimer.hpp>
 #include <Workphone/Interface/Vehicle/IVehicle.hpp>
+#include <Workphone/Interface/Vehicle/IDriveTrain.hpp>
 #include <Workphone/Interface/Vehicle/IVehicleManager.hpp>
 #include <Workphone/Interface/Vehicle/IWheelComponent.hpp>
 #include <Workphone/Core/LogManager.hpp>
@@ -172,6 +173,8 @@ namespace workphone::scene
 
                 m_collision = nullptr;
                 m_chassis = nullptr;
+                m_brakeHeldTime = 0.0f;
+                m_reversing = false;
 
                 for( auto wheel : m_wheels )
                 {
@@ -227,14 +230,25 @@ namespace workphone::scene
                 return;
             }
 
+            if( !isEnabled() )
+            {
+                return;
+            }
+
+            if( auto actor = getActor() )
+            {
+                if( !actor->isEnabledInScene() )
+                {
+                    return;
+                }
+            }
+
             VehicleController::update();
 
             if( task == sceneTask )
             {
-                ScopedLock controlsLock( this, true );
-                const bool driving =
-                    applicationManager->isPlaying() && !applicationManager->isPaused() && isEnabled();
-                if( driving && m_playerControls.load() )
+                const bool driving = applicationManager->isPlaying() && !applicationManager->isPaused();
+                if( driving && m_playerControls )
                 {
                     if( auto input = applicationManager->getInputDeviceManager() )
                     {
@@ -251,7 +265,8 @@ namespace workphone::scene
                         {
                             m_joystickActive = false;
                         }
-                        if( !m_joystickActive.load() )
+
+                        if( !m_joystickActive )
                         {
                             setThrottle( throttle ? 1.f : 0.f );
                             setBrake( brake ? 1.f : 0.f );
@@ -262,10 +277,67 @@ namespace workphone::scene
 
                 if( auto vehicle = getVehicleController() )
                 {
-                    vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ),
-                                         driving ? getThrottle() : 0.f );
-                    vehicle->setChannel( s32( vehicle::IVehicle::Input::BRAKE ),
-                                         driving ? getBrake() : 0.f );
+                    auto throttle = driving ? getThrottle() : 0.f;
+                    auto brake = driving ? getBrake() : 0.f;
+                    if( driving && m_playerControls.load() && m_chassis )
+                    {
+                        if( auto driveTrain = vehicle->getDriveTrain() )
+                        {
+                            const auto gearRatios = driveTrain->getGearRatios();
+                            if( gearRatios.size() > 2 && gearRatios[1] < 0 && gearRatios[2] > 0 )
+                            {
+                                constexpr f32 reverseDelay = 0.5f;
+                                constexpr f32 shiftSpeed = 0.25f;
+                                const bool stopped =
+                                    m_chassis->getLinearVelocity().length() < shiftSpeed;
+                                const bool reversePressed = brake > 0.5f && throttle < 0.1f;
+
+                                if( !m_reversing )
+                                {
+                                    m_brakeHeldTime = reversePressed && stopped
+                                                          ? m_brakeHeldTime + static_cast<f32>( dt )
+                                                          : 0.0f;
+                                    if( m_brakeHeldTime >= reverseDelay )
+                                    {
+                                        m_reversing = true;
+                                        driveTrain->setGear( 1 );
+                                    }
+                                }
+
+                                if( m_reversing )
+                                {
+                                    driveTrain->setGear( 1 );
+                                    if( !reversePressed && stopped )
+                                    {
+                                        m_reversing = false;
+                                        m_brakeHeldTime = 0.0f;
+                                        driveTrain->setGear( 2 );
+                                    }
+                                    else
+                                    {
+                                        // Brake drives backward; forward input first stops backward travel.
+                                        brake = reversePressed ? 0.0f : throttle;
+                                        throttle = reversePressed ? getBrake() : 0.0f;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        m_brakeHeldTime = 0.0f;
+                        if( m_reversing )
+                        {
+                            m_reversing = false;
+                            if( auto driveTrain = vehicle->getDriveTrain() )
+                            {
+                                driveTrain->setGear( 2 );
+                            }
+                        }
+                    }
+
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ), throttle );
+                    vehicle->setChannel( s32( vehicle::IVehicle::Input::BRAKE ), brake );
                     float steering = getSteering();
                     if( m_playerControls.load() && m_chassis )
                     {

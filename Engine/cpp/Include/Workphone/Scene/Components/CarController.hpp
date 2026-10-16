@@ -477,6 +477,8 @@ namespace workphone
             std::atomic<f32> m_throttle{ 0.0f };  ///< Throttle input [0..1]
             std::atomic<f32> m_brake{ 0.0f };     ///< Brake input [0..1]
             std::atomic<f32> m_steering{ 0.0f };  ///< Steering angle (degrees)
+            f32 m_brakeHeldTime = 0.0f;  ///< Time spent braking while nearly stopped
+            bool m_reversing = false;    ///< Player controls are driving in reverse
 
             VehicleDriveType m_driveType = VehicleDriveType::AllWheelDrive;  ///< Drive configuration
 
