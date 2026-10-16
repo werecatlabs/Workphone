@@ -10,9 +10,12 @@ device creation. A null device cannot return the previous view.
 
 Validation: `WPGraphics.cubemap_pbr` creates a second DX11 device, confirms the
 cached view is rejected there, then creates and reads a replacement cubemap on
-that device. Debug and RelWithDebInfo builds and focused test runs pass. This
-does not validate full device-loss recovery in the Editor or source-face
-recreation after device loss.
+that device. It also unloads and reloads the same `ClawRendererDX11` object
+while a `ClawCubemapTexture` holds six ordinary `ClawTexture` faces. The wrapper
+returns no view while unloaded, rebuilds on the new device, and verifies that
+all six faces reupload and a sampled cubemap pixel is preserved. Debug and
+RelWithDebInfo builds and focused test runs pass. Full device-loss recovery in
+the Editor remains unverified.
 
 ## Native cubemap GPU ownership — 16 October 2026
 

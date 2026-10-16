@@ -1,4 +1,5 @@
 #include <WPGraphics/ClawCubemap.hpp>
+#include <WPGraphics/ClawCubemapTexture.hpp>
 #include <windows.h>
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -113,6 +114,75 @@ static void floatTextureContracts()
     std::printf( "HDR sample texture bridge: RGBA32F radiance >1, invalid-input retention and unload/load reupload PASS\n" );
 }
 
+static void cubemapTextureRendererRecreation()
+{
+    using namespace workphone;
+    using namespace workphone::render;
+    claw_texture_mip_contracts::Fixture fixture;
+    fixture.initialize();
+    Array<SmartPtr<ITexture>> faces;
+    for( unsigned faceIndex = 0; faceIndex < 6; ++faceIndex )
+    {
+        auto face = make_ptr<ClawTexture>();
+        std::array<u8, 4 * 4 * 4> pixels{};
+        for( size_t pixel = 0; pixel < pixels.size(); pixel += 4 )
+        {
+            pixels[pixel + 1] = static_cast<u8>( 32 + faceIndex * 24 );
+            pixels[pixel + 3] = 255;
+        }
+        face->copyData( pixels.data(), { 4, 4 } );
+        face->load( nullptr );
+        faces.push_back( face );
+    }
+    ClawCubemapTexture cubemap;
+    cubemap.setFaces( faces );
+    cubemap.load( nullptr );
+    void *view = nullptr;
+    cubemap.getTextureFinal( &view );
+    require( view != nullptr, "six source textures must build a material cubemap" );
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> previousView =
+        static_cast<ID3D11ShaderResourceView *>( view );
+    Microsoft::WRL::ComPtr<ID3D11Device> previousDevice;
+    previousView->GetDevice( previousDevice.GetAddressOf() );
+    auto native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+    auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+    const auto previousPixel = cubePixel( previousDevice.Get(), context, previousView.Get(),
+                                          0, 0, 64, 64 );
+    cubemap.getTextureFinal( &view );
+    require( view == previousView.Get(), "unchanged material cubemap must reuse its filtered view" );
+
+    fixture.renderer->unload( nullptr );
+    cubemap.getTextureFinal( &view );
+    require( !view, "unloaded renderer must not expose its cached cubemap" );
+    fixture.renderer->load( fixture.window );
+    require( fixture.renderer->isLoaded(), "cubemap renderer must recreate" );
+    native = wp_renderer_get_dx11( fixture.renderer->getNativeRenderer() );
+    auto *nextDevice = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( native ) );
+    auto *nextContext = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( native ) );
+    cubemap.getTextureFinal( &view );
+    require( nextDevice && nextDevice != previousDevice.Get() && view &&
+                 view != previousView.Get() &&
+                 wp_dx11_texture_view_matches_device( view, nextDevice ),
+             "cubemap wrapper must rebuild on the replacement renderer device" );
+    for( const auto &face : faces )
+    {
+        void *sourceView = nullptr;
+        face->getTextureFinal( &sourceView );
+        require( wp_dx11_texture_view_matches_device( sourceView, nextDevice ),
+                 "cubemap source faces must reupload to the replacement device" );
+    }
+    const auto nextPixel = cubePixel( nextDevice, nextContext,
+                                      static_cast<ID3D11ShaderResourceView *>( view ),
+                                      0, 0, 64, 64 );
+    require( std::abs( previousPixel[1] - nextPixel[1] ) < .000001f,
+             "replacement cubemap must preserve source radiance" );
+    void *cached = nullptr;
+    cubemap.getTextureFinal( &cached );
+    require( cached == view, "replacement cubemap must be cached after recreation" );
+    cubemap.unload( nullptr );
+    std::puts( "Cubemap wrapper renderer recreation and six-face reupload passed." );
+}
+
 int main()
 {
     HWND window = CreateWindowExW( 0, L"STATIC", L"PBR test", WS_OVERLAPPED, 0, 0, 32, 32, nullptr,
@@ -129,6 +199,7 @@ int main()
     {
         claw_texture_mip_contracts::run();
         floatTextureContracts();
+        cubemapTextureRendererRecreation();
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
         require( recordDX11TestDevice( device ), "DX11 device evidence must be available" );
         std::array<wp_texture_cube_mip_dx11, 48> invalidCube{};
