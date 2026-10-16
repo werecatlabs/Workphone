@@ -39,10 +39,31 @@ state support. Native DX12 has no matching RTT target/job adapter; the native
 Vulkan implementation still contains creation/draw/presentation stubs. All three
 graphics APIs can render offscreen, but this implementation is currently DX11 only.
 
-Validation is pending the final Debug regression run. The isolated C90 RTT contract
-passes in RelWithDebInfo. Live Editor previews, immutable cull snapshots, queued
-scheduler integration, scene-linear/HDR output, GPU completion/per-job profiling,
-real device-removal recovery, long stress and hardware performance remain open.
+Validation: five selected Debug contracts pass: `WorkphoneGraphics.rtt_job`,
+`WPGraphics.claw_dx11_targets`, `claw_text_contract`, `claw_production_render` and
+`cubemap_pbr`. The isolated C90 RTT contract also passes in Debug and
+RelWithDebInfo. The DX11 test compares the complete RTT pixel buffer with a
+synchronous reference, checks blend factors/sample mask and PS/VS/CS bindings,
+output/depth/viewport restoration, pending dependencies, stale renderer/target
+and post-draw scene validation, wrong-thread/recursive execution, mid-pass resize
+and Present rejection, persistent/transient sampling hazards, and failed-draw
+pixel retention. Active Claw frame tests cover real job consumption, scene
+exceptions, preparation failure before begin, previous-target restoration,
+failed replacement retention and successful resize generation replacement.
+
+Device evidence is Microsoft Basic Render Driver/WARP, feature level `b000`,
+driver `10.0.19041.7802`. Logs are in `project_x64/graphics-rtt-debug-verified-tests.log`,
+`graphics-rtt-debug-isolated-adapter-build.log` and
+`graphics-rtt-contracts-{debug,release}-build.log`. The native DX11 library was
+rebuilt from the modified source before the final adapter/test build. Another
+chat is replacing the native DX12 source; the final selected C++ targets were
+rebuilt with project references disabled against those already-built native
+libraries. This is selected DX11 validation, not a full rebuild/certification of
+the in-progress DX12 backend or the full solution.
+
+Live Editor previews, immutable cull snapshots, queued scheduler integration,
+scene-linear/HDR output, GPU completion/per-job profiling, real device-removal
+recovery, long stress and hardware performance remain open.
 
 
 ## Resize rejection and active-pass safety - 16 October 2026
