@@ -2037,7 +2037,7 @@ wp_s32 wp_renderer_dx11_begin_hdr_scene( wp_renderer_dx11 *r, wp_f32 exposure )
     UINT i;
     wp_s32 valid = 1;
     const float black[4] = { 0, 0, 0, 0 };
-    if( !r || r->rtt_active || r->hdr_active || r->shadow_pass || !_finite( exposure ) || exposure <= 0.0f ) return 0;
+    if( !r || r->hdr_active || r->shadow_pass || !_finite( exposure ) || exposure <= 0.0f ) return 0;
     memset( targets, 0, sizeof( targets ) );
     ID3D11DeviceContext_OMGetRenderTargets( r->context, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT, targets, &depth );
     if( !targets[0] ) valid = 0;
@@ -2368,7 +2368,7 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
 
     /* Active HDR/shadow passes retain saved output state. Resizing here would
      * disrupt their bindings and can fail on retained swap-chain references. */
-    if( !r || r->hdr_active || r->shadow_pass ||
+    if( !r || r->rtt_active || r->hdr_active || r->shadow_pass ||
         !wp_renderer_dx11_dimensions_supported( r, width, height ) )
         return 0;
 

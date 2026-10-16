@@ -8,6 +8,8 @@
 #include <stdexcept>
 #include <vector>
 #include <cstring>
+#include <memory>
+#include <wrl/client.h>
 
 namespace claw_rtt_contracts {
 using namespace workphone;
@@ -19,6 +21,7 @@ struct Draw {
     wp_graphics_rtt_desc desc;
     HWND window = nullptr;
     bool fail = false, stale = false, pending = false, nested = false;
+    bool sample_destination = false;
     unsigned validations = 0, draws = 0;
 };
 inline void triangle(wp_renderer_dx11 *r) {
@@ -55,6 +58,11 @@ inline wp_rtt_result draw(void *p, const wp_graphics_rtt_desc *) {
                     d.window, 0), "RTT must block resize and presentation");
     }
     triangle(d.r);
+    if(d.sample_destination) {
+        auto *ctx = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(d.r));
+        auto *view = static_cast<ID3D11ShaderResourceView *>(wp_renderer_dx11_get_render_texture_view(d.target));
+        ctx->PSSetShaderResources(7, 1, &view);
+    }
     return d.fail ? WP_RTT_BACKEND_FAILED : WP_RTT_OK;
     } catch(...) { return WP_RTT_BACKEND_FAILED; }
 }
@@ -67,6 +75,8 @@ inline bool native(wp_renderer_dx11 *r) {
     auto *context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(r));
     auto *target = wp_renderer_dx11_create_render_texture(r, 32, 32);
     require(target != nullptr, "RTT destination allocation");
+    std::unique_ptr<wp_render_texture_dx11, decltype(&wp_renderer_dx11_destroy_render_texture)>
+        owned(target, &wp_renderer_dx11_destroy_render_texture);
     Draw d{r, target, {}};
     DXGI_SWAP_CHAIN_DESC swap{};
     require(SUCCEEDED(static_cast<IDXGISwapChain *>(wp_renderer_dx11_get_swap_chain(r))->GetDesc(&swap)), "RTT swap chain window");
@@ -78,13 +88,36 @@ inline bool native(wp_renderer_dx11 *r) {
     d.desc.clear_colour = d.desc.clear_depth = 1;
     d.desc.colour[0] = .25f; d.desc.colour[1] = .5f; d.desc.colour[2] = .75f; d.desc.colour[3] = 1;
     d.desc.depth = 1;
+    wp_renderer_dx11_set_render_texture(r, target);
+    wp_renderer_dx11_set_viewport(r, {0,0,32,32});
+    wp_renderer_dx11_set_clear_color(r,.25f,.5f,.75f,1);
+    wp_renderer_dx11_clear(r,WORKPHONE_CLEAR_FLAG_ALL);
+    triangle(r);
+    auto reference = pixels(target);
     wp_renderer_dx11_set_render_texture(r, nullptr);
     wp_renderer_dx11_set_viewport(r, {3,5,64,48});
     wp_renderer_dx11_set_scissor_enabled(r, 1);
     wp_renderer_dx11_set_scissor_rect(r, {7,9,21,25});
+    auto *device = static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(r));
+    Microsoft::WRL::ComPtr<ID3D11BlendState> blend;
+    D3D11_BLEND_DESC blendDescription{};
+    blendDescription.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_GREEN;
+    require(SUCCEEDED(device->CreateBlendState(&blendDescription, blend.GetAddressOf())), "RTT previous blend state");
+    const float factors[] = {.2f,.4f,.6f,.8f};
+    context->OMSetBlendState(blend.Get(), factors, 0x55555555);
+    const float sourcePixel[] = {.5f,.25f,.125f,1};
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> source;
+    source.Attach(static_cast<ID3D11ShaderResourceView *>(wp_renderer_dx11_create_texture_rgba32f_native(
+        r, sourcePixel, 1, 1, 4)));
+    require(source != nullptr, "RTT previous shader resource");
+    auto *sourceView = source.Get();
+    context->PSSetShaderResources(9, 1, &sourceView);
+    context->VSSetShaderResources(11, 1, &sourceView);
+    context->CSSetShaderResources(4, 1, &sourceView);
     ID3D11RenderTargetView *original = nullptr;
     ID3D11DepthStencilView *originalDepth = nullptr;
     context->OMGetRenderTargets(1, &original, &originalDepth);
+    if(original) original->Release(); if(originalDepth) originalDepth->Release();
     D3D11_VIEWPORT previous{}; UINT viewportCount = 1; context->RSGetViewports(&viewportCount, &previous);
     d.nested = true;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_OK,
@@ -94,6 +127,7 @@ inline bool native(wp_renderer_dx11 *r) {
                 std::abs(int(lastGood[2]) - 191) <= 1 && lastGood[3] == 255 &&
                 std::memcmp(lastGood.data(), &lastGood[(16 * 32 + 16) * 4], 4) != 0,
             "RTT clear and real triangle draw must reach destination pixels");
+    require(lastGood == reference, "native RTT output must match the complete synchronous reference image");
     const auto restored = wp_renderer_dx11_get_viewport(r);
     ID3D11RenderTargetView *after = nullptr; ID3D11DepthStencilView *afterDepth = nullptr;
     context->OMGetRenderTargets(1, &after, &afterDepth);
@@ -103,14 +137,32 @@ inline bool native(wp_renderer_dx11 *r) {
                 std::memcmp(&previous, &afterViewport, sizeof(previous)) == 0,
             "RTT must restore native and actual context outputs and viewport");
     if(after) after->Release(); if(afterDepth) afterDepth->Release();
-    if(original) original->Release(); if(originalDepth) originalDepth->Release();
+    Microsoft::WRL::ComPtr<ID3D11BlendState> restoredBlend;
+    float restoredFactors[4]{}; UINT restoredMask = 0;
+    context->OMGetBlendState(restoredBlend.GetAddressOf(), restoredFactors, &restoredMask);
+    require(restoredBlend == blend && restoredMask == 0x55555555 &&
+                !std::memcmp(factors, restoredFactors, sizeof(factors)), "RTT must restore blend state, factors and sample mask");
+    for(unsigned stage = 0; stage < 3; ++stage) {
+        Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> restoredSource;
+        if(stage == 0) context->PSGetShaderResources(9, 1, restoredSource.GetAddressOf());
+        else if(stage == 1) context->VSGetShaderResources(11, 1, restoredSource.GetAddressOf());
+        else context->CSGetShaderResources(4, 1, restoredSource.GetAddressOf());
+        require(restoredSource == source, "RTT must restore shader resource bindings across stages");
+    }
+    sourceView = nullptr;
+    context->PSSetShaderResources(9, 1, &sourceView);
+    context->VSSetShaderResources(11, 1, &sourceView);
+    context->CSSetShaderResources(4, 1, &sourceView);
     d.fail = true; d.nested = false; d.validations = 0; d.desc.colour[0] = 1;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_BACKEND_FAILED &&
                 pixels(target) == lastGood, "failed RTT must retain every last-good output pixel");
     d.fail = false; d.stale = true; d.validations = 0;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_STALE &&
                 pixels(target) == lastGood, "stale post-draw scene result must not publish");
-    d.stale = false; d.pending = true;
+    d.stale = false; d.sample_destination = true;
+    require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_HAZARD &&
+                pixels(target) == lastGood, "sampling destination during draw must reject publication and restore state");
+    d.sample_destination = false; d.pending = true;
     const auto draws = d.draws;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_NOT_READY &&
                 d.draws == draws && pixels(target) == lastGood, "pending cull dependency must not bind or draw");
@@ -118,6 +170,14 @@ inline bool native(wp_renderer_dx11 *r) {
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, nullptr, nullptr, draw, &d) == WP_RTT_STALE,
             "stale target generation must reject");
     --d.desc.target_generation;
+    ++d.desc.renderer_generation;
+    require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, nullptr, nullptr, draw, &d) == WP_RTT_STALE,
+            "stale renderer generation must reject");
+    --d.desc.renderer_generation;
+    d.desc.format = WP_RTT_RGBA16_FLOAT; d.desc.colour_space = WP_RTT_SCENE_LINEAR;
+    require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, nullptr, nullptr, draw, &d) == WP_RTT_UNSUPPORTED,
+            "unsupported HDR output must report its capability limit");
+    d.desc.format = WP_RTT_RGBA8_UNORM; d.desc.colour_space = WP_RTT_LEGACY_LDR;
     auto *view = static_cast<ID3D11ShaderResourceView *>(wp_renderer_dx11_get_render_texture_view(target));
     context->PSSetShaderResources(7, 1, &view);
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, nullptr, nullptr, draw, &d) == WP_RTT_HAZARD &&
@@ -127,7 +187,7 @@ inline bool native(wp_renderer_dx11 *r) {
     std::thread worker([&] { threadResult = wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, nullptr, nullptr, draw, &d); });
     worker.join();
     require(threadResult == WP_RTT_WRONG_THREAD, "RTT GPU execution must reject another thread");
-    wp_renderer_dx11_destroy_render_texture(target);
+    wp_renderer_dx11_set_scissor_enabled(r, 0);
     std::puts("DX11 RTT pixels, output/viewport restoration, rollback, dependencies, stale generations, hazards, recursion and render-owner execution passed.");
     return true;
 }
@@ -183,7 +243,7 @@ inline bool integration(SmartPtr<IGraphicsWindow> window) {
     require(graphics.draws == 2 && pixels(output) == good && renderer->getRenderTarget() == window,
             "active Claw scene exception must preserve last complete texture and restore window");
     const auto oldGeneration = wp_renderer_dx11_get_render_texture_generation(output);
-    target->setSize({INT_MAX,INT_MAX});
+    target->setSize({20000,20000});
     require(!target->getNativeRenderTexture(renderer->getNativeRenderer()) &&
                 target->getNativeTextureView() != nullptr && pixels(output) == good,
             "failed target replacement must retain the previous complete output");
