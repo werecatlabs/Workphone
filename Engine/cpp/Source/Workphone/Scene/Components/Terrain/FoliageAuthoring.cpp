@@ -3,7 +3,6 @@
 #include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <cJSON.h>
-#include "../Graphics/FoliageJsonBudget.hpp"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
