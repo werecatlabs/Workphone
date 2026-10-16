@@ -1,5 +1,7 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/Bindings/ComponentBind.hpp>
+#include <WPLuabind/Helpers/UIComponentHelper.hpp>
+#include <WPLuabind/Helpers/UiUtilHelper.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
 #include <WPLuabind/ParamConverter.hpp>
 #include <WPLuabind/StringConverter.hpp>
@@ -8,253 +10,6 @@
 
 namespace workphone
 {
-    void buttonSetClickHandler( scene::Button *button, scene::IComponent *component,
-                                const String &functionName )
-    {
-        if( !button || !component || functionName.empty() )
-        {
-            throw std::invalid_argument( "Button click handler requires a component and function" );
-        }
-
-        // Keep native event containers behind the binding. Lua owns the button;
-        // the event listener holds only weak references to its target script.
-        auto event = workphone::make_ptr<scene::ComponentEvent>();
-        event->setEventHash( IEvent::CLICK_HASH );
-        auto listener = workphone::make_ptr<scene::ComponentEventListener>();
-        listener->setEvent( event );
-        listener->setComponent( component );
-        listener->setFunction( functionName );
-        event->addListener( listener );
-        // Replace the previous click handler while preserving hover events.
-        for( const auto &existing : button->getEvents() )
-        {
-            if( existing && existing->getEventHash() == IEvent::CLICK_HASH )
-            {
-                button->removeEvent( existing );
-            }
-        }
-        button->addEvent( event );
-    }
-
-    lua_Integer _getInputFieldType( const scene::InputField *inputField )
-    {
-        return static_cast<lua_Integer>( inputField->getInputType() );
-    }
-
-    void _setInputFieldType( scene::InputField *inputField, lua_Integer inputType )
-    {
-        inputField->setInputType( static_cast<ui::IUITextEntry::InputType>( inputType ) );
-    }
-
-    void _setInputFieldTypeWithHint( scene::InputField *inputField, lua_Integer inputType,
-                                     const String &textHint )
-    {
-        inputField->setInputType( static_cast<ui::IUITextEntry::InputType>( inputType ), textHint );
-    }
-
-    lua_Integer _getPanelFlags( const scene::Layout *layout )
-    {
-        return static_cast<lua_Integer>( layout->getPanelFlags() );
-    }
-
-    void _setPanelFlags( scene::Layout *layout, lua_Integer flags )
-    {
-        layout->setPanelFlags( static_cast<PanelFlags>( flags ) );
-    }
-
-    bool _hasPanelFlag( const scene::Layout *layout, lua_Integer flag )
-    {
-        return layout->hasPanelFlag( static_cast<PanelFlags>( flag ) );
-    }
-
-    void _addPanelFlag( scene::Layout *layout, lua_Integer flag )
-    {
-        layout->addPanelFlag( static_cast<PanelFlags>( flag ) );
-    }
-
-    void _removePanelFlag( scene::Layout *layout, lua_Integer flag )
-    {
-        layout->removePanelFlag( static_cast<PanelFlags>( flag ) );
-    }
-
-    lua_Integer _getChildHorizontalAlignment( const scene::LayoutContainer *layout )
-    {
-        return static_cast<lua_Integer>( layout->getChildHorizontalAlignment() );
-    }
-
-    void _setChildHorizontalAlignment( scene::LayoutContainer *layout, lua_Integer alignment )
-    {
-        layout->setChildHorizontalAlignment( static_cast<HorizontalAlignment>( alignment ) );
-    }
-
-    lua_Integer _getChildVerticalAlignment( const scene::LayoutContainer *layout )
-    {
-        return static_cast<lua_Integer>( layout->getChildVerticalAlignment() );
-    }
-
-    void _setChildVerticalAlignment( scene::LayoutContainer *layout, lua_Integer alignment )
-    {
-        layout->setChildVerticalAlignment( static_cast<VerticalAlignment>( alignment ) );
-    }
-
-    lua_Integer _getLayoutHorizontalAlignment( const scene::LayoutTransform *transform )
-    {
-        return static_cast<lua_Integer>( transform->getHorizontalAlignment() );
-    }
-
-    void _setLayoutHorizontalAlignment( scene::LayoutTransform *transform, lua_Integer alignment )
-    {
-        transform->setHorizontalAlignment( static_cast<HorizontalAlignment>( alignment ) );
-    }
-
-    lua_Integer _getLayoutVerticalAlignment( const scene::LayoutTransform *transform )
-    {
-        return static_cast<lua_Integer>( transform->getVerticalAlignment() );
-    }
-
-    void _setLayoutVerticalAlignment( scene::LayoutTransform *transform, lua_Integer alignment )
-    {
-        transform->setVerticalAlignment( static_cast<VerticalAlignment>( alignment ) );
-    }
-
-    lua_Integer _getScrollBarDirection( const scene::ScrollBar *scrollBar )
-    {
-        return static_cast<lua_Integer>( scrollBar->getDirection() );
-    }
-
-    void _setScrollBarDirection( scene::ScrollBar *scrollBar, lua_Integer direction )
-    {
-        scrollBar->setDirection( static_cast<Direction>( direction ) );
-    }
-
-    lua_Integer _getComponentSliderDirection( const scene::Slider *slider )
-    {
-        return static_cast<lua_Integer>( slider->getDirection() );
-    }
-
-    void _setComponentSliderDirection( scene::Slider *slider, lua_Integer direction )
-    {
-        slider->setDirection( static_cast<Direction>( direction ) );
-    }
-
-    lua_Integer _getComponentToggleType( const scene::Toggle *toggle )
-    {
-        return static_cast<lua_Integer>( toggle->getToggleType() );
-    }
-
-    void _setComponentToggleType( scene::Toggle *toggle, lua_Integer type )
-    {
-        toggle->setToggleType( static_cast<scene::Toggle::ToggleType>( type ) );
-    }
-
-    lua_Integer _getComponentToggleState( const scene::Toggle *toggle )
-    {
-        return static_cast<lua_Integer>( toggle->getToggleState() );
-    }
-
-    void _setComponentToggleState( scene::Toggle *toggle, lua_Integer state )
-    {
-        toggle->setToggleState( static_cast<scene::Toggle::ToggleState>( state ) );
-    }
-
-    lua_Integer _getTabOrientation( const scene::TabView *tabView )
-    {
-        return static_cast<lua_Integer>( tabView->getOrientation() );
-    }
-
-    void _setTabOrientation( scene::TabView *tabView, lua_Integer orientation )
-    {
-        tabView->setOrientation( static_cast<scene::TabView::Orientation>( orientation ) );
-    }
-
-    lua_Integer _getTabPosition( const scene::TabView *tabView )
-    {
-        return static_cast<lua_Integer>( tabView->getTabPosition() );
-    }
-
-    void _setTabPosition( scene::TabView *tabView, lua_Integer position )
-    {
-        tabView->setTabPosition( static_cast<scene::TabView::TabPosition>( position ) );
-    }
-
-    String _getUiHorizontalAlignmentString( lua_Integer alignment )
-    {
-        if( alignment < 0 || alignment >= static_cast<lua_Integer>( HorizontalAlignment::COUNT ) )
-        {
-            return {};
-        }
-        return scene::UiUtil::getHorizontalAlignmentString(
-            static_cast<HorizontalAlignment>( alignment ) );
-    }
-
-    lua_Integer _getUiHorizontalAlignment( const String &str )
-    {
-        return static_cast<lua_Integer>( scene::UiUtil::getHorizontalAlignment( str ) );
-    }
-
-    String _getUiVerticalAlignmentString( lua_Integer alignment )
-    {
-        if( alignment < 0 || alignment >= static_cast<lua_Integer>( VerticalAlignment::COUNT ) )
-        {
-            return {};
-        }
-        return scene::UiUtil::getVerticalAlignmentString( static_cast<VerticalAlignment>( alignment ) );
-    }
-
-    lua_Integer _getUiVerticalAlignment( const String &str )
-    {
-        return static_cast<lua_Integer>( scene::UiUtil::getVerticalAlignment( str ) );
-    }
-
-    void _setUiAlignment( SmartPtr<scene::IGameActor> actor, lua_Integer horizontal,
-                          lua_Integer vertical )
-    {
-        if( horizontal < 0 || horizontal >= static_cast<lua_Integer>( HorizontalAlignment::COUNT ) ||
-            vertical < 0 || vertical >= static_cast<lua_Integer>( VerticalAlignment::COUNT ) )
-        {
-            throw std::invalid_argument( "UiUtil received an invalid alignment" );
-        }
-        scene::UiUtil::setAlignment( actor, static_cast<HorizontalAlignment>( horizontal ),
-                                     static_cast<VerticalAlignment>( vertical ) );
-    }
-
-    SmartPtr<scene::IGameActor> _createUiDropdownWithOptions( const String &label,
-                                                              luabind::object options, bool addToScene )
-    {
-        if( luabind::type( options ) != LUA_TTABLE )
-        {
-            throw std::invalid_argument( "UiUtil dropdown options must be a sequence of strings" );
-        }
-        size_t count = 0;
-        for( luabind::iterator it( options ), end; it != end; ++it )
-        {
-            ++count;
-        }
-        Array<String> labels;
-        labels.reserve( count );
-        for( size_t i = 1; i <= count; ++i )
-        {
-            luabind::object value = options[i];
-            if( luabind::type( value ) != LUA_TSTRING )
-            {
-                throw std::invalid_argument(
-                    "UiUtil dropdown options must be a dense sequence of strings" );
-            }
-            labels.push_back( luabind::object_cast<String>( value ) );
-        }
-        return scene::UiUtil::createDropdownWithOptions( label, labels, addToScene );
-    }
-
-    luabind::object _uiStringTable( lua_State *L, const Array<String> &strings )
-    {
-        auto table = luabind::newtable( L );
-        for( size_t i = 0; i < strings.size(); ++i )
-        {
-            table[i + 1] = strings[i];
-        }
-        return table;
-    }
-
     void bindComponentUI( lua_State *L )
     {
         using namespace scene;
@@ -269,22 +24,22 @@ namespace workphone
 
         module(
             L )[class_<UiUtil>( "UiUtil" )
-                    .scope[def( "getHorizontalAlignmentString", _getUiHorizontalAlignmentString ),
-                           def( "getHorizontalAlignment", _getUiHorizontalAlignment ),
+                    .scope[def( "getHorizontalAlignmentString", &UiUtilHelper::getHorizontalAlignmentString ),
+                           def( "getHorizontalAlignment", &UiUtilHelper::getHorizontalAlignment ),
                            def( "getHorizontalAlignmentTypesString",
                                 &UiUtil::getHorizontalAlignmentTypesString ),
-                           def( "getVerticalAlignmentString", _getUiVerticalAlignmentString ),
-                           def( "getVerticalAlignment", _getUiVerticalAlignment ),
+                           def( "getVerticalAlignmentString", &UiUtilHelper::getVerticalAlignmentString ),
+                           def( "getVerticalAlignment", &UiUtilHelper::getVerticalAlignment ),
                            def( "getVerticalAlignmentTypesString",
                                 &UiUtil::getVerticalAlignmentTypesString ),
                            def( "createText", &UiUtil::createText ),
                            def( "createButton", &UiUtil::createButton ),
                            def( "createButtonEx", &UiUtil::createButtonEx ),
                            def( "setRect", &UiUtil::setRect ), 
-                           def( "setAlignment", _setUiAlignment ),
+                           def( "setAlignment", &UiUtilHelper::setAlignment ),
                            def( "loadHierarchy", &UiUtil::loadHierarchy ),
                            def( "createDropdown", &UiUtil::createDropdown ),
-                           def( "createDropdownWithOptions", _createUiDropdownWithOptions ),
+                           def( "createDropdownWithOptions", &UiUtilHelper::createDropdownWithOptions ),
                            def( "createImage", &UiUtil::createImage ),
                            def( "createInputField", &UiUtil::createInputField ),
                            def( "createToggle", &UiUtil::createToggle ),
@@ -309,9 +64,9 @@ namespace workphone
                            def( "createScrollview", &UiUtil::createScrollview )]];
 
         object uiUtil = globals( L )["UiUtil"];
-        uiUtil["directionNames"] = _uiStringTable( L, UiUtil::directionNames );
-        uiUtil["verticalAlignmentTypes"] = _uiStringTable( L, UiUtil::verticalAlignmentTypes );
-        uiUtil["horizontalAlignmentTypes"] = _uiStringTable( L, UiUtil::horizontalAlignmentTypes );
+        uiUtil["directionNames"] = UiUtilHelper::stringTable( L, UiUtil::directionNames );
+        uiUtil["verticalAlignmentTypes"] = UiUtilHelper::stringTable( L, UiUtil::verticalAlignmentTypes );
+        uiUtil["horizontalAlignmentTypes"] = UiUtilHelper::stringTable( L, UiUtil::horizontalAlignmentTypes );
         uiUtil["directionStr"] = UiUtil::directionStr;
         uiUtil["handleStr"] = UiUtil::handleStr;
         uiUtil["backgroundStr"] = UiUtil::backgroundStr;
@@ -386,7 +141,7 @@ namespace workphone
                         .scope[def( "typeInfo", UIComponent::UIElementListener::typeInfo )]];
 
         module( L )[class_<Button, UIComponent, SmartPtr<Button>>( "UIButtonComponent" )
-                        .def( "setClickHandler", buttonSetClickHandler )
+                        .def( "setClickHandler", &UIComponentHelper::buttonSetClickHandler )
                         .def( "getImage", &Button::getImage )
                         .def( "setImage", &Button::setImage )
                         .def( "getText", &Button::getText )
@@ -461,10 +216,10 @@ namespace workphone
                         .def( "setSpacing", &LayoutContainer::setSpacing )
                         .def( "getPadding", &LayoutContainer::getPadding )
                         .def( "setPadding", &LayoutContainer::setPadding )
-                        .def( "getChildHorizontalAlignment", _getChildHorizontalAlignment )
-                        .def( "setChildHorizontalAlignment", _setChildHorizontalAlignment )
-                        .def( "getChildVerticalAlignment", _getChildVerticalAlignment )
-                        .def( "setChildVerticalAlignment", _setChildVerticalAlignment )
+                        .def( "getChildHorizontalAlignment", &UIComponentHelper::getChildHorizontalAlignment )
+                        .def( "setChildHorizontalAlignment", &UIComponentHelper::setChildHorizontalAlignment )
+                        .def( "getChildVerticalAlignment", &UIComponentHelper::getChildVerticalAlignment )
+                        .def( "setChildVerticalAlignment", &UIComponentHelper::setChildVerticalAlignment )
                         .def( "getOffset", &LayoutContainer::getOffset )
                         .def( "setOffset", &LayoutContainer::setOffset )
                         .def( "getUseChildHorizontalAlignment",
@@ -537,10 +292,10 @@ namespace workphone
                         .def( "setZOrder", &LayoutTransform::setZOrder )
                         .def( "getAutoCalculateOrder", &LayoutTransform::getAutoCalculateOrder )
                         .def( "setAutoCalculateOrder", &LayoutTransform::setAutoCalculateOrder )
-                        .def( "setHorizontalAlignment", _setLayoutHorizontalAlignment )
-                        .def( "getHorizontalAlignment", _getLayoutHorizontalAlignment )
-                        .def( "setVerticalAlignment", _setLayoutVerticalAlignment )
-                        .def( "getVerticalAlignment", _getLayoutVerticalAlignment )
+                        .def( "setHorizontalAlignment", &UIComponentHelper::setLayoutHorizontalAlignment )
+                        .def( "getHorizontalAlignment", &UIComponentHelper::getLayoutHorizontalAlignment )
+                        .def( "setVerticalAlignment", &UIComponentHelper::setLayoutVerticalAlignment )
+                        .def( "getVerticalAlignment", &UIComponentHelper::getLayoutVerticalAlignment )
                         .def( "getAbsolutePosition", &LayoutTransform::getAbsolutePosition )
                         .def( "setAbsolutePosition", &LayoutTransform::setAbsolutePosition )
                         .def( "getAbsoluteSize", &LayoutTransform::getAbsoluteSize )
@@ -591,9 +346,9 @@ namespace workphone
                         .def( "setSecureEntry", &InputField::setSecureEntry )
                         .def( "isMultiline", &InputField::isMultiline )
                         .def( "setMultiline", &InputField::setMultiline )
-                        .def( "getInputType", _getInputFieldType )
-                        .def( "setInputType", _setInputFieldType )
-                        .def( "setInputType", _setInputFieldTypeWithHint )
+                        .def( "getInputType", &UIComponentHelper::getInputFieldType )
+                        .def( "setInputType", &UIComponentHelper::setInputFieldType )
+                        .def( "setInputType", &UIComponentHelper::setInputFieldTypeWithHint )
                         .def( "getTextHint", &InputField::getTextHint )
                         .def( "getTextSize", &InputField::getTextSize )
                         .def( "setTextSize", &InputField::setTextSize )
@@ -616,10 +371,10 @@ namespace workphone
                         .def( "setTextSize", &Toggle::setTextSize )
                         .def( "getShowLabel", &Toggle::getShowLabel )
                         .def( "setShowLabel", &Toggle::setShowLabel )
-                        .def( "getToggleType", _getComponentToggleType )
-                        .def( "setToggleType", _setComponentToggleType )
-                        .def( "getToggleState", _getComponentToggleState )
-                        .def( "setToggleState", _setComponentToggleState )
+                        .def( "getToggleType", &UIComponentHelper::getComponentToggleType )
+                        .def( "setToggleType", &UIComponentHelper::setComponentToggleType )
+                        .def( "getToggleState", &UIComponentHelper::getComponentToggleState )
+                        .def( "setToggleState", &UIComponentHelper::setComponentToggleState )
                         .def( "getToggledPositionFactor", &Toggle::getToggledPositionFactor )
                         .def( "setToggledPositionFactor", &Toggle::setToggledPositionFactor )
                         .def( "getUntoggledPositionFactor", &Toggle::getUntoggledPositionFactor )
@@ -642,8 +397,8 @@ namespace workphone
                         .def( "setMinValue", &Slider::setMinValue )
                         .def( "getMaxValue", &Slider::getMaxValue )
                         .def( "setMaxValue", &Slider::setMaxValue )
-                        .def( "getDirection", _getComponentSliderDirection )
-                        .def( "setDirection", _setComponentSliderDirection )
+                        .def( "getDirection", &UIComponentHelper::getComponentSliderDirection )
+                        .def( "setDirection", &UIComponentHelper::setComponentSliderDirection )
                         .def( "isDragging", &Slider::isDragging )
                         .def( "setDragging", &Slider::setDragging )
                         .scope[def( "typeInfo", Slider::typeInfo )]];
@@ -659,8 +414,8 @@ namespace workphone
                         .def( "setScrollValue", &ScrollBar::setScrollValue )
                         .def( "getHandleSize", &ScrollBar::getHandleSize )
                         .def( "setHandleSize", &ScrollBar::setHandleSize )
-                        .def( "getDirection", _getScrollBarDirection )
-                        .def( "setDirection", _setScrollBarDirection )
+                        .def( "getDirection", &UIComponentHelper::getScrollBarDirection )
+                        .def( "setDirection", &UIComponentHelper::setScrollBarDirection )
                         .def( "getScrollView", &ScrollBar::getScrollView )
                         .def( "setScrollView", &ScrollBar::setScrollView )
                         .scope[def( "typeInfo", ScrollBar::typeInfo )]];
@@ -692,11 +447,11 @@ namespace workphone
                         .def( "getElementOrder", &Layout::getElementOrder )
                         .def( "getElementOrderReversed", &Layout::getElementOrderReversed )
                         .def( "getZOrder", &Layout::getZOrder )
-                        .def( "getPanelFlags", _getPanelFlags )
-                        .def( "setPanelFlags", _setPanelFlags )
-                        .def( "hasPanelFlag", _hasPanelFlag )
-                        .def( "addPanelFlag", _addPanelFlag )
-                        .def( "removePanelFlag", _removePanelFlag )
+                        .def( "getPanelFlags", &UIComponentHelper::getPanelFlags )
+                        .def( "setPanelFlags", &UIComponentHelper::setPanelFlags )
+                        .def( "hasPanelFlag", &UIComponentHelper::hasPanelFlag )
+                        .def( "addPanelFlag", &UIComponentHelper::addPanelFlag )
+                        .def( "removePanelFlag", &UIComponentHelper::removePanelFlag )
                         .scope[def( "typeInfo", Layout::typeInfo )]];
 
         module(
@@ -739,10 +494,10 @@ namespace workphone
                         .def( "getTabPage", &TabView::getTabPage )
                         .def( "getTabPages", &TabView::getTabPages )
                         .def( "getTabPageCount", &TabView::getTabPageCount )
-                        .def( "setOrientation", _setTabOrientation )
-                        .def( "getOrientation", _getTabOrientation )
-                        .def( "setTabPosition", _setTabPosition )
-                        .def( "getTabPosition", _getTabPosition )
+                        .def( "setOrientation", &UIComponentHelper::setTabOrientation )
+                        .def( "getOrientation", &UIComponentHelper::getTabOrientation )
+                        .def( "setTabPosition", &UIComponentHelper::setTabPosition )
+                        .def( "getTabPosition", &UIComponentHelper::getTabPosition )
                         .def( "getTabSize", &TabView::getTabSize )
                         .def( "setTabSize", &TabView::setTabSize )
                         .def( "getShowTabHeaders", &TabView::getShowTabHeaders )
