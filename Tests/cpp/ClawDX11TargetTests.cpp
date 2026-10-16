@@ -12,6 +12,7 @@
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include "DX11TestEvidence.hpp"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cmath>
@@ -734,12 +735,32 @@ int main()
         ok &= check( resizedViewport.width == 1024 && resizedViewport.height == 640,
                      "window viewport must follow a real resize" );
 
-        texture->setSize( { 320, 180 } );
+        texture->setSize( { 319, 179 } );
         renderer.setRenderTarget( texture );
         renderer.setViewport( nullptr );
         const auto textureViewport = wp_renderer_dx11_get_viewport( native );
-        ok &= check( textureViewport.width == 320 && textureViewport.height == 180,
+        ok &= check( textureViewport.width == 319 && textureViewport.height == 179,
                      "resized scene texture must update its viewport" );
+        renderer.clear( workphone::ColourF( .25f, .5f, .75f, 1.0f ) );
+        constexpr workphone::u32 readbackBytes = 319u * 179u * 4u;
+        std::vector<unsigned char> readback( readbackBytes + 4u, 0xA5 );
+        texture->copyContentsToMemory( readback.data(), readbackBytes - 1u );
+        ok &= check( std::all_of( readback.begin(), readback.end(),
+                                  []( unsigned char value ) { return value == 0xA5; } ),
+                     "undersized offscreen readback must leave the destination untouched" );
+        texture->copyContentsToMemory( readback.data(), readbackBytes );
+        const auto pixelMatches = [&]( size_t offset ) {
+            return std::abs( static_cast<int>( readback[offset] ) - 64 ) <= 1 &&
+                   std::abs( static_cast<int>( readback[offset + 1] ) - 128 ) <= 1 &&
+                   std::abs( static_cast<int>( readback[offset + 2] ) - 191 ) <= 1 &&
+                   readback[offset + 3] == 255;
+        };
+        ok &= check( pixelMatches( 0 ) && pixelMatches( 319u * 4u ) &&
+                         pixelMatches( 319u * 90u * 4u ) &&
+                         pixelMatches( readbackBytes - 4u ) &&
+                         std::all_of( readback.begin() + readbackBytes, readback.end(),
+                                      []( unsigned char value ) { return value == 0xA5; } ),
+                     "offscreen readback must return packed RGBA8 pixels without overrunning capacity" );
         renderer.setRenderTarget( window );
         auto *afterTextureResize = depthTarget( context );
         ok &= check( resizedDepth && afterTextureResize == resizedDepth,

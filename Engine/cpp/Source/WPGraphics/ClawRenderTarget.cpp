@@ -75,6 +75,7 @@ namespace workphone
 
         void ClawRenderTarget::copyContentsToMemory( void *buffer, u32 size, FrameBuffer bufferId )
         {
+            (void)bufferId; // An offscreen target has one colour surface.
             if( !buffer )
             {
                 WP_LOG_WARNING( "ClawRenderTarget::copyContentsToMemory: null buffer supplied." );
@@ -87,7 +88,10 @@ namespace workphone
                 return;
             }
 
-            WP_LOG_WARNING( "ClawRenderTarget::copyContentsToMemory: not yet wired to C renderer API." );
+            if( !wp_renderer_dx11_copy_render_texture_rgba8( m_nativeRenderTexture, buffer, size ) )
+            {
+                WP_LOG_WARNING( "ClawRenderTarget::copyContentsToMemory: target unavailable or RGBA8 buffer too small." );
+            }
         }
 
         Vector2I ClawRenderTarget::getSize() const

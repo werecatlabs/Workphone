@@ -1,5 +1,21 @@
 # WPGraphics implementation status
 
+## Native offscreen target readback — 16 October 2026
+
+`ClawRenderTarget::copyContentsToMemory()` now copies its allocated offscreen
+colour surface through a native DX11 staging readback. The result is top-down,
+tightly packed RGBA8 with four bytes per pixel. The native API checks target
+format and dimensions and requires enough caller-owned output capacity before
+copying, leaving undersized buffers untouched. Offscreen targets have one colour
+surface, so `FrameBuffer` selection has no effect. `swapBuffers()` remains
+unwired for this target type.
+
+Validation: Debug and RelWithDebInfo `WPGraphicsClawDX11TargetTests` builds and
+`WPGraphics.claw_dx11_targets` runs pass. The test clears an odd-width resized
+target to a known colour, checks pixels across multiple rows and an output guard,
+and confirms an undersized buffer stays untouched. This is a synchronous CPU
+readback contract; window presentation and frame capture remain separate work.
+
 ## Cached cubemap device identity — 16 October 2026
 
 `ClawCubemapTexture` checks that its cached filtered view belongs to the

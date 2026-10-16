@@ -3625,6 +3625,55 @@ void *wp_renderer_dx11_get_render_texture_target_view( const wp_render_texture_d
     return target ? target->rt_view : NULL;
 }
 
+wp_s32 wp_renderer_dx11_copy_render_texture_rgba8(
+    const wp_render_texture_dx11 *target, void *output, wp_u64 output_bytes )
+{
+    ID3D11Device *device = NULL;
+    ID3D11DeviceContext *context = NULL;
+    ID3D11Texture2D *staging = NULL;
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_MAPPED_SUBRESOURCE mapped;
+    wp_u64 row_bytes;
+    wp_u32 y;
+    wp_s32 result = 0;
+    if( !target || !target->texture || !output || target->width <= 0 || target->height <= 0 )
+        return 0;
+    row_bytes = (wp_u64)target->width * 4u;
+    if( output_bytes < row_bytes * (wp_u64)target->height ) return 0;
+    ID3D11Texture2D_GetDesc(target->texture,&desc);
+    if( desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM || desc.Width != (UINT)target->width ||
+        desc.Height != (UINT)target->height || desc.MipLevels != 1 || desc.ArraySize != 1 ||
+        desc.SampleDesc.Count != 1 ) return 0;
+    ID3D11Texture2D_GetDevice(target->texture,&device);
+    if( !device ) return 0;
+    ID3D11Device_GetImmediateContext(device,&context);
+    if( !context ) goto cleanup;
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    desc.MiscFlags = 0;
+    if( FAILED(ID3D11Device_CreateTexture2D(device,&desc,NULL,&staging)) ) goto cleanup;
+    ID3D11DeviceContext_CopyResource(context,(ID3D11Resource *)staging,
+                                    (ID3D11Resource *)target->texture);
+    memset(&mapped,0,sizeof(mapped));
+    if( FAILED(ID3D11DeviceContext_Map(context,(ID3D11Resource *)staging,0,D3D11_MAP_READ,0,
+                                       &mapped)) ) goto cleanup;
+    if( mapped.pData && mapped.RowPitch >= row_bytes )
+    {
+        for( y = 0; y < (wp_u32)target->height; ++y )
+            memcpy((unsigned char *)output + y * row_bytes,
+                   (const unsigned char *)mapped.pData + y * mapped.RowPitch,
+                   (size_t)row_bytes);
+        result = 1;
+    }
+    ID3D11DeviceContext_Unmap(context,(ID3D11Resource *)staging,0);
+cleanup:
+    if( staging ) ID3D11Texture2D_Release(staging);
+    if( context ) ID3D11DeviceContext_Release(context);
+    ID3D11Device_Release(device);
+    return result;
+}
+
 /* =========================================================================
  * Draw calls
  * ====================================================================== */

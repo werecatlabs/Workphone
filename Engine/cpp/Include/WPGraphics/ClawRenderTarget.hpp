@@ -19,9 +19,9 @@ namespace workphone
          * null-checking, error logging via @c WP_LOG_* macros, and data-driven property
          * exposure through @c getProperties / @c setProperties for the game editor.
          *
-         * Viewports are managed through @c ClawViewport instances. Operations that require
-         * a native backend (such as @c swapBuffers and @c copyContentsToMemory) are
-         * stubbed with warning logs and can be extended when the C renderer API is wired.
+         * Viewports are managed through @c ClawViewport instances. The offscreen
+         * colour surface supports RGBA8 CPU readback through the native renderer.
+         * Buffer selection is ignored because an offscreen target has one surface.
          *
          * @see IRenderTarget
          * @see ClawViewport
@@ -76,7 +76,7 @@ namespace workphone
             /** @brief Returns whether the target auto-updates. */
             bool isAutoUpdated() const override;
 
-            /** @brief Copies the current contents to memory. Logs a warning (stub). */
+            /** @brief Copies top-down, tightly packed RGBA8 pixels into a buffer of at least width * height * 4 bytes. */
             void copyContentsToMemory( void *buffer, u32 size,
                                        FrameBuffer bufferId = FrameBuffer::Auto ) override;
 

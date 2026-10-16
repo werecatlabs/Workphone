@@ -365,6 +365,11 @@ void *wp_renderer_dx11_get_render_texture_resource(
 void *wp_renderer_dx11_get_render_texture_view( const wp_render_texture_dx11 *render_texture );
 void *wp_renderer_dx11_get_render_texture_target_view(
     const wp_render_texture_dx11 *render_texture );
+/** Copies the complete offscreen colour texture as tightly packed, top-down RGBA8.
+ * Returns 0 without changing output if the target or output capacity is invalid.
+ * The target must not be concurrently resized or destroyed. */
+wp_s32 wp_renderer_dx11_copy_render_texture_rgba8(
+    const wp_render_texture_dx11 *render_texture, void *output, wp_u64 output_bytes );
 
 /* =========================================================================
  * Draw calls
