@@ -305,6 +305,55 @@ namespace
         ok &= check( !wp_renderer_dx11_create_texture_mips_native( renderer, invalid.data(),
                                                                    wp_u32( invalid.size() ) ),
                      "invalid GPU mip dimensions must be rejected" );
+        const float linearPixels[] = { 2.0f, 0.25f, 0.5f, 1.0f,
+                                       0.125f, 4.0f, 0.75f, 0.5f };
+        ok &= check( !wp_renderer_dx11_create_texture_rgba32f_native(
+                         renderer, linearPixels, 2, 1, 7 ),
+                     "RGBA32F upload must reject an incomplete pixel buffer" );
+        ok &= check( !wp_renderer_dx11_create_texture_rgba32f_native(
+                         renderer, linearPixels, 0, 1, 8 ),
+                     "RGBA32F upload must reject invalid dimensions" );
+        auto *linearView = static_cast<ID3D11ShaderResourceView *>(
+            wp_renderer_dx11_create_texture_rgba32f_native( renderer, linearPixels, 2, 1, 8 ) );
+        ok &= check( linearView != nullptr, "native RGBA32F texture must allocate" );
+        if( linearView )
+        {
+            ID3D11Resource *linearResource = nullptr;
+            ID3D11Texture2D *linearTexture = nullptr;
+            ID3D11Texture2D *staging = nullptr;
+            linearView->GetResource( &linearResource );
+            linearResource->QueryInterface( __uuidof( ID3D11Texture2D ),
+                                            reinterpret_cast<void **>( &linearTexture ) );
+            ok &= check( linearTexture != nullptr, "RGBA32F resource must be a texture" );
+            if( linearTexture )
+            {
+                D3D11_TEXTURE2D_DESC desc{};
+                linearTexture->GetDesc( &desc );
+                ok &= check( desc.Format == DXGI_FORMAT_R32G32B32A32_FLOAT &&
+                                 desc.Width == 2 && desc.Height == 1,
+                             "native RGBA32F resource must preserve its format and dimensions" );
+                desc.Usage = D3D11_USAGE_STAGING;
+                desc.BindFlags = 0;
+                desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+                if( SUCCEEDED( device->CreateTexture2D( &desc, nullptr, &staging ) ) )
+                {
+                    context->CopyResource( staging, linearTexture );
+                    D3D11_MAPPED_SUBRESOURCE mapped{};
+                    if( SUCCEEDED( context->Map( staging, 0, D3D11_MAP_READ, 0, &mapped ) ) )
+                    {
+                        ok &= check( std::memcmp( mapped.pData, linearPixels, sizeof( linearPixels ) ) == 0,
+                                     "native RGBA32F upload must preserve HDR pixel values" );
+                        context->Unmap( staging, 0 );
+                    }
+                    else ok &= check( false, "RGBA32F readback must map" );
+                    staging->Release();
+                }
+                else ok &= check( false, "RGBA32F readback must allocate" );
+                linearTexture->Release();
+            }
+            linearResource->Release();
+            linearView->Release();
+        }
         auto *target = wp_renderer_dx11_create_render_texture( renderer, 16, 16 );
         if( !check( target != nullptr, "fog test target must allocate" ) )
             return false;

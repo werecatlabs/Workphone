@@ -286,6 +286,12 @@ typedef struct wp_texture_mip_dx11
 void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *renderer,
     const wp_texture_mip_dx11 *levels, wp_u32 level_count );
 
+/** Immutable RGBA32F sampled texture. The exact float count is required and
+ * upload is rejected above the 256 MiB texture budget. Returns an owned SRV.
+ */
+void *wp_renderer_dx11_create_texture_rgba32f_native( wp_renderer_dx11 *renderer,
+    const wp_f32 *rgba, wp_u32 width, wp_u32 height, wp_u64 float_count );
+
 typedef struct wp_texture_encoded_mip_dx11
 {
     const void *bytes;

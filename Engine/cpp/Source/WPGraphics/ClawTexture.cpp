@@ -22,7 +22,6 @@
 #include <mutex>
 #include <unordered_map>
 #include <cmath>
-#include <d3d11.h>
 
 namespace
 {
@@ -325,23 +324,10 @@ namespace
             void *candidate = nullptr;
             if( !data.floatPixels.empty() )
             {
-                D3D11_TEXTURE2D_DESC desc{};
-                desc.Width = data.pixelSize.x;
-                desc.Height = data.pixelSize.y;
-                desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1;
-                desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-                desc.Usage = D3D11_USAGE_IMMUTABLE;
-                desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-                const D3D11_SUBRESOURCE_DATA pixels{ data.floatPixels.data(), desc.Width * 16u, 0 };
-                ID3D11Texture2D *texture = nullptr;
-                auto nativeDevice = static_cast<ID3D11Device *>( device );
-                if( SUCCEEDED( nativeDevice->CreateTexture2D( &desc, &pixels, &texture ) ) )
-                {
-                    ID3D11ShaderResourceView *view = nullptr;
-                    const auto created = nativeDevice->CreateShaderResourceView( texture, nullptr, &view );
-                    texture->Release();
-                    if( SUCCEEDED( created ) ) candidate = view;
-                }
+                candidate = wp_renderer_dx11_create_texture_rgba32f_native(
+                    dx11, data.floatPixels.data(), static_cast<wp_u32>( data.pixelSize.x ),
+                    static_cast<wp_u32>( data.pixelSize.y ),
+                    static_cast<wp_u64>( data.floatPixels.size() ) );
             }
             else if( !data.ddsBytes.empty() )
             {

@@ -3217,6 +3217,31 @@ void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *r,
     return SUCCEEDED(hr) ? view : NULL;
 }
 
+void *wp_renderer_dx11_create_texture_rgba32f_native( wp_renderer_dx11 *r,
+    const wp_f32 *rgba, wp_u32 width, wp_u32 height, wp_u64 float_count )
+{
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_SUBRESOURCE_DATA data;
+    ID3D11Texture2D *texture = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    wp_u64 count;
+    HRESULT hr;
+    if( !rgba || !wp_renderer_dx11_dimensions_supported( r, width, height ) ) return NULL;
+    count = (wp_u64)width * height * 4u;
+    if( count != float_count || count > (256ull * 1024 * 1024) / sizeof(wp_f32) ) return NULL;
+    memset( &desc, 0, sizeof(desc) );
+    desc.Width = width; desc.Height = height; desc.MipLevels = 1; desc.ArraySize = 1;
+    desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT; desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE; desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    memset( &data, 0, sizeof(data) );
+    data.pSysMem = rgba; data.SysMemPitch = width * 4u * sizeof(wp_f32);
+    hr = ID3D11Device_CreateTexture2D( r->device, &desc, &data, &texture );
+    if( FAILED(hr) ) return NULL;
+    hr = ID3D11Device_CreateShaderResourceView( r->device, (ID3D11Resource *)texture, NULL, &view );
+    ID3D11Texture2D_Release(texture);
+    return SUCCEEDED(hr) ? view : NULL;
+}
+
 void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *r,
     const wp_texture_encoded_mip_dx11 *levels, wp_u32 count, wp_u32 format )
 {
