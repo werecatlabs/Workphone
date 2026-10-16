@@ -1,8 +1,10 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiPropertyGrid.hpp>
+#include <WPImGui/ImGuiDropJob.hpp>
 #include <WPImGui/ImGuiUtil.hpp>
 #include <Workphone/Workphone.hpp>
 #include <imgui.h>
+#include <utility>
 
 namespace workphone::ui
 {
@@ -242,8 +244,7 @@ namespace workphone::ui
                             args[2].setStr( value );
                             args[3].setObject( properties );
                             args[4].setObject( parent );
-                            dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args, this, this,
-                                                     nullptr );
+                            ImGuiDropJob::queue( dropTarget, std::move( args ), this, this );
                         }
                         ImGui::EndDragDropTarget();
                     }

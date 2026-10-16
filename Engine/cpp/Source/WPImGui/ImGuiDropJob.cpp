@@ -14,7 +14,8 @@ namespace workphone::ui
 
     void ImGuiDropJob::execute()
     {
-        if( !isInterrupted() && m_dropTarget )
+        if( !isInterrupted() && m_dropTarget &&
+            ( !m_object || m_object->getLoadingState() == LoadingState::Loaded ) )
         {
             try
             {
@@ -50,5 +51,43 @@ namespace workphone::ui
     void ImGuiDropJob::setArguments( Array<Parameter> arguments )
     {
         m_arguments = std::move( arguments );
+    }
+
+    void ImGuiDropJob::queue( SmartPtr<IUIDropTarget> dropTarget,
+                              Array<Parameter> arguments, SmartPtr<ISharedObject> sender,
+                              SmartPtr<ISharedObject> object )
+    {
+        if( !dropTarget )
+        {
+            return;
+        }
+
+        auto applicationManager = core::IApplicationManager::instance();
+        auto factoryManager = applicationManager ? applicationManager->getFactoryManager() : nullptr;
+        if( !factoryManager )
+        {
+            return;
+        }
+
+        auto job = factoryManager->make_ptr<ImGuiDropJob>();
+        if( !job )
+        {
+            return;
+        }
+
+        job->setDropTarget( dropTarget );
+        job->setSender( sender );
+        job->setObject( object );
+        job->setArguments( std::move( arguments ) );
+
+        auto jobQueue = applicationManager->getJobQueue();
+        if( jobQueue && jobQueue->isRunning() )
+        {
+            jobQueue->addJob( job, TaskId::Application );
+        }
+        else
+        {
+            job->execute();
+        }
     }
 }  // namespace workphone::ui

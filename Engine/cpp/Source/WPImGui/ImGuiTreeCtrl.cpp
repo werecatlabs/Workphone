@@ -410,45 +410,6 @@ namespace workphone::ui
         return {};
     }
 
-    void ImGuiTreeCtrl::queueDropEvent( SmartPtr<IUIDropTarget> dropTarget,
-                                       Array<Parameter> arguments,
-                                       SmartPtr<ISharedObject> sender,
-                                       SmartPtr<ISharedObject> object )
-    {
-        if( !dropTarget )
-        {
-            return;
-        }
-
-        auto applicationManager = core::IApplicationManager::instance();
-        auto factoryManager = applicationManager ? applicationManager->getFactoryManager() : nullptr;
-        if( !factoryManager )
-        {
-            return;
-        }
-
-        auto job = factoryManager->make_ptr<ImGuiDropJob>();
-        if( !job )
-        {
-            return;
-        }
-
-        job->setDropTarget( dropTarget );
-        job->setSender( sender );
-        job->setObject( object );
-        job->setArguments( std::move( arguments ) );
-
-        auto jobQueue = applicationManager->getJobQueue();
-        if( jobQueue && jobQueue->isRunning() )
-        {
-            jobQueue->addJob( job, TaskId::Application );
-        }
-        else
-        {
-            job->execute();
-        }
-    }
-
     SmartPtr<IUIElement> ImGuiTreeCtrl::getDropDestinationElement() const
     {
         return m_dropDestinationElement;
@@ -550,7 +511,8 @@ namespace workphone::ui
                             args[0].object = treeCtrl;
                             args[1].str = data;
 
-                            queueDropEvent( dropTarget, std::move( args ), dropTarget, treeCtrl );
+                            ImGuiDropJob::queue( dropTarget, std::move( args ), dropTarget,
+                                                 treeCtrl );
                         }
 
                         ImGui::EndDragDropTarget();

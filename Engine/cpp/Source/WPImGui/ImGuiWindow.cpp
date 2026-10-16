@@ -1,9 +1,12 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiWindow.hpp>
 #include <WPImGui/ImGuiApplication.hpp>
+#include <WPImGui/ImGuiDropJob.hpp>
+#include <WPImGui/ImGuiListenerJob.hpp>
 #include "Workphone/Interface/UI/IUIManager.hpp"
 #include "Workphone/Core/LogManager.hpp"
 #include <imgui.h>
+#include <utility>
 
 namespace workphone::ui
 {
@@ -68,8 +71,8 @@ namespace workphone::ui
 
                                     args.emplace_back( data );
 
-                                    dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, args,
-                                                             window, window, nullptr );
+                                    ImGuiDropJob::queue( dropTarget, std::move( args ), window,
+                                                         window );
                                 }
 
                                 ImGui::EndDragDropTarget();
@@ -123,15 +126,16 @@ namespace workphone::ui
                         if( is_hovered && ImGui::IsMouseClicked( 0 ) )
                         {
                             auto listeners = window->getObjectListeners();
-                            for( auto listener : listeners )
+                            if( !listeners.empty() )
                             {
                                 auto args = Array<Parameter>();
                                 args.resize( 1 );
 
                                 args[0].object = window;
 
-                                listener->handleEvent( EventType::UI, IEvent::handleMouseClicked,
-                                                       args, window, this, nullptr );
+                                ImGuiListenerJob::queue( std::move( listeners ), EventType::UI,
+                                                         IEvent::handleMouseClicked, std::move( args ),
+                                                         window, window );
                             }
                         }
 

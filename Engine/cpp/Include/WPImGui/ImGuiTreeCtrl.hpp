@@ -37,12 +37,6 @@ namespace workphone
             String getDragPayload( SmartPtr<IUIElement> element,
                                    SmartPtr<IUIDragSource> dragSource );
 
-            /** Queue a copied drop event on the application task. */
-            static void queueDropEvent( SmartPtr<IUIDropTarget> dropTarget,
-                                        Array<Parameter> arguments,
-                                        SmartPtr<ISharedObject> sender,
-                                        SmartPtr<ISharedObject> object );
-
             /**
              * @brief Internal state listener for handling state messages.
              *

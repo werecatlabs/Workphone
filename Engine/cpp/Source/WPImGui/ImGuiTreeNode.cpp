@@ -1,6 +1,7 @@
 #include <WPImGui/WPImGuiPCH.hpp>
 #include <WPImGui/ImGuiTreeCtrl.hpp>
 #include <WPImGui/ImGuiTreeNode.hpp>
+#include <WPImGui/ImGuiDropJob.hpp>
 #include <WPImGui/ImGuiText.hpp>
 #include <WPImGui/ImGuiUtil.hpp>
 #include <Workphone/Workphone.hpp>
@@ -317,8 +318,7 @@ namespace workphone::ui
                             args.emplace_back( data );
                             args.emplace_back( -1 );
 
-                            ImGuiTreeCtrl::queueDropEvent( dropTarget, std::move( args ), src,
-                                                           treeNode );
+                            ImGuiDropJob::queue( dropTarget, std::move( args ), src, treeNode );
                         }
                     }
 
@@ -342,8 +342,7 @@ namespace workphone::ui
                             args.emplace_back( data );
                             args.emplace_back( tree->getSelectedSiblingIndex() );
 
-                            ImGuiTreeCtrl::queueDropEvent( dropTarget, std::move( args ), src,
-                                                           dst );
+                            ImGuiDropJob::queue( dropTarget, std::move( args ), src, dst );
                             tree->setSelectedSiblingIndex( -1 );
                         }
                     }

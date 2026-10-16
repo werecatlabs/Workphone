@@ -22,6 +22,10 @@ namespace workphone::ui
         void setObject( SmartPtr<ISharedObject> object );
         void setArguments( Array<Parameter> arguments );
 
+        /** Copy the event into a job and deliver it on the application task. */
+        static void queue( SmartPtr<IUIDropTarget> dropTarget, Array<Parameter> arguments,
+                           SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object );
+
         WP_CLASS_REGISTER_DECL;
 
     private:
