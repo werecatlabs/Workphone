@@ -171,6 +171,13 @@ void wp_renderer_dx11_end_frame( wp_renderer_dx11 *renderer );
  * @param vsync    Non-zero to synchronise to vertical blank.
  */
 void wp_renderer_dx11_present( wp_renderer_dx11 *renderer, wp_s32 vsync );
+/** Checked presentation on the render owner. Rejects a different window,
+ * offscreen target, or unfinished HDR/shadow pass without calling DXGI.
+ * Returns 1 for S_OK, 2 for occlusion, -1 for a DXGI failure, or 0 for rejection.
+ * Occlusion is not a completed submitted frame. The legacy entry point uses this
+ * same path with the renderer's window. */
+wp_s32 wp_renderer_dx11_try_present( wp_renderer_dx11 *renderer,
+                                     void *expected_hwnd, wp_s32 vsync );
 /** Copies the current window back buffer before Present as top-down, packed RGBA8.
  * expected_hwnd must match the swap chain's window. An invalid request leaves
  * output unchanged. Front-buffer capture after Present is not supported. */
@@ -182,7 +189,8 @@ wp_s32 wp_renderer_dx11_copy_back_buffer_rgba8(
  * graphics system lock. GPU queries are polled without forcing a flush.
  * Counts include offscreen, window and UI passes. CPU frame time spans the
  * first begin_frame through Present, including the separately reported wait.
- * Intervals measure consecutive completed Presents; p95 uses at most the last
+ * Only S_OK Presents complete measured frames. Occlusion/failure breaks the
+ * interval sequence. Intervals measure consecutive completed Presents; p95 uses at most the last
  * 8192 intervals. Other means and counters span the complete measurement. */
 typedef struct wp_render_statistics_dx11
 {
@@ -192,6 +200,8 @@ typedef struct wp_render_statistics_dx11
     uint64_t instance_buffer_creations;
     double interval_ms, interval_p95_ms, cpu_frame_ms, present_ms, gpu_frame_ms;
     wp_s32 flip_model;
+    uint64_t present_attempts, present_occluded, present_failures;
+    wp_s32 last_present_hresult; /* Raw DXGI HRESULT; render-thread diagnostics. */
 } wp_render_statistics_dx11;
 /** Call after external code (e.g. ImGui) changes the immediate context state. */
 void wp_renderer_dx11_invalidate_state( wp_renderer_dx11 *renderer );

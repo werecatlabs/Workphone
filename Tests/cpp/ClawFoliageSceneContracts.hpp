@@ -12,7 +12,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawScene.hpp>
 #include <Workphone/Graphics/Viewport.hpp>
-#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp
+#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
 #include <Workphone/State/States/ViewportStateData.hpp>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <WorkphoneGraphics/workphone_graphics_camera.h>

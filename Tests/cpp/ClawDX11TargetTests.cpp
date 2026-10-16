@@ -784,18 +784,61 @@ int main()
         std::printf( "Presentation: %s, %u buffers\n",
                      swapDesc.SwapEffect == DXGI_SWAP_EFFECT_FLIP_DISCARD ? "flip discard" : "legacy discard",
                      swapDesc.BufferCount );
+        wp_render_statistics_dx11 beforePresent{}, afterPresent{};
+        wp_renderer_dx11_get_statistics( native, &beforePresent );
+        ok &= check( !wp_renderer_dx11_try_present( nullptr, window->handle, 0 ) &&
+                         !wp_renderer_dx11_try_present( native, nullptr, 0 ) &&
+                         !wp_renderer_dx11_try_present( native, GetDesktopWindow(), 0 ),
+                     "checked presentation must reject missing renderer/window and foreign HWND" );
+        renderer.setRenderTarget( texture );
+        ok &= check( !wp_renderer_dx11_try_present( native, window->handle, 0 ),
+                     "offscreen rendering must not present the window" );
+        renderer.beginRender();
+        renderer.endRender();
+        renderer.setRenderTarget( window );
+        ok &= check( wp_renderer_dx11_begin_hdr_scene( native, 1.0f ),
+                     "presentation guard HDR scene must begin" );
+        ok &= check( !wp_renderer_dx11_try_present( native, window->handle, 0 ),
+                     "unfinished HDR scene must not present" );
+        wp_renderer_dx11_end_hdr_scene( native );
+        wp_mat4f presentationIdentity{};
+        for( int i = 0; i < 4; ++i ) presentationIdentity.m[i][i] = 1.0f;
+        ok &= check( wp_renderer_dx11_begin_shadow_map( native, &presentationIdentity, 128 ),
+                     "presentation guard shadow pass must begin" );
+        ok &= check( !wp_renderer_dx11_try_present( native, window->handle, 0 ),
+                     "unfinished shadow pass must not present" );
+        wp_renderer_dx11_end_shadow_map( native );
+        wp_renderer_dx11_get_statistics( native, &afterPresent );
+        ok &= check( beforePresent.present_attempts == afterPresent.present_attempts,
+                     "rejected presentation must not call DXGI" );
+        wp_renderer_dx11_reset_statistics( native );
         for( int frame = 0; frame < 3; ++frame )
         {
-            wp_renderer_dx11_begin_frame( native );
+            renderer.beginRender();
             ID3D11RenderTargetView *view = nullptr;
             context->OMGetRenderTargets( 1, &view, nullptr );
             ok &= check( view != nullptr, "beginFrame must rebind the back buffer after Present" );
-            if( view )
-                view->Release();
+            if( view ) view->Release();
             renderer.clear( workphone::ColourF::Black );
-            wp_renderer_dx11_end_frame( native );
-            ok &= check( SUCCEEDED( swapChain->Present( 0, 0 ) ), "consecutive presentations must succeed" );
+            renderer.endRender();
+            renderer.endRender();
+            wp_renderer_dx11_get_statistics( native, &afterPresent );
+            ok &= check( afterPresent.present_attempts == static_cast<unsigned>( frame + 1 ) &&
+                             afterPresent.present_failures == 0 &&
+                             afterPresent.frames + afterPresent.present_occluded ==
+                                 afterPresent.present_attempts,
+                         "wrapper must present once and count only S_OK as a completed frame" );
         }
+        renderer.setRenderTarget( nullptr );
+        renderer.beginRender();
+        renderer.endRender();
+        wp_renderer_dx11_get_statistics( native, &beforePresent );
+        ok &= check( beforePresent.present_attempts == afterPresent.present_attempts,
+                     "detached wrapper target must end safely without presentation" );
+        std::printf( "Checked native presentation: %llu attempts, %llu completed, %llu occluded\n",
+                     static_cast<unsigned long long>( afterPresent.present_attempts ),
+                     static_cast<unsigned long long>( afterPresent.frames ),
+                     static_cast<unsigned long long>( afterPresent.present_occluded ) );
         window->size = { 800, 600 };
         renderer.setRenderTarget( window );
         auto *afterPresentResize = depthTarget( context );
