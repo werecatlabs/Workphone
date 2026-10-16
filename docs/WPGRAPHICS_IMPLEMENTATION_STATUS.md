@@ -1,5 +1,26 @@
 # WPGraphics implementation status
 
+## Native RGBA32F texture upload — 16 October 2026
+
+The sampled linear-float texture path now calls a native DX11 upload API instead
+of creating Direct3D textures and shader-resource views in `ClawTexture.cpp`.
+The native API checks the device-supported dimensions, exact RGBA float count
+and 256 MiB upload limit before creating an immutable `R32G32B32A32_FLOAT`
+resource. The C++ wrapper retains its existing staged replacement and previous
+visible texture on upload failure. The DX11 target contract checks invalid
+inputs and reads back HDR pixel values from the uploaded resource.
+
+Validation: the Debug `WPGraphicsClawDX11TargetTests` and `ClawCubemapTests`
+targets build, and both `WPGraphics.claw_dx11_targets` and
+`WPGraphics.cubemap_pbr` pass on the current local DX11 device. The build also
+exposed two refactor-related issues: `FoliageAuthoring.cpp` lacked the local
+`FoliageJsonBudget.hpp` declaration, and a dependencies-off build linked the
+absent `Meshopt.lib`. The missing include and conditional CMake target link
+are repaired. These are selected Debug contracts, not a full suite or
+hardware performance result. This is one texture upload boundary increment; the other native
+target/camera, resource lifetime, frame snapshot and presentation work below
+remains open.
+
 ## Native frame and geometry ownership — 12 October 2026
 
 This increment advances the C90 implementation/C++17 wrapper boundary. It does

@@ -129,6 +129,10 @@ int main()
         floatTextureContracts();
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
         require( recordDX11TestDevice( device ), "DX11 device evidence must be available" );
+        std::array<wp_texture_cube_mip_dx11, 48> invalidCube{};
+        require( !wp_dx11_create_cubemap_rgba32f_native( device, invalidCube.data(), 47 ) &&
+                     !wp_dx11_create_cubemap_rgba32f_native( device, invalidCube.data(), 48 ),
+                 "native cubemap upload must reject incomplete face and mip data" );
         auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );
         ClawCubemap cube;
         std::array<ID3D11ShaderResourceView *, 6> views{};

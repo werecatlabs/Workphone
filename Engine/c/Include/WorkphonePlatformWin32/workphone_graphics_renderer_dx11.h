@@ -292,6 +292,19 @@ void *wp_renderer_dx11_create_texture_mips_native( wp_renderer_dx11 *renderer,
 void *wp_renderer_dx11_create_texture_rgba32f_native( wp_renderer_dx11 *renderer,
     const wp_f32 *rgba, wp_u32 width, wp_u32 height, wp_u64 float_count );
 
+typedef struct wp_texture_cube_mip_dx11
+{
+    const wp_f32 *rgba;
+    wp_u32 width, height;
+    wp_u64 float_count;
+} wp_texture_cube_mip_dx11;
+/** Immutable RGBA32F environment cube with six faces and eight mips per face.
+ * Levels are face-major and every mip must contain its exact pixel count.
+ * The returned SRV is caller-owned; release with destroy_texture_native().
+ */
+void *wp_dx11_create_cubemap_rgba32f_native( void *device,
+    const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count );
+
 typedef struct wp_texture_encoded_mip_dx11
 {
     const void *bytes;

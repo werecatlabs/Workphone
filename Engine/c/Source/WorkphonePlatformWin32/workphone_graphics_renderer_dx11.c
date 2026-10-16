@@ -3242,6 +3242,46 @@ void *wp_renderer_dx11_create_texture_rgba32f_native( wp_renderer_dx11 *r,
     return SUCCEEDED(hr) ? view : NULL;
 }
 
+void *wp_dx11_create_cubemap_rgba32f_native( void *native_device,
+    const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count )
+{
+    ID3D11Device *device = (ID3D11Device *)native_device;
+    D3D11_TEXTURE2D_DESC desc;
+    D3D11_SUBRESOURCE_DATA data[48];
+    ID3D11Texture2D *texture = NULL;
+    ID3D11ShaderResourceView *view = NULL;
+    wp_u32 face, mip, index, size;
+    HRESULT hr;
+    if( !device || !levels || level_count != 48 ) return NULL;
+    memset( data, 0, sizeof(data) );
+    for( face = 0; face < 6; ++face )
+    {
+        for( mip = 0; mip < 8; ++mip )
+        {
+            index = face * 8 + mip;
+            size = 128u >> mip;
+            if( !levels[index].rgba || levels[index].width != size ||
+                levels[index].height != size ||
+                levels[index].float_count != (wp_u64)size * size * 4u ) return NULL;
+            data[index].pSysMem = levels[index].rgba;
+            data[index].SysMemPitch = size * 4u * sizeof(wp_f32);
+        }
+    }
+    memset( &desc, 0, sizeof(desc) );
+    desc.Width = desc.Height = 128;
+    desc.MipLevels = 8; desc.ArraySize = 6;
+    desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    desc.SampleDesc.Count = 1;
+    desc.Usage = D3D11_USAGE_IMMUTABLE;
+    desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
+    hr = ID3D11Device_CreateTexture2D( device, &desc, data, &texture );
+    if( FAILED(hr) ) return NULL;
+    hr = ID3D11Device_CreateShaderResourceView( device, (ID3D11Resource *)texture, NULL, &view );
+    ID3D11Texture2D_Release(texture);
+    return SUCCEEDED(hr) ? view : NULL;
+}
+
 void *wp_renderer_dx11_create_texture_encoded_mips_native( wp_renderer_dx11 *r,
     const wp_texture_encoded_mip_dx11 *levels, wp_u32 count, wp_u32 format )
 {

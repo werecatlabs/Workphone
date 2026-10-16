@@ -1,6 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
+#include "../../../Graphics/FoliageJsonBudget.hpp"
 #include <Workphone/Core/StringUtil.hpp>
 #include <cJSON.h>
 #include <algorithm>

@@ -1,5 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawCubemap.hpp>
+#include <workphone_graphics_renderer_dx11.h>
 #include <d3d11.h>
 #include <algorithm>
 #include <cmath>
@@ -272,7 +273,7 @@ namespace workphone::render
             return false;
         }
         std::array<std::vector<float>, 48> pixels;
-        std::array<D3D11_SUBRESOURCE_DATA, 48> data{};
+        std::array<wp_texture_cube_mip_dx11, 48> data{};
         // GGX samples depend on roughness, not face or texel. Compute the
         // expensive trigonometry once per mip instead of millions of times.
         std::array<std::array<V, 64>, 8> halfVectors{};
@@ -338,28 +339,13 @@ namespace workphone::render
                             !std::isfinite( output[offset + 2] ) ) return false;
                     }
                 }
-                data[index].pSysMem = output.data();
-                data[index].SysMemPitch = size * 16;
+                data[index] = { output.data(), size, size, output.size() };
             }
         }
-        D3D11_TEXTURE2D_DESC desc{};
-        desc.Width = desc.Height = 128;
-        desc.MipLevels = 8;
-        desc.ArraySize = 6;
-        desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-        desc.SampleDesc.Count = 1;
-        desc.Usage = D3D11_USAGE_IMMUTABLE;
-        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-        desc.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
-        ID3D11Texture2D *texture = nullptr;
-        ID3D11ShaderResourceView *view = nullptr;
-        if( FAILED( device->CreateTexture2D( &desc, data.data(), &texture ) ) )
-        {
-            return false;
-        }
-        const auto hr = device->CreateShaderResourceView( texture, nullptr, &view );
-        texture->Release();
-        if( FAILED( hr ) )
+        auto *view = static_cast<ID3D11ShaderResourceView *>(
+            wp_dx11_create_cubemap_rgba32f_native( device, data.data(),
+                                                   static_cast<wp_u32>( data.size() ) ) );
+        if( !view )
         {
             return false;
         }

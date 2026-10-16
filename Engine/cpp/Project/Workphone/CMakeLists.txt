@@ -178,7 +178,9 @@ if(TARGET WorkphoneGraphics)
 endif()
 
 if (NOT WP_STATIC_LIB)
-    target_link_libraries(Workphone Meshopt)
+    if (TARGET Meshopt)
+        target_link_libraries(Workphone Meshopt)
+    endif()
 
     if (WIN32)
         if (WP_USE_ONETBB)
