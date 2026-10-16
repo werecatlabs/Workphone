@@ -352,8 +352,12 @@ namespace workphone::render
                         m_windowWidth = static_cast<u32>( size.x );
                         m_windowHeight = static_cast<u32>( size.y );
                     }
-                    m_rtWidth = static_cast<u32>( size.x );
-                    m_rtHeight = static_cast<u32>( size.y );
+                    // A rejected resize retains the old swap-chain buffers.
+                    // Publish their actual extent rather than the requested size.
+                    m_windowWidth = static_cast<u32>( wp_renderer_dx11_get_width( dx11 ) );
+                    m_windowHeight = static_cast<u32>( wp_renderer_dx11_get_height( dx11 ) );
+                    m_rtWidth = m_windowWidth;
+                    m_rtHeight = m_windowHeight;
                 }
             }
 

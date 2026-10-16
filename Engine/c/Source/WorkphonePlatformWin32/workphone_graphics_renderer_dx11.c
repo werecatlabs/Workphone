@@ -2356,8 +2356,13 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
     wp_s32 old_height;
     HRESULT hr;
 
-    if( !wp_renderer_dx11_dimensions_supported( r, width, height ) )
+    /* Active HDR/shadow passes retain saved output state. Resizing here would
+     * disrupt their bindings and can fail on retained swap-chain references. */
+    if( !r || r->hdr_active || r->shadow_pass ||
+        !wp_renderer_dx11_dimensions_supported( r, width, height ) )
         return 0;
+
+    if( width == r->width && height == r->height && r->rt_view && r->ds_view ) return 1;
 
     old_width = r->width;
     old_height = r->height;
@@ -2369,7 +2374,9 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
     if( FAILED( hr ) )
     {
         /* ResizeBuffers leaves the old swap-chain buffers intact on failure. */
-        (void)wp_renderer_dx11_create_targets( r );
+        if( wp_renderer_dx11_create_targets( r ) )
+            ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
+                                                    r->active_ds_view );
         return 0;
     }
 
@@ -2386,7 +2393,9 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
         {
             r->width = old_width;
             r->height = old_height;
-            (void)wp_renderer_dx11_create_targets( r );
+            if( wp_renderer_dx11_create_targets( r ) )
+                ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
+                                                        r->active_ds_view );
         }
         return 0;
     }

@@ -725,6 +725,48 @@ int main()
         std::printf( "60 scene/window switches and clears: %.3f ms (%.3f ms/frame)\n", elapsed, elapsed / 60 );
         ok &= check( retained, "scene/window switches must retain the window depth buffer" );
 
+        // A retained swap-chain buffer forces real DXGI ResizeBuffers rejection.
+        // Keep rendering/capture usable at the last successful extent, then retry.
+        ok &= check( wp_renderer_dx11_resize( native, 1280, 720 ),
+                     "same-extent native resize must succeed without replacing targets" );
+        auto *sameExtentDepth = depthTarget( context );
+        ok &= check( sameExtentDepth == originalDepth,
+                     "same-extent resize must retain the depth target" );
+        if( sameExtentDepth ) sameExtentDepth->Release();
+        auto *resizeSwapChain = static_cast<IDXGISwapChain *>(
+            wp_renderer_dx11_get_swap_chain( native ) );
+        ID3D11Texture2D *retainedBackBuffer = nullptr;
+        ok &= check( SUCCEEDED( resizeSwapChain->GetBuffer( 0, __uuidof( ID3D11Texture2D ),
+                         reinterpret_cast<void **>( &retainedBackBuffer ) ) ),
+                     "resize rejection fixture must retain the current back buffer" );
+        ok &= check( !wp_renderer_dx11_resize( native, 1024, 640 ),
+                     "retained back buffer must force native ResizeBuffers failure" );
+        ID3D11RenderTargetView *restoredWindowOutput = nullptr;
+        context->OMGetRenderTargets( 1, &restoredWindowOutput, nullptr );
+        ok &= check( restoredWindowOutput != nullptr,
+                     "native resize failure must rebind the retained window output" );
+        if( restoredWindowOutput ) restoredWindowOutput->Release();
+        window->size = { 1024, 640 };
+        renderer.setRenderTarget( window );
+        renderer.setViewport( nullptr );
+        const auto failedResizeViewport = wp_renderer_dx11_get_viewport( native );
+        ok &= check( wp_renderer_dx11_get_width( native ) == 1280 &&
+                         wp_renderer_dx11_get_height( native ) == 720 &&
+                         failedResizeViewport.width == 1280 && failedResizeViewport.height == 720,
+                     "rejected window resize must retain actual buffer and viewport dimensions" );
+        renderer.beginRender();
+        renderer.clear( workphone::ColourF( .25f, .5f, .75f, 1.0f ) );
+        std::vector<unsigned char> retainedPixels( 1280u * 720u * 4u );
+        ok &= check( wp_renderer_dx11_copy_back_buffer_rgba8(
+                         native, window->handle, retainedPixels.data(), retainedPixels.size() ) &&
+                         std::abs( static_cast<int>( retainedPixels[0] ) - 64 ) <= 1 &&
+                         std::abs( static_cast<int>( retainedPixels[1] ) - 128 ) <= 1 &&
+                         std::abs( static_cast<int>( retainedPixels[2] ) - 191 ) <= 1 &&
+                         retainedPixels[3] == 255,
+                     "rejected resize must leave a drawable and readable window buffer" );
+        renderer.endRender();
+        if( retainedBackBuffer ) retainedBackBuffer->Release();
+        std::puts( "Real DXGI resize rejection: retained extent, viewport, draw and readback passed." );
         window->size = { 1024, 640 };
         renderer.setRenderTarget( window );
         renderer.setViewport( nullptr );
@@ -800,6 +842,12 @@ int main()
                      "presentation guard HDR scene must begin" );
         ok &= check( !wp_renderer_dx11_try_present( native, window->handle, 0 ),
                      "unfinished HDR scene must not present" );
+        auto *hdrOutput = static_cast<ID3D11ShaderResourceView *>(
+            wp_renderer_dx11_get_hdr_scene_view( native ) );
+        ok &= check( !wp_renderer_dx11_resize( native, 800, 600 ) &&
+                         wp_renderer_dx11_is_hdr_scene_active( native ) &&
+                         wp_renderer_dx11_get_hdr_scene_view( native ) == hdrOutput,
+                     "resize during HDR must reject without disrupting the active scene" );
         wp_renderer_dx11_end_hdr_scene( native );
         wp_mat4f presentationIdentity{};
         for( int i = 0; i < 4; ++i ) presentationIdentity.m[i][i] = 1.0f;
@@ -807,6 +855,14 @@ int main()
                      "presentation guard shadow pass must begin" );
         ok &= check( !wp_renderer_dx11_try_present( native, window->handle, 0 ),
                      "unfinished shadow pass must not present" );
+        auto *shadowDepth = depthTarget( context );
+        ok &= check( !wp_renderer_dx11_resize( native, 800, 600 ),
+                     "resize during shadow pass must reject" );
+        auto *retainedShadowDepth = depthTarget( context );
+        ok &= check( shadowDepth && shadowDepth == retainedShadowDepth,
+                     "rejected resize must retain the active shadow target" );
+        if( shadowDepth ) shadowDepth->Release();
+        if( retainedShadowDepth ) retainedShadowDepth->Release();
         wp_renderer_dx11_end_shadow_map( native );
         wp_renderer_dx11_get_statistics( native, &afterPresent );
         ok &= check( beforePresent.present_attempts == afterPresent.present_attempts,

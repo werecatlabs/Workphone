@@ -1,6 +1,31 @@
 # WPGraphics implementation status
 
-## Checked native presentation — 16 October 2026
+## Resize rejection and active-pass safety - 16 October 2026
+
+The native DX11 resize path rejects requests during active HDR/shadow passes,
+whose saved output views must remain valid until resolve/restoration. A resize
+to the current valid extent preserves existing targets. When DXGI rejects
+`ResizeBuffers`, the native path recreates and rebinds the retained window
+outputs. The C++ adapter uses the actual swap-chain dimensions for its viewport
+instead of publishing the rejected requested extent, and retries on a later
+window target setup.
+
+Validation: all four selected Debug graphics targets rebuild and their CTest
+contracts pass (`claw_dx11_targets`, `claw_text_contract`,
+`claw_production_render`, `cubemap_pbr`). The target fixture retains a real
+swap-chain back buffer to force native and wrapper ResizeBuffers failure,
+checks native output rebinding, actual viewport dimensions, clear/readback and
+successful retry, and checks same-extent target retention and HDR/shadow resize
+rejection. Evidence is in `project_x64/graphics-resize-debug-final-build.log`
+and `project_x64/graphics-resize-debug-tests.log`. Device: Microsoft Basic
+Render Driver/WARP, feature level `b000`, driver `10.0.19041.7802`.
+
+This validates resize rejection recovery on a live device. RelWithDebInfo,
+device-removal recovery, failed rollback allocation, interactive Editor behavior
+and hardware frame pacing remain unverified.
+
+
+## Checked native presentation - 16 October 2026
 
 DX11 presentation now has a success-reporting native entry point. It checks the
 swap-chain window identity and rejects offscreen outputs and unfinished HDR or
