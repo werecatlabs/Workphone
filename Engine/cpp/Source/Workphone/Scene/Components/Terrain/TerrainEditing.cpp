@@ -1,7 +1,7 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/TerrainEditing.hpp>
-#include <Workphone/Scene/TerrainRecipes.hpp>
-#include <Workphone/Scene/TerrainMasks.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainMasks.hpp>
 #include <cJSON.h>
 #include <future>
 #include <chrono>

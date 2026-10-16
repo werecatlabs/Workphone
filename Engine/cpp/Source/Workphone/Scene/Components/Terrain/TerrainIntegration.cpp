@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/TerrainIntegration.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <Workphone/Memory/AtomicWeakPtr.hpp>

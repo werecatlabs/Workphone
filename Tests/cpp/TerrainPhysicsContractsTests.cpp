@@ -1,6 +1,6 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
-#include <Workphone/Scene/Components/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Scene/GameActor.hpp>
@@ -12,7 +12,7 @@
 #include <Workphone/System/TimerMT.hpp>
 #include <Workphone/System/CommandManagerMT.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
-#include <Workphone/Scene/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp
 #include <WPPhysics/WPPhysics.hpp>
 #include <Workphone/Physics/TerrainShape.hpp>
 #include <Workphone/Physics/PhysicsManager.hpp>

@@ -164,7 +164,7 @@
 #include <Workphone/Scene/Components/CollisionMesh.hpp>
 #include <Workphone/Scene/Components/CollisionPlane.hpp>
 #include <Workphone/Scene/Components/CollisionSphere.hpp>
-#include <Workphone/Scene/Components/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/FiniteStateMachine.hpp>
 #include <Workphone/Scene/Components/Light.hpp>
 #include <Workphone/Scene/Components/Material.hpp>

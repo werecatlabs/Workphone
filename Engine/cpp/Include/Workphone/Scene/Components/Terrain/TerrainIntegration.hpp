@@ -2,7 +2,7 @@
 #define WPTerrainIntegration_h__
 
 #include <Workphone/Graphics/TerrainData.hpp>
-#include <Workphone/Scene/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
 #include <Workphone/Math/AABB3.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 

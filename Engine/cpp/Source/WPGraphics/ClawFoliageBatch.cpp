@@ -3,7 +3,7 @@
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include "ClawMeshMaterial.hpp"
-#include <Workphone/Scene/TerrainIntegration.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
 #include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
 #include <cstring>

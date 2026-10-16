@@ -1,5 +1,5 @@
 #pragma once
-#include <Workphone/Scene/TerrainIntegration.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
 #include <Workphone/Interface/System/IEventListener.hpp>

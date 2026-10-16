@@ -1,9 +1,9 @@
 #ifndef WPTerrainAuthoringContracts_h__
 #define WPTerrainAuthoringContracts_h__
 
-#include <Workphone/Scene/TerrainEditing.hpp>
-#include <Workphone/Scene/TerrainRecipes.hpp>
-#include <Workphone/Scene/TerrainMasks.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp
+#include <Workphone/Scene/Components/Terrain/TerrainMasks.hpp
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/System/CommandManager.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>

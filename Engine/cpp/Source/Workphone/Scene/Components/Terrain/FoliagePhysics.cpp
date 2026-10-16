@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/FoliagePhysics.hpp>
-#include <Workphone/Scene/FoliageAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePhysics.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
 #include <Workphone/Interface/Physics/IPhysicsManager.hpp>
 #include <Workphone/Interface/Physics/IPhysicsScene3.hpp>
 #include <Workphone/Interface/Physics/IRigidStatic3.hpp>

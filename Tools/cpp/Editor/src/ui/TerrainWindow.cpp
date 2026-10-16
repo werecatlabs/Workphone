@@ -5,7 +5,7 @@
 #include <ui/ResourceDatabaseDialog.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>
-#include <Workphone/Scene/TerrainRecipes.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp
 #include <cmath>
 #include <limits>
 

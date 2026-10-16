@@ -1,6 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
-#include <Workphone/Scene/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
 #include <Workphone/Mesh/MeshManager.hpp>

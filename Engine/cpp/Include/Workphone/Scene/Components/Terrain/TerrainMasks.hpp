@@ -1,6 +1,6 @@
 #ifndef WPTerrainMasks_h__
 #define WPTerrainMasks_h__
-#include <Workphone/Scene/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
 
 namespace workphone::scene
 {

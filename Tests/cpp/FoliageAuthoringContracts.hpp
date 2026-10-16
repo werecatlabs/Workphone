@@ -1,7 +1,7 @@
 #ifndef WPFoliageAuthoringContracts_h__
 #define WPFoliageAuthoringContracts_h__
-#include <Workphone/Scene/FoliageAuthoring.hpp>
-#include <Workphone/Scene/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <cmath>
 #include <set>

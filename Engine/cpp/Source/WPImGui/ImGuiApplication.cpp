@@ -5,7 +5,7 @@
 #include <WPImGui/ImGuiMenuBar.hpp>
 #include <WPImGui/ImGuiMenu.hpp>
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Scene/TerrainRecipes.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
 #include "ImGuizmo.hpp"
 #include "ImSequencer.hpp"
 //#include "ImZoomSlider.hpp"

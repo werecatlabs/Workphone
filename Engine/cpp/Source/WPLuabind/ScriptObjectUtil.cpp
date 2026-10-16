@@ -1,7 +1,7 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/ScriptObjectUtil.hpp>
 #include <Workphone/Workphone.hpp>
-#include <Workphone/Scene/TerrainRecipes.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainRecipes.hpp>
 #include <luabind/luabind.hpp>
 #include <luabind/detail/convert_to_lua.hpp>
 

@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Interface/Mesh/IMesh.hpp>
 #include <Workphone/Interface/Mesh/ISubMesh.hpp>
 #include <Workphone/Interface/Mesh/IVertexBuffer.hpp>

@@ -1,7 +1,7 @@
 #ifndef WPTerrainRecipes_h__
 #define WPTerrainRecipes_h__
 
-#include <Workphone/Scene/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
 #include <Workphone/Interface/Memory/ISharedObject.hpp>
 
 namespace workphone::scene

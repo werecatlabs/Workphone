@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Physics/TerrainShape.hpp>

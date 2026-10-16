@@ -3,7 +3,7 @@
 #include <Workphone/Scene/Components/RigidbodyListener.hpp>
 #include <Workphone/Scene/GameManager.hpp>
 #include <Workphone/Scene/Components/Collision.hpp>
-#include <Workphone/Scene/Components/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Constraint.hpp>
 #include <Workphone/Scene/Transform.hpp>
 #include <Workphone/Interface/System/IFSMManager.hpp>

@@ -1,11 +1,11 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/CollisionTerrain.hpp>
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
-#include <Workphone/Scene/TerrainEditing.hpp>
-#include <Workphone/Scene/TerrainIntegration.hpp>
-#include <Workphone/Scene/FoliageAuthoring.hpp>
-#include <Workphone/Scene/FoliagePlantGenerator.hpp>
-#include <Workphone/Scene/FoliagePhysics.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
+#include <Workphone/Scene/Components/Terrain/TerrainIntegration.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePhysics.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
 #include <Workphone/Interface/System/ITaskManager.hpp>
 #include <Workphone/System/TaskLock.hpp>
