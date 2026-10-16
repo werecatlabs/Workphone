@@ -25,7 +25,6 @@ namespace workphone::scene
     protected:
         SmartPtr<IMesh> buildMesh() override;
 
-    private:
         procedural::RoadSegmentSpec m_spec;
         procedural::RoadSegmentResult m_result;
         SmartPtr<procedural::IRoadSystem> m_service;
