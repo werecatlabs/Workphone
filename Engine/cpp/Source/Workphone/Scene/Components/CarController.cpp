@@ -221,7 +221,7 @@ namespace workphone::scene
 
             const auto task = Thread::getCurrentTask();
             const auto gameManager = applicationManager->getGameManager();
-            const auto sceneTask =  gameManager->getSceneTask();
+            const auto sceneTask = gameManager->getSceneTask();
             if( task != sceneTask )
             {
                 return;
@@ -246,6 +246,7 @@ namespace workphone::scene
                                           input->isKeyPressed( KeyCodes::KEY_LEFT );
                         const bool right = input->isKeyPressed( KeyCodes::KEY_KEY_D ) ||
                                            input->isKeyPressed( KeyCodes::KEY_RIGHT );
+
                         if( throttle || brake || left || right )
                         {
                             m_joystickActive = false;
@@ -295,8 +296,6 @@ namespace workphone::scene
             {
                 setupWheels();
             }
-
-
 
             const auto twoPi = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
             // Positive wheel speed follows -Z. Up cross forward gives the rolling
