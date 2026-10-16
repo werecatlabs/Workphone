@@ -316,6 +316,33 @@ BOOST_AUTO_TEST_CASE( actor_dragdrop_test )
             //auto commandManager = applicationManager->getCommandManager();
             //commandManager->addCommand( cmd );
 
+            auto gameManager = applicationManager->getGameManager();
+            auto scene = gameManager ? gameManager->getCurrentScene() : nullptr;
+            BOOST_REQUIRE( scene );
+
+            auto dragged = gameManager->createActor();
+            auto parent = gameManager->createActor();
+            BOOST_REQUIRE( dragged );
+            BOOST_REQUIRE( parent );
+            scene->addActor( dragged );
+            scene->addActor( parent );
+
+            cmd->setActor( dragged );
+            cmd->setDestinationActor( parent );
+            cmd->execute();
+            BOOST_CHECK( dragged->getParent() == parent );
+            cmd->undo();
+            BOOST_CHECK( !dragged->getParent() );
+            cmd->redo();
+            BOOST_CHECK( dragged->getParent() == parent );
+
+            auto cyclicMove = workphone::make_ptr<DragDropActorCmd>();
+            cyclicMove->setActor( parent );
+            cyclicMove->setDestinationActor( dragged );
+            cyclicMove->execute();
+            BOOST_CHECK( !parent->getParent() );
+            BOOST_CHECK( dragged->getParent() == parent );
+
             applicationManager->setQuit( true );
             applicationManager->setRunning( false );
         }

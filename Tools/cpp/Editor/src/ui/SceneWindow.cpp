@@ -1350,11 +1350,6 @@ namespace workphone::editor
             }
             else if( eventValue == IEvent::handleTreeSelectionActivated )
             {
-                //if( sender == m_owner->m_tree )
-                //{
-                //    auto node = fb::static_pointer_cast<ui::IUITreeNode>( arguments[0].object );
-                //    m_owner->handleTreeSelectionChanged( node );
-                //}
             }
             else if( eventValue == IEvent::handleTreeSelectionRelease )
             {
@@ -1862,35 +1857,28 @@ namespace workphone::editor
     String SceneWindow::DragSource::handleDrag( const Vector2I &position,
                                                 SmartPtr<ui::IUIElement> element )
     {
+        auto owner = getOwner();
+        if( !owner || owner->getLoadingState() != LoadingState::Loaded )
+        {
+            return {};
+        }
+
         if( element && element->isDerived<ui::IUITreeNode>() )
         {
             auto treeNode = workphone::static_pointer_cast<ui::IUITreeNode>( element );
-            auto text = Util::getText( treeNode );
-
-            auto userData = treeNode->getNodeUserData();
-            if( userData )
+            auto treeData =
+                dynamic_pointer_cast<ProjectTreeData>( treeNode->getNodeUserData() );
+            auto actor = treeData
+                             ? dynamic_pointer_cast<scene::IGameActor>( treeData->getObjectData() )
+                             : nullptr;
+            auto handle = actor ? actor->getHandle() : nullptr;
+            auto uuid = handle ? handle->getUUIDAsString() : String();
+            if( !StringUtil::isNullOrEmpty( uuid ) )
             {
-                auto projectTreeData = workphone::static_pointer_cast<ProjectTreeData>( userData );
-                WP_ASSERT( projectTreeData );
-
                 auto data = workphone::make_ptr<Properties>();
-
                 data->setProperty( "sourceId", treeNode->getTreeNodeId() );
-
-                auto treeData =
-                    workphone::static_pointer_cast<ProjectTreeData>( treeNode->getNodeUserData() );
-                auto actor = treeData->getObjectData();
-
-                if( actor )
-                {
-                    if( auto handle = actor->getHandle() )
-                    {
-                        auto uuid = handle->getUUIDAsString();
-                        data->setProperty( "actorId", handle->getInstanceId() );
-                        data->setProperty( "actorUUID", uuid );
-                    }
-                }
-
+                data->setProperty( "actorId", handle->getInstanceId() );
+                data->setProperty( "actorUUID", uuid );
                 return DataUtil::toString( data.get(), true );
             }
         }
