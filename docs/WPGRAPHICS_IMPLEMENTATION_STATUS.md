@@ -1,5 +1,50 @@
 # WPGraphics implementation status
 
+## Native RTT job and DX11 execution - 16 October 2026
+
+`workphone_graphics_rtt_job.h/.c` now implement an opaque, synchronous C90 job
+with copied descriptors, optional retained contexts, dependency readiness,
+pre/post generation validation, terminal status/result, cooperative cancellation,
+and guarded reconfiguration/destruction. Finish is the non-cancellable
+publication/restore boundary. GPU execution stays on the render owner; this is
+not a worker immediate-context job or a queued completion/fence implementation.
+
+The DX11 adapter accepts RGBA8-UNORM with the existing legacy LDR draw policy.
+It uses a separate D3D11.1 context state and reusable per-target scratch colour
+and depth buffers. Clear/load and draw operate on scratch; only a successful
+post-draw check submits copies to the destination. Output bindings, viewport,
+scissor, blend/shader bindings and native input caches are restored on failure
+and success. Native constants are marked for re-upload by the next native draw;
+this does not undo arbitrary modifications to callback-owned resource contents.
+Scratch colour+depth is limited to 256 MiB per target, with no aggregate residency
+certification. `OK` confirms ordered command submission, not GPU fence completion.
+
+The adapter rejects stale renderer/target generations and extents, wrong-thread
+execution, recursive RTT, active HDR/shadow scopes at entry, resize/Present during
+RTT, and sampled destination hazards. Native texture/material bindings record a
+sticky hazard so unbinding before job completion cannot hide a self-reference.
+Scene/view generation and cull-result publication can be checked through callbacks;
+the Claw integration currently uses the existing synchronous scene scan, with
+retained C++ pass/target/camera references, rather than claiming frozen culling.
+
+`ClawHammerSystem` executes offscreen scene/pipeline/UI work inside the native
+job, catches C++ exceptions before returning through C, closes active pipeline
+work on failure and restores the previous C++ target/viewport/camera. A failed
+pass retains the previous complete texture. `ClawRenderTarget` also stages a new
+allocation before retiring the previous one; successful replacement gets a new
+native generation. The window frame path keeps its existing presentation policy.
+
+Backend support: DX11 implements this first adapter and requires D3D11.1 context
+state support. Native DX12 has no matching RTT target/job adapter; the native
+Vulkan implementation still contains creation/draw/presentation stubs. All three
+graphics APIs can render offscreen, but this implementation is currently DX11 only.
+
+Validation is pending the final Debug regression run. The isolated C90 RTT contract
+passes in RelWithDebInfo. Live Editor previews, immutable cull snapshots, queued
+scheduler integration, scene-linear/HDR output, GPU completion/per-job profiling,
+real device-removal recovery, long stress and hardware performance remain open.
+
+
 ## Resize rejection and active-pass safety - 16 October 2026
 
 The native DX11 resize path rejects requests during active HDR/shadow passes,

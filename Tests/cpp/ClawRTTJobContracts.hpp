@@ -21,7 +21,7 @@ struct Draw {
     wp_graphics_rtt_desc desc;
     HWND window = nullptr;
     bool fail = false, stale = false, pending = false, nested = false;
-    bool sample_destination = false;
+    bool sample_destination = false, transient_sample = false;
     unsigned validations = 0, draws = 0;
 };
 inline void triangle(wp_renderer_dx11 *r) {
@@ -58,6 +58,10 @@ inline wp_rtt_result draw(void *p, const wp_graphics_rtt_desc *) {
                     d.window, 0), "RTT must block resize and presentation");
     }
     triangle(d.r);
+    if(d.transient_sample) {
+        wp_renderer_dx11_set_texture_native(d.r, wp_renderer_dx11_get_render_texture_view(d.target));
+        wp_renderer_dx11_set_texture_native(d.r, nullptr);
+    }
     if(d.sample_destination) {
         auto *ctx = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(d.r));
         auto *view = static_cast<ID3D11ShaderResourceView *>(wp_renderer_dx11_get_render_texture_view(d.target));
@@ -162,7 +166,10 @@ inline bool native(wp_renderer_dx11 *r) {
     d.stale = false; d.sample_destination = true;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_HAZARD &&
                 pixels(target) == lastGood, "sampling destination during draw must reject publication and restore state");
-    d.sample_destination = false; d.pending = true;
+    d.sample_destination = false; d.transient_sample = true;
+    require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_HAZARD &&
+                pixels(target) == lastGood, "transient destination sampling must remain rejected after unbinding");
+    d.transient_sample = false; d.pending = true;
     const auto draws = d.draws;
     require(wp_renderer_dx11_execute_rtt_job(r, target, &d.desc, dependency, validate, draw, &d) == WP_RTT_NOT_READY &&
                 d.draws == draws && pixels(target) == lastGood, "pending cull dependency must not bind or draw");
@@ -219,8 +226,16 @@ public:
     }
     void detach() { m_renderer = nullptr; m_textureManager = nullptr; }
 };
+class Renderer : public ClawRendererDX11 {
+public:
+    bool rejectViewport = false;
+    void setViewport(SmartPtr<IViewport> value) override {
+        if(rejectViewport && value) throw std::runtime_error("injected RTT preparation failure");
+        ClawRendererDX11::setViewport(value);
+    }
+};
 inline bool integration(SmartPtr<IGraphicsWindow> window) {
-    auto renderer = make_ptr<ClawRendererDX11>(); renderer->load(window);
+    auto renderer = make_ptr<Renderer>(); renderer->load(window);
     require(renderer->isLoaded(), "Claw RTT integration renderer");
     auto target = make_ptr<ClawRenderTarget>(); target->setSize({32,32}); target->setActive(true);
     auto camera = make_ptr<ClawCamera>();
@@ -242,6 +257,11 @@ inline bool integration(SmartPtr<IGraphicsWindow> window) {
     graphics.frame();
     require(graphics.draws == 2 && pixels(output) == good && renderer->getRenderTarget() == window,
             "active Claw scene exception must preserve last complete texture and restore window");
+    renderer->rejectViewport = true;
+    graphics.frame();
+    require(graphics.draws == 2 && pixels(output) == good && renderer->getRenderTarget() == window,
+            "RTT preparation failure before begin must restore the window and preserve output");
+    renderer->rejectViewport = false;
     const auto oldGeneration = wp_renderer_dx11_get_render_texture_generation(output);
     target->setSize({20000,20000});
     require(!target->getNativeRenderTexture(renderer->getNativeRenderer()) &&

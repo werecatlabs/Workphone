@@ -16,6 +16,7 @@
 #ifdef _WIN32
 
 #    include <stdint.h>
+#    include "workphone_types.h"
 #    include "workphone_vector.h"
 #    include "workphone_matrix.h"
 #    include "workphone_graphics_vertex.h"
@@ -101,6 +102,16 @@ void wp_renderer_dx12_draw_triangles_ptc( wp_renderer_dx12 *renderer, const wp_v
 void wp_renderer_dx12_draw_indexed_triangles_ptc( wp_renderer_dx12 *renderer,
                                                   const wp_vertex_ptc *vertices, wp_s32 vertex_count,
                                                   const uint16_t *indices, wp_s32 index_count );
+
+/* =========================================================================
+ * Textures (used by the PTC draw calls)
+ * ====================================================================== */
+void wp_renderer_dx12_set_texture( wp_renderer_dx12 *renderer, const void *pixels, wp_s32 width,
+                                   wp_s32 height, wp_pixel_format format );
+void wp_renderer_dx12_set_texture_native( wp_renderer_dx12 *renderer, void *texture );
+void *wp_renderer_dx12_create_texture_native( wp_renderer_dx12 *renderer, const void *pixels,
+                                              wp_s32 width, wp_s32 height, wp_pixel_format format );
+void wp_renderer_dx12_destroy_texture_native( void *texture );
 
 /* =========================================================================
  * Dimension queries

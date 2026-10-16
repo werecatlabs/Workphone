@@ -133,6 +133,7 @@ namespace workphone
             bool nativeRtt = false;
             bool rttInside = false;
             bool rttCompleted = false;
+            bool rttCaptured = false;
             SmartPtr<IRenderTarget> previousTarget;
             SmartPtr<IViewport> previousViewport;
             SmartPtr<IGraphicsCamera> previousCamera;
@@ -639,9 +640,12 @@ namespace workphone
             pass.failed = false;
             pass.begun = false;
             pass.pipelineStarted = false;
-            pass.nativeRtt = pass.rttInside = pass.rttCompleted = false;
+            pass.nativeRtt = pass.rttInside = pass.rttCompleted = pass.rttCaptured = false;
             executeFramePassStage( system, dt, data, 0 );
-            // Entered passes always receive end, including failed preparation.
+            // Restore offscreen adapter state even when binding/preparation failed
+            // before the native frame driver entered this pass.
+            if( pass.failed && !pass.begun && pass.rttCaptured )
+                executeFramePassStage( system, dt, data, 5 );
             return pass.begun ? 1 : 0;
         }
 
@@ -685,13 +689,14 @@ namespace workphone
                         pass.previousTarget = renderer->getRenderTarget();
                         pass.previousViewport = renderer->getViewport();
                         pass.previousCamera = renderer->getCamera();
+                        pass.rttCaptured = true;
                     }
                     renderer->setRenderTarget( pass.target );
                     renderer->setViewport( viewport );
                     if( auto renderer3 = dynamic_pointer_cast<IRenderer3>( renderer ) )
                         renderer3->setCamera( viewport ? viewport->getCamera() : nullptr );
-                    renderer->beginRender();
                     pass.begun = true;
+                    renderer->beginRender();
                     if( !pass.nativeRtt )
                     {
                         if( pass.window || ( viewport && viewport->getClearEveryFrame() ) )
@@ -743,8 +748,16 @@ namespace workphone
                                 }
                                 executeFramePassStage( p.owner->m_sys, 0.0f, data, 3 );
                             }
-                            catch( const std::exception &e ) { p.failed = true; WP_LOG_EXCEPTION( e ); }
-                            catch( ... ) { p.failed = true; WP_LOG_ERROR( "RTT draw callback failed." ); }
+                            catch( const std::exception &e )
+                            {
+                                p.failed = true;
+                                try { WP_LOG_EXCEPTION( e ); } catch( ... ) {}
+                            }
+                            catch( ... )
+                            {
+                                p.failed = true;
+                                try { WP_LOG_ERROR( "RTT draw callback failed." ); } catch( ... ) {}
+                            }
                             p.rttInside = false;
                             return p.failed ? WP_RTT_BACKEND_FAILED : WP_RTT_OK;
                         };
@@ -804,7 +817,7 @@ namespace workphone
                         RenderPhaseProfile timing( owner->m_presentationProfile, "Presentation" );
                         renderer->endRender();
                     }
-                    if( pass.nativeRtt )
+                    if( pass.nativeRtt && pass.rttCaptured )
                     {
                         renderer->setRenderTarget( pass.previousTarget );
                         renderer->setViewport( pass.previousViewport );
@@ -813,6 +826,7 @@ namespace workphone
                         pass.previousTarget = nullptr;
                         pass.previousViewport = nullptr;
                         pass.previousCamera = nullptr;
+                        pass.rttCaptured = false;
                     }
                     break;
                 }
