@@ -200,24 +200,43 @@ namespace workphone::scene
         {
             // Scene updates run on several tasks. Animate wheel transforms once
             // on the application task, never while the render task samples them.
-            auto application = core::IApplicationManager::instancePtr();
-            const auto task = Thread::getCurrentTask();
-            const auto gameManager = application ? application->getGameManager() : nullptr;
-            const auto sceneTask = gameManager ? gameManager->getSceneTask() : TaskId::Primary;
-            if( application && task != sceneTask )
+
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            if( !applicationManager )
             {
                 return;
             }
+
+            auto timer = applicationManager->getTimerPtr();
+            if( !timer )
+            {
+                return;
+            }
+
+            const auto dt = static_cast<real_Num>( timer->getDeltaTime() );
+            if( dt <= std::numeric_limits<real_Num>::epsilon() )
+            {
+                return;
+            }
+
+            const auto task = Thread::getCurrentTask();
+            const auto gameManager = applicationManager->getGameManager();
+            const auto sceneTask =  gameManager->getSceneTask();
+            if( task != sceneTask )
+            {
+                return;
+            }
+
             VehicleController::update();
 
-            auto app = core::IApplicationManager::instancePtr();
-            if( app && task == sceneTask )
+            if( task == sceneTask )
             {
                 ScopedLock controlsLock( this, true );
-                const bool driving = app->isPlaying() && !app->isPaused() && isEnabled();
+                const bool driving =
+                    applicationManager->isPlaying() && !applicationManager->isPaused() && isEnabled();
                 if( driving && m_playerControls.load() )
                 {
-                    if( auto input = app->getInputDeviceManager() )
+                    if( auto input = applicationManager->getInputDeviceManager() )
                     {
                         const bool throttle = input->isKeyPressed( KeyCodes::KEY_KEY_W ) ||
                                               input->isKeyPressed( KeyCodes::KEY_UP );
@@ -239,6 +258,7 @@ namespace workphone::scene
                         }
                     }
                 }
+
                 if( auto vehicle = getVehicleController() )
                 {
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::THROTTLE ),
@@ -265,6 +285,7 @@ namespace workphone::scene
                             }
                         }
                     }
+
                     vehicle->setChannel( s32( vehicle::IVehicle::Input::STEERING ),
                                          driving ? steering : 0.f );
                 }
@@ -275,23 +296,7 @@ namespace workphone::scene
                 setupWheels();
             }
 
-            auto applicationManager = core::IApplicationManager::instancePtr();
-            if( !applicationManager )
-            {
-                return;
-            }
 
-            auto timer = applicationManager->getTimerPtr();
-            if( !timer )
-            {
-                return;
-            }
-
-            const auto dt = static_cast<real_Num>( timer->getDeltaTime() );
-            if( dt <= std::numeric_limits<real_Num>::epsilon() )
-            {
-                return;
-            }
 
             const auto twoPi = static_cast<real_Num>( 2.0 ) * Math<real_Num>::pi();
             // Positive wheel speed follows -Z. Up cross forward gives the rolling
@@ -799,7 +804,6 @@ namespace workphone::scene
 
         auto physicsManager = applicationManager->getPhysicsManagerPtr();
 
-        // auto raycastScene = applicationManager->getRaycastScene();
         auto raycastScene = physicsManager->getPhysicsScene();
         if( raycastScene )
         {

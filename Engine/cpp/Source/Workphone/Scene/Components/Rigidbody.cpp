@@ -701,31 +701,37 @@ namespace workphone::scene
 
     void Rigidbody::addToScene()
     {
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        WP_ASSERT( applicationManager );
-
-        auto physicsManager = applicationManager->getPhysicsManagerPtr();
-        if( !physicsManager )
+        if( auto actor = getActor() )
         {
-            WP_LOG_ERROR( "Physics manager is not available." );
-            return;
-        }
-
-        if( auto physicsScene = physicsManager->getPhysicsScene() )
-        {
-            if( auto rigidDynamic = getRigidDynamic() )
+            if( actor->isEnabledInScene() && isEnabled() )
             {
-                physicsScene->addActor( rigidDynamic );
-            }
+                auto applicationManager = core::IApplicationManager::instancePtr();
+                WP_ASSERT( applicationManager );
 
-            if( auto rigidStatic = getRigidStatic() )
-            {
-                physicsScene->addActor( rigidStatic );
+                auto physicsManager = applicationManager->getPhysicsManagerPtr();
+                if( !physicsManager )
+                {
+                    WP_LOG_ERROR( "Physics manager is not available." );
+                    return;
+                }
+
+                if( auto physicsScene = physicsManager->getPhysicsScene() )
+                {
+                    if( auto rigidDynamic = getRigidDynamic() )
+                    {
+                        physicsScene->addActor( rigidDynamic );
+                    }
+
+                    if( auto rigidStatic = getRigidStatic() )
+                    {
+                        physicsScene->addActor( rigidStatic );
+                    }
+                }
+                else
+                {
+                    WP_LOG_ERROR( "Physics scene is not available." );
+                }
             }
-        }
-        else
-        {
-            WP_LOG_ERROR( "Physics scene is not available." );
         }
     }
 
