@@ -18,7 +18,11 @@
 
 typedef struct wp_scenenode
 {
-    wp_u64 generation;
+    wp_u64 generation, local_revision;
+    wp_u64 local_cache_generation, world_cache_generation, parent_cache_revision, world_revision;
+    wp_u64 local_builds, world_builds;
+    wp_scenenode *cached_parent;
+    wp_mat4f cached_local, cached_world;
     wp_vec3f position;
     wp_quatf orientation;
     wp_vec3f scale;
@@ -48,6 +52,7 @@ wp_scenenode *wp_scenenode_create( void )
     memset( node, 0, sizeof( wp_scenenode ) );
 
     node->generation = wp_job_next_generation();
+    node->local_revision = 1;
     node->orientation.w = 1.0f;
     node->scale.x = 1.0f;
     node->scale.y = 1.0f;
@@ -237,8 +242,14 @@ void wp_scenenode_set_position( wp_scenenode *node, wp_vec3f position )
         return;
     }
 
+    if( node->position.x == position.x && node->position.y == position.y &&
+        node->position.z == position.z )
+    {
+        return;
+    }
     node->position = position;
     ++node->generation;
+    ++node->local_revision;
 }
 
 wp_quatf wp_scenenode_get_orientation( const wp_scenenode *node )
@@ -262,8 +273,14 @@ void wp_scenenode_set_orientation( wp_scenenode *node, wp_quatf orientation )
         return;
     }
 
+    if( node->orientation.x == orientation.x && node->orientation.y == orientation.y &&
+        node->orientation.z == orientation.z && node->orientation.w == orientation.w )
+    {
+        return;
+    }
     node->orientation = orientation;
     ++node->generation;
+    ++node->local_revision;
 }
 
 wp_vec3f wp_scenenode_get_scale( const wp_scenenode *node )
@@ -286,8 +303,13 @@ void wp_scenenode_set_scale( wp_scenenode *node, wp_vec3f scale )
         return;
     }
 
+    if( node->scale.x == scale.x && node->scale.y == scale.y && node->scale.z == scale.z )
+    {
+        return;
+    }
     node->scale = scale;
     ++node->generation;
+    ++node->local_revision;
 }
 
 static void wp_scenenode_local_matrix( const wp_scenenode *node, wp_mat4f *matrix )
@@ -343,11 +365,25 @@ static void wp_scenenode_local_matrix( const wp_scenenode *node, wp_mat4f *matri
 
 void wp_scenenode_get_local_matrix( const wp_scenenode *node, wp_mat4f *matrix )
 {
+    wp_scenenode *cache;
     if( !matrix )
     {
         return;
     }
-    wp_scenenode_local_matrix( node, matrix );
+    if( !node )
+    {
+        wp_mat4f_identity( matrix );
+        return;
+    }
+    /* Cache writes are owner-thread operations, just like hierarchy mutation. */
+    cache = (wp_scenenode *)node;
+    if( cache->local_cache_generation != cache->local_revision )
+    {
+        wp_scenenode_local_matrix( node, &cache->cached_local );
+        cache->local_cache_generation = cache->local_revision;
+        ++cache->local_builds;
+    }
+    *matrix = cache->cached_local;
 }
 
 static void wp_scenenode_world_matrix( const wp_scenenode *node, wp_mat4f *matrix, wp_s32 depth )
@@ -368,11 +404,72 @@ static void wp_scenenode_world_matrix( const wp_scenenode *node, wp_mat4f *matri
 
 void wp_scenenode_get_world_matrix( const wp_scenenode *node, wp_mat4f *matrix )
 {
+    wp_scenenode *chain[257], *current, *parent;
+    wp_mat4f local;
+    wp_u32 count = 0;
+    wp_u64 parent_revision;
+    const wp_scenenode *cursor;
     if( !matrix )
     {
         return;
     }
-    wp_scenenode_world_matrix( node, matrix, 0 );
+    if( !node )
+    {
+        wp_mat4f_identity( matrix );
+        return;
+    }
+    cursor = node;
+    while( cursor && count < 257u )
+    {
+        chain[count++] = (wp_scenenode *)cursor;
+        cursor = cursor->parent;
+    }
+    if( cursor )
+    {
+        /* Preserve the reference's depth-limited result without storing a
+         * truncated parent transform in a cache used by shallower queries. */
+        wp_scenenode_world_matrix( node, matrix, 0 );
+        return;
+    }
+    while( count )
+    {
+        current = chain[--count];
+        parent = current->parent;
+        parent_revision = parent ? parent->world_revision : 0;
+        if( !current->world_revision || current->world_cache_generation != current->generation ||
+            current->cached_parent != parent || current->parent_cache_revision != parent_revision )
+        {
+            wp_scenenode_get_local_matrix( current, &local );
+            if( parent )
+            {
+                wp_mat4f_mul( &current->cached_world, &parent->cached_world, &local );
+            }
+            else
+            {
+                current->cached_world = local;
+            }
+            current->world_cache_generation = current->generation;
+            current->cached_parent = parent;
+            current->parent_cache_revision = parent_revision;
+            ++current->world_revision;
+            ++current->world_builds;
+        }
+    }
+    *matrix = node->cached_world;
+}
+
+void wp_scenenode_get_transform_stats( const wp_scenenode *node, wp_scenenode_transform_stats *out )
+{
+    if( !out )
+    {
+        return;
+    }
+    memset( out, 0, sizeof( *out ) );
+    if( node )
+    {
+        out->local_builds = node->local_builds;
+        out->world_builds = node->world_builds;
+    }
 }
 
 /* =========================================================================

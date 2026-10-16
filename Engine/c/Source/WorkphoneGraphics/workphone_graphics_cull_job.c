@@ -52,6 +52,7 @@ struct wp_graphics_cull_result
     wp_s32 candidate_count;
     wp_u32 scene_generation;
     wp_graphics_cull_pass pass;
+    wp_transform_job_stats transform_stats;
 };
 
 struct wp_graphics_cull_job
@@ -68,6 +69,7 @@ struct wp_graphics_cull_job
     wp_u64 native_generation;
     wp_transform_job_system *transforms;
     wp_graphics_cull_pass pass;
+    wp_transform_job_stats transform_stats;
     wp_u32 scene_generation;
     wp_graphics_cull_result *result;
 };
@@ -380,6 +382,7 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
     cull_job_release_snapshot( job );
     cull_job_release_result( job );
     job->status = WP_GRAPHICS_CULL_STATUS_IDLE;
+    memset( &job->transform_stats, 0, sizeof( job->transform_stats ) );
 
     if( scene->object_count > 0 )
     {
@@ -421,6 +424,7 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
             return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
         }
         wp_transform_job_system_wait( job->transforms );
+        wp_transform_job_system_get_stats( job->transforms, &job->transform_stats );
         worlds = wp_transform_job_system_get_result( job->transforms, NULL, NULL );
         for( i = 0; i < job->entry_count; ++i )
         {
@@ -541,6 +545,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     result->candidate_count = job->entry_count;
     result->scene_generation = job->scene_generation;
     result->pass = job->pass;
+    result->transform_stats = job->transform_stats;
 
     free( sorted == indices ? scratch : indices );
     cull_job_release_snapshot( job );
@@ -753,4 +758,21 @@ wp_s32 wp_graphics_cull_result_validate( const wp_graphics_cull_result *r,
         }
     }
     return WP_GRAPHICS_CULL_OK;
+}
+
+void wp_graphics_cull_result_get_transform_stats( const wp_graphics_cull_result *result,
+                                                  wp_transform_job_stats *out )
+{
+    if( !out )
+    {
+        return;
+    }
+    if( result )
+    {
+        *out = result->transform_stats;
+    }
+    else
+    {
+        memset( out, 0, sizeof( *out ) );
+    }
 }

@@ -9,10 +9,24 @@ typedef struct wp_transform_path
     wp_u32 start, count;
 } wp_transform_path;
 
+typedef struct wp_transform_reference
+{
+    const wp_scenenode *node;
+    wp_u32 reference;
+} wp_transform_reference;
+
+static int wp_transform_reference_compare( const void *left, const void *right )
+{
+    uintptr_t a = (uintptr_t)( (const wp_transform_reference *)left )->node;
+    uintptr_t b = (uintptr_t)( (const wp_transform_reference *)right )->node;
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
 typedef struct wp_transform_batch
 {
     const wp_mat4f *locals;
     const wp_transform_path *paths;
+    const wp_u32 *indices;
     wp_mat4f *worlds;
     wp_u32 start, count;
 } wp_transform_batch;
@@ -26,6 +40,8 @@ struct wp_transform_job_system
     wp_mat4f *locals, *worlds, *destination;
     wp_transform_path *paths;
     wp_transform_batch *batches;
+    wp_u32 *indices;
+    wp_transform_job_stats stats;
     wp_transform_job_status status;
 };
 
@@ -42,7 +58,7 @@ static void wp_transform_batch_run( void *data )
         while( j )
         {
             --j;
-            wp_mat4f_mul( &combined, &world, &b->locals[b->paths[index].start + j] );
+            wp_mat4f_mul( &combined, &world, &b->locals[b->indices[b->paths[index].start + j]] );
             world = combined;
         }
         b->worlds[index] = world;
@@ -55,10 +71,12 @@ static void wp_transform_release( wp_transform_job_system *s )
     free( s->worlds );
     free( s->paths );
     free( s->batches );
+    free( s->indices );
     s->locals = NULL;
     s->worlds = NULL;
     s->paths = NULL;
     s->batches = NULL;
+    s->indices = NULL;
     s->count = 0;
     s->destination = NULL;
 }
@@ -125,7 +143,9 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     wp_mat4f *locals, *worlds;
     wp_transform_path *paths;
     wp_transform_batch *batches;
-    wp_u32 i, j, depth, total = 0, batch_count, start;
+    wp_transform_reference *references;
+    wp_u32 *indices;
+    wp_u32 i, j, depth, total = 0, unique = 0, batch_count, start;
     size_t bytes;
     if( !s || s->status == WP_TRANSFORM_RUNNING || ( count && !nodes ) )
     {
@@ -173,7 +193,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         total += depth;
     }
     batch_count = count / s->batch_size + ( count % s->batch_size != 0 );
-    bytes = (size_t)total * sizeof( wp_mat4f ) +
+    /* Sort borrowed references on the owner to capture each unique node once.
+     * Workers receive only owned matrices and integer path indices. Scratch and
+     * retained arrays together must fit the snapshot limit. */
+    bytes = (size_t)total * ( sizeof( wp_transform_reference ) + sizeof( wp_u32 ) ) +
             (size_t)count * ( sizeof( *paths ) + sizeof( wp_mat4f ) ) +
             (size_t)batch_count * sizeof( *batches );
     if( bytes > WP_TRANSFORM_BYTE_LIMIT )
@@ -181,28 +204,77 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         free( paths );
         return 0;
     }
-    locals = total ? (wp_mat4f *)malloc( (size_t)total * sizeof( *locals ) ) : NULL;
-    worlds = count ? (wp_mat4f *)malloc( (size_t)count * sizeof( *worlds ) ) : NULL;
-    batches = batch_count ? (wp_transform_batch *)calloc( batch_count, sizeof( *batches ) ) : NULL;
-    if( ( total && !locals ) || ( count && !worlds ) || ( batch_count && !batches ) )
+    references =
+        total ? (wp_transform_reference *)malloc( (size_t)total * sizeof( *references ) ) : NULL;
+    indices = total ? (wp_u32 *)malloc( (size_t)total * sizeof( *indices ) ) : NULL;
+    if( total && ( !references || !indices ) )
     {
         free( paths );
-        free( locals );
-        free( worlds );
-        free( batches );
+        free( references );
+        free( indices );
         return 0;
     }
-    /* All live hierarchy reads finish before the first task is submitted. */
     for( i = 0; i < count; ++i )
     {
         node = nodes[i];
         for( j = 0; j < paths[i].count; ++j )
         {
-            wp_scenenode_get_local_matrix( node, &locals[paths[i].start + j] );
+            start = paths[i].start + j;
+            references[start].node = node;
+            references[start].reference = start;
             node = wp_scenenode_get_parent( node );
         }
     }
+    if( total )
+    {
+        qsort( references, total, sizeof( *references ), wp_transform_reference_compare );
+    }
+    for( i = 0; i < total; ++i )
+    {
+        if( !i || references[i].node != references[i - 1].node )
+        {
+            ++unique;
+        }
+    }
+    bytes += (size_t)unique * sizeof( wp_mat4f );
+    if( bytes > WP_TRANSFORM_BYTE_LIMIT )
+    {
+        free( paths );
+        free( references );
+        free( indices );
+        return 0;
+    }
+    locals = unique ? (wp_mat4f *)malloc( (size_t)unique * sizeof( *locals ) ) : NULL;
+    worlds = count ? (wp_mat4f *)malloc( (size_t)count * sizeof( *worlds ) ) : NULL;
+    batches = batch_count ? (wp_transform_batch *)calloc( batch_count, sizeof( *batches ) ) : NULL;
+    if( ( unique && !locals ) || ( count && !worlds ) || ( batch_count && !batches ) )
+    {
+        free( paths );
+        free( references );
+        free( indices );
+        free( locals );
+        free( worlds );
+        free( batches );
+        return 0;
+    }
+    unique = 0;
+    for( i = 0; i < total; ++i )
+    {
+        if( !i || references[i].node != references[i - 1].node )
+        {
+            wp_scenenode_get_local_matrix( references[i].node, &locals[unique] );
+            ++unique;
+        }
+        indices[references[i].reference] = unique - 1u;
+    }
+    free( references );
     wp_transform_release( s );
+    s->indices = indices;
+    s->stats.output_count = count;
+    s->stats.local_matrix_count = unique;
+    s->stats.path_reference_count = total;
+    s->stats.capture_peak_bytes = bytes;
+    s->stats.retained_snapshot_bytes = bytes - (size_t)total * sizeof( wp_transform_reference );
     s->locals = locals;
     s->worlds = worlds;
     s->paths = paths;
@@ -217,6 +289,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         batches[i].locals = locals;
         batches[i].worlds = worlds;
         batches[i].paths = paths;
+        batches[i].indices = indices;
         batches[i].start = start;
         batches[i].count = count - start < s->batch_size ? count - start : s->batch_size;
         if( !wp_task_group_submit( s->completion, s->pool, wp_transform_batch_run, &batches[i] ) )
@@ -284,4 +357,20 @@ const wp_mat4f *wp_transform_job_system_get_result( const wp_transform_job_syste
         *generation = s->generation;
     }
     return s->worlds;
+}
+
+void wp_transform_job_system_get_stats( const wp_transform_job_system *s, wp_transform_job_stats *out )
+{
+    if( !out )
+    {
+        return;
+    }
+    if( s )
+    {
+        *out = s->stats;
+    }
+    else
+    {
+        memset( out, 0, sizeof( *out ) );
+    }
 }

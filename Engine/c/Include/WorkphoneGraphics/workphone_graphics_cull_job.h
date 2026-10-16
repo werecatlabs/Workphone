@@ -33,6 +33,10 @@ extern "C" {
 
 typedef struct wp_graphics_cull_job wp_graphics_cull_job;
 typedef struct wp_graphics_cull_result wp_graphics_cull_result;
+typedef struct wp_transform_job_stats wp_transform_job_stats;
+/* Copied transform preparation counters; include transform_job.h for the fields. */
+void wp_graphics_cull_result_get_transform_stats( const wp_graphics_cull_result *,
+                                                  wp_transform_job_stats * );
 
 typedef enum wp_graphics_cull_status
 {

@@ -1,5 +1,59 @@
 # WPGraphics implementation status
 
+## Native transform cache and shared capture - 16 October 2026
+
+The next `PERF-07` / `SCENE-03` increment is integrated into the existing native
+scene-node queries and transform-to-cull preparation. Local matrices are cached
+by a separate local revision. World queries walk the ancestor chain on the owner
+and rebuild only when the node revision, parent identity or parent's evaluated
+world revision changes. This uses per-instance revisions, with no assumption that
+separate DLLs share a global clock. Equal position/orientation/scale assignments
+keep both caches and prepared cull results valid. Reparenting and parent destruction
+invalidate world matrices while retaining unchanged local matrices.
+
+Queries through 257 nodes use the cache. Deeper native queries preserve the
+existing depth-limited recursive reference and never publish truncated transforms
+into the cache. Transform jobs still reject such paths. Matrix queries now populate
+caches even through const pointers and require the owner thread. Worker jobs keep
+their existing immutable-input contract and never access node caches.
+
+Transform capture sorts borrowed references on the owner, copies each unique
+local matrix once, and replaces repeated ancestor matrices with integer indices.
+Borrowed references are freed before worker submission. Workers retain their
+original root-to-leaf multiplication order, private outputs and scoped completion.
+The 64 MiB job-array/capture-scratch cap, cancellation and pre-draw fallback rules
+remain in effect. New counters report unique local matrices, path references,
+outputs and retained/peak job-array bytes; cull results copy these counters for
+active-pass inspection. Node counters report local/world cache builds, excluding
+hierarchy checks and the uncached deep-path fallback.
+
+The deterministic shared-hierarchy fixture requests 1,024 outputs from 256 children
+with one shared parent: 2,048 path references now use 257 copied local matrices.
+The x64 fixture retains 100,808 bytes of job arrays. Unchanged second captures do
+not rebuild any local matrices. Tests cover normalized rotation/nonuniform negative
+scale against independently composed matrices, warm reuse, selective child edits,
+ancestor edits, idempotent setters, parent replacement, parent
+retirement, attached-camera motion and the depth-limit boundary. Existing job
+capture/destruction/cancellation and cull-to-RTT pixel parity checks remain required.
+
+This measures copy/build work and job-array storage, not whole-frame speedup.
+Each node retains two matrices plus revision/counter metadata until destruction.
+Sorting adds capture work, and workers still compose shared prefixes separately
+for each requested output. Sharing one transform publication between colour/shadow
+views, persistent scratch reuse, spatial candidates, full per-pass timing and
+representative Editor/hardware benchmarks remain open.
+
+Validation: normal project-reference Debug rebuilds pass for the native scene
+contracts and Claw DX11 target/production targets. Six selected Debug contracts
+pass, including the two-camera complete pixel comparison, stale-dependency output
+retention and active material-aware Claw RTT path. All six isolated contracts pass
+in both Debug and RelWithDebInfo. Device evidence remains Microsoft Basic Render
+Driver/WARP (`b000`, driver `10.0.19041.7802`); live Editor and hardware performance
+have not been certified. Logs: `project_x64/build_transform_reuse_verified_debug.log`,
+`build_transform_reuse_final_contract_debug.log`, `test_transform_reuse_verified_debug.log`, and
+`project_graphics_contracts/{build,test}_transform_reuse_verified_{debug,release}.log`.
+`git diff --check` passes.
+
 ## Native transform and cull integration - 16 October 2026
 
 `workphone_graphics_transform_job.h/.c` capture local-matrix ancestor chains on
