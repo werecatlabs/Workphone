@@ -305,6 +305,20 @@ typedef struct wp_texture_cube_mip_dx11
 void *wp_dx11_create_cubemap_rgba32f_native( void *device,
     const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count );
 
+typedef struct wp_dx11_cubemap_owner wp_dx11_cubemap_owner;
+/** Publishes a complete filtered cube and retains each non-NULL source view.
+ * Sources must be all present or all absent and belong to the supplied device.
+ * The owner keeps the cube and source identities alive until destruction.
+ */
+wp_dx11_cubemap_owner *wp_dx11_cubemap_owner_create( void *device,
+    const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count,
+    void *const source_views[6] );
+void wp_dx11_cubemap_owner_destroy( wp_dx11_cubemap_owner *owner );
+void *wp_dx11_cubemap_owner_get_view( const wp_dx11_cubemap_owner *owner );
+wp_s32 wp_dx11_cubemap_owner_matches( const wp_dx11_cubemap_owner *owner,
+    void *device, void *const source_views[6] );
+wp_s32 wp_dx11_device_matches_context( void *device, void *context );
+
 enum wp_dx11_face_format
 {
     WP_DX11_FACE_BGRA8 = 1,

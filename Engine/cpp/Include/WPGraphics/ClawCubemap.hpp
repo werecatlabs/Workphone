@@ -7,6 +7,7 @@
 struct ID3D11Device;
 struct ID3D11DeviceContext;
 struct ID3D11ShaderResourceView;
+struct wp_dx11_cubemap_owner;
 
 namespace workphone::render
 {
@@ -27,19 +28,15 @@ namespace workphone::render
                      const std::array<ID3D11ShaderResourceView *, 6> &faces );
         void reset();
 
-        ID3D11ShaderResourceView *getView() const
-        {
-            return m_view;
-        }
+        ID3D11ShaderResourceView *getView() const;
 
         float getMaxLod() const
         {
-            return m_view ? 7.0f : 0.0f;
+            return m_owner ? 7.0f : 0.0f;
         }
 
     private:
-        ID3D11ShaderResourceView *m_view = nullptr;
-        std::array<ID3D11ShaderResourceView *, 6> m_faces{};
+        wp_dx11_cubemap_owner *m_owner = nullptr;
     };
 }  // namespace workphone::render
 #endif

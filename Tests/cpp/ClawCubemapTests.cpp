@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <limits>
+#include <vector>
 
 using workphone::render::ClawCubemap;
 static void require( bool condition, const char *message )
@@ -134,6 +135,34 @@ int main()
                      !wp_dx11_create_cubemap_rgba32f_native( device, invalidCube.data(), 48 ),
                  "native cubemap upload must reject incomplete face and mip data" );
         auto context = static_cast<ID3D11DeviceContext *>( wp_renderer_dx11_get_context( renderer ) );
+        std::vector<float> zeroCube( 128u * 128u * 4u, 0.0f );
+        std::array<wp_texture_cube_mip_dx11, 48> ownerLevels{};
+        for( unsigned face = 0; face < 6; ++face )
+            for( unsigned mip = 0; mip < 8; ++mip )
+            {
+                const auto size = 128u >> mip;
+                ownerLevels[face * 8 + mip] = { zeroCube.data(), size, size, size * size * 4u };
+            }
+        const unsigned char ownerPixel[] = { 32, 64, 96, 255 };
+        auto *retainedFace = wp_renderer_dx11_create_texture_native(
+            renderer, ownerPixel, 1, 1, WORKPHONE_PIXEL_FORMAT_RGBA8 );
+        require( retainedFace != nullptr, "source-retention face must allocate" );
+        std::array<void *, 6> retainedSources{};
+        retainedSources.fill( retainedFace );
+        auto *owner = wp_dx11_cubemap_owner_create(
+            device, ownerLevels.data(), static_cast<wp_u32>( ownerLevels.size() ),
+            retainedSources.data() );
+        require( owner && wp_dx11_cubemap_owner_get_view( owner ) &&
+                     wp_dx11_cubemap_owner_matches( owner, device, retainedSources.data() ),
+                 "native cubemap owner must retain a complete cube and its source identities" );
+        wp_renderer_dx11_destroy_texture_native( retainedFace );
+        wp_texture_face_readback_dx11 retainedReadback{};
+        require( wp_dx11_read_texture_face_native( device, context, retainedFace,
+                                                   &retainedReadback ) &&
+                     static_cast<const unsigned char *>( retainedReadback.pixels )[0] == 32,
+                 "native cubemap owner must keep source views alive after caller release" );
+        wp_dx11_release_texture_face_readback_native( &retainedReadback );
+        wp_dx11_cubemap_owner_destroy( owner );
         ClawCubemap cube;
         std::array<ID3D11ShaderResourceView *, 6> views{};
         // Every sky face has a unique red value and an asymmetric green horizontal ramp.

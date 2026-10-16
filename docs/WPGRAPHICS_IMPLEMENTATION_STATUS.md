@@ -1,5 +1,20 @@
 # WPGraphics implementation status
 
+## Native cubemap GPU ownership — 16 October 2026
+
+`ClawCubemap` now holds one opaque native owner for its filtered DX11 view and
+six retained source views. Native creation checks that all sources are present
+or all absent and belong to the requested device, uploads the complete cube,
+then retains their identities. Failed creation leaves the previous owner
+visible; reset and replacement release the view and sources together. The
+public `ClawCubemap` API and CPU GGX filter are unchanged.
+
+Validation: Debug and RelWithDebInfo `ClawCubemapTests` build, and
+`WPGraphics.cubemap_pbr` passes in both configurations. The added contract
+releases the caller's source view, reads it through the native owner's retained
+reference, and checks owner matching and destruction. Device-loss recovery and
+long-running resource stress remain unverified.
+
 ## Native cubemap source-face readback — 16 October 2026
 
 The DX11 staging texture, selected-mip copy and mapped-row handling used by
@@ -29,7 +44,8 @@ Validation: Debug and RelWithDebInfo `ClawCubemapTests` build, and
 `WPGraphics.cubemap_pbr` passes in both configurations,
 including face orientation, filtered mips, PBR draw readback, reuse, incomplete
 face rejection and the new native incomplete-mip rejection. This confirms the
-selected DX11 contract only; other cubemap lifetime work remains in C++.
+selected DX11 contract only; device-loss recovery and broader lifetime stress
+remain open.
 
 ## Native RGBA32F texture upload — 16 October 2026
 

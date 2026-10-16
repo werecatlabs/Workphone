@@ -3282,6 +3282,95 @@ void *wp_dx11_create_cubemap_rgba32f_native( void *native_device,
     return SUCCEEDED(hr) ? view : NULL;
 }
 
+struct wp_dx11_cubemap_owner
+{
+    ID3D11ShaderResourceView *view;
+    ID3D11ShaderResourceView *sources[6];
+};
+
+wp_s32 wp_dx11_device_matches_context( void *native_device, void *native_context )
+{
+    ID3D11Device *device = (ID3D11Device *)native_device;
+    ID3D11DeviceContext *context = (ID3D11DeviceContext *)native_context;
+    ID3D11Device *owner = NULL;
+    wp_s32 matches;
+    if( !device || !context ) return 0;
+    ID3D11DeviceContext_GetDevice( context, &owner );
+    matches = owner == device;
+    if( owner ) ID3D11Device_Release(owner);
+    return matches;
+}
+
+wp_dx11_cubemap_owner *wp_dx11_cubemap_owner_create( void *native_device,
+    const wp_texture_cube_mip_dx11 *levels, wp_u32 level_count,
+    void *const source_views[6] )
+{
+    ID3D11Device *device = (ID3D11Device *)native_device;
+    wp_dx11_cubemap_owner *owner;
+    ID3D11Device *source_device;
+    wp_u32 i;
+    wp_s32 has_sources;
+    if( !device || !source_views ) return NULL;
+    has_sources = source_views[0] != NULL;
+    for( i = 0; i < 6; ++i )
+    {
+        if( (source_views[i] != NULL) != has_sources ) return NULL;
+        if( has_sources )
+        {
+            source_device = NULL;
+            ID3D11ShaderResourceView_GetDevice((ID3D11ShaderResourceView *)source_views[i],
+                                                &source_device);
+            if( source_device != device )
+            {
+                if( source_device ) ID3D11Device_Release(source_device);
+                return NULL;
+            }
+            ID3D11Device_Release(source_device);
+        }
+    }
+    owner = (wp_dx11_cubemap_owner *)calloc(1,sizeof(*owner));
+    if( !owner ) return NULL;
+    owner->view = (ID3D11ShaderResourceView *)wp_dx11_create_cubemap_rgba32f_native(
+        device,levels,level_count);
+    if( !owner->view ) { free(owner); return NULL; }
+    for( i = 0; i < 6; ++i )
+    {
+        owner->sources[i] = (ID3D11ShaderResourceView *)source_views[i];
+        if( owner->sources[i] ) ID3D11ShaderResourceView_AddRef(owner->sources[i]);
+    }
+    return owner;
+}
+
+void wp_dx11_cubemap_owner_destroy( wp_dx11_cubemap_owner *owner )
+{
+    wp_u32 i;
+    if( !owner ) return;
+    if( owner->view ) ID3D11ShaderResourceView_Release(owner->view);
+    for( i = 0; i < 6; ++i )
+        if( owner->sources[i] ) ID3D11ShaderResourceView_Release(owner->sources[i]);
+    free(owner);
+}
+
+void *wp_dx11_cubemap_owner_get_view( const wp_dx11_cubemap_owner *owner )
+{
+    return owner ? owner->view : NULL;
+}
+
+wp_s32 wp_dx11_cubemap_owner_matches( const wp_dx11_cubemap_owner *owner,
+    void *native_device, void *const source_views[6] )
+{
+    ID3D11Device *device = (ID3D11Device *)native_device, *cube_device = NULL;
+    wp_u32 i;
+    wp_s32 matches;
+    if( !owner || !owner->view || !device || !source_views ) return 0;
+    for( i = 0; i < 6; ++i )
+        if( owner->sources[i] != source_views[i] ) return 0;
+    ID3D11ShaderResourceView_GetDevice(owner->view,&cube_device);
+    matches = cube_device == device;
+    if( cube_device ) ID3D11Device_Release(cube_device);
+    return matches;
+}
+
 wp_s32 wp_dx11_read_texture_face_native( void *native_device, void *native_context,
     void *native_view, wp_texture_face_readback_dx11 *output )
 {

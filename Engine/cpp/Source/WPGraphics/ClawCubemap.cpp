@@ -1,7 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawCubemap.hpp>
 #include <workphone_graphics_renderer_dx11.h>
-#include <d3d11.h>
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -171,41 +170,26 @@ namespace workphone::render
 
     void ClawCubemap::reset()
     {
-        if( m_view )
-        {
-            m_view->Release();
-        }
-        m_view = nullptr;
-        for( auto &face : m_faces )
-        {
-            if( face )
-            {
-                face->Release();
-            }
-            face = nullptr;
-        }
+        wp_dx11_cubemap_owner_destroy( m_owner );
+        m_owner = nullptr;
+    }
+
+    ID3D11ShaderResourceView *ClawCubemap::getView() const
+    {
+        return static_cast<ID3D11ShaderResourceView *>(
+            wp_dx11_cubemap_owner_get_view( m_owner ) );
     }
 
     bool ClawCubemap::update( ID3D11Device *device, ID3D11DeviceContext *context,
                               const std::array<ID3D11ShaderResourceView *, 6> &views )
     {
-        if( !device || !context )
+        if( !wp_dx11_device_matches_context( device, context ) )
         {
             return false;
         }
-        ID3D11Device *contextDevice = nullptr;
-        context->GetDevice( &contextDevice );
-        const bool sameDevice = contextDevice == device;
-        if( contextDevice ) contextDevice->Release();
-        if( !sameDevice ) return false;
-        if( m_view && views == m_faces )
-        {
-            ID3D11Device *cubeDevice = nullptr;
-            m_view->GetDevice( &cubeDevice );
-            const bool current = cubeDevice == device;
-            if( cubeDevice ) cubeDevice->Release();
-            return current;
-        }
+        std::array<void *, 6> nativeViews{};
+        for( size_t i = 0; i < views.size(); ++i ) nativeViews[i] = views[i];
+        if( wp_dx11_cubemap_owner_matches( m_owner, device, nativeViews.data() ) ) return true;
         std::array<Face, 6> faces;
         const bool hasFaces =
             std::all_of( views.begin(), views.end(), []( auto p ) { return p != nullptr; } );
@@ -294,23 +278,14 @@ namespace workphone::render
                 data[index] = { output.data(), size, size, output.size() };
             }
         }
-        auto *view = static_cast<ID3D11ShaderResourceView *>(
-            wp_dx11_create_cubemap_rgba32f_native( device, data.data(),
-                                                   static_cast<wp_u32>( data.size() ) ) );
-        if( !view )
+        auto *nextOwner = wp_dx11_cubemap_owner_create(
+            device, data.data(), static_cast<wp_u32>( data.size() ), nativeViews.data() );
+        if( !nextOwner )
         {
             return false;
         }
         reset();
-        m_view = view;
-        m_faces = views;
-        for( auto face : m_faces )
-        {
-            if( face )
-            {
-                face->AddRef();
-            }
-        }
+        m_owner = nextOwner;
         return true;
     }
 }  // namespace workphone::render
