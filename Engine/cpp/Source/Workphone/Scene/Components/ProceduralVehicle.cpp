@@ -74,43 +74,33 @@ namespace workphone::scene
             throw std::runtime_error( "Selected LOD does not exist" );
         }
 
-        const bool importedCar = !m_carChassisPath.empty();
-        if( importedCar && ( m_config.physicsPreset == VehiclePhysicsPreset::HelicopterLittleBird ||
-                             m_config.physicsPreset == VehiclePhysicsPreset::Warbird ) )
-        {
-            throw std::runtime_error(
-                "Imported car visuals require a car Physics Preset (GT, Road Sport or Grand Prix)" );
-        }
         auto mesh = workphone::make_ptr<workphone::Mesh>();
-        if( !importedCar )
+        for( const auto &section : vehicle.geometry.lods[m_lod].sections )
         {
-            for( const auto &section : vehicle.geometry.lods[m_lod].sections )
+            if( !section.hasGeometry() )
             {
-                if( !section.hasGeometry() )
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                Array<Vector3<real_Num>> positions, normals, uvs;
-                Array<Vector4F> tangents;
-                Array<u32> indices( section.indices.begin(), section.indices.end() );
+            Array<Vector3<real_Num>> positions, normals, uvs;
+            Array<Vector4F> tangents;
+            Array<u32> indices( section.indices.begin(), section.indices.end() );
 
-                for( const auto &v : section.vertices )
-                {
-                    positions.emplace_back( v.position.x, v.position.y, v.position.z );
-                    normals.emplace_back( v.normal.x, v.normal.y, v.normal.z );
-                    tangents.emplace_back( v.tangent.x, v.tangent.y, v.tangent.z, v.tangentSign );
-                    uvs.emplace_back( v.uv.x, v.uv.y, 0 );
-                }
+            for( const auto &v : section.vertices )
+            {
+                positions.emplace_back( v.position.x, v.position.y, v.position.z );
+                normals.emplace_back( v.normal.x, v.normal.y, v.normal.z );
+                tangents.emplace_back( v.tangent.x, v.tangent.y, v.tangent.z, v.tangentSign );
+                uvs.emplace_back( v.uv.x, v.uv.y, 0 );
+            }
 
-                auto part = MeshUtil::createMesh( positions, normals, tangents, uvs, indices );
-                for( auto sub : part->getSubMeshes() )
-                {
-                    const auto &material =
-                        vehicle.appearance.material( m_generator->materialSlotFor( section.material ) );
-                    sub->setMaterialName( material.name );
-                    mesh->addSubMesh( sub );
-                }
+            auto part = MeshUtil::createMesh( positions, normals, tangents, uvs, indices );
+            for( auto sub : part->getSubMeshes() )
+            {
+                const auto &material =
+                    vehicle.appearance.material( m_generator->materialSlotFor( section.material ) );
+                sub->setMaterialName( material.name );
+                mesh->addSubMesh( sub );
             }
         }
 
@@ -134,34 +124,6 @@ namespace workphone::scene
             m_effects = service<IVehicleEffects>( "IVehicleEffects" );
         }
 
-        std::unique_ptr<vehiclevisual::CarVisualScene> importedVisual;
-        if( importedCar )
-        {
-            vehiclevisual::Spec spec;
-            spec.length = float( vehicle.physics.bodyLengthM );
-            spec.wheelbase = float( vehicle.physics.wheelbaseM );
-            spec.frontTrack = float( vehicle.physics.frontTrackM );
-            spec.rearTrack = float( vehicle.physics.rearTrackM );
-            spec.axleOffsetZ = float(
-                ( vehicle.physics.wheels[0].hubPosition.z + vehicle.physics.wheels[2].hubPosition.z ) *
-                .5 );
-            for( unsigned i = 0; i < 4; ++i )
-            {
-                spec.wheelRadius[i] = float( vehicle.physics.wheels[i].tire.radiusM );
-            }
-            spec.player = m_carPlayer;
-            spec.police = m_carPolice;
-            spec.rivalShadows = m_carRivalShadows;
-            spec.sourceForwardPlusZ = m_carForwardPlusZ;
-            spec.yawFix = m_carYawFix;
-            spec.seed = m_config.seed;
-            const auto &c = m_config.appearance.primary;
-            importedVisual = std::make_unique<vehiclevisual::CarVisualScene>();
-            importedVisual->build( getActor(), getState(), spec, m_carChassisPath, m_carWheelPath,
-                                   { c.r, c.g, c.b, c.a }, m_carLiveryPath );
-        }
-        // Prepare the replacement before resetting the published simulation state.
-        // A bad model path must leave the previous vehicle and visual usable.
         if( m_dynamics )
         {
             m_dynamicsState = m_dynamics->reset( vehicle.physics );
@@ -181,12 +143,7 @@ namespace workphone::scene
         {
             m_effectsState = m_effects->reset( m_config.seed );
         }
-        m_carVisual = std::move( importedVisual );
-        {
-            std::lock_guard<std::mutex> guard( m_carFrameMutex );
-            m_carFrame = {};
-            m_carSeconds = 0;
-        }
+
         m_telemetry = {};
         m_events.clear();
         m_vehicle = std::move( vehicle );
@@ -231,22 +188,6 @@ namespace workphone::scene
                        []( const auto &a, const auto &b ) { return a->getIndex() < b->getIndex(); } );
         }
 
-        if( m_carVisual && m_carVisual->ready() )
-        {
-            for( auto &component : m_generatedMaterials )
-            {
-                auto material = component->getMaterial();
-                component->unload( nullptr );
-                actor->removeComponentInstance( component );
-                if( material )
-                {
-                    manager->destroyResource( material );
-                }
-            }
-            m_generatedMaterials.clear();
-            m_generatedMaterialIds.clear();
-            return;
-        }
         u32 index = 0;
         for( const auto &section : m_vehicle.geometry.lods[m_lod].sections )
         {
@@ -320,46 +261,15 @@ namespace workphone::scene
         }
     }
 
-    void ProceduralVehicle::syncCarVisual( const vehiclevisual::Frame &frame, double seconds )
-    {
-        std::lock_guard<std::mutex> guard( m_carFrameMutex );
-        m_carFrame = frame;
-        m_carSeconds = seconds;
-    }
-
-    void ProceduralVehicle::update()
-    {
-        ProceduralMeshComponent::update();
-        if( Thread::getCurrentTask() != TaskId::Application || !m_carVisual || !isEnabled() )
-        {
-            return;
-        }
-        vehiclevisual::Frame frame;
-        double seconds = 0;
-        {
-            std::lock_guard<std::mutex> guard( m_carFrameMutex );
-            frame = m_carFrame;
-            seconds = m_carSeconds;
-        }
-        m_carVisual->setState( getState() );
-        try
-        {
-            m_carVisual->sync( frame, seconds );
-        }
-        catch( const std::exception &e )
-        {
-            m_error = e.what();
-        }
-    }
-
     bool ProceduralVehicle::stepFixed( const procedural::VehicleControlInput &input,
                                        const std::array<procedural::VehicleSurfaceSample, 4> &surfaces,
                                        double deltaSeconds )
     {
         using namespace procedural;
         if( m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::HelicopterLittleBird ||
-            m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::Warbird || !m_dynamics ||
-            !m_damage || !m_presentation || !m_effects || !m_vehicle.geometry.hasGeometry() )
+            m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::Warbird ||
+            !m_dynamics || !m_damage || !m_presentation || !m_effects ||
+            !m_vehicle.geometry.hasGeometry() )
         {
             return false;
         }
@@ -409,21 +319,6 @@ namespace workphone::scene
         m_presentationState = presentation;
         m_effectsState = effects;
         m_events = std::move( events );
-        {
-            std::lock_guard<std::mutex> guard( m_carFrameMutex );
-            m_carFrame.pitch = float( presentation.bodyPitchRad );
-            m_carFrame.roll = float( presentation.bodyRollRad );
-            m_carFrame.rideY = float( presentation.bodyHeaveM );
-            m_carFrame.speed = float( telemetry.speedMps );
-            m_carFrame.brake = float( telemetry.brakeLight );
-            for( unsigned i = 0; i < 4; ++i )
-            {
-                m_carFrame.steering[i] = float( presentation.wheels[i].steerAngleRad );
-                m_carFrame.rotation[i] = float( presentation.wheels[i].rotationAngleRad );
-                m_carFrame.suspension[i] = float( presentation.wheels[i].suspensionOffsetM );
-            }
-            m_carSeconds += deltaSeconds;
-        }
         return true;
     }
 
@@ -453,22 +348,9 @@ namespace workphone::scene
         }
         p->setProperty( "Generated Material IDs", ids );
         p->getPropertyObject( "Generated Material IDs" ).setReadOnly( true );
-        p->setProperty( "Car Chassis Model", m_carChassisPath );
-        p->setProperty( "Car Wheel Model", m_carWheelPath );
-        p->setProperty( "Car Livery Texture", m_carLiveryPath );
-        for( const auto *key : { "Car Chassis Model", "Car Wheel Model", "Car Livery Texture" } )
-        {
-            p->getPropertyObject( key ).setTypeName( "file" );
-        }
-        p->setProperty( "Car Player Lights", m_carPlayer );
-        p->setProperty( "Car Police Lights", m_carPolice );
-        p->setProperty( "Car Rival Shadows", m_carRivalShadows );
-        p->setProperty( "Car Model Faces +Z", m_carForwardPlusZ );
-        p->setProperty( "Car Model Yaw Correction", m_carYawFix );
         p->setProperty( "Seed", m_config.seed );
-        procedural_properties::setEnum(
-            p, "Physics Preset", static_cast<s32>( m_config.physicsPreset ),
-            { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
+        procedural_properties::setEnum( p, "Physics Preset", static_cast<s32>( m_config.physicsPreset ),
+                                        { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
         procedural_properties::setEnum( p, "Appearance Quality",
                                         static_cast<s32>( m_config.appearance.quality ),
                                         { "Preview", "Standard", "High", "Cinematic" } );
@@ -508,20 +390,11 @@ namespace workphone::scene
         }
         ProceduralMeshComponent::setProperties( p );
         p->getPropertyValue( "Generated Material IDs", m_generatedMaterialIds );
-        p->getPropertyValue( "Car Chassis Model", m_carChassisPath );
-        p->getPropertyValue( "Car Wheel Model", m_carWheelPath );
-        p->getPropertyValue( "Car Livery Texture", m_carLiveryPath );
-        p->getPropertyValue( "Car Player Lights", m_carPlayer );
-        p->getPropertyValue( "Car Police Lights", m_carPolice );
-        p->getPropertyValue( "Car Rival Shadows", m_carRivalShadows );
-        p->getPropertyValue( "Car Model Faces +Z", m_carForwardPlusZ );
-        p->getPropertyValue( "Car Model Yaw Correction", m_carYawFix );
         p->getPropertyValue( "Seed", m_config.seed );
         s32 preset = static_cast<s32>( m_config.physicsPreset ),
             quality = static_cast<s32>( m_config.appearance.quality );
-        preset = procedural_properties::getEnum(
-            p, "Physics Preset", preset,
-            { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
+        preset = procedural_properties::getEnum( p, "Physics Preset", preset,
+                                                 { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
         quality = procedural_properties::getEnum( p, "Appearance Quality", quality,
                                                   { "Preview", "Standard", "High", "Cinematic" } );
         m_config.physicsPreset =
@@ -569,7 +442,6 @@ namespace workphone::scene
 
     void ProceduralVehicle::unload( SmartPtr<ISharedObject> data )
     {
-        m_carVisual.reset();
         auto actor = getActor();
         auto app = core::IApplicationManager::instancePtr();
         auto graphics = app ? app->getGraphicsSystem() : nullptr;

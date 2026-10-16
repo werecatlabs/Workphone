@@ -5,8 +5,6 @@
 #include <Workphone/Interface/Procedural/IVehicleDamage.hpp>
 #include <Workphone/Interface/Procedural/IVehiclePresentation.hpp>
 #include <Workphone/Interface/Procedural/IVehicleEffects.hpp>
-#include <Workphone/Vehicle/CarVisualScene.hpp>
-#include <mutex>
 
 namespace workphone::scene
 {
@@ -55,10 +53,6 @@ namespace workphone::scene
          * @param data Optional shared data used during unload operations.
          */
         void unload( SmartPtr<ISharedObject> data ) override;
-        void update() override;
-        /// Queue externally driven wheel/body/light/FX presentation for the application task.
-        /// The owning actor retains its physics/world pose; frame positions are car-local.
-        void syncCarVisual( const vehiclevisual::Frame &frame, double seconds );
 
         /**
          * @brief Get the current vehicle generation configuration.
@@ -195,13 +189,6 @@ namespace workphone::scene
 
         // Level-of-detail index used when generating or selecting meshes and materials.
         u32 m_lod = 0;
-        String m_carChassisPath, m_carWheelPath, m_carLiveryPath;
-        bool m_carPlayer = true, m_carPolice = false, m_carRivalShadows = true, m_carForwardPlusZ = true;
-        float m_carYawFix = 0;
-        std::unique_ptr<vehiclevisual::CarVisualScene> m_carVisual;
-        std::mutex m_carFrameMutex;
-        vehiclevisual::Frame m_carFrame;
-        double m_carSeconds = 0;
 
         // Materials produced by the generator and applied to the runtime renderer.
         Array<SmartPtr<Material>> m_generatedMaterials;
