@@ -3,6 +3,7 @@
 
 #include <Workphone/WorkphonePrerequisites.hpp>
 #include <Workphone/Interface/System/IFrameGrabber.hpp>
+#include <deque>
 
 namespace workphone
 {
@@ -11,8 +12,8 @@ namespace workphone
      * @brief Default implementation of the IFrameGrabber interface.
      *
      * The FrameGrabberStandard collects, stores and provides access to frame
-     * messages (IStateMessage) produced by various producers. It also maintains
-     * an optional video stream used for rendering or streaming captured frames.
+     * messages (IStateMessage) produced by various producers. It keeps the
+     * newest three frames in FIFO order and forwards them to an optional video stream.
      *
      * Usage notes:
      * - Call @c addFrame(...) to push a captured frame into the grabber.
@@ -83,6 +84,7 @@ namespace workphone
          * follow the project's SmartPtr conventions (reference-counted).
          */
         SmartPtr<render::IVideoStream> m_videoStream;
+        mutable std::deque<SmartPtr<IStateMessage>> m_frames;
     };
 }  // namespace workphone
 

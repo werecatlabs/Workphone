@@ -51,6 +51,8 @@ namespace workphone
             /** Copies the current back buffer before Present as packed RGBA8. */
             void copyContentsToMemory( void *buffer, u32 size,
                                        FrameBuffer bufferId = FrameBuffer::Auto ) override;
+            bool tryCopyContentsToMemory( void *buffer, u32 size,
+                                          FrameBuffer bufferId = FrameBuffer::Auto ) const override;
 
             /** Pump native window events. Returns false after the window closes. */
             bool messagePump();

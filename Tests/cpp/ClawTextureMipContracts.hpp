@@ -15,6 +15,7 @@
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
@@ -36,6 +37,9 @@ namespace claw_texture_mip_contracts
     {
     public:
         HWND handle = nullptr;
+        bool captureSucceeds = false;
+        u8 captureValue = 0;
+        mutable unsigned captureCalls = 0;
         Vector2I getSize() const override
         {
             return { 32, 32 };
@@ -48,11 +52,26 @@ namespace claw_texture_mip_contracts
         {
             *data = nullptr;
         }
+        bool tryCopyContentsToMemory( void *buffer, u32 size,
+                                      FrameBuffer bufferId = FrameBuffer::Auto ) const override
+        {
+            ++captureCalls;
+            if( !captureSucceeds || !buffer || size < 32u * 32u * 4u ||
+                bufferId == FrameBuffer::Front )
+                return false;
+            std::fill_n( static_cast<u8 *>( buffer ), 32u * 32u * 4u, captureValue );
+            return true;
+        }
     };
 
     class Graphics : public ClawHammerSystem
     {
     public:
+        SmartPtr<IGraphicsWindow> captureWindow;
+        SmartPtr<IGraphicsWindow> getDefaultWindow() const override
+        {
+            return captureWindow ? captureWindow : ClawHammerSystem::getDefaultWindow();
+        }
         void attachRenderer( SmartPtr<IRenderer> renderer )
         {
             m_renderer = renderer;
@@ -95,7 +114,10 @@ namespace claw_texture_mip_contracts
         ~Fixture()
         {
             if( graphics )
+            {
+                graphics->captureWindow = nullptr;
                 graphics->attachRenderer( nullptr );
+            }
             if( renderer )
                 renderer->unload( nullptr );
             renderer = nullptr;

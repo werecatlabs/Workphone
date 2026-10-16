@@ -1,5 +1,7 @@
 #include <WPGraphics/ClawCubemap.hpp>
 #include <WPGraphics/ClawCubemapTexture.hpp>
+#include <Workphone/System/FrameGrabberStandard.hpp>
+#include <Workphone/State/Messages/StateFrameData.hpp>
 #include <windows.h>
 #include <d3d11.h>
 #include <wrl/client.h>
@@ -183,6 +185,36 @@ static void cubemapTextureRendererRecreation()
     std::puts( "Cubemap wrapper renderer recreation and six-face reupload passed." );
 }
 
+static void frameGrabberContracts()
+{
+    using namespace workphone;
+    claw_texture_mip_contracts::Fixture fixture;
+    fixture.initialize();
+    fixture.graphics->captureWindow = fixture.window;
+    FrameGrabberStandard grabber;
+    require( !grabber.popFrame(), "empty frame grabber must not produce a message" );
+    grabber.update();
+    require( fixture.window->captureCalls == 1 && !grabber.popFrame(),
+             "failed window capture must not publish a frame" );
+    fixture.window->captureSucceeds = true;
+    for( u8 value = 1; value <= 4; ++value )
+    {
+        fixture.window->captureValue = value;
+        grabber.update();
+    }
+    for( u8 value = 2; value <= 4; ++value )
+    {
+        auto frame = dynamic_pointer_cast<StateFrameData>( grabber.popFrame() );
+        require( frame && frame->getVideoBufferSize() == 32 * 32 * 4 &&
+                     frame->getVideoBuffer() && frame->getVideoBuffer()[0] == value &&
+                     frame->getVideoBuffer()[32 * 32 * 4 - 1] == value,
+                 "frame grabber must retain the three newest exact RGBA8 frames in FIFO order" );
+    }
+    grabber.addFrame( nullptr );
+    require( !grabber.popFrame(), "empty frame grabber must remain empty" );
+    std::puts( "Frame grabber exact-size capture, failed-capture suppression and bounded FIFO passed." );
+}
+
 int main()
 {
     HWND window = CreateWindowExW( 0, L"STATIC", L"PBR test", WS_OVERLAPPED, 0, 0, 32, 32, nullptr,
@@ -200,6 +232,7 @@ int main()
         claw_texture_mip_contracts::run();
         floatTextureContracts();
         cubemapTextureRendererRecreation();
+        frameGrabberContracts();
         auto device = static_cast<ID3D11Device *>( wp_renderer_dx11_get_device( renderer ) );
         require( recordDX11TestDevice( device ), "DX11 device evidence must be available" );
         std::array<wp_texture_cube_mip_dx11, 48> invalidCube{};

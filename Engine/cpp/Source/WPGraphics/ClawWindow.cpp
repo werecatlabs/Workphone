@@ -345,10 +345,18 @@ namespace workphone
 
         void ClawWindow::copyContentsToMemory( void *buffer, u32 size, FrameBuffer bufferId )
         {
-            if( !buffer || !size || bufferId == FrameBuffer::Front )
+            if( !tryCopyContentsToMemory( buffer, size, bufferId ) )
             {
-                WP_LOG_WARNING( "ClawWindow::copyContentsToMemory: invalid buffer or unsupported front-buffer request." );
-                return;
+                WP_LOG_WARNING( "ClawWindow::copyContentsToMemory: back buffer unavailable or RGBA8 buffer too small." );
+            }
+        }
+
+        bool ClawWindow::tryCopyContentsToMemory( void *buffer, u32 size,
+                                                  FrameBuffer bufferId ) const
+        {
+            if( !buffer || !size || bufferId == FrameBuffer::Front || bufferId == FrameBuffer::Count )
+            {
+                return false;
             }
             auto app = core::IApplicationManager::instancePtr();
             auto graphics = app ? app->getGraphicsSystemPtr() : nullptr;
@@ -356,11 +364,8 @@ namespace workphone
                 ? dynamic_pointer_cast<ClawRendererDX11>( graphics->getRenderer() ) : nullptr;
             auto *dx11 = renderer ? wp_renderer_get_dx11( renderer->getNativeRenderer() ) : nullptr;
             void *windowHandle = nullptr;
-            getWindowHandle( &windowHandle );
-            if( !wp_renderer_dx11_copy_back_buffer_rgba8( dx11, windowHandle, buffer, size ) )
-            {
-                WP_LOG_WARNING( "ClawWindow::copyContentsToMemory: back buffer unavailable or RGBA8 buffer too small." );
-            }
+            const_cast<ClawWindow *>( this )->getWindowHandle( &windowHandle );
+            return wp_renderer_dx11_copy_back_buffer_rgba8( dx11, windowHandle, buffer, size ) != 0;
         }
 
         bool ClawWindow::messagePump()

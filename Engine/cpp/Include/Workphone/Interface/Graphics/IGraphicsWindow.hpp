@@ -153,6 +153,12 @@ namespace workphone
              */
             virtual void getWindowHandle( void *pData ) = 0;
 
+            /** Copies the current window back buffer before Present as packed RGBA8.
+             * Returns false without publishing a frame when capture is unavailable.
+             * Backends without readback support return false by default. */
+            virtual bool tryCopyContentsToMemory( void *buffer, u32 size,
+                                                  FrameBuffer bufferId = FrameBuffer::Auto ) const;
+
             /**
              * Gets the device handle. This is normally platform specific.
              * @param pData A pointer to the device handle.

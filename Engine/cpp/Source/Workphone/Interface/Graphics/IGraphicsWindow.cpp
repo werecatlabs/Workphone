@@ -26,4 +26,13 @@ namespace workphone::render
 
     IGraphicsWindow::~IGraphicsWindow() = default;
 
+    bool IGraphicsWindow::tryCopyContentsToMemory( void *buffer, u32 size,
+                                                   FrameBuffer bufferId ) const
+    {
+        (void)buffer;
+        (void)size;
+        (void)bufferId;
+        return false;
+    }
+
 }  // namespace workphone::render
