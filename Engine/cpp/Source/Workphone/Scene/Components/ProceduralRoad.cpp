@@ -32,7 +32,7 @@ namespace workphone::scene
     ProceduralRoad::ProceduralRoad() = default;
     ProceduralRoad::~ProceduralRoad() = default;
 
-    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRoad, ProceduralMeshComponent );
+    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralRoad, ProceduralMesh );
 
     SmartPtr<IMesh> ProceduralRoad::buildMesh()
     {
@@ -97,7 +97,7 @@ namespace workphone::scene
 
     SmartPtr<Properties> ProceduralRoad::getProperties() const
     {
-        auto p = ProceduralMeshComponent::getProperties();
+        auto p = ProceduralMesh::getProperties();
         p->setProperty( "Seed", m_spec.seed );
         p->setProperty( "Start", m_spec.start );
         p->setProperty( "End", m_end );
@@ -118,7 +118,7 @@ namespace workphone::scene
         {
             return;
         }
-        ProceduralMeshComponent::setProperties( p );
+        ProceduralMesh::setProperties( p );
         p->getPropertyValue( "Seed", m_spec.seed );
         p->getPropertyValue( "Start", m_spec.start );
         p->getPropertyValue( "End", m_end );
@@ -137,7 +137,7 @@ namespace workphone::scene
 
     void ProceduralRoad::unload( SmartPtr<ISharedObject> data )
     {
-        ProceduralMeshComponent::unload( data );
+        ProceduralMesh::unload( data );
         m_service = nullptr;
         m_result = {};
     }

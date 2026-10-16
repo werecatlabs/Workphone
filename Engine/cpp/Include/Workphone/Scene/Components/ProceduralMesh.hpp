@@ -5,11 +5,11 @@ namespace workphone::scene
 {
 
     /// Shared lifecycle for CPU-generated meshes. Regeneration is deferred until attached.
-    class WPCore_API ProceduralMeshComponent : public Component
+    class WPCore_API ProceduralMesh : public Component
     {
     public:
-        ProceduralMeshComponent();
-        ~ProceduralMeshComponent() override;
+        ProceduralMesh();
+        ~ProceduralMesh() override;
 
         void load( SmartPtr<ISharedObject> data ) override;
         void unload( SmartPtr<ISharedObject> data ) override;

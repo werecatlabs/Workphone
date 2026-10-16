@@ -1,5 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
-#include <Workphone/Scene/Components/ProceduralMeshComponent.hpp>
+#include <Workphone/Scene/Components/ProceduralMesh.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Interface/Scene/IGameActor.hpp>
@@ -14,12 +14,12 @@
 
 namespace workphone::scene
 {
-    ProceduralMeshComponent::ProceduralMeshComponent() = default;
-    ProceduralMeshComponent::~ProceduralMeshComponent() = default;
+    ProceduralMesh::ProceduralMesh() = default;
+    ProceduralMesh::~ProceduralMesh() = default;
 
-    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralMeshComponent, Component );
+    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralMesh, Component );
 
-    void ProceduralMeshComponent::load( SmartPtr<ISharedObject> data )
+    void ProceduralMesh::load( SmartPtr<ISharedObject> data )
     {
         Component::load( data );
         m_dirty = true;
@@ -27,7 +27,7 @@ namespace workphone::scene
         setLoadingState( LoadingState::Loaded );
     }
 
-    void ProceduralMeshComponent::setActor( SmartPtr<IGameActor> actor )
+    void ProceduralMesh::setActor( SmartPtr<IGameActor> actor )
     {
         if( actor != getActor() && m_meshComponent )
         {
@@ -37,7 +37,7 @@ namespace workphone::scene
         m_dirty = true;
     }
 
-    void ProceduralMeshComponent::update()
+    void ProceduralMesh::update()
     {
         if( Thread::getCurrentTask() == TaskId::Application && m_dirty && getActor() && isEnabled() )
         {
@@ -45,7 +45,7 @@ namespace workphone::scene
         }
     }
 
-    bool ProceduralMeshComponent::regenerate()
+    bool ProceduralMesh::regenerate()
     {
         m_dirty = false;
         if( !getActor() )
@@ -117,7 +117,7 @@ namespace workphone::scene
         }
     }
 
-    void ProceduralMeshComponent::unload( SmartPtr<ISharedObject> data )
+    void ProceduralMesh::unload( SmartPtr<ISharedObject> data )
     {
         if( auto actor = getActor() )
         {
@@ -165,7 +165,7 @@ namespace workphone::scene
         setLoadingState( LoadingState::Unloaded );
     }
 
-    SmartPtr<Properties> ProceduralMeshComponent::getProperties() const
+    SmartPtr<Properties> ProceduralMesh::getProperties() const
     {
         auto p = Component::getProperties();
         p->setButtonPressed( "Regenerate" );
@@ -174,7 +174,7 @@ namespace workphone::scene
         return p;
     }
 
-    void ProceduralMeshComponent::setProperties( SmartPtr<Properties> p )
+    void ProceduralMesh::setProperties( SmartPtr<Properties> p )
     {
         if( !p )
         {
@@ -184,16 +184,16 @@ namespace workphone::scene
         requestRegeneration();
     }
 
-    void ProceduralMeshComponent::applyGeneratedMaterials()
+    void ProceduralMesh::applyGeneratedMaterials()
     {
     }
 
-    const workphone::String &ProceduralMeshComponent::getGenerationError() const
+    const workphone::String &ProceduralMesh::getGenerationError() const
     {
         return m_error;
     }
 
-    void ProceduralMeshComponent::requestRegeneration()
+    void ProceduralMesh::requestRegeneration()
     {
         m_dirty = true;
     }

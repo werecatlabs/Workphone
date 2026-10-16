@@ -449,7 +449,7 @@
 #include <Workphone/Interface/Procedural/IVehiclePhysics.hpp>
 #include <Workphone/Interface/Procedural/IVehiclePresentation.hpp>
 
-#include <Workphone/Scene/Components/ProceduralMeshComponent.hpp>
+#include <Workphone/Scene/Components/ProceduralMesh.hpp>
 #include <Workphone/Scene/Components/ProceduralVehicle.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
 #include <Workphone/Scene/Components/ProceduralRoad.hpp>

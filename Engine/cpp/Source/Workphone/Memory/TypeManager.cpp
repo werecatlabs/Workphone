@@ -963,7 +963,7 @@ namespace workphone
         scene::Skybox::setupTypeInfo();
         scene::Skybox::MaterialSharedListener::setupTypeInfo();
         scene::SkyboxPanorama::setupTypeInfo();
-        scene::ProceduralMeshComponent::setupTypeInfo();
+        scene::ProceduralMesh::setupTypeInfo();
         scene::ProceduralVehicle::setupTypeInfo();
         scene::ProceduralRaceScene::setupTypeInfo();
         scene::ProceduralRoad::setupTypeInfo();

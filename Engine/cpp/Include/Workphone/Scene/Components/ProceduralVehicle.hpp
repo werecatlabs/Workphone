@@ -1,5 +1,5 @@
 #pragma once
-#include <Workphone/Scene/Components/ProceduralMeshComponent.hpp>
+#include <Workphone/Scene/Components/ProceduralMesh.hpp>
 #include <Workphone/Interface/Procedural/IVehicleGenerator.hpp>
 #include <Workphone/Interface/Procedural/IVehicleDynamics.hpp>
 #include <Workphone/Interface/Procedural/IVehicleDamage.hpp>
@@ -20,7 +20,7 @@ namespace workphone::scene
      * samples. The helicopter and warbird presets generate static models and mass metadata;
      * rotor/propeller animation and flight dynamics require a separate aircraft controller.
      */
-    class WPCore_API ProceduralVehicle : public ProceduralMeshComponent
+    class WPCore_API ProceduralVehicle : public ProceduralMesh
     {
     public:
         /**

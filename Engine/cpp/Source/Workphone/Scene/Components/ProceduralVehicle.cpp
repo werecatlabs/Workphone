@@ -13,21 +13,8 @@
 
 namespace workphone::scene
 {
-    namespace
-    {
-        template <class T>
-        SmartPtr<T> service( const String &name )
-        {
-            auto app = core::IApplicationManager::instancePtr();
-            if( !app || !app->getFactoryManager() )
-            {
-                return nullptr;
-            }
-            return app->getFactoryManager()->createObjectFromType<T>( name );
-        }
-    }  // namespace
 
-    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralVehicle, ProceduralMeshComponent );
+    WP_CLASS_REGISTER_DERIVED( workphone::scene, ProceduralVehicle, ProceduralMesh );
 
     ProceduralVehicle::ProceduralVehicle()
     {
@@ -45,9 +32,12 @@ namespace workphone::scene
     {
         using namespace procedural;
 
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        auto factoryManager = applicationManager->getFactoryManager();
+
         if( !m_generator )
         {
-            m_generator = service<IVehicleGenerator>( "IVehicleGenerator" );
+            m_generator = factoryManager->make_object<IVehicleGenerator>( "IVehicleGenerator" );
         }
 
         if( !m_generator )
@@ -106,22 +96,22 @@ namespace workphone::scene
 
         if( !m_dynamics )
         {
-            m_dynamics = service<IVehicleDynamics>( "IVehicleDynamics" );
+            m_dynamics = factoryManager->make_object<IVehicleDynamics>( "IVehicleDynamics" );
         }
 
         if( !m_damage )
         {
-            m_damage = service<IVehicleDamage>( "IVehicleDamage" );
+            m_damage = factoryManager->make_object<IVehicleDamage>( "IVehicleDamage" );
         }
 
         if( !m_presentation )
         {
-            m_presentation = service<IVehiclePresentation>( "IVehiclePresentation" );
+            m_presentation = factoryManager->make_object<IVehiclePresentation>( "IVehiclePresentation" );
         }
 
         if( !m_effects )
         {
-            m_effects = service<IVehicleEffects>( "IVehicleEffects" );
+            m_effects = factoryManager->make_object<IVehicleEffects>( "IVehicleEffects" );
         }
 
         if( m_dynamics )
@@ -154,14 +144,16 @@ namespace workphone::scene
     void ProceduralVehicle::applyGeneratedMaterials()
     {
         auto actor = getActor();
+       
         auto app = core::IApplicationManager::instancePtr();
         if( !actor || !app || !app->getGraphicsSystem() )
         {
             return;
         }
 
-        auto manager = app->getGraphicsSystem()->getMaterialManager();
-        if( !manager )
+        auto graphicsSystem = app->getGraphicsSystem();
+        auto materialManager = graphicsSystem->getMaterialManager();
+        if( !materialManager )
         {
             return;
         }
@@ -208,7 +200,7 @@ namespace workphone::scene
             else
             {
                 const String name = "ProceduralVehicle/" + StringUtil::getUUID();
-                material = workphone::dynamic_pointer_cast<render::IMaterial>( manager->create( name ) );
+                material = workphone::dynamic_pointer_cast<render::IMaterial>( materialManager->create( name ) );
                 if( !material )
                 {
                     return;
@@ -224,7 +216,7 @@ namespace workphone::scene
             if( !material )
             {
                 material = workphone::dynamic_pointer_cast<render::IMaterial>(
-                    manager->create( "ProceduralVehicle/" + StringUtil::getUUID() ) );
+                    materialManager->create( "ProceduralVehicle/" + StringUtil::getUUID() ) );
                 if( !material )
                 {
                     return;
@@ -255,7 +247,7 @@ namespace workphone::scene
             actor->removeComponentInstance( component );
             if( material )
             {
-                manager->destroyResource( material );
+                materialManager->destroyResource( material );
             }
             m_generatedMaterials.pop_back();
         }
@@ -267,9 +259,8 @@ namespace workphone::scene
     {
         using namespace procedural;
         if( m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::HelicopterLittleBird ||
-            m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::Warbird ||
-            !m_dynamics || !m_damage || !m_presentation || !m_effects ||
-            !m_vehicle.geometry.hasGeometry() )
+            m_vehicle.physics.preset == procedural::VehiclePhysicsPreset::Warbird || !m_dynamics ||
+            !m_damage || !m_presentation || !m_effects || !m_vehicle.geometry.hasGeometry() )
         {
             return false;
         }
@@ -336,7 +327,7 @@ namespace workphone::scene
 
     SmartPtr<Properties> ProceduralVehicle::getProperties() const
     {
-        auto p = ProceduralMeshComponent::getProperties();
+        auto p = ProceduralMesh::getProperties();
         String ids = m_generatedMaterialIds;
         if( !m_generatedMaterials.empty() )
         {
@@ -349,8 +340,9 @@ namespace workphone::scene
         p->setProperty( "Generated Material IDs", ids );
         p->getPropertyObject( "Generated Material IDs" ).setReadOnly( true );
         p->setProperty( "Seed", m_config.seed );
-        procedural_properties::setEnum( p, "Physics Preset", static_cast<s32>( m_config.physicsPreset ),
-                                        { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
+        procedural_properties::setEnum(
+            p, "Physics Preset", static_cast<s32>( m_config.physicsPreset ),
+            { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
         procedural_properties::setEnum( p, "Appearance Quality",
                                         static_cast<s32>( m_config.appearance.quality ),
                                         { "Preview", "Standard", "High", "Cinematic" } );
@@ -388,13 +380,14 @@ namespace workphone::scene
         {
             return;
         }
-        ProceduralMeshComponent::setProperties( p );
+        ProceduralMesh::setProperties( p );
         p->getPropertyValue( "Generated Material IDs", m_generatedMaterialIds );
         p->getPropertyValue( "Seed", m_config.seed );
         s32 preset = static_cast<s32>( m_config.physicsPreset ),
             quality = static_cast<s32>( m_config.appearance.quality );
-        preset = procedural_properties::getEnum( p, "Physics Preset", preset,
-                                                 { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
+        preset = procedural_properties::getEnum(
+            p, "Physics Preset", preset,
+            { "Grand Prix", "GT", "Road Sport", "Helicopter - Little Bird", "Plane - Warbird" } );
         quality = procedural_properties::getEnum( p, "Appearance Quality", quality,
                                                   { "Preview", "Standard", "High", "Cinematic" } );
         m_config.physicsPreset =
@@ -461,7 +454,7 @@ namespace workphone::scene
         }
         m_generatedMaterials.clear();
         m_generatedMaterialIds.clear();
-        ProceduralMeshComponent::unload( data );
+        ProceduralMesh::unload( data );
         m_generator = nullptr;
         m_dynamics = nullptr;
         m_damage = nullptr;

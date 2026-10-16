@@ -1,12 +1,12 @@
 #pragma once
-#include <Workphone/Scene/Components/ProceduralMeshComponent.hpp>
+#include <Workphone/Scene/Components/ProceduralMesh.hpp>
 #include <Workphone/Interface/Procedural/IRoadSystem.hpp>
 
 namespace workphone::scene
 {
 
     /// A local-space road segment with independently materialled render layers.
-    class WPCore_API ProceduralRoad : public ProceduralMeshComponent
+    class WPCore_API ProceduralRoad : public ProceduralMesh
     {
     public:
         ProceduralRoad();
