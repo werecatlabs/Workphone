@@ -1,6 +1,7 @@
 #include <WPLuabind/WPLuabindPCH.hpp>
 #include <WPLuabind/Bindings/ComponentBind.hpp>
-#include <WPLuabind/Helpers/DestructibleHelper.hpp>
+#include <WPLuabind/Helpers/ComponentHelper.hpp>
+#include <WPLuabind/Helpers/TerrainHelper.hpp>
 #include <Workphone/Workphone.hpp>
 #include <luabind/luabind.hpp>
 #include <WPLuabind/SmartPtrConverter.hpp>
@@ -11,226 +12,6 @@ namespace workphone
     String terrainAuthoring( scene::TerrainSystem *terrain, const String &action,
                              luabind::object options );
     SmartPtr<scene::TerrainRecipeStack> terrainCreateRecipe( scene::TerrainSystem *terrain );
-
-    namespace
-    {
-        String terrainBrush( scene::TerrainSystem *terrain, const String &mode, f32 x, f32 z, f32 radius,
-                             f32 strength, f32 target )
-        {
-            scene::TerrainBrush brush;
-            if( mode == "raise" )
-            {
-                brush.mode = scene::TerrainBrushMode::Raise;
-            }
-            else if( mode == "lower" )
-            {
-                brush.mode = scene::TerrainBrushMode::Lower;
-            }
-            else if( mode == "smooth" )
-            {
-                brush.mode = scene::TerrainBrushMode::Smooth;
-            }
-            else if( mode == "flatten" )
-            {
-                brush.mode = scene::TerrainBrushMode::Flatten;
-            }
-            else
-            {
-                return "This terrain brush is unavailable.";
-            }
-            brush.centre = Vector2F( x, z );
-            brush.radius = radius;
-            brush.strength = strength;
-            brush.targetHeight = target;
-            auto application = core::IApplicationManager::instancePtr();
-            String error;
-            scene::applyTerrainBrush( terrain, brush,
-                                      application ? application->getCommandManager() : nullptr, error );
-            return error;
-        }
-
-        String terrainSave( scene::TerrainSystem *terrain, const String &path )
-        {
-            String error;
-            scene::saveTerrainDataFile( terrain, path, error );
-            return error;
-        }
-
-        String terrainLoad( scene::TerrainSystem *terrain, const String &path )
-        {
-            String error;
-            scene::loadTerrainDataFile( terrain, path, error );
-            return error;
-        }
-
-        String terrainImport( scene::TerrainSystem *terrain, const String &data )
-        {
-            String error;
-            if( terrain )
-            {
-                terrain->importTerrainData( data, error );
-            }
-            else
-            {
-                error = "No terrain selected.";
-            }
-            return error;
-        }
-    }  // namespace
-
-    Parameter Component_handleEvent( scene::IComponent *component, lua_Integer eventType,
-                                     lua_Integer eventValue, const Array<Parameter> &arguments,
-                                     SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object,
-                                     SmartPtr<IEvent> event )
-    {
-        return component->handleEvent( static_cast<EventType>( eventType ), eventValue, arguments,
-                                       sender, object, event );
-    }
-
-    lua_Integer Component_getState( const scene::IComponent *component )
-    {
-        return static_cast<lua_Integer>( component->getState() );
-    }
-
-    void Component_setState( scene::IComponent *component, lua_Integer state )
-    {
-        component->setState( static_cast<scene::IComponent::State>( state ) );
-    }
-
-    SmartPtr<ISharedObject> Component_getStateByTypeId( scene::IComponent *component, u32 typeId )
-    {
-        return component->getStateByTypeId( typeId );
-    }
-
-    lua_Integer Renderer_getCastShadows( const scene::Renderer *renderer )
-    {
-        return static_cast<lua_Integer>( renderer->getCastShadows() );
-    }
-
-    void Renderer_setCastShadows( scene::Renderer *renderer, lua_Integer value )
-    {
-        renderer->setCastShadows( static_cast<scene::Renderer::CastShadows>( value ) );
-    }
-
-    lua_Integer Renderer_getRecieveShadows( const scene::Renderer *renderer )
-    {
-        return static_cast<lua_Integer>( renderer->getRecieveShadows() );
-    }
-
-    void Renderer_setRecieveShadows( scene::Renderer *renderer, lua_Integer value )
-    {
-        renderer->setRecieveShadows( static_cast<scene::Renderer::RecieveShadows>( value ) );
-    }
-
-    lua_Integer Renderer_getReflections( const scene::Renderer *renderer )
-    {
-        return static_cast<lua_Integer>( renderer->getReflections() );
-    }
-
-    void Renderer_setReflections( scene::Renderer *renderer, lua_Integer value )
-    {
-        renderer->setReflections( static_cast<scene::Renderer::Reflections>( value ) );
-    }
-
-    lua_Integer Renderer_getOcculsion( const scene::Renderer *renderer )
-    {
-        return static_cast<lua_Integer>( renderer->getOcculsion() );
-    }
-
-    void Renderer_setOcculsion( scene::Renderer *renderer, lua_Integer value )
-    {
-        renderer->setOcculsion( static_cast<scene::Renderer::Occulsion>( value ) );
-    }
-
-    lua_Integer WheelController_getTireModel( const scene::WheelController *controller )
-    {
-        return static_cast<lua_Integer>( controller->getTireModel() );
-    }
-
-    void WheelController_setTireModel( scene::WheelController *controller, lua_Integer value )
-    {
-        controller->setTireModel( static_cast<TireModel>( value ) );
-    }
-
-    u32 CharacterController_getActorFlags( scene::CharacterController *controller )
-    {
-        return static_cast<u32>( controller->getActorFlags() );
-    }
-
-    void CharacterController_setActorFlag( scene::CharacterController *controller, u32 flag, bool value )
-    {
-        controller->setActorFlag( static_cast<physics::ActorFlagEnum>( flag ), value );
-    }
-
-    u32 Constraint_getType( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getType() );
-    }
-
-    void Constraint_setType( scene::Constraint *constraint, u32 type )
-    {
-        constraint->setType( static_cast<scene::Constraint::Type>( type ) );
-    }
-
-    u32 Constraint_getAxisX( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getAxisX() );
-    }
-
-    void Constraint_setAxisX( scene::Constraint *constraint, u32 axisX )
-    {
-        constraint->setAxisX( static_cast<physics::D6MotionEnum>( axisX ) );
-    }
-
-    u32 Constraint_getAxisY( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getAxisY() );
-    }
-
-    void Constraint_setAxisY( scene::Constraint *constraint, u32 axisY )
-    {
-        constraint->setAxisY( static_cast<physics::D6MotionEnum>( axisY ) );
-    }
-
-    u32 Constraint_getAxisZ( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getAxisZ() );
-    }
-
-    void Constraint_setAxisZ( scene::Constraint *constraint, u32 axisZ )
-    {
-        constraint->setAxisZ( static_cast<physics::D6MotionEnum>( axisZ ) );
-    }
-
-    u32 Constraint_getSwing1( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getSwing1() );
-    }
-
-    void Constraint_setSwing1( scene::Constraint *constraint, u32 swing1 )
-    {
-        constraint->setSwing1( static_cast<physics::D6MotionEnum>( swing1 ) );
-    }
-
-    u32 Constraint_getSwing2( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getSwing2() );
-    }
-
-    void Constraint_setSwing2( scene::Constraint *constraint, u32 swing2 )
-    {
-        constraint->setSwing2( static_cast<physics::D6MotionEnum>( swing2 ) );
-    }
-
-    u32 Constraint_getTwist( scene::Constraint *constraint )
-    {
-        return static_cast<u32>( constraint->getTwist() );
-    }
-
-    void Constraint_setTwist( scene::Constraint *constraint, u32 twist )
-    {
-        constraint->setTwist( static_cast<physics::D6MotionEnum>( twist ) );
-    }
 
     void bindComponent( lua_State *L )
     {
@@ -278,8 +59,8 @@ namespace workphone
                         .def( "updateMaterials", &IComponent::updateMaterials )
                         .def( "updateDependentComponents", &IComponent::updateDependentComponents )
                         .def( "updateSmoothTransformState", &IComponent::updateSmoothTransformState )
-                        .def( "setState", Component_setState )
-                        .def( "getState", Component_getState )
+                        .def( "setState", &ComponentHelper::setState )
+                        .def( "getState", &ComponentHelper::getState )
                         .def( "getComponentFlags", &IComponent::getComponentFlags )
                         .def( "setComponentFlags", &IComponent::setComponentFlags )
                         .def( "setComponentFlag", &IComponent::setComponentFlag )
@@ -301,10 +82,10 @@ namespace workphone
                         .def( "getParent", &IComponent::getParent )
                         .def( "setParent", &IComponent::setParent )
                         .def( "compareTag", &IComponent::compareTag )
-                        .def( "handleEvent", Component_handleEvent )
+                        .def( "handleEvent", &ComponentHelper::handleEvent )
                         .def( "addState", &IComponent::addState )
                         .def( "removeState", &IComponent::removeState )
-                        .def( "getStateByTypeId", Component_getStateByTypeId )
+                        .def( "getStateByTypeId", &ComponentHelper::getStateByTypeId )
                         .def( "getStates", &IComponent::getStates )
                         .def( "getBoundingBox", &IComponent::getBoundingBox )
                         .def( "getComponentSystemPtr", &IComponent::getComponentSystemPtr )
@@ -414,13 +195,13 @@ namespace workphone
                     .def( "setHeightMap", &TerrainSystem::setHeightMap )
                     .def( "rebuild", &TerrainSystem::rebuild )
                     .def( "generateHeightMap", &TerrainSystem::generateHeightMap )
-                    .def( "applyHeightBrush", &terrainBrush )
+                    .def( "applyHeightBrush", &TerrainHelper::brush )
                     .def( "editTerrain", &terrainAuthoring )
                     .def( "createTerrainRecipe", &terrainCreateRecipe )
-                    .def( "saveTerrainDataFile", &terrainSave )
-                    .def( "loadTerrainDataFile", &terrainLoad )
+                    .def( "saveTerrainDataFile", &TerrainHelper::save )
+                    .def( "loadTerrainDataFile", &TerrainHelper::load )
                     .def( "exportTerrainData", &TerrainSystem::exportTerrainData )
-                    .def( "importTerrainData", &terrainImport )
+                    .def( "importTerrainData", &TerrainHelper::importData )
                     .def( "getTerrainRevision", &TerrainSystem::getTerrainRevision )
                     .def( "getHeightScale", &TerrainSystem::getHeightScale )
                     .def( "setHeightScale", &TerrainSystem::setHeightScale )
@@ -949,14 +730,14 @@ namespace workphone
                         .def( "setGraphicsObject", &Renderer::setGraphicsObject )
                         .def( "getGraphicsNode", &Renderer::getGraphicsNode )
                         .def( "setGraphicsNode", &Renderer::setGraphicsNode )
-                        .def( "getCastShadows", Renderer_getCastShadows )
-                        .def( "setCastShadows", Renderer_setCastShadows )
-                        .def( "getRecieveShadows", Renderer_getRecieveShadows )
-                        .def( "setRecieveShadows", Renderer_setRecieveShadows )
-                        .def( "getReflections", Renderer_getReflections )
-                        .def( "setReflections", Renderer_setReflections )
-                        .def( "getOcculsion", Renderer_getOcculsion )
-                        .def( "setOcculsion", Renderer_setOcculsion )
+                        .def( "getCastShadows", &ComponentHelper::getCastShadows )
+                        .def( "setCastShadows", &ComponentHelper::setCastShadows )
+                        .def( "getRecieveShadows", &ComponentHelper::getRecieveShadows )
+                        .def( "setRecieveShadows", &ComponentHelper::setRecieveShadows )
+                        .def( "getReflections", &ComponentHelper::getReflections )
+                        .def( "setReflections", &ComponentHelper::setReflections )
+                        .def( "getOcculsion", &ComponentHelper::getOcculsion )
+                        .def( "setOcculsion", &ComponentHelper::setOcculsion )
                         .def( "getVisibilityFlags", &Renderer::getVisibilityFlags )
                         .def( "setVisibilityFlags", &Renderer::setVisibilityFlags )
                         .def( "getZOrder", &Renderer::getZOrder )
@@ -1100,8 +881,8 @@ namespace workphone
                         .def( "setScene", &CharacterController::setScene )
                         .def( "getTransform", &CharacterController::getTransform )
                         .def( "setTransform", &CharacterController::setTransform )
-                        .def( "setActorFlag", CharacterController_setActorFlag )
-                        .def( "getActorFlags", CharacterController_getActorFlags )
+                        .def( "setActorFlag", &ComponentHelper::setActorFlag )
+                        .def( "getActorFlags", &ComponentHelper::getActorFlags )
                         .def( "getMass", &CharacterController::getMass )
                         .def( "setMass", &CharacterController::setMass )
                         .def( "getCollisionType", &CharacterController::getCollisionType )
@@ -1139,22 +920,22 @@ namespace workphone
                         .def( "setBodyA", &Constraint::setBodyA )
                         .def( "getBodyB", &Constraint::getBodyB )
                         .def( "setBodyB", &Constraint::setBodyB )
-                        .def( "getType", Constraint_getType )
-                        .def( "setType", Constraint_setType )
+                        .def( "getType", &ComponentHelper::getConstraintType )
+                        .def( "setType", &ComponentHelper::setConstraintType )
                         .def( "getConstraint", &Constraint::getConstraint )
                         .def( "setConstraint", &Constraint::setConstraint )
-                        .def( "getAxisX", Constraint_getAxisX )
-                        .def( "setAxisX", Constraint_setAxisX )
-                        .def( "getAxisY", Constraint_getAxisY )
-                        .def( "setAxisY", Constraint_setAxisY )
-                        .def( "getAxisZ", Constraint_getAxisZ )
-                        .def( "setAxisZ", Constraint_setAxisZ )
-                        .def( "getSwing1", Constraint_getSwing1 )
-                        .def( "setSwing1", Constraint_setSwing1 )
-                        .def( "getSwing2", Constraint_getSwing2 )
-                        .def( "setSwing2", Constraint_setSwing2 )
-                        .def( "getTwist", Constraint_getTwist )
-                        .def( "setTwist", Constraint_setTwist )
+                        .def( "getAxisX", &ComponentHelper::getAxisX )
+                        .def( "setAxisX", &ComponentHelper::setAxisX )
+                        .def( "getAxisY", &ComponentHelper::getAxisY )
+                        .def( "setAxisY", &ComponentHelper::setAxisY )
+                        .def( "getAxisZ", &ComponentHelper::getAxisZ )
+                        .def( "setAxisZ", &ComponentHelper::setAxisZ )
+                        .def( "getSwing1", &ComponentHelper::getSwing1 )
+                        .def( "setSwing1", &ComponentHelper::setSwing1 )
+                        .def( "getSwing2", &ComponentHelper::getSwing2 )
+                        .def( "setSwing2", &ComponentHelper::setSwing2 )
+                        .def( "getTwist", &ComponentHelper::getTwist )
+                        .def( "setTwist", &ComponentHelper::setTwist )
                         .def( "getBreakForce", &Constraint::getBreakForce )
                         .def( "setBreakForce", &Constraint::setBreakForce )
                         .def( "getBreakTorque", &Constraint::getBreakTorque )
@@ -1339,8 +1120,8 @@ namespace workphone
                         .def( "setSuspensionDistance", &WheelController::setSuspensionDistance )
                         .def( "getWheelDamping", &WheelController::getWheelDamping )
                         .def( "setWheelDamping", &WheelController::setWheelDamping )
-                        .def( "getTireModel", WheelController_getTireModel )
-                        .def( "setTireModel", WheelController_setTireModel )
+                        .def( "getTireModel", &ComponentHelper::getTireModel )
+                        .def( "setTireModel", &ComponentHelper::setTireModel )
                         .def( "setMassFraction", &WheelController::setMassFraction )
                         .def( "reset", &WheelController::reset )
                         .scope[def( "typeInfo", WheelController::typeInfo )]];
