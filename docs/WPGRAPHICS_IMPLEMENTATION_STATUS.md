@@ -1,5 +1,68 @@
 # WPGraphics implementation status
 
+## Resize rejection and active-pass safety - 16 October 2026
+
+The native DX11 resize path rejects requests during active HDR/shadow passes,
+whose saved output views must remain valid until resolve/restoration. A resize
+to the current valid extent preserves existing targets. When DXGI rejects
+`ResizeBuffers`, the native path recreates and rebinds the retained window
+outputs. The C++ adapter uses the actual swap-chain dimensions for its viewport
+instead of publishing the rejected requested extent, and retries on a later
+window target setup.
+
+Validation: all four selected Debug graphics targets rebuild and their CTest
+contracts pass (`claw_dx11_targets`, `claw_text_contract`,
+`claw_production_render`, `cubemap_pbr`). The target fixture retains a real
+swap-chain back buffer to force native and wrapper ResizeBuffers failure,
+checks native output rebinding, actual viewport dimensions, clear/readback and
+successful retry, and checks same-extent target retention and HDR/shadow resize
+rejection. Evidence is in `project_x64/graphics-resize-debug-final-build.log`
+and `project_x64/graphics-resize-debug-tests.log`. Device: Microsoft Basic
+Render Driver/WARP, feature level `b000`, driver `10.0.19041.7802`.
+
+This validates resize rejection recovery on a live device. RelWithDebInfo,
+device-removal recovery, failed rollback allocation, interactive Editor behavior
+and hardware frame pacing remain unverified.
+
+
+## Checked native presentation - 16 October 2026
+
+DX11 presentation now has a success-reporting native entry point. It checks the
+swap-chain window identity and rejects offscreen outputs and unfinished HDR or
+shadow passes before calling DXGI. The existing void presentation API delegates
+to the same implementation. Native diagnostics retain the last HRESULT and count
+presentation attempts, occlusion and failures separately. Only `S_OK` completes
+a measured frame; occlusion/failure breaks the interval sequence so a suspended
+window cannot inflate the next successful frame interval.
+
+`ClawRendererDX11::endRender()` finishes the native pass without invoking the
+generic end-frame function, which already presents with VSync enabled. This
+removes the second Present previously issued for a Claw window and keeps
+offscreen/detached target completion from presenting the swap chain. The adapter
+uses the checked path once for graphics windows, including window adapters. It handles a missing application/graphics system or
+detached target and logs DXGI presentation failures. Its existing frame guard
+prevents repeated `endRender()` calls from presenting twice. VSync remains an
+engine setting passed through the adapter; Direct3D calls and result accounting
+remain native.
+
+Validation: fresh Debug builds of `WPGraphicsClawDX11TargetTests`,
+`WPGraphicsClawRendererTests`, `WPGraphicsClawProductionTests` and
+`ClawCubemapTests` succeed; their four selected CTest contracts pass. The target
+test reports three attempts and three completed submissions for three window
+frames, including repeated end calls, missing application state, foreign/missing
+window rejection, offscreen wrapper completion, detached targets, unfinished
+HDR/shadow rejection, resize and back-buffer readback. The broader test build
+also required repairing a missing closing bracket in a foliage fixture include.
+
+Evidence is in `project_x64/graphics-presentation-debug-final-build.log`,
+`graphics-presentation-debug-target-final-build.log` and
+`graphics-presentation-debug-tests.log`. The device is Microsoft Basic Render
+Driver/WARP, feature level `b000`, driver `10.0.19041.7802`. This run returned
+`S_OK`; occlusion and device-removal outcomes were not injected. RelWithDebInfo,
+recovery, multi-window swap chains, interactive Editor acceptance and hardware
+frame pacing remain unverified. A successful DXGI submission alone does not
+prove a displayed or visually correct image.
+
 ## Bounded frame grabber capture — 16 October 2026
 
 `IGraphicsWindow` now offers a success-reporting RGBA8 capture method. Backends

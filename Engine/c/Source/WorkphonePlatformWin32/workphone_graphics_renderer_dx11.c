@@ -2356,8 +2356,13 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
     wp_s32 old_height;
     HRESULT hr;
 
-    if( !wp_renderer_dx11_dimensions_supported( r, width, height ) )
+    /* Active HDR/shadow passes retain saved output state. Resizing here would
+     * disrupt their bindings and can fail on retained swap-chain references. */
+    if( !r || r->hdr_active || r->shadow_pass ||
+        !wp_renderer_dx11_dimensions_supported( r, width, height ) )
         return 0;
+
+    if( width == r->width && height == r->height && r->rt_view && r->ds_view ) return 1;
 
     old_width = r->width;
     old_height = r->height;
@@ -2369,7 +2374,9 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
     if( FAILED( hr ) )
     {
         /* ResizeBuffers leaves the old swap-chain buffers intact on failure. */
-        (void)wp_renderer_dx11_create_targets( r );
+        if( wp_renderer_dx11_create_targets( r ) )
+            ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
+                                                    r->active_ds_view );
         return 0;
     }
 
@@ -2386,7 +2393,9 @@ wp_s32 wp_renderer_dx11_resize( wp_renderer_dx11 *r, wp_s32 width, wp_s32 height
         {
             r->width = old_width;
             r->height = old_height;
-            (void)wp_renderer_dx11_create_targets( r );
+            if( wp_renderer_dx11_create_targets( r ) )
+                ID3D11DeviceContext_OMSetRenderTargets( r->context, 1, &r->active_rt_view,
+                                                        r->active_ds_view );
         }
         return 0;
     }
@@ -2555,9 +2564,16 @@ void wp_renderer_dx11_end_frame( wp_renderer_dx11 *r )
 
 void wp_renderer_dx11_present( wp_renderer_dx11 *r, wp_s32 vsync )
 {
+    if( r ) wp_renderer_dx11_try_present( r, r->hwnd, vsync );
+}
+
+wp_s32 wp_renderer_dx11_try_present( wp_renderer_dx11 *r, void *expected_hwnd, wp_s32 vsync )
+{
     LARGE_INTEGER before, after;
-    if( !r || !r->swap_chain )
-        return;
+    HRESULT result;
+    if( !r || !r->swap_chain || !expected_hwnd || r->hwnd != (HWND)expected_hwnd ||
+        r->active_rt_view != r->rt_view || r->hdr_active || r->shadow_pass )
+        return 0;
     if( r->frame_measuring && r->active_gpu_query >= 0 )
     {
         wp_gpu_frame_query *q = &r->gpu_queries[r->active_gpu_query];
@@ -2566,9 +2582,20 @@ void wp_renderer_dx11_present( wp_renderer_dx11 *r, wp_s32 vsync )
         q->pending = 1;
     }
     QueryPerformanceCounter( &before );
-    IDXGISwapChain_Present( r->swap_chain, vsync ? 1 : 0,
+    result = IDXGISwapChain_Present( r->swap_chain, vsync ? 1 : 0,
                            !vsync && r->flip_model ? DXGI_PRESENT_ALLOW_TEARING : 0 );
     QueryPerformanceCounter( &after );
+    ++r->statistics.present_attempts;
+    r->statistics.last_present_hresult = (wp_s32)result;
+    if( result == DXGI_STATUS_OCCLUDED ) ++r->statistics.present_occluded;
+    else if( result != S_OK ) ++r->statistics.present_failures;
+    if( result != S_OK )
+    {
+        r->last_present.QuadPart = 0;
+        r->frame_measuring = 0;
+        r->active_gpu_query = -1;
+        return result == DXGI_STATUS_OCCLUDED ? 2 : -1;
+    }
     if( r->frame_measuring )
     {
         double scale = 1000.0 / r->clock_frequency.QuadPart;
@@ -2586,6 +2613,7 @@ void wp_renderer_dx11_present( wp_renderer_dx11 *r, wp_s32 vsync )
         r->frame_measuring = 0;
         r->active_gpu_query = -1;
     }
+    return 1;
 }
 
 /* =========================================================================

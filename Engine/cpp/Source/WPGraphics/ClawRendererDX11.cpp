@@ -262,16 +262,28 @@ namespace workphone::render
             return;
         }
 
-        wp_renderer_end_frame( m_renderer );
+        // The generic end_frame also Presents with VSync forced on. The window
+        // adapter owns presentation policy, so finish only the DX11 pass here.
+        wp_renderer_dx11_end_frame( wp_renderer_get_dx11( m_renderer ) );
 
-        if( m_renderTarget->isExactly<ClawWindow>() )
+        if( auto window = dynamic_pointer_cast<IGraphicsWindow>( m_renderTarget.load() ) )
         {
             if( auto dx11 = wp_renderer_get_dx11( m_renderer ) )
             {
-                auto applicationManager = core::IApplicationManager::instancePtr();
-                auto graphicsSystem = (ClawHammerSystem *)applicationManager->getGraphicsSystemPtr();
-
-                wp_renderer_dx11_present( dx11, graphicsSystem->getVSync() ? 1 : 0 );
+                auto app = core::IApplicationManager::instancePtr();
+                auto graphics = app ? dynamic_cast<ClawHammerSystem *>(
+                                          app->getGraphicsSystemPtr() ) : nullptr;
+                void *handle = nullptr;
+                window->getWindowHandle( &handle );
+                const auto result = wp_renderer_dx11_try_present(
+                    dx11, handle, graphics && graphics->getVSync() ? 1 : 0 );
+                if( result < 0 )
+                {
+                    wp_render_statistics_dx11 statistics{};
+                    wp_renderer_dx11_get_statistics( dx11, &statistics );
+                    WP_LOG_ERROR( "WPGraphics/DX11: Present failed; HRESULT=" +
+                                  std::to_string( statistics.last_present_hresult ) );
+                }
             }
         }
 
@@ -340,8 +352,12 @@ namespace workphone::render
                         m_windowWidth = static_cast<u32>( size.x );
                         m_windowHeight = static_cast<u32>( size.y );
                     }
-                    m_rtWidth = static_cast<u32>( size.x );
-                    m_rtHeight = static_cast<u32>( size.y );
+                    // A rejected resize retains the old swap-chain buffers.
+                    // Publish their actual extent rather than the requested size.
+                    m_windowWidth = static_cast<u32>( wp_renderer_dx11_get_width( dx11 ) );
+                    m_windowHeight = static_cast<u32>( wp_renderer_dx11_get_height( dx11 ) );
+                    m_rtWidth = m_windowWidth;
+                    m_rtHeight = m_windowHeight;
                 }
             }
 
