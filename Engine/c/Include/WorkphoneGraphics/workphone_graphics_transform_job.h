@@ -24,6 +24,9 @@ typedef struct wp_transform_job_stats
     /* Per accepted capture, for reference-sort scratch only (not all job allocations).
      * Exact-size reuse retains storage after scrubbing every borrowed pointer. */
     wp_u32 capture_scratch_allocations, capture_scratch_reuses;
+    /* Private integer path records, separate from the published matrix output.
+     * Reused when output count is unchanged and the previous tasks have drained. */
+    wp_u32 capture_path_allocations, capture_path_reuses;
     wp_u64 capture_scratch_bytes;
     wp_u64 retained_snapshot_bytes, capture_peak_bytes;
 } wp_transform_job_stats;

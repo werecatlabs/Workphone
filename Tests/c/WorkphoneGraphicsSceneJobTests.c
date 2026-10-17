@@ -476,6 +476,102 @@ static void retained_capture_scratch( void )
         "cancellation and empty release passed." );
 }
 
+static void retained_capture_paths( void )
+{
+    wp_scenenode *root = wp_scenenode_create(), *child = wp_scenenode_create(), *deep[258];
+    const wp_scenenode *nodes[4];
+    wp_threadpool *pool = wp_threadpool_create( 2 );
+    wp_transform_job_system *job = wp_transform_job_system_create( pool, 2 );
+    wp_transform_job_stats stats;
+    wp_mat4f out[4], saved[4], expected, sentinel;
+    const wp_mat4f *published;
+    wp_vec3f p = { 3, 4, 5 };
+    int i;
+    wp_scenenode_add_child( root, child );
+    wp_scenenode_set_position( root, p );
+    for( i = 0; i < 258; ++i )
+    {
+        deep[i] = wp_scenenode_create();
+        if( i )
+        {
+            wp_scenenode_add_child( deep[i - 1], deep[i] );
+        }
+    }
+    for( i = 0; i < 4; ++i )
+    {
+        nodes[i] = child;
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_allocations == 1 && !stats.capture_path_reuses );
+    published = wp_transform_job_system_get_result( job, NULL, NULL );
+    memcpy( saved, published, sizeof( saved ) );
+    /* Reuse writes two valid paths, then rejects a third path that is too deep.
+     * The old public matrix array must remain readable and bit-identical. */
+    nodes[0] = root;
+    nodes[1] = NULL;
+    nodes[2] = deep[257];
+    CHECK( !wp_transform_job_system_dispatch_snapshot( job, nodes, 4, 77 ) );
+    CHECK( wp_transform_job_system_get_result( job, NULL, NULL ) == published );
+    CHECK( !memcmp( saved, published, sizeof( saved ) ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_allocations == 1 && !stats.capture_path_reuses );
+    nodes[0] = child;
+    nodes[1] = root;
+    nodes[2] = NULL;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( !stats.capture_path_allocations && stats.capture_path_reuses == 1 &&
+           stats.capture_scratch_allocations == 1 );
+    for( i = 0; i < 4; ++i )
+    {
+        reference_world( nodes[i], &expected );
+        CHECK( !memcmp( &expected, &out[i], sizeof( expected ) ) );
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_reuses == 1 && stats.capture_scratch_reuses == 1 &&
+           !stats.capture_path_allocations && !stats.capture_scratch_allocations );
+    CHECK( wp_transform_job_system_process( job, nodes, out, 1 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_allocations == 1 && !stats.capture_path_reuses );
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_allocations == 1 && !stats.capture_path_reuses );
+    memset( &sentinel, 0xAB, sizeof( sentinel ) );
+    for( i = 0; i < 4; ++i )
+    {
+        out[i] = sentinel;
+    }
+    CHECK( wp_transform_job_system_dispatch( job, nodes, out, 4 ) );
+    wp_transform_job_system_cancel( job );
+    for( i = 0; i < 4; ++i )
+    {
+        CHECK( !memcmp( &out[i], &sentinel, sizeof( sentinel ) ) );
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_reuses == 1 && !stats.capture_path_allocations );
+    CHECK( wp_transform_job_system_dispatch_snapshot( job, NULL, 0, 78 ) );
+    wp_transform_job_system_wait( job );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( !stats.capture_path_allocations && !stats.capture_path_reuses );
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_path_allocations == 1 && !stats.capture_path_reuses );
+    wp_transform_job_system_destroy( job );
+    wp_threadpool_destroy( pool );
+    for( i = 257; i >= 0; --i )
+    {
+        wp_scenenode_destroy( deep[i] );
+    }
+    wp_scenenode_destroy( child );
+    wp_scenenode_destroy( root );
+    puts(
+        "Transform paths: warm reuse, changed hierarchy, partial failed capture preserves old matrices, "
+        "resize/cancel/empty release passed." );
+}
+
 static void cache_depth_boundary( void )
 {
     wp_scenenode *nodes[258];
@@ -1829,6 +1925,7 @@ int main( void )
     shared_transform_capture();
     shared_prefixes();
     retained_capture_scratch();
+    retained_capture_paths();
     prefix_budget_fallback();
     transforms();
     hierarchy_limit();

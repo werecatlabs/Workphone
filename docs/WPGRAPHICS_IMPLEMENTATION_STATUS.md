@@ -1,5 +1,40 @@
 # WPGraphics implementation status
 
+## Reused transform capture path records - 17 October 2026
+
+`PERF-07` now reuses the job's private integer path-record array when output
+count is unchanged and the previous tasks have drained. Every path's start/count
+is rebuilt from the current hierarchy, including null owners and changed path
+lengths. This storage was already retained with the completed job; reusing it
+removes another allocation/free pair without adding a separate retained buffer.
+Output-count changes allocate a replacement; empty capture and destruction release
+the old records. The existing 64 MiB capture-array cap remains in effect.
+
+Only private inputs may be overwritten during capture. A rejected capture retains
+the previous public matrix array and its copied metadata, even if it has already
+rewritten some path records. Successful capture transfers reused records before
+releasing the old input arrays, then submits only complete owned data. Running
+jobs cannot be reconfigured; scoped waiting, cancellation without caller-output
+publication and the public result's lifetime remain unchanged.
+
+Copied last-accepted statistics add `capture_path_allocations` and
+`capture_path_reuses`. Existing last-frame Claw preparation telemetry reports
+these alongside the separate reference-sort scratch counts, counting the shared
+colour/shadow publication once. Native tests cover cold/warm captures, changed
+hierarchies at fixed output count, shrink/regrowth, cancellation/reuse and empty
+release. A four-output test overwrites two valid paths before rejecting a third
+that exceeds the depth limit; the old published matrices remain readable and
+bit-identical, and the next valid capture reconstructs the paths correctly.
+The active Claw RTT test checks cold allocation followed by warm path reuse while
+retaining its rendered-pixel and lifecycle checks.
+
+All seven selected full Debug contracts pass on the existing DX11/WARP tier; all
+six isolated contracts pass in Debug and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_path_reuse_debug.log` and
+`project_graphics_contracts/{build,test}_path_reuse_{debug,release}.log`.
+Indices, local/output matrices, prefix arrays and batch records still allocate
+per dispatch. Representative timing is required before claiming a frame-time gain.
+
 ## Retained transform reference-sort scratch - 17 October 2026
 
 `PERF-07` now reuses the transform capture's reference-sort buffer when the next

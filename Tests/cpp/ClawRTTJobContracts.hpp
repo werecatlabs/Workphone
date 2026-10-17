@@ -332,6 +332,8 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             "frame telemetry counts colour/shadow publication once after retirement");
     require(counters.find("reference scratch allocs=1 reuses=0")!=String::npos,
             "first active capture allocates reference scratch once");
+    require(counters.find("path records allocs=1 reuses=0")!=String::npos,
+            "first active capture allocates path records once");
     good = pixels(output);
     require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
         "real ClawScene cull result must draw and be retired at frame end");
@@ -349,6 +351,8 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             "render statistics expose disabled stage work");
     require(counters.find("reference scratch allocs=0 reuses=1")!=String::npos,
             "warm active scene capture reuses reference scratch without allocation");
+    require(counters.find("path records allocs=0 reuses=1")!=String::npos,
+            "warm active scene capture also reuses path records");
     graphics.retireSceneAfterDraw = true;
     viewport->setBackgroundColour(ColourF(1,0,1,1));
     graphics.frame();

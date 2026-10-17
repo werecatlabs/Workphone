@@ -68,6 +68,17 @@ struct wp_transform_job_system
     wp_u32 capture_scratch_count;
 };
 
+static void wp_transform_discard_capture_paths( const wp_transform_job_system *s,
+                                                wp_transform_path *paths )
+{
+    /* Rejected capture may overwrite private inputs, but must not free reused
+     * storage owned by the last completed job or touch its published worlds. */
+    if( paths != s->paths )
+    {
+        free( paths );
+    }
+}
+
 static void wp_transform_batch_run( void *data )
 {
     wp_transform_batch *b = (wp_transform_batch *)data;
@@ -190,7 +201,8 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     wp_transform_reference *references;
     wp_transform_prefix *prefixes;
     wp_u32 *indices;
-    wp_u32 i, j, depth, total = 0, unique = 0, batch_count, start, prefix_count = 0, reused;
+    wp_u32 i, j, depth, total = 0, unique = 0, batch_count, start, prefix_count = 0, reused,
+                        reused_paths;
     size_t bytes;
     if( !s || s->status == WP_TRANSFORM_RUNNING || ( count && !nodes ) )
     {
@@ -210,7 +222,9 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         s->capture_scratch = NULL;
         s->capture_scratch_count = 0;
     }
-    paths = count ? (wp_transform_path *)calloc( count, sizeof( *paths ) ) : NULL;
+    reused_paths = count && count == s->count && s->paths != NULL;
+    paths = reused_paths ? s->paths
+                         : ( count ? (wp_transform_path *)calloc( count, sizeof( *paths ) ) : NULL );
     if( count && !paths )
     {
         return 0;
@@ -223,14 +237,14 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         {
             if( depth == WP_TRANSFORM_CHAIN_LIMIT )
             {
-                free( paths );
+                wp_transform_discard_capture_paths( s, paths );
                 return 0;
             }
             for( j = 0; j < depth; ++j )
             {
                 if( chain[j] == node )
                 {
-                    free( paths );
+                    wp_transform_discard_capture_paths( s, paths );
                     return 0;
                 }
             }
@@ -239,7 +253,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         }
         if( depth > WP_TRANSFORM_BYTE_LIMIT / sizeof( wp_mat4f ) - total )
         {
-            free( paths );
+            wp_transform_discard_capture_paths( s, paths );
             return 0;
         }
         paths[i].start = total;
@@ -255,7 +269,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
             (size_t)batch_count * sizeof( *batches );
     if( bytes > WP_TRANSFORM_BYTE_LIMIT )
     {
-        free( paths );
+        wp_transform_discard_capture_paths( s, paths );
         return 0;
     }
     reused = total && s->capture_scratch_count == total;
@@ -280,7 +294,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     indices = total ? (wp_u32 *)malloc( (size_t)total * sizeof( *indices ) ) : NULL;
     if( total && ( !references || !indices ) )
     {
-        free( paths );
+        wp_transform_discard_capture_paths( s, paths );
         if( references )
         {
             memset( references, 0, (size_t)total * sizeof( *references ) );
@@ -314,7 +328,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     bytes += (size_t)unique * sizeof( wp_mat4f );
     if( bytes > WP_TRANSFORM_BYTE_LIMIT )
     {
-        free( paths );
+        wp_transform_discard_capture_paths( s, paths );
         if( references )
         {
             memset( references, 0, (size_t)total * sizeof( *references ) );
@@ -327,7 +341,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     batches = batch_count ? (wp_transform_batch *)calloc( batch_count, sizeof( *batches ) ) : NULL;
     if( ( unique && !locals ) || ( count && !worlds ) || ( batch_count && !batches ) )
     {
-        free( paths );
+        wp_transform_discard_capture_paths( s, paths );
         if( references )
         {
             memset( references, 0, (size_t)total * sizeof( *references ) );
@@ -408,6 +422,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     {
         memset( references, 0, (size_t)total * sizeof( *references ) );
     }
+    if( reused_paths )
+    {
+        s->paths = NULL;
+    }
     wp_transform_release( s );
     s->indices = indices;
     s->stats.output_count = count;
@@ -417,6 +435,8 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     s->stats.batch_count = batch_count;
     s->stats.capture_scratch_allocations = total && !reused;
     s->stats.capture_scratch_reuses = reused;
+    s->stats.capture_path_allocations = count && !reused_paths;
+    s->stats.capture_path_reuses = reused_paths;
     s->stats.capture_scratch_bytes = (size_t)total * sizeof( *references );
     s->stats.capture_peak_bytes = bytes;
     s->stats.retained_snapshot_bytes = bytes - (size_t)total * sizeof( wp_transform_reference );
