@@ -2012,6 +2012,152 @@ static void sphere_parity( void )
     wp_camera_destroy( camera );
 }
 
+static wp_graphics_cull_result *capture_groups( wp_graphics_scene *scene, wp_camera *camera,
+                                                wp_graphics_cull_pass pass, int enabled )
+{
+    wp_graphics_cull_job *job = wp_graphics_cull_job_create();
+    wp_graphics_cull_result *result;
+    CHECK( wp_graphics_cull_job_set_group_test( job, enabled ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_configure( job, scene, camera, pass,
+                                           (wp_u32)wp_graphics_scene_get_generation( scene ) ) ==
+           WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_set_group_test( job, !enabled ) ==
+           WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
+    CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
+    result = wp_graphics_cull_job_take_result( job );
+    wp_graphics_cull_job_destroy( job );
+    return result;
+}
+
+static void compare_cull_views( const wp_graphics_cull_result *a, const wp_graphics_cull_result *b )
+{
+    int i, count = wp_graphics_cull_result_get_visible_count( a );
+    CHECK( a && b && count == wp_graphics_cull_result_get_visible_count( b ) );
+    for( i = 0; i < count; ++i )
+    {
+        CHECK( wp_graphics_cull_result_get_object( a, i ) ==
+               wp_graphics_cull_result_get_object( b, i ) );
+    }
+}
+
+static void coarse_groups( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_object *objects[129];
+    wp_scenenode *nodes[129], *parent = wp_graphics_scene_create_node( scene );
+    wp_camera *camera = wp_camera_create(), *second = wp_camera_create();
+    wp_graphics_cull_result *flat, *grouped, *derived, *reference, *shadow;
+    wp_graphics_cull_bounds_stats stats, baseline;
+    wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } };
+    wp_vec3f p = { 0, 0, 0 }, scale = { -2, 3, .5f };
+    wp_quatf rotation = { .9238795f, 0, 0, .3826834f };
+    int i, frame;
+    wp_u32 skipped = 0, nan_bits = 0x7fc00000u;
+    wp_f32 invalid;
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    for( i = 0; i < 129; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        nodes[i] = wp_graphics_scene_create_node( scene );
+        wp_graphics_object_set_mesh( objects[i], i == 100 ? NULL : mesh );
+        wp_graphics_object_set_render_func( objects[i], record );
+        wp_graphics_object_set_render_queue_group( objects[i], (wp_u32)( i % 3 ) );
+        wp_graphics_object_set_z_order( objects[i], (wp_u32)( i % 5 ) );
+        wp_scenenode_attach_object( nodes[i], objects[i] );
+        p.x = i < 32 || ( i >= 96 && i < 128 ) ? 100.0f : i >= 64 && i < 96 ? -100.0f : 0.0f;
+        p.y = (wp_f32)( i % 4 ) * .01f;
+        wp_scenenode_set_position( nodes[i], p );
+    }
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    CHECK( wp_graphics_scene_set_cull_flags( scene, 7 ) );
+    grouped = wp_graphics_scene_prepare_cull( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN );
+    compare_cull_views( flat, grouped );
+    wp_graphics_cull_result_get_bounds_stats( grouped, &stats );
+    wp_graphics_cull_result_get_bounds_stats( flat, &baseline );
+    CHECK( stats.group_tests == 5 && stats.group_rejections == 2 &&
+           stats.group_skipped_candidates == 64 && stats.group_fallbacks == 1 &&
+           stats.sphere_tests < baseline.sphere_tests );
+    wp_graphics_cull_result_destroy( flat );
+    p.x = 100;
+    p.y = 0;
+    wp_camera_set_position( second, p );
+    derived = wp_graphics_cull_result_create_view( grouped, second, WP_GRAPHICS_CULL_PASS_MAIN );
+    shadow = wp_graphics_cull_result_create_view( grouped, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+    wp_graphics_cull_result_destroy( grouped );
+    reference = capture_groups( scene, second, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    compare_cull_views( derived, reference );
+    CHECK( !wp_graphics_cull_result_get_transform_dispatch_count( derived ) );
+    wp_graphics_cull_result_destroy( reference );
+    wp_graphics_cull_result_destroy( derived );
+    reference = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_SHADOW, 0 );
+    compare_cull_views( shadow, reference );
+    wp_graphics_cull_result_get_bounds_stats( shadow, &stats );
+    CHECK( !stats.group_tests && wp_graphics_cull_result_get_visible_count( shadow ) == 129 );
+    wp_graphics_cull_result_destroy( shadow );
+    wp_graphics_cull_result_destroy( reference );
+    /* Reflected, sheared and singular hierarchies across independent views. */
+    for( i = 0; i < 129; ++i )
+    {
+        wp_scenenode_set_parent( nodes[i], parent );
+        wp_scenenode_set_orientation( nodes[i], rotation );
+    }
+    for( frame = 0; frame < 32; ++frame )
+    {
+        scale.x = frame % 7 ? -2.0f : 0.0f;
+        wp_scenenode_set_scale( parent, scale );
+        p.x = (wp_f32)( frame % 8 - 4 ) * 50;
+        p.y = (wp_f32)( frame % 3 );
+        p.z = (wp_f32)( frame % 5 - 2 );
+        wp_camera_set_position( camera, p );
+        wp_camera_set_projection_type(
+            camera, frame % 2 ? WORKPHONE_PROJECTION_ORTHOGRAPHIC : WORKPHONE_PROJECTION_PERSPECTIVE );
+        flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+        grouped = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 1 );
+        compare_cull_views( flat, grouped );
+        wp_graphics_cull_result_get_bounds_stats( grouped, &stats );
+        skipped += stats.group_skipped_candidates;
+        wp_graphics_cull_result_destroy( flat );
+        wp_graphics_cull_result_destroy( grouped );
+    }
+    CHECK( skipped > 0 );
+    memcpy( &invalid, &nan_bits, sizeof( invalid ) );
+    p.x = invalid;
+    wp_camera_set_position( camera, p );
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    grouped = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 1 );
+    compare_cull_views( flat, grouped );
+    wp_graphics_cull_result_get_bounds_stats( grouped, &stats );
+    CHECK( stats.group_tests == 5 && stats.group_fallbacks == 5 && !stats.group_rejections &&
+           wp_graphics_cull_result_get_visible_count( grouped ) == 129 );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( grouped );
+    p.x = 0;
+    wp_camera_set_position( camera, p );
+    /* A mutation in an excluded block still invalidates the full publication. */
+    grouped = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 1 );
+    p.x = 0;
+    p.y = 0;
+    p.z = 0;
+    wp_scenenode_set_position( nodes[0], p );
+    CHECK( wp_graphics_cull_result_validate( grouped, scene,
+                                             wp_graphics_cull_result_get_scene_generation( grouped ) ) ==
+           WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( !wp_graphics_cull_result_create_view( grouped, second, WP_GRAPHICS_CULL_PASS_MAIN ) );
+    wp_graphics_cull_result_destroy( grouped );
+    wp_graphics_scene_set_transform_pool( scene, NULL );
+    CHECK( wp_graphics_scene_get_cull_flags( scene ) == 7 );
+    wp_graphics_scene_clear( scene );
+    CHECK( wp_graphics_scene_get_cull_flags( scene ) == 7 );
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    wp_camera_destroy( second );
+    puts(
+        "Coarse groups: 129 candidates, 64 skipped, flat ordering parity, invalid-bound fallback, "
+        "32 affine/view cases, derived lifetime, shadow bypass and stale validation passed." );
+}
+
 static void shared_views( void )
 {
     wp_graphics_scene *scene = wp_graphics_scene_create();
@@ -2273,6 +2419,7 @@ int main( void )
     sat_common_points();
     compact_sat_axes();
     retirement();
+    coarse_groups();
     shared_views();
 #ifdef _WIN32
     own_completion();

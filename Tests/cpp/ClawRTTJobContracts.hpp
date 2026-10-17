@@ -323,6 +323,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     graphics.nativeMesh = snapshotMesh;
     graphics.attachScene(nativeScene);
     graphics.fail = false;
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),
+            WP_GRAPHICS_CULL_SPHERE_TEST|WP_GRAPHICS_CULL_SAT_TEST|WP_GRAPHICS_CULL_GROUP_TEST)!=0,
+            "enable opt-in coarse stage for active scene");
     auto request=make_ptr<Properties>(); request->setProperty("request_render_statistics",true);
     graphics.setProperties(request);
     graphics.frame();
@@ -342,6 +345,8 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             "active single-output capture reports local storage and no optional prefix cache");
     require(counters.find("main sort checks=0 passes=0 scratch allocs=0 bytes=0")!=String::npos,
             "single-output active view skips merge sorting and scratch allocation");
+    require(counters.find("coarse groups tests=0 rejects=0 skipped=0 fallbacks=0")!=String::npos,
+            "active small scene uses flat fallback below coarse threshold");
     good = pixels(output);
     require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
         "real ClawScene cull result must draw and be retired at frame end");

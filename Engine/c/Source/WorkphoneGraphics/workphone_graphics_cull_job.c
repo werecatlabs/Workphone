@@ -14,6 +14,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#define WP_CULL_GROUP_SIZE 32
+#define WP_CULL_GROUP_MINIMUM 64
 
 typedef struct cull_node_revision
 {
@@ -49,6 +51,7 @@ typedef struct cull_snapshot
     cull_entry *entries;
     wp_s32 count;
     wp_u32 references;
+    wp_cull_box *groups;
 } cull_snapshot;
 
 struct wp_graphics_cull_result
@@ -70,7 +73,7 @@ struct wp_graphics_cull_result
     wp_transform_job_stats transform_stats;
     wp_graphics_cull_bounds_stats bounds_stats;
     wp_graphics_cull_sort_stats sort_stats;
-    wp_s32 sphere_test, sat_test;
+    wp_s32 sphere_test, sat_test, group_test;
 };
 
 struct wp_graphics_cull_job
@@ -78,6 +81,7 @@ struct wp_graphics_cull_job
     wp_graphics_cull_status status;
     cull_snapshot *shared_snapshot; /* internal borrowed input for view derivation */
     cull_entry *entries;
+    wp_cull_box *groups;
     wp_s32 entry_count;
     wp_u32 visibility_mask;
     wp_s32 has_camera;
@@ -85,7 +89,7 @@ struct wp_graphics_cull_job
     wp_u32 camera_mask, scene_mask;
     wp_mat4f view_projection, view, projection;
     wp_cull_frustum frustum;
-    wp_s32 sphere_test, sat_test;
+    wp_s32 sphere_test, sat_test, group_test;
     const wp_graphics_scene *scene;
     wp_u64 native_generation;
     wp_transform_job_system *transforms;
@@ -109,9 +113,98 @@ static void cull_job_release_snapshot( wp_graphics_cull_job *job )
             free( job->entries[i].ancestors );
         }
     }
+    free( job->groups );
+    job->groups = NULL;
     free( job->entries );
     job->entries = NULL;
     job->entry_count = 0;
+}
+
+/* Immutable coarse bounds over capture-order blocks; no reordering of objects.
+ * A single invalid member disables its entire block. Padding covers child test
+ * tolerances as well as rounding of the enclosing half-axis representation. */
+static void cull_prepare_groups( wp_graphics_cull_job *job, size_t bytes )
+{
+    wp_s32 first, end, i, j, k, valid, group_count;
+    double low[3], high[3], extent, minimum, maximum, padding, squared;
+    const wp_cull_box *box;
+    wp_cull_box *group;
+    if( !job->group_test || job->entry_count < WP_CULL_GROUP_MINIMUM )
+    {
+        return;
+    }
+    group_count = job->entry_count / WP_CULL_GROUP_SIZE + ( job->entry_count % WP_CULL_GROUP_SIZE != 0 );
+    if( (size_t)group_count > ( 64u * 1024u * 1024u - bytes ) / sizeof( *group ) )
+    {
+        return;
+    }
+    job->groups = (wp_cull_box *)calloc( (size_t)group_count, sizeof( *group ) );
+    if( !job->groups )
+    {
+        return; /* Optional optimization: retain the flat path. */
+    }
+    for( first = 0; first < job->entry_count; first = end )
+    {
+        end = job->entry_count - first < WP_CULL_GROUP_SIZE ? job->entry_count
+                                                            : first + WP_CULL_GROUP_SIZE;
+        group = &job->groups[first / WP_CULL_GROUP_SIZE];
+        for( j = 0; j < 3; ++j )
+        {
+            low[j] = DBL_MAX;
+            high[j] = -DBL_MAX;
+        }
+        valid = 1;
+        for( i = first; i < end; ++i )
+        {
+            box = &job->entries[i].box;
+            if( !box->valid )
+            {
+                valid = 0;
+                break;
+            }
+            for( j = 0; j < 3; ++j )
+            {
+                extent = 0;
+                for( k = 0; k < 3; ++k )
+                {
+                    extent += fabs( box->axes[k][j] );
+                }
+                minimum = box->center[j] - extent;
+                maximum = box->center[j] + extent;
+                if( !wp_cull_finite( minimum ) || !wp_cull_finite( maximum ) )
+                {
+                    valid = 0;
+                }
+                if( minimum < low[j] )
+                {
+                    low[j] = minimum;
+                }
+                if( maximum > high[j] )
+                {
+                    high[j] = maximum;
+                }
+            }
+        }
+        if( !valid )
+        {
+            continue;
+        }
+        squared = 0;
+        for( j = 0; j < 3; ++j )
+        {
+            padding = 1.0e-4 * ( 1 + fabs( low[j] ) + fabs( high[j] ) );
+            group->center[j] = 0.5 * low[j] + 0.5 * high[j];
+            extent = 0.5 * high[j] - 0.5 * low[j] + padding;
+            group->axes[j][j] = extent;
+            squared += extent * extent;
+            if( !wp_cull_finite( group->center[j] ) || !wp_cull_finite( extent ) )
+            {
+                valid = 0;
+            }
+        }
+        group->radius = sqrt( squared );
+        group->valid = valid && wp_cull_finite( group->radius );
+    }
 }
 
 static void cull_job_release_result( wp_graphics_cull_job *job )
@@ -433,6 +526,10 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         }
     }
 
+    if( scene->object_count > 0 )
+    {
+        cull_prepare_groups( job, bytes );
+    }
     cull_capture_view( job, scene, camera, pass, scene_generation );
     job->status = WP_GRAPHICS_CULL_STATUS_READY;
     return WP_GRAPHICS_CULL_OK;
@@ -446,7 +543,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     wp_s32 *scratch;
     wp_s32 *sorted;
     wp_s32 count;
-    wp_s32 i, stage, outside, ordered;
+    wp_s32 i, stage, outside, ordered, group_end;
     size_t alloc_count;
     const cull_entry *entry;
 
@@ -482,6 +579,24 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     count = 0;
     for( i = 0; i < job->entry_count; ++i )
     {
+        if( job->groups && job->group_test && job->has_camera &&
+            job->pass == WP_GRAPHICS_CULL_PASS_MAIN && i % WP_CULL_GROUP_SIZE == 0 )
+        {
+            ++result->bounds_stats.group_tests;
+            if( wp_cull_box_outside( &job->groups[i / WP_CULL_GROUP_SIZE], &job->frustum, 0, &stage ) )
+            {
+                group_end = job->entry_count - i < WP_CULL_GROUP_SIZE ? job->entry_count
+                                                                      : i + WP_CULL_GROUP_SIZE;
+                ++result->bounds_stats.group_rejections;
+                result->bounds_stats.group_skipped_candidates += (wp_u32)( group_end - i );
+                i = group_end - 1;
+                continue;
+            }
+            if( !stage )
+            {
+                ++result->bounds_stats.group_fallbacks;
+            }
+        }
         entry = &job->entries[i];
         if( !entry->object || !entry->visible )
         {
@@ -604,6 +719,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     }
     else
     {
+        snapshot->groups = job->groups;
         snapshot->entries = job->entries;
         snapshot->count = job->entry_count;
         snapshot->references = 1;
@@ -612,6 +728,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     result->transform_dispatches = job->shared_snapshot ? 0u : ( job->entry_count > 0 ? 1u : 0u );
     result->entries = job->entries;
     job->entries = NULL;
+    job->groups = NULL;
     result->indices = sorted;
     result->scene = job->scene;
     result->native_generation = job->native_generation;
@@ -628,6 +745,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     result->transform_stats = job->transform_stats;
     result->sphere_test = job->sphere_test;
     result->sat_test = job->sat_test;
+    result->group_test = job->group_test;
 
     free( sorted == indices ? scratch : indices );
     cull_job_release_snapshot( job );
@@ -694,6 +812,7 @@ void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result )
         {
             free( result->snapshot->entries[i].ancestors );
         }
+        free( result->snapshot->groups );
         free( result->snapshot->entries );
         free( result->snapshot );
     }
@@ -895,11 +1014,13 @@ wp_graphics_cull_result *wp_graphics_cull_result_create_view( const wp_graphics_
     }
     memset( &view, 0, sizeof( view ) );
     view.entries = source->entries;
+    view.groups = source->snapshot->groups;
     view.entry_count = source->candidate_count;
     view.shared_snapshot = source->snapshot;
     view.transform_stats = source->transform_stats;
     view.sphere_test = source->sphere_test;
     view.sat_test = source->sat_test;
+    view.group_test = source->group_test;
     cull_capture_view( &view, source->scene, camera, pass, source->scene_generation );
     view.status = WP_GRAPHICS_CULL_STATUS_READY;
     /* Execute uses only captured entries, allocates independent indices and
@@ -970,4 +1091,18 @@ void wp_graphics_cull_result_get_sort_stats( const wp_graphics_cull_result *resu
             memset( out, 0, sizeof( *out ) );
         }
     }
+}
+
+wp_s32 wp_graphics_cull_job_set_group_test( wp_graphics_cull_job *job, wp_s32 enabled )
+{
+    if( !job )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    }
+    if( job->status == WP_GRAPHICS_CULL_STATUS_READY )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
+    }
+    job->group_test = enabled != 0;
+    return WP_GRAPHICS_CULL_OK;
 }
