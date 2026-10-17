@@ -1,5 +1,34 @@
 # WPGraphics implementation status
 
+## Reused transform indices and worker records - 17 October 2026
+
+`PERF-07` now reuses the private transform index array at unchanged path-reference
+count and worker batch records at unchanged batch count, after prior tasks have
+drained. These sizes are independent of output count: a different output mapping
+can reuse both, while a changed reference count replaces only the indices. Every
+index and worker field is rebuilt before submission, including transitions between
+cached-prefix and ordinary composition. Size changes allocate exact replacements;
+empty capture and destruction release storage. No additional retained buffers or
+changes to the 64 MiB capture-array accounting are introduced.
+
+Failed capture preserves the previous published world matrices and accepted
+statistics. Reused private arrays are detached before releasing the old snapshot;
+cancellation still drains without publishing to caller output. Native regression
+coverage includes changed mappings and output counts, cached/uncached transitions,
+independent resizing, rejected capture, cancellation/reuse, null owners and empty
+release. Copied job counters expose index/batch allocation and reuse separately;
+active Claw last-frame telemetry and RTT cold/warm assertions cover integration.
+
+All seven selected full Debug contracts pass on DX11/WARP. All six isolated
+contracts pass in Debug and RelWithDebInfo. The strengthened scene-job regression
+also passes in all three configurations. `git diff --check` passes. Logs:
+`project_x64/{build,test}_index_batch_reuse_debug.log`,
+`project_graphics_contracts/{build,test}_index_batch_reuse_{debug,release}.log`
+and corresponding `*_index_batch_transition_*` scene-job logs.
+Local/output matrices and optional prefix arrays still allocate per dispatch.
+Representative hardware timing and interactive Editor validation remain open;
+allocation-count reductions alone do not establish a frame-time improvement.
+
 ## Reused transform capture path records - 17 October 2026
 
 `PERF-07` now reuses the job's private integer path-record array when output

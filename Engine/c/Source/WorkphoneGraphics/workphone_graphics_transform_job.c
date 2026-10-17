@@ -202,7 +202,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     wp_transform_prefix *prefixes;
     wp_u32 *indices;
     wp_u32 i, j, depth, total = 0, unique = 0, batch_count, start, prefix_count = 0, reused,
-                        reused_paths;
+                        reused_paths, reused_indices, reused_batches;
     size_t bytes;
     if( !s || s->status == WP_TRANSFORM_RUNNING || ( count && !nodes ) )
     {
@@ -291,7 +291,9 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         }
     }
     references = s->capture_scratch;
-    indices = total ? (wp_u32 *)malloc( (size_t)total * sizeof( *indices ) ) : NULL;
+    reused_indices = total && total == s->stats.path_reference_count && s->indices != NULL;
+    indices = reused_indices ? s->indices
+                             : ( total ? (wp_u32 *)malloc( (size_t)total * sizeof( *indices ) ) : NULL );
     if( total && ( !references || !indices ) )
     {
         wp_transform_discard_capture_paths( s, paths );
@@ -299,7 +301,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         {
             memset( references, 0, (size_t)total * sizeof( *references ) );
         }
-        free( indices );
+        if( indices != s->indices )
+        {
+            free( indices );
+        }
         return 0;
     }
     for( i = 0; i < count; ++i )
@@ -333,12 +338,20 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         {
             memset( references, 0, (size_t)total * sizeof( *references ) );
         }
-        free( indices );
+        if( indices != s->indices )
+        {
+            free( indices );
+        }
         return 0;
     }
     locals = unique ? (wp_mat4f *)malloc( (size_t)unique * sizeof( *locals ) ) : NULL;
     worlds = count ? (wp_mat4f *)malloc( (size_t)count * sizeof( *worlds ) ) : NULL;
-    batches = batch_count ? (wp_transform_batch *)calloc( batch_count, sizeof( *batches ) ) : NULL;
+    reused_batches = batch_count && batch_count == s->stats.batch_count && s->batches != NULL;
+    batches =
+        reused_batches
+            ? s->batches
+            : ( batch_count ? (wp_transform_batch *)malloc( (size_t)batch_count * sizeof( *batches ) )
+                            : NULL );
     if( ( unique && !locals ) || ( count && !worlds ) || ( batch_count && !batches ) )
     {
         wp_transform_discard_capture_paths( s, paths );
@@ -346,10 +359,16 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         {
             memset( references, 0, (size_t)total * sizeof( *references ) );
         }
-        free( indices );
+        if( indices != s->indices )
+        {
+            free( indices );
+        }
         free( locals );
         free( worlds );
-        free( batches );
+        if( batches != s->batches )
+        {
+            free( batches );
+        }
         return 0;
     }
     unique = 0;
@@ -426,6 +445,16 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     {
         s->paths = NULL;
     }
+    /* Prior workers are drained. Every private index and batch field is rebuilt;
+     * only the public world matrices require separate transactional storage. */
+    if( reused_indices )
+    {
+        s->indices = NULL;
+    }
+    if( reused_batches )
+    {
+        s->batches = NULL;
+    }
     wp_transform_release( s );
     s->indices = indices;
     s->stats.output_count = count;
@@ -437,6 +466,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     s->stats.capture_scratch_reuses = reused;
     s->stats.capture_path_allocations = count && !reused_paths;
     s->stats.capture_path_reuses = reused_paths;
+    s->stats.capture_index_allocations = total && !reused_indices;
+    s->stats.capture_index_reuses = reused_indices;
+    s->stats.capture_batch_allocations = batch_count && !reused_batches;
+    s->stats.capture_batch_reuses = reused_batches;
     s->stats.capture_scratch_bytes = (size_t)total * sizeof( *references );
     s->stats.capture_peak_bytes = bytes;
     s->stats.retained_snapshot_bytes = bytes - (size_t)total * sizeof( wp_transform_reference );

@@ -334,6 +334,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             "first active capture allocates reference scratch once");
     require(counters.find("path records allocs=1 reuses=0")!=String::npos,
             "first active capture allocates path records once");
+    require(counters.find("index records allocs=1 reuses=0")!=String::npos &&
+            counters.find("batch records allocs=1 reuses=0")!=String::npos,
+            "active capture reports index and batch storage allocation or reuse");
     good = pixels(output);
     require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
         "real ClawScene cull result must draw and be retired at frame end");
@@ -353,6 +356,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             "warm active scene capture reuses reference scratch without allocation");
     require(counters.find("path records allocs=0 reuses=1")!=String::npos,
             "warm active scene capture also reuses path records");
+    require(counters.find("index records allocs=0 reuses=1")!=String::npos &&
+            counters.find("batch records allocs=0 reuses=1")!=String::npos,
+            "active capture reports index and batch storage allocation or reuse");
     graphics.retireSceneAfterDraw = true;
     viewport->setBackgroundColour(ColourF(1,0,1,1));
     graphics.frame();

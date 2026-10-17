@@ -572,6 +572,98 @@ static void retained_capture_paths( void )
         "resize/cancel/empty release passed." );
 }
 
+static void retained_capture_indices_and_batches( void )
+{
+    wp_scenenode *root = wp_scenenode_create(), *child = wp_scenenode_create();
+    const wp_scenenode *nodes[4];
+    wp_threadpool *pool = wp_threadpool_create( 2 );
+    wp_transform_job_system *job = wp_transform_job_system_create( pool, 2 );
+    wp_transform_job_stats stats;
+    wp_mat4f out[4], expected, sentinel;
+    const wp_mat4f *published;
+    wp_vec3f p = { 7, 2, -3 };
+    int i;
+    wp_scenenode_add_child( root, child );
+    wp_scenenode_set_position( child, p );
+    nodes[0] = child;
+    nodes[1] = root;
+    nodes[2] = NULL;
+    nodes[3] = root;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_allocations == 1 && !stats.capture_index_reuses &&
+           stats.capture_batch_allocations == 1 && !stats.capture_batch_reuses );
+    CHECK( stats.matrix_multiply_count == 3 );
+    /* Same four references and two batches, different output count and mapping.
+     * Reused indices must switch from prefix slots to uncached local indices. */
+    nodes[0] = child;
+    nodes[1] = NULL;
+    nodes[2] = child;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 3 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_reuses == 1 && !stats.capture_index_allocations &&
+           stats.capture_batch_reuses == 1 && !stats.capture_batch_allocations );
+    CHECK( stats.matrix_multiply_count == 4 );
+    for( i = 0; i < 3; ++i )
+    {
+        reference_world( nodes[i], &expected );
+        CHECK( !memcmp( &out[i], &expected, sizeof( expected ) ) );
+    }
+    published = wp_transform_job_system_get_result( job, NULL, NULL );
+    expected = published[1];
+    CHECK( !wp_transform_job_system_dispatch_snapshot( job, nodes, UINT_MAX, 99 ) );
+    CHECK( wp_transform_job_system_get_result( job, NULL, NULL ) == published &&
+           !memcmp( &published[1], &expected, sizeof( expected ) ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_reuses == 1 && stats.capture_batch_reuses == 1 );
+    memset( &sentinel, 0xAB, sizeof( sentinel ) );
+    for( i = 0; i < 3; ++i )
+    {
+        out[i] = sentinel;
+    }
+    CHECK( wp_transform_job_system_dispatch( job, nodes, out, 3 ) );
+    wp_transform_job_system_cancel( job );
+    for( i = 0; i < 3; ++i )
+    {
+        CHECK( !memcmp( &out[i], &sentinel, sizeof( sentinel ) ) );
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 3 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_reuses == 1 && stats.capture_batch_reuses == 1 );
+    /* Reference count changes independently of batch count; then both shrink. */
+    nodes[1] = root;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 3 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_allocations == 1 && !stats.capture_index_reuses &&
+           stats.capture_batch_reuses == 1 );
+    CHECK( wp_transform_job_system_process( job, nodes, out, 1 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_allocations == 1 && stats.capture_batch_allocations == 1 );
+    nodes[0] = NULL;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 1 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( !stats.capture_index_allocations && !stats.capture_index_reuses &&
+           stats.capture_batch_reuses == 1 );
+    wp_mat4f_identity( &expected );
+    CHECK( !memcmp( &out[0], &expected, sizeof( expected ) ) );
+    CHECK( wp_transform_job_system_dispatch_snapshot( job, NULL, 0, 100 ) );
+    wp_transform_job_system_wait( job );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( !stats.capture_index_allocations && !stats.capture_index_reuses &&
+           !stats.capture_batch_allocations && !stats.capture_batch_reuses );
+    nodes[0] = child;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 1 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_index_allocations == 1 && stats.capture_batch_allocations == 1 );
+    wp_transform_job_system_destroy( job );
+    wp_threadpool_destroy( pool );
+    wp_scenenode_destroy( child );
+    wp_scenenode_destroy( root );
+    puts(
+        "Transform indices/batches: exact-size reuse, changed mappings, rejection, cancel, "
+        "independent resize and empty release passed." );
+}
+
 static void cache_depth_boundary( void )
 {
     wp_scenenode *nodes[258];
@@ -1926,6 +2018,7 @@ int main( void )
     shared_prefixes();
     retained_capture_scratch();
     retained_capture_paths();
+    retained_capture_indices_and_batches();
     prefix_budget_fallback();
     transforms();
     hierarchy_limit();

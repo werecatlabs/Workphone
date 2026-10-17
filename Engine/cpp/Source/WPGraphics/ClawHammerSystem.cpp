@@ -147,6 +147,8 @@ namespace workphone
                 u64 views = 0, candidates = 0, visible = 0, dispatches = 0, multiplies = 0;
                 u64 scratchAllocations = 0, scratchReuses = 0;
                 u64 pathAllocations = 0, pathReuses = 0;
+                u64 indexAllocations = 0, indexReuses = 0;
+                u64 batchAllocations = 0, batchReuses = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
                     satAxes = 0, satFallbacks = 0;
             } work;
@@ -263,6 +265,10 @@ namespace workphone
                 work.multiplies += pass.work.multiplies;
                 work.scratchAllocations += pass.work.scratchAllocations;
                 work.scratchReuses += pass.work.scratchReuses;
+                work.indexAllocations += pass.work.indexAllocations;
+                work.indexReuses += pass.work.indexReuses;
+                work.batchAllocations += pass.work.batchAllocations;
+                work.batchReuses += pass.work.batchReuses;
                 work.pathAllocations += pass.work.pathAllocations;
                 work.pathReuses += pass.work.pathReuses;
                 work.sphereTests += pass.work.sphereTests;
@@ -273,13 +279,14 @@ namespace workphone
                 work.satAxes += pass.work.satAxes;
                 work.satFallbacks += pass.work.satFallbacks;
             }
-            char preparation[768];
+            char preparation[1024];
             std::snprintf(
                 preparation, sizeof( preparation ),
                 "\nPreparation last frame: views=%llu candidates=%llu main-visible=%llu "
                 "transform dispatches=%llu matrix multiplies=%llu sphere tests=%llu rejects=%llu "
                 "box tests=%llu SAT tests=%llu rejects=%llu axes=%llu fallbacks=%llu "
-                "reference scratch allocs=%llu reuses=%llu path records allocs=%llu reuses=%llu",
+                "reference scratch allocs=%llu reuses=%llu path records allocs=%llu reuses=%llu "
+                "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu",
                 (unsigned long long)work.views, (unsigned long long)work.candidates,
                 (unsigned long long)work.visible, (unsigned long long)work.dispatches,
                 (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
@@ -287,7 +294,9 @@ namespace workphone
                 (unsigned long long)work.satTests, (unsigned long long)work.satRejects,
                 (unsigned long long)work.satAxes, (unsigned long long)work.satFallbacks,
                 (unsigned long long)work.scratchAllocations, (unsigned long long)work.scratchReuses,
-                (unsigned long long)work.pathAllocations, (unsigned long long)work.pathReuses );
+                (unsigned long long)work.pathAllocations, (unsigned long long)work.pathReuses,
+                (unsigned long long)work.indexAllocations, (unsigned long long)work.indexReuses,
+                (unsigned long long)work.batchAllocations, (unsigned long long)work.batchReuses );
             result += preparation;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
@@ -784,6 +793,10 @@ namespace workphone
                                 pass.work.scratchReuses += transforms.capture_scratch_reuses;
                                 pass.work.pathAllocations += transforms.capture_path_allocations;
                                 pass.work.pathReuses += transforms.capture_path_reuses;
+                                pass.work.indexAllocations += transforms.capture_index_allocations;
+                                pass.work.indexReuses += transforms.capture_index_reuses;
+                                pass.work.batchAllocations += transforms.capture_batch_allocations;
+                                pass.work.batchReuses += transforms.capture_batch_reuses;
                                 pass.work.sphereTests += bounds.sphere_tests;
                                 pass.work.sphereRejects += bounds.sphere_rejections;
                                 pass.work.boxTests += bounds.box_tests;
