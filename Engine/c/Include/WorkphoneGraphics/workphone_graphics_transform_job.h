@@ -30,6 +30,10 @@ typedef struct wp_transform_job_stats
     /* Exact-size reuse of private path indices and drained worker descriptors. */
     wp_u32 capture_index_allocations, capture_index_reuses;
     wp_u32 capture_batch_allocations, capture_batch_reuses;
+    /* Private local matrices and optional per-batch composed prefixes. Reused
+     * at unchanged unique-local / cached-prefix counts, then fully rebuilt. */
+    wp_u32 capture_local_allocations, capture_local_reuses;
+    wp_u32 capture_prefix_allocations, capture_prefix_reuses;
     wp_u64 capture_scratch_bytes;
     wp_u64 retained_snapshot_bytes, capture_peak_bytes;
 } wp_transform_job_stats;

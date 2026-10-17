@@ -337,6 +337,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("index records allocs=1 reuses=0")!=String::npos &&
             counters.find("batch records allocs=1 reuses=0")!=String::npos,
             "active capture reports index and batch storage allocation or reuse");
+    require(counters.find("local matrices allocs=1 reuses=0")!=String::npos &&
+            counters.find("prefix cache allocs=0 reuses=0")!=String::npos,
+            "active single-output capture reports local storage and no optional prefix cache");
     good = pixels(output);
     require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
         "real ClawScene cull result must draw and be retired at frame end");
@@ -359,6 +362,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("index records allocs=0 reuses=1")!=String::npos &&
             counters.find("batch records allocs=0 reuses=1")!=String::npos,
             "active capture reports index and batch storage allocation or reuse");
+    require(counters.find("local matrices allocs=0 reuses=1")!=String::npos &&
+            counters.find("prefix cache allocs=0 reuses=0")!=String::npos,
+            "active single-output capture reports local storage and no optional prefix cache");
     graphics.retireSceneAfterDraw = true;
     viewport->setBackgroundColour(ColourF(1,0,1,1));
     graphics.frame();

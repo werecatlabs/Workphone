@@ -664,6 +664,139 @@ static void retained_capture_indices_and_batches( void )
         "independent resize and empty release passed." );
 }
 
+static void retained_capture_matrices( wp_u32 workers )
+{
+    wp_scenenode *root_a = wp_scenenode_create(), *root_b = wp_scenenode_create();
+    wp_scenenode *leaf_a = wp_scenenode_create(), *leaf_b = wp_scenenode_create();
+    const wp_scenenode *nodes[4];
+    wp_threadpool *pool = workers ? wp_threadpool_create( workers ) : NULL;
+    wp_transform_job_system *job = wp_transform_job_system_create( pool, 2 );
+    wp_transform_job_stats stats;
+    wp_mat4f out[4], expected, sentinel;
+    const wp_mat4f *published;
+    wp_vec3f p = { 7, -2, 3 }, scale = { -2, 3, 0.5f };
+    int i, step;
+    wp_scenenode_add_child( root_a, leaf_a );
+    wp_scenenode_add_child( root_b, leaf_b );
+    wp_scenenode_set_position( root_b, p );
+    wp_scenenode_set_scale( root_b, scale );
+    for( i = 0; i < 4; ++i )
+    {
+        nodes[i] = leaf_a;
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_allocations == 1 && !stats.capture_local_reuses &&
+           stats.capture_prefix_allocations == 1 && !stats.capture_prefix_reuses &&
+           stats.matrix_multiply_count == 4 );
+    for( step = 0; step < 3; ++step )
+    {
+        /* Equal counts with entirely different source identities, then reparent,
+         * then a local edit. Ready prefixes must never reuse previous worlds. */
+        if( step == 1 )
+        {
+            wp_scenenode_set_parent( leaf_b, root_a );
+        }
+        p.x += 2;
+        wp_scenenode_set_position( leaf_b, p );
+        for( i = 0; i < 4; ++i )
+        {
+            nodes[i] = leaf_b;
+        }
+        CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+        wp_transform_job_system_get_stats( job, &stats );
+        CHECK( stats.capture_local_reuses == 1 && !stats.capture_local_allocations &&
+               stats.capture_prefix_reuses == 1 && !stats.capture_prefix_allocations );
+        reference_world( leaf_b, &expected );
+        for( i = 0; i < 4; ++i )
+        {
+            CHECK( !memcmp( &expected, &out[i], sizeof( expected ) ) );
+        }
+    }
+    published = wp_transform_job_system_get_result( job, NULL, NULL );
+    CHECK( !wp_transform_job_system_dispatch_snapshot( job, nodes, UINT_MAX, 101 ) );
+    CHECK( wp_transform_job_system_get_result( job, NULL, NULL ) == published &&
+           !memcmp( &expected, &published[0], sizeof( expected ) ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && stats.capture_prefix_reuses == 1 );
+    memset( &sentinel, 0xAB, sizeof( sentinel ) );
+    for( i = 0; i < 4; ++i )
+    {
+        out[i] = sentinel;
+    }
+    CHECK( wp_transform_job_system_dispatch( job, nodes, out, 4 ) );
+    wp_transform_job_system_cancel( job );
+    for( i = 0; i < 4; ++i )
+    {
+        CHECK( !memcmp( &out[i], &sentinel, sizeof( sentinel ) ) );
+    }
+    p.y = 9;
+    wp_scenenode_set_position( root_a, p );
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && stats.capture_prefix_reuses == 1 );
+    reference_world( leaf_b, &expected );
+    CHECK( !memcmp( &out[3], &expected, sizeof( expected ) ) );
+    /* Two leaves sharing a root require three locals and six cached prefixes. */
+    nodes[0] = leaf_a;
+    nodes[2] = leaf_a;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.local_matrix_count == 3 && stats.matrix_multiply_count == 6 &&
+           stats.capture_local_allocations == 1 && !stats.capture_local_reuses &&
+           stats.capture_prefix_allocations == 1 && !stats.capture_prefix_reuses );
+    /* Same locals, no repeated nodes within a batch: drop the optional cache. */
+    nodes[1] = NULL;
+    nodes[3] = NULL;
+    nodes[2] = leaf_b;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && !stats.capture_prefix_allocations &&
+           !stats.capture_prefix_reuses && stats.matrix_multiply_count == 4 );
+    for( i = 0; i < 4; ++i )
+    {
+        reference_world( nodes[i], &expected );
+        CHECK( !memcmp( &out[i], &expected, sizeof( expected ) ) );
+    }
+    nodes[0] = leaf_a;
+    nodes[1] = leaf_b;
+    nodes[2] = leaf_a;
+    nodes[3] = leaf_b;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && stats.capture_prefix_allocations == 1 &&
+           !stats.capture_prefix_reuses );
+    for( i = 0; i < 4; ++i )
+    {
+        reference_world( nodes[i], &expected );
+        CHECK( !memcmp( &out[i], &expected, sizeof( expected ) ) );
+        nodes[i] = NULL;
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( !stats.local_matrix_count && !stats.capture_local_allocations &&
+           !stats.capture_local_reuses && !stats.capture_prefix_allocations &&
+           !stats.capture_prefix_reuses );
+    CHECK( wp_transform_job_system_dispatch_snapshot( job, NULL, 0, 102 ) );
+    wp_transform_job_system_wait( job );
+    nodes[0] = leaf_a;
+    nodes[1] = leaf_a;
+    nodes[2] = leaf_a;
+    nodes[3] = leaf_a;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_allocations == 1 && stats.capture_prefix_allocations == 1 );
+    wp_transform_job_system_destroy( job );
+    wp_threadpool_destroy( pool );
+    wp_scenenode_destroy( leaf_a );
+    wp_scenenode_destroy( leaf_b );
+    wp_scenenode_destroy( root_a );
+    wp_scenenode_destroy( root_b );
+    puts(
+        "Transform local/prefix reuse: changed identities, reparent/edit, rejection, cancel, "
+        "resize, optional-cache transitions and empty release passed." );
+}
+
 static void cache_depth_boundary( void )
 {
     wp_scenenode *nodes[258];
@@ -2019,6 +2152,8 @@ int main( void )
     retained_capture_scratch();
     retained_capture_paths();
     retained_capture_indices_and_batches();
+    retained_capture_matrices( 0 );
+    retained_capture_matrices( 2 );
     prefix_budget_fallback();
     transforms();
     hierarchy_limit();

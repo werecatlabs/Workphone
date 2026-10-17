@@ -149,6 +149,8 @@ namespace workphone
                 u64 pathAllocations = 0, pathReuses = 0;
                 u64 indexAllocations = 0, indexReuses = 0;
                 u64 batchAllocations = 0, batchReuses = 0;
+                u64 localAllocations = 0, localReuses = 0;
+                u64 prefixAllocations = 0, prefixReuses = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
                     satAxes = 0, satFallbacks = 0;
             } work;
@@ -269,6 +271,10 @@ namespace workphone
                 work.indexReuses += pass.work.indexReuses;
                 work.batchAllocations += pass.work.batchAllocations;
                 work.batchReuses += pass.work.batchReuses;
+                work.localAllocations += pass.work.localAllocations;
+                work.localReuses += pass.work.localReuses;
+                work.prefixAllocations += pass.work.prefixAllocations;
+                work.prefixReuses += pass.work.prefixReuses;
                 work.pathAllocations += pass.work.pathAllocations;
                 work.pathReuses += pass.work.pathReuses;
                 work.sphereTests += pass.work.sphereTests;
@@ -286,7 +292,8 @@ namespace workphone
                 "transform dispatches=%llu matrix multiplies=%llu sphere tests=%llu rejects=%llu "
                 "box tests=%llu SAT tests=%llu rejects=%llu axes=%llu fallbacks=%llu "
                 "reference scratch allocs=%llu reuses=%llu path records allocs=%llu reuses=%llu "
-                "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu",
+                "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu "
+                "local matrices allocs=%llu reuses=%llu prefix cache allocs=%llu reuses=%llu",
                 (unsigned long long)work.views, (unsigned long long)work.candidates,
                 (unsigned long long)work.visible, (unsigned long long)work.dispatches,
                 (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
@@ -296,7 +303,9 @@ namespace workphone
                 (unsigned long long)work.scratchAllocations, (unsigned long long)work.scratchReuses,
                 (unsigned long long)work.pathAllocations, (unsigned long long)work.pathReuses,
                 (unsigned long long)work.indexAllocations, (unsigned long long)work.indexReuses,
-                (unsigned long long)work.batchAllocations, (unsigned long long)work.batchReuses );
+                (unsigned long long)work.batchAllocations, (unsigned long long)work.batchReuses,
+                (unsigned long long)work.localAllocations, (unsigned long long)work.localReuses,
+                (unsigned long long)work.prefixAllocations, (unsigned long long)work.prefixReuses );
             result += preparation;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
@@ -797,6 +806,10 @@ namespace workphone
                                 pass.work.indexReuses += transforms.capture_index_reuses;
                                 pass.work.batchAllocations += transforms.capture_batch_allocations;
                                 pass.work.batchReuses += transforms.capture_batch_reuses;
+                                pass.work.localAllocations += transforms.capture_local_allocations;
+                                pass.work.localReuses += transforms.capture_local_reuses;
+                                pass.work.prefixAllocations += transforms.capture_prefix_allocations;
+                                pass.work.prefixReuses += transforms.capture_prefix_reuses;
                                 pass.work.sphereTests += bounds.sphere_tests;
                                 pass.work.sphereRejects += bounds.sphere_rejections;
                                 pass.work.boxTests += bounds.box_tests;

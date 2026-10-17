@@ -1,5 +1,42 @@
 # WPGraphics implementation status
 
+## Reused local transform matrices and prefix caches - 17 October 2026
+
+`PERF-07` now reuses private local-matrix storage at unchanged unique-node count,
+and the optional per-batch prefix cache at unchanged cached-prefix count, after
+previous workers have drained. Capture rebuilds every local matrix and clears the
+prefix records, including ready flags, before resolving current local/parent
+indices and submitting tasks. Matching counts do not imply matching node identity,
+parent relationships or matrix values. Size changes allocate exact replacements;
+ordinary uncached composition, null-only capture, empty capture and destruction
+release unused caches. The optional cache still falls back when it offers no
+reuse or exceeds the existing 64 MiB capture-array cap.
+
+Reused private buffers are transferred before releasing the old snapshot. Failed
+capture preserves published world matrices and last-accepted statistics, and
+cancellation drains without copying to caller output. World output remains a
+separate allocation until capture succeeds; this preserves the public result's
+lifetime without introducing an additional retained output buffer. Matching warm
+captures now avoid allocation of all six private input/scratch arrays; published
+world output and task-group internals are outside that claim.
+
+Copied statistics and active Claw telemetry add local-matrix and prefix-cache
+allocation/reuse counts. Native inline and two-worker regressions cover equal-size
+node replacement, reparenting, negative/nonuniform scale, local/ancestor edits,
+rejected capture, cancellation/reuse, cache resizing, cached/uncached transitions,
+null owners and empty release, checking matrices against the independent reference.
+The active single-output RTT test checks cold/warm local reuse and correctly
+reports no optional prefix cache while retaining its pixel/lifecycle assertions.
+
+Validation: all seven selected full Debug contracts pass, including active Claw
+RTT pixel/lifecycle checks on DX11/WARP. All six isolated contracts pass in Debug
+and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_matrix_reuse_debug.log` and
+`project_graphics_contracts/{build,test}_matrix_reuse_{debug,release}.log`.
+Representative hardware performance and interactive Editor validation remain open;
+reduced allocation counts do not establish a frame-time gain. Cross-batch prefix
+sharing and automatic compatible cross-viewport publication reuse remain open.
+
 ## Reused transform indices and worker records - 17 October 2026
 
 `PERF-07` now reuses the private transform index array at unchanged path-reference
