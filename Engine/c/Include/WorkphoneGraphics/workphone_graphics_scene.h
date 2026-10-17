@@ -148,10 +148,12 @@ void wp_graphics_scene_set_transform_pool( wp_graphics_scene *, wp_threadpool * 
 enum
 {
     WP_GRAPHICS_CULL_SPHERE_TEST = 1u,
-    WP_GRAPHICS_CULL_SAT_TEST = 2u
+    WP_GRAPHICS_CULL_SAT_TEST = 2u,
+    WP_GRAPHICS_CULL_GROUP_TEST = 4u
 };
 
-/* Owner-only scene A/B policy. Both enabled by default; six-plane box tests
+/* Owner-only scene A/B policy. Sphere/SAT enabled by default; groups opt-in.
+ * Six-plane box tests
  * remain active with zero flags. Unknown bits reject without mutation. Changes
  * invalidate prepared views; equal assignments preserve them. Pool replacement
  * and scene clear preserve the policy. Standalone jobs retain their own switches. */

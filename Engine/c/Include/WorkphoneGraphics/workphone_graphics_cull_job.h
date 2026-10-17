@@ -72,6 +72,7 @@ typedef struct wp_graphics_cull_bounds_stats
     wp_u32 sphere_tests, sphere_rejections, sphere_inside;
     wp_u32 box_tests, box_rejections, fitted_obb_tests, aabb_box_tests, conservative_candidates;
     wp_u32 sat_tests, sat_rejections, sat_axis_tests, sat_fallbacks;
+    wp_u32 group_tests, group_rejections, group_skipped_candidates, group_fallbacks;
 } wp_graphics_cull_bounds_stats;
 
 void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *,
@@ -94,6 +95,12 @@ wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *, wp_s32 enab
  * Refines plane-test survivors using finite-frustum/box separating axes.
  * Invalid/unbounded frusta fall back to the conservative plane result. */
 wp_s32 wp_graphics_cull_job_set_sat_test( wp_graphics_cull_job *, wp_s32 enabled );
+
+/* Default disabled. Optional padded world bounds over 32 captured candidates,
+ * built for >=64 candidates and shared by derived views. Invalid bounds or
+ * unavailable storage use individual tests. Shadow views bypass camera rejection.
+ * Owner-only; rejects changes while READY. */
+wp_s32 wp_graphics_cull_job_set_group_test( wp_graphics_cull_job *, wp_s32 enabled );
 
 wp_graphics_cull_job *wp_graphics_cull_job_create( void );
 /* Optional borrowed pool; owner-thread capture/wait precedes culling. */

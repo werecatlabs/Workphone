@@ -1,5 +1,54 @@
 # WPGraphics implementation status
 
+## Opt-in coarse candidate-block rejection - 17 October 2026
+
+`PERF-08` now has a first coarse rejection tier in native cull execution. With
+`WP_GRAPHICS_CULL_GROUP_TEST` enabled, captures of at least 64 candidates build
+padded world AABBs over contiguous 32-candidate blocks, using the transformed
+OBB/AABB half axes already captured for individual tests. Finite-frustum plane
+tests can reject a complete block before visiting its candidates. Surviving blocks
+still use the existing masks, sphere/box/SAT tests and stable draw ordering.
+No candidate is removed from the immutable publication; all membership, object,
+mesh and ancestor revisions remain subject to stale-result validation.
+
+The block bounds belong to the shared publication, so derived camera views use
+their own frustum against the same complete candidate set after source-view
+retirement. Camera rejection is bypassed for shadow views, retaining off-camera
+casters. Any unknown/nonfinite member disables its block bound. Invalid frusta,
+small scenes, optional allocation failure or insufficient space within the
+existing 64 MiB entry/ancestor capture budget retain individual tests. Block
+storage is released with cancelled capture or the last publication reference.
+Padding covers enclosing-box rounding and the individual plane-test tolerance.
+
+The new job switch rejects changes while READY; the scene A/B flag invalidates
+prepared results and persists across pool replacement/clear. Groups remain off by
+default; sphere/SAT defaults are unchanged. The synchronous reference remains
+flat. Copied per-view bounds statistics add group tests, rejections, skipped
+candidate counts and invalid-bound/view fallbacks; existing Claw last-frame
+telemetry reports these for the main view before retirement.
+
+Native coverage includes a 129-candidate fixture that rejects two blocks and
+skips 64 candidates while preserving exact visible object order against the flat
+path. An unknown-bound block falls back. Moved-camera derivation after source
+retirement reveals candidates excluded by the source view; shadows retain all
+129 casters. Thirty-two reflected/sheared/singular hierarchy and camera/projection
+cases preserve flat-path order, invalid views disable all coarse rejection, and
+mutations in excluded candidates still invalidate the publication. Scene policy
+survives pool replacement and clear. Active Claw RTT checks enable the flag,
+verify the small-scene fallback counters, then disable it while preserving pixels.
+
+All seven selected full Debug contracts pass, including DX11/WARP target and
+active Claw RTT pixel/lifecycle checks. All six isolated contracts pass in Debug
+and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_coarse_groups_debug.log` and
+`project_graphics_contracts/{build,test}_coarse_groups_{debug,release}.log`.
+
+This is capture-order block rejection, not a spatially partitioned hierarchy or
+retained scene index. Its benefit depends on spatial coherence of adjacent
+candidates, and capture pays to build the optional bounds. Representative
+hardware timing, threshold tuning and an enabled large-scene visual gate remain
+open before changing the default or claiming an overall frame-time improvement.
+
 ## Cull draw-order fast path and lazy merge scratch - 17 October 2026
 
 The native cull execute path now checks draw order among visible survivors before
