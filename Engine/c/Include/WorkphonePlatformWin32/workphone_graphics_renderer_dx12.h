@@ -45,6 +45,28 @@ wp_s32 wp_renderer_dx12_resize( wp_renderer_dx12 *renderer, wp_s32 width, wp_s32
 void wp_renderer_dx12_begin_frame( wp_renderer_dx12 *renderer );
 void wp_renderer_dx12_end_frame( wp_renderer_dx12 *renderer );
 void wp_renderer_dx12_present( wp_renderer_dx12 *renderer, wp_s32 vsync );
+wp_s32 wp_renderer_dx12_try_present( wp_renderer_dx12 *renderer, void *expected_hwnd,
+                                     wp_s32 vsync );
+wp_s32 wp_renderer_dx12_copy_back_buffer_rgba8( wp_renderer_dx12 *renderer,
+                                                void *expected_hwnd, void *output,
+                                                wp_u64 output_bytes );
+
+typedef struct wp_render_statistics_dx12
+{
+    uint64_t frames, interval_samples, gpu_samples, draws, triangles;
+    uint64_t material_uploads, transform_uploads, geometry_creations, state_bindings;
+    uint64_t instanced_draws, instances, instance_uploads, instance_upload_bytes;
+    uint64_t instance_buffer_creations;
+    double interval_ms, interval_p95_ms, cpu_frame_ms, present_ms, gpu_frame_ms;
+    wp_s32 flip_model;
+    uint64_t present_attempts, present_occluded, present_failures;
+    wp_s32 last_present_hresult;
+} wp_render_statistics_dx12;
+
+void wp_renderer_dx12_invalidate_state( wp_renderer_dx12 *renderer );
+void wp_renderer_dx12_reset_statistics( wp_renderer_dx12 *renderer );
+void wp_renderer_dx12_get_statistics( const wp_renderer_dx12 *renderer,
+                                      wp_render_statistics_dx12 *statistics );
 
 /* =========================================================================
  * Clear
@@ -102,6 +124,21 @@ void wp_renderer_dx12_draw_triangles_ptc( wp_renderer_dx12 *renderer, const wp_v
 void wp_renderer_dx12_draw_indexed_triangles_ptc( wp_renderer_dx12 *renderer,
                                                   const wp_vertex_ptc *vertices, wp_s32 vertex_count,
                                                   const uint16_t *indices, wp_s32 index_count );
+void wp_renderer_dx12_draw_indexed_triangles_ptc_u32( wp_renderer_dx12 *renderer,
+                                                      const wp_vertex_ptc *vertices,
+                                                      wp_s32 vertex_count, const uint32_t *indices,
+                                                      wp_s32 index_count );
+wp_s32 wp_renderer_dx12_prepare_indexed_triangles_ptc( wp_renderer_dx12 *renderer,
+                                                       const wp_vertex_ptc *vertices,
+                                                       wp_s32 vertex_count, const uint16_t *indices,
+                                                       wp_s32 index_count );
+wp_s32 wp_renderer_dx12_prepare_indexed_triangles_ptc_u32( wp_renderer_dx12 *renderer,
+                                                           const wp_vertex_ptc *vertices,
+                                                           wp_s32 vertex_count, const uint32_t *indices,
+                                                           wp_s32 index_count );
+void wp_renderer_dx12_draw_prepared_indexed_triangles_ptc( wp_renderer_dx12 *renderer,
+                                                           wp_s32 index_start, wp_s32 index_count,
+                                                           wp_s32 base_vertex );
 
 /* =========================================================================
  * Textures (used by the PTC draw calls)
@@ -118,6 +155,7 @@ void wp_renderer_dx12_destroy_texture_native( void *texture );
  * ====================================================================== */
 wp_s32 wp_renderer_dx12_get_width( const wp_renderer_dx12 *renderer );
 wp_s32 wp_renderer_dx12_get_height( const wp_renderer_dx12 *renderer );
+void wp_renderer_dx12_get_projection_matrix( wp_s32 width, wp_s32 height, wp_f32 *result );
 
 /* =========================================================================
  * Native object access

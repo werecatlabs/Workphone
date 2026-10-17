@@ -125,6 +125,11 @@ typedef struct wp_renderer_dx12
 	ID3D12Resource *upload_buffer;
 	UINT8 *upload_ptr;
 	UINT64 upload_offset;
+	wp_vertex_ptc *prepared_vertices;
+	void *prepared_indices;
+	wp_s32 prepared_vertex_count;
+	wp_s32 prepared_index_count;
+	wp_s32 prepared_indices_are_u32;
 
 	ID3D12Resource *white_texture;
 	ID3D12Resource *texture;
@@ -154,6 +159,7 @@ typedef struct wp_renderer_dx12
 	wp_depth_func depth_func;
 	wp_mat4f world_matrix, view_matrix, proj_matrix, mvp_matrix;
 	wp_s32 mvp_dirty;
+	wp_render_statistics_dx12 statistics;
 	void *native;
 } wp_renderer_dx12;
 
@@ -540,6 +546,38 @@ static void wp_renderer_dx12_replace_texture( wp_renderer_dx12 *r, ID3D12Resourc
 	r->texture_dirty = 1;
 }
 
+static wp_s32 wp_renderer_dx12_prepare_ptc( wp_renderer_dx12 *r, const wp_vertex_ptc *vertices,
+																								wp_s32 vertex_count, const void *indices,
+																								wp_s32 index_count, wp_s32 indices_are_u32 )
+{
+	wp_vertex_ptc *new_vertices;
+	void *new_indices;
+	size_t vertex_bytes, index_bytes;
+
+	if( !r || !vertices || !indices || vertex_count <= 0 || index_count <= 0 )
+		return 0;
+	vertex_bytes = (size_t)vertex_count * sizeof( *vertices );
+	index_bytes = (size_t)index_count * ( indices_are_u32 ? sizeof( uint32_t ) : sizeof( uint16_t ) );
+	new_vertices = (wp_vertex_ptc *)malloc( vertex_bytes );
+	new_indices = malloc( index_bytes );
+	if( !new_vertices || !new_indices )
+	{
+		free( new_vertices );
+		free( new_indices );
+		return 0;
+	}
+	memcpy( new_vertices, vertices, vertex_bytes );
+	memcpy( new_indices, indices, index_bytes );
+	free( r->prepared_vertices );
+	free( r->prepared_indices );
+	r->prepared_vertices = new_vertices;
+	r->prepared_indices = new_indices;
+	r->prepared_vertex_count = vertex_count;
+	r->prepared_index_count = index_count;
+	r->prepared_indices_are_u32 = indices_are_u32;
+	return 1;
+}
+
 /* =========================================================================
  * Internal helpers -- pipeline state and drawing
  * ====================================================================== */
@@ -702,7 +740,8 @@ static void wp_renderer_dx12_apply_viewport( wp_renderer_dx12 *r )
 static void wp_renderer_dx12_draw( wp_renderer_dx12 *r, wp_s32 layout, wp_s32 stride,
 								   D3D12_PRIMITIVE_TOPOLOGY_TYPE topology_type,
 								   D3D_PRIMITIVE_TOPOLOGY topology, const void *vertices,
-								   wp_s32 vertex_count, const uint16_t *indices, wp_s32 index_count )
+																								   wp_s32 vertex_count, const void *indices, wp_s32 index_count,
+																								   wp_s32 indices_are_u32 )
 {
 	wp_dx12_pso_key key;
 	ID3D12PipelineState *pso;
@@ -731,7 +770,9 @@ static void wp_renderer_dx12_draw( wp_renderer_dx12 *r, wp_s32 layout, wp_s32 st
 	if( !wp_renderer_dx12_upload( r, vertices, (UINT64)vertex_count * (UINT64)stride, &vb_offset ) )
 		return;
 	if( indexed &&
-		!wp_renderer_dx12_upload( r, indices, (UINT64)index_count * sizeof( uint16_t ), &ib_offset ) )
+		!wp_renderer_dx12_upload( r, indices,
+									 (UINT64)index_count * ( indices_are_u32 ? sizeof( uint32_t ) : sizeof( uint16_t ) ),
+									 &ib_offset ) )
 		return;
 
 	wp_renderer_dx12_update_mvp( r );
@@ -751,13 +792,17 @@ static void wp_renderer_dx12_draw( wp_renderer_dx12 *r, wp_s32 layout, wp_s32 st
 	{
 		D3D12_INDEX_BUFFER_VIEW ibv;
 		ibv.BufferLocation = ID3D12Resource_GetGPUVirtualAddress( r->upload_buffer ) + ib_offset;
-		ibv.SizeInBytes = (UINT)( (UINT)index_count * sizeof( uint16_t ) );
-		ibv.Format = DXGI_FORMAT_R16_UINT;
+		ibv.SizeInBytes = (UINT)( (UINT)index_count *
+										 ( indices_are_u32 ? sizeof( uint32_t ) : sizeof( uint16_t ) ) );
+		ibv.Format = indices_are_u32 ? DXGI_FORMAT_R32_UINT : DXGI_FORMAT_R16_UINT;
 		ID3D12GraphicsCommandList_IASetIndexBuffer( r->command_list, &ibv );
 		ID3D12GraphicsCommandList_DrawIndexedInstanced( r->command_list, (UINT)index_count, 1, 0, 0, 0 );
 	}
 	else
 		ID3D12GraphicsCommandList_DrawInstanced( r->command_list, (UINT)vertex_count, 1, 0, 0 );
+	r->statistics.draws++;
+	if( topology == D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST )
+		r->statistics.triangles += (uint64_t)( indexed ? index_count : vertex_count ) / 3u;
 }
 
 /* =========================================================================
@@ -909,6 +954,7 @@ wp_renderer_dx12 *wp_renderer_dx12_create( void *hwnd, wp_s32 width, wp_s32 heig
 	r->depth_write_enabled = 1;
 	r->depth_func = WORKPHONE_DEPTH_FUNC_LESS;
 	r->texture_slot = -1;
+	wp_renderer_dx12_reset_statistics( r );
 	wp_mat4f_identity( &r->world_matrix );
 	wp_mat4f_identity( &r->view_matrix );
 	wp_mat4f_identity( &r->proj_matrix );
@@ -935,6 +981,8 @@ void wp_renderer_dx12_destroy( wp_renderer_dx12 *r )
 	wp_renderer_dx12_wait_for_gpu( r );
 	wp_renderer_dx12_release_retired( r );
 	free( r->retired );
+	free( r->prepared_vertices );
+	free( r->prepared_indices );
 
 	for( i = 0; i < r->pso_count; i++ )
 		DX12_RELEASE( r->psos[i].pso );
@@ -1040,11 +1088,125 @@ void wp_renderer_dx12_end_frame( wp_renderer_dx12 *r )
 
 void wp_renderer_dx12_present( wp_renderer_dx12 *r, wp_s32 vsync )
 {
-	if( !r || !r->swap_chain )
+	(void)wp_renderer_dx12_try_present( r, r ? r->hwnd : NULL, vsync );
+}
+
+wp_s32 wp_renderer_dx12_try_present( wp_renderer_dx12 *r, void *expected_hwnd, wp_s32 vsync )
+{
+	HRESULT hr;
+
+	if( !r || !r->swap_chain || expected_hwnd != r->hwnd || r->frame_open )
+		return 0;
+	r->statistics.present_attempts++;
+	hr = IDXGISwapChain3_Present( r->swap_chain, vsync ? 1 : 0, 0 );
+	r->statistics.last_present_hresult = (wp_s32)hr;
+	if( hr == DXGI_STATUS_OCCLUDED )
+	{
+		r->statistics.present_occluded++;
+		return 2;
+	}
+	if( FAILED( hr ) )
+	{
+		r->statistics.present_failures++;
+		return -1;
+	}
+	r->statistics.frames++;
+	return 1;
+}
+
+void wp_renderer_dx12_invalidate_state( wp_renderer_dx12 *r )
+{
+	(void)r;
+}
+
+void wp_renderer_dx12_reset_statistics( wp_renderer_dx12 *r )
+{
+	if( !r )
 		return;
-	if( r->frame_open )
-		wp_renderer_dx12_end_frame( r );
-	IDXGISwapChain3_Present( r->swap_chain, vsync ? 1 : 0, 0 );
+	memset( &r->statistics, 0, sizeof( r->statistics ) );
+	r->statistics.flip_model = 1;
+}
+
+void wp_renderer_dx12_get_statistics( const wp_renderer_dx12 *r,
+																								wp_render_statistics_dx12 *statistics )
+{
+	if( !statistics )
+		return;
+	if( r )
+		*statistics = r->statistics;
+	else
+		memset( statistics, 0, sizeof( *statistics ) );
+}
+
+wp_s32 wp_renderer_dx12_copy_back_buffer_rgba8( wp_renderer_dx12 *r, void *expected_hwnd,
+																							 void *output, wp_u64 output_bytes )
+{
+	D3D12_RESOURCE_DESC source_desc;
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
+	UINT rows;
+	UINT64 row_bytes, readback_size;
+	D3D12_HEAP_PROPERTIES hp;
+	D3D12_RESOURCE_DESC buffer_desc;
+	D3D12_TEXTURE_COPY_LOCATION copy_destination;
+	D3D12_TEXTURE_COPY_LOCATION copy_source;
+	ID3D12Resource *readback = NULL;
+	ID3D12CommandList *lists[1];
+	UINT8 *mapped = NULL;
+	wp_s32 y;
+
+	if( !r || !output || expected_hwnd != r->hwnd || r->frame_open ||
+		output_bytes < (wp_u64)r->width * (wp_u64)r->height * 4u )
+		return 0;
+
+	r->render_targets[r->frame_index]->lpVtbl->GetDesc( r->render_targets[r->frame_index],
+																											 &source_desc );
+	ID3D12Device_GetCopyableFootprints( r->device, &source_desc, 0, 1, 0, &layout, &rows, &row_bytes,
+																						 &readback_size );
+	hp = wp_renderer_dx12_heap( D3D12_HEAP_TYPE_READBACK );
+	buffer_desc = wp_renderer_dx12_buffer_desc( readback_size );
+	if( FAILED( ID3D12Device_CreateCommittedResource( r->device, &hp, D3D12_HEAP_FLAG_NONE, &buffer_desc,
+																						 D3D12_RESOURCE_STATE_COPY_DEST, NULL,
+																						 &IID_ID3D12Resource, (void **)&readback ) ) )
+		return 0;
+	if( FAILED( ID3D12CommandAllocator_Reset( r->upload_allocator ) ) ||
+		FAILED( ID3D12GraphicsCommandList_Reset( r->upload_list, r->upload_allocator, NULL ) ) )
+	{
+		ID3D12Resource_Release( readback );
+		return 0;
+	}
+	wp_renderer_dx12_barrier( r->upload_list, r->render_targets[r->frame_index],
+							 D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_SOURCE );
+	memset( &copy_destination, 0, sizeof( copy_destination ) );
+	copy_destination.pResource = readback;
+	copy_destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	copy_destination.PlacedFootprint = layout;
+	memset( &copy_source, 0, sizeof( copy_source ) );
+	copy_source.pResource = r->render_targets[r->frame_index];
+	copy_source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	ID3D12GraphicsCommandList_CopyTextureRegion( r->upload_list, &copy_destination, 0, 0, 0,
+																						 &copy_source, NULL );
+	wp_renderer_dx12_barrier( r->upload_list, r->render_targets[r->frame_index],
+							 D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT );
+	if( FAILED( ID3D12GraphicsCommandList_Close( r->upload_list ) ) )
+	{
+		ID3D12Resource_Release( readback );
+		return 0;
+	}
+	lists[0] = (ID3D12CommandList *)r->upload_list;
+	ID3D12CommandQueue_ExecuteCommandLists( r->command_queue, 1, lists );
+	wp_renderer_dx12_wait_for_gpu( r );
+	if( FAILED( ID3D12Resource_Map( readback, 0, NULL, (void **)&mapped ) ) )
+	{
+		ID3D12Resource_Release( readback );
+		return 0;
+	}
+	for( y = 0; y < r->height; y++ )
+		memcpy( (UINT8 *)output + (size_t)y * (size_t)r->width * 4u,
+				mapped + layout.Offset + (size_t)y * layout.Footprint.RowPitch,
+				(size_t)r->width * 4u );
+	ID3D12Resource_Unmap( readback, 0, NULL );
+	ID3D12Resource_Release( readback );
+	return 1;
 }
 
 /* =========================================================================
@@ -1286,7 +1448,7 @@ void wp_renderer_dx12_draw_triangles_pc( wp_renderer_dx12 *r, const wp_vertex_pc
 										 wp_s32 vertex_count )
 {
 	wp_renderer_dx12_draw( r, 0, (wp_s32)sizeof( wp_vertex_pc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-						   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, NULL, 0 );
+							   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, NULL, 0, 0 );
 }
 
 void wp_renderer_dx12_draw_indexed_triangles_pc( wp_renderer_dx12 *r, const wp_vertex_pc *vertices,
@@ -1297,26 +1459,26 @@ void wp_renderer_dx12_draw_indexed_triangles_pc( wp_renderer_dx12 *r, const wp_v
 		return;
 	wp_renderer_dx12_draw( r, 0, (wp_s32)sizeof( wp_vertex_pc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
 						   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, indices,
-						   index_count );
+							   index_count, 0 );
 }
 
 void wp_renderer_dx12_draw_lines_pc( wp_renderer_dx12 *r, const wp_vertex_pc *vertices, wp_s32 vertex_count )
 {
 	wp_renderer_dx12_draw( r, 0, (wp_s32)sizeof( wp_vertex_pc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
-						   D3D_PRIMITIVE_TOPOLOGY_LINELIST, vertices, vertex_count, NULL, 0 );
+							   D3D_PRIMITIVE_TOPOLOGY_LINELIST, vertices, vertex_count, NULL, 0, 0 );
 }
 
 void wp_renderer_dx12_draw_points_pc( wp_renderer_dx12 *r, const wp_vertex_pc *vertices, wp_s32 vertex_count )
 {
 	wp_renderer_dx12_draw( r, 0, (wp_s32)sizeof( wp_vertex_pc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT,
-						   D3D_PRIMITIVE_TOPOLOGY_POINTLIST, vertices, vertex_count, NULL, 0 );
+							   D3D_PRIMITIVE_TOPOLOGY_POINTLIST, vertices, vertex_count, NULL, 0, 0 );
 }
 
 void wp_renderer_dx12_draw_triangles_ptc( wp_renderer_dx12 *r, const wp_vertex_ptc *vertices,
 										  wp_s32 vertex_count )
 {
 	wp_renderer_dx12_draw( r, 1, (wp_s32)sizeof( wp_vertex_ptc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-						   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, NULL, 0 );
+							   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, NULL, 0, 0 );
 }
 
 void wp_renderer_dx12_draw_indexed_triangles_ptc( wp_renderer_dx12 *r, const wp_vertex_ptc *vertices,
@@ -1327,7 +1489,49 @@ void wp_renderer_dx12_draw_indexed_triangles_ptc( wp_renderer_dx12 *r, const wp_
 		return;
 	wp_renderer_dx12_draw( r, 1, (wp_s32)sizeof( wp_vertex_ptc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
 						   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, indices,
-						   index_count );
+							   index_count, 0 );
+}
+
+void wp_renderer_dx12_draw_indexed_triangles_ptc_u32( wp_renderer_dx12 *r,
+																								  const wp_vertex_ptc *vertices, wp_s32 vertex_count,
+																								  const uint32_t *indices, wp_s32 index_count )
+{
+	if( !indices )
+		return;
+	wp_renderer_dx12_draw( r, 1, (wp_s32)sizeof( wp_vertex_ptc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+							   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, vertices, vertex_count, indices,
+							   index_count, 1 );
+}
+
+wp_s32 wp_renderer_dx12_prepare_indexed_triangles_ptc( wp_renderer_dx12 *r,
+																								const wp_vertex_ptc *vertices, wp_s32 vertex_count,
+																								const uint16_t *indices, wp_s32 index_count )
+{
+	return wp_renderer_dx12_prepare_ptc( r, vertices, vertex_count, indices, index_count, 0 );
+}
+
+wp_s32 wp_renderer_dx12_prepare_indexed_triangles_ptc_u32( wp_renderer_dx12 *r,
+																								const wp_vertex_ptc *vertices, wp_s32 vertex_count,
+																								const uint32_t *indices, wp_s32 index_count )
+{
+	return wp_renderer_dx12_prepare_ptc( r, vertices, vertex_count, indices, index_count, 1 );
+}
+
+void wp_renderer_dx12_draw_prepared_indexed_triangles_ptc( wp_renderer_dx12 *r, wp_s32 index_start,
+																								wp_s32 index_count, wp_s32 base_vertex )
+{
+	const UINT8 *indices;
+
+	if( !r || !r->prepared_vertices || !r->prepared_indices || index_start < 0 || index_count <= 0 ||
+		base_vertex < 0 || index_start > r->prepared_index_count - index_count ||
+		base_vertex >= r->prepared_vertex_count )
+		return;
+	indices = (const UINT8 *)r->prepared_indices +
+		(size_t)index_start * ( r->prepared_indices_are_u32 ? sizeof( uint32_t ) : sizeof( uint16_t ) );
+	wp_renderer_dx12_draw( r, 1, (wp_s32)sizeof( wp_vertex_ptc ), D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+							   D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+							   r->prepared_vertices + base_vertex, r->prepared_vertex_count - base_vertex, indices,
+							   index_count, r->prepared_indices_are_u32 );
 }
 
 /* =========================================================================
@@ -1342,6 +1546,20 @@ wp_s32 wp_renderer_dx12_get_width( const wp_renderer_dx12 *r )
 wp_s32 wp_renderer_dx12_get_height( const wp_renderer_dx12 *r )
 {
 	return r ? r->height : 0;
+}
+
+void wp_renderer_dx12_get_projection_matrix( wp_s32 width, wp_s32 height, wp_f32 *result )
+{
+	wp_mat4f matrix;
+
+	if( !result || width <= 0 || height <= 0 )
+		return;
+	wp_mat4f_identity( &matrix );
+	matrix.m[0][0] = 2.0f / (wp_f32)width;
+	matrix.m[1][1] = -2.0f / (wp_f32)height;
+	matrix.m[3][0] = -1.0f;
+	matrix.m[3][1] = 1.0f;
+	memcpy( result, &matrix, sizeof( matrix ) );
 }
 
 void wp_renderer_dx12_get_native( const wp_renderer_dx12 *r, void **pp )
