@@ -1016,7 +1016,7 @@ wp_u64 wp_graphics_scene_get_generation( const wp_graphics_scene *scene )
 wp_s32 wp_graphics_scene_set_cull_flags( wp_graphics_scene *scene, wp_u32 flags )
 {
     if( !scene || ( flags & ~(wp_u32)( WP_GRAPHICS_CULL_SPHERE_TEST | WP_GRAPHICS_CULL_SAT_TEST |
-                                       WP_GRAPHICS_CULL_GROUP_TEST ) ) )
+                                       WP_GRAPHICS_CULL_GROUP_TEST | WP_GRAPHICS_CULL_SPATIAL_TEST ) ) )
     {
         return 0;
     }
@@ -1073,6 +1073,8 @@ wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *scen
                                        ( scene->cull_flags & WP_GRAPHICS_CULL_SAT_TEST ) != 0 );
     wp_graphics_cull_job_set_group_test( scene->cull_job,
                                          ( scene->cull_flags & WP_GRAPHICS_CULL_GROUP_TEST ) != 0 );
+    wp_graphics_cull_job_set_spatial_test( scene->cull_job,
+                                           ( scene->cull_flags & WP_GRAPHICS_CULL_SPATIAL_TEST ) != 0 );
     if( wp_graphics_cull_job_configure( scene->cull_job, scene, camera, (wp_graphics_cull_pass)pass,
                                         (wp_u32)scene->generation ) != WP_GRAPHICS_CULL_OK ||
         wp_graphics_cull_job_execute( scene->cull_job ) != WP_GRAPHICS_CULL_OK )

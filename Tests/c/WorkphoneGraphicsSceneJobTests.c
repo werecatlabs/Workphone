@@ -2017,12 +2017,14 @@ static wp_graphics_cull_result *capture_groups( wp_graphics_scene *scene, wp_cam
 {
     wp_graphics_cull_job *job = wp_graphics_cull_job_create();
     wp_graphics_cull_result *result;
-    CHECK( wp_graphics_cull_job_set_group_test( job, enabled ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_set_group_test( job, enabled == 1 ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_set_spatial_test( job, enabled == 2 ) == WP_GRAPHICS_CULL_OK );
     CHECK( wp_graphics_cull_job_configure( job, scene, camera, pass,
                                            (wp_u32)wp_graphics_scene_get_generation( scene ) ) ==
            WP_GRAPHICS_CULL_OK );
     CHECK( wp_graphics_cull_job_set_group_test( job, !enabled ) ==
            WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
+    CHECK( wp_graphics_cull_job_set_spatial_test( job, 1 ) == WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
     CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
     result = wp_graphics_cull_job_take_result( job );
     wp_graphics_cull_job_destroy( job );
@@ -2174,6 +2176,323 @@ static void coarse_groups( void )
     puts(
         "Coarse groups: 129 candidates, 64 skipped, flat ordering parity, invalid-bound fallback, "
         "32 affine/view cases, derived lifetime, shadow bypass and stale validation passed." );
+}
+
+static void spatial_groups( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_camera *camera = wp_camera_create(), *second = wp_camera_create();
+    wp_scenenode *nodes[129], *parent = wp_graphics_scene_create_node( scene );
+    wp_graphics_object *objects[129];
+    wp_graphics_cull_result *flat, *blocks, *spatial, *derived, *shadow;
+    wp_graphics_cull_job *job = wp_graphics_cull_job_create();
+    wp_graphics_cull_bounds_stats stats;
+    wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } };
+    wp_vec3f p = { 0, 0, 0 }, scale = { -2, 3, .5f };
+    wp_quatf rotation = { .9238795f, 0, 0, .3826834f };
+    wp_u32 nan_bits = 0x7fc00000u;
+    wp_f32 invalid;
+    int i, frame;
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    for( i = 0; i < 129; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        nodes[i] = wp_graphics_scene_create_node( scene );
+        wp_graphics_object_set_mesh( objects[i], i == 128 ? NULL : mesh );
+        wp_graphics_object_set_render_func( objects[i], record );
+        wp_scenenode_attach_object( nodes[i], objects[i] );
+        p.x = i % 2 ? 100.0f : 0.0f;
+        wp_scenenode_set_position( nodes[i], p );
+    }
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    blocks = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 1 );
+    CHECK( wp_graphics_scene_set_cull_flags( scene, 11 ) );
+    spatial = wp_graphics_scene_prepare_cull( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN );
+    compare_cull_views( flat, spatial );
+    compare_cull_views( blocks, spatial );
+    wp_graphics_cull_result_get_bounds_stats( blocks, &stats );
+    CHECK( !stats.group_rejections && !stats.group_inside && stats.sphere_tests == 128 );
+    wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
+    CHECK( stats.group_tests == 2 && stats.group_rejections == 1 && stats.group_inside == 1 &&
+           stats.group_skipped_candidates == 64 && stats.group_inside_candidates == 64 &&
+           !stats.sphere_tests && stats.conservative_candidates == 1 );
+    CHECK( wp_graphics_cull_result_get_visible_count( spatial ) == 65 );
+    for( i = 0; i < 65; ++i )
+    {
+        CHECK( wp_graphics_cull_result_get_object( spatial, i ) == objects[2 * i] );
+    }
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( blocks );
+    p.x = 100;
+    wp_camera_set_position( second, p );
+    derived = wp_graphics_cull_result_create_view( spatial, second, WP_GRAPHICS_CULL_PASS_MAIN );
+    shadow = wp_graphics_cull_result_create_view( spatial, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+    wp_graphics_cull_result_destroy( spatial );
+    flat = capture_groups( scene, second, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    compare_cull_views( flat, derived );
+    CHECK( !wp_graphics_cull_result_get_transform_dispatch_count( derived ) );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( derived );
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_SHADOW, 0 );
+    compare_cull_views( flat, shadow );
+    wp_graphics_cull_result_get_bounds_stats( shadow, &stats );
+    CHECK( !stats.group_tests );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( shadow );
+    /* Member filters, stable tied ordering, affine bounds and independent views. */
+    wp_graphics_object_set_visible( objects[0], 0 );
+    wp_graphics_object_set_visibility_flags( objects[2], 2 );
+    wp_graphics_object_set_render_func( objects[4], NULL );
+    wp_camera_set_visibility_mask( camera, 1 );
+    for( i = 0; i < 129; ++i )
+    {
+        wp_scenenode_set_parent( nodes[i], parent );
+        wp_scenenode_set_orientation( nodes[i], rotation );
+        wp_graphics_object_set_render_queue_group( objects[i], (wp_u32)( i % 3 ) );
+        wp_graphics_object_set_z_order( objects[i], (wp_u32)( i % 5 ) );
+    }
+    for( frame = 0; frame < 32; ++frame )
+    {
+        scale.x = frame % 7 ? -2.0f : 0.0f;
+        wp_scenenode_set_scale( parent, scale );
+        p.x = (wp_f32)( frame % 8 - 4 ) * 50;
+        p.y = (wp_f32)( frame % 3 );
+        wp_camera_set_position( camera, p );
+        wp_camera_set_projection_type(
+            camera, frame % 2 ? WORKPHONE_PROJECTION_ORTHOGRAPHIC : WORKPHONE_PROJECTION_PERSPECTIVE );
+        flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+        spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+        compare_cull_views( flat, spatial );
+        wp_graphics_cull_result_destroy( flat );
+        wp_graphics_cull_result_destroy( spatial );
+    }
+    memcpy( &invalid, &nan_bits, sizeof( invalid ) );
+    p.x = invalid;
+    wp_camera_set_position( camera, p );
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+    compare_cull_views( flat, spatial );
+    wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
+    CHECK( !stats.group_rejections && !stats.group_inside && stats.group_fallbacks > 0 );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( spatial );
+    /* Degenerate centre span uses one occupied bin; empty bins are never tested. */
+    p.x = p.y = p.z = 0;
+    wp_camera_set_position( camera, p );
+    wp_camera_set_projection_type( camera, WORKPHONE_PROJECTION_PERSPECTIVE );
+    for( i = 0; i < 129; ++i )
+    {
+        wp_scenenode_set_parent( nodes[i], NULL );
+        wp_scenenode_set_position( nodes[i], p );
+    }
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+    compare_cull_views( flat, spatial );
+    wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
+    CHECK( stats.group_tests == 1 );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( spatial );
+    CHECK( wp_graphics_cull_job_set_spatial_test( job, 1 ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_configure( job, scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 99 ) ==
+           WP_GRAPHICS_CULL_OK );
+    wp_graphics_cull_job_cancel( job );
+    CHECK( wp_graphics_cull_job_configure( job, scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 99 ) ==
+           WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
+    spatial = wp_graphics_cull_job_take_result( job );
+    wp_graphics_cull_job_destroy( job );
+    p.x = 1;
+    wp_scenenode_set_position( nodes[1], p );
+    CHECK( wp_graphics_cull_result_validate( spatial, scene, 99 ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    CHECK( !wp_graphics_cull_result_create_view( spatial, second, WP_GRAPHICS_CULL_PASS_MAIN ) );
+    wp_graphics_cull_result_destroy( spatial );
+    wp_graphics_scene_set_transform_pool( scene, NULL );
+    CHECK( wp_graphics_scene_get_cull_flags( scene ) == 11 );
+    wp_graphics_scene_clear( scene );
+    CHECK( wp_graphics_scene_get_cull_flags( scene ) == 11 );
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    wp_camera_destroy( second );
+    puts(
+        "Spatial bins: interleaved candidates, 64 rejected/64 contained, stable flat parity, unknown "
+        "bounds, "
+        "derived/shadow lifetime, affine/invalid/degenerate views and cancel/rebuild passed." );
+}
+
+static void spatial_multiple_axes( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_camera *camera = wp_camera_create(), *second = wp_camera_create();
+    wp_scenenode *nodes[257];
+    wp_graphics_object *objects[257];
+    wp_graphics_cull_result *flat, *spatial, *derived, *shadow;
+    wp_graphics_cull_bounds_stats stats;
+    wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } };
+    wp_vec3f p = { 0, 0, 0 };
+    int i, dimensions, clusters, view;
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    for( i = 0; i < 257; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        nodes[i] = wp_graphics_scene_create_node( scene );
+        wp_graphics_object_set_mesh( objects[i], i == 256 ? NULL : mesh );
+        wp_graphics_object_set_render_func( objects[i], record );
+        wp_scenenode_attach_object( nodes[i], objects[i] );
+    }
+    for( dimensions = 2; dimensions <= 3; ++dimensions )
+    {
+        clusters = 1 << dimensions;
+        for( i = 0; i < 257; ++i )
+        {
+            p.x = i & 1 ? 100.0f : 0.0f;
+            p.y = i & 2 ? 100.0f : 0.0f;
+            p.z = dimensions == 3 && ( i & 4 ) ? 100.0f : 0.0f;
+            wp_scenenode_set_position( nodes[i], p );
+        }
+        flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+        spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+        compare_cull_views( flat, spatial );
+        wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
+        CHECK( stats.group_tests == (wp_u32)clusters && stats.group_inside == 1 &&
+               stats.group_rejections == (wp_u32)( clusters - 1 ) &&
+               stats.group_skipped_candidates == (wp_u32)( 256 - 256 / clusters ) &&
+               stats.group_inside_candidates == (wp_u32)( 256 / clusters ) && !stats.sphere_tests &&
+               stats.conservative_candidates == 1 );
+        CHECK( wp_graphics_cull_result_get_visible_count( spatial ) == 256 / clusters + 1 );
+        for( i = 0; i <= 256 / clusters; ++i )
+        {
+            CHECK( wp_graphics_cull_result_get_object( spatial, i ) == objects[i * clusters] );
+        }
+        wp_graphics_cull_result_destroy( flat );
+        /* Each camera independently classifies the same multi-axis publication. */
+        for( view = 0; view < clusters; ++view )
+        {
+            p.x = view & 1 ? 100.0f : 0.0f;
+            p.y = view & 2 ? 100.0f : 0.0f;
+            p.z = dimensions == 3 && ( view & 4 ) ? 100.0f : 0.0f;
+            wp_camera_set_position( second, p );
+            derived = wp_graphics_cull_result_create_view( spatial, second, WP_GRAPHICS_CULL_PASS_MAIN );
+            flat = capture_groups( scene, second, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+            compare_cull_views( flat, derived );
+            CHECK( !wp_graphics_cull_result_get_transform_dispatch_count( derived ) );
+            wp_graphics_cull_result_destroy( flat );
+            wp_graphics_cull_result_destroy( derived );
+        }
+        shadow = wp_graphics_cull_result_create_view( spatial, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+        wp_graphics_cull_result_destroy( spatial );
+        CHECK( wp_graphics_cull_result_get_visible_count( shadow ) == 257 );
+        wp_graphics_cull_result_get_bounds_stats( shadow, &stats );
+        CHECK( !stats.group_tests );
+        wp_graphics_cull_result_destroy( shadow );
+        /* Filters within a contained cell are still evaluated per candidate. */
+        wp_graphics_object_set_visible( objects[0], 0 );
+        wp_graphics_object_set_visibility_flags( objects[clusters], 2 );
+        wp_graphics_object_set_render_func( objects[2 * clusters], NULL );
+        wp_camera_set_visibility_mask( camera, 1 );
+        flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+        spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+        compare_cull_views( flat, spatial );
+        CHECK( wp_graphics_cull_result_get_visible_count( spatial ) == 256 / clusters - 2 );
+        wp_graphics_cull_result_destroy( flat );
+        wp_graphics_cull_result_destroy( spatial );
+        wp_graphics_object_set_visible( objects[0], 1 );
+        wp_graphics_object_set_visibility_flags( objects[clusters], (wp_u32)-1 );
+        wp_graphics_object_set_render_func( objects[2 * clusters], record );
+        wp_camera_set_visibility_mask( camera, (wp_u32)-1 );
+    }
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    wp_camera_destroy( second );
+    puts(
+        "Spatial multi-axis: four/eight interleaved clusters, 257 candidates, zero individual geometry "
+        "tests, stable flat parity, 12 derived cameras, unknown bounds, filters and shadows passed." );
+}
+
+static void spatial_spanning_bounds( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create(), *long_mesh = wp_graphics_mesh_create();
+    wp_graphics_object *objects[129];
+    wp_scenenode *nodes[129];
+    wp_camera *camera = wp_camera_create(), *second = wp_camera_create();
+    wp_graphics_cull_result *flat, *spatial, *derived, *shadow;
+    wp_graphics_cull_bounds_stats stats;
+    wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } }, wide;
+    wp_vec3f p = { 0, 0, 0 };
+    int i, axis;
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    for( i = 0; i < 129; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        nodes[i] = wp_graphics_scene_create_node( scene );
+        wp_graphics_object_set_mesh( objects[i], i == 128 ? NULL : i == 1 ? long_mesh : mesh );
+        wp_graphics_object_set_render_func( objects[i], record );
+        wp_scenenode_attach_object( nodes[i], objects[i] );
+    }
+    for( axis = 0; axis < 3; ++axis )
+    {
+        wide = bounds;
+        ( (wp_f32 *)&wide.min )[axis] -= 101;
+        ( (wp_f32 *)&wide.max )[axis] += 101;
+        wp_graphics_mesh_set_local_aabb( long_mesh, wide );
+        for( i = 0; i < 129; ++i )
+        {
+            p.x = p.y = p.z = 0;
+            ( (wp_f32 *)&p )[axis] = i % 2 ? 100.0f : 0.0f;
+            wp_scenenode_set_position( nodes[i], p );
+        }
+        flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+        spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+        compare_cull_views( flat, spatial );
+        wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
+        CHECK( stats.group_tests == 2 && stats.group_rejections == 1 && stats.group_inside == 1 &&
+               stats.group_skipped_candidates == 63 && stats.group_inside_candidates == 64 &&
+               stats.sphere_tests == 1 && stats.box_tests == 1 && stats.conservative_candidates == 1 );
+        CHECK( wp_graphics_cull_result_get_visible_count( spatial ) == 66 &&
+               wp_graphics_cull_result_get_object( spatial, 1 ) == objects[1] );
+        wp_graphics_cull_result_destroy( flat );
+        p.x = p.y = p.z = 0;
+        ( (wp_f32 *)&p )[axis] = 100;
+        wp_camera_set_position( second, p );
+        derived = wp_graphics_cull_result_create_view( spatial, second, WP_GRAPHICS_CULL_PASS_MAIN );
+        shadow = wp_graphics_cull_result_create_view( spatial, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+        wp_graphics_cull_result_destroy( spatial );
+        flat = capture_groups( scene, second, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+        compare_cull_views( flat, derived );
+        CHECK( !wp_graphics_cull_result_get_transform_dispatch_count( derived ) );
+        wp_graphics_cull_result_destroy( flat );
+        wp_graphics_cull_result_destroy( derived );
+        CHECK( wp_graphics_cull_result_get_visible_count( shadow ) == 129 );
+        wp_graphics_cull_result_get_bounds_stats( shadow, &stats );
+        CHECK( !stats.group_tests );
+        wp_graphics_cull_result_destroy( shadow );
+    }
+    /* Every valid member crosses cells: empty bins are never queried and the
+     * individually tested candidates still match the flat reference. */
+    for( i = 0; i < 128; ++i )
+    {
+        wp_graphics_object_set_mesh( objects[i], long_mesh );
+    }
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+    compare_cull_views( flat, spatial );
+    wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
+    CHECK( !stats.group_tests && stats.sphere_tests == 128 && stats.conservative_candidates == 1 );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( spatial );
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_graphics_mesh_destroy( long_mesh );
+    wp_camera_destroy( camera );
+    wp_camera_destroy( second );
+    puts(
+        "Spatial cross-cell bounds: X/Y/Z long objects stay individually visible, 63 neighbours "
+        "rejected/64 contained, stable flat parity, derived/shadow lifetime and all-spanning fallback "
+        "passed." );
 }
 
 static void shared_views( void )
@@ -2438,6 +2757,9 @@ int main( void )
     compact_sat_axes();
     retirement();
     coarse_groups();
+    spatial_groups();
+    spatial_multiple_axes();
+    spatial_spanning_bounds();
     shared_views();
 #ifdef _WIN32
     own_completion();

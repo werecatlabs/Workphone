@@ -382,6 +382,7 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     // Cross the coarse threshold with real Claw meshes and native scene nodes.
     // First block is fully inside; the second block is outside the camera.
     std::vector<wp_scenenode *> outsideNodes;
+    std::vector<wp_scenenode *> coarseNodes{nativeNode};
     for(unsigned i=1;i<64;++i) {
         auto extraObject=wp_graphics_scene_create_object(nativeScene->getNativeScene());
         auto extraNode=wp_graphics_scene_create_node(nativeScene->getNativeScene());
@@ -394,6 +395,7 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             wp_scenenode_set_position(extraNode,{100,0,0}); outsideNodes.push_back(extraNode);
         }
         graphics.extraMeshes.push_back(mesh);
+        coarseNodes.push_back(extraNode);
     }
     graphics.expectedCandidates=64; graphics.expectedVisible=32;
     require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),3)!=0,"flat large-scene baseline");
@@ -423,6 +425,76 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             graphics.getProperties()->getPropertyValue("render_counters",counters) &&
             counters.find("candidates=64 main-visible=63")!=String::npos,
             "contained blocks still honour per-object visibility");
+    // Interleaving defeats capture-order bounds; spatial bins preserve draw order.
+    wp_graphics_object_set_visible(object,1); graphics.expectedVisible=32;
+    for(unsigned i=0;i<coarseNodes.size();++i)
+        wp_scenenode_set_position(coarseNodes[i],{i%2 ? 100.0f : 0.0f,0,0});
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),3)!=0,"interleaved flat baseline");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels,"interleaved flat scene preserves reference image");
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),7)!=0,"interleaved block baseline");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("coarse groups tests=2 rejects=0 skipped=0 fallbacks=0 inside=0 candidates=0")!=String::npos &&
+            counters.find("sphere tests=64")!=String::npos,
+            "mixed capture-order blocks retain all individual geometry tests");
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),11)!=0,"enable spatial bins");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("coarse groups tests=2 rejects=1 skipped=32 fallbacks=0 inside=1 candidates=32")!=String::npos &&
+            counters.find("sphere tests=0 rejects=0 box tests=0")!=String::npos,
+            "spatial bins classify interleaved meshes with full flat pixel parity and no individual geometry tests");
+    std::puts("Active spatial RTT: 64 interleaved real meshes, flat/block/spatial pixel parity and work counters passed.");
+    // Four interleaved X/Y clusters require partitioning more than one axis.
+    for(unsigned i=64;i<128;++i) {
+        auto extraObject=wp_graphics_scene_create_object(nativeScene->getNativeScene());
+        auto extraNode=wp_graphics_scene_create_node(nativeScene->getNativeScene());
+        auto mesh=make_ptr<SnapshotMesh>();
+        require(extraObject && extraNode,"multi-axis RTT object/node allocation");
+        wp_graphics_mesh_compute_aabb(mesh->getNativeMesh());
+        mesh->bindNativeRenderObject(extraObject); mesh->setVisibilityFlags(~u32(0));
+        wp_scenenode_attach_object(extraNode,extraObject);
+        graphics.extraMeshes.push_back(mesh); coarseNodes.push_back(extraNode);
+    }
+    graphics.expectedCandidates=128; graphics.expectedVisible=32;
+    for(unsigned i=0;i<coarseNodes.size();++i)
+        wp_scenenode_set_position(coarseNodes[i],{i&1 ? 100.0f : 0.0f,i&2 ? 100.0f : 0.0f,0});
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),3)!=0,"multi-axis flat baseline");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("sphere tests=128")!=String::npos,"flat four-cluster reference image and work");
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),11)!=0,"multi-axis spatial A/B");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("coarse groups tests=4 rejects=3 skipped=96 fallbacks=0 inside=1 candidates=32")!=String::npos &&
+            counters.find("sphere tests=0 rejects=0 box tests=0")!=String::npos,
+            "multi-axis bins preserve every flat pixel with 96 rejected and 32 contained meshes");
+    std::puts("Active multi-axis RTT: 128 real meshes in four interleaved clusters, full pixel parity and zero individual geometry tests passed.");
+    // One authored bound crosses cells and reaches the camera from a far cluster.
+    // Its real triangle stays off-screen, so all output pixels remain comparable.
+    wp_aabb3f crossingBounds{{-101,-.5f,-2.1f},{101,.5f,-1.9f}};
+    wp_graphics_mesh_set_local_aabb(graphics.extraMeshes.front()->getNativeMesh(),crossingBounds);
+    graphics.expectedVisible=33;
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),3)!=0,"long-bound flat baseline");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels,"flat long-bound geometry preserves reference pixels");
+    auto previousBackground=viewport->getBackgroundColour();
+    viewport->setBackgroundColour(ColourF(.8f,.1f,.3f,1));
+    graphics.frame();
+    require(pixels(output)!=flatPixels,"sentinel clear must publish before the spatial comparison");
+    viewport->setBackgroundColour(previousBackground);
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),11)!=0,"long-bound spatial A/B");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("coarse groups tests=4 rejects=3 skipped=95 fallbacks=0 inside=1 candidates=32")!=String::npos &&
+            counters.find("sphere tests=1 rejects=0 box tests=1")!=String::npos,
+            "cross-cell authored bound uses individual geometry while 95 neighbours are rejected and 32 contained");
+    std::puts("Active long-bound RTT: 128 real meshes, full flat/spatial pixel parity, one individual geometry test and isolated cross-cell bound passed.");
     good=flatPixels;
     std::puts("Active coarse RTT: 64 real meshes, full pixel A/B, block acceptance/rejection, moved nodes and member visibility passed.");
     graphics.retireSceneAfterDraw = true;
