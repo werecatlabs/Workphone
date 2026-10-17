@@ -5,7 +5,8 @@ param(
     [string]$CMakeExecutable,
     [string]$Generator,
     [switch]$IncludeEditor,
-    [switch]$RequireExternalAssets
+    [switch]$RequireExternalAssets,
+    [switch]$CaptureCrashDumps
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
@@ -62,5 +63,5 @@ foreach ($config in $Configuration) {
     $buildArguments = @('--build', $buildPath, '--config', $config, '--parallel', '4', '--target') + $preset.targets
     if ($IncludeEditor) { $buildArguments += 'Editor' }
     Invoke-BaselineCMake ($buildArguments + @('--', '/nodeReuse:false', '/verbosity:minimal')) (Join-Path $buildPath "baseline-$config-build.log")
-    & (Join-Path $PSScriptRoot 'ValidateClawGraphics.ps1') -BuildDirectory $buildPath -Configuration $config -CTestExecutable $ctestExecutable -RequireExternalAssets:$RequireExternalAssets
+    & (Join-Path $PSScriptRoot 'ValidateClawGraphics.ps1') -BuildDirectory $buildPath -Configuration $config -CTestExecutable $ctestExecutable -RequireExternalAssets:$RequireExternalAssets -CaptureCrashDumps:$CaptureCrashDumps
 }

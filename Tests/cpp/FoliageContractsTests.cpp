@@ -1,9 +1,9 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Graphics/FoliagePageStream.hpp>
 #include <Workphone/Graphics/Terrain.hpp>
-#include <Workphone/Scene/Components/Terrain/FoliagePhysics.hpp
-#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp
-#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp
+#include <Workphone/Scene/Components/Terrain/FoliagePhysics.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliageAuthoring.hpp>
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/System/ApplicationManager.hpp>
 #include <Workphone/System/FactoryManager.hpp>
 #include <Workphone/System/StateManager.hpp>

@@ -1,5 +1,54 @@
 # WPGraphics implementation status
 
+## Release baseline recovery and teardown diagnostics - 18 October 2026
+
+The graphics baseline build presets now name 25 current test targets. They include
+the native frame, RTT and scene jobs, the C89 skinning/particle target names,
+foliage authoring and material-load sequencing. The validator requires all 29
+registered results, including a new bounded lifecycle test. Terrain, foliage/
+physics and Claw UI destruction targets are active again; their dormant fixtures
+had malformed include directives and missing native-header/library search paths.
+The terrain Lua workflow also receives the configuration-specific library path.
+Native graphics headers/sources and the additional fixture sources are included
+in the evidence hashes. The hash manifest follows the moved Lua render-binding
+source, and the per-test output cap is one MiB so lifecycle traces do not cut off
+the production test's buffered device/driver evidence.
+
+`WPGraphics.claw_lifecycle_soak` repeats the existing particle lifecycle, scene-node
+transform and material-pass lifetime contracts 32 times. It creates no graphics
+window; this is a bounded ownership regression, not a mixed scene/device soak.
+The production executable also accepts `--lifecycle-soak N` for 1–10,000 cycles.
+
+`Tools/BuildWPGraphicsBaseline.ps1` and `Tools/ValidateClawGraphics.ps1` accept
+`-CaptureCrashDumps`. This enables a best-effort Windows unhandled-exception dump
+for the production/lifecycle executable in a fresh directory, preserves the
+failing process exit, and records dump availability in the JSON evidence. Normal
+runs leave the exception filter unchanged. An existing dump is never overwritten;
+the previous environment setting is restored after CTest. To validate the current
+build with strict external-media coverage:
+
+```powershell
+./Tools/ValidateClawGraphics.ps1 -BuildDirectory project_x64 -Configuration Debug -RequireExternalAssets -CaptureCrashDumps
+```
+
+The earlier intermittent `StateContext` teardown access violation remains open.
+Ten fresh full production processes passed without a debugger, using Microsoft's
+software DX11 renderer; lifecycle-only runs also did not reproduce it. A separate
+intentional-crash probe produced a readable dump with its exception stack, kept
+its failing exit code and preserved an existing dump on a second attempt. These
+checks validate capture tooling, not an engine crash fix or hardware acceptance.
+
+The four restored terrain, terrain-physics, foliage and UI teardown tests pass in
+Debug (`project_x64/test_release_restored_debug.log`). The rebuilt Debug baseline
+then reports **28 passed, one unavailable, zero failed** in 107.30 seconds.
+`project_x64/claw-graphics-Debug-evidence.json` records 29 required results, 283
+source hashes, executable hashes and software DX11 device evidence from all four
+GPU tests. All six external mesh fixtures are absent. With `-RequireExternalAssets`,
+the validator exits nonzero and records `validationPassed=false`,
+`coverageComplete=false`, `releaseCertified=false`; it still writes the evidence.
+No production dump was created. This is an existing-build-tree check, not clean CI,
+hardware/Editor acceptance, a crash fix, package-consumer or mixed-soak certification.
+
 ## One shared ancestor-revision array per publication - 17 October 2026
 
 `PERF-07` now consolidates per-entry ancestor-revision allocations into one

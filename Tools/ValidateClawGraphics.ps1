@@ -3,7 +3,8 @@ param(
     [string]$BuildDirectory = 'project_x64',
     [ValidateSet('Debug', 'Release', 'RelWithDebInfo')][string]$Configuration = 'RelWithDebInfo',
     [string]$CTestExecutable,
-    [switch]$RequireExternalAssets
+    [switch]$RequireExternalAssets,
+    [switch]$CaptureCrashDumps
 )
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path $PSScriptRoot -Parent
@@ -18,11 +19,16 @@ $requiredTests = @(
     'WPAnimation.core_contracts', 'WPAnimation.import_contracts',
     'WPGraphics.terrain_contracts', 'WPGraphics.terrain_physics', 'WPGraphics.terrain_lua_workflow',
     'WPGraphics.foliage_contracts',
+    'WPGraphics.foliage_authoring', 'WPGraphics.foliage_plant_geometry',
+    'WPGraphics.material_load_sequence',
     'WPGraphics.production_Skinning', 'WPGraphics.production_ParticleSimulation',
     'WorkphoneGraphics.mesh_serializer', 'WorkphoneGraphics.mesh_import_assets',
     'WorkphoneGraphics.renderer_contract', 'WorkphoneGraphics.shader_contract',
+    'WorkphoneGraphics.native_frame', 'WorkphoneGraphics.rtt_job',
+    'WorkphoneGraphics.scene_jobs', 'WorkphoneGraphics.cull_benchmark_smoke',
     'WorkphoneGraphics.aaa_pipeline', 'WPGraphics.cubemap_pbr',
     'WorkphoneAssets.catalog_contracts', 'WPGraphics.claw_production_render', 'WPGraphics.cooked_material_resource',
+    'WPGraphics.claw_lifecycle_soak',
     'WPGraphics.claw_text_contract', 'WPGraphics.claw_dx11_targets',
     'WPGraphics.claw_ui_destruction', 'WPResourceTests'
 )
@@ -36,8 +42,20 @@ $reportPath = Join-Path $buildPath "claw-graphics-$Configuration-results.xml"
 $evidencePath = Join-Path $buildPath "claw-graphics-$Configuration-evidence.json"
 # Do not accidentally certify an old report if this CTest invocation fails.
 if (Test-Path -LiteralPath $reportPath) { Remove-Item -LiteralPath $reportPath }
-& $CTestExecutable --test-dir $buildPath -C $Configuration -R $selection --output-on-failure --no-tests=error --test-output-size-passed 262144 --test-output-size-failed 262144 --output-junit $reportPath
-$testExit = $LASTEXITCODE
+$crashDumpPath = $env:WP_GRAPHICS_TEST_CRASH_DUMP
+$previousCrashDumpPath = $env:WP_GRAPHICS_TEST_CRASH_DUMP
+try {
+    if ($CaptureCrashDumps) {
+        $crashDirectory = Join-Path $buildPath ('graphics-crash-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $crashDirectory | Out-Null
+        $crashDumpPath = Join-Path $crashDirectory 'production.dmp'
+        $env:WP_GRAPHICS_TEST_CRASH_DUMP = $crashDumpPath
+    }
+    # Lifecycle traces can precede buffered device evidence; retain the complete
+    # production output while keeping each test's report bounded to one MiB.
+    & $CTestExecutable --test-dir $buildPath -C $Configuration -R $selection --output-on-failure --no-tests=error --test-output-size-passed 1048576 --test-output-size-failed 1048576 --output-junit $reportPath
+    $testExit = $LASTEXITCODE
+} finally { $env:WP_GRAPHICS_TEST_CRASH_DUMP = $previousCrashDumpPath }
 if (-not (Test-Path -LiteralPath $reportPath)) { throw 'CTest did not produce a report.' }
 [xml]$report = Get-Content -LiteralPath $reportPath -Raw
 $skipped = @($report.testsuite.testcase | Where-Object { $_.status -eq 'notrun' -or $_.skipped })
@@ -55,6 +73,10 @@ $testSources = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cp
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp') -Filter '*Contracts.hpp') +
     @(Get-Item -LiteralPath (Join-Path $repositoryRoot 'Tests/cpp/AssetCatalogTests.cpp'), (Join-Path $repositoryRoot 'Tests/cpp/ResourceSystem/ResourceSystemSmoke.cpp'))
 $verificationPaths = @(
+    'Tests/c/CMakeLists.txt', 'Tests/c/SceneJobContracts.cmake',
+    'Tests/c/WorkphoneGraphicsCullBenchmark.c', 'Tests/c/WorkphoneGraphicsCullBenchmark.h',
+    'Tests/cpp/GraphicsCrashEvidence.hpp',
+    'Tests/cpp/FoliageAuthoringTests.cpp', 'Tests/cpp/MaterialLoadSequenceTests.cpp',
     'Engine/cpp/Project/WPAssimp/CMakeLists.txt',
     'Engine/cpp/Source/WPGraphics/ClawMeshMaterial.hpp',
     'Tests/cpp/AnimationCoreTests.cpp',
@@ -131,7 +153,7 @@ $verificationPaths = @(
     'Engine/cpp/Source/WPPhysics/WPPhysicsRigidDynamic3.cpp',
     'Engine/c/Include/WorkphonePhysics/workphone_physics_collisionshape.h',
     'Engine/c/Source/WorkphonePhysics/workphone_physics_collisionshape.c',
-    'Engine/cpp/Source/WPLuabind/Bindings/render_bindings/RenderLuaBindings.cpp',
+    'Engine/cpp/Source/WPLuabind/Bindings/RenderLuaBindings.cpp',
     'Engine/cpp/Source/WPLuabind/ScriptObjectUtil.cpp',
     'Engine/cpp/Source/WPImGui/ImGuiApplication.cpp',
     'Tools/cpp/Editor/src/ui/TerrainWindow.hpp',
@@ -165,6 +187,8 @@ $verificationPaths = @(
     'Engine/cpp/Source/Workphone/Database/CatalogResourceAdapter.cpp'
 )
 $testSources += @($verificationPaths | ForEach-Object { Get-Item -LiteralPath (Join-Path $repositoryRoot $_) })
+$testSources += @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Engine/c/Include/WorkphoneGraphics') -Filter '*.h') +
+    @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Engine/c/Source/WorkphoneGraphics') -Filter '*.c')
 $testSources += @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Engine/cpp/Include/WPGraphics/Resources') -Filter '*.hpp') +
     @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'Engine/cpp/Source/WPGraphics/Resources') -Filter '*.cpp')
 $hashes = @($testSources | ForEach-Object { [ordered]@{ path = [System.IO.Path]::GetRelativePath($repositoryRoot, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash } })
@@ -220,6 +244,8 @@ $evidence = [ordered]@{
     systemAdapters = $adapters; adapterQueryError = $adapterError
     testSources = $hashes; externalFixtures = $fixtures; testBinaries = $binaries; tests = $results
     testExitCode = $testExit; requiredTests = $requiredTests; requireExternalAssets = [bool]$RequireExternalAssets
+    crashCaptureEnabled = [bool]$crashDumpPath; crashDumpPath = $crashDumpPath
+    crashDumpAvailable = [bool]($crashDumpPath -and (Test-Path -LiteralPath $crashDumpPath))
     coverageComplete = ($testExit -eq 0 -and $skipped.Count -eq 0 -and $missingResults.Count -eq 0)
     validationPassed = ($testExit -eq 0 -and $unexpectedSkips.Count -eq 0 -and $missingResults.Count -eq 0)
     releaseCertified = $false
