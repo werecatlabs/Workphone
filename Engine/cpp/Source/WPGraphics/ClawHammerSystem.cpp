@@ -167,6 +167,12 @@ namespace workphone
                     phases.visibility_ns += value.visibility_ns;
                     phases.sort_ns += value.sort_ns;
                     phases.publish_ns += value.publish_ns;
+                    phases.transform_hierarchy_ns += value.transform_hierarchy_ns;
+                    phases.transform_unique_ns += value.transform_unique_ns;
+                    phases.transform_locals_ns += value.transform_locals_ns;
+                    phases.transform_prefixes_ns += value.transform_prefixes_ns;
+                    phases.transform_submit_ns += value.transform_submit_ns;
+                    phases.transform_wait_ns += value.transform_wait_ns;
                 }
                 u64 cullSharedBytes = 0, cullGroupBytes = 0, cullMapBytes = 0;
                 u64 cullViewBytes = 0, cullViewPeakSum = 0, cullClassScratch = 0;
@@ -384,6 +390,17 @@ namespace workphone
                 (unsigned long long)work.phases.sort_ns,
                 (unsigned long long)work.phases.publish_ns );
             result += phases;
+            char transforms[512];
+            std::snprintf( transforms, sizeof( transforms ),
+                "\nCPU transform phases hierarchy-ns=%llu unique-ns=%llu locals-ns=%llu "
+                "prefixes-ns=%llu submit-ns=%llu wait-ns=%llu",
+                (unsigned long long)work.phases.transform_hierarchy_ns,
+                (unsigned long long)work.phases.transform_unique_ns,
+                (unsigned long long)work.phases.transform_locals_ns,
+                (unsigned long long)work.phases.transform_prefixes_ns,
+                (unsigned long long)work.phases.transform_submit_ns,
+                (unsigned long long)work.phases.transform_wait_ns );
+            result += transforms;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
         }

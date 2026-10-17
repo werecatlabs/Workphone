@@ -226,7 +226,8 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
              "pair,order,mode,frame,prepare_ns,retire_ns,lifecycle_ns,candidates,visible,multiplies,"
              "sphere_tests,box_tests,sat_tests,group_tests,group_rejections,group_inside,publication_"
              "bytes,view_peak_bytes,map_bytes,class_bytes,phases_available,capture_ns,transform_ns,"
-             "bounds_ns,groups_ns,view_ns,visibility_ns,sort_ns,publish_ns\n" );
+             "bounds_ns,groups_ns,view_ns,visibility_ns,sort_ns,publish_ns,transform_hierarchy_ns,"
+             "transform_unique_ns,transform_locals_ns,transform_prefixes_ns,transform_submit_ns,transform_wait_ns\n" );
     fprintf( stderr, "Headless CPU only; QPC %.0f Hz; sample-buffer %lu bytes; no GPU/readback.\n",
              wp_bench_frequency, (unsigned long)( WP_BENCH_SAMPLE_LIMIT * sizeof( *samples ) ) );
     for( pair = 0; pair < pairs; ++pair )
@@ -268,7 +269,7 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
                 wp_bench_sample *s = &samples[i];
                 fprintf( file,
                          "%lu,%lu,%s,%lu,%.0f,%.0f,%.0f,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%.0f,%.0f,%."
-                         "0f,%.0f,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f\n",
+                         "0f,%.0f,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f\n",
                          (unsigned long)( pair + 1u ), (unsigned long)order, mode ? "spatial" : "flat",
                          (unsigned long)i, s->prepare_ns, s->retire_ns, s->prepare_ns + s->retire_ns,
                          (unsigned long)objects, (unsigned long)s->visible, (unsigned long)s->multiplies,
@@ -281,7 +282,10 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
                          (double)s->timing.capture_ns, (double)s->timing.transform_ns,
                          (double)s->timing.bounds_ns, (double)s->timing.groups_ns,
                          (double)s->timing.view_ns, (double)s->timing.visibility_ns,
-                         (double)s->timing.sort_ns, (double)s->timing.publish_ns );
+                         (double)s->timing.sort_ns, (double)s->timing.publish_ns,
+                         (double)s->timing.transform_hierarchy_ns, (double)s->timing.transform_unique_ns,
+                         (double)s->timing.transform_locals_ns, (double)s->timing.transform_prefixes_ns,
+                         (double)s->timing.transform_submit_ns, (double)s->timing.transform_wait_ns );
             }
             if( ferror( file ) || fflush( file ) )
             {

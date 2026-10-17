@@ -277,6 +277,10 @@ public:
                         phases.capture_ns+phases.transform_ns+phases.bounds_ns+phases.groups_ns+
                         phases.view_ns+phases.visibility_ns+phases.sort_ns+phases.publish_ns<=timing.main_prepare_ns,
                         "native main phases fit inside the profiled owner main interval");
+                require(phases.transform_hierarchy_ns+phases.transform_unique_ns+
+                        phases.transform_locals_ns+phases.transform_prefixes_ns+
+                        phases.transform_submit_ns+phases.transform_wait_ns<=phases.transform_ns,
+                        "nested transform phases fit inside their main transform interval");
                 require(timing.total_ns>=timing.main_prepare_ns+timing.shadow_derive_ns,
                         "monotonic preparation total contains the disjoint main/shadow phases");
             } else {
@@ -386,6 +390,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("CPU main phases samples=1 capture-ns=")!=String::npos &&
             counters.find(" transform-ns=")!=String::npos && counters.find(" visibility-ns=")!=String::npos,
             "requested frame publishes copied native main phase timings");
+    require(counters.find("CPU transform phases hierarchy-ns=")!=String::npos &&
+            counters.find(" unique-ns=")!=String::npos && counters.find(" prefixes-ns=")!=String::npos,
+            "requested frame publishes nested owner transform phases");
     require(counters.find("reference scratch allocs=1 reuses=0")!=String::npos,
             "first active capture allocates reference scratch once");
     require(counters.find("path records allocs=1 reuses=0")!=String::npos,
@@ -569,6 +576,7 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             counters.find("Preparation last frame: views=0 candidates=0 main-visible=0 transform dispatches=0")!=String::npos &&
             counters.find("CPU prepare samples=0 total-ns=0 main-ns=0 shadow-ns=0")!=String::npos &&
             counters.find("CPU main phases samples=0 capture-ns=0 transform-ns=0 bounds-ns=0 groups-ns=0 view-ns=0 visibility-ns=0 sort-ns=0 publish-ns=0")!=String::npos &&
+            counters.find("CPU transform phases hierarchy-ns=0 unique-ns=0 locals-ns=0 prefixes-ns=0 submit-ns=0 wait-ns=0")!=String::npos &&
             counters.find("cull arrays shared=0 groups=0 map=0 view=0 view-peak-sum=0 class-scratch=0 spatial-views=0 block-views=0 mapped=0 individual=0")!=String::npos,
             "skipped frame does not carry prior preparation counters");
     viewport->setActive(true);

@@ -129,8 +129,11 @@ groups, view, visibility, sort and publication intervals. Requested Claw statist
 copy them before retirement; the CPU benchmark enables them with `-ProfilePhases`.
 The short 10k-object diagnostic identifies transform setup/dispatch/wait as the
 largest measured interval, and spatial construction exceeds the visibility work
-saved in that fixture. Next isolate transform input capture from composition/waits
-and remove demonstrated retained-input work. Preserve whole-preparation paired
+saved in that fixture. Transform owner intervals now separately expose hierarchy,
+global deduplication, local capture, prefix planning, submission and wait. Prefix
+planning reuses reference scratch as a dense local/batch lookup, removing the
+second reference sort with unchanged storage and multiplication counts. The
+remaining global deduplication sort is the next capture target. Preserve whole-preparation paired
 measurement before claiming an improvement. Fine shadow/worker/GPU attribution
 and representative fixtures remain open; see the implementation status for
 diagnostic values and scope.

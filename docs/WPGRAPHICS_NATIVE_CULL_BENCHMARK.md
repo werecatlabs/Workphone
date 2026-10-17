@@ -35,6 +35,18 @@ summary is empty. Native phase timestamps add instrumentation overhead, so compa
 runs with the same switch and do not assume overhead meets the plan's 2% target.
 The third command is a short diagnostic, not a timing-protocol performance run.
 
+Six `transform_*` subphases are nested inside `transform_ns`: hierarchy traversal,
+global reference sorting/deduplication (`unique`), local-matrix capture, prefix
+planning, submission and wait/publication. Do not add these to the eight main
+phases. Prefix planning now uses a dense lookup in existing reference scratch,
+removing its second comparison sort without another allocation. With inline
+transforms, `transform_submit_ns` includes matrix composition; with a pool it
+includes task submission and any inline fallback while workers may execute
+concurrently. `transform_wait_ns` measures remaining wait and destination copy.
+These are owner intervals; no clock is called on a worker and they do not report
+individual worker CPU time. Rejected dispatch preserves the last accepted timing
+sample; cancelled/running/unprofiled/invalid-clock samples are unavailable.
+
 Capture includes entry and ancestor allocations. Transform includes node-array
 setup, dispatch and wait, rather than pure matrix arithmetic. Visibility includes
 execute/result/index/classification allocations. Sorting includes order checks

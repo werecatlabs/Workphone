@@ -43,6 +43,10 @@ typedef struct wp_graphics_cull_timing_stats
 {
     wp_u64 capture_ns, transform_ns, bounds_ns, groups_ns;
     wp_u64 view_ns, visibility_ns, sort_ns, publish_ns;
+    /* Nested inside transform_ns, not additional disjoint main phases. Submit
+     * includes inline composition; with a pool it overlaps worker execution. */
+    wp_u64 transform_hierarchy_ns, transform_unique_ns, transform_locals_ns;
+    wp_u64 transform_prefixes_ns, transform_submit_ns, transform_wait_ns;
 } wp_graphics_cull_timing_stats;
 /* Reject while READY. Borrowed callback/context must survive configure/execute,
  * including worker execution if used there; never retained by results. Reset

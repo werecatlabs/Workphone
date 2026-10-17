@@ -183,8 +183,13 @@ Opt-in native main phase timings now split capture, transform setup/dispatch/wai
 bounds, groups, view setup, visibility, sorting and publication. Requested Claw
 statistics and benchmark raw samples consume copied values; ordinary preparation
 does not invoke a clock. Derived views remain separately timed at the encompassing
-shadow boundary. The short diagnostic prioritizes transform input capture and
-composition attribution next, without satisfying the representative timing gate.
+shadow boundary. Nested transform timings now separate hierarchy traversal, global
+deduplication, local capture, prefix planning, submission and wait. Prefix planning
+uses an owner-only dense lookup in existing scratch, eliminating its second sort
+without increasing storage or changing multiplication counts. Inline submission
+includes composition; pooled submission/wait does not measure worker CPU. The
+remaining global deduplication sort is a subsequent capture target. Short diagnostic
+runs do not satisfy the representative timing gate.
 
 ## 6. Milestones and work packages
 

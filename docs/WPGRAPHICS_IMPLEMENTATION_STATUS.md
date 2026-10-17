@@ -1,5 +1,71 @@
 # WPGraphics implementation status
 
+## Linear batch-prefix lookup and nested transform timing - 17 October 2026
+
+`PERF-07` now removes the second transform reference comparison sort. Global
+deduplication already assigns dense local-node indices. The owner reuses existing
+reference scratch as a local-to-current-batch lookup, first counting unique batch
+prefixes and then assigning their slots while visiting the original paths. Parent
+slots are resolved before submission as before; workers still compose root to
+leaf in private batch caches. Prefix allocation/budget fallback, exact-size reuse,
+borrowed-pointer scrubbing, multiplication counts and public-world transactional
+ownership remain intact. No new capture array or allocation was introduced. The
+remaining first sort for global local-node deduplication is unchanged.
+
+`PERF-01` now exposes six nested transform owner intervals: hierarchy traversal,
+global reference gather/sort/deduplication, local-matrix capture, prefix planning,
+task submission and remaining wait/destination publication. They fit inside the
+existing main transform interval, not alongside it. Inline submission includes
+composition; pooled submission overlaps worker execution and is not worker CPU
+time. The optional borrowed clock is called only by the owner. Rejected captures
+preserve prior accepted timing; running/cancelled/unprofiled/backwards-clock
+samples are unavailable and zeroed. Main cull results copy values, Claw requested
+statistics publish `CPU transform phases ...`, and benchmark schema 3 includes
+raw subphase columns and per-run distributions. Derived shadow views do not add
+the source transform subphase durations to frame totals again.
+
+Two short optimized inline diagnostics used 10,000 objects, seed 1337, two
+alternating flat/spatial pairs, one-second warmup and five seconds per measured
+variant, with phase profiling enabled. Both completed parity and source/executable
+hash checks; both intentionally have `protocol_eligible=false`:
+
+| Per-run median, ms | Before lookup | After lookup |
+|---|---:|---:|
+| Prefix planning | 7.186–7.196 | 0.186–0.201 |
+| Entire transform interval | 11.551–11.842 | 4.500–4.650 |
+| Preparation plus result retirement | 16.300–17.048 | 9.048–9.523 |
+
+Before: `project_graphics_contracts/benchmarks/cull-20261017T172437551Z/`
+(1,198 frames). After:
+`project_graphics_contracts/benchmarks/cull-20261017T172839793Z/` (2,113 frames).
+Both retain 1,000 visible objects and 10,157 multiplications with unchanged
+publication/view array accounting. These sequential short diagnostics are not
+alternating old/new algorithm pairs, representative GPU/Editor measurements or
+performance certification. Global deduplication remains roughly 3.44 ms in the
+post-change fixture and is the next capture target. Spatial mode stays opt-in.
+
+Validation: existing exact-reference matrices across four batch sizes and inline/
+three-worker runs, shared-prefix multiplication counts, reparent/edit/reuse,
+64-MiB fallback, rejected capture and cancellation tests pass. New deterministic
+timing tests exercise owner-only callbacks with a pool, gaps, empty dispatch,
+rejected early/depth-limit capture retaining prior timing, cancelled/unprofiled
+samples and nested backwards clocks. All seven isolated contracts pass in Debug
+and RelWithDebInfo; all eight selected full Debug contracts pass after the final
+lookup change, including active DX11/WARP interval envelopes, copied statistics,
+pixels and skipped reset. Final logs:
+`project_x64/{build,test}_prefix_lookup_final_debug.log` and
+`project_graphics_contracts/{build,test}_prefix_lookup_{debug,release}.log`.
+
+An earlier instrumentation-only full run crashed during production-test teardown
+in `Workphone.dll` (access violation; symbol lookup resolves the fault address to
+`workphone::detail::AtomicMachine<char>::compare_and_swap + 0x2D`). The immediate
+production-test retry, complete retry and both subsequent lookup integration runs
+passed. The root cause is unresolved; this is not certified crash-free execution.
+Original failure/retry logs remain at
+`project_x64/test_transform_phases_debug.log`,
+`project_x64/test_transform_phases_production_retry.log` and
+`project_x64/test_transform_phases_debug_retry.log`.
+
 ## Opt-in native preparation phase attribution - 17 October 2026
 
 `PERF-01` now copies eight disjoint native elapsed intervals into successful cull

@@ -12,6 +12,24 @@ extern "C" {
 
 typedef struct wp_transform_job_system wp_transform_job_system;
 
+/* Owner elapsed phases. Submit includes inline composition with a NULL pool;
+ * with a pool it measures submission, overlapping worker work. Wait measures
+ * remaining task-group wait and destination publication, not worker CPU.
+ * Inter-call gaps are excluded. Only completed accepted dispatches are readable. */
+typedef struct wp_transform_job_timing_stats
+{
+    wp_u64 hierarchy_ns, unique_ns, locals_ns, prefixes_ns, submit_ns, wait_ns;
+} wp_transform_job_timing_stats;
+typedef wp_u64 ( *wp_transform_job_clock )( void *context );
+/* Borrowed monotonic nanosecond clock, invoked only by the owner; never workers.
+ * Reject changes while RUNNING. NULL disables calls. Survives wait/cancel until
+ * replaced. Callback/context must survive dispatch and wait/cancel. */
+wp_s32 wp_transform_job_system_set_clock( wp_transform_job_system *, wp_transform_job_clock, void * );
+/* False/zero for unprofiled, running, cancelled or backwards-clock samples.
+ * Rejected dispatch preserves prior accepted result and timing metadata. */
+wp_s32 wp_transform_job_system_get_timing_stats( const wp_transform_job_system *,
+                                                wp_transform_job_timing_stats * );
+
 /* Metadata for the last accepted dispatch; reading it does not publish results.
  * Byte counts cover job-owned arrays and capture scratch, excluding allocator,
  * task-group/pool overhead and any previous result retained during capture. */

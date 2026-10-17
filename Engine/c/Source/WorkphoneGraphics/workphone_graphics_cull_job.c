@@ -719,6 +719,7 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
     size_t bytes = 0;
     const wp_scenenode **nodes;
     const wp_mat4f *worlds;
+    wp_transform_job_timing_stats transform_timing;
     wp_u64 stamp;
 
     if( !job || !scene || scene->object_count < 0 || ( scene->object_count && !scene->objects ) )
@@ -776,15 +777,31 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         {
             nodes[i] = wp_graphics_object_get_owner( job->entries[i].object );
         }
+        wp_transform_job_system_set_clock( job->transforms, job->clock, job->clock_context );
         i = wp_transform_job_system_dispatch_snapshot( job->transforms, nodes, (wp_u32)job->entry_count,
                                                        wp_graphics_scene_get_generation( scene ) );
         free( nodes );
         if( !i )
         {
+            wp_transform_job_system_set_clock( job->transforms, NULL, NULL );
             cull_job_release_snapshot( job );
             return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
         }
         wp_transform_job_system_wait( job->transforms );
+        if( wp_transform_job_system_get_timing_stats( job->transforms, &transform_timing ) )
+        {
+            job->timing.transform_hierarchy_ns = transform_timing.hierarchy_ns;
+            job->timing.transform_unique_ns = transform_timing.unique_ns;
+            job->timing.transform_locals_ns = transform_timing.locals_ns;
+            job->timing.transform_prefixes_ns = transform_timing.prefixes_ns;
+            job->timing.transform_submit_ns = transform_timing.submit_ns;
+            job->timing.transform_wait_ns = transform_timing.wait_ns;
+        }
+        else if( job->clock )
+        {
+            job->timing_valid = 0;
+        }
+        wp_transform_job_system_set_clock( job->transforms, NULL, NULL );
         wp_transform_job_system_get_stats( job->transforms, &job->transform_stats );
         worlds = wp_transform_job_system_get_result( job->transforms, NULL, NULL );
         cull_time_phase( job, &stamp, &job->timing.transform_ns );

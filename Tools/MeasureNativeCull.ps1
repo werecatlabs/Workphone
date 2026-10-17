@@ -35,7 +35,7 @@ $manifestPath=Join-Path $output 'manifest.json'
 $csvPath=Join-Path $output 'frames.csv'
 $summaryPath=Join-Path $output 'summary.json'
 $manifest=[ordered]@{
-    schema_version=2
+    schema_version=3
     status='RUNNING'; started_utc=[DateTime]::UtcNow.ToString('o'); scope='Headless native CPU preparation and result retirement; no GPU, draw, Present, Editor or image timings.'
     protocol_eligible=(-not $Smoke); fixture='seeded_static_interleaved_10_clusters_10_percent_visible'
     objects=$Objects; expected_visible=[int][Math]::Ceiling($Objects/10.0); seed=$Seed; workers=$Workers
@@ -113,7 +113,8 @@ try {
         $phases=[ordered]@{}
         if (@($group.Group | Where-Object { [int]$_.phases_available -ne [int][bool]$ProfilePhases }).Count) { throw 'Unexpected phase timing availability.' }
         if ($ProfilePhases) {
-            foreach($name in @('capture','transform','bounds','groups','view','visibility','sort','publish')) {
+            foreach($name in @('capture','transform','bounds','groups','view','visibility','sort','publish',
+                'transform_hierarchy','transform_unique','transform_locals','transform_prefixes','transform_submit','transform_wait')) {
                 $phases[$name]=Get-Distribution ($group.Group | ForEach-Object { [double]::Parse($_.($name+'_ns'),$culture) })
             }
         }
@@ -133,7 +134,7 @@ try {
         if ($flat.order -ne (($pair-1)%2) -or $spatial.order -ne (1-(($pair-1)%2))) { throw 'Unexpected A/B order.' }
         [ordered]@{ pair=$pair; flat_median_ms=$flat.lifecycle.p50_ms; spatial_median_ms=$spatial.lifecycle.p50_ms; spatial_change_percent=100*($spatial.lifecycle.p50_ms/$flat.lifecycle.p50_ms-1) }
     })
-    $report=[ordered]@{ schema_version=2; scope=$manifest.scope; profile_phases=[bool]$ProfilePhases; protocol_eligible=$manifest.protocol_eligible; runs=$runs; paired=$paired; raw_samples=$rows.Count; interpretation='CPU fixture evidence only. Lower geometry work does not establish GPU/Editor or representative frame-time improvement.' }
+    $report=[ordered]@{ schema_version=3; scope=$manifest.scope; profile_phases=[bool]$ProfilePhases; protocol_eligible=$manifest.protocol_eligible; runs=$runs; paired=$paired; raw_samples=$rows.Count; interpretation='CPU fixture evidence only. Lower geometry work does not establish GPU/Editor or representative frame-time improvement.' }
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $summaryPath -Encoding utf8
     $manifest.git_head_after=(& git -C $root rev-parse HEAD) -join ''
     $manifest.git_status_after=@(& git -C $root status --short)

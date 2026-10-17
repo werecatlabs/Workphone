@@ -2780,12 +2780,15 @@ static void compact_sat_axes( void )
 typedef struct test_cull_clock
 {
     wp_u64 tick;
-    wp_u32 calls, backwards_at;
+    wp_u32 calls, backwards_at, owner_id;
 } test_cull_clock;
 
 static wp_u64 test_cull_now( void *context )
 {
     test_cull_clock *clock = (test_cull_clock *)context;
+#ifdef _WIN32
+    CHECK( !clock->owner_id || clock->owner_id == GetCurrentThreadId() );
+#endif
     ++clock->calls;
     clock->tick = clock->calls == clock->backwards_at ? 0 : clock->tick + 100;
     return clock->tick;
@@ -2811,18 +2814,21 @@ static void cull_phase_timing( void )
     clock.tick += 5000; /* Time between configure and execute is outside every phase. */
     CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
     result = wp_graphics_cull_job_take_result( job );
-    CHECK( wp_graphics_cull_result_get_timing_stats( result, &timing ) && clock.calls == 10 );
-    CHECK( timing.capture_ns == 100 && timing.transform_ns == 100 && timing.bounds_ns == 100 &&
+    CHECK( wp_graphics_cull_result_get_timing_stats( result, &timing ) && clock.calls == 18 );
+    CHECK( timing.capture_ns == 100 && timing.transform_ns == 900 && timing.bounds_ns == 100 &&
            timing.groups_ns == 100 && timing.view_ns == 100 && timing.visibility_ns == 100 &&
            timing.sort_ns == 100 && timing.publish_ns == 100 );
+    CHECK( timing.transform_hierarchy_ns == 100 && timing.transform_unique_ns == 100 &&
+           timing.transform_locals_ns == 100 && timing.transform_prefixes_ns == 100 &&
+           timing.transform_submit_ns == 100 && timing.transform_wait_ns == 100 );
     other = wp_graphics_cull_result_create_view( result, NULL, WP_GRAPHICS_CULL_PASS_SHADOW );
     CHECK( other && !wp_graphics_cull_result_get_timing_stats( other, &timing ) &&
-           !memcmp( &timing, &zero, sizeof( zero ) ) && clock.calls == 10 );
+           !memcmp( &timing, &zero, sizeof( zero ) ) && clock.calls == 18 );
     wp_graphics_cull_result_destroy( other );
     wp_graphics_cull_job_reset( job );
     CHECK( wp_graphics_cull_result_get_timing_stats( result, &timing ) && timing.capture_ns == 100 );
     wp_graphics_cull_result_destroy( result );
-    /* Backwards across configure/execute must not publish huge unsigned durations. */
+    /* Backwards inside nested transform profiling must not publish huge unsigned durations. */
     memset( &clock, 0, sizeof( clock ) );
     clock.backwards_at = 7;
     CHECK( wp_graphics_cull_job_configure( job, scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN,
@@ -2834,15 +2840,15 @@ static void cull_phase_timing( void )
     wp_graphics_cull_result_destroy( result );
     memset( &clock, 0, sizeof( clock ) );
     result = wp_graphics_scene_prepare_cull_profiled( scene, NULL, 0, test_cull_now, &clock );
-    CHECK( result && clock.calls == 10 && wp_graphics_cull_result_get_timing_stats( result, &timing ) );
+    CHECK( result && clock.calls == 18 && wp_graphics_cull_result_get_timing_stats( result, &timing ) );
     wp_graphics_cull_result_destroy( result );
     other = wp_graphics_scene_prepare_cull( scene, NULL, 0 );
-    CHECK( other && clock.calls == 10 && !wp_graphics_cull_result_get_timing_stats( other, &timing ) &&
+    CHECK( other && clock.calls == 18 && !wp_graphics_cull_result_get_timing_stats( other, &timing ) &&
            !memcmp( &timing, &zero, sizeof( zero ) ) );
     wp_graphics_cull_result_destroy( other );
     CHECK( !wp_graphics_scene_prepare_cull_profiled( scene, NULL, 9, test_cull_now, &clock ) );
     other = wp_graphics_scene_prepare_cull( scene, NULL, 0 );
-    CHECK( other && clock.calls == 10 && !wp_graphics_cull_result_get_timing_stats( other, &timing ) );
+    CHECK( other && clock.calls == 18 && !wp_graphics_cull_result_get_timing_stats( other, &timing ) );
     wp_graphics_cull_result_destroy( other );
     wp_graphics_scene_clear( scene );
     result = wp_graphics_scene_prepare_cull_profiled( scene, NULL, 0, test_cull_now, &clock );
@@ -2853,6 +2859,84 @@ static void cull_phase_timing( void )
     CHECK( !wp_graphics_cull_result_get_timing_stats( NULL, &timing ) && !memcmp( &timing, &zero, sizeof( zero ) ) );
     CHECK( !wp_graphics_cull_result_get_timing_stats( NULL, NULL ) );
     wp_graphics_cull_job_destroy( job );
+    wp_graphics_scene_destroy( scene );
+}
+
+static void transform_phase_timing( wp_u32 workers )
+{
+    wp_threadpool *pool = workers ? wp_threadpool_create( workers ) : NULL;
+    wp_transform_job_system *system = wp_transform_job_system_create( pool, 1 );
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    const wp_scenenode *nodes[2];
+    const wp_mat4f *accepted;
+    wp_mat4f matrices[2];
+    wp_transform_job_timing_stats timing, zero;
+    test_cull_clock clock;
+    wp_scenenode *deep = NULL, *next;
+    const wp_scenenode *deep_nodes[1];
+    wp_u32 depth;
+    memset( &zero, 0, sizeof( zero ) );
+    memset( &clock, 0, sizeof( clock ) );
+#ifdef _WIN32
+    clock.owner_id = GetCurrentThreadId();
+#endif
+    nodes[0] = wp_graphics_scene_create_node( scene );
+    nodes[1] = wp_graphics_scene_create_node( scene );
+    CHECK( !workers || pool );
+    CHECK( wp_transform_job_system_set_clock( system, test_cull_now, &clock ) );
+    CHECK( wp_transform_job_system_dispatch( system, nodes, matrices, 2 ) );
+    CHECK( !wp_transform_job_system_set_clock( system, NULL, NULL ) &&
+           !wp_transform_job_system_get_timing_stats( system, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) );
+    clock.tick += 5000;
+    wp_transform_job_system_wait( system );
+    CHECK( clock.calls == 8 && wp_transform_job_system_get_timing_stats( system, &timing ) );
+    CHECK( timing.hierarchy_ns == 100 && timing.unique_ns == 100 && timing.locals_ns == 100 &&
+           timing.prefixes_ns == 100 && timing.submit_ns == 100 && timing.wait_ns == 100 );
+    accepted = wp_transform_job_system_get_result( system, NULL, NULL );
+    CHECK( accepted && !memcmp( accepted, matrices, sizeof( matrices ) ) );
+    CHECK( !wp_transform_job_system_dispatch_snapshot( system, NULL, 2, 0 ) &&
+           wp_transform_job_system_get_result( system, NULL, NULL ) == accepted &&
+           wp_transform_job_system_get_timing_stats( system, &timing ) && clock.calls == 8 );
+    for( depth = 0; depth < 258; ++depth )
+    {
+        next = wp_graphics_scene_create_node( scene );
+        if( deep )
+        {
+            wp_scenenode_add_child( deep, next );
+        }
+        deep = next;
+    }
+    deep_nodes[0] = deep;
+    CHECK( !wp_transform_job_system_dispatch_snapshot( system, deep_nodes, 1, 0 ) &&
+           wp_transform_job_system_get_result( system, NULL, NULL ) == accepted &&
+           wp_transform_job_system_get_timing_stats( system, &timing ) && timing.wait_ns == 100 );
+    clock.calls = 8;
+    CHECK( wp_transform_job_system_set_clock( system, NULL, NULL ) );
+    CHECK( wp_transform_job_system_process( system, nodes, matrices, 2 ) && clock.calls == 8 &&
+           !wp_transform_job_system_get_timing_stats( system, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) );
+    memset( &clock, 0, sizeof( clock ) );
+    clock.backwards_at = 7; /* Across dispatch/wait, before publication. */
+    CHECK( wp_transform_job_system_set_clock( system, test_cull_now, &clock ) );
+    CHECK( wp_transform_job_system_process( system, nodes, matrices, 2 ) &&
+           wp_transform_job_system_get_status( system ) == WP_TRANSFORM_COMPLETE &&
+           !wp_transform_job_system_get_timing_stats( system, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) );
+    memset( &clock, 0, sizeof( clock ) );
+    CHECK( wp_transform_job_system_dispatch( system, nodes, matrices, 2 ) );
+    wp_transform_job_system_cancel( system );
+    CHECK( !wp_transform_job_system_get_timing_stats( system, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) );
+    memset( &clock, 0, sizeof( clock ) );
+    CHECK( wp_transform_job_system_dispatch_snapshot( system, NULL, 0, 0 ) );
+    wp_transform_job_system_wait( system );
+    CHECK( clock.calls == 8 && wp_transform_job_system_get_timing_stats( system, &timing ) );
+    CHECK( !wp_transform_job_system_get_timing_stats( NULL, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) );
+    CHECK( !wp_transform_job_system_get_timing_stats( system, NULL ) );
+    wp_transform_job_system_destroy( system );
+    wp_threadpool_destroy( pool );
     wp_graphics_scene_destroy( scene );
 }
 
@@ -2869,6 +2953,8 @@ int main( int argc, char **argv )
     }
     matrix_cache();
     cull_phase_timing();
+    transform_phase_timing( 0 );
+    transform_phase_timing( 2 );
     cache_depth_boundary();
     shared_transform_capture();
     shared_prefixes();
