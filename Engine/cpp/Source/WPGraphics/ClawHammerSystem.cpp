@@ -145,6 +145,7 @@ namespace workphone
             struct PreparationWork
             {
                 u64 views = 0, candidates = 0, visible = 0, dispatches = 0, multiplies = 0;
+                u64 hashProbes = 0, hashCollisions = 0, hashFallbacks = 0;
                 u64 scratchAllocations = 0, scratchReuses = 0;
                 u64 pathAllocations = 0, pathReuses = 0;
                 u64 indexAllocations = 0, indexReuses = 0;
@@ -175,6 +176,7 @@ namespace workphone
                     phases.transform_wait_ns += value.transform_wait_ns;
                 }
                 u64 cullSharedBytes = 0, cullGroupBytes = 0, cullMapBytes = 0;
+                u64 cullEntryBytes = 0, ancestorBytes = 0, ancestorRefs = 0, ancestorAllocs = 0;
                 u64 cullViewBytes = 0, cullViewPeakSum = 0, cullClassScratch = 0;
                 u64 spatialViews = 0, blockViews = 0, spatialMapped = 0, spatialIndividual = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
@@ -291,6 +293,9 @@ namespace workphone
                 work.visible += pass.work.visible;
                 work.dispatches += pass.work.dispatches;
                 work.multiplies += pass.work.multiplies;
+                work.hashProbes += pass.work.hashProbes;
+                work.hashCollisions += pass.work.hashCollisions;
+                work.hashFallbacks += pass.work.hashFallbacks;
                 work.scratchAllocations += pass.work.scratchAllocations;
                 work.scratchReuses += pass.work.scratchReuses;
                 work.indexAllocations += pass.work.indexAllocations;
@@ -318,6 +323,10 @@ namespace workphone
                 work.phaseSamples += pass.work.phaseSamples;
                 work.addPhases( pass.work.phases );
                 work.cullSharedBytes += pass.work.cullSharedBytes;
+                work.cullEntryBytes += pass.work.cullEntryBytes;
+                work.ancestorBytes += pass.work.ancestorBytes;
+                work.ancestorRefs += pass.work.ancestorRefs;
+                work.ancestorAllocs += pass.work.ancestorAllocs;
                 work.cullGroupBytes += pass.work.cullGroupBytes;
                 work.cullMapBytes += pass.work.cullMapBytes;
                 work.cullViewBytes += pass.work.cullViewBytes;
@@ -401,6 +410,18 @@ namespace workphone
                 (unsigned long long)work.phases.transform_submit_ns,
                 (unsigned long long)work.phases.transform_wait_ns );
             result += transforms;
+            char hash[192];
+            std::snprintf( hash, sizeof( hash ),
+                "\nTransform capture hash probes=%llu collisions=%llu sort-fallbacks=%llu",
+                (unsigned long long)work.hashProbes, (unsigned long long)work.hashCollisions,
+                (unsigned long long)work.hashFallbacks );
+            result += hash;
+            char ancestors[256];
+            std::snprintf( ancestors, sizeof( ancestors ),
+                "\nCull publication entries-bytes=%llu ancestor-bytes=%llu ancestor-refs=%llu ancestor-allocs=%llu",
+                (unsigned long long)work.cullEntryBytes, (unsigned long long)work.ancestorBytes,
+                (unsigned long long)work.ancestorRefs, (unsigned long long)work.ancestorAllocs );
+            result += ancestors;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
         }
@@ -909,6 +930,10 @@ namespace workphone
                                 }
                                 clawScene->getPreparedStorageStatistics( &storage );
                                 pass.work.cullSharedBytes += storage.publication_bytes;
+                                pass.work.cullEntryBytes += storage.entry_bytes;
+                                pass.work.ancestorBytes += storage.ancestor_bytes;
+                                pass.work.ancestorRefs += storage.ancestor_reference_count;
+                                pass.work.ancestorAllocs += storage.ancestor_allocations;
                                 pass.work.cullGroupBytes += storage.group_bytes;
                                 pass.work.cullMapBytes += storage.map_bytes;
                                 pass.work.cullViewBytes += storage.view_index_bytes;
@@ -923,6 +948,9 @@ namespace workphone
                                 pass.work.visible += visible;
                                 pass.work.dispatches += clawScene->getPreparedTransformDispatchCount();
                                 pass.work.multiplies += transforms.matrix_multiply_count;
+                                pass.work.hashProbes += transforms.capture_hash_probes;
+                                pass.work.hashCollisions += transforms.capture_hash_collisions;
+                                pass.work.hashFallbacks += transforms.capture_hash_fallbacks;
                                 pass.work.scratchAllocations += transforms.capture_scratch_allocations;
                                 pass.work.scratchReuses += transforms.capture_scratch_reuses;
                                 pass.work.pathAllocations += transforms.capture_path_allocations;

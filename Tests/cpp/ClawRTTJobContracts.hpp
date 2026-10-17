@@ -268,6 +268,10 @@ public:
                     storage.view_index_bytes<=wp_u64(expectedCandidates)*sizeof(wp_s32) &&
                     storage.view_array_peak_bytes>=storage.view_index_bytes,
                     "prepared cull storage reports owned publication and independent view arrays");
+            require(storage.publication_bytes==storage.entry_bytes+storage.ancestor_bytes+
+                        storage.group_bytes+storage.map_bytes &&
+                    storage.ancestor_allocations==static_cast<wp_u32>(storage.ancestor_bytes!=0),
+                    "native cull publication owns at most one exact-sized ancestor array");
             ClawScene::PreparationTiming timing;
             timing.total_ns=99;
             if(nativeScene->getPreparedTiming(timing)) {
@@ -393,6 +397,10 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("CPU transform phases hierarchy-ns=")!=String::npos &&
             counters.find(" unique-ns=")!=String::npos && counters.find(" prefixes-ns=")!=String::npos,
             "requested frame publishes nested owner transform phases");
+    require(counters.find("Transform capture hash probes=0 collisions=0 sort-fallbacks=0")!=String::npos,
+            "single unique native node publishes copied hash metadata once");
+    require(counters.find("ancestor-refs=1 ancestor-allocs=1")!=String::npos,
+            "active colour/shadow statistics count the shared ancestor array once");
     require(counters.find("reference scratch allocs=1 reuses=0")!=String::npos,
             "first active capture allocates reference scratch once");
     require(counters.find("path records allocs=1 reuses=0")!=String::npos,
@@ -424,6 +432,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(!nativeScene->getPreparedStorageStatistics(&retiredStorage) &&
             !retiredStorage.publication_bytes && !retiredStorage.view_index_bytes,
             "retired cull storage metadata is zeroed");
+    require(!retiredStorage.entry_bytes && !retiredStorage.ancestor_bytes &&
+            !retiredStorage.ancestor_reference_count && !retiredStorage.ancestor_allocations,
+            "retired ancestor allocation metadata is zeroed");
     require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),0)!=0,"disable scene optional cull stages");
     graphics.setProperties(request); graphics.frame();
     require(pixels(output)==good,"cull A/B policy preserves visible RTT pixels");
@@ -577,6 +588,8 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             counters.find("CPU prepare samples=0 total-ns=0 main-ns=0 shadow-ns=0")!=String::npos &&
             counters.find("CPU main phases samples=0 capture-ns=0 transform-ns=0 bounds-ns=0 groups-ns=0 view-ns=0 visibility-ns=0 sort-ns=0 publish-ns=0")!=String::npos &&
             counters.find("CPU transform phases hierarchy-ns=0 unique-ns=0 locals-ns=0 prefixes-ns=0 submit-ns=0 wait-ns=0")!=String::npos &&
+            counters.find("Transform capture hash probes=0 collisions=0 sort-fallbacks=0")!=String::npos &&
+            counters.find("Cull publication entries-bytes=0 ancestor-bytes=0 ancestor-refs=0 ancestor-allocs=0")!=String::npos &&
             counters.find("cull arrays shared=0 groups=0 map=0 view=0 view-peak-sum=0 class-scratch=0 spatial-views=0 block-views=0 mapped=0 individual=0")!=String::npos,
             "skipped frame does not carry prior preparation counters");
     viewport->setActive(true);

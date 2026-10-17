@@ -49,7 +49,7 @@ typedef struct cull_entry
 typedef struct cull_snapshot
 {
     cull_entry *entries;
-    wp_s32 count;
+    cull_node_revision *ancestors;
     wp_u32 references;
     wp_cull_box *groups;
     wp_s32 *entry_groups;
@@ -87,6 +87,7 @@ struct wp_graphics_cull_job
     wp_graphics_cull_status status;
     cull_snapshot *shared_snapshot; /* internal borrowed input for view derivation */
     cull_entry *entries;
+    cull_node_revision *ancestors;
     wp_cull_box *groups;
     wp_s32 *entry_groups;
     wp_s32 group_count;
@@ -170,14 +171,8 @@ wp_s32 wp_graphics_cull_job_set_clock( wp_graphics_cull_job *job,
 
 static void cull_job_release_snapshot( wp_graphics_cull_job *job )
 {
-    wp_s32 i;
-    if( job->entries )
-    {
-        for( i = 0; i < job->entry_count; ++i )
-        {
-            free( job->entries[i].ancestors );
-        }
-    }
+    free( job->ancestors );
+    job->ancestors = NULL;
     free( job->groups );
     free( job->entry_groups );
     job->entry_groups = NULL;
@@ -538,45 +533,27 @@ static wp_s32 *cull_sort_indices( const cull_entry *entries, wp_s32 *source, wp_
     return source;
 }
 
-static wp_s32 cull_capture_entry( cull_entry *entry, wp_graphics_object *obj, size_t *bytes )
+/* Entries are freshly zeroed by configure. Ancestors are an immutable slice of
+ * one publication-owned array, never an independently owned per-entry buffer. */
+static void cull_capture_entry( cull_entry *entry, wp_graphics_object *obj,
+                                 cull_node_revision *ancestors, wp_u32 count )
 {
     wp_graphics_mesh *mesh;
     wp_aabb3f bounds;
     const wp_scenenode *node;
-    wp_u32 count, i;
+    wp_u32 i;
 
-    memset( entry, 0, sizeof( *entry ) );
     entry->object = obj;
+    entry->ancestors = ancestors;
+    entry->ancestor_count = count;
     if( !obj )
     {
-        return 1;
+        return;
     }
 
     entry->object_generation = wp_graphics_object_get_generation( obj );
-    count = 0;
-    node = wp_graphics_object_get_owner( obj );
-    while( node )
-    {
-        if( count == 257u )
-        {
-            return 0;
-        }
-        ++count;
-        node = wp_scenenode_get_parent( node );
-    }
-    if( count > ( ( 64u * 1024u * 1024u ) - *bytes ) / sizeof( cull_node_revision ) )
-    {
-        return 0;
-    }
     if( count )
     {
-        entry->ancestors = (cull_node_revision *)malloc( (size_t)count * sizeof( cull_node_revision ) );
-        if( !entry->ancestors )
-        {
-            return 0;
-        }
-        entry->ancestor_count = count;
-        *bytes += (size_t)count * sizeof( cull_node_revision );
         node = wp_graphics_object_get_owner( obj );
         for( i = 0; i < count; ++i )
         {
@@ -611,7 +588,6 @@ static wp_s32 cull_capture_entry( cull_entry *entry, wp_graphics_object *obj, si
             entry->has_bounds = 1;
         }
     }
-    return 1;
 }
 
 /* =========================================================================
@@ -716,7 +692,9 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
                                        wp_u32 scene_generation )
 {
     wp_s32 i;
-    size_t bytes = 0;
+    size_t bytes = 0, ancestor_count = 0, offset = 0;
+    wp_u32 depth;
+    const wp_scenenode *node;
     const wp_scenenode **nodes;
     const wp_mat4f *worlds;
     wp_transform_job_timing_stats transform_timing;
@@ -758,13 +736,50 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         }
         job->entry_count = scene->object_count;
         bytes = (size_t)scene->object_count * sizeof( cull_entry );
+        job->storage.entry_bytes = bytes;
+        /* Count every candidate, including hidden objects, before allocating
+         * one exact-sized ancestor array under the same publication byte cap. */
         for( i = 0; i < scene->object_count; ++i )
         {
-            if( !cull_capture_entry( &job->entries[i], scene->objects[i], &bytes ) )
+            depth = 0;
+            node = wp_graphics_object_get_owner( scene->objects[i] );
+            while( node )
+            {
+                if( depth == 257u )
+                {
+                    cull_job_release_snapshot( job );
+                    return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
+                }
+                ++depth;
+                node = wp_scenenode_get_parent( node );
+            }
+            if( depth > ( ( 64u * 1024u * 1024u ) - bytes ) / sizeof( cull_node_revision ) )
             {
                 cull_job_release_snapshot( job );
                 return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
             }
+            job->entries[i].ancestor_count = depth;
+            ancestor_count += depth;
+            bytes += (size_t)depth * sizeof( cull_node_revision );
+        }
+        if( ancestor_count )
+        {
+            job->ancestors = (cull_node_revision *)malloc( ancestor_count * sizeof( *job->ancestors ) );
+            if( !job->ancestors )
+            {
+                cull_job_release_snapshot( job );
+                return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
+            }
+            job->storage.ancestor_allocations = 1;
+        }
+        job->storage.ancestor_reference_count = (wp_u32)ancestor_count;
+        job->storage.ancestor_bytes = ancestor_count * sizeof( *job->ancestors );
+        for( i = 0; i < scene->object_count; ++i )
+        {
+            depth = job->entries[i].ancestor_count;
+            cull_capture_entry( &job->entries[i], scene->objects[i],
+                                  depth ? job->ancestors + offset : NULL, depth );
+            offset += depth;
         }
         cull_time_phase( job, &stamp, &job->timing.capture_ns );
         nodes = (const wp_scenenode **)malloc( (size_t)job->entry_count * sizeof( *nodes ) );
@@ -1101,13 +1116,14 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         snapshot->entry_groups = job->entry_groups;
         snapshot->group_count = job->group_count;
         snapshot->entries = job->entries;
-        snapshot->count = job->entry_count;
+        snapshot->ancestors = job->ancestors;
         snapshot->references = 1;
     }
     result->snapshot = snapshot;
     result->transform_dispatches = job->shared_snapshot ? 0u : ( job->entry_count > 0 ? 1u : 0u );
     result->entries = job->entries;
     job->entries = NULL;
+    job->ancestors = NULL;
     job->groups = NULL;
     job->entry_groups = NULL;
     job->group_count = 0;
@@ -1203,17 +1219,13 @@ wp_graphics_cull_result *wp_graphics_cull_job_take_result( wp_graphics_cull_job 
 
 void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result )
 {
-    wp_s32 i;
     if( !result )
     {
         return;
     }
     if( --result->snapshot->references == 0 )
     {
-        for( i = 0; i < result->snapshot->count; ++i )
-        {
-            free( result->snapshot->entries[i].ancestors );
-        }
+        free( result->snapshot->ancestors );
         free( result->snapshot->entry_groups );
         free( result->snapshot->groups );
         free( result->snapshot->entries );

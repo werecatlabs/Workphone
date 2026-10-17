@@ -133,7 +133,14 @@ saved in that fixture. Transform owner intervals now separately expose hierarchy
 global deduplication, local capture, prefix planning, submission and wait. Prefix
 planning reuses reference scratch as a dense local/batch lookup, removing the
 second reference sort with unchanged storage and multiplication counts. The
-remaining global deduplication sort is the next capture target. Preserve whole-preparation paired
+global deduplication now also uses the existing scratch as a chained hash lookup,
+with bounded collision work and a comparison-sort fallback. Copied probe/collision/
+fallback counts expose that choice without another allocation. Further capture
+work should follow the updated diagnostic. Entry capture now consolidates ancestor
+revisions into one exact-sized shared array, preserving each candidate's complete
+revision path and derived-view lifetime. Copied entry/ancestor byte and allocation
+counters describe this subset; no additional capture storage is required. Further
+world-bound and owner-input work remains subject to measurement. Preserve whole-preparation paired
 measurement before claiming an improvement. Fine shadow/worker/GPU attribution
 and representative fixtures remain open; see the implementation status for
 diagnostic values and scope.

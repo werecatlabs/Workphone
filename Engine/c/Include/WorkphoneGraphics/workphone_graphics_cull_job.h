@@ -128,6 +128,12 @@ typedef struct wp_graphics_cull_storage_stats
     wp_u64 view_index_bytes, view_array_peak_bytes, classification_scratch_bytes;
     wp_u32 group_mode, group_count, valid_group_count;
     wp_u32 mapped_candidates, individual_candidates;
+    /* Shared publication components; ancestor revisions occupy one exact-sized
+     * array, with entry pointers into it. Allocation count is for this array
+     * alone, not a complete allocation census. Derived views report the shared
+     * capture's metadata, not additional ancestor allocations. */
+    wp_u64 entry_bytes, ancestor_bytes;
+    wp_u32 ancestor_reference_count, ancestor_allocations;
 } wp_graphics_cull_storage_stats;
 
 void wp_graphics_cull_result_get_storage_stats( const wp_graphics_cull_result *,

@@ -1,5 +1,130 @@
 # WPGraphics implementation status
 
+## One shared ancestor-revision array per publication - 17 October 2026
+
+`PERF-07` now consolidates per-entry ancestor-revision allocations into one
+exact-sized array owned by the immutable cull publication. Configure counts the
+full paths of all candidates, including hidden objects, checks the existing
+64-MiB cap and allocates the array once. Entries retain slices into that array;
+each node pointer and generation is still captured and compared individually.
+Freshly zeroed entries no longer receive a redundant second full clear.
+
+Publication transfers both entry and ancestor ownership out of the job. Derived
+views retain that publication, and the last view frees its ancestor array once.
+Fresh captures, cancellation, rejected depth-limited capture and job reset cannot
+free another retained publication's slices. Empty and wholly unowned captures
+allocate no ancestor array. Byte accounting is unchanged: this reduces allocation
+calls and frees, not the number of revision records or their reported array bytes.
+
+Native storage metadata now separates `entry_bytes` and `ancestor_bytes`, with
+`ancestor_reference_count` and `ancestor_allocations`. These are shared capture
+metadata, not additional allocations per derived view or a complete allocator
+census. The existing requested Claw frame statistics count main publication entry/
+ancestor storage once across colour and shadow; skipped/retired samples zero it.
+Benchmark schema 5 records those fields and rejects executables missing them.
+
+Two optimized inline diagnostics used 10,000 objects, seed 1337, two alternating
+flat/spatial pairs, one-second warmup and five seconds per measured variant, with
+phase profiling enabled. Both completed parity and source/executable hash checks;
+both intentionally have `protocol_eligible=false`:
+
+| Per-run median, ms | Before shared array | After shared array |
+|---|---:|---:|
+| Entry/ancestor capture | 2.523–2.679 | 1.751–1.853 |
+| Result retirement | 0.692–0.795 | 0.317–0.320 |
+| Preparation plus result retirement | 6.205–6.889 | 4.980–5.220 |
+
+Before: `project_graphics_contracts/benchmarks/cull-20261017T191918872Z/`
+(2,984 frames). After:
+`project_graphics_contracts/benchmarks/cull-20261017T222114961Z/` (3,833 frames).
+The fixture now reports one ancestor allocation holding 20,000 revision records
+in 320,000 bytes, alongside 3,760,000 entry bytes. This replaces 10,000 per-entry
+ancestor allocations in that fixture. Both modes retain 1,000 visible objects,
+10,157 multiplications and unchanged shared publication/view-array accounting;
+the post-change run has no hash fallback frames. These sequential short diagnostics
+are not alternating old/new algorithm pairs, representative Editor/GPU timings
+or formal performance certification. Spatial mode stays opt-in.
+
+New native ownership coverage checks mixed-depth and unowned entries, identical
+shared metadata after source retirement, independent recapture, cancellation,
+partial depth-limit rejection, hidden-candidate revision invalidation, wholly
+unowned and empty captures. Existing native stale/mask/camera/sort/affine/OBB tests
+and active DX11/WARP pixel/rollback/lifetime checks remain green. All eight selected
+full Debug contracts pass. All seven isolated contracts pass in Debug,
+RelWithDebInfo and the forced-hash-fallback build. A two-worker instrumented
+benchmark smoke also passes. Logs:
+`project_x64/{build,test}_ancestor_arena_debug.log`,
+`project_graphics_contracts/{build,test}_ancestor_arena_{debug,release,fallback}.log`.
+The earlier intermittent production teardown crash remains unresolved; its absence
+in this run does not certify crash-free execution. Further entry/world-bound
+preparation costs and representative measurements remain open.
+
+## Bounded hash deduplication of transform inputs - 17 October 2026
+
+`PERF-07` now replaces the remaining global reference sort on the normal capture
+path. Existing reference scratch stores packed unique node pointers/chain links
+and bucket heads in independent fields; path indices receive dense local IDs as
+nodes are encountered. Local matrices are captured once per unique node, then
+the same scratch is reused by the batch-prefix lookup. No additional array or
+allocation was introduced, and the 64-MiB accounting, pointer scrubbing, exact-size
+reuse, cancellation and transactional public-world ownership remain intact.
+
+Sixty-four unequal comparisons in one hash lookup trigger the retained comparison
+sort. The fallback rebuilds all references and path mappings before packing unique
+nodes, so partial hash work is never published. Copied native hash probe/collision/
+fallback counters feed the existing Claw frame statistics and benchmark schema 4.
+Raw samples retain per-frame values; summaries count fallback frames. Hash probes
+count node comparisons, collisions count unequal comparisons; fallback counters
+describe attempted hash work rather than sort comparisons. Derived shadow views
+do not count shared transform capture again.
+
+Two optimized inline diagnostic runs used 10,000 objects, seed 1337, two alternating
+flat/spatial pairs, one-second warmup and five seconds per measured variant, with
+phase profiling enabled. Both completed parity and source/executable hash checks;
+both intentionally have `protocol_eligible=false`:
+
+| Per-run median, ms | Before hash | After hash |
+|---|---:|---:|
+| Global reference deduplication | 3.479–3.484 | 0.282–0.283 |
+| Entire transform interval | 4.611–4.911 | 1.379–1.553 |
+| Preparation plus result retirement | 9.900–10.460 | 6.473–7.042 |
+
+Before: `project_graphics_contracts/benchmarks/cull-20261017T185214533Z/`
+(1,946 frames). After:
+`project_graphics_contracts/benchmarks/cull-20261017T190013632Z/` (2,958 frames).
+The post-change fixture reported 16,697 probes, 6,698 collisions and zero fallback
+frames; both modes retain 1,000 visible objects, 10,157 multiplications and unchanged
+publication/view-array accounting. These sequential short diagnostics are not
+alternating old/new algorithm pairs, representative Editor/GPU results or a
+formal speedup gate. Spatial mode stays opt-in. Entry/ancestor capture, bounds
+preparation and the unresolved teardown failure below remain further work.
+
+Collision contracts use three independent nodes and every two-node pairing to
+guarantee a colliding pair in two buckets without duplicating the hash function.
+They cover reversed order, duplicate/mixed-null/all-null nodes, empty release,
+rejected-capture metadata preservation and exact reference matrices with inline
+and pooled transforms. Existing diverse hierarchies, four batch sizes, prefix
+budgets, reparent/edit/reuse, cancellation and stale-result contracts pass.
+All seven isolated contracts pass in Debug and RelWithDebInfo. A separate isolated
+build with `/DWP_TRANSFORM_HASH_CHAIN_LIMIT=1` also passes all seven; its collision
+fixture explicitly requires a sort fallback. This private compile-time override
+is validation-only; the normal build retains the limit of 64. Logs:
+`project_graphics_contracts/{build,test}_transform_hash_{debug,release}.log` and
+`project_graphics_contracts/{configure,build,test}_transform_hash_fallback.log`.
+
+The active selected full Debug suite passed 8/8 with hash metadata publication,
+pixel/parity/rollback and skipped-reset checks. A later aggregate run with the
+final all-null native fixture passed 7/8 and hit the previously observed production
+teardown access violation in `Workphone.dll` at offset `0x1d499d`, after
+`StateContext` logged shared-listener cleanup. Two CDB runs of the same production
+executable completed the contracts without reproducing it. Its root cause remains
+unresolved; this increment does not certify crash-free production execution.
+The subsequent normal selected-suite retry passed 8/8; its log is
+`project_x64/test_transform_hash_final_retry_debug.log`.
+Logs: `project_x64/{build,test}_transform_hash_debug.log`,
+`project_x64/{build,test}_transform_hash_final_debug.log` and
+`project_x64/debug_transform_hash_teardown{,_second}.log`.
+
 ## Linear batch-prefix lookup and nested transform timing - 17 October 2026
 
 `PERF-07` now removes the second transform reference comparison sort. Global
