@@ -95,6 +95,8 @@ namespace workphone
             /** Render owner: prepare CPU jobs before binding an offscreen target. */
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera );
             bool validateRenderJobs() const;
+            /** Actual transform dispatches for the prepared pass; derived views add none. */
+            u32 getPreparedTransformDispatchCount() const;
             void discardRenderJobs();
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;

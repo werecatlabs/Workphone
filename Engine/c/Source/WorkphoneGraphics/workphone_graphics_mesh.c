@@ -7,6 +7,7 @@
 #include "workphone_graphics_material.h"
 #include "workphone_graphics_renderer.h"
 #include <limits.h>
+#include <float.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,8 @@ typedef struct wp_graphics_mesh
     wp_u32 submesh_cap;
 
     wp_aabb3f local_aabb;
+    wp_graphics_obb local_obb;
+    wp_s32 has_obb, aabb_authored;
     void *native;
     wp_s32 is_dirty;
     wp_vertex_ptc *render_vertices;
@@ -45,12 +48,14 @@ static const wp_u32 WORKPHONE_SUBMESH_INITIAL_CAP = 4u;
 #ifdef _MSC_VER
 #    include <intrin.h>
 static __declspec( align( 8 ) ) volatile __int64 wp_mesh_generation;
+
 static uint64_t wp_mesh_next_generation( void )
 {
     return (uint64_t)_InterlockedIncrement64( &wp_mesh_generation );
 }
 #else
 static uint64_t wp_mesh_generation;
+
 static uint64_t wp_mesh_next_generation( void )
 {
     return __atomic_add_fetch( &wp_mesh_generation, 1, __ATOMIC_RELAXED );
@@ -62,11 +67,11 @@ static void wp_mesh_invalidate_lit( wp_graphics_mesh *mesh )
     mesh->lit_vertices = NULL;
     mesh->content_generation = wp_mesh_next_generation();
 }
+
 uint64_t wp_graphics_mesh_get_content_generation( const wp_graphics_mesh *mesh )
 {
     return mesh ? mesh->content_generation : 0;
 }
-
 
 /* =========================================================================
  * Vertex format helpers
@@ -153,7 +158,10 @@ wp_s32 wp_graphics_mesh_set_vertices( wp_graphics_mesh *mesh, wp_vertex_format f
         return 0;
     }
 
-    if( (size_t)count > (size_t)-1 / stride ) return 0;
+    if( (size_t)count > (size_t)-1 / stride )
+    {
+        return 0;
+    }
     copy = malloc( (size_t)stride * count );
     if( !copy )
     {
@@ -163,6 +171,11 @@ wp_s32 wp_graphics_mesh_set_vertices( wp_graphics_mesh *mesh, wp_vertex_format f
     memcpy( copy, data, (size_t)stride * count );
     free( mesh->vertices );
 
+    mesh->has_obb = 0;
+    if( !mesh->aabb_authored )
+    {
+        memset( &mesh->local_aabb, 0, sizeof( mesh->local_aabb ) );
+    }
     mesh->vertices = copy;
     mesh->vertex_count = count;
     mesh->vertex_format = fmt;
@@ -225,7 +238,10 @@ wp_s32 wp_graphics_mesh_set_indices_u16( wp_graphics_mesh *mesh, const uint16_t 
         return 0;
     }
 
-    if( (size_t)count > (size_t)-1 / sizeof( uint16_t ) ) return 0;
+    if( (size_t)count > (size_t)-1 / sizeof( uint16_t ) )
+    {
+        return 0;
+    }
     copy = malloc( sizeof( uint16_t ) * (size_t)count );
     if( !copy )
     {
@@ -253,7 +269,10 @@ wp_s32 wp_graphics_mesh_set_indices_u32( wp_graphics_mesh *mesh, const wp_u32 *d
         return 0;
     }
 
-    if( (size_t)count > (size_t)-1 / sizeof( wp_u32 ) ) return 0;
+    if( (size_t)count > (size_t)-1 / sizeof( wp_u32 ) )
+    {
+        return 0;
+    }
     copy = malloc( sizeof( wp_u32 ) * (size_t)count );
     if( !copy )
     {
@@ -440,7 +459,282 @@ void wp_graphics_mesh_set_local_aabb( wp_graphics_mesh *mesh, wp_aabb3f aabb )
     }
 
     mesh->local_aabb = aabb;
+    mesh->aabb_authored = 1;
+    mesh->has_obb = 0;
     mesh->content_generation = wp_mesh_next_generation();
+}
+
+static wp_s32 wp_mesh_finite( double x )
+{
+    return x <= DBL_MAX && x >= -DBL_MAX;
+}
+
+static double wp_mesh_dot( const wp_vec3d *a, const wp_vec3d *b )
+{
+    return a->x * b->x + a->y * b->y + a->z * b->z;
+}
+
+wp_s32 wp_graphics_mesh_get_local_obb( const wp_graphics_mesh *mesh, wp_graphics_obb *out )
+{
+    if( !mesh || !out || !mesh->has_obb )
+    {
+        return 0;
+    }
+    *out = mesh->local_obb;
+    return 1;
+}
+
+wp_s32 wp_graphics_mesh_set_local_obb( wp_graphics_mesh *mesh, const wp_graphics_obb *box )
+{
+    wp_s32 i, j;
+    double lengths[3], dot;
+    if( !mesh || !box )
+    {
+        return 0;
+    }
+    for( i = 0; i < 12; ++i )
+    {
+        if( !wp_mesh_finite( ( (const double *)box )[i] ) )
+        {
+            return 0;
+        }
+    }
+    for( i = 0; i < 3; ++i )
+    {
+        lengths[i] = wp_mesh_dot( &box->half_axes[i], &box->half_axes[i] );
+        if( !wp_mesh_finite( lengths[i] ) )
+        {
+            return 0;
+        }
+        for( j = 0; j < i; ++j )
+        {
+            dot = wp_mesh_dot( &box->half_axes[i], &box->half_axes[j] );
+            if( fabs( dot ) > 1.0e-8 * sqrt( lengths[i] ) * sqrt( lengths[j] ) )
+            {
+                return 0;
+            }
+        }
+    }
+    mesh->local_obb = *box;
+    mesh->has_obb = 1;
+    mesh->content_generation = wp_mesh_next_generation();
+    return 1;
+}
+
+void wp_graphics_mesh_clear_local_obb( wp_graphics_mesh *mesh )
+{
+    if( mesh && mesh->has_obb )
+    {
+        mesh->has_obb = 0;
+        mesh->content_generation = wp_mesh_next_generation();
+    }
+}
+
+wp_s32 wp_graphics_mesh_compute_obb( wp_graphics_mesh *mesh )
+{
+    double mean[3] = { 0, 0, 0 }, covariance[3][3], basis[3][3], delta[3], low[3], high[3], middle[3],
+           extent[3];
+    double largest, trace, angle, cosine, sine, left, right, ap, aq, cross, value, scale = 0, pad, score,
+                                                                                   axis_score;
+    wp_graphics_obb box;
+    const wp_vec3f *vertex;
+    const wp_u8 *data;
+    wp_u32 n, stride;
+    wp_s32 i, j, k, p = 0, q = 1, sweep;
+    if( !mesh )
+    {
+        return 0;
+    }
+    wp_graphics_mesh_clear_local_obb( mesh );
+    if( !mesh->vertices || !mesh->vertex_count )
+    {
+        return 0;
+    }
+    n = mesh->vertex_count;
+    stride = wp_vertex_format_stride( mesh->vertex_format );
+    if( !stride )
+    {
+        return 0;
+    }
+    data = (const wp_u8 *)mesh->vertices;
+    /* Incremental mean avoids a large unscaled sum on wide meshes. */
+    for( k = 0; k < 3; ++k )
+    {
+        mean[k] = 0;
+    }
+    for( n = 0; n < mesh->vertex_count; ++n )
+    {
+        vertex = (const wp_vec3f *)( data + (size_t)n * stride );
+        for( i = 0; i < 3; ++i )
+        {
+            value = ( (const wp_f32 *)vertex )[i];
+            if( !( value <= FLT_MAX && value >= -FLT_MAX ) )
+            {
+                return 0;
+            }
+            mean[i] += ( value - mean[i] ) / (double)( n + 1u );
+        }
+    }
+    memset( covariance, 0, sizeof( covariance ) );
+    memset( basis, 0, sizeof( basis ) );
+    for( i = 0; i < 3; ++i )
+    {
+        basis[i][i] = 1;
+    }
+    for( n = 0; n < mesh->vertex_count; ++n )
+    {
+        vertex = (const wp_vec3f *)( data + (size_t)n * stride );
+        for( i = 0; i < 3; ++i )
+        {
+            delta[i] = ( (const wp_f32 *)vertex )[i] - mean[i];
+        }
+        for( i = 0; i < 3; ++i )
+        {
+            for( j = 0; j < 3; ++j )
+            {
+                covariance[i][j] += delta[i] * delta[j] / (double)mesh->vertex_count;
+            }
+        }
+    }
+    for( sweep = 0; sweep < 32; ++sweep )
+    {
+        largest = 0;
+        trace = 0;
+        for( i = 0; i < 3; ++i )
+        {
+            trace += fabs( covariance[i][i] );
+            for( j = i + 1; j < 3; ++j )
+            {
+                if( fabs( covariance[i][j] ) > largest )
+                {
+                    largest = fabs( covariance[i][j] );
+                    p = i;
+                    q = j;
+                }
+            }
+        }
+        if( largest <= 1.0e-14 * trace || largest == 0 )
+        {
+            break;
+        }
+        angle = 0.5 * atan2( 2 * covariance[p][q], covariance[q][q] - covariance[p][p] );
+        cosine = cos( angle );
+        sine = sin( angle );
+        ap = covariance[p][p];
+        aq = covariance[q][q];
+        cross = covariance[p][q];
+        for( k = 0; k < 3; ++k )
+        {
+            if( k != p && k != q )
+            {
+                left = covariance[k][p];
+                right = covariance[k][q];
+                covariance[k][p] = covariance[p][k] = cosine * left - sine * right;
+                covariance[k][q] = covariance[q][k] = sine * left + cosine * right;
+            }
+            left = basis[k][p];
+            right = basis[k][q];
+            basis[k][p] = cosine * left - sine * right;
+            basis[k][q] = sine * left + cosine * right;
+        }
+        covariance[p][p] = cosine * cosine * ap - 2 * sine * cosine * cross + sine * sine * aq;
+        covariance[q][q] = sine * sine * ap + 2 * sine * cosine * cross + cosine * cosine * aq;
+        covariance[p][q] = covariance[q][p] = 0;
+    }
+    for( i = 0; i < 3; ++i )
+    {
+        low[i] = DBL_MAX;
+        high[i] = -DBL_MAX;
+    }
+    for( n = 0; n < mesh->vertex_count; ++n )
+    {
+        vertex = (const wp_vec3f *)( data + (size_t)n * stride );
+        for( i = 0; i < 3; ++i )
+        {
+            value = 0;
+            for( j = 0; j < 3; ++j )
+            {
+                value += basis[j][i] * ( ( (const wp_f32 *)vertex )[j] - mean[j] );
+            }
+            if( value < low[i] )
+            {
+                low[i] = value;
+            }
+            if( value > high[i] )
+            {
+                high[i] = value;
+            }
+        }
+    }
+    for( i = 0; i < 3; ++i )
+    {
+        middle[i] = ( low[i] + high[i] ) * 0.5;
+        extent[i] = ( high[i] - low[i] ) * 0.5;
+        if( extent[i] > scale )
+        {
+            scale = extent[i];
+        }
+    }
+    score = extent[0] * extent[1] + extent[0] * extent[2] + extent[1] * extent[2];
+    /* Prefer the local axes when PCA gives a larger surface-area proxy. */
+    for( i = 0; i < 3; ++i )
+    {
+        delta[i] = ( ( (const wp_f32 *)&mesh->local_aabb.max )[i] -
+                     (double)( (const wp_f32 *)&mesh->local_aabb.min )[i] ) *
+                   0.5;
+    }
+    axis_score = delta[0] * delta[1] + delta[0] * delta[2] + delta[1] * delta[2];
+    if( mesh->local_aabb.min.x <= mesh->local_aabb.max.x &&
+        mesh->local_aabb.min.y <= mesh->local_aabb.max.y &&
+        mesh->local_aabb.min.z <= mesh->local_aabb.max.z && axis_score > 0 && score > axis_score )
+    {
+        /* Reproject rather than trust possibly authored AABB extents. */
+        memset( basis, 0, sizeof( basis ) );
+        for( i = 0; i < 3; ++i )
+        {
+            basis[i][i] = 1;
+            low[i] = DBL_MAX;
+            high[i] = -DBL_MAX;
+        }
+        for( n = 0; n < mesh->vertex_count; ++n )
+        {
+            vertex = (const wp_vec3f *)( data + (size_t)n * stride );
+            for( i = 0; i < 3; ++i )
+            {
+                value = ( (const wp_f32 *)vertex )[i] - mean[i];
+                if( value < low[i] )
+                {
+                    low[i] = value;
+                }
+                if( value > high[i] )
+                {
+                    high[i] = value;
+                }
+            }
+        }
+        for( i = 0; i < 3; ++i )
+        {
+            middle[i] = ( low[i] + high[i] ) * 0.5;
+            extent[i] = ( high[i] - low[i] ) * 0.5;
+        }
+    }
+    memset( &box, 0, sizeof( box ) );
+    pad = 1.0e-6 * scale +
+          32 * DBL_EPSILON * ( fabs( mean[0] ) + fabs( mean[1] ) + fabs( mean[2] ) + scale ) + 1.0e-12;
+    for( i = 0; i < 3; ++i )
+    {
+        value = mean[i];
+        for( j = 0; j < 3; ++j )
+        {
+            value += basis[i][j] * middle[j];
+        }
+        ( (double *)&box.center )[i] = value;
+        for( j = 0; j < 3; ++j )
+        {
+            ( (double *)&box.half_axes[j] )[i] = basis[i][j] * ( extent[j] + pad );
+        }
+    }
+    return wp_graphics_mesh_set_local_obb( mesh, &box );
 }
 
 void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
@@ -449,6 +743,7 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
     const wp_vec3f *pos;
     wp_u32 stride;
     wp_u32 i;
+    wp_s32 axis;
 
     if( !mesh || !mesh->vertices || mesh->vertex_count == 0 )
     {
@@ -465,6 +760,22 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
     pos = (const wp_vec3f *)data;
 
     mesh->content_generation = wp_mesh_next_generation();
+    mesh->aabb_authored = 0;
+    mesh->has_obb = 0;
+    for( i = 0; i < mesh->vertex_count; ++i )
+    {
+        pos = (const wp_vec3f *)( data + (size_t)i * stride );
+        for( axis = 0; axis < 3; ++axis )
+        {
+            if( !( ( (const wp_f32 *)pos )[axis] <= FLT_MAX &&
+                   ( (const wp_f32 *)pos )[axis] >= -FLT_MAX ) )
+            {
+                memset( &mesh->local_aabb, 0, sizeof( mesh->local_aabb ) );
+                return;
+            }
+        }
+    }
+    pos = (const wp_vec3f *)data;
     mesh->local_aabb.min = *pos;
     mesh->local_aabb.max = *pos;
 
@@ -498,6 +809,7 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
             mesh->local_aabb.max.z = pos->z;
         }
     }
+    wp_graphics_mesh_compute_obb( mesh );
 }
 
 /* =========================================================================
@@ -522,6 +834,12 @@ void wp_graphics_mesh_mark_dirty( wp_graphics_mesh *mesh )
     }
 
     mesh->is_dirty = 1;
+    mesh->has_obb = 0;
+    if( !mesh->aabb_authored )
+    {
+        memset( &mesh->local_aabb, 0, sizeof( mesh->local_aabb ) );
+    }
+    wp_mesh_invalidate_lit( mesh );
 }
 
 void wp_graphics_mesh_clear_dirty( wp_graphics_mesh *mesh )
@@ -697,11 +1015,14 @@ void wp_graphics_mesh_render( wp_graphics_mesh *mesh, wp_renderer *renderer,
 /* Native format conversion and generated normals shared by all hardware views. */
 static wp_u32 wp_mesh_lit_index( const wp_graphics_mesh *mesh, wp_u32 i )
 {
-    if( !mesh->indices ) return i;
-    return mesh->index_format == WORKPHONE_INDEX_FORMAT_UINT32
-        ? ( (const wp_u32 *)mesh->indices )[i]
-        : ( (const uint16_t *)mesh->indices )[i];
+    if( !mesh->indices )
+    {
+        return i;
+    }
+    return mesh->index_format == WORKPHONE_INDEX_FORMAT_UINT32 ? ( (const wp_u32 *)mesh->indices )[i]
+                                                               : ( (const uint16_t *)mesh->indices )[i];
 }
+
 const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *mesh )
 {
     wp_vertex_pntc *vertices;
@@ -710,16 +1031,31 @@ const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *m
     const unsigned char *source;
     wp_vec3f ab, ac, normal;
     double length;
-    if( !mesh || !mesh->vertices || !mesh->vertex_count ) return NULL;
-    if( mesh->lit_vertices ) return mesh->lit_vertices;
-    if( (size_t)mesh->vertex_count > (size_t)-1 / sizeof( *vertices ) ) return NULL;
+    if( !mesh || !mesh->vertices || !mesh->vertex_count )
+    {
+        return NULL;
+    }
+    if( mesh->lit_vertices )
+    {
+        return mesh->lit_vertices;
+    }
+    if( (size_t)mesh->vertex_count > (size_t)-1 / sizeof( *vertices ) )
+    {
+        return NULL;
+    }
     stride = wp_vertex_format_stride( mesh->vertex_format );
-    if( !stride ) return NULL;
+    if( !stride )
+    {
+        return NULL;
+    }
     vertices = (wp_vertex_pntc *)calloc( mesh->vertex_count, sizeof( *vertices ) );
-    if( !vertices ) return NULL;
+    if( !vertices )
+    {
+        return NULL;
+    }
     has_normals = mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PN ||
-        mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNT ||
-        mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNTC;
+                  mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNT ||
+                  mesh->vertex_format == WORKPHONE_VERTEX_FORMAT_PNTC;
     for( i = 0; i < mesh->vertex_count; ++i )
     {
         source = (const unsigned char *)mesh->vertices + (size_t)i * stride;
@@ -728,22 +1064,29 @@ const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *m
         switch( mesh->vertex_format )
         {
         case WORKPHONE_VERTEX_FORMAT_PN:
-            vertices[i].normal = ( (const wp_graphics_mesh_vertex_pn *)source )->normal; break;
+            vertices[i].normal = ( (const wp_graphics_mesh_vertex_pn *)source )->normal;
+            break;
         case WORKPHONE_VERTEX_FORMAT_PT:
-            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pt *)source )->uv; break;
+            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pt *)source )->uv;
+            break;
         case WORKPHONE_VERTEX_FORMAT_PNT:
             vertices[i].normal = ( (const wp_graphics_mesh_vertex_pnt *)source )->normal;
-            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pnt *)source )->uv; break;
+            vertices[i].uv = ( (const wp_graphics_mesh_vertex_pnt *)source )->uv;
+            break;
         case WORKPHONE_VERTEX_FORMAT_PNTC:
             vertices[i].normal = ( (const wp_graphics_mesh_vertex_pntc *)source )->normal;
             vertices[i].uv = ( (const wp_graphics_mesh_vertex_pntc *)source )->uv;
-            vertices[i].color = ( (const wp_graphics_mesh_vertex_pntc *)source )->color; break;
+            vertices[i].color = ( (const wp_graphics_mesh_vertex_pntc *)source )->color;
+            break;
         case WORKPHONE_VERTEX_FORMAT_PC:
-            vertices[i].color = ( (const wp_graphics_mesh_vertex_pc *)source )->color; break;
+            vertices[i].color = ( (const wp_graphics_mesh_vertex_pc *)source )->color;
+            break;
         case WORKPHONE_VERTEX_FORMAT_PTC:
             vertices[i].uv = ( (const wp_graphics_mesh_vertex_ptc *)source )->uv;
-            vertices[i].color = ( (const wp_graphics_mesh_vertex_ptc *)source )->color; break;
-        default: break;
+            vertices[i].color = ( (const wp_graphics_mesh_vertex_ptc *)source )->color;
+            break;
+        default:
+            break;
         }
     }
     if( !has_normals )
@@ -755,11 +1098,20 @@ const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *m
         {
             for( i = 0; elements >= 3u && i <= elements - 3u; i += step )
             {
-                a = wp_mesh_lit_index( mesh, i ); b = wp_mesh_lit_index( mesh, i + 1u );
+                a = wp_mesh_lit_index( mesh, i );
+                b = wp_mesh_lit_index( mesh, i + 1u );
                 c = wp_mesh_lit_index( mesh, i + 2u );
-                if( step == 1u && ( i & 1u ) ) { swap = a; a = b; b = swap; }
+                if( step == 1u && ( i & 1u ) )
+                {
+                    swap = a;
+                    a = b;
+                    b = swap;
+                }
                 if( a >= mesh->vertex_count || b >= mesh->vertex_count || c >= mesh->vertex_count )
-                { free( vertices ); return NULL; }
+                {
+                    free( vertices );
+                    return NULL;
+                }
                 ab.x = vertices[b].position.x - vertices[a].position.x;
                 ab.y = vertices[b].position.y - vertices[a].position.y;
                 ab.z = vertices[b].position.z - vertices[a].position.z;
@@ -769,22 +1121,34 @@ const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *m
                 normal.x = ab.y * ac.z - ab.z * ac.y;
                 normal.y = ab.z * ac.x - ab.x * ac.z;
                 normal.z = ab.x * ac.y - ab.y * ac.x;
-                vertices[a].normal.x += normal.x; vertices[a].normal.y += normal.y; vertices[a].normal.z += normal.z;
-                vertices[b].normal.x += normal.x; vertices[b].normal.y += normal.y; vertices[b].normal.z += normal.z;
-                vertices[c].normal.x += normal.x; vertices[c].normal.y += normal.y; vertices[c].normal.z += normal.z;
+                vertices[a].normal.x += normal.x;
+                vertices[a].normal.y += normal.y;
+                vertices[a].normal.z += normal.z;
+                vertices[b].normal.x += normal.x;
+                vertices[b].normal.y += normal.y;
+                vertices[b].normal.z += normal.z;
+                vertices[c].normal.x += normal.x;
+                vertices[c].normal.y += normal.y;
+                vertices[c].normal.z += normal.z;
             }
         }
         for( i = 0; i < mesh->vertex_count; ++i )
         {
             normal = vertices[i].normal;
-            length = sqrt( (double)normal.x * normal.x + (double)normal.y * normal.y + (double)normal.z * normal.z );
+            length = sqrt( (double)normal.x * normal.x + (double)normal.y * normal.y +
+                           (double)normal.z * normal.z );
             if( length > 1.0e-6 )
             {
                 vertices[i].normal.x = (float)( normal.x / length );
                 vertices[i].normal.y = (float)( normal.y / length );
                 vertices[i].normal.z = (float)( normal.z / length );
             }
-            else { vertices[i].normal.x = 0.0f; vertices[i].normal.y = 1.0f; vertices[i].normal.z = 0.0f; }
+            else
+            {
+                vertices[i].normal.x = 0.0f;
+                vertices[i].normal.y = 1.0f;
+                vertices[i].normal.z = 0.0f;
+            }
         }
     }
     mesh->lit_vertices = vertices;

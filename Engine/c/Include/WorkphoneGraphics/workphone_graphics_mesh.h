@@ -180,7 +180,7 @@ wp_u32 wp_vertex_format_stride( wp_vertex_format fmt );
  * generated as area-weighted smooth normals. NULL means invalid input or OOM.
  * Call on the render owner, serialized with mesh mutation. */
 const wp_vertex_pntc *wp_graphics_mesh_prepare_lit_vertices( wp_graphics_mesh *mesh );
-/** Changes on every successful vertex/index/topology mutation. */
+/** Changes on every successful vertex/index/topology/bounds mutation. */
 uint64_t wp_graphics_mesh_get_content_generation( const wp_graphics_mesh *mesh );
 
 /* -------------------------------------------------------------------------
@@ -212,6 +212,8 @@ void wp_graphics_mesh_destroy( wp_graphics_mesh *mesh );
  *
  * The mesh takes ownership of an internal copy of the data; the caller may
  * free its buffer after this call returns.
+ * Successful replacement invalidates computed AABB/OBB bounds. Authored AABB
+ * margins remain in force; rebuild computed bounds explicitly when appropriate.
  *
  * @param mesh  Pointer to the mesh.
  * @param fmt   Interleaved vertex layout of the supplied data.
@@ -359,6 +361,26 @@ void wp_graphics_mesh_remove_submesh( wp_graphics_mesh *mesh, wp_s32 index );
  * @param mesh Pointer to the mesh.
  */
 void wp_graphics_mesh_clear_submeshes( wp_graphics_mesh *mesh );
+
+/* Mesh-local oriented box: centre plus three orthogonal half-axis vectors.
+ * Double precision is CPU bounds data only; vertex/GPU formats are unchanged. */
+typedef struct wp_graphics_obb
+{
+    wp_vec3d center;
+    wp_vec3d half_axes[3];
+} wp_graphics_obb;
+
+/* Owned bounds copied out. Returns zero when absent. No lazy vertex scans. */
+wp_s32 wp_graphics_mesh_get_local_obb( const wp_graphics_mesh *, wp_graphics_obb * );
+/* Trusted conservative bounds for all rendered/deformed positions. Rejects
+ * nonfinite/nonorthogonal inputs transactionally; zero axes are permitted. */
+wp_s32 wp_graphics_mesh_set_local_obb( wp_graphics_mesh *, const wp_graphics_obb * );
+void wp_graphics_mesh_clear_local_obb( wp_graphics_mesh * );
+/* Fit from all current CPU vertex positions using PCA and projected extrema.
+ * Approximate fit, not a minimum-volume guarantee. Rebuilt outside drawing;
+ * compute_aabb also calls this. For GPU deformation supply expanded authored
+ * bounds instead. Vertex replacement/mark_dirty invalidates the fit until rebuilt. */
+wp_s32 wp_graphics_mesh_compute_obb( wp_graphics_mesh * );
 
 /* -------------------------------------------------------------------------
  * AABB

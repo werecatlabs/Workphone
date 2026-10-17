@@ -73,15 +73,25 @@ namespace claw_scene_job_contracts
                     r, static_cast<const wp_vertex_ptc *>( wp_graphics_mesh_get_vertices( mesh ) ), 3 );
             } );
         }
+        std::unique_ptr<wp_graphics_cull_result, decltype( &wp_graphics_cull_result_destroy )>
+            publication(
+                wp_graphics_scene_prepare_cull( scene.get(), camera.get(), WP_GRAPHICS_CULL_PASS_MAIN ),
+                wp_graphics_cull_result_destroy ),
+            latest( nullptr, wp_graphics_cull_result_destroy );
+        require( publication &&
+                     wp_graphics_cull_result_get_transform_dispatch_count( publication.get() ) == 1,
+                 "shared geometry publication must dispatch transforms once" );
+        wp_graphics_rtt_desc lastDesc{};
         std::vector<unsigned char> views[2];
         for( int view = 0; view < 2; ++view )
         {
             wp_camera_set_position( camera.get(), { view ? .25f : 0.f, 0, 0 } );
             std::unique_ptr<wp_graphics_cull_result, decltype( &wp_graphics_cull_result_destroy )>
-                result( wp_graphics_scene_prepare_cull( scene.get(), camera.get(),
-                                                        WP_GRAPHICS_CULL_PASS_MAIN ),
+                result( wp_graphics_cull_result_create_view( publication.get(), camera.get(),
+                                                             WP_GRAPHICS_CULL_PASS_MAIN ),
                         wp_graphics_cull_result_destroy );
-            require( result && wp_graphics_cull_result_get_visible_count( result.get() ) == 2,
+            require( result && !wp_graphics_cull_result_get_transform_dispatch_count( result.get() ) &&
+                         wp_graphics_cull_result_get_visible_count( result.get() ) == 2,
                      "per-view main list excludes offscreen mesh" );
             wp_renderer_dx11_set_render_texture( native, target.get() );
             wp_renderer_dx11_set_viewport( native, { 0, 0, 32, 32 } );
@@ -119,14 +129,21 @@ namespace claw_scene_job_contracts
             views[view] = pixels( target.get() );
             require( views[view] == reference,
                      "complete per-view job pixels must equal synchronous scene reference" );
-            wp_scenenode_set_position( wp_graphics_object_get_owner( scene->objects[0] ),
-                                       { view ? -.5f : -.6f, 0, 0 } );
-            require( wp_renderer_dx11_execute_rtt_job( native, target.get(), &desc, ready, ready, draw,
-                                                       &d ) == WP_RTT_STALE &&
-                         pixels( target.get() ) == reference,
-                     "stale transform dependency must reject before binding and preserve pixels" );
+            lastDesc = desc;
+            latest = std::move( result );
         }
         require( views[0] != views[1], "independent camera views must produce different images" );
+        publication.reset();
+        SnapshotDraw retained{ scene.get(), latest.get(), generic };
+        require( wp_renderer_dx11_execute_rtt_job( native, target.get(), &lastDesc, ready, ready, draw,
+                                                   &retained ) == WP_RTT_OK &&
+                     pixels( target.get() ) == views[1],
+                 "derived GPU view must survive source publication retirement" );
+        wp_scenenode_set_position( wp_graphics_object_get_owner( scene->objects[0] ), { -.6f, 0, 0 } );
+        require( wp_renderer_dx11_execute_rtt_job( native, target.get(), &lastDesc, ready, ready, draw,
+                                                   &retained ) == WP_RTT_STALE &&
+                     pixels( target.get() ) == views[1],
+                 "stale shared transform dependency must preserve output" );
         wp_renderer_dx11_set_render_texture( native, nullptr );
         std::puts(
             "Native transform/cull-to-RTT two-camera pixel parity and stale dependency retention "

@@ -536,6 +536,7 @@ static void culling( void )
     wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 3 );
     CHECK( wp_graphics_cull_result_validate( main, scene, (wp_u32)revision ) ==
            WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_mesh_compute_aabb( mesh );
     wp_graphics_cull_result_destroy( main );
     wp_graphics_object_set_visible( a, 0 );
     main = capture( scene, camera, 0 );
@@ -628,6 +629,372 @@ static void conservative_bounds( void )
     wp_camera_destroy( camera );
 }
 
+static double box_dot( const wp_vec3d *a, const wp_vec3d *b )
+{
+    return a->x * b->x + a->y * b->y + a->z * b->z;
+}
+
+static void check_enclosure( const wp_graphics_obb *box, const wp_graphics_mesh_vertex_p *vertices,
+                             int count )
+{
+    int i, j;
+    wp_vec3d d;
+    double squared;
+    for( i = 0; i < count; ++i )
+    {
+        d.x = vertices[i].position.x - box->center.x;
+        d.y = vertices[i].position.y - box->center.y;
+        d.z = vertices[i].position.z - box->center.z;
+        for( j = 0; j < 3; ++j )
+        {
+            squared = box_dot( &box->half_axes[j], &box->half_axes[j] );
+            CHECK( fabs( box_dot( &d, &box->half_axes[j] ) ) <= squared + 1.0e-10 );
+        }
+    }
+}
+
+static void oriented_bounds( void )
+{
+    wp_graphics_scene *s = wp_graphics_scene_create();
+    wp_camera *camera = wp_camera_create();
+    wp_graphics_object *object = wp_graphics_scene_create_object( s );
+    wp_scenenode *node = wp_graphics_scene_create_node( s );
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_mesh_vertex_p vertices[8];
+    wp_graphics_obb fitted, invalid, actual;
+    wp_graphics_cull_result *r, *shadow;
+    wp_graphics_cull_bounds_stats stats;
+    wp_vec3f p = { 1.2f, 0, 0 };
+    wp_quatf q = { 0.923879533f, 0, 0, 0.382683432f };
+    wp_aabb3f authored = { { -10, -10, -3 }, { 10, 10, -1 } };
+    wp_u64 generation;
+    int i, j;
+    wp_u32 nan_bits = 0x7fc00000u;
+    double along, across;
+    for( i = 0; i < 8; ++i )
+    {
+        along = ( i & 1 ) ? 2 : -2;
+        across = ( i & 2 ) ? 0.05 : -0.05;
+        vertices[i].position.x = (wp_f32)( ( along - across ) * 0.70710678118655 );
+        vertices[i].position.y = (wp_f32)( ( along + across ) * 0.70710678118655 );
+        vertices[i].position.z = ( i & 4 ) ? -1.95f : -2.05f;
+    }
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    wp_graphics_mesh_compute_aabb( mesh );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &fitted ) );
+    check_enclosure( &fitted, vertices, 8 );
+    invalid = fitted;
+    invalid.half_axes[1] = invalid.half_axes[0];
+    generation = wp_graphics_mesh_get_content_generation( mesh );
+    CHECK( !wp_graphics_mesh_set_local_obb( mesh, &invalid ) );
+    CHECK( wp_graphics_mesh_get_content_generation( mesh ) == generation );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+    CHECK( memcmp( &actual, &fitted, sizeof( actual ) ) == 0 );
+    wp_graphics_object_set_mesh( object, mesh );
+    wp_scenenode_attach_object( node, object );
+    wp_scenenode_set_position( node, p );
+    wp_scenenode_set_orientation( node, q );
+    wp_camera_set_projection_type( camera, WORKPHONE_PROJECTION_ORTHOGRAPHIC );
+    wp_camera_set_ortho_width( camera, 1 );
+    wp_camera_set_aspect_ratio( camera, 1 );
+    r = capture( s, camera, 0 );
+    CHECK( wp_graphics_cull_result_get_visible_count( r ) == 0 );
+    wp_graphics_cull_result_get_bounds_stats( r, &stats );
+    CHECK( stats.sphere_tests == 1 && stats.sphere_rejections == 0 && stats.fitted_obb_tests == 1 &&
+           stats.box_rejections == 1 );
+    shadow = wp_graphics_cull_result_create_view( r, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+    CHECK( shadow && wp_graphics_cull_result_get_visible_count( shadow ) == 1 );
+    wp_graphics_cull_result_get_bounds_stats( shadow, &stats );
+    CHECK( !stats.sphere_tests && !stats.box_tests );
+    wp_graphics_cull_result_destroy( r );
+    CHECK( wp_graphics_cull_result_get_visible_count( shadow ) == 1 );
+    wp_graphics_mesh_clear_local_obb( mesh );
+    CHECK( wp_graphics_cull_result_validate( shadow, s,
+                                             wp_graphics_cull_result_get_scene_generation( shadow ) ) ==
+           WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( shadow );
+    r = capture( s, camera, 0 );
+    CHECK( wp_graphics_cull_result_get_visible_count( r ) == 1 );
+    wp_graphics_cull_result_destroy( r );
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &fitted ) );
+    p.x = 100;
+    wp_scenenode_set_position( node, p );
+    r = capture( s, camera, 0 );
+    wp_graphics_cull_result_get_bounds_stats( r, &stats );
+    CHECK( stats.sphere_rejections == 1 && !stats.box_tests );
+    wp_graphics_cull_result_destroy( r );
+    wp_graphics_mesh_set_local_aabb( mesh, authored );
+    CHECK( !wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    CHECK( wp_graphics_mesh_get_local_aabb( mesh ).max.x == 10 );
+    /* Repeated eigenvalues, planar, linear, and point clouds remain enclosed. */
+    for( j = 0; j < 4; ++j )
+    {
+        for( i = 0; i < 8; ++i )
+        {
+            vertices[i].position.x = ( j == 3 ) ? 4 : (wp_f32)( ( i & 1 ) ? 1 : -1 );
+            vertices[i].position.y = ( j >= 2 ) ? 0 : (wp_f32)( ( i & 2 ) ? 1 : -1 );
+            vertices[i].position.z = ( j >= 1 ) ? 0 : (wp_f32)( ( i & 4 ) ? 1 : -1 );
+        }
+        wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+        wp_graphics_mesh_compute_aabb( mesh );
+        CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+        check_enclosure( &actual, vertices, 8 );
+    }
+    for( j = 0; j < 64; ++j )
+    {
+        for( i = 0; i < 8; ++i )
+        {
+            along = 3 * sin( i * 1.73 + j * 0.13 );
+            across = 0.1 * cos( i * 0.9 + j );
+            vertices[i].position.x = (wp_f32)( along * 0.7 - across * 0.6 );
+            vertices[i].position.y = (wp_f32)( along * 0.4 + across * 0.8 );
+            vertices[i].position.z = (wp_f32)( along * 0.591607978 + 0.02 * sin( i + j ) );
+        }
+        wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+        wp_graphics_mesh_compute_aabb( mesh );
+        CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+        check_enclosure( &actual, vertices, 8 );
+    }
+    wp_graphics_mesh_mark_dirty( mesh );
+    CHECK( !wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+    CHECK( wp_graphics_mesh_get_local_aabb( mesh ).max.x == 0 );
+    memcpy( &vertices[0].position.x, &nan_bits, sizeof( nan_bits ) );
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    wp_graphics_mesh_compute_aabb( mesh );
+    CHECK( !wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+    p.x = 0;
+    wp_scenenode_set_position( node, p );
+    r = capture( s, camera, 0 );
+    wp_graphics_cull_result_get_bounds_stats( r, &stats );
+    CHECK( wp_graphics_cull_result_get_visible_count( r ) == 1 && stats.conservative_candidates == 1 );
+    wp_graphics_cull_result_destroy( r );
+    wp_graphics_scene_destroy( s );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    puts(
+        "Fitted OBB: enclosure, tighter rejection, authored margins, shadow retention and invalidation "
+        "passed." );
+}
+
+static void sphere_parity( void )
+{
+    wp_graphics_scene *s = wp_graphics_scene_create();
+    wp_camera *camera = wp_camera_create();
+    wp_graphics_object *object = wp_graphics_scene_create_object( s );
+    wp_scenenode *parent = wp_graphics_scene_create_node( s ),
+                 *node = wp_graphics_scene_create_node( s );
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_mesh_vertex_p vertices[8];
+    wp_graphics_cull_job *job = wp_graphics_cull_job_create();
+    wp_graphics_cull_result *on, *off;
+    wp_graphics_cull_bounds_stats stats;
+    wp_vec3f p, scale;
+    wp_quatf q;
+    wp_mat4f world, view, projection, vp, clip;
+    double v[4];
+    int sample, i, j, k, inside, seen = 0;
+    wp_u32 rejects = 0, accepts = 0, box_tests = 0;
+    for( i = 0; i < 8; ++i )
+    {
+        vertices[i].position.x = ( i & 1 ) ? 0.4f : -0.4f;
+        vertices[i].position.y = ( i & 2 ) ? 0.2f : -0.2f;
+        vertices[i].position.z = ( i & 4 ) ? 0.1f : -0.1f;
+    }
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    wp_graphics_mesh_compute_aabb( mesh );
+    wp_graphics_object_set_mesh( object, mesh );
+    wp_scenenode_attach_object( node, object );
+    wp_scenenode_add_child( parent, node );
+    wp_camera_set_projection_type( camera, WORKPHONE_PROJECTION_ORTHOGRAPHIC );
+    wp_camera_set_ortho_width( camera, 2 );
+    wp_camera_set_aspect_ratio( camera, 1 );
+    for( sample = 0; sample < 256; ++sample )
+    {
+        /* Coprime sequences exercise reflected, singular and sheared hierarchies. */
+        p.x = (wp_f32)( ( sample * 37 ) % 101 - 50 ) * 0.09f;
+        p.y = (wp_f32)( ( sample * 19 ) % 79 - 39 ) * 0.09f;
+        p.z = -5;
+        scale.x = ( sample % 11 == 0 ) ? 0 : ( ( sample & 1 ) ? -3.0f : 0.3f );
+        scale.y = 1.7f;
+        scale.z = 0.5f;
+        wp_scenenode_set_position( parent, p );
+        wp_scenenode_set_scale( parent, scale );
+        q.x = 0;
+        q.y = 0;
+        q.z = (wp_f32)sin( sample * 0.137 );
+        q.w = (wp_f32)cos( sample * 0.137 );
+        wp_scenenode_set_orientation( node, q );
+        on = capture( s, camera, 0 );
+        wp_graphics_cull_result_get_bounds_stats( on, &stats );
+        rejects += stats.sphere_rejections;
+        accepts += stats.sphere_inside;
+        box_tests += stats.box_tests;
+        CHECK( wp_graphics_cull_job_set_sphere_test( job, 0 ) == WP_GRAPHICS_CULL_OK );
+        CHECK( wp_graphics_cull_job_configure( job, s, camera, 0, 0 ) == WP_GRAPHICS_CULL_OK );
+        CHECK( wp_graphics_cull_job_set_sphere_test( job, 1 ) == WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
+        CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
+        off = wp_graphics_cull_job_take_result( job );
+        CHECK( wp_graphics_cull_result_get_visible_count( on ) ==
+               wp_graphics_cull_result_get_visible_count( off ) );
+        wp_graphics_cull_result_get_bounds_stats( off, &stats );
+        CHECK( !stats.sphere_tests && !stats.sphere_rejections && !stats.sphere_inside );
+        /* Independent clip-space vertex oracle: never discard a mesh containing a visible vertex. */
+        wp_scenenode_get_world_matrix( node, &world );
+        wp_graphics_cull_result_get_camera_matrices( on, &view, &projection );
+        wp_mat4f_mul( &vp, &projection, &view );
+        wp_mat4f_mul( &clip, &vp, &world );
+        inside = 0;
+        for( i = 0; i < 8; ++i )
+        {
+            for( j = 0; j < 4; ++j )
+            {
+                v[j] = clip.m[j][3];
+                for( k = 0; k < 3; ++k )
+                {
+                    v[j] += clip.m[j][k] * ( (const wp_f32 *)&vertices[i].position )[k];
+                }
+            }
+            if( v[0] > -v[3] + 0.0001 && v[0] < v[3] - 0.0001 && v[1] > -v[3] + 0.0001 &&
+                v[1] < v[3] - 0.0001 && v[2] > -v[3] + 0.0001 && v[2] < v[3] - 0.0001 )
+            {
+                inside = 1;
+            }
+        }
+        if( inside )
+        {
+            ++seen;
+            CHECK( wp_graphics_cull_result_get_visible_count( on ) == 1 );
+        }
+        wp_graphics_cull_result_destroy( on );
+        wp_graphics_cull_result_destroy( off );
+        wp_graphics_cull_job_reset( job );
+    }
+    CHECK( seen > 0 && rejects > 0 && accepts > 0 && box_tests > 0 );
+    printf(
+        "Sphere parity: 256 affine hierarchies, %lu early rejects, %lu full accepts, %lu box tests.\n",
+        (unsigned long)rejects, (unsigned long)accepts, (unsigned long)box_tests );
+    wp_graphics_cull_job_destroy( job );
+    wp_graphics_scene_destroy( s );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+}
+
+static void shared_views( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_threadpool *pool = wp_threadpool_create( 1 );
+    CHECK( pool != NULL );
+    wp_camera *a = wp_camera_create(), *b = wp_camera_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_object *objects[2];
+    wp_scenenode *nodes[2];
+    wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } };
+    wp_vec3f p = { 100, 0, 0 };
+    wp_mat4f world, other_world;
+    wp_graphics_cull_result *main, *shadow, *second, *third, *reference, *empty;
+    wp_transform_job_stats original_stats, derived_stats;
+    wp_u32 stamp;
+    int i;
+    for( i = 0; i < 2; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        nodes[i] = wp_graphics_scene_create_node( scene );
+        wp_graphics_object_set_mesh( objects[i], mesh );
+        wp_scenenode_attach_object( nodes[i], objects[i] );
+    }
+    wp_graphics_mesh_set_local_aabb( mesh, bounds );
+    wp_scenenode_set_position( nodes[1], p );
+    wp_camera_set_position( b, p );
+    main = capture( scene, a, WP_GRAPHICS_CULL_PASS_MAIN );
+    stamp = wp_graphics_cull_result_get_scene_generation( main );
+    CHECK( wp_graphics_cull_result_get_visible_count( main ) == 1 &&
+           wp_graphics_cull_result_get_object( main, 0 ) == objects[0] );
+    shadow = wp_graphics_cull_result_create_view( main, a, WP_GRAPHICS_CULL_PASS_SHADOW );
+    second = wp_graphics_cull_result_create_view( main, b, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( shadow && second );
+    CHECK( wp_graphics_cull_result_get_visible_count( shadow ) == 2 );
+    CHECK( wp_graphics_cull_result_get_visible_count( second ) == 1 &&
+           wp_graphics_cull_result_get_object( second, 0 ) == objects[1] );
+    CHECK( wp_graphics_cull_result_get_transform_dispatch_count( main ) == 1 &&
+           !wp_graphics_cull_result_get_transform_dispatch_count( shadow ) &&
+           !wp_graphics_cull_result_get_transform_dispatch_count( second ) );
+    wp_graphics_cull_result_get_transform_stats( main, &original_stats );
+    wp_graphics_cull_result_get_transform_stats( second, &derived_stats );
+    CHECK( original_stats.output_count == 2 &&
+           !memcmp( &original_stats, &derived_stats, sizeof( original_stats ) ) );
+    reference = capture( scene, b, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( wp_graphics_cull_result_get_object( reference, 0 ) ==
+           wp_graphics_cull_result_get_object( second, 0 ) );
+    wp_graphics_cull_result_get_world_matrix( reference, 0, &world );
+    wp_graphics_cull_result_get_world_matrix( second, 0, &other_world );
+    CHECK( equal_matrix( &world, &other_world ) );
+    wp_graphics_cull_result_destroy( reference );
+    wp_camera_set_visibility_mask( b, 0 );
+    empty = wp_graphics_cull_result_create_view( main, b, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( empty && wp_graphics_cull_result_get_visible_count( empty ) == 0 );
+    CHECK( wp_graphics_cull_result_validate( main, scene, stamp ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_result_validate( second, scene, stamp ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( empty );
+    wp_camera_set_visibility_mask( b, ~(wp_u32)0 );
+
+    /* View-only edits permit a fresh view without recapturing valid geometry. */
+    p.x = 10;
+    wp_camera_set_position( a, p );
+    CHECK( wp_graphics_cull_result_validate( main, scene, stamp ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    empty = wp_graphics_cull_result_create_view( main, a, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( empty && wp_graphics_cull_result_get_visible_count( empty ) == 0 &&
+           !wp_graphics_cull_result_get_transform_dispatch_count( empty ) );
+    wp_graphics_cull_result_destroy( empty );
+    p.x = 0;
+    wp_camera_set_position( a, p );
+    third = wp_graphics_cull_result_create_view( second, a, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( third && wp_graphics_cull_result_get_object( third, 0 ) == objects[0] );
+    CHECK( !wp_graphics_cull_result_create_view( main, a, (wp_graphics_cull_pass)9 ) );
+    wp_graphics_cull_result_destroy( main );
+    wp_graphics_cull_result_destroy( second );
+    /* Neither source result nor the scene's persistent job owns derived entries. */
+    wp_graphics_scene_set_transform_pool( scene, pool );
+    CHECK( wp_graphics_cull_result_validate( shadow, scene, stamp ) == WP_GRAPHICS_CULL_OK );
+    draws = 0;
+    CHECK( wp_graphics_scene_render_cull_result( scene, (wp_renderer *)scene, third, consume, NULL ) ==
+               WP_GRAPHICS_CULL_OK &&
+           draws == 1 );
+    wp_graphics_cull_result_destroy( third );
+    wp_graphics_object_set_visibility_flags( objects[0], 2 );
+    CHECK( !wp_graphics_cull_result_create_view( shadow, a, WP_GRAPHICS_CULL_PASS_MAIN ) );
+    CHECK( wp_graphics_cull_result_validate( shadow, scene, stamp ) == WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( shadow );
+    main = capture( scene, a, WP_GRAPHICS_CULL_PASS_MAIN );
+    shadow = wp_graphics_cull_result_create_view( main, a, WP_GRAPHICS_CULL_PASS_SHADOW );
+    p.x = 90;
+    wp_scenenode_set_position( nodes[1], p );
+    CHECK( !wp_graphics_cull_result_create_view( main, b, WP_GRAPHICS_CULL_PASS_MAIN ) );
+    wp_graphics_scene_clear( scene );
+    CHECK( wp_graphics_cull_result_validate( shadow, scene,
+                                             wp_graphics_cull_result_get_scene_generation( shadow ) ) ==
+           WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( main );
+    wp_graphics_cull_result_destroy( shadow );
+    /* Empty publications also have independent, retainable view lifetimes. */
+    main = capture( scene, NULL, 0 );
+    shadow = wp_graphics_cull_result_create_view( main, NULL, WP_GRAPHICS_CULL_PASS_SHADOW );
+    wp_graphics_cull_result_destroy( main );
+    CHECK( shadow && !wp_graphics_cull_result_get_candidate_count( shadow ) );
+    CHECK( wp_graphics_cull_result_validate( shadow, scene,
+                                             wp_graphics_cull_result_get_scene_generation( shadow ) ) ==
+           WP_GRAPHICS_CULL_OK );
+    wp_graphics_cull_result_destroy( shadow );
+    wp_graphics_scene_destroy( scene );
+    wp_threadpool_destroy( pool );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( a );
+    wp_camera_destroy( b );
+    puts(
+        "Shared candidate publication: one transform dispatch, independent colour/shadow/camera views "
+        "and source retirement passed." );
+}
+
 static wp_s32 clear_during_submit( wp_graphics_object *o, wp_renderer *r, const wp_mat4f *w, void *data )
 {
     (void)o;
@@ -661,7 +1028,10 @@ int main( void )
     hierarchy_limit();
     culling();
     conservative_bounds();
+    oriented_bounds();
+    sphere_parity();
     retirement();
+    shared_views();
 #ifdef _WIN32
     own_completion();
 #endif

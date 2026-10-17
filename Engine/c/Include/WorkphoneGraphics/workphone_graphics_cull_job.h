@@ -65,6 +65,20 @@ typedef enum wp_graphics_cull_result_code
     WP_GRAPHICS_CULL_ERROR_STALE = -4
 } wp_graphics_cull_result_code;
 
+/* Per-view stages; unknown/nonfinite bounds and invalid views are retained.
+ * Shadow views bypass camera geometry tests entirely. */
+typedef struct wp_graphics_cull_bounds_stats
+{
+    wp_u32 sphere_tests, sphere_rejections, sphere_inside;
+    wp_u32 box_tests, box_rejections, fitted_obb_tests, aabb_box_tests, conservative_candidates;
+} wp_graphics_cull_bounds_stats;
+
+void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *,
+                                               wp_graphics_cull_bounds_stats * );
+/* Default enabled. Owner-only A/B control; reject while READY. Derived views
+ * inherit this policy. A disabled sphere stage leaves OBB classification intact. */
+wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *, wp_s32 enabled );
+
 wp_graphics_cull_job *wp_graphics_cull_job_create( void );
 /* Optional borrowed pool; owner-thread capture/wait precedes culling. */
 wp_s32 wp_graphics_cull_job_set_threadpool( wp_graphics_cull_job *, wp_threadpool * );
@@ -106,6 +120,20 @@ wp_graphics_cull_status wp_graphics_cull_job_get_status( const wp_graphics_cull_
  *         wp_graphics_cull_result_destroy.  The job returns to idle.
  */
 wp_graphics_cull_result *wp_graphics_cull_job_take_result( wp_graphics_cull_job *job );
+
+/* Derive an independently owned view from the complete immutable candidate
+ * publication, including candidates excluded by the source view. Captures only
+ * camera/masks and sorting; never dispatches transforms. Rejects stale scene,
+ * object, mesh or ancestor revisions (source camera changes alone are allowed).
+ * NULL camera selects active/default. Source may be destroyed after success.
+ * Scene/resources remain borrowed. Derive/destroy/validate share the owner thread.
+ * Returns NULL on stale inputs, invalid pass or allocation failure. */
+wp_graphics_cull_result *wp_graphics_cull_result_create_view( const wp_graphics_cull_result *,
+                                                              const wp_camera *, wp_graphics_cull_pass );
+/* Transform work performed specifically for this view: zero for derived views.
+ * get_transform_stats describes their shared publication and must not be summed
+ * as fresh work for each derived view. */
+wp_u32 wp_graphics_cull_result_get_transform_dispatch_count( const wp_graphics_cull_result * );
 
 void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result );
 wp_s32 wp_graphics_cull_result_get_candidate_count( const wp_graphics_cull_result *result );

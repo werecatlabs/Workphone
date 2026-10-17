@@ -1,5 +1,102 @@
 # WPGraphics implementation status
 
+## Fitted OBB and sphere culling - 17 October 2026
+
+`SCENE-02` now uses mesh-local oriented bounds in both native job preparation and
+the synchronous scene reference. Rebuilding a mesh AABB also fits an OBB from CPU
+positions using covariance principal axes and projected extrema. The fit falls
+back to local axes when their surface-area proxy is smaller. This is an approximate
+fit, with no minimum-volume guarantee (see the distinction in the
+[Open3D oriented-box documentation](https://www.open3d.org/docs/latest/cpp_api/classopen3d_1_1geometry_1_1_oriented_bounding_box.html)).
+The previous transformed local AABB already avoided world-AABB inflation; the new
+fit additionally tightens meshes whose geometry runs diagonally in local space.
+
+The immutable candidate publication caches each transformed centre, three half
+axes and an enclosing sphere. Frustum planes are normalized once per view. Sphere
+rejection and full containment precede six-plane box support tests. Under parent
+shear the transformed box is a parallelepiped, and its sphere encloses all eight
+corners; negative and singular affine scales remain supported. Invalid/nonfinite
+bounds or unsupported projective transforms retain candidates. These are
+conservative six-plane tests, not full frustum/box separating-axis intersection.
+Shadow views continue to retain off-camera casters and perform no camera-bound
+tests. Derived camera/shadow views reuse the cached bounds without refitting.
+
+Mesh APIs expose copied OBBs, explicit fitting, trusted authored OBBs and clearing.
+Authored AABBs clear fitted OBBs and preserve their deformation margins through
+vertex replacement. Replacement and dirty notifications invalidate computed
+bounds and mesh generations; unknown bounds remain visible until rebuilt. Fitting
+occurs at an explicit bounds rebuild, never lazily during drawing. Serialized
+authored AABBs remain conservative; OBB serialization is not introduced. GPU
+deformation still requires suitably expanded authored bounds. CPU skinning that
+rebuilds bounds also pays the fit cost and needs representative profiling.
+
+Per-view copied counters report sphere tests/rejections/full acceptance, box
+tests/rejections, fitted versus fallback boxes and conservative candidates.
+`wp_graphics_cull_job_set_sphere_test` provides an owner-side A/B switch, inherited
+by derived views and immutable while a configured job is ready.
+
+Native regression evidence includes fitted enclosure for diagonal, arbitrary 3D,
+planar, linear and point clouds; transactional invalid-box rejection; NaN retention;
+authored margins and stale-result invalidation. A diagonal rod is rejected by its
+OBB while its transformed local AABB remains admitted. Its shadow caster survives
+source-view retirement. In 256 reflected/singular/sheared hierarchy fixtures,
+sphere-enabled and box-only lists agree; an independent clip-space vertex check
+detects no rejection of a mesh containing a visible vertex. The fixture records
+123 sphere rejections, 19 full accepts and 114 box tests. These operation counts
+do not establish a frame-time speedup or a live hardware/Editor visual result.
+
+Validation: all seven selected full Debug contracts pass, including DX11 target
+and active Claw production rendering on Microsoft Basic Render Driver/WARP. All
+six isolated contracts pass in both Debug and RelWithDebInfo; `git diff --check`
+passes. Logs: `project_x64/{build,test}_obb_debug.log` and
+`project_graphics_contracts/{build,test}_obb_{debug,release}.log`. DX12/Vulkan device
+rendering was not exercised; the bounds implementation is backend-independent CPU
+code consumed through the existing native scene/Claw job paths.
+
+## Shared colour/shadow candidate publication - 17 October 2026
+
+`wp_graphics_cull_result_create_view` derives a camera/main or conservative shadow
+view from the complete immutable candidate publication. Bounds, world matrices,
+object ordering keys and ancestor/resource revisions are held once by an internal
+reference-counted snapshot. Each view owns independent camera matrices/masks,
+visible indices and ordering. It includes candidates excluded by the source view,
+so another camera can see them and off-camera shadow casters remain admitted.
+
+Derivation checks scene membership and every captured object's mesh/ancestor
+revisions before reuse. Camera-only changes may be sampled into a new view without
+recapturing valid geometry; they still invalidate an old view that captured the
+previous matrices/mask. Scene or geometry changes reject derivation. Reference
+changes, validation and view destruction are owner-thread operations. Successful
+views survive destruction of the source result and replacement/destruction of its
+preparation job. Scene, cameras and resources remain borrowed; their existing
+owner/lifetime contract is unchanged. Empty publications also support derived views.
+
+`ClawScene::prepareRenderJobs` now prepares colour once and derives shadows from
+that publication. A non-empty scene performs **one transform dispatch per pass**
+instead of two; the shadow view performs zero. Native per-view dispatch counters
+and `ClawScene::getPreparedTransformDispatchCount` expose actual preparation work.
+The older transform-array counters describe the shared publication, so clients
+must not sum them as fresh work for each derived view. Frame-end retirement and
+RTT pre-bind/post-draw validation keep their existing ordering and output retention.
+
+Validation: six selected full Debug contracts pass after normal project-reference
+builds, and all six isolated contracts pass in Debug and RelWithDebInfo. New native
+checks cover independent cameras/masks, off-camera casters, reference-list/matrix
+parity, zero derived dispatches, source/job retirement, nested views, stale object/
+ancestor/membership rejection and empty views. DX11 compares two cameras derived
+from one publication against complete synchronous reference pixel buffers, renders
+a retained view after source retirement, and verifies stale shared geometry leaves
+RTT pixels intact. The active material-aware Claw RTT test asserts one dispatch for
+its colour/shadow pass. Device: Microsoft Basic Render Driver/WARP, feature level
+`b000`, driver `10.0.19041.7802`. `git diff --check` passes.
+
+Logs: `project_x64/build_shared_views_debug.log`, `test_shared_views_debug.log`, and
+`project_graphics_contracts/{build,test}_shared_views_verified_{debug,release}.log`.
+This removes duplicate candidate capture/composition within a pass; it does not
+establish a measured whole-frame speedup. Automatic reuse across separate active
+viewport passes, shared-prefix worker composition, retained sort/capture scratch,
+async scheduling and live Editor/hardware performance remain open.
+
 ## Native transform cache and shared capture - 16 October 2026
 
 The next `PERF-07` / `SCENE-03` increment is integrated into the existing native

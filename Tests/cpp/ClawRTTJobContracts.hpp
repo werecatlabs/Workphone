@@ -247,6 +247,8 @@ public:
         auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
         if(nativeScene) {
             require(nativeScene->validateRenderJobs(), "frame must publish transform/cull dependency before draw");
+            require(nativeScene->getPreparedTransformDispatchCount()==1,
+                "active colour/shadow pass must share one transform dispatch");
             ClawHammerSystem::render();
             if(retireSceneAfterDraw) {
                 if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);

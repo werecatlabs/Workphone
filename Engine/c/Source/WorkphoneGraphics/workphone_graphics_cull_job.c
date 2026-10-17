@@ -9,6 +9,7 @@
 #include "workphone_graphics_object.h"
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_transform_job.h"
+#include "graphics_cull_bounds.h"
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
@@ -35,11 +36,25 @@ typedef struct cull_entry
     wp_s32 casts_shadows;
     wp_s32 has_bounds;
     wp_aabb3f bounds;
+    wp_graphics_obb local_obb;
+    wp_s32 has_obb;
+    wp_cull_box box;
     wp_mat4f world;
 } cull_entry;
 
+/* Reference changes occur only on the owner. Workers may read retained
+ * immutable entries but may not derive/destroy views concurrently. */
+typedef struct cull_snapshot
+{
+    cull_entry *entries;
+    wp_s32 count;
+    wp_u32 references;
+} cull_snapshot;
+
 struct wp_graphics_cull_result
 {
+    cull_snapshot *snapshot;
+    wp_u32 transform_dispatches;
     cull_entry *entries;
     wp_s32 *indices;
     const wp_graphics_scene *scene;
@@ -53,11 +68,14 @@ struct wp_graphics_cull_result
     wp_u32 scene_generation;
     wp_graphics_cull_pass pass;
     wp_transform_job_stats transform_stats;
+    wp_graphics_cull_bounds_stats bounds_stats;
+    wp_s32 sphere_test;
 };
 
 struct wp_graphics_cull_job
 {
     wp_graphics_cull_status status;
+    cull_snapshot *shared_snapshot; /* internal borrowed input for view derivation */
     cull_entry *entries;
     wp_s32 entry_count;
     wp_u32 visibility_mask;
@@ -65,6 +83,8 @@ struct wp_graphics_cull_job
     const wp_camera *camera;
     wp_u32 camera_mask, scene_mask;
     wp_mat4f view_projection, view, projection;
+    wp_cull_frustum frustum;
+    wp_s32 sphere_test;
     const wp_graphics_scene *scene;
     wp_u64 native_generation;
     wp_transform_job_system *transforms;
@@ -97,71 +117,6 @@ static void cull_job_release_result( wp_graphics_cull_job *job )
 {
     wp_graphics_cull_result_destroy( job->result );
     job->result = NULL;
-}
-
-static wp_s32 cull_entry_outside_frustum( const cull_entry *entry, const wp_mat4f *view_projection )
-{
-    wp_mat4f clip;
-    wp_s32 axis;
-    wp_s32 sign;
-    wp_f32 a, b, c, d;
-    wp_f32 x, y, z;
-    wp_f32 distance;
-    wp_f32 tolerance;
-
-    if( !entry->has_bounds )
-    {
-        return 0;
-    }
-
-    wp_mat4f_mul( &clip, view_projection, &entry->world );
-    /* Invalid transforms/planes must never make a partially valid frustum reject. */
-    for( axis = 0; axis < 16; ++axis )
-    {
-        if( !( ( (const wp_f32 *)&clip )[axis] <= FLT_MAX &&
-               ( (const wp_f32 *)&clip )[axis] >= -FLT_MAX ) )
-        {
-            return 0;
-        }
-    }
-    for( axis = 0; axis < 3; ++axis )
-    {
-        for( sign = -1; sign <= 1; sign += 2 )
-        {
-            a = clip.m[3][0] + sign * clip.m[axis][0];
-            b = clip.m[3][1] + sign * clip.m[axis][1];
-            c = clip.m[3][2] + sign * clip.m[axis][2];
-            if( fabs( a ) + fabs( b ) + fabs( c ) < 1.0e-20 )
-            {
-                return 0;
-            }
-        }
-    }
-    for( axis = 0; axis < 3; ++axis )
-    {
-        for( sign = -1; sign <= 1; sign += 2 )
-        {
-            a = clip.m[3][0] + sign * clip.m[axis][0];
-            b = clip.m[3][1] + sign * clip.m[axis][1];
-            c = clip.m[3][2] + sign * clip.m[axis][2];
-            d = clip.m[3][3] + sign * clip.m[axis][3];
-            if( fabs( a ) + fabs( b ) + fabs( c ) < 1.0e-20 )
-            {
-                return 0;
-            }
-            x = a >= 0 ? entry->bounds.max.x : entry->bounds.min.x;
-            y = b >= 0 ? entry->bounds.max.y : entry->bounds.min.y;
-            z = c >= 0 ? entry->bounds.max.z : entry->bounds.min.z;
-            distance = a * x + b * y + c * z + d;
-            tolerance =
-                (wp_f32)( 1.0e-5 * ( fabs( a * x ) + fabs( b * y ) + fabs( c * z ) + fabs( d ) + 1.0 ) );
-            if( distance < -tolerance )
-            {
-                return 1;
-            }
-        }
-    }
-    return 0;
 }
 
 static wp_s32 cull_entry_before( const cull_entry *left, const cull_entry *right )
@@ -285,6 +240,7 @@ static wp_s32 cull_capture_entry( cull_entry *entry, wp_graphics_object *obj, si
     entry->mesh_generation = mesh ? wp_graphics_mesh_get_content_generation( mesh ) : 0;
     if( mesh )
     {
+        entry->has_obb = wp_graphics_mesh_get_local_obb( mesh, &entry->local_obb );
         bounds = wp_graphics_mesh_get_local_aabb( mesh );
         if( bounds.min.x >= -FLT_MAX && bounds.max.x <= FLT_MAX && bounds.min.y >= -FLT_MAX &&
             bounds.max.y <= FLT_MAX && bounds.min.z >= -FLT_MAX && bounds.max.z <= FLT_MAX &&
@@ -315,6 +271,7 @@ wp_graphics_cull_job *wp_graphics_cull_job_create( void )
     }
     memset( job, 0, sizeof( *job ) );
     job->status = WP_GRAPHICS_CULL_STATUS_IDLE;
+    job->sphere_test = 1;
     job->transforms = wp_transform_job_system_create( NULL, 64 );
     if( !job->transforms )
     {
@@ -353,14 +310,48 @@ wp_s32 wp_graphics_cull_job_set_threadpool( wp_graphics_cull_job *job, wp_thread
     return WP_GRAPHICS_CULL_OK;
 }
 
+static void cull_capture_view( wp_graphics_cull_job *job, const wp_graphics_scene *scene,
+                               const wp_camera *camera, wp_graphics_cull_pass pass,
+                               wp_u32 scene_generation )
+{
+    wp_camera *view_camera;
+    wp_mat4f view_matrix, projection_matrix;
+    wp_u32 mask;
+    view_camera = (wp_camera *)camera;
+    if( !view_camera )
+    {
+        view_camera = scene->active_camera ? scene->active_camera : scene->default_camera;
+    }
+
+    mask = scene->visibility_mask;
+    job->has_camera = view_camera != NULL;
+    job->camera = view_camera;
+    job->camera_mask = view_camera ? wp_camera_get_visibility_mask( view_camera ) : 0;
+    if( view_camera )
+    {
+        mask &= wp_camera_get_visibility_mask( view_camera );
+        wp_camera_get_view_matrix( view_camera, &view_matrix );
+        wp_camera_get_projection_matrix( view_camera, &projection_matrix );
+        wp_mat4f_mul( &job->view_projection, &projection_matrix, &view_matrix );
+        wp_cull_prepare_frustum( &job->frustum, &job->view_projection );
+    }
+    if( view_camera )
+    {
+        job->view = view_matrix;
+        job->projection = projection_matrix;
+    }
+    job->scene = scene;
+    job->native_generation = wp_graphics_scene_get_generation( scene );
+    job->scene_mask = scene->visibility_mask;
+    job->visibility_mask = mask;
+    job->pass = pass;
+    job->scene_generation = scene_generation;
+}
+
 wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graphics_scene *scene,
                                        const wp_camera *camera, wp_graphics_cull_pass pass,
                                        wp_u32 scene_generation )
 {
-    wp_camera *view_camera;
-    wp_mat4f view_matrix;
-    wp_mat4f projection_matrix;
-    wp_u32 mask;
     wp_s32 i;
     size_t bytes;
     const wp_scenenode **nodes;
@@ -429,37 +420,13 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         for( i = 0; i < job->entry_count; ++i )
         {
             job->entries[i].world = worlds[i];
+            wp_cull_prepare_box(
+                &job->entries[i].box, job->entries[i].has_bounds ? &job->entries[i].bounds : NULL,
+                job->entries[i].has_obb ? &job->entries[i].local_obb : NULL, &worlds[i] );
         }
     }
 
-    view_camera = (wp_camera *)camera;
-    if( !view_camera )
-    {
-        view_camera = scene->active_camera ? scene->active_camera : scene->default_camera;
-    }
-
-    mask = scene->visibility_mask;
-    job->has_camera = view_camera != NULL;
-    job->camera = view_camera;
-    job->camera_mask = view_camera ? wp_camera_get_visibility_mask( view_camera ) : 0;
-    if( view_camera )
-    {
-        mask &= wp_camera_get_visibility_mask( view_camera );
-        wp_camera_get_view_matrix( view_camera, &view_matrix );
-        wp_camera_get_projection_matrix( view_camera, &projection_matrix );
-        wp_mat4f_mul( &job->view_projection, &projection_matrix, &view_matrix );
-    }
-    if( view_camera )
-    {
-        job->view = view_matrix;
-        job->projection = projection_matrix;
-    }
-    job->scene = scene;
-    job->native_generation = wp_graphics_scene_get_generation( scene );
-    job->scene_mask = scene->visibility_mask;
-    job->visibility_mask = mask;
-    job->pass = pass;
-    job->scene_generation = scene_generation;
+    cull_capture_view( job, scene, camera, pass, scene_generation );
     job->status = WP_GRAPHICS_CULL_STATUS_READY;
     return WP_GRAPHICS_CULL_OK;
 }
@@ -467,11 +434,12 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
 wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
 {
     wp_graphics_cull_result *result;
+    cull_snapshot *snapshot;
     wp_s32 *indices;
     wp_s32 *scratch;
     wp_s32 *sorted;
     wp_s32 count;
-    wp_s32 i;
+    wp_s32 i, stage, outside;
     size_t alloc_count;
     const cull_entry *entry;
 
@@ -485,11 +453,17 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     }
 
     alloc_count = job->entry_count > 0 ? (size_t)job->entry_count : 1u;
+    snapshot =
+        job->shared_snapshot ? job->shared_snapshot : (cull_snapshot *)malloc( sizeof( *snapshot ) );
     result = (wp_graphics_cull_result *)malloc( sizeof( *result ) );
     indices = (wp_s32 *)malloc( alloc_count * sizeof( wp_s32 ) );
     scratch = (wp_s32 *)malloc( alloc_count * sizeof( wp_s32 ) );
-    if( !result || !indices || !scratch )
+    if( !snapshot || !result || !indices || !scratch )
     {
+        if( !job->shared_snapshot )
+        {
+            free( snapshot );
+        }
         free( result );
         free( indices );
         free( scratch );
@@ -517,9 +491,48 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
                 continue;
             }
         }
-        else if( job->has_camera && cull_entry_outside_frustum( entry, &job->view_projection ) )
+        else if( job->has_camera )
         {
-            continue;
+            outside = wp_cull_box_outside( &entry->box, &job->frustum, job->sphere_test, &stage );
+            if( !stage )
+            {
+                ++result->bounds_stats.conservative_candidates;
+            }
+            else
+            {
+                if( job->sphere_test )
+                {
+                    ++result->bounds_stats.sphere_tests;
+                }
+                if( stage == 1 )
+                {
+                    ++result->bounds_stats.sphere_rejections;
+                }
+                if( stage == 2 )
+                {
+                    ++result->bounds_stats.sphere_inside;
+                }
+                if( stage == 3 || stage == 4 )
+                {
+                    ++result->bounds_stats.box_tests;
+                    if( entry->box.fitted )
+                    {
+                        ++result->bounds_stats.fitted_obb_tests;
+                    }
+                    else
+                    {
+                        ++result->bounds_stats.aabb_box_tests;
+                    }
+                    if( stage == 3 )
+                    {
+                        ++result->bounds_stats.box_rejections;
+                    }
+                }
+            }
+            if( outside )
+            {
+                continue;
+            }
         }
         if( !entry->has_render_func )
         {
@@ -530,6 +543,18 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
 
     sorted = cull_sort_indices( job->entries, indices, scratch, count );
 
+    if( job->shared_snapshot )
+    {
+        ++snapshot->references;
+    }
+    else
+    {
+        snapshot->entries = job->entries;
+        snapshot->count = job->entry_count;
+        snapshot->references = 1;
+    }
+    result->snapshot = snapshot;
+    result->transform_dispatches = job->shared_snapshot ? 0u : ( job->entry_count > 0 ? 1u : 0u );
     result->entries = job->entries;
     job->entries = NULL;
     result->indices = sorted;
@@ -546,6 +571,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     result->scene_generation = job->scene_generation;
     result->pass = job->pass;
     result->transform_stats = job->transform_stats;
+    result->sphere_test = job->sphere_test;
 
     free( sorted == indices ? scratch : indices );
     cull_job_release_snapshot( job );
@@ -606,11 +632,15 @@ void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result )
     {
         return;
     }
-    for( i = 0; i < result->candidate_count; ++i )
+    if( --result->snapshot->references == 0 )
     {
-        free( result->entries[i].ancestors );
+        for( i = 0; i < result->snapshot->count; ++i )
+        {
+            free( result->snapshot->entries[i].ancestors );
+        }
+        free( result->snapshot->entries );
+        free( result->snapshot );
     }
-    free( result->entries );
     free( result->indices );
     free( result );
 }
@@ -770,6 +800,84 @@ void wp_graphics_cull_result_get_transform_stats( const wp_graphics_cull_result 
     if( result )
     {
         *out = result->transform_stats;
+    }
+    else
+    {
+        memset( out, 0, sizeof( *out ) );
+    }
+}
+
+wp_u32 wp_graphics_cull_result_get_transform_dispatch_count( const wp_graphics_cull_result *result )
+{
+    return result ? result->transform_dispatches : 0;
+}
+
+wp_graphics_cull_result *wp_graphics_cull_result_create_view( const wp_graphics_cull_result *source,
+                                                              const wp_camera *camera,
+                                                              wp_graphics_cull_pass pass )
+{
+    wp_graphics_cull_job view;
+    wp_s32 i;
+    if( !source || !source->snapshot || source->snapshot->references == (wp_u32)-1 ||
+        ( pass != WP_GRAPHICS_CULL_PASS_MAIN && pass != WP_GRAPHICS_CULL_PASS_SHADOW ) )
+    {
+        return NULL;
+    }
+    /* The new view captures its own camera; only geometry/membership from the
+     * publication must still be current. Never dereference retired candidates. */
+    if( !cull_membership_valid( source, source->scene, source->scene_generation ) )
+    {
+        return NULL;
+    }
+    for( i = 0; i < source->candidate_count; ++i )
+    {
+        if( source->scene->objects[i] != source->entries[i].object ||
+            !cull_entry_valid( &source->entries[i] ) )
+        {
+            return NULL;
+        }
+    }
+    memset( &view, 0, sizeof( view ) );
+    view.entries = source->entries;
+    view.entry_count = source->candidate_count;
+    view.shared_snapshot = source->snapshot;
+    view.transform_stats = source->transform_stats;
+    view.sphere_test = source->sphere_test;
+    cull_capture_view( &view, source->scene, camera, pass, source->scene_generation );
+    view.status = WP_GRAPHICS_CULL_STATUS_READY;
+    /* Execute uses only captured entries, allocates independent indices and
+     * retains the publication on success. Failure leaves source ownership intact. */
+    if( wp_graphics_cull_job_execute( &view ) != WP_GRAPHICS_CULL_OK )
+    {
+        return NULL;
+    }
+    return wp_graphics_cull_job_take_result( &view );
+}
+
+wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *job, wp_s32 enabled )
+{
+    if( !job )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    }
+    if( job->status == WP_GRAPHICS_CULL_STATUS_READY )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
+    }
+    job->sphere_test = enabled != 0;
+    return WP_GRAPHICS_CULL_OK;
+}
+
+void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *result,
+                                               wp_graphics_cull_bounds_stats *out )
+{
+    if( !out )
+    {
+        return;
+    }
+    if( result )
+    {
+        *out = result->bounds_stats;
     }
     else
     {

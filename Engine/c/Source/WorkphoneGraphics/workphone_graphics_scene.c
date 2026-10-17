@@ -6,6 +6,7 @@
 #include "workphone_graphics_scene.h"
 #include "workphone_graphics_cull_job.h"
 #include "graphics_job_generation.h"
+#include "graphics_cull_bounds.h"
 #include "workphone_graphics_camera.h"
 #include "workphone_graphics_scenenode.h"
 #include "workphone_graphics_object.h"
@@ -93,66 +94,23 @@ static wp_s32 scene_render_object_before( const wp_graphics_object *left,
 }
 
 static wp_s32 scene_mesh_outside_frustum( const wp_graphics_object *object,
-                                          const wp_mat4f *view_projection )
+                                          const wp_cull_frustum *frustum )
 {
-    wp_graphics_mesh *mesh;
-    wp_aabb3f bounds;
+    wp_graphics_mesh *mesh = wp_graphics_object_get_mesh( object );
+    wp_graphics_obb obb;
+    wp_aabb3f aabb;
     wp_mat4f world;
-    wp_mat4f clip;
-    wp_s32 axis;
-    wp_s32 sign;
-    wp_f32 a, b, c, d;
-    wp_f32 x, y, z;
-    wp_f32 distance;
-    wp_f32 tolerance;
-
-    mesh = wp_graphics_object_get_mesh( object );
+    wp_cull_box box;
+    wp_s32 stage;
     if( !mesh )
-        return 0;
-    /* Read current mesh bounds: the object's copy can predate a mesh reload. */
-    bounds = wp_graphics_mesh_get_local_aabb( mesh );
-    if( !( bounds.min.x >= -FLT_MAX && bounds.max.x <= FLT_MAX && bounds.min.y >= -FLT_MAX &&
-           bounds.max.y <= FLT_MAX && bounds.min.z >= -FLT_MAX && bounds.max.z <= FLT_MAX &&
-           bounds.min.x <= bounds.max.x && bounds.min.y <= bounds.max.y &&
-           bounds.min.z <= bounds.max.z ) ||
-        ( bounds.min.x == bounds.max.x && bounds.min.y == bounds.max.y &&
-          bounds.min.z == bounds.max.z ) )
     {
         return 0;
     }
-
+    aabb = wp_graphics_mesh_get_local_aabb( mesh );
     wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &world );
-    wp_mat4f_mul( &clip, view_projection, &world );
-    for( axis = 0; axis < 16; ++axis )
-    {
-        if( !( ( (const wp_f32 *)&clip )[axis] <= FLT_MAX &&
-               ( (const wp_f32 *)&clip )[axis] >= -FLT_MAX ) )
-        {
-            return 0;
-        }
-    }
-    /* Camera matrices use -w <= x,y,z <= w (DX11 remaps z in its vertex shader).
-     * Extract the planes in local space and test each box's furthest vertex.
-     * This also handles parent transforms, rotations and negative scales. */
-    for( axis = 0; axis < 3; ++axis )
-    {
-        for( sign = -1; sign <= 1; sign += 2 )
-        {
-            a = clip.m[3][0] + sign * clip.m[axis][0];
-            b = clip.m[3][1] + sign * clip.m[axis][1];
-            c = clip.m[3][2] + sign * clip.m[axis][2];
-            d = clip.m[3][3] + sign * clip.m[axis][3];
-            x = a >= 0 ? bounds.max.x : bounds.min.x;
-            y = b >= 0 ? bounds.max.y : bounds.min.y;
-            z = c >= 0 ? bounds.max.z : bounds.min.z;
-            distance = a * x + b * y + c * z + d;
-            tolerance = (wp_f32)( 1.0e-5 * ( fabs( a * x ) + fabs( b * y ) +
-                                            fabs( c * z ) + fabs( d ) + 1.0 ) );
-            if( distance < -tolerance )
-                return 1;
-        }
-    }
-    return 0;
+    wp_cull_prepare_box( &box, &aabb, wp_graphics_mesh_get_local_obb( mesh, &obb ) ? &obb : NULL,
+                         &world );
+    return wp_cull_box_outside( &box, frustum, 1, &stage );
 }
 
 static wp_s32 scene_ensure_render_capacity( wp_graphics_scene *scene, wp_s32 required )
@@ -945,6 +903,7 @@ void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer
     wp_mat4f view_matrix;
     wp_mat4f projection_matrix;
     wp_mat4f view_projection;
+    wp_cull_frustum frustum;
 
     if( !scene || !renderer || scene->object_count <= 0 )
     {
@@ -965,6 +924,7 @@ void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer
         wp_camera_get_view_matrix( camera, &view_matrix );
         wp_camera_get_projection_matrix( camera, &projection_matrix );
         wp_mat4f_mul( &view_projection, &projection_matrix, &view_matrix );
+        wp_cull_prepare_frustum( &frustum, &view_projection );
         wp_renderer_set_view_matrix( renderer, &view_matrix );
         wp_renderer_set_projection_matrix( renderer, &projection_matrix );
     }
@@ -983,7 +943,7 @@ void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer
             continue;
         }
 
-        if( camera && scene_mesh_outside_frustum( obj, &view_projection ) )
+        if( camera && scene_mesh_outside_frustum( obj, &frustum ) )
         {
             continue;
         }

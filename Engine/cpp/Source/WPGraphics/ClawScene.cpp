@@ -866,8 +866,8 @@ namespace workphone
             auto jobs = std::make_shared<NativeRenderJobs>();
             jobs->camera = camera;
             jobs->main = wp_graphics_scene_prepare_cull( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN );
-            jobs->shadow =
-                wp_graphics_scene_prepare_cull( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
+            jobs->shadow = wp_graphics_cull_result_create_view(
+                jobs->main, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
             if( !jobs->main || !jobs->shadow )
             {
                 return false;
@@ -887,6 +887,13 @@ namespace workphone
                        m_nativeRenderJobs->shadow, m_scene,
                        static_cast<wp_u32>( wp_graphics_scene_get_generation( m_scene ) ) ) ==
                        WP_GRAPHICS_CULL_OK;
+        }
+
+        u32 ClawScene::getPreparedTransformDispatchCount() const
+        {
+            return m_nativeRenderJobs ?
+                wp_graphics_cull_result_get_transform_dispatch_count(m_nativeRenderJobs->main) +
+                wp_graphics_cull_result_get_transform_dispatch_count(m_nativeRenderJobs->shadow) : 0;
         }
 
         void ClawScene::discardRenderJobs()
