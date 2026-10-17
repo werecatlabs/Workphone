@@ -28,6 +28,8 @@ typedef struct wp_bench_sample
     wp_graphics_cull_storage_stats storage;
     wp_graphics_cull_timing_stats timing;
     wp_u32 visible, multiplies;
+    wp_u64 hash_probes, hash_collisions;
+    wp_u32 hash_fallbacks;
 } wp_bench_sample;
 
 static double wp_bench_frequency;
@@ -109,6 +111,9 @@ static int wp_bench_frame( wp_graphics_scene *scene, wp_camera *camera, wp_u32 e
     wp_graphics_cull_result_get_storage_stats( result, &sample->storage );
     wp_graphics_cull_result_get_transform_stats( result, &transforms );
     sample->multiplies = transforms.matrix_multiply_count;
+    sample->hash_probes = transforms.capture_hash_probes;
+    sample->hash_collisions = transforms.capture_hash_collisions;
+    sample->hash_fallbacks = transforms.capture_hash_fallbacks;
     if( !wp_graphics_cull_result_get_timing_stats( result, &sample->timing ) && wp_bench_profile_phases )
     {
         wp_graphics_cull_result_destroy( result );
@@ -227,7 +232,8 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
              "sphere_tests,box_tests,sat_tests,group_tests,group_rejections,group_inside,publication_"
              "bytes,view_peak_bytes,map_bytes,class_bytes,phases_available,capture_ns,transform_ns,"
              "bounds_ns,groups_ns,view_ns,visibility_ns,sort_ns,publish_ns,transform_hierarchy_ns,"
-             "transform_unique_ns,transform_locals_ns,transform_prefixes_ns,transform_submit_ns,transform_wait_ns\n" );
+             "transform_unique_ns,transform_locals_ns,transform_prefixes_ns,transform_submit_ns,transform_wait_ns,"
+             "hash_probes,hash_collisions,hash_fallbacks,entry_bytes,ancestor_bytes,ancestor_refs,ancestor_allocs\n" );
     fprintf( stderr, "Headless CPU only; QPC %.0f Hz; sample-buffer %lu bytes; no GPU/readback.\n",
              wp_bench_frequency, (unsigned long)( WP_BENCH_SAMPLE_LIMIT * sizeof( *samples ) ) );
     for( pair = 0; pair < pairs; ++pair )
@@ -269,7 +275,7 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
                 wp_bench_sample *s = &samples[i];
                 fprintf( file,
                          "%lu,%lu,%s,%lu,%.0f,%.0f,%.0f,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%.0f,%.0f,%."
-                         "0f,%.0f,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f\n",
+                         "0f,%.0f,%d,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%.0f,%lu,%.0f,%.0f,%lu,%lu\n",
                          (unsigned long)( pair + 1u ), (unsigned long)order, mode ? "spatial" : "flat",
                          (unsigned long)i, s->prepare_ns, s->retire_ns, s->prepare_ns + s->retire_ns,
                          (unsigned long)objects, (unsigned long)s->visible, (unsigned long)s->multiplies,
@@ -285,7 +291,12 @@ int wp_graphics_cull_benchmark_main( int argc, char **argv )
                          (double)s->timing.sort_ns, (double)s->timing.publish_ns,
                          (double)s->timing.transform_hierarchy_ns, (double)s->timing.transform_unique_ns,
                          (double)s->timing.transform_locals_ns, (double)s->timing.transform_prefixes_ns,
-                         (double)s->timing.transform_submit_ns, (double)s->timing.transform_wait_ns );
+                         (double)s->timing.transform_submit_ns, (double)s->timing.transform_wait_ns,
+                         (double)s->hash_probes, (double)s->hash_collisions,
+                         (unsigned long)s->hash_fallbacks, (double)s->storage.entry_bytes,
+                         (double)s->storage.ancestor_bytes,
+                         (unsigned long)s->storage.ancestor_reference_count,
+                         (unsigned long)s->storage.ancestor_allocations );
             }
             if( ferror( file ) || fflush( file ) )
             {

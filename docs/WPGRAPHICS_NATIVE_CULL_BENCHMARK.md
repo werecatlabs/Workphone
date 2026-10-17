@@ -36,7 +36,7 @@ runs with the same switch and do not assume overhead meets the plan's 2% target.
 The third command is a short diagnostic, not a timing-protocol performance run.
 
 Six `transform_*` subphases are nested inside `transform_ns`: hierarchy traversal,
-global reference sorting/deduplication (`unique`), local-matrix capture, prefix
+global reference deduplication (`unique`), local-matrix capture, prefix
 planning, submission and wait/publication. Do not add these to the eight main
 phases. Prefix planning now uses a dense lookup in existing reference scratch,
 removing its second comparison sort without another allocation. With inline
@@ -46,6 +46,26 @@ concurrently. `transform_wait_ns` measures remaining wait and destination copy.
 These are owner intervals; no clock is called on a worker and they do not report
 individual worker CPU time. Rejected dispatch preserves the last accepted timing
 sample; cancelled/running/unprofiled/invalid-clock samples are unavailable.
+
+Global deduplication now uses chained hash lookup in the existing reference
+scratch, with packed unique nodes and bucket heads stored in independent fields.
+No extra buffer is allocated. Sixty-four unequal comparisons in one lookup
+trigger the retained comparison-sort fallback. `hash_probes`, `hash_collisions`
+and `hash_fallbacks` are copied per frame; the summary also counts frames that
+fell back. Probes count node comparisons and collisions count unequal comparisons.
+On fallback these counters cover the attempted hash work, not sort comparisons.
+Local indices follow first encounter on the hash path and pointer order on the
+fallback; public output order and root-to-leaf matrix arithmetic stay unchanged.
+
+Ancestor revisions now occupy one exact-sized array per shared cull publication;
+entry records point into slices of it. Schema 5 records `entry_bytes`,
+`ancestor_bytes`, `ancestor_refs` and `ancestor_allocs`. Ancestor allocation count
+is zero for unowned/empty captures and one when revisions exist. Derived views
+report the root publication's metadata; count these allocations once across its
+views. This is a census of that array's allocation only, excluding other capture,
+transform, result, sort and allocator work. Publication array bytes are entries
+plus ancestors plus group/map arrays. Result retirement frees the ancestor array
+only when the last retained view releases the publication.
 
 Capture includes entry and ancestor allocations. Transform includes node-array
 setup, dispatch and wait, rather than pure matrix arithmetic. Visibility includes

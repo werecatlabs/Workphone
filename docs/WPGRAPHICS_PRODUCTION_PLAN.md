@@ -188,7 +188,15 @@ deduplication, local capture, prefix planning, submission and wait. Prefix plann
 uses an owner-only dense lookup in existing scratch, eliminating its second sort
 without increasing storage or changing multiplication counts. Inline submission
 includes composition; pooled submission/wait does not measure worker CPU. The
-remaining global deduplication sort is a subsequent capture target. Short diagnostic
+global deduplication now also uses chained hash lookup within the existing reference
+array. Bounded collision work falls back to the comparison sort; native and active
+statistics expose probes/collisions/fallbacks. No extra capture buffer is allocated,
+and forced-fallback contracts verify reference matrices. Ancestor revisions now
+occupy one exact-sized shared array with per-entry slices instead of per-object
+allocations. All hidden/visible candidate paths remain validated, and the last
+retained view releases the array. Native/Claw/benchmark metadata separates entry
+and ancestor bytes and counts this array's allocation once per publication.
+Short diagnostic
 runs do not satisfy the representative timing gate.
 
 ## 6. Milestones and work packages

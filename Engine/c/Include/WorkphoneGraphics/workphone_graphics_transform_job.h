@@ -39,7 +39,7 @@ typedef struct wp_transform_job_stats
     /* Planned/executed after draining: one multiplication per unique ancestor
      * within each cached batch; uncached fallback uses path_reference_count. */
     wp_u32 matrix_multiply_count, batch_count;
-    /* Per accepted capture, for reference-sort scratch only (not all job allocations).
+    /* Per accepted capture, for reference/hash/prefix scratch (not all allocations).
      * Exact-size reuse retains storage after scrubbing every borrowed pointer. */
     wp_u32 capture_scratch_allocations, capture_scratch_reuses;
     /* Private integer path records, separate from the published matrix output.
@@ -54,6 +54,12 @@ typedef struct wp_transform_job_stats
     wp_u32 capture_prefix_allocations, capture_prefix_reuses;
     wp_u64 capture_scratch_bytes;
     wp_u64 retained_snapshot_bytes, capture_peak_bytes;
+    /* Pointer comparisons in hash chains; unequal comparisons are collisions.
+     * Buckets share the existing reference array (path_reference_count slots).
+     * A bounded chain falls back to comparison sorting; counters then describe
+     * the attempted hash portion, not the fallback sort. */
+    wp_u64 capture_hash_probes, capture_hash_collisions;
+    wp_u32 capture_hash_fallbacks;
 } wp_transform_job_stats;
 
 void wp_transform_job_system_get_stats( const wp_transform_job_system *, wp_transform_job_stats * );

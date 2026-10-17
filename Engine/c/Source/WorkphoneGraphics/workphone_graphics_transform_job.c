@@ -3,6 +3,9 @@
 #include <string.h>
 #define WP_TRANSFORM_CHAIN_LIMIT 257u
 #define WP_TRANSFORM_BYTE_LIMIT ( 64u * 1024u * 1024u )
+#ifndef WP_TRANSFORM_HASH_CHAIN_LIMIT
+#    define WP_TRANSFORM_HASH_CHAIN_LIMIT 64u
+#endif
 
 typedef struct wp_transform_path
 {
@@ -20,6 +23,110 @@ static int wp_transform_reference_compare( const void *left, const void *right )
     uintptr_t a = (uintptr_t)( (const wp_transform_reference *)left )->node;
     uintptr_t b = (uintptr_t)( (const wp_transform_reference *)right )->node;
     return a < b ? -1 : a > b ? 1 : 0;
+}
+
+static wp_u32 wp_transform_node_bucket( const wp_scenenode *node, wp_u32 buckets )
+{
+    wp_u64 address = (wp_u64)(uintptr_t)node;
+    wp_u32 hash = (wp_u32)( address >> 4 ) ^ (wp_u32)( address >> 32 );
+    hash ^= hash >> 16;
+    hash *= 0x7feb352du;
+    hash ^= hash >> 15;
+    hash *= 0x846ca68bu;
+    hash ^= hash >> 16;
+    return hash % buckets;
+}
+
+/* The same array stores packed unique nodes/next links and bucket heads in
+ * independent fields. There are no more unique nodes than path references.
+ * After local capture its batch fields become the existing prefix lookup. */
+static wp_s32 wp_transform_hash_references( const wp_scenenode *const *nodes,
+                                            const wp_transform_path *paths, wp_u32 count,
+                                            wp_u32 total, wp_transform_reference *references,
+                                            wp_u32 *indices, wp_u32 *unique,
+                                            wp_u64 *probes, wp_u64 *collisions )
+{
+    const wp_scenenode *node;
+    wp_u32 i, j, bucket, slot, steps;
+    *unique = 0;
+    for( i = 0; i < total; ++i )
+    {
+        references[i].node = NULL;
+        references[i].reference = 0;
+        references[i].batch = (wp_u32)-1;
+    }
+    for( i = 0; i < count; ++i )
+    {
+        node = nodes[i];
+        for( j = 0; j < paths[i].count; ++j )
+        {
+            bucket = wp_transform_node_bucket( node, total );
+            slot = references[bucket].batch;
+            steps = 0;
+            while( slot != (wp_u32)-1 )
+            {
+                ++*probes;
+                if( references[slot].node == node )
+                {
+                    break;
+                }
+                ++*collisions;
+                if( ++steps >= WP_TRANSFORM_HASH_CHAIN_LIMIT )
+                {
+                    return 0;
+                }
+                slot = references[slot].reference;
+            }
+            if( slot == (wp_u32)-1 )
+            {
+                slot = ( *unique )++;
+                references[slot].node = node;
+                references[slot].reference = references[bucket].batch;
+                references[bucket].batch = slot;
+            }
+            indices[paths[i].start + j] = slot;
+            node = wp_scenenode_get_parent( node );
+        }
+    }
+    return 1;
+}
+
+/* Bounded hash collisions may require the original comparison-sort path. Pack
+ * unique nodes at the front only after mapping each sorted reference to a local
+ * index. A separate previous pointer avoids reading overwritten packed slots. */
+static wp_u32 wp_transform_sort_references( const wp_scenenode *const *nodes,
+                                             const wp_transform_path *paths, wp_u32 count,
+                                             wp_u32 total, wp_transform_reference *references,
+                                             wp_u32 *indices )
+{
+    const wp_scenenode *node, *previous = NULL;
+    wp_u32 i, j, start, unique = 0;
+    for( i = 0; i < count; ++i )
+    {
+        node = nodes[i];
+        for( j = 0; j < paths[i].count; ++j )
+        {
+            start = paths[i].start + j;
+            references[start].node = node;
+            references[start].reference = start;
+            node = wp_scenenode_get_parent( node );
+        }
+    }
+    if( total )
+    {
+        qsort( references, total, sizeof( *references ), wp_transform_reference_compare );
+    }
+    for( i = 0; i < total; ++i )
+    {
+        node = references[i].node;
+        if( !i || node != previous )
+        {
+            references[unique++].node = node;
+            previous = node;
+        }
+        indices[references[i].reference] = unique - 1u;
+    }
+    return unique;
 }
 
 /* Each slot belongs to exactly one batch, including shared ancestors. No worker
@@ -259,6 +366,8 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     wp_transform_job_timing_stats timing;
     wp_u64 stamp = 0;
     wp_s32 timing_valid;
+    wp_u64 hash_probes = 0, hash_collisions = 0;
+    wp_u32 hash_fallbacks = 0;
     if( !s || s->status == WP_TRANSFORM_RUNNING || ( count && !nodes ) )
     {
         return 0;
@@ -320,7 +429,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     }
     batch_count = count / s->batch_size + ( count % s->batch_size != 0 );
     wp_transform_time_phase( s, &stamp, &timing_valid, &timing.hierarchy_ns );
-    /* Sort borrowed references on the owner to capture each unique node once.
+    /* Deduplicate borrowed references on the owner to capture each unique node once.
      * Workers receive only owned matrices and integer path indices. Scratch and
      * retained arrays together must fit the snapshot limit. */
     bytes = (size_t)total * ( sizeof( wp_transform_reference ) + sizeof( wp_u32 ) ) +
@@ -366,28 +475,11 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         }
         return 0;
     }
-    for( i = 0; i < count; ++i )
+    if( !wp_transform_hash_references( nodes, paths, count, total, references, indices,
+                                       &unique, &hash_probes, &hash_collisions ) )
     {
-        node = nodes[i];
-        for( j = 0; j < paths[i].count; ++j )
-        {
-            start = paths[i].start + j;
-            references[start].node = node;
-            references[start].reference = start;
-            references[start].batch = 0;
-            node = wp_scenenode_get_parent( node );
-        }
-    }
-    if( total )
-    {
-        qsort( references, total, sizeof( *references ), wp_transform_reference_compare );
-    }
-    for( i = 0; i < total; ++i )
-    {
-        if( !i || references[i].node != references[i - 1].node )
-        {
-            ++unique;
-        }
+        unique = wp_transform_sort_references( nodes, paths, count, total, references, indices );
+        hash_fallbacks = 1;
     }
     bytes += (size_t)unique * sizeof( wp_mat4f );
     wp_transform_time_phase( s, &stamp, &timing_valid, &timing.unique_ns );
@@ -437,15 +529,9 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         }
         return 0;
     }
-    unique = 0;
-    for( i = 0; i < total; ++i )
+    for( i = 0; i < unique; ++i )
     {
-        if( !i || references[i].node != references[i - 1].node )
-        {
-            wp_scenenode_get_local_matrix( references[i].node, &locals[unique] );
-            ++unique;
-        }
-        indices[references[i].reference] = unique - 1u;
+        wp_scenenode_get_local_matrix( references[i].node, &locals[i] );
     }
     wp_transform_time_phase( s, &stamp, &timing_valid, &timing.locals_ns );
     if( total && s->batch_size > 1u && count > 1u )
@@ -571,6 +657,9 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     s->stats.path_reference_count = total;
     s->stats.matrix_multiply_count = prefix_count;
     s->stats.batch_count = batch_count;
+    s->stats.capture_hash_probes = hash_probes;
+    s->stats.capture_hash_collisions = hash_collisions;
+    s->stats.capture_hash_fallbacks = hash_fallbacks;
     s->stats.capture_scratch_allocations = total && !reused;
     s->stats.capture_scratch_reuses = reused;
     s->stats.capture_path_allocations = count && !reused_paths;

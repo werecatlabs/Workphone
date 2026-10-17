@@ -35,7 +35,7 @@ $manifestPath=Join-Path $output 'manifest.json'
 $csvPath=Join-Path $output 'frames.csv'
 $summaryPath=Join-Path $output 'summary.json'
 $manifest=[ordered]@{
-    schema_version=3
+    schema_version=5
     status='RUNNING'; started_utc=[DateTime]::UtcNow.ToString('o'); scope='Headless native CPU preparation and result retirement; no GPU, draw, Present, Editor or image timings.'
     protocol_eligible=(-not $Smoke); fixture='seeded_static_interleaved_10_clusters_10_percent_visible'
     objects=$Objects; expected_visible=[int][Math]::Ceiling($Objects/10.0); seed=$Seed; workers=$Workers
@@ -107,6 +107,9 @@ try {
     if ($manifest.executable_sha256 -ne (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash) { throw 'Benchmark executable changed during measurement.' }
     $rows=@(Import-Csv -LiteralPath $csvPath)
     if (-not $rows.Count) { throw 'No raw samples produced.' }
+    foreach($column in @('hash_probes','hash_collisions','hash_fallbacks','entry_bytes','ancestor_bytes','ancestor_refs','ancestor_allocs')) {
+        if (-not $rows[0].PSObject.Properties[$column]) { throw "Benchmark CSV is missing schema 5 column: $column. Rebuild the executable." }
+    }
     $runs=@(foreach($group in ($rows | Group-Object pair,mode)) {
         $first=$group.Group[0]
         if (@($group.Group | Where-Object { [int]$_.candidates -ne $Objects -or [int]$_.visible -ne $manifest.expected_visible }).Count) { throw 'Unexpected work/visibility in raw samples.' }
@@ -121,10 +124,11 @@ try {
         [ordered]@{
             pair=[int]$first.pair; order=[int]$first.order; mode=$first.mode; frames=$group.Count
             phases=$phases
+            hash_fallback_frames=@($group.Group | Where-Object { [int]$_.hash_fallbacks -ne 0 }).Count
             prepare=(Get-Distribution ($group.Group | ForEach-Object { [double]::Parse($_.prepare_ns,$culture) }))
             retire=(Get-Distribution ($group.Group | ForEach-Object { [double]::Parse($_.retire_ns,$culture) }))
             lifecycle=(Get-Distribution ($group.Group | ForEach-Object { [double]::Parse($_.lifecycle_ns,$culture) }))
-            work=$first | Select-Object candidates,visible,multiplies,sphere_tests,box_tests,sat_tests,group_tests,group_rejections,group_inside,publication_bytes,view_peak_bytes,map_bytes,class_bytes
+            work=$first | Select-Object candidates,visible,multiplies,sphere_tests,box_tests,sat_tests,group_tests,group_rejections,group_inside,publication_bytes,view_peak_bytes,map_bytes,class_bytes,hash_probes,hash_collisions,hash_fallbacks,entry_bytes,ancestor_bytes,ancestor_refs,ancestor_allocs
         }
     })
     if ($runs.Count -ne 2*$Pairs) { throw 'Incomplete paired run set.' }
@@ -134,7 +138,7 @@ try {
         if ($flat.order -ne (($pair-1)%2) -or $spatial.order -ne (1-(($pair-1)%2))) { throw 'Unexpected A/B order.' }
         [ordered]@{ pair=$pair; flat_median_ms=$flat.lifecycle.p50_ms; spatial_median_ms=$spatial.lifecycle.p50_ms; spatial_change_percent=100*($spatial.lifecycle.p50_ms/$flat.lifecycle.p50_ms-1) }
     })
-    $report=[ordered]@{ schema_version=3; scope=$manifest.scope; profile_phases=[bool]$ProfilePhases; protocol_eligible=$manifest.protocol_eligible; runs=$runs; paired=$paired; raw_samples=$rows.Count; interpretation='CPU fixture evidence only. Lower geometry work does not establish GPU/Editor or representative frame-time improvement.' }
+    $report=[ordered]@{ schema_version=5; scope=$manifest.scope; profile_phases=[bool]$ProfilePhases; protocol_eligible=$manifest.protocol_eligible; runs=$runs; paired=$paired; raw_samples=$rows.Count; interpretation='CPU fixture evidence only. Lower geometry work does not establish GPU/Editor or representative frame-time improvement.' }
     $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $summaryPath -Encoding utf8
     $manifest.git_head_after=(& git -C $root rev-parse HEAD) -join ''
     $manifest.git_status_after=@(& git -C $root status --short)
