@@ -149,6 +149,9 @@ namespace workphone
                 u64 pathAllocations = 0, pathReuses = 0;
                 u64 indexAllocations = 0, indexReuses = 0;
                 u64 batchAllocations = 0, batchReuses = 0;
+                u64 localAllocations = 0, localReuses = 0;
+                u64 prefixAllocations = 0, prefixReuses = 0;
+                u64 sortChecks = 0, sortPasses = 0, sortAllocations = 0, sortBytes = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
                     satAxes = 0, satFallbacks = 0;
             } work;
@@ -269,6 +272,14 @@ namespace workphone
                 work.indexReuses += pass.work.indexReuses;
                 work.batchAllocations += pass.work.batchAllocations;
                 work.batchReuses += pass.work.batchReuses;
+                work.localAllocations += pass.work.localAllocations;
+                work.localReuses += pass.work.localReuses;
+                work.prefixAllocations += pass.work.prefixAllocations;
+                work.prefixReuses += pass.work.prefixReuses;
+                work.sortChecks += pass.work.sortChecks;
+                work.sortPasses += pass.work.sortPasses;
+                work.sortAllocations += pass.work.sortAllocations;
+                work.sortBytes += pass.work.sortBytes;
                 work.pathAllocations += pass.work.pathAllocations;
                 work.pathReuses += pass.work.pathReuses;
                 work.sphereTests += pass.work.sphereTests;
@@ -279,14 +290,16 @@ namespace workphone
                 work.satAxes += pass.work.satAxes;
                 work.satFallbacks += pass.work.satFallbacks;
             }
-            char preparation[1024];
+            char preparation[1536];
             std::snprintf(
                 preparation, sizeof( preparation ),
                 "\nPreparation last frame: views=%llu candidates=%llu main-visible=%llu "
                 "transform dispatches=%llu matrix multiplies=%llu sphere tests=%llu rejects=%llu "
                 "box tests=%llu SAT tests=%llu rejects=%llu axes=%llu fallbacks=%llu "
                 "reference scratch allocs=%llu reuses=%llu path records allocs=%llu reuses=%llu "
-                "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu",
+                "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu "
+                "local matrices allocs=%llu reuses=%llu prefix cache allocs=%llu reuses=%llu "
+                "main sort checks=%llu passes=%llu scratch allocs=%llu bytes=%llu",
                 (unsigned long long)work.views, (unsigned long long)work.candidates,
                 (unsigned long long)work.visible, (unsigned long long)work.dispatches,
                 (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
@@ -296,7 +309,11 @@ namespace workphone
                 (unsigned long long)work.scratchAllocations, (unsigned long long)work.scratchReuses,
                 (unsigned long long)work.pathAllocations, (unsigned long long)work.pathReuses,
                 (unsigned long long)work.indexAllocations, (unsigned long long)work.indexReuses,
-                (unsigned long long)work.batchAllocations, (unsigned long long)work.batchReuses );
+                (unsigned long long)work.batchAllocations, (unsigned long long)work.batchReuses,
+                (unsigned long long)work.localAllocations, (unsigned long long)work.localReuses,
+                (unsigned long long)work.prefixAllocations, (unsigned long long)work.prefixReuses,
+                (unsigned long long)work.sortChecks, (unsigned long long)work.sortPasses,
+                (unsigned long long)work.sortAllocations, (unsigned long long)work.sortBytes );
             result += preparation;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
@@ -781,9 +798,14 @@ namespace workphone
                                 }
                                 wp_transform_job_stats transforms{};
                                 wp_graphics_cull_bounds_stats bounds{};
+                                wp_graphics_cull_sort_stats sort{};
                                 wp_u32 candidates = 0, visible = 0;
                                 clawScene->getPreparedJobStatistics( &transforms, &bounds, &candidates,
-                                                                     &visible );
+                                                                     &visible, &sort );
+                                pass.work.sortChecks += sort.order_checks;
+                                pass.work.sortPasses += sort.merge_passes;
+                                pass.work.sortAllocations += sort.scratch_allocations;
+                                pass.work.sortBytes += sort.scratch_bytes;
                                 ++pass.work.views;
                                 pass.work.candidates += candidates;
                                 pass.work.visible += visible;
@@ -797,6 +819,10 @@ namespace workphone
                                 pass.work.indexReuses += transforms.capture_index_reuses;
                                 pass.work.batchAllocations += transforms.capture_batch_allocations;
                                 pass.work.batchReuses += transforms.capture_batch_reuses;
+                                pass.work.localAllocations += transforms.capture_local_allocations;
+                                pass.work.localReuses += transforms.capture_local_reuses;
+                                pass.work.prefixAllocations += transforms.capture_prefix_allocations;
+                                pass.work.prefixReuses += transforms.capture_prefix_reuses;
                                 pass.work.sphereTests += bounds.sphere_tests;
                                 pass.work.sphereRejects += bounds.sphere_rejections;
                                 pass.work.boxTests += bounds.box_tests;

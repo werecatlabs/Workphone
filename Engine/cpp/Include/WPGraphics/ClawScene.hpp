@@ -8,6 +8,7 @@
 #include <mutex>
 struct wp_transform_job_stats;
 struct wp_graphics_cull_bounds_stats;
+struct wp_graphics_cull_sort_stats;
 
 namespace workphone
 {
@@ -104,7 +105,8 @@ namespace workphone
              * view. Optional outputs are zeroed after retirement; stale prepared
              * jobs still report work performed, without certifying draw validity. */
             bool getPreparedJobStatistics( wp_transform_job_stats *, wp_graphics_cull_bounds_stats *,
-                                           wp_u32 *candidates, wp_u32 *visible ) const;
+                                           wp_u32 *candidates, wp_u32 *visible,
+                                           wp_graphics_cull_sort_stats *sort = nullptr ) const;
             void discardRenderJobs();
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;

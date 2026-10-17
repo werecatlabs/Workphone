@@ -664,6 +664,139 @@ static void retained_capture_indices_and_batches( void )
         "independent resize and empty release passed." );
 }
 
+static void retained_capture_matrices( wp_u32 workers )
+{
+    wp_scenenode *root_a = wp_scenenode_create(), *root_b = wp_scenenode_create();
+    wp_scenenode *leaf_a = wp_scenenode_create(), *leaf_b = wp_scenenode_create();
+    const wp_scenenode *nodes[4];
+    wp_threadpool *pool = workers ? wp_threadpool_create( workers ) : NULL;
+    wp_transform_job_system *job = wp_transform_job_system_create( pool, 2 );
+    wp_transform_job_stats stats;
+    wp_mat4f out[4], expected, sentinel;
+    const wp_mat4f *published;
+    wp_vec3f p = { 7, -2, 3 }, scale = { -2, 3, 0.5f };
+    int i, step;
+    wp_scenenode_add_child( root_a, leaf_a );
+    wp_scenenode_add_child( root_b, leaf_b );
+    wp_scenenode_set_position( root_b, p );
+    wp_scenenode_set_scale( root_b, scale );
+    for( i = 0; i < 4; ++i )
+    {
+        nodes[i] = leaf_a;
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_allocations == 1 && !stats.capture_local_reuses &&
+           stats.capture_prefix_allocations == 1 && !stats.capture_prefix_reuses &&
+           stats.matrix_multiply_count == 4 );
+    for( step = 0; step < 3; ++step )
+    {
+        /* Equal counts with entirely different source identities, then reparent,
+         * then a local edit. Ready prefixes must never reuse previous worlds. */
+        if( step == 1 )
+        {
+            wp_scenenode_set_parent( leaf_b, root_a );
+        }
+        p.x += 2;
+        wp_scenenode_set_position( leaf_b, p );
+        for( i = 0; i < 4; ++i )
+        {
+            nodes[i] = leaf_b;
+        }
+        CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+        wp_transform_job_system_get_stats( job, &stats );
+        CHECK( stats.capture_local_reuses == 1 && !stats.capture_local_allocations &&
+               stats.capture_prefix_reuses == 1 && !stats.capture_prefix_allocations );
+        reference_world( leaf_b, &expected );
+        for( i = 0; i < 4; ++i )
+        {
+            CHECK( !memcmp( &expected, &out[i], sizeof( expected ) ) );
+        }
+    }
+    published = wp_transform_job_system_get_result( job, NULL, NULL );
+    CHECK( !wp_transform_job_system_dispatch_snapshot( job, nodes, UINT_MAX, 101 ) );
+    CHECK( wp_transform_job_system_get_result( job, NULL, NULL ) == published &&
+           !memcmp( &expected, &published[0], sizeof( expected ) ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && stats.capture_prefix_reuses == 1 );
+    memset( &sentinel, 0xAB, sizeof( sentinel ) );
+    for( i = 0; i < 4; ++i )
+    {
+        out[i] = sentinel;
+    }
+    CHECK( wp_transform_job_system_dispatch( job, nodes, out, 4 ) );
+    wp_transform_job_system_cancel( job );
+    for( i = 0; i < 4; ++i )
+    {
+        CHECK( !memcmp( &out[i], &sentinel, sizeof( sentinel ) ) );
+    }
+    p.y = 9;
+    wp_scenenode_set_position( root_a, p );
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && stats.capture_prefix_reuses == 1 );
+    reference_world( leaf_b, &expected );
+    CHECK( !memcmp( &out[3], &expected, sizeof( expected ) ) );
+    /* Two leaves sharing a root require three locals and six cached prefixes. */
+    nodes[0] = leaf_a;
+    nodes[2] = leaf_a;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.local_matrix_count == 3 && stats.matrix_multiply_count == 6 &&
+           stats.capture_local_allocations == 1 && !stats.capture_local_reuses &&
+           stats.capture_prefix_allocations == 1 && !stats.capture_prefix_reuses );
+    /* Same locals, no repeated nodes within a batch: drop the optional cache. */
+    nodes[1] = NULL;
+    nodes[3] = NULL;
+    nodes[2] = leaf_b;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && !stats.capture_prefix_allocations &&
+           !stats.capture_prefix_reuses && stats.matrix_multiply_count == 4 );
+    for( i = 0; i < 4; ++i )
+    {
+        reference_world( nodes[i], &expected );
+        CHECK( !memcmp( &out[i], &expected, sizeof( expected ) ) );
+    }
+    nodes[0] = leaf_a;
+    nodes[1] = leaf_b;
+    nodes[2] = leaf_a;
+    nodes[3] = leaf_b;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_reuses == 1 && stats.capture_prefix_allocations == 1 &&
+           !stats.capture_prefix_reuses );
+    for( i = 0; i < 4; ++i )
+    {
+        reference_world( nodes[i], &expected );
+        CHECK( !memcmp( &out[i], &expected, sizeof( expected ) ) );
+        nodes[i] = NULL;
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( !stats.local_matrix_count && !stats.capture_local_allocations &&
+           !stats.capture_local_reuses && !stats.capture_prefix_allocations &&
+           !stats.capture_prefix_reuses );
+    CHECK( wp_transform_job_system_dispatch_snapshot( job, NULL, 0, 102 ) );
+    wp_transform_job_system_wait( job );
+    nodes[0] = leaf_a;
+    nodes[1] = leaf_a;
+    nodes[2] = leaf_a;
+    nodes[3] = leaf_a;
+    CHECK( wp_transform_job_system_process( job, nodes, out, 4 ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.capture_local_allocations == 1 && stats.capture_prefix_allocations == 1 );
+    wp_transform_job_system_destroy( job );
+    wp_threadpool_destroy( pool );
+    wp_scenenode_destroy( leaf_a );
+    wp_scenenode_destroy( leaf_b );
+    wp_scenenode_destroy( root_a );
+    wp_scenenode_destroy( root_b );
+    puts(
+        "Transform local/prefix reuse: changed identities, reparent/edit, rejection, cancel, "
+        "resize, optional-cache transitions and empty release passed." );
+}
+
 static void cache_depth_boundary( void )
 {
     wp_scenenode *nodes[258];
@@ -903,6 +1036,111 @@ static wp_graphics_cull_result *capture( wp_graphics_scene *s, wp_camera *c, wp_
     wp_graphics_cull_result *r = wp_graphics_scene_prepare_cull( s, c, pass );
     CHECK( r != NULL );
     return r;
+}
+
+static void cull_order_fast_path( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_object *objects[17];
+    wp_graphics_cull_result *result, *derived;
+    wp_graphics_cull_sort_stats stats;
+    wp_u32 groups[17], depths[17];
+    int expected[17], i, j, key, count, mode, n, ordered, passes, width;
+    CHECK( scene != NULL );
+    for( i = 0; i < 17; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        wp_graphics_object_set_render_func( objects[i], record );
+    }
+    for( mode = 0; mode < 6; ++mode )
+    {
+        for( count = 0; count <= 17; ++count )
+        {
+            n = 0;
+            ordered = 1;
+            for( i = 0; i < 17; ++i )
+            {
+                groups[i] = mode == 0                 ? 0
+                            : mode == 1               ? (wp_u32)( i / 3 )
+                            : mode == 2               ? (wp_u32)( ( 16 - i ) / 3 )
+                            : mode == 3               ? (wp_u32)( ( i * 7 ) % 3 )
+                            : mode == 4 && !( i % 2 ) ? 99u
+                                                      : (wp_u32)i;
+                depths[i] = mode == 2 ? (wp_u32)( 16 - i ) : mode == 3 ? (wp_u32)( i % 2 ) : 0u;
+                if( mode == 5 && i == count - 1 )
+                {
+                    groups[i] = 0;
+                }
+                wp_graphics_object_set_render_queue_group( objects[i], groups[i] );
+                wp_graphics_object_set_z_order( objects[i], depths[i] );
+                wp_graphics_object_set_visible( objects[i], i < count && ( mode != 4 || i % 2 ) );
+                if( i < count && ( mode != 4 || i % 2 ) )
+                {
+                    if( n && ( groups[i] < groups[expected[n - 1]] ||
+                               ( groups[i] == groups[expected[n - 1]] &&
+                                 depths[i] < depths[expected[n - 1]] ) ) )
+                    {
+                        ordered = 0;
+                    }
+                    expected[n++] = i;
+                }
+            }
+            /* Independent stable insertion reference, including repeated keys. */
+            for( i = 1; i < n; ++i )
+            {
+                key = expected[i];
+                j = i;
+                while( j && ( groups[key] < groups[expected[j - 1]] ||
+                              ( groups[key] == groups[expected[j - 1]] &&
+                                depths[key] < depths[expected[j - 1]] ) ) )
+                {
+                    expected[j] = expected[j - 1];
+                    --j;
+                }
+                expected[j] = key;
+            }
+            result = capture( scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+            CHECK( result != NULL && wp_graphics_cull_result_get_visible_count( result ) == n );
+            for( i = 0; i < n; ++i )
+            {
+                CHECK( wp_graphics_cull_result_get_object( result, i ) == objects[expected[i]] );
+            }
+            wp_graphics_cull_result_get_sort_stats( result, &stats );
+            if( ordered )
+            {
+                CHECK( !stats.merge_passes && !stats.scratch_allocations && !stats.scratch_bytes &&
+                       stats.order_checks == (wp_u32)( n ? n - 1 : 0 ) );
+            }
+            else
+            {
+                passes = 0;
+                for( width = 1; width < n; width *= 2 )
+                {
+                    ++passes;
+                }
+                CHECK( stats.merge_passes == (wp_u32)passes && stats.scratch_allocations == 1 &&
+                       stats.scratch_bytes == (wp_u64)n * sizeof( wp_s32 ) );
+            }
+            derived = wp_graphics_cull_result_create_view( result, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+            CHECK( derived != NULL && !wp_graphics_cull_result_get_transform_dispatch_count( derived ) );
+            wp_graphics_cull_result_destroy( result );
+            /* Independent sorted indices survive source-view retirement. */
+            for( i = 0; i < n; ++i )
+            {
+                CHECK( wp_graphics_cull_result_get_object( derived, i ) == objects[expected[i]] );
+            }
+            wp_graphics_cull_result_get_sort_stats( derived, &stats );
+            CHECK( stats.scratch_allocations == (wp_u32)!ordered );
+            wp_graphics_cull_result_destroy( derived );
+        }
+    }
+    wp_graphics_cull_result_get_sort_stats( NULL, &stats );
+    CHECK( !stats.order_checks && !stats.merge_passes && !stats.scratch_allocations &&
+           !stats.scratch_bytes );
+    wp_graphics_scene_destroy( scene );
+    puts(
+        "Cull ordering: 108 ordered/reversed/tied/filtered/late-inversion fixtures, "
+        "stable reference parity, exact scratch bytes and derived-view ownership passed." );
 }
 
 static void culling( void )
@@ -2019,9 +2257,12 @@ int main( void )
     retained_capture_scratch();
     retained_capture_paths();
     retained_capture_indices_and_batches();
+    retained_capture_matrices( 0 );
+    retained_capture_matrices( 2 );
     prefix_budget_fallback();
     transforms();
     hierarchy_limit();
+    cull_order_fast_path();
     culling();
     conservative_bounds();
     oriented_bounds();

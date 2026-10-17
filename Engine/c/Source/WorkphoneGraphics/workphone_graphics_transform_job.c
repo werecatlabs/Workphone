@@ -202,7 +202,7 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     wp_transform_prefix *prefixes;
     wp_u32 *indices;
     wp_u32 i, j, depth, total = 0, unique = 0, batch_count, start, prefix_count = 0, reused,
-                        reused_paths, reused_indices, reused_batches;
+                        reused_paths, reused_indices, reused_batches, reused_locals, reused_prefixes = 0;
     size_t bytes;
     if( !s || s->status == WP_TRANSFORM_RUNNING || ( count && !nodes ) )
     {
@@ -344,7 +344,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         }
         return 0;
     }
-    locals = unique ? (wp_mat4f *)malloc( (size_t)unique * sizeof( *locals ) ) : NULL;
+    reused_locals = unique && unique == s->stats.local_matrix_count && s->locals != NULL;
+    locals = reused_locals
+                 ? s->locals
+                 : ( unique ? (wp_mat4f *)malloc( (size_t)unique * sizeof( *locals ) ) : NULL );
     worlds = count ? (wp_mat4f *)malloc( (size_t)count * sizeof( *worlds ) ) : NULL;
     reused_batches = batch_count && batch_count == s->stats.batch_count && s->batches != NULL;
     batches =
@@ -363,7 +366,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
         {
             free( indices );
         }
-        free( locals );
+        if( locals != s->locals )
+        {
+            free( locals );
+        }
         free( worlds );
         if( batches != s->batches )
         {
@@ -403,7 +409,18 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     if( prefix_count < total &&
         (size_t)prefix_count <= ( WP_TRANSFORM_BYTE_LIMIT - bytes ) / sizeof( *prefixes ) )
     {
-        prefixes = (wp_transform_prefix *)calloc( prefix_count, sizeof( *prefixes ) );
+        reused_prefixes = s->prefixes != NULL && prefix_count == s->stats.matrix_multiply_count;
+        if( reused_prefixes )
+        {
+            prefixes = s->prefixes;
+            /* Drained workers left ready flags and worlds from the old hierarchy.
+             * Rebuild the entire private cache before any new task can read it. */
+            memset( prefixes, 0, (size_t)prefix_count * sizeof( *prefixes ) );
+        }
+        else
+        {
+            prefixes = (wp_transform_prefix *)calloc( prefix_count, sizeof( *prefixes ) );
+        }
     }
     if( prefixes )
     {
@@ -455,6 +472,14 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     {
         s->batches = NULL;
     }
+    if( reused_locals )
+    {
+        s->locals = NULL;
+    }
+    if( reused_prefixes )
+    {
+        s->prefixes = NULL;
+    }
     wp_transform_release( s );
     s->indices = indices;
     s->stats.output_count = count;
@@ -470,6 +495,10 @@ static wp_s32 wp_transform_dispatch( wp_transform_job_system *s, const wp_scenen
     s->stats.capture_index_reuses = reused_indices;
     s->stats.capture_batch_allocations = batch_count && !reused_batches;
     s->stats.capture_batch_reuses = reused_batches;
+    s->stats.capture_local_allocations = unique && !reused_locals;
+    s->stats.capture_local_reuses = reused_locals;
+    s->stats.capture_prefix_allocations = prefixes != NULL && !reused_prefixes;
+    s->stats.capture_prefix_reuses = reused_prefixes;
     s->stats.capture_scratch_bytes = (size_t)total * sizeof( *references );
     s->stats.capture_peak_bytes = bytes;
     s->stats.retained_snapshot_bytes = bytes - (size_t)total * sizeof( wp_transform_reference );

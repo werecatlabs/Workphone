@@ -76,6 +76,17 @@ typedef struct wp_graphics_cull_bounds_stats
 
 void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *,
                                                wp_graphics_cull_bounds_stats * );
+
+/* Per-view ordering work, independent of shared candidate/transform capture.
+ * Ordered survivors (including zero/one object) need no merge scratch. */
+typedef struct wp_graphics_cull_sort_stats
+{
+    wp_u32 order_checks, merge_passes, scratch_allocations;
+    wp_u64 scratch_bytes;
+} wp_graphics_cull_sort_stats;
+
+void wp_graphics_cull_result_get_sort_stats( const wp_graphics_cull_result *,
+                                             wp_graphics_cull_sort_stats * );
 /* Default enabled. Owner-only A/B control; reject while READY. Derived views
  * inherit this policy. A disabled sphere stage leaves OBB classification intact. */
 wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *, wp_s32 enabled );
