@@ -13,6 +13,8 @@
 #    include <Workphone/Database/ResourceDatabase.hpp>
 #    include <Workphone/Mesh/MeshSerializer.hpp>
 #    include <EditorApplication.hpp>
+#    include <ui/SceneWindow.hpp>
+#    include <ui/UIManager.hpp>
 
 using namespace workphone;
 using namespace workphone::editor;
@@ -440,6 +442,39 @@ BOOST_AUTO_TEST_CASE( project_mesh_import_cache_test )
         graphicsScene->removeGraphicsObject( graphicsMesh );
     }
     BOOST_CHECK_EQUAL( meshCount, 1u );
+    auto gameManager = app->getGameManager();
+    auto scene = gameManager ? gameManager->getCurrentScene() : nullptr;
+    BOOST_REQUIRE( scene );
+    auto actorsBeforeDrop = scene->getActors().size();
+    auto dropData = workphone::make_ptr<Properties>();
+    dropData->setProperty( "assetPath", "Assets/Triangle.obj" );
+    dropData->setProperty( "assetType", "file" );
+    dropData->setProperty( "filePath", "Assets/Triangle.obj" );
+    auto payload = DataUtil::toString( dropData.get(), true );
+    auto sceneWindow = editor->getUI()->getSceneWindow();
+    BOOST_REQUIRE( sceneWindow );
+    auto rootWindow = sceneWindow->getParentWindow();
+    BOOST_REQUIRE( rootWindow );
+    auto dropTarget = rootWindow->getDropTarget();
+    BOOST_REQUIRE( dropTarget );
+    Array<Parameter> dropArguments;
+    dropArguments.emplace_back( payload );
+    dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, dropArguments, nullptr, rootWindow,
+                             nullptr );
+    auto jobQueue = app->getJobQueue();
+    BOOST_REQUIRE( jobQueue );
+    for( int i = 0; i < 100 && jobQueue->hasJobs(); ++i )
+    {
+        jobQueue->update();
+    }
+    BOOST_CHECK_EQUAL( scene->getActors().size(), actorsBeforeDrop + 1 );
+    if( scene->getActors().size() > actorsBeforeDrop )
+    {
+        auto createdActor = scene->getActors().back();
+        BOOST_CHECK_EQUAL( createdActor->getName(), "Triangle" );
+        app->getCommandManager()->clearAll();
+        gameManager->destroyActor( createdActor );
+    }
     for( const auto &entry : std::filesystem::directory_iterator( directory ) )
     {
         BOOST_CHECK( entry.path().extension() != ".prefab" &&

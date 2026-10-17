@@ -6,6 +6,7 @@
 #include "Workphone/Interface/UI/IUIManager.hpp"
 #include "Workphone/Core/LogManager.hpp"
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <utility>
 
 namespace workphone::ui
@@ -57,7 +58,9 @@ namespace workphone::ui
                         auto dropTarget = window->getDropTarget();
                         if( dropTarget )
                         {
-                            if( ImGui::BeginDragDropTarget() )
+                            auto imguiWindow = ImGui::GetCurrentWindow();
+                            if( ImGui::BeginDragDropTargetCustom( imguiWindow->InnerRect,
+                                                                 imguiWindow->ID ) )
                             {
                                 auto payload = ImGui::AcceptDragDropPayload( "_TREENODE" );
                                 if( payload )
