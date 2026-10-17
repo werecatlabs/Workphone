@@ -53,7 +53,9 @@ namespace workphone
             return nullptr;
         }
 
-        auto applicationManager = core::IApplicationManager::instance();
+        auto applicationManager = core::IApplicationManager::instancePtr();
+        WP_ASSERT( applicationManager );
+
         auto factoryManager = applicationManager->getFactoryManager();
         if( factoryManager )
         {

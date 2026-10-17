@@ -242,7 +242,7 @@ namespace workphone
                         "UIVerticalLayoutComponent" )
                         .scope[def( "typeInfo", VerticalLayout::typeInfo )]];
 
-        module( L )[class_<GridLayout, LayoutContainer, SmartPtr<GridLayout>>( "UIGridLayoutComponent" )
+        module( L )[class_<GridLayout, LayoutContainer, SmartPtr<GridLayout>>( "GridLayout" )
                         .def( "getColumnCount", &GridLayout::getColumnCount )
                         .def( "setColumnCount", &GridLayout::setColumnCount )
                         .def( "getCellSize", &GridLayout::getCellSize )
@@ -254,7 +254,7 @@ namespace workphone
                         .scope[def( "typeInfo", GridLayout::typeInfo )]];
 
         module(
-            L )[class_<TableLayout, LayoutContainer, SmartPtr<TableLayout>>( "UITableLayoutComponent" )
+            L )[class_<TableLayout, LayoutContainer, SmartPtr<TableLayout>>( "TableLayout" )
                     .def( "getNumRows", &TableLayout::getNumRows )
                     .def( "setNumRows", &TableLayout::setNumRows )
                     .def( "getNumColumns", &TableLayout::getNumColumns )
@@ -272,7 +272,7 @@ namespace workphone
                     .scope[def( "typeInfo", TableLayout::typeInfo )]];
 
         module( L )[class_<LayoutTransform, Component, SmartPtr<LayoutTransform>>(
-                        "UILayoutTransformComponent" )
+                        "LayoutTransform" )
                         .def( "getMin", &LayoutTransform::getMin )
                         .def( "getAbsoluteMin", &LayoutTransform::getAbsoluteMin )
                         .def( "getMax", &LayoutTransform::getMax )
@@ -309,7 +309,7 @@ namespace workphone
                         .def( "setUIComponent", &LayoutTransform::setUIComponent )
                         .scope[def( "typeInfo", LayoutTransform::typeInfo )]];
 
-        module( L )[class_<scene::Image, UIComponent, SmartPtr<scene::Image>>( "UIImageComponent" )
+        module( L )[class_<scene::Image, UIComponent, SmartPtr<scene::Image>>( "Image" )
                         .def( "getImage", &scene::Image::getImage )
                         .def( "setImage", &scene::Image::setImage )
                         .def( "getTexture", &scene::Image::getTexture )
@@ -322,7 +322,7 @@ namespace workphone
                         .def( "setBaseMaterialName", &scene::Image::setBaseMaterialName )
                         .scope[def( "typeInfo", scene::Image::typeInfo )]];
 
-        module( L )[class_<Text, UIComponent, SmartPtr<Text>>( "UITextComponent" )
+        module( L )[class_<Text, UIComponent, SmartPtr<Text>>( "Text" )
                         .def( "getTextObject", &Text::getTextObject )
                         .def( "setTextObject", &Text::setTextObject )
                         .def( "getText", &Text::getText )
@@ -333,7 +333,7 @@ namespace workphone
                         .def( "setHorizontalAlignment", &Text::setHorizontalAlignment )
                         .scope[def( "typeInfo", Text::typeInfo )]];
 
-        module( L )[class_<InputField, UIComponent, SmartPtr<InputField>>( "UIInputFieldComponent" )
+        module( L )[class_<InputField, UIComponent, SmartPtr<InputField>>( "InputField" )
                         .def( "getTextEntry", &InputField::getTextEntry )
                         .def( "setTextEntry", &InputField::setTextEntry )
                         .def( "getText", &InputField::getText )
@@ -354,7 +354,7 @@ namespace workphone
                         .def( "setTextSize", &InputField::setTextSize )
                         .scope[def( "typeInfo", InputField::typeInfo )]];
 
-        module( L )[class_<Toggle, UIComponent, SmartPtr<Toggle>>( "UIToggleComponent" )
+        module( L )[class_<Toggle, UIComponent, SmartPtr<Toggle>>( "Toggle" )
                         .def( "isToggled", &Toggle::isToggled )
                         .def( "setToggled", &Toggle::setToggled )
                         .def( "getToggleBgTransform", &Toggle::getToggleBgTransform )

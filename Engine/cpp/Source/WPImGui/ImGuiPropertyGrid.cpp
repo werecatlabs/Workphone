@@ -542,4 +542,14 @@ namespace workphone::ui
 
         ImGui::EndDisabled();
     }
+
+    void ImGuiPropertyGrid::load( SmartPtr<ISharedObject> data )
+    {
+        setLoadingState( LoadingState::Loading );
+        setObjectFlag( OBJECT_FLAG_GARBAGE_COLLECTED, true );
+        setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
+        setObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS, true );
+        setLoadingState( LoadingState::Loaded );
+    }
+
 }  // namespace workphone::ui

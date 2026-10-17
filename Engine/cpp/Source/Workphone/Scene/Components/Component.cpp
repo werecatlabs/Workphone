@@ -29,6 +29,8 @@ namespace workphone::scene
         setObjectFlag( OBJECT_FLAG_RECEIVE_EVENTS, true );
         setEventTaskFlags( Thread::Application_Flag );
 
+        m_componentFlags = ComponentEnabledFlag;
+
 #if !WP_FINAL
         String debugStr = getDebugStr() + DebugUtil::getStackTrace();
         setDebugStr( debugStr );
@@ -75,11 +77,9 @@ namespace workphone::scene
             auto typeManager = TypeManager::instance();
 
             const auto iTypeInfo = getTypeInfo();
-            //const auto typeName = typeManager->getName( typeInfo );
-            //const auto componentName = typeName ? String( typeName ) : String();
-            //setName( componentName );
-
-            setEnabled( true );
+            const auto typeName = typeManager->getName( iTypeInfo );
+            const auto componentName = typeName ? String( typeName ) : String();
+            setName( componentName );
 
             auto fsmManager = sceneManager->getComponentFsmManager( iTypeInfo );
             WP_ASSERT( fsmManager );
