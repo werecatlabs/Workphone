@@ -154,6 +154,7 @@ namespace workphone
                 u64 sortChecks = 0, sortPasses = 0, sortAllocations = 0, sortBytes = 0;
                 u64 groupTests = 0, groupRejects = 0, groupSkipped = 0, groupFallbacks = 0;
                 u64 groupInside = 0, groupInsideCandidates = 0;
+                u64 timingSamples = 0, prepareNs = 0, mainPrepareNs = 0, shadowDeriveNs = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
                     satAxes = 0, satFallbacks = 0;
             } work;
@@ -288,6 +289,10 @@ namespace workphone
                 work.groupFallbacks += pass.work.groupFallbacks;
                 work.groupInside += pass.work.groupInside;
                 work.groupInsideCandidates += pass.work.groupInsideCandidates;
+                work.timingSamples += pass.work.timingSamples;
+                work.prepareNs += pass.work.prepareNs;
+                work.mainPrepareNs += pass.work.mainPrepareNs;
+                work.shadowDeriveNs += pass.work.shadowDeriveNs;
                 work.pathAllocations += pass.work.pathAllocations;
                 work.pathReuses += pass.work.pathReuses;
                 work.sphereTests += pass.work.sphereTests;
@@ -298,7 +303,7 @@ namespace workphone
                 work.satAxes += pass.work.satAxes;
                 work.satFallbacks += pass.work.satFallbacks;
             }
-            char preparation[1536];
+            char preparation[2048];
             std::snprintf(
                 preparation, sizeof( preparation ),
                 "\nPreparation last frame: views=%llu candidates=%llu main-visible=%llu "
@@ -308,7 +313,8 @@ namespace workphone
                 "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu "
                 "local matrices allocs=%llu reuses=%llu prefix cache allocs=%llu reuses=%llu "
                 "main sort checks=%llu passes=%llu scratch allocs=%llu bytes=%llu "
-                "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu inside=%llu candidates=%llu",
+                "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu inside=%llu candidates=%llu "
+                "CPU prepare samples=%llu total-ns=%llu main-ns=%llu shadow-ns=%llu",
                 (unsigned long long)work.views, (unsigned long long)work.candidates,
                 (unsigned long long)work.visible, (unsigned long long)work.dispatches,
                 (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
@@ -325,7 +331,9 @@ namespace workphone
                 (unsigned long long)work.sortAllocations, (unsigned long long)work.sortBytes,
                 (unsigned long long)work.groupTests, (unsigned long long)work.groupRejects,
                 (unsigned long long)work.groupSkipped, (unsigned long long)work.groupFallbacks,
-                (unsigned long long)work.groupInside, (unsigned long long)work.groupInsideCandidates );
+                (unsigned long long)work.groupInside, (unsigned long long)work.groupInsideCandidates,
+                (unsigned long long)work.timingSamples, (unsigned long long)work.prepareNs,
+                (unsigned long long)work.mainPrepareNs, (unsigned long long)work.shadowDeriveNs );
             result += preparation;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
@@ -803,7 +811,7 @@ namespace workphone
                             if( auto clawScene = dynamic_pointer_cast<ClawScene>( scene ) )
                             {
                                 pass.preparedScenes.push_back( clawScene );
-                                if( !clawScene->prepareRenderJobs( camera ) )
+                                if( !clawScene->prepareRenderJobs( camera, owner->m_statisticsSnapshotRequested.load() ) )
                                 {
                                     throw std::runtime_error(
                                         "Native transform/cull preparation failed." );
@@ -818,6 +826,14 @@ namespace workphone
                                 pass.work.sortPasses += sort.merge_passes;
                                 pass.work.sortAllocations += sort.scratch_allocations;
                                 pass.work.sortBytes += sort.scratch_bytes;
+                                ClawScene::PreparationTiming timing;
+                                if( clawScene->getPreparedTiming( timing ) )
+                                {
+                                    ++pass.work.timingSamples;
+                                    pass.work.prepareNs += timing.total_ns;
+                                    pass.work.mainPrepareNs += timing.main_prepare_ns;
+                                    pass.work.shadowDeriveNs += timing.shadow_derive_ns;
+                                }
                                 ++pass.work.views;
                                 pass.work.candidates += candidates;
                                 pass.work.visible += visible;

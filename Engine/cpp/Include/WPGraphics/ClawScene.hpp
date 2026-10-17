@@ -97,6 +97,20 @@ namespace workphone
             void render( void *renderer );
             /** Render owner: prepare CPU jobs before binding an offscreen target. */
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera );
+            bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile );
+
+            /** Owner elapsed CPU time for an explicitly profiled successful
+             * preparation. Main includes capture/transforms/culling/sorting and
+             * worker waits; shadow includes validation/derivation/sorting.
+             * Total also includes retirement/setup. These are not GPU times. */
+            struct PreparationTiming
+            {
+                u64 total_ns = 0, main_prepare_ns = 0, shadow_derive_ns = 0;
+            };
+
+            /** False and zeroed when unprofiled, failed or retired. Stale jobs
+             * still describe elapsed work, without certifying draw validity. */
+            bool getPreparedTiming( PreparationTiming & ) const;
             bool validateRenderJobs() const;
             /** Actual transform dispatches for the prepared pass; derived views add none. */
             u32 getPreparedTransformDispatchCount() const;

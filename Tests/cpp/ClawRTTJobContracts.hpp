@@ -237,7 +237,7 @@ public:
     SmartPtr<ClawMesh> nativeMesh;
     std::vector<SmartPtr<ClawMesh>> extraMeshes;
     wp_u32 expectedCandidates=1, expectedVisible=1;
-    unsigned draws = 0;
+    unsigned draws = 0, profiledPreparations = 0, unprofiledPreparations = 0;
     void attachScene(SmartPtr<ClawScene> scene) { nativeScene = scene; m_scenes.push_back(scene); }
     void unbindMeshes() {
         if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);
@@ -263,6 +263,17 @@ public:
             require(nativeScene->getPreparedJobStatistics(&transforms,&bounds,&candidates,&visible) &&
                     candidates==expectedCandidates && visible==expectedVisible && transforms.output_count==expectedCandidates,
                     "active preparation exposes one shared candidate publication");
+            ClawScene::PreparationTiming timing;
+            timing.total_ns=99;
+            if(nativeScene->getPreparedTiming(timing)) {
+                ++profiledPreparations;
+                require(timing.total_ns>=timing.main_prepare_ns+timing.shadow_derive_ns,
+                        "monotonic preparation total contains the disjoint main/shadow phases");
+            } else {
+                ++unprofiledPreparations;
+                require(!timing.total_ns && !timing.main_prepare_ns && !timing.shadow_derive_ns,
+                        "unprofiled preparation does not report stale timing values");
+            }
             const auto flags=wp_graphics_scene_get_cull_flags(nativeScene->getNativeScene());
             require((flags&WP_GRAPHICS_CULL_SPHERE_TEST) || bounds.sphere_tests==0,
                     "active scene honours disabled sphere policy");
@@ -317,6 +328,21 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     if(withNativeScene) {
     // Exercise real ClawScene consumption within the active RTT frame, then make
     // the completed draw stale before publication. Last complete output survives.
+    {
+        auto probe=make_ptr<ClawScene>();
+        ClawScene::PreparationTiming timing;
+        require(probe->prepareRenderJobs(nullptr,true) && probe->getPreparedTiming(timing) &&
+                timing.total_ns>=timing.main_prepare_ns+timing.shadow_derive_ns,
+                "explicit profile works for empty scene preparation without duration thresholds");
+        require(probe->prepareRenderJobs(nullptr) && !probe->getPreparedTiming(timing) &&
+                !timing.total_ns && !timing.main_prepare_ns && !timing.shadow_derive_ns,
+                "default preparation clears prior profiling metadata");
+        probe->discardRenderJobs(); timing.total_ns=99;
+        require(!probe->getPreparedTiming(timing) && !timing.total_ns,"retirement clears timing metadata");
+        auto missing=make_ptr<ClawScene>(static_cast<wp_graphics_scene *>(nullptr),false);
+        require(!missing->prepareRenderJobs(nullptr,true) && !missing->getPreparedTiming(timing) &&
+                !timing.total_ns,"failed preparation has no timing sample");
+    }
     auto nativeScene = make_ptr<ClawScene>();
     auto object = wp_graphics_scene_create_object(nativeScene->getNativeScene());
     auto nativeNode=wp_graphics_scene_create_node(nativeScene->getNativeScene());
@@ -339,6 +365,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
             counters.find("Preparation last frame: views=1 candidates=1 main-visible=1 transform dispatches=1")!=String::npos,
             "frame telemetry counts colour/shadow publication once after retirement");
+    require(counters.find("CPU prepare samples=1 total-ns=")!=String::npos &&
+            counters.find(" main-ns=")!=String::npos && counters.find(" shadow-ns=")!=String::npos,
+            "requested frame publishes one CPU preparation sample after job retirement");
     require(counters.find("reference scratch allocs=1 reuses=0")!=String::npos,
             "first active capture allocates reference scratch once");
     require(counters.find("path records allocs=1 reuses=0")!=String::npos,
@@ -362,6 +391,10 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(!nativeScene->getPreparedJobStatistics(&retiredTransforms,&retiredBounds,&retiredCandidates,&retiredVisible,&retiredSort) &&
             !retiredCandidates && !retiredVisible && !retiredTransforms.output_count && !retiredBounds.sphere_tests && !retiredSort.scratch_allocations,
             "retired preparation metadata is zeroed");
+    ClawScene::PreparationTiming retiredTiming; retiredTiming.total_ns=99;
+    require(!nativeScene->getPreparedTiming(retiredTiming) && !retiredTiming.total_ns &&
+            !retiredTiming.main_prepare_ns && !retiredTiming.shadow_derive_ns,
+            "retired timing metadata is zeroed");
     require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),0)!=0,"disable scene optional cull stages");
     graphics.setProperties(request); graphics.frame();
     require(pixels(output)==good,"cull A/B policy preserves visible RTT pixels");
@@ -495,6 +528,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             counters.find("sphere tests=1 rejects=0 box tests=1")!=String::npos,
             "cross-cell authored bound uses individual geometry while 95 neighbours are rejected and 32 contained");
     std::puts("Active long-bound RTT: 128 real meshes, full flat/spatial pixel parity, one individual geometry test and isolated cross-cell bound passed.");
+    require(graphics.profiledPreparations>0 && graphics.unprofiledPreparations>0,
+            "active frames exercise requested profiling and default unprofiled preparation");
+    std::puts("Active preparation profiling: requested samples, disjoint CPU phases, unprofiled/failed/retired zeroing and fresh RTT publication passed.");
     good=flatPixels;
     std::puts("Active coarse RTT: 64 real meshes, full pixel A/B, block acceptance/rejection, moved nodes and member visibility passed.");
     graphics.retireSceneAfterDraw = true;
@@ -505,7 +541,8 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     graphics.removeScenes(); nativeScene = nullptr;
     viewport->setActive(false); graphics.setProperties(request); graphics.frame();
     require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
-            counters.find("Preparation last frame: views=0 candidates=0 main-visible=0 transform dispatches=0")!=String::npos,
+            counters.find("Preparation last frame: views=0 candidates=0 main-visible=0 transform dispatches=0")!=String::npos &&
+            counters.find("CPU prepare samples=0 total-ns=0 main-ns=0 shadow-ns=0")!=String::npos,
             "skipped frame does not carry prior preparation counters");
     viewport->setActive(true);
     }

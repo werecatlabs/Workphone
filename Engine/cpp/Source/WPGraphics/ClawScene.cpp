@@ -846,6 +846,8 @@ namespace workphone
             wp_graphics_cull_result *main = nullptr;
             wp_graphics_cull_result *shadow = nullptr;
             SmartPtr<IGraphicsCamera> camera;
+            PreparationTiming timing;
+            bool profiled = false;
 
             ~NativeRenderJobs()
             {
@@ -856,6 +858,13 @@ namespace workphone
 
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera )
         {
+            return prepareRenderJobs( camera, false );
+        }
+
+        bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile )
+        {
+            using Clock = std::chrono::steady_clock;
+            const auto start = profile ? Clock::now() : Clock::time_point{};
             discardRenderJobs();
             if( !m_scene )
             {
@@ -865,14 +874,40 @@ namespace workphone
             wp_graphics_scene_set_active_camera( m_scene, view ? view->getNativeCamera() : nullptr );
             auto jobs = std::make_shared<NativeRenderJobs>();
             jobs->camera = camera;
+            const auto mainStart = profile ? Clock::now() : Clock::time_point{};
             jobs->main = wp_graphics_scene_prepare_cull( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN );
-            jobs->shadow = wp_graphics_cull_result_create_view(
-                jobs->main, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
+            const auto mainEnd = profile ? Clock::now() : Clock::time_point{};
+            jobs->shadow =
+                wp_graphics_cull_result_create_view( jobs->main, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
+            const auto shadowEnd = profile ? Clock::now() : Clock::time_point{};
             if( !jobs->main || !jobs->shadow )
             {
                 return false;
             }
+            if( profile )
+            {
+                jobs->timing.total_ns = static_cast<u64>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>( shadowEnd - start ).count() );
+                jobs->timing.main_prepare_ns = static_cast<u64>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>( mainEnd - mainStart )
+                        .count() );
+                jobs->timing.shadow_derive_ns = static_cast<u64>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>( shadowEnd - mainEnd )
+                        .count() );
+                jobs->profiled = true;
+            }
             m_nativeRenderJobs = jobs;
+            return true;
+        }
+
+        bool ClawScene::getPreparedTiming( PreparationTiming &out ) const
+        {
+            out = {};
+            if( !m_nativeRenderJobs || !m_nativeRenderJobs->profiled )
+            {
+                return false;
+            }
+            out = m_nativeRenderJobs->timing;
             return true;
         }
 

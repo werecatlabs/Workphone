@@ -1,5 +1,52 @@
 # WPGraphics implementation status
 
+## Request-driven CPU preparation timing - 17 October 2026
+
+`PERF-01` now measures the active Claw scene's CPU preparation wall time when the
+existing `request_render_statistics` flag is pending. The original one-argument
+`prepareRenderJobs` entry point remains available and unprofiled; an explicit
+profiling overload samples `std::chrono::steady_clock`. Normal unrequested frames
+skip clock reads. Accepted job publications carry copied nanosecond totals for
+main-view preparation and shadow-view derivation, plus an encompassing total
+that includes old-job retirement and setup. The native C89/C90 APIs are unchanged.
+
+Main preparation includes native capture, transform dispatch/wait, bounds/group
+construction, main culling and sorting. Shadow derivation includes candidate
+validation, its own visibility filtering and sorting, without counting another
+transform dispatch. These are elapsed owner-thread intervals, including worker
+waits, not process CPU usage, GPU timing or per-worker execution time. Failed
+preparation has no sample; successful CPU preparation remains measured even if a
+later target/draw/publication step fails. Stale prepared jobs describe performed
+work without certifying draw validity.
+
+`ClawScene::getPreparedTiming` returns false and zeroes its output for unprofiled,
+failed or retired preparation. The active frame copies successful samples before
+job retirement and publishes `CPU prepare samples=... total-ns=... main-ns=...
+shadow-ns=...` in the existing last-frame preparation statistics. Multiple scene
+samples sum elapsed preparation intervals; sample count identifies availability.
+Zero samples do not certify zero cost, including a request arriving after a
+frame's preparation. Skipped frames reset sample count and durations to zero.
+
+The active DX11/WARP contracts cover explicit profiling of an empty scene,
+default-off preparation following a profiled capture, failed/missing scenes,
+retired metadata, requested-frame publication and skipped-frame reset. Profiled
+main/shadow phases must fit within the encompassing monotonic interval; no fixed
+latency threshold is asserted. Existing 64/128-mesh flat/coarse/spatial pixel,
+long-bound sentinel publication, member filtering and stale-result rollback
+checks remain green. All seven selected full Debug contracts pass.
+Both Claw contracts also pass after rebuilding against the preserved one-argument
+entry point. Logs: `project_x64/{build,test}_prepare_timing_debug.log`; compatibility
+rebuild validation is recorded separately in
+`project_x64/{build,test}_prepare_timing_compat_debug.log`.
+`git diff --check` passes. Native implementations were unchanged in this increment.
+
+This supplies first preparation-phase costs beside the work counters. It does not
+supply representative performance results, GPU preparation time, worker CPU time,
+failed-capture timing or separate capture/transform/group/cull/sort intervals.
+Representative paired runs, allocation/high-water metadata and finer native
+phase attribution remain open before claiming a frame-time improvement or
+changing the opt-in spatial policy.
+
 ## Cross-cell bounds stay on the individual spatial path - 17 October 2026
 
 The opt-in spatial builder now keeps a candidate out of a bin when its enclosing
