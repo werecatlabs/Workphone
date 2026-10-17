@@ -1262,44 +1262,46 @@ namespace workphone::editor
         EventType eventType, hash_type eventValue, const Array<Parameter> &arguments,
         SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object, SmartPtr<IEvent> event )
     {
-        auto owner = getOwner();
-        auto applicationManager = core::IApplicationManager::instance();
-        WP_ASSERT( applicationManager );
-
-        auto resourceDatabase = applicationManager->getResourceDatabase();
-
-        if( eventValue == IEvent::handleDrop )
+        if( auto owner = getOwner() )
         {
-            auto properties = owner->getProperties();
-            auto dataStr = arguments[0].getStr();
-            auto name = arguments[1].getStr();
-            auto value = arguments[2].getStr();
+            auto applicationManager = core::IApplicationManager::instance();
+            WP_ASSERT( applicationManager );
 
-            DataUtil::parse( dataStr, properties.get() );
+            auto resourceDatabase = applicationManager->getResourceDatabase();
 
-            auto filePath = properties->getProperty( "filePath" );
-            if( !StringUtil::isNullOrEmpty( filePath ) )
+            if( eventValue == IEvent::handleDrop )
             {
-                auto resource = resourceDatabase->loadResource( filePath );
-                if( !resource )
+                auto properties = owner->getProperties();
+                auto dataStr = arguments[0].getStr();
+                auto name = arguments[1].getStr();
+                auto value = arguments[2].getStr();
+
+                DataUtil::parse( dataStr, properties.get() );
+
+                auto filePath = properties->getProperty( "filePath" );
+                if( !StringUtil::isNullOrEmpty( filePath ) )
                 {
-                    WP_LOG( "Failed to load resource from file: " + filePath );
+                    auto resource = resourceDatabase->loadResource( filePath );
+                    if( !resource )
+                    {
+                        WP_LOG( "Failed to load resource from file: " + filePath );
+                    }
+
+                    if( resource )
+                    {
+                        auto handle = resource->getHandle();
+                        auto uuid = handle->getUUIDAsString();
+
+                        properties->setProperty( name, uuid );
+                        owner->propertyChange( properties, name, uuid, false );
+                    }
                 }
-
-                if( resource )
+                else
                 {
-                    auto handle = resource->getHandle();
-                    auto uuid = handle->getUUIDAsString();
+                    auto uuid = properties->getProperty( "actorUUID" );
 
-                    properties->setProperty( name, uuid );
                     owner->propertyChange( properties, name, uuid, false );
                 }
-            }
-            else
-            {
-                auto uuid = properties->getProperty( "actorUUID" );
-
-                owner->propertyChange( properties, name, uuid, false );
             }
         }
 

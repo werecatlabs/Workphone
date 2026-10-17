@@ -15,6 +15,8 @@ namespace workphone
             ImGuiPropertyGrid();
             ~ImGuiPropertyGrid() override;
 
+            void load(SmartPtr<ISharedObject> data) override;
+
             /** @copydoc IUIPropertyGrid::getProperties */
             SmartPtr<Properties> getProperties() const override;
 
