@@ -2,6 +2,14 @@
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawCamera.hpp>
+#if defined WP_TEST_IMGUI
+#include <WPGraphics/ClawImguiManager.hpp>
+#include <WPImGui/ImGuiManager.hpp>
+#include <Workphone/System/ApplicationManager.hpp>
+#include <Workphone/IO/FileSystem.hpp>
+#include <Workphone/System/FactoryManager.hpp>
+#include <imgui.h>
+#endif
 #include <Workphone/Graphics/GraphicsWindow.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/Memory/TypeManager.hpp>
@@ -48,6 +56,76 @@ namespace
         context->OMGetRenderTargets( 0, nullptr, &view );
         return view;
     }
+
+    #if defined WP_TEST_IMGUI
+    bool testImgui( workphone::render::ClawRendererDX11 &wrapper )
+    {
+        workphone::render::ClawImguiManager manager;
+        manager.setRenderer( wrapper.getNativeRenderer() );
+        manager.load( nullptr );
+        bool ok = check( manager.isInitialised(), "ImGui must initialise without application services" );
+        if( !ok ) return false;
+        auto &io = ImGui::GetIO();
+        io.IniFilename = nullptr;
+        ok &= check( io.Fonts->TexID != nullptr, "font atlas must upload" );
+        {
+            auto app = workphone::make_ptr<workphone::core::ApplicationManager>();
+            workphone::core::IApplicationManager::setInstance( app );
+            auto factories = workphone::make_ptr<workphone::FactoryManager>();
+            factories->load( nullptr );
+            app->setFactoryManager( factories );
+            app->setFileSystem( workphone::make_ptr<workphone::FileSystem>() );
+            workphone::ui::ImGuiManager ui;
+            ok &= check( !ui.loadFont( "missing-icon-font.ttf", "awesome" ), "missing font must fail safely" );
+            ok &= check( ui.loadFont( WP_TEST_ICON_FONT, "awesome" ), "bundled icon font must load" );
+            const int configs = io.Fonts->ConfigData.Size;
+            ok &= check( ui.loadFont( WP_TEST_ICON_FONT, "awesome" ) &&
+                         io.Fonts->ConfigData.Size == configs, "repeated icon load must not duplicate merges" );
+            const ImFontGlyph *icon = io.Fonts->Fonts[0]->FindGlyphNoFallback( 0xf007 );
+            ImFontAtlas reference;
+            static const ImWchar range[] = { 0xf007, 0xf007, 0 };
+            auto *referenceFont = reference.AddFontFromFileTTF( WP_TEST_ICON_FONT, 12.0f, nullptr, range );
+            reference.Build();
+            const auto *oldIcon = referenceFont->FindGlyphNoFallback( 0xf007 );
+            ok &= check( icon && oldIcon && icon->Y1 - icon->Y0 > oldIcon->Y1 - oldIcon->Y0,
+                         "merged icon outline must be larger than the previous 12px glyph" );
+            ui.unloadFont();
+            io.Fonts->ClearTexData();
+            ok &= check( io.Fonts->Build(), "atlas must rebuild after UI font unload" );
+            app->setFileSystem( nullptr );
+            app->setFactoryManager( nullptr );
+            factories->unload( nullptr );
+            workphone::core::IApplicationManager::setInstance( nullptr );
+        }
+        const int sources = io.Fonts->ConfigData.Size;
+        for( int i = 0; i < 3; ++i ) manager.createFontTexture();
+        ok &= check( io.Fonts->ConfigData.Size == sources, "texture rebuild must not add font sources" );
+        manager.newFrame();
+        const int frame = ImGui::GetFrameCount();
+        manager.newFrame();
+        ok &= check( ImGui::GetFrameCount() == frame, "duplicate newFrame must be harmless" );
+        auto texture = io.Fonts->TexID;
+        manager.createFontTexture();
+        ok &= check( texture == io.Fonts->TexID, "locked atlas must not be replaced" );
+        int callbacks = 0;
+        auto *draw = ImGui::GetForegroundDrawList();
+        draw->AddCallback( []( const ImDrawList *, const ImDrawCmd *cmd ) {
+            ++*static_cast<int *>( cmd->UserCallbackData );
+        }, &callbacks );
+        draw->AddCallback( ImDrawCallback_ResetRenderState, nullptr );
+        draw->PushClipRect( ImVec2( -1e30f, -1e30f ), ImVec2( 1e30f, 1e30f ) );
+        draw->AddRectFilled( ImVec2( 5, 5 ), ImVec2( 20, 20 ), IM_COL32_WHITE );
+        draw->PopClipRect();
+        manager.render();
+        manager.render();
+        ok &= check( callbacks == 1, "zero-element callback must run exactly once" );
+        manager.shutdown();
+        manager.shutdown();
+        ok &= check( !manager.isInitialised(), "shutdown must be idempotent" );
+        return ok;
+    }
+
+    #endif
 
     bool testShadows( workphone::render::ClawRendererDX11 &wrapper )
     {
@@ -703,6 +781,9 @@ int main()
         try { ok &= claw_rtt_contracts::native(native); ok &= claw_scene_job_contracts::pixelsMatch(renderer); }
         catch(const std::exception &e) { ok &= check(false, e.what()); }
         renderer.setRenderTarget( window );
+#if defined WP_TEST_IMGUI
+        ok &= testImgui( renderer );
+#endif
         auto *originalDepth = depthTarget( context );
         ok &= check( originalDepth != nullptr, "window depth target must be bound" );
         auto texture = workphone::make_ptr<workphone::render::ClawRenderTarget>();

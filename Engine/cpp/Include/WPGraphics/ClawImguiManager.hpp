@@ -81,6 +81,7 @@ namespace workphone
             static ClawImguiManager *ms_singleton;
 
             wp_renderer *m_renderer = nullptr;
+            void *m_fontTexture = nullptr;  // Owned DX11 shader-resource view.
 
             // ImGui .ini/.log filenames. Stored as members so the C strings
             // handed to ImGui remain valid for the manager's lifetime.

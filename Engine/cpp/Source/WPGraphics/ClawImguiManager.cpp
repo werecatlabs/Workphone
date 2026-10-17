@@ -66,21 +66,11 @@ namespace workphone
                 return std::isfinite( scale ) && scale > 0.0f ? scale : 1.0f;
             }
 
-            int clampInt( int value, int minValue, int maxValue )
+            int clampClip( double value, int maximum )
             {
-                return std::max( minValue, std::min( value, maxValue ) );
+                // Clamp before conversion: even finite draw coordinates may exceed INT_MAX.
+                return static_cast<int>( std::max( 0.0, std::min( value, double( maximum ) ) ) );
             }
-
-            auto clampClip = []( float value, int maximum ) -> int {
-                if( !std::isfinite( value ) )
-                {
-                    return 0;
-                }
-
-                value = std::max( 0.0f, std::min( value, static_cast<float>( maximum ) ) );
-
-                return static_cast<int>( value );
-            };
 
             // Clamp a float to a safe positive range for viewport math. This
             // guards against negative/NaN/Inf dimensions reported by a renderer
@@ -222,6 +212,12 @@ namespace workphone
                 }
             }
 
+            if( m_fontTexture )
+            {
+                wp_renderer_dx11_destroy_texture_native( m_fontTexture );
+                m_fontTexture = nullptr;
+            }
+
             m_renderer = nullptr;
             m_vpWidth = 0;
             m_vpHeight = 0;
@@ -339,7 +335,8 @@ namespace workphone
 
         bool ClawImguiManager::isInitialised() const
         {
-            return m_renderer != nullptr && ImGui::GetCurrentContext() != nullptr;
+            return m_renderer != nullptr && ImGui::GetCurrentContext() != nullptr &&
+                   ImGui::GetIO().BackendRendererUserData == this;
         }
 
         void ClawImguiManager::setupViewport( s32 width, s32 height )
@@ -369,7 +366,7 @@ namespace workphone
         {
             ScopedLock lock( this, true );
 
-            if( !m_renderer || !ImGui::GetCurrentContext() )
+            if( !isInitialised() || !m_frameEnded )
             {
                 return;
             }
@@ -407,8 +404,10 @@ namespace workphone
         {
             const float safeW = safeDimension( width, 1.0f );
             const float safeH = safeDimension( height, 1.0f );
-            m_vpWidth = static_cast<s32>( safeW );
-            m_vpHeight = static_cast<s32>( safeH );
+            m_vpWidth = static_cast<s32>( std::min( static_cast<double>( safeW ),
+                          static_cast<double>( std::numeric_limits<s32>::max() ) ) );
+            m_vpHeight = static_cast<s32>( std::min( static_cast<double>( safeH ),
+                          static_cast<double>( std::numeric_limits<s32>::max() ) ) );
 
             if( ImGui::GetCurrentContext() )
             {
@@ -421,7 +420,7 @@ namespace workphone
         {
             ScopedLock lock( this, true );
 
-            if( !m_renderer || m_frameEnded || !ImGui::GetCurrentContext() )
+            if( !isInitialised() || m_frameEnded )
             {
                 return;
             }
@@ -483,24 +482,21 @@ namespace workphone
             const wp_s32 savedDepthWrite = wp_renderer_get_depth_write_enabled( m_renderer );
             const wp_depth_func savedDepthFunc = wp_renderer_get_depth_func( m_renderer );
 
-            wp_renderer_set_blend_mode( m_renderer, WORKPHONE_BLEND_MODE_ALPHA );
-            wp_renderer_set_cull_mode( m_renderer, WORKPHONE_CULL_MODE_NONE );
-            wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
-            wp_renderer_set_depth_test_enabled( m_renderer, 0 );
-            wp_renderer_set_depth_write_enabled( m_renderer, 0 );
-            wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_ALWAYS );
-            wp_renderer_set_scissor_enabled( m_renderer, 1 );
-
-            // do NOT call wp_renderer_set_texture_native(nullptr) here.
-            // That clears ptc_external_texture_view and forces fallback to
-            // ptc_texture_view (the font), but it does NOT prevent a scene
-            // texture SRV from shadowing it if set_texture_native(scene_srv)
-            // was called earlier. The per-cmd branch below binds explicitly on
-            // every draw call, so no header-level unbind is needed.
-
-            wp_renderer_set_world_matrix( m_renderer, &identity );
-            wp_renderer_set_view_matrix( m_renderer, &identity );
-            wp_renderer_set_projection_matrix( m_renderer, &projMatrix );
+            const auto setupRenderState = [&]() {
+                wp_renderer_set_blend_mode( m_renderer, WORKPHONE_BLEND_MODE_ALPHA );
+                wp_renderer_set_cull_mode( m_renderer, WORKPHONE_CULL_MODE_NONE );
+                wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
+                wp_renderer_set_depth_test_enabled( m_renderer, 0 );
+                wp_renderer_set_depth_write_enabled( m_renderer, 0 );
+                wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_ALWAYS );
+                wp_renderer_set_scissor_enabled( m_renderer, 1 );
+                wp_renderer_set_viewport( m_renderer, vp );
+                wp_renderer_set_scissor_rect( m_renderer, vp );
+                wp_renderer_set_world_matrix( m_renderer, &identity );
+                wp_renderer_set_view_matrix( m_renderer, &identity );
+                wp_renderer_set_projection_matrix( m_renderer, &projMatrix );
+            };
+            setupRenderState();
 
             const ImVec2 clipOff = drawData->DisplayPos;
             const ImVec2 clipScale = drawData->FramebufferScale;
@@ -517,21 +513,11 @@ namespace workphone
                     continue;
                 }
 
-                if( drawList->VtxBuffer.empty() || drawList->IdxBuffer.empty() )
-                {
-                    continue;
-                }
-
                 const ImDrawVert *vtxSrc = drawList->VtxBuffer.Data;
                 const unsigned int vertexCount = static_cast<unsigned int>( drawList->VtxBuffer.Size );
                 const unsigned int indexCount = static_cast<unsigned int>( drawList->IdxBuffer.Size );
 
-                if( vertexCount == 0u || indexCount == 0u )
-                {
-                    continue;
-                }
-
-                if( vtxSrc == nullptr || drawList->IdxBuffer.Data == nullptr )
+                if( ( vertexCount && !vtxSrc ) || ( indexCount && !drawList->IdxBuffer.Data ) )
                 {
                     continue;
                 }
@@ -564,7 +550,7 @@ namespace workphone
                 const auto dx11 = wp_renderer_get_dx11( m_renderer );
                 bool prepared = false;
 
-                if( dx11 &&
+                if( dx11 && vertexCount && indexCount &&
                     vertexCount <= static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) &&
                     indexCount <= static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
                 {
@@ -586,38 +572,23 @@ namespace workphone
                 for( int i = 0; i < drawList->CmdBuffer.Size; ++i )
                 {
                     const ImDrawCmd *cmd = &drawList->CmdBuffer[i];
-                    if( !cmd || cmd->ElemCount == 0u )
-                    {
-                        continue;
-                    }
-
                     if( cmd->UserCallback )
                     {
                         if( cmd->UserCallback == ImDrawCallback_ResetRenderState )
                         {
-                            wp_renderer_set_blend_mode( m_renderer, WORKPHONE_BLEND_MODE_ALPHA );
-                            wp_renderer_set_cull_mode( m_renderer, WORKPHONE_CULL_MODE_NONE );
-                            wp_renderer_set_fill_mode( m_renderer, WORKPHONE_FILL_MODE_SOLID );
-                            wp_renderer_set_depth_test_enabled( m_renderer, 0 );
-                            wp_renderer_set_depth_write_enabled( m_renderer, 0 );
-                            wp_renderer_set_depth_func( m_renderer, WORKPHONE_DEPTH_FUNC_ALWAYS );
-                            wp_renderer_set_scissor_enabled( m_renderer, 1 );
-                            wp_renderer_set_texture_native( m_renderer, nullptr );
-                            wp_renderer_set_world_matrix( m_renderer, &identity );
-                            wp_renderer_set_view_matrix( m_renderer, &identity );
-                            wp_renderer_set_projection_matrix( m_renderer, &projMatrix );
-
-                            wp_viewport_i fullScissor;
-                            fullScissor.x = static_cast<wp_s32>( offX );
-                            fullScissor.y = static_cast<wp_s32>( offY );
-                            fullScissor.width = static_cast<wp_s32>( vpWidth );
-                            fullScissor.height = static_cast<wp_s32>( vpHeight );
-                            wp_renderer_set_scissor_rect( m_renderer, fullScissor );
+                            setupRenderState();
                         }
                         else
                         {
                             cmd->UserCallback( drawList, cmd );
+                            // Callbacks may overwrite the backend's shared vertex/index buffers.
+                            prepared = false;
                         }
+                        continue;
+                    }
+
+                    if( cmd->ElemCount == 0u )
+                    {
                         continue;
                     }
 
@@ -628,12 +599,15 @@ namespace workphone
                         continue;
                     }
 
-                    if( !prepared && cmd->VtxOffset != 0u )
+                    if( cmd->VtxOffset >= vertexCount ||
+                        cmd->ElemCount > static_cast<unsigned int>( std::numeric_limits<wp_s32>::max() ) )
                     {
                         continue;
                     }
 
-                    if( cmd->VtxOffset > vertexCount )
+                    const unsigned int availableVertices = vertexCount - cmd->VtxOffset;
+                    if( std::any_of( idxBuf + indexOffset, idxBuf + indexOffset + cmd->ElemCount,
+                                    [availableVertices]( ImDrawIdx index ) { return index >= availableVertices; } ) )
                     {
                         continue;
                     }
@@ -667,11 +641,11 @@ namespace workphone
                         continue;
                     }
 
-                    const int clipL = clampInt( static_cast<int>( std::floor( clipMinX ) ), 0, vpWidth );
+                    const int clipL = clampClip( std::floor( double( clipMinX ) ), vpWidth );
                     const int clipT =
-                        clampInt( static_cast<int>( std::floor( clipMinY ) ), 0, vpHeight );
-                    const int clipR = clampInt( static_cast<int>( std::ceil( clipMaxX ) ), 0, vpWidth );
-                    const int clipB = clampInt( static_cast<int>( std::ceil( clipMaxY ) ), 0, vpHeight );
+                        clampClip( std::floor( double( clipMinY ) ), vpHeight );
+                    const int clipR = clampClip( std::ceil( double( clipMaxX ) ), vpWidth );
+                    const int clipB = clampClip( std::ceil( double( clipMaxY ) ), vpHeight );
 
                     if( clipR <= clipL || clipB <= clipT )
                     {
@@ -695,12 +669,12 @@ namespace workphone
                     }
                     else
                     {
-                        const wp_vertex_ptc *vertices = converted.data();
+                        const wp_vertex_ptc *vertices = converted.data() + cmd->VtxOffset;
                         if constexpr( sizeof( ImDrawIdx ) == sizeof( uint16_t ) )
                         {
                             const auto indices = idxBuf + indexOffset;
                             wp_renderer_draw_indexed_triangles_ptc(
-                                m_renderer, vertices, static_cast<wp_s32>( vertexCount ), indices,
+                                m_renderer, vertices, static_cast<wp_s32>( availableVertices ), indices,
                                 static_cast<wp_s32>( cmd->ElemCount ) );
                         }
                         else
@@ -712,7 +686,7 @@ namespace workphone
                             }
 
                             wp_renderer_dx11_draw_indexed_triangles_ptc_u32(
-                                dx11, vertices, static_cast<wp_s32>( vertexCount ),
+                                dx11, vertices, static_cast<wp_s32>( availableVertices ),
                                 reinterpret_cast<const uint32_t *>( idxBuf + indexOffset ),
                                 static_cast<wp_s32>( cmd->ElemCount ) );
                         }
@@ -720,6 +694,7 @@ namespace workphone
                 }
             }
 
+            wp_renderer_set_texture_native( m_renderer, nullptr );
             wp_renderer_set_scissor_enabled( m_renderer, 0 );
             wp_renderer_set_blend_mode( m_renderer, savedBlend );
             wp_renderer_set_cull_mode( m_renderer, savedCull );
@@ -734,42 +709,21 @@ namespace workphone
         {
             ScopedLock lock( this, true );
 
-            auto applicationManager = core::IApplicationManager::instance();
-            WP_ASSERT( applicationManager );
-
-            auto ui = applicationManager->getUI();
-
-            if( !m_renderer )
+            if( !isInitialised() )
             {
-                return;
-            }
-
-            if( !ImGui::GetCurrentContext() )
-            {
-                WP_LOG_ERROR( "ClawImguiManager::createFontTexture: no ImGui context." );
                 return;
             }
 
             ImGuiIO &io = ImGui::GetIO();
-            if( !io.Fonts )
+            if( !io.Fonts || io.Fonts->Locked )
             {
-                WP_LOG_ERROR( "ClawImguiManager::createFontTexture: font atlas is null." );
+                WP_LOG_ERROR( "ClawImguiManager::createFontTexture: font atlas is null or locked by an active frame." );
                 return;
             }
 
             if( io.Fonts->Fonts.empty() )
             {
                 io.Fonts->AddFontDefault();
-            }
-
-            // Load Font Awesome font (must happen before createFontTexture bakes the atlas)
-            if( ui )
-            {
-                String fontPath = "fa-solid-900.ttf";
-                if( !ui->loadFont( fontPath, "awesome" ) )
-                {
-                    WP_LOG_ERROR( "Failed to load Font Awesome font" );
-                }
             }
 
             unsigned char *pixels = nullptr;
@@ -808,7 +762,18 @@ namespace workphone
                 nativeHandle = wp_renderer_dx11_create_texture_native( dx11, pixels, width, height,
                                                                        WORKPHONE_PIXEL_FORMAT_RGBA8 );
             }
+            if( !nativeHandle )
+            {
+                WP_LOG_ERROR( "ClawImguiManager::createFontTexture: font texture upload failed." );
+                return;
+            }
+
             io.Fonts->SetTexID( nativeHandle );
+            if( m_fontTexture )
+            {
+                wp_renderer_dx11_destroy_texture_native( m_fontTexture );
+            }
+            m_fontTexture = nativeHandle;
         }
     }  // namespace render
 }  // namespace workphone
