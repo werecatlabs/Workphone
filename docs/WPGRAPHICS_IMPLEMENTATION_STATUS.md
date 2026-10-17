@@ -1,5 +1,45 @@
 # WPGraphics implementation status
 
+## Coarse block containment and active multi-mesh RTT gate - 17 October 2026
+
+The opt-in coarse cull tier now accepts padded block bounds fully inside every
+camera plane, bypassing individual sphere/box/SAT geometry tests for that block.
+Member visibility, masks, render-callback presence and stable ordering still run.
+Containment state is private to each execute call and resets at every block;
+boundary/invalid blocks retain individual tests, and shadow views bypass camera
+geometry as before. Derived camera views classify the shared bounds independently.
+No additional storage or default-policy change is introduced.
+
+Copied bounds counters and main-view Claw telemetry add fully contained block and
+candidate counts. These candidate counts precede member filtering and must not be
+interpreted as an exact count of tests avoided. Native flat-path parity coverage
+now checks a 129-candidate capture with two contained blocks (33 candidates,
+including the partial tail), alongside rejected and unknown-bound blocks. Hiding,
+masking and removing a callback within a contained block preserves flat-path
+visible ordering; reflected/sheared/singular transforms, invalid views, shadows
+and source-view retirement continue through the existing regressions.
+
+The active DX11/WARP RTT contract now grows the real Claw scene from one to 64
+native scene-node/mesh objects. It compares the entire rendered image between
+flat culling and the coarse tier, checks one contained and one rejected block,
+then moves the rejected block into view and hides one contained member. The
+fixture also retains post-draw stale-result rollback, target restoration and
+resize checks. Every extra mesh binding is detached before native scene clear.
+All seven selected full Debug contracts pass, including this active DX11/WARP
+pixel/lifecycle gate. The flat 64-mesh frame performs 64 sphere tests; coarse
+classification accepts one 32-candidate block and rejects the other, performing
+zero individual sphere/box/SAT tests. Moving the rejected block into view accepts
+both blocks, and hiding a contained member produces 63 visible objects. Every
+frame preserves the reference pixels. All six isolated contracts pass in Debug
+and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_group_inside_debug.log` and
+`project_graphics_contracts/{build,test}_group_inside_{debug,release}.log`.
+
+Capture-order blocks remain opt-in. This focused WARP scene is a reproducible
+pixel/work-count gate, not a representative large-scene hardware/performance or
+interactive Editor acceptance result. Spatial partitioning, retained scene indices,
+representative timings and threshold tuning remain open.
+
 ## Opt-in coarse candidate-block rejection - 17 October 2026
 
 `PERF-08` now has a first coarse rejection tier in native cull execution. With

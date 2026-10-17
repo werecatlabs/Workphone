@@ -2077,7 +2077,8 @@ static void coarse_groups( void )
     wp_graphics_cull_result_get_bounds_stats( flat, &baseline );
     CHECK( stats.group_tests == 5 && stats.group_rejections == 2 &&
            stats.group_skipped_candidates == 64 && stats.group_fallbacks == 1 &&
-           stats.sphere_tests < baseline.sphere_tests );
+           stats.sphere_tests < baseline.sphere_tests && stats.group_inside == 2 &&
+           stats.group_inside_candidates == 33 );
     wp_graphics_cull_result_destroy( flat );
     p.x = 100;
     p.y = 0;
@@ -2096,6 +2097,23 @@ static void coarse_groups( void )
     CHECK( !stats.group_tests && wp_graphics_cull_result_get_visible_count( shadow ) == 129 );
     wp_graphics_cull_result_destroy( shadow );
     wp_graphics_cull_result_destroy( reference );
+    /* Whole-block containment only bypasses geometry, never member filters. */
+    wp_camera_set_visibility_mask( camera, 1 );
+    wp_graphics_object_set_visible( objects[32], 0 );
+    wp_graphics_object_set_visibility_flags( objects[33], 2 );
+    wp_graphics_object_set_render_func( objects[34], NULL );
+    flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
+    grouped = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 1 );
+    compare_cull_views( flat, grouped );
+    wp_graphics_cull_result_get_bounds_stats( grouped, &stats );
+    CHECK( stats.group_inside == 2 && stats.group_inside_candidates == 33 &&
+           wp_graphics_cull_result_get_visible_count( grouped ) == 31 );
+    wp_graphics_cull_result_destroy( flat );
+    wp_graphics_cull_result_destroy( grouped );
+    wp_camera_set_visibility_mask( camera, (wp_u32)-1 );
+    wp_graphics_object_set_visible( objects[32], 1 );
+    wp_graphics_object_set_visibility_flags( objects[33], (wp_u32)-1 );
+    wp_graphics_object_set_render_func( objects[34], record );
     /* Reflected, sheared and singular hierarchies across independent views. */
     for( i = 0; i < 129; ++i )
     {

@@ -235,10 +235,16 @@ public:
     bool retireSceneAfterDraw = false;
     SmartPtr<ClawScene> nativeScene;
     SmartPtr<ClawMesh> nativeMesh;
+    std::vector<SmartPtr<ClawMesh>> extraMeshes;
+    wp_u32 expectedCandidates=1, expectedVisible=1;
     unsigned draws = 0;
     void attachScene(SmartPtr<ClawScene> scene) { nativeScene = scene; m_scenes.push_back(scene); }
-    void removeScenes() {
+    void unbindMeshes() {
         if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);
+        for(auto &mesh:extraMeshes) mesh->bindNativeRenderObject(nullptr);
+    }
+    void removeScenes() {
+        unbindMeshes(); extraMeshes.clear();
         nativeMesh = nullptr; m_scenes.clear(); nativeScene = nullptr;
     }
     void initialise(SmartPtr<ClawRendererDX11> renderer, SmartPtr<Textures> textures) {
@@ -255,7 +261,7 @@ public:
             wp_transform_job_stats transforms{}; wp_graphics_cull_bounds_stats bounds{};
             wp_u32 candidates=0,visible=0;
             require(nativeScene->getPreparedJobStatistics(&transforms,&bounds,&candidates,&visible) &&
-                    candidates==1 && visible==1 && transforms.output_count==1,
+                    candidates==expectedCandidates && visible==expectedVisible && transforms.output_count==expectedCandidates,
                     "active preparation exposes one shared candidate publication");
             const auto flags=wp_graphics_scene_get_cull_flags(nativeScene->getNativeScene());
             require((flags&WP_GRAPHICS_CULL_SPHERE_TEST) || bounds.sphere_tests==0,
@@ -264,7 +270,7 @@ public:
                     "active scene honours disabled SAT policy");
             ClawHammerSystem::render();
             if(retireSceneAfterDraw) {
-                if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);
+                unbindMeshes();
                 wp_graphics_scene_clear(nativeScene->getNativeScene());
             }
         } else triangle(wp_renderer_get_dx11(renderer->getNativeRenderer()));
@@ -373,6 +379,52 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("local matrices allocs=0 reuses=1")!=String::npos &&
             counters.find("prefix cache allocs=0 reuses=0")!=String::npos,
             "active single-output capture reports local storage and no optional prefix cache");
+    // Cross the coarse threshold with real Claw meshes and native scene nodes.
+    // First block is fully inside; the second block is outside the camera.
+    std::vector<wp_scenenode *> outsideNodes;
+    for(unsigned i=1;i<64;++i) {
+        auto extraObject=wp_graphics_scene_create_object(nativeScene->getNativeScene());
+        auto extraNode=wp_graphics_scene_create_node(nativeScene->getNativeScene());
+        auto mesh=make_ptr<SnapshotMesh>();
+        require(extraObject && extraNode,"coarse RTT object/node allocation");
+        wp_graphics_mesh_compute_aabb(mesh->getNativeMesh());
+        mesh->bindNativeRenderObject(extraObject); mesh->setVisibilityFlags(~u32(0));
+        wp_scenenode_attach_object(extraNode,extraObject);
+        if(i>=32) {
+            wp_scenenode_set_position(extraNode,{100,0,0}); outsideNodes.push_back(extraNode);
+        }
+        graphics.extraMeshes.push_back(mesh);
+    }
+    graphics.expectedCandidates=64; graphics.expectedVisible=32;
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),3)!=0,"flat large-scene baseline");
+    graphics.setProperties(request); graphics.frame();
+    auto flatPixels=pixels(output);
+    require(flatPixels==good,"overlapping identical visible meshes preserve reference pixels");
+    require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("sphere tests=64")!=String::npos,
+            "flat baseline individually tests all 64 candidates");
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),7)!=0,"coarse large-scene A/B");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels,"coarse acceptance/rejection matches all flat RTT pixels");
+    require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("coarse groups tests=2 rejects=1 skipped=32 fallbacks=0 inside=1 candidates=32")!=String::npos &&
+            counters.find("sphere tests=0 rejects=0 box tests=0")!=String::npos,
+            "real coarse frame skips geometry tests for both inside and outside blocks");
+    for(auto node:outsideNodes) wp_scenenode_set_position(node,{0,0,0});
+    graphics.expectedVisible=64;
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("coarse groups tests=2 rejects=0 skipped=0 fallbacks=0 inside=2 candidates=64")!=String::npos,
+            "moved nodes rebuild block bounds and expose all 64 meshes without changing pixels");
+    wp_graphics_object_set_visible(object,0); graphics.expectedVisible=63;
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==flatPixels &&
+            graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("candidates=64 main-visible=63")!=String::npos,
+            "contained blocks still honour per-object visibility");
+    good=flatPixels;
+    std::puts("Active coarse RTT: 64 real meshes, full pixel A/B, block acceptance/rejection, moved nodes and member visibility passed.");
     graphics.retireSceneAfterDraw = true;
     viewport->setBackgroundColour(ColourF(1,0,1,1));
     graphics.frame();

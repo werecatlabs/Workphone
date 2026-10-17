@@ -543,7 +543,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     wp_s32 *scratch;
     wp_s32 *sorted;
     wp_s32 count;
-    wp_s32 i, stage, outside, ordered, group_end;
+    wp_s32 i, stage, outside, ordered, group_end, group_inside = 0;
     size_t alloc_count;
     const cull_entry *entry;
 
@@ -582,15 +582,24 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         if( job->groups && job->group_test && job->has_camera &&
             job->pass == WP_GRAPHICS_CULL_PASS_MAIN && i % WP_CULL_GROUP_SIZE == 0 )
         {
+            group_inside = 0;
+            group_end =
+                job->entry_count - i < WP_CULL_GROUP_SIZE ? job->entry_count : i + WP_CULL_GROUP_SIZE;
             ++result->bounds_stats.group_tests;
             if( wp_cull_box_outside( &job->groups[i / WP_CULL_GROUP_SIZE], &job->frustum, 0, &stage ) )
             {
-                group_end = job->entry_count - i < WP_CULL_GROUP_SIZE ? job->entry_count
-                                                                      : i + WP_CULL_GROUP_SIZE;
                 ++result->bounds_stats.group_rejections;
                 result->bounds_stats.group_skipped_candidates += (wp_u32)( group_end - i );
                 i = group_end - 1;
                 continue;
+            }
+            if( stage == 5 )
+            {
+                /* A padded enclosing bound is inside every plane. Only geometry
+                 * tests are redundant: member visibility/masks/callbacks still apply. */
+                group_inside = 1;
+                ++result->bounds_stats.group_inside;
+                result->bounds_stats.group_inside_candidates += (wp_u32)( group_end - i );
             }
             if( !stage )
             {
@@ -613,7 +622,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
                 continue;
             }
         }
-        else if( job->has_camera )
+        else if( job->has_camera && !group_inside )
         {
             outside = wp_cull_box_outside( &entry->box, &job->frustum, job->sphere_test, &stage );
             if( !stage )
