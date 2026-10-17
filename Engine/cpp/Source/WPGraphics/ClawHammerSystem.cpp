@@ -153,6 +153,7 @@ namespace workphone
                 u64 prefixAllocations = 0, prefixReuses = 0;
                 u64 sortChecks = 0, sortPasses = 0, sortAllocations = 0, sortBytes = 0;
                 u64 groupTests = 0, groupRejects = 0, groupSkipped = 0, groupFallbacks = 0;
+                u64 groupInside = 0, groupInsideCandidates = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
                     satAxes = 0, satFallbacks = 0;
             } work;
@@ -285,6 +286,8 @@ namespace workphone
                 work.groupRejects += pass.work.groupRejects;
                 work.groupSkipped += pass.work.groupSkipped;
                 work.groupFallbacks += pass.work.groupFallbacks;
+                work.groupInside += pass.work.groupInside;
+                work.groupInsideCandidates += pass.work.groupInsideCandidates;
                 work.pathAllocations += pass.work.pathAllocations;
                 work.pathReuses += pass.work.pathReuses;
                 work.sphereTests += pass.work.sphereTests;
@@ -305,7 +308,7 @@ namespace workphone
                 "index records allocs=%llu reuses=%llu batch records allocs=%llu reuses=%llu "
                 "local matrices allocs=%llu reuses=%llu prefix cache allocs=%llu reuses=%llu "
                 "main sort checks=%llu passes=%llu scratch allocs=%llu bytes=%llu "
-                "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu",
+                "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu inside=%llu candidates=%llu",
                 (unsigned long long)work.views, (unsigned long long)work.candidates,
                 (unsigned long long)work.visible, (unsigned long long)work.dispatches,
                 (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
@@ -321,7 +324,8 @@ namespace workphone
                 (unsigned long long)work.sortChecks, (unsigned long long)work.sortPasses,
                 (unsigned long long)work.sortAllocations, (unsigned long long)work.sortBytes,
                 (unsigned long long)work.groupTests, (unsigned long long)work.groupRejects,
-                (unsigned long long)work.groupSkipped, (unsigned long long)work.groupFallbacks );
+                (unsigned long long)work.groupSkipped, (unsigned long long)work.groupFallbacks,
+                (unsigned long long)work.groupInside, (unsigned long long)work.groupInsideCandidates );
             result += preparation;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
@@ -835,6 +839,8 @@ namespace workphone
                                 pass.work.groupRejects += bounds.group_rejections;
                                 pass.work.groupSkipped += bounds.group_skipped_candidates;
                                 pass.work.groupFallbacks += bounds.group_fallbacks;
+                                pass.work.groupInside += bounds.group_inside;
+                                pass.work.groupInsideCandidates += bounds.group_inside_candidates;
                                 pass.work.sphereTests += bounds.sphere_tests;
                                 pass.work.sphereRejects += bounds.sphere_rejections;
                                 pass.work.boxTests += bounds.box_tests;

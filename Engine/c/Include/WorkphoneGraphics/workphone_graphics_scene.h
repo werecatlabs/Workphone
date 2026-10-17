@@ -149,10 +149,11 @@ enum
 {
     WP_GRAPHICS_CULL_SPHERE_TEST = 1u,
     WP_GRAPHICS_CULL_SAT_TEST = 2u,
-    WP_GRAPHICS_CULL_GROUP_TEST = 4u
+    WP_GRAPHICS_CULL_GROUP_TEST = 4u,
+    WP_GRAPHICS_CULL_SPATIAL_TEST = 8u
 };
 
-/* Owner-only scene A/B policy. Sphere/SAT enabled by default; groups opt-in.
+/* Owner-only scene A/B policy. Sphere/SAT enabled by default; blocks/spatial bins opt-in.
  * Six-plane box tests
  * remain active with zero flags. Unknown bits reject without mutation. Changes
  * invalidate prepared views; equal assignments preserve them. Pool replacement

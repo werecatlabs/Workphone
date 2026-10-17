@@ -73,6 +73,9 @@ typedef struct wp_graphics_cull_bounds_stats
     wp_u32 box_tests, box_rejections, fitted_obb_tests, aabb_box_tests, conservative_candidates;
     wp_u32 sat_tests, sat_rejections, sat_axis_tests, sat_fallbacks;
     wp_u32 group_tests, group_rejections, group_skipped_candidates, group_fallbacks;
+    /* Entire padded bounds inside the view: candidate counts precede member
+     * visibility/mask/callback filtering, not an exact count of tests avoided. */
+    wp_u32 group_inside, group_inside_candidates;
 } wp_graphics_cull_bounds_stats;
 
 void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *,
@@ -97,10 +100,18 @@ wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *, wp_s32 enab
 wp_s32 wp_graphics_cull_job_set_sat_test( wp_graphics_cull_job *, wp_s32 enabled );
 
 /* Default disabled. Optional padded world bounds over 32 captured candidates,
- * built for >=64 candidates and shared by derived views. Invalid bounds or
+ * built for >=64 candidates and shared by derived views. Fully contained blocks
+ * bypass individual geometry tests; member filtering remains active. Invalid bounds or
  * unavailable storage use individual tests. Shadow views bypass camera rejection.
  * Owner-only; rejects changes while READY. */
 wp_s32 wp_graphics_cull_job_set_group_test( wp_graphics_cull_job *, wp_s32 enabled );
+/* Default disabled. Prefer widest-cell-axis spatial bins over capture-order
+ * blocks, without reordering candidates. Unknown and cross-cell bounds remain
+ * individual, preventing long bounds from loosening neighbouring bins.
+ * Optional capture storage failure falls back to blocks if enabled, otherwise
+ * flat tests. Per-view classification allocation failure also uses flat tests.
+ * Independent derived-view classifications; same READY restriction. */
+wp_s32 wp_graphics_cull_job_set_spatial_test( wp_graphics_cull_job *, wp_s32 enabled );
 
 wp_graphics_cull_job *wp_graphics_cull_job_create( void );
 /* Optional borrowed pool; owner-thread capture/wait precedes culling. */

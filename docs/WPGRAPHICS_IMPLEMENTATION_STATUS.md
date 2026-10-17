@@ -1,5 +1,182 @@
 # WPGraphics implementation status
 
+## Cross-cell bounds stay on the individual spatial path - 17 October 2026
+
+The opt-in spatial builder now keeps a candidate out of a bin when its enclosing
+world AABB crosses an interior cell plane. Such candidates remain in the complete
+publication and run the existing individual sphere/box/SAT path, preserving
+visibility and draw order. This prevents one long bound from expanding a bin
+across neighbouring cells and defeating rejection of its small members. World
+extents come from the sum of absolute transformed half-axis components, preserving
+shear/reflection support; the same extents are reused when accumulating bin bounds.
+Only interior cell planes matter because the grid range describes object centres:
+geometry in an outer cell may extend beyond the global centre range normally.
+
+No additional heap storage, public counter fields or default-policy change is
+introduced. Shared maps/bounds remain immutable; derived cameras independently
+classify the remaining bins, and spanning candidates still undergo all member
+filters, validation and pass-specific shadow rules. Empty bins are never queried.
+
+Native X/Y/Z regressions each include 129 candidates with a long bound reaching
+into the camera from an off-screen cluster and one unknown-bound object. The long
+object remains visible through individual geometry testing; 63 small neighbours
+are rejected and 64 contained. Exact flat-path ordering, moved-camera derivation
+after source retirement and all 129 shadow casters match the reference. An
+all-spanning capture queries no bins and individually tests its valid candidates,
+while keeping the unknown bound conservative. Existing multi-axis, affine,
+invalid-view, degenerate-span, cancellation and ownership cases remain green.
+
+The active 128-mesh DX11/WARP RTT test authors a cross-cell bound on an off-screen
+triangle. Flat and spatial frames match every output pixel, with four group
+tests, 95 rejected candidates, 32 contained candidates and exactly one individual
+sphere/box test for the spanning object. An intermediate changed clear colour
+must publish before restoring the reference background for the spatial frame;
+retaining an old texture cannot falsely satisfy this pixel comparison.
+
+All seven selected full Debug contracts pass, including the active RTT gate.
+All six isolated contracts pass in Debug and RelWithDebInfo. `git diff --check`
+passes. Logs: `project_x64/{build,test}_cross_cell_debug.log` and
+`project_graphics_contracts/{build,test}_cross_cell_{debug,release}.log`.
+
+Spatial grouping remains opt-in. Centre outliers, long extents in unsplit
+dimensions, grid-boundary occupancy and representative hardware build/frame cost
+still require profiling and further work; this is not a retained spatial index
+or proof of an overall frame-time improvement.
+
+## Multi-axis spatial partition within the existing bin budget - 17 October 2026
+
+The opt-in spatial tier now splits the widest remaining cell dimension instead
+of assigning every bin along a single world-centre axis. Starting with one cell,
+it doubles the selected grid dimension while the product fits the existing
+`ceil(candidate_count / 32)` bin budget. Equal spans choose X/Y/Z deterministically;
+coincident centres use one cell. The resulting grid can partition X/Y/Z as useful,
+uses no additional retained or temporary arrays, and allocates no more cells than
+the earlier tier. Unsplit dimensions skip ratio/division work during assignment.
+
+Enclosing bounds, conservative padding, unknown-bound fallback, immutable mapping,
+per-view classification caching and capture-order draw traversal are unchanged.
+All candidates remain available for stale-result validation and independently
+derived cameras; member filtering and off-camera shadow casters remain intact.
+Allocation/cap fallback and the default-disabled scene/job switch remain in force.
+
+Native regressions add four- and eight-cluster interleaved layouts with 257
+candidates, including one unknown-bound object. Four occupied cells reject 192
+bounded candidates and contain 64; eight reject 224 and contain 32. Both perform
+zero individual geometry tests, preserve tied-key capture order against the flat
+reference, and keep the unknown-bound object conservative. Twelve derived camera
+positions, shadow publication survival and visibility/mask/callback filtering
+within contained cells also match the reference. Existing affine, singular,
+invalid-view, degenerate-span, cancellation and ownership cases remain covered.
+All six isolated contracts pass in Debug and RelWithDebInfo.
+
+The active RTT contract additionally grows to 128 real Claw meshes in four
+interleaved X/Y clusters, comparing every pixel against the flat path and checking
+four group tests, three rejections (96 candidates) and one containment (32).
+All seven selected full Debug contracts pass, including that DX11/WARP image
+comparison with zero individual sphere/box/SAT tests. Existing 64-mesh coarse
+and single-axis layouts, moved nodes, member visibility and stale post-draw
+rollback remain green. `git diff --check` passes.
+Logs: `project_x64/{build,test}_multi_axis_debug.log` and
+`project_graphics_contracts/{build,test}_multi_axis_{debug,release}.log`.
+
+This remains a per-capture uniform grid, with variable occupancy and no retained
+hierarchy. Outlier/long-bound handling, representative hardware timing and
+large-scene visual validation remain open before changing the default or claiming
+an overall frame-time gain.
+
+## Opt-in spatial bins for interleaved candidates - 17 October 2026
+
+`PERF-08` now has a spatial grouping alternative to capture-order blocks. With
+`WP_GRAPHICS_CULL_SPATIAL_TEST` enabled, captures of at least 64 candidates find
+the widest finite world-centre axis and assign bounded candidates to uniform
+bins along it. Bin count is `ceil(candidate_count / 32)`; occupancy is variable,
+and empty bins are never tested. Padded enclosing world AABBs use the same
+conservative half-axis/padding policy as block bounds. Unknown bounds are mapped
+to the individual path instead of disabling a bin containing valid neighbours.
+
+Candidates and visible-list traversal remain in capture order; the immutable
+object-to-bin map never reorders entries or changes stable equal-key ordering.
+Each main-camera execution optionally caches bin classifications in private byte
+storage, testing each occupied bin at most once. Outside bins skip geometry,
+inside bins skip individual geometry but retain member filters, and boundary or
+invalid classifications retain individual tests. Shadow views bypass camera
+classification. Derived views share bin bounds and mapping with the full candidate
+publication, but allocate their own classifications and use independent cameras.
+
+The retained bounds/map and one view's classification bytes are checked against
+the remaining 64 MiB entry/ancestor capture budget. Optional capture allocation
+failure falls back to capture-order blocks when separately enabled, otherwise
+flat tests; optional view-cache allocation failure uses flat tests. Cancellation,
+reconfiguration and last-publication retirement release the owned mapping.
+The new scene/job switch is off by default, rejects READY changes at job scope,
+and scene policy persists across pool replacement/clear. If both spatial and
+block flags are enabled, successful spatial preparation takes precedence.
+Existing per-view group counters/main-view Claw telemetry report classifications;
+shared capture still needs representative allocation/build/timing profiling.
+
+Native coverage includes 129 interleaved candidates: capture-order blocks reject
+none and perform 128 individual sphere tests, whereas spatial bins reject 64,
+contain 64 and perform zero individual sphere tests; one unknown-bound candidate
+remains visible on the conservative path. Both preserve exact flat-path order,
+including tied queue keys. Moved-camera/shadow derivation after source retirement,
+member filters, 32 reflected/sheared/singular view cases, invalid frusta,
+degenerate centre spans, cancellation/rebuild and stale-result checks pass.
+All six isolated contracts pass in Debug and RelWithDebInfo.
+All seven selected full Debug contracts pass, including the active 64-mesh
+DX11/WARP flat/block/spatial pixel comparison. Interleaved capture-order blocks
+retain 64 individual sphere tests; spatial bins classify one inside and one
+outside cluster with zero individual geometry tests and identical full output
+pixels. Existing moved-node, member visibility, stale post-draw rollback and
+target lifecycle checks remain green. `git diff --check` passes.
+Logs: `project_x64/{build,test}_spatial_bins_debug.log` and
+`project_graphics_contracts/{build,test}_spatial_bins_{debug,release}.log`.
+
+This is a per-capture one-axis spatial partition, not a retained multi-axis BVH.
+Every candidate still participates in capture and ordered map traversal. Clusters,
+outliers and long bounds can produce poor bins; representative hardware timing,
+large-scene visual acceptance, axis/bin tuning and retained-index work remain open.
+Neither coarse policy is enabled by default by this increment.
+
+## Coarse block containment and active multi-mesh RTT gate - 17 October 2026
+
+The opt-in coarse cull tier now accepts padded block bounds fully inside every
+camera plane, bypassing individual sphere/box/SAT geometry tests for that block.
+Member visibility, masks, render-callback presence and stable ordering still run.
+Containment state is private to each execute call and resets at every block;
+boundary/invalid blocks retain individual tests, and shadow views bypass camera
+geometry as before. Derived camera views classify the shared bounds independently.
+No additional storage or default-policy change is introduced.
+
+Copied bounds counters and main-view Claw telemetry add fully contained block and
+candidate counts. These candidate counts precede member filtering and must not be
+interpreted as an exact count of tests avoided. Native flat-path parity coverage
+now checks a 129-candidate capture with two contained blocks (33 candidates,
+including the partial tail), alongside rejected and unknown-bound blocks. Hiding,
+masking and removing a callback within a contained block preserves flat-path
+visible ordering; reflected/sheared/singular transforms, invalid views, shadows
+and source-view retirement continue through the existing regressions.
+
+The active DX11/WARP RTT contract now grows the real Claw scene from one to 64
+native scene-node/mesh objects. It compares the entire rendered image between
+flat culling and the coarse tier, checks one contained and one rejected block,
+then moves the rejected block into view and hides one contained member. The
+fixture also retains post-draw stale-result rollback, target restoration and
+resize checks. Every extra mesh binding is detached before native scene clear.
+All seven selected full Debug contracts pass, including this active DX11/WARP
+pixel/lifecycle gate. The flat 64-mesh frame performs 64 sphere tests; coarse
+classification accepts one 32-candidate block and rejects the other, performing
+zero individual sphere/box/SAT tests. Moving the rejected block into view accepts
+both blocks, and hiding a contained member produces 63 visible objects. Every
+frame preserves the reference pixels. All six isolated contracts pass in Debug
+and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_group_inside_debug.log` and
+`project_graphics_contracts/{build,test}_group_inside_{debug,release}.log`.
+
+Capture-order blocks remain opt-in. This focused WARP scene is a reproducible
+pixel/work-count gate, not a representative large-scene hardware/performance or
+interactive Editor acceptance result. Spatial partitioning, retained scene indices,
+representative timings and threshold tuning remain open.
+
 ## Opt-in coarse candidate-block rejection - 17 October 2026
 
 `PERF-08` now has a first coarse rejection tier in native cull execution. With

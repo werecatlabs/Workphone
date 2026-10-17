@@ -52,6 +52,8 @@ typedef struct cull_snapshot
     wp_s32 count;
     wp_u32 references;
     wp_cull_box *groups;
+    wp_s32 *entry_groups;
+    wp_s32 group_count;
 } cull_snapshot;
 
 struct wp_graphics_cull_result
@@ -73,7 +75,7 @@ struct wp_graphics_cull_result
     wp_transform_job_stats transform_stats;
     wp_graphics_cull_bounds_stats bounds_stats;
     wp_graphics_cull_sort_stats sort_stats;
-    wp_s32 sphere_test, sat_test, group_test;
+    wp_s32 sphere_test, sat_test, group_test, spatial_test;
 };
 
 struct wp_graphics_cull_job
@@ -82,6 +84,8 @@ struct wp_graphics_cull_job
     cull_snapshot *shared_snapshot; /* internal borrowed input for view derivation */
     cull_entry *entries;
     wp_cull_box *groups;
+    wp_s32 *entry_groups;
+    wp_s32 group_count;
     wp_s32 entry_count;
     wp_u32 visibility_mask;
     wp_s32 has_camera;
@@ -89,7 +93,7 @@ struct wp_graphics_cull_job
     wp_u32 camera_mask, scene_mask;
     wp_mat4f view_projection, view, projection;
     wp_cull_frustum frustum;
-    wp_s32 sphere_test, sat_test, group_test;
+    wp_s32 sphere_test, sat_test, group_test, spatial_test;
     const wp_graphics_scene *scene;
     wp_u64 native_generation;
     wp_transform_job_system *transforms;
@@ -114,10 +118,201 @@ static void cull_job_release_snapshot( wp_graphics_cull_job *job )
         }
     }
     free( job->groups );
+    free( job->entry_groups );
+    job->entry_groups = NULL;
+    job->group_count = 0;
     job->groups = NULL;
     free( job->entries );
     job->entries = NULL;
     job->entry_count = 0;
+}
+
+/* Spatial bins split the widest remaining cell dimension, without changing entry or
+ * draw-list traversal order. Unknown bounds remain individual candidates. */
+static wp_s32 cull_prepare_spatial_groups( wp_graphics_cull_job *job, size_t bytes )
+{
+    wp_s32 i, j, k, axis, bin, count, target, grid[3], cell[3], spanning;
+    double low[3], high[3], spans[3], extents[3], ratio, extent, a, b, squared, padding;
+    const wp_cull_box *box;
+    wp_cull_box *group;
+    size_t group_bytes, map_bytes;
+    for( j = 0; j < 3; ++j )
+    {
+        low[j] = DBL_MAX;
+        high[j] = -DBL_MAX;
+    }
+    for( i = 0; i < job->entry_count; ++i )
+    {
+        box = &job->entries[i].box;
+        if( !box->valid )
+        {
+            continue;
+        }
+        for( j = 0; j < 3; ++j )
+        {
+            if( box->center[j] < low[j] )
+            {
+                low[j] = box->center[j];
+            }
+            if( box->center[j] > high[j] )
+            {
+                high[j] = box->center[j];
+            }
+        }
+    }
+    if( low[0] > high[0] )
+    {
+        return 0;
+    }
+    for( j = 0; j < 3; ++j )
+    {
+        spans[j] = high[j] - low[j];
+        if( !wp_cull_finite( spans[j] ) )
+        {
+            return 0;
+        }
+        grid[j] = 1;
+    }
+    target = job->entry_count / WP_CULL_GROUP_SIZE + ( job->entry_count % WP_CULL_GROUP_SIZE != 0 );
+    count = 1;
+    /* Power-of-two grids fit the existing bin budget. Equal spans prefer X/Y/Z
+     * deterministically; coincident centres need only one occupied cell. */
+    while( count <= target / 2 )
+    {
+        axis = 0;
+        for( j = 1; j < 3; ++j )
+        {
+            if( spans[j] / grid[j] > spans[axis] / grid[axis] )
+            {
+                axis = j;
+            }
+        }
+        if( spans[axis] <= 0 )
+        {
+            break;
+        }
+        grid[axis] *= 2;
+        count *= 2;
+    }
+    group_bytes = (size_t)count * sizeof( *group );
+    map_bytes = (size_t)job->entry_count * sizeof( *job->entry_groups );
+    /* Include a view's optional classification bytes as well as retained arrays. */
+    if( group_bytes + map_bytes + (size_t)count > 64u * 1024u * 1024u - bytes )
+    {
+        return 0;
+    }
+    job->groups = (wp_cull_box *)calloc( (size_t)count, sizeof( *group ) );
+    job->entry_groups = (wp_s32 *)malloc( map_bytes );
+    if( !job->groups || !job->entry_groups )
+    {
+        free( job->groups );
+        free( job->entry_groups );
+        job->groups = NULL;
+        job->entry_groups = NULL;
+        return 0;
+    }
+    job->group_count = count;
+    for( i = 0; i < job->entry_count; ++i )
+    {
+        box = &job->entries[i].box;
+        job->entry_groups[i] = -1;
+        if( !box->valid )
+        {
+            continue;
+        }
+        spanning = 0;
+        for( j = 0; j < 3; ++j )
+        {
+            extents[j] = 0;
+            for( k = 0; k < 3; ++k )
+            {
+                extents[j] += fabs( box->axes[k][j] );
+            }
+            if( grid[j] == 1 )
+            {
+                cell[j] = 0;
+                continue;
+            }
+            ratio = spans[j] > 0 ? ( box->center[j] - low[j] ) / spans[j] : 0;
+            cell[j] = (wp_s32)( ratio * grid[j] );
+            if( cell[j] < 0 )
+            {
+                cell[j] = 0;
+            }
+            if( cell[j] >= grid[j] )
+            {
+                cell[j] = grid[j] - 1;
+            }
+            /* Grid limits describe centres, not geometry. Only interior planes
+             * separate neighbours: outer cells may extend beyond the centre range.
+             * A cross-cell bound remains individually tested instead of loosening
+             * one bin enough to prevent rejection of its small neighbours. */
+            extent = spans[j] / grid[j];
+            a = low[j] + extent * cell[j];
+            b = low[j] + extent * ( cell[j] + 1 );
+            if( ( cell[j] > 0 && box->center[j] - extents[j] < a ) ||
+                ( cell[j] + 1 < grid[j] && box->center[j] + extents[j] > b ) )
+            {
+                spanning = 1;
+            }
+        }
+        if( spanning )
+        {
+            continue;
+        }
+        bin = ( cell[0] * grid[1] + cell[1] ) * grid[2] + cell[2];
+        group = &job->groups[bin];
+        /* During accumulation, centre/first axis hold lower/upper bounds. */
+        for( j = 0; j < 3; ++j )
+        {
+            a = box->center[j] - extents[j];
+            b = box->center[j] + extents[j];
+            if( !group->valid || a < group->center[j] )
+            {
+                group->center[j] = a;
+            }
+            if( !group->valid || b > group->axes[0][j] )
+            {
+                group->axes[0][j] = b;
+            }
+        }
+        group->valid = 1;
+        job->entry_groups[i] = bin;
+    }
+    for( bin = 0; bin < count; ++bin )
+    {
+        group = &job->groups[bin];
+        if( !group->valid )
+        {
+            continue;
+        }
+        for( j = 0; j < 3; ++j )
+        {
+            low[j] = group->center[j];
+            high[j] = group->axes[0][j];
+        }
+        memset( group, 0, sizeof( *group ) );
+        group->valid = 1;
+        squared = 0;
+        for( j = 0; j < 3; ++j )
+        {
+            padding = 1.0e-4 * ( 1 + fabs( low[j] ) + fabs( high[j] ) );
+            group->center[j] = 0.5 * low[j] + 0.5 * high[j];
+            extent = 0.5 * high[j] - 0.5 * low[j] + padding;
+            group->axes[j][j] = extent;
+            squared += extent * extent;
+            if( !wp_cull_finite( group->center[j] ) || !wp_cull_finite( extent ) )
+            {
+                group->valid = 0;
+            }
+        }
+        group->radius = sqrt( squared );
+        if( !wp_cull_finite( group->radius ) )
+        {
+            group->valid = 0;
+        }
+    }
+    return 1;
 }
 
 /* Immutable coarse bounds over capture-order blocks; no reordering of objects.
@@ -129,6 +324,11 @@ static void cull_prepare_groups( wp_graphics_cull_job *job, size_t bytes )
     double low[3], high[3], extent, minimum, maximum, padding, squared;
     const wp_cull_box *box;
     wp_cull_box *group;
+    if( job->spatial_test && job->entry_count >= WP_CULL_GROUP_MINIMUM &&
+        cull_prepare_spatial_groups( job, bytes ) )
+    {
+        return;
+    }
     if( !job->group_test || job->entry_count < WP_CULL_GROUP_MINIMUM )
     {
         return;
@@ -143,6 +343,7 @@ static void cull_prepare_groups( wp_graphics_cull_job *job, size_t bytes )
     {
         return; /* Optional optimization: retain the flat path. */
     }
+    job->group_count = group_count;
     for( first = 0; first < job->entry_count; first = end )
     {
         end = job->entry_count - first < WP_CULL_GROUP_SIZE ? job->entry_count
@@ -543,7 +744,8 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     wp_s32 *scratch;
     wp_s32 *sorted;
     wp_s32 count;
-    wp_s32 i, stage, outside, ordered, group_end;
+    wp_s32 i, stage, outside, ordered, group_end, group_index, group_inside = 0;
+    signed char *group_states;
     size_t alloc_count;
     const cull_entry *entry;
 
@@ -576,21 +778,71 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     }
     memset( result, 0, sizeof( *result ) );
 
+    /* Per-view cache never mutates shared bounds or affects stable traversal.
+     * Missing optional storage simply executes the flat geometry path. */
+    group_states = job->entry_groups && job->has_camera && job->pass == WP_GRAPHICS_CULL_PASS_MAIN
+                       ? (signed char *)calloc( (size_t)job->group_count, 1 )
+                       : NULL;
     count = 0;
     for( i = 0; i < job->entry_count; ++i )
     {
-        if( job->groups && job->group_test && job->has_camera &&
-            job->pass == WP_GRAPHICS_CULL_PASS_MAIN && i % WP_CULL_GROUP_SIZE == 0 )
+        if( job->entry_groups )
         {
+            group_inside = 0;
+            group_index = job->entry_groups[i];
+            if( group_states && group_index >= 0 )
+            {
+                if( !group_states[group_index] )
+                {
+                    ++result->bounds_stats.group_tests;
+                    outside = wp_cull_box_outside( &job->groups[group_index], &job->frustum, 0, &stage );
+                    group_states[group_index] = (signed char)( outside ? -1 : stage ? stage : 6 );
+                    if( outside )
+                    {
+                        ++result->bounds_stats.group_rejections;
+                    }
+                    else if( stage == 5 )
+                    {
+                        ++result->bounds_stats.group_inside;
+                    }
+                    else if( !stage )
+                    {
+                        ++result->bounds_stats.group_fallbacks;
+                    }
+                }
+                if( group_states[group_index] == -1 )
+                {
+                    ++result->bounds_stats.group_skipped_candidates;
+                    continue;
+                }
+                if( group_states[group_index] == 5 )
+                {
+                    group_inside = 1;
+                    ++result->bounds_stats.group_inside_candidates;
+                }
+            }
+        }
+        else if( job->groups && job->group_test && job->has_camera &&
+                 job->pass == WP_GRAPHICS_CULL_PASS_MAIN && i % WP_CULL_GROUP_SIZE == 0 )
+        {
+            group_inside = 0;
+            group_end =
+                job->entry_count - i < WP_CULL_GROUP_SIZE ? job->entry_count : i + WP_CULL_GROUP_SIZE;
             ++result->bounds_stats.group_tests;
             if( wp_cull_box_outside( &job->groups[i / WP_CULL_GROUP_SIZE], &job->frustum, 0, &stage ) )
             {
-                group_end = job->entry_count - i < WP_CULL_GROUP_SIZE ? job->entry_count
-                                                                      : i + WP_CULL_GROUP_SIZE;
                 ++result->bounds_stats.group_rejections;
                 result->bounds_stats.group_skipped_candidates += (wp_u32)( group_end - i );
                 i = group_end - 1;
                 continue;
+            }
+            if( stage == 5 )
+            {
+                /* A padded enclosing bound is inside every plane. Only geometry
+                 * tests are redundant: member visibility/masks/callbacks still apply. */
+                group_inside = 1;
+                ++result->bounds_stats.group_inside;
+                result->bounds_stats.group_inside_candidates += (wp_u32)( group_end - i );
             }
             if( !stage )
             {
@@ -613,7 +865,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
                 continue;
             }
         }
-        else if( job->has_camera )
+        else if( job->has_camera && !group_inside )
         {
             outside = wp_cull_box_outside( &entry->box, &job->frustum, job->sphere_test, &stage );
             if( !stage )
@@ -681,6 +933,8 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         indices[count++] = i;
     }
 
+    free( group_states );
+
     /* Equal keys retain capture order. Check only visible survivors: excluded
      * candidates must not force allocation or sorting of an already ordered view. */
     ordered = 1;
@@ -720,6 +974,8 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     else
     {
         snapshot->groups = job->groups;
+        snapshot->entry_groups = job->entry_groups;
+        snapshot->group_count = job->group_count;
         snapshot->entries = job->entries;
         snapshot->count = job->entry_count;
         snapshot->references = 1;
@@ -729,6 +985,8 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     result->entries = job->entries;
     job->entries = NULL;
     job->groups = NULL;
+    job->entry_groups = NULL;
+    job->group_count = 0;
     result->indices = sorted;
     result->scene = job->scene;
     result->native_generation = job->native_generation;
@@ -746,6 +1004,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     result->sphere_test = job->sphere_test;
     result->sat_test = job->sat_test;
     result->group_test = job->group_test;
+    result->spatial_test = job->spatial_test;
 
     free( sorted == indices ? scratch : indices );
     cull_job_release_snapshot( job );
@@ -812,6 +1071,7 @@ void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result )
         {
             free( result->snapshot->entries[i].ancestors );
         }
+        free( result->snapshot->entry_groups );
         free( result->snapshot->groups );
         free( result->snapshot->entries );
         free( result->snapshot );
@@ -1015,12 +1275,15 @@ wp_graphics_cull_result *wp_graphics_cull_result_create_view( const wp_graphics_
     memset( &view, 0, sizeof( view ) );
     view.entries = source->entries;
     view.groups = source->snapshot->groups;
+    view.entry_groups = source->snapshot->entry_groups;
+    view.group_count = source->snapshot->group_count;
     view.entry_count = source->candidate_count;
     view.shared_snapshot = source->snapshot;
     view.transform_stats = source->transform_stats;
     view.sphere_test = source->sphere_test;
     view.sat_test = source->sat_test;
     view.group_test = source->group_test;
+    view.spatial_test = source->spatial_test;
     cull_capture_view( &view, source->scene, camera, pass, source->scene_generation );
     view.status = WP_GRAPHICS_CULL_STATUS_READY;
     /* Execute uses only captured entries, allocates independent indices and
@@ -1104,5 +1367,19 @@ wp_s32 wp_graphics_cull_job_set_group_test( wp_graphics_cull_job *job, wp_s32 en
         return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
     }
     job->group_test = enabled != 0;
+    return WP_GRAPHICS_CULL_OK;
+}
+
+wp_s32 wp_graphics_cull_job_set_spatial_test( wp_graphics_cull_job *job, wp_s32 enabled )
+{
+    if( !job )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    }
+    if( job->status == WP_GRAPHICS_CULL_STATUS_READY )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
+    }
+    job->spatial_test = enabled != 0;
     return WP_GRAPHICS_CULL_OK;
 }
