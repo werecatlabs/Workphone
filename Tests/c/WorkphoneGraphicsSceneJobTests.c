@@ -88,6 +88,220 @@ static wp_s32 consume( wp_graphics_object *o, wp_renderer *r, const wp_mat4f *w,
     return 1;
 }
 
+static void matrix_cache( void )
+{
+    wp_scenenode *root = wp_scenenode_create(), *child = wp_scenenode_create(),
+                 *sibling = wp_scenenode_create(), *other = wp_scenenode_create();
+    wp_scenenode_transform_stats root_stats, child_stats, sibling_stats;
+    wp_vec3f position = { 3, 4, 5 }, scale = { -2, 3, 4 };
+    wp_quatf orientation = { 1.41421356f, 0, 0, 1.41421356f };
+    wp_mat4f translation, rotation, scaling, combined, parent, child_local, expected, actual;
+    wp_u64 revision;
+    int i;
+    wp_scenenode_add_child( root, child );
+    wp_scenenode_add_child( root, sibling );
+    wp_scenenode_set_position( root, position );
+    wp_scenenode_set_orientation( root, orientation );
+    wp_scenenode_set_scale( root, scale );
+    wp_mat4f_from_translation( &translation, 3, 4, 5 );
+    wp_mat4f_from_rotation_z( &rotation, 1.57079632679f );
+    wp_mat4f_from_scale( &scaling, -2, 3, 4 );
+    wp_mat4f_mul( &combined, &translation, &rotation );
+    wp_mat4f_mul( &parent, &combined, &scaling );
+    position.x = 1;
+    position.y = 2;
+    position.z = 3;
+    wp_scenenode_set_position( child, position );
+    wp_mat4f_from_translation( &child_local, 1, 2, 3 );
+    wp_mat4f_mul( &expected, &parent, &child_local );
+    wp_scenenode_get_world_matrix( child, &actual );
+    CHECK( equal_matrix( &actual, &expected ) );
+    wp_scenenode_get_world_matrix( sibling, &actual );
+    for( i = 0; i < 100; ++i )
+    {
+        wp_scenenode_get_world_matrix( child, &actual );
+        wp_scenenode_get_local_matrix( root, &actual );
+    }
+    wp_scenenode_get_transform_stats( root, &root_stats );
+    wp_scenenode_get_transform_stats( child, &child_stats );
+    CHECK( root_stats.local_builds == 1 && root_stats.world_builds == 1 &&
+           child_stats.local_builds == 1 && child_stats.world_builds == 1 );
+    revision = wp_scenenode_get_generation( root );
+    position.x = 3;
+    position.y = 4;
+    position.z = 5;
+    wp_scenenode_set_position( root, position );
+    wp_scenenode_set_orientation( root, orientation );
+    wp_scenenode_set_scale( root, scale );
+    CHECK( wp_scenenode_get_generation( root ) == revision );
+    position.x = 2;
+    position.y = 2;
+    position.z = 3;
+    wp_scenenode_set_position( child, position );
+    wp_scenenode_get_world_matrix( child, &actual );
+    wp_mat4f_from_translation( &child_local, 2, 2, 3 );
+    wp_mat4f_mul( &expected, &parent, &child_local );
+    CHECK( equal_matrix( &actual, &expected ) );
+    wp_scenenode_get_transform_stats( root, &root_stats );
+    wp_scenenode_get_transform_stats( child, &child_stats );
+    wp_scenenode_get_transform_stats( sibling, &sibling_stats );
+    CHECK( root_stats.world_builds == 1 && child_stats.world_builds == 2 &&
+           sibling_stats.world_builds == 1 );
+    /* A grandparent edit invalidates descendant worlds without rebuilding their locals. */
+    position.x = 6;
+    position.y = 4;
+    position.z = 5;
+    wp_scenenode_set_position( root, position );
+    wp_scenenode_get_world_matrix( child, &actual );
+    expected.m[0][3] += 3;
+    CHECK( equal_matrix( &actual, &expected ) );
+    wp_scenenode_get_transform_stats( child, &child_stats );
+    CHECK( child_stats.local_builds == 2 && child_stats.world_builds == 3 );
+    wp_scenenode_get_world_matrix( sibling, &actual );
+    wp_scenenode_get_transform_stats( sibling, &sibling_stats );
+    CHECK( sibling_stats.local_builds == 1 && sibling_stats.world_builds == 2 );
+    /* Reparenting must replace the cached parent transform. */
+    position.x = 20;
+    position.y = 0;
+    position.z = 0;
+    wp_scenenode_set_position( other, position );
+    wp_scenenode_get_world_matrix( other, &actual );
+    wp_scenenode_set_parent( child, other );
+    wp_scenenode_get_world_matrix( child, &actual );
+    CHECK( actual.m[0][3] == 22 && actual.m[1][3] == 2 && actual.m[2][3] == 3 );
+    wp_scenenode_destroy( other );
+    wp_scenenode_get_world_matrix( child, &actual );
+    CHECK( equal_matrix( &actual, &child_local ) );
+    wp_scenenode_get_transform_stats( child, &child_stats );
+    CHECK( child_stats.local_builds == 2 );
+    wp_scenenode_destroy( root );
+    wp_scenenode_destroy( sibling );
+    wp_scenenode_destroy( child );
+}
+
+static void shared_transform_capture( void )
+{
+    enum
+    {
+        population = 256,
+        repeats = 4
+    };
+
+    wp_scenenode *root = wp_scenenode_create(), *children[population];
+    const wp_scenenode *nodes[population * repeats];
+    wp_mat4f worlds[population * repeats], expected;
+    wp_vec3f position = { 3, 4, 5 };
+    wp_transform_job_system *job = wp_transform_job_system_create( NULL, 17 );
+    wp_transform_job_stats stats;
+    wp_scenenode_transform_stats node_stats;
+    int i, j;
+    wp_scenenode_set_position( root, position );
+    for( i = 0; i < population; ++i )
+    {
+        children[i] = wp_scenenode_create();
+        wp_scenenode_add_child( root, children[i] );
+        position.x = (wp_f32)i;
+        position.y = 2;
+        position.z = 1;
+        wp_scenenode_set_position( children[i], position );
+        for( j = 0; j < repeats; ++j )
+        {
+            nodes[i * repeats + j] = children[i];
+        }
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, worlds, population * repeats ) );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.output_count == population * repeats && stats.local_matrix_count == population + 1 &&
+           stats.path_reference_count == population * repeats * 2 );
+    CHECK( stats.capture_peak_bytes <= 64u * 1024u * 1024u &&
+           stats.retained_snapshot_bytes < stats.capture_peak_bytes );
+    for( i = 0; i < population; ++i )
+    {
+        wp_mat4f_from_translation( &expected, 3 + (wp_f32)i, 6, 6 );
+        for( j = 0; j < repeats; ++j )
+        {
+            CHECK( equal_matrix( &worlds[i * repeats + j], &expected ) );
+        }
+    }
+    CHECK( wp_transform_job_system_process( job, nodes, worlds, population * repeats ) );
+    wp_scenenode_get_transform_stats( root, &node_stats );
+    CHECK( node_stats.local_builds == 1 );
+    for( i = 0; i < population; ++i )
+    {
+        wp_scenenode_get_transform_stats( children[i], &node_stats );
+        CHECK( node_stats.local_builds == 1 );
+    }
+    position.x = 9;
+    position.y = 4;
+    position.z = 5;
+    wp_scenenode_set_position( root, position );
+    CHECK( wp_transform_job_system_dispatch( job, nodes, worlds, population * repeats ) );
+    for( i = 0; i < population; ++i )
+    {
+        wp_scenenode_destroy( children[i] );
+    }
+    wp_scenenode_destroy( root );
+    wp_transform_job_system_wait( job );
+    for( i = 0; i < population; ++i )
+    {
+        wp_mat4f_from_translation( &expected, 9 + (wp_f32)i, 6, 6 );
+        CHECK( equal_matrix( &worlds[i * repeats], &expected ) );
+    }
+    printf(
+        "Transform reuse fixture: %u outputs, %u path references, %u unique locals, %lu retained "
+        "bytes.\n",
+        (unsigned)stats.output_count, (unsigned)stats.path_reference_count,
+        (unsigned)stats.local_matrix_count, (unsigned long)stats.retained_snapshot_bytes );
+    wp_transform_job_system_destroy( job );
+}
+
+static void cache_depth_boundary( void )
+{
+    wp_scenenode *nodes[258];
+    wp_mat4f world;
+    wp_vec3f position = { 1, 0, 0 };
+    wp_camera *camera = wp_camera_create();
+    wp_mat4f view;
+    int i;
+    for( i = 0; i < 258; ++i )
+    {
+        nodes[i] = wp_scenenode_create();
+        wp_scenenode_set_position( nodes[i], position );
+        if( i )
+        {
+            wp_scenenode_add_child( nodes[i - 1], nodes[i] );
+        }
+    }
+    position.x = 7;
+    wp_scenenode_set_position( nodes[0], position );
+    wp_scenenode_get_world_matrix( nodes[256], &world );
+    CHECK( world.m[0][3] == 263 );
+    wp_scenenode_get_world_matrix( nodes[257], &world );
+    CHECK( world.m[0][3] == 257 );
+    wp_scenenode_get_world_matrix( nodes[256], &world );
+    CHECK( world.m[0][3] == 263 );
+    wp_camera_attach_to_node( camera, nodes[2] );
+    wp_camera_get_view_matrix( camera, &view );
+    CHECK( view.m[0][3] == -9 );
+    position.x = 10;
+    wp_scenenode_set_position( nodes[0], position );
+    wp_scenenode_get_world_matrix( nodes[256], &world );
+    CHECK( world.m[0][3] == 266 );
+    wp_scenenode_get_world_matrix( nodes[257], &world );
+    CHECK( world.m[0][3] == 257 );
+    wp_camera_get_view_matrix( camera, &view );
+    CHECK( view.m[0][3] == -12 );
+    wp_scenenode_set_parent( nodes[257], nodes[0] );
+    wp_scenenode_get_world_matrix( nodes[257], &world );
+    CHECK( world.m[0][3] == 11 );
+    wp_camera_attach_to_node( camera, NULL );
+    wp_camera_destroy( camera );
+    for( i = 257; i >= 0; --i )
+    {
+        wp_scenenode_destroy( nodes[i] );
+    }
+}
+
 static void transforms( void )
 {
     wp_threadpool *pool = wp_threadpool_create( 2 );
@@ -246,6 +460,8 @@ static void culling( void )
                                               { { 0.2f, -0.2f, -2 } },
                                               { { 0, 0.2f, -2 } } };
     wp_graphics_cull_result *main, *shadow, *other;
+    wp_transform_job_stats prepared_stats;
+    wp_scenenode_transform_stats node_stats;
     wp_graphics_cull_job *job = wp_graphics_cull_job_create();
     wp_mat4f world, frozen;
     wp_vec3f p = { 100, 0, 0 };
@@ -269,6 +485,16 @@ static void culling( void )
     wp_graphics_scene_set_active_camera( scene, camera );
     main = capture( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN );
     shadow = capture( scene, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+    wp_graphics_cull_result_get_transform_stats( main, &prepared_stats );
+    CHECK( prepared_stats.output_count == 4 && prepared_stats.local_matrix_count == 2 &&
+           prepared_stats.path_reference_count == 2 );
+    wp_scenenode_get_transform_stats( parent, &node_stats );
+    CHECK( node_stats.local_builds == 1 );
+    wp_scenenode_set_position( parent, wp_scenenode_get_position( parent ) );
+    CHECK( wp_graphics_cull_result_validate( main, scene,
+                                             wp_graphics_cull_result_get_scene_generation( main ) ) ==
+           WP_GRAPHICS_CULL_OK );
+
     CHECK( wp_graphics_cull_result_get_visible_count( main ) == 3 &&
            wp_graphics_cull_result_get_visible_count( shadow ) == 4 );
     CHECK( wp_graphics_cull_result_get_object( main, 0 ) == b &&
@@ -428,6 +654,9 @@ static void retirement( void )
 
 int main( void )
 {
+    matrix_cache();
+    cache_depth_boundary();
+    shared_transform_capture();
     transforms();
     hierarchy_limit();
     culling();
