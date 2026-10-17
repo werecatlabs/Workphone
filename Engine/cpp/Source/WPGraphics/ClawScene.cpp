@@ -896,6 +896,24 @@ namespace workphone
                 wp_graphics_cull_result_get_transform_dispatch_count(m_nativeRenderJobs->shadow) : 0;
         }
 
+        bool ClawScene::getPreparedJobStatistics( wp_transform_job_stats *transforms,
+                                                  wp_graphics_cull_bounds_stats *bounds,
+                                                  wp_u32 *candidates, wp_u32 *visible ) const
+        {
+            auto main = m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr;
+            wp_graphics_cull_result_get_transform_stats( main, transforms );
+            wp_graphics_cull_result_get_bounds_stats( main, bounds );
+            if( candidates )
+            {
+                *candidates = static_cast<wp_u32>( wp_graphics_cull_result_get_candidate_count( main ) );
+            }
+            if( visible )
+            {
+                *visible = static_cast<wp_u32>( wp_graphics_cull_result_get_visible_count( main ) );
+            }
+            return main != nullptr;
+        }
+
         void ClawScene::discardRenderJobs()
         {
             m_nativeRenderJobs.reset();

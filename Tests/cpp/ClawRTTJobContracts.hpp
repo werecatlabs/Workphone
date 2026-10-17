@@ -6,6 +6,9 @@
 #include <WPGraphics/ClawScene.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <WorkphoneGraphics/workphone_graphics_cull_job.h>
+#include <WorkphoneGraphics/workphone_graphics_transform_job.h>
+#include <WorkphoneGraphics/workphone_graphics_scenenode.h>
+#include <Workphone/Core/Properties.hpp>
 #include <WorkphoneGraphics/workphone_graphics_system.h>
 #include <thread>
 #include <stdexcept>
@@ -241,7 +244,7 @@ public:
     void initialise(SmartPtr<ClawRendererDX11> renderer, SmartPtr<Textures> textures) {
         m_sys = wp_graphics_system_create(); m_renderer = renderer; m_textureManager = textures;
     }
-    void frame() { prepareFramePasses(.016f); wp_graphics_system_render(m_sys); }
+    void frame() { prepareFramePasses(.016f); wp_graphics_system_render(m_sys); publishRenderStatistics(); }
     void render() override {
         ++draws;
         auto renderer = dynamic_pointer_cast<ClawRendererDX11>(getRenderer());
@@ -249,6 +252,16 @@ public:
             require(nativeScene->validateRenderJobs(), "frame must publish transform/cull dependency before draw");
             require(nativeScene->getPreparedTransformDispatchCount()==1,
                 "active colour/shadow pass must share one transform dispatch");
+            wp_transform_job_stats transforms{}; wp_graphics_cull_bounds_stats bounds{};
+            wp_u32 candidates=0,visible=0;
+            require(nativeScene->getPreparedJobStatistics(&transforms,&bounds,&candidates,&visible) &&
+                    candidates==1 && visible==1 && transforms.output_count==1,
+                    "active preparation exposes one shared candidate publication");
+            const auto flags=wp_graphics_scene_get_cull_flags(nativeScene->getNativeScene());
+            require((flags&WP_GRAPHICS_CULL_SPHERE_TEST) || bounds.sphere_tests==0,
+                    "active scene honours disabled sphere policy");
+            require((flags&WP_GRAPHICS_CULL_SAT_TEST) || bounds.sat_tests==0,
+                    "active scene honours disabled SAT policy");
             ClawHammerSystem::render();
             if(retireSceneAfterDraw) {
                 if(nativeMesh) nativeMesh->bindNativeRenderObject(nullptr);
@@ -300,23 +313,53 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     // the completed draw stale before publication. Last complete output survives.
     auto nativeScene = make_ptr<ClawScene>();
     auto object = wp_graphics_scene_create_object(nativeScene->getNativeScene());
+    auto nativeNode=wp_graphics_scene_create_node(nativeScene->getNativeScene());
+    wp_scenenode_attach_object(nativeNode,object);
     auto snapshotMesh = make_ptr<SnapshotMesh>();
+    wp_graphics_mesh_compute_aabb(snapshotMesh->getNativeMesh());
     snapshotMesh->bindNativeRenderObject(object);
     snapshotMesh->setVisibilityFlags(~u32(0));
     nativeScene->setEnableShadows(false);
     graphics.nativeMesh = snapshotMesh;
     graphics.attachScene(nativeScene);
     graphics.fail = false;
+    auto request=make_ptr<Properties>(); request->setProperty("request_render_statistics",true);
+    graphics.setProperties(request);
     graphics.frame();
+    String counters;
+    require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("Preparation last frame: views=1 candidates=1 main-visible=1 transform dispatches=1")!=String::npos,
+            "frame telemetry counts colour/shadow publication once after retirement");
+    require(counters.find("reference scratch allocs=1 reuses=0")!=String::npos,
+            "first active capture allocates reference scratch once");
     good = pixels(output);
     require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
         "real ClawScene cull result must draw and be retired at frame end");
+    wp_transform_job_stats retiredTransforms{}; wp_graphics_cull_bounds_stats retiredBounds{};
+    wp_u32 retiredCandidates=99,retiredVisible=99;
+    require(!nativeScene->getPreparedJobStatistics(&retiredTransforms,&retiredBounds,&retiredCandidates,&retiredVisible) &&
+            !retiredCandidates && !retiredVisible && !retiredTransforms.output_count && !retiredBounds.sphere_tests,
+            "retired preparation metadata is zeroed");
+    require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),0)!=0,"disable scene optional cull stages");
+    graphics.setProperties(request); graphics.frame();
+    require(pixels(output)==good,"cull A/B policy preserves visible RTT pixels");
+    require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("sphere tests=0 rejects=0")!=String::npos &&
+            counters.find("SAT tests=0 rejects=0 axes=0")!=String::npos,
+            "render statistics expose disabled stage work");
+    require(counters.find("reference scratch allocs=0 reuses=1")!=String::npos,
+            "warm active scene capture reuses reference scratch without allocation");
     graphics.retireSceneAfterDraw = true;
     viewport->setBackgroundColour(ColourF(1,0,1,1));
     graphics.frame();
     require(pixels(output) == good && renderer->getRenderTarget() == window,
         "scene retirement after draw must invalidate cull dependency and retain prior RTT output");
     graphics.removeScenes(); nativeScene = nullptr;
+    viewport->setActive(false); graphics.setProperties(request); graphics.frame();
+    require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
+            counters.find("Preparation last frame: views=0 candidates=0 main-visible=0 transform dispatches=0")!=String::npos,
+            "skipped frame does not carry prior preparation counters");
+    viewport->setActive(true);
     }
     const auto oldGeneration = wp_renderer_dx11_get_render_texture_generation(output);
     target->setSize({20000,20000});

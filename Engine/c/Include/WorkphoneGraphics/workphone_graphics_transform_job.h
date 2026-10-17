@@ -21,6 +21,10 @@ typedef struct wp_transform_job_stats
     /* Planned/executed after draining: one multiplication per unique ancestor
      * within each cached batch; uncached fallback uses path_reference_count. */
     wp_u32 matrix_multiply_count, batch_count;
+    /* Per accepted capture, for reference-sort scratch only (not all job allocations).
+     * Exact-size reuse retains storage after scrubbing every borrowed pointer. */
+    wp_u32 capture_scratch_allocations, capture_scratch_reuses;
+    wp_u64 capture_scratch_bytes;
     wp_u64 retained_snapshot_bytes, capture_peak_bytes;
 } wp_transform_job_stats;
 

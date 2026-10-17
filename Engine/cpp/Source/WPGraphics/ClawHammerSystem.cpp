@@ -1,6 +1,7 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <stdexcept>
 #include "workphone_graphics_cull_job.h"
+#include "workphone_graphics_transform_job.h"
 #include <WPGraphics/ClawDebug.hpp>
 #include <WPGraphics/ClawFontManager.hpp>
 #include <WPGraphics/ClawGraphicsPipeline.hpp>
@@ -140,6 +141,14 @@ namespace workphone
             SmartPtr<IViewport> previousViewport;
             SmartPtr<IGraphicsCamera> previousCamera;
             Array<SmartPtr<ClawScene>> preparedScenes;
+
+            struct PreparationWork
+            {
+                u64 views = 0, candidates = 0, visible = 0, dispatches = 0, multiplies = 0;
+                u64 scratchAllocations = 0, scratchReuses = 0;
+                u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
+                    satAxes = 0, satFallbacks = 0;
+            } work;
         };
 
         ClawHammerSystem::ClawHammerSystem() : m_sys( nullptr )
@@ -243,6 +252,39 @@ namespace workphone
                     result = summary;
                 }
             }
+            FramePassContext::PreparationWork work;
+            for( const auto &pass : m_framePasses )
+            {
+                work.views += pass.work.views;
+                work.candidates += pass.work.candidates;
+                work.visible += pass.work.visible;
+                work.dispatches += pass.work.dispatches;
+                work.multiplies += pass.work.multiplies;
+                work.scratchAllocations += pass.work.scratchAllocations;
+                work.scratchReuses += pass.work.scratchReuses;
+                work.sphereTests += pass.work.sphereTests;
+                work.sphereRejects += pass.work.sphereRejects;
+                work.boxTests += pass.work.boxTests;
+                work.satTests += pass.work.satTests;
+                work.satRejects += pass.work.satRejects;
+                work.satAxes += pass.work.satAxes;
+                work.satFallbacks += pass.work.satFallbacks;
+            }
+            char preparation[768];
+            std::snprintf(
+                preparation, sizeof( preparation ),
+                "\nPreparation last frame: views=%llu candidates=%llu main-visible=%llu "
+                "transform dispatches=%llu matrix multiplies=%llu sphere tests=%llu rejects=%llu "
+                "box tests=%llu SAT tests=%llu rejects=%llu axes=%llu fallbacks=%llu "
+                "reference scratch allocs=%llu reuses=%llu",
+                (unsigned long long)work.views, (unsigned long long)work.candidates,
+                (unsigned long long)work.visible, (unsigned long long)work.dispatches,
+                (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
+                (unsigned long long)work.sphereRejects, (unsigned long long)work.boxTests,
+                (unsigned long long)work.satTests, (unsigned long long)work.satRejects,
+                (unsigned long long)work.satAxes, (unsigned long long)work.satFallbacks,
+                (unsigned long long)work.scratchAllocations, (unsigned long long)work.scratchReuses );
+            result += preparation;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
         }
@@ -639,8 +681,12 @@ namespace workphone
         wp_s32 ClawHammerSystem::beginFramePass( wp_graphics_system *system, wp_f32 dt, void *data )
         {
             auto &pass = *static_cast<FramePassContext *>( data );
-            if( pass.owner->m_sys != system ) return 0;
+            if( pass.owner->m_sys != system )
+            {
+                return 0;
+            }
             pass.failed = false;
+            pass.work = {};
             pass.begun = false;
             pass.pipelineStarted = false;
             pass.nativeRtt = pass.rttInside = pass.rttCompleted = pass.rttCaptured = false;
@@ -720,6 +766,25 @@ namespace workphone
                                     throw std::runtime_error(
                                         "Native transform/cull preparation failed." );
                                 }
+                                wp_transform_job_stats transforms{};
+                                wp_graphics_cull_bounds_stats bounds{};
+                                wp_u32 candidates = 0, visible = 0;
+                                clawScene->getPreparedJobStatistics( &transforms, &bounds, &candidates,
+                                                                     &visible );
+                                ++pass.work.views;
+                                pass.work.candidates += candidates;
+                                pass.work.visible += visible;
+                                pass.work.dispatches += clawScene->getPreparedTransformDispatchCount();
+                                pass.work.multiplies += transforms.matrix_multiply_count;
+                                pass.work.scratchAllocations += transforms.capture_scratch_allocations;
+                                pass.work.scratchReuses += transforms.capture_scratch_reuses;
+                                pass.work.sphereTests += bounds.sphere_tests;
+                                pass.work.sphereRejects += bounds.sphere_rejections;
+                                pass.work.boxTests += bounds.box_tests;
+                                pass.work.satTests += bounds.sat_tests;
+                                pass.work.satRejects += bounds.sat_rejections;
+                                pass.work.satAxes += bounds.sat_axis_tests;
+                                pass.work.satFallbacks += bounds.sat_fallbacks;
                             }
                         }
                     }

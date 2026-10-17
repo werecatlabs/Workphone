@@ -94,7 +94,7 @@ static wp_s32 scene_render_object_before( const wp_graphics_object *left,
 }
 
 static wp_s32 scene_mesh_outside_frustum( const wp_graphics_object *object,
-                                          const wp_cull_frustum *frustum )
+                                          const wp_cull_frustum *frustum, wp_u32 flags )
 {
     wp_graphics_mesh *mesh = wp_graphics_object_get_mesh( object );
     wp_graphics_obb obb;
@@ -111,11 +111,12 @@ static wp_s32 scene_mesh_outside_frustum( const wp_graphics_object *object,
     wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &world );
     wp_cull_prepare_box( &box, &aabb, wp_graphics_mesh_get_local_obb( mesh, &obb ) ? &obb : NULL,
                          &world );
-    if( wp_cull_box_outside( &box, frustum, 1, &stage ) )
+    if( wp_cull_box_outside( &box, frustum, ( flags & WP_GRAPHICS_CULL_SPHERE_TEST ) != 0, &stage ) )
     {
         return 1;
     }
-    return stage == 4 && wp_cull_sat_outside( &box, frustum, &tested );
+    return stage == 4 && ( flags & WP_GRAPHICS_CULL_SAT_TEST ) &&
+           wp_cull_sat_outside( &box, frustum, &tested );
 }
 
 static wp_s32 scene_ensure_render_capacity( wp_graphics_scene *scene, wp_s32 required )
@@ -245,6 +246,7 @@ wp_graphics_scene *wp_graphics_scene_create( void )
 
     memset( scene, 0, sizeof( wp_graphics_scene ) );
     scene->generation = wp_job_next_generation();
+    scene->cull_flags = WP_GRAPHICS_CULL_SPHERE_TEST | WP_GRAPHICS_CULL_SAT_TEST;
 
     scene->visibility_mask = 0xFFFFFFFFu;
     scene->ambient_r = 0.2f;
@@ -930,7 +932,10 @@ void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer
         wp_camera_get_projection_matrix( camera, &projection_matrix );
         wp_mat4f_mul( &view_projection, &projection_matrix, &view_matrix );
         wp_cull_prepare_frustum( &frustum, &view_projection );
-        wp_cull_prepare_sat_frustum( &frustum );
+        if( scene->cull_flags & WP_GRAPHICS_CULL_SAT_TEST )
+        {
+            wp_cull_prepare_sat_frustum( &frustum );
+        }
         wp_renderer_set_view_matrix( renderer, &view_matrix );
         wp_renderer_set_projection_matrix( renderer, &projection_matrix );
     }
@@ -949,7 +954,7 @@ void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer
             continue;
         }
 
-        if( camera && scene_mesh_outside_frustum( obj, &frustum ) )
+        if( camera && scene_mesh_outside_frustum( obj, &frustum, scene->cull_flags ) )
         {
             continue;
         }
@@ -1008,6 +1013,25 @@ wp_u64 wp_graphics_scene_get_generation( const wp_graphics_scene *scene )
     return scene ? scene->generation : 0;
 }
 
+wp_s32 wp_graphics_scene_set_cull_flags( wp_graphics_scene *scene, wp_u32 flags )
+{
+    if( !scene || ( flags & ~(wp_u32)( WP_GRAPHICS_CULL_SPHERE_TEST | WP_GRAPHICS_CULL_SAT_TEST ) ) )
+    {
+        return 0;
+    }
+    if( scene->cull_flags != flags )
+    {
+        scene->cull_flags = flags;
+        ++scene->generation;
+    }
+    return 1;
+}
+
+wp_u32 wp_graphics_scene_get_cull_flags( const wp_graphics_scene *scene )
+{
+    return scene ? scene->cull_flags : 0;
+}
+
 void wp_graphics_scene_set_transform_pool( wp_graphics_scene *scene, wp_threadpool *pool )
 {
     if( !scene || scene->transform_pool == pool )
@@ -1042,6 +1066,10 @@ wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *scen
         }
     }
     wp_graphics_cull_job_reset( scene->cull_job );
+    wp_graphics_cull_job_set_sphere_test( scene->cull_job,
+                                          ( scene->cull_flags & WP_GRAPHICS_CULL_SPHERE_TEST ) != 0 );
+    wp_graphics_cull_job_set_sat_test( scene->cull_job,
+                                       ( scene->cull_flags & WP_GRAPHICS_CULL_SAT_TEST ) != 0 );
     if( wp_graphics_cull_job_configure( scene->cull_job, scene, camera, (wp_graphics_cull_pass)pass,
                                         (wp_u32)scene->generation ) != WP_GRAPHICS_CULL_OK ||
         wp_graphics_cull_job_execute( scene->cull_job ) != WP_GRAPHICS_CULL_OK )

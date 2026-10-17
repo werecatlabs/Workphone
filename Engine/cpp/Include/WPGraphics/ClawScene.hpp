@@ -6,6 +6,8 @@
 #include "workphone_graphics_scene.h"
 #include <memory>
 #include <mutex>
+struct wp_transform_job_stats;
+struct wp_graphics_cull_bounds_stats;
 
 namespace workphone
 {
@@ -97,6 +99,12 @@ namespace workphone
             bool validateRenderJobs() const;
             /** Actual transform dispatches for the prepared pass; derived views add none. */
             u32 getPreparedTransformDispatchCount() const;
+            /** Owner-only copied main-view preparation work. Transform counters
+             * describe the shared publication once, excluding the derived shadow
+             * view. Optional outputs are zeroed after retirement; stale prepared
+             * jobs still report work performed, without certifying draw validity. */
+            bool getPreparedJobStatistics( wp_transform_job_stats *, wp_graphics_cull_bounds_stats *,
+                                           wp_u32 *candidates, wp_u32 *visible ) const;
             void discardRenderJobs();
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;

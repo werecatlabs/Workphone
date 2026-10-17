@@ -1,5 +1,85 @@
 # WPGraphics implementation status
 
+## Retained transform reference-sort scratch - 17 October 2026
+
+`PERF-07` now reuses the transform capture's reference-sort buffer when the next
+accepted capture has the same path-reference count. It retains an exact-sized
+buffer, replaces it on growth/shrink, and releases it for an empty capture or job
+destruction. The old buffer is released before allocating a replacement, avoiding
+two simultaneous sort buffers. Path-array planning also accounts for a retained
+buffer before the new path-reference count is known.
+
+Every borrowed node pointer and reference record is scrubbed before worker
+submission, and populated scratch is scrubbed on capture failure. Workers still
+read only owned matrices/integer paths and never read the reusable buffer. Reuse
+does not change root-to-leaf arithmetic, scoped completion or cancellation without
+caller-output publication. Rejected captures preserve the previous result.
+
+Copied last-accepted job statistics add `capture_scratch_allocations`,
+`capture_scratch_reuses` and `capture_scratch_bytes`. These describe reference-sort
+scratch only, not all allocations. `retained_snapshot_bytes` still excludes this
+cache; `capture_peak_bytes` includes it. The 64 MiB accepted capture-array limit
+remains in place, excluding the previous completed result retained during a new
+capture as before. The existing last-frame preparation text now includes reference
+scratch allocation/reuse counts, counting shared colour/shadow preparation once.
+
+The 1,024-output fixture retains 32,768 bytes of reference scratch alongside
+128,808 bytes of snapshot arrays. Its first capture allocates the scratch once;
+unchanged captures report zero such allocations and one reuse. Tests also cover
+exact-size shrink/regrowth, empty release, failed dispatch preservation,
+cancellation and subsequent reuse, plus source-node retirement before completion.
+Active Claw RTT telemetry checks cold allocation followed by warm reuse while
+preserving rendered pixels.
+
+All seven selected full Debug contracts pass on the existing DX11/WARP tier; all
+six isolated contracts pass in Debug and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_transform_scratch_debug.log` and
+`project_graphics_contracts/{build,test}_transform_scratch_{debug,release}.log`.
+Other capture/output/prefix arrays still allocate per dispatch. Pointer scrubbing
+adds a write pass and the buffer consumes retained memory; representative timings
+are required before claiming a frame-time gain.
+
+## Active scene culling controls and preparation telemetry - 17 October 2026
+
+The scene preparation path now exposes owner-side A/B policy through
+`wp_graphics_scene_set_cull_flags` / `get_cull_flags`. Both
+`WP_GRAPHICS_CULL_SPHERE_TEST` and `WP_GRAPHICS_CULL_SAT_TEST` are enabled by default.
+For example, setting only `WP_GRAPHICS_CULL_SPHERE_TEST` disables SAT refinement;
+zero flags retain the mandatory six-plane box test. Scene preparation and its
+synchronous reference apply the same policy. Standalone jobs keep their existing
+independent switches, and derived views inherit their source's captured policy.
+
+Unknown bits reject without mutation. Equal assignments preserve generations;
+changed policy invalidates prepared results. Worker-pool replacement and scene
+clear preserve the chosen flags. Claw uses the native scene policy through its
+existing `getNativeScene()` owner API, with no separate configuration store.
+
+`ClawScene::getPreparedJobStatistics` copies main-view bounds work, shared
+transform metadata and candidate/visible counts. It zeros optional outputs after
+retirement. These are preparation-work counters, not permission to submit stale
+jobs. The frame adapter copies successful preparations before pass retirement and
+appends a **Preparation last frame** line to the existing requested render
+statistics snapshot (`request_render_statistics` / `render_counters`). It includes
+scene/view preparations, candidates, main-visible entries, actual transform
+dispatches, matrix multiplies, sphere/box work and SAT tests/rejections/axes/fallbacks.
+The colour/shadow publication's transform metadata is counted once. Later target
+or draw failures still report completed preparation work; failed partial captures
+are not included. Skipped passes report zero instead of retaining previous counts.
+
+The preparation line describes the last native frame, independently of the older
+DX11 renderer interval/cumulative statistics above it. Property readers consume
+the existing mutex-protected cached string and never inspect live native jobs.
+These counters enable workload comparisons; they do not measure a frame-time gain.
+
+Native tests cover policy invalidation/idempotence, invalid bits, pool replacement,
+scene-clear persistence and reference parity. Active Claw RTT tests verify copied
+statistics and retirement, one colour/shadow publication, disabled-stage counters,
+unchanged visible pixels and zero preparation counts in the following skipped frame.
+All seven selected full Debug contracts pass on the existing DX11/WARP tier; all
+six isolated contracts pass in Debug and RelWithDebInfo. `git diff --check` passes.
+Logs: `project_x64/{build,test}_cull_telemetry_debug.log` and
+`project_graphics_contracts/{build,test}_cull_telemetry_{debug,release}.log`.
+
 ## Exact SAT direction compaction - 17 October 2026
 
 Native culling now builds compact face-normal and edge-direction index lists

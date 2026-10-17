@@ -137,12 +137,26 @@ typedef struct wp_graphics_scene
     wp_u64 generation;
     wp_graphics_cull_job *cull_job;
     wp_threadpool *transform_pool; /* borrowed; synchronous preparation drains it */
+    wp_u32 cull_flags;
 } wp_graphics_scene;
 
 /* Scene membership/view revision. Mutation/capture/submission are owner-thread
  * operations. Workers never dereference the scene after capture. */
 wp_u64 wp_graphics_scene_get_generation( const wp_graphics_scene * );
 void wp_graphics_scene_set_transform_pool( wp_graphics_scene *, wp_threadpool * );
+
+enum
+{
+    WP_GRAPHICS_CULL_SPHERE_TEST = 1u,
+    WP_GRAPHICS_CULL_SAT_TEST = 2u
+};
+
+/* Owner-only scene A/B policy. Both enabled by default; six-plane box tests
+ * remain active with zero flags. Unknown bits reject without mutation. Changes
+ * invalidate prepared views; equal assignments preserve them. Pool replacement
+ * and scene clear preserve the policy. Standalone jobs retain their own switches. */
+wp_s32 wp_graphics_scene_set_cull_flags( wp_graphics_scene *, wp_u32 flags );
+wp_u32 wp_graphics_scene_get_cull_flags( const wp_graphics_scene * );
 /* Owned independent per-view result; pass is 0=colour or 1=conservative shadows.
  * A NULL result means preparation failed and the caller may use the synchronous
  * render_with_submit reference before issuing any draws. */
@@ -269,8 +283,8 @@ void wp_graphics_scene_render( wp_graphics_scene *scene, wp_renderer *renderer )
 /** @brief Optional submission hook for visible objects in sorted render order.
  * Return nonzero when handled, or zero to use the object's normal render callback.
  */
-typedef wp_s32 ( *wp_graphics_scene_submit_func )( wp_graphics_object *object,
-                                                  wp_renderer *renderer, void *user_data );
+typedef wp_s32 ( *wp_graphics_scene_submit_func )( wp_graphics_object *object, wp_renderer *renderer,
+                                                   void *user_data );
 void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer *renderer,
                                            wp_graphics_scene_submit_func submit, void *user_data );
 
