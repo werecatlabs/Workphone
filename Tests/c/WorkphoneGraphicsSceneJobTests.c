@@ -10,6 +10,7 @@
 #include <string.h>
 #include <math.h>
 #include <limits.h>
+#include <stdlib.h>
 #ifdef _WIN32
 #    include <windows.h>
 #endif
@@ -213,6 +214,7 @@ static void shared_transform_capture( void )
     wp_transform_job_system_get_stats( job, &stats );
     CHECK( stats.output_count == population * repeats && stats.local_matrix_count == population + 1 &&
            stats.path_reference_count == population * repeats * 2 );
+    CHECK( stats.batch_count == 61 && stats.matrix_multiply_count == 362 );
     CHECK( stats.capture_peak_bytes <= 64u * 1024u * 1024u &&
            stats.retained_snapshot_bytes < stats.capture_peak_bytes );
     for( i = 0; i < population; ++i )
@@ -249,10 +251,141 @@ static void shared_transform_capture( void )
     }
     printf(
         "Transform reuse fixture: %u outputs, %u path references, %u unique locals, %lu retained "
-        "bytes.\n",
+        "bytes, %u matrix multiplies versus %u unshared.\n",
         (unsigned)stats.output_count, (unsigned)stats.path_reference_count,
-        (unsigned)stats.local_matrix_count, (unsigned long)stats.retained_snapshot_bytes );
+        (unsigned)stats.local_matrix_count, (unsigned long)stats.retained_snapshot_bytes,
+        (unsigned)stats.matrix_multiply_count, (unsigned)stats.path_reference_count );
     wp_transform_job_system_destroy( job );
+}
+
+/* Independent root-to-leaf reference, without the job's deduplication or cache. */
+static void reference_world( const wp_scenenode *node, wp_mat4f *out )
+{
+    wp_mat4f locals[257], combined;
+    int depth = 0;
+    while( node && depth < 257 )
+    {
+        wp_scenenode_get_local_matrix( node, &locals[depth++] );
+        node = wp_scenenode_get_parent( node );
+    }
+    wp_mat4f_identity( out );
+    while( depth )
+    {
+        wp_mat4f_mul( &combined, out, &locals[--depth] );
+        *out = combined;
+    }
+}
+
+static void shared_prefixes( void )
+{
+    enum
+    {
+        population = 48,
+        outputs = 193
+    };
+
+    wp_scenenode *hierarchy[population];
+    const wp_scenenode *nodes[outputs], *seen[population], *node;
+    wp_mat4f expected[outputs], actual[outputs];
+    wp_vec3f position, scale;
+    wp_quatf orientation;
+    wp_threadpool *pool = wp_threadpool_create( 3 );
+    wp_transform_job_system *job;
+    wp_transform_job_stats stats;
+    wp_u32 batch_sizes[4] = { 1, 7, 64, 1000 };
+    wp_u32 expected_multiplies, unshared, unique, begin, end, output, j;
+    int i, mode, size, found;
+    CHECK( pool != NULL );
+    for( i = 0; i < population; ++i )
+    {
+        hierarchy[i] = wp_scenenode_create();
+        /* Two roots, long shared prefixes, and several diverging branches. */
+        if( i > 1 )
+        {
+            wp_scenenode_add_child( hierarchy[( i - 2 ) / 2], hierarchy[i] );
+        }
+        position.x = (wp_f32)( i % 7 ) * 0.13f;
+        position.y = -0.21f;
+        position.z = 0.37f;
+        scale.x = ( i & 1 ) ? -0.9f : 1.1f;
+        scale.y = 1.2f;
+        scale.z = ( i % 11 ) ? 0.8f : 0;
+        orientation.w = (wp_f32)cos( i * 0.031 );
+        orientation.x = 0;
+        orientation.y = (wp_f32)sin( i * 0.031 );
+        orientation.z = 0;
+        wp_scenenode_set_position( hierarchy[i], position );
+        wp_scenenode_set_scale( hierarchy[i], scale );
+        wp_scenenode_set_orientation( hierarchy[i], orientation );
+    }
+    for( i = 0; i < outputs; ++i )
+    {
+        nodes[i] = ( i % 17 ) ? hierarchy[( i * 11 ) % population] : NULL;
+        reference_world( nodes[i], &expected[i] );
+    }
+    for( mode = 0; mode < 2; ++mode )
+    {
+        for( size = 0; size < 4; ++size )
+        {
+            expected_multiplies = 0;
+            unshared = 0;
+            for( begin = 0; begin < outputs; begin += batch_sizes[size] )
+            {
+                unique = 0;
+                end = begin + batch_sizes[size];
+                if( end > outputs )
+                {
+                    end = outputs;
+                }
+                for( output = begin; output < end; ++output )
+                {
+                    node = nodes[output];
+                    while( node )
+                    {
+                        ++unshared;
+                        found = 0;
+                        for( j = 0; j < unique; ++j )
+                        {
+                            if( seen[j] == node )
+                            {
+                                found = 1;
+                            }
+                        }
+                        if( !found )
+                        {
+                            seen[unique++] = node;
+                        }
+                        node = wp_scenenode_get_parent( node );
+                    }
+                }
+                expected_multiplies += unique;
+            }
+            job = wp_transform_job_system_create( mode ? pool : NULL, batch_sizes[size] );
+            CHECK( wp_transform_job_system_process( job, nodes, actual, outputs ) );
+            wp_transform_job_system_get_stats( job, &stats );
+            CHECK( stats.matrix_multiply_count == expected_multiplies );
+            CHECK( stats.path_reference_count == unshared );
+            CHECK( stats.batch_count == ( outputs + batch_sizes[size] - 1 ) / batch_sizes[size] );
+            CHECK( stats.capture_peak_bytes <= 64u * 1024u * 1024u );
+            for( i = 0; i < outputs; ++i )
+            {
+                CHECK( !memcmp( &expected[i], &actual[i], sizeof( actual[i] ) ) );
+            }
+            if( size == 3 )
+            {
+                CHECK( stats.matrix_multiply_count == population );
+            }
+            wp_transform_job_system_destroy( job );
+        }
+    }
+    for( i = population - 1; i >= 0; --i )
+    {
+        wp_scenenode_destroy( hierarchy[i] );
+    }
+    wp_threadpool_destroy( pool );
+    puts(
+        "Shared prefixes: bit-identical reference matrices across four batch sizes, inline and three "
+        "workers." );
 }
 
 static void cache_depth_boundary( void )
@@ -300,6 +433,57 @@ static void cache_depth_boundary( void )
     {
         wp_scenenode_destroy( nodes[i] );
     }
+}
+
+static void prefix_budget_fallback( void )
+{
+    enum
+    {
+        outputs = 350000
+    };
+
+    wp_scenenode *root = wp_scenenode_create(), *leaf = wp_scenenode_create();
+    const wp_scenenode **nodes = (const wp_scenenode **)malloc( outputs * sizeof( *nodes ) );
+    wp_transform_job_system *job = wp_transform_job_system_create( NULL, 2 );
+    wp_transform_job_stats stats;
+    wp_vec3f position = { 2, 3, 4 };
+    wp_mat4f expected;
+    const wp_mat4f *result;
+    int i;
+    CHECK( nodes && job );
+    if( !nodes || !job )
+    {
+        free( nodes );
+        wp_transform_job_system_destroy( job );
+        wp_scenenode_destroy( leaf );
+        wp_scenenode_destroy( root );
+        return;
+    }
+    wp_scenenode_add_child( root, leaf );
+    wp_scenenode_set_position( root, position );
+    reference_world( leaf, &expected );
+    for( i = 0; i < outputs; ++i )
+    {
+        nodes[i] = leaf;
+    }
+    /* Base capture fits; the optional per-batch prefix worlds would exceed 64 MiB. */
+    CHECK( wp_transform_job_system_dispatch_snapshot( job, nodes, outputs, 17 ) );
+    wp_transform_job_system_wait( job );
+    wp_transform_job_system_get_stats( job, &stats );
+    CHECK( stats.path_reference_count == outputs * 2 && stats.matrix_multiply_count == outputs * 2 );
+    CHECK( stats.capture_peak_bytes <= 64u * 1024u * 1024u );
+    result = wp_transform_job_system_get_result( job, NULL, NULL );
+    CHECK( result != NULL );
+    if( result )
+    {
+        CHECK( !memcmp( &result[0], &expected, sizeof( expected ) ) );
+        CHECK( !memcmp( &result[outputs - 1], &expected, sizeof( expected ) ) );
+    }
+    free( nodes );
+    wp_transform_job_system_destroy( job );
+    wp_scenenode_destroy( leaf );
+    wp_scenenode_destroy( root );
+    puts( "Prefix cache budget: optional cache falls back without rejecting a valid base capture." );
 }
 
 static void transforms( void )
@@ -1024,6 +1208,8 @@ int main( void )
     matrix_cache();
     cache_depth_boundary();
     shared_transform_capture();
+    shared_prefixes();
+    prefix_budget_fallback();
     transforms();
     hierarchy_limit();
     culling();

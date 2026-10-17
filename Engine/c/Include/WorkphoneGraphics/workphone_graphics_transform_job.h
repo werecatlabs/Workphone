@@ -18,6 +18,9 @@ typedef struct wp_transform_job_system wp_transform_job_system;
 typedef struct wp_transform_job_stats
 {
     wp_u32 output_count, local_matrix_count, path_reference_count;
+    /* Planned/executed after draining: one multiplication per unique ancestor
+     * within each cached batch; uncached fallback uses path_reference_count. */
+    wp_u32 matrix_multiply_count, batch_count;
     wp_u64 retained_snapshot_bytes, capture_peak_bytes;
 } wp_transform_job_stats;
 
@@ -32,7 +35,8 @@ typedef enum wp_transform_job_status
 } wp_transform_job_status;
 
 /* Owner-thread capture requires a stable hierarchy during dispatch only.
- * Workers use owned, deduplicated local matrices and integer ancestor paths. Reject paths deeper than 257 and
+ * Workers use owned, deduplicated local matrices and integer ancestor paths,
+ * caching composed prefixes privately within each batch. Reject paths deeper than 257 and
  * snapshots above 64 MiB. APIs are single-owner; pool is borrowed. */
 wp_s32 wp_transform_job_system_dispatch_snapshot( wp_transform_job_system *, const wp_scenenode *const *,
                                                   wp_u32 count, wp_u64 generation );

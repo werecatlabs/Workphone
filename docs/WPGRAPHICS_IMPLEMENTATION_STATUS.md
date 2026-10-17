@@ -1,5 +1,50 @@
 # WPGraphics implementation status
 
+## Worker-batch shared transform prefixes - 17 October 2026
+
+The next `PERF-07` / `SCENE-03` increment reuses composed ancestors within each
+transform batch. Owner capture still deduplicates local matrices globally. It
+additionally resolves integer parent/cache slots for each unique node in a batch,
+then discards all borrowed node references before submission. A worker composes a
+prefix on its first root-to-leaf visit and reuses that exact matrix for later
+outputs. Each slot belongs to one batch; there are no cross-task dependencies,
+shared cache writes or worker reads of live scene nodes.
+
+Root identity multiplication and parent-to-child order are preserved. Null owners
+still publish identity matrices. Scoped completion, cancellation without output
+publication, rejected-dispatch inline execution, and the 257-node hierarchy limit
+are unchanged. The original composition path is retained when there is no
+within-batch reuse or the optional cache cannot fit/allocate within the 64 MiB
+capture limit. A failed base capture still preserves the previous result.
+
+Copied job statistics add `matrix_multiply_count` and `batch_count`; counts describe
+the accepted plan and become completed work after this job drains. The existing
+path-reference count gives the unshared multiplication cost. Derived cull views
+retain those shared-publication statistics and must not count them as fresh work.
+
+The 1,024-output fixture with 257 distinct local matrices and batch size 17 now
+performs **362 matrix multiplications instead of 2,048** across 61 batches. Retained
+job-array storage rises from 100,808 to 128,808 bytes in that fixture. New tests
+compare every matrix bit-for-bit with an independent uncached root-to-leaf
+reference across four batch sizes, inline execution and three workers, using two
+roots, diverging branches, duplicate/null/ancestor outputs, rotations and reflected
+or singular scales. Existing retirement, cancellation, depth and OBB/sphere tests
+remain part of the native suite. A 350,000-output fixture verifies that an optional
+cache exceeding the capture budget falls back without rejecting the valid base
+snapshot or changing its matrices.
+
+Validation: all seven selected full Debug contracts pass, including active Claw
+and DX11 target rendering on Microsoft Basic Render Driver/WARP; all six isolated
+contracts pass in Debug and RelWithDebInfo. `git diff --check` passes. Logs:
+`project_x64/{build,test}_prefix_debug.log` and
+`project_graphics_contracts/{build,test}_prefix_{debug,release}.log`.
+
+This removes repeated matrix arithmetic within batches, not repeated path walks
+or all owner-side capture/sort work. Cross-batch prefix sharing, automatic reuse
+across viewport passes and retained allocation scratch remain open. The extra
+capture sort and cache storage need representative profiling before claiming a
+whole-frame speedup.
+
 ## Fitted OBB and sphere culling - 17 October 2026
 
 `SCENE-02` now uses mesh-local oriented bounds in both native job preparation and
