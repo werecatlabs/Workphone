@@ -33,6 +33,8 @@ namespace workphone::ui
         SmartPtr<ISharedObject> m_sender;
         SmartPtr<ISharedObject> m_object;
         Array<Parameter> m_arguments;
+
+        static atomic_f64 s_lastDropTime;
     };
 }  // namespace workphone::ui
 

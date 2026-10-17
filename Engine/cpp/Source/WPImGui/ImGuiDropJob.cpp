@@ -10,6 +10,8 @@ namespace workphone::ui
 {
     WP_CLASS_REGISTER_DERIVED( workphone::ui, ImGuiDropJob, Job );
 
+    atomic_f64 ImGuiDropJob::s_lastDropTime = 0.0;
+
     ImGuiDropJob::ImGuiDropJob() = default;
     ImGuiDropJob::~ImGuiDropJob() = default;
 
@@ -20,8 +22,8 @@ namespace workphone::ui
         {
             try
             {
-                m_dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, m_arguments,
-                                           m_sender, m_object, nullptr );
+                m_dropTarget->handleEvent( EventType::UI, IEvent::handleDrop, m_arguments, m_sender,
+                                           m_object, nullptr );
             }
             catch( const std::exception &e )
             {
@@ -54,9 +56,8 @@ namespace workphone::ui
         m_arguments = std::move( arguments );
     }
 
-    void ImGuiDropJob::queue( SmartPtr<IUIDropTarget> dropTarget,
-                              Array<Parameter> arguments, SmartPtr<ISharedObject> sender,
-                              SmartPtr<ISharedObject> object )
+    void ImGuiDropJob::queue( SmartPtr<IUIDropTarget> dropTarget, Array<Parameter> arguments,
+                              SmartPtr<ISharedObject> sender, SmartPtr<ISharedObject> object )
     {
         if( !dropTarget )
         {
@@ -76,42 +77,47 @@ namespace workphone::ui
             return;
         }
 
-        // A tree row, its insertion line and the enclosing window can all observe the same
-        // release. Only the first eligible target may dispatch that drag gesture.
-        if( ImGui::GetCurrentContext() && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+        auto timer = applicationManager->getTimer();
+        if( s_lastDropTime + 1.0 < timer->now() )
         {
-            if( const auto payload = ImGui::GetDragDropPayload();
-                payload && payload->IsDataType( "_TREENODE" ) )
+            // A tree row, its insertion line and the enclosing window can all observe the same
+            // release. Only the first eligible target may dispatch that drag gesture.
+            if( ImGui::GetCurrentContext() && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
             {
-                static thread_local ImGuiContext *lastContext = nullptr;
-                static thread_local int lastFrame = -1;
-                static thread_local ImGuiID lastSource = 0;
-                const auto context = ImGui::GetCurrentContext();
-                const auto frame = ImGui::GetFrameCount();
-                if( lastContext == context && lastFrame == frame &&
-                    lastSource == payload->SourceId )
+                if( const auto payload = ImGui::GetDragDropPayload();
+                    payload && payload->IsDataType( "_TREENODE" ) )
                 {
-                    return;
+                    static thread_local ImGuiContext *lastContext = nullptr;
+                    static thread_local int lastFrame = -1;
+                    static thread_local ImGuiID lastSource = 0;
+                    const auto context = ImGui::GetCurrentContext();
+                    const auto frame = ImGui::GetFrameCount();
+                    if( lastContext == context && lastFrame == frame && lastSource == payload->SourceId )
+                    {
+                        return;
+                    }
+                    lastContext = context;
+                    lastFrame = frame;
+                    lastSource = payload->SourceId;
                 }
-                lastContext = context;
-                lastFrame = frame;
-                lastSource = payload->SourceId;
             }
-        }
 
-        job->setDropTarget( dropTarget );
-        job->setSender( sender );
-        job->setObject( object );
-        job->setArguments( std::move( arguments ) );
+            job->setDropTarget( dropTarget );
+            job->setSender( sender );
+            job->setObject( object );
+            job->setArguments( std::move( arguments ) );
 
-        auto jobQueue = applicationManager->getJobQueue();
-        if( jobQueue && jobQueue->isRunning() )
-        {
-            jobQueue->addJob( job, TaskId::Application );
-        }
-        else
-        {
-            job->execute();
+            auto jobQueue = applicationManager->getJobQueue();
+            if( jobQueue && jobQueue->isRunning() )
+            {
+                jobQueue->addJob( job, TaskId::Application );
+            }
+            else
+            {
+                job->execute();
+            }
+
+            s_lastDropTime = timer->now();
         }
     }
 }  // namespace workphone::ui
