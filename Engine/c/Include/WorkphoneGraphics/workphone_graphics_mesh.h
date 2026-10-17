@@ -383,7 +383,8 @@ void wp_graphics_mesh_clear_local_obb( wp_graphics_mesh * );
 wp_s32 wp_graphics_mesh_compute_obb( wp_graphics_mesh * );
 
 /* Cumulative owner-thread work counters, independent for each mesh instance.
- * PCA counts full covariance solves; refits count successful projected bounds. */
+ * PCA counts full covariance solves; refits count successful projected bounds.
+ * Adaptive refreshes are successful quality-triggered fits, included in PCA solves. */
 typedef struct wp_graphics_mesh_bounds_stats
 {
     wp_u64 pca_solves, orientation_refits, adaptive_refreshes;

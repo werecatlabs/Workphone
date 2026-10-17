@@ -1,5 +1,81 @@
 # WPGraphics implementation status
 
+## Frustum/box separating-axis refinement - 17 October 2026
+
+`SCENE-02` now refines boundary boxes after sphere and six-plane support tests.
+The additional candidate axes are the face normals of both convex shapes and
+their edge cross products, following the general
+[convex-polyhedron separating-axis method](https://www.geometrictools.com/Documentation/MethodOfSeparatingAxes.pdf).
+For transformed boxes, face normals come from half-axis cross products rather
+than assuming orthogonal world axes, preserving parent-induced shear.
+
+Each main view reconstructs finite frustum corners from its copied planes and
+caches twelve edge directions. Near-singular intersections, invalid corners or
+collapsed edges disable refinement and retain the earlier conservative plane
+classification. Projections use box-relative coordinates and enlarged intervals
+for reconstruction/roundoff uncertainty. Near-parallel candidate axes are skipped;
+contact remains visible. Sphere-contained and plane-confirmed contained boxes
+skip refinement. Shadow views still bypass camera geometry tests completely.
+
+The stage is enabled by default in native scene/Claw preparation and the native
+synchronous reference. `wp_graphics_cull_job_set_sat_test` is an owner-side A/B
+switch, rejected while READY and inherited by derived camera/shadow views. Copied
+per-view counters report SAT candidates, rejections, tested axes and frustum
+fallbacks. It adds no per-candidate allocation, but can test up to 45 axes for a
+boundary candidate; representative timings and axis deduplication remain open.
+
+Native regressions cover a box beyond a view corner, a fixed 3D edge-edge case
+with an analytic separating-gap witness despite overlapping face-axis intervals,
+corner contact without an interior box vertex, contained-box early-out, collapsed
+frustum fallback, source-view retirement, A/B inheritance and off-camera casters.
+A separate common-point oracle retains 256 perspective/orthographic boxes with
+reflected, singular and sheared hierarchies. Existing sphere on/off parity and
+independent clip-space vertex checks continue to pass. This is conservative
+floating-point culling; the counters do not establish a frame-time improvement.
+
+Validation: all seven selected full Debug contracts pass, including active Claw
+and DX11 target rendering on Microsoft Basic Render Driver/WARP. All six isolated
+contracts pass in Debug and RelWithDebInfo; `git diff --check` passes. Logs:
+`project_x64/{build,test}_sat_debug.log` and
+`project_graphics_contracts/{build,test}_sat_{debug,release}.log`.
+
+## Adaptive deformed-OBB orientation refresh - 17 October 2026
+
+`wp_graphics_mesh_refit_bounds_adaptive` now checks refit quality against the
+current CPU AABB. It compares the sum of pairwise half-extent products (a surface
+area proxy), including numerical padding for zero-width AABB dimensions. A refit
+above the caller's ratio requests a new PCA fit; missing/invalid prior directions
+already request one fit and are not solved twice. Nonfinite ratios or ratios below
+one are rejected before bounds, generations or counters change. A failed refresh
+retains the previously computed conservative refit.
+
+`ClawMesh::applySkinningPalette` uses a ratio of **1.5**. Stable poses retain the
+allocation-free orientation refit. A pose whose refit is more than 50% larger than
+its padded local AABB requests a new orientation. Ordinary fixed-orientation
+refitting and explicit full rebuilds remain available. Per-mesh copied statistics
+add `adaptive_refreshes`, a subset of full `pca_solves`; each refreshed pose also
+records the refit that preceded its quality check.
+
+The native regression turns a diagonal slender mesh into an axis-aligned pose.
+The fixed-orientation box admits it at the edge of an orthographic view, while
+the refreshed box rejects it and still encloses every vertex. Its surface proxy
+falls by more than 80%. After that one refresh, 64 stable translated poses perform
+no further PCA solves. Invalid thresholds preserve the previous publication, and
+point/line/planar fixtures do not refresh solely because of numerical padding.
+Active Claw animation contracts also check a large skinning rotation triggers
+exactly one refresh and its repeated pose triggers none.
+
+Validation: all seven selected full Debug contracts pass, including active Claw
+and DX11 targets on Microsoft Basic Render Driver/WARP. All six isolated contracts
+pass in Debug and RelWithDebInfo; `git diff --check` passes. Logs:
+`project_x64/{build,test}_adaptive_debug.log` and
+`project_graphics_contracts/{build,test}_adaptive_{debug,release}.log`.
+
+This local heuristic catches a refit that is worse than the local AABB. It does
+not estimate the optimal box, detect every possible orientation improvement or
+certify a frame-time gain. Representative animated-scene profiling and threshold
+tuning remain open.
+
 ## CPU-skinned OBB orientation refits - 17 October 2026
 
 `ClawMesh::applySkinningPalette` now copies the previous OBB before replacing

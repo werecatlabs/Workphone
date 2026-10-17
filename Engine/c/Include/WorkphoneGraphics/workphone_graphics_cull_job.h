@@ -71,6 +71,7 @@ typedef struct wp_graphics_cull_bounds_stats
 {
     wp_u32 sphere_tests, sphere_rejections, sphere_inside;
     wp_u32 box_tests, box_rejections, fitted_obb_tests, aabb_box_tests, conservative_candidates;
+    wp_u32 sat_tests, sat_rejections, sat_axis_tests, sat_fallbacks;
 } wp_graphics_cull_bounds_stats;
 
 void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *,
@@ -78,6 +79,10 @@ void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *,
 /* Default enabled. Owner-only A/B control; reject while READY. Derived views
  * inherit this policy. A disabled sphere stage leaves OBB classification intact. */
 wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *, wp_s32 enabled );
+/* Default enabled; owner-only A/B switch with the same READY restriction.
+ * Refines plane-test survivors using finite-frustum/box separating axes.
+ * Invalid/unbounded frusta fall back to the conservative plane result. */
+wp_s32 wp_graphics_cull_job_set_sat_test( wp_graphics_cull_job *, wp_s32 enabled );
 
 wp_graphics_cull_job *wp_graphics_cull_job_create( void );
 /* Optional borrowed pool; owner-thread capture/wait precedes culling. */

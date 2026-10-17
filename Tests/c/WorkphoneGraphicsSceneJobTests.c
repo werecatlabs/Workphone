@@ -1019,12 +1019,12 @@ static void adaptive_bounds( void )
             vertices[i].position.z = 0;
         }
         wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
-        CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, NULL, 1.5 ) );
+        CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, NULL, 1.0 ) );
         CHECK( wp_graphics_mesh_get_local_obb( mesh, &previous ) );
         wp_graphics_mesh_get_bounds_stats( mesh, &before );
         for( pose = 0; pose < 8; ++pose )
         {
-            CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, 1.5 ) );
+            CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, 1.0 ) );
             CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
             check_enclosure( &actual, vertices, 8 );
             previous = actual;
@@ -1163,6 +1163,198 @@ static void oriented_bounds( void )
     puts(
         "Fitted OBB: enclosure, tighter rejection, authored margins, shadow retention and invalidation "
         "passed." );
+}
+
+static double cube_box_gap( const wp_graphics_obb *box, wp_vec3d axis )
+{
+    wp_vec3d delta = box->center;
+    double radius = 0;
+    int i;
+    delta.z += 2;
+    for( i = 0; i < 3; ++i )
+    {
+        radius += fabs( box_dot( &box->half_axes[i], &axis ) );
+    }
+    return fabs( box_dot( &delta, &axis ) ) - radius - fabs( axis.x ) - fabs( axis.y ) - fabs( axis.z );
+}
+
+static void separating_axes( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_object *object = wp_graphics_scene_create_object( scene );
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_camera *camera = wp_camera_create();
+    wp_graphics_cull_job *job = wp_graphics_cull_job_create();
+    wp_graphics_cull_result *main, *off, *shadow, *derived;
+    wp_graphics_cull_bounds_stats stats;
+    wp_graphics_obb box = { { 1.3, 1.3, -2 },
+                            { { 1.414213562373095, -1.414213562373095, 0 },
+                              { 0.0353553390593274, 0.0353553390593274, 0 },
+                              { 0, 0, 0.05 } } };
+    wp_vec3f position = { 1.3f, 1.3f, 0 };
+    wp_vec3d axis;
+    int i;
+    wp_camera_set_projection_type( camera, WORKPHONE_PROJECTION_ORTHOGRAPHIC );
+    wp_camera_set_ortho_width( camera, 1 );
+    wp_camera_set_aspect_ratio( camera, 1 );
+    wp_camera_set_near_clip_distance( camera, 1 );
+    wp_camera_set_far_clip_distance( camera, 3 );
+    wp_graphics_scene_set_active_camera( scene, camera );
+    wp_graphics_object_set_mesh( object, mesh );
+    wp_graphics_object_set_render_func( object, record );
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &box ) );
+    CHECK( wp_graphics_cull_job_set_sat_test( job, 0 ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_configure( job, scene, camera, 0, 0 ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_set_sat_test( job, 1 ) == WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
+    CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
+    off = wp_graphics_cull_job_take_result( job );
+    CHECK( wp_graphics_cull_result_get_visible_count( off ) == 1 );
+    wp_graphics_cull_result_get_bounds_stats( off, &stats );
+    CHECK( !stats.sat_tests && !stats.sat_axis_tests );
+    derived = wp_graphics_cull_result_create_view( off, camera, 0 );
+    CHECK( derived && wp_graphics_cull_result_get_visible_count( derived ) == 1 );
+    wp_graphics_cull_result_destroy( derived );
+    wp_graphics_cull_result_destroy( off );
+    main = capture( scene, camera, 0 );
+    CHECK( wp_graphics_cull_result_get_visible_count( main ) == 0 );
+    wp_graphics_cull_result_get_bounds_stats( main, &stats );
+    CHECK( stats.sat_tests == 1 && stats.sat_rejections == 1 && stats.sat_axis_tests > 0 );
+    draws = 0;
+    wp_graphics_scene_render_with_submit( scene, (wp_renderer *)scene, NULL, NULL );
+    CHECK( draws == 0 );
+    shadow = wp_graphics_cull_result_create_view( main, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
+    CHECK( shadow && wp_graphics_cull_result_get_visible_count( shadow ) == 1 );
+    wp_graphics_cull_result_get_bounds_stats( shadow, &stats );
+    CHECK( !stats.sat_tests && !stats.sphere_tests );
+    wp_camera_set_position( camera, position );
+    derived = wp_graphics_cull_result_create_view( main, camera, 0 );
+    CHECK( derived && wp_graphics_cull_result_get_visible_count( derived ) == 1 );
+    wp_graphics_cull_result_destroy( main );
+    wp_graphics_cull_result_destroy( shadow );
+    CHECK( wp_graphics_cull_result_get_visible_count( derived ) == 1 );
+    wp_graphics_cull_result_destroy( derived );
+    position.x = position.y = 0;
+    wp_camera_set_position( camera, position );
+    /* Contact at the view corner, with no box vertex inside, must survive. */
+    box.center.x = box.center.y = 1.0353553390593274;
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &box ) );
+    main = capture( scene, camera, 0 );
+    CHECK( wp_graphics_cull_result_get_visible_count( main ) == 1 );
+    wp_graphics_cull_result_destroy( main );
+    /* Fixed edge-edge regression: all six cube and three OBB face axes overlap,
+     * but the supplied cross-edge witness has a positive separating gap. */
+    box.center.x = 1.2956478737760335;
+    box.center.y = -0.5425630835816264;
+    box.center.z = -0.6363588424865156;
+    box.half_axes[0].x = 0.6986211111440349;
+    box.half_axes[0].y = -0.421736194036587;
+    box.half_axes[0].z = -1.2585972849579043;
+    box.half_axes[1].x = 0.13126710687103646;
+    box.half_axes[1].y = 0.11862733377251229;
+    box.half_axes[1].z = 0.03311347664822984;
+    box.half_axes[2].x = 0.06015061715330456;
+    box.half_axes[2].y = -0.08370942140533064;
+    box.half_axes[2].z = 0.061438066571640734;
+    for( i = 0; i < 3; ++i )
+    {
+        axis.x = i == 0;
+        axis.y = i == 1;
+        axis.z = i == 2;
+        CHECK( cube_box_gap( &box, axis ) < 0 );
+        CHECK( cube_box_gap( &box, box.half_axes[i] ) < 0 );
+    }
+    axis.x = -0.839064856638603;
+    axis.y = 0;
+    axis.z = -0.4657474074293566;
+    CHECK( cube_box_gap( &box, axis ) > 0.2 );
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &box ) );
+    main = capture( scene, camera, 0 );
+    wp_graphics_cull_result_get_bounds_stats( main, &stats );
+    CHECK( !wp_graphics_cull_result_get_visible_count( main ) && stats.sat_rejections == 1 );
+    wp_graphics_cull_result_destroy( main );
+    /* A contained wide box skips SAT even when its sphere crosses the view planes. */
+    memset( &box, 0, sizeof( box ) );
+    box.center.z = -2;
+    box.half_axes[0].x = box.half_axes[1].y = 0.95;
+    box.half_axes[2].z = 0.05;
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &box ) );
+    main = capture( scene, camera, 0 );
+    wp_graphics_cull_result_get_bounds_stats( main, &stats );
+    CHECK( wp_graphics_cull_result_get_visible_count( main ) == 1 && stats.box_tests == 1 &&
+           !stats.sphere_inside && !stats.sat_tests );
+    wp_graphics_cull_result_destroy( main );
+    /* Numerically collapsed finite frustum keeps its plane result. */
+    memset( &box, 0, sizeof( box ) );
+    box.center.z = -2;
+    box.half_axes[0].x = box.half_axes[1].y = box.half_axes[2].z = 0.2;
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &box ) );
+    wp_camera_set_aspect_ratio( camera, 1.0e20f );
+    main = capture( scene, camera, 0 );
+    wp_graphics_cull_result_get_bounds_stats( main, &stats );
+    CHECK( wp_graphics_cull_result_get_visible_count( main ) == 1 && stats.sat_fallbacks == 1 &&
+           !stats.sat_tests );
+    wp_graphics_cull_result_destroy( main );
+    wp_graphics_cull_job_destroy( job );
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    puts(
+        "Frustum/box SAT: corner and edge-edge rejection, corner contact, A/B inheritance, shadows and "
+        "numeric fallback passed." );
+}
+
+static void sat_common_points( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_object *object = wp_graphics_scene_create_object( scene );
+    wp_scenenode *parent = wp_graphics_scene_create_node( scene ),
+                 *child = wp_graphics_scene_create_node( scene );
+    wp_camera *camera = wp_camera_create();
+    wp_graphics_obb box = { { 0, 0, 0 }, { { 2, 0, 0 }, { 0, 0.1, 0 }, { 0, 0, 0.2 } } };
+    wp_graphics_cull_result *r;
+    wp_graphics_cull_bounds_stats stats;
+    wp_vec3f position = { 0.3f, 0.2f, -2 }, scale;
+    wp_quatf orientation;
+    wp_u32 tested = 0;
+    int i;
+    wp_graphics_object_set_mesh( object, mesh );
+    wp_scenenode_attach_object( child, object );
+    wp_scenenode_add_child( parent, child );
+    wp_scenenode_set_position( parent, position );
+    CHECK( wp_graphics_mesh_set_local_obb( mesh, &box ) );
+    wp_camera_set_ortho_width( camera, 1 );
+    wp_camera_set_aspect_ratio( camera, 1 );
+    wp_camera_set_near_clip_distance( camera, 1 );
+    wp_camera_set_far_clip_distance( camera, 3 );
+    for( i = 0; i < 256; ++i )
+    {
+        wp_camera_set_projection_type(
+            camera, ( i & 1 ) ? WORKPHONE_PROJECTION_PERSPECTIVE : WORKPHONE_PROJECTION_ORTHOGRAPHIC );
+        scale.x = ( i % 13 ) ? ( ( i & 2 ) ? -3.0f : 0.2f ) : 0;
+        scale.y = 1.7f;
+        scale.z = 0.4f;
+        wp_scenenode_set_scale( parent, scale );
+        orientation.w = (wp_f32)cos( i * 0.077 );
+        orientation.x = (wp_f32)( sin( i * 0.077 ) * 0.6 );
+        orientation.y = (wp_f32)( sin( i * 0.077 ) * 0.8 );
+        orientation.z = 0;
+        wp_scenenode_set_orientation( child, orientation );
+        /* The local origin is inside the box and maps to a strict interior point
+         * of either view, independent of reflection, rank loss or parent shear. */
+        r = capture( scene, camera, 0 );
+        wp_graphics_cull_result_get_bounds_stats( r, &stats );
+        tested += stats.sat_tests;
+        CHECK( wp_graphics_cull_result_get_visible_count( r ) == 1 && !stats.sat_rejections );
+        wp_graphics_cull_result_destroy( r );
+    }
+    CHECK( tested > 0 );
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    puts(
+        "SAT common-point oracle: 256 perspective/orthographic reflected, singular and sheared boxes "
+        "retained." );
 }
 
 static void sphere_parity( void )
@@ -1422,6 +1614,8 @@ int main( void )
     refitted_bounds();
     adaptive_bounds();
     sphere_parity();
+    separating_axes();
+    sat_common_points();
     retirement();
     shared_views();
 #ifdef _WIN32

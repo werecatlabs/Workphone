@@ -102,6 +102,7 @@ static wp_s32 scene_mesh_outside_frustum( const wp_graphics_object *object,
     wp_mat4f world;
     wp_cull_box box;
     wp_s32 stage;
+    wp_u32 tested;
     if( !mesh )
     {
         return 0;
@@ -110,7 +111,11 @@ static wp_s32 scene_mesh_outside_frustum( const wp_graphics_object *object,
     wp_scenenode_get_world_matrix( wp_graphics_object_get_owner( object ), &world );
     wp_cull_prepare_box( &box, &aabb, wp_graphics_mesh_get_local_obb( mesh, &obb ) ? &obb : NULL,
                          &world );
-    return wp_cull_box_outside( &box, frustum, 1, &stage );
+    if( wp_cull_box_outside( &box, frustum, 1, &stage ) )
+    {
+        return 1;
+    }
+    return stage == 4 && wp_cull_sat_outside( &box, frustum, &tested );
 }
 
 static wp_s32 scene_ensure_render_capacity( wp_graphics_scene *scene, wp_s32 required )
@@ -925,6 +930,7 @@ void wp_graphics_scene_render_with_submit( wp_graphics_scene *scene, wp_renderer
         wp_camera_get_projection_matrix( camera, &projection_matrix );
         wp_mat4f_mul( &view_projection, &projection_matrix, &view_matrix );
         wp_cull_prepare_frustum( &frustum, &view_projection );
+        wp_cull_prepare_sat_frustum( &frustum );
         wp_renderer_set_view_matrix( renderer, &view_matrix );
         wp_renderer_set_projection_matrix( renderer, &projection_matrix );
     }

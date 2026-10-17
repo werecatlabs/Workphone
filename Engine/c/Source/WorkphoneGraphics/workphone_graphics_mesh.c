@@ -966,7 +966,7 @@ wp_s32 wp_graphics_mesh_refit_bounds_adaptive( wp_graphics_mesh *mesh, const wp_
 {
     wp_u64 refits;
     wp_s32 i;
-    double half[3], box_half[3], scale = 0, pad, box_score, axis_score;
+    double half[3], box_half[3], scale = 0, pad, box_score, axis_score, ratio;
     wp_graphics_obb retained;
     if( !mesh || !wp_mesh_finite( max_surface_ratio ) || max_surface_ratio < 1 )
     {
@@ -1007,7 +1007,8 @@ wp_s32 wp_graphics_mesh_refit_bounds_adaptive( wp_graphics_mesh *mesh, const wp_
     }
     box_score = box_half[0] * box_half[1] + box_half[0] * box_half[2] + box_half[1] * box_half[2];
     axis_score = half[0] * half[1] + half[0] * half[2] + half[1] * half[2];
-    if( box_score / axis_score <= max_surface_ratio )
+    ratio = box_score / axis_score;
+    if( ratio <= max_surface_ratio || ratio - max_surface_ratio <= 1.0e-12 * ratio )
     {
         return 1;
     }
