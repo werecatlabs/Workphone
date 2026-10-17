@@ -209,10 +209,10 @@ namespace workphone
         }
 
         macosLibraryPaths.push_back( enginePath + "/libs/macos/${CMAKE_BUILD_TYPE}" );
-        macosLibraryPaths.push_back( proprietaryLibraryPath + "/libs/macos/${CMAKE_BUILD_TYPE}" );
+        //macosLibraryPaths.push_back( proprietaryLibraryPath + "/libs/macos/${CMAKE_BUILD_TYPE}" );
 
         unixLibraryPaths.push_back( enginePath + "/libs/unix/${CMAKE_BUILD_TYPE}" );
-        unixLibraryPaths.push_back( proprietaryLibraryPath + "/libs/unix/${CMAKE_BUILD_TYPE}" );
+        //unixLibraryPaths.push_back( proprietaryLibraryPath + "/libs/unix/${CMAKE_BUILD_TYPE}" );
 
         /*
         libraryPaths.push_back( enginePath + "/AdditionalLibraries/lib/windows/" + toolset + "/" + arch +
