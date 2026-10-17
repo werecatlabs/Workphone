@@ -155,6 +155,22 @@ namespace workphone
                 u64 groupTests = 0, groupRejects = 0, groupSkipped = 0, groupFallbacks = 0;
                 u64 groupInside = 0, groupInsideCandidates = 0;
                 u64 timingSamples = 0, prepareNs = 0, mainPrepareNs = 0, shadowDeriveNs = 0;
+                u64 phaseSamples = 0;
+                wp_graphics_cull_timing_stats phases{};
+                void addPhases( const wp_graphics_cull_timing_stats &value )
+                {
+                    phases.capture_ns += value.capture_ns;
+                    phases.transform_ns += value.transform_ns;
+                    phases.bounds_ns += value.bounds_ns;
+                    phases.groups_ns += value.groups_ns;
+                    phases.view_ns += value.view_ns;
+                    phases.visibility_ns += value.visibility_ns;
+                    phases.sort_ns += value.sort_ns;
+                    phases.publish_ns += value.publish_ns;
+                }
+                u64 cullSharedBytes = 0, cullGroupBytes = 0, cullMapBytes = 0;
+                u64 cullViewBytes = 0, cullViewPeakSum = 0, cullClassScratch = 0;
+                u64 spatialViews = 0, blockViews = 0, spatialMapped = 0, spatialIndividual = 0;
                 u64 sphereTests = 0, sphereRejects = 0, boxTests = 0, satTests = 0, satRejects = 0,
                     satAxes = 0, satFallbacks = 0;
             } work;
@@ -293,6 +309,18 @@ namespace workphone
                 work.prepareNs += pass.work.prepareNs;
                 work.mainPrepareNs += pass.work.mainPrepareNs;
                 work.shadowDeriveNs += pass.work.shadowDeriveNs;
+                work.phaseSamples += pass.work.phaseSamples;
+                work.addPhases( pass.work.phases );
+                work.cullSharedBytes += pass.work.cullSharedBytes;
+                work.cullGroupBytes += pass.work.cullGroupBytes;
+                work.cullMapBytes += pass.work.cullMapBytes;
+                work.cullViewBytes += pass.work.cullViewBytes;
+                work.cullViewPeakSum += pass.work.cullViewPeakSum;
+                work.cullClassScratch += pass.work.cullClassScratch;
+                work.spatialViews += pass.work.spatialViews;
+                work.blockViews += pass.work.blockViews;
+                work.spatialMapped += pass.work.spatialMapped;
+                work.spatialIndividual += pass.work.spatialIndividual;
                 work.pathAllocations += pass.work.pathAllocations;
                 work.pathReuses += pass.work.pathReuses;
                 work.sphereTests += pass.work.sphereTests;
@@ -303,7 +331,7 @@ namespace workphone
                 work.satAxes += pass.work.satAxes;
                 work.satFallbacks += pass.work.satFallbacks;
             }
-            char preparation[2048];
+            char preparation[2560];
             std::snprintf(
                 preparation, sizeof( preparation ),
                 "\nPreparation last frame: views=%llu candidates=%llu main-visible=%llu "
@@ -314,7 +342,9 @@ namespace workphone
                 "local matrices allocs=%llu reuses=%llu prefix cache allocs=%llu reuses=%llu "
                 "main sort checks=%llu passes=%llu scratch allocs=%llu bytes=%llu "
                 "coarse groups tests=%llu rejects=%llu skipped=%llu fallbacks=%llu inside=%llu candidates=%llu "
-                "CPU prepare samples=%llu total-ns=%llu main-ns=%llu shadow-ns=%llu",
+                "CPU prepare samples=%llu total-ns=%llu main-ns=%llu shadow-ns=%llu "
+                "cull arrays shared=%llu groups=%llu map=%llu view=%llu view-peak-sum=%llu "
+                "class-scratch=%llu spatial-views=%llu block-views=%llu mapped=%llu individual=%llu",
                 (unsigned long long)work.views, (unsigned long long)work.candidates,
                 (unsigned long long)work.visible, (unsigned long long)work.dispatches,
                 (unsigned long long)work.multiplies, (unsigned long long)work.sphereTests,
@@ -333,8 +363,27 @@ namespace workphone
                 (unsigned long long)work.groupSkipped, (unsigned long long)work.groupFallbacks,
                 (unsigned long long)work.groupInside, (unsigned long long)work.groupInsideCandidates,
                 (unsigned long long)work.timingSamples, (unsigned long long)work.prepareNs,
-                (unsigned long long)work.mainPrepareNs, (unsigned long long)work.shadowDeriveNs );
+                (unsigned long long)work.mainPrepareNs, (unsigned long long)work.shadowDeriveNs,
+                (unsigned long long)work.cullSharedBytes, (unsigned long long)work.cullGroupBytes,
+                (unsigned long long)work.cullMapBytes, (unsigned long long)work.cullViewBytes,
+                (unsigned long long)work.cullViewPeakSum, (unsigned long long)work.cullClassScratch,
+                (unsigned long long)work.spatialViews, (unsigned long long)work.blockViews,
+                (unsigned long long)work.spatialMapped, (unsigned long long)work.spatialIndividual );
             result += preparation;
+            char phases[640];
+            std::snprintf( phases, sizeof( phases ),
+                "\nCPU main phases samples=%llu capture-ns=%llu transform-ns=%llu bounds-ns=%llu "
+                "groups-ns=%llu view-ns=%llu visibility-ns=%llu sort-ns=%llu publish-ns=%llu",
+                (unsigned long long)work.phaseSamples,
+                (unsigned long long)work.phases.capture_ns,
+                (unsigned long long)work.phases.transform_ns,
+                (unsigned long long)work.phases.bounds_ns,
+                (unsigned long long)work.phases.groups_ns,
+                (unsigned long long)work.phases.view_ns,
+                (unsigned long long)work.phases.visibility_ns,
+                (unsigned long long)work.phases.sort_ns,
+                (unsigned long long)work.phases.publish_ns );
+            result += phases;
             std::lock_guard<std::mutex> lock( m_statisticsMutex );
             m_renderStatistics = std::move( result );
         }
@@ -834,6 +883,24 @@ namespace workphone
                                     pass.work.mainPrepareNs += timing.main_prepare_ns;
                                     pass.work.shadowDeriveNs += timing.shadow_derive_ns;
                                 }
+                                wp_graphics_cull_storage_stats storage{};
+                                wp_graphics_cull_timing_stats phases{};
+                                if( clawScene->getPreparedPhaseTiming( &phases ) )
+                                {
+                                    ++pass.work.phaseSamples;
+                                    pass.work.addPhases( phases );
+                                }
+                                clawScene->getPreparedStorageStatistics( &storage );
+                                pass.work.cullSharedBytes += storage.publication_bytes;
+                                pass.work.cullGroupBytes += storage.group_bytes;
+                                pass.work.cullMapBytes += storage.map_bytes;
+                                pass.work.cullViewBytes += storage.view_index_bytes;
+                                pass.work.cullViewPeakSum += storage.view_array_peak_bytes;
+                                pass.work.cullClassScratch += storage.classification_scratch_bytes;
+                                pass.work.spatialViews += storage.group_mode == 2;
+                                pass.work.blockViews += storage.group_mode == 1;
+                                pass.work.spatialMapped += storage.mapped_candidates;
+                                pass.work.spatialIndividual += storage.individual_candidates;
                                 ++pass.work.views;
                                 pass.work.candidates += candidates;
                                 pass.work.visible += visible;

@@ -1,4 +1,5 @@
 /* Real C90 scene/job algorithms, with a recording renderer boundary. */
+#include "WorkphoneGraphicsCullBenchmark.h"
 #include "workphone_graphics_scene.h"
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_transform_job.h"
@@ -2017,6 +2018,9 @@ static wp_graphics_cull_result *capture_groups( wp_graphics_scene *scene, wp_cam
 {
     wp_graphics_cull_job *job = wp_graphics_cull_job_create();
     wp_graphics_cull_result *result;
+    wp_graphics_cull_storage_stats storage;
+    wp_graphics_cull_sort_stats sort;
+    wp_u64 base, peak;
     CHECK( wp_graphics_cull_job_set_group_test( job, enabled == 1 ) == WP_GRAPHICS_CULL_OK );
     CHECK( wp_graphics_cull_job_set_spatial_test( job, enabled == 2 ) == WP_GRAPHICS_CULL_OK );
     CHECK( wp_graphics_cull_job_configure( job, scene, camera, pass,
@@ -2027,6 +2031,17 @@ static wp_graphics_cull_result *capture_groups( wp_graphics_scene *scene, wp_cam
     CHECK( wp_graphics_cull_job_set_spatial_test( job, 1 ) == WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
     CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
     result = wp_graphics_cull_job_take_result( job );
+    wp_graphics_cull_result_get_storage_stats( result, &storage );
+    wp_graphics_cull_result_get_sort_stats( result, &sort );
+    base = (wp_u64)( scene->object_count ? scene->object_count : 1 ) * sizeof( wp_s32 );
+    peak = storage.classification_scratch_bytes > sort.scratch_bytes
+               ? storage.classification_scratch_bytes
+               : sort.scratch_bytes;
+    CHECK( storage.view_array_peak_bytes == base + peak );
+    CHECK( storage.view_index_bytes ==
+           ( sort.merge_passes % 2
+                 ? (wp_u64)wp_graphics_cull_result_get_visible_count( result ) * sizeof( wp_s32 )
+                 : base ) );
     wp_graphics_cull_job_destroy( job );
     return result;
 }
@@ -2421,6 +2436,7 @@ static void spatial_spanning_bounds( void )
     wp_camera *camera = wp_camera_create(), *second = wp_camera_create();
     wp_graphics_cull_result *flat, *spatial, *derived, *shadow;
     wp_graphics_cull_bounds_stats stats;
+    wp_graphics_cull_storage_stats flat_storage, storage, shadow_storage;
     wp_aabb3f bounds = { { -.2f, -.2f, -2.2f }, { .2f, .2f, -1.8f } }, wide;
     wp_vec3f p = { 0, 0, 0 };
     int i, axis;
@@ -2448,6 +2464,16 @@ static void spatial_spanning_bounds( void )
         flat = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
         spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
         compare_cull_views( flat, spatial );
+        wp_graphics_cull_result_get_storage_stats( flat, &flat_storage );
+        wp_graphics_cull_result_get_storage_stats( spatial, &storage );
+        CHECK( flat_storage.group_mode == 0 && !flat_storage.group_bytes && !flat_storage.map_bytes );
+        CHECK( storage.group_mode == 2 && storage.group_count == 4 && storage.valid_group_count == 2 &&
+               storage.mapped_candidates == 127 && storage.individual_candidates == 2 &&
+               storage.map_bytes == 129 * sizeof( wp_s32 ) &&
+               storage.group_bytes == 4 * sizeof( wp_cull_box ) &&
+               storage.publication_bytes ==
+                   flat_storage.publication_bytes + storage.group_bytes + storage.map_bytes &&
+               storage.classification_scratch_bytes == 4 );
         wp_graphics_cull_result_get_bounds_stats( spatial, &stats );
         CHECK( stats.group_tests == 2 && stats.group_rejections == 1 && stats.group_inside == 1 &&
                stats.group_skipped_candidates == 63 && stats.group_inside_candidates == 64 &&
@@ -2461,6 +2487,12 @@ static void spatial_spanning_bounds( void )
         derived = wp_graphics_cull_result_create_view( spatial, second, WP_GRAPHICS_CULL_PASS_MAIN );
         shadow = wp_graphics_cull_result_create_view( spatial, camera, WP_GRAPHICS_CULL_PASS_SHADOW );
         wp_graphics_cull_result_destroy( spatial );
+        wp_graphics_cull_result_get_storage_stats( shadow, &shadow_storage );
+        CHECK( shadow_storage.publication_bytes == storage.publication_bytes &&
+               shadow_storage.map_bytes == storage.map_bytes &&
+               shadow_storage.mapped_candidates == storage.mapped_candidates &&
+               !shadow_storage.classification_scratch_bytes &&
+               shadow_storage.view_index_bytes == 129 * sizeof( wp_s32 ) );
         flat = capture_groups( scene, second, WP_GRAPHICS_CULL_PASS_MAIN, 0 );
         compare_cull_views( flat, derived );
         CHECK( !wp_graphics_cull_result_get_transform_dispatch_count( derived ) );
@@ -2484,6 +2516,20 @@ static void spatial_spanning_bounds( void )
     CHECK( !stats.group_tests && stats.sphere_tests == 128 && stats.conservative_candidates == 1 );
     wp_graphics_cull_result_destroy( flat );
     wp_graphics_cull_result_destroy( spatial );
+    wp_graphics_scene_clear( scene );
+    spatial = capture_groups( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN, 2 );
+    wp_graphics_cull_result_get_storage_stats( spatial, &storage );
+    CHECK( !storage.publication_bytes && !storage.group_bytes && !storage.map_bytes &&
+           !storage.group_count && !storage.mapped_candidates && !storage.individual_candidates &&
+           storage.view_index_bytes == sizeof( wp_s32 ) &&
+           storage.view_array_peak_bytes == sizeof( wp_s32 ) );
+    wp_graphics_cull_result_destroy( spatial );
+    memset( &storage, 0xAB, sizeof( storage ) );
+    wp_graphics_cull_result_get_storage_stats( NULL, &storage );
+    CHECK( !storage.publication_bytes && !storage.group_bytes && !storage.map_bytes &&
+           !storage.view_index_bytes && !storage.view_array_peak_bytes &&
+           !storage.classification_scratch_bytes && !storage.group_mode && !storage.group_count &&
+           !storage.valid_group_count && !storage.mapped_candidates && !storage.individual_candidates );
     wp_graphics_scene_destroy( scene );
     wp_graphics_mesh_destroy( mesh );
     wp_graphics_mesh_destroy( long_mesh );
@@ -2731,9 +2777,98 @@ static void compact_sat_axes( void )
         (unsigned long)total_full, (unsigned long)total_compact );
 }
 
-int main( void )
+typedef struct test_cull_clock
 {
+    wp_u64 tick;
+    wp_u32 calls, backwards_at;
+} test_cull_clock;
+
+static wp_u64 test_cull_now( void *context )
+{
+    test_cull_clock *clock = (test_cull_clock *)context;
+    ++clock->calls;
+    clock->tick = clock->calls == clock->backwards_at ? 0 : clock->tick + 100;
+    return clock->tick;
+}
+
+static void cull_phase_timing( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_cull_job *job = wp_graphics_cull_job_create();
+    wp_graphics_cull_result *result, *other;
+    wp_graphics_cull_timing_stats timing, zero;
+    wp_graphics_object *object = wp_graphics_scene_create_object( scene );
+    wp_scenenode *node = wp_graphics_scene_create_node( scene );
+    test_cull_clock clock;
+    memset( &clock, 0, sizeof( clock ) );
+    memset( &zero, 0, sizeof( zero ) );
+    wp_scenenode_attach_object( node, object );
+    wp_graphics_object_set_render_func( object, record );
+    CHECK( wp_graphics_cull_job_set_clock( job, test_cull_now, &clock ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_configure( job, scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN,
+           (wp_u32)wp_graphics_scene_get_generation( scene ) ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_set_clock( job, NULL, NULL ) == WP_GRAPHICS_CULL_ERROR_INVALID_STATE );
+    clock.tick += 5000; /* Time between configure and execute is outside every phase. */
+    CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
+    result = wp_graphics_cull_job_take_result( job );
+    CHECK( wp_graphics_cull_result_get_timing_stats( result, &timing ) && clock.calls == 10 );
+    CHECK( timing.capture_ns == 100 && timing.transform_ns == 100 && timing.bounds_ns == 100 &&
+           timing.groups_ns == 100 && timing.view_ns == 100 && timing.visibility_ns == 100 &&
+           timing.sort_ns == 100 && timing.publish_ns == 100 );
+    other = wp_graphics_cull_result_create_view( result, NULL, WP_GRAPHICS_CULL_PASS_SHADOW );
+    CHECK( other && !wp_graphics_cull_result_get_timing_stats( other, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) && clock.calls == 10 );
+    wp_graphics_cull_result_destroy( other );
+    wp_graphics_cull_job_reset( job );
+    CHECK( wp_graphics_cull_result_get_timing_stats( result, &timing ) && timing.capture_ns == 100 );
+    wp_graphics_cull_result_destroy( result );
+    /* Backwards across configure/execute must not publish huge unsigned durations. */
+    memset( &clock, 0, sizeof( clock ) );
+    clock.backwards_at = 7;
+    CHECK( wp_graphics_cull_job_configure( job, scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN,
+           (wp_u32)wp_graphics_scene_get_generation( scene ) ) == WP_GRAPHICS_CULL_OK );
+    CHECK( wp_graphics_cull_job_execute( job ) == WP_GRAPHICS_CULL_OK );
+    result = wp_graphics_cull_job_take_result( job );
+    CHECK( wp_graphics_cull_result_get_visible_count( result ) == 1 &&
+           !wp_graphics_cull_result_get_timing_stats( result, &timing ) && !memcmp( &timing, &zero, sizeof( zero ) ) );
+    wp_graphics_cull_result_destroy( result );
+    memset( &clock, 0, sizeof( clock ) );
+    result = wp_graphics_scene_prepare_cull_profiled( scene, NULL, 0, test_cull_now, &clock );
+    CHECK( result && clock.calls == 10 && wp_graphics_cull_result_get_timing_stats( result, &timing ) );
+    wp_graphics_cull_result_destroy( result );
+    other = wp_graphics_scene_prepare_cull( scene, NULL, 0 );
+    CHECK( other && clock.calls == 10 && !wp_graphics_cull_result_get_timing_stats( other, &timing ) &&
+           !memcmp( &timing, &zero, sizeof( zero ) ) );
+    wp_graphics_cull_result_destroy( other );
+    CHECK( !wp_graphics_scene_prepare_cull_profiled( scene, NULL, 9, test_cull_now, &clock ) );
+    other = wp_graphics_scene_prepare_cull( scene, NULL, 0 );
+    CHECK( other && clock.calls == 10 && !wp_graphics_cull_result_get_timing_stats( other, &timing ) );
+    wp_graphics_cull_result_destroy( other );
+    wp_graphics_scene_clear( scene );
+    result = wp_graphics_scene_prepare_cull_profiled( scene, NULL, 0, test_cull_now, &clock );
+    CHECK( result && wp_graphics_cull_result_get_timing_stats( result, &timing ) &&
+           !timing.transform_ns && !timing.bounds_ns && timing.capture_ns == 100 );
+    wp_graphics_cull_result_destroy( result );
+    memset( &timing, 0xff, sizeof( timing ) );
+    CHECK( !wp_graphics_cull_result_get_timing_stats( NULL, &timing ) && !memcmp( &timing, &zero, sizeof( zero ) ) );
+    CHECK( !wp_graphics_cull_result_get_timing_stats( NULL, NULL ) );
+    wp_graphics_cull_job_destroy( job );
+    wp_graphics_scene_destroy( scene );
+}
+
+int main( int argc, char **argv )
+{
+    if( argc > 1 )
+    {
+        if( !strcmp( argv[1], "--cull-benchmark" ) )
+        {
+            return wp_graphics_cull_benchmark_main( argc, argv );
+        }
+        fprintf( stderr, "Unknown scene-job contract option.\n" );
+        return 2;
+    }
     matrix_cache();
+    cull_phase_timing();
     cache_depth_boundary();
     shared_transform_capture();
     shared_prefixes();

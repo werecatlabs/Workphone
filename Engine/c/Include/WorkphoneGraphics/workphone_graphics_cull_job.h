@@ -34,6 +34,24 @@ extern "C" {
 typedef struct wp_graphics_cull_job wp_graphics_cull_job;
 typedef struct wp_graphics_cull_result wp_graphics_cull_result;
 typedef struct wp_transform_job_stats wp_transform_job_stats;
+/* Disjoint elapsed owner intervals, not worker CPU/GPU time. Transform includes
+ * dispatch/wait and node-array setup; visibility includes execute allocations.
+ * Capture includes old-job retirement and entry/ancestor allocation; publication
+ * includes result ownership transfer/cleanup. Scene wrapper setup is excluded.
+ * Derived views are unprofiled; they do not inherit source phase durations. */
+typedef struct wp_graphics_cull_timing_stats
+{
+    wp_u64 capture_ns, transform_ns, bounds_ns, groups_ns;
+    wp_u64 view_ns, visibility_ns, sort_ns, publish_ns;
+} wp_graphics_cull_timing_stats;
+/* Reject while READY. Borrowed callback/context must survive configure/execute,
+ * including worker execution if used there; never retained by results. Reset
+ * preserves this option. NULL disables clock reads. A backwards clock invalidates
+ * the timing sample without affecting visibility or result publication. */
+wp_s32 wp_graphics_cull_job_set_clock( wp_graphics_cull_job *, wp_graphics_cull_clock, void *context );
+/* False and zeroed for null/unprofiled/invalid-clock samples. */
+wp_s32 wp_graphics_cull_result_get_timing_stats( const wp_graphics_cull_result *,
+                                               wp_graphics_cull_timing_stats * );
 /* Copied transform preparation counters; include transform_job.h for the fields. */
 void wp_graphics_cull_result_get_transform_stats( const wp_graphics_cull_result *,
                                                   wp_transform_job_stats * );
@@ -91,6 +109,25 @@ typedef struct wp_graphics_cull_sort_stats
 
 void wp_graphics_cull_result_get_sort_stats( const wp_graphics_cull_result *,
                                              wp_graphics_cull_sort_stats * );
+
+/* Actual cull array storage for this result. Publication bytes cover shared
+ * entries, ancestor revisions, group bounds and spatial map; count once across
+ * derived views. View bytes cover owned indices and temporary array peaks only.
+ * Excludes wrappers/allocator overhead, native transform buffers and pools.
+ * Classification and merge scratch do not overlap in time. Mode is actual
+ * capture storage: 0=flat, 1=blocks, 2=spatial; optional view-cache failure can
+ * still use flat geometry tests in mode 2. Mapped/individual counts describe
+ * spatial capture membership before per-view visibility/mask filtering. */
+typedef struct wp_graphics_cull_storage_stats
+{
+    wp_u64 publication_bytes, group_bytes, map_bytes;
+    wp_u64 view_index_bytes, view_array_peak_bytes, classification_scratch_bytes;
+    wp_u32 group_mode, group_count, valid_group_count;
+    wp_u32 mapped_candidates, individual_candidates;
+} wp_graphics_cull_storage_stats;
+
+void wp_graphics_cull_result_get_storage_stats( const wp_graphics_cull_result *,
+                                                wp_graphics_cull_storage_stats * );
 /* Default enabled. Owner-only A/B control; reject while READY. Derived views
  * inherit this policy. A disabled sphere stage leaves OBB classification intact. */
 wp_s32 wp_graphics_cull_job_set_sphere_test( wp_graphics_cull_job *, wp_s32 enabled );

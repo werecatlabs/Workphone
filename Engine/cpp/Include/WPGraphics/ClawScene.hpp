@@ -9,6 +9,8 @@
 struct wp_transform_job_stats;
 struct wp_graphics_cull_bounds_stats;
 struct wp_graphics_cull_sort_stats;
+struct wp_graphics_cull_storage_stats;
+struct wp_graphics_cull_timing_stats;
 
 namespace workphone
 {
@@ -111,6 +113,8 @@ namespace workphone
             /** False and zeroed when unprofiled, failed or retired. Stale jobs
              * still describe elapsed work, without certifying draw validity. */
             bool getPreparedTiming( PreparationTiming & ) const;
+            /** Disjoint native main preparation phases; false/zero when unavailable. */
+            bool getPreparedPhaseTiming( wp_graphics_cull_timing_stats * ) const;
             bool validateRenderJobs() const;
             /** Actual transform dispatches for the prepared pass; derived views add none. */
             u32 getPreparedTransformDispatchCount() const;
@@ -121,6 +125,9 @@ namespace workphone
             bool getPreparedJobStatistics( wp_transform_job_stats *, wp_graphics_cull_bounds_stats *,
                                            wp_u32 *candidates, wp_u32 *visible,
                                            wp_graphics_cull_sort_stats *sort = nullptr ) const;
+            /** Copied main-view cull array bytes; shared publication counted once.
+             * False and zeroed after retirement, without certifying draw validity. */
+            bool getPreparedStorageStatistics( wp_graphics_cull_storage_stats * ) const;
             void discardRenderJobs();
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;

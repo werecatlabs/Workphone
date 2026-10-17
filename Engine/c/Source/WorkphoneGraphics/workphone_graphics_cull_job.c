@@ -54,6 +54,7 @@ typedef struct cull_snapshot
     wp_cull_box *groups;
     wp_s32 *entry_groups;
     wp_s32 group_count;
+    wp_graphics_cull_storage_stats storage;
 } cull_snapshot;
 
 struct wp_graphics_cull_result
@@ -75,7 +76,10 @@ struct wp_graphics_cull_result
     wp_transform_job_stats transform_stats;
     wp_graphics_cull_bounds_stats bounds_stats;
     wp_graphics_cull_sort_stats sort_stats;
+    wp_graphics_cull_storage_stats storage;
     wp_s32 sphere_test, sat_test, group_test, spatial_test;
+    wp_graphics_cull_timing_stats timing;
+    wp_s32 timing_valid;
 };
 
 struct wp_graphics_cull_job
@@ -101,7 +105,64 @@ struct wp_graphics_cull_job
     wp_transform_job_stats transform_stats;
     wp_u32 scene_generation;
     wp_graphics_cull_result *result;
+    wp_graphics_cull_storage_stats storage;
+    wp_graphics_cull_clock clock;
+    void *clock_context;
+    wp_u64 clock_last;
+    wp_graphics_cull_timing_stats timing;
+    wp_s32 timing_valid;
 };
+
+static wp_u64 cull_time_start( wp_graphics_cull_job *job )
+{
+    wp_u64 now;
+    if( !job->clock )
+    {
+        return 0;
+    }
+    now = job->clock( job->clock_context );
+    if( now < job->clock_last )
+    {
+        job->timing_valid = 0;
+    }
+    job->clock_last = now;
+    return now;
+}
+
+static void cull_time_phase( wp_graphics_cull_job *job, wp_u64 *last, wp_u64 *phase )
+{
+    wp_u64 now;
+    if( !job->clock )
+    {
+        return;
+    }
+    now = cull_time_start( job );
+    if( now < *last )
+    {
+        job->timing_valid = 0;
+    }
+    else
+    {
+        *phase = now - *last;
+    }
+    *last = now;
+}
+
+wp_s32 wp_graphics_cull_job_set_clock( wp_graphics_cull_job *job,
+                                       wp_graphics_cull_clock clock, void *context )
+{
+    if( !job )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_ARGUMENT;
+    }
+    if( job->status == WP_GRAPHICS_CULL_STATUS_READY )
+    {
+        return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
+    }
+    job->clock = clock;
+    job->clock_context = clock ? context : NULL;
+    return WP_GRAPHICS_CULL_OK;
+}
 
 /* =========================================================================
  * Internal helpers
@@ -278,6 +339,7 @@ static wp_s32 cull_prepare_spatial_groups( wp_graphics_cull_job *job, size_t byt
         }
         group->valid = 1;
         job->entry_groups[i] = bin;
+        ++job->storage.mapped_candidates;
     }
     for( bin = 0; bin < count; ++bin )
     {
@@ -654,9 +716,10 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
                                        wp_u32 scene_generation )
 {
     wp_s32 i;
-    size_t bytes;
+    size_t bytes = 0;
     const wp_scenenode **nodes;
     const wp_mat4f *worlds;
+    wp_u64 stamp;
 
     if( !job || !scene || scene->object_count < 0 || ( scene->object_count && !scene->objects ) )
     {
@@ -671,10 +734,15 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
     }
 
+    memset( &job->timing, 0, sizeof( job->timing ) );
+    job->timing_valid = job->clock != NULL;
+    job->clock_last = 0;
+    stamp = cull_time_start( job );
     cull_job_release_snapshot( job );
     cull_job_release_result( job );
     job->status = WP_GRAPHICS_CULL_STATUS_IDLE;
     memset( &job->transform_stats, 0, sizeof( job->transform_stats ) );
+    memset( &job->storage, 0, sizeof( job->storage ) );
 
     if( scene->object_count > 0 )
     {
@@ -697,6 +765,7 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
                 return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
             }
         }
+        cull_time_phase( job, &stamp, &job->timing.capture_ns );
         nodes = (const wp_scenenode **)malloc( (size_t)job->entry_count * sizeof( *nodes ) );
         if( !nodes )
         {
@@ -718,6 +787,7 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         wp_transform_job_system_wait( job->transforms );
         wp_transform_job_system_get_stats( job->transforms, &job->transform_stats );
         worlds = wp_transform_job_system_get_result( job->transforms, NULL, NULL );
+        cull_time_phase( job, &stamp, &job->timing.transform_ns );
         for( i = 0; i < job->entry_count; ++i )
         {
             job->entries[i].world = worlds[i];
@@ -725,13 +795,36 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
                 &job->entries[i].box, job->entries[i].has_bounds ? &job->entries[i].bounds : NULL,
                 job->entries[i].has_obb ? &job->entries[i].local_obb : NULL, &worlds[i] );
         }
+        cull_time_phase( job, &stamp, &job->timing.bounds_ns );
+    }
+    else
+    {
+        cull_time_phase( job, &stamp, &job->timing.capture_ns );
     }
 
     if( scene->object_count > 0 )
     {
         cull_prepare_groups( job, bytes );
     }
+    job->storage.group_count = (wp_u32)job->group_count;
+    job->storage.group_bytes = (size_t)job->group_count * sizeof( *job->groups );
+    job->storage.group_mode = job->entry_groups ? 2u : job->groups ? 1u : 0u;
+    if( job->entry_groups )
+    {
+        job->storage.map_bytes = (size_t)job->entry_count * sizeof( *job->entry_groups );
+        job->storage.individual_candidates = (wp_u32)job->entry_count - job->storage.mapped_candidates;
+    }
+    for( i = 0; i < job->group_count; ++i )
+    {
+        if( job->groups[i].valid )
+        {
+            ++job->storage.valid_group_count;
+        }
+    }
+    job->storage.publication_bytes = bytes + job->storage.group_bytes + job->storage.map_bytes;
+    cull_time_phase( job, &stamp, &job->timing.groups_ns );
     cull_capture_view( job, scene, camera, pass, scene_generation );
+    cull_time_phase( job, &stamp, &job->timing.view_ns );
     job->status = WP_GRAPHICS_CULL_STATUS_READY;
     return WP_GRAPHICS_CULL_OK;
 }
@@ -748,6 +841,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     signed char *group_states;
     size_t alloc_count;
     const cull_entry *entry;
+    wp_u64 stamp;
 
     if( !job )
     {
@@ -758,6 +852,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         return WP_GRAPHICS_CULL_ERROR_INVALID_STATE;
     }
 
+    stamp = cull_time_start( job );
     alloc_count = job->entry_count > 0 ? (size_t)job->entry_count : 1u;
     snapshot =
         job->shared_snapshot ? job->shared_snapshot : (cull_snapshot *)malloc( sizeof( *snapshot ) );
@@ -777,12 +872,14 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
     }
     memset( result, 0, sizeof( *result ) );
+    result->storage = job->storage;
 
     /* Per-view cache never mutates shared bounds or affects stable traversal.
      * Missing optional storage simply executes the flat geometry path. */
     group_states = job->entry_groups && job->has_camera && job->pass == WP_GRAPHICS_CULL_PASS_MAIN
                        ? (signed char *)calloc( (size_t)job->group_count, 1 )
                        : NULL;
+    result->storage.classification_scratch_bytes = group_states ? (size_t)job->group_count : 0;
     count = 0;
     for( i = 0; i < job->entry_count; ++i )
     {
@@ -934,6 +1031,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     }
 
     free( group_states );
+    cull_time_phase( job, &stamp, &job->timing.visibility_ns );
 
     /* Equal keys retain capture order. Check only visible survivors: excluded
      * candidates must not force allocation or sorting of an already ordered view. */
@@ -967,12 +1065,21 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         sorted = cull_sort_indices( job->entries, indices, scratch, count, &result->sort_stats );
     }
 
+    cull_time_phase( job, &stamp, &job->timing.sort_ns );
+    result->storage.view_index_bytes =
+        ( sorted == indices ? alloc_count : (size_t)count ) * sizeof( *indices );
+    result->storage.view_array_peak_bytes =
+        alloc_count * sizeof( *indices ) +
+        ( result->storage.classification_scratch_bytes > result->sort_stats.scratch_bytes
+              ? result->storage.classification_scratch_bytes
+              : result->sort_stats.scratch_bytes );
     if( job->shared_snapshot )
     {
         ++snapshot->references;
     }
     else
     {
+        snapshot->storage = job->storage;
         snapshot->groups = job->groups;
         snapshot->entry_groups = job->entry_groups;
         snapshot->group_count = job->group_count;
@@ -1011,7 +1118,26 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     cull_job_release_result( job );
     job->result = result;
     job->status = WP_GRAPHICS_CULL_STATUS_COMPLETE;
+    cull_time_phase( job, &stamp, &job->timing.publish_ns );
+    result->timing = job->timing;
+    result->timing_valid = job->timing_valid;
     return WP_GRAPHICS_CULL_OK;
+}
+
+wp_s32 wp_graphics_cull_result_get_timing_stats( const wp_graphics_cull_result *result,
+                                                wp_graphics_cull_timing_stats *out )
+{
+    if( !out )
+    {
+        return 0;
+    }
+    memset( out, 0, sizeof( *out ) );
+    if( !result || !result->timing_valid )
+    {
+        return 0;
+    }
+    *out = result->timing;
+    return 1;
 }
 
 void wp_graphics_cull_job_cancel( wp_graphics_cull_job *job )
@@ -1280,6 +1406,7 @@ wp_graphics_cull_result *wp_graphics_cull_result_create_view( const wp_graphics_
     view.entry_count = source->candidate_count;
     view.shared_snapshot = source->snapshot;
     view.transform_stats = source->transform_stats;
+    view.storage = source->snapshot->storage;
     view.sphere_test = source->sphere_test;
     view.sat_test = source->sat_test;
     view.group_test = source->group_test;
@@ -1382,4 +1509,20 @@ wp_s32 wp_graphics_cull_job_set_spatial_test( wp_graphics_cull_job *job, wp_s32 
     }
     job->spatial_test = enabled != 0;
     return WP_GRAPHICS_CULL_OK;
+}
+
+void wp_graphics_cull_result_get_storage_stats( const wp_graphics_cull_result *result,
+                                                wp_graphics_cull_storage_stats *out )
+{
+    if( out )
+    {
+        if( result )
+        {
+            *out = result->storage;
+        }
+        else
+        {
+            memset( out, 0, sizeof( *out ) );
+        }
+    }
 }

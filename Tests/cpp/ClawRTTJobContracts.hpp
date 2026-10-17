@@ -263,14 +263,29 @@ public:
             require(nativeScene->getPreparedJobStatistics(&transforms,&bounds,&candidates,&visible) &&
                     candidates==expectedCandidates && visible==expectedVisible && transforms.output_count==expectedCandidates,
                     "active preparation exposes one shared candidate publication");
+            wp_graphics_cull_storage_stats storage{};
+            require(nativeScene->getPreparedStorageStatistics(&storage) && storage.publication_bytes>0 &&
+                    storage.view_index_bytes<=wp_u64(expectedCandidates)*sizeof(wp_s32) &&
+                    storage.view_array_peak_bytes>=storage.view_index_bytes,
+                    "prepared cull storage reports owned publication and independent view arrays");
             ClawScene::PreparationTiming timing;
             timing.total_ns=99;
             if(nativeScene->getPreparedTiming(timing)) {
                 ++profiledPreparations;
+                wp_graphics_cull_timing_stats phases{};
+                require(nativeScene->getPreparedPhaseTiming(&phases) &&
+                        phases.capture_ns+phases.transform_ns+phases.bounds_ns+phases.groups_ns+
+                        phases.view_ns+phases.visibility_ns+phases.sort_ns+phases.publish_ns<=timing.main_prepare_ns,
+                        "native main phases fit inside the profiled owner main interval");
                 require(timing.total_ns>=timing.main_prepare_ns+timing.shadow_derive_ns,
                         "monotonic preparation total contains the disjoint main/shadow phases");
             } else {
                 ++unprofiledPreparations;
+                wp_graphics_cull_timing_stats phases; std::memset(&phases,0xff,sizeof(phases));
+                const wp_graphics_cull_timing_stats zero{};
+                require(!nativeScene->getPreparedPhaseTiming(&phases) &&
+                        !std::memcmp(&phases,&zero,sizeof(phases)),
+                        "unprofiled native phases are zeroed");
                 require(!timing.total_ns && !timing.main_prepare_ns && !timing.shadow_derive_ns,
                         "unprofiled preparation does not report stale timing values");
             }
@@ -368,6 +383,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("CPU prepare samples=1 total-ns=")!=String::npos &&
             counters.find(" main-ns=")!=String::npos && counters.find(" shadow-ns=")!=String::npos,
             "requested frame publishes one CPU preparation sample after job retirement");
+    require(counters.find("CPU main phases samples=1 capture-ns=")!=String::npos &&
+            counters.find(" transform-ns=")!=String::npos && counters.find(" visibility-ns=")!=String::npos,
+            "requested frame publishes copied native main phase timings");
     require(counters.find("reference scratch allocs=1 reuses=0")!=String::npos,
             "first active capture allocates reference scratch once");
     require(counters.find("path records allocs=1 reuses=0")!=String::npos,
@@ -395,6 +413,10 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(!nativeScene->getPreparedTiming(retiredTiming) && !retiredTiming.total_ns &&
             !retiredTiming.main_prepare_ns && !retiredTiming.shadow_derive_ns,
             "retired timing metadata is zeroed");
+    wp_graphics_cull_storage_stats retiredStorage{}; retiredStorage.publication_bytes=99;
+    require(!nativeScene->getPreparedStorageStatistics(&retiredStorage) &&
+            !retiredStorage.publication_bytes && !retiredStorage.view_index_bytes,
+            "retired cull storage metadata is zeroed");
     require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),0)!=0,"disable scene optional cull stages");
     graphics.setProperties(request); graphics.frame();
     require(pixels(output)==good,"cull A/B policy preserves visible RTT pixels");
@@ -527,6 +549,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
             counters.find("coarse groups tests=4 rejects=3 skipped=95 fallbacks=0 inside=1 candidates=32")!=String::npos &&
             counters.find("sphere tests=1 rejects=0 box tests=1")!=String::npos,
             "cross-cell authored bound uses individual geometry while 95 neighbours are rejected and 32 contained");
+    require(counters.find("map=512 view=512 view-peak-sum=516 class-scratch=4 spatial-views=1 block-views=0 mapped=127 individual=1")!=String::npos,
+            "frame storage counts shared spatial publication once and reports actual independent view scratch");
+    std::puts("Active cull storage: shared publication, exact spatial map/view scratch, main-only ownership counts and retirement passed.");
     std::puts("Active long-bound RTT: 128 real meshes, full flat/spatial pixel parity, one individual geometry test and isolated cross-cell bound passed.");
     require(graphics.profiledPreparations>0 && graphics.unprofiledPreparations>0,
             "active frames exercise requested profiling and default unprofiled preparation");
@@ -542,7 +567,9 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     viewport->setActive(false); graphics.setProperties(request); graphics.frame();
     require(graphics.getProperties()->getPropertyValue("render_counters",counters) &&
             counters.find("Preparation last frame: views=0 candidates=0 main-visible=0 transform dispatches=0")!=String::npos &&
-            counters.find("CPU prepare samples=0 total-ns=0 main-ns=0 shadow-ns=0")!=String::npos,
+            counters.find("CPU prepare samples=0 total-ns=0 main-ns=0 shadow-ns=0")!=String::npos &&
+            counters.find("CPU main phases samples=0 capture-ns=0 transform-ns=0 bounds-ns=0 groups-ns=0 view-ns=0 visibility-ns=0 sort-ns=0 publish-ns=0")!=String::npos &&
+            counters.find("cull arrays shared=0 groups=0 map=0 view=0 view-peak-sum=0 class-scratch=0 spatial-views=0 block-views=0 mapped=0 individual=0")!=String::npos,
             "skipped frame does not carry prior preparation counters");
     viewport->setActive(true);
     }

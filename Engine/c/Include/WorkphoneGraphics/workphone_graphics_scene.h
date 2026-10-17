@@ -165,6 +165,11 @@ wp_u32 wp_graphics_scene_get_cull_flags( const wp_graphics_scene * );
  * render_with_submit reference before issuing any draws. */
 wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *, const wp_camera *,
                                                          wp_s32 pass );
+/* Optional borrowed monotonic nanosecond clock, used only during this call.
+ * NULL selects ordinary unprofiled preparation. No scene policy/generation change. */
+typedef wp_u64 ( *wp_graphics_cull_clock )( void *context );
+wp_graphics_cull_result *wp_graphics_scene_prepare_cull_profiled(
+    wp_graphics_scene *, const wp_camera *, wp_s32 pass, wp_graphics_cull_clock, void *context );
 typedef wp_s32 ( *wp_graphics_scene_snapshot_submit_func )( wp_graphics_object *, wp_renderer *,
                                                             const wp_mat4f *, void * );
 /* Validates before and during consumption. Callbacks may not destroy the scene.

@@ -1047,6 +1047,14 @@ void wp_graphics_scene_set_transform_pool( wp_graphics_scene *scene, wp_threadpo
 wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *scene,
                                                          const wp_camera *camera, wp_s32 pass )
 {
+    return wp_graphics_scene_prepare_cull_profiled( scene, camera, pass, NULL, NULL );
+}
+
+wp_graphics_cull_result *wp_graphics_scene_prepare_cull_profiled(
+    wp_graphics_scene *scene, const wp_camera *camera, wp_s32 pass,
+    wp_graphics_cull_clock clock, void *context )
+{
+    wp_graphics_cull_result *result;
     if( !scene )
     {
         return NULL;
@@ -1067,6 +1075,7 @@ wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *scen
         }
     }
     wp_graphics_cull_job_reset( scene->cull_job );
+    wp_graphics_cull_job_set_clock( scene->cull_job, clock, context );
     wp_graphics_cull_job_set_sphere_test( scene->cull_job,
                                           ( scene->cull_flags & WP_GRAPHICS_CULL_SPHERE_TEST ) != 0 );
     wp_graphics_cull_job_set_sat_test( scene->cull_job,
@@ -1079,9 +1088,12 @@ wp_graphics_cull_result *wp_graphics_scene_prepare_cull( wp_graphics_scene *scen
                                         (wp_u32)scene->generation ) != WP_GRAPHICS_CULL_OK ||
         wp_graphics_cull_job_execute( scene->cull_job ) != WP_GRAPHICS_CULL_OK )
     {
+        wp_graphics_cull_job_set_clock( scene->cull_job, NULL, NULL );
         return NULL;
     }
-    return wp_graphics_cull_job_take_result( scene->cull_job );
+    result = wp_graphics_cull_job_take_result( scene->cull_job );
+    wp_graphics_cull_job_set_clock( scene->cull_job, NULL, NULL );
+    return result;
 }
 
 wp_s32 wp_graphics_scene_render_cull_result( wp_graphics_scene *scene, wp_renderer *renderer,

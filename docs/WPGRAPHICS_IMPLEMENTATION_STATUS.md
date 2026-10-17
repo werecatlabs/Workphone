@@ -1,5 +1,154 @@
 # WPGraphics implementation status
 
+## Opt-in native preparation phase attribution - 17 October 2026
+
+`PERF-01` now copies eight disjoint native elapsed intervals into successful cull
+results: entry/ancestor capture, transform setup/dispatch/wait, world bounds,
+group construction, view/frustum setup, visibility, sorting and publication.
+The caller supplies a borrowed monotonic nanosecond clock; ordinary preparation
+makes no clock callbacks. The existing scene entry point remains available, and
+`wp_graphics_scene_prepare_cull_profiled` scopes the callback/context to one call.
+Results retain values only. A backwards clock invalidates timing metadata while
+preserving the usable visibility result; null/unprofiled/invalid timing getters
+zero their outputs. Derived views do not inherit source phase durations.
+
+Requested Claw preparation now passes a steady-clock callback and exposes copied
+main phases through `getPreparedPhaseTiming` and the existing last-frame statistics
+as `CPU main phases samples=...`. Main phases are counted once across colour and
+shadow; derived shadow cost remains in the existing encompassing shadow interval.
+Unprofiled/failed/retired/skipped preparation cannot carry stale phase samples.
+Native phases exclude scene-wrapper setup and the configure/execute gap, and
+include allocation/setup work inside their respective intervals. They are not
+worker CPU or GPU timings. Timestamp overhead has not been certified below 2%.
+
+`Tools/MeasureNativeCull.ps1 -ProfilePhases` adds explicit availability and raw
+phase columns plus per-run phase distributions. A short optimized diagnostic
+(`-Smoke -ProfilePhases -Objects 10000 -WarmupSeconds 1 -MeasurementSeconds 5 -Pairs 2`)
+completed 1,178 frames with parity and source/executable hashes intact. Its
+`protocol_eligible=false` manifest is intentional; this does not replace the
+five-pair baseline. Per-run median ranges, in ms:
+
+| Phase | Flat | Spatial |
+|---|---:|---:|
+| Entry/ancestor capture | 2.464–2.639 | 2.778–2.836 |
+| Transform setup/dispatch/wait | 11.539–11.600 | 11.846–11.961 |
+| World bounds | 1.384–1.391 | 1.390–1.393 |
+| Group construction | 0.0004–0.0005 | 0.355–0.365 |
+| Visibility | 0.236–0.244 | 0.057–0.058 |
+
+These observations prioritize finer transform capture/dispatch attribution and
+retained input work before further geometry-test optimization. Phase medians do
+not sum to a total median. Dynamic/worker/multi-view and hardware/Editor acceptance
+remain open; spatial mode stays opt-in. Evidence:
+`project_graphics_contracts/benchmarks/cull-20261017T165706781Z/`.
+
+Deterministic native tests cover phase values, configure/execute-gap exclusion,
+READY setter rejection, reset/result lifetime, empty capture, derived-view
+isolation, backwards clocks and unprofiled/failed-call cleanup. A two-worker
+instrumented benchmark smoke passes. All eight selected full Debug contracts pass,
+including active DX11/WARP phase-envelope, copied-frame publication and skipped
+reset checks; all seven isolated contracts pass in Debug and RelWithDebInfo.
+Logs: `project_x64/{build,test}_cull_phases_debug.log` and
+`project_graphics_contracts/{build,test}_cull_phases_{debug,release}.log`.
+
+## Repeatable native cull CPU comparison - 17 October 2026
+
+`PERF-01` now has an executable benchmark mode in the existing production C90
+scene-job contract target, with `Tools/MeasureNativeCull.ps1` handling rebuild,
+alternating pairs, provenance and summaries. See the
+[commands and evidence contract](WPGRAPHICS_NATIVE_CULL_BENCHMARK.md).
+Windows QPC measures owner preparation and result retirement separately;
+counter extraction, parity checks and CSV output stay outside those intervals.
+Flat/spatial visibility, object order and captured world matrices are checked
+before/after measured blocks. Source/executable changes, partial runs and sample
+overflow invalidate evidence; smoke and skipped-build runs cannot claim protocol
+eligibility. A Windows-only CTest smoke keeps the CLI/parity path exercised.
+
+The first optimized run completed five alternating pairs with five seconds of
+warmup and thirty seconds of measurement per variant, using 10,000 static objects,
+1,000 visible, seed 1337 and inline transforms (`workers=0`). All 18,085 measured
+frames passed count checks; pre/post parity passed and source/executable hashes
+remained unchanged. Lifecycle is preparation plus result destruction, in ms:
+
+| Pair | Flat median | Spatial median | Spatial change |
+|---|---:|---:|---:|
+| 1 | 16.427 | 16.694 | +1.63% |
+| 2 | 15.901 | 16.115 | +1.35% |
+| 3 | 16.227 | 16.475 | +1.52% |
+| 4 | 16.695 | 16.484 | -1.26% |
+| 5 | 16.644 | 16.858 | +1.29% |
+
+Spatial geometry work dropped from 10,000 individual sphere tests to ten group
+tests (nine rejected, one fully contained), with zero individual geometry tests.
+Both modes performed 10,157 transform multiplications. Shared publication arrays
+grew from 4,080,000 to 4,148,672 bytes, including the 40,000-byte spatial map;
+classification scratch was 256 bytes. Both modes had a 44,000-byte view-array
+peak because visible-sort scratch exceeded classification scratch. These are
+array subsets, not total memory. The result does **not** demonstrate a consistent
+timing improvement: per-capture spatial construction and other preparation costs
+remain in the interval. Spatial mode stays opt-in. Finer phase attribution,
+dynamic/worker/multi-view fixtures and representative Editor/hardware runs remain
+open; this headless run measures no GPU, submission or Present work.
+
+Raw frames, per-run p50/p95/p99/outliers, build/run logs and the `COMPLETE`,
+protocol-eligible manifest are under
+`project_graphics_contracts/benchmarks/cull-20261017T160646946Z/`.
+Executable SHA256:
+`AA4569104D379DFDFEC45998C05ADA7637D91C8EA995D0B396AF6568B4D6D134`.
+All eight selected full Debug contracts pass, including DX11/WARP target/render
+contracts and the new benchmark smoke. All seven isolated contracts pass in
+Debug and RelWithDebInfo. Logs are
+`project_x64/{build,test}_cull_benchmark_debug.log` and
+`project_graphics_contracts/{build,test}_cull_benchmark_{debug,release}.log`.
+
+## Cull publication and per-view array storage telemetry - 17 October 2026
+
+`PERF-01` now exposes copied native cull storage metadata through
+`wp_graphics_cull_result_get_storage_stats`. Shared publication bytes cover the
+captured entry array, ancestor-revision arrays, group bounds and object-to-group
+map; the map/group components are also reported separately. Actual capture mode
+(flat/blocks/spatial), allocated/valid group counts and mapped/individual spatial
+candidate counts distinguish successfully built storage from requested policy.
+Spatial membership counts precede per-view visibility/mask/callback filtering.
+
+Per-view fields report the independently owned result index buffer, actual
+classification scratch bytes and execute-array peak. Stable merge sorting can
+transfer either original indices or visible-sized merge storage to the result;
+reported retained bytes follow the buffer actually retained. Classification
+scratch is freed before sorting, so peak is original candidate-index bytes plus
+the larger of classification and merge scratch, not their sum. These byte counts
+exclude result/snapshot wrappers, allocator overhead, native transform storage,
+pools and transient owner capture inputs. They are array accounting, not process
+memory or a complete capture/engine high-water measure.
+
+Snapshot metadata is immutable and shared across derived views. Derived results
+copy publication metadata but report their own index/temporary storage; shadow
+views allocate no spatial classification cache. `ClawScene` exposes a main-view
+copy, and the existing last-frame preparation string aggregates main-view shared,
+group/map, index and classification bytes beside timing/work counters. The field
+`view-peak-sum` is explicitly the sum of per-main-view peaks, not a simultaneously
+measured frame high-water value. Derived shadow publication bytes are not summed
+again; shadow-owned view arrays are outside this main-view aggregate. Retired
+scene getters and skipped frame aggregates zero their outputs.
+
+Native coverage checks exact spatial map/group sizes, publication deltas against
+the flat path, mapped versus individually tested long/unknown candidates, derived
+shadow ownership after source retirement, retained sort-buffer parity and the
+max-of-scratch peak across existing view fixtures. Empty captures retain a single
+index slot, and null-result metadata is zeroed. All six isolated contracts pass
+in Debug and RelWithDebInfo. The active 128-mesh RTT check expects a 512-byte
+spatial map, 512-byte main-view indices, four classification bytes and a 516-byte
+main-view array peak, with 127 mapped and one individual candidate. All seven
+selected full Debug contracts pass, including the active DX11/WARP exact-byte
+assertion, timing lifecycle and existing pixel/sentinel/rollback gates.
+`git diff --check` passes.
+Logs: `project_x64/{build,test}_cull_storage_debug.log` and
+`project_graphics_contracts/{build,test}_cull_storage_{debug,release}.log`.
+
+Representative allocation-call tracing, full capture high-water accounting,
+worker/GPU profiling and paired hardware timing remain open. The spatial policy
+stays opt-in, and these metadata additions do not establish a frame-time gain.
+
 ## Request-driven CPU preparation timing - 17 October 2026
 
 `PERF-01` now measures the active Claw scene's CPU preparation wall time when the

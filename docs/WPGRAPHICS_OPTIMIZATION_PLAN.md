@@ -96,7 +96,7 @@ Priorities describe implementation urgency, not measured ranking. **P0** establi
 
 ## 4. Measurement contract and benchmark matrix
 
-M0 must produce an A/B baseline before substantial refactoring. Proposed new harness/tools below are implementation deliverables, not existing commands.
+M0 must produce an A/B baseline before substantial refactoring. The [native cull CPU benchmark](WPGRAPHICS_NATIVE_CULL_BENCHMARK.md) now implements a headless flat/spatial comparison through `Tools/MeasureNativeCull.ps1`, with raw frames, paired quantiles and source/executable hashes. It covers one static clustered fixture; the remaining GPU/application harnesses below are implementation deliverables.
 
 ### Run protocol
 
@@ -123,6 +123,17 @@ Run uncapped with VSync disabled for throughput, and separately with the intende
 Extend the existing [VehicleAdvanced benchmark controls](../Samples/cpp/VehicleAdvanced/SampleVehicleAdvanced.cpp), including `--benchmark`, `--orbit`, `--view`, forced LOD, resolution and capture options. Keep that sample's vehicle/physics lifecycle. Add a deterministic renderer workload executable for scale sweeps; do not mistake its result for playable-scene acceptance. Freeze and hash camera/input recordings rather than relying on realtime manual motion.
 
 ### Telemetry to add
+
+Native main preparation now offers opt-in disjoint capture, transform, bounds,
+groups, view, visibility, sort and publication intervals. Requested Claw statistics
+copy them before retirement; the CPU benchmark enables them with `-ProfilePhases`.
+The short 10k-object diagnostic identifies transform setup/dispatch/wait as the
+largest measured interval, and spatial construction exceeds the visibility work
+saved in that fixture. Next isolate transform input capture from composition/waits
+and remove demonstrated retained-input work. Preserve whole-preparation paired
+measurement before claiming an improvement. Fine shadow/worker/GPU attribution
+and representative fixtures remain open; see the implementation status for
+diagnostic values and scope.
 
 One immutable per-frame record, published on the render owner, should include frame/simulation/view/pass IDs; CPU preparation/cull/sort/material-resolution/submission/UI/upload/publication times; lock wait/hold and queue backlog; GPU timestamps per pass; Present/wait/interval; draw/API calls, instances, triangles and compatible-group split reasons; objects visited/culled/drawn; changed transforms/bounds; successful and failed resource creations; VB/IB/instance/palette/texture bytes uploaded; current/peak decoded/cooked/GPU/reserved capacity; transient allocations and high-water sizes.
 
@@ -188,7 +199,7 @@ M0–M6 form the first coherent throughput delivery, roughly 34–59 focused eng
 
 ### First reviewable batches
 
-1. **PERF-01: baseline and telemetry.** Active scene A/B controls and last-frame preparation/culling work counters are now published through the existing render-statistics snapshot, counting shared colour/shadow transforms once. Requested statistics now also sample steady-clock owner wall time for main preparation (capture/transforms/waits/bounds/cull/sort), independent shadow derivation and an encompassing preparation total, copied before retirement. Unrequested preparation skips clocks; sample count identifies availability, and unprofiled/failed/retired/skipped cases clear timing metadata. The original preparation entry point remains unprofiled. Active DX11/WARP lifecycle and pixel contracts cover the path. Extend finer native phase attribution and remaining counters/profiles, add missing bytes/allocations/pass tags and freeze representative fixtures. Telemetry alone does not certify a representative performance improvement.
+1. **PERF-01: baseline and telemetry.** Active scene A/B controls and last-frame preparation/culling work counters are now published through the existing render-statistics snapshot, counting shared colour/shadow transforms once. Requested statistics now also sample steady-clock owner wall time for main preparation (capture/transforms/waits/bounds/cull/sort), independent shadow derivation and an encompassing preparation total, copied before retirement. Unrequested preparation skips clocks; sample count identifies availability, and unprofiled/failed/retired/skipped cases clear timing metadata. The original preparation entry point remains unprofiled. Active DX11/WARP lifecycle and pixel contracts cover the path. Copied native cull storage metadata now separates shared entry/ancestor/group/map arrays from actual owned per-view indices and classification scratch. Execute-array peaks account for non-overlapping classification and merge phases; main-view Claw aggregates label the sum of view peaks explicitly and avoid counting derived shadow publications again. Native exact-byte/lifetime/sort-buffer tests cover this subset; wrappers, allocator overhead, transforms and capture temporaries remain outside it. Extend finer native phase attribution and remaining counters/profiles, allocation-call/full high-water metadata and pass tags, and freeze representative fixtures. Telemetry alone does not certify a representative performance improvement.
 2. **PERF-02: backend allocation.** Keep pipeline settings available; instantiate CPU arrays only for an active software pipeline and enabled dependencies. Test DX11 configuration, software enable/disable, resize, quality changes and shutdown/failure.
 3. **PERF-03: WorkphoneCore UI prepare once.** Reuse the ImGui/native prepared-range pattern, retaining fallback for software. Test several clips/textures and index ranges, empty/invisible commands and capacity growth; check bytes and pixels together.
 4. **PERF-04: retained strip/index conversion.** Canonicalize/cache once, preserve submesh offsets/winding and keep original resource metadata. Cover direct native mutations and invalidation before relying on shared geometry.

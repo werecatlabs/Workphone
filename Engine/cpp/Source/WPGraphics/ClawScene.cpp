@@ -861,6 +861,12 @@ namespace workphone
             return prepareRenderJobs( camera, false );
         }
 
+        static wp_u64 cullProfileClock( void * )
+        {
+            return static_cast<wp_u64>( std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch() ).count() );
+        }
+
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile )
         {
             using Clock = std::chrono::steady_clock;
@@ -875,7 +881,9 @@ namespace workphone
             auto jobs = std::make_shared<NativeRenderJobs>();
             jobs->camera = camera;
             const auto mainStart = profile ? Clock::now() : Clock::time_point{};
-            jobs->main = wp_graphics_scene_prepare_cull( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN );
+            jobs->main = wp_graphics_scene_prepare_cull_profiled(
+                m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN,
+                profile ? cullProfileClock : nullptr, nullptr );
             const auto mainEnd = profile ? Clock::now() : Clock::time_point{};
             jobs->shadow =
                 wp_graphics_cull_result_create_view( jobs->main, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
@@ -909,6 +917,12 @@ namespace workphone
             }
             out = m_nativeRenderJobs->timing;
             return true;
+        }
+
+        bool ClawScene::getPreparedPhaseTiming( wp_graphics_cull_timing_stats *out ) const
+        {
+            return wp_graphics_cull_result_get_timing_stats(
+                m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr, out ) != 0;
         }
 
         bool ClawScene::validateRenderJobs() const
@@ -948,6 +962,13 @@ namespace workphone
             {
                 *visible = static_cast<wp_u32>( wp_graphics_cull_result_get_visible_count( main ) );
             }
+            return main != nullptr;
+        }
+
+        bool ClawScene::getPreparedStorageStatistics( wp_graphics_cull_storage_stats *out ) const
+        {
+            auto main = m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr;
+            wp_graphics_cull_result_get_storage_stats( main, out );
             return main != nullptr;
         }
 

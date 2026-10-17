@@ -4,6 +4,7 @@ if(NOT TARGET WorkphoneGraphicsSceneJobTests)
     set(WP_JOB_ROOT "${CMAKE_SOURCE_DIR}")
     add_executable(WorkphoneGraphicsSceneJobTests
         ${WP_JOB_ROOT}/Tests/c/WorkphoneGraphicsSceneJobTests.c
+        ${WP_JOB_ROOT}/Tests/c/WorkphoneGraphicsCullBenchmark.c
         ${WP_JOB_ROOT}/Engine/c/Source/WorkphoneCore/workphone_threadpool.c
         ${WP_JOB_ROOT}/Engine/c/Source/WorkphoneCore/workphone_math.c
         ${WP_JOB_ROOT}/Engine/c/Source/WorkphoneCore/workphone_matrix.c
@@ -25,6 +26,11 @@ if(NOT TARGET WorkphoneGraphicsSceneJobTests)
     if(UNIX)
         find_package(Threads REQUIRED)
         target_link_libraries(WorkphoneGraphicsSceneJobTests PRIVATE m Threads::Threads)
+    endif()
+    if(WIN32)
+        add_test(NAME WorkphoneGraphics.cull_benchmark_smoke COMMAND WorkphoneGraphicsSceneJobTests
+            --cull-benchmark "${CMAKE_CURRENT_BINARY_DIR}/cull-benchmark-smoke-$<CONFIG>.csv" 128 .01 .03 2 1337 0 1)
+        set_tests_properties(WorkphoneGraphics.cull_benchmark_smoke PROPERTIES LABELS "graphics;headless;benchmark" TIMEOUT 30)
     endif()
     add_test(NAME WorkphoneGraphics.scene_jobs COMMAND WorkphoneGraphicsSceneJobTests)
     set_tests_properties(WorkphoneGraphics.scene_jobs PROPERTIES LABELS "graphics;headless;cull;transform" TIMEOUT 30)
