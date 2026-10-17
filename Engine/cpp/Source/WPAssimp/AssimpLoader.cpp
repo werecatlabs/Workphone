@@ -39,7 +39,8 @@ namespace workphone
         {
             if( !std::isfinite( animation.mDuration ) || animation.mDuration < 0 ||
                 !std::isfinite( animation.mTicksPerSecond ) || animation.mTicksPerSecond < 0 ||
-                animation.mDuration / ( animation.mTicksPerSecond > 0 ? animation.mTicksPerSecond : 25 ) >
+                animation.mDuration /
+                        ( animation.mTicksPerSecond > 0 ? animation.mTicksPerSecond : 25 ) >
                     std::numeric_limits<float>::max() )
             {
                 error = "invalid animation duration or tick rate";
@@ -59,7 +60,12 @@ namespace workphone
                 pending.pop_back();
                 nodes[node->mName.C_Str()].push_back( node );
                 for( unsigned i = 0; node->mChildren && i < node->mNumChildren; ++i )
-                    if( node->mChildren[i] ) pending.push_back( node->mChildren[i] );
+                {
+                    if( node->mChildren[i] )
+                    {
+                        pending.push_back( node->mChildren[i] );
+                    }
+                }
             }
             std::set<std::string> channelNames;
             ImportedChannelSamples candidate( animation.mNumChannels );
@@ -74,13 +80,16 @@ namespace workphone
                 const auto found = nodes.find( channel->mNodeName.C_Str() );
                 if( found == nodes.end() || found->second.size() != 1 )
                 {
-                    error = "animation node is missing or ambiguous: " + std::string( channel->mNodeName.C_Str() );
+                    error = "animation node is missing or ambiguous: " +
+                            std::string( channel->mNodeName.C_Str() );
                     return false;
                 }
                 if( !animation_import::sampleChannel( *channel, found->second.front()->mTransformation,
-                                                       animation.mDuration, animation.mTicksPerSecond,
-                                                       candidate[i], error ) )
+                                                      animation.mDuration, animation.mTicksPerSecond,
+                                                      candidate[i], error ) )
+                {
                     return false;
+                }
                 for( const auto &sample : candidate[i] )
                 {
                     if( !std::isfinite( sample.position.x * meshScale.X() ) ||
@@ -158,8 +167,7 @@ namespace workphone
             auto meshComponent = ensureMeshComponent( actor, meshFilePath, meshResource );
             if( meshComponent && meshDirector )
             {
-                meshComponent->setProgressiveMeshOptions(
-                    meshDirector->getProgressiveMeshOptions() );
+                meshComponent->setProgressiveMeshOptions( meshDirector->getProgressiveMeshOptions() );
             }
             auto meshRenderer = ensureMeshRenderer( actor, meshFilePath );
             return meshComponent && meshRenderer;
@@ -362,14 +370,14 @@ namespace workphone
             return !StringUtil::isNullOrEmpty( texturePath ) && texturePath[0] == '*';
         }
 
-#if WP_USE_ASSET_IMPORT
+#    if WP_USE_ASSET_IMPORT
         const aiTextureType materialTextureTypes[] = {
-            aiTextureType_BASE_COLOR,        aiTextureType_DIFFUSE,   aiTextureType_EMISSIVE,
-            aiTextureType_METALNESS,         aiTextureType_SPECULAR,  aiTextureType_NORMALS,
-            aiTextureType_HEIGHT,           aiTextureType_DIFFUSE_ROUGHNESS,
-            aiTextureType_AMBIENT_OCCLUSION, aiTextureType_LIGHTMAP
+            aiTextureType_BASE_COLOR, aiTextureType_DIFFUSE,           aiTextureType_EMISSIVE,
+            aiTextureType_METALNESS,  aiTextureType_SPECULAR,          aiTextureType_NORMALS,
+            aiTextureType_HEIGHT,     aiTextureType_DIFFUSE_ROUGHNESS, aiTextureType_AMBIENT_OCCLUSION,
+            aiTextureType_LIGHTMAP
         };
-#endif
+#    endif
 
         void hashBytes( u64 &hash, const void *data, size_t size )
         {
@@ -681,6 +689,11 @@ namespace workphone
 
         auto resourceDatabase = applicationManager->getResourceDatabase();
 
+        auto taskManager = applicationManager->getTaskManager();
+        WP_ASSERT( taskManager );
+
+        auto renderTaskLock = taskManager->lockTask( workphone::TaskId::Render );
+
         if( resource )
         {
             setMeshResource( resource );
@@ -842,6 +855,11 @@ namespace workphone
 
             auto resourceDatabase = applicationManager->getResourceDatabase();
 
+            auto taskManager = applicationManager->getTaskManager();
+            WP_ASSERT( taskManager );
+
+            auto renderTaskLock = taskManager->lockTask( workphone::TaskId::Render );
+
             ScopedLock lock( this );
 
             m_meshes.clear();
@@ -986,7 +1004,8 @@ namespace workphone
                         auto pAIMaterial = scene->mMaterials[i];
                         if( pAIMaterial )
                         {
-                            createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial, materialFolder );
+                            createMaterial( nullptr, static_cast<s32>( i ), pAIMaterial,
+                                            materialFolder );
                         }
                     }
 
@@ -1048,6 +1067,11 @@ namespace workphone
         auto meshManager = applicationManager->getMeshManager();
 
         auto resourceDatabase = applicationManager->getResourceDatabase();
+
+        auto taskManager = applicationManager->getTaskManager();
+        WP_ASSERT( taskManager );
+
+        auto renderTaskLock = taskManager->lockTask( workphone::TaskId::Render );
 
         if( resource )
         {
@@ -1209,6 +1233,11 @@ namespace workphone
 
         auto applicationManager = core::IApplicationManager::instance();
         WP_ASSERT( applicationManager );
+
+        auto taskManager = applicationManager->getTaskManager();
+        WP_ASSERT( taskManager );
+
+        auto renderTaskLock = taskManager->lockTask( workphone::TaskId::Render );
 
         auto fileSystem = applicationManager->getFileSystem();
         WP_ASSERT( fileSystem );
@@ -1624,7 +1653,8 @@ namespace workphone
                             if( !m_quietMode )
                             {
                                 WP_LOG_INFO( String( "SubMesh " ) + StringUtil::toString( idx ) +
-                                             String( " for mesh '" ) + String( pNode->mName.data ) + "'" );
+                                             String( " for mesh '" ) + String( pNode->mName.data ) +
+                                             "'" );
                             }
 
                             const auto pAIMaterial = getAssimpMaterial( mScene, pAIMesh );
@@ -1634,10 +1664,9 @@ namespace workphone
                             }
 
                             auto nodeNode = String( pNode->mName.data );
-                            createdSubMesh =
-                                createSubMesh( nodeNode, idx, pNode, pAIMesh, pAIMaterial, targetMesh,
-                                               mDir ) ||
-                                createdSubMesh;
+                            createdSubMesh = createSubMesh( nodeNode, idx, pNode, pAIMesh, pAIMaterial,
+                                                            targetMesh, mDir ) ||
+                                             createdSubMesh;
                         }
                         catch( std::exception &e )
                         {
@@ -1655,7 +1684,8 @@ namespace workphone
                     if( instanceIt != m_meshInstancesByKey.end() && instanceIt->second.meshResource )
                     {
                         auto candidateMesh = factoryManager->make_ptr<Mesh>();
-                        if( candidateMesh && createNodeMesh( candidateMesh ) && instanceIt->second.mesh &&
+                        if( candidateMesh && createNodeMesh( candidateMesh ) &&
+                            instanceIt->second.mesh &&
                             candidateMesh->compare( instanceIt->second.mesh ) )
                         {
                             meshFilePath = instanceIt->second.meshFilePath;
@@ -1739,8 +1769,7 @@ namespace workphone
                     }
                 }
 
-                if( ensureMeshActorComponents( actor, meshFilePath, meshResource,
-                                               getMeshDirector() ) )
+                if( ensureMeshActorComponents( actor, meshFilePath, meshResource, getMeshDirector() ) )
                 {
                     if( auto meshComponent = actor->getComponent<scene::Mesh>() )
                     {
@@ -2252,7 +2281,8 @@ namespace workphone
         }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
-        auto resourceDatabase = applicationManager ? applicationManager->getResourceDatabasePtr() : nullptr;
+        auto resourceDatabase =
+            applicationManager ? applicationManager->getResourceDatabasePtr() : nullptr;
         if( !resourceDatabase )
         {
             return;
@@ -2283,7 +2313,8 @@ namespace workphone
                     continue;
                 }
                 const auto name = String( reference.C_Str() );
-                if( name.empty() || m_importedTexturesByName.find( name ) != m_importedTexturesByName.end() )
+                if( name.empty() ||
+                    m_importedTexturesByName.find( name ) != m_importedTexturesByName.end() )
                 {
                     continue;
                 }
@@ -2309,8 +2340,8 @@ namespace workphone
                 }
                 if( texturePath.empty() )
                 {
-                    WP_LOG_WARNING( "Assimp texture missing or ambiguous: " + name +
-                                    " for material " + getMaterialName( mat, static_cast<s32>( i ) ) );
+                    WP_LOG_WARNING( "Assimp texture missing or ambiguous: " + name + " for material " +
+                                    getMaterialName( mat, static_cast<s32>( i ) ) );
                     continue;
                 }
 
@@ -2336,14 +2367,17 @@ namespace workphone
                         auto manager = graphics ? graphics->getTextureManager() : nullptr;
                         if( manager )
                         {
-                            const auto absolute = Path::isPathAbsolute( texturePath ) ? texturePath :
-                                Path::getAbsolutePath( projectFolder, texturePath );
+                            const auto absolute =
+                                Path::isPathAbsolute( texturePath )
+                                    ? texturePath
+                                    : Path::getAbsolutePath( projectFolder, texturePath );
                             imported = dynamic_pointer_cast<render::ITexture>(
                                 manager->createOrRetrieve( absolute ).first );
                             if( imported )
                             {
                                 resourceDatabase->addResource( imported );
-                                imported = resourceDatabase->loadResourceByType<render::ITexture>( texturePath );
+                                imported = resourceDatabase->loadResourceByType<render::ITexture>(
+                                    texturePath );
                             }
                         }
                     }
@@ -2371,8 +2405,8 @@ namespace workphone
         {
             f32 opacity = 1.0f;
             const auto hasOpacity = AI_SUCCESS == aiGetMaterialFloat( mat, AI_MATKEY_OPACITY, &opacity );
-            const auto isObj = StringUtil::make_lower( Path::getFileExtension( m_meshPath ) ) ==
-                               String( ".obj" );
+            const auto isObj =
+                StringUtil::make_lower( Path::getFileExtension( m_meshPath ) ) == String( ".obj" );
             const auto recoverOpacity = detail::recoverObjMaterialOpacity(
                 opacity, isObj, m_materialImportOptions.recoverZeroOpacityObjMaterials );
             opacity = recoverOpacity ? 1.0f : detail::materialUnitFactor( opacity, 1.0f );
@@ -2456,12 +2490,26 @@ namespace workphone
                 u32 layerIdx = 0u;
                 switch( textureType )
                 {
-                case aiTextureType_NORMALS: case aiTextureType_HEIGHT: layerIdx = 1u; break;
-                case aiTextureType_SPECULAR: case aiTextureType_METALNESS: layerIdx = 2u; break;
-                case aiTextureType_DIFFUSE_ROUGHNESS: layerIdx = 3u; break;
-                case aiTextureType_EMISSIVE: layerIdx = 13u; break;
-                case aiTextureType_LIGHTMAP: case aiTextureType_AMBIENT_OCCLUSION: layerIdx = 22u; break;
-                default: break;
+                case aiTextureType_NORMALS:
+                case aiTextureType_HEIGHT:
+                    layerIdx = 1u;
+                    break;
+                case aiTextureType_SPECULAR:
+                case aiTextureType_METALNESS:
+                    layerIdx = 2u;
+                    break;
+                case aiTextureType_DIFFUSE_ROUGHNESS:
+                    layerIdx = 3u;
+                    break;
+                case aiTextureType_EMISSIVE:
+                    layerIdx = 13u;
+                    break;
+                case aiTextureType_LIGHTMAP:
+                case aiTextureType_AMBIENT_OCCLUSION:
+                    layerIdx = 22u;
+                    break;
+                default:
+                    break;
                 }
                 aiString path;
                 if( mat->GetTexture( textureType, 0, &path ) != AI_SUCCESS )
@@ -2768,9 +2816,9 @@ namespace workphone
         }
     }
 
-    Array<SmartPtr<IAnimation> > AssimpLoader::importSceneAnimations( const aiScene *scene )
+    Array<SmartPtr<IAnimation>> AssimpLoader::importSceneAnimations( const aiScene *scene )
     {
-        Array<SmartPtr<IAnimation> > animations;
+        Array<SmartPtr<IAnimation>> animations;
         if( !scene || !scene->HasAnimations() || m_sceneActorsByName.empty() )
         {
             return animations;
@@ -2878,7 +2926,7 @@ namespace workphone
     }
 
     void AssimpLoader::writeSceneAnimationCacheFile( const String &meshPath,
-                                                     const Array<SmartPtr<IAnimation> > &animations )
+                                                     const Array<SmartPtr<IAnimation>> &animations )
     {
         if( StringUtil::isNullOrEmpty( meshPath ) )
         {
@@ -3024,12 +3072,20 @@ namespace workphone
 
             bool unsupportedScale = false;
             for( const auto &samples : channelSamples )
+            {
                 for( const auto &sample : samples )
+                {
                     if( !animation_import::equivalent( sample.scale, aiVector3D( 1, 1, 1 ) ) )
+                    {
                         unsupportedScale = true;
+                    }
+                }
+            }
             if( unsupportedScale )
             {
-                WP_LOG_ERROR( "Skeletal animation import rejected: the legacy IBone runtime cannot apply scale channels" );
+                WP_LOG_ERROR(
+                    "Skeletal animation import rejected: the legacy IBone runtime cannot apply scale "
+                    "channels" );
                 continue;
             }
 
@@ -3186,14 +3242,14 @@ namespace workphone
         //aiVector3D *uv = mesh->mTextureCoords[0];
         aiColor4D *col = mesh->mColors[0];
 
-        Array<Array<Vector3<f32> > > uvs;
+        Array<Array<Vector3<f32>>> uvs;
         uvs.reserve( mesh->GetNumUVChannels() );
 
         for( auto uv : mesh->mTextureCoords )
         {
             if( uv )
             {
-                Array<Vector3<f32> > uvArray;
+                Array<Vector3<f32>> uvArray;
                 uvArray.reserve( mesh->mNumVertices );
 
                 for( size_t j = 0; j < mesh->mNumVertices; ++j )
