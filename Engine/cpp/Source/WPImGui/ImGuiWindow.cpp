@@ -154,4 +154,10 @@ namespace workphone::ui
             }
         }
     }
+
+    void ImGuiWindow::load( SmartPtr<ISharedObject> data )
+    {
+        setLoadingState( LoadingState::Loaded );
+    }
+
 }  // namespace workphone::ui

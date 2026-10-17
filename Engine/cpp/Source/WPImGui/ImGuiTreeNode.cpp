@@ -201,7 +201,10 @@ namespace workphone::ui
             auto opened = ImGui::TreeNodeEx( (void *)static_cast<intptr_t>( id ), node_flags, "%s",
                                              label );
 
-            if( ImGui::IsMouseDragging( 0 ) )
+            const auto dragPayload = ImGui::GetDragDropPayload();
+            const bool treeDropReleased = ImGui::IsMouseReleased( 0 ) && dragPayload &&
+                                          dragPayload->IsDataType( "_TREENODE" );
+            if( ImGui::IsMouseDragging( 0 ) || treeDropReleased )
             {
                 auto siblingIndex = treeNode->getSiblingIndexByType<IUITreeNode>();
                 auto siblingCount = treeNode->getSiblingCountByType<IUITreeNode>();
@@ -324,8 +327,7 @@ namespace workphone::ui
 
                     ImGui::EndDragDropTarget();
                 }
-                else if( ImGui::IsMouseReleased( 0 ) &&
-                         tree->getSelectedSiblingIndex() != -1 )
+                else if( treeDropReleased && tree->getSelectedSiblingIndex() != -1 )
                 {
                     if( auto payload = ImGui::GetDragDropPayload() )
                     {

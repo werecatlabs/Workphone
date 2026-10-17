@@ -206,6 +206,7 @@ namespace workphone::editor
                 auto dropTarget = workphone::make_ptr<DropTarget>();
                 dropTarget->setOwner( this );
                 window->setDropTarget( dropTarget );
+                sceneWindow->setDropTarget( dropTarget );
 #endif
 
                 m_tree->setDropTarget( dropTarget );

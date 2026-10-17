@@ -389,6 +389,7 @@ namespace workphone::ui
             job->setRoot( element.get() == this );
             setDragSourceElement( element );
             m_dragJob = job;
+            WP_LOG_INFO( "DDTRACE source job created" );
 
             auto jobQueue = applicationManager->getJobQueue();
             if( jobQueue && jobQueue->isRunning() )
@@ -404,6 +405,15 @@ namespace workphone::ui
 
         if( m_dragJob->getState() == IJob::State::Finish && !m_dragJob->isInterrupted() )
         {
+            if( !m_dragJob->getPayload().empty() )
+            {
+                static thread_local ImGuiDragJob *lastLoggedJob = nullptr;
+                if( lastLoggedJob != m_dragJob.get() )
+                {
+                    WP_LOG_INFO( "DDTRACE source payload ready" );
+                    lastLoggedJob = m_dragJob.get();
+                }
+            }
             return m_dragJob->getPayload();
         }
 
@@ -434,7 +444,10 @@ namespace workphone::ui
     {
         auto applicationManager = core::IApplicationManager::instance();
         auto treeCtrl = workphone::static_pointer_cast<ImGuiTreeCtrl>( element );
-        //treeCtrl->setSiblingIndex( -1 );
+        // A line drop must be based on the cursor position in this frame. A stale index from
+        // an earlier hover would otherwise turn a release over empty space into a tree drop.
+        treeCtrl->setSelectedSiblingIndex( -1 );
+        treeCtrl->setDropDestinationElement( nullptr );
 
         // A control may have been hidden during the mouse release frame. A fresh press always
         // starts a new gesture, so discard any payload left from the previous one.

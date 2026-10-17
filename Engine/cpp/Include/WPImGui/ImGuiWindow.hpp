@@ -20,6 +20,8 @@ namespace workphone
             ImGuiWindow();
             ~ImGuiWindow() override;
 
+            void load( SmartPtr<ISharedObject> data ) override;
+
             void update() override;
 
             WP_CLASS_REGISTER_DECL;

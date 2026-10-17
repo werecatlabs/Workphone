@@ -3,6 +3,7 @@
 #include <Workphone/Workphone.hpp>
 #include <Workphone/Interface/UI/IUIDropTarget.hpp>
 #include <Workphone/Interface/System/IEvent.hpp>
+#include <imgui.h>
 #include <utility>
 
 namespace workphone::ui
@@ -73,6 +74,29 @@ namespace workphone::ui
         if( !job )
         {
             return;
+        }
+
+        // A tree row, its insertion line and the enclosing window can all observe the same
+        // release. Only the first eligible target may dispatch that drag gesture.
+        if( ImGui::GetCurrentContext() && ImGui::IsMouseReleased( ImGuiMouseButton_Left ) )
+        {
+            if( const auto payload = ImGui::GetDragDropPayload();
+                payload && payload->IsDataType( "_TREENODE" ) )
+            {
+                static thread_local ImGuiContext *lastContext = nullptr;
+                static thread_local int lastFrame = -1;
+                static thread_local ImGuiID lastSource = 0;
+                const auto context = ImGui::GetCurrentContext();
+                const auto frame = ImGui::GetFrameCount();
+                if( lastContext == context && lastFrame == frame &&
+                    lastSource == payload->SourceId )
+                {
+                    return;
+                }
+                lastContext = context;
+                lastFrame = frame;
+                lastSource = payload->SourceId;
+            }
         }
 
         job->setDropTarget( dropTarget );
