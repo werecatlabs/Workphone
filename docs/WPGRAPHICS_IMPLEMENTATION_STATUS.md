@@ -1,5 +1,42 @@
 # WPGraphics implementation status
 
+## Cull draw-order fast path and lazy merge scratch - 17 October 2026
+
+The native cull execute path now checks draw order among visible survivors before
+merge sorting. Already ordered views preserve their existing indices and perform
+no merge passes or scratch allocation, including empty/single-object views and
+equal queue/z-order keys. Excluded candidates cannot force sorting. Unsorted
+survivors retain the stable bottom-up merge sort, with temporary scratch sized to
+the visible count instead of the full candidate count. The published index buffer
+remains independently owned by each result; derived views retain the shared
+candidate publication and never borrow temporary sort storage. Allocation failure
+leaves a derived source's ownership intact and fails before result publication.
+
+`wp_graphics_cull_result_get_sort_stats` exposes per-view order checks, merge
+passes, scratch allocations and bytes, separately from shared transform and bounds
+work. Claw's copied preparation statistics and last-frame `main sort` telemetry
+report the main view's work; shadow sort work is not included in that aggregate.
+The active single-output RTT test checks zero merge/scratch work and zeroed
+statistics after retirement, alongside its existing pixel and lifecycle checks.
+
+Native coverage compares 108 fixtures (zero through seventeen candidates in six
+order/filter patterns) with an independent stable insertion reference. Coverage
+includes ascending/reversed order, repeated keys, mixed queue/z-order keys,
+disordered excluded candidates, late inversions, odd/non-power-of-two merge
+lengths, exact visible scratch byte counts and derived-view survival after source
+retirement. All six isolated contracts pass in Debug and RelWithDebInfo.
+All seven selected full Debug contracts pass, including DX11/WARP target and
+active Claw RTT pixel/lifecycle checks. Both Claw contracts also pass after the
+final retirement-statistics assertion. `git diff --check` passes.
+Logs: `project_x64/{build,test}_cull_order_retirement_debug.log`,
+`project_x64/{build,test}_cull_order_debug.log` and
+`project_graphics_contracts/{build,test}_cull_order_{debug,release}.log`.
+
+This advances the ordering work associated with `PERF-08` without introducing new
+ordering classes or spatial indices. Unsorted views pay an additional linear
+order check (which stops at the first inversion); representative frame timings
+are still required before claiming an overall speedup.
+
 ## Reused local transform matrices and prefix caches - 17 October 2026
 
 `PERF-07` now reuses private local-matrix storage at unchanged unique-node count,

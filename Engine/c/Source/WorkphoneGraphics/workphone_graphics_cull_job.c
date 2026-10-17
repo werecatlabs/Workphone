@@ -69,6 +69,7 @@ struct wp_graphics_cull_result
     wp_graphics_cull_pass pass;
     wp_transform_job_stats transform_stats;
     wp_graphics_cull_bounds_stats bounds_stats;
+    wp_graphics_cull_sort_stats sort_stats;
     wp_s32 sphere_test, sat_test;
 };
 
@@ -130,7 +131,7 @@ static wp_s32 cull_entry_before( const cull_entry *left, const cull_entry *right
 
 /* Stable bottom-up merge sort of entry indices. Returns the sorted buffer. */
 static wp_s32 *cull_sort_indices( const cull_entry *entries, wp_s32 *source, wp_s32 *scratch,
-                                  wp_s32 count )
+                                  wp_s32 count, wp_graphics_cull_sort_stats *stats )
 {
     wp_s32 *destination;
     wp_s32 *swap;
@@ -141,6 +142,7 @@ static wp_s32 *cull_sort_indices( const cull_entry *entries, wp_s32 *source, wp_
     destination = scratch;
     for( width = 1; width < count; )
     {
+        ++stats->merge_passes;
         for( left = 0; left < count; left = right )
         {
             middle = width > count - left ? count : left + width;
@@ -444,7 +446,7 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
     wp_s32 *scratch;
     wp_s32 *sorted;
     wp_s32 count;
-    wp_s32 i, stage, outside;
+    wp_s32 i, stage, outside, ordered;
     size_t alloc_count;
     const cull_entry *entry;
 
@@ -462,8 +464,8 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         job->shared_snapshot ? job->shared_snapshot : (cull_snapshot *)malloc( sizeof( *snapshot ) );
     result = (wp_graphics_cull_result *)malloc( sizeof( *result ) );
     indices = (wp_s32 *)malloc( alloc_count * sizeof( wp_s32 ) );
-    scratch = (wp_s32 *)malloc( alloc_count * sizeof( wp_s32 ) );
-    if( !snapshot || !result || !indices || !scratch )
+    scratch = NULL;
+    if( !snapshot || !result || !indices )
     {
         if( !job->shared_snapshot )
         {
@@ -564,7 +566,37 @@ wp_s32 wp_graphics_cull_job_execute( wp_graphics_cull_job *job )
         indices[count++] = i;
     }
 
-    sorted = cull_sort_indices( job->entries, indices, scratch, count );
+    /* Equal keys retain capture order. Check only visible survivors: excluded
+     * candidates must not force allocation or sorting of an already ordered view. */
+    ordered = 1;
+    for( i = 1; i < count; ++i )
+    {
+        ++result->sort_stats.order_checks;
+        if( cull_entry_before( &job->entries[indices[i]], &job->entries[indices[i - 1]] ) )
+        {
+            ordered = 0;
+            break;
+        }
+    }
+    sorted = indices;
+    if( !ordered )
+    {
+        scratch = (wp_s32 *)malloc( (size_t)count * sizeof( *scratch ) );
+        if( !scratch )
+        {
+            if( !job->shared_snapshot )
+            {
+                free( snapshot );
+            }
+            free( result );
+            free( indices );
+            job->status = WP_GRAPHICS_CULL_STATUS_FAILED;
+            return WP_GRAPHICS_CULL_ERROR_OUT_OF_MEMORY;
+        }
+        result->sort_stats.scratch_allocations = 1;
+        result->sort_stats.scratch_bytes = (size_t)count * sizeof( *scratch );
+        sorted = cull_sort_indices( job->entries, indices, scratch, count, &result->sort_stats );
+    }
 
     if( job->shared_snapshot )
     {
@@ -921,5 +953,21 @@ void wp_graphics_cull_result_get_bounds_stats( const wp_graphics_cull_result *re
     else
     {
         memset( out, 0, sizeof( *out ) );
+    }
+}
+
+void wp_graphics_cull_result_get_sort_stats( const wp_graphics_cull_result *result,
+                                             wp_graphics_cull_sort_stats *out )
+{
+    if( out )
+    {
+        if( result )
+        {
+            *out = result->sort_stats;
+        }
+        else
+        {
+            memset( out, 0, sizeof( *out ) );
+        }
     }
 }

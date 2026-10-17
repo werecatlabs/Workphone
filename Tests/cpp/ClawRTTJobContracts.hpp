@@ -340,13 +340,16 @@ inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene =
     require(counters.find("local matrices allocs=1 reuses=0")!=String::npos &&
             counters.find("prefix cache allocs=0 reuses=0")!=String::npos,
             "active single-output capture reports local storage and no optional prefix cache");
+    require(counters.find("main sort checks=0 passes=0 scratch allocs=0 bytes=0")!=String::npos,
+            "single-output active view skips merge sorting and scratch allocation");
     good = pixels(output);
     require(good[(16*32+16)*4] != good[0] && !nativeScene->validateRenderJobs(),
         "real ClawScene cull result must draw and be retired at frame end");
     wp_transform_job_stats retiredTransforms{}; wp_graphics_cull_bounds_stats retiredBounds{};
+    wp_graphics_cull_sort_stats retiredSort{}; retiredSort.scratch_allocations=99;
     wp_u32 retiredCandidates=99,retiredVisible=99;
-    require(!nativeScene->getPreparedJobStatistics(&retiredTransforms,&retiredBounds,&retiredCandidates,&retiredVisible) &&
-            !retiredCandidates && !retiredVisible && !retiredTransforms.output_count && !retiredBounds.sphere_tests,
+    require(!nativeScene->getPreparedJobStatistics(&retiredTransforms,&retiredBounds,&retiredCandidates,&retiredVisible,&retiredSort) &&
+            !retiredCandidates && !retiredVisible && !retiredTransforms.output_count && !retiredBounds.sphere_tests && !retiredSort.scratch_allocations,
             "retired preparation metadata is zeroed");
     require(wp_graphics_scene_set_cull_flags(nativeScene->getNativeScene(),0)!=0,"disable scene optional cull stages");
     graphics.setProperties(request); graphics.frame();
