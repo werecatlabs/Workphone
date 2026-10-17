@@ -48,6 +48,17 @@ if(WIN32 AND TARGET WPGraphics AND WP_GRAPHICS_SYSTEM_CLAW)
             endif()
             target_link_directories(${graphics_target} PRIVATE
                 ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+            if(graphics_contract STREQUAL "ClawDX11Target" AND TARGET imgui)
+                # The manager is internal to WPGraphics; compile it alongside the
+                # test's ImGui context instead of exporting an additional DLL API.
+                target_sources(${graphics_target} PRIVATE
+                    ${WP_ROOT}/Engine/cpp/Source/WPGraphics/ClawImguiManager.cpp)
+                target_include_directories(${graphics_target} PRIVATE
+                    ${WP_ROOT}/Dependencies/imgui ${WP_ROOT}/Dependencies/boost
+                    ${WP_ROOT}/Engine/c/Include/WorkphonePlatformWin32)
+                target_compile_definitions(${graphics_target} PRIVATE
+                    WP_TEST_IMGUI WP_TEST_ICON_FONT="${WP_ROOT}/bin/Media/fa-solid-900.ttf")
+            endif()
             set_target_properties(${graphics_target} PROPERTIES FOLDER Tests/Cpp)
             add_test(NAME ${graphics_test} COMMAND ${graphics_target})
             set_tests_properties(${graphics_test} PROPERTIES LABELS "graphics;gpu" TIMEOUT 120)

@@ -42,6 +42,10 @@
 #include <WPImGui/ImGuiTabBar.hpp>
 #include <WPImGui/ImGuiTabItem.hpp>
 #include <Workphone/Workphone.hpp>
+#include <cmath>
+#include <cstring>
+#include <limits>
+#include <vector>
 
 namespace workphone::ui
 {
@@ -592,12 +596,35 @@ namespace workphone::ui
         try
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
-            WP_ASSERT( applicationManager );
-
+            if( !applicationManager || !ImGui::GetCurrentContext() )
+            {
+                return false;
+            }
             auto fileSystem = applicationManager->getFileSystemPtr();
-            WP_ASSERT( fileSystem );
+            auto &io = ImGui::GetIO();
+            if( !fileSystem || !io.Fonts || io.Fonts->Locked )
+            {
+                return false;
+            }
 
-            auto &fontData = ImGuiApplication::s_fontData;
+            if( io.Fonts->Fonts.empty() )
+            {
+                io.Fonts->AddFontDefault();
+            }
+            auto *baseFont = io.Fonts->Fonts.back();
+
+            // Detect the merge in this atlas, rather than trusting a static pointer
+            // which may belong to a previously destroyed context.
+            constexpr const char *iconFontName = "Workphone Font Awesome";
+            for( const auto &config : io.Fonts->ConfigData )
+            {
+                if( config.DstFont == baseFont && std::strcmp( config.Name, iconFontName ) == 0 )
+                {
+                    ImGuiApplication::s_fontAwesomeFont = config.DstFont;
+                    return true;
+                }
+            }
+            std::vector<unsigned char> fontData;
             auto &fontAwesomeFont = ImGuiApplication::s_fontAwesomeFont;
 
             auto fileStream = fileSystem->open( fontPath, true, true, false, true, true );
@@ -609,6 +636,10 @@ namespace workphone::ui
 
             // Get file size
             auto fileSize = fileStream->size();
+            if( fileSize == 0 || fileSize > static_cast<size_t>( std::numeric_limits<int>::max() ) )
+            {
+                return false;
+            }
             fontData.resize( fileSize );
 
             // Read file data
@@ -619,24 +650,31 @@ namespace workphone::ui
                 return false;
             }
 
-            // Add font to ImGui
-            ImGuiIO &io = ImGui::GetIO();
+            float baseSize = 13.0f;
+            for( const auto &source : io.Fonts->ConfigData )
+            {
+                if( source.DstFont == baseFont && !source.MergeMode &&
+                    std::isfinite( source.SizePixels ) && source.SizePixels > 0.0f )
+                {
+                    baseSize = source.SizePixels;
+                    break;
+                }
+            }
 
             ImFontConfig config;
             config.MergeMode = true;
+            config.DstFont = baseFont;
             config.PixelSnapH = true;
-            // The backing bytes live in ImGuiApplication::s_fontData and were
-            // not allocated by ImGui, so the atlas must not try to free them.
+            config.GlyphMinAdvanceX = baseSize;
+            std::strcpy( config.Name, iconFontName );
+            // AddFont copies non-owned input into atlas-owned memory. Keep the
+            // temporary bytes local so contexts never share a mutable buffer.
             config.FontDataOwnedByAtlas = false;
-            //config.GlyphMinAdvanceX = 13.0f;
-            //config.GlyphMaxAdvanceX = 400.0f;
-            //config.GlyphOffset.y = 1.0f;
-
-            // Add Font Awesome font with specific icon ranges
+            // Icon outlines have more internal padding than text glyphs. Scale
+            // relative to the destination text font (16px for the default 13px).
             fontAwesomeFont = io.Fonts->AddFontFromMemoryTTF(
-                fontData.data(), static_cast<int>( fontData.size() ), 12.0f, &config,
-                icons_ranges  // Use our custom icon ranges
-            );
+                fontData.data(), static_cast<int>( fontData.size() ), baseSize * ( 16.0f / 13.0f ),
+                &config, icons_ranges );
 
             if( !fontAwesomeFont )
             {
@@ -645,9 +683,7 @@ namespace workphone::ui
             }
 
             // Build font atlas
-            io.Fonts->Build();
-
-            return true;
+            return io.Fonts->Build();
         }
         catch( std::exception &e )
         {
