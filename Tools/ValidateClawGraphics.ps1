@@ -93,6 +93,8 @@ $verificationPaths = @(
     'Engine/cpp/Source/WPGraphics/ClawFoliageBatch.cpp',
     'Engine/cpp/Include/WPGraphics/ClawScene.hpp',
     'Engine/cpp/Source/WPGraphics/ClawScene.cpp',
+    'Engine/cpp/Include/Workphone/Graphics/GraphicsScene.hpp',
+    'Engine/cpp/Source/Workphone/Graphics/GraphicsScene.cpp',
     'Engine/cpp/Include/WPGraphics/ClawMesh.hpp',
     'Engine/cpp/Source/WPGraphics/ClawMesh.cpp',
     'Engine/cpp/Include/WPGraphics/ClawRendererDX11.hpp',

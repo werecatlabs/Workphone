@@ -8,9 +8,12 @@ Release verification recovery updated: 18 October 2026. Baseline presets now bui
 25 current targets and validation requires 29 results, including native frame/RTT/
 scene jobs, authoring, material sequencing and bounded lifecycle coverage. Dormant
 terrain/foliage/physics/UI registrations and fixture build dependencies are restored.
-Opt-in production crash dumps preserve unhandled-exception evidence. The earlier
-intermittent teardown crash remains unresolved despite passing repeat attempts;
-do not close `SHIP-05` or the no-crash release gate on that evidence. See the
+Opt-in production crash dumps captured the intermittent teardown crash. Its scene
+context/listener lifetime defects are repaired with single constructor initialization,
+symmetric cleanup and retained-context regression coverage. Both configurations
+report 28 passed and one external-media result unavailable. `SHIP-05` remains open
+for broader mixed-soak/recovery certification; clean CI, fixtures, hardware and
+packaging acceptance still block release. See the
 [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and results.
 
 Native job implementation updated: 17 October 2026. Transform capture/composition, immutable per-view cull results and the synchronous C90 RTT lifecycle form an active transform → cull → draw/RTT slice. Revision-cached native matrix queries and deduplicated local capture feed one shared candidate publication for colour/shadow views within each Claw pass. Derived views own their camera/masks and sorted lists and perform no new transform dispatch. DX11 RTT validates completed scene results before binding and publication; the first GPU tier remains RGBA8/legacy LDR on D3D11.1. Shared-prefix worker composition, automatic cross-viewport reuse, queued frame scheduling, HDR RTT and the broader gates remain open. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for current evidence.

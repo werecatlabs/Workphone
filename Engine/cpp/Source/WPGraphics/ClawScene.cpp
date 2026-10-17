@@ -161,7 +161,6 @@ namespace workphone
 
         ClawScene::ClawScene() : ClawScene( wp_graphics_scene_create(), true )
         {
-            createStateContext();
         }
 
         ClawScene::ClawScene( wp_graphics_scene *scene, bool ownsScene ) :

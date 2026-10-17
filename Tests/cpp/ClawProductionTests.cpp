@@ -1,6 +1,7 @@
 #include "ClawFoliageContracts.hpp"
 #include "ClawPrimaryLightContracts.hpp"
 #include "ClawFoliageSceneContracts.hpp"
+#include "ClawSceneLifetimeContracts.hpp"
 #include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
 #include "ClawRTTJobContracts.hpp"
@@ -353,7 +354,7 @@ int main( int argc, char **argv )
         {
             std::fprintf( stderr, "Lifecycle soak iteration %ld\n", iteration + 1 );
             ok = testParticleLifecycle() && claw_scene_node_transform_contracts::run() &&
-                 claw_material_pass_lifetime_contracts::run();
+                 claw_material_pass_lifetime_contracts::run() && claw_scene_lifetime_contracts::run();
         }
         core::IApplicationManager::setInstance(nullptr); application=nullptr;
         TypeManager::setInstance(nullptr); types.unload();
@@ -362,6 +363,7 @@ int main( int argc, char **argv )
     bool ok = testParticleLifecycle();
     ok &= claw_scene_node_transform_contracts::run();
     ok &= claw_material_pass_lifetime_contracts::run();
+    ok &= claw_scene_lifetime_contracts::run();
     ok &= testLightDirection();
     ok &= claw_primary_light_contracts::run();
     auto window = make_ptr<TestWindow>();

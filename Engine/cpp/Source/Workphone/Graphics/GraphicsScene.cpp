@@ -43,25 +43,57 @@ namespace workphone::render
 
     GraphicsScene::~GraphicsScene()
     {
-        auto applicationManager = core::IApplicationManager::instancePtr();
-        if( applicationManager )
-        {
-            if( auto stateManager = applicationManager->getStateManagerPtr() )
-            {
-                if( auto stateContext = getStateContextPtr() )
-                {
-                    auto states = stateContext->getStates();
-                    for( auto &state : states )
-                    {
-                        if( state && state->getOwnerPtr() == this )
-                        {
-                            state->unload( nullptr );
-                            stateContext->removeState( state );
-                        }
-                    }
+        destroySceneStateContexts();
+    }
 
-                    setStateContext( nullptr );
+    void GraphicsScene::destroySceneStateContexts()
+    {
+        // Pin every context before dropping the weak index. Contexts and listeners
+        // may be retained independently of this scene until state-manager teardown.
+        Array<SmartPtr<IStateContext>> contexts;
+        if( auto context = getStateContext() )
+            contexts.push_back( context );
+        if( auto context = getSceneNodeContext() )
+            contexts.push_back( context );
+        for( auto &[id, weakContext] : m_graphicsObjectContexts )
+        {
+            if( auto context = weakContext.lock() )
+                contexts.push_back( context );
+        }
+
+        auto listener = getStateListener();
+        if( listener )
+            listener->unload( nullptr );
+        m_graphicsObjectContexts.clear();
+        m_sceneNodeContext = nullptr;
+        setStateContext( nullptr );
+        setStateListener( nullptr );
+
+        auto application = core::IApplicationManager::instancePtr();
+        auto manager = application ? application->getStateManagerPtr() : nullptr;
+        for( auto &context : contexts )
+        {
+            if( listener )
+                context->removeStateListener( listener );
+            for( auto &state : context->getStates() )
+            {
+                if( state && state->getOwnerPtr() == this )
+                {
+                    state->unload( nullptr );
+                    context->removeState( state );
                 }
+            }
+
+            const auto owned = context->getOwnerPtr() == this;
+            if( owned )
+                context->setOwner( nullptr );
+            if( owned || ( !context->getOwnerPtr() && context->getStates().empty() &&
+                           context->getStateListeners().empty() ) )
+            {
+                if( manager )
+                    manager->removeStateContext( context );
+                else
+                    context->unload( nullptr );
             }
         }
     }
@@ -131,58 +163,7 @@ namespace workphone::render
             setFactoryManager( nullptr );
         }
 
-        if( auto applicationManager = core::IApplicationManager::instancePtr() )
-        {
-            if( auto stateManager = applicationManager->getStateManagerPtr() )
-            {
-                std::fprintf( stderr, "TRACE base GraphicsScene state cleanup start\n" );
-                auto stateListener = getStateListener();
-
-                if( auto sceneNodeContext = getSceneNodeContext() )
-                {
-                    std::fprintf( stderr, "TRACE base GraphicsScene node context %p\n",
-                                  sceneNodeContext.get() );
-                    if( stateListener )
-                    {
-                        sceneNodeContext->removeStateListener( stateListener );
-                    }
-                    std::fprintf( stderr, "TRACE base GraphicsScene node listener removed\n" );
-
-                    stateManager->removeStateContext( sceneNodeContext );
-                    std::fprintf( stderr, "TRACE base GraphicsScene node context removed\n" );
-                    sceneNodeContext->setOwner( nullptr );
-                    std::fprintf( stderr, "TRACE base GraphicsScene node context owner cleared\n" );
-                }
-                std::fprintf( stderr, "TRACE base GraphicsScene scene-node context done\n" );
-
-                Array<SmartPtr<IStateContext>> graphicsObjectContexts;
-                for( auto &[id, weakContext] : m_graphicsObjectContexts )
-                {
-                    if( auto ctx = weakContext.lock() )
-                    {
-                        graphicsObjectContexts.push_back( ctx );
-                    }
-                }
-
-                // Keep the contexts alive while releasing the weak index. WeakPtr uses
-                // intrusive counters stored on the context itself, so its destructor must
-                // run before removeStateContext can destroy the last strong reference.
-                m_graphicsObjectContexts.clear();
-
-                for( auto &ctx : graphicsObjectContexts )
-                {
-                    if( stateListener )
-                        ctx->removeStateListener( stateListener );
-
-                    stateManager->removeStateContext( ctx );
-                    ctx->setOwner( nullptr );
-                }
-                std::fprintf( stderr, "TRACE base GraphicsScene object contexts done\n" );
-            }
-        }
-
-        m_sceneNodeContext = nullptr;
-        m_graphicsObjectContexts.clear();
+        destroySceneStateContexts();
 
         SharedGraphicsObject<IGraphicsScene>::unload( data );
         std::fprintf( stderr, "TRACE base GraphicsScene unload end\n" );
