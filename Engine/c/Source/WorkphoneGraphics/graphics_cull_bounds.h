@@ -16,6 +16,7 @@ typedef struct wp_cull_frustum
 {
     double planes[6][4];
     double corners[8][3], edges[12][3], error;
+    wp_s32 face_indices[6], edge_indices[12], face_count, edge_count;
     wp_s32 valid, sat_valid;
 } wp_cull_frustum;
 
@@ -53,14 +54,23 @@ static wp_s32 wp_cull_unit( double axis[3] )
     return 1;
 }
 
+/* Exact component equality only. Nearby directions stay distinct, so this
+ * optimization never drops a candidate axis merely because its angle is small. */
+static wp_s32 wp_cull_same_axis( const double a[3], const double b[3] )
+{
+    return ( a[0] == b[0] && a[1] == b[1] && a[2] == b[2] ) ||
+           ( a[0] == -b[0] && a[1] == -b[1] && a[2] == -b[2] );
+}
+
 /* Intersect one plane from each clip-coordinate pair. Do not refine when the
  * finite corners cannot be reconstructed reliably (including infinite far views). */
 static void wp_cull_prepare_sat_frustum( wp_cull_frustum *out )
 {
     const double *p[3];
     double cross[3][3], det, min_det = 1, magnitude = 1, distance, terms;
-    wp_s32 mask, i, j, k, axis, edge = 0;
+    wp_s32 mask, i, j, k, axis, duplicate, edge = 0;
     out->sat_valid = 0;
+    out->face_count = out->edge_count = 0;
     if( !out->valid )
     {
         return;
@@ -148,6 +158,38 @@ static void wp_cull_prepare_sat_frustum( wp_cull_frustum *out )
             }
         }
     }
+    /* Retain first occurrences, preserving the reference's candidate order.
+     * Raw directions remain available for full-axis regression comparisons. */
+    for( i = 0; i < 6; ++i )
+    {
+        duplicate = 0;
+        for( j = 0; j < out->face_count; ++j )
+        {
+            if( wp_cull_same_axis( out->planes[i], out->planes[out->face_indices[j]] ) )
+            {
+                duplicate = 1;
+            }
+        }
+        if( !duplicate )
+        {
+            out->face_indices[out->face_count++] = i;
+        }
+    }
+    for( i = 0; i < 12; ++i )
+    {
+        duplicate = 0;
+        for( j = 0; j < out->edge_count; ++j )
+        {
+            if( wp_cull_same_axis( out->edges[i], out->edges[out->edge_indices[j]] ) )
+            {
+                duplicate = 1;
+            }
+        }
+        if( !duplicate )
+        {
+            out->edge_indices[out->edge_count++] = i;
+        }
+    }
     out->sat_valid = 1;
 }
 
@@ -199,21 +241,22 @@ static wp_s32 wp_cull_sat_axis( const wp_cull_box *box, const wp_cull_frustum *f
 
 /* Convex-polyhedron SAT: face normals of both shapes plus edge cross products.
  * Transformed half axes can be sheared; face normals are their cross products. */
-static wp_s32 wp_cull_sat_outside( const wp_cull_box *box, const wp_cull_frustum *frustum,
-                                   wp_u32 *tested )
+static wp_s32 wp_cull_sat_outside_mode( const wp_cull_box *box, const wp_cull_frustum *frustum,
+                                        wp_u32 *tested, wp_s32 compact )
 {
     double edges[3][3], axis[3];
-    wp_s32 i, j, k;
+    wp_s32 i, j, k, index;
     *tested = 0;
     if( !box->valid || !frustum->sat_valid )
     {
         return 0;
     }
-    for( i = 0; i < 6; ++i )
+    for( i = 0; i < ( compact ? frustum->face_count : 6 ); ++i )
     {
+        index = compact ? frustum->face_indices[i] : i;
         for( j = 0; j < 3; ++j )
         {
-            axis[j] = frustum->planes[i][j];
+            axis[j] = frustum->planes[index][j];
         }
         if( wp_cull_sat_axis( box, frustum, axis, tested ) )
         {
@@ -238,9 +281,10 @@ static wp_s32 wp_cull_sat_outside( const wp_cull_box *box, const wp_cull_frustum
         {
             return 1;
         }
-        for( k = 0; k < 12; ++k )
+        for( k = 0; k < ( compact ? frustum->edge_count : 12 ); ++k )
         {
-            wp_cull_cross( axis, edges[i], frustum->edges[k] );
+            index = compact ? frustum->edge_indices[k] : k;
+            wp_cull_cross( axis, edges[i], frustum->edges[index] );
             if( wp_cull_sat_axis( box, frustum, axis, tested ) )
             {
                 return 1;
@@ -248,6 +292,12 @@ static wp_s32 wp_cull_sat_outside( const wp_cull_box *box, const wp_cull_frustum
         }
     }
     return 0;
+}
+
+static wp_s32 wp_cull_sat_outside( const wp_cull_box *box, const wp_cull_frustum *frustum,
+                                   wp_u32 *tested )
+{
+    return wp_cull_sat_outside_mode( box, frustum, tested, 1 );
 }
 
 static void wp_cull_prepare_box( wp_cull_box *out, const wp_aabb3f *aabb, const wp_graphics_obb *obb,

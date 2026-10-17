@@ -6,6 +6,8 @@
 #include "workphone_graphics_mesh.h"
 #include "workphone_graphics_camera.h"
 #include "workphone_graphics_renderer.h"
+/* Full-axis comparison for the private SAT compaction optimization. */
+#include "../../Engine/c/Source/WorkphoneGraphics/graphics_cull_bounds.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -1599,6 +1601,103 @@ static void retirement( void )
     wp_graphics_scene_destroy( s );
 }
 
+static void compact_sat_axes( void )
+{
+    wp_camera *camera = wp_camera_create();
+    wp_cull_frustum frustum;
+    wp_cull_box box;
+    wp_aabb3f bounds = { { -0.5f, -0.5f, -0.5f }, { 0.5f, 0.5f, 0.5f } };
+    wp_mat4f view, projection, vp, world, rotation, tilt, combined, scale;
+    wp_vec3f position;
+    wp_quatf orientation;
+    double near_axis[3] = { 1, 1.0e-14, 0 }, exact_axis[3] = { 1, 0, 0 };
+    wp_u32 full, compact, total_full = 0, total_compact = 0, rejected = 0, retained = 0;
+    wp_s32 a, b, stage;
+    int pass, sample;
+    CHECK( !wp_cull_same_axis( near_axis, exact_axis ) );
+    wp_camera_set_ortho_width( camera, 1 );
+    wp_camera_set_aspect_ratio( camera, 1 );
+    wp_camera_set_near_clip_distance( camera, 1 );
+    wp_camera_set_far_clip_distance( camera, 4 );
+    for( pass = 0; pass < 4; ++pass )
+    {
+        wp_camera_set_projection_type( camera, ( pass & 1 ) ? WORKPHONE_PROJECTION_PERSPECTIVE
+                                                            : WORKPHONE_PROJECTION_ORTHOGRAPHIC );
+        position.x = pass >= 2 ? 10.0f : 0;
+        position.y = pass >= 2 ? -7.0f : 0;
+        position.z = pass >= 2 ? 3.0f : 0;
+        orientation.w = (wp_f32)cos( pass >= 2 ? 0.17 : 0 );
+        orientation.x = (wp_f32)( sin( pass >= 2 ? 0.17 : 0 ) * 0.6 );
+        orientation.y = (wp_f32)( sin( pass >= 2 ? 0.17 : 0 ) * 0.8 );
+        orientation.z = 0;
+        wp_camera_set_position( camera, position );
+        wp_camera_set_orientation( camera, orientation );
+        wp_camera_get_view_matrix( camera, &view );
+        wp_camera_get_projection_matrix( camera, &projection );
+        wp_mat4f_mul( &vp, &projection, &view );
+        wp_cull_prepare_frustum( &frustum, &vp );
+        wp_cull_prepare_sat_frustum( &frustum );
+        CHECK( frustum.sat_valid );
+        if( pass == 0 )
+        {
+            CHECK( frustum.face_count == 3 && frustum.edge_count == 3 );
+        }
+        if( pass == 1 )
+        {
+            CHECK( frustum.face_count == 5 && frustum.edge_count == 6 );
+        }
+        for( sample = 0; sample < 256; ++sample )
+        {
+            wp_mat4f_from_rotation_z( &rotation, (wp_f32)( sample * 0.137 ) );
+            wp_mat4f_from_rotation_y( &tilt, (wp_f32)( sample * 0.071 ) );
+            wp_mat4f_mul( &combined, &rotation, &tilt );
+            wp_mat4f_from_scale( &scale, ( sample % 23 ) ? ( ( sample & 1 ) ? -3.0f : 0.3f ) : 0, 1.7f,
+                                 0.6f );
+            wp_mat4f_mul( &world, &scale, &combined );
+            world.m[0][3] = position.x + (wp_f32)( ( sample * 37 ) % 101 - 50 ) * 0.06f;
+            world.m[1][3] = position.y + (wp_f32)( ( sample * 19 ) % 79 - 39 ) * 0.06f;
+            world.m[2][3] = position.z - 2 + (wp_f32)( ( sample * 11 ) % 31 - 15 ) * 0.1f;
+            wp_cull_prepare_box( &box, &bounds, NULL, &world );
+            CHECK( box.valid );
+            a = wp_cull_sat_outside_mode( &box, &frustum, &full, 0 );
+            b = wp_cull_sat_outside( &box, &frustum, &compact );
+            CHECK( a == b && compact <= full );
+            total_full += full;
+            total_compact += compact;
+            if( a )
+            {
+                ++rejected;
+            }
+            else
+            {
+                ++retained;
+            }
+        }
+    }
+    CHECK( rejected && retained && total_compact < total_full );
+    /* A simple retained axis-aligned box gives an exact work-count comparison. */
+    wp_mat4f_identity( &vp );
+    wp_cull_prepare_frustum( &frustum, &vp );
+    wp_cull_prepare_sat_frustum( &frustum );
+    wp_mat4f_identity( &world );
+    bounds.min.x = bounds.min.y = bounds.min.z = -2;
+    bounds.max.x = bounds.max.y = bounds.max.z = 2;
+    wp_cull_prepare_box( &box, &bounds, NULL, &world );
+    CHECK( !wp_cull_box_outside( &box, &frustum, 1, &stage ) && stage == 4 );
+    CHECK( !wp_cull_sat_outside_mode( &box, &frustum, &full, 0 ) );
+    CHECK( !wp_cull_sat_outside( &box, &frustum, &compact ) );
+    CHECK( full == 33 && compact == 12 );
+    memset( &vp, 0, sizeof( vp ) );
+    wp_cull_prepare_frustum( &frustum, &vp );
+    wp_cull_prepare_sat_frustum( &frustum );
+    CHECK( !wp_cull_sat_outside( &box, &frustum, &compact ) && !compact );
+    wp_camera_destroy( camera );
+    printf(
+        "SAT compaction: 1024 full-axis classifications match; %lu -> %lu axis tests; boundary box 33 "
+        "-> 12.\n",
+        (unsigned long)total_full, (unsigned long)total_compact );
+}
+
 int main( void )
 {
     matrix_cache();
@@ -1616,6 +1715,7 @@ int main( void )
     sphere_parity();
     separating_axes();
     sat_common_points();
+    compact_sat_axes();
     retirement();
     shared_views();
 #ifdef _WIN32

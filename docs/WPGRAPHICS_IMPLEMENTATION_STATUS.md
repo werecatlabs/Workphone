@@ -1,5 +1,39 @@
 # WPGraphics implementation status
 
+## Exact SAT direction compaction - 17 October 2026
+
+Native culling now builds compact face-normal and edge-direction index lists
+once per finite main-view frustum. Identical or exactly opposite unit directions
+retain their first occurrence. Plane offsets do not define SAT direction identity;
+projection still uses the complete frustum corner interval. Nearby directions are
+kept distinct, with no new angular approximation or change to uncertainty margins.
+
+Both job execution and the synchronous scene reference use the compact lists.
+Sphere/box containment early-outs, uncertain-frustum fallback, corner contact and
+off-camera shadow retention remain unchanged. Existing `sat_axis_tests` counters
+report the reduced actual work. The raw directions and a private full-axis query
+mode remain available to regression tests; no additional public runtime policy
+or per-candidate allocation is introduced.
+
+The direct SAT regression compares 1,024 queries across perspective/orthographic
+and rotated/translated views, with 3D box rotations, reflection, singular scales
+and shear. All classifications match the full-axis mode, while axis tests fall
+from **14,192 to 7,076**. An axis-aligned orthographic boundary box that encloses
+the view still requires SAT and drops from **33 to 12** tested axes. Standard
+unrotated orthographic frusta retain three face/three edge directions; perspective
+frusta retain five face/six edge directions. Rotated views may retain more when
+computed directions are only approximately parallel.
+
+Validation: all seven selected full Debug contracts pass, including active Claw
+and DX11 target rendering on Microsoft Basic Render Driver/WARP. All six isolated
+contracts pass in Debug and RelWithDebInfo; `git diff --check` passes. Logs:
+`project_x64/{build,test}_sat_compact_debug.log` and
+`project_graphics_contracts/{build,test}_sat_compact_{debug,release}.log`.
+
+These are deterministic operation counts, not frame-time measurements. View
+planning has a small fixed comparison cost; representative profiling and further
+axis optimization remain open.
+
 ## Frustum/box separating-axis refinement - 17 October 2026
 
 `SCENE-02` now refines boundary boxes after sphere and six-plane support tests.
@@ -22,7 +56,8 @@ synchronous reference. `wp_graphics_cull_job_set_sat_test` is an owner-side A/B
 switch, rejected while READY and inherited by derived camera/shadow views. Copied
 per-view counters report SAT candidates, rejections, tested axes and frustum
 fallbacks. It adds no per-candidate allocation, but can test up to 45 axes for a
-boundary candidate; representative timings and axis deduplication remain open.
+boundary candidate before compaction. Exact-direction compaction is described
+above; representative timings and further axis reduction remain open.
 
 Native regressions cover a box beyond a view corner, a fixed 3D edge-edge case
 with an analytic separating-gap witness despite overlapping face-axis intervals,
