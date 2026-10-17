@@ -35,6 +35,7 @@ typedef struct wp_graphics_mesh
     wp_aabb3f local_aabb;
     wp_graphics_obb local_obb;
     wp_s32 has_obb, aabb_authored;
+    wp_graphics_mesh_bounds_stats bounds_stats;
     void *native;
     wp_s32 is_dirty;
     wp_vertex_ptc *render_vertices;
@@ -575,6 +576,7 @@ wp_s32 wp_graphics_mesh_compute_obb( wp_graphics_mesh *mesh )
             mean[i] += ( value - mean[i] ) / (double)( n + 1u );
         }
     }
+    ++mesh->bounds_stats.pca_solves;
     memset( covariance, 0, sizeof( covariance ) );
     memset( basis, 0, sizeof( basis ) );
     for( i = 0; i < 3; ++i )
@@ -737,7 +739,7 @@ wp_s32 wp_graphics_mesh_compute_obb( wp_graphics_mesh *mesh )
     return wp_graphics_mesh_set_local_obb( mesh, &box );
 }
 
-void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
+static wp_s32 wp_mesh_compute_aabb_only( wp_graphics_mesh *mesh )
 {
     const wp_u8 *data;
     const wp_vec3f *pos;
@@ -747,13 +749,13 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
 
     if( !mesh || !mesh->vertices || mesh->vertex_count == 0 )
     {
-        return;
+        return 0;
     }
 
     stride = wp_vertex_format_stride( mesh->vertex_format );
     if( stride == 0 )
     {
-        return;
+        return 0;
     }
 
     data = (const wp_u8 *)mesh->vertices;
@@ -771,7 +773,7 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
                    ( (const wp_f32 *)pos )[axis] >= -FLT_MAX ) )
             {
                 memset( &mesh->local_aabb, 0, sizeof( mesh->local_aabb ) );
-                return;
+                return 0;
             }
         }
     }
@@ -781,7 +783,7 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
 
     for( i = 1; i < mesh->vertex_count; i++ )
     {
-        pos = (const wp_vec3f *)( data + (wp_u32)i * (wp_u32)stride );
+        pos = (const wp_vec3f *)( data + (size_t)i * stride );
 
         if( pos->x < mesh->local_aabb.min.x )
         {
@@ -809,7 +811,233 @@ void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
             mesh->local_aabb.max.z = pos->z;
         }
     }
-    wp_graphics_mesh_compute_obb( mesh );
+    return 1;
+}
+
+void wp_graphics_mesh_compute_aabb( wp_graphics_mesh *mesh )
+{
+    if( wp_mesh_compute_aabb_only( mesh ) )
+    {
+        wp_graphics_mesh_compute_obb( mesh );
+    }
+}
+
+static wp_s32 wp_mesh_refit_orientation( wp_graphics_mesh *mesh, const wp_graphics_obb *previous )
+{
+    double basis[3][3], origin[3], low[3], high[3], lengths[3], value, dot, extent, scale = 0, pad;
+    wp_graphics_obb box;
+    const wp_u8 *data = (const wp_u8 *)mesh->vertices;
+    const wp_vec3f *position;
+    wp_u32 n, stride = wp_vertex_format_stride( mesh->vertex_format );
+    wp_s32 i, j, k;
+    if( !previous )
+    {
+        return 0;
+    }
+    for( i = 0; i < 3; ++i )
+    {
+        lengths[i] = 0;
+        for( j = 0; j < 3; ++j )
+        {
+            value = ( (const double *)&previous->half_axes[i] )[j];
+            if( !wp_mesh_finite( value ) )
+            {
+                return 0;
+            }
+            basis[i][j] = value;
+            lengths[i] += value * value;
+        }
+        if( !wp_mesh_finite( lengths[i] ) || lengths[i] <= DBL_MIN )
+        {
+            return 0;
+        }
+        lengths[i] = sqrt( lengths[i] );
+        for( j = 0; j < 3; ++j )
+        {
+            basis[i][j] /= lengths[i];
+        }
+        for( k = 0; k < i; ++k )
+        {
+            dot = 0;
+            for( j = 0; j < 3; ++j )
+            {
+                dot += basis[i][j] * basis[k][j];
+            }
+            if( fabs( dot ) > 1.0e-8 )
+            {
+                return 0;
+            }
+        }
+    }
+    /* Orthonormalize accepted near-orthogonal directions before projecting. */
+    dot = 0;
+    for( j = 0; j < 3; ++j )
+    {
+        dot += basis[0][j] * basis[1][j];
+    }
+    value = 0;
+    for( j = 0; j < 3; ++j )
+    {
+        basis[1][j] -= dot * basis[0][j];
+        value += basis[1][j] * basis[1][j];
+    }
+    value = sqrt( value );
+    for( j = 0; j < 3; ++j )
+    {
+        basis[1][j] /= value;
+    }
+    for( j = 0; j < 3; ++j )
+    {
+        basis[2][j] = basis[0][( j + 1 ) % 3] * basis[1][( j + 2 ) % 3] -
+                      basis[0][( j + 2 ) % 3] * basis[1][( j + 1 ) % 3];
+    }
+    for( j = 0; j < 3; ++j )
+    {
+        origin[j] = ( (const wp_f32 *)&mesh->local_aabb.min )[j] * 0.5 +
+                    ( (const wp_f32 *)&mesh->local_aabb.max )[j] * 0.5;
+        low[j] = DBL_MAX;
+        high[j] = -DBL_MAX;
+    }
+    for( n = 0; n < mesh->vertex_count; ++n )
+    {
+        position = (const wp_vec3f *)( data + (size_t)n * stride );
+        for( i = 0; i < 3; ++i )
+        {
+            value = 0;
+            for( j = 0; j < 3; ++j )
+            {
+                value += basis[i][j] * ( ( (const wp_f32 *)position )[j] - origin[j] );
+            }
+            if( value < low[i] )
+            {
+                low[i] = value;
+            }
+            if( value > high[i] )
+            {
+                high[i] = value;
+            }
+        }
+    }
+    for( i = 0; i < 3; ++i )
+    {
+        extent = ( high[i] - low[i] ) * 0.5;
+        if( extent > scale )
+        {
+            scale = extent;
+        }
+    }
+    pad = 1.0e-6 * scale +
+          32 * DBL_EPSILON * ( fabs( origin[0] ) + fabs( origin[1] ) + fabs( origin[2] ) + scale ) +
+          1.0e-12;
+    memset( &box, 0, sizeof( box ) );
+    for( j = 0; j < 3; ++j )
+    {
+        value = origin[j];
+        for( i = 0; i < 3; ++i )
+        {
+            value += basis[i][j] * ( low[i] + high[i] ) * 0.5;
+            ( (double *)&box.half_axes[i] )[j] = basis[i][j] * ( ( high[i] - low[i] ) * 0.5 + pad );
+        }
+        ( (double *)&box.center )[j] = value;
+    }
+    if( !wp_graphics_mesh_set_local_obb( mesh, &box ) )
+    {
+        return 0;
+    }
+    ++mesh->bounds_stats.orientation_refits;
+    return 1;
+}
+
+wp_s32 wp_graphics_mesh_refit_bounds( wp_graphics_mesh *mesh, const wp_graphics_obb *previous )
+{
+    if( !wp_mesh_compute_aabb_only( mesh ) )
+    {
+        return 0;
+    }
+    if( wp_mesh_refit_orientation( mesh, previous ) )
+    {
+        return 1;
+    }
+    return wp_graphics_mesh_compute_obb( mesh );
+}
+
+wp_s32 wp_graphics_mesh_refit_bounds_adaptive( wp_graphics_mesh *mesh, const wp_graphics_obb *previous,
+                                               wp_f64 max_surface_ratio )
+{
+    wp_u64 refits;
+    wp_s32 i;
+    double half[3], box_half[3], scale = 0, pad, box_score, axis_score;
+    wp_graphics_obb retained;
+    if( !mesh || !wp_mesh_finite( max_surface_ratio ) || max_surface_ratio < 1 )
+    {
+        return 0;
+    }
+    refits = mesh->bounds_stats.orientation_refits;
+    if( !wp_graphics_mesh_refit_bounds( mesh, previous ) )
+    {
+        return 0;
+    }
+    /* Missing/invalid prior directions already requested a full fit. */
+    if( mesh->bounds_stats.orientation_refits == refits )
+    {
+        return 1;
+    }
+    for( i = 0; i < 3; ++i )
+    {
+        half[i] = ( ( (const wp_f32 *)&mesh->local_aabb.max )[i] -
+                    (double)( (const wp_f32 *)&mesh->local_aabb.min )[i] ) *
+                  0.5;
+        if( half[i] > scale )
+        {
+            scale = half[i];
+        }
+        box_half[i] =
+            sqrt( wp_mesh_dot( &mesh->local_obb.half_axes[i], &mesh->local_obb.half_axes[i] ) );
+    }
+    /* Match fitting's numerical margin so points/lines/planes cannot force a
+     * refresh solely because one of the unpadded AABB dimensions is zero. */
+    pad = 1.0e-6 * scale +
+          32 * DBL_EPSILON *
+              ( fabs( mesh->local_obb.center.x ) + fabs( mesh->local_obb.center.y ) +
+                fabs( mesh->local_obb.center.z ) + scale ) +
+          1.0e-12;
+    for( i = 0; i < 3; ++i )
+    {
+        half[i] += pad;
+    }
+    box_score = box_half[0] * box_half[1] + box_half[0] * box_half[2] + box_half[1] * box_half[2];
+    axis_score = half[0] * half[1] + half[0] * half[2] + half[1] * half[2];
+    if( box_score / axis_score <= max_surface_ratio )
+    {
+        return 1;
+    }
+    retained = mesh->local_obb;
+    if( wp_graphics_mesh_compute_obb( mesh ) )
+    {
+        ++mesh->bounds_stats.adaptive_refreshes;
+    }
+    else
+    {
+        wp_graphics_mesh_set_local_obb( mesh, &retained );
+    }
+    return 1;
+}
+
+void wp_graphics_mesh_get_bounds_stats( const wp_graphics_mesh *mesh,
+                                        wp_graphics_mesh_bounds_stats *out )
+{
+    if( !out )
+    {
+        return;
+    }
+    if( mesh )
+    {
+        *out = mesh->bounds_stats;
+    }
+    else
+    {
+        memset( out, 0, sizeof( *out ) );
+    }
 }
 
 /* =========================================================================

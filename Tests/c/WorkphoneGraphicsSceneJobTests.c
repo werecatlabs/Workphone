@@ -837,6 +837,210 @@ static void check_enclosure( const wp_graphics_obb *box, const wp_graphics_mesh_
     }
 }
 
+static void refitted_bounds( void )
+{
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_mesh_vertex_p vertices[8];
+    wp_graphics_obb previous, current, invalid;
+    wp_graphics_mesh_bounds_stats stats;
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_object *object = wp_graphics_scene_create_object( scene );
+    wp_graphics_cull_result *captured;
+    wp_u32 nan_bits = 0x7fc00000u;
+    double x, y, z, projection, old_extent, new_extent;
+    int i, pose, expanded = 0;
+    for( i = 0; i < 8; ++i )
+    {
+        x = ( i & 1 ) ? 2 : -2;
+        y = ( i & 2 ) ? 0.1 : -0.1;
+        vertices[i].position.x = (wp_f32)( ( x - y ) * 0.70710678118655 );
+        vertices[i].position.y = (wp_f32)( ( x + y ) * 0.70710678118655 );
+        vertices[i].position.z = ( i & 4 ) ? 0.2f : -0.2f;
+    }
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    CHECK( wp_graphics_mesh_refit_bounds( mesh, NULL ) );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &previous ) );
+    wp_graphics_object_set_mesh( object, mesh );
+    captured = capture( scene, NULL, 0 );
+    old_extent = box_dot( &previous.half_axes[0], &previous.half_axes[0] );
+    for( pose = 0; pose < 64; ++pose )
+    {
+        for( i = 0; i < 8; ++i )
+        {
+            x = ( ( i & 1 ) ? 1 : -1 ) * ( 1 + pose * 0.07 );
+            y = ( ( i & 2 ) ? 1 : -1 ) * ( 0.1 + pose * 0.03 );
+            z = ( ( i & 4 ) ? 1 : -1 ) * ( 0.2 + pose * 0.01 );
+            vertices[i].position.x =
+                (wp_f32)( x * cos( pose * 0.03 ) - y * sin( pose * 0.03 ) + pose * 2 );
+            vertices[i].position.y = (wp_f32)( x * sin( pose * 0.03 ) + y * cos( pose * 0.03 ) - pose );
+            vertices[i].position.z = (wp_f32)z;
+        }
+        wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+        CHECK( !wp_graphics_mesh_get_local_obb( mesh, &current ) );
+        CHECK( wp_graphics_mesh_refit_bounds( mesh, &previous ) );
+        CHECK( wp_graphics_mesh_get_local_obb( mesh, &current ) );
+        check_enclosure( &current, vertices, 8 );
+        new_extent = box_dot( &current.half_axes[0], &current.half_axes[0] );
+        projection = box_dot( &previous.half_axes[0], &current.half_axes[0] );
+        CHECK( fabs( projection * projection /
+                         ( box_dot( &previous.half_axes[0], &previous.half_axes[0] ) * new_extent ) -
+                     1 ) < 1.0e-10 );
+        if( new_extent > old_extent * 2 )
+        {
+            expanded = 1;
+        }
+        previous = current;
+    }
+    CHECK( expanded && previous.center.x > 100 );
+    CHECK( wp_graphics_cull_result_validate(
+               captured, scene, wp_graphics_cull_result_get_scene_generation( captured ) ) ==
+           WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( captured );
+    wp_graphics_mesh_get_bounds_stats( mesh, &stats );
+    CHECK( stats.pca_solves == 1 && stats.orientation_refits == 64 );
+    /* Invalid or rank-deficient prior directions request a new full fit. */
+    invalid = previous;
+    invalid.half_axes[1] = invalid.half_axes[0];
+    CHECK( wp_graphics_mesh_refit_bounds( mesh, &invalid ) );
+    memset( &invalid, 0, sizeof( invalid ) );
+    CHECK( wp_graphics_mesh_refit_bounds( mesh, &invalid ) );
+    invalid = previous;
+    invalid.half_axes[0].x = HUGE_VAL;
+    CHECK( wp_graphics_mesh_refit_bounds( mesh, &invalid ) );
+    CHECK( wp_graphics_mesh_refit_bounds( mesh, NULL ) );
+    wp_graphics_mesh_get_bounds_stats( mesh, &stats );
+    CHECK( stats.pca_solves == 5 && stats.orientation_refits == 64 );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &current ) );
+    check_enclosure( &current, vertices, 8 );
+    memcpy( &vertices[0].position.x, &nan_bits, sizeof( nan_bits ) );
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    CHECK( !wp_graphics_mesh_refit_bounds( mesh, &previous ) );
+    CHECK( !wp_graphics_mesh_get_local_obb( mesh, &current ) );
+    CHECK( wp_graphics_mesh_get_local_aabb( mesh ).max.x == 0 );
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    puts(
+        "Deformed bounds: 64 conservative orientation refits with one PCA solve; invalid basis fallback "
+        "passed." );
+}
+
+static double box_surface_proxy( const wp_graphics_obb *box )
+{
+    double a = sqrt( box_dot( &box->half_axes[0], &box->half_axes[0] ) );
+    double b = sqrt( box_dot( &box->half_axes[1], &box->half_axes[1] ) );
+    double c = sqrt( box_dot( &box->half_axes[2], &box->half_axes[2] ) );
+    return a * b + a * c + b * c;
+}
+
+static void adaptive_bounds( void )
+{
+    wp_graphics_mesh *mesh = wp_graphics_mesh_create();
+    wp_graphics_mesh_vertex_p vertices[8];
+    wp_graphics_obb previous, fixed, refreshed, actual;
+    wp_graphics_mesh_bounds_stats stats, before;
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_object *object = wp_graphics_scene_create_object( scene );
+    wp_camera *camera = wp_camera_create();
+    wp_graphics_cull_result *r;
+    wp_u64 generation;
+    wp_u32 nan_bits = 0x7fc00000u;
+    wp_f32 nan_value;
+    double x, y;
+    int i, pose, type;
+    for( i = 0; i < 8; ++i )
+    {
+        x = ( i & 1 ) ? 2 : -2;
+        y = ( i & 2 ) ? 0.05 : -0.05;
+        vertices[i].position.x = (wp_f32)( ( x - y ) * 0.70710678118655 );
+        vertices[i].position.y = (wp_f32)( ( x + y ) * 0.70710678118655 );
+        vertices[i].position.z = ( i & 4 ) ? -1.95f : -2.05f;
+    }
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, NULL, 1.5 ) );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &previous ) );
+    for( i = 0; i < 8; ++i )
+    {
+        vertices[i].position.x = ( i & 2 ) ? 1.25f : 1.15f;
+        vertices[i].position.y = ( i & 1 ) ? 2 : -2;
+    }
+    wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+    CHECK( wp_graphics_mesh_refit_bounds( mesh, &previous ) );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &fixed ) );
+    check_enclosure( &fixed, vertices, 8 );
+    wp_graphics_object_set_mesh( object, mesh );
+    wp_camera_set_projection_type( camera, WORKPHONE_PROJECTION_ORTHOGRAPHIC );
+    wp_camera_set_ortho_width( camera, 1 );
+    wp_camera_set_aspect_ratio( camera, 1 );
+    r = capture( scene, camera, 0 );
+    CHECK( wp_graphics_cull_result_get_visible_count( r ) == 1 );
+    CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, &fixed, 1.5 ) );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &refreshed ) );
+    check_enclosure( &refreshed, vertices, 8 );
+    CHECK( box_surface_proxy( &refreshed ) < box_surface_proxy( &fixed ) * 0.2 );
+    CHECK( wp_graphics_cull_result_validate( r, scene,
+                                             wp_graphics_cull_result_get_scene_generation( r ) ) ==
+           WP_GRAPHICS_CULL_ERROR_STALE );
+    wp_graphics_cull_result_destroy( r );
+    r = capture( scene, camera, 0 );
+    CHECK( wp_graphics_cull_result_get_visible_count( r ) == 0 );
+    wp_graphics_cull_result_destroy( r );
+    previous = refreshed;
+    for( pose = 0; pose < 64; ++pose )
+    {
+        for( i = 0; i < 8; ++i )
+        {
+            vertices[i].position.x += 0.01f;
+        }
+        wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+        CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, 1.5 ) );
+        CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+        check_enclosure( &actual, vertices, 8 );
+        previous = actual;
+    }
+    wp_graphics_mesh_get_bounds_stats( mesh, &stats );
+    CHECK( stats.pca_solves == 2 && stats.orientation_refits == 66 && stats.adaptive_refreshes == 1 );
+    generation = wp_graphics_mesh_get_content_generation( mesh );
+    memcpy( &nan_value, &nan_bits, sizeof( nan_value ) );
+    CHECK( !wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, 0.5 ) );
+    CHECK( !wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, HUGE_VAL ) );
+    CHECK( !wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, nan_value ) );
+    CHECK( wp_graphics_mesh_get_content_generation( mesh ) == generation );
+    wp_graphics_mesh_get_bounds_stats( mesh, &before );
+    CHECK( !memcmp( &stats, &before, sizeof( stats ) ) );
+    CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+    CHECK( !memcmp( &actual, &previous, sizeof( actual ) ) );
+    /* Numerical padding alone must not trigger refreshes for flat/linear/point data. */
+    for( type = 0; type < 3; ++type )
+    {
+        for( i = 0; i < 8; ++i )
+        {
+            vertices[i].position.x = type == 2 ? 4 : ( ( i & 1 ) ? 2 : -2 );
+            vertices[i].position.y = type >= 1 ? 0 : ( ( i & 2 ) ? 1 : -1 );
+            vertices[i].position.z = 0;
+        }
+        wp_graphics_mesh_set_vertices( mesh, WORKPHONE_VERTEX_FORMAT_P, vertices, 8 );
+        CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, NULL, 1.5 ) );
+        CHECK( wp_graphics_mesh_get_local_obb( mesh, &previous ) );
+        wp_graphics_mesh_get_bounds_stats( mesh, &before );
+        for( pose = 0; pose < 8; ++pose )
+        {
+            CHECK( wp_graphics_mesh_refit_bounds_adaptive( mesh, &previous, 1.5 ) );
+            CHECK( wp_graphics_mesh_get_local_obb( mesh, &actual ) );
+            check_enclosure( &actual, vertices, 8 );
+            previous = actual;
+        }
+        wp_graphics_mesh_get_bounds_stats( mesh, &stats );
+        CHECK( stats.pca_solves == before.pca_solves &&
+               stats.adaptive_refreshes == before.adaptive_refreshes );
+    }
+    wp_graphics_scene_destroy( scene );
+    wp_graphics_mesh_destroy( mesh );
+    wp_camera_destroy( camera );
+    puts(
+        "Adaptive OBB: tighter cull after one refresh, 64 stable refits without more PCA, degenerate "
+        "stability passed." );
+}
+
 static void oriented_bounds( void )
 {
     wp_graphics_scene *s = wp_graphics_scene_create();
@@ -1215,6 +1419,8 @@ int main( void )
     culling();
     conservative_bounds();
     oriented_bounds();
+    refitted_bounds();
+    adaptive_bounds();
     sphere_parity();
     retirement();
     shared_views();

@@ -382,6 +382,27 @@ void wp_graphics_mesh_clear_local_obb( wp_graphics_mesh * );
  * bounds instead. Vertex replacement/mark_dirty invalidates the fit until rebuilt. */
 wp_s32 wp_graphics_mesh_compute_obb( wp_graphics_mesh * );
 
+/* Cumulative owner-thread work counters, independent for each mesh instance.
+ * PCA counts full covariance solves; refits count successful projected bounds. */
+typedef struct wp_graphics_mesh_bounds_stats
+{
+    wp_u64 pca_solves, orientation_refits, adaptive_refreshes;
+} wp_graphics_mesh_bounds_stats;
+
+/* Rebuild current CPU AABB and enclose all current positions using only the
+ * previous OBB's orientation. Prior centre/extents never limit the new bounds.
+ * Missing/degenerate/invalid axes fall back to full PCA. Explicitly replaces
+ * authored bounds, like compute_aabb; GPU deformation still needs authored bounds.
+ * Returns zero for missing/invalid vertices (unknown bounds remain conservative). */
+wp_s32 wp_graphics_mesh_refit_bounds( wp_graphics_mesh *, const wp_graphics_obb *previous );
+/* Refit, then refresh via PCA if its half-extent surface proxy exceeds that of
+ * the padded current AABB by max_surface_ratio. This is a local quality heuristic,
+ * not a minimum-volume fit guarantee. Finite ratios >= 1 are accepted; invalid
+ * ratios reject transactionally. A failed refresh retains the conservative refit. */
+wp_s32 wp_graphics_mesh_refit_bounds_adaptive( wp_graphics_mesh *, const wp_graphics_obb *previous,
+                                               wp_f64 max_surface_ratio );
+void wp_graphics_mesh_get_bounds_stats( const wp_graphics_mesh *, wp_graphics_mesh_bounds_stats * );
+
 /* -------------------------------------------------------------------------
  * AABB
  * ---------------------------------------------------------------------- */

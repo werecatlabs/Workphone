@@ -27,13 +27,23 @@ namespace claw_animation_contracts
     class SkinFixture : public ClawMesh
     {
     public:
-        SkinFixture()
+        explicit SkinFixture( bool diagonalRod = false )
         {
             m_mesh = wp_graphics_mesh_create();
-            const wp_graphics_mesh_vertex_pnt vertices[] = {
+            wp_graphics_mesh_vertex_pnt vertices[] = {
                 { { -0.2f, -0.2f, 0.5f }, { 0, 0, -1 }, { 0, 0 } },
                 { { 0.2f, -0.2f, 0.5f }, { 0, 0, -1 }, { 1, 0 } },
                 { { 0, 0.2f, 0.5f }, { 0, 0, -1 }, { 0.5f, 1 } } };
+            if( diagonalRod )
+            {
+                for( auto &vertex : vertices )
+                {
+                    const float along = vertex.position.x * 10;
+                    const float across = vertex.position.y * 0.1f;
+                    vertex.position.x = ( along - across ) * 0.707106781f;
+                    vertex.position.y = ( along + across ) * 0.707106781f;
+                }
+            }
             const wp_u16 indices[] = { 0, 1, 2 };
             require( m_mesh && wp_graphics_mesh_set_vertices( m_mesh, WORKPHONE_VERTEX_FORMAT_PNT, vertices, 3 ) &&
                      wp_graphics_mesh_set_indices_u16( m_mesh, indices, 3 ), "clone fixture geometry allocation" );
@@ -104,8 +114,33 @@ namespace claw_animation_contracts
         } scope{ renderer };
         try
         {
+            auto rod = make_ptr<SkinFixture>( true );
+            require( rod->applySkinningPalette( palette( 0 ) ), "initial diagonal skinning bounds" );
+            auto rotation = palette( 0 );
+            rotation[0].m[0][0] = rotation[0].m[1][1] = 0.707106781f;
+            rotation[0].m[0][1] = 0.707106781f;
+            rotation[0].m[1][0] = -0.707106781f;
+            require( rod->applySkinningPalette( rotation ), "rotated diagonal skinning bounds" );
+            wp_graphics_mesh_bounds_stats adaptiveStats{};
+            wp_graphics_mesh_get_bounds_stats( rod->getNativeMesh(), &adaptiveStats );
+            require( adaptiveStats.pca_solves == 2 && adaptiveStats.adaptive_refreshes == 1,
+                     "skinning refreshes a loose orientation" );
+            require( rod->applySkinningPalette( rotation ), "stable refreshed skinning bounds" );
+            wp_graphics_mesh_get_bounds_stats( rod->getNativeMesh(), &adaptiveStats );
+            require( adaptiveStats.pca_solves == 2 && adaptiveStats.orientation_refits == 2 &&
+                     adaptiveStats.adaptive_refreshes == 1,
+                     "stable refreshed pose avoids further covariance solves" );
+            rod->unload( nullptr );
             auto original = make_ptr<SkinFixture>();
             require( original->applySkinningPalette( palette( 0.5f ) ), "original deformation" );
+            wp_graphics_mesh_bounds_stats boundsStats{};
+            wp_graphics_mesh_get_bounds_stats( original->getNativeMesh(), &boundsStats );
+            require( boundsStats.pca_solves == 1 && boundsStats.orientation_refits == 0,
+                     "missing initial bounds use one full PCA fit" );
+            require( original->applySkinningPalette( palette( 0.5f ) ), "repeat original deformation" );
+            wp_graphics_mesh_get_bounds_stats( original->getNativeMesh(), &boundsStats );
+            require( boundsStats.pca_solves == 1 && boundsStats.orientation_refits == 1,
+                     "warm skinning refits current vertices without another PCA solve" );
             auto clone = dynamic_pointer_cast<ClawMesh>( original->clone( "independent-character" ) );
             require( clone && clone->hasSkinningData() && clone->getNativeMesh() != original->getNativeMesh(),
                      "clone retains bind skinning and owns independent native geometry" );
@@ -119,6 +154,9 @@ namespace claw_animation_contracts
                      std::abs( firstX( *clone ) + 0.7f ) < 1e-5f &&
                      std::abs( firstX( *original ) - 0.3f ) < 1e-5f,
                      "clone samples immutable bind vertices, independently of source output" );
+            wp_graphics_mesh_get_bounds_stats( clone->getNativeMesh(), &boundsStats );
+            require( boundsStats.pca_solves == 1 && boundsStats.orientation_refits == 1,
+                     "clone owns independently refitted bounds" );
             auto target = make_ptr<ClawRenderTarget>();
             target->setSize( { 64, 64 } );
             renderer.setRenderTarget( target );
@@ -139,6 +177,9 @@ namespace claw_animation_contracts
                      "clone retains shared immutable bind data after original unload" );
             renderer.clear( ColourF::Black );
             renderer.renderMesh( clone.get(), Matrix4F::identity() );
+            wp_graphics_mesh_get_bounds_stats( clone->getNativeMesh(), &boundsStats );
+            require( boundsStats.pca_solves == 1 && boundsStats.orientation_refits == 2,
+                     "surviving clone refits bounds independently after source retirement" );
             require( greenPixel( native, 32, 32 ) > 30 && greenPixel( native, 16, 32 ) < 10,
                      "surviving clone refreshes its own DX11 deformation cache" );
             clone->unload( nullptr );

@@ -1,5 +1,42 @@
 # WPGraphics implementation status
 
+## CPU-skinned OBB orientation refits - 17 October 2026
+
+`ClawMesh::applySkinningPalette` now copies the previous OBB before replacing
+vertices, then calls `wp_graphics_mesh_refit_bounds`. The native C90 path rebuilds
+the current CPU AABB and projects every current vertex onto the previous box's
+orientation, recalculating both centre and extents. Old extents never limit a new
+pose. Finite, nondegenerate, nearly orthogonal directions are orthonormalized
+before projection; missing, invalid or degenerate directions fall back to a full
+PCA fit. Nonfinite vertices leave unknown bounds, preserving conservative culling.
+
+Warm deformations avoid covariance accumulation and eigenvector solving. This
+performs no lazy drawing work and allocates no heap scratch for refitting. Explicit bounds
+updates retain the existing mesh-generation/stale-cull rejection contract and
+refresh the attached native object's AABB. Each mesh exposes copied, cumulative
+`pca_solves` and `orientation_refits` counters; clones own their own counters and
+bounds. Ordinary authored-geometry rebuilds still request a new full fit.
+
+Native tests move, rotate and stretch an eight-vertex mesh through 64 poses,
+checking enclosure, changed centre/extents, retained orientation, one full solve
+and 64 refits. They also cover invalid-direction fallback, invalid-vertex bounds
+and stale prepared results. Active Claw animation contracts check initial full
+fit, warm refit and independent clone refits after source retirement alongside
+their DX11 pixel evidence.
+
+Validation: all seven selected full Debug contracts pass, including active Claw
+and DX11 target rendering on Microsoft Basic Render Driver/WARP. All six isolated
+contracts pass in Debug and RelWithDebInfo; `git diff --check` passes. Logs:
+`project_x64/{build,test}_refit_debug.log` and
+`project_graphics_contracts/{build,test}_refit_{debug,release}.log`.
+
+The retained orientation can be looser than a new PCA fit after a large shape
+change. `wp_graphics_mesh_compute_aabb` remains available to refresh it explicitly.
+The refit API explicitly replaces authored bounds, like that existing rebuild;
+it does not change the requirement for expanded bounds around GPU deformation.
+Representative animated-scene timings and an adaptive orientation-refresh policy
+remain open; fewer covariance solves alone do not establish a frame-time speedup.
+
 ## Worker-batch shared transform prefixes - 17 October 2026
 
 The next `PERF-07` / `SCENE-03` increment reuses composed ancestors within each

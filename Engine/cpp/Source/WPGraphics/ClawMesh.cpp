@@ -561,6 +561,9 @@ namespace workphone
                 return false;
             }
             Array<u8> vertices( static_cast<size_t>( count ) * stride );
+            wp_graphics_obb previousBounds;
+            const bool hasPreviousBounds =
+                wp_graphics_mesh_get_local_obb( m_mesh, &previousBounds ) != 0;
             std::memcpy( vertices.data(), source, vertices.size() );
             for( u32 i = 0; i < count; ++i )
             {
@@ -575,7 +578,10 @@ namespace workphone
                 return false;
             }
             ClawRendererDX11::forgetMesh( m_mesh );
-            wp_graphics_mesh_compute_aabb( m_mesh );
+            // Reproject every deformed position; previous extents never constrain the new pose.
+            // Refresh a loose orientation when its surface proxy exceeds the current AABB by 50%.
+            wp_graphics_mesh_refit_bounds_adaptive(
+                m_mesh, hasPreviousBounds ? &previousBounds : nullptr, 1.5 );
             if( m_renderObject )
             {
                 wp_graphics_object_set_local_aabb( m_renderObject,
