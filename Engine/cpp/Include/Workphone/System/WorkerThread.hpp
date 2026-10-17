@@ -134,8 +134,8 @@ namespace workphone
         /// Atomic pointer to the underlying std::thread object.
         AtomicValue<std::thread *> m_thread;
 
-        /// Target frames per second for the worker thread (default: 5000.0).
-        atomic_f64 m_targetFPS = 5000.0;
+        /// Target frames per second for the worker thread (default: 240.0).
+        atomic_f64 m_targetFPS = 240.0;
 
         /// The worker's index in its owning pool (default: the first worker).
         AtomicValue<Thread::ThreadId> m_workerThreadId = Thread::ThreadId::WorkerThread;
