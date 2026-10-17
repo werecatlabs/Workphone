@@ -666,6 +666,7 @@ namespace workphone::scene
 
             component->m_next = nullptr;
             component->addReference();
+
             if( m_componentsTail != nullptr )
             {
                 m_componentsTail->m_next = component.get();
@@ -674,10 +675,19 @@ namespace workphone::scene
             {
                 m_componentsHead = component.get();
             }
+
             m_componentsTail = component.get();
 
             applyCollisionMaskToComponent( component, false );
             updateBounds();
+
+            if( applicationManager->isEditor() )
+            {
+                if( !applicationManager->isPlaying() )
+                {
+                    component->setState( IComponent::State::Edit );
+                }
+            }
         }
         catch( std::exception &e )
         {
@@ -1680,6 +1690,7 @@ namespace workphone::scene
             {
                 m_childrenHead = child.get();
             }
+
             m_childrenTail = child.get();
             ++m_numChildren;
 
@@ -1700,6 +1711,25 @@ namespace workphone::scene
             };
 
             child->setState( eState );
+
+            auto applicationManager = core::IApplicationManager::instancePtr();
+            if( applicationManager->isEditor() )
+            {
+                if( !applicationManager->isPlaying() )
+                {
+                    auto components = child->getComponents();
+                    for( auto &component : components )
+                    {
+                        if (!component->isLoaded())
+                        {
+                            component->load( nullptr );
+                        }
+
+                        component->setState( IComponent::State::Edit );
+                    }
+                }
+            }
+
             updateBounds();
         }
 
@@ -1758,10 +1788,12 @@ namespace workphone::scene
 
                 current->nextChild = nullptr;
                 current->removeReference();
+
                 if( m_numChildren > 0 )
                 {
                     --m_numChildren;
                 }
+
                 removed = true;
                 break;
             }
