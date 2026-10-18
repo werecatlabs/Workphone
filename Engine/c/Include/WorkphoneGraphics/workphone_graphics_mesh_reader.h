@@ -6,6 +6,8 @@
  * Ogre-compatible chunked format used by the C++ MeshSerializerImpl. Shared
  * and per-submesh geometry are flattened into the C mesh representation.
  * Ogre material names are converted to material IDs with 32-bit FNV-1a.
+ * WPM1 decoding rejects truncated/overflowing layouts, non-finite positions or
+ * bounds, inverted bounds, invalid indices and out-of-range submesh spans.
  */
 
 #ifndef WORKPHONE_GRAPHICS_MESH_READER_H
@@ -32,7 +34,8 @@ wp_graphics_mesh *wp_graphics_mesh_read( const wp_c8 *path );
  * @brief Reads a mesh from an already-open FILE stream.
  *
  * The stream must be opened in binary mode.  On return the file position has
- * advanced past the mesh data.
+ * advanced past one WPM1 record. Ogre decoding consumes the remaining stream.
+ * WPM1 layout is checked against remaining bytes before payload allocation.
  *
  * @param file Open FILE stream positioned at the start of the mesh data. Must not be NULL.
  * @return Newly allocated wp_graphics_mesh on success, or NULL on failure.

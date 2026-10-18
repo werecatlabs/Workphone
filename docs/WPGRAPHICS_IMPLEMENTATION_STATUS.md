@@ -1,5 +1,171 @@
 # WPGraphics implementation status
 
+## Full-baseline material completion repair - 18 October 2026
+
+Rebuilding the full 25-target baseline exposed a separate Debug failure in
+`WPGraphics.material_load_sequence`: an inline Claw material load stopped
+refreshing the scene material component. `ISharedObject::setLoadingState` requires
+both ordinary event and loading-event opt-ins; `render::Material` enabled the
+former but omitted `OBJECT_FLAG_LOADING_EVENTS`. The base material constructor
+now opts in, preserving the existing EventJob/task dispatch and scene listener
+guards. The sequencing fixture explicitly checks the opt-in and still exercises
+real serialized-material loading, Primary/Application completion, replacement,
+late mesh/texture readiness and listener retirement.
+
+The initial strict Debug run recorded 27 passed, one failed and one unavailable.
+Its original XML/JSON are retained as
+`project_x64/mesh-release-initial-Debug-{results.xml,evidence.json}` and its log is
+`project_x64/mesh-release-validation-Debug.log`. The repaired focused fixture and
+state-listener fan-out pass in both configurations. All 25 baseline targets were
+rebuilt in Debug and RelWithDebInfo after the final arithmetic changes. Final
+strict validation reports:
+
+| Configuration | Passed | Unavailable | Failed | CTest seconds |
+|---|---:|---:|---:|---:|
+| Debug | 28 | 1 | 0 | 107.67 |
+| RelWithDebInfo | 28 | 1 | 0 | 70.81 |
+
+Frozen XML/JSON reports are
+`project_x64/mesh-release-final-{Debug,RelWithDebInfo}-{results.xml,evidence.json}`;
+logs are `mesh-release-validation-final-{Debug,RelWithDebInfo}.log`. Neither run
+produced a crash dump. All 290 source hashes and recorded test executable hashes
+match the current files. The validator now includes base/scene material,
+ISharedObject and EventJob sources as well as the fixture. Strict validation exits
+nonzero because the six required external mesh files are absent; both reports
+retain `validationPassed=false`, `coverageComplete=false`, `releaseCertified=false`.
+
+This restores material completion behavior without changing the general event
+opt-in policy for unrelated objects. It does not establish interactive Editor
+acceptance or full catalog/runtime-package adoption.
+
+## Corrupted native mesh release gate - 18 October 2026
+
+The new WPM1 corruption fixture reproduced acceptance of invalid vertex indices,
+out-of-range and wrapped submesh spans, NaN positions, infinite/inverted bounds,
+and incorrect embedded-stream offsets before the repair. Both 16- and 32-bit
+index formats were affected. The reader now validates layout with remaining-byte
+division before multiplication/allocation, checks all positions/indices/spans
+before constructing a mesh, and rejects invalid bounds. Nonindexed submeshes
+use vertex spans; valid empty end spans remain supported. Unaligned buffer
+inputs remain readable. No mesh ABI or WPM1 format version changed.
+
+The writer also checks the complete record size in 64 bits before narrowing to
+the 32-bit format/API length. Submesh capacity doubling and allocation byte
+counts are checked, with signed-index count limits preserved. A real 1,000-section
+nonindexed round trip exercises growth and publication. Multi-GiB allocation
+pressure is not exercised by these bounded regressions and remains a release gate.
+
+File decoding starts at the caller's current offset, checks WPM1 layout before
+allocating its payload and reads exactly one WPM1 record. It supports consecutive
+embedded WPM1 records without consuming the next record. Ogre decoding continues
+to consume the remaining stream. The FILE API's seekable-stream and representable
+size limits remain; this does not introduce general streaming or a residency budget.
+
+`Tests/c/WorkphoneGraphicsMeshTests.c` covers every truncation of valid indexed
+records, overflowing declared counts, invalid indexed/nonindexed spans, non-finite
+geometry/bounds, unaligned input, valid controls and consecutive embedded records.
+The isolated native suite passes 7/7 in x64 Debug and RelWithDebInfo. The focused
+mesh suite passes in Win32 Debug and RelWithDebInfo, exercising 32-bit `size_t`.
+The focused x64 Debug mesh suite also passes with MSVC AddressSanitizer enabled
+(`/fsanitize=address`, `/MDd /Zi /Od`, incremental linking disabled), with no
+reported memory errors. Its report is `project_graphics_sdk/mesh-asan-results.xml`;
+configure/build logs are `mesh-asan-{configure,build}.log` in that directory.
+This sanitizer run does not check device behavior or establish a leak-free process.
+The Win32 build exposed an existing unresolved `_InterlockedIncrement64`; x86
+mesh generation now uses the supported atomic compare/exchange loop, while the
+x64 increment remains unchanged. The native CI matrix adds only these focused
+mesh checks on Win32; the full native/SDK release lane remains x64. YAML parsing
+and matrix structure were checked locally; remote execution is still pending.
+
+Native JUnit reports are `project_graphics_sdk/mesh-final-{x64,Win32}-{Debug,RelWithDebInfo}.xml`.
+The rebuilt SDK archive report is
+`project_graphics_sdk/validation-f304703ed30c4f1b84d6b14ae0fe5e11/evidence.json`:
+six extracted-package consumers pass, including the cooked mesh's 242 nonblack
+software pixels. All 182 extracted files match installation hashes and all 308
+recorded input hashes match current sources. The ZIP is adjacent to the report.
+The native and full-baseline evidence is indexed, with input/report hashes, in
+`project_graphics_sdk/mesh-release-evidence.json`. The final full-baseline results
+are recorded above.
+This closes the covered native decoder regressions, not the broader SHIP-05
+device recovery, memory pressure or long mixed-scene soak gate.
+
+## Native release archive/content and CI - 18 October 2026
+
+The SDK now cooks an original triangle to WPM1 with the existing native mesh
+writer at build time. Debug and RelWithDebInfo cooks must have identical SHA-256
+hashes. The installed C90 consumer loads that asset using the existing reader,
+computes its OBB, runs pooled transforms and shared culling, and renders it via
+native update/render. Geometry is no longer generated in the runtime sample.
+This is a native mesh sample, not the C++ catalog/runtime-content release sample.
+
+`Tools/ValidateGraphicsSDK.ps1` now creates the distributable ZIP before testing,
+extracts it to another path containing spaces, verifies every extracted file
+against the installed hashes, and builds consumers exclusively against that
+extracted package. Release is also tested to exercise its RelWithDebInfo archive/
+CRT mapping. The copied sample comes from the ZIP. The input snapshot also covers
+the workflow and ignore rules. A `-Generator` option supports CI toolchain selection.
+
+Validation evidence is
+`project_graphics_sdk/validation-6b9648e72be54df1b7a6bafe9b187c90/evidence.json`:
+six consumer tests passed across Debug, RelWithDebInfo and Release; each C90 run
+loads the cooked mesh and draws 242 nonblack software pixels. ZIP round-trip and
+cross-configuration cook hashes pass. All six native archives and six compiler
+PDBs are present. The ZIP is adjacent to the report. This validation supersedes
+the previous moved-install-only SDK result below.
+
+The native contracts also pass 7/7 in both Debug and RelWithDebInfo; local JUnit
+reports are `project_graphics_sdk/native-ci-results-{Debug,RelWithDebInfo}.xml`.
+The new `.github/workflows/native-graphics-release.yml` defines Windows 2022/MSVC
+jobs for those isolated contracts and SDK archive validation, with read-only
+repository permissions, finite timeouts and retained logs/JUnit/package evidence.
+`.gitignore` now allows only this workflow beneath the previously ignored
+`.github` directory. YAML parsing, trigger/job structure and local job commands
+were checked; no remote workflow was dispatched. Local evidence uses MSVC 19.51;
+the workflow's Visual Studio 2022 host still requires its first remote run.
+
+SHIP-01/03 remain partial. Full Claw/catalog/GPU CI, external fixtures,
+C++/Editor/shared-library distribution, catalog-backed cooked content,
+clean-machine acceptance, hardware/interactive and mixed-soak/recovery gates
+remain open. The native report keeps `releaseCertified=false`.
+
+## Native SDK install/export slice - 18 October 2026
+
+`WP_BUILD_GRAPHICS_SDK_ONLY=ON` builds the existing native Core, Graphics and
+Win32 backend static targets without the C++ engine/editor or proprietary
+dependencies. The install exports `WorkphoneGraphics::SDK` and separate Core,
+Graphics and PlatformWin32 targets, with relocatable headers, per-configuration
+archives/PDBs, package version/architecture checks, explicit Windows SDK imports,
+dependency metadata, Workphone/STB license notices and an installed consumer
+sample. Core feature definitions propagate without STB implementation macros.
+Debug uses the DLL Debug CRT; release consumers map to RelWithDebInfo, never a
+Debug archive. The scope and commands are in [the SDK guide](WPGRAPHICS_NATIVE_SDK.md).
+
+`Tools/ValidateGraphicsSDK.ps1` performs fresh Debug/RelWithDebInfo builds and
+installs, moves the prefix to a path containing spaces, copies the installed
+sample into a separate source directory and builds/tests it using only the
+installed package. The original prefix is absent; exported header/archive paths
+must exist inside the relocated prefix and contain no checkout/build paths.
+Required PDBs are checked, inputs must remain unchanged during validation, and
+the evidence hashes source inputs, installed files and a distributable ZIP.
+
+Current evidence:
+`project_graphics_sdk/validation-e9161048aafc46ff914d58bb807baf40/evidence.json`.
+Both configurations passed both CTest consumers (four results total). The C90
+sample runs pooled transform snapshot publication, mesh OBB computation, shared
+main/shadow cull views surviving source-result destruction, and native
+`update()`/`render()` producing 242 nonblack software pixels. It also verifies
+RTT creation/destruction linkage; it does not execute a GPU RTT. The C++17 sample
+checks installed C linkage and frame entry points. No renderer stubs are used.
+The ZIP is adjacent to the report as
+`WorkphoneGraphicsSDK-0.1.0-Windows-x64.zip`.
+
+This is partial SHIP-03 completion: local Windows x64/MSVC static native SDK
+validation, not a clean-machine or full engine distribution. C++/Editor and shared
+library packaging, cooked-content sample, external media, remote CI, hardware/
+interactive captures and mixed-scene/recovery/long-soak gates remain open.
+The report records `validationPassed=true` for this slice and
+`releaseCertified=false`. No native runtime implementation changed in this slice.
+
 ## Release baseline recovery and teardown diagnostics - 18 October 2026
 
 The graphics baseline build presets now name 25 current test targets. They include

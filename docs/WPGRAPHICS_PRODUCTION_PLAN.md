@@ -4,6 +4,37 @@ Cross-system follow-up: [WPProcedural production and racing visual quality plan]
 
 Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).
 
+Corrupted-content follow-up: 18 October 2026. WPM1 layout, positions/bounds,
+indices and submesh spans are checked before mesh publication. Embedded file reads
+honor record offsets/boundaries. Reproduced malformed-content regressions now pass
+on x64 and Win32, with the focused Win32 mesh lane added to native CI. The rebuilt
+SDK archive still passes six consumer checks; writer size and submesh growth
+arithmetic are guarded, with a valid 1,000-section round trip. Full baseline
+rebuilds also exposed and repaired a missing material loading-event opt-in. Final
+Debug and RelWithDebInfo each report 28 passed, one external-media result
+unavailable and no failures; source/executable hashes match and no dumps were
+generated. Strict validation still blocks release for missing fixtures. This is
+the native mesh subset of SHIP-05; full backend/resource recovery, pressure and
+mixed-scene acceptance remain open.
+See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for evidence.
+
+Native release follow-up: 18 October 2026. The SDK ZIP now includes a WPM1 mesh
+cooked through the existing writer and loaded by the runtime sample. All extracted
+files match installation hashes; Debug/RelWithDebInfo cooks match. Six consumer
+tests pass across Debug, RelWithDebInfo and Release, and isolated native contracts
+pass 7/7 in both native configurations. A Windows native SDK/contracts CI workflow
+is defined and trackable; its first remote run and the full Claw/catalog/GPU CI
+remain open. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md).
+
+Native distribution updated: 18 October 2026. The first SHIP-03 slice exports the
+existing Windows native static SDK, per-configuration libraries/symbols, licenses,
+dependency metadata and an installed C90/C++17 consumer. Fresh Debug and
+RelWithDebInfo relocated-package consumers pass, including real software draws
+through native update/render. [SDK instructions](WPGRAPHICS_NATIVE_SDK.md) and
+[hashed evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md) describe the boundary.
+Full C++/Editor/shared distribution, cooked sample content and clean-machine
+acceptance remain open; this does not certify the release.
+
 Release verification recovery updated: 18 October 2026. Baseline presets now build
 25 current targets and validation requires 29 results, including native frame/RTT/
 scene jobs, authoring, material sequencing and bounded lifecycle coverage. Dormant
@@ -20,7 +51,7 @@ Native job implementation updated: 17 October 2026. Transform capture/compositio
 
 Recorded implementation baseline: the 10 October cooked-material increment starts from `7107f0a39`, retaining the identity/adapter work committed as `7809b208c`. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for execution evidence and historical baselines.
 Historical implementation evidence: initial graphics review at `8a767dda5`; catalog follow-up starting from `d5c859612`, Visual Studio 2026/MSVC 19.51 and CMake 4.4.4, RelWithDebInfo.
-Status: Implementation in progress. The 10 October Debug and RelWithDebInfo validation each reports **14 passed and one external-media test unavailable**, covering catalog identity/lifecycle, the existing resource system, typed material/texture cooking, exact mip upload, visible DX11 draws, staged replacement and stale-generation rejection. Catalog symlink containment and Windows 8.3 root aliases remain covered. Terrain/foliage reviews retain their separate source-only evidence limits. The CI workflow is currently absent and release coverage remains incomplete. Neither R1 nor R2 is certified.
+Status: Implementation in progress. The 10 October Debug and RelWithDebInfo validation each reports **14 passed and one external-media test unavailable**, covering catalog identity/lifecycle, the existing resource system, typed material/texture cooking, exact mip upload, visible DX11 draws, staged replacement and stale-generation rejection. Catalog symlink containment and Windows 8.3 root aliases remain covered. Terrain/foliage reviews retain their separate source-only evidence limits. Native SDK/contracts CI is defined; full Claw/catalog/GPU remote execution and release coverage remain incomplete. Neither R1 nor R2 is certified.
 Scope: WPGraphics/Claw, its native WorkphoneGraphics dependencies, AssetDatabaseManager and the existing resource pipeline, engine terrain/query/collision/vegetation systems, WPProcedural services and generators, and their engine/editor/Lua integration.
 User priorities: explicitly validate animation and particle systems; include water rendering and asset database integration; make foliage LOD, batch-count reduction and fewer actual draw calls essential release work. Foliage includes its procedural placement and plant-authoring tools.
 
@@ -37,7 +68,7 @@ Use two release gates:
 
 DX12 and additional platforms receive their own certification gates. They do not inherit production status from DX11. Advanced ocean simulation, ray tracing, and virtualized geometry are subsequent optional work.
 
-Historical graphics evidence is 11 passed and one external mesh import test skipped; historical catalog evidence includes required SQLite CRUD/migration contracts. The initial 8 October planning attempt selected 14 tests whose executables were missing. The subsequent rebuild fixes the ImGui target dependency and updates light-lifecycle/PBR-winding fixtures, then executes all 13 mandatory tests successfully in Debug and RelWithDebInfo. External Ogre/OgreNext mesh fixtures remain unavailable and block strict release validation. Device/driver, configuration, source/fixture and executable hashes are recorded; CI definitions were restored in that increment and subsequently deleted by the branch update; the workflow is currently absent and remote execution remains unverified. The two isolated native tests duplicate contracts in the graphics suite. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and evidence limits.
+Historical graphics evidence is 11 passed and one external mesh import test skipped; historical catalog evidence includes required SQLite CRUD/migration contracts. The initial 8 October planning attempt selected 14 tests whose executables were missing. The subsequent rebuild fixes the ImGui target dependency and updates light-lifecycle/PBR-winding fixtures, then executes all 13 mandatory tests successfully in Debug and RelWithDebInfo. External Ogre/OgreNext mesh fixtures remain unavailable and block strict release validation. Device/driver, configuration, source/fixture and executable hashes are recorded; CI definitions were restored in that increment and subsequently deleted by the branch update; the native SDK/contracts workflow is now defined separately and remote execution remains unverified. The two isolated native tests duplicate contracts in the graphics suite. See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for commands and evidence limits.
 
 The 8 October increment implements canonical catalog file identity, explicit file/scene kinds, lifecycle snapshots and the UUID-to-ResourceSystem adapter; Debug and RelWithDebInfo pass. The intervening branch adds DX11 fog, semantic texture mips, serialized LOD detail bounds, core concurrency changes, and vehicle physics/scenery/handling work. Texture regression fixes retain authored mip settings on reload and preserve the prior GPU view until a valid replacement is created. A standalone-header fix removes ClawHammerSystem's native float-type include-order dependency, and validation hashes now include the new contract helpers and catalog/adapter implementation. These changes and current device/toolchain evidence are described in the implementation status.
 
@@ -73,13 +104,13 @@ Paths below are relative to the repository root. Observations are limited to the
 | Tests | [C++ registration](../Tests/cpp/CMakeLists.txt) includes Claw text, DX11 target, UI destruction, and cubemap/PBR targets; C tests cover renderer/shader/pipeline contracts | Preserve regression coverage and extend it to complete frames and failure/recovery paths |
 | Editor/UI | Existing animation/particle/material/shader Lua editors; rebuilt Claw text/UI/camera tests pass in both configurations, covering long text, visibility, editor-camera selection during Play and snapshot restoration | Preserve camera/runtime transitions and connect previews to runtime asset/render paths; complete editor validation remains open |
 | Instrumentation/samples | ClawHammerSystem reports CPU/Present/GPU and upload/draw counters; VehicleAdvanced adds capture/benchmark controls, richer scenery/materials, LOD detail bounds, and handling/physics tests | Use repeatable capture scenes and counters to establish budgets; sample smoke checks do not certify feature performance or end-to-end animation/effects |
-| Build/distribution | Full-baseline/native/catalog presets, [build runner](../Tools/BuildWPGraphicsBaseline.ps1), and [validation runner](../Tools/ValidateClawGraphics.ps1) record local hashed evidence. The graphics CI workflow is absent on the current branch | Confirm remote CI, supply external-media release fixtures, then validate packaging/export and an external consumer |
+| Build/distribution | Full-baseline/native/catalog presets, [build runner](../Tools/BuildWPGraphicsBaseline.ps1), and [validation runner](../Tools/ValidateClawGraphics.ps1) record local hashed evidence. Native SDK/contracts CI and ZIP consumer validation are defined | Confirm remote CI, supply external-media fixtures, then complete C++/Editor/shared packaging and catalog-backed content |
 
 ### 2.1 Current completion and evidence limits
 
 | Work package | Current status | Next evidence needed |
 |---|---|---|
-| BASE-01/02/03 | See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for current configuration results and device/driver/hash evidence; the baseline now requires the native terrain and Lua workflow targets. Graphics CI workflow remains absent | Remote CI execution, external-media release coverage, clean-machine/static/shared packaging evidence |
+| BASE-01/02/03 | See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for current configuration results and device/driver/hash evidence; the baseline now requires the native terrain and Lua workflow targets. Native SDK/contracts CI is defined; full Claw/catalog/GPU CI remains open | Remote CI execution, external-media release coverage, clean-machine/static/shared packaging evidence |
 | BASE-04/05 | Partial generated triangle/particle fixtures; representative content and budgets pending | Licensed imported character/effect/water fixtures, reference sequences and measured costs |
 | ANIM-02/05 | CPU reference and explicit mesh deformation validated | Imported skin/clip bridge, multiple independent instances, bind/inverse-bind correctness, repeated GPU cache updates and CPU/GPU comparison |
 | FX-01/02/03/05 | Basic lifecycle, seed/step/pool and visible billboard path validated | Templates/serialization, full lifecycle/space semantics, multi-view integration, sorting/depth/state tests and stress budgets |
@@ -301,7 +332,7 @@ The additive `CatalogResourceAdapter` requires a caller-supplied `sourceRoot` th
 | DB-06 | Unified narrow/wide load/open/close/destroy, root capture/switch invalidation and fail-closed schema handling | Open-failure recovery, backend capability diagnostics, durability/busy policy and outstanding-job cancellation |
 | DB-07 | UUID adapter plus matres/texres compilers, pinned typed texture dependencies and a cooked DX11 material consumer; existing ResourceSystem owns compilation metadata | Imported mesh/skeleton/clip/particle families and Editor adoption |
 | DB-08/09 | Exact cooked mip upload, staged last-good material bundle, guarded catalog swap, request/device checks and pinned old handles | Transactional cook-file/metadata publication, stale-output recovery, cancellation, editor diagnostics and packaged read-only manifest |
-| DB-10 | Required SQLite/catalog/resource targets and 15-test local baseline, including catalog-to-DX11 draw | CI workflow currently absent; remote execution, additional process/race/failure tests and external fixtures remain required |
+| DB-10 | Required SQLite/catalog/resource targets and 15-test local baseline, including catalog-to-DX11 draw | Full catalog/GPU CI remains open; remote execution, additional process/race/failure tests and external fixtures remain required |
 
 | ID | Deliverable | Acceptance evidence |
 |---|---|---|
@@ -440,8 +471,14 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
 - **SHIP-01:** CI: clean configure/build, C90/C++17 compilation, contract/unit tests, targeted static analysis and supported sanitizer configurations. GPU jobs produce image/sequence comparisons and capture diagnostics.
 - **SHIP-02:** Separate test outcomes into passed/failed/skipped/unavailable; require the selected backend for certification. Pin assets, capture settings and tolerances; review golden-image updates rather than automatically accepting changes.
 - **SHIP-03:** Add install/export targets, headers/libraries/dependency manifests, sample cooked content, license notices, symbols and an out-of-tree consumer that builds against the installed package.
+  First native static SDK slice is implemented and locally validated on Windows
+  x64 in Debug/RelWithDebInfo. Complete the C++/Editor/shared package, cooked-content
+  sample through the C++ catalog and clean-machine acceptance before closing this work package.
 - **SHIP-04:** Document supported hardware/features/limits, setup, resource formats, quality tiers, recovery, migration, troubleshooting and profiling.
 - **SHIP-05:** Run long-duration mixed-scene soak, repeated scene/resource reload, device recovery, corrupted-asset and memory-pressure tests. Archive evidence per candidate/version/backend.
+  The WPM1 decoder corruption/stream-boundary subset is covered by x64/Win32
+  regressions and a focused MSVC AddressSanitizer run. The remaining asset formats,
+  recovery, pressure and mixed-scene gates still require their own evidence.
 
 **GR:** Ship only after the applicable R1/R2 gates below pass. Release notes identify certified configurations and experimental features.
 

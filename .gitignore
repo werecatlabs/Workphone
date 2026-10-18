@@ -119,6 +119,7 @@ steam_appid.txt
 /build_ninja
 /wpimgui-build.log
 /project_graphics_contracts/
+/project_graphics_sdk/
 /project_graphics_hash_fallback/
 /project_procedural_exports/
 /project_procedural_texture_tests/
@@ -134,7 +135,10 @@ steam_appid.txt
 /bin/Media/Audio/VehicleAdvanced/
 /project_graphics_effects_tests
 /project_network_contracts/
-/.github
+/.github/*
+!/.github/workflows/
+/.github/workflows/*
+!/.github/workflows/native-graphics-release.yml
 /project_network_contracts/Engine/c/Project/WorkphoneNetwork/RelWithDebInfo/WorkphoneNetwork.pdb
 /project_network_contracts/Testing/Temporary/CTestCostData.txt
 /project_network_contracts/Testing/Temporary/LastTest.log
