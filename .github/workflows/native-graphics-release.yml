@@ -1,0 +1,87 @@
+name: Native graphics release checks
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/native-graphics-release.yml'
+      - 'CMakeLists.txt'
+      - 'CMake/*GraphicsSDK*'
+      - 'Engine/c/**'
+      - 'Tests/c/**'
+      - 'Tests/cpp/GraphicsProduction/**'
+      - 'Tests/GraphicsSDKConsumer/**'
+      - 'Tools/ValidateGraphicsSDK.ps1'
+      - 'docs/WPGRAPHICS_NATIVE_SDK.md'
+      - 'LICENSE'
+  pull_request:
+    paths:
+      - '.github/workflows/native-graphics-release.yml'
+      - 'CMakeLists.txt'
+      - 'CMake/*GraphicsSDK*'
+      - 'Engine/c/**'
+      - 'Tests/c/**'
+      - 'Tests/cpp/GraphicsProduction/**'
+      - 'Tests/GraphicsSDKConsumer/**'
+      - 'Tools/ValidateGraphicsSDK.ps1'
+      - 'docs/WPGRAPHICS_NATIVE_SDK.md'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+
+jobs:
+  native-contracts:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, RelWithDebInfo]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure isolated native contracts
+        shell: pwsh
+        run: |
+          cmake -S . -B project_graphics_contracts -G "Visual Studio 17 2022" -A x64 -DWP_BUILD_GRAPHICS_CONTRACTS_ONLY=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build native contracts
+        shell: pwsh
+        run: |
+          cmake --build project_graphics_contracts --config ${{ matrix.configuration }} --parallel 4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run native contracts
+        shell: pwsh
+        run: |
+          ctest --test-dir project_graphics_contracts -C ${{ matrix.configuration }} --no-tests=error --output-on-failure --output-junit native-results.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-contracts-${{ matrix.configuration }}
+          path: |
+            project_graphics_contracts/native-results.xml
+            project_graphics_contracts/Testing/Temporary/LastTest.log
+            project_graphics_contracts/**/cull-benchmark-smoke-*.csv
+          if-no-files-found: warn
+          retention-days: 14
+
+  native-sdk:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, archive, extract and consume native SDK
+        shell: pwsh
+        run: ./Tools/ValidateGraphicsSDK.ps1 -Generator 'Visual Studio 17 2022'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-sdk-package-evidence
+          path: |
+            project_graphics_sdk/validation-*/*.json
+            project_graphics_sdk/validation-*/*.log
+            project_graphics_sdk/validation-*/*.xml
+            project_graphics_sdk/validation-*/*.zip
+          if-no-files-found: warn
+          retention-days: 14

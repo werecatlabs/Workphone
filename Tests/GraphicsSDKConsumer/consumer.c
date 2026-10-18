@@ -1,5 +1,6 @@
 #include <WorkphoneGraphics/workphone_graphics_system.h>
 #include <WorkphoneGraphics/workphone_graphics_mesh.h>
+#include <WorkphoneGraphics/workphone_graphics_mesh_reader.h>
 #include <WorkphoneGraphics/workphone_graphics_transform_job.h>
 #include <WorkphoneGraphics/workphone_graphics_cull_job.h>
 #include <WorkphoneGraphics/workphone_graphics_rtt_job.h>
@@ -8,7 +9,7 @@
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "Failed at line %d: %s\n", __LINE__, #x); return 1; } } while (0)
 
-int main(void)
+int main(int argc, char **argv)
 {
     wp_graphics_system *system;
     wp_graphics_scene *scene;
@@ -16,7 +17,6 @@ int main(void)
     wp_scenenode *node;
     const wp_scenenode *nodes[1];
     wp_graphics_mesh *mesh;
-    wp_graphics_mesh_vertex_pc vertices[3];
     wp_renderer *renderer;
     wp_threadpool *pool;
     wp_transform_job_system *transforms;
@@ -30,6 +30,7 @@ int main(void)
     const wp_u8 *pixels;
     int i, coloured;
 
+    CHECK(argc == 2);
     system = wp_graphics_system_create();
     renderer = wp_renderer_create_software(32, 32, WORKPHONE_PIXEL_FORMAT_RGBA8);
     pool = wp_threadpool_create(2);
@@ -38,14 +39,9 @@ int main(void)
     CHECK(scene);
     node = wp_graphics_scene_create_node(scene);
     object = wp_graphics_scene_create_object(scene);
-    mesh = wp_graphics_mesh_create();
+    mesh = wp_graphics_mesh_read(argv[1]);
     CHECK(node && object && mesh);
-    memset(vertices, 0, sizeof(vertices));
-    vertices[0].position.x = -0.7f; vertices[0].position.y = -0.7f;
-    vertices[1].position.x = 0.7f; vertices[1].position.y = -0.7f;
-    vertices[2].position.y = 0.7f;
-    for(i = 0; i < 3; ++i) { vertices[i].position.z = 0.5f; vertices[i].color = 0xFFFFFFFFu; }
-    CHECK(wp_graphics_mesh_set_vertices(mesh, WORKPHONE_VERTEX_FORMAT_PC, vertices, 3));
+    CHECK(wp_graphics_mesh_get_vertex_count(mesh) == 3);
     CHECK(wp_graphics_mesh_compute_obb(mesh));
     wp_graphics_object_set_mesh(object, mesh);
     wp_scenenode_attach_object(node, object);
@@ -91,6 +87,6 @@ int main(void)
     wp_graphics_mesh_destroy(mesh);
     wp_threadpool_destroy(pool);
     wp_renderer_destroy(renderer);
-    printf("Installed SDK: transforms, shared cull publication, update/render, %d software pixels; RTT linkage OK\n", coloured);
+    printf("Installed SDK: cooked WPM1 mesh, transforms, shared cull publication, update/render, %d software pixels; RTT linkage OK\n", coloured);
     return 0;
 }

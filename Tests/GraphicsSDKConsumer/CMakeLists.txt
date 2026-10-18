@@ -32,5 +32,7 @@ foreach(_target graphics_sdk_c90 graphics_sdk_cpp17)
     target_link_libraries(${_target} PRIVATE WorkphoneGraphics::SDK)
     set_target_properties(${_target} PROPERTIES
         MSVC_RUNTIME_LIBRARY "${WorkphoneGraphicsSDK_MSVC_RUNTIME_LIBRARY}")
-    add_test(NAME ${_target} COMMAND ${_target})
+    add_test(NAME ${_target} COMMAND ${_target}
+        "${SDK_ROOT}/share/WorkphoneGraphicsSDK/sample/content/triangle.wpm")
+    set_tests_properties(${_target} PROPERTIES TIMEOUT 30)
 endforeach()

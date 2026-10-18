@@ -1,5 +1,44 @@
 # WPGraphics implementation status
 
+## Native release archive/content and CI - 18 October 2026
+
+The SDK now cooks an original triangle to WPM1 with the existing native mesh
+writer at build time. Debug and RelWithDebInfo cooks must have identical SHA-256
+hashes. The installed C90 consumer loads that asset using the existing reader,
+computes its OBB, runs pooled transforms and shared culling, and renders it via
+native update/render. Geometry is no longer generated in the runtime sample.
+This is a native mesh sample, not the C++ catalog/runtime-content release sample.
+
+`Tools/ValidateGraphicsSDK.ps1` now creates the distributable ZIP before testing,
+extracts it to another path containing spaces, verifies every extracted file
+against the installed hashes, and builds consumers exclusively against that
+extracted package. Release is also tested to exercise its RelWithDebInfo archive/
+CRT mapping. The copied sample comes from the ZIP. The input snapshot also covers
+the workflow and ignore rules. A `-Generator` option supports CI toolchain selection.
+
+Validation evidence is
+`project_graphics_sdk/validation-6b9648e72be54df1b7a6bafe9b187c90/evidence.json`:
+six consumer tests passed across Debug, RelWithDebInfo and Release; each C90 run
+loads the cooked mesh and draws 242 nonblack software pixels. ZIP round-trip and
+cross-configuration cook hashes pass. All six native archives and six compiler
+PDBs are present. The ZIP is adjacent to the report. This validation supersedes
+the previous moved-install-only SDK result below.
+
+The native contracts also pass 7/7 in both Debug and RelWithDebInfo; local JUnit
+reports are `project_graphics_sdk/native-ci-results-{Debug,RelWithDebInfo}.xml`.
+The new `.github/workflows/native-graphics-release.yml` defines Windows 2022/MSVC
+jobs for those isolated contracts and SDK archive validation, with read-only
+repository permissions, finite timeouts and retained logs/JUnit/package evidence.
+`.gitignore` now allows only this workflow beneath the previously ignored
+`.github` directory. YAML parsing, trigger/job structure and local job commands
+were checked; no remote workflow was dispatched. Local evidence uses MSVC 19.51;
+the workflow's Visual Studio 2022 host still requires its first remote run.
+
+SHIP-01/03 remain partial. Full Claw/catalog/GPU CI, external fixtures,
+C++/Editor/shared-library distribution, catalog-backed cooked content,
+clean-machine acceptance, hardware/interactive and mixed-soak/recovery gates
+remain open. The native report keeps `releaseCertified=false`.
+
 ## Native SDK install/export slice - 18 October 2026
 
 `WP_BUILD_GRAPHICS_SDK_ONLY=ON` builds the existing native Core, Graphics and

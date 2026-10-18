@@ -29,6 +29,18 @@ target_link_libraries(WorkphonePlatformWin32 PUBLIC d3d12 user32 gdi32)
 add_library(WorkphoneGraphicsSDK INTERFACE)
 set_target_properties(WorkphoneGraphicsSDK PROPERTIES EXPORT_NAME SDK)
 target_link_libraries(WorkphoneGraphicsSDK INTERFACE WorkphonePlatformWin32)
+add_executable(WorkphoneGraphicsSDKSampleCooker
+    "${CMAKE_SOURCE_DIR}/Tests/GraphicsSDKConsumer/cook_sample.c")
+set_target_properties(WorkphoneGraphicsSDKSampleCooker PROPERTIES
+    C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+target_link_libraries(WorkphoneGraphicsSDKSampleCooker PRIVATE WorkphoneGraphicsSDK)
+set(_sdk_sample "${CMAKE_BINARY_DIR}/sample-content/$<CONFIG>/triangle.wpm")
+add_custom_command(OUTPUT "${_sdk_sample}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/sample-content/$<CONFIG>"
+    COMMAND WorkphoneGraphicsSDKSampleCooker "${_sdk_sample}"
+    DEPENDS WorkphoneGraphicsSDKSampleCooker VERBATIM)
+add_custom_target(WorkphoneGraphicsSDKSampleContent ALL DEPENDS "${_sdk_sample}")
+install(FILES "${_sdk_sample}" DESTINATION share/WorkphoneGraphicsSDK/sample/content)
 install(TARGETS ${_sdk_targets} WorkphoneGraphicsSDK
     EXPORT WorkphoneGraphicsSDKTargets ARCHIVE DESTINATION "lib/$<CONFIG>")
 # Physics headers close Core's public header dependencies, not a physics library.
@@ -46,7 +58,7 @@ write_basic_package_version_file(
     "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDKConfigVersion.cmake"
     VERSION ${PROJECT_VERSION} COMPATIBILITY SameMinorVersion)
 file(WRITE "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDK-dependencies.json"
-    "{\n  \"schemaVersion\": 1,\n  \"packageVersion\": \"${PROJECT_VERSION}\",\n  \"platform\": \"Windows\",\n  \"pointerBytes\": ${CMAKE_SIZEOF_VOID_P},\n  \"compiler\": \"${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}\",\n  \"linkage\": \"static\",\n  \"crt\": \"Microsoft DLL CRT; Debug CRT for Debug\",\n  \"windowsSdkImportLibraries\": [\"d3d11\", \"d3d12\", \"dxgi\", \"d3dcompiler\", \"dxguid\", \"user32\", \"gdi32\"],\n  \"bundledThirdParty\": [\"STB: embedded MIT/public-domain license notices in installed headers\"],\n  \"scope\": \"Native graphics SDK only; no C++ engine, editor, cooked sample or physics library\",\n  \"releaseCertified\": false\n}\n")
+    "{\n  \"schemaVersion\": 1,\n  \"packageVersion\": \"${PROJECT_VERSION}\",\n  \"platform\": \"Windows\",\n  \"pointerBytes\": ${CMAKE_SIZEOF_VOID_P},\n  \"compiler\": \"${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION}\",\n  \"linkage\": \"static\",\n  \"crt\": \"Microsoft DLL CRT; Debug CRT for Debug\",\n  \"windowsSdkImportLibraries\": [\"d3d11\", \"d3d12\", \"dxgi\", \"d3dcompiler\", \"dxguid\", \"user32\", \"gdi32\"],\n  \"bundledThirdParty\": [\"STB: embedded MIT/public-domain license notices in installed headers\"],\n  \"scope\": \"Native graphics SDK with cooked WPM1 mesh sample; no C++ engine, editor, catalog content or physics library\",\n  \"releaseCertified\": false\n}\n")
 install(FILES "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDKConfig.cmake"
     "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDKConfigVersion.cmake"
     DESTINATION lib/cmake/WorkphoneGraphicsSDK)
