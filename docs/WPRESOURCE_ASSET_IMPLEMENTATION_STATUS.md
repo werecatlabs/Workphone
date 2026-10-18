@@ -960,6 +960,87 @@ git diff --check passed. No interactive Editor run,
 Debug build, process-kill/power-loss test, platform-port execution or real shipping
 application certification was performed. The remaining production gates stay open.
 
+## Increment 16: Checked resource-package CLI (18 October 2026)
+
+`WorkphoneResourcePackage` connects the existing Lua and graphics compilers to
+catalog-admitted directory export. Explicit catalog type mappings and root UUIDs
+select inputs; package-mode compilation precedes complete-closure UUID and shipping
+policy admission. Missing catalog paths are rejected without database creation.
+Windows uses Unicode arguments. Existing output directories remain untouched.
+See [command-line usage and limitations](WPRESOURCE_RUNTIME_PACKAGES.md).
+
+The new Python/CTest integration fixture invokes the built executable against an
+independent SQLite catalog under a Unicode source path. It covers exact directory
+membership, occupied-output byte preservation, missing UUID/catalog rejection,
+Lua syntax failure, unsupported policy schema, Editor-only/excluded transitive
+dependencies, restored runtime eligibility and uncataloged dependencies.
+Python SQLite connections are explicitly closed before Windows fixture cleanup.
+
+The first broader catalog run exposed an unattached-technique null dereference in
+`MaterialTechnique::addPass` during existing authored material save contracts.
+The method now updates its parent material only when attached; assembling an
+authored technique before material ownership is valid. The debugger identified
+this production method before the guard was added.
+
+This delivers a synchronous CLI subset of RES-028/030. Multi-root cooks commit
+each successful root normally; a later root failure retains earlier derived cache
+records but never publishes partial output. Saved profiles, PackageEditor adoption,
+asynchronous cancellation, remaining typed families, executable/plugin packaging
+and actual shipping application acceptance remain open. Opening a supported legacy
+catalog may invoke its existing migration path.
+
+Windows/MSVC v145 RelWithDebInfo builds passed for `WorkphoneResourcePackage`,
+`WPAssetCatalogTests` and `WPResourceTests`, including required dependencies.
+The final focused CTest gate passed **5/5 in 23.66 seconds**: catalog contracts
+(14.75 s), resource contracts (2.50 s), writer lease (3.37 s), index migration
+(0.47 s) and package CLI (2.54 s). The existing cooked-graphics and Lua test
+executables also passed against the rebuilt DLLs (**2/2 in 12.24 seconds**);
+those two test targets were not separately rebuilt in this increment.
+`git diff --check` passed. Logs: `project_x64/resource-package-cli-final-build.log`,
+`project_x64/resource-package-cli-final-tests.log` and
+`project_x64/resource-package-cli-consumer-tests.log`. The initial failed catalog
+run and debugger evidence remain in the corresponding `resource-package-cli-tests`
+and `resource-package-cli-catalog-stack` logs. No Debug build, interactive Editor
+walkthrough, independent shipping application launch or process-kill/power-loss
+certification was performed.
+
+## Increment 17: Saved CLI profiles and source-free verification (18 October 2026)
+
+The package CLI now saves version-1 JSON requests with `--save-profile` and builds
+them with `--profile`. Relative paths resolve from the profile directory, allowing
+relocation independently of the working directory. Profiles select explicit target,
+source/catalog/cooked/output paths, catalog type mappings and root UUIDs. They feed
+the existing compilation and checked catalog exporter; no alternative policy or
+runtime store was introduced. Profile saving performs no cooking or catalog open.
+Exclusive hard-link publication preserves an existing profile and requires a
+supporting filesystem. Unsupported versions, unknown/duplicate/missing fields,
+malformed UTF-8/JSON, NUL/trailing bytes, duplicate roots/mappings and bounded
+size/count violations fail before authoring services open.
+
+`--verify` uses the existing runtime-only mount and loads requested UUID install
+closures without an authoring catalog, compilation database or compiler registry.
+The command still depends on the CLI's DLLs. It validates payload loading, not
+Lua execution, GPU installation, audible output or every unrequested manifest item.
+
+The executable integration fixture now saves/reloads profiles, verifies exclusive
+save/no-cook behavior, relocates a profile/project tree and verifies policy rejection
+through the profile path. It then removes the relocated sources/catalog/cooked
+cache and successfully loads both root and dependency UUIDs from read-only package
+files in another process. It checks unchanged bytes/membership, absent authoring
+storage, wrong target, missing UUID and corrupted-payload rejection. Rejected
+profiles leave output and cooked directories absent; completed saves leave no
+profile staging file.
+
+Windows/MSVC v145 RelWithDebInfo `WorkphoneResourcePackage` and dependencies built
+successfully. The expanded `WorkphoneAssets.package_cli` CTest passed; results are
+in `project_x64/resource-package-profile-tests.log`, with build output in
+`project_x64/resource-package-profile-build.log`. `git diff --check` passed.
+Only this targeted integration suite was needed for these tool-only changes;
+the earlier engine/consumer gate is recorded in increment 16. No Debug build,
+interactive Editor acceptance or shipping consumer/application certification is
+claimed. PackageEditor and shared native/UI request integration, asynchronous jobs,
+full typed-family adoption and the remaining production gates stay open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -980,7 +1061,7 @@ the same immutable resource pipeline.
    typed compile/install/platform dependency modes, invalidation and cycle policy.
    Indexed forward/reverse queries and project missing/type diagnostics now exist.
 4. Integrate the runtime UUID map and pinned directory export with typed consumers,
-   PackageEditor/CLI and owner-thread publication throughout the Editor and shipping
+   PackageEditor, shared Editor/CLI profile controls and owner-thread publication throughout the Editor and shipping
    sample; enforce shipping eligibility and complete asynchronous session-safe jobs.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;
    implement domain editing, previews, full reference coverage, packaging controls and

@@ -10,39 +10,86 @@
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
+#include <set>
+#include "PackageProfile.hpp"
 
 namespace
 {
     using namespace workphone;
     using namespace workphone::resource;
 
-    int run(const Array<String> &args)
+    int run(const Array<String> &input)
     {
+        if(input.size() >= 5 && input[1] == "--verify")
+        {
+            ResourceSystem runtime(nullptr, nullptr);
+            RuntimeResourceConfig config;
+            const auto directory = std::filesystem::absolute(std::filesystem::u8path(input[2].c_str()));
+            config.compiledRoot = directory.u8string().c_str();
+            config.manifestPath = (directory / "runtime.wprm").u8string().c_str();
+            config.target = input[3];
+            String error;
+            if(!runtime.initializeRuntime(config, error))
+                throw std::runtime_error(error.c_str());
+            for(size_t i = 4; i < input.size(); ++i)
+                if(!runtime.loadUUID(input[i], error))
+                    throw std::runtime_error(error.c_str());
+            std::cout << "Verified pinned runtime payload closures by UUID.\n";
+            return 0;
+        }
+        auto args = input;
+        String savePath;
+        if(args.size() == 3 && args[1] == "--profile")
+            args = loadPackageProfile(args[2]);
+        else if(args.size() >= 3 && args[1] == "--save-profile")
+        {
+            savePath = args[2];
+            args.erase(args.begin() + 1, args.begin() + 3);
+        }
         if(args.size() < 10 || (args.size() - 6) % 2 != 0)
         {
             std::cerr << "Usage: WorkphoneResourcePackage <source-root> <catalog> <cooked-root> "
                          "<new-output-directory> <target> --map <catalog-type=extension> --root <uuid> "
-                         "[--map <type=extension>] [--root <uuid>]\n";
+                         "[--map <type=extension>] [--root <uuid>]\n"
+                         "       WorkphoneResourcePackage --profile <profile.json>\n"
+                         "       WorkphoneResourcePackage --verify <package-directory> <target> <uuid> [uuid...]\n"
+                         "       WorkphoneResourcePackage --save-profile <new-profile.json> <positional arguments above>\n";
             return 2;
         }
         Array<CatalogResourceAdapter::TypeMapping> mappings;
         Array<String> uuids;
+        std::set<String> mappedTypes, rootIdentities;
         for(size_t i = 6; i < args.size(); i += 2)
         {
             if(args[i] == "--root")
+            {
+                auto identity = StringUtil::make_lower(args[i + 1]);
+                if(!rootIdentities.insert(identity).second)
+                    throw std::runtime_error("Duplicate package root UUID");
                 uuids.push_back(args[i + 1]);
+            }
             else if(args[i] == "--map")
             {
                 const auto split = args[i + 1].find('=');
                 if(split == String::npos || split == 0 || split + 1 == args[i + 1].size())
                     throw std::runtime_error("Expected --map catalog-type=extension");
-                mappings.push_back({args[i + 1].substr(0, split), ResourceTypeID(args[i + 1].substr(split + 1))});
+                const auto type = args[i + 1].substr(0, split);
+                const ResourceTypeID extension(args[i + 1].substr(split + 1));
+                if(!extension.isValid() || !mappedTypes.insert(type).second)
+                    throw std::runtime_error("Invalid or duplicate package type mapping");
+                mappings.push_back({type, extension});
             }
             else
                 throw std::runtime_error("Unknown package option");
         }
         if(mappings.empty() || uuids.empty() || args[5].empty())
             throw std::runtime_error("At least one mapping, root UUID and explicit target are required");
+        if(!savePath.empty())
+        {
+            savePackageProfile(savePath, args);
+            std::cout << "Saved package profile; no assets compiled or exported.\n";
+            return 0;
+        }
         // Never create an authoring database because a CLI path was misspelled.
         if(!std::filesystem::is_regular_file(std::filesystem::u8path(args[2].c_str())))
             throw std::runtime_error("Catalog must be an existing regular file");

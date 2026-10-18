@@ -123,7 +123,77 @@ reenter resource operations from the callback. A second manifest validation chec
 that artifacts and generations did not change during admission. Resolver exceptions
 fail export and clean request-owned staging. The raw explicit-binding export and
 partial-map manifest format remain available; they do not enforce catalog policy.
-PackageEditor/CLI adoption of the checked route remains open.
+PackageEditor adoption of the checked route remains open. The command-line
+resource-directory slice below uses checked catalog admission.
+
+## Command-line resource directory packaging
+
+Build `WorkphoneResourcePackage` when Workphone, SQLite, WPGraphics and WPLua are
+enabled. It registers the existing graphics (`texres`/`matres`) and Lua compilers.
+Provide an existing writable project catalog, its actual source root, a cooked
+root, a new destination, an explicit target and root asset UUIDs:
+
+```powershell
+WorkphoneResourcePackage.exe 'G:/Project' 'G:/Project/AssetDatabase.db' `
+  'G:/Cooked/Project' 'G:/Packages/Project-v1' pc `
+  --map script=lua --map texture=texres --map material=matres --root <asset-uuid>
+```
+
+Mappings are explicit catalog type names, not inferred from filenames. Use the
+types actually stored in the project catalog; repeat `--map` and `--root` as
+needed. Resolve all roots first, compile each root and its dependency closure
+with `packagedBuild=true`, then publish through
+`CatalogResourceAdapter::writeRuntimePackage`. Missing identities, unmapped or
+ineligible dependencies, compilation errors and occupied destinations return
+nonzero without publishing a new complete package. Windows arguments use the
+wide-character entry point, preserving Unicode paths. Exit codes are 0 for
+publication, 1 for an operation/validation failure and 2 for invalid argument count.
+
+Successful earlier root compilations remain in the derived cache if a later root
+fails; output publication is still all-or-nothing. This synchronous command does
+not provide cancellation, executable/plugin distribution,
+PackageEditor controls or additional typed compilers. It may perform the catalog's
+normal supported legacy schema migration on opening; retain project backups as for
+Editor authoring. It rejects a missing catalog path rather than creating one.
+
+### Saved CLI profiles and runtime verification
+
+Prefix the positional request with `--save-profile <new-file.json>` to save it
+without opening the catalog, cooking or exporting. The parent directory must
+exist. Publication is exclusive and never replaces an existing profile. It uses
+a staged file and same-directory hard link; filesystems without hard-link support
+reject saving. Saving validates structure, not the current existence or eligibility
+of asset UUIDs; the checked build validates those when the profile runs.
+
+```powershell
+WorkphoneResourcePackage.exe --save-profile 'G:/Project/shipping.json' `
+  'G:/Project' 'G:/Project/AssetDatabase.db' 'G:/Project/Cooked' `
+  'G:/Packages/Project-v1' pc --map script=lua --root <asset-uuid>
+WorkphoneResourcePackage.exe --profile 'G:/Project/shipping.json'
+WorkphoneResourcePackage.exe --verify 'G:/Packages/Project-v1' pc <asset-uuid>
+```
+
+Version 1 JSON contains exactly `version`, `sourceRoot`, `catalog`, `cookedRoot`,
+`output`, `target`, `mappings` and `roots`. A mapping has exactly `catalogType` and
+`extension`; roots are UUID strings. Paths resolve relative to the profile file,
+independently of the process working directory. Saved paths are relative where
+possible, allowing a project/profile tree to relocate. Absolute paths remain
+supported. There are no command-line overrides when loading a profile.
+
+The reader rejects unsupported versions, unknown/duplicate/missing fields,
+malformed UTF-8/JSON, NULs, trailing content, duplicate root UUIDs (ignoring case),
+duplicate catalog type mappings, files above 64 KiB, strings above 4096 bytes,
+more than 128 mappings or 512 roots. Profiles use the same compilers and checked
+exporter as positional requests; they cannot bypass shipping policy.
+
+`--verify <directory> <target> <uuid> [uuid...]` mounts the existing runtime
+manifest and loads every requested UUID with its pinned install closure. It uses
+`ResourceSystem(nullptr, nullptr)` and never opens a catalog or compilation index.
+It checks container identity, target and payload integrity through the existing
+runtime loader. It verifies requested closures, not every unrequested manifest
+entry. The CLI executable still requires its normal DLL dependencies. This does
+not execute Lua or install graphics/audio resources into a live consumer.
+No files are written by verification. Missing/corrupt content returns nonzero.
 
 ## Validation boundary
 

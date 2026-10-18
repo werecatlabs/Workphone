@@ -141,15 +141,11 @@ namespace workphone::render
     {
         m_children.push_back( pass );
 
-        if( m_children.size() == 1 )
+        // Authored graphs may assemble passes before attaching the technique to
+        // a material (including catalog document serialization).
+        if( auto material = getMaterial() )
         {
-            auto material = getMaterial();
-            material->setPass( pass );
-        }
-        else
-        {
-            auto material = getMaterial();
-            material->setPass( nullptr );
+            material->setPass( m_children.size() == 1 ? pass : nullptr );
         }
     }
 
