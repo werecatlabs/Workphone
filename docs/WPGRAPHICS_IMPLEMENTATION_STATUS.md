@@ -1,5 +1,43 @@
 # WPGraphics implementation status
 
+## Native SDK install/export slice - 18 October 2026
+
+`WP_BUILD_GRAPHICS_SDK_ONLY=ON` builds the existing native Core, Graphics and
+Win32 backend static targets without the C++ engine/editor or proprietary
+dependencies. The install exports `WorkphoneGraphics::SDK` and separate Core,
+Graphics and PlatformWin32 targets, with relocatable headers, per-configuration
+archives/PDBs, package version/architecture checks, explicit Windows SDK imports,
+dependency metadata, Workphone/STB license notices and an installed consumer
+sample. Core feature definitions propagate without STB implementation macros.
+Debug uses the DLL Debug CRT; release consumers map to RelWithDebInfo, never a
+Debug archive. The scope and commands are in [the SDK guide](WPGRAPHICS_NATIVE_SDK.md).
+
+`Tools/ValidateGraphicsSDK.ps1` performs fresh Debug/RelWithDebInfo builds and
+installs, moves the prefix to a path containing spaces, copies the installed
+sample into a separate source directory and builds/tests it using only the
+installed package. The original prefix is absent; exported header/archive paths
+must exist inside the relocated prefix and contain no checkout/build paths.
+Required PDBs are checked, inputs must remain unchanged during validation, and
+the evidence hashes source inputs, installed files and a distributable ZIP.
+
+Current evidence:
+`project_graphics_sdk/validation-e9161048aafc46ff914d58bb807baf40/evidence.json`.
+Both configurations passed both CTest consumers (four results total). The C90
+sample runs pooled transform snapshot publication, mesh OBB computation, shared
+main/shadow cull views surviving source-result destruction, and native
+`update()`/`render()` producing 242 nonblack software pixels. It also verifies
+RTT creation/destruction linkage; it does not execute a GPU RTT. The C++17 sample
+checks installed C linkage and frame entry points. No renderer stubs are used.
+The ZIP is adjacent to the report as
+`WorkphoneGraphicsSDK-0.1.0-Windows-x64.zip`.
+
+This is partial SHIP-03 completion: local Windows x64/MSVC static native SDK
+validation, not a clean-machine or full engine distribution. C++/Editor and shared
+library packaging, cooked-content sample, external media, remote CI, hardware/
+interactive captures and mixed-scene/recovery/long-soak gates remain open.
+The report records `validationPassed=true` for this slice and
+`releaseCertified=false`. No native runtime implementation changed in this slice.
+
 ## Release baseline recovery and teardown diagnostics - 18 October 2026
 
 The graphics baseline build presets now name 25 current test targets. They include

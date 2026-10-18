@@ -4,6 +4,15 @@ Cross-system follow-up: [WPProcedural production and racing visual quality plan]
 
 Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).
 
+Native distribution updated: 18 October 2026. The first SHIP-03 slice exports the
+existing Windows native static SDK, per-configuration libraries/symbols, licenses,
+dependency metadata and an installed C90/C++17 consumer. Fresh Debug and
+RelWithDebInfo relocated-package consumers pass, including real software draws
+through native update/render. [SDK instructions](WPGRAPHICS_NATIVE_SDK.md) and
+[hashed evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md) describe the boundary.
+Full C++/Editor/shared distribution, cooked sample content and clean-machine
+acceptance remain open; this does not certify the release.
+
 Release verification recovery updated: 18 October 2026. Baseline presets now build
 25 current targets and validation requires 29 results, including native frame/RTT/
 scene jobs, authoring, material sequencing and bounded lifecycle coverage. Dormant
@@ -440,6 +449,9 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
 - **SHIP-01:** CI: clean configure/build, C90/C++17 compilation, contract/unit tests, targeted static analysis and supported sanitizer configurations. GPU jobs produce image/sequence comparisons and capture diagnostics.
 - **SHIP-02:** Separate test outcomes into passed/failed/skipped/unavailable; require the selected backend for certification. Pin assets, capture settings and tolerances; review golden-image updates rather than automatically accepting changes.
 - **SHIP-03:** Add install/export targets, headers/libraries/dependency manifests, sample cooked content, license notices, symbols and an out-of-tree consumer that builds against the installed package.
+  First native static SDK slice is implemented and locally validated on Windows
+  x64 in Debug/RelWithDebInfo. Complete the C++/Editor/shared package, cooked-content
+  sample and clean-machine acceptance before closing this work package.
 - **SHIP-04:** Document supported hardware/features/limits, setup, resource formats, quality tiers, recovery, migration, troubleshooting and profiling.
 - **SHIP-05:** Run long-duration mixed-scene soak, repeated scene/resource reload, device recovery, corrupted-asset and memory-pressure tests. Archive evidence per candidate/version/backend.
 

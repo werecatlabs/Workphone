@@ -119,6 +119,7 @@ steam_appid.txt
 /build_ninja
 /wpimgui-build.log
 /project_graphics_contracts/
+/project_graphics_sdk/
 /project_graphics_hash_fallback/
 /project_procedural_exports/
 /project_procedural_texture_tests/
