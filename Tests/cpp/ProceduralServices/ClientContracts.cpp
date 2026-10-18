@@ -13,7 +13,7 @@
 #include <Workphone/Interface/System/IFactoryManager.hpp>
 #include <Workphone/Scene/Components/ProceduralVehicle.hpp>
 #include <Workphone/Scene/Components/ProceduralRaceScene.hpp>
-#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp
+#include <Workphone/Scene/Components/Terrain/FoliagePlantGenerator.hpp>
 #include <Workphone/Graphics/ProceduralSurfaceSourceExport.hpp>
 #include <Workphone/Graphics/Texture.hpp>
 #include <chrono>

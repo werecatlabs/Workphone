@@ -8,7 +8,7 @@
 #include <Workphone/Interface/Physics/IPhysicsMaterial3.hpp>
 #include <Workphone/Interface/Physics/IRigidStatic3.hpp>
 #include <Workphone/Interface/Physics/ITerrainShape.hpp>
-#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp
+#include <Workphone/Scene/Components/Terrain/CollisionTerrain.hpp>
 #include <Workphone/Scene/Components/Rigidbody.hpp>
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/State/States/GraphicsObjectData.hpp>
