@@ -1,5 +1,40 @@
 # WPGraphics implementation status
 
+## Shared C++ development SDK consumer - 18 October 2026
+
+`WorkphoneCppSDK` now overlays the existing Editor runtime component with
+Workphone/Claw and native interface headers, Boost headers, the Workphone and
+WPGraphics import libraries, and a relocatable `WorkphoneCppSDK` CMake package.
+It exposes `WorkphoneCpp::Core` and `WorkphoneCpp::Graphics` for Windows x64,
+C++17, the producing MSVC compiler version and the release DLL CRT. Debug
+installs/consumers and static CRT consumers are rejected explicitly.
+
+The installed interface records the DLL's actual compile definitions, including
+configuration-specific options. Comparison with the generated Workphone release
+project finds all 112 `WP_` definitions present. The installed sample uses the
+normal TypeManager startup/shutdown around exported Properties, Material defaults
+and a standalone Claw camera. Initial execution exposed the missing registry
+startup and an inappropriate graphics unload without an application manager;
+the sample now follows the existing lifecycle requirements.
+
+`Tools/ValidateCppSDK.ps1` builds/installs, archives, extracts into a fresh external
+directory with spaces, copies the installed sample, and builds RelWithDebInfo
+and Release consumers. It checks archive/file integrity, read-only execution,
+restricted-environment DLL provenance and incompatible configuration rejection.
+The final candidate is
+`project_graphics_sdk/cpp-sdk-validation-ec15973c923c4adcba2b72e5264847be/`.
+Its normal incremental build and full validator pass: both consumer configurations
+pass CTest and restricted execution; all three rejection checks pass. Each process
+observes 37 modules, confined to the consumer executable, extracted SDK or Windows.
+All 17,415 payload files retain their hashes after extraction and read-only use;
+the source snapshot is unchanged. `cpp-sdk-evidence.json` and
+`abi-definition-verification.json` preserve the results; the SDK ZIP includes the
+Editor runtime closure but does not supersede interactive Editor acceptance.
+
+This is the Core/Claw installed-consumer subset of SHIP-03. Optional plugin SDKs,
+all-public-header coverage, cooked C++ catalog sample, interactive authoring,
+clean-machine acceptance and license auditing still require their own evidence.
+
 ## Material defaults and procedural vehicle persistence repair - 18 October 2026
 
 `Material::getEditorUInt` now reads authored technique/pass settings in the same

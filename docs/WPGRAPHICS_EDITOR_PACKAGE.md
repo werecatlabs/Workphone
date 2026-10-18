@@ -7,6 +7,8 @@ and available dependency notices. Debug Editor is a Boost test executable and is
 deliberately rejected by this component. Other install components are unrelated.
 Matching linker symbols are installed by `WorkphoneEditorSymbols` and archived
 separately as `WorkphoneEditorSymbols-Windows-x64.zip`.
+The separate `WorkphoneCppSDK` component adds development headers, import
+libraries and CMake targets over this runtime; see [the C++ SDK guide](WPGRAPHICS_CPP_SDK.md).
 
 Extract the ZIP and launch `bin/Editor.exe`. The adjacent `editor-package.cfg`
 selects packaged startup automatically. Media is located relative to the package;

@@ -34,4 +34,7 @@ endif()
 
 if(WP_BUILD_ENGINE AND WP_BUILD_SQLITE AND TARGET Workphone AND TARGET WPSQLite)
     add_subdirectory(MediaAssetCatalogTool)
+    if(TARGET WPGraphics AND TARGET WPLuaBind)
+        add_subdirectory(ResourcePackageTool)
+    endif()
 endif()

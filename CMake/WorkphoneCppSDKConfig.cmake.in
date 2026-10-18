@@ -4,6 +4,9 @@ if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(WorkphoneCppSDK_NOT_FOUND_MESSAGE "This SDK requires Windows x64/MSVC")
     return()
 endif()
+if(NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+    message(FATAL_ERROR "This C++ SDK requires the x64 compiler target")
+endif()
 if(NOT MSVC_VERSION EQUAL @MSVC_VERSION@)
     message(FATAL_ERROR "This C++ SDK requires MSVC @MSVC_VERSION@ to match its DLL ABI")
 endif()
@@ -28,7 +31,7 @@ if(NOT TARGET WorkphoneCpp::Core)
             IMPORTED_LOCATION_RELWITHDEBINFO "${PACKAGE_PREFIX_DIR}/bin/${_binary}.dll"
             MAP_IMPORTED_CONFIG_RELEASE RelWithDebInfo
             MAP_IMPORTED_CONFIG_MINSIZEREL RelWithDebInfo
-            INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/include"
+            INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/include;${PACKAGE_PREFIX_DIR}/include/WorkphoneCore;${PACKAGE_PREFIX_DIR}/include/WorkphoneGraphics;${PACKAGE_PREFIX_DIR}/include/WorkphonePlatformWin32;${PACKAGE_PREFIX_DIR}/include/WorkphonePhysics"
             INTERFACE_COMPILE_FEATURES cxx_std_17
             INTERFACE_COMPILE_DEFINITIONS "@WORKPHONE_CPP_SDK_DEFINITIONS@;_ITERATOR_DEBUG_LEVEL=0")
         if(NOT EXISTS "${PACKAGE_PREFIX_DIR}/bin/${_binary}.dll" OR NOT EXISTS "${PACKAGE_PREFIX_DIR}/lib/${_binary}.lib")

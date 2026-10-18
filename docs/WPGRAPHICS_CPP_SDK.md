@@ -7,6 +7,12 @@ This candidate supports Windows x64, the producing MSVC compiler version, C++17
 and the release DLL CRT. Debug consumers are rejected because this distribution
 does not contain matching Debug DLLs. The package records the DLL's compile
 definitions, including its string, pointer, atomic and precision configuration.
+`Tools/ValidateCppSDK.ps1` builds and installs both components, creates a ZIP,
+extracts it outside the checkout, copies the installed sample, and builds/runs
+RelWithDebInfo and Release consumers against that extraction. It verifies hashes
+before/after read-only execution, restricts the consumer process environment,
+records loaded modules, and checks rejection of Debug installs/consumers and
+static CRT consumers. Logs, JUnit and a JSON report stay beside each candidate.
 
 ```powershell
 cmake --install project_x64 --config RelWithDebInfo --component WorkphoneEditor --prefix <sdk>

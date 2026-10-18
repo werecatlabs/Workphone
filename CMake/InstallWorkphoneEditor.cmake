@@ -53,5 +53,6 @@ foreach(_notice "Dependencies/boost/LICENSE_1_0.txt" "Dependencies/imgui/LICENSE
     endif()
 endforeach()
 install(FILES "${WP_ROOT}/docs/WPGRAPHICS_EDITOR_PACKAGE.md" DESTINATION . COMPONENT WorkphoneEditor RENAME README.md)
+install(FILES "${WP_ROOT}/docs/WPGRAPHICS_CPP_SDK.md" DESTINATION . COMPONENT WorkphoneEditor)
 
 include("${CMAKE_CURRENT_LIST_DIR}/InstallWorkphoneCppSDK.cmake")

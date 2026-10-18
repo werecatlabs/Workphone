@@ -1,12 +1,33 @@
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <WPGraphics/ClawCamera.hpp>
+#include <Workphone/Memory/TypeManager.hpp>
 #include <iostream>
 #include <windows.h>
 #include <tlhelp32.h>
 
+namespace
+{
+    // Use the engine's normal registry lifecycle before constructing typed objects.
+    struct RuntimeTypes
+    {
+        workphone::TypeManager manager;
+        RuntimeTypes()
+        {
+            manager.load();
+            workphone::TypeManager::setInstance(&manager);
+        }
+        ~RuntimeTypes()
+        {
+            manager.unload();
+            workphone::TypeManager::setInstance(nullptr);
+        }
+    };
+}
+
 int main()
 {
+    RuntimeTypes runtime;
     workphone::Properties properties;
     properties.setProperty("name", workphone::String("installed C++ SDK"));
     properties.setProperty("count", workphone::s32(42));
@@ -20,7 +41,6 @@ int main()
     camera.setNearClipDistance(0.25f);
     if(camera.getNearClipDistance() != 0.25f)
         return 3;
-    camera.unload(nullptr);
     const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
     if(snapshot == INVALID_HANDLE_VALUE)
         return 4;

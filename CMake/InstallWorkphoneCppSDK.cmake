@@ -27,7 +27,7 @@ get_directory_property(_sdk_directory_definitions DIRECTORY "${_sdk_source_direc
 list(APPEND _sdk_definitions ${_sdk_directory_definitions})
 set(WORKPHONE_CPP_SDK_DEFINITIONS "")
 foreach(_definition IN LISTS _sdk_definitions)
-    if(_definition MATCHES "^(WP_|ENABLE_PTR_RTTI=|BOOST_ALL_NO_LIB|_ENABLE_ATOMIC_ALIGNMENT_FIX)"
+    if(_definition MATCHES "(WP_|^ENABLE_PTR_RTTI=|^BOOST_ALL_NO_LIB|^_ENABLE_ATOMIC_ALIGNMENT_FIX)"
        AND NOT _definition MATCHES "_EXPORTS($|=)")
         list(APPEND WORKPHONE_CPP_SDK_DEFINITIONS "${_definition}")
     endif()
@@ -46,4 +46,4 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/cpp-sdk/RelWithDebInfo/WorkphoneCppSD
 install(DIRECTORY "${WP_ROOT}/Tests/CppSDKConsumer/" DESTINATION share/WorkphoneCppSDK/sample
     COMPONENT WorkphoneCppSDK)
 install(FILES "${WP_ROOT}/docs/WPGRAPHICS_CPP_SDK.md" DESTINATION .
-    COMPONENT WorkphoneCppSDK RENAME CPP-SDK.md)
+    COMPONENT WorkphoneCppSDK)

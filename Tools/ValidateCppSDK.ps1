@@ -3,8 +3,7 @@
 param([string]$BuildDirectory = 'project_x64', [switch]$SkipBuild)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
-$build = [IO.Path]::GetFullPath((Join-Path $repo $BuildDirectory))
-if ([IO.Path]::IsPathRooted($BuildDirectory)) { $build = $BuildDirectory }
+$build = if ([IO.Path]::IsPathRooted($BuildDirectory)) { [IO.Path]::GetFullPath($BuildDirectory) } else { [IO.Path]::GetFullPath((Join-Path $repo $BuildDirectory)) }
 $run = Join-Path $repo ('project_graphics_sdk/cpp-sdk-validation-' + [guid]::NewGuid().ToString('N'))
 $external = Join-Path ([IO.Path]::GetTempPath()) ('Workphone Cpp SDK ' + [guid]::NewGuid().ToString('N'))
 $stage = Join-Path $run 'WorkphoneCppSDK'
@@ -28,8 +27,8 @@ function Get-Payload([string]$Root) {
 try {
     $inputFiles = @(Get-ChildItem (Join-Path $repo 'Engine/cpp/Include/Workphone'),
         (Join-Path $repo 'Engine/cpp/Include/WPGraphics'), (Join-Path $repo 'Tests/CppSDKConsumer') -Recurse -File)
-    $inputFiles += @('CMake/InstallWorkphoneCppSDK.cmake','CMake/WorkphoneCppSDKConfig.cmake.in',
-        'CMake/InstallWorkphoneEditor.cmake','Tools/ValidateCppSDK.ps1','docs/WPGRAPHICS_CPP_SDK.md') |
+    $inputFiles += @('CMakeLists.txt','CMake/InstallWorkphoneCppSDK.cmake','CMake/WorkphoneCppSDKConfig.cmake.in',
+        'CMake/InstallWorkphoneEditor.cmake','Tools/ValidateCppSDK.ps1','docs/WPGRAPHICS_CPP_SDK.md','docs/WPGRAPHICS_EDITOR_PACKAGE.md') |
         ForEach-Object { Get-Item -LiteralPath (Join-Path $repo $_) }
     $report['inputs'] = @($inputFiles | Sort-Object FullName -Unique | ForEach-Object {
         [ordered]@{path=$_.FullName;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
@@ -41,7 +40,7 @@ try {
     Invoke-Checked 'install-runtime' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneEditor','--prefix',$stage)
     Invoke-Checked 'install-sdk' @('--install',$build,'--config','RelWithDebInfo','--component','WorkphoneCppSDK','--prefix',$stage)
     & cmake --install $build --config Debug --component WorkphoneCppSDK --prefix (Join-Path $run 'rejected-debug') *> (Join-Path $run 'reject-debug-install.log')
-    if ($LASTEXITCODE -eq 0) { throw 'Debug SDK install was not rejected' }
+    if ($LASTEXITCODE -eq 0 -or (Get-Content (Join-Path $run 'reject-debug-install.log') -Raw) -notlike '*SDK requires RelWithDebInfo*') { throw 'Debug SDK install was not rejected for the expected reason' }
     $report['debugInstallRejected'] = $true
     $payload = Get-Payload $stage
     $report['payload'] = $payload
@@ -61,10 +60,10 @@ try {
     $consumerBuild = Join-Path $external 'consumer-build'
     Invoke-Checked 'consumer-configure' @('-S',$sample,'-B',$consumerBuild,'-A','x64',"-DCMAKE_PREFIX_PATH=$extracted")
     & cmake -S $sample -B (Join-Path $external 'rejected-debug-consumer') -A x64 "-DCMAKE_PREFIX_PATH=$extracted" '-DCMAKE_CONFIGURATION_TYPES=Debug' *> (Join-Path $run 'reject-debug-consumer.log')
-    if ($LASTEXITCODE -eq 0) { throw 'Debug consumer was not rejected' }
+    if ($LASTEXITCODE -eq 0 -or (Get-Content (Join-Path $run 'reject-debug-consumer.log') -Raw) -notlike '*contains release CRT DLLs*') { throw 'Debug consumer was not rejected for the expected reason' }
     $report['debugConsumerRejected'] = $true
     & cmake -S $sample -B (Join-Path $external 'rejected-static-crt') -A x64 "-DCMAKE_PREFIX_PATH=$extracted" '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded' *> (Join-Path $run 'reject-static-crt.log')
-    if ($LASTEXITCODE -eq 0) { throw 'Static CRT consumer was not rejected' }
+    if ($LASTEXITCODE -eq 0 -or (Get-Content (Join-Path $run 'reject-static-crt.log') -Raw) -notlike '*requires CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL*') { throw 'Static CRT consumer was not rejected for the expected reason' }
     $report['staticCrtConsumerRejected'] = $true
     $results = [Collections.Generic.List[object]]::new()
     foreach ($config in @('RelWithDebInfo','Release')) {
@@ -104,12 +103,12 @@ try {
         & ctest --test-dir $consumerBuild -C $config --output-on-failure --output-junit (Join-Path $run "consumer-$config.xml") *> (Join-Path $run "consumer-$config.log")
         if ($LASTEXITCODE -ne 0) { throw "Consumer CTest failed: $config" }
     }
+    $report['consumerResults']=$results.ToArray()
     foreach ($inputEntry in $report.inputs) {
         if ((Get-FileHash -LiteralPath $inputEntry.path).Hash -ne $inputEntry.sha256) { throw "Input changed: $($inputEntry.path)" }
     }
     $after = Get-Payload $extracted
     if (($payload | ConvertTo-Json -Depth 4 -Compress) -ne ($after | ConvertTo-Json -Depth 4 -Compress)) { throw 'SDK payload changed during validation' }
-    $report['consumerResults']=@($results)
     $report['readOnlyPayloadUnchanged']=$true
     $report['sourceInputsUnchanged']=$true
     $report['validationPassed']=$true
