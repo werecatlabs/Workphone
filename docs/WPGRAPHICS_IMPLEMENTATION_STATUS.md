@@ -1,5 +1,85 @@
 # WPGraphics implementation status
 
+## Release baseline recovery and teardown diagnostics - 18 October 2026
+
+The graphics baseline build presets now name 25 current test targets. They include
+the native frame, RTT and scene jobs, the C89 skinning/particle target names,
+foliage authoring and material-load sequencing. The validator requires all 29
+registered results, including a new bounded lifecycle test. Terrain, foliage/
+physics and Claw UI destruction targets are active again; their dormant fixtures
+had malformed include directives and missing native-header/library search paths.
+The terrain Lua workflow also receives the configuration-specific library path.
+Native graphics headers/sources and the additional fixture sources are included
+in the evidence hashes. The hash manifest follows the moved Lua render-binding
+source, and the per-test output cap is one MiB so lifecycle traces do not cut off
+the production test's buffered device/driver evidence.
+
+`WPGraphics.claw_lifecycle_soak` repeats particle lifecycle, scene-node transform,
+material-pass lifetime and scene-context lifetime contracts 32 times. It creates no graphics
+window; this is a bounded ownership regression, not a mixed scene/device soak.
+The production executable also accepts `--lifecycle-soak N` for 1–10,000 cycles.
+
+`Tools/BuildWPGraphicsBaseline.ps1` and `Tools/ValidateClawGraphics.ps1` accept
+`-CaptureCrashDumps`. This enables a best-effort Windows unhandled-exception dump
+for the production/lifecycle executable in a fresh directory, preserves the
+failing process exit, and records dump availability in the JSON evidence. Normal
+runs leave the exception filter unchanged. An existing dump is never overwritten;
+the previous environment setting is restored after CTest. To validate the current
+build with strict external-media coverage:
+
+```powershell
+./Tools/ValidateClawGraphics.ps1 -BuildDirectory project_x64 -Configuration Debug -RequireExternalAssets -CaptureCrashDumps
+```
+
+The intermittent teardown access violation was reproduced on the eighth fresh
+production process after seven passes. The dump and symbolized stack are in
+`project_x64/release_teardown_20261018T000206/production.dmp` and `analysis.log`.
+The failing chain is `StateManager::unload` → `StateContext::clearStateListeners`
+→ scene-listener destruction → `AtomicWeakPtr<GraphicsScene>` reading an already
+freed owner. The stack was symbolized before rebuilding the affected DLLs.
+
+`ClawScene`'s delegating default constructor initialized its five contexts twice,
+leaving the first set registered. `GraphicsScene`'s destructor also dropped its
+primary context without deregistering it and left auxiliary contexts behind.
+The default constructor now initializes once. Both unload and destruction use
+`destroySceneStateContexts`: retain all contexts before clearing their weak index,
+detach the listener while the scene still exists, remove only this scene's state
+from shared contexts, and retire owned contexts through the manager or directly
+when no manager is available. Foreign owners and their state remain intact.
+
+The new regression retains contexts and listeners after default/wrapped-scene
+destruction and repeated unload, checks exactly five registrations and complete
+retirement, preserves a borrowed native scene, and preserves foreign shared state.
+It runs four scene cases per lifecycle cycle (128 scenes across 32 cycles).
+The lifecycle test and state-listener fan-out test pass in Debug and RelWithDebInfo;
+see `project_x64/test_release_scene_lifetime_{debug,relwithdebinfo}.log`.
+
+Post-repair baseline results from the existing build tree:
+
+| Configuration | Passed | Unavailable | Failed | CTest seconds |
+|---|---:|---:|---:|---:|
+| Debug | 28 | 1 | 0 | 105.88 |
+| RelWithDebInfo | 28 | 1 | 0 | 69.99 |
+
+`project_x64/claw-graphics-{Debug,RelWithDebInfo}-evidence.json` records 29 required
+results, 286 source hash entries, executable hashes and software DX11 device/driver
+evidence from all four GPU tests. Every recorded source hash matches the repaired
+sources. All six external mesh fixtures remain absent. With `-RequireExternalAssets`,
+both validators exit nonzero and record `validationPassed=false`,
+`coverageComplete=false`, `releaseCertified=false` while preserving the reports.
+Neither post-repair baseline generated a production dump. Clean CI, hardware/
+Editor acceptance, package-consumer validation and the broader mixed-soak/recovery
+gate remain open; these bounded tests do not certify R1 or R2.
+
+The repaired Debug production executable additionally passes **20/20 fresh
+processes** with `ctest --repeat until-fail:20`, in 176.69 seconds, with no dump.
+`project_x64/release_teardown_fixed_20261018T001511/` contains the raw repeat log,
+JUnit result and manifest. The manifest's executable, Workphone DLL and WPGraphics
+DLL hashes match the accepted binaries after the repeat. Repeat counts use only
+per-test pass lines, excluding CTest's summary line. This directly repeats the
+previously failing production sequence; it does not replace broader device/
+recovery, hardware or long mixed-scene soak acceptance.
+
 ## One shared ancestor-revision array per publication - 17 October 2026
 
 `PERF-07` now consolidates per-entry ancestor-revision allocations into one

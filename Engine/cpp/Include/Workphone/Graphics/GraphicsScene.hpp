@@ -664,6 +664,9 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            /** Detach all scene contexts and their listener before the owner is destroyed. */
+            void destroySceneStateContexts();
+
             /** Marks the scene state dirty after a dependency collection changes. */
             void invalidateSceneState();
 

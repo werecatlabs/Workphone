@@ -1,7 +1,7 @@
 #ifndef WPTerrainEditingContracts_h__
 #define WPTerrainEditingContracts_h__
 
-#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp
+#include <Workphone/Scene/Components/Terrain/TerrainEditing.hpp>
 #include "TerrainAuthoringContracts.hpp"
 #include <Workphone/Scene/Components/Terrain/TerrainSystem.hpp>
 #include <Workphone/Graphics/TerrainData.hpp>

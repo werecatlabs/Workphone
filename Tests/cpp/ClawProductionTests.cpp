@@ -1,6 +1,7 @@
 #include "ClawFoliageContracts.hpp"
 #include "ClawPrimaryLightContracts.hpp"
 #include "ClawFoliageSceneContracts.hpp"
+#include "ClawSceneLifetimeContracts.hpp"
 #include "ClawFoliageWorldContracts.hpp"
 #include "ClawAnimationContracts.hpp"
 #include "ClawRTTJobContracts.hpp"
@@ -29,6 +30,7 @@
 #include "DX11TestEvidence.hpp"
 #include "ClawSceneNodeTransformContracts.hpp"
 #include "ClawMaterialPassLifetimeContracts.hpp"
+#include "GraphicsCrashEvidence.hpp"
 #include "ClawTerrainContracts.hpp"
 #include "ClawTerrainMaterialContracts.hpp"
 #include "ClawTerrainStreamingContracts.hpp"
@@ -36,6 +38,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <cstdlib>
 
 using namespace workphone;
 using namespace workphone::render;
@@ -328,14 +331,39 @@ namespace
     }
 }
 
-int main()
+int main( int argc, char **argv )
 {
+    graphics_crash_evidence::install();
     TypeManager types; types.load(); TypeManager::setInstance(&types);
     auto application = make_ptr<core::ApplicationManager>();
     core::IApplicationManager::setInstance(application);
+    if( argc > 1 )
+    {
+        char *end = nullptr;
+        const auto iterations = argc == 3 ? std::strtol( argv[2], &end, 10 ) : 0;
+        if( argc != 3 || std::strcmp( argv[1], "--lifecycle-soak" ) ||
+            !end || *end || iterations < 1 || iterations > 10000 )
+        {
+            std::fprintf( stderr, "Usage: --lifecycle-soak iterations[1..10000]\n" );
+            core::IApplicationManager::setInstance(nullptr); application=nullptr;
+            TypeManager::setInstance(nullptr); types.unload();
+            return 2;
+        }
+        bool ok = true;
+        for( long iteration = 0; iteration < iterations && ok; ++iteration )
+        {
+            std::fprintf( stderr, "Lifecycle soak iteration %ld\n", iteration + 1 );
+            ok = testParticleLifecycle() && claw_scene_node_transform_contracts::run() &&
+                 claw_material_pass_lifetime_contracts::run() && claw_scene_lifetime_contracts::run();
+        }
+        core::IApplicationManager::setInstance(nullptr); application=nullptr;
+        TypeManager::setInstance(nullptr); types.unload();
+        return ok ? 0 : 1;
+    }
     bool ok = testParticleLifecycle();
     ok &= claw_scene_node_transform_contracts::run();
     ok &= claw_material_pass_lifetime_contracts::run();
+    ok &= claw_scene_lifetime_contracts::run();
     ok &= testLightDirection();
     ok &= claw_primary_light_contracts::run();
     auto window = make_ptr<TestWindow>();
