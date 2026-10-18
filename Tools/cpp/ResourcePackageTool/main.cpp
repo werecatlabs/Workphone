@@ -11,7 +11,10 @@
 #include <iostream>
 #include <stdexcept>
 #include <set>
-#include "PackageProfile.hpp"
+#include <Workphone/System/ResourcePackageProfile.hpp>
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 namespace
 {
@@ -38,6 +41,26 @@ namespace
             return 0;
         }
         auto args = input;
+        std::function<bool()> cancelled = [] { return false; };
+#ifdef _WIN32
+        if(args.size() == 5 && args[1] == "--profile" && args[3] == "--cancel-handle")
+        {
+            const auto text = std::string(args[4].c_str());
+            size_t used = 0;
+            const auto number = std::stoull(text, &used);
+            if(used != text.size() || number == 0 || number > UINTPTR_MAX)
+                throw std::runtime_error("Invalid cancellation handle");
+            const auto event = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(number));
+            DWORD flags = 0;
+            if(!GetHandleInformation(event, &flags)) throw std::runtime_error("Cancellation handle was not inherited");
+            cancelled = [event] {
+                const auto wait = WaitForSingleObject(event, 0);
+                if(wait == WAIT_FAILED) throw std::runtime_error("Cannot inspect cancellation event");
+                return wait == WAIT_OBJECT_0;
+            };
+            args.erase(args.begin() + 3, args.end());
+        }
+#endif
         String savePath;
         if(args.size() == 3 && args[1] == "--profile")
             args = loadPackageProfile(args[2]);
@@ -90,6 +113,7 @@ namespace
             std::cout << "Saved package profile; no assets compiled or exported.\n";
             return 0;
         }
+        if(cancelled()) return 3;
         // Never create an authoring database because a CLI path was misspelled.
         if(!std::filesystem::is_regular_file(std::filesystem::u8path(args[2].c_str())))
             throw std::runtime_error("Catalog must be an existing regular file");
@@ -123,12 +147,14 @@ namespace
         options.packagedBuild = true;
         for(const auto &request : roots)
         {
+            if(cancelled()) return 3;
             const auto report = adapter.compile(request, options);
             for(const auto &message : report.messages)
                 std::cerr << message << '\n';
             if(!report.succeeded())
                 throw std::runtime_error("Package compilation failed; no output directory published");
         }
+        if(cancelled()) return 3;
         if(!adapter.writeRuntimePackage(args[4], roots, error))
             throw std::runtime_error(error.c_str());
         std::cout << "Published catalog-admitted runtime resource directory.\n";

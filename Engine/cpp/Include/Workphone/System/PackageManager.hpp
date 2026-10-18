@@ -2,9 +2,12 @@
 #define PackageManager_h__
 
 #include <Workphone/Interface/System/IPackageManager.hpp>
+#include <mutex>
+#include <memory>
 
 namespace workphone
 {
+    struct ResourcePackageJobState;
 
     /**
      * @brief Manages packaging options and operations for the application.
@@ -54,6 +57,14 @@ namespace workphone
          * assemble the package according to the configured options.
          */
         void createPackage() override;
+        void setResourcePackageProfile(const String &path) override;
+        String getResourcePackageProfile() const override;
+        bool startResourcePackage() override;
+        void cancelResourcePackage() override;
+        bool isResourcePackageBusy() const override;
+        String getResourcePackageStatus() const override;
+        String getResourcePackageDiagnostic() const override;
+        String getResourcePackageLogPath() const override;
 
         /**
          * @brief Query whether textures are included in the package.
@@ -108,6 +119,9 @@ namespace workphone
         WP_CLASS_REGISTER_DECL;
 
     protected:
+        mutable std::mutex m_resourcePackageMutex;
+        String m_resourcePackageProfile, m_resourcePackageError;
+        std::shared_ptr<ResourcePackageJobState> m_resourcePackageRequest;
         /**
          * @brief Flags indicating which target platforms are enabled for packaging.
          *

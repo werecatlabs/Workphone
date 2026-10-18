@@ -6,6 +6,10 @@ endif()
 
 set(_editor_plugins WPGraphics WPAssimp WPSQLite WPPhysics WPLua WPAudio WPVehiclePhysics WPProcedural)
 set(_editor_runtime_targets Editor Workphone WPNetwork ${_editor_plugins})
+if(NOT TARGET WorkphoneResourcePackage)
+    message(FATAL_ERROR "Editor package requires the checked resource package tool")
+endif()
+list(APPEND _editor_runtime_targets WorkphoneResourcePackage)
 set(_editor_config "# Workphone Editor package plugin profile\n")
 foreach(_plugin IN LISTS _editor_plugins)
     if(NOT TARGET ${_plugin})
@@ -43,6 +47,7 @@ file(GLOB _editor_media "${WP_ROOT}/bin/Media/*.mat" "${WP_ROOT}/bin/Media/*.png
 install(FILES ${_editor_media} DESTINATION Media COMPONENT WorkphoneEditor)
 install(FILES "${WP_ROOT}/LICENSE" DESTINATION licenses COMPONENT WorkphoneEditor RENAME Workphone-LICENSE)
 foreach(_notice "Dependencies/boost/LICENSE_1_0.txt" "Dependencies/imgui/LICENSE.txt"
+        "Dependencies/rapidjson/license.txt"
         "Dependencies/meshoptimizer/LICENSE.md" "Dependencies/earcut-hpp/LICENSE"
         "Dependencies/tinyusdz/LICENSE"
         "docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt" "docs/WPGRAPHICS_EDITOR_THIRD_PARTY_NOTICES.txt"

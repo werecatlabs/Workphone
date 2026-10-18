@@ -29,6 +29,15 @@ namespace workphone
          */
         virtual void createPackage() = 0;
 
+        virtual void setResourcePackageProfile(const String &path) = 0;
+        virtual String getResourcePackageProfile() const = 0;
+        virtual bool startResourcePackage() = 0;
+        virtual void cancelResourcePackage() = 0;
+        virtual bool isResourcePackageBusy() const = 0;
+        virtual String getResourcePackageStatus() const = 0;
+        virtual String getResourcePackageDiagnostic() const = 0;
+        virtual String getResourcePackageLogPath() const = 0;
+
         /**
          * @brief Checks if package textures are enabled.
          * @return True if package textures are enabled, false otherwise.

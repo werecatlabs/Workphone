@@ -1,4 +1,5 @@
-#include "PackageProfile.hpp"
+#include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/System/ResourcePackageProfile.hpp>
 #include <Workphone/Core/StringUtil.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
@@ -41,7 +42,7 @@ namespace
     }
 }
 
-workphone::Array<workphone::String> loadPackageProfile(const workphone::String &path)
+workphone::Array<workphone::String> workphone::loadPackageProfile(const workphone::String &path)
 {
     const auto file = fs::absolute(fs::u8path(path.c_str()));
     std::ifstream input(file, std::ios::binary);
@@ -89,7 +90,7 @@ workphone::Array<workphone::String> loadPackageProfile(const workphone::String &
     return args;
 }
 
-void savePackageProfile(const workphone::String &path, const workphone::Array<workphone::String> &args)
+void workphone::savePackageProfile(const workphone::String &path, const workphone::Array<workphone::String> &args)
 {
     const auto file = fs::absolute(fs::u8path(path.c_str()));
     require(fs::is_directory(file.parent_path()), "Package profile parent directory must exist");

@@ -163,6 +163,7 @@ target_include_directories(Workphone PUBLIC
     ${WP_ROOT}/Engine/cpp/Include
     ${CMAKE_SOURCE_DIR}/Dependencies/boost
 )
+target_include_directories(Workphone PRIVATE ${WP_ROOT}/Dependencies/rapidjson/include)
 
 # The renderer-neutral foliage service reuses the native page-grid lifecycle.
 # WorkphoneGraphics is the C geometry library, not the WPGraphics renderer plugin.

@@ -241,6 +241,14 @@ namespace workphone
 
         module( L )[class_<IPackageManager, ISharedObject, SmartPtr<ISharedObject>>( "IPackageManager" )
                         .def( "createPackage", &IPackageManager::createPackage )
+                        .def( "setResourcePackageProfile", &IPackageManager::setResourcePackageProfile )
+                        .def( "getResourcePackageProfile", &IPackageManager::getResourcePackageProfile )
+                        .def( "startResourcePackage", &IPackageManager::startResourcePackage )
+                        .def( "cancelResourcePackage", &IPackageManager::cancelResourcePackage )
+                        .def( "isResourcePackageBusy", &IPackageManager::isResourcePackageBusy )
+                        .def( "getResourcePackageStatus", &IPackageManager::getResourcePackageStatus )
+                        .def( "getResourcePackageDiagnostic", &IPackageManager::getResourcePackageDiagnostic )
+                        .def( "getResourcePackageLogPath", &IPackageManager::getResourcePackageLogPath )
                         .def( "getPackageTextures", &IPackageManager::getPackageTextures )
                         .def( "setPackageTextures", &IPackageManager::setPackageTextures )
                         .scope[def( "typeInfo", IPackageManager::typeInfo )]];

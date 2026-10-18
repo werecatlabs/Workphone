@@ -989,6 +989,12 @@ namespace workphone::editor
                                 invoker->callObjectMember( "update" );
                             }
                         }
+                        auto packageWindow = editorUI->getPackageWindow();
+                        if(packageWindow && packageWindow->isLoaded() && packageWindow->isWindowVisible())
+                        {
+                            if(auto invoker = packageWindow->getInvoker())
+                                invoker->callObjectMember("update");
+                        }
                     }
 
                     if( auto translateManipulator = editorManager->getTranslateManipulator() )

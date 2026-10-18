@@ -1068,8 +1068,16 @@ namespace workphone::core
 
     void ApplicationManager::setProjectPath( const String &projectPath )
     {
-        ScopedLock lock( this );
-        m_projectPath = projectPath;
+        bool changed = false;
+        {
+            ScopedLock lock( this );
+            changed = m_projectPath != projectPath;
+            m_projectPath = projectPath;
+        }
+        // Package workers own captured project requests. Revoke pending work on
+        // session changes without calling into the manager under the app lock.
+        if(changed)
+            if(auto packages = getPackageManager()) packages->cancelResourcePackage();
     }
 
     auto ApplicationManager::getProjectLibraryName() const -> String
