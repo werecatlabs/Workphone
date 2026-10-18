@@ -50,9 +50,12 @@ with tempfile.TemporaryDirectory(prefix="wp-package-jobs-") as temporary:
                             capture_output=True, text=True, timeout=110)
     print(result.stdout)
     print(result.stderr, file=sys.stderr)
+    if result.returncode:
+        for log in (project / ".workphone" / "package-jobs").glob("*.log"):
+            print(log.name, log.read_text(errors="replace"), file=sys.stderr)
     assert result.returncode == 0, result.returncode
     relocated = pathlib.Path(temporary) / "read-only-relocated"
-    shutil.copytree(project / "success-output", relocated)
+    shutil.copytree(project.parent / "success-output", relocated)
     # No authoring sources, catalog or cooking cache remain for the consumer process.
     for name in ("main.lua", "helper.lua", "main.lua.deps"):
         (project / name).unlink()

@@ -7,9 +7,16 @@ import tempfile
 import uuid
 import json
 import shutil
+import os
 from contextlib import closing
 
 exe = pathlib.Path(sys.argv[1]).resolve()
+child_environment = dict(os.environ)
+system_root = child_environment.get("SYSTEMROOT", r"C:\Windows")
+child_environment["PATH"] = str(pathlib.Path(system_root) / "System32") + os.pathsep + system_root
+for key in tuple(child_environment):
+    if key.upper().startswith(("WP_", "LUA_PATH", "LUA_CPATH")):
+        child_environment.pop(key)
 
 with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     root = pathlib.Path(temporary) / "project café"
@@ -29,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     def package(output, identity=main_id, catalog_path=catalog, expected=0):
         result = subprocess.run([str(exe), str(source), str(catalog_path), str(root / "cooked"),
                                  str(output), "pc", "--map", "script=lua", "--root", identity],
-                                cwd=exe.parent, capture_output=True, text=True)
+                                cwd=exe.parent, capture_output=True, text=True, env=child_environment)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
 
     output = root / "package"
@@ -39,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     assert all(p == "runtime.wprm" or p.endswith(".wprs") for p in files)
     def invoke(arguments, expected=0):
         result = subprocess.run([str(exe), *map(str, arguments)], cwd=exe.parent,
-                                capture_output=True, text=True)
+                                capture_output=True, text=True, env=child_environment)
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result
 

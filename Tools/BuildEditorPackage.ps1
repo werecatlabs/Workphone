@@ -21,7 +21,13 @@ $inputs = @('CMakeLists.txt','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEd
     'Tools/cpp/Editor/src/application/win32/Main.cpp','Tools/cpp/Editor/src/application/win32/EditorPackage.hpp',
     'Tools/cpp/Editor/src/EditorApplication.hpp','Tools/cpp/Editor/src/EditorApplication.cpp',
     'Engine/cpp/Source/Workphone/System/ApplicationManager.cpp','docs/WPGRAPHICS_EDITOR_PACKAGE.md',
-    'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt','docs/WPGRAPHICS_EDITOR_THIRD_PARTY_NOTICES.txt') | ForEach-Object {
+    'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt','docs/WPGRAPHICS_EDITOR_THIRD_PARTY_NOTICES.txt',
+    'Tools/cpp/ResourcePackageTool/main.cpp','Tools/cpp/ResourcePackageTool/CMakeLists.txt',
+    'Engine/cpp/Source/Workphone/System/ResourcePackageProfile.cpp',
+    'Engine/cpp/Source/Workphone/System/PackageManager.cpp',
+    'Engine/cpp/Source/Workphone/Jobs/ResourcePackageJob.cpp',
+    'Engine/cpp/Source/WPLuaBind/Bindings/SystemBind.cpp',
+    'bin/Media/Scripts/Lua/Editor/PackageEditor.lua','Tests/python/resource_package_cli.py') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }
 $evidence['packagingInputs'] = @($inputs)
@@ -104,6 +110,9 @@ try {
             $checks.Add([ordered]@{ name = $Name; expectedExit = $ExpectedExit; exitCode = $process.ExitCode })
             if ($process.ExitCode -ne $ExpectedExit -or ($text + $errors) -notlike "*$ExpectedText*") { throw "Editor check failed: $Name ($($process.ExitCode))" }
             if ($ExpectedExit -eq 0) {
+                if (($text + $errors) -match 'stack traceback:|No matching overload found') {
+                    throw "Editor startup reported a Lua binding/runtime failure: $Name"
+                }
                 $modules = @(Get-Content -LiteralPath $moduleReport)
                 if (-not $modules.Count) { throw 'Empty module inventory' }
                 foreach ($module in $modules) {
@@ -121,6 +130,15 @@ try {
             }
         } finally { $process.Dispose() }
     }
+    # Run the real checked profile tool from the read-only relocated installation.
+    # Its fixture restricts child PATH to Windows system directories, so missing
+    # packaged DLLs cannot fall back to the source checkout through PATH.
+    $pythonLine = Get-Content (Join-Path $build 'CMakeCache.txt') | Where-Object { $_ -match '^_Python3_EXECUTABLE:INTERNAL=' } | Select-Object -First 1
+    if (-not $pythonLine) { throw 'Python interpreter is required for relocated resource package validation' }
+    $python = $pythonLine.Substring($pythonLine.IndexOf('=') + 1)
+    & $python (Join-Path $repo 'Tests/python/resource_package_cli.py') (Join-Path $root 'bin/WorkphoneResourcePackage.exe') *> (Join-Path $output 'relocated-resource-package.log')
+    $checks.Add([ordered]@{ name = 'relocated-resource-package-profiles'; exitCode = $LASTEXITCODE })
+    if ($LASTEXITCODE -ne 0) { throw 'Relocated resource package CLI validation failed' }
     Invoke-Editor 'startup' 0 'Editor package startup and teardown passed'
     # Remove a required media input in this task-owned extracted copy, then restore.
     $media = Join-Path $root 'Media/Scripts/Lua/Editor/Editor.lua'

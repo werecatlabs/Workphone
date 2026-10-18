@@ -1041,6 +1041,99 @@ interactive Editor acceptance or shipping consumer/application certification is
 claimed. PackageEditor and shared native/UI request integration, asynchronous jobs,
 full typed-family adoption and the remaining production gates stay open.
 
+## Increment 18: PackageEditor integration and owned asynchronous builds (18 October 2026)
+
+The versioned profile reader/writer now lives in Workphone as exported shared
+functions. The CLI and native PackageManager use the same format rather than
+maintaining separate profile stores. PackageEditor selects a saved profile and
+offers Build, Cancel, status/diagnostics and the request log path. Unsupported
+build-type/platform/compression/version setter calls were removed. The existing
+Editor application update path polls the window while visible; workers never
+hold or call Lua UI objects. Full in-window profile authoring remains open.
+
+`IPackageManager` now exposes the resource-profile/job contract. `createPackage`
+delegates to this route instead of the legacy filename-filtered archive builder.
+Legacy texture/platform flag accessors remain for compatibility but do not alter
+saved resource profiles. This public virtual-interface change requires matching
+rebuilt native consumers and bindings.
+
+Admission requires a running project, queue and worker pool. It reads the bounded
+profile, verifies the actual source root against the active project, and captures
+resolved request arguments before queueing. Overlapping builds and silently
+rejected queue submissions fail explicitly. `ResourcePackageJob` rejects primary
+thread execution, snapshots only its captured request, starts the deployed CLI
+without a shell and waits only for that child. Restricted inherited handles carry
+stdout/stderr and a cooperative cancellation event. A Windows Job Object owns
+child lifetime. Result state and logs are detached from application/UI lifetime.
+
+Project path changes and manager/window unload request cancellation. An unstarted
+job stopped by queue shutdown finalizes as cancelled and cannot run later.
+Cancellation checks run before authoring setup, between root compilations and
+before export. In-progress compilation/export may finish; a committed output
+remains success. Normal completion removes the immutable request snapshot and
+retains its unique log. Process-crash orphan cleanup, retention quotas and
+interruption inside a compiler/export remain open.
+
+The Editor target depends on the package executable. Editor installation includes
+that executable, its runtime dependency closure and the RapidJSON license used by
+the shared profile parser. `BuildEditorPackage.ps1` now runs the real checked CLI
+profile fixture from the relocated read-only installation with a system-only child
+PATH, in addition to the existing Editor startup/negative-input checks.
+
+New validation lanes are `WorkphoneAssets.package_editor_workflow` (production Lua
+window with strict UI doubles) and `WorkphoneAssets.package_jobs` (native manager,
+real Lua bindings, worker execution and actual child process). Native contracts
+cover worker/queue admission, immutable queued requests, overlap, cancel/stop,
+nonzero exits, retry, project switching, unload and snapshot/log lifecycle. The
+job fixture also relocates a resulting package, removes authoring sources/catalog/
+cooked data, makes package files read-only and runs an actual LuaManager consumer
+with filesystem module search disabled. This is typed Lua execution/require
+evidence, not scene/mesh/animation/audio/UI-family certification.
+
+Current-source Windows/MSVC v145 RelWithDebInfo builds passed for the package tool,
+native job/consumer host, catalog/resource/cooked-graphics/Lua test targets and
+Editor, including affected dependencies. A final follow-up rebuild included the
+queue-stop handling and corrected external-output native fixture. The nine-suite
+CTest gate passed **9/9 in 41.27 seconds**: catalog (14.83 s), cooked graphics
+(11.11 s), Lua runtime (0.81 s), resource (2.60 s), writer lease (3.40 s), index
+migration (0.45 s), PackageEditor Lua workflow (0.01 s), native package jobs and
+Lua consumer (1.39 s), and package CLI/profiles (6.41 s). `git diff --check` passed.
+Logs: `project_x64/resource-package-editor-final-build.log`,
+`project_x64/resource-package-editor-validation-build.log` and
+`project_x64/resource-package-editor-final-tests.log`. The first native job run
+correctly rejected a test output inside its source root; the fixture now exports
+outside the project, retaining that overlap guard. The first build's local
+`Handle` helper collided with the engine's type and was renamed before the final
+passing rebuilds.
+
+The first installed-package pass returned exit 0 despite a PackageEditor Lua
+overload traceback: native `setEnabled` requires the child-propagation argument.
+The window now passes both booleans, its strict UI double enforces that arity,
+and installed-package validation rejects Lua tracebacks/overload errors even on
+exit 0. The earlier `resource-editor-validation-20261018-c146ecad` candidate is
+explicitly rejected/superseded by its `resource-package-review.json` annotation.
+The final nine-suite gate above includes the corrected window and stricter test.
+
+Final installed-package validation passed in
+`project_graphics_sdk/resource-editor-validation-20261018-7af6c738/`.
+`editor-package-evidence.json` records `validationPassed=true` and
+`releaseCertified=false`. The candidate includes the runtime archive, separate
+symbols archive, payload/module SHA-256 inventories and per-check logs. Checks
+passed for relocated resource CLI/profile contracts, read-only Editor startup,
+cross-volume startup, rejection of Debug harness packaging, and expected failures
+for missing media/plugin inputs. Loaded modules were confined to the installation
+and Windows, and the installed payload remained byte-for-byte unchanged. Final
+driver log: `project_x64/resource-editor-install-final-validation.log`.
+
+No Debug test build, interactive artist walkthrough, clean-machine validation,
+completed license audit, full-family game launch, representative hardware capture,
+process-kill/power-loss certification or scale/soak/performance acceptance was
+performed. The installed candidate and typed Lua test do not substitute for those
+remaining mandatory gates.
+Full R1/R2 shipping certification remains open until the declared family matrix,
+interactive workflows, recovery/soak/performance and representative hardware gates
+in the production plan are satisfied.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -1061,8 +1154,9 @@ the same immutable resource pipeline.
    typed compile/install/platform dependency modes, invalidation and cycle policy.
    Indexed forward/reverse queries and project missing/type diagnostics now exist.
 4. Integrate the runtime UUID map and pinned directory export with typed consumers,
-   PackageEditor, shared Editor/CLI profile controls and owner-thread publication throughout the Editor and shipping
-   sample; enforce shipping eligibility and complete asynchronous session-safe jobs.
+   full PackageEditor profile authoring and owner-thread publication throughout the
+   Editor and shipping sample. Extend the owned Windows package job to the
+   remaining asynchronous requests/residency and platform requirements.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;
    implement domain editing, previews, full reference coverage, packaging controls and
    the declared format-family matrix.

@@ -58,9 +58,9 @@ function PackageEditor:update()
         self.statusText:setText(message)
         self.lastStatus = message
     end
-    self.profileEntry:setEnabled(not busy)
-    self.buildButton:setEnabled(not busy)
-    self.cancelButton:setEnabled(busy)
+    self.profileEntry:setEnabled(not busy, false)
+    self.buildButton:setEnabled(not busy, false)
+    self.cancelButton:setEnabled(busy, false)
 end
 
 function PackageEditor:handleEvent(parameters, results)

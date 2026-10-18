@@ -18,7 +18,10 @@ local function element()
     function result:setElementId(value) self.id=value end
     function result:getElementId() return self.id end
     function result:setVisible(value) self.visible=value end
-    function result:setEnabled(value) self.enabled=value end
+    function result:setEnabled(value, cascade)
+        assert(type(value)=="boolean" and type(cascade)=="boolean", "Native setEnabled requires two booleans")
+        self.enabled=value
+    end
     function result:addChild(value) table.insert(self.children, value); value.parent=self end
     function result:getParent() return self.parent end
     function result:removeChild(value)

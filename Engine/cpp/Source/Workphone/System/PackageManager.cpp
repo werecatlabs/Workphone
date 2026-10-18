@@ -66,7 +66,7 @@ namespace workphone
             if(!queue || !queue->isRunning() || !app->isRunning() || app->getQuit() || app->getProjectPath().empty())
                 throw std::runtime_error("A project and job queue are required");
             auto workers = app->getThreadPool();
-            if(!workers || workers->getNumThreads() == 0)
+            if(!workers || workers->getNumThreads() == 0 || workers->getState() != IThreadPool::State::Start)
                 throw std::runtime_error("Resource packaging requires a worker thread pool");
             const auto project = fs::canonical(fs::u8path(app->getProjectPath().c_str()));
             auto profile = fs::u8path(m_resourcePackageProfile.c_str());
@@ -97,6 +97,11 @@ namespace workphone
             m_resourcePackageRequest = request;
             try { queue->addJob(job); }
             catch(...) { m_resourcePackageRequest.reset(); throw; }
+            if(job->getState() == IJob::State::Ready)
+            {
+                m_resourcePackageRequest.reset();
+                throw std::runtime_error("The job queue did not accept the package request");
+            }
             return true;
         }
         catch(const std::exception &error)

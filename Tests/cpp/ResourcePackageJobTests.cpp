@@ -23,13 +23,20 @@ namespace
     {
     public:
         SmartPtr<IJob> captured;
+        bool accepting = true;
         bool isRunning() const override { return true; }
-        void addJob(SmartPtr<IJob> job) override { captured = job; }
+        void addJob(SmartPtr<IJob> job) override
+        {
+            if(!accepting) return;
+            job->setState(IJob::State::Queue);
+            captured = job;
+        }
     };
     class Workers final : public ThreadPool
     {
     public:
         u32 getNumThreads() const override { return 1; }
+        IThreadPool::State getState() const override { return IThreadPool::State::Start; }
     };
     void run(const fs::path &project, const fs::path &original)
     {
@@ -38,7 +45,6 @@ namespace
         app->setRunning(true);
         auto queue = make_ptr<Queue>();
         app->setJobQueue(queue);
-        app->setThreadPool(make_ptr<Workers>());
         auto manager = make_ptr<PackageManager>();
         app->setPackageManager(manager);
         {
@@ -57,7 +63,7 @@ namespace
         const auto base = loadPackageProfile(original.u8string().c_str());
         auto configure = [&](const char *name) {
             auto arguments = base;
-            const auto output = project / name;
+            const auto output = project.parent_path() / name;
             arguments[4] = output.u8string().c_str();
             const auto profile = project / (std::string(name) + ".json");
             savePackageProfile(profile.u8string().c_str(), arguments);
@@ -65,11 +71,25 @@ namespace
             return profile;
         };
         configure("cancelled-output");
+        require(!manager->startResourcePackage() && !queue->captured,
+                "Missing worker pool fails without queueing work on the UI thread");
+        app->setThreadPool(make_ptr<Workers>());
+        queue->accepting = false;
+        require(!manager->startResourcePackage() && !manager->isResourcePackageBusy(),
+                "A dropped queue request reports failure rather than staying busy");
+        queue->accepting = true;
         require(manager->startResourcePackage() && manager->isResourcePackageBusy(), "Queue package request");
         require(!manager->startResourcePackage(), "Reject overlapping manager builds");
         manager->cancelResourcePackage();
         queue->captured->execute();
-        require(manager->getResourcePackageStatus() == "cancelled" && !fs::exists(project / "cancelled-output"), "Queued cancellation prevents publication");
+        require(manager->getResourcePackageStatus() == "cancelled" && !fs::exists(project.parent_path() / "cancelled-output"), "Queued cancellation prevents publication");
+        configure("stopped-output");
+        require(manager->startResourcePackage(), "Queue before worker queue shutdown");
+        queue->captured->stop();
+        require(!manager->isResourcePackageBusy() && manager->getResourcePackageStatus() == "cancelled",
+                "Queue shutdown finalizes an unstarted request");
+        queue->captured->execute();
+        require(!fs::exists(project.parent_path() / "stopped-output"), "Stopped job cannot execute later");
         const auto profile = configure("success-output");
         require(manager->startResourcePackage(), "Queue retry after cancellation");
         // Change the selected profile after queueing. Worker must use the captured request.
@@ -85,7 +105,7 @@ namespace
         require(future.wait_for(std::chrono::seconds(60)) == std::future_status::ready, "Package child completes");
         future.get();
         require(manager->getResourcePackageStatus() == "succeeded" && !manager->isResourcePackageBusy(), "Successful child reports completion");
-        require(fs::is_regular_file(project / "success-output" / "runtime.wprm"), "Success publishes checked runtime manifest");
+        require(fs::is_regular_file(project.parent_path() / "success-output" / "runtime.wprm"), "Success publishes checked runtime manifest");
         require(fs::is_regular_file(fs::u8path(manager->getResourcePackageLogPath().c_str())), "Capture owned child log");
         fs::rename(moved, profile);
         require(manager->startResourcePackage(), "Queue occupied destination failure");
@@ -95,21 +115,21 @@ namespace
             failureJob->execute();
         }).get();
         require(manager->getResourcePackageStatus() == "failed", "Nonzero child exit propagates failure");
-        require(fs::is_regular_file(project / "success-output" / "runtime.wprm"), "Failed retry preserves last package");
+        require(fs::is_regular_file(project.parent_path() / "success-output" / "runtime.wprm"), "Failed retry preserves last package");
         configure("switch-output");
         require(manager->startResourcePackage(), "Queue before project switch");
         const auto other = project / "other-project";
         fs::create_directory(other);
         app->setProjectPath(other.u8string().c_str());
         queue->captured->execute();
-        require(!fs::exists(project / "switch-output"), "Project switch cancels queued old-session work");
+        require(!fs::exists(project.parent_path() / "switch-output"), "Project switch cancels queued old-session work");
         require(!manager->startResourcePackage(), "Reject profile bound to another project");
         app->setProjectPath(project.u8string().c_str());
         configure("unload-output");
         require(manager->startResourcePackage(), "Queue before manager unload");
         manager->unload(nullptr);
         queue->captured->execute();
-        require(!fs::exists(project / "unload-output"), "Manager unload cancels queued work");
+        require(!fs::exists(project.parent_path() / "unload-output"), "Manager unload cancels queued work");
         for(const auto &entry : fs::directory_iterator(project / ".workphone" / "package-jobs"))
             require(entry.path().extension() == ".log", "Finished requests remove immutable profile snapshots");
         queue->captured = nullptr;

@@ -123,8 +123,8 @@ reenter resource operations from the callback. A second manifest validation chec
 that artifacts and generations did not change during admission. Resolver exceptions
 fail export and clean request-owned staging. The raw explicit-binding export and
 partial-map manifest format remain available; they do not enforce catalog policy.
-PackageEditor adoption of the checked route remains open. The command-line
-resource-directory slice below uses checked catalog admission.
+PackageEditor and the command-line resource-directory slice below use checked
+catalog admission through the same saved profile request.
 
 ## Command-line resource directory packaging
 
@@ -152,7 +152,7 @@ publication, 1 for an operation/validation failure and 2 for invalid argument co
 Successful earlier root compilations remain in the derived cache if a later root
 fails; output publication is still all-or-nothing. This synchronous command does
 not provide cancellation, executable/plugin distribution,
-PackageEditor controls or additional typed compilers. It may perform the catalog's
+additional typed compilers. It may perform the catalog's
 normal supported legacy schema migration on opening; retain project backups as for
 Editor authoring. It rejects a missing catalog path rather than creating one.
 
@@ -195,6 +195,48 @@ entry. The CLI executable still requires its normal DLL dependencies. This does
 not execute Lua or install graphics/audio resources into a live consumer.
 No files are written by verification. Missing/corrupt content returns nonzero.
 
+### PackageEditor and owned background jobs
+
+PackageEditor now selects a saved JSON profile and exposes Build, Cancel, status
+and the per-request log path. Unsupported build-type/compression/platform/version
+setters have been removed from this window. Profiles remain the settings authority;
+author or edit them using the CLI/JSON workflow above. The selected path survives
+closing/reopening the window in the current manager session. The default path is
+`.workphone/package.json` relative to the active project.
+
+The native `IPackageManager` resource-package API queues one `ResourcePackageJob`
+at a time on the existing worker queue. It requires a running worker pool and
+rejects execution on the primary thread. Before queueing it reads the bounded
+profile and verifies that its source root is the current project. The detached
+request captures resolved paths and settings; later profile edits cannot redirect
+that job. The worker writes an immutable request snapshot under
+`.workphone/package-jobs`, then launches the deployed `WorkphoneResourcePackage`
+directly with Unicode arguments and a restricted inherited-handle list. No shell
+or process-wide current-directory change is used.
+
+A Windows Job Object owns the child lifetime and kills it if its owning handles
+close during process teardown. Only the package child is awaited, never the global
+job queue. Its exit status determines succeeded/failed/cancelled; stdout/stderr go
+to a unique log. Completed requests remove their snapshot; logs are retained.
+UI polling occurs on the Editor update path and never from the worker. Project
+path changes, manager unload and PackageEditor unload request cancellation.
+
+Cancellation is cooperative through an inherited event: the CLI checks before
+authoring setup, between root compilations and before export. It returns exit 3
+when cancellation wins before export. An in-progress compiler/export is allowed
+to finish; a successfully published package remains success even if cancellation
+was requested too late. This avoids misreporting a committed output as cancelled.
+Worker watchdogs, interruption within a compiler/export, process-crash orphan
+cleanup and log retention quotas remain open. A queued cancelled job still needs
+the queue to process it before its detached result becomes final.
+
+The Editor build and install package include the tool beside `Editor.exe` with
+its runtime dependency closure. The legacy texture/platform flag methods remain
+for API compatibility, but do not change a saved resource profile. Resource profile
+builds always include required eligible install dependencies. This window builds
+resource directories; it does not package game executables or certify other typed
+families or interactive workflows.
+
 ## Validation boundary
 
 `WPResourceTests` covers deterministic v3 export, invalid/duplicate/aliased/outside-
@@ -205,7 +247,9 @@ with original source/cooked storage removed and read-only runtime byte preservat
 `WorkphoneAssets.catalog_contracts` covers the real catalog-to-package UUID bridge,
 stale binding rejection and UUID-preserving authoring rename beside a pinned package.
 
-This resource-directory API does not complete PackageEditor/CLI profiles, scene/
+This resource-directory API does not complete in-window profile authoring, scene/
 mesh/animation/audio/UI typed consumer adoption, multi-mount precedence, asynchronous
 residency, executable packaging, process-kill recovery, interactive Editor acceptance
-or representative hardware/source-free shipping application certification.
+or representative hardware/full-family shipping application certification. The
+native package-job fixture separately exercises a source-free Lua consumer; that
+does not close the other typed-family or interactive release gates.

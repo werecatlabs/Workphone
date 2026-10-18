@@ -38,6 +38,17 @@ namespace workphone
     void ResourcePackageJob::stop()
     {
         m_request->cancel = true;
+        {
+            std::lock_guard<std::mutex> lock(m_request->mutex);
+            if(m_request->status == "queued")
+            {
+                m_request->status = "cancelled";
+                m_request->diagnostic = "Cancelled before execution";
+                m_request->exitCode = 3;
+                m_request->finished = true;
+                setState(IJob::State::Finish);
+            }
+        }
         Job::stop();
     }
     void ResourcePackageJob::execute()
@@ -51,15 +62,16 @@ namespace workphone
             request.finished = true;
             setState(IJob::State::Finish);
         };
+        {
+            std::lock_guard<std::mutex> lock(request.mutex);
+            if(request.finished || request.status != "queued") return;
+            request.status = "running";
+        }
         if(request.cancel) { complete("cancelled", "Cancelled before execution", 3); return; }
         if(Thread::getCurrentThreadId() == Thread::ThreadId::Primary)
         {
             complete("failed", "Package process cannot execute on the primary thread", 1);
             return;
-        }
-        {
-            std::lock_guard<std::mutex> lock(request.mutex);
-            request.status = "running";
         }
         try
         {
