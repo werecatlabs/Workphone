@@ -140,6 +140,17 @@ namespace workphone::render
     void MaterialTechnique::addPass( SmartPtr<IMaterialPass> pass )
     {
         m_children.push_back( pass );
+
+        if( m_children.size() == 1 )
+        {
+            auto material = getMaterial();
+            material->setPass( pass );
+        }
+        else
+        {
+            auto material = getMaterial();
+            material->setPass( nullptr );
+        }
     }
 
     void MaterialTechnique::removePass( SmartPtr<IMaterialPass> pass )

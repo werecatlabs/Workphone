@@ -549,6 +549,7 @@ namespace workphone
              * @see removeTechnique(), getTechniques()
              */
             SmartPtr<IMaterialTechnique> createTechnique() override;
+
             /**
              * @brief Adds an existing technique to the material's technique list.
              *
@@ -587,6 +588,14 @@ namespace workphone
              * @see removeTechnique(), createTechnique()
              */
             void removeAllTechniques() override;
+
+            SmartPtr<IMaterialTechnique> getTechnique() const;
+
+            void setTechnique( SmartPtr<IMaterialTechnique> technique );
+
+            SmartPtr<IMaterialPass> getPass() const;
+
+            void setPass( SmartPtr<IMaterialPass> pass );
 
             /**
              * @brief Gets a technique by its index.
@@ -1237,6 +1246,9 @@ namespace workphone
 
             /** Primary technique used for rendering (cached for performance) */
             AtomicSmartPtr<IMaterialTechnique> m_technique;
+
+            /** Single pass used for rendering (cached for performance) */
+            AtomicSmartPtr<IMaterialPass> m_pass;
 
             /// Optional cube texture assigned to this material.
             AtomicSmartPtr<ITexture> m_cubeTexture;

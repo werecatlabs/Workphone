@@ -107,11 +107,16 @@ namespace workphone
              */
             static const String materialTypeStr;
 
+            /**
+             * @brief Default constructor for IMaterial.
+             */
             IMaterial();
 
-            IMaterial( u32 poolTypeId ) : IResource( poolTypeId )
-            {
-            }
+            /**
+             * @brief Constructor for IMaterial with a pool type ID.
+             * @param poolTypeId The type ID of the pool to which the material belongs.
+             */
+            IMaterial( u32 poolTypeId );
 
             /**
              * @brief Virtual destructor for IMaterial.
@@ -155,6 +160,20 @@ namespace workphone
              * This method removes all material techniques from the material.
              */
             virtual void removeAllTechniques() = 0;
+
+            /**
+             * @brief Gets a material technique.
+             */
+            virtual SmartPtr<IMaterialTechnique> getTechnique() const = 0;
+
+            /**
+             * @brief Sets a material technique.
+             */
+            virtual void setTechnique( SmartPtr<IMaterialTechnique> technique ) = 0;
+
+            virtual SmartPtr<IMaterialPass> getPass() const = 0;
+
+            virtual void setPass( SmartPtr<IMaterialPass> pass ) = 0;
 
             /**
              * @brief Gets a material technique by index.

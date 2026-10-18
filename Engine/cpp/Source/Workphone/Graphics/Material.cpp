@@ -877,6 +877,13 @@ namespace workphone::render
             technique->setMaterial( this );
 
             m_techniques.push_back( technique );
+
+            auto activeTechnique = getTechnique();
+            if( !activeTechnique )
+            {
+                m_technique = technique;
+            }
+
             return technique;
         }
         catch( std::exception &e )
@@ -913,6 +920,16 @@ namespace workphone::render
         return nullptr;
     }
 
+    SmartPtr<IMaterialTechnique> Material::getTechnique() const
+    {
+        return m_technique;
+    }
+
+    void Material::setTechnique( SmartPtr<IMaterialTechnique> technique )
+    {
+        m_technique = technique;
+    }
+
     auto Material::getTechniques() const -> Array<SmartPtr<IMaterialTechnique>>
     {
         return m_techniques.snapshot();
@@ -931,15 +948,6 @@ namespace workphone::render
     void Material::setScale( const Vector3<real_Num> &scale, u32 textureIndex /*= 0*/,
                              u32 passIndex /*= 0*/, u32 techniqueIndex /*= 0 */ )
     {
-        //if( m_material )
-        //{
-        //    Ogre::Matrix4 mat = Ogre::Matrix4::IDENTITY;
-        //    mat.setScale( Ogre::Vector3( scale.X(), scale.Y(), scale.Z() ) );
-        //    m_material->getTechnique( techniqueIndex )
-        //        ->getPass( passIndex )
-        //        ->getTextureUnitState( textureIndex )
-        //        ->setTextureTransform( mat );
-        //}
     }
 
     f32 Material::getMetalness() const
@@ -2622,6 +2630,16 @@ namespace workphone::render
     bool Material::isDataDriven() const
     {
         return !m_shaderID.empty();
+    }
+
+    void Material::setPass( SmartPtr<IMaterialPass> pass )
+    {
+        m_pass = pass;
+    }
+
+    SmartPtr<IMaterialPass> Material::getPass() const
+    {
+        return m_pass;
     }
 
 }  // namespace workphone::render

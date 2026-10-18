@@ -31,6 +31,10 @@ namespace workphone::render
     {
     }
 
+    IMaterial::IMaterial( u32 poolTypeId ) : IResource( poolTypeId )
+    {
+    }
+
     IMaterial::~IMaterial() = default;
 
 }  // namespace workphone::render
