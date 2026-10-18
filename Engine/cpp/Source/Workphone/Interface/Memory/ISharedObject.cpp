@@ -38,6 +38,7 @@ namespace workphone
             std::mutex mutex;
             std::unordered_map<const ISharedObject *, std::shared_ptr<const void>> tokens;
         };
+
         ObservedLifetimes &observedLifetimes()
         {
             // Survive static shutdown: factories can destroy objects very late.
@@ -45,23 +46,30 @@ namespace workphone
             return *registry;
         }
     }  // namespace
+
     std::weak_ptr<const void> observeObjectLifetime( ISharedObject *object )
     {
         if( !object || !object->isAlive() || object->getReferences() <= 0 )
+        {
             return {};
+        }
         auto &registry = observedLifetimes();
         std::lock_guard<std::mutex> lock( registry.mutex );
         auto &token = registry.tokens[object];
         if( !token )
+        {
             token = std::make_shared<const int>( 0 );
+        }
         return token;
     }
+
     void expireObjectLifetime( const ISharedObject *object )
     {
         auto &registry = observedLifetimes();
         std::lock_guard<std::mutex> lock( registry.mutex );
         registry.tokens.erase( object );
     }
+
     namespace
     {
         constexpr s32 destroyingReferenceCount = std::numeric_limits<s32>::min();
@@ -390,8 +398,9 @@ namespace workphone
 
     void ISharedObject::setLoadingState( LoadingState state )
     {
-        auto triggerEvents = getObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS );
-        if( triggerEvents )
+        auto triggerEvents = getObjectFlags();
+        if( ( triggerEvents & OBJECT_FLAG_TRIGGER_EVENTS ) != 0 &&
+            ( triggerEvents & OBJECT_FLAG_LOADING_EVENTS ) )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
             if( applicationManager )

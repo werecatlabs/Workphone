@@ -79,9 +79,16 @@ namespace workphone
 
         /**
          * @brief Gets the object flags.
-         * @return The object flags.
+         * @param flag The flag to get.
+         * @return The object flag value.
          */
         bool getObjectFlag( u8 flag ) const;
+
+        /**
+         * @brief Gets the object flags.
+         * @return The object flags.
+         */
+        u8 getObjectFlags() const;
 
         /**
          * Returns a pointer to the `Handle` object associated with this object.
@@ -249,11 +256,6 @@ namespace workphone
         static bool isDerivedType( u32 type, u32 baseType );
         static bool isExactlyType( u32 type, u32 otherType );
     };
-
-    WPForceInline bool IObject::getObjectFlag( u8 flag ) const
-    {
-        return ( m_objectFlags & flag ) != 0;
-    }
 
 #if WP_CPP_STANDARD >= WP_CPP_2020
     template <class B>

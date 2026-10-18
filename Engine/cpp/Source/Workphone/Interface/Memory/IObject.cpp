@@ -260,6 +260,16 @@ namespace workphone
         }
     }
 
+    bool IObject::getObjectFlag( u8 flag ) const
+    {
+        return ( m_objectFlags & flag ) != 0;
+    }
+
+    u8 IObject::getObjectFlags() const
+    {
+        return m_objectFlags;
+    }
+
 #if WP_USE_CUSTOM_NEW_DELETE
 
     auto IObject::operator new( size_Num sz ) -> void *
@@ -502,6 +512,7 @@ namespace workphone
     {
         m_objectData->m_debugStr = debugStr;
     }
+
 #endif
 
 }  // namespace workphone

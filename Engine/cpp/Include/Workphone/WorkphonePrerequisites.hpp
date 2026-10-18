@@ -756,7 +756,7 @@ namespace workphone
     }  // namespace scene
 
     // Object flags
-    static const u8 OBJECT_FLAG_RESERVED = ( 1 << 0 );
+    static const u8 OBJECT_FLAG_LOADING_EVENTS = ( 1 << 0 );
     static const u8 OBJECT_FLAG_GARBAGE_COLLECTED = ( 1 << 1 );
     static const u8 OBJECT_FLAG_ALIVE = ( 1 << 2 );
     static const u8 OBJECT_FLAG_POOL_ELEMENT = ( 1 << 3 );
