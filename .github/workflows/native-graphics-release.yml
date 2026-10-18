@@ -12,7 +12,10 @@ on:
       - 'Tests/cpp/GraphicsProduction/**'
       - 'Tests/GraphicsSDKConsumer/**'
       - 'Tools/ValidateGraphicsSDK.ps1'
+      - 'Tools/ValidateGraphicsRuntime.ps1'
       - 'docs/WPGRAPHICS_NATIVE_SDK.md'
+      - 'docs/WPGRAPHICS_RUNTIME_SAMPLE.md'
+      - 'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt'
       - 'LICENSE'
   pull_request:
     paths:
@@ -24,7 +27,10 @@ on:
       - 'Tests/cpp/GraphicsProduction/**'
       - 'Tests/GraphicsSDKConsumer/**'
       - 'Tools/ValidateGraphicsSDK.ps1'
+      - 'Tools/ValidateGraphicsRuntime.ps1'
       - 'docs/WPGRAPHICS_NATIVE_SDK.md'
+      - 'docs/WPGRAPHICS_RUNTIME_SAMPLE.md'
+      - 'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt'
       - 'LICENSE'
 
 permissions:
@@ -76,7 +82,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Build, archive, extract and consume native SDK
+      - name: Build SDK and validate extracted SDK/runtime packages
         shell: pwsh
         run: ./Tools/ValidateGraphicsSDK.ps1 -Generator 'Visual Studio 17 2022'
       - uses: actions/upload-artifact@v4

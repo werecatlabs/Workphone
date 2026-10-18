@@ -649,6 +649,11 @@ if (WP_BUILD_TOOLS)
     add_subdirectory(Tools)
 endif()
 
+option(WP_INSTALL_EDITOR_PACKAGE "Enable the relocatable Windows Editor install component" OFF)
+if(WP_INSTALL_EDITOR_PACKAGE)
+    include(CMake/InstallWorkphoneEditor.cmake)
+endif()
+
 
 
 

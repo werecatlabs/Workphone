@@ -25,6 +25,16 @@ hashes are recorded and a mismatch fails validation.
 The installed sample's CTest command supplies the content path; when running the
 executable directly, pass the absolute path to `triangle.wpm` as its sole argument.
 
+The runner also installs the RelWithDebInfo C90 consumer as
+`WorkphoneGraphicsSample.exe` into a separate runtime-only ZIP. It includes the
+cooked mesh, linker PDB, notices and a hash manifest. The extracted runtime is
+launched from a fresh temporary directory, with inherited developer environment
+variables removed and PATH limited to Windows directories. Its actual loaded
+modules must reside under Windows or be the sample executable. Valid, missing
+and truncated content runs must return their exact expected exit codes; payload
+hashes must remain unchanged. See [runtime instructions](WPGRAPHICS_RUNTIME_SAMPLE.md).
+This is a local source-free launch check, not a clean-machine or GPU acceptance run.
+
 The native CI definition is `.github/workflows/native-graphics-release.yml`. It
 builds/runs isolated native contracts in Debug/RelWithDebInfo and validates the
 SDK ZIP on Windows 2022/MSVC, retaining JUnit, logs, hashes and package artifacts.

@@ -18,7 +18,7 @@ $generatorArguments = if ($Generator) { @('-G', $Generator) } else { @() }
 New-Item -ItemType Directory -Path $runRoot | Out-Null
 $commands = [System.Collections.Generic.List[object]]::new()
 $report = [ordered]@{
-    schemaVersion = 2
+    schemaVersion = 3
     architecture = $Architecture
     scope = 'Windows static native SDK; ZIP-extracted C90/C++17 consumer with cooked WPM1 mesh and software rasterization'
     validationPassed = $false
@@ -48,6 +48,8 @@ function Get-SourceSnapshot {
         (Join-Path $RepositoryRoot 'Tests/GraphicsSDKConsumer') -Recurse -File)
     $inputs += foreach ($relative in @('.gitignore', 'CMakeLists.txt', 'CMake/InstallWorkphoneGraphicsSDK.cmake',
         'CMake/WorkphoneGraphicsSDKConfig.cmake.in', 'Tools/ValidateGraphicsSDK.ps1',
+        'Tools/ValidateGraphicsRuntime.ps1', 'docs/WPGRAPHICS_RUNTIME_SAMPLE.md',
+        'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt',
         '.github/workflows/native-graphics-release.yml',
         'Engine/c/Project/WorkphoneCore/CMakeLists.txt', 'Engine/c/Project/WorkphoneGraphics/CMakeLists.txt',
         'Engine/c/Project/WorkphonePlatformWin32/CMakeLists.txt', 'LICENSE', 'docs/WPGRAPHICS_NATIVE_SDK.md')) {
@@ -124,6 +126,13 @@ try {
         Invoke-Checked "test-consumer-$config" 'ctest' @('--test-dir', $consumerBuild, '-C', $config,
             '--no-tests=error', '-V', '--output-junit', (Join-Path $runRoot "consumer-$config.xml"))
     }
+    & (Join-Path $PSScriptRoot 'ValidateGraphicsRuntime.ps1') -ConsumerBuild $consumerBuild `
+        -SdkRoot $packageRoot -OutputDirectory $runRoot -Architecture $Architecture
+    $runtimeReport = Join-Path $runRoot 'runtime-evidence.json'
+    if (-not (Get-Content -LiteralPath $runtimeReport -Raw | ConvertFrom-Json).validationPassed) {
+        throw 'Runtime deployment validation did not pass'
+    }
+    $report.runtimeReport = [ordered]@{ path = $runtimeReport; sha256 = (Get-FileHash -LiteralPath $runtimeReport -Algorithm SHA256).Hash }
     $after = Get-SourceSnapshot
     if (($snapshot | ConvertTo-Json -Depth 4 -Compress) -cne ($after | ConvertTo-Json -Depth 4 -Compress)) {
         throw 'SDK inputs changed during validation; rerun against stable sources'

@@ -63,6 +63,8 @@ install(FILES "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDKConfig.cmake"
     "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDKConfigVersion.cmake"
     DESTINATION lib/cmake/WorkphoneGraphicsSDK)
 install(FILES "${CMAKE_SOURCE_DIR}/LICENSE"
+    "${CMAKE_SOURCE_DIR}/docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt"
+    "${CMAKE_SOURCE_DIR}/docs/WPGRAPHICS_RUNTIME_SAMPLE.md"
     "${CMAKE_BINARY_DIR}/WorkphoneGraphicsSDK-dependencies.json"
     "${CMAKE_SOURCE_DIR}/docs/WPGRAPHICS_NATIVE_SDK.md"
     DESTINATION share/WorkphoneGraphicsSDK)

@@ -1,5 +1,127 @@
 # WPGraphics implementation status
 
+## Relocatable C++/Editor package candidate - 18 October 2026
+
+`WP_INSTALL_EDITOR_PACKAGE=ON` enables the `WorkphoneEditor` install component
+for the shared Windows x64 Claw/Lua RelWithDebInfo Editor. It stages the actual
+C++ Editor, Workphone/Network DLLs, eight configured plugins, resolved PE runtime
+dependencies, Lua/SQL scripts, bundled media, available notices and package
+metadata. The separate `WorkphoneEditorSymbols` component stages eleven linker
+PDBs. Debug installation is rejected because that Editor executable is a test
+harness. Unrelated install components and local settings/databases are excluded.
+
+The installed executable detects `editor-package.cfg` beside its parent `bin`
+directory. It resolves media/plugins from the package and uses a separate
+workspace (default `%LOCALAPPDATA%/Workphone/Editor`) for settings, caches, logs
+and the derived media catalog. A package-specific Editor adapter preserves the
+development defaults. `ApplicationManager::setMediaPath` now accepts absolute
+paths as documented by its existing public interface, including media on another
+volume. Startup exceptions now produce a failing exit code.
+
+`Tools/BuildEditorPackage.ps1` installs and ZIPs the candidate, extracts it outside
+the checkout into a path containing spaces, restricts the child environment and
+marks payload files read-only. The release executable's `--package-smoke` uses
+the existing headless Editor lifecycle/software renderer, checks initialized
+managers, mounted scripts and the workspace media catalog, executes a Lua owner
+binding probe, records modules while plugins are alive, then unloads normally.
+
+Current candidate: `project_graphics_sdk/editor-validation-fac85e87636c4d5685cccc1e501a5010/`.
+
+- `editor-package-evidence.json`: validation passed; five checks pass (Debug
+  install rejection, startup/teardown, missing media, missing plugin, and a G:
+  installation with a C: workspace). The 265
+  extracted payload files retain their hashes, all eight plugins are loaded,
+  and all 59 mapped modules reside inside the package or Windows.
+- `WorkphoneEditor-Windows-x64.zip`: actual C++ Editor runtime/media candidate.
+- `WorkphoneEditorSymbols-Windows-x64.zip`: eleven matching-build linker PDBs.
+- Earlier staging/launch failures are retained under `editor-validation-49059f*`
+  (missing core DLL), `editor-validation-0ca814*` (legacy media-path assertion),
+  and `editor-validation-7a06c6*` (script lookup probe and catalog destination).
+  The initial cross-drive guard failure is retained in
+  `editor-validation-308694*/cross-volume-evidence.json`; its corrected run and
+  module inventory are now part of the automated validator. The final candidate
+  includes the available Lua, STB and tinyusdz notices and ran the normal
+  configure/build/install path (`buildSkipped=false`).
+
+The build reused `project_x64`; this is local incremental-build and isolated
+startup evidence. Windows and the Microsoft Visual C++ x64 release runtime are
+prerequisites. Audio output is unavailable on this machine and is not certified.
+Interactive DX11 authoring/presentation, clean-machine installation, a cooked
+graphics sample consumed through the C++ catalog, complete dependency/media
+license auditing, a public C++ SDK consumer and full shipping certification
+remain open. The report retains `releaseCertified=false` and distinguishes
+interactive, clean-machine and license-audit status. See
+[Editor package instructions](WPGRAPHICS_EDITOR_PACKAGE.md).
+
+The rebuilt Debug `Editor.all` aggregate is **not green**: it starts 66 Boost
+cases, reports Play-mode camera/viewport activation failures, and terminates with
+a segmentation fault after 122.16 seconds. An isolated `Editor.play_mode` run
+also fails (83/85 assertions pass; camera and viewport remain inactive). A CDB
+run of `play_mode_worker_transitions` captures a first-chance access violation
+in `wp_scenenode_get_world_matrix`, through `wp_camera_get_view_matrix`,
+`ClawCamera::getViewMatrix`, `wp_graphics_rtt_job_execute` and the render worker.
+These are open release blockers; the passing package smoke does not cover them.
+The candidate evidence directory preserves the aggregate/focused logs and JUnit,
+the debugger trace and `editor-release-gates.json`. No cause or repair is claimed
+from that stack alone.
+
+The rebuilt Debug `Editor.editor_repeated_lifecycle`, `Editor.editor_start` and
+`Editor.editor_run_single_threaded` tests pass (3/3, 63.27 seconds). These focused
+results cover ordinary load/unload and update behavior; they do not override the
+failed aggregate or Play-mode release blockers. Their JUnit/logs and hashes of
+the tested Debug executables and investigation sources are retained alongside
+the package's successful startup evidence.
+
+## Source-free native runtime distribution - 18 October 2026
+
+The installed SDK consumer can now be installed as a separate RelWithDebInfo
+runtime package: `WorkphoneGraphicsSample.exe`, its linker PDB, cooked triangle,
+Workphone/STB notices, runtime instructions and a file-hash manifest. The runtime
+ZIP contains seven files and no SDK headers/libraries, CMake project or source.
+It is a console smoke application that draws into an offscreen software buffer;
+it is not an interactive game/editor or a catalog-backed runtime package.
+
+`Tools/ValidateGraphicsRuntime.ps1`, called by the SDK validator, checks the PE
+machine against the package architecture, extracts the runtime ZIP to a fresh
+temporary directory outside the checkout/SDK/build trees, verifies file hashes
+and marks all payload files read-only. Each child process receives only Windows
+root/PATH, private temporary paths and its module-report setting. It inherits no
+developer environment or compiler search paths. Valid content must exit 0 and
+produce the draw evidence; missing and truncated content must exit exactly 1
+with the mesh-load diagnostic, so a crash/loader failure cannot count as rejection.
+The success process writes its actual mapped module paths before exiting. Every
+module must be the application executable or reside under Windows. Payload
+counts and hashes must remain unchanged after all three runs.
+
+Current reports and both ZIPs are under
+`project_graphics_sdk/validation-0c229675e6374cedb6526317cccc87e6/`:
+
+- `evidence.json`: six SDK consumer checks passed across Debug, RelWithDebInfo
+  and Release; all 184 extracted SDK files match installation hashes and the
+  311 recorded inputs match the validated source snapshot.
+- `runtime-evidence.json`: all three runtime runs passed; valid content drew
+  242 nonblack software pixels. PE machine is AMD64 (`0x8664`), all seven files
+  were read-only and unchanged, and the module inventory contains the application
+  plus 20 DLLs under Windows, including `VCRUNTIME140.dll` and `ucrtbase.dll`.
+- `WorkphoneGraphicsRuntime-0.1.0-Windows-x64.zip`: runtime application distribution.
+- `WorkphoneGraphicsSDK-0.1.0-Windows-x64.zip`: native development distribution.
+
+A separate call deliberately labeling the x64 executable as Win32 was rejected
+before archive creation; see `runtime-architecture-rejection.log` and
+`architecture-rejection/runtime-evidence.json`. The CI workflow triggers on the
+runtime validator/docs and its SDK job now creates and tests both ZIPs, retaining
+their reports/logs. YAML parsing and the new trigger were checked locally; no
+remote run was dispatched.
+
+This advances the native executable-distribution subset of SHIP-03. No shared
+engine API or renderer implementation changed in this increment; the installed
+application and packaging scripts were rebuilt/validated. See
+[runtime setup](WPGRAPHICS_RUNTIME_SAMPLE.md). Windows system components and the
+release Microsoft DLL CRT remain prerequisites, and Microsoft DLLs are not bundled.
+Local isolated launch does not certify a clean machine, hardware/backend output,
+the C++/Editor/plugins distribution, catalog-backed content, device recovery or
+long mixed-scene acceptance. Both reports retain `releaseCertified=false`.
+
 ## Full-baseline material completion repair - 18 October 2026
 
 Rebuilding the full 25-target baseline exposed a separate Debug failure in

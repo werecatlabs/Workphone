@@ -26,6 +26,7 @@ foreach(_target Core Graphics PlatformWin32)
 endforeach()
 add_executable(graphics_sdk_c90 consumer.c)
 set_target_properties(graphics_sdk_c90 PROPERTIES C_STANDARD 90 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+set_target_properties(graphics_sdk_c90 PROPERTIES OUTPUT_NAME WorkphoneGraphicsSample)
 add_executable(graphics_sdk_cpp17 consumer.cpp)
 set_target_properties(graphics_sdk_cpp17 PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 foreach(_target graphics_sdk_c90 graphics_sdk_cpp17)
@@ -36,3 +37,12 @@ foreach(_target graphics_sdk_c90 graphics_sdk_cpp17)
         "${SDK_ROOT}/share/WorkphoneGraphicsSDK/sample/content/triangle.wpm")
     set_tests_properties(${_target} PROPERTIES TIMEOUT 30)
 endforeach()
+
+# This application distribution contains no SDK libraries, headers or sources.
+# A release CRT is required; Debug CRT binaries are not part of the runtime ZIP.
+install(TARGETS graphics_sdk_c90 RUNTIME DESTINATION bin CONFIGURATIONS RelWithDebInfo)
+install(FILES "$<TARGET_PDB_FILE:graphics_sdk_c90>" DESTINATION symbols CONFIGURATIONS RelWithDebInfo)
+install(FILES "${SDK_ROOT}/share/WorkphoneGraphicsSDK/sample/content/triangle.wpm" DESTINATION content)
+install(FILES "${SDK_ROOT}/share/WorkphoneGraphicsSDK/LICENSE"
+    "${SDK_ROOT}/share/WorkphoneGraphicsSDK/WPGRAPHICS_THIRD_PARTY_NOTICES.txt" DESTINATION licenses)
+install(FILES "${SDK_ROOT}/share/WorkphoneGraphicsSDK/WPGRAPHICS_RUNTIME_SAMPLE.md" DESTINATION .)

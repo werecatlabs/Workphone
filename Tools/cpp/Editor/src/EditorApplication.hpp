@@ -48,6 +48,13 @@ namespace workphone
              */
             ~EditorApplication() override;
 
+            /** Destination for the derived bundled-media index. Installed
+             * applications override this to keep the media tree read-only. */
+            virtual String getMediaCatalogPath( const String &mediaRoot ) const
+            {
+                return mediaRoot + "/.workphone/media-assets.db";
+            }
+
             /**
              * @brief Loads the editor application.
              * @param data The data to load.

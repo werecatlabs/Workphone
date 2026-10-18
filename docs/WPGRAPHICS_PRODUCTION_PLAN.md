@@ -4,6 +4,16 @@ Cross-system follow-up: [WPProcedural production and racing visual quality plan]
 
 Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).
 
+Native runtime distribution follow-up: 18 October 2026. A companion executable
+ZIP now runs independently of SDK/build/source files from a fresh temporary
+directory, with restricted environment/PATH, read-only payload checks and actual
+loaded-module inventory. Valid, missing and truncated content runs pass; the
+sample loads only its executable and Windows DLLs. PE/package architecture is
+checked, and the SDK validator/CI definition cover both ZIPs. This is an offscreen
+native console sample, not the full C++/Editor/catalog distribution or clean-machine
+certification. [Runtime setup](WPGRAPHICS_RUNTIME_SAMPLE.md) and
+[implementation evidence](WPGRAPHICS_IMPLEMENTATION_STATUS.md) record the limits.
+
 Corrupted-content follow-up: 18 October 2026. WPM1 layout, positions/bounds,
 indices and submesh spans are checked before mesh publication. Embedded file reads
 honor record offsets/boundaries. Reproduced malformed-content regressions now pass
@@ -472,8 +482,19 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
 - **SHIP-02:** Separate test outcomes into passed/failed/skipped/unavailable; require the selected backend for certification. Pin assets, capture settings and tolerances; review golden-image updates rather than automatically accepting changes.
 - **SHIP-03:** Add install/export targets, headers/libraries/dependency manifests, sample cooked content, license notices, symbols and an out-of-tree consumer that builds against the installed package.
   First native static SDK slice is implemented and locally validated on Windows
-  x64 in Debug/RelWithDebInfo. Complete the C++/Editor/shared package, cooked-content
-  sample through the C++ catalog and clean-machine acceptance before closing this work package.
+  x64 in Debug/RelWithDebInfo, with a separately extracted runtime executable ZIP
+  passing restricted-environment and read-only payload checks. A shared Windows
+  x64 C++ Editor candidate now installs/extracts with eight configured plugins,
+  separate symbols, package-relative media and a writable workspace; its actual
+  release executable passes bounded software startup/Lua/catalog/teardown and
+  missing-input checks. Complete interactive Editor and clean-machine acceptance,
+  the C++ development SDK consumer, cooked-content sample through the C++ catalog
+  and dependency/media license auditing before closing this work package.
+  The current rebuilt Debug Editor aggregate also blocks release: Play camera
+  and viewport activation assertions fail, and worker transitions reproduce an
+  access violation in camera world/view-matrix calculation on the DX11 RTT path.
+  Preserve that reproducer and repair/revalidate the transition/resource lifetime
+  before claiming Editor readiness; package startup success does not close it.
 - **SHIP-04:** Document supported hardware/features/limits, setup, resource formats, quality tiers, recovery, migration, troubleshooting and profiling.
 - **SHIP-05:** Run long-duration mixed-scene soak, repeated scene/resource reload, device recovery, corrupted-asset and memory-pressure tests. Archive evidence per candidate/version/backend.
   The WPM1 decoder corruption/stream-boundary subset is covered by x64/Win32

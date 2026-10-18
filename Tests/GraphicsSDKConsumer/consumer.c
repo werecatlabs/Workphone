@@ -6,8 +6,44 @@
 #include <WorkphoneGraphics/workphone_graphics_rtt_job.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <tlhelp32.h>
 
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "Failed at line %d: %s\n", __LINE__, #x); return 1; } } while (0)
+
+/* Optional deployment evidence, written by the running application rather than
+ * inferred from its import table. Never overwrite an existing report. */
+static int report_loaded_modules(void)
+{
+    const wchar_t *path;
+    HANDLE file, snapshot;
+    MODULEENTRY32W entry;
+    char utf8[MAX_PATH * 4 + 1];
+    DWORD written, error;
+    int bytes, found, ok = 1;
+    path = _wgetenv(L"WP_GRAPHICS_MODULE_REPORT");
+    if(!path) return 1;
+    file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if(file == INVALID_HANDLE_VALUE) return 0;
+    snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, 0);
+    if(snapshot == INVALID_HANDLE_VALUE) { CloseHandle(file); return 0; }
+    memset(&entry, 0, sizeof(entry)); entry.dwSize = sizeof(entry);
+    found = Module32FirstW(snapshot, &entry);
+    while(found)
+    {
+        bytes = WideCharToMultiByte(CP_UTF8, 0, entry.szExePath, -1, utf8, sizeof(utf8), NULL, NULL);
+        if(bytes <= 1 || !WriteFile(file, utf8, (DWORD)(bytes - 1), &written, NULL) ||
+           written != (DWORD)(bytes - 1) || !WriteFile(file, "\n", 1, &written, NULL) || written != 1)
+        { ok = 0; break; }
+        found = Module32NextW(snapshot, &entry);
+    }
+    error = GetLastError();
+    if(!found && error != ERROR_NO_MORE_FILES) ok = 0;
+    CloseHandle(snapshot); CloseHandle(file);
+    return ok;
+}
 
 int main(int argc, char **argv)
 {
@@ -30,7 +66,9 @@ int main(int argc, char **argv)
     const wp_u8 *pixels;
     int i, coloured;
 
-    CHECK(argc == 2);
+    if(argc != 2) { fprintf(stderr, "Usage: WorkphoneGraphicsSample <cooked-mesh.wpm>\n"); return 2; }
+    mesh = wp_graphics_mesh_read(argv[1]);
+    if(!mesh) { fprintf(stderr, "Cannot load cooked mesh: %s\n", argv[1]); return 1; }
     system = wp_graphics_system_create();
     renderer = wp_renderer_create_software(32, 32, WORKPHONE_PIXEL_FORMAT_RGBA8);
     pool = wp_threadpool_create(2);
@@ -39,7 +77,6 @@ int main(int argc, char **argv)
     CHECK(scene);
     node = wp_graphics_scene_create_node(scene);
     object = wp_graphics_scene_create_object(scene);
-    mesh = wp_graphics_mesh_read(argv[1]);
     CHECK(node && object && mesh);
     CHECK(wp_graphics_mesh_get_vertex_count(mesh) == 3);
     CHECK(wp_graphics_mesh_compute_obb(mesh));
@@ -87,6 +124,7 @@ int main(int argc, char **argv)
     wp_graphics_mesh_destroy(mesh);
     wp_threadpool_destroy(pool);
     wp_renderer_destroy(renderer);
+    CHECK(report_loaded_modules());
     printf("Installed SDK: cooked WPM1 mesh, transforms, shared cull publication, update/render, %d software pixels; RTT linkage OK\n", coloured);
     return 0;
 }

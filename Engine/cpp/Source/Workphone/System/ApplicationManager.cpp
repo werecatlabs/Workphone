@@ -1123,8 +1123,8 @@ namespace workphone::core
 
     void ApplicationManager::setMediaPath( const String &mediaPath )
     {
-        WP_ASSERT( !( Path::isPathAbsolute( mediaPath ) == true ) );
-
+        // Installed media can be on a different volume from the writable
+        // workspace. The public contract accepts absolute media paths.
         ScopedLock lock( this );
         m_mediaPath = mediaPath;
     }

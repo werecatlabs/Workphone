@@ -272,6 +272,7 @@ namespace workphone::scene
                     if( !cameraActor->getFlag( IGameActor::ActorFlagIsEditor ) )
                     {
                         auto enable = camera->isEnabled() && cameraActor->isEnabledInScene();
+                        std::cerr << "CAMTRACE reset " << cameraActor->getName().c_str() << " enabled=" << enable << " component=" << camera->isEnabled() << " actor=" << cameraActor->isEnabledInScene() << std::endl;
                         camera->setActive( enable );
 
                         auto rtt = getEditorRTT();

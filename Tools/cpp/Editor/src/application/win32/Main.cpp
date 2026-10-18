@@ -46,10 +46,20 @@ int main( int argc, char *argv[] )
     return EXIT_FAILURE;
 }
 #else
+#    include "EditorPackage.hpp"
 int main( int argc, char *argv[] )
 {
     try
     {
+        for( int i = 1; i < argc; ++i )
+        {
+            if( strcmp( argv[i], "--help" ) == 0 || strcmp( argv[i], "-h" ) == 0 )
+            {
+                printf( "Usage: Editor [--software|--dx11] [--workspace PATH] [--package-root PATH] [--package-smoke]\n" );
+                return EXIT_SUCCESS;
+            }
+        }
+        editor::EditorPackage package( argc, argv );
         auto typeManager = workphone::make_shared<TypeManager>();
         typeManager->load();
         TypeManager::setInstance( typeManager.get() );
@@ -75,17 +85,24 @@ int main( int argc, char *argv[] )
                 rendererType = render::IGraphicsSystem::RenderApi::DX11;
                 rendererExplicit = true;
             }
-            else if( strcmp( argv[i], "--help" ) == 0 || strcmp( argv[i], "-h" ) == 0 )
-            {
-                printf( "Usage: LioncatEditor [--software|--dx11]\n" );
-                return 0;
-            }
             // TODO: Handle project path argument if needed
         }
 
+        int result = EXIT_SUCCESS;
         try
         {
-            auto app = workphone::make_ptr<editor::EditorApplication>();
+            auto app = workphone::make_ptr<editor::PackagedEditorApplication>();
+            if( !package.root.empty() )
+            {
+                app->mediaDirectory = ( package.root / "Media" ).generic_string().c_str();
+                app->pluginConfiguration = ( package.workspace / "wp_plugins_package.cfg" ).generic_string().c_str();
+                app->catalogFile = ( package.workspace / "Cache/media-assets.db" ).generic_string().c_str();
+            }
+            else
+            {
+                app->mediaDirectory = app->Application::getMediaPath();
+                app->pluginConfiguration = "wp_plugins_editor.cfg";
+            }
 
             // Set the renderer type for the application
             if( rendererExplicit )
@@ -96,24 +113,38 @@ int main( int argc, char *argv[] )
             const auto maxThreads = 12;
             const auto numThreads = (s32)Thread::hardware_concurrency();
             const auto threads = Math<s32>::min( numThreads, maxThreads );
-            app->setActiveThreads( threads );
+            app->setActiveThreads( package.smoke ? 0 : threads );
             //app->setActiveThreads( 0 );
 
             app->setCreateFrameStatistics( false );
-            app->setDebugMode( false );
+            app->setDebugMode( package.smoke );
+            if( package.smoke ) app->setRendererType( render::IGraphicsSystem::RenderApi::Software );
 
 #    if !WP_FINAL
             auto flags = app->getApplicationFlags();
-            app->setApplicationFlags( flags | core::IApplication::developerModeFlag );
+            if( package.root.empty() )
+                app->setApplicationFlags( flags | core::IApplication::developerModeFlag );
 #    endif
 
             app->load( nullptr );
-            app->run();
+            try
+            {
+                if( !app->isLoaded() ) throw std::runtime_error( "Editor failed to load" );
+                if( package.smoke ) package.verifyStartup( app );
+                else app->run();
+            }
+            catch( ... )
+            {
+                app->unload( nullptr );
+                throw;
+            }
             app->unload( nullptr );
+            if( package.smoke ) std::cout << "Editor package startup and teardown passed" << std::endl;
         }
         catch( const std::exception &e )
         {
-            std::cout << e.what() << std::endl;
+            std::cerr << e.what() << std::endl;
+            result = EXIT_FAILURE;
         }
 
         if( typeManager )
@@ -122,12 +153,13 @@ int main( int argc, char *argv[] )
             TypeManager::setInstance( nullptr );
             typeManager = nullptr;
         }
+        return result;
     }
     catch( const std::exception &e )
     {
-        std::cout << e.what() << std::endl;
+        std::cerr << e.what() << std::endl;
     }
 
-    return 0;
+    return EXIT_FAILURE;
 }
 #endif

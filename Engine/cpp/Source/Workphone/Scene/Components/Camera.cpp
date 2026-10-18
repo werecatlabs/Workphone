@@ -454,6 +454,7 @@ namespace workphone::scene
 
     void Camera::setActive( bool active )
     {
+        std::cerr << "CAMTRACE active " << this << " " << (getActor() ? getActor()->getName().c_str() : "none") << " " << active << std::endl;
         m_isActive = active;
 
         updateActiveState( m_isActive );

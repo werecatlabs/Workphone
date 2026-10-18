@@ -1697,7 +1697,7 @@ namespace workphone::editor
         if( canonicalAssetCatalogRoot( applicationManager->getMediaPath(), mediaRoot,
                                        mediaCatalogError ) )
         {
-            const auto catalogPath = mediaRoot + "/.workphone/media-assets.db";
+            const auto catalogPath = getMediaCatalogPath( mediaRoot );
             auto mediaCatalog = openMediaAssetCatalog( mediaRoot, mediaCatalogError, catalogPath );
             if( mediaCatalog && resourceDatabase->setMediaCatalog( mediaCatalog ) )
             {
