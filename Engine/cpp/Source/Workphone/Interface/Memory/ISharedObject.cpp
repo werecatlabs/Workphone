@@ -400,7 +400,7 @@ namespace workphone
     {
         auto triggerEvents = getObjectFlags();
         if( ( triggerEvents & OBJECT_FLAG_TRIGGER_EVENTS ) != 0 &&
-            ( triggerEvents & OBJECT_FLAG_LOADING_EVENTS ) )
+            ( triggerEvents & OBJECT_FLAG_LOADING_EVENTS ) != 0 )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
             if( applicationManager )
