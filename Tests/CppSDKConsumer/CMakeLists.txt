@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 3.24)
+set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Release" CACHE STRING "SDK-compatible configurations")
+set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreadedDLL CACHE STRING "SDK DLL CRT")
+project(WorkphoneCppSDKConsumer LANGUAGES CXX)
+find_package(WorkphoneCppSDK 0.1 CONFIG REQUIRED)
+add_executable(cpp-sdk-consumer main.cpp)
+target_link_libraries(cpp-sdk-consumer PRIVATE WorkphoneCpp::Graphics)
+enable_testing()
+add_test(NAME cpp-sdk-consumer COMMAND cpp-sdk-consumer)
+# Resolve DLL imports from the extracted package rather than the checkout.
+get_target_property(_sdk_dll WorkphoneCpp::Core IMPORTED_LOCATION_RELWITHDEBINFO)
+get_filename_component(_sdk_bin "${_sdk_dll}" DIRECTORY)
+set_tests_properties(cpp-sdk-consumer PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${_sdk_bin}")

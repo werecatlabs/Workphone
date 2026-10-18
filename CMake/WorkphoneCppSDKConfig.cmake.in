@@ -1,0 +1,40 @@
+@PACKAGE_INIT@
+if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(WorkphoneCppSDK_FOUND FALSE)
+    set(WorkphoneCppSDK_NOT_FOUND_MESSAGE "This SDK requires Windows x64/MSVC")
+    return()
+endif()
+if(NOT MSVC_VERSION EQUAL @MSVC_VERSION@)
+    message(FATAL_ERROR "This C++ SDK requires MSVC @MSVC_VERSION@ to match its DLL ABI")
+endif()
+if("Debug" IN_LIST CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(FATAL_ERROR "This C++ SDK contains release CRT DLLs; select only Release/RelWithDebInfo/MinSizeRel configurations")
+endif()
+if(DEFINED CMAKE_MSVC_RUNTIME_LIBRARY AND NOT CMAKE_MSVC_RUNTIME_LIBRARY STREQUAL "MultiThreadedDLL")
+    message(FATAL_ERROR "This C++ SDK requires CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL")
+endif()
+if(NOT TARGET WorkphoneCpp::Core)
+    add_library(WorkphoneCpp::Core SHARED IMPORTED)
+    add_library(WorkphoneCpp::Graphics SHARED IMPORTED)
+    foreach(_target Core Graphics)
+        if(_target STREQUAL "Core")
+            set(_binary Workphone)
+        else()
+            set(_binary WPGraphics)
+        endif()
+        set_target_properties(WorkphoneCpp::${_target} PROPERTIES
+            IMPORTED_CONFIGURATIONS RelWithDebInfo
+            IMPORTED_IMPLIB_RELWITHDEBINFO "${PACKAGE_PREFIX_DIR}/lib/${_binary}.lib"
+            IMPORTED_LOCATION_RELWITHDEBINFO "${PACKAGE_PREFIX_DIR}/bin/${_binary}.dll"
+            MAP_IMPORTED_CONFIG_RELEASE RelWithDebInfo
+            MAP_IMPORTED_CONFIG_MINSIZEREL RelWithDebInfo
+            INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/include"
+            INTERFACE_COMPILE_FEATURES cxx_std_17
+            INTERFACE_COMPILE_DEFINITIONS "@WORKPHONE_CPP_SDK_DEFINITIONS@;_ITERATOR_DEBUG_LEVEL=0")
+        if(NOT EXISTS "${PACKAGE_PREFIX_DIR}/bin/${_binary}.dll" OR NOT EXISTS "${PACKAGE_PREFIX_DIR}/lib/${_binary}.lib")
+            message(FATAL_ERROR "Install both WorkphoneEditor and WorkphoneCppSDK components into this prefix")
+        endif()
+    endforeach()
+    set_property(TARGET WorkphoneCpp::Graphics PROPERTY INTERFACE_LINK_LIBRARIES WorkphoneCpp::Core)
+endif()
+check_required_components(WorkphoneCppSDK)
