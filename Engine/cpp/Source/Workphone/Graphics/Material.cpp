@@ -137,6 +137,9 @@ namespace workphone::render
     {
         setObjectFlag( OBJECT_FLAG_GARBAGE_COLLECTED, true );
         setObjectFlag( OBJECT_FLAG_TRIGGER_EVENTS, true );
+        // Scene material components subscribe to resource completion. Loading
+        // notifications are opt-in independently of ordinary object events.
+        setObjectFlag( OBJECT_FLAG_LOADING_EVENTS, true );
         setObjectFlag( OBJECT_FLAG_GLOBAL_EVENTS, true );
         setObjectFlag( OBJECT_FLAG_RECEIVE_EVENTS, true );
 

@@ -225,6 +225,8 @@ namespace
         component->fromData( properties );
         auto material = component->getMaterial();
         require( material && !material->isLoaded(), "scene restore must retain the pending material" );
+        require( material->getObjectFlag( OBJECT_FLAG_LOADING_EVENTS ),
+                 "materials must opt in to loading completion notifications" );
         const fs::path resolvedPath( material->getFilePath().c_str() );
         require(
             resolvedPath.is_absolute() && fs::equivalent( resolvedPath, fixture.root / "surface.mat" ),

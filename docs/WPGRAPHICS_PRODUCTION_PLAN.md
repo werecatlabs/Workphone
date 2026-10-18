@@ -4,6 +4,20 @@ Cross-system follow-up: [WPProcedural production and racing visual quality plan]
 
 Review updated: 9 October 2026. Terrain/procedural source audit at `38e012a5b`; foliage follow-up at `2a37b63ea`. See the [terrain/procedural review](WPGRAPHICS_TERRAIN_PROCEDURAL_REVIEW.md) and [foliage production plan](WPGRAPHICS_FOLIAGE_PRODUCTION_PLAN.md).
 
+Corrupted-content follow-up: 18 October 2026. WPM1 layout, positions/bounds,
+indices and submesh spans are checked before mesh publication. Embedded file reads
+honor record offsets/boundaries. Reproduced malformed-content regressions now pass
+on x64 and Win32, with the focused Win32 mesh lane added to native CI. The rebuilt
+SDK archive still passes six consumer checks; writer size and submesh growth
+arithmetic are guarded, with a valid 1,000-section round trip. Full baseline
+rebuilds also exposed and repaired a missing material loading-event opt-in. Final
+Debug and RelWithDebInfo each report 28 passed, one external-media result
+unavailable and no failures; source/executable hashes match and no dumps were
+generated. Strict validation still blocks release for missing fixtures. This is
+the native mesh subset of SHIP-05; full backend/resource recovery, pressure and
+mixed-scene acceptance remain open.
+See [implementation status](WPGRAPHICS_IMPLEMENTATION_STATUS.md) for evidence.
+
 Native release follow-up: 18 October 2026. The SDK ZIP now includes a WPM1 mesh
 cooked through the existing writer and loaded by the runtime sample. All extracted
 files match installation hashes; Debug/RelWithDebInfo cooks match. Six consumer
@@ -462,6 +476,9 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
   sample through the C++ catalog and clean-machine acceptance before closing this work package.
 - **SHIP-04:** Document supported hardware/features/limits, setup, resource formats, quality tiers, recovery, migration, troubleshooting and profiling.
 - **SHIP-05:** Run long-duration mixed-scene soak, repeated scene/resource reload, device recovery, corrupted-asset and memory-pressure tests. Archive evidence per candidate/version/backend.
+  The WPM1 decoder corruption/stream-boundary subset is covered by x64/Win32
+  regressions and a focused MSVC AddressSanitizer run. The remaining asset formats,
+  recovery, pressure and mixed-scene gates still require their own evidence.
 
 **GR:** Ship only after the applicable R1/R2 gates below pass. Release notes identify certified configurations and experimental features.
 

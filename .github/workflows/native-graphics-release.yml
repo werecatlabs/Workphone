@@ -38,27 +38,32 @@ jobs:
       fail-fast: false
       matrix:
         configuration: [Debug, RelWithDebInfo]
+        architecture: [x64, Win32]
     steps:
       - uses: actions/checkout@v4
       - name: Configure isolated native contracts
         shell: pwsh
         run: |
-          cmake -S . -B project_graphics_contracts -G "Visual Studio 17 2022" -A x64 -DWP_BUILD_GRAPHICS_CONTRACTS_ONLY=ON
+          cmake -S . -B project_graphics_contracts -G "Visual Studio 17 2022" -A ${{ matrix.architecture }} -DWP_BUILD_GRAPHICS_CONTRACTS_ONLY=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build native contracts
         shell: pwsh
         run: |
-          cmake --build project_graphics_contracts --config ${{ matrix.configuration }} --parallel 4
+          # Win32 covers the mesh decoder's 32-bit size arithmetic; the full
+          # native/SDK release lane remains x64.
+          $targets = if ('${{ matrix.architecture }}' -eq 'Win32') { @('--target', 'WorkphoneGraphicsMeshTests') } else { @() }
+          cmake --build project_graphics_contracts --config ${{ matrix.configuration }} --parallel 4 @targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run native contracts
         shell: pwsh
         run: |
-          ctest --test-dir project_graphics_contracts -C ${{ matrix.configuration }} --no-tests=error --output-on-failure --output-junit native-results.xml
+          $selection = if ('${{ matrix.architecture }}' -eq 'Win32') { @('-R', '^WorkphoneGraphics.mesh_serializer$') } else { @() }
+          ctest --test-dir project_graphics_contracts -C ${{ matrix.configuration }} --no-tests=error --output-on-failure --output-junit native-results.xml @selection
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: native-contracts-${{ matrix.configuration }}
+          name: native-contracts-${{ matrix.architecture }}-${{ matrix.configuration }}
           path: |
             project_graphics_contracts/native-results.xml
             project_graphics_contracts/Testing/Temporary/LastTest.log

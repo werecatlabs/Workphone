@@ -52,7 +52,21 @@ static __declspec( align( 8 ) ) volatile __int64 wp_mesh_generation;
 
 static uint64_t wp_mesh_next_generation( void )
 {
+#if defined(_M_IX86)
+    /* MSVC x86 provides the 64-bit compare/exchange intrinsic, but not the
+     * increment intrinsic. Keep the lifetime ID atomic on both architectures. */
+    __int64 expected, desired, observed;
+    expected = _InterlockedCompareExchange64( &wp_mesh_generation, 0, 0 );
+    for( ;; )
+    {
+        desired = (__int64)((uint64_t)expected + 1u);
+        observed = _InterlockedCompareExchange64( &wp_mesh_generation, desired, expected );
+        if( observed == expected ) return (uint64_t)desired;
+        expected = observed;
+    }
+#else
     return (uint64_t)_InterlockedIncrement64( &wp_mesh_generation );
+#endif
 }
 #else
 static uint64_t wp_mesh_generation;
@@ -359,15 +373,17 @@ wp_s32 wp_graphics_mesh_add_submesh( wp_graphics_mesh *mesh, wp_u32 index_start,
     wp_u32 new_cap;
     wp_s32 idx;
 
-    if( !mesh )
+    if( !mesh || mesh->submesh_count >= (wp_u32)INT_MAX )
     {
         return -1;
     }
 
     if( mesh->submesh_count >= mesh->submesh_cap )
     {
+        if( mesh->submesh_cap > (wp_u32)-1 / 2u ) return -1;
         new_cap = ( mesh->submesh_cap == 0u ) ? WORKPHONE_SUBMESH_INITIAL_CAP : mesh->submesh_cap * 2u;
-        new_submeshes = (wp_submesh *)realloc( mesh->submeshes, (wp_u32)new_cap * sizeof( wp_submesh ) );
+        if( (size_t)new_cap > (size_t)-1 / sizeof( wp_submesh ) ) return -1;
+        new_submeshes = (wp_submesh *)realloc( mesh->submeshes, (size_t)new_cap * sizeof( wp_submesh ) );
         if( !new_submeshes )
         {
             return -1;
