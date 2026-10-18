@@ -45,6 +45,10 @@ namespace workphone::scene
         setObjectFlag( OBJECT_FLAG_RECEIVE_EVENTS, true );
         setEventTaskFlags( Thread::Application_Flag );
 
+        // Pooled components have the same enabled default as ordinary ones.
+        // Deserialization can still explicitly restore a disabled component.
+        m_componentFlags = ComponentEnabledFlag;
+
 #if !WP_FINAL
         String debugStr = getDebugStr() + DebugUtil::getStackTrace();
         setDebugStr( debugStr );

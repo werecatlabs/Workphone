@@ -196,6 +196,7 @@ namespace
         {
             auto camera = addActor( name )->addComponent<scene::Camera>();
             BOOST_REQUIRE( camera );
+            BOOST_REQUIRE_MESSAGE( camera->isEnabled(), "New pooled cameras must start enabled" );
             settle();
             return camera;
         }
@@ -203,7 +204,7 @@ namespace
         SmartPtr<scene::Camera> gameCamera( const String &name = "GameCamera" )
         {
             auto actor = scene->findActorByName( name );
-            BOOST_REQUIRE_MESSAGE( actor, "Game camera actor was lost" );
+            BOOST_REQUIRE_MESSAGE( actor, "Game camera actor was lost: " << name.c_str() );
             auto camera = actor->getComponent<scene::Camera>();
             BOOST_REQUIRE( camera );
             return camera;
@@ -435,6 +436,14 @@ BOOST_FIXTURE_TEST_CASE( play_mode_camera_eligibility, PlayModeFixture )
     checkRenderedCamera( disabledActor, false );
     checkRenderedCamera( childCamera, false );
     checkRenderedCamera( editorOnly, false );
+    stop();
+    // Restoring the edit snapshot must preserve explicit disabled settings,
+    // rather than replacing them with the pooled constructor's default.
+    BOOST_CHECK( !gameCamera( "DisabledComponent" )->isEnabled() );
+    BOOST_CHECK( !gameCamera( "DisabledActor" )->getActor()->isEnabled() );
+    enter();
+    checkRenderedCamera( gameCamera( "DisabledComponent" ), false );
+    checkRenderedCamera( gameCamera( "DisabledActor" ), false );
 }
 
 BOOST_FIXTURE_TEST_CASE( play_mode_no_game_camera, PlayModeFixture )
