@@ -35,6 +35,55 @@ namespace workphone::render
     const String Material::shaderIDStr = String( "Shader ID" );
     const String Material::shaderParamPrefixStr = String( "ShaderParam." );
     const String Material::shaderTexturePrefixStr = String( "ShaderTex." );
+    const String Material::editorSettingsStr = String( "editorSettings" );
+    const String Material::editorFloatsStr = String( "floats" );
+    const String Material::editorUIntsStr = String( "uints" );
+    const String Material::editorBoolsStr = String( "bools" );
+    const String Material::editorStringsStr = String( "strings" );
+    const String Material::schemesStr = String( "schemes" );
+    const String Material::texturesStr = String( "textures" );
+    const String Material::textureStr = String( "texture" );
+    const String Material::uuidStr = String( "uuid" );
+    const String Material::enumStr = String( "enum" );
+    const String Material::defaultPBRShaderIDStr = String( "DefaultPBR" );
+    const String Material::unlitShaderIDStr = String( "Unlit" );
+    const String Material::colorOnlyShaderIDStr = String( "ColorOnly" );
+    const String Material::shaderAlbedoParamStr = String( "Albedo" );
+    const String Material::shaderMetalnessParamStr = String( "Metalness" );
+    const String Material::shaderRoughnessParamStr = String( "Roughness" );
+    const String Material::shaderEmissiveParamStr = String( "Emissive" );
+    const String Material::shaderOpacityParamStr = String( "Opacity" );
+    const String Material::shaderAlphaClipParamStr = String( "AlphaClip" );
+    const String Material::shaderColorParamStr = String( "Color" );
+    const String Material::shaderParamVectorXStr = String( ".x" );
+    const String Material::shaderParamVectorYStr = String( ".y" );
+    const String Material::shaderParamVectorZStr = String( ".z" );
+    const String Material::shaderParamVectorWStr = String( ".w" );
+    const String Material::shaderParamMatrixSuffixStr[16] = {
+        String( ".m0" ),  String( ".m1" ),  String( ".m2" ),  String( ".m3" ),
+        String( ".m4" ),  String( ".m5" ),  String( ".m6" ),  String( ".m7" ),
+        String( ".m8" ),  String( ".m9" ),  String( ".m10" ), String( ".m11" ),
+        String( ".m12" ), String( ".m13" ), String( ".m14" ), String( ".m15" ) };
+    const String Material::renderModeStr = String( "renderMode" );
+    const String Material::workflowStr = String( "workflow" );
+    const String Material::specularStr = String( "specular" );
+    const String Material::normalStrengthStr = String( "normalStrength" );
+    const String Material::detailNormalStrengthStr = String( "detailNormalStrength" );
+    const String Material::alphaClipStr = String( "alphaClip" );
+    const String Material::opacityStr = String( "opacity" );
+    const String Material::blendModeStr = String( "blendMode" );
+    const String Material::depthWriteStr = String( "depthWrite" );
+    const String Material::depthTestStr = String( "depthTest" );
+    const String Material::cullModeStr = String( "cullMode" );
+    const String Material::doubleSidedStr = String( "doubleSided" );
+    const String Material::uvTilingXStr = String( "uvTilingX" );
+    const String Material::uvTilingYStr = String( "uvTilingY" );
+    const String Material::uvOffsetXStr = String( "uvOffsetX" );
+    const String Material::uvOffsetYStr = String( "uvOffsetY" );
+    const String Material::uvRotationStr = String( "uvRotation" );
+    const String Material::uvProjectionStr = String( "uvProjection" );
+    const String Material::uvSetStr = String( "uvSet" );
+    const String Material::uvTriplanarScaleStr = String( "uvTriplanarScale" );
 
     WP_CLASS_REGISTER_DERIVED( workphone::render, Material, ResourceGraphics<IMaterial> );
     WP_CLASS_REGISTER_DERIVED( workphone::render, Material::MaterialStateListener, IStateListener );
@@ -43,12 +92,6 @@ namespace workphone::render
 
     namespace
     {
-        const String EditorSettingsStr = String( "editorSettings" );
-        const String EditorFloatsStr = String( "floats" );
-        const String EditorUIntsStr = String( "uints" );
-        const String EditorBoolsStr = String( "bools" );
-        const String EditorStringsStr = String( "strings" );
-
         void applyCullModeToPasses( IMaterial *material, u32 mode )
         {
             if( !material )
@@ -1239,7 +1282,7 @@ namespace workphone::render
             for( auto technique : techniques )
             {
                 auto pTechniqueData = workphone::static_pointer_cast<Properties>( technique->toData() );
-                pTechniqueData->setName( "schemes" );
+                pTechniqueData->setName( schemesStr );
                 properties->addChild( pTechniqueData );
             }
 
@@ -1283,24 +1326,24 @@ namespace workphone::render
                 auto editorBoolProperties = SmartPtr<Properties>();
                 auto editorStringProperties = SmartPtr<Properties>();
 
-                if( auto editorProperties = properties->getChild( EditorSettingsStr ) )
+                if( auto editorProperties = properties->getChild( editorSettingsStr ) )
                 {
-                    editorFloatProperties = editorProperties->getChild( EditorFloatsStr );
-                    editorUIntProperties = editorProperties->getChild( EditorUIntsStr );
-                    editorBoolProperties = editorProperties->getChild( EditorBoolsStr );
-                    editorStringProperties = editorProperties->getChild( EditorStringsStr );
+                    editorFloatProperties = editorProperties->getChild( editorFloatsStr );
+                    editorUIntProperties = editorProperties->getChild( editorUIntsStr );
+                    editorBoolProperties = editorProperties->getChild( editorBoolsStr );
+                    editorStringProperties = editorProperties->getChild( editorStringsStr );
                 }
 
                 auto textures = Array<SmartPtr<ITexture>>();
                 textures.resize( (u32)PbsTextureTypes::NUM_PBSM_TEXTURE_TYPES );
 
                 auto textureCount = 0u;
-                if( auto texturesChild = properties->getChild( "textures" ) )
+                if( auto texturesChild = properties->getChild( texturesStr ) )
                 {
-                    auto textureChildren = texturesChild->getChildrenByName( "texture" );
+                    auto textureChildren = texturesChild->getChildrenByName( textureStr );
                     for( auto textureChild : textureChildren )
                     {
-                        auto sUUID = textureChild->getProperty( "uuid" );
+                        auto sUUID = textureChild->getProperty( uuidStr );
                         if( !StringUtil::isNullOrEmpty( sUUID ) )
                         {
                             auto uuid = StringUtil::parseUUID( sUUID );
@@ -1319,7 +1362,7 @@ namespace workphone::render
 
                 auto techniques = getTechniques();
 
-                auto schemes = properties->getChildrenByName( "schemes" );
+                auto schemes = properties->getChildrenByName( schemesStr );
                 for( auto &scheme : schemes )
                 {
                     auto technique = SmartPtr<IMaterialTechnique>();
@@ -1350,7 +1393,7 @@ namespace workphone::render
                     for( const auto &property : editorFloatProperties->getPropertiesAsArray() )
                     {
                         setEditorFloat( property.getName(), property.getValueAsFloat() );
-                        if( property.getName() == "specular" )
+                        if( property.getName() == specularStr )
                         {
                             setSpecularAmount( property.getValueAsFloat() );
                         }
@@ -1360,7 +1403,7 @@ namespace workphone::render
                 {
                     for( const auto &property : editorUIntProperties->getPropertiesAsArray() )
                     {
-                        if( property.getName() != "materialType" )
+                        if( property.getName() != materialTypeDataStr )
                         {
                             setEditorUInt( property.getName(),
                                            static_cast<u32>( property.getValueAsInt() ) );
@@ -1423,10 +1466,10 @@ namespace workphone::render
             properties->setProperty( materialTypeStr, materialTypeValueStr );
 
             auto &materialPathProperty = properties->getPropertyObject( materialTypeStr );
-            materialPathProperty.setTypeName( "enum" );
+            materialPathProperty.setTypeName( enumStr );
 
             auto enumValues = GraphicsUtil::getMaterialTypesString();
-            materialPathProperty.setAttribute( "enum", enumValues );
+            materialPathProperty.setAttribute( enumStr, enumValues );
 
             // Data-driven shader (Esoterica integration, step 5): persist the bound shader id
             // and each editable scalar/colour parameter so the choice survives save/reload.
@@ -1457,10 +1500,10 @@ namespace workphone::render
                     else if( p.m_type == MaterialShaderParameterType::Vector4 )
                     {
                         auto v = m_shaderParameters.GetVector4f( handle );
-                        properties->setProperty( key + String( ".x" ), v.x );
-                        properties->setProperty( key + String( ".y" ), v.y );
-                        properties->setProperty( key + String( ".z" ), v.z );
-                        properties->setProperty( key + String( ".w" ), v.w );
+                        properties->setProperty( key + shaderParamVectorXStr, v.x );
+                        properties->setProperty( key + shaderParamVectorYStr, v.y );
+                        properties->setProperty( key + shaderParamVectorZStr, v.z );
+                        properties->setProperty( key + shaderParamVectorWStr, v.w );
                     }
                     else if( p.m_type == MaterialShaderParameterType::Texture )
                     {
@@ -1469,15 +1512,11 @@ namespace workphone::render
                     }
                     else if( p.m_type == MaterialShaderParameterType::Matrix )
                     {
-                        static const char *kMatSuffix[16] = { ".m0",  ".m1",  ".m2",  ".m3",
-                                                              ".m4",  ".m5",  ".m6",  ".m7",
-                                                              ".m8",  ".m9",  ".m10", ".m11",
-                                                              ".m12", ".m13", ".m14", ".m15" };
                         auto m = m_shaderParameters.GetMatrix( handle );
                         const f32 *p = m.ptr();
                         for( u32 i = 0; i < 16; ++i )
                         {
-                            properties->setProperty( key + String( kMatSuffix[i] ), p[i] );
+                            properties->setProperty( key + shaderParamMatrixSuffixStr[i], p[i] );
                         }
                     }
                 }
@@ -1540,7 +1579,7 @@ namespace workphone::render
                 if( shader )
                 {
                     setShaderParameters( shader->getParameterInfo(), shader->getShaderID() );
-                    if( shader->getShaderID() == "DefaultPBR" )
+                    if( shader->getShaderID() == defaultPBRShaderIDStr )
                     {
                         syncPBRToShaderParameters();
                     }
@@ -1580,10 +1619,10 @@ namespace workphone::render
                         else if( p.m_type == MaterialShaderParameterType::Vector4 )
                         {
                             Vector4F v;
-                            v.x = properties->getPropertyAsFloat( key + String( ".x" ), 0.0f );
-                            v.y = properties->getPropertyAsFloat( key + String( ".y" ), 0.0f );
-                            v.z = properties->getPropertyAsFloat( key + String( ".z" ), 0.0f );
-                            v.w = properties->getPropertyAsFloat( key + String( ".w" ), 0.0f );
+                            v.x = properties->getPropertyAsFloat( key + shaderParamVectorXStr, 0.0f );
+                            v.y = properties->getPropertyAsFloat( key + shaderParamVectorYStr, 0.0f );
+                            v.z = properties->getPropertyAsFloat( key + shaderParamVectorZStr, 0.0f );
+                            v.w = properties->getPropertyAsFloat( key + shaderParamVectorWStr, 0.0f );
                             m_shaderParameters.SetVector4( handle, v );
                         }
                         else if( p.m_type == MaterialShaderParameterType::Texture )
@@ -1597,15 +1636,11 @@ namespace workphone::render
                         }
                         else if( p.m_type == MaterialShaderParameterType::Matrix )
                         {
-                            static const char *kMatSuffix[16] = { ".m0",  ".m1",  ".m2",  ".m3",
-                                                                  ".m4",  ".m5",  ".m6",  ".m7",
-                                                                  ".m8",  ".m9",  ".m10", ".m11",
-                                                                  ".m12", ".m13", ".m14", ".m15" };
                             Matrix4<f32> m;
                             f32 *p = m.ptr();
                             for( u32 i = 0; i < 16; ++i )
                             {
-                                p[i] = properties->getPropertyAsFloat( key + String( kMatSuffix[i] ),
+                                p[i] = properties->getPropertyAsFloat( key + shaderParamMatrixSuffixStr[i],
                                                                        0.0f );
                             }
                             m_shaderParameters.SetMatrix( handle, m );
@@ -1892,11 +1927,11 @@ namespace workphone::render
             WP_LOG_WARNING( String( "Material::setEditorBool ignored unknown setting: " ) + name );
         }
 
-        if( name == "doubleSided" )
+        if( name == doubleSidedStr )
         {
             constexpr auto cullNone = 1u;
             constexpr auto cullClockwise = 2u;
-            const auto mode = value ? cullNone : getEditorUInt( String( "cullMode" ), cullClockwise );
+            const auto mode = value ? cullNone : getEditorUInt( cullModeStr, cullClockwise );
             applyCullModeToPasses( this, mode );
         }
     }
@@ -1980,7 +2015,7 @@ namespace workphone::render
             mode = 0u;
         }
 
-        setEditorUInt( String( "renderMode" ), mode );
+        setEditorUInt( renderModeStr, mode );
 
         switch( mode )
         {
@@ -2017,23 +2052,23 @@ namespace workphone::render
     u32 Material::getRenderMode() const
     {
         auto defaultMode = isTransparent() ? 3u : ( isCutout() ? 1u : 0u );
-        return getEditorUInt( String( "renderMode" ), defaultMode );
+        return getEditorUInt( renderModeStr, defaultMode );
     }
 
     void Material::setWorkflow( u32 workflow )
     {
         // Keep this in sync with the material editor's PBR Workflow dropdown.
-        setEditorUInt( String( "workflow" ), workflow <= 3u ? workflow : 0u );
+        setEditorUInt( workflowStr, workflow <= 3u ? workflow : 0u );
     }
 
     u32 Material::getWorkflow() const
     {
-        return getEditorUInt( String( "workflow" ), 0u );
+        return getEditorUInt( workflowStr, 0u );
     }
 
     void Material::setSpecularAmount( f32 value )
     {
-        setEditorFloat( String( "specular" ), value );
+        setEditorFloat( specularStr, value );
         setSpecular( ColourF( value, value, value, 1.0f ) );
     }
 
@@ -2041,37 +2076,37 @@ namespace workphone::render
     {
         auto specular = getSpecular();
         auto defaultValue = ( specular.r + specular.g + specular.b ) / 3.0f;
-        return getEditorFloat( String( "specular" ), defaultValue );
+        return getEditorFloat( specularStr, defaultValue );
     }
 
     void Material::setNormalStrength( f32 value )
     {
-        setEditorFloat( String( "normalStrength" ), value );
+        setEditorFloat( normalStrengthStr, value );
     }
 
     f32 Material::getNormalStrength() const
     {
-        return getEditorFloat( String( "normalStrength" ), 1.0f );
+        return getEditorFloat( normalStrengthStr, 1.0f );
     }
 
     void Material::setDetailNormalStrength( f32 value )
     {
-        setEditorFloat( String( "detailNormalStrength" ), value );
+        setEditorFloat( detailNormalStrengthStr, value );
     }
 
     f32 Material::getDetailNormalStrength() const
     {
-        return getEditorFloat( String( "detailNormalStrength" ), 1.0f );
+        return getEditorFloat( detailNormalStrengthStr, 1.0f );
     }
 
     void Material::setAlphaClip( f32 value )
     {
-        setEditorFloat( String( "alphaClip" ), value );
+        setEditorFloat( alphaClipStr, value );
     }
 
     f32 Material::getAlphaClip() const
     {
-        return getEditorFloat( String( "alphaClip" ), 0.5f );
+        return getEditorFloat( alphaClipStr, 0.5f );
     }
 
     void Material::setOpacity( f32 value )
@@ -2079,7 +2114,7 @@ namespace workphone::render
         value = Math<real_Num>::clamp( value, 0.0f, 1.0f );
         m_hasPendingOpacity = true;
         m_pendingOpacity = value;
-        setEditorFloat( String( "opacity" ), value );
+        setEditorFloat( opacityStr, value );
 
         auto diffuse = getDiffuse();
         diffuse.a = value;
@@ -2101,12 +2136,12 @@ namespace workphone::render
 
     f32 Material::getOpacity() const
     {
-        return getEditorFloat( String( "opacity" ), getDiffuse().a );
+        return getEditorFloat( opacityStr, getDiffuse().a );
     }
 
     void Material::setBlendMode( u32 blendMode )
     {
-        setEditorUInt( String( "blendMode" ), blendMode );
+        setEditorUInt( blendModeStr, blendMode );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2121,12 +2156,12 @@ namespace workphone::render
 
     u32 Material::getBlendMode() const
     {
-        return getEditorUInt( String( "blendMode" ), 0u );
+        return getEditorUInt( blendModeStr, 0u );
     }
 
     void Material::setDepthWrite( bool enabled )
     {
-        setEditorBool( String( "depthWrite" ), enabled );
+        setEditorBool( depthWriteStr, enabled );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2147,16 +2182,16 @@ namespace workphone::render
             auto passes = technique->getPasses();
             for( auto pass : passes )
             {
-                return getEditorBool( String( "depthWrite" ), pass->isDepthWriteEnabled() );
+                return getEditorBool( depthWriteStr, pass->isDepthWriteEnabled() );
             }
         }
 
-        return getEditorBool( String( "depthWrite" ), true );
+        return getEditorBool( depthWriteStr, true );
     }
 
     void Material::setDepthTest( u32 mode )
     {
-        setEditorUInt( String( "depthTest" ), mode );
+        setEditorUInt( depthTestStr, mode );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2171,12 +2206,12 @@ namespace workphone::render
 
     u32 Material::getDepthTest() const
     {
-        return getEditorUInt( String( "depthTest" ), 2u );
+        return getEditorUInt( depthTestStr, 2u );
     }
 
     void Material::setCullMode( u32 mode )
     {
-        setEditorUInt( String( "cullMode" ), mode );
+        setEditorUInt( cullModeStr, mode );
 
         auto techniques = getTechniques();
         for( auto technique : techniques )
@@ -2197,80 +2232,80 @@ namespace workphone::render
             auto passes = technique->getPasses();
             for( auto pass : passes )
             {
-                return getEditorUInt( String( "cullMode" ), pass->getCullingMode() );
+                return getEditorUInt( cullModeStr, pass->getCullingMode() );
             }
         }
 
-        return getEditorUInt( String( "cullMode" ), 2u );
+        return getEditorUInt( cullModeStr, 2u );
     }
 
     void Material::setUVTiling( const Vector2F &tiling )
     {
-        setEditorFloat( String( "uvTilingX" ), tiling.X() );
-        setEditorFloat( String( "uvTilingY" ), tiling.Y() );
+        setEditorFloat( uvTilingXStr, tiling.X() );
+        setEditorFloat( uvTilingYStr, tiling.Y() );
         setScale( Vector3F( tiling.X(), tiling.Y(), 1.0f ), 0u );
     }
 
     Vector2F Material::getUVTiling() const
     {
-        return Vector2F( getEditorFloat( String( "uvTilingX" ), 1.0f ),
-                         getEditorFloat( String( "uvTilingY" ), 1.0f ) );
+        return Vector2F( getEditorFloat( uvTilingXStr, 1.0f ),
+                         getEditorFloat( uvTilingYStr, 1.0f ) );
     }
 
     void Material::setUVOffset( const Vector2F &offset )
     {
-        setEditorFloat( String( "uvOffsetX" ), offset.X() );
-        setEditorFloat( String( "uvOffsetY" ), offset.Y() );
+        setEditorFloat( uvOffsetXStr, offset.X() );
+        setEditorFloat( uvOffsetYStr, offset.Y() );
     }
 
     Vector2F Material::getUVOffset() const
     {
-        return Vector2F( getEditorFloat( String( "uvOffsetX" ), 0.0f ),
-                         getEditorFloat( String( "uvOffsetY" ), 0.0f ) );
+        return Vector2F( getEditorFloat( uvOffsetXStr, 0.0f ),
+                         getEditorFloat( uvOffsetYStr, 0.0f ) );
     }
 
     void Material::setUVRotation( f32 rotation )
     {
-        setEditorFloat( String( "uvRotation" ), rotation );
+        setEditorFloat( uvRotationStr, rotation );
     }
 
     f32 Material::getUVRotation() const
     {
-        return getEditorFloat( String( "uvRotation" ), 0.0f );
+        return getEditorFloat( uvRotationStr, 0.0f );
     }
 
     void Material::setUVProjection( u32 projection )
     {
         // Keep this in sync with the material editor's Projection dropdown.
-        setEditorUInt( String( "uvProjection" ), projection <= 6u ? projection : 0u );
+        setEditorUInt( uvProjectionStr, projection <= 6u ? projection : 0u );
     }
 
     u32 Material::getUVProjection() const
     {
-        const auto projection = getEditorUInt( String( "uvProjection" ), 0u );
+        const auto projection = getEditorUInt( uvProjectionStr, 0u );
         return projection <= 6u ? projection : 0u;
     }
 
     void Material::setUVSet( u32 uvSet )
     {
-        setEditorUInt( String( "uvSet" ), uvSet <= 3u ? uvSet : 0u );
+        setEditorUInt( uvSetStr, uvSet <= 3u ? uvSet : 0u );
     }
 
     u32 Material::getUVSet() const
     {
-        const auto uvSet = getEditorUInt( String( "uvSet" ), 0u );
+        const auto uvSet = getEditorUInt( uvSetStr, 0u );
         return uvSet <= 3u ? uvSet : 0u;
     }
 
     void Material::setTriplanarScale( f32 scale )
     {
         const auto validScale = std::isfinite( scale ) ? Math<real_Num>::max( scale, 0.0001f ) : 1.0f;
-        setEditorFloat( String( "uvTriplanarScale" ), validScale );
+        setEditorFloat( uvTriplanarScaleStr, validScale );
     }
 
     f32 Material::getTriplanarScale() const
     {
-        const auto scale = getEditorFloat( String( "uvTriplanarScale" ), 1.0f );
+        const auto scale = getEditorFloat( uvTriplanarScaleStr, 1.0f );
         return std::isfinite( scale ) ? Math<real_Num>::max( scale, 0.0001f ) : 1.0f;
     }
 
@@ -2343,7 +2378,7 @@ namespace workphone::render
         {
             auto intMessage = workphone::static_pointer_cast<StateMessageUIntValue>( message );
 
-            if( intMessage->getType() == StringUtil::getHash( "materialType" ) )
+            if( intMessage->getType() == StringUtil::getHash( materialTypeDataStr ) )
             {
                 owner->setMaterialType( static_cast<MaterialType>( intMessage->getValue() ) );
             }
@@ -2450,27 +2485,27 @@ namespace workphone::render
         // Bridge legacy PBR pass values into the data-driven buffer, but only for
         // slots the bound shader actually declares. This keeps legacy PBR materials
         // working while letting the renderer read a single data-driven buffer.
-        auto trySetScalar = [this]( const char *name, f32 value ) {
-            auto handle = m_shaderParameters.FindParameter( String( name ) );
+        auto trySetScalar = [this]( const String &name, f32 value ) {
+            auto handle = m_shaderParameters.FindParameter( name );
             if( handle.IsValid() )
             {
                 m_shaderParameters.SetScalar( handle, value );
             }
         };
-        auto trySetColour = [this]( const char *name, const ColourF &value ) {
-            auto handle = m_shaderParameters.FindParameter( String( name ) );
+        auto trySetColour = [this]( const String &name, const ColourF &value ) {
+            auto handle = m_shaderParameters.FindParameter( name );
             if( handle.IsValid() )
             {
                 m_shaderParameters.SetColour( handle, value );
             }
         };
 
-        trySetColour( "Albedo", getDiffuse() );
-        trySetScalar( "Metalness", getMetalness() );
-        trySetScalar( "Roughness", getRoughness() );
-        trySetColour( "Emissive", getEmissive() );
-        trySetScalar( "Opacity", getOpacity() );
-        trySetScalar( "AlphaClip", getAlphaClip() );
+        trySetColour( shaderAlbedoParamStr, getDiffuse() );
+        trySetScalar( shaderMetalnessParamStr, getMetalness() );
+        trySetScalar( shaderRoughnessParamStr, getRoughness() );
+        trySetColour( shaderEmissiveParamStr, getEmissive() );
+        trySetScalar( shaderOpacityParamStr, getOpacity() );
+        trySetScalar( shaderAlphaClipParamStr, getAlphaClip() );
 
         m_shaderParametersDirty = false;
     }
@@ -2489,7 +2524,9 @@ namespace workphone::render
             return;
         }
         auto const &id = m_shaderID;
-        auto target = ( id == "Unlit" || id == "ColorOnly" ) ? MaterialType::UI : MaterialType::Standard;
+        auto target = ( id == unlitShaderIDStr || id == colorOnlyShaderIDStr )
+                          ? MaterialType::UI
+                          : MaterialType::Standard;
         if( getMaterialType() != target )
         {
             setMaterialType( target );
@@ -2504,35 +2541,35 @@ namespace workphone::render
         }
         auto const &id = m_shaderID;
 
-        auto getScalar = [this]( const char *name, f32 def ) -> f32 {
-            auto h = m_shaderParameters.FindParameter( String( name ) );
+        auto getScalar = [this]( const String &name, f32 def ) -> f32 {
+            auto h = m_shaderParameters.FindParameter( name );
             return h.IsValid() ? m_shaderParameters.GetScalar( h ) : def;
         };
-        auto getColour = [this]( const char *name, const ColourF &def ) -> ColourF {
-            auto h = m_shaderParameters.FindParameter( String( name ) );
+        auto getColour = [this]( const String &name, const ColourF &def ) -> ColourF {
+            auto h = m_shaderParameters.FindParameter( name );
             return h.IsValid() ? m_shaderParameters.GetColour( h ) : def;
         };
 
-        if( id == "Unlit" )
+        if( id == unlitShaderIDStr )
         {
-            setEmissive( getColour( "Emissive", ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) ) );
-            setOpacity( getScalar( "Opacity", 1.0f ) );
+            setEmissive( getColour( shaderEmissiveParamStr, ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) ) );
+            setOpacity( getScalar( shaderOpacityParamStr, 1.0f ) );
         }
-        else if( id == "ColorOnly" )
+        else if( id == colorOnlyShaderIDStr )
         {
-            auto c = getColour( "Color", ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) );
+            auto c = getColour( shaderColorParamStr, ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) );
             setEmissive( c );
             setDiffuse( c );
-            setOpacity( getScalar( "Opacity", 1.0f ) );
+            setOpacity( getScalar( shaderOpacityParamStr, 1.0f ) );
         }
         else  // DefaultPBR (and any other PBR-style shader)
         {
-            setDiffuse( getColour( "Albedo", getDiffuse() ) );
-            setMetalness( getScalar( "Metalness", getMetalness() ) );
-            setRoughness( getScalar( "Roughness", getRoughness() ) );
-            setEmissive( getColour( "Emissive", getEmissive() ) );
-            setOpacity( getScalar( "Opacity", getOpacity() ) );
-            setAlphaClip( getScalar( "AlphaClip", getAlphaClip() ) );
+            setDiffuse( getColour( shaderAlbedoParamStr, getDiffuse() ) );
+            setMetalness( getScalar( shaderMetalnessParamStr, getMetalness() ) );
+            setRoughness( getScalar( shaderRoughnessParamStr, getRoughness() ) );
+            setEmissive( getColour( shaderEmissiveParamStr, getEmissive() ) );
+            setOpacity( getScalar( shaderOpacityParamStr, getOpacity() ) );
+            setAlphaClip( getScalar( shaderAlphaClipParamStr, getAlphaClip() ) );
         }
         m_shaderParametersDirty = false;
     }

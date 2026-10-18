@@ -80,6 +80,51 @@ namespace workphone
             static const String shaderParamPrefixStr;
             /** Property-name prefix for persisted data-driven texture slot paths. */
             static const String shaderTexturePrefixStr;
+            static const String editorSettingsStr;
+            static const String editorFloatsStr;
+            static const String editorUIntsStr;
+            static const String editorBoolsStr;
+            static const String editorStringsStr;
+            static const String schemesStr;
+            static const String texturesStr;
+            static const String textureStr;
+            static const String uuidStr;
+            static const String enumStr;
+            static const String defaultPBRShaderIDStr;
+            static const String unlitShaderIDStr;
+            static const String colorOnlyShaderIDStr;
+            static const String shaderAlbedoParamStr;
+            static const String shaderMetalnessParamStr;
+            static const String shaderRoughnessParamStr;
+            static const String shaderEmissiveParamStr;
+            static const String shaderOpacityParamStr;
+            static const String shaderAlphaClipParamStr;
+            static const String shaderColorParamStr;
+            static const String shaderParamVectorXStr;
+            static const String shaderParamVectorYStr;
+            static const String shaderParamVectorZStr;
+            static const String shaderParamVectorWStr;
+            static const String shaderParamMatrixSuffixStr[16];
+            static const String renderModeStr;
+            static const String workflowStr;
+            static const String specularStr;
+            static const String normalStrengthStr;
+            static const String detailNormalStrengthStr;
+            static const String alphaClipStr;
+            static const String opacityStr;
+            static const String blendModeStr;
+            static const String depthWriteStr;
+            static const String depthTestStr;
+            static const String cullModeStr;
+            static const String doubleSidedStr;
+            static const String uvTilingXStr;
+            static const String uvTilingYStr;
+            static const String uvOffsetXStr;
+            static const String uvOffsetYStr;
+            static const String uvRotationStr;
+            static const String uvProjectionStr;
+            static const String uvSetStr;
+            static const String uvTriplanarScaleStr;
 
             /**
              * @class MaterialStateListener
