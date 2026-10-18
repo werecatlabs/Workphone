@@ -48,7 +48,7 @@ namespace workphone
          * @par Example Usage:
          * @code
          * // Create a new material
-         * auto material = fb::make_ptr<Material>();
+         * auto material = workphone::make_ptr<Material>();
          * material->setMaterialType(MaterialType::Standard);
          *
          * // Set PBR properties
@@ -72,8 +72,6 @@ namespace workphone
         class WPCore_API Material : public ResourceGraphics<IMaterial>
         {
         public:
-            SmartPtr<IStateContext> getStateContext() const override;
-            IStateContext *getStateContextPtr() const override;
             static const String materialTypeStr;
             static const String materialTypeDataStr;
             /** Property name used to persist the bound data-driven shader id. */
@@ -1149,68 +1147,29 @@ namespace workphone
              */
             bool handleStateChanged( SmartPtr<IState> &state );
 
-            WP_CLASS_REGISTER_DECL;
-
-            //---------------------------------------------------------------------------------------
-            // Data-driven shader parameters (Esoterica integration, step 2)
-            //
-            // These methods are NOT part of IMaterial and do not change the existing PBR API.
-            // A material may optionally reference a named "shader" (a data-driven material
-            // shader that publishes a parameter list) and own a MaterialShaderParametersInstance.
-            // Legacy PBR materials keep working unchanged; new / non-PBR materials set a
-            // shaderID and a parameter list and never touch the PBR setters.
-            // syncPBRToShaderParameters() bridges the two worlds by copying the legacy pass
-            // values into the data-driven buffer for any named slots the shader declares
-            // (e.g. "Albedo", "Metalness", "Roughness").
-            //---------------------------------------------------------------------------------------
-
             /** @brief True when this material references a data-driven shader (non-PBR capable). */
-            bool isDataDriven() const
-            {
-                return !m_shaderID.empty();
-            }
+            bool isDataDriven() const;
 
             /** @brief The data-driven shader this material is bound to (empty for legacy PBR). */
-            const String &getShaderID() const
-            {
-                return m_shaderID;
-            }
+            String getShaderID() const;
 
             /** @brief Bind this material to a data-driven shader by name. Clears nothing;
              *
              * call setShaderParameters() to (re)build the parameter buffer. */
-            void setShaderID( const String &shaderID )
-            {
-                m_shaderID = shaderID;
-                m_shaderParametersDirty = true;
-            }
+            void setShaderID( const String &shaderID );
 
             /** @brief The data-driven parameter values (read/write). Invalid until
              *
              * setShaderParameters() is called. */
-            MaterialShaderParametersInstance &getShaderParameters()
-            {
-                return m_shaderParameters;
-            }
-            const MaterialShaderParametersInstance &getShaderParameters() const
-            {
-                return m_shaderParameters;
-            }
+            MaterialShaderParametersInstance &getShaderParameters();
+
+            const MaterialShaderParametersInstance &getShaderParameters() const;
 
             /** @brief (Re)build the parameter buffer from a shader's published parameter list
              * and
              * optionally bind the shader by name. */
             void setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,
-                                      const String &shaderID = String() )
-            {
-                if( !shaderID.empty() )
-                {
-                    m_shaderID = shaderID;
-                }
-                m_shaderParameters.Reset( parameterInfo );
-                m_shaderParameters.InitializeDefaultResourceHandles();
-                m_shaderParametersDirty = true;
-            }
+                                      const String &shaderID = String() );
 
             /** @brief Copy legacy PBR pass values into the data-driven buffer for any matching
              * named
@@ -1248,6 +1207,11 @@ namespace workphone
              *         legacy setTexture(path, idx)). Override in a backend to bind to the correct
              *         Hlms Pbs/Unlit semantic slots (step 3c). */
             virtual void applyDataDrivenTextures();
+
+            SmartPtr<IStateContext> getStateContext() const override;
+            IStateContext *getStateContextPtr() const override;
+
+            WP_CLASS_REGISTER_DECL;
 
         protected:
             /** @brief Initializes the internal state object for the material. */
@@ -1295,21 +1259,22 @@ namespace workphone
             /** Static counter for generating unique material names */
             static u32 m_idExt;
 
-            //--- Data-driven shader parameters (Esoterica integration, step 2) -----------------
             /** Data-driven shader this material is bound to (empty for legacy PBR materials). */
             String m_shaderID;
+
             /** Self-owned, data-driven parameter storage. See MaterialShaderParameters.hpp. */
             MaterialShaderParametersInstance m_shaderParameters;
+
             /** True when the data-driven buffer needs re-sync to the renderer. */
             bool m_shaderParametersDirty = false;
 
-            //--- Data-driven texture slots (step 5c) -------------------------------------------
             /** @brief A named texture slot and the resource path bound to it. */
             struct ShaderTextureRef
             {
                 String paramName;
                 String texturePath;
             };
+
             /** Per-slot texture resource paths for the bound data-driven shader. */
             Array<ShaderTextureRef> m_shaderTextureRefs;
         };

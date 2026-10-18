@@ -2539,4 +2539,42 @@ namespace workphone::render
         }
     }
 
+    void Material::setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,
+                                        const String &shaderID /*= String() */ )
+    {
+        if( !shaderID.empty() )
+        {
+            m_shaderID = shaderID;
+        }
+        m_shaderParameters.Reset( parameterInfo );
+        m_shaderParameters.InitializeDefaultResourceHandles();
+        m_shaderParametersDirty = true;
+    }
+
+    const workphone::render::MaterialShaderParametersInstance &Material::getShaderParameters() const
+    {
+        return m_shaderParameters;
+    }
+
+    workphone::render::MaterialShaderParametersInstance &Material::getShaderParameters()
+    {
+        return m_shaderParameters;
+    }
+
+    void Material::setShaderID( const String &shaderID )
+    {
+        m_shaderID = shaderID;
+        m_shaderParametersDirty = true;
+    }
+
+    workphone::String Material::getShaderID() const
+    {
+        return m_shaderID;
+    }
+
+    bool Material::isDataDriven() const
+    {
+        return !m_shaderID.empty();
+    }
+
 }  // namespace workphone::render

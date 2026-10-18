@@ -957,7 +957,8 @@ namespace workphone::render
                 }
             }
 
-            auto material = resolveMeshMaterial( mesh, submeshIndex );
+            auto pMaterial = resolveMeshMaterial( mesh, submeshIndex );
+            auto material = pMaterial.get();
 
             void *nativeTexture = nullptr;
             if( material )
@@ -976,9 +977,11 @@ namespace workphone::render
             {
                 continue;
             }
+
             wp_renderer_dx11_enable_shadow_receiving(
                 dx11, m_shadowsEnabled && mesh->getReceiveShadows() &&
                           ( !state || state->getFlag( receiveShadowsFlag ) ) );
+
             u32 textureSlots[] = { 1u, 2u, 3u, 13u, 22u, 24u };
             if( state )
             {
@@ -1014,6 +1017,7 @@ namespace workphone::render
                     }
                 }
             }
+
             wp_renderer_dx11_set_material_textures( dx11, textureViews );
             wp_renderer_dx11_set_material_sampler(
                 dx11, state ? state->uvWrapU : 0u, state ? state->uvWrapV : 0u,
@@ -1029,6 +1033,7 @@ namespace workphone::render
             nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
             nativeMaterial.emissive_color = { emissive.r, emissive.g, emissive.b, emissive.a };
             applySceneLighting( nativeMaterial );
+
             // A material's reflection probe overrides the sky environment for this draw.
             if( material )
             {
@@ -1050,6 +1055,7 @@ namespace workphone::render
                     }
                 }
             }
+
             nativeMaterial.surface = { material ? material->getMetalness() : 0.0f,
                                        material ? material->getRoughness() : 0.5f, 1.0f, 1.0f };
             nativeMaterial.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
@@ -1058,17 +1064,21 @@ namespace workphone::render
                                          textureViews[2] ? 1.0f : 0.0f, textureViews[3] ? 1.0f : 0.0f };
             nativeMaterial.extra_map_flags = { textureViews[4] ? 1.0f : 0.0f,
                                                textureViews[5] ? 1.0f : 0.0f, 0.0f, 0.0f };
+
             applyPrimaryMaterialUvState( material, state, nativeMaterial );
             if( dx11 )
             {
                 wp_renderer_dx11_set_material( dx11, &nativeMaterial );
             }
+
             auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() )
                                   : WORKPHONE_BLEND_MODE_NONE;
+
             if( material && material->isTransparent() && blend == WORKPHONE_BLEND_MODE_NONE )
             {
                 blend = WORKPHONE_BLEND_MODE_ALPHA;
             }
+
             wp_renderer_set_blend_mode( m_renderer, blend );
             wp_renderer_set_depth_write_enabled(
                 m_renderer, m_shadowPass || !material || material->getDepthWrite() );
