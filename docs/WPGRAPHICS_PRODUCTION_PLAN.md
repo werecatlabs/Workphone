@@ -490,11 +490,19 @@ Expose wave height/normal sampling only through a deliberate contract if gamepla
   missing-input checks. Complete interactive Editor and clean-machine acceptance,
   the C++ development SDK consumer, cooked-content sample through the C++ catalog
   and dependency/media license auditing before closing this work package.
-  The current rebuilt Debug Editor aggregate also blocks release: Play camera
-  and viewport activation assertions fail, and worker transitions reproduce an
-  access violation in camera world/view-matrix calculation on the DX11 RTT path.
-  Preserve that reproducer and repair/revalidate the transition/resource lifetime
-  before claiming Editor readiness; package startup success does not close it.
+  The Play activation default and worker camera-node retirement faults are now
+  repaired: all 20 Play-mode CTests pass, retained-camera lifecycle
+  contracts pass 32 iterations in both configurations, and the rebuilt package
+  passes its five startup/install checks. The material-selection and foliage
+  assertions are repaired by reading authored material passes without requiring
+  a selected technique. The imported-car check targeted a subsystem explicitly
+  removed in the Project clean commit; it is replaced by JSON persistence
+  coverage for the three supported car presets. The full Debug Editor aggregate
+  now passes all 66 cases (628.80 seconds); focused Debug checks and release
+  graphics/lifecycle/material sequencing also pass. The refreshed candidate is
+  `editor-validation-a9d449faa7f04984bdf52b8dc98e6624`; its evidence preserves the
+  earlier failures. Interactive, clean-machine, development SDK and licensing
+  gates above remain open.
 - **SHIP-04:** Document supported hardware/features/limits, setup, resource formats, quality tiers, recovery, migration, troubleshooting and profiling.
 - **SHIP-05:** Run long-duration mixed-scene soak, repeated scene/resource reload, device recovery, corrupted-asset and memory-pressure tests. Archive evidence per candidate/version/backend.
   The WPM1 decoder corruption/stream-boundary subset is covered by x64/Win32

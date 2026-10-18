@@ -1,5 +1,92 @@
 # WPGraphics implementation status
 
+## Material defaults and procedural vehicle persistence repair - 18 October 2026
+
+`Material::getEditorUInt` now reads authored technique/pass settings in the same
+way as the float and boolean readers. A resource with no techniques returns the
+declared defaults; a material with authored passes no longer requires the
+selected-render-technique cache to be populated. This repairs both unloaded
+material selection in the Editor and the foliage material guard. The Editor
+visibility test explicitly checks empty-resource blend/cull defaults, while the
+existing loaded-material control tests and additive/transparent foliage guards
+retain their real pass-state coverage.
+
+Git history confirms that `fa474d823` ("Project clean", 16 October) removed the
+CarVisual headers, implementation and ProceduralVehicle integration. The old
+imported-car property test and its documentation had survived that removal.
+The obsolete test is replaced by JSON component serialization round trips for
+Grand Prix, GT and Road Sport, checking preset, seed, wheelbase, LOD, paint and
+disabled state. Its individual CTest is now registered. The historical CarVisual
+document identifies the removed feature; this increment does not restore it.
+
+All five focused Debug checks pass (52.90 seconds), including the production
+graphics test, material selection/controls and vehicle serialization. Rebuilt
+Debug material-load sequencing passes; RelWithDebInfo production graphics,
+32-iteration headless lifecycle and material-load sequencing pass (3/3).
+The full Debug Editor aggregate also passes: all 66 Boost cases complete in
+628.80 seconds with no CTest failures or skips. The reports and binary/source
+hashes are archived in the candidate's `editor-release-gates.json` evidence.
+All 2,316,556 assertions pass. The CRT exit dump contains 16 allocations / 1,056
+bytes, with the exact ordered size profile of the previously investigated
+intentional lifetime/lock diagnostic registries. Both reports are archived;
+this run did not capture fresh allocation stacks or audit custom pools/drivers.
+
+The refreshed package candidate is
+`project_graphics_sdk/editor-validation-a9d449faa7f04984bdf52b8dc98e6624/`.
+Its normal build/install/relocation run passes all five package checks. It
+contains 265 unchanged payload files and separate symbols, and its loaded-module
+inventory stays inside the package or Windows. This is local validation;
+interactive authoring, clean-machine acceptance, license auditing and the wider
+shipping gates remain open.
+
+## Play camera activation and native camera retirement repair - 18 October 2026
+
+The pooled `Component(u32)` constructor now enables new components just like
+the ordinary constructor. `Camera` uses that pooled constructor; its previous
+disabled default caused `CameraManager::reset` to correctly reject the new game
+camera even though its actor was enabled. Explicit serialized disable settings
+still override the default. Play fixtures assert the initial enabled state and
+the eligibility case now checks disabled components/actors after Stop restores
+the edit snapshot and Play is entered again.
+
+`ClawCamera::unload` now detaches the native camera from its scene node before
+the generic graphics unload clears the C++ weak owner. Previously an RTT-held
+camera could outlive the node, retain its raw native pointer and read freed
+memory in `wp_scenenode_get_world_matrix`. CDB reproduced the worker-transition
+fault with freed-heap contents in that node. A retained-camera regression in
+the scene-node contracts checks native detachment and a finite view matrix
+after node destruction.
+
+All 20 registered Play-mode CTests pass (139.91 seconds), covering activation,
+eligibility, repeated/rapid requests, Play/Stop, saved and unsaved scenes, scene
+switches, camera migration/precedence and worker transitions. The extended
+headless lifecycle contracts pass 32 iterations in Debug (1.47 seconds) and
+RelWithDebInfo (0.48 seconds).
+
+The full Debug Editor aggregate now proceeds beyond Play-mode validation, but
+is still not green: after 454.12 seconds it reports missing imported-car
+properties in `procedural_components_imported_car_properties`, then a null
+material-technique assertion in `editor_material_selection_visibility_test` and
+subsequent fixture initialization failure. It starts 66 cases but does not
+produce a complete passing Boost report. These results do not repeat the
+camera activation failures or the worker camera-node access violation.
+
+The refreshed candidate is
+`project_graphics_sdk/editor-validation-68dbd2653c1147e3b41f4c528c08d640/`.
+Its normal configure/build/install validation passes all five packaging checks,
+including separate-drive startup, with 265 unchanged payload files and 59
+mapped modules inside the package or Windows. Runtime and symbol ZIPs include
+the rebuilt release camera/component fixes.
+`play-camera-evidence.json` and `editor-release-gates.json` retain the test
+outcomes, source/binary/log hashes, earlier failures and debugger traces.
+
+The broader `WPGraphics.claw_production_render` test fails at a separate null
+material-technique assertion: `Material::getEditorUInt` -> `getBlendMode` ->
+`isSupportedFoliageMaterial` during foliage scene contracts. CDB evidence is
+retained; this repair does not claim that graphics test passes or certify an
+interactive or shipping release. Earlier camera failures below are historical
+evidence superseded by the focused repair results above.
+
 ## Relocatable C++/Editor package candidate - 18 October 2026
 
 `WP_INSTALL_EDITOR_PACKAGE=ON` enables the `WorkphoneEditor` install component

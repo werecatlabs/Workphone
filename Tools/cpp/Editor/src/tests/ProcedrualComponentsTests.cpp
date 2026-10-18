@@ -42,7 +42,8 @@ namespace
     T propertyValue( SmartPtr<Properties> properties, const String &name )
     {
         T value{};
-        BOOST_REQUIRE( properties->getPropertyValue( name, value ) );
+        BOOST_REQUIRE_MESSAGE( properties->getPropertyValue( name, value ),
+                               "Missing component property: " << name.c_str() );
         return value;
     }
 
@@ -308,23 +309,40 @@ BOOST_FIXTURE_TEST_CASE( procedural_components_warbird_properties, ProceduralCom
     BOOST_CHECK_CLOSE( vehicle.getConfig().appearance.secondary.g, .065f, .01f );
 }
 
-BOOST_FIXTURE_TEST_CASE( procedural_components_imported_car_properties, ProceduralComponentFixture )
+BOOST_FIXTURE_TEST_CASE( procedural_components_vehicle_serialization, ProceduralComponentFixture )
 {
-    scene::ProceduralVehicle vehicle;
-    auto input = vehicle.getProperties();
-    input->setProperty( "Physics Preset", String( "Road Sport" ) );
-    input->setProperty( "Car Chassis Model", String( "cars/body.glb" ) );
-    input->setProperty( "Car Wheel Model", String( "cars/wheel.glb" ) );
-    input->setProperty( "Car Livery Texture", String( "cars/livery.png" ) );
-    input->setProperty( "Car Police Lights", true );
-    input->setProperty( "Car Player Lights", false );
-    vehicle.setProperties( input );
-    const auto output = vehicle.getProperties();
-    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Car Chassis Model" ), "cars/body.glb" );
-    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Car Wheel Model" ), "cars/wheel.glb" );
-    BOOST_CHECK_EQUAL( propertyValue<String>( output, "Car Livery Texture" ), "cars/livery.png" );
-    BOOST_CHECK( propertyValue<bool>( output, "Car Police Lights" ) );
-    BOOST_CHECK( !propertyValue<bool>( output, "Car Player Lights" ) );
+    // The imported CarVisual subsystem was removed in the Project clean change.
+    // Exercise the supported car presets through actual serialized component data.
+    for( const auto *preset : { "Grand Prix", "GT", "Road Sport" } )
+    {
+        BOOST_TEST_CONTEXT( preset )
+        {
+            scene::ProceduralVehicle source;
+            auto input = source.getProperties();
+            input->setProperty( "Physics Preset", String( preset ) );
+            input->setProperty( "Seed", u32( 7821 ) );
+            input->setProperty( "Wheelbase", real_Num( 2.8 ) );
+            input->setProperty( "LOD", u32( 1 ) );
+            input->setProperty( "Primary Colour", ColourF( .2f, .3f, .4f, 1 ) );
+            input->setProperty( "Secondary Colour", ColourF( .6f, .5f, .4f, 1 ) );
+            source.setProperties( input );
+            source.setEnabled( false );
+            const auto data = source.toData();
+            auto parsed = make_ptr<Properties>();
+            DataUtil::parse( DataUtil::toString( data.get(), true ), parsed.get() );
+
+            scene::ProceduralVehicle restored;
+            restored.fromData( parsed );
+            const auto output = restored.getProperties();
+            BOOST_CHECK_EQUAL( propertyValue<String>( output, "Physics Preset" ), preset );
+            BOOST_CHECK_EQUAL( restored.getConfig().seed, 7821u );
+            BOOST_CHECK_CLOSE( restored.getConfig().geometry.wheelbase, 2.8f, .01f );
+            BOOST_CHECK_EQUAL( propertyValue<u32>( output, "LOD" ), 1u );
+            BOOST_CHECK_CLOSE( restored.getConfig().appearance.primary.g, .3f, .01f );
+            BOOST_CHECK_CLOSE( restored.getConfig().appearance.secondary.r, .6f, .01f );
+            BOOST_CHECK( !restored.isEnabled() );
+        }
+    }
 }
 
 BOOST_FIXTURE_TEST_CASE( procedural_components_detached_meshes, ProceduralComponentFixture )

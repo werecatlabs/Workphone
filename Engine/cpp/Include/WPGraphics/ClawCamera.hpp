@@ -32,6 +32,8 @@ namespace workphone
              */
             ~ClawCamera() override;
 
+            void unload( SmartPtr<ISharedObject> data ) override;
+
             WP_CLASS_REGISTER_DECL;
 
             /** @name Camera Properties

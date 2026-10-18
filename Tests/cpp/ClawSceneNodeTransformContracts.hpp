@@ -1,6 +1,7 @@
 #pragma once
 
 #include <WPGraphics/ClawSceneNode.hpp>
+#include <WPGraphics/ClawCamera.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
 #include <Workphone/State/States/State.hpp>
 #include <Workphone/State/States/TransformStateData.hpp>
@@ -101,7 +102,27 @@ namespace claw_scene_node_transform_contracts
             ok &= check( node->getTransform() == desired && matches( native, desired ),
                          "changed owner transform must update both authored and native state" );
         }
+        auto camera = make_ptr<render::ClawCamera>();
+        node->attachObject( camera );
+        ok &= check( wp_camera_get_node( camera->getNativeCamera() ) == native,
+                     "camera must attach to its native scene node" );
+        // Render queues can unload the camera before its node while an RTT
+        // snapshot still retains the camera object. Generic unload drops the
+        // C++ weak owner, so native detachment must happen before that step.
+        camera->unload( nullptr );
+        ok &= check( wp_camera_get_node( camera->getNativeCamera() ) == nullptr,
+                     "unloaded retained camera must release its native node" );
         node->unload( nullptr );
+        if( !wp_camera_get_node( camera->getNativeCamera() ) )
+        {
+            const auto view = camera->getViewMatrix();
+            bool finite = true;
+            for( u32 row = 0; row < 4; ++row )
+                for( u32 column = 0; column < 4; ++column )
+                    finite &= std::isfinite( view[row][column] );
+            ok &= check( finite, "retained camera view must remain valid after node destruction" );
+        }
+        camera = nullptr;
         node->setStateContext( nullptr );
         context->removeState( state );
         state->setOwner( nullptr );

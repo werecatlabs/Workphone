@@ -419,6 +419,9 @@ BOOST_AUTO_TEST_CASE( editor_material_selection_visibility_test )
     BOOST_CHECK( visibleFileEditor );
 
     auto resource = make_ptr<render::Material>();
+    BOOST_CHECK( resource->getTechniques().empty() );
+    BOOST_CHECK_EQUAL( resource->getBlendMode(), 0u );
+    BOOST_CHECK_EQUAL( resource->getCullMode(), 2u );
     selectionManager->clearSelection();
     selectionManager->addSelectedObject( resource );
     applicationManager->getScriptManager()->loadScriptFromString( R"(

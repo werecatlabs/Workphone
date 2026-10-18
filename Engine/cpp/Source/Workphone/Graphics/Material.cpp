@@ -1886,16 +1886,22 @@ namespace workphone::render
 
     u32 Material::getEditorUInt( const String &name, u32 defaultValue ) const
     {
-        for( auto pass : m_technique->getPasses() )
+        // Authored techniques can exist before a render technique is selected,
+        // and a newly allocated resource can have none. Match the other editor
+        // setting readers rather than dereferencing the selected-technique cache.
+        for( auto technique : getTechniques() )
         {
-            if( auto stateContext = pass->getStateContext() )
+            for( auto pass : technique->getPasses() )
             {
-                if( auto state = stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
+                if( auto stateContext = pass->getStateContext() )
                 {
-                    auto value = defaultValue;
-                    if( state->getEditorUInt( name, value ) )
+                    if( auto state = stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                     {
-                        return value;
+                        auto value = defaultValue;
+                        if( state->getEditorUInt( name, value ) )
+                        {
+                            return value;
+                        }
                     }
                 }
             }

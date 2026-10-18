@@ -1,5 +1,13 @@
 # CarVisual C++17 integration
 
+Historical implementation record: the CarVisual headers, runtime sources and
+ProceduralVehicle integration described below were explicitly removed by the
+16 October 2026 `fa474d823` ("Project clean") commit. The current Editor supports
+procedural car/aircraft presets; the imported-car properties and native API below
+are unavailable. Restoring that subsystem requires a separate implementation and
+runtime validation. The obsolete imported-property test has been replaced by
+serialized component round trips for the three supported procedural car presets.
+
 The user-supplied `Claude-for-speed-main/src/vehicle/CarVisual.js` has been ported into the native C++17 vehicle path. It assembles imported body and wheel meshes; it does not procedurally create the car body. The procedural car and aircraft presets remain available.
 
 ## Editor setup

@@ -1055,6 +1055,7 @@ if (WP_EDITOR_TESTS)
         procedural_components_sky_nonfinite
         procedural_components_sky_service_recovery
         procedural_components_vehicle_properties
+        procedural_components_vehicle_serialization
         procedural_components_detached_meshes
         expired_pooled_weak_references
         editor_repeated_lifecycle

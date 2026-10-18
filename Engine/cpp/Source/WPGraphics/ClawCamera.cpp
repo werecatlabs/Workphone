@@ -18,6 +18,15 @@ namespace workphone
             wp_camera_destroy( m_camera );
         }
 
+        void ClawCamera::unload( SmartPtr<ISharedObject> data )
+        {
+            // Generic graphics unload clears the weak owner. Detach the native
+            // camera first so a retained RTT camera cannot read a freed node
+            // after its scene node is unloaded on the render task.
+            wp_camera_attach_to_node( m_camera, nullptr );
+            GraphicsCamera::unload( data );
+        }
+
         f32 ClawCamera::getFOVy() const
         {
             return wp_camera_get_fov_y( m_camera );
