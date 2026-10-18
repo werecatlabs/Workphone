@@ -169,7 +169,9 @@ namespace workphone::render
     void Material::createStateObject()
     {
         if( getStateContext() )
+        {
             return;
+        }
         auto pThis = getSharedFromThis<ISharedObject>();
 
         auto applicationManager = core::IApplicationManager::instance();
@@ -224,7 +226,9 @@ namespace workphone::render
 
         String error;
         if( !saveAssetDocumentText( filePath, properties, materialStr, error ) )
+        {
             throw std::runtime_error( error.c_str() );
+        }
     }
 
     void Material::loadFromFile( const String &filePath )
@@ -288,7 +292,9 @@ namespace workphone::render
                     auto filePath = String( fileInfo.filePath.c_str() );
                     String error;
                     if( !saveAssetDocumentText( filePath, materialData, dataStr, error ) )
+                    {
                         throw std::runtime_error( error.c_str() );
+                    }
                     wroteFile = true;
                 }
                 else
@@ -304,7 +310,9 @@ namespace workphone::render
                 {
                     String error;
                     if( !saveAssetDocumentText( filePath, materialData, dataStr, error ) )
+                    {
                         throw std::runtime_error( error.c_str() );
+                    }
 
                     FileInfo fileInfo;
                     if( fileSystem->findFileInfo( filePath, fileInfo ) )
@@ -354,12 +362,20 @@ namespace workphone::render
             if( auto context = getStateContext() )
             {
                 for( auto listener : context->getStateListeners() )
+                {
                     if( auto materialListener = dynamic_pointer_cast<MaterialStateListener>( listener ) )
+                    {
                         materialListener->setOwner( nullptr );
+                    }
+                }
                 context->setOwner( nullptr );
                 if( auto app = core::IApplicationManager::instancePtr() )
+                {
                     if( auto manager = app->getStateManager() )
+                    {
                         manager->removeStateContext( context );
+                    }
+                }
                 context->unload( nullptr );
                 m_materialStateContext = nullptr;
             }
@@ -404,8 +420,8 @@ namespace workphone::render
             static const auto defaultTextureName = String( "checker.png" );
             // A manually supplied GPU texture does not require an authoring database
             // (runtime packages and generated textures may have no source assets).
-            auto defaultTexture = resourceDatabase
-                ? resourceDatabase->loadResource( defaultTextureName ) : nullptr;
+            auto defaultTexture =
+                resourceDatabase ? resourceDatabase->loadResource( defaultTextureName ) : nullptr;
             if( defaultTexture && defaultTexture == texture )
             {
                 texture = nullptr;
@@ -507,7 +523,9 @@ namespace workphone::render
                         // in texture units beyond Ogre's fixed PBS state array.
                         const auto units = pass->getTextureUnits();
                         if( layerIdx < units.size() && units[layerIdx] )
+                        {
                             return units[layerIdx]->getTexture();
+                        }
                     }
                 }
             }
@@ -1335,19 +1353,25 @@ namespace workphone::render
                     for( const auto &property : editorUIntProperties->getPropertiesAsArray() )
                     {
                         if( property.getName() != "materialType" )
+                        {
                             setEditorUInt( property.getName(),
                                            static_cast<u32>( property.getValueAsInt() ) );
+                        }
                     }
                 }
                 if( editorBoolProperties )
                 {
                     for( const auto &property : editorBoolProperties->getPropertiesAsArray() )
+                    {
                         setEditorBool( property.getName(), property.getValueAsBool() );
+                    }
                 }
                 if( editorStringProperties )
                 {
                     for( const auto &property : editorStringProperties->getPropertiesAsArray() )
+                    {
                         setEditorString( property.getName(), property.getValue() );
+                    }
                 }
 
                 auto layerIdx = 0;
@@ -1406,7 +1430,9 @@ namespace workphone::render
                 {
                     auto handle = m_shaderParameters.FindParameter( p.m_name );
                     if( !handle.IsValid() )
+                    {
                         continue;
+                    }
                     auto key = shaderParamPrefixStr + p.m_name;
                     if( p.m_type == MaterialShaderParameterType::Scalar )
                     {
@@ -1442,7 +1468,9 @@ namespace workphone::render
                         auto m = m_shaderParameters.GetMatrix( handle );
                         const f32 *p = m.ptr();
                         for( u32 i = 0; i < 16; ++i )
+                        {
                             properties->setProperty( key + String( kMatSuffix[i] ), p[i] );
+                        }
                     }
                 }
             }
@@ -1513,25 +1541,33 @@ namespace workphone::render
                     {
                         auto handle = m_shaderParameters.FindParameter( p.m_name );
                         if( !handle.IsValid() )
+                        {
                             continue;
+                        }
                         auto key = shaderParamPrefixStr + p.m_name;
                         if( p.m_type == MaterialShaderParameterType::Scalar )
                         {
                             f32 v = 0.0f;
                             if( properties->getPropertyValue( key, v ) )
+                            {
                                 m_shaderParameters.SetScalar( handle, v );
+                            }
                         }
                         else if( p.m_type == MaterialShaderParameterType::Colour )
                         {
                             ColourF c;
                             if( properties->getPropertyValue( key, c ) )
+                            {
                                 m_shaderParameters.SetColour( handle, c );
+                            }
                         }
                         else if( p.m_type == MaterialShaderParameterType::Vector2 )
                         {
                             Vector2F v;
                             if( properties->getPropertyValue( key, v ) )
+                            {
                                 m_shaderParameters.SetVector2( handle, v );
+                            }
                         }
                         else if( p.m_type == MaterialShaderParameterType::Vector4 )
                         {
@@ -1560,8 +1596,10 @@ namespace workphone::render
                             Matrix4<f32> m;
                             f32 *p = m.ptr();
                             for( u32 i = 0; i < 16; ++i )
+                            {
                                 p[i] = properties->getPropertyAsFloat( key + String( kMatSuffix[i] ),
                                                                        0.0f );
+                            }
                             m_shaderParameters.SetMatrix( handle, m );
                         }
                     }
@@ -1805,20 +1843,16 @@ namespace workphone::render
 
     u32 Material::getEditorUInt( const String &name, u32 defaultValue ) const
     {
-        for( auto technique : getTechniques() )
+        for( auto pass : m_technique->getPasses() )
         {
-            for( auto pass : technique->getPasses() )
+            if( auto stateContext = pass->getStateContext() )
             {
-                if( auto stateContext = pass->getStateContext() )
+                if( auto state = stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                 {
-                    if( auto state =
-                            stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
+                    auto value = defaultValue;
+                    if( state->getEditorUInt( name, value ) )
                     {
-                        auto value = defaultValue;
-                        if( state->getEditorUInt( name, value ) )
-                        {
-                            return value;
-                        }
+                        return value;
                     }
                 }
             }
@@ -2443,7 +2477,9 @@ namespace workphone::render
     void Material::routeDataDrivenMaterialType()
     {
         if( !isDataDriven() )
+        {
             return;
+        }
         auto const &id = m_shaderID;
         auto target = ( id == "Unlit" || id == "ColorOnly" ) ? MaterialType::UI : MaterialType::Standard;
         if( getMaterialType() != target )
@@ -2455,7 +2491,9 @@ namespace workphone::render
     void Material::applyShaderParametersToRenderer()
     {
         if( !isDataDriven() || !m_shaderParameters.IsValid() )
+        {
             return;
+        }
         auto const &id = m_shaderID;
 
         auto getScalar = [this]( const char *name, f32 def ) -> f32 {
@@ -2516,7 +2554,9 @@ namespace workphone::render
         for( auto const &ref : m_shaderTextureRefs )
         {
             if( ref.paramName == paramName )
+            {
                 return ref.texturePath;
+            }
         }
         return String();
     }
@@ -2524,7 +2564,9 @@ namespace workphone::render
     void Material::applyDataDrivenTextures()
     {
         if( !isDataDriven() || !m_shaderParameters.IsValid() )
+        {
             return;
+        }
         // Best-effort: bind each named texture slot to a texture unit by ordinal. Backend
         // overrides (step 3c) should map these to the correct Hlms Pbs/Unlit semantic slots.
         u32 layerIdx = 0;
@@ -2532,7 +2574,9 @@ namespace workphone::render
         for( auto const &p : info )
         {
             if( p.m_type != MaterialShaderParameterType::Texture )
+            {
                 continue;
+            }
             auto path = getShaderTexture( p.m_name );
             if( !path.empty() )
             {
@@ -2554,12 +2598,12 @@ namespace workphone::render
         m_shaderParametersDirty = true;
     }
 
-    const workphone::render::MaterialShaderParametersInstance &Material::getShaderParameters() const
+    const MaterialShaderParametersInstance &Material::getShaderParameters() const
     {
         return m_shaderParameters;
     }
 
-    workphone::render::MaterialShaderParametersInstance &Material::getShaderParameters()
+    MaterialShaderParametersInstance &Material::getShaderParameters()
     {
         return m_shaderParameters;
     }
@@ -2570,7 +2614,7 @@ namespace workphone::render
         m_shaderParametersDirty = true;
     }
 
-    workphone::String Material::getShaderID() const
+    String Material::getShaderID() const
     {
         return m_shaderID;
     }
