@@ -185,6 +185,8 @@ namespace workphone::ui
             node_flags |= ImGuiTreeNodeFlags_OpenOnArrow;
             node_flags |= ImGuiTreeNodeFlags_FramePadding;
             node_flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
+            node_flags |= ImGuiTreeNodeFlags_AllowItemOverlap;
+
             if( numChildTreeNodes > 0 )
             {
                 node_flags |= ImGuiTreeNodeFlags_NavLeftJumpsBackHere;

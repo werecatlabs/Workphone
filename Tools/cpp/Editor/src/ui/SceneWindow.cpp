@@ -822,6 +822,7 @@ namespace workphone::editor
                 {
                     return;
                 }
+
                 Util::setText( node, actorName );
 
                 static const String actorStr = "actor";
@@ -835,8 +836,8 @@ namespace workphone::editor
                 }
 
                 auto toggle = ui->addElementByType<ui::IUIToggle>();
-                toggle->setSameLine( false );
-                toggle->setScale( 0.5f );
+                toggle->setSameLine( true );
+                toggle->setScale( 0.75f );
                 toggle->setToggled( actor->isEnabled() );
                 node->addChild( toggle );
 
