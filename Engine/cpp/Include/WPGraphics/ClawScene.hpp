@@ -99,7 +99,8 @@ namespace workphone
             void render( void *renderer );
             /** Render owner: prepare CPU jobs before binding an offscreen target. */
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera );
-            bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile );
+            bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile,
+                                    bool captureMaterials = true );
 
             /** Owner elapsed CPU time for an explicitly profiled successful
              * preparation. Main includes capture/transforms/culling/sorting and
@@ -108,6 +109,7 @@ namespace workphone
             struct PreparationTiming
             {
                 u64 total_ns = 0, main_prepare_ns = 0, shadow_derive_ns = 0;
+                u64 material_prepare_ns = 0;
             };
 
             /** False and zeroed when unprofiled, failed or retired. Stale jobs
@@ -128,6 +130,12 @@ namespace workphone
             /** Copied main-view cull array bytes; shared publication counted once.
              * False and zeroed after retirement, without certifying draw validity. */
             bool getPreparedStorageStatistics( wp_graphics_cull_storage_stats * ) const;
+            struct MaterialPreparationStatistics
+            {
+                u64 records = 0, bindings = 0, meshes = 0, preparations = 0;
+            };
+            /** Copied scene material publication counts; false/zero after retirement. */
+            bool getPreparedMaterialStatistics( MaterialPreparationStatistics & ) const;
             void discardRenderJobs();
 
             using FoliageBatches = Array<std::shared_ptr<const ClawFoliageBatch>>;
