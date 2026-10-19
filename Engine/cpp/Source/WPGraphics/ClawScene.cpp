@@ -405,6 +405,11 @@ namespace workphone
                 return nullptr;
             }
 
+            // update() holds this same recursive lock through native capture and rendering.
+            // Protect creation too: loadObject's queue lock is acquired only after the
+            // native object array has already been grown and the mesh has been bound.
+            ScopedLock graphicsLock( this );
+
             auto factoryManager = getFactoryManagerPtr();
             if( !factoryManager )
             {

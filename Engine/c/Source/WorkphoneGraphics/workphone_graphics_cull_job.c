@@ -737,9 +737,10 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         job->entry_count = scene->object_count;
         bytes = (size_t)scene->object_count * sizeof( cull_entry );
         job->storage.entry_bytes = bytes;
-        /* Count every candidate, including hidden objects, before allocating
-         * one exact-sized ancestor array under the same publication byte cap. */
-        for( i = 0; i < scene->object_count; ++i )
+        /* Bound snapshot writes by its allocated count, including hidden objects,
+         * before allocating one ancestor array under the publication byte cap.
+         * The owner must still serialize scene/object/hierarchy mutation. */
+        for( i = 0; i < job->entry_count; ++i )
         {
             depth = 0;
             node = wp_graphics_object_get_owner( scene->objects[i] );
@@ -774,7 +775,7 @@ wp_s32 wp_graphics_cull_job_configure( wp_graphics_cull_job *job, const wp_graph
         }
         job->storage.ancestor_reference_count = (wp_u32)ancestor_count;
         job->storage.ancestor_bytes = ancestor_count * sizeof( *job->ancestors );
-        for( i = 0; i < scene->object_count; ++i )
+        for( i = 0; i < job->entry_count; ++i )
         {
             depth = job->entries[i].ancestor_count;
             cull_capture_entry( &job->entries[i], scene->objects[i],

@@ -22,7 +22,7 @@ namespace workphone
     void FileList::load( SmartPtr<ISharedObject> data )
     {
         setLoadingState( LoadingState::Loading );
-        m_files.reserve( 1024 );
+        m_files.reserve( 4096 );
         setLoadingState( LoadingState::Loaded );
     }
 
@@ -272,8 +272,7 @@ namespace workphone
             }
         }
 
-        auto files = m_files.snapshot();
-        for( auto &file : files )
+        for( auto &file : m_files )
         {
             if( file.fileId == filePathHash )
             {
