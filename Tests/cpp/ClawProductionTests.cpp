@@ -173,6 +173,105 @@ namespace
         return found;
     }
 
+    class MaterialRoutingTexture : public ClawTexture
+    {
+    public:
+        mutable u32 requests = 0;
+        void getTextureFinal( void **view ) const override
+        {
+            ++requests;
+            *view = nullptr; // A retained texture whose device view is not ready yet.
+        }
+    };
+
+    bool testPreparedMaterialEdits( ClawRendererDX11 &renderer )
+    {
+        claw_foliage_scene_contracts::Fixture fixture;
+        auto target = make_ptr<ClawRenderTarget>();
+        target->setSize( { 64, 64 } );
+        renderer.setRenderTarget( target );
+        renderer.setViewport( nullptr );
+        renderer.setCamera( nullptr );
+        renderer.disableShadows();
+        auto native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        auto material = make_ptr<ClawMaterial>();
+        auto technique = make_ptr<ClawMaterialTechnique>();
+        technique->setMaterial( material.get() );
+        auto pass = technique->createPass();
+        material->setTechniques( { technique } );
+        material->setMaterialType( MaterialType::UI );
+        material->setCullMode( 1u );
+        material->setBlendMode( 0u );
+        TestMesh mesh;
+        mesh.setMaterial( material );
+        bool ok = true;
+        // Repeated draws hit the prepared record; a new snapshot must replace
+        // its surface values, while lighting/fog continue to belong to the view.
+        for( int edit = 0; edit < 8; ++edit )
+        {
+            const bool red = edit % 2 == 0;
+            material->setDiffuse( red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
+            for( int view = 0; view < 2; ++view )
+            {
+                renderer.setSceneLighting( view ? ColourF::Black : ColourF::White,
+                                          Vector3F( 0, -1, 0 ), ColourF::White, f32( view ) );
+                renderer.setSceneFog( 0u, ColourF::Black, 0.0f, 0.0f, 1.0f );
+                renderer.clear( ColourF::Black );
+                renderer.renderMesh( &mesh, Matrix4F::identity() );
+                const auto pixels = claw_foliage_contracts::pixels( native );
+                const auto offset = ( 32u * 64u + 32u ) * 4u;
+                ok &= check( pixels[offset + ( red ? 0u : 1u )] > 200 &&
+                             pixels[offset + ( red ? 1u : 0u )] < 10 && pixels[offset + 2] < 10,
+                             "prepared UI material must show current edits across repeated draws/views" );
+            }
+        }
+        material->setMaterialType( MaterialType::Standard );
+        material->setDiffuse( ColourF::White );
+        material->setSpecular( ColourF::Black );
+        material->setMetalness( 0.0f );
+        for( int view = 0; view < 2; ++view )
+        {
+            renderer.setSceneLighting( view ? ColourF::White : ColourF::Black,
+                                      Vector3F( 0, -1, 0 ), ColourF::White, 0.0f );
+            renderer.clear( ColourF::Black );
+            renderer.renderMesh( &mesh, Matrix4F::identity() );
+            const auto pixels = claw_foliage_contracts::pixels( native );
+            const auto offset = ( 32u * 64u + 32u ) * 4u;
+            const auto brightness = int( pixels[offset] ) + pixels[offset + 1] + pixels[offset + 2];
+            ok &= check( view ? brightness > 60 : brightness < 10,
+                         "cached lit material must use current view lighting without a material edit" );
+        }
+        auto metallic = make_ptr<MaterialRoutingTexture>();
+        auto roughness = make_ptr<MaterialRoutingTexture>();
+        auto packed = make_ptr<MaterialRoutingTexture>();
+        {
+            auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>( pass->getId() );
+            data->textures[2] = metallic;
+            data->textures[3] = roughness;
+            data->extendedTextures[25u - data->textures.size()] = packed;
+        }
+        material->setEditorUInt( "metallicSource", 0u );
+        constexpr u32 roughnessSlots[] = { 3u, 3u, 2u, 25u, 2u, 3u };
+        for( u32 mode = 0; mode < 6; ++mode )
+        {
+            material->setEditorUInt( "roughnessSource", mode );
+            for( int repeat = 0; repeat < 2; ++repeat )
+            {
+                metallic->requests = roughness->requests = packed->requests = 0;
+                renderer.clear( ColourF::Black );
+                renderer.renderMesh( &mesh, Matrix4F::identity() );
+                ok &= check( metallic->requests == ( roughnessSlots[mode] == 2u ? 2u : 1u ) &&
+                             roughness->requests == ( roughnessSlots[mode] == 3u ? 1u : 0u ) &&
+                             packed->requests == ( roughnessSlots[mode] == 25u ? 1u : 0u ),
+                             "new and cached draws must resolve the texture owner for each authored roughness mode" );
+            }
+        }
+        mesh.setMaterial( nullptr );
+        material->unload( nullptr );
+        renderer.setRenderTarget( nullptr );
+        return ok;
+    }
+
     bool testParticleLifecycle()
     {
         CParticleSystem effect;
@@ -380,6 +479,7 @@ int main( int argc, char **argv )
                              wp_renderer_dx11_get_device( native ) ) ),
                          "DX11 device evidence must be available" );
             ok &= testRenderedFeatures(renderer);
+            ok &= testPreparedMaterialEdits(renderer);
             ok &= testMeshShadows(renderer);
             ok &= claw_terrain_contracts::run(renderer);
             ok &= claw_terrain_material_contracts::run(renderer);
