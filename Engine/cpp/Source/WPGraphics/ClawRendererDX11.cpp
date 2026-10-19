@@ -1,5 +1,6 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
 #include <WPGraphics/ClawRendererDX11.hpp>
+#include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <Workphone/Graphics/Material.hpp>
@@ -55,41 +56,6 @@ namespace workphone::render
                         if( auto state = context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                             return state->getRenderState();
             return {};
-        }
-
-        void applyPrimaryMaterialUvState( const SmartPtr<IMaterial> &material,
-                                          const MaterialRenderState::Ptr &state,
-                                          wp_material_dx11 &nativeMaterial )
-        {
-            if( state )
-            {
-                nativeMaterial.surface.z = state->uvTilingX;
-                nativeMaterial.surface.w = state->uvTilingY;
-                nativeMaterial.uv_transform.x = state->uvOffsetX;
-                nativeMaterial.uv_transform.y = state->uvOffsetY;
-                nativeMaterial.uv_transform.w = state->uvRotation;
-                nativeMaterial.projection = { static_cast<f32>( ( state->uvProjection <= 6u ? state->uvProjection : 0u ) ),
-                                              std::isfinite( state->uvTriplanarScale ) ?
-                                                  std::max( state->uvTriplanarScale, 0.0001f ) : 1.0f, 0.0f, 0.0f };
-                nativeMaterial.controls.x = state->normalStrength;
-                nativeMaterial.controls.y = state->aoStrength;
-                nativeMaterial.controls.z = state->getFlag( cutoutFlag ) ? state->alphaClip : -1.0f;
-                nativeMaterial.controls.w = state->blendMode == 2u ? 1.0f : 0.0f;
-                nativeMaterial.texture_sources = { static_cast<f32>( state->metallicSource ),
-                                                   static_cast<f32>( state->roughnessSource ),
-                                                   static_cast<f32>( state->aoSource ),
-                                                   static_cast<f32>( state->opacitySource ) };
-                const auto intensity =
-                    state->getFlag( emissionEnabledFlag ) ? state->emissionIntensity : 0.0f;
-                nativeMaterial.emissive_color.x *= intensity;
-                nativeMaterial.emissive_color.y *= intensity;
-                nativeMaterial.emissive_color.z *= intensity;
-                // UI materials use the same texture and alpha handling without lighting.
-                if( state->materialType == MaterialType::UI )
-                {
-                    nativeMaterial.uv_transform.z = 0.0f;
-                }
-            }
         }
 
     }  // namespace
@@ -189,6 +155,7 @@ namespace workphone::render
 
     void ClawRendererDX11::destroyRenderer()
     {
+        m_materialRenderCache.reset();
         g_skyEnvironmentCaches.erase( this );
         m_environment.reset();
         m_previewEnvironment.reset();
@@ -939,10 +906,26 @@ namespace workphone::render
             auto pMaterial = resolveMeshMaterial( mesh, submeshIndex );
             auto material = pMaterial.get();
             const auto state = getPrimaryMaterialPassState( pMaterial );
-            const auto getTexture = [&]( u32 slot ) -> SmartPtr<ITexture> {
-                return state && slot < state->textures.size() ? state->textures[slot] :
-                       pMaterial ? pMaterial->getTexture( slot ) : nullptr;
+            // The snapshot retains all texture owners for this draw. Only the
+            // third-party fallback needs a temporary owning reference.
+            SmartPtr<ITexture> fallbackTexture;
+            const auto getTexture = [&]( u32 slot ) -> ITexture * {
+                if( state )
+                    return slot < state->textures.size() ? state->textures[slot].get() : nullptr;
+                fallbackTexture = pMaterial ? pMaterial->getTexture( slot ) : nullptr;
+                return fallbackTexture.get();
             };
+
+            if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
+                continue;
+
+            const ClawPreparedMaterialDX11 *prepared = nullptr;
+            if( state )
+            {
+                if( !m_materialRenderCache )
+                    m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
+                prepared = &m_materialRenderCache->get( state );
+            }
 
             void *nativeTexture = nullptr;
             if( material )
@@ -957,45 +940,17 @@ namespace workphone::render
 
             // These are Workphone/Ogre PBS slots, not the low-level C material slots.
 
-            if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
-            {
-                continue;
-            }
-
             wp_renderer_dx11_enable_shadow_receiving(
                 dx11, m_shadowsEnabled && mesh->getReceiveShadows() &&
                           ( !state || state->getFlag( receiveShadowsFlag ) ) );
 
-            u32 textureSlots[] = { 1u, 2u, 3u, 13u, 22u, 24u };
-            if( state )
-            {
-                if( state->metallicSource == 3u )
-                {
-                    textureSlots[1] = 25u;
-                }
-                if( state->roughnessSource == 2u || state->roughnessSource == 4u )
-                {
-                    textureSlots[2] = 2u;
-                }
-                if( state->roughnessSource == 3u )
-                {
-                    textureSlots[2] = 25u;
-                }
-                if( state->aoSource == 1u )
-                {
-                    textureSlots[4] = 25u;
-                }
-                if( state->opacitySource == 2u )
-                {
-                    textureSlots[5] = 25u;
-                }
-            }
+            constexpr u32 defaultTextureSlots[] = { 1u, 2u, 3u, 13u, 22u, 24u };
             void *textureViews[6] = {};
             if( material )
             {
                 for( size_t i = 0; i < 6; ++i )
                 {
-                    if( auto texture = getTexture( textureSlots[i] ) )
+                    if( auto texture = getTexture( prepared ? prepared->textureSlots[i] : defaultTextureSlots[i] ) )
                     {
                         texture->getTextureFinal( &textureViews[i] );
                     }
@@ -1004,18 +959,23 @@ namespace workphone::render
 
             wp_renderer_dx11_set_material_textures( dx11, textureViews );
             wp_renderer_dx11_set_material_sampler(
-                dx11, state ? state->uvWrapU : 0u, state ? state->uvWrapV : 0u,
-                state ? state->uvFilter : 1u,
-                state ? static_cast<u32>( Math<f32>::clamp( state->uvAniso, 1.0f, 16.0f ) ) : 1u );
+                dx11, prepared ? prepared->wrapU : 0u, prepared ? prepared->wrapV : 0u,
+                prepared ? prepared->filter : 1u, prepared ? prepared->anisotropy : 1u );
 
-            wp_material_dx11 nativeMaterial{};
-            const auto diffuse = material ? ( state ? state->diffuseColour : material->getDiffuse() ) : ColourF::White;
-            const auto specular =
-                material ? ( state ? state->specularColour : material->getSpecular() ) : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
-            const auto emissive = material ? ( state ? state->emissiveColour : material->getEmissive() ) : ColourF::Black;
-            nativeMaterial.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
-            nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
-            nativeMaterial.emissive_color = { emissive.r, emissive.g, emissive.b, emissive.a };
+            wp_material_dx11 nativeMaterial = prepared ? prepared->compose() : wp_material_dx11{};
+            if( !prepared )
+            {
+                const auto diffuse = material ? material->getDiffuse() : ColourF::White;
+                const auto specular = material ? material->getSpecular() : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
+                const auto emissive = material ? material->getEmissive() : ColourF::Black;
+                nativeMaterial.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
+                nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
+                nativeMaterial.emissive_color = { emissive.r, emissive.g, emissive.b, emissive.a };
+                nativeMaterial.surface = { material ? material->getMetalness() : 0.0f,
+                                           material ? material->getRoughness() : 0.5f, 1.0f, 1.0f };
+                nativeMaterial.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
+                nativeMaterial.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
+            }
             applySceneLighting( nativeMaterial );
 
             // A material's reflection probe overrides the sky environment for this draw.
@@ -1040,16 +1000,11 @@ namespace workphone::render
                 }
             }
 
-            nativeMaterial.surface = { material ? ( state ? state->metalness : material->getMetalness() ) : 0.0f,
-                                       material ? ( state ? state->roughness : material->getRoughness() ) : 0.5f, 1.0f, 1.0f };
-            nativeMaterial.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
-            nativeMaterial.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
             nativeMaterial.map_flags = { textureViews[0] ? 1.0f : 0.0f, textureViews[1] ? 1.0f : 0.0f,
                                          textureViews[2] ? 1.0f : 0.0f, textureViews[3] ? 1.0f : 0.0f };
             nativeMaterial.extra_map_flags = { textureViews[4] ? 1.0f : 0.0f,
                                                textureViews[5] ? 1.0f : 0.0f, 0.0f, 0.0f };
 
-            applyPrimaryMaterialUvState( material, state, nativeMaterial );
             if( dx11 )
             {
                 wp_renderer_dx11_set_material( dx11, &nativeMaterial );

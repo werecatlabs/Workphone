@@ -1,6 +1,7 @@
 #include <Workphone/Workphone.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawMaterial.hpp>
+#include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <WPGraphics/ClawMaterialManager.hpp>
 #include <WPGraphics/ClawMaterialTechnique.hpp>
 #include <WPGraphics/ClawMaterialPass.hpp>
@@ -21,7 +22,10 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <limits>
+#include <vector>
 #include "workphone_graphics_material.h"
+#include "MaterialRenderCacheBenchmark.hpp"
 
 namespace
 {
@@ -32,6 +36,133 @@ namespace
     {
         if( !value )
             throw std::runtime_error( message );
+    }
+
+    void runMaterialPreparation()
+    {
+        using namespace render;
+        ClawMaterialRenderCache cache;
+        auto authored = std::make_shared<MaterialRenderState>();
+        authored->diffuseColour = ColourF( 0.2f, 0.3f, 0.4f, 0.6f );
+        authored->specularColour = ColourF( 0.04f, 0.05f, 0.06f, 1.0f );
+        authored->emissiveColour = ColourF( 0.5f, 0.25f, 0.125f, 0.75f );
+        authored->flags = emissionEnabledFlag | cutoutFlag;
+        authored->emissionIntensity = 4.0f;
+        authored->alphaClip = 0.3f;
+        authored->metalness = 0.8f;
+        authored->roughness = 0.2f;
+        authored->uvTilingX = 2.0f;
+        authored->uvTilingY = 3.0f;
+        authored->uvOffsetX = 0.1f;
+        authored->uvOffsetY = 0.2f;
+        authored->uvRotation = 45.0f;
+        authored->uvProjection = 4u;
+        authored->uvTriplanarScale = 2.5f;
+        authored->normalStrength = 0.7f;
+        authored->aoStrength = 0.6f;
+        authored->blendMode = 2u;
+        authored->metallicSource = authored->roughnessSource = 3u;
+        authored->aoSource = 1u;
+        authored->opacitySource = 2u;
+        authored->uvWrapU = 3u;
+        authored->uvWrapV = 4u;
+        authored->uvFilter = 3u;
+        authored->uvAniso = 12.5f;
+        const MaterialRenderState::Ptr state = authored;
+        const auto owners = state.use_count();
+        const auto first = cache.get( state );
+        const auto &c = first.constants;
+        require( c.base_color.x == 0.2f && c.base_color.w == 0.6f &&
+                 c.specular_color.y == 0.05f && c.emissive_color.x == 2.0f &&
+                 c.emissive_color.y == 1.0f && c.emissive_color.w == 0.75f,
+                 "prepared colours preserve opacity, F0 and emission intensity" );
+        require( c.surface.x == 0.8f && c.surface.y == 0.2f && c.surface.z == 2.0f &&
+                 c.surface.w == 3.0f && c.uv_transform.x == 0.1f && c.uv_transform.y == 0.2f &&
+                 c.uv_transform.z == 1.0f && c.uv_transform.w == 45.0f &&
+                 c.controls.x == 0.7f && c.controls.y == 0.6f && c.controls.z == 0.3f &&
+                 c.controls.w == 1.0f && c.projection.x == 4.0f && c.projection.y == 2.5f,
+                 "prepared surface, UV, projection and blend controls" );
+        require( first.textureSlots == std::array<u32, 6>{ 1u, 25u, 25u, 13u, 25u, 25u } &&
+                 c.texture_sources.x == 3.0f && c.texture_sources.w == 2.0f &&
+                 first.wrapU == 3u && first.wrapV == 4u && first.filter == 3u && first.anisotropy == 12u,
+                 "prepared packed-map bindings and sampler controls" );
+        for( int draw = 0; draw < 20000; ++draw )
+        {
+            auto perView = cache.get( state ).compose();
+            perView.light_color.x = static_cast<f32>( draw );
+            perView.fog_params.x = 2.0f;
+            perView.map_flags.x = 1.0f;
+            require( perView.light_color.x == static_cast<f32>( draw ) && perView.fog_params.x == 2.0f,
+                     "each view composes its own draw constants" );
+        }
+        require( cache.getPreparationCount() == 1 && state.use_count() == owners,
+                 "repeated submeshes/views prepare once without taking resource owners" );
+        require( cache.get( state ).compose().light_color.x == 0.0f &&
+                 cache.get( state ).compose().fog_params.x == 0.0f &&
+                 cache.get( state ).compose().map_flags.x == 0.0f,
+                 "draw lighting, fog and texture readiness cannot pollute material preparation" );
+
+        // Authoring modes: roughness R/A, metallic A, packed G, inverted
+        // metallic smoothness A, and glTF roughness G respectively.
+        constexpr u32 roughnessSlots[] = { 3u, 3u, 2u, 25u, 2u, 3u };
+        ClawMaterialRenderCache routing;
+        for( u32 mode = 0; mode < 6; ++mode )
+        {
+            auto selected = std::make_shared<MaterialRenderState>( *state );
+            selected->roughnessSource = mode;
+            require( routing.get( selected ).textureSlots[2] == roughnessSlots[mode],
+                     "all authored roughness modes resolve their semantic texture owner" );
+        }
+
+        auto changed = std::make_shared<MaterialRenderState>( *state );
+        changed->materialType = MaterialType::UI;
+        changed->flags = 0;
+        changed->roughness = 0.9f;
+        changed->metallicSource = changed->roughnessSource = changed->aoSource = changed->opacitySource = 0u;
+        changed->uvProjection = 999u;
+        changed->uvTriplanarScale = std::numeric_limits<f32>::quiet_NaN();
+        changed->uvAniso = std::numeric_limits<f32>::infinity();
+        const auto updated = cache.get( changed );
+        require( updated.constants.surface.y == 0.9f && updated.constants.uv_transform.z == 0.0f &&
+                 updated.constants.emissive_color.x == 0.0f && updated.constants.controls.z == -1.0f &&
+                 updated.constants.projection.x == 0.0f && updated.constants.projection.y == 1.0f &&
+                 updated.anisotropy == 1u &&
+                 updated.textureSlots == std::array<u32, 6>{ 1u, 2u, 3u, 13u, 22u, 24u },
+                 "replacement snapshot updates UI, disabled features, map bindings and invalid numeric defaults" );
+        require( cache.getPreparationCount() == 2 && cache.get( state ).constants.surface.y == 0.2f,
+                 "snapshot ownership distinguishes identical local revisions and keeps old draws coherent" );
+        std::weak_ptr<const MaterialRenderState> retired = changed;
+        changed.reset();
+        require( retired.expired(), "preparation cache does not keep retired snapshots or textures alive" );
+
+        // Simulate allocator address reuse with distinct owners of one live object.
+        MaterialRenderState sameAddress;
+        MaterialRenderState::Ptr ownerA( &sameAddress, []( const auto * ) {} );
+        MaterialRenderState::Ptr ownerB( &sameAddress, []( const auto * ) {} );
+        cache.get( ownerA );
+        const auto beforeReuse = cache.getPreparationCount();
+        cache.get( ownerB );
+        require( cache.getPreparationCount() == beforeReuse + 1,
+                 "different owners at the same address cannot return a stale prepared record" );
+
+        std::vector<MaterialRenderState::Ptr> stress;
+        for( size_t i = 0; i < ClawMaterialRenderCache::Capacity * 3; ++i )
+        {
+            auto item = std::make_shared<MaterialRenderState>();
+            item->roughness = static_cast<f32>( i );
+            stress.push_back( item );
+        }
+        for( int pass = 0; pass < 3; ++pass )
+            for( size_t i = 0; i < stress.size(); ++i )
+                require( cache.get( stress[i] ).constants.surface.y == static_cast<f32>( i ),
+                         "bounded cache collisions and eviction preserve material identity" );
+        cache.clear();
+        require( cache.getPreparationCount() == 0, "renderer teardown clears cached metadata" );
+        cache.get( state );
+        require( cache.getPreparationCount() == 1, "cleared cache rebuilds on first use" );
+        std::cout << "material_preparation_cache_bytes=" << sizeof( cache )
+                  << " capacity=" << ClawMaterialRenderCache::Capacity
+                  << " repeated_draws=20000 preparations=1\n";
     }
 
     class DeferredGraphics : public render::ClawHammerSystem
@@ -441,10 +572,17 @@ namespace
     }
 }
 
-int main()
+int main( int argc, char **argv )
 {
     try
     {
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-preparation" )
+        {
+            material_cache_benchmark::run();
+            return 0;
+        }
+        material_cache_benchmark::contracts();
+        runMaterialPreparation();
         Fixture fixture;
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );

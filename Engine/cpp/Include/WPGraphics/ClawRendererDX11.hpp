@@ -25,6 +25,7 @@ namespace workphone
     {
         class ClawMesh;
         class ClawTerrain;
+        class ClawMaterialRenderCache;
         struct FoliageMaterial;
 
         /**
@@ -252,6 +253,7 @@ namespace workphone
             static u32 packColour( const ColourF &colour );
 
             wp_renderer *m_renderer = nullptr;
+            std::unique_ptr<ClawMaterialRenderCache> m_materialRenderCache;
             std::shared_ptr<StreamBudgetLease> m_foliageStreamBudget;
             ClawCubemap m_environment;
             mutable ClawCubemap m_previewEnvironment;
