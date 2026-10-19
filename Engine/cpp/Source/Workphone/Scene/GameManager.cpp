@@ -2101,8 +2101,29 @@ namespace workphone::scene
             if( diff > Math<time_interval>::epsilon() )
             {
                 auto diffPos = newer.transform.getPosition() - older.transform.getPosition();
-                velocity = diffPos / static_cast<real_Num>( diff );
+                if( diffPos.lengthSquared() > Math<real_Num>::epsilon() )
+                {
+                    velocity = diffPos / static_cast<real_Num>( diff );
+                }
             }
+        }
+
+        if( Math<real_Num>::Abs( velocity.x ) < Math<real_Num>::epsilon() ||
+            !Math<real_Num>::isFinite( velocity.x ) )
+        {
+            velocity.x = (real_Num)0.0;
+        }
+
+        if( Math<real_Num>::Abs( velocity.y ) < Math<real_Num>::epsilon() ||
+            !Math<real_Num>::isFinite( velocity.y ) )
+        {
+            velocity.y = (real_Num)0.0;
+        }
+
+        if( Math<real_Num>::Abs( velocity.z ) < Math<real_Num>::epsilon() ||
+            !Math<real_Num>::isFinite( velocity.z ) )
+        {
+            velocity.z = (real_Num)0.0;
         }
 
         transform.setPosition( newer.transform.getPosition() + velocity * elapsed );
