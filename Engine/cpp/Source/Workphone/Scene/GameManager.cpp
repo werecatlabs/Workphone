@@ -2090,16 +2090,23 @@ namespace workphone::scene
         }
 
         transform = newer.transform;
+
         // Bridge short producer gaps; hold the final prediction after 100 ms.
         const auto elapsed = static_cast<real_Num>(
             std::clamp( t - newer.time, time_interval( 0 ), time_interval( 0.1 ) ) );
         auto velocity = newer.linearVelocity;
         if( !newer.hasVelocity && hasPrevious )
         {
-            velocity = ( newer.transform.getPosition() - older.transform.getPosition() ) /
-                       static_cast<real_Num>( newer.time - older.time );
+            auto diff = newer.time - older.time;
+            if( diff > Math<time_interval>::epsilon() )
+            {
+                auto diffPos = newer.transform.getPosition() - older.transform.getPosition();
+                velocity = diffPos / static_cast<real_Num>( diff );
+            }
         }
+
         transform.setPosition( newer.transform.getPosition() + velocity * elapsed );
+
         auto orientation = newer.transform.getOrientation();
         const auto angularSpeed = newer.angularVelocity.length();
         if( newer.hasVelocity && angularSpeed > real_Num( 0 ) && elapsed > real_Num( 0 ) )
@@ -2117,6 +2124,7 @@ namespace workphone::scene
                 older.transform.getOrientation(), newer.transform.getOrientation(), true );
             orientation.normalise();
         }
+
         transform.setOrientation( orientation );
         return true;
     }
