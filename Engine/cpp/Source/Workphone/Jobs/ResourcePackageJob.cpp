@@ -1,8 +1,10 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Jobs/ResourcePackageJob.hpp>
 #include <Workphone/System/ResourcePackageProfile.hpp>
+#include <Workphone/System/ResourcePackageRecovery.hpp>
 #include <filesystem>
 #include <stdexcept>
+#include <fstream>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
@@ -17,6 +19,50 @@ namespace workphone
             HANDLE value = nullptr;
             ~PackageProcessHandle() { if(value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
         };
+        HANDLE requestLock(const std::filesystem::path &snapshot)
+        {
+            auto path = snapshot;
+            path += ".lock";
+            return CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, 0, nullptr,
+                CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
+        }
+        bool redirected(const std::filesystem::path &path)
+        {
+            const auto attributes = GetFileAttributesW(path.c_str());
+            return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+        }
+        constexpr char requestOwnerMagic[] = "WORKPHONE_PACKAGE_REQUEST_V1\n";
+        std::filesystem::path ownerPath(const std::filesystem::path &snapshot)
+        {
+            auto path = snapshot.parent_path() / snapshot.stem();
+            path += ".owner";
+            return path;
+        }
+        bool ownedSnapshot(const std::filesystem::path &snapshot)
+        {
+            const auto path = ownerPath(snapshot);
+            std::error_code ec;
+            if(redirected(path) || !std::filesystem::is_regular_file(std::filesystem::symlink_status(path, ec)) || ec)
+                return false;
+            std::ifstream marker(path, std::ios::binary);
+            char bytes[sizeof(requestOwnerMagic)]{};
+            marker.read(bytes, sizeof(bytes));
+            return std::string(bytes, static_cast<size_t>(marker.gcount())) == requestOwnerMagic;
+        }
+        bool requestName(const std::string &name)
+        {
+            if(name.size() != 41 || name.substr(36) != ".json") return false;
+            bool nonzero = false;
+            for(size_t i = 0; i < 36; ++i)
+            {
+                if(i == 8 || i == 13 || i == 18 || i == 23)
+                { if(name[i] != '-') return false; continue; }
+                const auto c = name[i];
+                if(!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+                nonzero = nonzero || c != '0';
+            }
+            return nonzero;
+        }
         std::wstring quote(const std::wstring &text)
         {
             std::wstring result = L"\"";
@@ -34,6 +80,63 @@ namespace workphone
         }
 #endif
     }
+    bool recoverResourcePackageJobs(const String &projectRoot,
+        ResourcePackageRecoveryResult &result, String &error)
+    {
+        result = {}; error.clear();
+        try
+        {
+#ifdef _WIN32
+            namespace fs = std::filesystem;
+            if(projectRoot.empty()) throw std::runtime_error("Recovery requires an existing project root");
+            const auto project = fs::canonical(fs::u8path(projectRoot.c_str()));
+            if(!fs::is_directory(project)) throw std::runtime_error("Recovery project must be a directory");
+            const auto storage = project / ".workphone";
+            const auto jobs = storage / "package-jobs";
+            if(redirected(storage) || redirected(jobs))
+                throw std::runtime_error("Recovery refuses redirected package-job storage");
+            if(!fs::exists(jobs)) return true;
+            if(!fs::is_directory(jobs)) throw std::runtime_error("Package-job storage must be a directory");
+            // Capture names before renaming: iterator mutation must not hide entries.
+            Array<fs::path> candidates;
+            size_t visited = 0;
+            for(const auto &entry : fs::directory_iterator(jobs))
+            {
+                if(visited++ == 4096)
+                { result.warnings.push_back("Recovery scan reached 4096 directory entries; additional history was not inspected"); break; }
+                if(requestName(entry.path().filename().u8string())) candidates.push_back(entry.path());
+            }
+            for(const auto &snapshot : candidates)
+            {
+                if(redirected(snapshot) || !fs::is_regular_file(fs::symlink_status(snapshot)))
+                { result.warnings.push_back("Recovery preserved a non-regular snapshot: " + String(snapshot.u8string().c_str())); continue; }
+                PackageProcessHandle lock{requestLock(snapshot)};
+                if(lock.value == INVALID_HANDLE_VALUE)
+                { result.skipped.push_back(snapshot.u8string().c_str()); continue; }
+                try
+                {
+                    if(!ownedSnapshot(snapshot))
+                        throw std::runtime_error("Legacy/unmarked snapshot preserved for manual inspection");
+                    const auto arguments = loadPackageProfile(snapshot.u8string().c_str());
+                    if(!fs::equivalent(project, fs::u8path(arguments[1].c_str())))
+                        throw std::runtime_error("Snapshot source root does not match recovery project");
+                    auto archived = jobs / snapshot.stem();
+                    archived += ".interrupted.json";
+                    if(!MoveFileExW(snapshot.c_str(), archived.c_str(), MOVEFILE_WRITE_THROUGH))
+                        throw std::runtime_error("Cannot archive snapshot exclusively; existing history is preserved");
+                    result.recovered.push_back(archived.u8string().c_str());
+                }
+                catch(const std::exception &exception)
+                { result.warnings.push_back(String(snapshot.u8string().c_str()) + ": " + exception.what()); }
+            }
+            return true;
+#else
+            throw std::runtime_error("Package-job recovery is currently supported on Windows only");
+#endif
+        }
+        catch(const std::exception &exception) { error = exception.what(); return false; }
+    }
+
     ResourcePackageJob::ResourcePackageJob(std::shared_ptr<ResourcePackageJobState> state) : m_request(std::move(state)) {}
     void ResourcePackageJob::stop()
     {
@@ -54,10 +157,17 @@ namespace workphone
     void ResourcePackageJob::execute()
     {
         auto &request = *m_request;
+        String recoveryNotice;
+        bool ownsSnapshot = false;
+        bool ownsMarker = false;
+#ifdef _WIN32
+        // Retained until after normal snapshot cleanup; completion can race a new job.
+        PackageProcessHandle ownedRequest;
+#endif
         auto complete = [&](const String &status, const String &diagnostic, int code) {
             std::lock_guard<std::mutex> lock(request.mutex);
             request.status = status;
-            request.diagnostic = diagnostic;
+            request.diagnostic = diagnostic + recoveryNotice;
             request.exitCode = code;
             request.finished = true;
             setState(IJob::State::Finish);
@@ -78,8 +188,31 @@ namespace workphone
 #ifdef _WIN32
             namespace fs = std::filesystem;
             const auto snapshot = fs::u8path(request.snapshotPath.c_str());
+            ResourcePackageRecoveryResult recovery;
+            String recoveryError;
+            if(!recoverResourcePackageJobs(request.projectRoot, recovery, recoveryError))
+                throw std::runtime_error(recoveryError.c_str());
+            if(!recovery.recovered.empty() || !recovery.skipped.empty() || !recovery.warnings.empty())
+            {
+                recoveryNotice = "; interrupted-request recovery: " + StringUtil::toString(recovery.recovered.size()) +
+                    " archived, " + StringUtil::toString(recovery.skipped.size()) + " locked, " +
+                    StringUtil::toString(recovery.warnings.size()) + " warnings. Inspect .workphone/package-jobs";
+            }
             fs::create_directories(snapshot.parent_path());
+            ownedRequest.value = requestLock(snapshot);
+            if(ownedRequest.value == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot own package request lifetime");
+            {
+                PackageProcessHandle marker{CreateFileW(ownerPath(snapshot).c_str(), GENERIC_WRITE,
+                    FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr)};
+                if(marker.value == INVALID_HANDLE_VALUE) throw std::runtime_error("Cannot create request ownership marker exclusively");
+                ownsMarker = true;
+                DWORD written = 0;
+                if(!WriteFile(marker.value, requestOwnerMagic, sizeof(requestOwnerMagic)-1, &written, nullptr) ||
+                    written != sizeof(requestOwnerMagic)-1 || !FlushFileBuffers(marker.value))
+                    throw std::runtime_error("Cannot persist package request ownership marker");
+            }
             savePackageProfile(request.snapshotPath, request.arguments);
+            ownsSnapshot = true;
             PackageProcessHandle cancelEvent{CreateEventW(nullptr, TRUE, FALSE, nullptr)};
             if(!cancelEvent.value) throw std::runtime_error("Cannot create package cancellation event");
             // Only these three handles may be inherited by the package child.
@@ -108,7 +241,10 @@ namespace workphone
             if(!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited, sizeof(inherited), nullptr, nullptr))
                 throw std::runtime_error("Cannot restrict package inherited handles");
             const auto executable = fs::u8path(request.executable.c_str());
-            auto command = quote(executable.wstring()) + L" --profile " + quote(snapshot.wstring()) +
+            auto command = quote(executable.wstring()) +
+                (request.previewPath.empty() ? L" --profile " : L" --preview-profile ") + quote(snapshot.wstring());
+            if(!request.previewPath.empty()) command += L" " + quote(fs::u8path(request.previewPath.c_str()).wstring());
+            command +=
                 L" --cancel-handle " + std::to_wstring(reinterpret_cast<uintptr_t>(cancelEvent.value));
             STARTUPINFOEXW startup{};
             startup.StartupInfo.cb = sizeof(startup);
@@ -140,7 +276,8 @@ namespace workphone
             }
             DWORD exitCode = 1;
             if(!GetExitCodeProcess(child.value, &exitCode)) throw std::runtime_error("Cannot read package exit status");
-            const String message = exitCode == 0 ? "Published checked resource directory" :
+            const String message = exitCode == 0 ? (request.previewPath.empty() ? "Published checked resource directory" :
+                "Previewed checked closure; package output was not touched") :
                 (exitCode == 3 ? "Cancelled before package publication" : "Package failed; inspect the job log");
             complete(exitCode == 0 ? "succeeded" : (exitCode == 3 ? "cancelled" : "failed"), message, static_cast<int>(exitCode));
 #else
@@ -149,6 +286,11 @@ namespace workphone
         }
         catch(const std::exception &error) { complete("failed", error.what(), 1); }
         std::error_code ignored;
-        std::filesystem::remove(std::filesystem::u8path(request.snapshotPath.c_str()), ignored);
+        if(ownsSnapshot) std::filesystem::remove(std::filesystem::u8path(request.snapshotPath.c_str()), ignored);
+#ifdef _WIN32
+        // Keep ownership evidence if snapshot cleanup failed. Recovery retains it
+        // beside archived history; unmarked legacy requests are never archived.
+        if(ownsMarker && !ignored) std::filesystem::remove(ownerPath(std::filesystem::u8path(request.snapshotPath.c_str())), ignored);
+#endif
     }
 }

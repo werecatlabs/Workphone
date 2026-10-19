@@ -13,6 +13,7 @@ namespace workphone
         mutable std::mutex mutex;
         Array<String> arguments;
         String projectRoot, executable, logPath, snapshotPath;
+        String previewPath;
         String status = "queued", diagnostic;
         std::atomic<bool> cancel{false};
         std::atomic<bool> finished{false};

@@ -1134,6 +1134,224 @@ Full R1/R2 shipping certification remains open until the declared family matrix,
 interactive workflows, recovery/soak/performance and representative hardware gates
 in the production plan are satisfied.
 
+## Increment 19: Supported profile authoring inside PackageEditor (18 October 2026)
+
+The window now loads and edits catalog/cooked/output paths, target, root UUIDs and
+explicit type mappings. The active source root is read-only. Save new profile
+delegates to the shared native writer and preserves existing files; Load restores
+the selected file. Unsaved edits disable Build, reopening restores a selected
+saved profile, and project changes reset the draft. The default profile filename
+is now `package.json` in the active project; older profiles remain loadable by path.
+Unsupported compression/platform/version features are not exposed as controls.
+
+The Lua bindings translate detached field tables to the existing profile request.
+They validate active project ownership, string/list limits, exact field sets,
+dense arrays, valid non-nil UUIDs and duplicate identities/mappings, then use the
+same version-1 reader/writer as the CLI. Failures return structured errors without
+opening a catalog or cooking. Actual asset existence, complete closure mapping and
+shipping eligibility remain checked at build/export time. No new catalog/store or
+alternate package format was introduced.
+
+The production Lua window test covers edit/save/load, preserved existing profiles,
+dirty-build prevention, reopened settings, project switching and asynchronous
+controls. The native binding/job test authors and reopens a profile through real
+LuaManager bindings, changes target/output/cooked settings, builds that profile,
+then mounts its actual manifest using the edited target and loads its root UUID.
+It also rejects duplicate roots/mappings, sparse arrays, unknown fields and a
+different source project without creating the rejected files.
+
+Windows/MSVC v145 RelWithDebInfo builds passed for the native host, package tool,
+Editor and affected Lua libraries; LuaRuntimeTests was relinked against the updated
+bindings. The full nine-suite resource gate passed **9/9 in 42.84 seconds**.
+Logs: `project_x64/resource-package-profile-editor-final-build.log`,
+`project_x64/resource-package-profile-editor-lua-build.log` and
+`project_x64/resource-package-profile-editor-final-tests.log`.
+
+Build recovery exposed a full G: drive after generating release symbol copies.
+The previous WPLua PDB was preserved. Redundant task-owned extracted symbol trees
+were moved intact to the C: task workspace; the original ZIPs/evidence remain on
+G:. No source/user assets were removed. The first cross-volume validation attempt
+under a long G: scratch path failed artifact copying; the shorter task scratch
+root rerun is recorded below. General long-path certification remains open.
+
+Installed-package validation passed with `validationPassed=true` and
+`releaseCertified=false`. Evidence, runtime/symbol ZIPs and per-check logs are in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-profile-editor-validation-20261018-24602bad/`.
+The task scratch root was `G:/Workphone/project_x64/tmp/24602bad` to bound native
+artifact paths and retain a real cross-volume installation/workspace check.
+Relocated CLI/profile contracts, read-only Editor startup, cross-volume startup,
+Debug harness rejection and missing-media/plugin failures passed. Successful
+startup logs contain no Lua overload errors or tracebacks. The installed payload
+remained unchanged and loaded modules were confined to the installation/Windows.
+Final driver log: `project_x64/resource-profile-editor-install-final-validation.log`.
+`git diff --check` passed.
+Interactive layout/artist acceptance, a full asset-family shipping sample,
+hardware, recovery/power-loss and scale/soak certification remain open.
+
+## Increment 20: Bounded PackageEditor catalog root picker (19 October 2026)
+
+PackageEditor searches the active project's existing catalog with literal
+path/UUID text and exact optional type filters. Up to 25 file rows are displayed;
+larger result sets require refining the filters. Selection rechecks detached
+path/type/revision/catalog-instance identity against the live catalog, rejects
+project transitions and closed/reopened catalog sessions, and adds the UUID to
+the draft only when its type has an explicit mapping. Duplicate roots and the
+512-root limit are enforced. Catalog identities cross Lua as decimal strings to
+preserve all 64 bits. Queries construct no assets and keep no second catalog
+cache. Searches and selections are disabled while a package job is active.
+
+The picker browses the active project catalog, not an arbitrary draft catalog
+path. The existing checked build validates the saved profile against its selected
+catalog and shipping policy. Source existence/compiler availability and full
+install-closure admission are build checks, not picker guarantees. Closure
+preview, richer root-list editing, asynchronous catalog scale gates and interactive
+layout/artist acceptance remain open.
+
+Native Lua contracts cover literal/type filtering, bounded results, malformed
+filters, stale revisions, reopened catalogs and project isolation. Lua workflow
+contracts cover mapping/duplicate guards, dirty drafts, filter invalidation,
+project reset and queued UI events during builds. The Editor, package tool and
+native fixture built successfully. All nine focused resource/catalog/graphics/
+Lua/package suites passed in 41.18 seconds; see
+`project_x64/resource-package-root-picker-final-tests.log`.
+`git diff --check` passed.
+
+Relocated package validation passed with `validationPassed=true` and
+`releaseCertified=false`. Evidence and runtime/symbol ZIPs are in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-root-picker-validation-20261019/`;
+the driver log is `project_x64/resource-package-root-picker-install.log`.
+Relocated CLI/profile checks, read-only startup, cross-volume startup, Debug
+harness rejection and missing-media/plugin failures passed. Interactive picker
+acceptance, clean-machine validation, license audit and full-family shipping
+certification remain open.
+
+## Increment 21: Asynchronous checked install-closure previews (19 October 2026)
+
+PackageEditor can preview a saved profile through the owned Windows package job.
+The child compiles roots in package mode, reuses export's pinned manifest collector
+and catalog/SQLite admission resolver, then returns UUID/ResourceID identities,
+selected-root markers, payload sizes and direct install dependency edges. Missing,
+unmapped, Editor-only or excluded members reject the entire request. This inspects
+the cooked install closure rather than estimating it from authored references.
+
+`CatalogResourceAdapter::previewRuntimePackage` delegates to
+`ResourceSystem::previewRuntimePackageChecked`; the exporter and preview share the
+same admission and closure validation path. Preview stops before artifact copying
+and directory publication. Its temporary manifest is cleaned from cooked storage
+on normal return. The profile's output directory is untouched, including when it
+already exists. The CLI exposes
+`--preview-profile <saved-profile> <new-report.json>` and publishes a complete JSON
+report exclusively. Preview can change catalog/cooked storage and is labelled as
+such in the UI. It is not a side-effect-free plan or a guarantee that a later build
+will admit the same generation.
+
+The Editor captures settings before queueing, excludes overlapping builds/previews,
+uses the existing cooperative cancellation and project/unload lifecycle, and
+displays results on its update thread. Reports are retained beside logs; quotas
+and process-crash cleanup remain open. The UI reads at most 8 MiB once per completed
+preview, shows up to 100 resources and three inclusion parents per member, and
+displays the full report's path. Preview is limited to 4096 closure members. Draft edits,
+root additions, profile load/save and project changes clear the displayed snapshot.
+Payload byte totals are not installed-size or residency estimates. Subsequent
+builds repeat validation.
+
+The Editor, package tool, native job host and affected resource/catalog/Lua/graphics
+test hosts built successfully; see
+`project_x64/resource-package-preview-final-build.log`. All nine focused suites
+passed in 43.85 seconds (`project_x64/resource-package-preview-final-tests.log`).
+Coverage includes preview/report determinism, exact install membership and reasons,
+occupied output, exclusive report publication, cooperative preview cancellation,
+project isolation, malformed/missing reports, ineligible/uncataloged dependencies,
+stale-result suppression, and the source-free packaged Lua consumer.
+
+Final relocated installation validation passed with `validationPassed=true` and
+`releaseCertified=false`. Evidence, runtime/symbol ZIPs and per-check logs are in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-preview-final-validation-20261019/`;
+the driver log is `project_x64/resource-package-preview-final-install.log`.
+Relocated CLI/profile/preview contracts, read-only Editor startup, cross-volume
+startup, Debug harness rejection and missing-media/plugin failures passed.
+The payload remained unchanged; loaded modules were confined to installation and
+Windows paths. This final run supersedes the earlier preview candidate, which
+preceded the final procedural DLL rebuild. `git diff --check` passed.
+Interactive layout/artist acceptance, full-family shipping samples,
+clean-machine/license audit, hardware and recovery/soak gates remain open.
+
+## Increment 22: Catalog and closure preview paging (19 October 2026)
+
+PackageEditor now navigates the catalog in bounded 25-row pages instead of
+requiring more restrictive filters for every result beyond the first page.
+The additive Lua page query reuses the existing catalog cursor, binding it to
+exact filters, revision and catalog instance. Decimal identity strings preserve
+all 64 bits; malformed, overflowing, stale and mismatched cursor values fail
+closed. The UI keeps cursor history for Previous/Next, clears it on filter or
+project changes, and clears old rows/navigation when a query fails. Selection
+still rechecks current detached identity before adding a root UUID.
+
+Closure previews now show 25 resources per page with row ranges and Previous/Next
+controls through the existing 4096-member limit. The native reader validates the
+full bounded report on each explicit page request and returns only that page;
+ordinary UI updates do not reread it. Negative/oversized/out-of-range requests
+fail. Changed report paths, read failures, profile edits and project switches
+clear navigation. Inclusion reasons and payload totals remain tied to the same
+successful preview request. The legacy first-100-row read helper remains available.
+
+The package tool, Editor, native job host and Lua host built successfully
+(`project_x64/resource-package-paging-build.log`). All nine focused suites passed
+in 55.03 seconds (`project_x64/resource-package-paging-tests.log`). The native
+fixture builds a real 127-resource closure, checks all six pages for exact unique
+membership, validates inclusion reasons and the partial last page, rejects
+invalid page indices, and executes the exported package after deleting all Lua
+sources and the catalog. A 30-row catalog fixture checks continuation membership,
+filter mismatch, overflowing identities and catalog reopen rejection. Lua workflow
+tests cover bidirectional navigation, reset/invalidations and report replacement.
+
+Installed Editor validation passed with `validationPassed=true` and
+`releaseCertified=false`. Evidence, runtime/symbol ZIPs and per-check logs are in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-paging-validation-20261019/`;
+driver log: `project_x64/resource-package-paging-install.log`.
+Relocated CLI/profile/preview contracts, read-only startup, cross-volume startup,
+Debug harness rejection and missing-media/plugin failures passed. Startup logs
+contain no Lua binding/overload tracebacks; installed payload bytes remained
+unchanged and loaded modules were confined to installation/Windows paths.
+`git diff --check` passed. Interactive acceptance, asynchronous catalog scale work,
+report caching/retention and broader shipping certification remain open.
+
+## Increment 23: Interrupted package request recovery (19 October 2026)
+
+Windows package jobs now retain an exclusive, non-inherited delete-on-close lock
+for the lifetime of each captured request. Another recovery pass skips unavailable
+locks; normal completion cleans its profile before releasing the lock. Owner
+death releases the OS handle, while the existing kill-on-close Job Object owns
+the child lifetime. Cleanup now removes a snapshot only when this worker created
+it successfully, preserving pre-existing files after a failed capture.
+
+Before starting a new build/preview, the worker scans at most 4096 entries in the
+project's owned package-job directory. Each new request exclusively writes and
+flushes a versioned `.owner` marker before capturing its profile; recovery requires
+an exact bounded marker match. Unmarked legacy requests and unknown/partial
+markers are left in place, avoiding interference with older live producers.
+Valid UUID-named captured profiles with ownership markers are
+checked with the shared bounded profile parser and exact project-root binding,
+then archived exclusively as `<uuid>.interrupted.json`. Recovery retains settings
+and reports counts in the completion diagnostic. Invalid/foreign snapshots,
+non-regular files, unavailable locks and archive conflicts are preserved with
+diagnostics. Reparse/redirected storage is rejected. The standalone CLI
+`--recover-jobs <project-root>` performs the same operation without opening a
+catalog or cooking assets. Repeated recovery ignores already archived records.
+
+Recovery never automatically retries, removes published outputs or reclaims
+package/cooked staging trees. An interrupted request's publication outcome is
+unknown; inspect the output before explicitly choosing a fresh destination.
+Archived records retain the ownership marker as history; successful normal
+cleanup removes only the worker's own marker.
+Retention quotas, orphan artifact cleanup, compiler/export kill windows and
+power-loss durability remain open.
+
+Validation is in progress. The native process fixture deliberately blocks a child
+inside the production job's ownership path, kills the owner, checks child exit and
+profile preservation, recovers the record and runs a fresh real export. This
+scope does not certify interruption inside a compiler or publication.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add
@@ -1154,7 +1372,7 @@ the same immutable resource pipeline.
    typed compile/install/platform dependency modes, invalidation and cycle policy.
    Indexed forward/reverse queries and project missing/type diagnostics now exist.
 4. Integrate the runtime UUID map and pinned directory export with typed consumers,
-   full PackageEditor profile authoring and owner-thread publication throughout the
+   richer root picking/closure inspection and owner-thread publication throughout the
    Editor and shipping sample. Extend the owned Windows package job to the
    remaining asynchronous requests/residency and platform requirements.
 5. Extend the bounded catalog inspection window with asynchronous scale gates;

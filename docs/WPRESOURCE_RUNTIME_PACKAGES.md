@@ -197,12 +197,24 @@ No files are written by verification. Missing/corrupt content returns nonzero.
 
 ### PackageEditor and owned background jobs
 
-PackageEditor now selects a saved JSON profile and exposes Build, Cancel, status
-and the per-request log path. Unsupported build-type/compression/platform/version
-setters have been removed from this window. Profiles remain the settings authority;
-author or edit them using the CLI/JSON workflow above. The selected path survives
-closing/reopening the window in the current manager session. The default path is
-`.workphone/package.json` relative to the active project.
+PackageEditor loads and authors the supported JSON profile settings: catalog,
+cooked storage, output directory, target, root UUIDs and explicit type mappings.
+The active project source root is displayed read-only. Roots and mappings accept
+semicolon-separated lists. Load restores the saved values; Save new profile
+creates an unused file through the shared native writer and never replaces an
+existing profile. Choose a new filename when editing an existing profile. The
+profile parent directory must already exist. Unsaved edits disable Build, and
+project changes reset the draft. The selected saved profile restores after
+closing/reopening the window in the current manager session. The default file is
+`package.json` relative to the active project.
+
+Native read/save bindings return structured success/error results, validate the
+active source root and bounded settings/lists, and reject malformed/nil/duplicate
+root UUIDs, invalid/duplicate mappings, unknown fields and sparse arrays. They do
+not open a catalog or cook content. Asset existence and shipping eligibility are
+checked by the normal build/export route. Build, Cancel, job status and the
+per-request log path use the owned background job described below. Unsupported
+build-type/compression/platform/version controls remain absent.
 
 The native `IPackageManager` resource-package API queues one `ResourcePackageJob`
 at a time on the existing worker queue. It requires a running worker pool and
@@ -226,7 +238,7 @@ authoring setup, between root compilations and before export. It returns exit 3
 when cancellation wins before export. An in-progress compiler/export is allowed
 to finish; a successfully published package remains success even if cancellation
 was requested too late. This avoids misreporting a committed output as cancelled.
-Worker watchdogs, interruption within a compiler/export, process-crash orphan
+Worker watchdogs, interruption within a compiler/export, package-staging orphan
 cleanup and log retention quotas remain open. A queued cancelled job still needs
 the queue to process it before its detached result becomes final.
 
@@ -236,6 +248,110 @@ for API compatibility, but do not change a saved resource profile. Resource prof
 builds always include required eligible install dependencies. This window builds
 resource directories; it does not package game executables or certify other typed
 families or interactive workflows.
+
+PackageEditor also searches the active project's catalog for file roots, using a
+literal path/UUID filter and optional exact catalog type. It shows 25 matches per
+page with Previous/Next navigation. Continuations capture the filters, catalog
+instance and revision; stale or mismatched continuations fail and clear the old
+page. Changing filters or projects clears navigation history. Clicking a match rechecks its path,
+type, catalog instance and revision before adding its UUID. A reopened catalog or
+project switch invalidates the old selection. The picker constructs no resources,
+requires an explicit type mapping and suppresses duplicate roots. Adding a root
+marks the draft unsaved; save to a new profile filename before building. Search
+is disabled during a package job. This searches the active project catalog; a
+different catalog entered in the profile is still checked by the build pipeline.
+Selection alone does not certify source availability, compiler support, shipping
+eligibility or install dependencies.
+
+## Checked closure previews
+
+Use **Preview saved closure** in PackageEditor, or run:
+
+```text
+WorkphoneResourcePackage --preview-profile shipping.json new-preview.json
+```
+
+Preview compiles the saved roots in package mode, then uses the same pinned
+manifest collector and catalog admission resolver as export. It checks every
+install member's UUID, type mapping, revision and shipping policy. The report
+lists selected roots, ResourceIDs, UUIDs, payload byte counts and direct install
+dependency edges. Compile-only inputs are not install members. An Editor-only,
+excluded, missing or unmapped install member rejects the whole preview; no partial
+report is published. The report filename must be new and its parent must exist.
+Publishing the report uses an exclusive hard link and preserves existing files.
+
+Preview updates the authoring catalog/cooking cache and temporarily writes an
+owned manifest under cooked storage. It never creates, checks or replaces the
+profile's package destination, so an existing output does not prevent preview.
+Normal completion/failure removes the temporary manifest tree. A preview is a
+snapshot of the admitted cooked generation, not permission to skip build checks;
+the subsequent build compiles and validates again. Crash/power-loss cleanup and
+durability certification remain open.
+
+The Editor runs preview through the same owned child job, immutable captured
+profile, single-request guard, cancellation event and project/unload lifecycle as
+build. Successful reports remain beside job logs as `<request>.preview.json`;
+log/report retention quotas remain open. UI polling reads a successful report
+on completion and again on explicit page navigation on the owner thread. It shows
+25 members per page across at most 4096 resources, with Previous/Next controls,
+the current row range, and up to three immediate inclusion parents per member.
+Normal update polling never reparses the report. Replaced report paths or failed
+reads clear preview navigation. The legacy `readResourcePackagePreview` Lua
+helper still returns its first 100 rows; the window uses the additive
+`readResourcePackagePreviewPage` helper. The full JSON report
+retains every direct dependency edge and is limited to 8 MiB. Payload byte totals
+exclude WPRS containers, the runtime manifest, filesystem overhead and compiler
+inputs; they are not installed size or residency estimates. Editing settings,
+loading/saving a profile, adding a root or switching projects clears the displayed
+snapshot. Failed/cancelled requests expose diagnostics instead of old results.
+
+## Interrupted package requests
+
+On Windows, each executing package job owns an exclusive `<request>.json.lock`
+handle until its captured profile has been cleaned up. The lock is created
+exclusively, is not inherited by the child, and is deleted by Windows on handle
+close, including owner process death. The existing kill-on-close Job Object owns
+the package child. Worker cleanup removes a captured profile only after that
+worker successfully created it; failed ownership/profile creation preserves an
+existing file.
+
+Before writing a captured profile, the worker exclusively creates and flushes
+`<request>.owner` with the exact versioned `WORKPHONE_PACKAGE_REQUEST_V1` marker.
+Normal cleanup removes its own marker only when profile cleanup succeeds (or
+capture never succeeded). A process crash leaves the marker beside its profile.
+Recovery requires an exact, bounded marker match before opening the profile;
+unmarked legacy records and unknown/truncated/extended markers are preserved
+with warnings. This avoids treating an older producer's unlocked live request
+as abandoned. Archived records retain their ownership marker as history.
+
+Before a new build or preview, the worker inspects up to 4096 entries in the
+project's `.workphone/package-jobs` directory. A request filename must be a nonnil
+dashed UUID followed by `.json`. The profile must pass the shared bounded parser
+and resolve to the same project source root. Recovery takes its own exclusive
+request lock; unavailable locks are skipped. Abandoned snapshots are renamed
+exclusively to `<request>.interrupted.json` in the same directory. Invalid or
+foreign-project snapshots, non-regular files and existing archive conflicts are
+preserved with warnings. Redirected/reparse job-storage directories are rejected.
+The worker's completion diagnostic reports recovery counts.
+
+Inspect/recover records without opening a catalog or cooking assets with:
+
+```text
+WorkphoneResourcePackage --recover-jobs <project-root>
+```
+
+The CLI lists recovered paths, lock skips and warning counts. Repeating recovery
+does not reprocess interrupted records. Logs, preview reports, package outputs,
+cooking artifacts and package staging trees are untouched. Request records from
+older producers have no ownership/live-lock protocol and are left in place for
+manual inspection. An archived request has an unknown publication outcome. Recovery never retries
+or declares a prior package successful/failed. Inspect outputs first, then save
+an explicit profile with an unused destination before retrying.
+
+This establishes snapshot recovery and child-lifetime behavior after a tested
+owner-process kill. It does not certify killing a compiler during cooking/export,
+the publication window, orphan artifact reclamation, power-loss durability,
+hostile filesystem races or retention quotas.
 
 ## Validation boundary
 
@@ -247,9 +363,9 @@ with original source/cooked storage removed and read-only runtime byte preservat
 `WorkphoneAssets.catalog_contracts` covers the real catalog-to-package UUID bridge,
 stale binding rejection and UUID-preserving authoring rename beside a pinned package.
 
-This resource-directory API does not complete in-window profile authoring, scene/
-mesh/animation/audio/UI typed consumer adoption, multi-mount precedence, asynchronous
-residency, executable packaging, process-kill recovery, interactive Editor acceptance
+This resource-directory API does not complete interactive closure-preview
+acceptance, scene/mesh/animation/audio/UI typed consumer adoption, multi-mount precedence, asynchronous
+residency, executable packaging, compiler/export-kill recovery, interactive Editor acceptance
 or representative hardware/full-family shipping application certification. The
 native package-job fixture separately exercises a source-free Lua consumer; that
 does not close the other typed-family or interactive release gates.

@@ -20,6 +20,15 @@ namespace workphone::resource
         Array<ResourceID> resources;
     };
 
+    struct WPCore_API RuntimePackagePreviewEntry
+    {
+        String uuid;
+        ResourceID resourceId;
+        u64 payloadBytes = 0;
+        bool root = false;
+        Array<ResourceID> installDependencies;
+    };
+
     /** A checked exporter retains admission until publication or failure. The
      * resolver must bind every closure member, acquire external admission in
      * resource-system -> catalog -> connection order, and never reenter this
@@ -96,6 +105,12 @@ namespace workphone::resource
         /** Policy-aware export. Rejects absent admission or incomplete UUID coverage. */
         bool writeRuntimePackageChecked( const String &directory, const Array<ResourceID> &roots,
                                          const RuntimePackageResolver &resolver, String &error );
+        /** Cooks are performed by the caller. Inspects the same pinned, admitted
+         * closure as export without publishing or touching a package destination.
+         * A temporary manifest is owned under cooked storage and removed on return. */
+        bool previewRuntimePackageChecked( const Array<ResourceID> &roots,
+            const RuntimePackageResolver &resolver, Array<RuntimePackagePreviewEntry> &entries,
+            String &error );
         /** Runtime-only UUID lookup. Failure clears output; no path fallback. */
         bool resolveRuntimeUUID( const String &uuid, ResourceID &output, String &error ) const;
         /** Resolves and loads under one mount lifetime fence, sharing load() cache/limits. */
@@ -127,7 +142,8 @@ namespace workphone::resource
     private:
         bool writeRuntimePackageImpl( const String &, const Array<ResourceID> &,
                                       const Array<RuntimeResourceBinding> &,
-                                      const RuntimePackageResolver &, String & );
+                                      const RuntimePackageResolver &, String &,
+                                      Array<RuntimePackagePreviewEntry> *preview = nullptr );
         bool writeRuntimeManifestLocked( const String &, const Array<ResourceID> &,
                                          const Array<RuntimeResourceBinding> &, String & );
         class Impl;

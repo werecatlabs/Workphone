@@ -54,6 +54,26 @@ namespace workphone
     }
     bool PackageManager::startResourcePackage()
     {
+        return startResourcePackageRequest(false);
+    }
+    bool PackageManager::startResourcePackagePreview()
+    {
+        return startResourcePackageRequest(true);
+    }
+    String PackageManager::getResourcePackagePreviewPath() const
+    {
+        std::lock_guard<std::mutex> lock(m_resourcePackageMutex);
+        if(!m_resourcePackageError.empty() || !m_resourcePackageRequest || !m_resourcePackageRequest->finished) return {};
+        auto &request = *m_resourcePackageRequest;
+        std::lock_guard<std::mutex> resultLock(request.mutex);
+        auto app = core::IApplicationManager::instancePtr();
+        std::error_code ec;
+        if(!app || !std::filesystem::equivalent(std::filesystem::u8path(app->getProjectPath().c_str()),
+            std::filesystem::u8path(request.projectRoot.c_str()), ec) || ec || request.status != "succeeded") return {};
+        return request.previewPath;
+    }
+    bool PackageManager::startResourcePackageRequest(bool preview)
+    {
         namespace fs = std::filesystem;
         std::lock_guard<std::mutex> lock(m_resourcePackageMutex);
         if(m_resourcePackageRequest && !m_resourcePackageRequest->finished)
@@ -82,6 +102,7 @@ namespace workphone
             const auto jobs = project / ".workphone" / "package-jobs";
             request->snapshotPath = (jobs / fs::u8path((id + ".json").c_str())).u8string().c_str();
             request->logPath = (jobs / fs::u8path((id + ".log").c_str())).u8string().c_str();
+            if(preview) request->previewPath = (jobs / fs::u8path((id + ".preview.json").c_str())).u8string().c_str();
 #ifdef _WIN32
             std::vector<wchar_t> module(32768);
             const auto count = GetModuleFileNameW(nullptr, module.data(), static_cast<DWORD>(module.size()));

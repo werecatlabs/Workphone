@@ -9,6 +9,7 @@ namespace workphone
     namespace resource
     {
         struct RuntimeResourceBinding;
+        struct RuntimePackagePreviewEntry;
     }
     /**
      * Connects durable catalog identity to the existing resource compilation service.
@@ -59,12 +60,16 @@ namespace workphone
          */
         bool writeRuntimePackage( const String &directory, const Array<Request> &roots,
                                   String &error ) const;
+        bool previewRuntimePackage( const Array<Request> &roots,
+            Array<resource::RuntimePackagePreviewEntry> &entries, String &error ) const;
         resource::CompilationReport compile( const Request &request,
                                              const resource::CompilationOptions &options = {} ) const;
         std::shared_ptr<const resource::RuntimeResource> load( const Request &request,
                                                                String &error ) const;
 
     private:
+        bool packageOperation(const String &directory, const Array<Request> &roots,
+            Array<resource::RuntimePackagePreviewEntry> *preview, String &error) const;
         bool validateBinding( String &error ) const;
         bool validateRequest( const Request &request, String &error ) const;
 

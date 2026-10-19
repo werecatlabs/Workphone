@@ -168,6 +168,19 @@ namespace workphone
     bool CatalogResourceAdapter::writeRuntimePackage( const String &directory,
                                                       const Array<Request> &roots, String &error ) const
     {
+        return packageOperation(directory, roots, nullptr, error);
+    }
+
+    bool CatalogResourceAdapter::previewRuntimePackage(const Array<Request> &roots,
+        Array<resource::RuntimePackagePreviewEntry> &entries, String &error) const
+    {
+        entries.clear();
+        return packageOperation({}, roots, &entries, error);
+    }
+
+    bool CatalogResourceAdapter::packageOperation(const String &directory, const Array<Request> &roots,
+        Array<resource::RuntimePackagePreviewEntry> *preview, String &error) const
+    {
         error.clear();
         const auto resources = std::dynamic_pointer_cast<resource::ResourceSystem>( m_resources );
         if( !resources || roots.empty() || roots.size() > 65536 )
@@ -186,9 +199,7 @@ namespace workphone
             }
             ids.push_back( root.resourceId );
         }
-        return resources->writeRuntimePackageChecked(
-            directory, ids,
-            [&]( const resource::RuntimePackageContext &context,
+        const resource::RuntimePackageResolver resolver = [&]( const resource::RuntimePackageContext &context,
                  resource::RuntimePackageAdmission &result, String &diagnostic ) {
                 auto admission =
                     std::make_shared<asset_package_detail::Admission>( m_catalog, diagnostic );
@@ -258,8 +269,9 @@ namespace workphone
                 }
                 result.lifetime = std::move( admission );
                 return true;
-            },
-            error );
+            };
+        return preview ? resources->previewRuntimePackageChecked(ids, resolver, *preview, error) :
+            resources->writeRuntimePackageChecked(directory, ids, resolver, error);
     }
 
     resource::CompilationReport CatalogResourceAdapter::compile(

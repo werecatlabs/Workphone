@@ -50,6 +50,62 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
         assert result.returncode == expected, (result.returncode, result.stdout, result.stderr)
         return result
 
+    # Recovery archives only valid, project-bound captured requests; everything
+    # ambiguous is preserved with diagnostics, and no authoring database is opened.
+    jobs = source / ".workphone" / "package-jobs"
+    jobs.mkdir(parents=True)
+    recovery_settings = dict(version=1, sourceRoot=str(source), catalog=str(catalog),
+        cookedRoot=str(root / "recovery-cooked"), output=str(root / "recovery-output"), target="pc",
+        mappings=[dict(catalogType="script", extension="lua")], roots=[main_id])
+    abandoned = jobs / (str(uuid.uuid4()) + ".json")
+    abandoned.write_text(json.dumps(recovery_settings), encoding="utf-8")
+    abandoned_bytes = abandoned.read_bytes()
+    invalid = jobs / (str(uuid.uuid4()) + ".json")
+    invalid.write_bytes(b"{}")
+    wrong = jobs / (str(uuid.uuid4()) + ".json")
+    wrong.write_text(json.dumps(dict(recovery_settings, sourceRoot=str(root))), encoding="utf-8")
+    conflict = jobs / (str(uuid.uuid4()) + ".json")
+    conflict.write_bytes(abandoned_bytes)
+    conflict_archive = conflict.with_name(conflict.stem + ".interrupted.json")
+    conflict_archive.write_bytes(b"retained history")
+    for path in (abandoned, invalid, wrong, conflict):
+        path.with_suffix(".owner").write_bytes(b"WORKPHONE_PACKAGE_REQUEST_V1\n")
+    legacy = jobs / (str(uuid.uuid4()) + ".json")
+    legacy.write_bytes(abandoned_bytes)
+    untrusted = jobs / (str(uuid.uuid4()) + ".json")
+    untrusted.write_bytes(abandoned_bytes)
+    untrusted.with_suffix(".owner").write_bytes(b"WORKPHONE_PACKAGE_REQUEST_V1\ntrailing-data")
+    log = jobs / (abandoned.stem + ".log")
+    report = jobs / (abandoned.stem + ".preview.json")
+    log.write_bytes(b"retained log"); report.write_bytes(b"retained report")
+    ignored = jobs / "not-a-request.json"
+    ignored.write_bytes(b"unrelated file")
+    preserved = {path: path.read_bytes() for path in (invalid, wrong, conflict, conflict_archive, legacy,
+                 untrusted, untrusted.with_suffix(".owner"), log, report, ignored)}
+    database_before = catalog.read_bytes()
+    recovery = invoke(["--recover-jobs", source])
+    assert "Recovered 1" in recovery.stdout and "warnings 5" in recovery.stdout, (recovery.stdout, recovery.stderr)
+    archive = abandoned.with_name(abandoned.stem + ".interrupted.json")
+    assert archive.read_bytes() == abandoned_bytes and not abandoned.exists()
+    assert all(path.read_bytes() == contents for path, contents in preserved.items())
+    assert catalog.read_bytes() == database_before and not (root / "recovery-cooked").exists()
+    assert not (root / "recovery-output").exists() and not list(jobs.glob("*.lock"))
+    assert "Recovered 0" in invoke(["--recover-jobs", source]).stdout
+    missing_jobs = root / "no-jobs-project"
+    missing_jobs.mkdir()
+    invoke(["--recover-jobs", missing_jobs])
+    assert not (missing_jobs / ".workphone").exists()
+    invoke(["--recover-jobs", root / "missing-project"], expected=1)
+    redirected = root / "redirected-project"
+    redirected.mkdir()
+    try:
+        (redirected / ".workphone").symlink_to(jobs.parent, target_is_directory=True)
+    except OSError:
+        pass  # Symlink creation can require developer mode/privilege on Windows.
+    else:
+        invoke(["--recover-jobs", redirected], expected=1)
+        assert all(path.read_bytes() == contents for path, contents in preserved.items())
+
     profile = root / "shipping café.json"
     profile_output = root / "profile-output"
     request = [source, catalog, root / "profile-cooked", profile_output, "pc",
@@ -62,9 +118,26 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     assert settings["roots"] == [main_id] and settings["target"] == "pc"
     invoke(["--save-profile", profile, *request], expected=1)
     assert profile.read_bytes() == saved
+    preview = root / "preview café.json"
+    invoke(["--preview-profile", profile, ""], expected=1)
+    assert not profile_output.exists()
+    invoke(["--preview-profile", profile, preview])
+    assert not profile_output.exists()
+    report = json.loads(preview.read_bytes())
+    by_id = {entry["resourceId"]: entry for entry in report["entries"]}
+    assert report["version"] == 1 and report["target"] == "pc" and len(by_id) == 2
+    assert by_id["data://main.lua"]["uuid"] == main_id and by_id["data://main.lua"]["root"]
+    assert by_id["data://main.lua"]["installDependencies"] == ["data://helper.lua"]
+    assert by_id["data://helper.lua"]["uuid"] == helper_id and not by_id["data://helper.lua"]["root"]
+    assert all(entry["payloadBytes"] > 0 for entry in by_id.values())
+    preview_bytes = preview.read_bytes()
+    invoke(["--preview-profile", profile, preview], expected=1)
+    assert preview.read_bytes() == preview_bytes and not profile_output.exists()
     invoke(["--profile", profile])
     assert len([p for p in profile_output.rglob("*") if p.is_file()]) == 3
     invoke(["--profile", profile], expected=1)
+    invoke(["--preview-profile", profile, root / "preview-occupied-output.json"])
+    assert preview_bytes == (root / "preview-occupied-output.json").read_bytes()
     relocated = root / "relocated"
     relocated.mkdir()
     shutil.copytree(source, relocated / "sources")
@@ -147,10 +220,15 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     ineligible_profile = root / "ineligible.json"
     ineligible_profile.write_text(json.dumps(dict(settings, output="profile-ineligible")), encoding="utf-8")
     invoke(["--profile", ineligible_profile], expected=1)
+    rejected_report = root / "ineligible-preview.json"
+    failed_preview = invoke(["--preview-profile", ineligible_profile, rejected_report], expected=1)
+    assert "Editor-only" in failed_preview.stderr and not rejected_report.exists()
     assert not (root / "profile-ineligible").exists()
     with closing(sqlite3.connect(catalog)) as db, db:
         db.execute("UPDATE wp_asset_package_usage SET usage='excluded' WHERE uuid=?", (helper_id,))
     package(root / "excluded", expected=1)
+    excluded_preview = invoke(["--preview-profile", ineligible_profile, rejected_report], expected=1)
+    assert "excluded" in excluded_preview.stderr and not rejected_report.exists()
     assert not (root / "excluded").exists()
     with closing(sqlite3.connect(catalog)) as db, db:
         db.execute("UPDATE wp_asset_package_usage SET usage='runtime' WHERE uuid=?", (helper_id,))
@@ -159,6 +237,10 @@ with tempfile.TemporaryDirectory(prefix="wp-package-cli-") as temporary:
     with closing(sqlite3.connect(catalog)) as db, db:
         db.execute("DELETE FROM resources WHERE uuid=?", (helper_id,))
     package(root / "uncataloged", expected=1)
+    invoke(["--preview-profile", ineligible_profile, rejected_report], expected=1)
+    assert not rejected_report.exists()
     assert not (root / "uncataloged").exists()
     assert not list(root.glob(".wp-package-*"))
+    assert not list(root.glob(".wp-preview-*"))
+    assert not list((root / "profile-cooked").glob(".wp-package-*"))
 print("Resource package CLI contracts passed")

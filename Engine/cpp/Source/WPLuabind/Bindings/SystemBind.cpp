@@ -8,9 +8,388 @@
 #include <Workphone/Workphone.hpp>
 #include <luabind/luabind.hpp>
 #include <boost/core/noncopyable.hpp>
+#include <Workphone/System/ResourcePackageProfile.hpp>
+#include <filesystem>
+#include <set>
+#include <cmath>
+#include <Workphone/System/ResourceID.hpp>
+#include <Workphone/Database/AssetDatabaseManager.hpp>
+#include <Workphone/Database/AssetCatalogPath.hpp>
+#include <Workphone/System/PackageManager.hpp>
+#include <rapidjson/document.h>
+#include <fstream>
+#include <map>
 
 namespace workphone
 {
+    namespace
+    {
+        namespace profile_fs = std::filesystem;
+        void profileRequire(bool valid, const char *message)
+        {
+            if(!valid) throw std::runtime_error(message);
+        }
+        String profileString(const luabind::object &value)
+        {
+            profileRequire(luabind::type(value) == LUA_TSTRING, "Profile fields must be strings");
+            auto text = luabind::object_cast<String>(value);
+            profileRequire(!text.empty() && text.size() <= 4096 && text.find('\0') == String::npos,
+                           "Profile strings must contain 1 to 4096 bytes without NULs");
+            return text;
+        }
+        bool profileUUID(const String &text)
+        {
+            if(text.size() != 36) return false;
+            bool nonzero = false;
+            for(size_t i = 0; i < text.size(); ++i)
+            {
+                const auto c = text[i];
+                if(i == 8 || i == 13 || i == 18 || i == 23) { if(c != '-') return false; }
+                else
+                {
+                    if(!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+                    nonzero = nonzero || c != '0';
+                }
+            }
+            return nonzero;
+        }
+        size_t profileArraySize(const luabind::object &value, size_t maximum)
+        {
+            profileRequire(luabind::type(value) == LUA_TTABLE, "Profile lists must be arrays");
+            size_t count = 0, largest = 0;
+            for(luabind::iterator i(value), end; i != end; ++i)
+            {
+                profileRequire(luabind::type(i.key()) == LUA_TNUMBER, "Profile array has a nonnumeric key");
+                const auto key = luabind::object_cast<double>(i.key());
+                profileRequire(key >= 1 && key <= maximum && key == std::floor(key), "Invalid profile array index");
+                largest = std::max(largest, static_cast<size_t>(key));
+                ++count;
+            }
+            profileRequire(count > 0 && count == largest && count <= maximum, "Profile arrays must be nonempty, dense and bounded");
+            return count;
+        }
+        void profileFields(const luabind::object &value, const std::set<String> &allowed)
+        {
+            profileRequire(luabind::type(value) == LUA_TTABLE, "Profile settings must be a table");
+            std::set<String> seen;
+            for(luabind::iterator i(value), end; i != end; ++i)
+            {
+                const auto key = profileString(i.key());
+                profileRequire(allowed.count(key) && seen.insert(key).second, "Unknown profile field");
+            }
+            profileRequire(seen.size() == allowed.size(), "Missing profile field");
+        }
+        profile_fs::path profileProject(IPackageManager *manager)
+        {
+            profileRequire(manager && !manager->isResourcePackageBusy(), "Finish or cancel the active package job first");
+            const auto root = core::IApplicationManager::instance()->getProjectPath();
+            profileRequire(!root.empty(), "Open a project before editing a package profile");
+            return profile_fs::canonical(profile_fs::u8path(root.c_str()));
+        }
+        profile_fs::path profilePath(const String &text, const profile_fs::path &project)
+        {
+            profileRequire(!text.empty() && text.size() <= 4096 && text.find('\0') == String::npos, "Invalid profile path");
+            auto path = profile_fs::u8path(text.c_str());
+            return (path.is_absolute() ? path : project / path).lexically_normal();
+        }
+        SmartPtr<AssetDatabaseManager> packageCatalog(IPackageManager *manager)
+        {
+            profileProject(manager);
+            auto app = core::IApplicationManager::instance();
+            auto resources = app->getResourceDatabase();
+            auto catalog = resources ? dynamic_pointer_cast<AssetDatabaseManager>(resources->getDatabaseManager()) : nullptr;
+            String root, error;
+            profileRequire(catalog && canonicalAssetCatalogRoot(app->getProjectPath(), root, error) &&
+                root == catalog->getProjectRoot(), "Active project catalog is unavailable; reopen the project.");
+            return catalog;
+        }
+
+        luabind::object packageRootQueryImpl(IPackageManager *manager, const String &search,
+            const String &type, lua_State *state, const luabind::object *continuation = nullptr)
+        {
+            auto result = luabind::newtable(state);
+            result["ok"] = false;
+            try
+            {
+                profileRequire(search.size() <= 4096 && type.size() <= 4096 &&
+                    search.find('\0') == String::npos && type.find('\0') == String::npos, "Invalid catalog filter.");
+                auto catalog = packageCatalog(manager);
+                AssetDatabaseManager::EntryQuery query;
+                query.search = search; query.type = type; query.includeScenes = false; query.pageSize = 25;
+                AssetDatabaseManager::EntryCursor cursor;
+                const bool resumed = continuation && luabind::type(*continuation) != LUA_TNIL;
+                if(resumed)
+                {
+                    const auto &value = *continuation;
+                    profileFields(value, {"afterUuid", "search", "type", "generation", "catalogInstance"});
+                    cursor.afterUuid = profileString(value["afterUuid"]);
+                    profileRequire(luabind::type(value["search"]) == LUA_TSTRING &&
+                        luabind::type(value["type"]) == LUA_TSTRING, "Invalid catalog cursor filters.");
+                    cursor.search = luabind::object_cast<String>(value["search"]);
+                    cursor.type = luabind::object_cast<String>(value["type"]);
+                    profileRequire(cursor.search == search && cursor.type == type, "Catalog filters changed; search again.");
+                    auto identity = [&](const char *key) -> u64 {
+                        const auto text = profileString(value[key]);
+                        size_t used = 0;
+                        const auto number = std::stoull(text.c_str(), &used);
+                        profileRequire(used == text.size() && StringUtil::toString(static_cast<u64>(number)) == text,
+                            "Invalid catalog cursor identity.");
+                        return static_cast<u64>(number);
+                    };
+                    cursor.generation = identity("generation");
+                    cursor.catalogInstance = identity("catalogInstance");
+                    cursor.includeScenes = false;
+                }
+                auto page = catalog->queryEntries(query, resumed ? &cursor : nullptr);
+                if(!page.succeeded) throw std::runtime_error(page.error.c_str());
+                auto rows = luabind::newtable(state);
+                int index = 1;
+                for(const auto &entry : page.entries)
+                {
+                    auto row = luabind::newtable(state);
+                    row["uuid"] = entry.uuid; row["path"] = entry.path; row["type"] = entry.type;
+                    // Keep 64-bit identities out of Lua's floating-point number representation.
+                    row["generation"] = StringUtil::toString(entry.generation);
+                    row["catalogInstance"] = StringUtil::toString(entry.catalogInstance);
+                    rows[index++] = row;
+                }
+                result["entries"] = rows; result["hasMore"] = page.hasMore; result["ok"] = true;
+                if(page.hasMore)
+                {
+                    auto next = luabind::newtable(state);
+                    next["afterUuid"] = page.next.afterUuid; next["search"] = page.next.search;
+                    next["type"] = page.next.type;
+                    next["generation"] = StringUtil::toString(page.next.generation);
+                    next["catalogInstance"] = StringUtil::toString(page.next.catalogInstance);
+                    result["next"] = next;
+                }
+            }
+            catch(const std::exception &error) { result["error"] = String(error.what()); }
+            return result;
+        }
+
+        luabind::object packageRootQuery(IPackageManager *manager, const String &search,
+            const String &type, lua_State *state)
+        { return packageRootQueryImpl(manager, search, type, state); }
+
+        luabind::object packageRootQueryPage(IPackageManager *manager, const String &search,
+            const String &type, const luabind::object &cursor, lua_State *state)
+        { return packageRootQueryImpl(manager, search, type, state, &cursor); }
+
+        luabind::object packageRootSelect(IPackageManager *manager, const luabind::object &row,
+                                          lua_State *state)
+        {
+            auto result = luabind::newtable(state);
+            result["ok"] = false;
+            try
+            {
+                profileFields(row, {"uuid", "path", "type", "generation", "catalogInstance"});
+                auto catalog = packageCatalog(manager);
+                AssetDatabaseManager::EntrySnapshot entry;
+                profileRequire(catalog->tryGetEntry(profileString(row["uuid"]), entry) &&
+                    entry.kind == AssetDatabaseManager::EntryKind::File &&
+                    entry.path == profileString(row["path"]) && entry.type == profileString(row["type"]) &&
+                    StringUtil::toString(entry.generation) == profileString(row["generation"]) &&
+                    StringUtil::toString(entry.catalogInstance) == profileString(row["catalogInstance"]) &&
+                    catalog->isEntryCurrent(entry), "Catalog changed; search again before selecting a root.");
+                profileRequire(profileUUID(entry.uuid), "Catalog entry does not have a package UUID.");
+                result["uuid"] = entry.uuid; result["ok"] = true;
+            }
+            catch(const std::exception &error) { result["error"] = String(error.what()); }
+            return result;
+        }
+
+        bool packagePreviewStart(IPackageManager *manager)
+        {
+            auto concrete = dynamic_cast<PackageManager *>(manager);
+            return concrete && concrete->startResourcePackagePreview();
+        }
+
+        luabind::object packagePreviewReadImpl(IPackageManager *manager, lua_State *state, int page)
+        {
+            auto result = luabind::newtable(state);
+            result["ok"] = false;
+            try
+            {
+                profileRequire(page >= -1 && page <= 163, "Invalid closure preview page.");
+                profileProject(manager);
+                auto concrete = dynamic_cast<PackageManager *>(manager);
+                profileRequire(concrete != nullptr, "Package manager does not support closure previews.");
+                const auto path = concrete->getResourcePackagePreviewPath();
+                profileRequire(!path.empty(), "No successful preview for the active project.");
+                std::ifstream stream(profile_fs::u8path(path.c_str()), std::ios::binary | std::ios::ate);
+                const auto size = stream.tellg();
+                profileRequire(size > 0 && size <= 8 * 1024 * 1024, "Invalid closure preview report size.");
+                std::string bytes(static_cast<size_t>(size), '\0');
+                stream.seekg(0); stream.read(bytes.data(), bytes.size());
+                profileRequire(static_cast<bool>(stream) && bytes.find('\0') == std::string::npos, "Cannot read closure preview report.");
+                rapidjson::Document doc;
+                doc.Parse<rapidjson::kParseValidateEncodingFlag | rapidjson::kParseIterativeFlag>(bytes.data(), bytes.size());
+                profileRequire(!doc.HasParseError() && doc.IsObject() && doc.HasMember("version") &&
+                    doc["version"].IsUint() && doc["version"].GetUint() == 1 && doc.HasMember("target") &&
+                    doc["target"].IsString() && doc.HasMember("entries") && doc["entries"].IsArray() &&
+                    doc["entries"].Size() > 0 && doc["entries"].Size() <= 4096, "Invalid closure preview report.");
+                auto jsonString = [](const rapidjson::Value &object, const char *key) -> String {
+                    profileRequire(object.IsObject() && object.HasMember(key) && object[key].IsString() &&
+                        object[key].GetStringLength() > 0 && object[key].GetStringLength() <= 4096,
+                        "Invalid closure preview string.");
+                    const String value(object[key].GetString(), object[key].GetStringLength());
+                    profileRequire(value.find('\0') == String::npos, "Invalid closure preview string.");
+                    return value;
+                };
+                std::map<String, Array<String>> parents;
+                std::set<String> ids;
+                u64 totalBytes = 0;
+                for(const auto &entry : doc["entries"].GetArray())
+                {
+                    const auto id = jsonString(entry, "resourceId");
+                    profileRequire(ids.insert(id).second && profileUUID(jsonString(entry, "uuid")) &&
+                        entry.HasMember("root") && entry["root"].IsBool() && entry.HasMember("payloadBytes") &&
+                        entry["payloadBytes"].IsUint64() && entry["payloadBytes"].GetUint64() <= (1024ull << 30) &&
+                        entry.HasMember("installDependencies") && entry["installDependencies"].IsArray() &&
+                        entry["installDependencies"].Size() <= 4096, "Invalid closure preview entry.");
+                    totalBytes += entry["payloadBytes"].GetUint64();
+                    for(const auto &child : entry["installDependencies"].GetArray())
+                    {
+                        profileRequire(child.IsString() && child.GetStringLength() > 0 && child.GetStringLength() <= 4096,
+                            "Invalid closure dependency.");
+                        parents[String(child.GetString(), child.GetStringLength())].push_back(id);
+                    }
+                }
+                for(const auto &item : parents) profileRequire(ids.count(item.first) != 0, "Incomplete closure preview.");
+                auto rows = luabind::newtable(state);
+                const int start = page < 0 ? 0 : page * 25;
+                const int limit = page < 0 ? 100 : 25;
+                profileRequire(start < static_cast<int>(doc["entries"].Size()), "Closure preview page is out of range.");
+                int index = 1;
+                int position = 0;
+                for(const auto &entry : doc["entries"].GetArray())
+                {
+                    if(position++ < start) continue;
+                    if(index > limit) break;
+                    auto row = luabind::newtable(state);
+                    const auto id = jsonString(entry, "resourceId");
+                    row["resourceId"] = id; row["uuid"] = jsonString(entry, "uuid");
+                    row["root"] = entry["root"].GetBool();
+                    row["payloadBytes"] = StringUtil::toString(static_cast<u64>(entry["payloadBytes"].GetUint64()));
+                    String reason;
+                    size_t count = 0;
+                    for(const auto &parent : parents[id])
+                    {
+                        if(count++ == 3) { reason += ", ..."; break; }
+                        if(!reason.empty()) reason += ", ";
+                        reason += parent;
+                    }
+                    row["includedBy"] = reason;
+                    rows[index++] = row;
+                }
+                result["entries"] = rows; result["total"] = static_cast<int>(doc["entries"].Size());
+                result["page"] = page < 0 ? 0 : page;
+                result["hasPrevious"] = start > 0;
+                result["hasMore"] = start + index - 1 < static_cast<int>(doc["entries"].Size());
+                result["totalPayloadBytes"] = StringUtil::toString(totalBytes);
+                result["target"] = jsonString(doc, "target"); result["path"] = path; result["ok"] = true;
+            }
+            catch(const std::exception &error) { result["error"] = String(error.what()); }
+            return result;
+        }
+
+        luabind::object packagePreviewRead(IPackageManager *manager, lua_State *state)
+        { return packagePreviewReadImpl(manager, state, -1); }
+
+        luabind::object packagePreviewReadPage(IPackageManager *manager, int page, lua_State *state)
+        {
+            // Negative values are reserved for the legacy bounded reader.
+            return packagePreviewReadImpl(manager, state, page < 0 ? 164 : page);
+        }
+
+        luabind::object packageProfileRead(IPackageManager *manager, const String &path, lua_State *state)
+        {
+            auto result = luabind::newtable(state);
+            result["ok"] = false;
+            try
+            {
+                const auto project = profileProject(manager);
+                const auto file = profilePath(path, project);
+                const auto args = loadPackageProfile(file.u8string().c_str());
+                profileRequire(profile_fs::equivalent(project, profile_fs::u8path(args[1].c_str())), "Profile belongs to a different project");
+                auto values = luabind::newtable(state);
+                const char *fields[] = {"sourceRoot", "catalog", "cookedRoot", "output", "target"};
+                for(size_t i = 0; i < 5; ++i) values[fields[i]] = args[i + 1];
+                auto mappings = luabind::newtable(state), roots = luabind::newtable(state);
+                size_t mappingIndex = 1, rootIndex = 1;
+                std::set<String> types, identities;
+                for(size_t i = 6; i < args.size(); i += 2)
+                    if(args[i] == "--root")
+                    {
+                        profileRequire(profileUUID(args[i + 1]) && identities.insert(StringUtil::make_lower(args[i + 1])).second,
+                                       "Invalid or duplicate root UUID");
+                        roots[rootIndex++] = args[i + 1];
+                    }
+                    else
+                    {
+                        const auto split = args[i + 1].find('=');
+                        const auto type = args[i + 1].substr(0, split), extension = args[i + 1].substr(split + 1);
+                        profileRequire(resource::ResourceTypeID(extension).isValid() && types.insert(type).second,
+                                       "Invalid or duplicate type mapping");
+                        auto mapping = luabind::newtable(state);
+                        mapping["catalogType"] = type;
+                        mapping["extension"] = extension;
+                        mappings[mappingIndex++] = mapping;
+                    }
+                values["mappings"] = mappings; values["roots"] = roots;
+                result["profile"] = values;
+                result["path"] = String(file.u8string().c_str());
+                result["ok"] = true;
+                manager->setResourcePackageProfile(file.u8string().c_str());
+            }
+            catch(const std::exception &error) { result["error"] = String(error.what()); }
+            return result;
+        }
+        luabind::object packageProfileSave(IPackageManager *manager, const String &path,
+                                           const luabind::object &values, lua_State *state)
+        {
+            auto result = luabind::newtable(state);
+            result["ok"] = false;
+            try
+            {
+                const auto project = profileProject(manager);
+                const auto file = profilePath(path, project);
+                profileFields(values, {"sourceRoot", "catalog", "cookedRoot", "output", "target", "mappings", "roots"});
+                Array<String> args = {"WorkphoneResourcePackage"};
+                for(const char *field : {"sourceRoot", "catalog", "cookedRoot", "output"})
+                    args.push_back(profilePath(profileString(values[field]), project).u8string().c_str());
+                profileRequire(profile_fs::equivalent(project, profile_fs::u8path(args[1].c_str())), "Profile source root must match the active project");
+                args.push_back(profileString(values["target"]));
+                const luabind::object mappings = values["mappings"];
+                const luabind::object roots = values["roots"];
+                const auto mappingCount = profileArraySize(mappings, 128), rootCount = profileArraySize(roots, 512);
+                std::set<String> types, identities;
+                for(size_t i = 1; i <= mappingCount; ++i)
+                {
+                    const luabind::object mapping = mappings[i];
+                    profileFields(mapping, {"catalogType", "extension"});
+                    const auto type = profileString(mapping["catalogType"]), extension = profileString(mapping["extension"]);
+                    profileRequire(type.find('=') == String::npos && resource::ResourceTypeID(extension).isValid() &&
+                                   types.insert(type).second, "Invalid or duplicate type mapping");
+                    args.push_back("--map"); args.push_back(type + "=" + extension);
+                }
+                for(size_t i = 1; i <= rootCount; ++i)
+                {
+                    const auto uuid = profileString(roots[i]);
+                    profileRequire(profileUUID(uuid) && identities.insert(StringUtil::make_lower(uuid)).second,
+                                   "Invalid or duplicate root UUID");
+                    args.push_back("--root"); args.push_back(uuid);
+                }
+                savePackageProfile(file.u8string().c_str(), args);
+                manager->setResourcePackageProfile(file.u8string().c_str());
+                result["path"] = String(file.u8string().c_str());
+                result["ok"] = true;
+            }
+            catch(const std::exception &error) { result["error"] = String(error.what()); }
+            return result;
+        }
+    }
     SmartPtr<render::ITexture> loadEditorTexture( IResourceDatabase *resources, const String &path )
     {
         return resources ? dynamic_pointer_cast<render::ITexture>( resources->loadResource( path ) )
@@ -242,6 +621,14 @@ namespace workphone
         module( L )[class_<IPackageManager, ISharedObject, SmartPtr<ISharedObject>>( "IPackageManager" )
                         .def( "createPackage", &IPackageManager::createPackage )
                         .def( "setResourcePackageProfile", &IPackageManager::setResourcePackageProfile )
+                        .def( "readResourcePackageProfile", packageProfileRead )
+                        .def( "startResourcePackagePreview", packagePreviewStart )
+                        .def( "readResourcePackagePreview", packagePreviewRead )
+                        .def( "readResourcePackagePreviewPage", packagePreviewReadPage )
+                        .def( "queryResourcePackageRoots", packageRootQuery )
+                        .def( "queryResourcePackageRootsPage", packageRootQueryPage )
+                        .def( "selectResourcePackageRoot", packageRootSelect )
+                        .def( "saveResourcePackageProfile", packageProfileSave )
                         .def( "getResourcePackageProfile", &IPackageManager::getResourcePackageProfile )
                         .def( "startResourcePackage", &IPackageManager::startResourcePackage )
                         .def( "cancelResourcePackage", &IPackageManager::cancelResourcePackage )

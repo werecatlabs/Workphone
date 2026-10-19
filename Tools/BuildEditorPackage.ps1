@@ -24,9 +24,17 @@ $inputs = @('CMakeLists.txt','CMake/InstallWorkphoneEditor.cmake','Tools/BuildEd
     'docs/WPGRAPHICS_THIRD_PARTY_NOTICES.txt','docs/WPGRAPHICS_EDITOR_THIRD_PARTY_NOTICES.txt',
     'Tools/cpp/ResourcePackageTool/main.cpp','Tools/cpp/ResourcePackageTool/CMakeLists.txt',
     'Engine/cpp/Source/Workphone/System/ResourcePackageProfile.cpp',
+    'Engine/cpp/Include/Workphone/System/ResourcePackageRecovery.hpp',
+    'Engine/cpp/Include/Workphone/System/ResourceSystem.hpp',
+    'Engine/cpp/Source/Workphone/System/ResourceSystem.cpp',
+    'Engine/cpp/Include/Workphone/Database/CatalogResourceAdapter.hpp',
+    'Engine/cpp/Source/Workphone/Database/CatalogResourceAdapter.cpp',
+    'Engine/cpp/Include/Workphone/System/PackageManager.hpp',
+    'Engine/cpp/Include/Workphone/Jobs/ResourcePackageJob.hpp',
     'Engine/cpp/Source/Workphone/System/PackageManager.cpp',
     'Engine/cpp/Source/Workphone/Jobs/ResourcePackageJob.cpp',
     'Engine/cpp/Source/WPLuaBind/Bindings/SystemBind.cpp',
+    'Engine/cpp/Project/WPLuaBind/CMakeLists.txt',
     'bin/Media/Scripts/Lua/Editor/PackageEditor.lua','Tests/python/resource_package_cli.py') | ForEach-Object {
     [ordered]@{ path = $_; sha256 = (Get-FileHash -LiteralPath (Join-Path $repo $_)).Hash }
 }

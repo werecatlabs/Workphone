@@ -1954,10 +1954,19 @@ namespace workphone::resource
         return writeRuntimePackageImpl( directory, roots, {}, resolver, error );
     }
 
+    bool ResourceSystem::previewRuntimePackageChecked( const Array<ResourceID> &roots,
+        const RuntimePackageResolver &resolver, Array<RuntimePackagePreviewEntry> &entries, String &error )
+    {
+        entries.clear();
+        if(!resolver) { error = "Checked runtime preview requires a package resolver"; return false; }
+        return writeRuntimePackageImpl({}, roots, {}, resolver, error, &entries);
+    }
+
     bool ResourceSystem::writeRuntimePackageImpl( const String &directory,
                                                   const Array<ResourceID> &roots,
                                                   const Array<RuntimeResourceBinding> &bindings,
-                                                  const RuntimePackageResolver &resolver, String &error )
+                                                  const RuntimePackageResolver &resolver, String &error,
+                                                  Array<RuntimePackagePreviewEntry> *preview )
     try
     {
         error.clear();
@@ -1969,24 +1978,25 @@ namespace workphone::resource
                 "package-mode build";
             return false;
         }
-        if( directory.empty() || directory.find( '\0' ) != String::npos )
+        if( !preview && (directory.empty() || directory.find( '\0' ) != String::npos) )
         {
             error = "A runtime package requires a valid destination directory";
             return false;
         }
         std::error_code ec;
-        const auto destination = fs::weakly_canonical( fs::u8path( directory.c_str() ), ec );
-        if( ec || destination.empty() || destination == destination.root_path() ||
+        const auto destination = preview ? m_impl->compiledRoot / "preview" :
+            fs::weakly_canonical( fs::u8path( directory.c_str() ), ec );
+        if( !preview && (ec || destination.empty() || destination == destination.root_path() ||
             isUnderRoot( m_impl->sourceRoot, destination ) ||
             isUnderRoot( destination, m_impl->sourceRoot ) ||
             isUnderRoot( m_impl->compiledRoot, destination ) ||
-            isUnderRoot( destination, m_impl->compiledRoot ) )
+            isUnderRoot( destination, m_impl->compiledRoot )) )
         {
             error = "Runtime package destination must be separate from source and cooked storage";
             return false;
         }
         const auto status = fs::symlink_status( destination, ec );
-        if( ( ec && ec != std::errc::no_such_file_or_directory ) || fs::exists( status ) )
+        if( !preview && (( ec && ec != std::errc::no_such_file_or_directory ) || fs::exists( status )) )
         {
             error = "Runtime package destination already exists or cannot be inspected";
             return false;
@@ -2079,6 +2089,25 @@ namespace workphone::resource
                     return false;
                 }
             manifest = std::move( rebound );
+        }
+        if(preview)
+        {
+            if(manifest.resources.size() > 4096)
+            { error = "Closure preview supports at most 4096 resources"; return false; }
+            Array<RuntimePackagePreviewEntry> result;
+            for(const auto &item : manifest.resources)
+            {
+                RuntimePackagePreviewEntry entry;
+                entry.resourceId = item.second.resourceId;
+                entry.payloadBytes = item.second.payloadSize;
+                entry.installDependencies = item.second.installDependencies;
+                entry.root = std::find(roots.begin(), roots.end(), entry.resourceId) != roots.end();
+                for(const auto &binding : admission.bindings)
+                    if(binding.resourceId == entry.resourceId) { entry.uuid = binding.uuid; break; }
+                result.push_back(std::move(entry));
+            }
+            *preview = std::move(result);
+            return true;
         }
         std::set<String> artifactPaths;
         for( const auto &entry : manifest.resources )

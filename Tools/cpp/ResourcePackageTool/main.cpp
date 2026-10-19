@@ -11,7 +11,11 @@
 #include <iostream>
 #include <stdexcept>
 #include <set>
+#include <fstream>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
 #include <Workphone/System/ResourcePackageProfile.hpp>
+#include <Workphone/System/ResourcePackageRecovery.hpp>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
@@ -23,6 +27,17 @@ namespace
 
     int run(const Array<String> &input)
     {
+        if(input.size() == 3 && input[1] == "--recover-jobs")
+        {
+            ResourcePackageRecoveryResult recovery;
+            String error;
+            if(!recoverResourcePackageJobs(input[2], recovery, error)) throw std::runtime_error(error.c_str());
+            std::cout << "Recovered " << recovery.recovered.size() << "; locked " << recovery.skipped.size()
+                << "; warnings " << recovery.warnings.size() << ". Publication outcomes are unknown; inspect outputs before retrying.\n";
+            for(const auto &path : recovery.recovered) std::cout << path << '\n';
+            for(const auto &warning : recovery.warnings) std::cerr << warning << '\n';
+            return 0;
+        }
         if(input.size() >= 5 && input[1] == "--verify")
         {
             ResourceSystem runtime(nullptr, nullptr);
@@ -41,6 +56,15 @@ namespace
             return 0;
         }
         auto args = input;
+        String previewPath;
+        if(args.size() >= 4 && args[1] == "--preview-profile")
+        {
+            previewPath = args[3];
+            if(previewPath.empty() || previewPath.find('\0') != String::npos)
+                throw std::runtime_error("Preview requires a new report filename");
+            args.erase(args.begin() + 3);
+            args[1] = "--profile";
+        }
         std::function<bool()> cancelled = [] { return false; };
 #ifdef _WIN32
         if(args.size() == 5 && args[1] == "--profile" && args[3] == "--cancel-handle")
@@ -75,6 +99,8 @@ namespace
                          "<new-output-directory> <target> --map <catalog-type=extension> --root <uuid> "
                          "[--map <type=extension>] [--root <uuid>]\n"
                          "       WorkphoneResourcePackage --profile <profile.json>\n"
+                         "       WorkphoneResourcePackage --recover-jobs <project-root>\n"
+                         "       WorkphoneResourcePackage --preview-profile <profile.json> <new-report.json>\n"
                          "       WorkphoneResourcePackage --verify <package-directory> <target> <uuid> [uuid...]\n"
                          "       WorkphoneResourcePackage --save-profile <new-profile.json> <positional arguments above>\n";
             return 2;
@@ -155,6 +181,48 @@ namespace
                 throw std::runtime_error("Package compilation failed; no output directory published");
         }
         if(cancelled()) return 3;
+        if(!previewPath.empty())
+        {
+            Array<RuntimePackagePreviewEntry> entries;
+            if(!adapter.previewRuntimePackage(roots, entries, error))
+                throw std::runtime_error(error.c_str());
+            rapidjson::StringBuffer buffer;
+            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+            auto string = [&](const String &value) { writer.String(value.c_str(), static_cast<rapidjson::SizeType>(value.size())); };
+            writer.StartObject();
+            writer.Key("version"); writer.Uint(1);
+            writer.Key("target"); string(config.target);
+            writer.Key("entries"); writer.StartArray();
+            for(const auto &entry : entries)
+            {
+                writer.StartObject();
+                writer.Key("uuid"); string(entry.uuid);
+                writer.Key("resourceId"); string(entry.resourceId.str());
+                writer.Key("root"); writer.Bool(entry.root);
+                writer.Key("payloadBytes"); writer.Uint64(entry.payloadBytes);
+                writer.Key("installDependencies"); writer.StartArray();
+                for(const auto &child : entry.installDependencies) string(child.str());
+                writer.EndArray(); writer.EndObject();
+            }
+            writer.EndArray(); writer.EndObject();
+            if(buffer.GetSize() > 8 * 1024 * 1024) throw std::runtime_error("Closure preview exceeds 8 MiB report limit");
+            if(cancelled()) return 3;
+            namespace fs = std::filesystem;
+            const auto report = fs::absolute(fs::u8path(previewPath.c_str()));
+            const auto temporary = report.parent_path() / fs::u8path((".wp-preview-" + StringUtil::getUUID()).c_str());
+            struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove(path, ec); } } cleanup{temporary};
+            {
+                std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+                stream.write(buffer.GetString(), buffer.GetSize());
+                stream.close();
+                if(!stream) throw std::runtime_error("Cannot write closure preview report");
+            }
+            std::error_code ec;
+            fs::create_hard_link(temporary, report, ec);
+            if(ec) throw std::runtime_error("Cannot publish closure preview report exclusively");
+            std::cout << "Previewed admitted install closure; package output was not touched.\n";
+            return 0;
+        }
         if(!adapter.writeRuntimePackage(args[4], roots, error))
             throw std::runtime_error(error.c_str());
         std::cout << "Published catalog-admitted runtime resource directory.\n";

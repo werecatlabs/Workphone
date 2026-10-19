@@ -54,6 +54,7 @@ if (WP_USE_PRECOMPILED_HEADERS)
 endif()
 
 add_library(WPLuaBind STATIC ${HEADER_FILES} ${SOURCE_FILES})
+target_include_directories(WPLuaBind PRIVATE ${WP_ROOT}/Dependencies/rapidjson/include)
 set_target_properties (WPLuaBind PROPERTIES FOLDER Engine/Cpp/Scripting)
 
 if (NOT WP_STATIC_LIB)
