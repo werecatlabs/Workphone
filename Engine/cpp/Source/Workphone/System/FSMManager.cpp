@@ -417,7 +417,8 @@ namespace workphone
 
     auto FSMManager::getCurrentState( u32 id ) const -> u8
     {
-        if( id < m_currentStates.size() )
+        ScopedLock lock( &m_currentStates );
+        if( id < (u32)m_currentStates.size() )
         {
             return m_currentStates[id];
         }
@@ -427,7 +428,8 @@ namespace workphone
 
     void FSMManager::setCurrentState( u32 id, s32 state )
     {
-        if( id < m_currentStates.size() )
+        ScopedLock lock( &m_currentStates );
+        if( id < (u32)m_currentStates.size() )
         {
             m_currentStates[id] = state;
         }
@@ -435,7 +437,8 @@ namespace workphone
 
     auto FSMManager::getNewState( u32 id ) const -> u8
     {
-        if( id < m_newStates.size() )
+        ScopedLock lock( &m_newStates );
+        if( id < (u32)m_newStates.size() )
         {
             return m_newStates[id];
         }
@@ -445,7 +448,7 @@ namespace workphone
 
     void FSMManager::setNewState( u32 id, s32 state, bool changeNow )
     {
-        if( id < m_newStates.size() )
+        if( id < (u32)m_newStates.size() )
         {
             m_newStates[id] = state;
         }
