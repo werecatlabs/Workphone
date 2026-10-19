@@ -1013,8 +1013,6 @@ namespace workphone::scene
         {
         }
         }
-
-        updateBounds();
     }
 
     Array<SmartPtr<IComponent>> GameActor::getComponents() const
@@ -2753,7 +2751,8 @@ namespace workphone::scene
                 const auto childBounds = child->getLocalAABB();
                 if( childBounds.isFinite() && childBounds.isValid() )
                 {
-                    mergeBounds( child->getLocalTransform().transformAABB( childBounds ) );
+                    auto childTransform = child->getLocalTransform();
+                    mergeBounds( childTransform.transformAABB( childBounds ) );
                 }
             }
         }
