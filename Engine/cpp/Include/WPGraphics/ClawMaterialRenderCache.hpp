@@ -2,7 +2,7 @@
 #define WP_CLAW_MATERIAL_RENDER_CACHE_HPP
 
 #include <Workphone/Graphics/MaterialRenderState.hpp>
-#include <WorkphonePlatformWin32/workphone_graphics_renderer_dx11.h>
+#include <workphone_graphics_renderer_dx11.h>
 #include <array>
 #include <algorithm>
 #include <cmath>
