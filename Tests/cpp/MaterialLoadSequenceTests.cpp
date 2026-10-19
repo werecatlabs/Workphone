@@ -24,6 +24,8 @@
 #include <stdexcept>
 #include <limits>
 #include <vector>
+#include <thread>
+#include <atomic>
 #include "workphone_graphics_material.h"
 #include "MaterialRenderCacheBenchmark.hpp"
 
@@ -462,6 +464,235 @@ namespace
 
 namespace
 {
+    render::MaterialShader observedSchema()
+    {
+        render::MaterialShader schema( "ObservedPBR" );
+        schema.addParameter( render::MaterialShaderParameterType::Colour, "Albedo" )
+              .addParameter( render::MaterialShaderParameterType::Scalar, "Metalness" )
+              .addParameter( render::MaterialShaderParameterType::Scalar, "Roughness" )
+              .addParameter( render::MaterialShaderParameterType::Colour, "Emissive" )
+              .addParameter( render::MaterialShaderParameterType::Scalar, "Opacity" )
+              .addParameter( render::MaterialShaderParameterType::Scalar, "AlphaClip" )
+              .addParameter( render::MaterialShaderParameterType::Int, "Custom" );
+        render::MaterialShaderRegistry::instance().registerShader( schema );
+        return schema;
+    }
+
+    void benchmarkObservedParameters()
+    {
+        using namespace render;
+        auto schema = observedSchema();
+        auto legacy = make_ptr<ClawMaterial>(), batched = make_ptr<ClawMaterial>();
+        legacy->load( nullptr ); batched->load( nullptr );
+        legacy->setRenderMode( 3u ); batched->setRenderMode( 3u );
+        batched->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &parameters = batched->getShaderParameters();
+        const auto albedo = parameters.Resolve<ColourF>( "Albedo" );
+        const auto metal = parameters.Resolve<f32>( "Metalness" );
+        const auto rough = parameters.Resolve<f32>( "Roughness" );
+        const auto emissive = parameters.Resolve<ColourF>( "Emissive" );
+        const auto opacity = parameters.Resolve<f32>( "Opacity" );
+        const auto clip = parameters.Resolve<f32>( "AlphaClip" );
+        const auto names = parameters.GetNameLookupCount();
+        constexpr int updates = 1000, samples = 7;
+        const auto write = [&]( bool useBatch, f32 value ) {
+            const auto color = ColourF( value, 1.0f - value, value * 0.5f, 1 );
+            const auto emission = ColourF( value * 0.25f, 0, 0, 1 );
+            if( useBatch )
+            {
+                auto edit = parameters.Edit();
+                parameters.Set( albedo, color ); parameters.Set( metal, value );
+                parameters.Set( rough, 1.0f - value ); parameters.Set( emissive, emission );
+                parameters.Set( opacity, value ); parameters.Set( clip, 1.0f - value );
+            }
+            else
+            {
+                legacy->setDiffuse( color ); legacy->setMetalness( value );
+                legacy->setRoughness( 1.0f - value ); legacy->setEmissive( emission );
+                legacy->setOpacity( value ); legacy->setAlphaClip( 1.0f - value );
+            }
+        };
+        std::array<double, samples> oldTimes{}, newTimes{};
+        u64 oldPublications = 0, newPublications = 0;
+        const auto measure = [&]( bool useBatch ) {
+            write( useBatch, 0.75f );
+            auto material = useBatch ? batched : legacy;
+            const auto before = material->getRenderState()->revision;
+            const auto start = std::chrono::steady_clock::now();
+            for( int update = 0; update < updates; ++update )
+                write( useBatch, update % 2 ? 0.75f : 0.25f );
+            const auto elapsed = std::chrono::steady_clock::now() - start;
+            const auto publications = material->getRenderState()->revision - before;
+            if( useBatch ) newPublications = publications; else oldPublications = publications;
+            return std::chrono::duration<double, std::milli>( elapsed ).count();
+        };
+        for( int sample = 0; sample < samples; ++sample )
+        {
+            if( sample % 2 ) { newTimes[sample] = measure( true ); oldTimes[sample] = measure( false ); }
+            else { oldTimes[sample] = measure( false ); newTimes[sample] = measure( true ); }
+            const auto before = legacy->getRenderState(), after = batched->getRenderState();
+            require( before->diffuseColour == after->diffuseColour && before->emissiveColour == after->emissiveColour &&
+                     before->metalness == after->metalness && before->roughness == after->roughness &&
+                     before->opacity == after->opacity && before->alphaClip == after->alphaClip &&
+                     before->flags == after->flags && before->blendMode == after->blendMode &&
+                     newPublications == updates && oldPublications == updates * 7 &&
+                     parameters.GetNameLookupCount() == names, "publication benchmark output/count/name parity" );
+        }
+        std::sort( oldTimes.begin(), oldTimes.end() ); std::sort( newTimes.begin(), newTimes.end() );
+        std::cout << "updates=" << updates << " samples=" << samples
+                  << " legacy_median_ms=" << oldTimes[samples / 2] << " batched_median_ms=" << newTimes[samples / 2]
+                  << " legacy_publications=" << oldPublications << " batched_publications=" << newPublications
+                  << " name_lookups_during_updates=" << parameters.GetNameLookupCount() - names << '\n';
+        legacy->unload( nullptr ); batched->unload( nullptr );
+    }
+
+    void runObservedParameters( Fixture &fixture )
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>();
+        material->load( nullptr );
+        auto secondPass = material->getTechnique( 0 )->createPass();
+        secondPass->load( nullptr );
+        auto schema = observedSchema();
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &parameters = material->getShaderParameters();
+        const auto albedo = parameters.Resolve<ColourF>( "Albedo" );
+        const auto metal = parameters.Resolve<f32>( "Metalness" );
+        const auto rough = parameters.Resolve<f32>( "Roughness" );
+        const auto emissive = parameters.Resolve<ColourF>( "Emissive" );
+        const auto opacity = parameters.Resolve<f32>( "Opacity" );
+        const auto clip = parameters.Resolve<f32>( "AlphaClip" );
+        const auto custom = parameters.Resolve<s32>( "Custom" );
+        const auto names = parameters.GetNameLookupCount();
+        auto before = material->getRenderState();
+        auto secondBefore = secondPass->getStateContext()->getStateDataById<MaterialPassStateData>(
+            secondPass->getId() )->getRenderState();
+        {
+            auto edit = parameters.Edit();
+            parameters.Set( albedo, ColourF( 0.2f, 0.3f, 0.4f, 1 ) );
+            {
+                auto nested = parameters.Edit();
+                parameters.Set( metal, 0.25f ); parameters.Set( rough, 0.75f );
+                parameters.Set( emissive, ColourF::Black ); parameters.Set( opacity, 1.0f );
+                parameters.Set( clip, 0.4f );
+            }
+            material->applyShaderParametersToRenderer();
+            require( material->getRenderState() == before, "nested buffer edits retain the prior render version" );
+        }
+        auto committed = material->getRenderState();
+        auto secondCommitted = secondPass->getStateContext()->getStateDataById<MaterialPassStateData>(
+            secondPass->getId() )->getRenderState();
+        require( committed->revision == before->revision + 1 &&
+                 secondCommitted->revision == secondBefore->revision + 1 &&
+                 committed->metalness == 0.25f && committed->roughness == 0.75f &&
+                 committed->diffuseColour.r == 0.2f && secondCommitted->roughness == 0.75f,
+                 "one coherent publication per pass for a complete parameter edit" );
+        std::atomic<bool> finished{ false }, coherent{ true };
+        std::thread reader( [&] {
+            while( !finished.load() )
+            {
+                const auto snapshot = material->getRenderState();
+                if( !snapshot || std::abs( snapshot->metalness + snapshot->roughness - 1.0f ) > 0.00001f )
+                    coherent.store( false );
+            }
+        } );
+        for( int update = 0; update < 256; ++update )
+        {
+            auto edit = parameters.Edit();
+            const auto value = update % 2 ? 0.25f : 0.75f;
+            parameters.Set( metal, value ); parameters.Set( rough, 1.0f - value );
+        }
+        finished.store( true ); reader.join();
+        require( coherent.load(), "render readers see coherent versions during parameter edit batches" );
+        parameters.Set( rough, 0.33f );
+        require( material->getRenderState()->roughness == 0.33f && committed->roughness == 0.75f,
+                 "retained mutable buffer references publish without a manual renderer apply" );
+        before = material->getRenderState();
+        parameters.Set( rough, 0.33f );
+        require( !parameters.SetScalar( rough.handle, s32( 3 ) ) && material->getRenderState() == before,
+                 "no-op and wrong-type writes do not publish" );
+        {
+            auto edit = parameters.Edit();
+            parameters.Set( rough, 0.9f ); parameters.Set( rough, 0.33f );
+        }
+        require( material->getRenderState() == before, "a batch with no net surface change reuses its render version" );
+        parameters.Set( custom, s32( 17 ) );
+        require( material->getRenderState() == before && parameters.GetNameLookupCount() == names,
+                 "custom CPU slots do not reapply unrelated surface values or resolve names" );
+        material->setMetalness( 0.9f );
+        parameters.Set( rough, 0.2f );
+        require( material->getRenderState()->metalness == 0.9f,
+                 "incremental parameter edits preserve unrelated legacy pass edits" );
+        before = material->getRenderState();
+        material->applyShaderParametersToRenderer();
+        require( material->getRenderState()->metalness == 0.25f &&
+                 material->getRenderState()->revision == before->revision + 1,
+                 "explicit full reapply retains compatibility and coalesces publication" );
+        parameters.Set( opacity, 0.4f );
+        auto transparent = material->getRenderState();
+        require( transparent->opacity == 0.4f && transparent->diffuseColour.a == 0.4f &&
+                 transparent->getFlag( transparentFlag ) && !transparent->getFlag( cutoutFlag ) &&
+                 transparent->blendMode == 1u && material->getRenderMode() == 3u,
+                 "automatic opacity edits preserve alpha and render-mode normalization" );
+
+        auto detached = parameters;
+        detached.Set( rough, 0.8f );
+        require( material->getRenderState() == transparent, "copies never inherit a material observer" );
+        parameters = detached;
+        require( material->getRenderState()->roughness == 0.8f, "assignment retains the destination observer" );
+        detached.Set( rough, 0.6f );
+        require( material->getRenderState()->roughness == 0.8f, "assigned sources remain independent" );
+        before = material->getRenderState();
+        const auto revision = parameters.GetRevision();
+        parameters = parameters;
+        require( parameters.GetRevision() == revision && material->getRenderState() == before,
+                 "self assignment preserves versions" );
+        auto other = make_ptr<ClawMaterial>();
+        other->load( nullptr ); other->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &otherParameters = other->getShaderParameters();
+        otherParameters = std::move( parameters );
+        require( !parameters.IsValid() && other->getRenderState()->roughness == 0.8f &&
+                 material->getRenderState() == before, "moves transfer values without rebinding either owner" );
+        parameters.Reset( detached.GetLayout() );
+        parameters.Set( rough, 0.12f ); otherParameters.Set( rough, 0.34f );
+        require( material->getRenderState()->roughness == 0.12f && other->getRenderState()->roughness == 0.34f,
+                 "moved-from and moved-to buffers continue notifying their own material" );
+
+        before = other->getRenderState();
+        auto bag = make_ptr<Properties>();
+        bag->setProperty( Material::shaderIDStr, schema.getShaderID() );
+        bag->setProperty( "ShaderParam.Roughness", 0.45f );
+        bag->setProperty( "ShaderParam.Albedo", ColourF( 0.6f, 0.2f, 0.1f, 1 ) );
+        other->setProperties( bag );
+        require( other->getRenderState()->roughness == 0.45f && other->getRenderState()->diffuseColour.r == 0.6f &&
+                 other->getRenderState()->revision == before->revision + 1,
+                 "schema restore and property edits publish only their final state" );
+        auto nextSchema = schema;
+        nextSchema.addParameter( MaterialShaderParameterType::Scalar, "Extra" );
+        MaterialShaderRegistry::instance().registerShader( nextSchema );
+        before = other->getRenderState();
+        other->setShaderParameters( nextSchema.getParameterInfo(), nextSchema.getShaderID() );
+        require( other->getRenderState() == before && !otherParameters.Set( rough, 0.9f ),
+                 "schema migration retains the render version and rejects old handles" );
+        auto nextRough = otherParameters.Resolve<f32>( "Roughness" );
+        otherParameters.Set( nextRough, 0.27f );
+        require( other->getRenderState()->roughness == 0.27f,
+                 "schema replacement retains observer binding on the physical instance" );
+
+        material->unload( nullptr );
+        {
+            auto edit = parameters.Edit();
+            parameters.Set( albedo, ColourF( 0.1f, 0.7f, 0.2f, 1 ) );
+            parameters.Set( rough, 0.67f );
+        }
+        require( !material->getRenderState(), "edits after unload do not resurrect a retired graph" );
+        material->load( nullptr );
+        require( material->getRenderState()->roughness == 0.67f && material->getRenderState()->diffuseColour.g == 0.7f,
+                 "pending parameter edits reach the new graph after reload" );
+        material->unload( nullptr ); other->unload( nullptr );
+        fixture.graphics->pending.clear();
+    }
+
     void runRenderSnapshots( Fixture &fixture )
     {
         auto pending = make_ptr<render::ClawMaterial>();
@@ -584,6 +815,12 @@ int main( int argc, char **argv )
         material_cache_benchmark::contracts();
         runMaterialPreparation();
         Fixture fixture;
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-publication" )
+        {
+            benchmarkObservedParameters();
+            return 0;
+        }
+        runObservedParameters( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );
         run( fixture );

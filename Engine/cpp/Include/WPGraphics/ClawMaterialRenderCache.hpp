@@ -111,7 +111,8 @@ namespace workphone::render
 
         u64 getPreparationCount() const { return m_preparations; }
 
-    private:
+        // Also used by immutable scene publications, which prepare each distinct
+        // material once and retain the result for every colour/shadow consumer.
         static ClawPreparedMaterialDX11 prepare( const MaterialRenderState &state )
         {
             ClawPreparedMaterialDX11 result;
@@ -150,6 +151,7 @@ namespace workphone::render
             return result;
         }
 
+    private:
         struct Tag
         {
             std::weak_ptr<const MaterialRenderState> owner;

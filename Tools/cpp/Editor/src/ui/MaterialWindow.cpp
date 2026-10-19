@@ -729,13 +729,7 @@ namespace workphone::editor
                     }
                 }
 
-                // Push the edited value into the legacy renderer path so it renders immediately.
-                auto editedMaterial =
-                    workphone::dynamic_pointer_cast<render::Material>( m_owner->getMaterial() );
-                if( editedMaterial )
-                {
-                    editedMaterial->applyShaderParametersToRenderer();
-                }
+                // Numeric parameter writes publish through the owning material.
             }
             return {};
         }

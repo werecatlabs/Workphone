@@ -6,6 +6,7 @@
 #include "ClawAnimationContracts.hpp"
 #include "ClawRTTJobContracts.hpp"
 #include <Workphone/Interface/Graphics/IMaterial.hpp>
+#include <Workphone/Graphics/MaterialShader.hpp>
 #include <Workphone/Interface/IBuildDirector.hpp>
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
@@ -265,6 +266,31 @@ namespace
                              packed->requests == ( roughnessSlots[mode] == 25u ? 1u : 0u ),
                              "new and cached draws must resolve the texture owner for each authored roughness mode" );
             }
+        }
+        MaterialShader shader( "ColorOnly" );
+        shader.addParameter( MaterialShaderParameterType::Colour, "Color" )
+              .addParameter( MaterialShaderParameterType::Scalar, "Opacity" );
+        MaterialShaderRegistry::instance().registerShader( shader );
+        material->setShaderParameters( shader.getParameterInfo(), shader.getShaderID() );
+        material->routeDataDrivenMaterialType();
+        auto &parameters = material->getShaderParameters();
+        const auto color = parameters.Resolve<ColourF>( "Color" );
+        const auto opacity = parameters.Resolve<f32>( "Opacity" );
+        for( int edit = 0; edit < 4; ++edit )
+        {
+            const bool red = edit % 2 == 0;
+            {
+                auto transaction = parameters.Edit();
+                parameters.Set( color, red ? ColourF( 1, 0, 0, 1 ) : ColourF( 0, 1, 0, 1 ) );
+                parameters.Set( opacity, 1.0f );
+            }
+            renderer.clear( ColourF::Black );
+            renderer.renderMesh( &mesh, Matrix4F::identity() );
+            const auto pixels = claw_foliage_contracts::pixels( native );
+            const auto offset = ( 32u * 64u + 32u ) * 4u;
+            ok &= check( pixels[offset + ( red ? 0u : 1u )] > 200 &&
+                         pixels[offset + ( red ? 1u : 0u )] < 10,
+                         "retained typed parameter edits must reach GPU pixels without manual apply" );
         }
         mesh.setMaterial( nullptr );
         material->unload( nullptr );

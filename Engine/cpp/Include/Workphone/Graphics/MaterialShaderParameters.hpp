@@ -11,6 +11,7 @@
 
 namespace workphone::render
 {
+    class Material;
     using MaterialResourceHandle = u64;
     WPCore_API extern const MaterialResourceHandle InvalidMaterialResourceHandle;
     // Existing values retained. Scalar/Vector2/Vector4 explicitly describe floats.
@@ -98,10 +99,27 @@ namespace workphone::render
     public:
         MaterialShaderParametersInstance() = default;
         ~MaterialShaderParametersInstance() = default;
-        MaterialShaderParametersInstance( const MaterialShaderParametersInstance & ) = default;
-        MaterialShaderParametersInstance &operator=( const MaterialShaderParametersInstance & ) = default;
-        MaterialShaderParametersInstance( MaterialShaderParametersInstance && ) noexcept = default;
-        MaterialShaderParametersInstance &operator=( MaterialShaderParametersInstance && ) noexcept = default;
+        MaterialShaderParametersInstance( const MaterialShaderParametersInstance &other );
+        MaterialShaderParametersInstance &operator=( const MaterialShaderParametersInstance &other );
+        MaterialShaderParametersInstance( MaterialShaderParametersInstance &&other ) noexcept;
+        MaterialShaderParametersInstance &operator=( MaterialShaderParametersInstance &&other ) noexcept;
+
+        /** Coalesce supported material-semantic writes until the outer scope closes.
+         * The instance must outlive the scope. Values/revisions update immediately;
+         * readers of the material keep its previous immutable render snapshot.
+         */
+        class EditScope
+        {
+        public:
+            explicit EditScope( MaterialShaderParametersInstance &instance ) : m_instance( instance )
+            { m_instance.BeginEdit(); }
+            ~EditScope() { m_instance.EndEdit(); }
+            EditScope( const EditScope & ) = delete;
+            EditScope &operator=( const EditScope & ) = delete;
+        private:
+            MaterialShaderParametersInstance &m_instance;
+        };
+        EditScope Edit() { return EditScope( *this ); }
 
         void Reset( const Array<MaterialShaderParameterInfo> &info );
         void Reset( MaterialShaderParameterLayout::Ptr layout );
@@ -166,12 +184,18 @@ namespace workphone::render
         void InitializeDefaultResourceHandles();
         bool ValidateResourceHandles() const;
     private:
+        friend class Material;
+        void NotifyOwner( u8 mask ) noexcept;
+        void BeginEdit() noexcept;
+        void EndEdit() noexcept;
         bool WriteBytes( MaterialShaderParameterHandle h, const void *value, u32 size, MaterialShaderParameterType type );
         bool ReadBytes( MaterialShaderParameterHandle h, void *value, u32 size, MaterialShaderParameterType type ) const;
         MaterialShaderParameterLayout::Ptr m_layout;
         Array<u8> m_parametersMemory;
         u64 m_revision = 0;
         mutable u64 m_nameLookups = 0;
+        // Binding belongs to this physical instance, never to copies/moved values.
+        Material *m_owner = nullptr;
     };
 }
 #endif

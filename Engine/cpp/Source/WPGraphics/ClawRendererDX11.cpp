@@ -854,10 +854,24 @@ namespace workphone::render
         return renderMeshBatch( mesh, Matrix4F::identity(), instances, count );
     }
 
+    bool ClawRendererDX11::renderMeshRecords( ClawMesh *mesh, const Matrix4F &transform,
+        const ClawMaterialDrawRecords &records, const ClawMaterialDrawRecords::Binding &binding,
+        const wp_mat4f *view, const wp_mat4f *projection )
+    {
+        const auto native = mesh ? mesh->getNativeMesh() : nullptr;
+        if( !native || !records.valid( binding, mesh,
+                static_cast<u32>( std::max<s32>( 1, wp_graphics_mesh_get_submesh_count( native ) ) ) ) )
+            return false;
+        renderMeshBatch( mesh, transform, nullptr, 0, view, projection, &records, &binding );
+        return true;
+    }
+
     u64 ClawRendererDX11::renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
                                            const wp_instance_pntc_dx11 *instances, u32 instanceCount,
                                            const wp_mat4f *snapshotView,
-                                           const wp_mat4f *snapshotProjection )
+                                           const wp_mat4f *snapshotProjection,
+                                           const ClawMaterialDrawRecords *records,
+                                           const ClawMaterialDrawRecords::Binding *binding )
     {
         auto nativeMesh = mesh ? mesh->getNativeMesh() : nullptr;
         if( !m_renderer || !mesh || !mesh->isVisible() || !nativeMesh )
@@ -903,16 +917,23 @@ namespace workphone::render
                 }
             }
 
-            auto pMaterial = resolveMeshMaterial( mesh, submeshIndex );
-            auto material = pMaterial.get();
-            const auto state = getPrimaryMaterialPassState( pMaterial );
+            const auto record = records && binding ? records->get( *binding, submeshIndex ) : nullptr;
+            SmartPtr<IMaterial> pMaterial;
+            MaterialRenderState::Ptr ownedState;
+            if( !record )
+            {
+                pMaterial = resolveMeshMaterial( mesh, submeshIndex );
+                ownedState = getPrimaryMaterialPassState( pMaterial );
+            }
+            auto material = record ? record->material : pMaterial.get();
+            const auto state = record ? record->state : ownedState.get();
             // The snapshot retains all texture owners for this draw. Only the
             // third-party fallback needs a temporary owning reference.
             SmartPtr<ITexture> fallbackTexture;
             const auto getTexture = [&]( u32 slot ) -> ITexture * {
                 if( state )
                     return slot < state->textures.size() ? state->textures[slot].get() : nullptr;
-                fallbackTexture = pMaterial ? pMaterial->getTexture( slot ) : nullptr;
+                fallbackTexture = material ? material->getTexture( slot ) : nullptr;
                 return fallbackTexture.get();
             };
 
@@ -922,9 +943,13 @@ namespace workphone::render
             const ClawPreparedMaterialDX11 *prepared = nullptr;
             if( state )
             {
-                if( !m_materialRenderCache )
-                    m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
-                prepared = &m_materialRenderCache->get( state );
+                if( record ) prepared = &record->prepared;
+                else
+                {
+                    if( !m_materialRenderCache )
+                        m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
+                    prepared = &m_materialRenderCache->get( ownedState );
+                }
             }
 
             void *nativeTexture = nullptr;

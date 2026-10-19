@@ -1,5 +1,6 @@
 #include <Workphone/WorkphonePCH.hpp>
 #include <Workphone/Graphics/MaterialShaderParameters.hpp>
+#include <Workphone/Graphics/Material.hpp>
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -104,14 +105,72 @@ namespace workphone::render
         return bytes;
     }
 
+    MaterialShaderParametersInstance::MaterialShaderParametersInstance(
+        const MaterialShaderParametersInstance &other ) :
+        m_layout( other.m_layout ), m_parametersMemory( other.m_parametersMemory ),
+        m_revision( other.m_revision ), m_nameLookups( other.m_nameLookups ) {}
+
+    MaterialShaderParametersInstance &MaterialShaderParametersInstance::operator=(
+        const MaterialShaderParametersInstance &other )
+    {
+        if( this == &other ) return *this;
+        if( m_layout == other.m_layout && m_parametersMemory == other.m_parametersMemory ) return *this;
+        auto bytes = other.m_parametersMemory; // Preserve the destination on allocation failure.
+        m_layout = other.m_layout;
+        m_parametersMemory = std::move( bytes );
+        ++m_revision;
+        NotifyOwner( 0xffu );
+        return *this;
+    }
+
+    MaterialShaderParametersInstance::MaterialShaderParametersInstance(
+        MaterialShaderParametersInstance &&other ) noexcept :
+        m_layout( std::move( other.m_layout ) ), m_parametersMemory( std::move( other.m_parametersMemory ) ),
+        m_revision( other.m_revision ), m_nameLookups( other.m_nameLookups )
+    {
+        ++other.m_revision;
+        other.NotifyOwner( 0xffu );
+    }
+
+    MaterialShaderParametersInstance &MaterialShaderParametersInstance::operator=(
+        MaterialShaderParametersInstance &&other ) noexcept
+    {
+        if( this == &other ) return *this;
+        const bool changed = m_layout != other.m_layout || m_parametersMemory != other.m_parametersMemory;
+        m_layout = std::move( other.m_layout );
+        m_parametersMemory = std::move( other.m_parametersMemory );
+        if( changed ) { ++m_revision; NotifyOwner( 0xffu ); }
+        ++other.m_revision;
+        other.NotifyOwner( 0xffu );
+        return *this;
+    }
+
+    void MaterialShaderParametersInstance::NotifyOwner( u8 mask ) noexcept
+    {
+        if( !m_owner || !mask || m_owner->m_synchronizingShaderParameters ) return;
+        m_owner->shaderParametersChanged( mask );
+    }
+
+    void MaterialShaderParametersInstance::BeginEdit() noexcept
+    {
+        if( m_owner ) ++m_owner->m_shaderParameterEditDepth;
+    }
+
+    void MaterialShaderParametersInstance::EndEdit() noexcept
+    {
+        if( m_owner && --m_owner->m_shaderParameterEditDepth == 0 )
+            m_owner->shaderParametersChanged( 0 );
+    }
+
     void MaterialShaderParametersInstance::Reset( const Array<MaterialShaderParameterInfo> &info )
     { Reset( MaterialShaderParameterLayout::Create( info ) ); }
     void MaterialShaderParametersInstance::Reset( MaterialShaderParameterLayout::Ptr layout )
     {
-        m_layout = std::move( layout );
-        if( m_layout ) m_parametersMemory = m_layout->GetDefaults();
+        if( layout ) m_parametersMemory = layout->GetDefaults();
         else m_parametersMemory.clear();
+        m_layout = std::move( layout );
         ++m_revision;
+        NotifyOwner( 0xffu );
     }
     void MaterialShaderParametersInstance::Clear() { Reset( MaterialShaderParameterLayout::Ptr{} ); }
     const Array<MaterialShaderParameterInfo> &MaterialShaderParametersInstance::GetParameterInfo() const
@@ -149,6 +208,19 @@ namespace workphone::render
         {
             std::memcpy( destination, value, size );
             ++m_revision;
+            if( m_owner )
+            {
+                static_assert( static_cast<u32>( MaterialBuiltinParameter::Count ) <= 8,
+                               "extend the publication mask when adding material semantics" );
+                u8 mask = 0;
+                for( u32 i = 0; i < static_cast<u32>( MaterialBuiltinParameter::Count ); ++i )
+                {
+                    const auto builtin = GetBuiltin( static_cast<MaterialBuiltinParameter>( i ) );
+                    if( builtin.IsValid() && builtin.m_parameterIndex == h.m_parameterIndex )
+                        mask |= static_cast<u8>( 1u << i );
+                }
+                NotifyOwner( mask );
+            }
         }
         return true;
     }
@@ -204,6 +276,7 @@ namespace workphone::render
     }
     void MaterialShaderParametersInstance::InitializeDefaultResourceHandles()
     {
+        auto edit = Edit();
         for( u32 i = 0; i < GetParameterInfo().size(); ++i )
         {
             const auto type = GetParameterInfo()[i].m_type;

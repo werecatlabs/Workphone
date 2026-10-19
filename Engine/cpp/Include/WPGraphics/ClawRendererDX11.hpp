@@ -7,6 +7,7 @@
 #include <Workphone/Math/Matrix4.hpp>
 #include <Workphone/Memory/AtomicSmartPtr.hpp>
 #include <WPGraphics/ClawCubemap.hpp>
+#include <WPGraphics/ClawMaterialDrawRecords.hpp>
 
 struct wp_renderer;
 struct wp_mat4f;
@@ -162,6 +163,10 @@ namespace workphone
             void renderMesh( ClawMesh *mesh, const Matrix4F &transform );
             /** Colour draw using the same captured view that produced its cull list. */
             void renderMeshSnapshot( ClawMesh *, const Matrix4F &, const wp_mat4f &, const wp_mat4f & );
+            /** Borrow the scene publication; false rejects stale/foreign/changed section bindings. */
+            bool renderMeshRecords( ClawMesh *, const Matrix4F &, const ClawMaterialDrawRecords &,
+                                    const ClawMaterialDrawRecords::Binding &,
+                                    const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
             /** Draw fixed-LOD instances through the same material/submesh path.
              * Returns submitted instance-sections; zero means no output. */
             u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances, u32 count );
@@ -223,7 +228,9 @@ namespace workphone
         private:
             u64 renderMeshBatch( ClawMesh *mesh, const Matrix4F &transform,
                                  const wp_instance_pntc_dx11 *instances, u32 instanceCount,
-                                 const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
+                                 const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr,
+                                 const ClawMaterialDrawRecords *records = nullptr,
+                                 const ClawMaterialDrawRecords::Binding *binding = nullptr );
             void applySceneLighting( wp_material_dx11 &material ) const;
 
             /**

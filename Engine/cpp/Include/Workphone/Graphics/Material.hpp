@@ -1219,7 +1219,9 @@ namespace workphone
 
             /** @brief The data-driven parameter values (read/write). Invalid until
              *
-             * setShaderParameters() is called. */
+             * setShaderParameters() is called. Effective built-in writes publish
+             * automatically; use its Edit() scope to coalesce related changes.
+             * Owning-thread use or external synchronization is required. */
             MaterialShaderParametersInstance &getShaderParameters();
 
             const MaterialShaderParametersInstance &getShaderParameters() const;
@@ -1237,9 +1239,9 @@ namespace workphone
 
             /** @brief Push the data-driven parameter buffer back into the legacy PBR setters the
              *
-             * renderer already consumes (inverse of syncPBRToShaderParameters). Call on
-             *
-             * shader selection and on per-parameter edits so data-driven values render.
+             * renderer already consumes (inverse of syncPBRToShaderParameters). Use
+             * on shader selection or to explicitly reapply all supported semantics.
+             * Parameter mutators already publish their changed semantics automatically.
              *
              * Does not change the material type. */
             void applyShaderParametersToRenderer();
@@ -1274,6 +1276,9 @@ namespace workphone
 
         protected:
             friend class MaterialPass; // Seed newly loaded passes from typed pre-load values.
+            friend class MaterialShaderParametersInstance;
+            void shaderParametersChanged( u8 mask ) noexcept;
+            void applyShaderParametersToRenderer( u8 mask );
             /** @brief Initializes the internal state object for the material. */
             void createStateObject();
 
@@ -1342,6 +1347,9 @@ namespace workphone
 
             /** True when the data-driven buffer needs re-sync to the renderer. */
             bool m_shaderParametersDirty = false;
+            bool m_synchronizingShaderParameters = false;
+            u8 m_pendingShaderSemantics = 0;
+            u32 m_shaderParameterEditDepth = 0;
 
             /** @brief A named texture slot and the resource path bound to it. */
             struct ShaderTextureRef

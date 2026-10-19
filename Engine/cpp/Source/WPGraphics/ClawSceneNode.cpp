@@ -155,6 +155,10 @@ namespace workphone
                 return;
             }
 
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
+
             auto owner = object->getOwner();
             if( owner != this )
             {
@@ -203,6 +207,10 @@ namespace workphone
             {
                 return;
             }
+
+            auto application = core::IApplicationManager::instancePtr();
+            auto graphics = application ? application->getGraphicsSystem() : nullptr;
+            ScopedLock graphicsLock( graphics );
 
             auto owner = object->getOwner();
             if( owner != this )
