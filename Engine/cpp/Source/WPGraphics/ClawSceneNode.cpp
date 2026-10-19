@@ -12,29 +12,8 @@ namespace workphone
 {
     namespace render
     {
+
         WP_CLASS_REGISTER_DERIVED( workphone::render, ClawSceneNode, GraphicsSceneNode );
-
-        namespace
-        {
-            void applyNativeTransform( wp_scenenode *node, const Transform3<real_Num> &transform )
-            {
-                const auto &position = transform.getPosition();
-                wp_vec3f pos = { position.x, position.y, position.z };
-
-                const auto &orientation = transform.getOrientation();
-                wp_quatf ori = { static_cast<wp_f32>( orientation.w ),
-                                 static_cast<wp_f32>( orientation.x ),
-                                 static_cast<wp_f32>( orientation.y ),
-                                 static_cast<wp_f32>( orientation.z ) };
-
-                const auto &scale = transform.getScale();
-                wp_vec3f s = { scale.x, scale.y, scale.z };
-
-                wp_scenenode_set_position( node, pos );
-                wp_scenenode_set_orientation( node, ori );
-                wp_scenenode_set_scale( node, s );
-            }
-        }  // namespace
 
         ClawSceneNode::ClawSceneNode() : GraphicsSceneNode(), m_node( nullptr )
         {
@@ -139,17 +118,7 @@ namespace workphone
             // an old transform, and retain updates made before native-node creation.
             if( m_node && isThreadSafe() )
             {
-                if( getTransform() != transform )
-                {
-                    if( auto stateContext = getStateContext() )
-                    {
-                        if( auto stateData = stateContext->invalidateStateDataById<TransformStateData>(
-                                getId(), false ) )
-                        {
-                            stateData->localTransform = transform;
-                        }
-                    }
-                }
+                m_transformStateData->localTransform = transform;
 
                 // Equal authored state can still be waiting for render-thread dispatch.
                 // Always synchronize the native node when its owner applies the transform.
@@ -157,10 +126,7 @@ namespace workphone
             }
             else
             {
-                if( getTransform() != transform )
-                {
-                    GraphicsSceneNode::setTransform( transform );
-                }
+                GraphicsSceneNode::setTransform( transform );
             }
         }
 
@@ -339,6 +305,25 @@ namespace workphone
             }
 
             return false;
+        }
+
+        void ClawSceneNode::applyNativeTransform( wp_scenenode *node,
+                                                  const Transform3<real_Num> &transform )
+        {
+            const auto &position = transform.getPosition();
+            wp_vec3f pos = { position.x, position.y, position.z };
+
+            const auto &orientation = transform.getOrientation();
+            wp_quatf ori = { static_cast<wp_f32>( orientation.w ), static_cast<wp_f32>( orientation.x ),
+                             static_cast<wp_f32>( orientation.y ),
+                             static_cast<wp_f32>( orientation.z ) };
+
+            const auto &scale = transform.getScale();
+            wp_vec3f s = { scale.x, scale.y, scale.z };
+
+            wp_scenenode_set_position( node, pos );
+            wp_scenenode_set_orientation( node, ori );
+            wp_scenenode_set_scale( node, s );
         }
 
         void ClawSceneNode::setupStateContext()
