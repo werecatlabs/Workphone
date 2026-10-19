@@ -14,6 +14,9 @@ namespace workphone
         Array<String> arguments;
         String projectRoot, executable, logPath, snapshotPath;
         String previewPath;
+        // Captured before queueing. Zero explicitly disables the respective limit.
+        u32 maximumRunMilliseconds = 30 * 60 * 1000;
+        u32 cancelGraceMilliseconds = 30 * 1000;
         String status = "queued", diagnostic;
         std::atomic<bool> cancel{false};
         std::atomic<bool> finished{false};

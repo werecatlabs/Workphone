@@ -9,6 +9,7 @@
 #include <Workphone/Jobs/ResourcePackageJob.hpp>
 #include <Workphone/System/ResourcePackageProfile.hpp>
 #include <filesystem>
+#include <cstdlib>
 #ifdef _WIN32
 #include <Windows.h>
 #endif
@@ -96,6 +97,22 @@ namespace workphone
             if(!fs::equivalent(project, fs::u8path(arguments[1].c_str())))
                 throw std::runtime_error("Package profile source root does not match the active project");
             auto request = std::make_shared<ResourcePackageJobState>();
+            auto executionLimit = [](const char *name, u32 fallback, u32 maximum) -> u32 {
+                const auto raw = std::getenv(name);
+                if(!raw) return fallback;
+                const std::string value(raw);
+                if(value.empty() || value.size() > 10 ||
+                    value.find_first_not_of("0123456789") != std::string::npos)
+                    throw std::runtime_error(std::string("Invalid execution limit: ") + name);
+                const auto number = std::stoull(value);
+                if(number > maximum || (number != 0 && number < 1000))
+                    throw std::runtime_error(std::string("Execution limit is out of range: ") + name);
+                return static_cast<u32>(number);
+            };
+            request->maximumRunMilliseconds = executionLimit("WP_RESOURCE_PACKAGE_MAX_RUN_MS",
+                request->maximumRunMilliseconds, 24 * 60 * 60 * 1000);
+            request->cancelGraceMilliseconds = executionLimit("WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS",
+                request->cancelGraceMilliseconds, 10 * 60 * 1000);
             request->arguments = arguments;
             request->projectRoot = project.u8string().c_str();
             const auto id = StringUtil::getUUID();

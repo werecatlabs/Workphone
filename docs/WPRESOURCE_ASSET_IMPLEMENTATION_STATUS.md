@@ -1375,6 +1375,32 @@ Interactive acceptance, clean-machine/license audit, full-family shipping,
 compiler/export kill windows, artifact reclamation, retention and power-loss
 certification remain open.
 
+## Increment 24: Bounded package-child supervision (19 October 2026)
+
+Windows package jobs now supervise child execution with a monotonic deadline and
+cooperative cancellation grace period. Defaults are 30 minutes and 30 seconds.
+The Editor captures validated `WP_RESOURCE_PACKAGE_MAX_RUN_MS` (1000–86400000)
+and `WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS` (1000–600000) overrides before queueing;
+zero explicitly disables the corresponding limit. Invalid settings fail without
+queueing. Captured fields are detached from later environment/UI changes.
+
+Cancellation first signals the existing inherited event. Child exit 0 still wins
+over a pending deadline; cooperative exit 3 distinguishes user cancellation from
+a timeout. If the child does not exit within grace, its owned Job Object is
+terminated and exit confirmation is bounded to five seconds. Forced stops,
+unexpected exit codes and uncertain wait/status failures report `interrupted`
+instead of asserting that publication failed or never occurred. Captured settings
+and ownership evidence remain available for the existing recovery route. Outputs
+are never deleted to make a retry possible. Watchdog timing starts at child
+resume; prelaunch filesystem/recovery work is outside this deadline.
+
+Validation is in progress. The deliberately blocked native child tests deadline
+escalation, user cancellation, cooperative timeout, success after a cancellation
+signal, unexpected exit and retained-record recovery. These establish supervisor
+behavior, not a crash inside a real compiler or the publication window. Retention,
+artifact reclamation, real compiler/export interruption, power-loss and full
+shipping certification remain open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add

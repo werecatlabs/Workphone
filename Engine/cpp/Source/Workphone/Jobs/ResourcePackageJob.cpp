@@ -160,6 +160,7 @@ namespace workphone
         String recoveryNotice;
         bool ownsSnapshot = false;
         bool ownsMarker = false;
+        bool retainSnapshot = false;
 #ifdef _WIN32
         // Retained until after normal snapshot cleanup; completion can race a new job.
         PackageProcessHandle ownedRequest;
@@ -262,35 +263,81 @@ namespace workphone
             if(!AssignProcessToJobObject(group.value, child.value))
             {
                 TerminateProcess(child.value, 1);
-                WaitForSingleObject(child.value, INFINITE);
+                WaitForSingleObject(child.value, 5000);
                 throw std::runtime_error("Cannot assign package child lifetime");
             }
             if(ResumeThread(thread.value) == static_cast<DWORD>(-1))
                 throw std::runtime_error("Cannot start package child");
+            const auto started = GetTickCount64();
+            ULONGLONG cancellationStarted = 0;
+            bool cancellationPending = false, expired = false, forced = false;
             for(;;)
             {
-                if(request.cancel) SetEvent(cancelEvent.value);
                 const auto wait = WaitForSingleObject(child.value, 50);
                 if(wait == WAIT_OBJECT_0) break;
-                if(wait != WAIT_TIMEOUT) throw std::runtime_error("Cannot wait for package child");
+                if(wait != WAIT_TIMEOUT)
+                { retainSnapshot = true; throw std::runtime_error("Cannot wait for package child"); }
+                const auto now = GetTickCount64();
+                if(!cancellationPending && (request.cancel || (request.maximumRunMilliseconds &&
+                    now - started >= request.maximumRunMilliseconds)))
+                {
+                    expired = !request.cancel;
+                    cancellationPending = true;
+                    cancellationStarted = now;
+                    {
+                        std::lock_guard<std::mutex> lock(request.mutex);
+                        request.status = expired ? "timing out" : "cancelling";
+                        request.diagnostic = String(expired ? "Child deadline reached" : "Cancellation requested") +
+                            (request.cancelGraceMilliseconds ? "; waiting for cooperative exit before forced interruption" :
+                                "; forced interruption is disabled");
+                    }
+                    if(!SetEvent(cancelEvent.value))
+                    { retainSnapshot = true; throw std::runtime_error("Cannot signal package cancellation"); }
+                }
+                if(cancellationPending && request.cancelGraceMilliseconds &&
+                    now - cancellationStarted >= request.cancelGraceMilliseconds)
+                {
+                    // Recheck before escalation: a completed publication wins.
+                    if(WaitForSingleObject(child.value, 0) == WAIT_OBJECT_0) break;
+                    retainSnapshot = true;
+                    if(!TerminateJobObject(group.value, 4))
+                        throw std::runtime_error("Cannot terminate unresponsive package child");
+                    forced = true;
+                    if(WaitForSingleObject(child.value, 5000) != WAIT_OBJECT_0)
+                        throw std::runtime_error("Package child termination could not be confirmed");
+                    break;
+                }
             }
             DWORD exitCode = 1;
-            if(!GetExitCodeProcess(child.value, &exitCode)) throw std::runtime_error("Cannot read package exit status");
+            if(!GetExitCodeProcess(child.value, &exitCode))
+            { retainSnapshot = true; throw std::runtime_error("Cannot read package exit status"); }
+            if(forced || (exitCode != 0 && exitCode != 1 && exitCode != 3))
+            {
+                retainSnapshot = true;
+                complete("interrupted", String(forced ? (expired ? "Package child deadline and grace period expired" :
+                    "Package child cancellation grace period expired") : "Package child exited unexpectedly") +
+                    "; publication outcome is unknown. Captured request retained; inspect output before retrying", static_cast<int>(exitCode));
+            }
+            else
+            {
             const String message = exitCode == 0 ? (request.previewPath.empty() ? "Published checked resource directory" :
                 "Previewed checked closure; package output was not touched") :
-                (exitCode == 3 ? "Cancelled before package publication" : "Package failed; inspect the job log");
-            complete(exitCode == 0 ? "succeeded" : (exitCode == 3 ? "cancelled" : "failed"), message, static_cast<int>(exitCode));
+                (exitCode == 3 ? (expired ? "Child deadline reached; cancelled before package publication" :
+                    "Cancelled before package publication") : "Package failed; inspect the job log");
+            complete(exitCode == 0 ? "succeeded" : (exitCode == 3 ? (expired ? "timed out" : "cancelled") : "failed"), message, static_cast<int>(exitCode));
+            }
 #else
             throw std::runtime_error("Asynchronous resource packaging is currently supported on Windows only");
 #endif
         }
-        catch(const std::exception &error) { complete("failed", error.what(), 1); }
+        catch(const std::exception &error) { complete(retainSnapshot ? "interrupted" : "failed",
+            String(error.what()) + (retainSnapshot ? "; publication outcome is unknown; captured request retained" : ""), 1); }
         std::error_code ignored;
-        if(ownsSnapshot) std::filesystem::remove(std::filesystem::u8path(request.snapshotPath.c_str()), ignored);
+        if(ownsSnapshot && !retainSnapshot) std::filesystem::remove(std::filesystem::u8path(request.snapshotPath.c_str()), ignored);
 #ifdef _WIN32
         // Keep ownership evidence if snapshot cleanup failed. Recovery retains it
         // beside archived history; unmarked legacy requests are never archived.
-        if(ownsMarker && !ignored) std::filesystem::remove(ownerPath(std::filesystem::u8path(request.snapshotPath.c_str())), ignored);
+        if(ownsMarker && !retainSnapshot && !ignored) std::filesystem::remove(ownerPath(std::filesystem::u8path(request.snapshotPath.c_str())), ignored);
 #endif
     }
 }

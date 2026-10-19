@@ -18,12 +18,24 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <cstdlib>
+#include <thread>
 
 using namespace workphone;
 namespace fs = std::filesystem;
 namespace
 {
     void require(bool value, const char *message) { if(!value) throw std::runtime_error(message); }
+    struct EnvironmentValue
+    {
+        std::string name, previous;
+        EnvironmentValue(const char *key, const char *value) : name(key)
+        {
+            if(const auto old = std::getenv(key)) previous = old;
+            _putenv_s(key, value);
+        }
+        ~EnvironmentValue() { _putenv_s(name.c_str(), previous.c_str()); }
+    };
     class Queue final : public JobQueue
     {
     public:
@@ -45,6 +57,8 @@ namespace
     };
     void run(const fs::path &project, const fs::path &original)
     {
+        EnvironmentValue maximum("WP_RESOURCE_PACKAGE_MAX_RUN_MS", "0");
+        EnvironmentValue grace("WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS", "30000");
         auto app = core::IApplicationManager::instance();
         app->setProjectPath(project.u8string().c_str());
         app->setRunning(true);
@@ -190,6 +204,18 @@ namespace
         require(!manager->startResourcePackage() && !queue->captured,
                 "Missing worker pool fails without queueing work on the UI thread");
         app->setThreadPool(make_ptr<Workers>());
+        for(const auto bad : {"", "-1", "1", "1000ms", "86400001", "18446744073709551616"})
+        {
+            EnvironmentValue invalid("WP_RESOURCE_PACKAGE_MAX_RUN_MS", bad);
+            // An empty environment value removes the override and uses the default.
+            if(*bad) require(!manager->startResourcePackage() && !queue->captured,
+                "Invalid execution limits fail before queueing a child");
+        }
+        {
+            EnvironmentValue invalid("WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS", "600001");
+            require(!manager->startResourcePackagePreview() && !queue->captured,
+                "Invalid cancellation grace fails before queueing a preview");
+        }
         queue->accepting = false;
         require(!manager->startResourcePackage() && !manager->isResourcePackageBusy(),
                 "A dropped queue request reports failure rather than staying busy");
@@ -341,6 +367,69 @@ namespace
         std::cout << "PASS: native package jobs, immutable requests, cancellation, failure, retry and project isolation\n";
     }
 }
+namespace
+{
+    void watchdogContracts(const fs::path &project, const fs::path &profile, const fs::path &executable)
+    {
+        const auto jobs = project / ".workphone" / "package-jobs";
+        const auto marker = project / "crash-child.pid";
+        for(int mode = 1; mode <= 5; ++mode)
+        {
+            fs::remove(marker);
+            auto request = std::make_shared<ResourcePackageJobState>();
+            request->arguments = loadPackageProfile(profile.u8string().c_str());
+            request->projectRoot = project.u8string().c_str();
+            request->executable = executable.u8string().c_str();
+            const String id = "d08c0000-0000-4000-8000-00000000000" + StringUtil::toString(mode);
+            const auto snapshot = jobs / fs::u8path((id + ".json").c_str());
+            request->snapshotPath = snapshot.u8string().c_str();
+            request->logPath = (jobs / fs::u8path((id + ".log").c_str())).u8string().c_str();
+            request->maximumRunMilliseconds = mode == 2 ? 0 : 2000;
+            request->cancelGraceMilliseconds = 500;
+            auto job = make_ptr<ResourcePackageJob>(request);
+            auto future = std::async(std::launch::async, [job]() mutable {
+                Thread::setCurrentThreadId(Thread::ThreadId::WorkerThread);
+                job->execute();
+            });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while(!fs::exists(marker) && !request->finished && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            if(!fs::exists(marker)) request->cancel = true;
+            require(fs::exists(marker), "Watchdog child started and published its test PID");
+            HANDLE child = nullptr;
+            if(mode != 5)
+            {
+                DWORD pid = 0; std::ifstream input(marker); input >> pid;
+                child = OpenProcess(SYNCHRONIZE, FALSE, pid);
+            }
+            if(mode == 2) request->cancel = true;
+            const auto ready = future.wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+            if(!ready) request->cancel = true;
+            require(ready, "Package child supervision finishes within a bounded wait");
+            future.get();
+            if(mode != 5)
+            {
+                const auto exited = child && WaitForSingleObject(child, 1000) == WAIT_OBJECT_0;
+                if(child) CloseHandle(child);
+                require(exited, "Supervised child has exited before the job completes");
+            }
+            const bool retained = mode == 1 || mode == 2 || mode == 5;
+            require(fs::exists(snapshot) == retained, "Only uncertain outcomes retain captured requests");
+            if(retained)
+            {
+                require(request->status == "interrupted" && request->diagnostic.find("unknown") != String::npos,
+                    "Forced stops and crashes expose an uncertain publication outcome");
+            }
+            else if(mode == 3)
+                require(request->status == "timed out" && request->exitCode == 3,
+                    "Deadline cancellation is distinct from forced interruption");
+            else
+                require(request->status == "succeeded" && request->exitCode == 0,
+                    "Successful child completion wins over a pending deadline");
+        }
+        std::cout << "PASS: watchdog deadline, forced cancellation, cooperative timeout, success race and unexpected child exit\n";
+    }
+}
 int wmain(int argc, wchar_t **argv)
 {
     if(argc >= 3 && std::wstring(argv[1]) == L"--profile")
@@ -350,6 +439,15 @@ int wmain(int argc, wchar_t **argv)
         const auto snapshot = fs::path(argv[2]);
         std::ofstream pid(snapshot.parent_path().parent_path().parent_path() / "crash-child.pid");
         pid << GetCurrentProcessId(); pid.close();
+        const auto name = snapshot.stem().u8string();
+        if(name == "d08c0000-0000-4000-8000-000000000003" || name == "d08c0000-0000-4000-8000-000000000004")
+        {
+            if(argc != 5) return 19;
+            const auto event = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(std::stoull(argv[4])));
+            if(WaitForSingleObject(event, 10000) != WAIT_OBJECT_0) return 19;
+            return name.back() == '3' ? 3 : 0;
+        }
+        if(name == "d08c0000-0000-4000-8000-000000000005") return 17;
         Sleep(INFINITE);
         return 1;
     }
@@ -366,7 +464,9 @@ int wmain(int argc, wchar_t **argv)
     int code = 0;
     try
     {
-        if(argc == 4 && (std::wstring(argv[1]) == L"--crash-owner" || std::wstring(argv[1]) == L"--run-profile"))
+        if(argc == 4 && std::wstring(argv[1]) == L"--watchdog")
+            watchdogContracts(fs::canonical(argv[2]), fs::path(argv[3]), fs::absolute(argv[0]));
+        else if(argc == 4 && (std::wstring(argv[1]) == L"--crash-owner" || std::wstring(argv[1]) == L"--run-profile"))
         {
             const bool crashOwner = std::wstring(argv[1]) == L"--crash-owner";
             const auto project = fs::canonical(argv[2]);
