@@ -1347,10 +1347,33 @@ cleanup removes only the worker's own marker.
 Retention quotas, orphan artifact cleanup, compiler/export kill windows and
 power-loss durability remain open.
 
-Validation is in progress. The native process fixture deliberately blocks a child
-inside the production job's ownership path, kills the owner, checks child exit and
-profile preservation, recovers the record and runs a fresh real export. This
-scope does not certify interruption inside a compiler or publication.
+The native process fixture deliberately blocks a child inside the production
+job's ownership path, kills the owner, checks child exit and profile preservation,
+recovers the record, and runs a fresh real export through a restarted worker.
+It also checks automatic recovery counts, active-lock skipping, marker retention,
+idempotent recovery, unowned-file protection and source-free package execution.
+CLI fixtures cover legacy/unknown marker preservation, malformed/foreign profiles,
+archive conflicts, unchanged logs/reports/catalog bytes and redirected storage
+rejection when symlink creation is supported. This scope does not certify
+interruption inside a compiler or publication.
+
+The complete `WorkphoneEditorPackageBinaries` runtime set, tool, native host and
+Lua host built successfully; see
+`project_x64/resource-package-recovery-marked-build.log`. All nine focused suites
+passed in 62.29 seconds (`project_x64/resource-package-recovery-final-tests.log`).
+Installed validation passed with `validationPassed=true`, `releaseCertified=false`:
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-recovery-final-validation-20261019/`.
+The driver log is `project_x64/resource-package-recovery-final-install.log`.
+Relocated CLI/profile/preview/recovery contracts, read-only Editor startup,
+cross-volume startup, Debug harness rejection and missing-media/plugin failures
+passed. Payload bytes remained unchanged, loaded modules stayed within installed/
+Windows paths, and final installed runtime hashes match the built modules.
+The initial `resource-recovery-validation-20261019` candidate is superseded and
+marked with `recovery-review.json`: it preceded the durable ownership guard and
+must not be used for legacy request recovery. `git diff --check` passed.
+Interactive acceptance, clean-machine/license audit, full-family shipping,
+compiler/export kill windows, artifact reclamation, retention and power-loss
+certification remain open.
 
 ## Next implementation gates
 
