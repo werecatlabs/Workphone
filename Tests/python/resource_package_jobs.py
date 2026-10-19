@@ -92,6 +92,7 @@ with tempfile.TemporaryDirectory(prefix="wp-package-jobs-") as temporary:
     snapshot = jobs / "0c01438b-6391-4c51-8383-62f8f06388de.json"
     interrupted = snapshot.with_name(snapshot.stem + ".interrupted.json")
     marker = project / "crash-child.pid"
+    marker.unlink(missing_ok=True)  # The preceding watchdog cases use the same fixture marker.
     kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel.OpenProcess.restype = wintypes.HANDLE
     kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]

@@ -1394,12 +1394,30 @@ and ownership evidence remain available for the existing recovery route. Outputs
 are never deleted to make a retry possible. Watchdog timing starts at child
 resume; prelaunch filesystem/recovery work is outside this deadline.
 
-Validation is in progress. The deliberately blocked native child tests deadline
-escalation, user cancellation, cooperative timeout, success after a cancellation
-signal, unexpected exit and retained-record recovery. These establish supervisor
-behavior, not a crash inside a real compiler or the publication window. Retention,
-artifact reclamation, real compiler/export interruption, power-loss and full
-shipping certification remain open.
+The complete Editor runtime set, package tool, native host and Lua host built
+successfully (`project_x64/resource-package-watchdog-build.log`). All nine focused
+suites passed in 63.76 seconds
+(`project_x64/resource-package-watchdog-final-tests.log`). The native child tests
+deadline escalation, user cancellation, cooperative timeout, success after a
+cancellation signal, unexpected exit, child termination before job completion,
+retained-record recovery and invalid environment settings before queueing.
+Existing real CLI export, 127-member closure paging, source-free Lua consumption
+and owner-kill recovery also passed. The test PID marker is reset between the
+watchdog and owner-kill phases to prevent stale-PID fixture interference.
+These establish supervisor behavior, not a crash inside a real compiler or the
+publication window.
+
+Installed-package validation passed with `validationPassed=true` and
+`releaseCertified=false`. Evidence, runtime/symbol ZIPs and per-check logs are in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-watchdog-validation-20261019/`;
+driver log: `project_x64/resource-package-watchdog-install.log`.
+Relocated CLI/profile/preview/recovery contracts, read-only Editor startup,
+cross-volume startup, Debug harness rejection and missing-media/plugin failures
+passed. The installed payload remained unchanged and loaded modules were confined
+to installation/Windows paths. Final installed module hashes match the built
+runtime set. `git diff --check` passed. Interactive acceptance, retention,
+artifact reclamation, real compiler/export interruption, clean-machine/license
+audit, power-loss and full shipping certification remain open.
 
 ## Next implementation gates
 
