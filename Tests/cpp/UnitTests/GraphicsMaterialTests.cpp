@@ -79,7 +79,7 @@ namespace
         FloatFieldCase{ "refractionIor", 1.45f },
         FloatFieldCase{ "metalness", 0.0f },
         FloatFieldCase{ "roughness", 0.5f },
-        FloatFieldCase{ "specular", 0.5f },
+        FloatFieldCase{ "specular", 0.05f },
         FloatFieldCase{ "normalStrength", 1.0f },
         FloatFieldCase{ "aoStrength", 1.0f },
         FloatFieldCase{ "heightScale", 0.02f },

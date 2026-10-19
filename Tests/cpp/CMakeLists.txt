@@ -6,6 +6,21 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+if(TARGET Workphone)
+    add_executable(WPMaterialParameterLayoutTests MaterialParameterLayoutTests.cpp)
+    target_include_directories(WPMaterialParameterLayoutTests PRIVATE
+        ${WP_ROOT}/Engine/cpp/Include ${WP_ROOT}/Dependencies/boost)
+    target_compile_definitions(WPMaterialParameterLayoutTests PRIVATE BOOST_ALL_NO_LIB)
+    target_link_libraries(WPMaterialParameterLayoutTests PRIVATE Workphone)
+    if(WIN32)
+        target_link_directories(WPMaterialParameterLayoutTests PRIVATE
+            ${WP_ROOT}/libs/windows/${WP_TOOLSET}/${WP_ARCH}/${WP_STATIC_LINK_CRT_TYPE}/$<CONFIG>)
+    endif()
+    set_target_properties(WPMaterialParameterLayoutTests PROPERTIES FOLDER Tests/Cpp)
+    add_test(NAME WPGraphics.material_parameter_layout COMMAND WPMaterialParameterLayoutTests)
+    set_tests_properties(WPGraphics.material_parameter_layout PROPERTIES LABELS "graphics;material;headless" TIMEOUT 30)
+endif()
+
 if(TARGET WPNetwork)
     add_executable(WPNetworkIntegrationTests NetworkProductionTests.cpp)
     target_compile_definitions(WPNetworkIntegrationTests PRIVATE BOOST_ALL_NO_LIB)

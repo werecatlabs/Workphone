@@ -124,6 +124,8 @@ namespace workphone::render
     void MaterialTexture::setTexture( SmartPtr<ITexture> texture )
     {
         m_texture = texture;
+        if( auto parent = dynamic_pointer_cast<MaterialPass>( getParent() ) )
+            parent->updateRenderTexture( this, texture );
     }
 
     void MaterialTexture::setScale( const Vector3<real_Num> &scale )

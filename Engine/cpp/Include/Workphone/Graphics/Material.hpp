@@ -6,6 +6,7 @@
 #include <Workphone/Interface/System/IStateListener.hpp>
 #include <Workphone/Graphics/ResourceGraphics.hpp>
 #include <Workphone/Graphics/MaterialShaderParameters.hpp>
+#include <Workphone/Graphics/MaterialRenderState.hpp>
 
 namespace workphone
 {
@@ -1204,6 +1205,10 @@ namespace workphone
             /** @brief True when this material references a data-driven shader (non-PBR capable). */
             bool isDataDriven() const;
 
+            /** Retained immutable primary-pass values; warm reads do not walk graphs. */
+            MaterialRenderState::Ptr getRenderState() const;
+            void invalidateRenderState();
+
             /** @brief The data-driven shader this material is bound to (empty for legacy PBR). */
             String getShaderID() const;
 
@@ -1268,6 +1273,7 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            friend class MaterialPass; // Seed newly loaded passes from typed pre-load values.
             /** @brief Initializes the internal state object for the material. */
             void createStateObject();
 
@@ -1307,8 +1313,10 @@ namespace workphone
             // Values assigned before the first technique must reach its passes.
             bool m_hasPendingOpacity = false;
             bool m_hasPendingRoughness = false;
+            bool m_hasPendingMetalness = false;
             f32 m_pendingOpacity = 1.0f;
             f32 m_pendingRoughness = 0.0f;
+            f32 m_pendingMetalness = 0.0f;
 
             /** Cube texture used for environment mapping or reflections */
             ConcurrentArray<SmartPtr<ITexture>> m_cubicTextures;
@@ -1318,9 +1326,19 @@ namespace workphone
 
             /** Data-driven shader this material is bound to (empty for legacy PBR materials). */
             String m_shaderID;
+            enum class ShaderWorkflow : u8 { Pbr, Unlit, ColorOnly };
+            ShaderWorkflow m_shaderWorkflow = ShaderWorkflow::Pbr;
 
             /** Self-owned, data-driven parameter storage. See MaterialShaderParameters.hpp. */
             MaterialShaderParametersInstance m_shaderParameters;
+
+            struct PrimaryPassSelection
+            {
+                u64 graphRevision = 0;
+                SmartPtr<IState> state;
+            };
+            std::atomic<u64> m_graphRevision{ 1 };
+            mutable std::shared_ptr<const PrimaryPassSelection> m_primaryPassSelection;
 
             /** True when the data-driven buffer needs re-sync to the renderer. */
             bool m_shaderParametersDirty = false;

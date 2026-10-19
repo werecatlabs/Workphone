@@ -43,7 +43,10 @@ namespace workphone::render
     {
         if( pass )
         {
+            pass->setMaterial( getMaterial() );
+            pass->setParent( this );
             m_passes.push_back( pass );
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
     }
 
@@ -59,6 +62,7 @@ namespace workphone::render
             if( m_passes[i] == pass )
             {
                 m_passes.erase( m_passes.begin() + i );
+                if( auto material = getMaterial() ) material->setPass( nullptr );
                 break;
             }
         }
@@ -67,6 +71,7 @@ namespace workphone::render
     void ClawMaterialTechnique::removePasses()
     {
         m_passes.clear();
+        if( auto material = getMaterial() ) material->setPass( nullptr );
     }
 
     Array<SmartPtr<IMaterialPass>> ClawMaterialTechnique::getPasses() const
@@ -77,6 +82,12 @@ namespace workphone::render
     void ClawMaterialTechnique::setPasses( Array<SmartPtr<IMaterialPass>> passes )
     {
         m_passes = passes;
+        for( auto pass : passes ) if( pass )
+        {
+            pass->setMaterial( getMaterial() );
+            pass->setParent( this );
+        }
+        if( auto material = getMaterial() ) material->setPass( nullptr );
     }
 
     SmartPtr<IMaterialPass> ClawMaterialTechnique::getPass( u32 index ) const

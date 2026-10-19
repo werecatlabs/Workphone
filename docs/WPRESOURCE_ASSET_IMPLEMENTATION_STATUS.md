@@ -1375,6 +1375,50 @@ Interactive acceptance, clean-machine/license audit, full-family shipping,
 compiler/export kill windows, artifact reclamation, retention and power-loss
 certification remain open.
 
+## Increment 24: Bounded package-child supervision (19 October 2026)
+
+Windows package jobs now supervise child execution with a monotonic deadline and
+cooperative cancellation grace period. Defaults are 30 minutes and 30 seconds.
+The Editor captures validated `WP_RESOURCE_PACKAGE_MAX_RUN_MS` (1000–86400000)
+and `WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS` (1000–600000) overrides before queueing;
+zero explicitly disables the corresponding limit. Invalid settings fail without
+queueing. Captured fields are detached from later environment/UI changes.
+
+Cancellation first signals the existing inherited event. Child exit 0 still wins
+over a pending deadline; cooperative exit 3 distinguishes user cancellation from
+a timeout. If the child does not exit within grace, its owned Job Object is
+terminated and exit confirmation is bounded to five seconds. Forced stops,
+unexpected exit codes and uncertain wait/status failures report `interrupted`
+instead of asserting that publication failed or never occurred. Captured settings
+and ownership evidence remain available for the existing recovery route. Outputs
+are never deleted to make a retry possible. Watchdog timing starts at child
+resume; prelaunch filesystem/recovery work is outside this deadline.
+
+The complete Editor runtime set, package tool, native host and Lua host built
+successfully (`project_x64/resource-package-watchdog-build.log`). All nine focused
+suites passed in 63.76 seconds
+(`project_x64/resource-package-watchdog-final-tests.log`). The native child tests
+deadline escalation, user cancellation, cooperative timeout, success after a
+cancellation signal, unexpected exit, child termination before job completion,
+retained-record recovery and invalid environment settings before queueing.
+Existing real CLI export, 127-member closure paging, source-free Lua consumption
+and owner-kill recovery also passed. The test PID marker is reset between the
+watchdog and owner-kill phases to prevent stale-PID fixture interference.
+These establish supervisor behavior, not a crash inside a real compiler or the
+publication window.
+
+Installed-package validation passed with `validationPassed=true` and
+`releaseCertified=false`. Evidence, runtime/symbol ZIPs and per-check logs are in
+`C:/Users/casper_music/.codex/visualizations/2026/10/18/01a14ff8-ad4b-7281-81a5-8eaffeefa475/resource-watchdog-validation-20261019/`;
+driver log: `project_x64/resource-package-watchdog-install.log`.
+Relocated CLI/profile/preview/recovery contracts, read-only Editor startup,
+cross-volume startup, Debug harness rejection and missing-media/plugin failures
+passed. The installed payload remained unchanged and loaded modules were confined
+to installation/Windows paths. Final installed module hashes match the built
+runtime set. `git diff --check` passed. Interactive acceptance, retention,
+artifact reclamation, real compiler/export interruption, clean-machine/license
+audit, power-loss and full shipping certification remain open.
+
 ## Next implementation gates
 
 User-requested scope extension: production-plan packages **RES-050–054** add

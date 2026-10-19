@@ -1,311 +1,226 @@
-﻿// Data-driven material shader parameter layer.
-//
-// Foundation step 1 of the Esoterica material integration. This is the
-// self-contained (option B) port of Esoterica's MaterialShaderParametersInstance
-// (Engine/Render/Shaders/EngineShader.h). The instance owns its own byte
-// buffer and a copy of the parameter info so it compiles / serializes without
-// any RHI dependency; the GPU upload path will read this memory in step 3.
-
 #include <Workphone/WorkphonePCH.hpp>
-#include "Workphone/Graphics/MaterialShaderParameters.hpp"
-
+#include <Workphone/Graphics/MaterialShaderParameters.hpp>
+#include <algorithm>
+#include <atomic>
 #include <cstring>
+#include <limits>
 
-namespace workphone
+namespace workphone::render
 {
-    namespace render
+    const MaterialResourceHandle InvalidMaterialResourceHandle = ~u64( 0 );
+    u32 GetMaterialShaderParameterStride( MaterialShaderParameterType type )
     {
-
-        //---------------------------------------------------------------------------------------
-        // Opaque resource handle sentinel
-        //---------------------------------------------------------------------------------------
-
-        const MaterialResourceHandle InvalidMaterialResourceHandle =
-            static_cast<MaterialResourceHandle>( ~0ULL );
-
-        //---------------------------------------------------------------------------------------
-        // Parameter type -> byte stride
-        //---------------------------------------------------------------------------------------
-
-        u32 GetMaterialShaderParameterStride( MaterialShaderParameterType type )
+        switch( type )
         {
-            switch( type )
-            {
-            case MaterialShaderParameterType::Scalar:
-                return static_cast<u32>( sizeof( u32 ) );
-            case MaterialShaderParameterType::Colour:
-                return static_cast<u32>( sizeof( ColourF ) );
-            case MaterialShaderParameterType::Vector2:
-                return static_cast<u32>( sizeof( Vector2<f32> ) );
-            case MaterialShaderParameterType::Vector4:
-                return static_cast<u32>( sizeof( Vector4<f32> ) );
-            case MaterialShaderParameterType::Matrix:
-                return static_cast<u32>( sizeof( Matrix4<f32> ) );
-            case MaterialShaderParameterType::Texture:
-                return static_cast<u32>( sizeof( MaterialResourceHandle ) );
-            case MaterialShaderParameterType::Buffer:
-                return static_cast<u32>( sizeof( MaterialResourceHandle ) );
-            case MaterialShaderParameterType::Sampler:
-                return static_cast<u32>( sizeof( MaterialResourceHandle ) );
-            default:
-                WP_ASSERT( false );
-                return 0;
-            }
+        case MaterialShaderParameterType::Scalar:
+        case MaterialShaderParameterType::Int:
+        case MaterialShaderParameterType::UInt:
+        case MaterialShaderParameterType::Bool: return 4;
+        case MaterialShaderParameterType::Colour: return sizeof( ColourF );
+        case MaterialShaderParameterType::Vector2: return sizeof( Vector2<f32> );
+        case MaterialShaderParameterType::IntVector2: return sizeof( Vector2<s32> );
+        case MaterialShaderParameterType::Vector4: return sizeof( Vector4<f32> );
+        case MaterialShaderParameterType::IntVector4: return sizeof( Vector4<s32> );
+        case MaterialShaderParameterType::Matrix: return sizeof( Matrix4<f32> );
+        case MaterialShaderParameterType::Texture:
+        case MaterialShaderParameterType::Buffer:
+        case MaterialShaderParameterType::Sampler: return sizeof( MaterialResourceHandle );
+        default: return 0;
         }
+    }
 
-        //---------------------------------------------------------------------------------------
-        // Lifetime
-        //---------------------------------------------------------------------------------------
+    u64 GetMaterialShaderParameterId( const String &name )
+    {
+        u64 id = 14695981039346656037ull;
+        for( auto c : name ) { id ^= static_cast<unsigned char>( c ); id *= 1099511628211ull; }
+        return id;
+    }
 
-        MaterialShaderParametersInstance::MaterialShaderParametersInstance() = default;
-        MaterialShaderParametersInstance::~MaterialShaderParametersInstance() = default;
-
-        void MaterialShaderParametersInstance::Reset(
-            const Array<MaterialShaderParameterInfo> &parameterInfo )
+    MaterialShaderParameterLayout::Ptr MaterialShaderParameterLayout::Create(
+        const Array<MaterialShaderParameterInfo> &info )
+    {
+        static std::atomic<u64> nextId{ 1 };
+        auto layout = std::make_shared<MaterialShaderParameterLayout>();
+        layout->m_info = info;
+        u64 offset = 0;
+        for( u32 i = 0; i < layout->m_info.size(); ++i )
         {
-            m_parameterInfo = parameterInfo;
-
-            u32 offset = 0;
-            for( auto &info : m_parameterInfo )
-            {
-                // 4-byte align every slot; resource handles are 8 bytes and naturally satisfy this,
-                // scalars/vectors/colours pack to 4-byte boundaries.
-                const u32 alignMask = 3u;
-                offset = ( offset + alignMask ) & ~alignMask;
-
-                info.m_strideInBytes = GetMaterialShaderParameterStride( info.m_type );
-                info.m_offsetInBytes = offset;
-                offset += info.m_strideInBytes;
-            }
-
-            m_parametersMemory.assign( offset, 0 );
+            auto &p = layout->m_info[i];
+            p.m_strideInBytes = GetMaterialShaderParameterStride( p.m_type );
+            if( p.m_name.empty() || !p.m_strideInBytes ) return {};
+            offset = ( offset + 3ull ) & ~3ull;
+            if( offset + p.m_strideInBytes > std::numeric_limits<u32>::max() ) return {};
+            p.m_offsetInBytes = static_cast<u32>( offset );
+            offset += p.m_strideInBytes;
+            layout->m_lookup.push_back( { GetMaterialShaderParameterId( p.m_name ), i } );
         }
-
-        void MaterialShaderParametersInstance::Clear()
+        std::sort( layout->m_lookup.begin(), layout->m_lookup.end(),
+                   []( const Lookup &a, const Lookup &b ) { return a.id < b.id; } );
+        for( size_t i = 1; i < layout->m_lookup.size(); ++i )
+            if( layout->m_lookup[i - 1].id == layout->m_lookup[i].id ) return {};
+        auto identity = nextId.load( std::memory_order_relaxed );
+        do
         {
-            m_parameterInfo.clear();
-            m_parametersMemory.clear();
-        }
+            if( identity == std::numeric_limits<u64>::max() ) return {};
+        } while( !nextId.compare_exchange_weak( identity, identity + 1, std::memory_order_relaxed ) );
+        layout->m_id = identity;
+        layout->m_defaults.assign( static_cast<size_t>( offset ), 0 );
+        for( const auto &p : layout->m_info )
+            if( p.m_type == MaterialShaderParameterType::Texture ||
+                p.m_type == MaterialShaderParameterType::Buffer ||
+                p.m_type == MaterialShaderParameterType::Sampler )
+                std::memcpy( layout->m_defaults.data() + p.m_offsetInBytes,
+                             &InvalidMaterialResourceHandle, sizeof( MaterialResourceHandle ) );
+        const char *names[] = { "Albedo", "Metalness", "Roughness", "Emissive", "Opacity", "AlphaClip", "Color" };
+        for( u32 i = 0; i < static_cast<u32>( MaterialBuiltinParameter::Count ); ++i )
+            layout->m_builtin[i] = layout->FindParameter( names[i] );
+        return layout;
+    }
 
-        //---------------------------------------------------------------------------------------
-        // Lookup
-        //---------------------------------------------------------------------------------------
+    MaterialShaderParameterHandle MaterialShaderParameterLayout::GetParameter( u32 index ) const
+    {
+        if( index >= m_info.size() ) return {};
+        const auto &p = m_info[index];
+        return { p.m_strideInBytes, p.m_offsetInBytes, m_id, index };
+    }
+    MaterialShaderParameterHandle MaterialShaderParameterLayout::FindParameter( const String &name ) const
+    {
+        const auto id = GetMaterialShaderParameterId( name );
+        auto it = std::lower_bound( m_lookup.begin(), m_lookup.end(), id,
+                                  []( const Lookup &a, u64 b ) { return a.id < b; } );
+        if( it == m_lookup.end() || it->id != id || m_info[it->index].m_name != name ) return {};
+        return GetParameter( it->index );
+    }
+    MaterialShaderParameterHandle MaterialShaderParameterLayout::GetBuiltin( MaterialBuiltinParameter semantic ) const
+    {
+        const auto i = static_cast<u32>( semantic );
+        return i < static_cast<u32>( MaterialBuiltinParameter::Count ) ? m_builtin[i] : MaterialShaderParameterHandle{};
+    }
+    size_t MaterialShaderParameterLayout::GetStorageBytes() const
+    {
+        size_t bytes = sizeof( *this ) + m_info.capacity() * sizeof( MaterialShaderParameterInfo ) +
+                       m_lookup.capacity() * sizeof( Lookup ) + m_defaults.capacity();
+        for( const auto &p : m_info ) bytes += p.m_name.capacity() + 1;
+        return bytes;
+    }
 
-        MaterialShaderParameterHandle MaterialShaderParametersInstance::FindParameter(
-            const String &parameterName ) const
+    void MaterialShaderParametersInstance::Reset( const Array<MaterialShaderParameterInfo> &info )
+    { Reset( MaterialShaderParameterLayout::Create( info ) ); }
+    void MaterialShaderParametersInstance::Reset( MaterialShaderParameterLayout::Ptr layout )
+    {
+        m_layout = std::move( layout );
+        if( m_layout ) m_parametersMemory = m_layout->GetDefaults();
+        else m_parametersMemory.clear();
+        ++m_revision;
+    }
+    void MaterialShaderParametersInstance::Clear() { Reset( MaterialShaderParameterLayout::Ptr{} ); }
+    const Array<MaterialShaderParameterInfo> &MaterialShaderParametersInstance::GetParameterInfo() const
+    {
+        static const Array<MaterialShaderParameterInfo> empty;
+        return m_layout ? m_layout->GetParameterInfo() : empty;
+    }
+    size_t MaterialShaderParametersInstance::GetInstanceStorageBytes() const
+    { return sizeof( *this ) + m_parametersMemory.capacity(); }
+    MaterialShaderParameterHandle MaterialShaderParametersInstance::FindParameter( const String &name ) const
+    {
+        ++m_nameLookups;
+        return m_layout ? m_layout->FindParameter( name ) : MaterialShaderParameterHandle{};
+    }
+    MaterialShaderParameterHandle MaterialShaderParametersInstance::GetParameter( u32 index ) const
+    { return m_layout ? m_layout->GetParameter( index ) : MaterialShaderParameterHandle{}; }
+    MaterialShaderParameterHandle MaterialShaderParametersInstance::GetBuiltin( MaterialBuiltinParameter semantic ) const
+    { return m_layout ? m_layout->GetBuiltin( semantic ) : MaterialShaderParameterHandle{}; }
+    bool MaterialShaderParametersInstance::IsHandleValid( MaterialShaderParameterHandle h,
+        MaterialShaderParameterType type, u32 size ) const
+    {
+        if( !m_layout || !h.IsValid() || h.m_layoutId != m_layout->GetId() ||
+            h.m_parameterIndex >= GetParameterInfo().size() ) return false;
+        const auto &p = GetParameterInfo()[h.m_parameterIndex];
+        return p.m_type == type && p.m_strideInBytes == size && h.m_strideInBytes == size &&
+               h.m_offsetInBytes == p.m_offsetInBytes && h.m_offsetInBytes <= m_parametersMemory.size() &&
+               size <= m_parametersMemory.size() - h.m_offsetInBytes;
+    }
+    bool MaterialShaderParametersInstance::WriteBytes( MaterialShaderParameterHandle h,
+        const void *value, u32 size, MaterialShaderParameterType type )
+    {
+        if( !value || !IsHandleValid( h, type, size ) ) return false;
+        auto *destination = m_parametersMemory.data() + h.m_offsetInBytes;
+        if( std::memcmp( destination, value, size ) != 0 )
         {
-            for( const auto &info : m_parameterInfo )
-            {
-                if( info.m_name == parameterName )
-                {
-                    return { info.m_strideInBytes, info.m_offsetInBytes };
-                }
-            }
-            return {};
+            std::memcpy( destination, value, size );
+            ++m_revision;
         }
+        return true;
+    }
+    bool MaterialShaderParametersInstance::ReadBytes( MaterialShaderParameterHandle h,
+        void *value, u32 size, MaterialShaderParameterType type ) const
+    {
+        if( !value || !IsHandleValid( h, type, size ) ) return false;
+        std::memcpy( value, m_parametersMemory.data() + h.m_offsetInBytes, size );
+        return true;
+    }
 
-        //---------------------------------------------------------------------------------------
-        // Bounds-checked raw access
-        //---------------------------------------------------------------------------------------
-
-        void MaterialShaderParametersInstance::WriteBytes( MaterialShaderParameterHandle parameter,
-                                                           const void *value, u32 valueSize )
+#define WP_MATERIAL_SET(Name, ValueType, Kind) \
+    bool MaterialShaderParametersInstance::Name( MaterialShaderParameterHandle h, ValueType value ) \
+    { return WriteBytes( h, &value, sizeof( value ), MaterialShaderParameterType::Kind ); }
+    WP_MATERIAL_SET( SetScalar, f32, Scalar )
+    WP_MATERIAL_SET( SetScalar, s32, Int )
+    WP_MATERIAL_SET( SetScalar, u32, UInt )
+    WP_MATERIAL_SET( SetColour, const ColourF &, Colour )
+    WP_MATERIAL_SET( SetVector2, const Vector2<f32> &, Vector2 )
+    WP_MATERIAL_SET( SetVector2, const Vector2<s32> &, IntVector2 )
+    WP_MATERIAL_SET( SetVector4, const Vector4<f32> &, Vector4 )
+    WP_MATERIAL_SET( SetVector4, const Vector4<s32> &, IntVector4 )
+    WP_MATERIAL_SET( SetMatrix, const Matrix4<f32> &, Matrix )
+    WP_MATERIAL_SET( SetTexture, MaterialResourceHandle, Texture )
+    WP_MATERIAL_SET( SetBuffer, MaterialResourceHandle, Buffer )
+    WP_MATERIAL_SET( SetSampler, MaterialResourceHandle, Sampler )
+#undef WP_MATERIAL_SET
+#define WP_MATERIAL_GET(Name, ValueType, Kind) \
+    ValueType MaterialShaderParametersInstance::Name( MaterialShaderParameterHandle h ) const \
+    { ValueType value{}; ReadBytes( h, &value, sizeof( value ), MaterialShaderParameterType::Kind ); return value; }
+    WP_MATERIAL_GET( GetScalar, f32, Scalar )
+    WP_MATERIAL_GET( GetInt, s32, Int )
+    WP_MATERIAL_GET( GetUInt, u32, UInt )
+    WP_MATERIAL_GET( GetColour, ColourF, Colour )
+    WP_MATERIAL_GET( GetVector2f, Vector2<f32>, Vector2 )
+    WP_MATERIAL_GET( GetVector4f, Vector4<f32>, Vector4 )
+    WP_MATERIAL_GET( GetMatrix, Matrix4<f32>, Matrix )
+#undef WP_MATERIAL_GET
+    bool MaterialShaderParametersInstance::SetBool( MaterialShaderParameterHandle h, bool value )
+    { const u32 packed = value ? 1u : 0u; return WriteBytes( h, &packed, sizeof( packed ), MaterialShaderParameterType::Bool ); }
+    bool MaterialShaderParametersInstance::GetBool( MaterialShaderParameterHandle h ) const
+    { u32 value = 0; ReadBytes( h, &value, sizeof( value ), MaterialShaderParameterType::Bool ); return value != 0; }
+    MaterialResourceHandle MaterialShaderParametersInstance::GetResource( MaterialShaderParameterHandle h ) const
+    {
+        auto value = InvalidMaterialResourceHandle;
+        if( m_layout && h.m_parameterIndex < GetParameterInfo().size() )
         {
-            WP_ASSERT( parameter.IsValid() );
-            WP_ASSERT( parameter.m_strideInBytes == valueSize );
-            WP_ASSERT( parameter.m_offsetInBytes + valueSize <= m_parametersMemory.size() );
-            if( !parameter.IsValid() ||
-                parameter.m_offsetInBytes + valueSize > m_parametersMemory.size() )
-            {
-                return;
-            }
-            std::memcpy( m_parametersMemory.data() + parameter.m_offsetInBytes, value, valueSize );
+            const auto type = GetParameterInfo()[h.m_parameterIndex].m_type;
+            if( type == MaterialShaderParameterType::Texture || type == MaterialShaderParameterType::Buffer ||
+                type == MaterialShaderParameterType::Sampler ) ReadBytes( h, &value, sizeof( value ), type );
         }
-
-        void MaterialShaderParametersInstance::ReadBytes( MaterialShaderParameterHandle parameter,
-                                                          void *outValue, u32 valueSize ) const
+        return value;
+    }
+    void MaterialShaderParametersInstance::InitializeDefaultResourceHandles()
+    {
+        for( u32 i = 0; i < GetParameterInfo().size(); ++i )
         {
-            WP_ASSERT( parameter.IsValid() );
-            WP_ASSERT( parameter.m_strideInBytes == valueSize );
-            WP_ASSERT( parameter.m_offsetInBytes + valueSize <= m_parametersMemory.size() );
-            if( !parameter.IsValid() ||
-                parameter.m_offsetInBytes + valueSize > m_parametersMemory.size() )
-            {
-                std::memset( outValue, 0, valueSize );
-                return;
-            }
-            std::memcpy( outValue, m_parametersMemory.data() + parameter.m_offsetInBytes, valueSize );
+            const auto type = GetParameterInfo()[i].m_type;
+            if( type == MaterialShaderParameterType::Texture || type == MaterialShaderParameterType::Buffer ||
+                type == MaterialShaderParameterType::Sampler )
+                WriteBytes( GetParameter( i ), &InvalidMaterialResourceHandle, sizeof( MaterialResourceHandle ), type );
         }
-
-        //---------------------------------------------------------------------------------------
-        // Typed setters
-        //---------------------------------------------------------------------------------------
-
-        void MaterialShaderParametersInstance::SetScalar( MaterialShaderParameterHandle parameter,
-                                                          f32 value )
+    }
+    bool MaterialShaderParametersInstance::ValidateResourceHandles() const
+    {
+        for( u32 i = 0; i < GetParameterInfo().size(); ++i )
         {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
+            const auto type = GetParameterInfo()[i].m_type;
+            if( ( type == MaterialShaderParameterType::Texture || type == MaterialShaderParameterType::Buffer ||
+                  type == MaterialShaderParameterType::Sampler ) &&
+                GetResource( GetParameter( i ) ) == InvalidMaterialResourceHandle ) return false;
         }
-
-        void MaterialShaderParametersInstance::SetScalar( MaterialShaderParameterHandle parameter,
-                                                          s32 value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetScalar( MaterialShaderParameterHandle parameter,
-                                                          u32 value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetColour( MaterialShaderParameterHandle parameter,
-                                                          const ColourF &value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetVector2( MaterialShaderParameterHandle parameter,
-                                                           const Vector2<f32> &value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetVector2( MaterialShaderParameterHandle parameter,
-                                                           const Vector2<s32> &value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetVector4( MaterialShaderParameterHandle parameter,
-                                                           const Vector4<f32> &value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetVector4( MaterialShaderParameterHandle parameter,
-                                                           const Vector4<s32> &value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetMatrix( MaterialShaderParameterHandle parameter,
-                                                          const Matrix4<f32> &value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetTexture( MaterialShaderParameterHandle parameter,
-                                                           MaterialResourceHandle value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetBuffer( MaterialShaderParameterHandle parameter,
-                                                          MaterialResourceHandle value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        void MaterialShaderParametersInstance::SetSampler( MaterialShaderParameterHandle parameter,
-                                                           MaterialResourceHandle value )
-        {
-            WriteBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-        }
-
-        //---------------------------------------------------------------------------------------
-        // Typed getters
-        //---------------------------------------------------------------------------------------
-
-        f32 MaterialShaderParametersInstance::GetScalar( MaterialShaderParameterHandle parameter ) const
-        {
-            f32 value = 0.0f;
-            ReadBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-            return value;
-        }
-
-        ColourF MaterialShaderParametersInstance::GetColour(
-            MaterialShaderParameterHandle parameter ) const
-        {
-            ColourF value;
-            ReadBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-            return value;
-        }
-
-        Vector2<f32> MaterialShaderParametersInstance::GetVector2f(
-            MaterialShaderParameterHandle parameter ) const
-        {
-            Vector2<f32> value;
-            ReadBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-            return value;
-        }
-
-        Vector4<f32> MaterialShaderParametersInstance::GetVector4f(
-            MaterialShaderParameterHandle parameter ) const
-        {
-            Vector4<f32> value;
-            ReadBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-            return value;
-        }
-
-        Matrix4<f32> MaterialShaderParametersInstance::GetMatrix(
-            MaterialShaderParameterHandle parameter ) const
-        {
-            Matrix4<f32> value;
-            ReadBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-            return value;
-        }
-
-        MaterialResourceHandle MaterialShaderParametersInstance::GetResource(
-            MaterialShaderParameterHandle parameter ) const
-        {
-            MaterialResourceHandle value = InvalidMaterialResourceHandle;
-            ReadBytes( parameter, &value, static_cast<u32>( sizeof( value ) ) );
-            return value;
-        }
-
-        //---------------------------------------------------------------------------------------
-        // Resource handle helpers
-        //---------------------------------------------------------------------------------------
-
-        void MaterialShaderParametersInstance::InitializeDefaultResourceHandles()
-        {
-            for( const auto &info : m_parameterInfo )
-            {
-                const bool isResource = info.m_type == MaterialShaderParameterType::Texture ||
-                                        info.m_type == MaterialShaderParameterType::Buffer ||
-                                        info.m_type == MaterialShaderParameterType::Sampler;
-                if( !isResource )
-                {
-                    continue;
-                }
-
-                MaterialShaderParameterHandle handle{ info.m_strideInBytes, info.m_offsetInBytes };
-                const MaterialResourceHandle sentinel = InvalidMaterialResourceHandle;
-                WriteBytes( handle, &sentinel, static_cast<u32>( sizeof( sentinel ) ) );
-            }
-        }
-
-        bool MaterialShaderParametersInstance::ValidateResourceHandles() const
-        {
-            for( const auto &info : m_parameterInfo )
-            {
-                const bool isResource = info.m_type == MaterialShaderParameterType::Texture ||
-                                        info.m_type == MaterialShaderParameterType::Buffer ||
-                                        info.m_type == MaterialShaderParameterType::Sampler;
-                if( !isResource )
-                {
-                    continue;
-                }
-
-                MaterialShaderParameterHandle handle{ info.m_strideInBytes, info.m_offsetInBytes };
-                if( GetResource( handle ) == InvalidMaterialResourceHandle )
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-    }  // namespace render
-}  // namespace workphone
+        return true;
+    }
+}

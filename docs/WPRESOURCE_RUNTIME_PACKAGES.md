@@ -233,13 +233,31 @@ to a unique log. Completed requests remove their snapshot; logs are retained.
 UI polling occurs on the Editor update path and never from the worker. Project
 path changes, manager unload and PackageEditor unload request cancellation.
 
-Cancellation is cooperative through an inherited event: the CLI checks before
-authoring setup, between root compilations and before export. It returns exit 3
-when cancellation wins before export. An in-progress compiler/export is allowed
-to finish; a successfully published package remains success even if cancellation
-was requested too late. This avoids misreporting a committed output as cancelled.
-Worker watchdogs, interruption within a compiler/export, package-staging orphan
-cleanup and log retention quotas remain open. A queued cancelled job still needs
+Cancellation starts cooperatively through an inherited event: the CLI checks
+before authoring setup, between root compilations and before export. It returns
+exit 3 when cancellation wins before export. Editor-owned Windows jobs now allow
+30 minutes of child execution by default, followed by a 30-second cooperative
+grace period. A user cancellation starts that grace period immediately. Limits
+use the monotonic Windows clock and are captured before the job enters the queue.
+
+`WP_RESOURCE_PACKAGE_MAX_RUN_MS` overrides the child deadline (1000–86400000 ms);
+`WP_RESOURCE_PACKAGE_CANCEL_GRACE_MS` overrides the grace period (1000–600000 ms).
+Either can be set to `0` to disable that respective limit. Invalid values reject
+the request before queueing. Environment changes after queueing cannot alter the
+captured execution policy. These are Editor job settings, not profile fields or
+timeouts for a standalone CLI invocation. The deadline starts when the child is
+resumed; it does not bound filesystem/recovery work before launch.
+
+A child that finishes successfully before escalation remains success even if
+cancellation was requested too late. A cooperative exit 3 reports `cancelled`, or
+`timed out` when caused by the deadline. An unresponsive child is terminated via
+its owned Windows Job Object after grace expires; the parent then allows at most
+five seconds to confirm exit. Forced stops and unexpected child exit codes report
+`interrupted`, retain the captured profile/ownership marker, and explicitly leave
+the publication outcome unknown. No existing output is removed or replaced.
+Inspect outputs and recover the retained record before explicitly retrying.
+Interruption inside real compiler/export publication windows, package-staging
+orphan cleanup and log retention quotas remain open. A queued cancelled job still needs
 the queue to process it before its detached result becomes final.
 
 The Editor build and install package include the tool beside `Editor.exe` with

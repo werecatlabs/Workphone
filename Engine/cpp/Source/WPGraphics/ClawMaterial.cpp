@@ -93,40 +93,42 @@ namespace workphone
 
         void ClawMaterial::syncNativeMaterial() const
         {
-            if( !m_material || getNumTechniques() == 0u )
-            {
-                return;
-            }
-            wp_graphics_material_desc desc;
-            wp_graphics_material_desc_init( &desc );
-            wp_graphics_material_get_desc( m_material, &desc );
-            desc.diffuse = ClawUtil::toCColour( getDiffuse() );
-            desc.specular = ClawUtil::toCColour( getSpecular() );
-            desc.emissive = ClawUtil::toCColour( getEmissive() );
-            desc.metalness = getMetalness();
-            desc.roughness = getRoughness();
-            desc.normal_scale = getNormalStrength();
-            desc.occlusion_strength = getEditorFloat( "aoStrength", 1.0f );
-            desc.emissive_intensity = getEditorFloat( "emissionIntensity", 1.0f );
-            desc.alpha_cutoff = getAlphaClip();
-            desc.clearcoat = getEditorFloat( "clearCoat", 0.0f );
-            desc.clearcoat_roughness = getEditorFloat( "clearCoatRoughness", 0.1f );
-            desc.transmission = getEditorFloat( "refractionAmount", 0.0f );
-            desc.index_of_refraction = getEditorFloat( "refractionIor", 1.45f );
-            desc.blend_mode = ClawUtil::toCBlendMode( getBlendMode() );
-            desc.cull_mode = getEditorBool( "doubleSided", false )
-                                 ? WORKPHONE_CULL_MODE_NONE
-                                 : ClawUtil::toCCullMode( getCullMode() );
+            if( !m_material ) return;
+            const auto state = getRenderState();
+            if( !state ) return;
+            if( m_syncedRenderState == state &&
+                m_syncedNativeRevision == wp_graphics_material_get_revision( m_material ) ) return;
+            wp_graphics_material_values values;
+            values.struct_size = sizeof( values );
+            wp_graphics_material_get_values( m_material, &values );
+            values.diffuse = ClawUtil::toCColour( state->diffuseColour );
+            values.specular = ClawUtil::toCColour( state->specularColour );
+            values.emissive = ClawUtil::toCColour( state->emissiveColour );
+            values.metalness = state->metalness;
+            values.roughness = state->roughness;
+            values.normal_scale = state->normalStrength;
+            values.occlusion_strength = state->aoStrength;
+            values.emissive_intensity = state->emissionIntensity;
+            values.alpha_cutoff = state->alphaClip;
+            values.clearcoat = state->clearCoat;
+            values.clearcoat_roughness = state->clearCoatRoughness;
+            values.transmission = state->refractionAmount;
+            values.index_of_refraction = state->refractionIor;
+            values.blend_mode = ClawUtil::toCBlendMode( state->blendMode );
+            values.cull_mode = state->getFlag( doubleSidedFlag ) ? WORKPHONE_CULL_MODE_NONE :
+                                                                   ClawUtil::toCCullMode( state->cullMode );
             const auto setFlag = [&]( wp_u32 flag, bool enabled ) {
-                desc.flags = enabled ? desc.flags | flag : desc.flags & ~flag;
+                values.flags = enabled ? values.flags | flag : values.flags & ~flag;
             };
-            setFlag( WORKPHONE_MATERIAL_FLAG_TRANSPARENT, isTransparent() );
-            setFlag( WORKPHONE_MATERIAL_FLAG_CUTOUT, isCutout() );
-            setFlag( WORKPHONE_MATERIAL_FLAG_EMISSION, isEmissionEnabled() );
-            setFlag( WORKPHONE_MATERIAL_FLAG_REFRACTION, isRefractionEnabled() );
-            setFlag( WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE, getDepthWrite() );
-            setFlag( WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK, getDepthTest() != 0u );
-            wp_graphics_material_set_desc( m_material, &desc );
+            setFlag( WORKPHONE_MATERIAL_FLAG_TRANSPARENT, state->getFlag( transparentFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_CUTOUT, state->getFlag( cutoutFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_EMISSION, state->getFlag( emissionEnabledFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_REFRACTION, state->getFlag( refractionEnabledFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE, state->getFlag( depthWriteFlag ) );
+            setFlag( WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK, state->depthTest != 0u );
+            wp_graphics_material_set_values( m_material, &values );
+            m_syncedRenderState = state;
+            m_syncedNativeRevision = wp_graphics_material_get_revision( m_material );
         }
 
         /*
