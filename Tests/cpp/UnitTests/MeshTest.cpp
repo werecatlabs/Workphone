@@ -3,8 +3,13 @@
 #include <boost/test/unit_test.hpp>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
+#include <cstdlib>
 #include <Workphone/Interface/Mesh/IMeshLoader.hpp>
 #include <Workphone/Interface/Mesh/IMeshResource.hpp>
+#include <Workphone/Interface/Graphics/IMeshConverter.hpp>
+#include <Workphone/Interface/Scene/IGamePrefabManager.hpp>
+#include <Workphone/Interface/Scene/IGamePrefab.hpp>
 #include <Workphone/Scene/Components/Mesh.hpp>
 #include <Workphone/Database/ResourceDatabase.hpp>
 #include <Workphone/Database/AssetDatabaseManager.hpp>
@@ -638,6 +643,126 @@ BOOST_AUTO_TEST_CASE( mesh_load_same_asset_returns_cached_resource )
     }
 }
 
+// Opt-in real-asset benchmark. All generated resources stay in a temporary project.
+BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )
+{
+    const auto source = std::getenv( "WP_MESH_BENCHMARK_ASSET" );
+    if( !source || !*source )
+    {
+        BOOST_TEST_MESSAGE( "Set WP_MESH_BENCHMARK_ASSET to benchmark a large model" );
+        return;
+    }
+    BOOST_REQUIRE( std::filesystem::is_regular_file( source ) );
+    TestGuard guard;
+    auto app = guard.applicationManager;
+    auto loader = app->getMeshLoader();
+    BOOST_REQUIRE( loader );
+    const auto oldProject = app->getProjectPath();
+    const auto oldCache = app->getCachePath();
+    const auto oldSettings = app->getSettingsPath();
+    auto oldDatabase = app->getResourceDatabase();
+    const auto oldOverwrite = loader->getOverwrite();
+    const auto directory = std::filesystem::temp_directory_path() / StringUtil::getUUID().c_str();
+    std::filesystem::create_directories( directory / "Cache" );
+    std::filesystem::create_directories( directory / "SettingsCache" );
+    const auto model = directory / std::filesystem::path( source ).filename();
+    std::filesystem::copy_file( source, model );
+    guard.trackFilesystemPath( directory.generic_string() );
+    auto database = workphone::make_ptr<ResourceDatabase>();
+    guard.addCleanup( [app, loader, database, oldDatabase, oldProject, oldCache, oldSettings,
+                       oldOverwrite]() mutable {
+        database->unload( nullptr );
+        app->setResourceDatabase( oldDatabase );
+        app->setProjectPath( oldProject );
+        app->setCachePath( oldCache );
+        app->setSettingsPath( oldSettings );
+        loader->setOverwrite( oldOverwrite );
+    } );
+    app->setProjectPath( directory.generic_string() );
+    app->setCachePath( ( directory / "Cache" ).generic_string() + "/" );
+    app->setSettingsPath( ( directory / "SettingsCache" ).generic_string() + "/" );
+    app->setResourceDatabase( database );
+    database->load( nullptr );
+    auto catalog = dynamic_pointer_cast<AssetDatabaseManager>( database->getDatabaseManager() );
+    BOOST_REQUIRE( catalog );
+    BOOST_REQUIRE( catalog->setProjectRoot( directory.generic_string() ) );
+    const auto catalogPath = ( directory / "Cache" / "asset.db" ).generic_string();
+    database->setFilePath( catalogPath );
+    catalog->loadFromFile( catalogPath );
+    const auto folder = String( directory.generic_string() );
+    app->getFileSystem()->addFolder( folder, true );
+    guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
+    loader->setOverwrite( true );
+    const auto start = std::chrono::steady_clock::now();
+    auto actor = loader->loadActor( model.generic_string() );
+    const auto seconds = std::chrono::duration<double>( std::chrono::steady_clock::now() - start ).count();
+    BOOST_REQUIRE( actor );
+    size_t nodes = 0, meshes = 0, vertices = 0;
+    std::vector<SmartPtr<scene::IGameActor>> pending{ actor };
+    while( !pending.empty() )
+    {
+        auto current = pending.back();
+        pending.pop_back();
+        ++nodes;
+        if( auto component = current->getComponent<scene::Mesh>() )
+        {
+            auto resource = component->getMeshResource();
+            BOOST_REQUIRE( resource );
+            auto mesh = resource->getMesh();
+            BOOST_REQUIRE( mesh );
+            BOOST_REQUIRE_GT( mesh->getNumSubMeshes(), 0u );
+            ++meshes;
+            for( auto submesh : mesh->getSubMeshes() )
+            {
+                BOOST_REQUIRE( submesh->getVertexBuffer() );
+                vertices += submesh->getVertexBuffer()->getNumVertices();
+            }
+        }
+        for( auto child : current->getChildren() )
+        {
+            pending.push_back( child );
+        }
+    }
+    BOOST_CHECK_GT( meshes, 0u );
+    BOOST_TEST_MESSAGE( "Import seconds=" << seconds << " nodes=" << nodes << " meshes=" << meshes
+                        << " vertices=" << vertices );
+    const auto cacheStart = std::chrono::steady_clock::now();
+    auto converter = app->getGraphicsSystem()->getMeshConverter();
+    BOOST_REQUIRE( converter );
+    converter->writeMesh( actor );
+    BOOST_TEST_MESSAGE( "Cache write seconds=" << std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - cacheStart ).count() );
+    const auto prefabPath = ( directory / "benchmark.prefab" ).generic_string();
+    const auto prefabStart = std::chrono::steady_clock::now();
+    app->getPrefabManager()->savePrefab( prefabPath, actor );
+    BOOST_REQUIRE( std::filesystem::is_regular_file( prefabPath ) );
+    auto prefab = app->getPrefabManager()->loadPrefab( prefabPath );
+    BOOST_REQUIRE( prefab );
+    auto instance = prefab->createActor();
+    BOOST_REQUIRE( instance );
+    BOOST_TEST_MESSAGE( "Prefab save/load seconds=" << std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - prefabStart ).count() );
+    size_t instanceMeshes = 0;
+    pending = { instance };
+    while( !pending.empty() )
+    {
+        auto current = pending.back();
+        pending.pop_back();
+        if( auto component = current->getComponent<scene::Mesh>() )
+        {
+            BOOST_REQUIRE( component->getMeshResource() );
+            ++instanceMeshes;
+        }
+        for( auto child : current->getChildren() )
+        {
+            pending.push_back( child );
+        }
+    }
+    BOOST_CHECK_EQUAL( instanceMeshes, meshes );
+    guard.sceneManager->destroyActor( instance );
+    guard.sceneManager->destroyActor( actor );
+}
+
 BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_attempt )
 {
     TestGuard guard;
@@ -712,6 +837,25 @@ BOOST_AUTO_TEST_CASE( mesh_reimport_rebuilds_geometry_and_settings_on_every_atte
         mesh->updateAABB( true );
         BOOST_CHECK_CLOSE( mesh->getAABB().getMaximum().x,
                            static_cast<real_Num>( attempt * attempt ), 0.001 );
+        // Generated mesh caches must remain resolvable after prefab serialization.
+        auto converter = app->getGraphicsSystem()->getMeshConverter();
+        BOOST_REQUIRE( converter );
+        converter->writeMesh( actor );
+        auto cachedResource = database->loadResourceByType<IMeshResource>( mesh->getName() );
+        BOOST_REQUIRE( cachedResource );
+        BOOST_CHECK( cachedResource->getMesh() == mesh );
+        const auto prefabPath = ( directory / "triangle.prefab" ).generic_string();
+        app->getPrefabManager()->savePrefab( prefabPath, actor );
+        auto prefab = app->getPrefabManager()->loadPrefab( prefabPath );
+        BOOST_REQUIRE( prefab );
+        auto instance = prefab->createActor();
+        BOOST_REQUIRE( instance );
+        auto instanceMesh = findMesh( instance );
+        BOOST_REQUIRE( instanceMesh );
+        instanceMesh->updateAABB( true );
+        BOOST_CHECK_CLOSE( instanceMesh->getAABB().getMaximum().x,
+                           static_cast<real_Num>( attempt * attempt ), 0.001 );
+        guard.sceneManager->destroyActor( instance );
         guard.sceneManager->destroyActor( actor );
     }
 }

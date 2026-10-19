@@ -376,11 +376,17 @@ namespace workphone
 
             auto sFilePath = StringUtil::cleanupPath( path );
             auto fileId = StringUtil::getUUID( sFilePath );
+            const auto hasIdentity = !StringUtil::isNullOrEmpty( uuid );
+            const auto resourceId = hasIdentity ? StringUtil::parseUUID( uuid ) : UUID();
 
             for( auto meshResource : m_meshResources )
             {
                 auto meshResourceFileId = meshResource->getFileSystemId();
-                if( meshResourceFileId == fileId )
+                // Catalog loads use absolute paths, while imported prefabs retain
+                // project-relative cache paths. Their persistent identity is the same.
+                const auto sameIdentity = hasIdentity &&
+                                          meshResource->getHandle()->getUUID() == resourceId;
+                if( sameIdentity || meshResourceFileId == fileId )
                 {
                     return Pair<SmartPtr<IResource>, bool>( meshResource, false );
                 }

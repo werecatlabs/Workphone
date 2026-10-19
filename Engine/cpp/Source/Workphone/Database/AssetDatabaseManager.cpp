@@ -780,57 +780,70 @@ namespace workphone
     }
     void AssetDatabaseManager::addResourceEntry( SmartPtr<ISharedObject> object )
     {
+        addResourceEntries( { object } );
+    }
+
+    void AssetDatabaseManager::addResourceEntries( const Array<SmartPtr<ISharedObject>> &objects )
+    {
         ScopedLock lock( this );
-        if( !m_catalogReady || !object || !object->getHandle() )
-            return;
-        auto uuid = object->getHandle()->getUUIDAsString();
-        if( uuid.empty() )
-            uuid = StringUtil::getUUID();
-        AssetCatalogPath path;
-        const auto kind = kindName( resourceKind( object ) );
-        auto types = TypeManager::instance();
-        if( !types || !validValue( uuid, 256 ) || !resolveResourcePath( *this, object, path ) )
-            return;
-        auto type = types->getName( object->getTypeInfo() );
-        if( object->isDerived<scene::IGameActor>() )
-            type = "Actor";
-        else if( object->isDerived<render::IMaterial>() )
-            type = "Material";
-        else if( object->isDerived<render::ITexture>() )
-            type = "Texture";
-        else if( object->isDerived<ScriptAsset>() )
-            type = "script";
-        if( !validValue( type, 256 ) )
+        if( !m_catalogReady || objects.empty() )
             return;
         CatalogTransaction transaction( *this );
         if( !transaction.active() )
             return;
-        auto existing = queryCatalog( *this,
-                                      "SELECT uuid,path_key,kind,type FROM resources WHERE uuid=? OR "
-                                      "(kind='file' AND ?='file' AND path_key=?)",
-                                      { uuid, kind, path.key } );
-        if( !existing )
-            return;
-        if( !existing->eof() )
+        Array<Pair<SmartPtr<ISharedObject>, String>> inserted;
+        for( const auto &object : objects )
         {
-            const bool identical = existing->getFieldValue( "uuid" ) == uuid &&
-                                   existing->getFieldValue( "path_key" ) == path.key &&
-                                   existing->getFieldValue( "kind" ) == kind &&
-                                   existing->getFieldValue( "type" ) == type;
-            existing->nextRow();
-            if( identical && existing->eof() )
-                transaction.commit();
-            else
+            if( !object || !object->getHandle() )
+                return;
+            auto uuid = object->getHandle()->getUUIDAsString();
+            if( uuid.empty() )
+                uuid = StringUtil::getUUID();
+            AssetCatalogPath path;
+            const auto kind = kindName( resourceKind( object ) );
+            auto types = TypeManager::instance();
+            if( !types || !validValue( uuid, 256 ) || !resolveResourcePath( *this, object, path ) )
+                return;
+            auto type = types->getName( object->getTypeInfo() );
+            if( object->isDerived<scene::IGameActor>() )
+                type = "Actor";
+            else if( object->isDerived<render::IMaterial>() )
+                type = "Material";
+            else if( object->isDerived<render::ITexture>() )
+                type = "Texture";
+            else if( object->isDerived<ScriptAsset>() )
+                type = "script";
+            if( !validValue( type, 256 ) )
+                return;
+            auto existing = queryCatalog( *this,
+                                          "SELECT uuid,path_key,kind,type FROM resources WHERE uuid=? OR "
+                                          "(kind='file' AND ?='file' AND path_key=?)",
+                                          { uuid, kind, path.key } );
+            if( !existing )
+                return;
+            if( !existing->eof() )
             {
-                WP_LOG_ERROR( "Conflicting catalog identity; insertion rejected." );
+                const bool identical = existing->getFieldValue( "uuid" ) == uuid &&
+                                       existing->getFieldValue( "path_key" ) == path.key &&
+                                       existing->getFieldValue( "kind" ) == kind &&
+                                       existing->getFieldValue( "type" ) == type;
+                existing->nextRow();
+                if( !identical || !existing->eof() )
+                {
+                    WP_LOG_ERROR( "Conflicting catalog identity; insertion rejected." );
+                    return;
+                }
+                continue;
             }
-            return;
+            if( !queryCatalog( *this, "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,?,?)",
+                               { uuid, path.path, type, kind, path.key } ) )
+                return;
+            inserted.push_back( { object, uuid } );
         }
-        if( queryCatalog( *this, "INSERT INTO resources(uuid,path,type,kind,path_key) VALUES(?,?,?,?,?)",
-                          { uuid, path.path, type, kind, path.key } ) &&
-            transaction.commit() )
+        if( transaction.commit() && !inserted.empty() )
         {
-            object->getHandle()->setUUID( uuid );
+            for( const auto &entry : inserted )
+                entry.first->getHandle()->setUUID( entry.second );
             invalidateCatalog();
         }
     }

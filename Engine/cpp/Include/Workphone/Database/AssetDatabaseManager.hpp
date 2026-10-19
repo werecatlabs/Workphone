@@ -162,6 +162,9 @@ namespace workphone
          */
         void addResourceEntry( SmartPtr<ISharedObject> object );
 
+        /** Register import outputs atomically with one durable catalog commit. */
+        void addResourceEntries( const Array<SmartPtr<ISharedObject>> &objects );
+
         /** @brief Updates an existing resource entry in the database.
          *  @param object The shared object containing updated resource data.
          */

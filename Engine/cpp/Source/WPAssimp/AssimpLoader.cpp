@@ -129,14 +129,13 @@ namespace workphone
 
             if( meshComponent )
             {
-                if( !StringUtil::isNullOrEmpty( meshFilePath ) )
-                {
-                    meshComponent->setMeshPath( meshFilePath );
-                }
-
                 if( meshResource )
                 {
                     meshComponent->setMeshResource( meshResource );
+                }
+                else if( !StringUtil::isNullOrEmpty( meshFilePath ) )
+                {
+                    meshComponent->setMeshPath( meshFilePath );
                 }
             }
 
@@ -543,6 +542,7 @@ namespace workphone
         m_meshInstancesByKey.clear();
         m_loadedMeshSignatures.clear();
         m_importedTexturesByName.clear();
+        m_importedMaterialsByPath.clear();
         m_aiSkeleton = nullptr;
 #endif
 
@@ -1564,7 +1564,9 @@ namespace workphone
             auto actorTransform = actor->getTransform();
             WP_ASSERT( actorTransform );
 
-            parent->updateTransform();
+            // Ancestors are populated before their children. Updating the entire parent
+            // subtree here revisits every previously imported sibling for every node.
+            parent->getTransform()->update();
 
             auto parentTransform = parent->getTransform();
             auto parentWorldTransform = parentTransform->getWorldTransform();
@@ -2275,6 +2277,7 @@ namespace workphone
     void AssimpLoader::importMaterialTextures( const aiScene *scene, const String &folderPath )
     {
         m_importedTexturesByName.clear();
+        m_importedMaterialsByPath.clear();
         if( !scene || !m_materialImportOptions.importTextures )
         {
             return;
@@ -2554,6 +2557,23 @@ namespace workphone
     {
         try
         {
+            if( !mat )
+            {
+                return;
+            }
+            const auto preparedPath = getMaterialPath( mat, index, folderPath );
+            const auto prepared = m_importedMaterialsByPath.find( preparedPath );
+            if( prepared != m_importedMaterialsByPath.end() )
+            {
+                if( omat )
+                {
+                    omat->setMaterialPath( preparedPath );
+                    omat->setMaterial( prepared->second );
+                    omat->updateMaterial();
+                }
+                return;
+            }
+
             auto applicationManager = core::IApplicationManager::instancePtr();
             WP_ASSERT( applicationManager );
 
@@ -2628,6 +2648,8 @@ namespace workphone
                 }
             }
 
+            m_importedMaterialsByPath[materialPath] = material;
+
             if( omat )
             {
                 omat->setMaterial( material );
@@ -2651,7 +2673,11 @@ namespace workphone
 
         createMaterial( nullptr, static_cast<s32>( index ), mat, folderPath );
 
-        auto material = createOrRetrieveMaterial( mat, static_cast<s32>( index ), folderPath );
+        const auto materialPath = getMaterialPath( mat, static_cast<s32>( index ), folderPath );
+        const auto prepared = m_importedMaterialsByPath.find( materialPath );
+        auto material = prepared != m_importedMaterialsByPath.end()
+                            ? prepared->second
+                            : createOrRetrieveMaterial( mat, static_cast<s32>( index ), folderPath );
         if( !material )
         {
             createMaterial( nullptr, static_cast<s32>( index ), mat, folderPath );

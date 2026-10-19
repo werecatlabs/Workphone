@@ -952,6 +952,40 @@ namespace
         catalog->unload(nullptr);
     }
 
+    void batchImportContracts( const std::filesystem::path &folder )
+    {
+        auto catalog = make_ptr<AssetDatabaseManager>();
+        const auto databasePath = ( folder / "batch-import.db" ).generic_string();
+        catalog->loadFromFile( databasePath );
+        auto first = asset( "Cache/import-a.fbmeshbin" );
+        auto second = asset( "Cache/import-b.fbmeshbin" );
+        const auto generation = catalog->getCatalogGeneration();
+        catalog->addResourceEntries( { first, second, first } );
+        require( scalar( catalog->getDatabase(), "SELECT count(*) AS n FROM resources" ) == 2,
+                 "Batch registration must insert distinct outputs and reuse repeated instances" );
+        require( catalog->getCatalogGeneration() == generation + 1,
+                 "Batch registration must publish one catalog generation" );
+        require( entryId( catalog->getResourceEntryFromPath( first->getFilePath() ) ) ==
+                     first->getHandle()->getUUIDAsString(),
+                 "Batch registration must preserve the imported resource identity" );
+        const auto committedGeneration = catalog->getCatalogGeneration();
+        auto third = asset( "Cache/import-c.fbmeshbin" );
+        auto conflict = asset( first->getFilePath() );
+        catalog->addResourceEntries( { third, conflict } );
+        require( !catalog->getResourceEntryFromPath( third->getFilePath() ) &&
+                     catalog->getCatalogGeneration() == committedGeneration,
+                 "A conflicting batch must roll back every insertion without publication" );
+        catalog->addResourceEntries( { first, second } );
+        require( catalog->getCatalogGeneration() == committedGeneration,
+                 "Repeated batch registration must be idempotent" );
+        catalog->unload( nullptr );
+        catalog->loadFromFile( databasePath );
+        require( entryId( catalog->getResourceEntryFromPath( second->getFilePath() ) ) ==
+                     second->getHandle()->getUUIDAsString(),
+                 "Batch output identities must survive catalog reopening" );
+        catalog->unload( nullptr );
+    }
+
     void contracts( AssetDatabaseManager &catalog, const std::filesystem::path &folder )
     {
         auto db = catalog.getDatabase();
@@ -1104,6 +1138,7 @@ int main()
             require( catalog->getDatabase() && catalog->getDatabase()->isLoaded(),
                      "Real SQLite backend must open" );
             contracts( *catalog, folder );
+            batchImportContracts( folder );
             browsingContracts(folder);
             mediaAssetCatalogContracts(folder);
             assetReferenceChangeContracts(folder);

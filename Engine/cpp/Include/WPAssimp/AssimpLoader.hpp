@@ -393,6 +393,9 @@ namespace workphone
 
         std::map<String, SmartPtr<render::ITexture>> m_importedTexturesByName;
 
+        // Prepared once per import, even when hundreds of nodes share a material.
+        std::map<String, SmartPtr<render::IMaterial>> m_importedMaterialsByPath;
+
         SmartPtr<scene::Material> assignMaterialComponent( SmartPtr<scene::IGameActor> actor, u32 index,
                                                            const aiMaterial *mat,
                                                            const String &folderPath );
