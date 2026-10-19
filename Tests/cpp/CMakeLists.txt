@@ -6,6 +6,10 @@ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(cpp_defines)
 include(cpp_compiler_options)
 
+if (WIN32 AND WP_GRAPHICS_SYSTEM_CLAW)
+    include_directories( ${WP_ROOT}/Engine/c/Include )
+endif()
+
 if(TARGET Workphone)
     add_executable(WPMaterialParameterLayoutTests MaterialParameterLayoutTests.cpp)
     target_include_directories(WPMaterialParameterLayoutTests PRIVATE
