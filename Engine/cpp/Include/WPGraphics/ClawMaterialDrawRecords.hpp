@@ -3,9 +3,11 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
+#include <WPGraphics/ClawDrawSort.hpp>
 #include <unordered_map>
 #include <vector>
 #include <memory_resource>
+struct wp_graphics_cull_result;
 
 namespace workphone::render
 {
@@ -37,6 +39,11 @@ namespace workphone::render
         ClawMaterialDrawRecords &operator=( const ClawMaterialDrawRecords & ) = delete;
         void capture( ClawMesh *mesh );
         void seal( ClawMaterialRenderCache *cache = nullptr );
+        /** Reorder a private view before publication. Unknown/mixed materials,
+         * refraction, UI and nonstandard depth tests are barriers. Missing cameras
+         * retain order. Invalid policies/failed view allocation return false;
+         * key-storage allocation may throw. Failure preserves the input view. */
+        bool sortView( wp_graphics_cull_result *&view, ClawDrawSortStrategy, double bucketSize = 10.0 );
         // Retire owners and invalidate old bindings, retaining reusable capacity.
         void clear();
         const Binding *find( const ClawMesh *mesh ) const;
@@ -95,6 +102,8 @@ namespace workphone::render
         std::pmr::vector<Record> m_records{ &m_vectorStorage };
         std::pmr::vector<Owner> m_owners{ &m_vectorStorage };
         std::pmr::vector<u32> m_bindings{ &m_vectorStorage };
+        std::pmr::vector<ClawDrawSortKey> m_sortKeys{ &m_vectorStorage };
+        std::pmr::vector<int32_t> m_sortOrder{ &m_vectorStorage };
         std::pmr::unordered_map<const IMaterial *, u32> m_materials{ &m_pool };
         std::pmr::unordered_map<const ClawMesh *, Binding> m_meshes{ &m_pool };
         u64 m_publication = 0, m_preparations = 0;

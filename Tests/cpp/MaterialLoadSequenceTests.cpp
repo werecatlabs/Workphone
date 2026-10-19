@@ -29,6 +29,9 @@
 #include <atomic>
 #include <optional>
 #include "workphone_graphics_material.h"
+#include "workphone_graphics_cull_job.h"
+#include "workphone_graphics_camera.h"
+#include "workphone_graphics_scenenode.h"
 #include "MaterialRenderCacheBenchmark.hpp"
 
 namespace
@@ -40,6 +43,51 @@ namespace
     {
         if( !value )
             throw std::runtime_error( message );
+    }
+
+    void runDrawSorting()
+    {
+        using namespace render;
+        using Key = ClawDrawSortKey;
+        auto key = []( u32 index, u32 material, double depth, bool transparent = false ) {
+            Key value; value.index = index; value.material = material; value.depth = depth;
+            value.transparent = transparent; value.barrier = false; return value;
+        };
+        const std::vector<Key> original{ key( 0, 1, 25 ), key( 1, 0, 8 ), key( 2, 1, 3 ),
+            key( 3, 0, 24 ), key( 4, 0, 7, true ), key( 5, 1, 30, true ), key( 6, 0, 7, true ) };
+        const u32 expected[4][7] = {
+            { 0, 1, 2, 3, 4, 5, 6 }, { 2, 1, 3, 0, 5, 4, 6 },
+            { 1, 3, 2, 0, 5, 4, 6 }, { 1, 2, 3, 0, 5, 4, 6 } };
+        for( u32 mode = 0; mode < 4; ++mode )
+        {
+            auto keys = original;
+            sortDrawKeys( keys.data(), keys.size(), static_cast<ClawDrawSortStrategy>( mode ) );
+            for( u32 i = 0; i < keys.size(); ++i )
+                require( keys[i].index == expected[mode][i], "strategy-specific opaque order and stable back-to-front alpha" );
+        }
+        for( auto boundary : { 0, 1, 2, 3 } )
+        {
+            std::vector<Key> keys{ key( 0, 1, 10 ), key( 1, 1, 20 ), key( 2, 0, 1 ), key( 3, 0, 2 ) };
+            if( boundary == 0 ) keys[1].barrier = true;
+            if( boundary == 1 ) { keys[2].queue = 1; keys[3].queue = 1; }
+            if( boundary == 2 ) { keys[2].zOrder = 1; keys[3].zOrder = 1; }
+            if( boundary == 3 ) keys[1].depth = std::numeric_limits<double>::quiet_NaN();
+            sortDrawKeys( keys.data(), keys.size(), ClawDrawSortStrategy::MaterialFirst );
+            for( u32 i = 0; i < keys.size(); ++i ) require( keys[i].index == i, "ordering boundaries retain positions" );
+        }
+        require( !validDrawSort( static_cast<ClawDrawSortStrategy>( 99 ), 10 ) &&
+                 !validDrawSort( ClawDrawSortStrategy::DepthBuckets, 0 ) &&
+                 !validDrawSort( ClawDrawSortStrategy::DepthBuckets, std::numeric_limits<double>::infinity() ),
+                 "invalid sorting policies reject" );
+        std::vector<Key> large;
+        for( u32 i = 0; i < 4096; ++i ) large.push_back( key( i, i % 17, ( i * 31 ) % 101 ) );
+        auto expectedKeys = large;
+        std::stable_sort( expectedKeys.begin(), expectedKeys.end(), []( const auto &a, const auto &b ) {
+            return a.material != b.material ? a.material < b.material : a.depth < b.depth;
+        } );
+        sortDrawKeys( large.data(), large.size(), ClawDrawSortStrategy::MaterialFirst );
+        for( size_t i = 0; i < large.size(); ++i )
+            require( large[i].index == expectedKeys[i].index, "numeric sorting matches stable reference with repeated keys" );
     }
 
     void runMaterialPreparation()
@@ -482,6 +530,68 @@ namespace
             return ClawMesh::getMaterial( index );
         }
     };
+
+    void runCapturedDrawSorting( Fixture &fixture )
+    {
+        using namespace render;
+        auto scene = wp_graphics_scene_create();
+        auto camera = wp_camera_create();
+        wp_camera_set_position( camera, { 0, 0, 50 } );
+        std::vector<SmartPtr<ClawMaterial>> materials;
+        for( int i = 0; i < 3; ++i )
+        {
+            auto material = make_ptr<ClawMaterial>(); material->load( nullptr );
+            if( i == 2 ) material->setOpacity( 0.5f );
+            materials.push_back( material );
+        }
+        std::vector<std::unique_ptr<CapturedMaterialMesh>> meshes;
+        std::vector<wp_graphics_object *> objects;
+        const float depths[] = { 25, 8, 3, 24, 7, 30, 7 };
+        ClawMaterialDrawRecords records;
+        for( int i = 0; i < 7; ++i )
+        {
+            auto mesh = std::make_unique<CapturedMaterialMesh>();
+            for( int section = 0; section < 2; ++section ) mesh->setMaterial( materials[i < 4 ? i % 2 : 2], section );
+            auto object = wp_graphics_scene_create_object( scene );
+            wp_graphics_object_set_render_func( object, []( wp_graphics_object *, wp_renderer * ) {} );
+            wp_graphics_object_set_submit_data( object, mesh.get() );
+            auto node = wp_graphics_scene_create_node( scene );
+            wp_scenenode_set_position( node, { 0, 0, 50 - depths[i] } );
+            wp_scenenode_attach_object( node, object );
+            objects.push_back( object ); records.capture( mesh.get() ); meshes.push_back( std::move( mesh ) );
+        }
+        records.seal();
+        const u32 expected[4][7] = {
+            { 0, 1, 2, 3, 4, 5, 6 }, { 2, 1, 3, 0, 5, 4, 6 },
+            { 2, 0, 1, 3, 5, 4, 6 }, { 2, 1, 0, 3, 5, 4, 6 } };
+        auto source = wp_graphics_scene_prepare_cull( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN );
+        require( source && wp_graphics_cull_result_get_visible_count( source ) == 7, "sort fixture captures all objects" );
+        const int identity[] = { 0, 1, 2, 3, 4, 5, 6 };
+        // Live edits must not affect the captured classification or query materials.
+        materials[0]->setOpacity( 0.25f );
+        for( u32 mode = 0; mode < 4; ++mode )
+        {
+            auto view = wp_graphics_cull_result_create_ordered( source, identity, 7 );
+            require( records.sortView( view, static_cast<ClawDrawSortStrategy>( mode ) ), "captured draw strategy succeeds" );
+            for( int i = 0; i < 7; ++i )
+                require( wp_graphics_cull_result_get_object( view, i ) == objects[expected[mode][i]],
+                         "captured strategy orders native objects using frozen materials and translated camera depth" );
+            require( wp_graphics_cull_result_validate( view, scene, wp_graphics_cull_result_get_scene_generation( view ) ) == WP_GRAPHICS_CULL_OK,
+                     "reordered view retains source validation and transforms" );
+            wp_graphics_cull_result_destroy( view );
+        }
+        for( auto &mesh : meshes ) require( mesh->materialQueries == 2, "sorting never reacquires materials" );
+        wp_graphics_cull_result_destroy( source );
+        source = wp_graphics_scene_prepare_cull( scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN );
+        require( records.sortView( source, ClawDrawSortStrategy::MaterialFirst ), "missing camera retains queue order" );
+        for( int i = 0; i < 7; ++i ) require( wp_graphics_cull_result_get_object( source, i ) == objects[i], "no-camera order preserved" );
+        wp_graphics_cull_result_destroy( source );
+        records.clear();
+        wp_graphics_scene_destroy( scene ); wp_camera_destroy( camera );
+        meshes.clear();
+        for( auto material : materials ) material->unload( nullptr );
+        fixture.graphics->pending.clear();
+    }
 
     void runCapturedMaterialRecords( Fixture &fixture )
     {
@@ -1059,6 +1169,7 @@ int main( int argc, char **argv )
 {
     try
     {
+        runDrawSorting();
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-preparation" )
         {
             material_cache_benchmark::run();
@@ -1078,6 +1189,7 @@ int main( int argc, char **argv )
             return 0;
         }
         runCapturedMaterialRecords( fixture );
+        runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );

@@ -3133,6 +3133,55 @@ static void cull_ancestor_arena( void )
     puts( "Cull ancestor arena: shared views, recapture/cancel/rejection, hidden revisions and empty ownership passed." );
 }
 
+static void ordered_views( void )
+{
+    wp_graphics_scene *scene = wp_graphics_scene_create();
+    wp_graphics_object *objects[3];
+    wp_graphics_cull_result *source, *ordered, *derived, *empty;
+    wp_s32 order[3] = { 2, 0, 1 }, duplicate[3] = { 1, 1, 0 };
+    wp_mat4f world;
+    int i;
+    for( i = 0; i < 3; ++i )
+    {
+        objects[i] = wp_graphics_scene_create_object( scene );
+        wp_graphics_object_set_render_func( objects[i], record );
+    }
+    source = capture( scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( !wp_graphics_cull_result_create_ordered( NULL, order, 3 ) );
+    CHECK( !wp_graphics_cull_result_create_ordered( source, order, 2 ) );
+    CHECK( !wp_graphics_cull_result_create_ordered( source, NULL, 3 ) );
+    CHECK( !wp_graphics_cull_result_create_ordered( source, duplicate, 3 ) );
+    duplicate[1] = -1;
+    CHECK( !wp_graphics_cull_result_create_ordered( source, duplicate, 3 ) );
+    duplicate[1] = 3;
+    CHECK( !wp_graphics_cull_result_create_ordered( source, duplicate, 3 ) );
+    ordered = wp_graphics_cull_result_create_ordered( source, order, 3 );
+    CHECK( ordered != NULL );
+    for( i = 0; i < 3; ++i )
+    {
+        CHECK( wp_graphics_cull_result_get_object( source, i ) == objects[i] );
+        CHECK( wp_graphics_cull_result_get_object( ordered, i ) == objects[order[i]] );
+        CHECK( wp_graphics_cull_result_validate_object( ordered, scene, i ) == WP_GRAPHICS_CULL_OK );
+        CHECK( wp_graphics_cull_result_get_world_matrix( ordered, i, &world ) );
+    }
+    wp_graphics_cull_result_destroy( source );
+    CHECK( wp_graphics_cull_result_get_object( ordered, 0 ) == objects[2] );
+    derived = wp_graphics_cull_result_create_view( ordered, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+    CHECK( derived && wp_graphics_cull_result_get_visible_count( derived ) == 3 );
+    wp_graphics_cull_result_destroy( ordered );
+    CHECK( wp_graphics_cull_result_validate( derived, scene,
+        wp_graphics_cull_result_get_scene_generation( derived ) ) == WP_GRAPHICS_CULL_OK );
+    wp_graphics_cull_result_destroy( derived );
+    wp_graphics_scene_clear( scene );
+    source = capture( scene, NULL, WP_GRAPHICS_CULL_PASS_MAIN );
+    empty = wp_graphics_cull_result_create_ordered( source, NULL, 0 );
+    CHECK( empty && wp_graphics_cull_result_get_visible_count( empty ) == 0 );
+    wp_graphics_cull_result_destroy( source );
+    wp_graphics_cull_result_destroy( empty );
+    wp_graphics_scene_destroy( scene );
+    puts( "Immutable ordered views: permutation validation, sharing and retirement passed." );
+}
+
 int main( int argc, char **argv )
 {
     if( argc > 1 )
@@ -3145,6 +3194,7 @@ int main( int argc, char **argv )
         return 2;
     }
     matrix_cache();
+    ordered_views();
     cull_phase_timing();
     cull_ancestor_arena();
     transform_phase_timing( 0 );

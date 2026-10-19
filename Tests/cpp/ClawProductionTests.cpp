@@ -384,6 +384,70 @@ namespace
         return ok;
     }
 
+    bool testSortedTransparency( ClawRendererDX11 &renderer )
+    {
+        auto target = make_ptr<ClawRenderTarget>(); target->setSize( {64,64} );
+        renderer.setRenderTarget( target ); renderer.setViewport( nullptr );
+        auto camera = make_ptr<ClawCamera>();
+        camera->setNearClipDistance( 0.1f ); camera->setFarClipDistance( 10 ); camera->setAspectRatio( 1 );
+        wp_camera_set_position( camera->getNativeCamera(), {0,0,3} );
+        renderer.setCamera( camera );
+        auto scene = make_ptr<MaterialStorageScene>(); scene->setEnableShadows( false );
+        scene->setAmbientLight( ColourF::White );
+        TestMesh nearMesh, farMesh;
+        auto makeMaterial = []( ColourF colour ) {
+            auto material = make_ptr<ClawMaterial>();
+            auto technique = make_ptr<ClawMaterialTechnique>(); technique->setMaterial( material.get() );
+            technique->createPass(); material->setTechniques( {technique} );
+            material->setCullMode( 1 ); material->setDiffuse( colour ); material->setOpacity( 0.5f );
+            material->setDepthWrite( false ); return material;
+        };
+        auto nearMaterial = makeMaterial( ColourF::Red ), farMaterial = makeMaterial( ColourF::Blue );
+        nearMesh.setMaterial( nearMaterial ); farMesh.setMaterial( farMaterial );
+        wp_graphics_object *objects[2];
+        int index = 0;
+        for( auto mesh : { &nearMesh, &farMesh } )
+        {
+            auto object = wp_graphics_scene_create_object( scene->getNativeScene() ); objects[index] = object;
+            mesh->bindNativeRenderObject( object );
+            auto node = wp_graphics_scene_create_node( scene->getNativeScene() );
+            wp_scenenode_set_position( node, {0,0,index == 0 ? 0.4f : 0.0f} );
+            wp_scenenode_attach_object( node, object ); ++index;
+        }
+        auto native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        bool ok = true;
+        auto draw = [&] {
+            ok &= check( scene->prepareRenderJobs( camera, false, &renderer ), "sorted alpha scene prepares" );
+            renderer.clear( ColourF::Black ); scene->render( static_cast<IRenderer *>( &renderer ) );
+            return claw_foliage_contracts::pixels( native );
+        };
+        // Explicit z-order supplies an independent far-before-near reference.
+        wp_graphics_object_set_z_order( objects[0], 1 );
+        const auto reference = draw();
+        const auto pixel = ( 32u * 64u + 32u ) * 4u;
+        ok &= check( reference[pixel] > 20 && reference[pixel+2] > 10, "alpha reference contains both surfaces" );
+        wp_graphics_object_set_z_order( objects[0], 0 );
+        ok &= check( draw() != reference, "near-first alpha fixture detects incorrect submission order" );
+        for( auto strategy : { ClawDrawSortStrategy::FrontToBack, ClawDrawSortStrategy::MaterialFirst,
+                               ClawDrawSortStrategy::DepthBuckets } )
+        {
+            ok &= check( scene->setDrawSortStrategy( strategy ), "valid scene sort policy accepted" );
+            ok &= check( draw() == reference, "every optimized strategy preserves back-to-front alpha pixels" );
+            const auto publication = scene->retainJobs();
+            ok &= check( scene->setDrawSortStrategy( strategy ) && scene->retainJobs() == publication,
+                         "equal sort policy preserves prepared publication" );
+            ok &= check( !scene->setDrawSortStrategy( static_cast<ClawDrawSortStrategy>( 99 ) ) &&
+                         !scene->setDrawSortStrategy( strategy, 0 ) && scene->retainJobs() == publication,
+                         "invalid sort policies preserve publication" );
+        }
+        nearMesh.bindNativeRenderObject( nullptr ); farMesh.bindNativeRenderObject( nullptr );
+        scene->unload( nullptr );
+        nearMesh.setMaterial( nullptr ); farMesh.setMaterial( nullptr );
+        nearMaterial->unload( nullptr ); farMaterial->unload( nullptr );
+        renderer.setCamera( nullptr ); renderer.setRenderTarget( nullptr );
+        return ok;
+    }
+
     bool testParticleLifecycle()
     {
         CParticleSystem effect;

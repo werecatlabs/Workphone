@@ -5,6 +5,8 @@
 #include <atomic>
 #include <limits>
 #include <stdexcept>
+#include "workphone_graphics_cull_job.h"
+#include "workphone_graphics_object.h"
 
 namespace workphone::render
 {
@@ -156,6 +158,8 @@ namespace workphone::render
         m_bindings.clear();
         m_materials.clear();
         m_meshes.clear();
+        m_sortKeys.clear();
+        m_sortOrder.clear();
         m_publication = publication;
         m_preparations = 0;
         m_sealed = false;
@@ -171,7 +175,66 @@ namespace workphone::render
     u64 ClawMaterialDrawRecords::getDenseCapacityBytes() const
     {
         return m_records.capacity() * sizeof( Record ) + m_owners.capacity() * sizeof( Owner ) +
-            m_bindings.capacity() * sizeof( u32 );
+            m_bindings.capacity() * sizeof( u32 ) + m_sortKeys.capacity() * sizeof( ClawDrawSortKey ) +
+            m_sortOrder.capacity() * sizeof( int32_t );
+    }
+
+    bool ClawMaterialDrawRecords::sortView( wp_graphics_cull_result *&view,
+                                            ClawDrawSortStrategy strategy, double bucketSize )
+    {
+        if( !m_sealed || !view || !validDrawSort( strategy, bucketSize ) ) return false;
+        if( strategy == ClawDrawSortStrategy::QueueOrder ) return true;
+        wp_mat4f camera, projection;
+        if( !wp_graphics_cull_result_get_camera_matrices( view, &camera, &projection ) ) return true;
+        const auto count = wp_graphics_cull_result_get_visible_count( view );
+        m_sortKeys.resize( count );
+        m_sortOrder.resize( count );
+        for( s32 index = 0; index < count; ++index )
+        {
+            auto &key = m_sortKeys[index];
+            key = {};
+            key.index = index;
+            auto object = wp_graphics_cull_result_get_object( view, index );
+            if( !object ) continue;
+            if( wp_graphics_object_get_flags( object ) &
+                ( WORKPHONE_GRAPHICS_OBJECT_FLAG_OVERLAY | WORKPHONE_GRAPHICS_OBJECT_FLAG_UI ) ) continue;
+            key.queue = wp_graphics_object_get_render_queue_group( object );
+            key.zOrder = wp_graphics_object_get_z_order( object );
+            auto mesh = static_cast<const ClawMesh *>( wp_graphics_object_get_submit_data( object ) );
+            auto binding = find( mesh );
+            auto record = binding ? get( *binding, 0 ) : nullptr;
+            if( !record || !record->state ) continue;
+            bool homogeneous = true;
+            for( u32 section = 1; section < binding->count; ++section )
+                if( get( *binding, section ) != record ) { homogeneous = false; break; }
+            const auto &state = *record->state;
+            if( !homogeneous || ( state.depthTest != 1u && state.depthTest != 2u ) ||
+                state.materialType == MaterialType::UI || state.getFlag( refractionEnabledFlag ) ) continue;
+            key.transparent = state.getFlag( transparentFlag ) || state.blendMode != 0;
+            if( !key.transparent && !state.getFlag( depthWriteFlag ) ) continue;
+            wp_mat4f world;
+            if( !wp_graphics_cull_result_get_world_matrix( view, index, &world ) ) continue;
+            // Native matrices use m[row][column]. Use signed view depth:
+            // off-axis objects must not change transparency order by radius.
+            key.depth = -( double( camera.m[2][0] ) * world.m[0][3] +
+                           double( camera.m[2][1] ) * world.m[1][3] +
+                           double( camera.m[2][2] ) * world.m[2][3] + camera.m[2][3] );
+            key.material = static_cast<u32>( record - m_records.data() );
+            key.barrier = !std::isfinite( key.depth );
+        }
+        sortDrawKeys( m_sortKeys.data(), m_sortKeys.size(), strategy, bucketSize );
+        bool changed = false;
+        for( s32 index = 0; index < count; ++index )
+        {
+            m_sortOrder[index] = static_cast<s32>( m_sortKeys[index].index );
+            changed = changed || m_sortOrder[index] != index;
+        }
+        if( !changed ) return true;
+        auto ordered = wp_graphics_cull_result_create_ordered( view, m_sortOrder.data(), count );
+        if( !ordered ) return false;
+        wp_graphics_cull_result_destroy( view );
+        view = ordered;
+        return true;
     }
 
     bool ClawMaterialDrawRecords::valid( const Binding &binding, const ClawMesh *mesh, u32 sections ) const

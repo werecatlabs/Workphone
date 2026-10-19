@@ -33,6 +33,14 @@ extern "C" {
 
 typedef struct wp_graphics_cull_job wp_graphics_cull_job;
 typedef struct wp_graphics_cull_result wp_graphics_cull_result;
+
+/* Owner-only immutable reordered copy. Order is a permutation of source visible
+ * indices; count must match exactly. Shared capture/resources remain borrowed
+ * under the original lifetime contract. Invalid input/allocation failure returns
+ * NULL without modifying source. Native cull timing/sort counters remain those
+ * of the source; this operation is an additional submission ordering stage. */
+wp_graphics_cull_result *wp_graphics_cull_result_create_ordered(
+    const wp_graphics_cull_result *source, const wp_s32 *order, wp_s32 count );
 typedef struct wp_transform_job_stats wp_transform_job_stats;
 /* Disjoint elapsed owner intervals, not worker CPU/GPU time. Transform includes
  * dispatch/wait and node-array setup; visibility includes execute allocations.

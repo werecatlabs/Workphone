@@ -1236,6 +1236,37 @@ void wp_graphics_cull_result_destroy( wp_graphics_cull_result *result )
     free( result );
 }
 
+wp_graphics_cull_result *wp_graphics_cull_result_create_ordered(
+    const wp_graphics_cull_result *source, const wp_s32 *order, wp_s32 count )
+{
+    wp_graphics_cull_result *copy;
+    wp_s32 *indices, i;
+    unsigned char *seen;
+    if( !source || count < 0 || (size_t)count > (size_t)-1 / sizeof( *indices ) ||
+        count != source->visible_count || ( count && !order ) ||
+        !source->snapshot || source->snapshot->references == (wp_u32)-1 ) return NULL;
+    copy = (wp_graphics_cull_result *)malloc( sizeof( *copy ) );
+    if( !copy ) return NULL;
+    indices = count ? (wp_s32 *)malloc( (size_t)count * sizeof( *indices ) ) : NULL;
+    seen = count ? (unsigned char *)calloc( (size_t)count, 1 ) : NULL;
+    if( count && ( !indices || !seen ) )
+    { free( seen ); free( indices ); free( copy ); return NULL; }
+    for( i = 0; i < count; ++i )
+    {
+        if( order[i] < 0 || order[i] >= count || seen[order[i]] )
+        { free( seen ); free( indices ); free( copy ); return NULL; }
+        seen[order[i]] = 1;
+        indices[i] = source->indices[order[i]];
+    }
+    free( seen );
+    *copy = *source;
+    copy->indices = indices;
+    copy->storage.view_index_bytes = (size_t)count * sizeof( *indices );
+    copy->storage.view_array_peak_bytes = copy->storage.view_index_bytes + (size_t)count;
+    ++copy->snapshot->references;
+    return copy;
+}
+
 wp_s32 wp_graphics_cull_result_get_candidate_count( const wp_graphics_cull_result *result )
 {
     return result ? result->candidate_count : 0;

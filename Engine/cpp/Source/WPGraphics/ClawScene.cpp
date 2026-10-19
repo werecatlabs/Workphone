@@ -874,6 +874,8 @@ namespace workphone
 
             bool reusedMaterialStorage = false;
             u64 materialStorageAllocations = 0;
+            ClawDrawSortStrategy sortStrategy = ClawDrawSortStrategy::QueueOrder;
+            double sortBucketSize = 10.0;
 
             void captureMaterials( ClawRendererDX11 &renderer,
                                    std::unique_ptr<ClawMaterialDrawRecords> &workspace )
@@ -890,6 +892,8 @@ namespace workphone
                             publication->capture( static_cast<ClawMesh *>(
                                 wp_graphics_object_get_submit_data( object ) ) );
                 renderer.prepareMaterialRecords( *publication );
+                if( !publication->sortView( main, sortStrategy, sortBucketSize ) )
+                    throw std::runtime_error( "Could not order captured material draws." );
                 materialStorageAllocations = publication->getStorageAllocationCount() - previousAllocations;
                 materials = std::move( publication );
             }
@@ -904,6 +908,16 @@ namespace workphone
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera )
         {
             return prepareRenderJobs( camera, false );
+        }
+
+        bool ClawScene::setDrawSortStrategy( ClawDrawSortStrategy strategy, double bucketSize )
+        {
+            if( !validDrawSort( strategy, bucketSize ) ) return false;
+            if( strategy == m_drawSortStrategy && bucketSize == m_drawSortBucketSize ) return true;
+            discardRenderJobs();
+            m_drawSortStrategy = strategy;
+            m_drawSortBucketSize = bucketSize;
+            return true;
         }
 
         static wp_u64 cullProfileClock( void * )
@@ -927,6 +941,8 @@ namespace workphone
             wp_graphics_scene_set_active_camera( m_scene, view ? view->getNativeCamera() : nullptr );
             auto jobs = std::make_shared<NativeRenderJobs>();
             jobs->camera = camera;
+            jobs->sortStrategy = m_drawSortStrategy;
+            jobs->sortBucketSize = m_drawSortBucketSize;
             const auto mainStart = profile ? Clock::now() : Clock::time_point{};
             jobs->main =
                 wp_graphics_scene_prepare_cull_profiled( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN,

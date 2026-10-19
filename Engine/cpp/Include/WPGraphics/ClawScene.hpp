@@ -3,6 +3,7 @@
 
 #include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <Workphone/Graphics/GraphicsScene.hpp>
+#include <WPGraphics/ClawDrawSort.hpp>
 #include "workphone_graphics_scene.h"
 #include <memory>
 #include <mutex>
@@ -114,6 +115,13 @@ namespace workphone
                 u64 total_ns = 0, main_prepare_ns = 0, shadow_derive_ns = 0;
                 u64 material_prepare_ns = 0;
             };
+
+            /** Owner-thread policy for subsequent material publications. Equal
+             * assignments retain prepared jobs; invalid policies are rejected.
+             * QueueOrder preserves existing ordering. Bucket size is world units. */
+            bool setDrawSortStrategy( ClawDrawSortStrategy strategy, double bucketSize = 10.0 );
+            ClawDrawSortStrategy getDrawSortStrategy() const { return m_drawSortStrategy; }
+            double getDrawSortBucketSize() const { return m_drawSortBucketSize; }
 
             /** False and zeroed when unprofiled, failed or retired. Stale jobs
              * still describe elapsed work, without certifying draw validity. */
@@ -229,6 +237,8 @@ namespace workphone
             std::shared_ptr<NativeRenderJobs> m_nativeRenderJobs;
             // Empty retired storage, never in-flight resources or draw records.
             std::unique_ptr<ClawMaterialDrawRecords> m_materialRecordWorkspace;
+            ClawDrawSortStrategy m_drawSortStrategy = ClawDrawSortStrategy::QueueOrder;
+            double m_drawSortBucketSize = 10.0;
             struct FoliageWorldState;
             std::unique_ptr<FoliageWorldState> m_foliageWorlds;
         };
