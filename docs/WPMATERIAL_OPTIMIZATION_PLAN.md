@@ -108,6 +108,21 @@ Reuse `wp_shader_program` indexed/validated-handle APIs through an explicit layo
 
 This phase removes CPU material preparation overhead. It does not by itself reduce draw count. Existing compatible draw grouping can consume the new material key later; preserve transparent sorting, UI painter order and custom queue barriers.
 
+### 7. Selectable draw sorting
+
+Expose scene-level policies so content can trade material locality against early depth rejection:
+
+| Policy | Opaque order within queue/z-order boundaries | Intended use |
+| --- | --- | --- |
+| QueueOrder | Existing stable submission order | Compatibility/default and explicit author ordering |
+| FrontToBack | Camera-forward depth, then material | Reduce overdraw |
+| MaterialFirst | Dense material ID, then depth | Group repeated material state |
+| DepthBuckets | Depth range, then material, then depth | Balance locality and early depth rejection |
+
+The first implementation uses captured numeric material IDs and object-origin view depth. All optimized policies put opaque draws before transparent draws and order transparency back-to-front within each eligible run. Equal keys preserve submission order. Queue groups, explicit z-order, UI/overlays, refraction, nonstandard depth comparisons, opaque materials without depth writes, unknown material state and mixed-material meshes constrain reordering. Missing cameras preserve the original order. Shadow submission retains its existing order.
+
+Reuse contiguous key/permutation buffers with scene material storage. Reorder a private immutable cull view before publication, retaining shared captured transforms and resource ownership; never reorder a published consumer's array in place. Count the additional reordered-view allocations separately from reusable material-table storage. Validate pixel parity against explicit transparent ordering, retained views, policy changes, repeated keys and independent view lifetimes. Measure sorting CPU cost, adjacent material changes and depth reversals separately; require representative GPU/frame measurements before selecting an optimized default. Section-level packets and more precise transparent geometry ordering can extend this path later.
+
 ## Delivery sequence and review gates
 
 Each row is a separately reviewable implementation slice. Estimates are provisional engineering days, excluding unavailable hardware and broad pre-existing build failures; refine after M0.

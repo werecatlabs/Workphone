@@ -90,6 +90,53 @@ namespace
             require( large[i].index == expectedKeys[i].index, "numeric sorting matches stable reference with repeated keys" );
     }
 
+    void benchmarkDrawSorting()
+    {
+        using namespace render;
+        std::vector<ClawDrawSortKey> input( 65536 ), work( input.size() );
+        u32 random = 1337;
+        for( u32 i = 0; i < input.size(); ++i )
+        {
+            random ^= random << 13; random ^= random >> 17; random ^= random << 5;
+            auto &key = input[i]; key.index = i; key.material = random % 128;
+            key.depth = double( ( random >> 7 ) % 100000 ) / 100.0;
+            key.transparent = i % 8 == 0; key.barrier = false;
+        }
+        std::vector<double> samples[4];
+        u64 transitions[4]{}, inversions[4]{}, checksums[4]{};
+        for( int sample = 0; sample < 7; ++sample ) for( int order = 0; order < 4; ++order )
+        {
+            const auto mode = ( sample + order ) % 4;
+            const auto begin = std::chrono::steady_clock::now();
+            work = input;
+            sortDrawKeys( work.data(), work.size(), static_cast<ClawDrawSortStrategy>( mode ), 10.0 );
+            const auto end = std::chrono::steady_clock::now();
+            samples[mode].push_back( std::chrono::duration<double, std::milli>( end - begin ).count() );
+            u64 sum = 0, changes = 0, reversals = 0;
+            const ClawDrawSortKey *previous = nullptr;
+            for( const auto &key : work )
+            {
+                sum += key.index;
+                if( !key.transparent )
+                {
+                    if( previous ) { changes += key.material != previous->material; reversals += key.depth < previous->depth; }
+                    previous = &key;
+                }
+            }
+            require( sum == u64( input.size() ) * ( input.size() - 1 ) / 2, "sorting benchmark retains all indices" );
+            transitions[mode] = changes; inversions[mode] = reversals; checksums[mode] = sum;
+        }
+        const char *names[] = { "queue_order", "front_to_back", "material_first", "depth_buckets" };
+        std::cout << "CPU key copy/sort only: 65536 objects, 128 materials, 1/8 alpha, 7 rotating samples; bucket=10 units\n";
+        for( int mode = 0; mode < 4; ++mode )
+        {
+            std::sort( samples[mode].begin(), samples[mode].end() );
+            std::cout << names[mode] << " median_ms=" << samples[mode][3]
+                << " opaque_material_changes=" << transitions[mode] << " opaque_depth_reversals=" << inversions[mode]
+                << " checksum=" << checksums[mode] << '\n';
+        }
+    }
+
     void runMaterialPreparation()
     {
         using namespace render;
@@ -581,7 +628,27 @@ namespace
             wp_graphics_cull_result_destroy( view );
         }
         for( auto &mesh : meshes ) require( mesh->materialQueries == 2, "sorting never reacquires materials" );
+        const auto warmAllocations = records.getStorageAllocationCount();
+        for( int repeat = 0; repeat < 16; ++repeat )
+        {
+            auto view = wp_graphics_cull_result_create_ordered( source, identity, 7 );
+            require( records.sortView( view, ClawDrawSortStrategy::DepthBuckets ) &&
+                     records.getStorageAllocationCount() == warmAllocations,
+                     "warmed numeric key/order buffers are reused across views" );
+            wp_graphics_cull_result_destroy( view );
+        }
         wp_graphics_cull_result_destroy( source );
+        // Mixed section materials prevent an object-level reorder through it.
+        meshes[1]->setMaterial( materials[0], 1 );
+        ClawMaterialDrawRecords mixed;
+        for( auto &mesh : meshes ) mixed.capture( mesh.get() );
+        mixed.seal();
+        source = wp_graphics_scene_prepare_cull( scene, camera, WP_GRAPHICS_CULL_PASS_MAIN );
+        require( mixed.sortView( source, ClawDrawSortStrategy::MaterialFirst ) &&
+                 wp_graphics_cull_result_get_object( source, 0 ) == objects[0] &&
+                 wp_graphics_cull_result_get_object( source, 1 ) == objects[1],
+                 "mixed-material mesh is a barrier to object-level sorting" );
+        wp_graphics_cull_result_destroy( source ); mixed.clear();
         source = wp_graphics_scene_prepare_cull( scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN );
         require( records.sortView( source, ClawDrawSortStrategy::MaterialFirst ), "missing camera retains queue order" );
         for( int i = 0; i < 7; ++i ) require( wp_graphics_cull_result_get_object( source, i ) == objects[i], "no-camera order preserved" );
@@ -1170,6 +1237,11 @@ int main( int argc, char **argv )
     try
     {
         runDrawSorting();
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-sorting" )
+        {
+            benchmarkDrawSorting();
+            return 0;
+        }
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-preparation" )
         {
             material_cache_benchmark::run();

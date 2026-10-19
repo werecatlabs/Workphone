@@ -18,6 +18,7 @@ namespace workphone::render
     {
         uint32_t index = 0, queue = 0, zOrder = 0, material = 0;
         double depth = 0;
+        double bucket = 0;
         bool transparent = false, barrier = true;
     };
 
@@ -32,6 +33,12 @@ namespace workphone::render
                               ClawDrawSortStrategy strategy, double bucketSize = 10.0 )
     {
         if( !validDrawSort( strategy, bucketSize ) || strategy == ClawDrawSortStrategy::QueueOrder ) return;
+        // Compute once per key instead of dividing/flooring in O(n log n)
+        // comparisons. This costs one scalar per key in the reused workspace.
+        if( strategy == ClawDrawSortStrategy::DepthBuckets )
+            for( size_t index = 0; index < count; ++index )
+                if( !keys[index].barrier && std::isfinite( keys[index].depth ) )
+                    keys[index].bucket = std::floor( keys[index].depth / bucketSize );
         size_t begin = 0;
         while( begin < count )
         {
@@ -52,8 +59,7 @@ namespace workphone::render
                         return a.depth < b.depth;
                     if( strategy == ClawDrawSortStrategy::DepthBuckets )
                     {
-                        const auto ad = std::floor( a.depth / bucketSize ), bd = std::floor( b.depth / bucketSize );
-                        if( ad != bd ) return ad < bd;
+                        if( a.bucket != b.bucket ) return a.bucket < b.bucket;
                     }
                     if( a.material != b.material ) return a.material < b.material;
                     if( a.depth != b.depth ) return a.depth < b.depth;

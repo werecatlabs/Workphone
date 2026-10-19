@@ -386,6 +386,7 @@ namespace
 
     bool testSortedTransparency( ClawRendererDX11 &renderer )
     {
+        claw_foliage_scene_contracts::Fixture fixture;
         auto target = make_ptr<ClawRenderTarget>(); target->setSize( {64,64} );
         renderer.setRenderTarget( target ); renderer.setViewport( nullptr );
         auto camera = make_ptr<ClawCamera>();
@@ -410,6 +411,7 @@ namespace
         {
             auto object = wp_graphics_scene_create_object( scene->getNativeScene() ); objects[index] = object;
             mesh->bindNativeRenderObject( object );
+            mesh->setVisibilityFlags( ~u32( 0 ) );
             auto node = wp_graphics_scene_create_node( scene->getNativeScene() );
             wp_scenenode_set_position( node, {0,0,index == 0 ? 0.4f : 0.0f} );
             wp_scenenode_attach_object( node, object ); ++index;
@@ -656,6 +658,7 @@ int main( int argc, char **argv )
                          "DX11 device evidence must be available" );
             ok &= testRenderedFeatures(renderer);
             ok &= testPreparedMaterialEdits(renderer);
+            ok &= testSortedTransparency(renderer);
             ok &= testMeshShadows(renderer);
             ok &= claw_terrain_contracts::run(renderer);
             ok &= claw_terrain_material_contracts::run(renderer);

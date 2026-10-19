@@ -45,6 +45,38 @@ Scene material records share the existing native render-job lifetime. The active
 
 This table covers the native scene mesh path. Direct preview/UI/instance draws retain their existing immediate resolution and bounded cache; terrain and foliage retain their existing adapters. Third-party materials without a published snapshot retain the interface fallback and its live getter behavior. Records own no native views, so streaming completion and device recreation still use the texture adapter at submission. Per-job lookup maps/vector capacity are additional CPU storage; this is not a claim that total scene memory falls by the parameter-layer percentage below. Persistent resource-generation records shared across cameras/frames remain a later step.
 
+## Selectable scene draw sorting
+
+`ClawScene::setDrawSortStrategy(strategy, bucketSize)` selects the ordering for subsequent DX11 main-view material publications. `QueueOrder` remains the default. Invalid strategies and nonfinite/nonpositive bucket sizes return false and preserve the current publication; equal assignments also preserve it. A changed policy retires the scene's active publication through the existing ownership path. The policy is an owner-thread runtime option and is not serialized.
+
+| Strategy | Opaque ordering | Transparent ordering |
+| --- | --- | --- |
+| `QueueOrder` | Existing queue/z-order/submission sequence | Existing sequence |
+| `FrontToBack` | Increasing camera-forward depth, then material | Back-to-front |
+| `MaterialFirst` | Dense captured material ID, then depth | Back-to-front |
+| `DepthBuckets` | Increasing depth bucket, material, then depth | Back-to-front |
+
+For example, `scene->setDrawSortStrategy(ClawDrawSortStrategy::DepthBuckets, 10.0)` groups materials within ten-world-unit depth ranges. Sorting uses captured snapshots and integer material indices; it performs no name lookup or material/resource reference acquisition. Numeric key and permutation arrays retain reusable capacity in the existing material workspace. Their capacity is included in the table's storage counters. The default mode allocates no sorting buffers.
+
+Reordering operates only inside contiguous eligible runs with the same render queue and explicit z-order. Unknown state, mixed section materials, refraction, UI/overlays, nonstandard depth comparisons, opaque materials without depth writes and nonfinite depths are barriers that keep their positions. Missing cameras preserve order. All sections must share one captured record to make a mesh eligible. Depth uses the captured camera and world transform's object origin, so intersecting transparent geometry still needs content-specific ordering. Shadow views retain their existing ordering.
+
+The native `wp_graphics_cull_result_create_ordered` API validates a complete visible-index permutation and returns a separately owned immutable view sharing captured geometry. Source views and retained consumers remain unchanged. A changed order allocates a result wrapper, index array and temporary validation bytes outside the material-table counters; unchanged order avoids this copy. Existing native sort/phase counters describe original culling, while the extra scene ordering time belongs to material preparation. This does not establish allocation-free scene preparation or reduced draw/upload counts.
+
+Contracts cover exact orders for all four modes, repeated-key stability against a reference sort, queue/z-order/barrier boundaries, invalid policies, frozen material classification after live edits, translated-camera depth, mixed-material barriers, warmed buffer reuse and no-camera fallback. Native contracts cover malformed permutations, independent view destruction, derived views and empty captures. WARP readback compares every optimized policy with a separately specified far-before-near alpha reference, and confirms that the unsorted near-first fixture produces different pixels.
+
+Final sorting validation: Debug and RelWithDebInfo each passed **4/4** focused contracts (native scene jobs, parameter layout, material load sequence and Claw production rendering). The rebuilt Debug material selection passed **90 cases and 1,890 assertions**. Debug Editor was rebuilt; the full Editor aggregate result below belongs to the preceding reusable-storage slice and was not repeated for sorting. Evidence is in `project_x64/material_sort_debug_final_contracts.log`, `material_sort_rwi_final_contracts.log`, `material_sort_unit_tests.log` and the `material_sort_*_cached_build.log` files.
+
+The optional `WPMaterialLoadSequenceTests --benchmark-sorting` fixture copies and sorts 65,536 numeric keys with 128 materials and one-eighth transparent objects. RelWithDebInfo, seven rotating-order samples, other builds/tests idle, ten-unit buckets:
+
+| Strategy | Median key copy/sort | Adjacent opaque material changes | Adjacent opaque depth reversals |
+| --- | ---: | ---: | ---: |
+| QueueOrder | 0.3416 ms | 56,919 | 28,641 |
+| FrontToBack | 8.0030 ms | 56,863 | 0 |
+| MaterialFirst | 8.9212 ms | 127 | 127 |
+| DepthBuckets | 9.7706 ms | 12,646 | 12,031 |
+
+These count ordering opportunities, not actual GPU state transitions or avoided fragments. Timing excludes key construction from scene data, reordered-view allocation/validation, submission, GPU execution and whole-frame work. All modes retain the same indices/checksum. Bucket numbers are computed once per key, rather than inside every comparison; this uses a 40-byte key plus a 4-byte permutation element per retained slot. The earlier 32-byte-key implementation repeatedly computed buckets during comparisons and took 14.3011 ms for the bucket mode in the same fixture. Outputs are `material_sort_benchmark.txt` and `material_sort_initial_benchmark.txt`. Extra CPU sorting cost is explicit; representative frame/GPU measurements are still required to choose a different default.
+
 ## Validation
 
 - Rebuilt Debug `WorkphoneGraphicsShaderTests`: passed `WorkphoneGraphics.shader_contract`, including new compact-storage, actual texture-name allocation, clone/reset, descriptor round-trip, unchanged-revision and short-descriptor-buffer contracts. Empty native storage is **264 bytes**; the preserved public legacy descriptor alone is **2,172 bytes**.
