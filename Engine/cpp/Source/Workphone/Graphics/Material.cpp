@@ -400,6 +400,7 @@ namespace workphone::render
 
     void Material::unload( SmartPtr<ISharedObject> data )
     {
+        invalidateRenderState();
         try
         {
             if( auto context = getStateContext() )
@@ -906,6 +907,7 @@ namespace workphone::render
 
     auto Material::createTechnique() -> SmartPtr<IMaterialTechnique>
     {
+        invalidateRenderState();
         try
         {
             auto applicationManager = core::IApplicationManager::instance();
@@ -920,6 +922,7 @@ namespace workphone::render
             technique->setMaterial( this );
 
             m_techniques.push_back( technique );
+            invalidateRenderState();
 
             auto activeTechnique = getTechnique();
             if( !activeTechnique )
@@ -939,18 +942,25 @@ namespace workphone::render
 
     void Material::removeTechnique( SmartPtr<IMaterialTechnique> technique )
     {
+        invalidateRenderState();
         m_techniques.erase( std::remove( m_techniques.begin(), m_techniques.end(), technique ),
                             m_techniques.end() );
+        invalidateRenderState();
     }
 
     void Material::setTechniques( const Array<SmartPtr<IMaterialTechnique>> &techniques )
     {
+        invalidateRenderState();
         m_techniques = { techniques.begin(), techniques.end() };
+        for( auto technique : techniques ) if( technique ) technique->setMaterial( this );
+        invalidateRenderState();
     }
 
     void Material::removeAllTechniques()
     {
+        invalidateRenderState();
         m_techniques.clear();
+        invalidateRenderState();
     }
 
     SmartPtr<IMaterialTechnique> Material::getTechnique( u32 index ) const
@@ -1010,6 +1020,8 @@ namespace workphone::render
 
     void Material::setMetalness( f32 metalness )
     {
+        m_hasPendingMetalness = true;
+        m_pendingMetalness = metalness;
         auto techniques = getTechniques();
         for( auto technique : techniques )
         {
@@ -1173,6 +1185,11 @@ namespace workphone::render
                     }
                 }
             }
+            // Pass constructors may initialize state before the material owner is
+            // attached. Apply pre-load values after the complete graph is ready.
+            if( m_hasPendingRoughness ) setRoughness( m_pendingRoughness );
+            if( m_hasPendingMetalness ) setMetalness( m_pendingMetalness );
+            if( m_hasPendingOpacity ) setOpacity( m_pendingOpacity );
         }
         catch( std::exception &e )
         {
@@ -1182,10 +1199,17 @@ namespace workphone::render
 
     void Material::addTechnique( SmartPtr<IMaterialTechnique> technique )
     {
+        invalidateRenderState();
+        if( technique ) technique->setMaterial( this );
         m_techniques.push_back( technique );
+        invalidateRenderState();
         if( m_hasPendingRoughness )
         {
             setRoughness( m_pendingRoughness );
+        }
+        if( m_hasPendingMetalness )
+        {
+            setMetalness( m_pendingMetalness );
         }
         if( m_hasPendingOpacity )
         {
@@ -1477,9 +1501,10 @@ namespace workphone::render
             if( isDataDriven() && m_shaderParameters.IsValid() )
             {
                 auto const &paramInfo = m_shaderParameters.GetParameterInfo();
-                for( auto const &p : paramInfo )
+                for( u32 parameterIndex = 0; parameterIndex < paramInfo.size(); ++parameterIndex )
                 {
-                    auto handle = m_shaderParameters.FindParameter( p.m_name );
+                    const auto &p = paramInfo[parameterIndex];
+                    auto handle = m_shaderParameters.GetParameter( parameterIndex );
                     if( !handle.IsValid() )
                     {
                         continue;
@@ -1489,6 +1514,12 @@ namespace workphone::render
                     {
                         properties->setProperty( key, m_shaderParameters.GetScalar( handle ) );
                     }
+                    else if( p.m_type == MaterialShaderParameterType::Int )
+                        properties->setProperty( key, m_shaderParameters.GetInt( handle ) );
+                    else if( p.m_type == MaterialShaderParameterType::UInt )
+                        properties->setProperty( key, m_shaderParameters.GetUInt( handle ) );
+                    else if( p.m_type == MaterialShaderParameterType::Bool )
+                        properties->setProperty( key, m_shaderParameters.GetBool( handle ) );
                     else if( p.m_type == MaterialShaderParameterType::Colour )
                     {
                         properties->setProperty( key, m_shaderParameters.GetColour( handle ) );
@@ -1504,6 +1535,22 @@ namespace workphone::render
                         properties->setProperty( key + shaderParamVectorYStr, v.y );
                         properties->setProperty( key + shaderParamVectorZStr, v.z );
                         properties->setProperty( key + shaderParamVectorWStr, v.w );
+                    }
+                    else if( p.m_type == MaterialShaderParameterType::IntVector2 )
+                    {
+                        Vector2<s32> value;
+                        m_shaderParameters.Get( MaterialParameterHandle<Vector2<s32>>{ handle }, value );
+                        properties->setProperty( key + shaderParamVectorXStr, value.x );
+                        properties->setProperty( key + shaderParamVectorYStr, value.y );
+                    }
+                    else if( p.m_type == MaterialShaderParameterType::IntVector4 )
+                    {
+                        Vector4<s32> value;
+                        m_shaderParameters.Get( MaterialParameterHandle<Vector4<s32>>{ handle }, value );
+                        properties->setProperty( key + shaderParamVectorXStr, value.x );
+                        properties->setProperty( key + shaderParamVectorYStr, value.y );
+                        properties->setProperty( key + shaderParamVectorZStr, value.z );
+                        properties->setProperty( key + shaderParamVectorWStr, value.w );
                     }
                     else if( p.m_type == MaterialShaderParameterType::Texture )
                     {
@@ -1584,9 +1631,10 @@ namespace workphone::render
                         syncPBRToShaderParameters();
                     }
                     auto const &paramInfo = m_shaderParameters.GetParameterInfo();
-                    for( auto const &p : paramInfo )
+                    for( u32 parameterIndex = 0; parameterIndex < paramInfo.size(); ++parameterIndex )
                     {
-                        auto handle = m_shaderParameters.FindParameter( p.m_name );
+                        const auto &p = paramInfo[parameterIndex];
+                        auto handle = m_shaderParameters.GetParameter( parameterIndex );
                         if( !handle.IsValid() )
                         {
                             continue;
@@ -1599,6 +1647,24 @@ namespace workphone::render
                             {
                                 m_shaderParameters.SetScalar( handle, v );
                             }
+                        }
+                        else if( p.m_type == MaterialShaderParameterType::Int )
+                        {
+                            s32 value = 0;
+                            if( properties->getPropertyValue( key, value ) )
+                                m_shaderParameters.SetScalar( handle, value );
+                        }
+                        else if( p.m_type == MaterialShaderParameterType::UInt )
+                        {
+                            u32 value = 0;
+                            if( properties->getPropertyValue( key, value ) )
+                                m_shaderParameters.SetScalar( handle, value );
+                        }
+                        else if( p.m_type == MaterialShaderParameterType::Bool )
+                        {
+                            bool value = false;
+                            if( properties->getPropertyValue( key, value ) )
+                                m_shaderParameters.SetBool( handle, value );
                         }
                         else if( p.m_type == MaterialShaderParameterType::Colour )
                         {
@@ -1624,6 +1690,24 @@ namespace workphone::render
                             v.z = properties->getPropertyAsFloat( key + shaderParamVectorZStr, 0.0f );
                             v.w = properties->getPropertyAsFloat( key + shaderParamVectorWStr, 0.0f );
                             m_shaderParameters.SetVector4( handle, v );
+                        }
+                        else if( p.m_type == MaterialShaderParameterType::IntVector2 )
+                        {
+                            Vector2<s32> value;
+                            m_shaderParameters.Get( MaterialParameterHandle<Vector2<s32>>{ handle }, value );
+                            properties->getPropertyValue( key + shaderParamVectorXStr, value.x );
+                            properties->getPropertyValue( key + shaderParamVectorYStr, value.y );
+                            m_shaderParameters.SetVector2( handle, value );
+                        }
+                        else if( p.m_type == MaterialShaderParameterType::IntVector4 )
+                        {
+                            Vector4<s32> value;
+                            m_shaderParameters.Get( MaterialParameterHandle<Vector4<s32>>{ handle }, value );
+                            properties->getPropertyValue( key + shaderParamVectorXStr, value.x );
+                            properties->getPropertyValue( key + shaderParamVectorYStr, value.y );
+                            properties->getPropertyValue( key + shaderParamVectorZStr, value.z );
+                            properties->getPropertyValue( key + shaderParamVectorWStr, value.w );
+                            m_shaderParameters.SetVector4( handle, value );
                         }
                         else if( p.m_type == MaterialShaderParameterType::Texture )
                         {
@@ -1813,6 +1897,7 @@ namespace workphone::render
 
     void Material::setEditorFloat( const String &name, f32 value )
     {
+        const auto setting = MaterialPassStateData::resolveFloatSetting( name );
         auto handled = false;
         for( auto technique : getTechniques() )
         {
@@ -1823,7 +1908,7 @@ namespace workphone::render
                     if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
                             pass->getId() ) )
                     {
-                        handled = state->setEditorFloat( name, value ) || handled;
+                        handled = state->setFloatSetting( setting, value ) || handled;
                     }
                 }
             }
@@ -1837,6 +1922,7 @@ namespace workphone::render
 
     f32 Material::getEditorFloat( const String &name, f32 defaultValue ) const
     {
+        const auto setting = MaterialPassStateData::resolveFloatSetting( name );
         for( auto technique : getTechniques() )
         {
             for( auto pass : technique->getPasses() )
@@ -1847,7 +1933,7 @@ namespace workphone::render
                             stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                     {
                         auto value = defaultValue;
-                        if( state->getEditorFloat( name, value ) )
+                        if( state->getFloatSetting( setting, value ) )
                         {
                             return value;
                         }
@@ -1861,6 +1947,7 @@ namespace workphone::render
 
     void Material::setEditorUInt( const String &name, u32 value )
     {
+        const auto setting = MaterialPassStateData::resolveUIntSetting( name );
         auto handled = false;
         for( auto technique : getTechniques() )
         {
@@ -1871,7 +1958,7 @@ namespace workphone::render
                     if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
                             pass->getId() ) )
                     {
-                        handled = state->setEditorUInt( name, value ) || handled;
+                        handled = state->setUIntSetting( setting, value ) || handled;
                     }
                 }
             }
@@ -1886,6 +1973,7 @@ namespace workphone::render
 
     u32 Material::getEditorUInt( const String &name, u32 defaultValue ) const
     {
+        const auto setting = MaterialPassStateData::resolveUIntSetting( name );
         // Authored techniques can exist before a render technique is selected,
         // and a newly allocated resource can have none. Match the other editor
         // setting readers rather than dereferencing the selected-technique cache.
@@ -1898,7 +1986,7 @@ namespace workphone::render
                     if( auto state = stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                     {
                         auto value = defaultValue;
-                        if( state->getEditorUInt( name, value ) )
+                        if( state->getUIntSetting( setting, value ) )
                         {
                             return value;
                         }
@@ -1912,6 +2000,7 @@ namespace workphone::render
 
     void Material::setEditorBool( const String &name, bool value )
     {
+        const auto setting = MaterialPassStateData::resolveBoolSetting( name );
         auto handled = false;
         for( auto technique : getTechniques() )
         {
@@ -1922,7 +2011,7 @@ namespace workphone::render
                     if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
                             pass->getId() ) )
                     {
-                        handled = state->setEditorBool( name, value ) || handled;
+                        handled = state->setBoolSetting( setting, value ) || handled;
                     }
                 }
             }
@@ -1944,6 +2033,7 @@ namespace workphone::render
 
     bool Material::getEditorBool( const String &name, bool defaultValue ) const
     {
+        const auto setting = MaterialPassStateData::resolveBoolSetting( name );
         for( auto technique : getTechniques() )
         {
             for( auto pass : technique->getPasses() )
@@ -1954,7 +2044,7 @@ namespace workphone::render
                             stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                     {
                         auto value = defaultValue;
-                        if( state->getEditorBool( name, value ) )
+                        if( state->getBoolSetting( setting, value ) )
                         {
                             return value;
                         }
@@ -1968,6 +2058,7 @@ namespace workphone::render
 
     void Material::setEditorString( const String &name, const String &value )
     {
+        const auto setting = MaterialPassStateData::resolveStringSetting( name );
         auto handled = false;
         for( auto technique : getTechniques() )
         {
@@ -1978,7 +2069,7 @@ namespace workphone::render
                     if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>(
                             pass->getId() ) )
                     {
-                        handled = state->setEditorString( name, value ) || handled;
+                        handled = state->setStringSetting( setting, value ) || handled;
                     }
                 }
             }
@@ -1992,6 +2083,7 @@ namespace workphone::render
 
     String Material::getEditorString( const String &name, const String &defaultValue ) const
     {
+        const auto setting = MaterialPassStateData::resolveStringSetting( name );
         for( auto technique : getTechniques() )
         {
             for( auto pass : technique->getPasses() )
@@ -2002,7 +2094,7 @@ namespace workphone::render
                             stateContext->getStateDataById<MaterialPassStateData>( pass->getId() ) )
                     {
                         auto value = defaultValue;
-                        if( state->getEditorString( name, value ) )
+                        if( state->getStringSetting( setting, value ) )
                         {
                             return value;
                         }
@@ -2488,30 +2580,32 @@ namespace workphone::render
             return;
         }
 
+        const auto state = getRenderState();
+
         // Bridge legacy PBR pass values into the data-driven buffer, but only for
         // slots the bound shader actually declares. This keeps legacy PBR materials
         // working while letting the renderer read a single data-driven buffer.
-        auto trySetScalar = [this]( const String &name, f32 value ) {
-            auto handle = m_shaderParameters.FindParameter( name );
+        auto trySetScalar = [this]( MaterialBuiltinParameter semantic, f32 value ) {
+            auto handle = m_shaderParameters.GetBuiltin( semantic );
             if( handle.IsValid() )
             {
                 m_shaderParameters.SetScalar( handle, value );
             }
         };
-        auto trySetColour = [this]( const String &name, const ColourF &value ) {
-            auto handle = m_shaderParameters.FindParameter( name );
+        auto trySetColour = [this]( MaterialBuiltinParameter semantic, const ColourF &value ) {
+            auto handle = m_shaderParameters.GetBuiltin( semantic );
             if( handle.IsValid() )
             {
                 m_shaderParameters.SetColour( handle, value );
             }
         };
 
-        trySetColour( shaderAlbedoParamStr, getDiffuse() );
-        trySetScalar( shaderMetalnessParamStr, getMetalness() );
-        trySetScalar( shaderRoughnessParamStr, getRoughness() );
-        trySetColour( shaderEmissiveParamStr, getEmissive() );
-        trySetScalar( shaderOpacityParamStr, getOpacity() );
-        trySetScalar( shaderAlphaClipParamStr, getAlphaClip() );
+        trySetColour( MaterialBuiltinParameter::Albedo, state ? state->diffuseColour : getDiffuse() );
+        trySetScalar( MaterialBuiltinParameter::Metalness, state ? state->metalness : getMetalness() );
+        trySetScalar( MaterialBuiltinParameter::Roughness, state ? state->roughness : getRoughness() );
+        trySetColour( MaterialBuiltinParameter::Emissive, state ? state->emissiveColour : getEmissive() );
+        trySetScalar( MaterialBuiltinParameter::Opacity, state ? state->opacity : getOpacity() );
+        trySetScalar( MaterialBuiltinParameter::AlphaClip, state ? state->alphaClip : getAlphaClip() );
 
         m_shaderParametersDirty = false;
     }
@@ -2529,8 +2623,7 @@ namespace workphone::render
         {
             return;
         }
-        auto const &id = m_shaderID;
-        auto target = ( id == unlitShaderIDStr || id == colorOnlyShaderIDStr )
+        auto target = ( m_shaderWorkflow != ShaderWorkflow::Pbr )
                           ? MaterialType::UI
                           : MaterialType::Standard;
         if( getMaterialType() != target )
@@ -2545,37 +2638,38 @@ namespace workphone::render
         {
             return;
         }
-        auto const &id = m_shaderID;
-
-        auto getScalar = [this]( const String &name, f32 def ) -> f32 {
-            auto h = m_shaderParameters.FindParameter( name );
-            return h.IsValid() ? m_shaderParameters.GetScalar( h ) : def;
+        const auto state = getRenderState();
+        auto getScalar = [this]( MaterialBuiltinParameter semantic, f32 def ) -> f32 {
+            auto h = m_shaderParameters.GetBuiltin( semantic );
+            return m_shaderParameters.IsHandleValid( h, MaterialShaderParameterType::Scalar, sizeof( f32 ) ) ?
+                   m_shaderParameters.GetScalar( h ) : def;
         };
-        auto getColour = [this]( const String &name, const ColourF &def ) -> ColourF {
-            auto h = m_shaderParameters.FindParameter( name );
-            return h.IsValid() ? m_shaderParameters.GetColour( h ) : def;
+        auto getColour = [this]( MaterialBuiltinParameter semantic, const ColourF &def ) -> ColourF {
+            auto h = m_shaderParameters.GetBuiltin( semantic );
+            return m_shaderParameters.IsHandleValid( h, MaterialShaderParameterType::Colour, sizeof( ColourF ) ) ?
+                   m_shaderParameters.GetColour( h ) : def;
         };
 
-        if( id == unlitShaderIDStr )
+        if( m_shaderWorkflow == ShaderWorkflow::Unlit )
         {
-            setEmissive( getColour( shaderEmissiveParamStr, ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) ) );
-            setOpacity( getScalar( shaderOpacityParamStr, 1.0f ) );
+            setEmissive( getColour( MaterialBuiltinParameter::Emissive, ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) ) );
+            setOpacity( getScalar( MaterialBuiltinParameter::Opacity, 1.0f ) );
         }
-        else if( id == colorOnlyShaderIDStr )
+        else if( m_shaderWorkflow == ShaderWorkflow::ColorOnly )
         {
-            auto c = getColour( shaderColorParamStr, ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) );
+            auto c = getColour( MaterialBuiltinParameter::Color, ColourF( 0.5f, 0.5f, 0.5f, 1.0f ) );
             setEmissive( c );
             setDiffuse( c );
-            setOpacity( getScalar( shaderOpacityParamStr, 1.0f ) );
+            setOpacity( getScalar( MaterialBuiltinParameter::Opacity, 1.0f ) );
         }
         else  // DefaultPBR (and any other PBR-style shader)
         {
-            setDiffuse( getColour( shaderAlbedoParamStr, getDiffuse() ) );
-            setMetalness( getScalar( shaderMetalnessParamStr, getMetalness() ) );
-            setRoughness( getScalar( shaderRoughnessParamStr, getRoughness() ) );
-            setEmissive( getColour( shaderEmissiveParamStr, getEmissive() ) );
-            setOpacity( getScalar( shaderOpacityParamStr, getOpacity() ) );
-            setAlphaClip( getScalar( shaderAlphaClipParamStr, getAlphaClip() ) );
+            setDiffuse( getColour( MaterialBuiltinParameter::Albedo, state ? state->diffuseColour : getDiffuse() ) );
+            setMetalness( getScalar( MaterialBuiltinParameter::Metalness, state ? state->metalness : getMetalness() ) );
+            setRoughness( getScalar( MaterialBuiltinParameter::Roughness, state ? state->roughness : getRoughness() ) );
+            setEmissive( getColour( MaterialBuiltinParameter::Emissive, state ? state->emissiveColour : getEmissive() ) );
+            setOpacity( getScalar( MaterialBuiltinParameter::Opacity, state ? state->opacity : getOpacity() ) );
+            setAlphaClip( getScalar( MaterialBuiltinParameter::AlphaClip, state ? state->alphaClip : getAlphaClip() ) );
         }
         m_shaderParametersDirty = false;
     }
@@ -2640,12 +2734,72 @@ namespace workphone::render
     void Material::setShaderParameters( const Array<MaterialShaderParameterInfo> &parameterInfo,
                                         const String &shaderID /*= String() */ )
     {
-        if( !shaderID.empty() )
+        const auto candidateId = shaderID.empty() ? m_shaderID : shaderID;
+        auto shader = MaterialShaderRegistry::instance().find( candidateId );
+        auto layout = shader ? shader->getLayout() : MaterialShaderParameterLayout::Ptr{};
+        bool sameSchema = layout && layout->GetParameterInfo().size() == parameterInfo.size();
+        for( size_t i = 0; sameSchema && i < parameterInfo.size(); ++i )
         {
-            m_shaderID = shaderID;
+            const auto &registered = layout->GetParameterInfo()[i];
+            sameSchema = registered.m_name == parameterInfo[i].m_name &&
+                         registered.m_type == parameterInfo[i].m_type;
         }
-        m_shaderParameters.Reset( parameterInfo );
-        m_shaderParameters.InitializeDefaultResourceHandles();
+        if( !sameSchema ) layout = MaterialShaderParameterLayout::Create( parameterInfo );
+        if( !layout )
+        {
+            WP_LOG_WARNING( "Material rejected an invalid shader parameter schema." );
+            return; // Keep the last valid shader/layout and values.
+        }
+        auto previous = std::move( m_shaderParameters );
+        m_shaderParameters.Reset( std::move( layout ) );
+        if( !shaderID.empty() ) setShaderID( shaderID );
+        // Layout replacement is an authoring/load operation. Resolve names here only;
+        // compatible values survive reordered/extended schemas and partial updates.
+        for( u32 i = 0; i < m_shaderParameters.GetParameterInfo().size(); ++i )
+        {
+            const auto &info = m_shaderParameters.GetParameterInfo()[i];
+            const auto old = previous.FindParameter( info.m_name );
+            if( !old.IsValid() || previous.GetParameterInfo()[old.m_parameterIndex].m_type != info.m_type )
+                continue;
+            const auto next = m_shaderParameters.GetParameter( i );
+            switch( info.m_type )
+            {
+            case MaterialShaderParameterType::Scalar:
+                m_shaderParameters.SetScalar( next, previous.GetScalar( old ) ); break;
+            case MaterialShaderParameterType::Int:
+                m_shaderParameters.SetScalar( next, previous.GetInt( old ) ); break;
+            case MaterialShaderParameterType::UInt:
+                m_shaderParameters.SetScalar( next, previous.GetUInt( old ) ); break;
+            case MaterialShaderParameterType::Bool:
+                m_shaderParameters.SetBool( next, previous.GetBool( old ) ); break;
+            case MaterialShaderParameterType::Colour:
+                m_shaderParameters.SetColour( next, previous.GetColour( old ) ); break;
+            case MaterialShaderParameterType::Vector2:
+                m_shaderParameters.SetVector2( next, previous.GetVector2f( old ) ); break;
+            case MaterialShaderParameterType::Vector4:
+                m_shaderParameters.SetVector4( next, previous.GetVector4f( old ) ); break;
+            case MaterialShaderParameterType::IntVector2:
+            {
+                Vector2<s32> value;
+                previous.Get( MaterialParameterHandle<Vector2<s32>>{ old }, value );
+                m_shaderParameters.SetVector2( next, value ); break;
+            }
+            case MaterialShaderParameterType::IntVector4:
+            {
+                Vector4<s32> value;
+                previous.Get( MaterialParameterHandle<Vector4<s32>>{ old }, value );
+                m_shaderParameters.SetVector4( next, value ); break;
+            }
+            case MaterialShaderParameterType::Matrix:
+                m_shaderParameters.SetMatrix( next, previous.GetMatrix( old ) ); break;
+            case MaterialShaderParameterType::Texture:
+                m_shaderParameters.SetTexture( next, previous.GetResource( old ) ); break;
+            case MaterialShaderParameterType::Buffer:
+                m_shaderParameters.SetBuffer( next, previous.GetResource( old ) ); break;
+            case MaterialShaderParameterType::Sampler:
+                m_shaderParameters.SetSampler( next, previous.GetResource( old ) ); break;
+            }
+        }
         m_shaderParametersDirty = true;
     }
 
@@ -2662,6 +2816,9 @@ namespace workphone::render
     void Material::setShaderID( const String &shaderID )
     {
         m_shaderID = shaderID;
+        m_shaderWorkflow = shaderID == unlitShaderIDStr ? ShaderWorkflow::Unlit :
+                           shaderID == colorOnlyShaderIDStr ? ShaderWorkflow::ColorOnly :
+                                                            ShaderWorkflow::Pbr;
         m_shaderParametersDirty = true;
     }
 
@@ -2678,6 +2835,45 @@ namespace workphone::render
     void Material::setPass( SmartPtr<IMaterialPass> pass )
     {
         m_pass = pass;
+        invalidateRenderState();
+    }
+
+    void Material::invalidateRenderState()
+    {
+        m_graphRevision.fetch_add( 1, std::memory_order_acq_rel );
+        std::atomic_store( &m_primaryPassSelection, std::shared_ptr<const PrimaryPassSelection>{} );
+    }
+
+    MaterialRenderState::Ptr Material::getRenderState() const
+    {
+        const auto revision = m_graphRevision.load( std::memory_order_acquire );
+        auto selection = std::atomic_load( &m_primaryPassSelection );
+        if( !selection || selection->graphRevision != revision )
+        {
+            auto next = std::make_shared<PrimaryPassSelection>();
+            next->graphRevision = revision;
+            for( const auto &technique : getTechniques() )
+            {
+                if( !technique ) continue;
+                for( const auto &pass : technique->getPasses() )
+                {
+                    auto context = pass ? pass->getStateContext() : nullptr;
+                    auto source = context ? context->getStateById( pass->getId() ) : nullptr;
+                    auto data = source ? source->getData() : nullptr;
+                    if( data && data->isDerived<MaterialPassStateData>() )
+                    { next->state = source; break; }
+                }
+                if( next->state ) break;
+            }
+            selection = next;
+            // An overlapping graph edit may render the retained old version once,
+            // but must never publish it as the new graph's selection.
+            if( m_graphRevision.load( std::memory_order_acquire ) == revision )
+                std::atomic_store( &m_primaryPassSelection, selection );
+        }
+        auto data = selection->state ? selection->state->getData() : nullptr;
+        return data && data->isDerived<MaterialPassStateData>() ?
+            static_pointer_cast<MaterialPassStateData>( data )->getRenderState() : nullptr;
     }
 
     SmartPtr<IMaterialPass> Material::getPass() const

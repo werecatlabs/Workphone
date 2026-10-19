@@ -377,6 +377,7 @@ namespace workphone
                 m_children.push_back( child );
                 child->setParent( this );
             }
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
 
         template <class T>
@@ -387,6 +388,7 @@ namespace workphone
                 m_children[index] = child;
                 child->setParent( this );
             }
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
 
         template <class T>
@@ -398,6 +400,7 @@ namespace workphone
                 m_children.erase( it );
                 child->setParent( nullptr );
             }
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
 
         template <class T>
@@ -423,6 +426,7 @@ namespace workphone
             }
 
             m_children.clear();
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
 
         template <class T>
@@ -462,6 +466,7 @@ namespace workphone
         void MaterialNode<T>::setChildren( const Array<SmartPtr<IMaterialNode>> &children )
         {
             m_children = { children.begin(), children.end() };
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
 
         template <class T>
@@ -493,7 +498,11 @@ namespace workphone
         template <class T>
         void MaterialNode<T>::setMaterial( SmartPtr<IMaterial> material )
         {
+            if( auto previous = getMaterial() ) previous->setPass( nullptr );
             m_material = material;
+            for( auto child : m_children )
+                if( child && child.get() != this ) child->setMaterial( material );
+            if( material ) material->setPass( nullptr );
         }
 
         template <class T>

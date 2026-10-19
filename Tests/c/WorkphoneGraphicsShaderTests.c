@@ -67,6 +67,62 @@ static wp_s32 reset_program( wp_renderer *renderer, void *user_data )
     return 1;
 }
 
+static int material_storage_contracts( void )
+{
+    wp_graphics_material *m;
+    wp_graphics_material *copy;
+    wp_graphics_material_values values;
+    wp_graphics_material_desc desc;
+    wp_u32 bytes, revision;
+    wp_u32 short_desc[2];
+    int ok;
+    m = wp_graphics_material_create();
+    if( !m ) return check( 0, "compact material creation" );
+    ok = 1;
+    bytes = wp_graphics_material_get_storage_size( m );
+    printf( "native material storage: %lu bytes; legacy descriptor: %lu bytes\n",
+            (unsigned long)bytes, (unsigned long)sizeof( wp_graphics_material_desc ) );
+    ok &= check( bytes < sizeof( wp_graphics_material_desc ) / 2u,
+                 "default material omits the 2 KB texture-name block" );
+    values.struct_size = sizeof( values );
+    ok &= check( wp_graphics_material_get_values( m, &values ), "compact values read" );
+    revision = wp_graphics_material_get_revision( m );
+    ok &= check( wp_graphics_material_set_values( m, &values ) &&
+                 wp_graphics_material_get_revision( m ) == revision, "unchanged bulk values" );
+    values.roughness = 0.25f;
+    values.metalness = 4.0f;
+    ok &= check( wp_graphics_material_set_values( m, &values ) &&
+                 wp_graphics_material_get_roughness( m ) == 0.25f &&
+                 wp_graphics_material_get_metalness( m ) == 1.0f, "bulk values sanitize" );
+    wp_graphics_material_set_texture_name( m, 2, "Textures/Car.dds" );
+    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes + strlen( "Textures/Car.dds" ) + 1,
+                 "only populated texture identity bytes allocated" );
+    desc.struct_size = sizeof( desc );
+    ok &= check( wp_graphics_material_get_desc( m, &desc ) &&
+                 desc.roughness == 0.25f && !strcmp( desc.texture_names[2], "Textures/Car.dds" ),
+                 "legacy descriptor reconstructs compact storage" );
+    revision = wp_graphics_material_get_revision( m );
+    ok &= check( wp_graphics_material_set_desc( m, &desc ) &&
+                 wp_graphics_material_get_revision( m ) == revision, "descriptor no-op preserves revision" );
+    copy = wp_graphics_material_clone( m );
+    ok &= check( copy && !strcmp( wp_graphics_material_get_texture_name( copy, 2 ), "Textures/Car.dds" ),
+                 "clone retains texture identity" );
+    wp_graphics_material_set_texture_name( m, 2, NULL );
+    ok &= check( wp_graphics_material_get_storage_size( m ) == bytes &&
+                 copy && !strcmp( wp_graphics_material_get_texture_name( copy, 2 ), "Textures/Car.dds" ),
+                 "clear releases cold storage without changing clone" );
+    short_desc[0] = sizeof( wp_u32 ); short_desc[1] = 0xfeedcafeu;
+    ok &= check( wp_graphics_material_get_desc( m, (wp_graphics_material_desc *)short_desc ) &&
+                 short_desc[0] == sizeof( desc ) && short_desc[1] == 0xfeedcafeu,
+                 "size-tagged old caller does not overrun" );
+    wp_graphics_material_reset( copy );
+    ok &= check( copy && wp_graphics_material_get_storage_size( copy ) == bytes,
+                 "reset releases cloned cold storage" );
+    wp_graphics_material_destroy( copy );
+    wp_graphics_material_destroy( m );
+    return ok;
+}
+
 int main( void )
 {
     wp_shader *vertex;
@@ -94,7 +150,7 @@ int main( void )
     wp_f32 value;
     int ok;
 
-    ok = 1;
+    ok = material_storage_contracts();
     unbacked = wp_shader_create( WORKPHONE_SHADER_TYPE_VERTEX, WORKPHONE_SHADER_LANGUAGE_HLSL,
                                  "void main(){}", "main" );
     ok &= check( unbacked != NULL && wp_shader_compile( unbacked ) == 0 &&

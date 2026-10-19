@@ -145,6 +145,7 @@ namespace workphone::render
 
     void MaterialPass::setStateContext( SmartPtr<IStateContext> stateContext )
     {
+        if( auto material = getMaterial() ) material->setPass( nullptr );
         // The base MaterialNode<IMaterialPass>::setStateContext() is a no-op,
         // so persist the context in our own atomic storage. This keeps the
         // state-context get/set round-trip working for standalone MaterialPass
@@ -158,6 +159,7 @@ namespace workphone::render
 
     void MaterialPass::releaseLocalStateContext()
     {
+        if( auto material = getMaterial() ) material->setPass( nullptr );
         // SmartPtr's rvalue constructor retains its source; clear ownership
         // explicitly before cleanup or a later shared context could inherit it.
         auto context = m_createdStateContext;
@@ -204,6 +206,7 @@ namespace workphone::render
     }
     void MaterialPass::load( SmartPtr<ISharedObject> data )
     {
+        if( auto material = getMaterial() ) material->setPass( nullptr );
         try
         {
             setLoadingState( LoadingState::Loading );
@@ -257,6 +260,18 @@ namespace workphone::render
                                 // rather than MaterialPassStateData's raw defaults.
                                 stateData->metalness = m_metalness;
                                 stateData->roughness = m_roughness;
+                                if( auto material = dynamic_pointer_cast<Material>( getMaterial() ) )
+                                {
+                                    if( material->m_hasPendingMetalness )
+                                        stateData->metalness = material->m_pendingMetalness;
+                                    if( material->m_hasPendingRoughness )
+                                        stateData->roughness = material->m_pendingRoughness;
+                                    if( material->m_hasPendingOpacity )
+                                    {
+                                        stateData->opacity = material->m_pendingOpacity;
+                                        stateData->diffuseColour.a = material->m_pendingOpacity;
+                                    }
+                                }
                                 stateData->setFlag( depthWriteFlag, true );
                             }
                             state->setId( getId() );
@@ -281,7 +296,11 @@ namespace workphone::render
                 t->load( nullptr );
             }
 
+            // Authored texture units may precede the pass's state context.
+            if( !m_textures.empty() ) refreshRenderTextures();
+
             setLoadingState( LoadingState::Loaded );
+            if( auto material = getMaterial() ) material->setPass( nullptr );
         }
         catch( std::exception &e )
         {
@@ -656,6 +675,8 @@ namespace workphone::render
     void MaterialPass::setTextureUnits( const Array<SmartPtr<IMaterialTexture>> &textures )
     {
         m_textures = { textures.begin(), textures.end() };
+        for( auto unit : textures ) if( unit ) unit->setParent( this );
+        refreshRenderTextures();
     }
 
     void MaterialPass::unload( SmartPtr<ISharedObject> data )
@@ -812,12 +833,55 @@ namespace workphone::render
     void MaterialPass::addTextureUnit( SmartPtr<IMaterialTexture> textureUnit )
     {
         m_textures.push_back( textureUnit );
+        if( textureUnit )
+        {
+            textureUnit->setParent( this );
+            updateRenderTexture( textureUnit.get(), textureUnit->getTexture() );
+        }
     }
 
     void MaterialPass::removeTextureUnit( SmartPtr<IMaterialTexture> textureUnit )
     {
         m_textures.erase( std::remove( m_textures.begin(), m_textures.end(), textureUnit ),
                           m_textures.end() );
+        refreshRenderTextures();
+    }
+
+    void MaterialPass::updateRenderTexture( IMaterialTexture *unit, SmartPtr<ITexture> texture )
+    {
+        const auto units = m_textures.snapshot();
+        for( u32 i = 0; i < units.size() && i < MaterialRenderState::TextureCount; ++i )
+            if( units[i].get() == unit )
+            {
+                if( auto context = getStateContextPtr() )
+                    if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                    {
+                        if( i < state->textures.size() )
+                        {
+                            state->textureDirty[i] = state->textureDirty[i] || state->textures[i] != texture;
+                            state->textures[i] = texture;
+                        }
+                        else state->extendedTextures[i - state->textures.size()] = texture;
+                    }
+                return;
+            }
+    }
+
+    void MaterialPass::refreshRenderTextures()
+    {
+        const auto units = m_textures.snapshot();
+        if( auto context = getStateContextPtr() )
+            if( auto state = context->invalidateStateDataById<MaterialPassStateData>( getId() ) )
+                for( u32 i = 0; i < MaterialRenderState::TextureCount; ++i )
+                {
+                    auto texture = i < units.size() && units[i] ? units[i]->getTexture() : nullptr;
+                    if( i < state->textures.size() )
+                    {
+                        state->textureDirty[i] = state->textureDirty[i] || state->textures[i] != texture;
+                        state->textures[i] = texture;
+                    }
+                    else state->extendedTextures[i - state->textures.size()] = texture;
+                }
     }
 
     auto MaterialPass::getTextureUnits() const -> Array<SmartPtr<IMaterialTexture>>
@@ -844,6 +908,8 @@ namespace workphone::render
                         state->textures[layerIdx] = tex;
                         state->textureDirty[layerIdx] = true;
                     }
+                    else if( layerIdx < MaterialRenderState::TextureCount )
+                        state->extendedTextures[layerIdx - state->textures.size()] = tex;
                 }
             }
 
@@ -1007,7 +1073,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->vertexShaderName;
+                return state->getVertexShaderName();
             }
         }
 
@@ -1020,7 +1086,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->vertexShaderName = name;
+                state->setVertexShaderName( name );
             }
         }
     }
@@ -1031,7 +1097,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->fragmentShaderName;
+                return state->getFragmentShaderName();
             }
         }
 
@@ -1044,7 +1110,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->fragmentShaderName = name;
+                state->setFragmentShaderName( name );
             }
         }
     }
@@ -1055,7 +1121,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->getStateDataById<MaterialPassStateData>( getId() ) )
             {
-                return state->geometryShaderName;
+                return state->getGeometryShaderName();
             }
         }
 
@@ -1068,7 +1134,7 @@ namespace workphone::render
         {
             if( auto state = stateContext->invalidateStateDataById<MaterialPassStateData>( getId() ) )
             {
-                state->geometryShaderName = name;
+                state->setGeometryShaderName( name );
             }
         }
     }

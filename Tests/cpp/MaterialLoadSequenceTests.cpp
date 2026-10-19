@@ -7,6 +7,8 @@
 #include <WPGraphics/ClawMaterialTexture.hpp>
 #include <WPGraphics/ClawMesh.hpp>
 #include <WPGraphics/ClawTexture.hpp>
+#include <Workphone/State/States/MaterialPassStateData.hpp>
+#include <Workphone/Graphics/MaterialShader.hpp>
 #include <Workphone/Scene/Components/Material.hpp>
 #include <Workphone/Scene/Components/MeshRenderer.hpp>
 #include <Workphone/Scene/GameActor.hpp>
@@ -327,11 +329,124 @@ namespace
     }
 }  // namespace
 
+namespace
+{
+    void runRenderSnapshots( Fixture &fixture )
+    {
+        auto pending = make_ptr<render::ClawMaterial>();
+        pending->setMetalness( 0.7f );
+        pending->setRoughness( 0.25f );
+        pending->load( nullptr );
+        require( pending->getRenderState()->metalness == 0.7f &&
+                 pending->getRenderState()->roughness == 0.25f,
+                 "typed values assigned before load reach the first pass" );
+        pending->unload( nullptr );
+        auto material = make_ptr<render::ClawMaterial>();
+        material->load( nullptr );
+        auto first = material->getRenderState();
+        require( first != nullptr, "material publishes primary-pass snapshot" );
+        require( material->getRenderState() == first, "unchanged material reuses snapshot" );
+        auto native = material->getNativeMaterial();
+        const auto nativeRevision = wp_graphics_material_get_revision( native );
+        require( material->getNativeMaterial() == native &&
+                 wp_graphics_material_get_revision( native ) == nativeRevision,
+                 "unchanged native access preserves revision" );
+        material->setRoughness( 0.35f );
+        auto edited = material->getRenderState();
+        require( edited != first && edited->roughness == 0.35f && first->roughness != 0.35f,
+                 "legacy setter publishes new values and retains old snapshot" );
+        require( wp_graphics_material_get_roughness( material->getNativeMaterial() ) == 0.35f,
+                 "native sync consumes latest snapshot" );
+        material->setRoughness( 0.35f );
+        require( material->getRenderState() == edited, "no-op material edit reuses snapshot" );
+        auto pass = material->getTechnique( 0 )->getPass( 0 );
+        pass->setMetalness( 0.6f );
+        require( material->getRenderState()->metalness == 0.6f, "direct pass edit is visible" );
+        {
+            auto data = pass->getStateContext()->invalidateStateDataById<MaterialPassStateData>( pass->getId() );
+            require( bool( data ), "owned pass data" );
+            data->roughness = 0.8f;
+            data->uvOffsetX = 0.25f;
+        }
+        auto direct = material->getRenderState();
+        require( direct->roughness == 0.8f && direct->uvOffsetX == 0.25f,
+                 "existing SafePtr writes publish coherently" );
+        auto texture = make_ptr<render::ClawTexture>();
+        auto detached = make_ptr<render::ClawMaterialPass>();
+        auto detachedUnit = make_ptr<render::ClawMaterialTexture>();
+        detachedUnit->setTexture( texture );
+        detached->addTextureUnit( detachedUnit );
+        detached->load( nullptr );
+        {
+            auto data = detached->getStateContext()->getStateDataById<MaterialPassStateData>( detached->getId() );
+            require( data && data->getRenderState()->textures[0] == texture,
+                     "texture units authored before state creation reach runtime snapshot" );
+        }
+        detached->unload( nullptr );
+        material->setTexture( texture, 22 );
+        auto textured = material->getRenderState();
+        require( textured->textures[22] == texture, "extension texture slot in snapshot" );
+        auto unit = pass->getTextureUnits()[22];
+        unit->setTexture( nullptr );
+        require( !material->getRenderState()->textures[22] && textured->textures[22] == texture,
+                 "direct texture-unit removal updates new record and retains prior resource" );
+        auto originalTechnique = material->getTechnique( 0 );
+        auto secondTechnique = material->createTechnique();
+        auto secondPass = secondTechnique->createPass();
+        secondPass->load( nullptr );
+        secondPass->setRoughness( 0.9f );
+        material->removeTechnique( originalTechnique );
+        require( material->getRenderState()->roughness == 0.9f,
+                 "removing primary technique changes cached selection" );
+        secondTechnique->removePass( secondPass );
+        require( !material->getRenderState(), "removing last pass invalidates selection" );
+        secondTechnique->addPass( secondPass );
+        require( material->getRenderState()->roughness == 0.9f, "adding pass restores selection" );
+        render::MaterialShader schema( "SnapshotSchema" );
+        schema.addParameter( render::MaterialShaderParameterType::Scalar, "CustomValue" )
+              .addParameter( render::MaterialShaderParameterType::Int, "SignedValue" );
+        render::MaterialShaderRegistry::instance().registerShader( schema );
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto oldHandle = material->getShaderParameters().FindParameter( "CustomValue" );
+        material->getShaderParameters().SetScalar( oldHandle, 0.42f );
+        material->getShaderParameters().SetScalar(
+            material->getShaderParameters().FindParameter( "SignedValue" ), s32( -17 ) );
+        schema.addParameter( render::MaterialShaderParameterType::Bool, "Extra" );
+        render::MaterialShaderRegistry::instance().registerShader( schema );
+        material->setShaderParameters( schema.getParameterInfo(), schema.getShaderID() );
+        auto &parameters = material->getShaderParameters();
+        require( !parameters.SetScalar( oldHandle, 1.0f ) &&
+                 parameters.GetScalar( parameters.FindParameter( "CustomValue" ) ) == 0.42f &&
+                 parameters.GetInt( parameters.FindParameter( "SignedValue" ) ) == -17 &&
+                 !parameters.GetBool( parameters.FindParameter( "Extra" ) ),
+                 "schema replacement migrates compatible values and defaults new slots" );
+        const auto validLayout = parameters.GetLayout();
+        auto invalidSchema = schema.getParameterInfo();
+        invalidSchema.push_back( invalidSchema[0] );
+        material->setShaderParameters( invalidSchema, "RejectedSchema" );
+        require( parameters.GetLayout() == validLayout && material->getShaderID() == "SnapshotSchema",
+                 "invalid candidate preserves prior shader/layout" );
+        auto serialized = material->getProperties();
+        auto restored = make_ptr<render::ClawMaterial>();
+        restored->load( nullptr );
+        restored->setProperties( serialized );
+        auto &restoredParameters = restored->getShaderParameters();
+        require( restoredParameters.GetInt( restoredParameters.FindParameter( "SignedValue" ) ) == -17 &&
+                 restoredParameters.GetScalar( restoredParameters.FindParameter( "CustomValue" ) ) == 0.42f,
+                 "typed values preserve existing property serialization" );
+        restored->unload( nullptr );
+        material->unload( nullptr );
+        require( !material->getRenderState(), "unload releases selected graph" );
+        fixture.graphics->pending.clear();
+    }
+}
+
 int main()
 {
     try
     {
         Fixture fixture;
+        runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );
         run( fixture );
         std::cout << "PASS: first-load specular, scene material restoration, delayed completion, replacement, load order and "

@@ -88,6 +88,7 @@ namespace workphone
             MaterialShader &addParameter( MaterialShaderParameterType type, const String &name )
             {
                 m_parameterInfo.emplace_back( type, name );
+                m_layout.reset();
                 return *this;
             }
 
@@ -127,10 +128,14 @@ namespace workphone
              */
             void buildInstance( MaterialShaderParametersInstance &outInstance ) const;
 
+            /** Finalized before registry publication; retained independently by instances. */
+            MaterialShaderParameterLayout::Ptr getLayout() const;
+
         private:
             String m_shaderID;
             u32 m_flags = 0;
             Array<MaterialShaderParameterInfo> m_parameterInfo;
+            mutable MaterialShaderParameterLayout::Ptr m_layout;
         };
 
         //---------------------------------------------------------------------------------------

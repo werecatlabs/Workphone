@@ -5,10 +5,12 @@
 #include <float.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 
 struct wp_graphics_material
 {
-    wp_graphics_material_desc desc;
+    wp_graphics_material_values values;
+    wp_c8 *texture_names[WP_MATERIAL_MAX_TEXTURES];
     wp_shader_program *shader_program;
     void *native;
     wp_graphics_material_sync_func sync_func;
@@ -72,7 +74,7 @@ static void wp_mat_name( wp_c8 *dst, const wp_c8 *src )
         dst[0] = '\0';
 }
 
-void wp_graphics_material_desc_init( wp_graphics_material_desc *d )
+void wp_graphics_material_values_init( wp_graphics_material_values *d )
 {
     if( !d )
         return;
@@ -98,11 +100,24 @@ void wp_graphics_material_desc_init( wp_graphics_material_desc *d )
     d->cull_mode = WORKPHONE_CULL_MODE_BACK;
 }
 
-static void wp_mat_sanitise( wp_graphics_material_desc *out, const wp_graphics_material_desc *in )
+void wp_graphics_material_desc_init( wp_graphics_material_desc *d )
 {
-    wp_graphics_material_desc def;
-    wp_s32 i;
-    wp_graphics_material_desc_init( &def );
+    wp_graphics_material_values values;
+    if( !d ) return;
+    wp_graphics_material_values_init( &values );
+    memset( d, 0, sizeof( *d ) );
+    memcpy( d, &values, offsetof( wp_graphics_material_desc, texture_names ) );
+    d->struct_size = (wp_u32)sizeof( *d );
+}
+
+/* The public descriptor prefix is deliberately preserved without type punning. */
+typedef char wp_mat_values_prefix_check[
+    sizeof( wp_graphics_material_values ) == offsetof( wp_graphics_material_desc, texture_names ) ? 1 : -1 ];
+
+static void wp_mat_sanitise( wp_graphics_material_values *out, const wp_graphics_material_values *in )
+{
+    wp_graphics_material_values def;
+    wp_graphics_material_values_init( &def );
     *out = *in;
     out->struct_size = (wp_u32)sizeof( *out );
     if( out->material_type < WORKPHONE_MATERIAL_TYPE_STANDARD ||
@@ -130,8 +145,6 @@ static void wp_mat_sanitise( wp_graphics_material_desc *out, const wp_graphics_m
     out->index_of_refraction =
         wp_mat_clamp( out->index_of_refraction, 1.0f, 2.5f, def.index_of_refraction );
     out->flags &= WORKPHONE_MATERIAL_FLAG_ALL;
-    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
-        out->texture_names[i][WP_MATERIAL_MAX_NAME - 1] = '\0';
 }
 
 wp_graphics_material *wp_graphics_material_create( void )
@@ -141,7 +154,7 @@ wp_graphics_material *wp_graphics_material_create( void )
     if( !m )
         return NULL;
     memset( m, 0, sizeof( *m ) );
-    wp_graphics_material_desc_init( &m->desc );
+    wp_graphics_material_values_init( &m->values );
     m->revision = 1u;
     m->is_dirty = 1;
     return m;
@@ -164,7 +177,9 @@ wp_graphics_material *wp_graphics_material_clone( const wp_graphics_material *so
     wp_graphics_material *clone;
     if( !source )
         return NULL;
-    clone = wp_graphics_material_create_from_desc( &source->desc );
+    clone = wp_graphics_material_create();
+    if( clone && !wp_graphics_material_copy( clone, source ) )
+    { wp_graphics_material_destroy( clone ); return NULL; }
     if( clone )
         wp_graphics_material_set_shader_program( clone, source->shader_program );
     return clone;
@@ -172,6 +187,8 @@ wp_graphics_material *wp_graphics_material_clone( const wp_graphics_material *so
 
 void wp_graphics_material_destroy( wp_graphics_material *mat )
 {
+    wp_s32 i;
+    if( mat ) for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) free( mat->texture_names[i] );
     if( mat && mat->shader_program )
         wp_shader_program_destroy( mat->shader_program );
     if( mat && mat->native && mat->release_func )
@@ -179,43 +196,106 @@ void wp_graphics_material_destroy( wp_graphics_material *mat )
     free( mat );
 }
 
+wp_s32 wp_graphics_material_get_values( const wp_graphics_material *mat, wp_graphics_material_values *v )
+{
+    wp_u32 copy_size;
+    if( !mat || !v || v->struct_size < sizeof( wp_u32 ) ) return 0;
+    copy_size = v->struct_size < sizeof( *v ) ? v->struct_size : (wp_u32)sizeof( *v );
+    memcpy( v, &mat->values, copy_size );
+    v->struct_size = (wp_u32)sizeof( *v );
+    return 1;
+}
+
+wp_s32 wp_graphics_material_set_values( wp_graphics_material *mat, const wp_graphics_material_values *v )
+{
+    wp_graphics_material_values input, clean;
+    wp_u32 copy_size;
+    if( !mat || !v || v->struct_size < sizeof( wp_u32 ) ) return 0;
+    wp_graphics_material_values_init( &input );
+    copy_size = v->struct_size < sizeof( input ) ? v->struct_size : (wp_u32)sizeof( input );
+    memcpy( &input, v, copy_size );
+    wp_mat_sanitise( &clean, &input );
+    if( memcmp( &mat->values, &clean, sizeof( clean ) ) )
+    { mat->values = clean; wp_mat_touch( mat ); }
+    return 1;
+}
+
+wp_u32 wp_graphics_material_get_storage_size( const wp_graphics_material *mat )
+{
+    wp_u32 bytes;
+    wp_s32 i;
+    if( !mat ) return 0;
+    bytes = (wp_u32)sizeof( *mat );
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
+        if( mat->texture_names[i] ) bytes += (wp_u32)strlen( mat->texture_names[i] ) + 1u;
+    return bytes;
+}
+
 wp_s32 wp_graphics_material_get_desc( const wp_graphics_material *mat, wp_graphics_material_desc *d )
 {
-    wp_u32 capacity;
+    wp_graphics_material_desc out;
     wp_u32 copy_size;
-    if( !mat || !d || d->struct_size < (wp_u32)sizeof( wp_u32 ) )
-        return 0;
-    capacity = d->struct_size;
-    copy_size = capacity < (wp_u32)sizeof( *d ) ? capacity : (wp_u32)sizeof( *d );
-    memcpy( d, &mat->desc, copy_size );
-    d->struct_size = (wp_u32)sizeof( *d );
+    wp_s32 i;
+    if( !mat || !d || d->struct_size < sizeof( wp_u32 ) ) return 0;
+    memset( &out, 0, sizeof( out ) );
+    memcpy( &out, &mat->values, sizeof( mat->values ) );
+    out.struct_size = (wp_u32)sizeof( out );
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
+        wp_mat_name( out.texture_names[i], mat->texture_names[i] );
+    copy_size = d->struct_size < sizeof( *d ) ? d->struct_size : (wp_u32)sizeof( *d );
+    memcpy( d, &out, copy_size );
     return 1;
 }
 
 wp_s32 wp_graphics_material_set_desc( wp_graphics_material *mat, const wp_graphics_material_desc *d )
 {
-    wp_graphics_material_desc clean;
     wp_graphics_material_desc input;
+    wp_graphics_material_values values;
+    wp_c8 *candidates[WP_MATERIAL_MAX_TEXTURES];
     wp_u32 copy_size;
-    if( !mat || !d || d->struct_size < (wp_u32)sizeof( wp_u32 ) )
-        return 0;
+    wp_s32 i, changed;
+    if( !mat || !d || d->struct_size < sizeof( wp_u32 ) ) return 0;
     wp_graphics_material_desc_init( &input );
-    copy_size = d->struct_size < (wp_u32)sizeof( input ) ? d->struct_size : (wp_u32)sizeof( input );
+    copy_size = d->struct_size < sizeof( input ) ? d->struct_size : (wp_u32)sizeof( input );
     memcpy( &input, d, copy_size );
-    input.struct_size = (wp_u32)sizeof( input );
-    wp_mat_sanitise( &clean, &input );
-    if( memcmp( &mat->desc, &clean, sizeof( clean ) ) != 0 )
+    memset( candidates, 0, sizeof( candidates ) );
+    /* Allocate the complete candidate first. Failure preserves all existing state. */
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
     {
-        mat->desc = clean;
-        wp_mat_touch( mat );
+        input.texture_names[i][WP_MATERIAL_MAX_NAME - 1] = '\0';
+        if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) &&
+            input.texture_names[i][0] )
+        {
+            candidates[i] = (wp_c8 *)malloc( strlen( input.texture_names[i] ) + 1u );
+            if( !candidates[i] )
+            {
+                for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i ) free( candidates[i] );
+                return 0;
+            }
+            strcpy( candidates[i], input.texture_names[i] );
+        }
     }
+    memcpy( &values, &input, sizeof( values ) );
+    values.struct_size = (wp_u32)sizeof( values );
+    wp_graphics_material_set_values( mat, &values );
+    changed = 0;
+    for( i = 0; i < WP_MATERIAL_MAX_TEXTURES; ++i )
+        if( strcmp( wp_graphics_material_get_texture_name( mat, i ), input.texture_names[i] ) )
+        {
+            free( mat->texture_names[i] );
+            mat->texture_names[i] = candidates[i];
+            changed = 1;
+        }
+    if( changed ) wp_mat_touch( mat );
     return 1;
 }
 
 wp_s32 wp_graphics_material_copy( wp_graphics_material *dst, const wp_graphics_material *src )
 {
-    if( !dst || !src || !wp_graphics_material_set_desc( dst, &src->desc ) )
-        return 0;
+    wp_graphics_material_desc d;
+    if( !dst || !src ) return 0;
+    d.struct_size = (wp_u32)sizeof( d );
+    if( !wp_graphics_material_get_desc( src, &d ) || !wp_graphics_material_set_desc( dst, &d ) ) return 0;
     wp_graphics_material_set_shader_program( dst, src->shader_program );
     return 1;
 }
@@ -231,15 +311,15 @@ void wp_graphics_material_reset( wp_graphics_material *mat )
 
 wp_graphics_material_type wp_graphics_material_get_type( const wp_graphics_material *mat )
 {
-    return mat ? mat->desc.material_type : WORKPHONE_MATERIAL_TYPE_STANDARD;
+    return mat ? mat->values.material_type : WORKPHONE_MATERIAL_TYPE_STANDARD;
 }
 
 void wp_graphics_material_set_type( wp_graphics_material *mat, wp_graphics_material_type type )
 {
     if( mat && type >= WORKPHONE_MATERIAL_TYPE_STANDARD && type <= WORKPHONE_MATERIAL_TYPE_CUSTOM &&
-        mat->desc.material_type != type )
+        mat->values.material_type != type )
     {
-        mat->desc.material_type = type;
+        mat->values.material_type = type;
         wp_mat_touch( mat );
     }
 }
@@ -254,17 +334,17 @@ static wp_colour_f wp_mat_zero( void )
 #define WP_COLOUR_ACCESSORS( Name, Field )                                         \
     wp_colour_f wp_graphics_material_get_##Name( const wp_graphics_material *m )   \
     {                                                                              \
-        return m ? m->desc.Field : wp_mat_zero();                                  \
+        return m ? m->values.Field : wp_mat_zero();                                  \
     }                                                                              \
     void wp_graphics_material_set_##Name( wp_graphics_material *m, wp_colour_f v ) \
     {                                                                              \
         wp_colour_f c;                                                             \
         if( !m )                                                                   \
             return;                                                                \
-        c = wp_mat_colour( v, m->desc.Field );                                     \
-        if( !wp_mat_colour_eq( c, m->desc.Field ) )                                \
+        c = wp_mat_colour( v, m->values.Field );                                     \
+        if( !wp_mat_colour_eq( c, m->values.Field ) )                                \
         {                                                                          \
-            m->desc.Field = c;                                                     \
+            m->values.Field = c;                                                     \
             wp_mat_touch( m );                                                     \
         }                                                                          \
     }
@@ -277,17 +357,17 @@ WP_COLOUR_ACCESSORS( emissive, emissive )
 #define WP_SCALAR_ACCESSORS( Name, Field, Default, Lo, Hi )                   \
     wp_f32 wp_graphics_material_get_##Name( const wp_graphics_material *m )   \
     {                                                                         \
-        return m ? m->desc.Field : Default;                                   \
+        return m ? m->values.Field : Default;                                   \
     }                                                                         \
     void wp_graphics_material_set_##Name( wp_graphics_material *m, wp_f32 v ) \
     {                                                                         \
         wp_f32 c;                                                             \
         if( !m )                                                              \
             return;                                                           \
-        c = wp_mat_clamp( v, Lo, Hi, m->desc.Field );                         \
-        if( c != m->desc.Field )                                              \
+        c = wp_mat_clamp( v, Lo, Hi, m->values.Field );                         \
+        if( c != m->values.Field )                                              \
         {                                                                     \
-            m->desc.Field = c;                                                \
+            m->values.Field = c;                                                \
             wp_mat_touch( m );                                                \
         }                                                                     \
     }
@@ -304,7 +384,7 @@ WP_SCALAR_ACCESSORS( index_of_refraction, index_of_refraction, 1.5f, 1.0f, 2.5f 
 
 wp_f32 wp_graphics_material_get_emissive_intensity( const wp_graphics_material *m )
 {
-    return m ? m->desc.emissive_intensity : 1.0f;
+    return m ? m->values.emissive_intensity : 1.0f;
 }
 
 void wp_graphics_material_set_emissive_intensity( wp_graphics_material *m, wp_f32 v )
@@ -312,25 +392,25 @@ void wp_graphics_material_set_emissive_intensity( wp_graphics_material *m, wp_f3
     wp_f32 c;
     if( !m )
         return;
-    c = wp_mat_positive( v, m->desc.emissive_intensity );
-    if( c != m->desc.emissive_intensity )
+    c = wp_mat_positive( v, m->values.emissive_intensity );
+    if( c != m->values.emissive_intensity )
     {
-        m->desc.emissive_intensity = c;
+        m->values.emissive_intensity = c;
         wp_mat_touch( m );
     }
 }
 
 wp_u32 wp_graphics_material_get_flags( const wp_graphics_material *m )
 {
-    return m ? m->desc.flags : 0u;
+    return m ? m->values.flags : 0u;
 }
 
 void wp_graphics_material_set_flags( wp_graphics_material *m, wp_u32 flags )
 {
     flags &= WORKPHONE_MATERIAL_FLAG_ALL;
-    if( m && m->desc.flags != flags )
+    if( m && m->values.flags != flags )
     {
-        m->desc.flags = flags;
+        m->values.flags = flags;
         wp_mat_touch( m );
     }
 }
@@ -340,61 +420,68 @@ void wp_graphics_material_set_flag( wp_graphics_material *m, wp_u32 flag, wp_s32
     wp_u32 flags;
     if( !m )
         return;
-    flags = enabled ? m->desc.flags | flag : m->desc.flags & ~flag;
+    flags = enabled ? m->values.flags | flag : m->values.flags & ~flag;
     wp_graphics_material_set_flags( m, flags );
 }
 
 wp_s32 wp_graphics_material_has_flag( const wp_graphics_material *m, wp_u32 flag )
 {
-    return m ? ( m->desc.flags & flag ) != 0u : 0;
+    return m ? ( m->values.flags & flag ) != 0u : 0;
 }
 
 wp_blend_mode wp_graphics_material_get_blend_mode( const wp_graphics_material *m )
 {
-    return m ? m->desc.blend_mode : WORKPHONE_BLEND_MODE_NONE;
+    return m ? m->values.blend_mode : WORKPHONE_BLEND_MODE_NONE;
 }
 
 void wp_graphics_material_set_blend_mode( wp_graphics_material *m, wp_blend_mode mode )
 {
     if( m && mode >= WORKPHONE_BLEND_MODE_NONE && mode <= WORKPHONE_BLEND_MODE_PREMULTIPLIED &&
-        m->desc.blend_mode != mode )
+        m->values.blend_mode != mode )
     {
-        m->desc.blend_mode = mode;
+        m->values.blend_mode = mode;
         wp_mat_touch( m );
     }
 }
 
 wp_cull_mode wp_graphics_material_get_cull_mode( const wp_graphics_material *m )
 {
-    return m ? m->desc.cull_mode : WORKPHONE_CULL_MODE_BACK;
+    return m ? m->values.cull_mode : WORKPHONE_CULL_MODE_BACK;
 }
 
 void wp_graphics_material_set_cull_mode( wp_graphics_material *m, wp_cull_mode mode )
 {
     if( m && mode >= WORKPHONE_CULL_MODE_NONE && mode <= WORKPHONE_CULL_MODE_FRONT &&
-        m->desc.cull_mode != mode )
+        m->values.cull_mode != mode )
     {
-        m->desc.cull_mode = mode;
+        m->values.cull_mode = mode;
         wp_mat_touch( m );
     }
 }
 
 const wp_c8 *wp_graphics_material_get_texture_name( const wp_graphics_material *m, wp_s32 layer )
 {
-    return !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES ? "" : m->desc.texture_names[layer];
+    return !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES || !m->texture_names[layer] ?
+        "" : m->texture_names[layer];
 }
 
 void wp_graphics_material_set_texture_name( wp_graphics_material *m, wp_s32 layer, const wp_c8 *name )
 {
     wp_c8 clean[WP_MATERIAL_MAX_NAME];
-    if( !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES )
-        return;
+    wp_c8 *candidate;
+    if( !m || layer < 0 || layer >= WP_MATERIAL_MAX_TEXTURES ) return;
     wp_mat_name( clean, name );
-    if( strcmp( m->desc.texture_names[layer], clean ) != 0 )
+    if( !strcmp( wp_graphics_material_get_texture_name( m, layer ), clean ) ) return;
+    candidate = NULL;
+    if( clean[0] )
     {
-        wp_mat_name( m->desc.texture_names[layer], clean );
-        wp_mat_touch( m );
+        candidate = (wp_c8 *)malloc( strlen( clean ) + 1u );
+        if( !candidate ) return;
+        strcpy( candidate, clean );
     }
+    free( m->texture_names[layer] );
+    m->texture_names[layer] = candidate;
+    wp_mat_touch( m );
 }
 
 wp_s32 wp_graphics_material_is_dirty( const wp_graphics_material *m )
@@ -500,18 +587,18 @@ wp_s32 wp_graphics_material_apply( wp_graphics_material *m, wp_renderer *rendere
         return 0;
     if( !m->shader_program && !wp_renderer_reset_program( renderer ) )
         return 0;
-    blend = m->desc.blend_mode;
-    depth_write = ( m->desc.flags & WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE ) != 0u;
-    if( ( m->desc.flags & WORKPHONE_MATERIAL_FLAG_TRANSPARENT ) != 0u )
+    blend = m->values.blend_mode;
+    depth_write = ( m->values.flags & WORKPHONE_MATERIAL_FLAG_DEPTH_WRITE ) != 0u;
+    if( ( m->values.flags & WORKPHONE_MATERIAL_FLAG_TRANSPARENT ) != 0u )
     {
         if( blend == WORKPHONE_BLEND_MODE_NONE )
             blend = WORKPHONE_BLEND_MODE_ALPHA;
         depth_write = 0;
     }
     wp_renderer_set_blend_mode( renderer, blend );
-    wp_renderer_set_cull_mode( renderer, m->desc.cull_mode );
+    wp_renderer_set_cull_mode( renderer, m->values.cull_mode );
     wp_renderer_set_depth_test_enabled( renderer,
-                                        ( m->desc.flags & WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK ) != 0u );
+                                        ( m->values.flags & WORKPHONE_MATERIAL_FLAG_DEPTH_CHECK ) != 0u );
     wp_renderer_set_depth_write_enabled( renderer, depth_write );
     if( m->bind_func )
         return m->bind_func( m, renderer, m->native, m->bind_user_data ) != 0;

@@ -68,6 +68,39 @@ typedef enum wp_graphics_material_texture_slot
     WORKPHONE_MATERIAL_TEXTURE_TRANSMISSION = 7
 } wp_graphics_material_texture_slot;
 
+/** Compact surface values; texture identities stay in the authoring descriptor.
+ * Both structures have size-tagged copy contracts and contain no owning pointers. */
+typedef struct wp_graphics_material_values
+{
+    wp_u32 struct_size;
+    wp_graphics_material_type material_type;
+    wp_colour_f ambient;
+    wp_colour_f diffuse;
+    wp_colour_f specular;
+    wp_colour_f emissive;
+    wp_f32 metalness;
+    wp_f32 roughness;
+    wp_f32 normal_scale;
+    wp_f32 occlusion_strength;
+    wp_f32 emissive_intensity;
+    wp_f32 alpha_cutoff;
+    wp_f32 clearcoat;
+    wp_f32 clearcoat_roughness;
+    wp_f32 transmission;
+    wp_f32 index_of_refraction;
+    wp_u32 flags;
+    wp_blend_mode blend_mode;
+    wp_cull_mode cull_mode;
+} wp_graphics_material_values;
+
+WORKPHONE_API void wp_graphics_material_values_init( wp_graphics_material_values *values );
+WORKPHONE_API wp_s32 wp_graphics_material_get_values( const wp_graphics_material *mat,
+                                                     wp_graphics_material_values *values );
+WORKPHONE_API wp_s32 wp_graphics_material_set_values( wp_graphics_material *mat,
+                                                     const wp_graphics_material_values *values );
+/** Live CPU storage, including allocated texture names (excludes backend allocations). */
+WORKPHONE_API wp_u32 wp_graphics_material_get_storage_size( const wp_graphics_material *mat );
+
 /** Complete, serialisable CPU-side material description. */
 typedef struct wp_graphics_material_desc
 {

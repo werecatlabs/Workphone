@@ -26,6 +26,9 @@ namespace workphone
         class WPCore_API MaterialPass : public MaterialNode<IMaterialPass>
         {
         public:
+            /** Mirror texture-unit edits to the immutable render snapshot at edit time. */
+            void updateRenderTexture( IMaterialTexture *unit, SmartPtr<ITexture> texture );
+            void refreshRenderTextures();
             /**
              * @brief Set the state context for this pass.
              *

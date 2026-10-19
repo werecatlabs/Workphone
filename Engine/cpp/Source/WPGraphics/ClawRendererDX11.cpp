@@ -2,6 +2,7 @@
 #include <WPGraphics/ClawRendererDX11.hpp>
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawMesh.hpp>
+#include <Workphone/Graphics/Material.hpp>
 #include <WPGraphics/ClawRenderTarget.hpp>
 #include <WPGraphics/ClawTerrain.hpp>
 #include <WPGraphics/ClawTerrainMaterial.hpp>
@@ -43,36 +44,21 @@ namespace workphone::render
         // invalidated by every switch between them, repeating GGX filtering.
         std::unordered_map<const ClawRendererDX11 *, SkyEnvironmentCache> g_skyEnvironmentCaches;
 
-        SafeReadPtr<MaterialPassStateData> getPrimaryMaterialPassState(
-            const SmartPtr<IMaterial> &material )
+        MaterialRenderState::Ptr getPrimaryMaterialPassState( const SmartPtr<IMaterial> &material )
         {
-            if( !material )
-            {
-                return {};
-            }
-            for( const auto &technique : material->getTechniques() )
-            {
-                if( !technique )
-                {
-                    continue;
-                }
-                for( const auto &pass : technique->getPasses() )
-                {
+            if( auto concrete = dynamic_pointer_cast<Material>( material ) )
+                return concrete->getRenderState();
+            // Third-party material implementations retain the interface fallback.
+            if( material ) for( const auto &technique : material->getTechniques() )
+                if( technique ) for( const auto &pass : technique->getPasses() )
                     if( auto context = pass ? pass->getStateContext() : nullptr )
-                    {
-                        if( auto state =
-                                context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
-                        {
-                            return state;
-                        }
-                    }
-                }
-            }
+                        if( auto state = context->getStateDataById<MaterialPassStateData>( pass->getId() ) )
+                            return state->getRenderState();
             return {};
         }
 
         void applyPrimaryMaterialUvState( const SmartPtr<IMaterial> &material,
-                                          const SafeReadPtr<MaterialPassStateData> &state,
+                                          const MaterialRenderState::Ptr &state,
                                           wp_material_dx11 &nativeMaterial )
         {
             if( state )
@@ -82,8 +68,9 @@ namespace workphone::render
                 nativeMaterial.uv_transform.x = state->uvOffsetX;
                 nativeMaterial.uv_transform.y = state->uvOffsetY;
                 nativeMaterial.uv_transform.w = state->uvRotation;
-                nativeMaterial.projection = { static_cast<f32>( material->getUVProjection() ),
-                                              material->getTriplanarScale(), 0.0f, 0.0f };
+                nativeMaterial.projection = { static_cast<f32>( ( state->uvProjection <= 6u ? state->uvProjection : 0u ) ),
+                                              std::isfinite( state->uvTriplanarScale ) ?
+                                                  std::max( state->uvTriplanarScale, 0.0001f ) : 1.0f, 0.0f, 0.0f };
                 nativeMaterial.controls.x = state->normalStrength;
                 nativeMaterial.controls.y = state->aoStrength;
                 nativeMaterial.controls.z = state->getFlag( cutoutFlag ) ? state->alphaClip : -1.0f;
@@ -105,14 +92,6 @@ namespace workphone::render
             }
         }
 
-        bool isMaterialDoubleSided( const SmartPtr<IMaterial> &material )
-        {
-            if( auto state = getPrimaryMaterialPassState( material ) )
-            {
-                return state->getFlag( doubleSidedFlag );
-            }
-            return false;
-        }
     }  // namespace
 
     ClawRendererDX11::ClawRendererDX11() = default;
@@ -959,11 +938,16 @@ namespace workphone::render
 
             auto pMaterial = resolveMeshMaterial( mesh, submeshIndex );
             auto material = pMaterial.get();
+            const auto state = getPrimaryMaterialPassState( pMaterial );
+            const auto getTexture = [&]( u32 slot ) -> SmartPtr<ITexture> {
+                return state && slot < state->textures.size() ? state->textures[slot] :
+                       pMaterial ? pMaterial->getTexture( slot ) : nullptr;
+            };
 
             void *nativeTexture = nullptr;
             if( material )
             {
-                if( auto texture = material->getTexture( 0 ) )
+                if( auto texture = getTexture( 0 ) )
                 {
                     texture->getTextureFinal( &nativeTexture );
                 }
@@ -972,7 +956,7 @@ namespace workphone::render
             wp_renderer_set_texture_native( m_renderer, nativeTexture );
 
             // These are Workphone/Ogre PBS slots, not the low-level C material slots.
-            const auto state = getPrimaryMaterialPassState( material );
+
             if( m_shadowPass && state && !state->getFlag( castShadowsFlag ) )
             {
                 continue;
@@ -1011,7 +995,7 @@ namespace workphone::render
             {
                 for( size_t i = 0; i < 6; ++i )
                 {
-                    if( auto texture = material->getTexture( textureSlots[i] ) )
+                    if( auto texture = getTexture( textureSlots[i] ) )
                     {
                         texture->getTextureFinal( &textureViews[i] );
                     }
@@ -1025,10 +1009,10 @@ namespace workphone::render
                 state ? static_cast<u32>( Math<f32>::clamp( state->uvAniso, 1.0f, 16.0f ) ) : 1u );
 
             wp_material_dx11 nativeMaterial{};
-            const auto diffuse = material ? material->getDiffuse() : ColourF::White;
+            const auto diffuse = material ? ( state ? state->diffuseColour : material->getDiffuse() ) : ColourF::White;
             const auto specular =
-                material ? material->getSpecular() : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
-            const auto emissive = material ? material->getEmissive() : ColourF::Black;
+                material ? ( state ? state->specularColour : material->getSpecular() ) : ColourF( 0.04f, 0.04f, 0.04f, 1.0f );
+            const auto emissive = material ? ( state ? state->emissiveColour : material->getEmissive() ) : ColourF::Black;
             nativeMaterial.base_color = { diffuse.r, diffuse.g, diffuse.b, diffuse.a };
             nativeMaterial.specular_color = { specular.r, specular.g, specular.b, specular.a };
             nativeMaterial.emissive_color = { emissive.r, emissive.g, emissive.b, emissive.a };
@@ -1038,7 +1022,7 @@ namespace workphone::render
             if( material )
             {
                 if( auto reflection =
-                        material->getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
+                        getTexture( static_cast<u32>( PbsTextureTypes::PBSM_REFLECTION ) ) )
                 {
                     void *view = nullptr;
                     reflection->getTextureFinal( &view );
@@ -1056,8 +1040,8 @@ namespace workphone::render
                 }
             }
 
-            nativeMaterial.surface = { material ? material->getMetalness() : 0.0f,
-                                       material ? material->getRoughness() : 0.5f, 1.0f, 1.0f };
+            nativeMaterial.surface = { material ? ( state ? state->metalness : material->getMetalness() ) : 0.0f,
+                                       material ? ( state ? state->roughness : material->getRoughness() ) : 0.5f, 1.0f, 1.0f };
             nativeMaterial.uv_transform = { 0.0f, 0.0f, 1.0f, 0.0f };
             nativeMaterial.controls = { 1.0f, 1.0f, -1.0f, 0.0f };
             nativeMaterial.map_flags = { textureViews[0] ? 1.0f : 0.0f, textureViews[1] ? 1.0f : 0.0f,
@@ -1071,24 +1055,24 @@ namespace workphone::render
                 wp_renderer_dx11_set_material( dx11, &nativeMaterial );
             }
 
-            auto blend = material ? ClawUtil::toCBlendMode( material->getBlendMode() )
+            auto blend = material ? ClawUtil::toCBlendMode( ( state ? state->blendMode : material->getBlendMode() ) )
                                   : WORKPHONE_BLEND_MODE_NONE;
 
-            if( material && material->isTransparent() && blend == WORKPHONE_BLEND_MODE_NONE )
+            if( material && ( state ? state->getFlag( transparentFlag ) : material->isTransparent() ) && blend == WORKPHONE_BLEND_MODE_NONE )
             {
                 blend = WORKPHONE_BLEND_MODE_ALPHA;
             }
 
             wp_renderer_set_blend_mode( m_renderer, blend );
             wp_renderer_set_depth_write_enabled(
-                m_renderer, m_shadowPass || !material || material->getDepthWrite() );
+                m_renderer, m_shadowPass || !material || ( state ? state->getFlag( depthWriteFlag ) : material->getDepthWrite() ) );
             // The editor's comparison list differs from the C renderer enum.
             constexpr wp_depth_func depthFunctions[] = {
                 WORKPHONE_DEPTH_FUNC_NEVER, WORKPHONE_DEPTH_FUNC_LESS,   WORKPHONE_DEPTH_FUNC_LEQUAL,
                 WORKPHONE_DEPTH_FUNC_EQUAL, WORKPHONE_DEPTH_FUNC_GEQUAL, WORKPHONE_DEPTH_FUNC_GREATER,
                 WORKPHONE_DEPTH_FUNC_ALWAYS
             };
-            const auto depthTest = material ? material->getDepthTest() : 2u;
+            const auto depthTest = material ? ( state ? state->depthTest : material->getDepthTest() ) : 2u;
             wp_renderer_set_depth_test_enabled( m_renderer, 1 );
             wp_renderer_set_depth_func( m_renderer, m_shadowPass
                                                         ? WORKPHONE_DEPTH_FUNC_LESS
@@ -1098,8 +1082,8 @@ namespace workphone::render
                                            ? WORKPHONE_FILL_MODE_WIREFRAME
                                            : WORKPHONE_FILL_MODE_SOLID );
             wp_renderer_set_cull_mode( m_renderer,
-                                       isMaterialDoubleSided( material ) ? WORKPHONE_CULL_MODE_NONE
-                                       : material ? ClawUtil::toCCullMode( material->getCullMode() )
+                                       ( state && state->getFlag( doubleSidedFlag ) ) ? WORKPHONE_CULL_MODE_NONE
+                                       : material ? ClawUtil::toCCullMode( ( state ? state->cullMode : material->getCullMode() ) )
                                                   : WORKPHONE_CULL_MODE_BACK );
 
             if( instances )

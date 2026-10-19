@@ -2,6 +2,8 @@
 
 Date: 19 October 2026. Status: source-reviewed proposal; implementation and performance measurements are pending.
 
+Implementation checkpoint: shared layouts, typed access, immutable pass snapshots, active DX11 consumption and compact native storage are now implemented. See [implementation status](WPMATERIAL_IMPLEMENTATION_STATUS.md) for validation evidence and remaining production gates; the findings and estimates below record the original planning baseline.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.
@@ -164,4 +166,4 @@ Pair structural/counter tests with interactive Editor and rendered scene checks:
 
 Start with M0-M1: establish material-specific costs, share immutable layouts in the existing shader parameter layer, add validated typed handles and cache built-in bindings. Follow immediately with M2-M3 to remove repeated graph traversal from active DX11 rendering. Delay allocator specialization and constant-buffer reorganization until the counters identify the remaining bottleneck.
 
-This review changed documentation only. No engine implementation, build, benchmark or visual validation was performed for this plan.
+The original planning review changed documentation only. Subsequent implementation and validation are tracked in the linked implementation status.

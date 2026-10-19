@@ -157,6 +157,8 @@ namespace workphone
 
         protected:
             void syncNativeMaterial() const;
+            mutable MaterialRenderState::Ptr m_syncedRenderState;
+            mutable u32 m_syncedNativeRevision = 0;
             wp_graphics_material *m_material;  ///< Underlying Claw material handle.
         };
     }  // namespace render

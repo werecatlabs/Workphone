@@ -18,8 +18,14 @@ namespace workphone
 
         void MaterialShader::buildInstance( MaterialShaderParametersInstance &outInstance ) const
         {
-            outInstance.Reset( m_parameterInfo );
-            outInstance.InitializeDefaultResourceHandles();
+            outInstance.Reset( getLayout() );
+        }
+
+        MaterialShaderParameterLayout::Ptr MaterialShader::getLayout() const
+        {
+            if( !m_layout )
+                m_layout = MaterialShaderParameterLayout::Create( m_parameterInfo );
+            return m_layout;
         }
 
         //---------------------------------------------------------------------------------------
@@ -34,7 +40,7 @@ namespace workphone
 
         void MaterialShaderRegistry::registerShader( const MaterialShader &shader )
         {
-            if( !shader.isValid() )
+            if( !shader.isValid() || !shader.getLayout() )
             {
                 return;
             }
