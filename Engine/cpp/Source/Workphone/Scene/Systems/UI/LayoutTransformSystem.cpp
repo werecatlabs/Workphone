@@ -46,7 +46,7 @@ namespace workphone::scene
             return Vector2<real_Num>( value.x / divisor.x, value.y / divisor.y );
         }
 
-        u32 getHierarchyDepth( const LayoutTransform *layoutTransform )
+        u32 getHierarchyDepth( const SmartPtr<LayoutTransform> layoutTransform )
         {
             u32 depth = 0;
 
