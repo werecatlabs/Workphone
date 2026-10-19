@@ -64,6 +64,9 @@ namespace
     class TestMesh : public ClawMesh
     {
     public:
+        mutable u64 materialQueries = 0;
+        SmartPtr<IMaterial> getMaterial( s32 index = -1 ) const override
+        { ++materialQueries; return ClawMesh::getMaterial( index ); }
         TestMesh()
         {
             m_mesh = wp_graphics_mesh_create();
@@ -256,16 +259,25 @@ namespace
         for( u32 mode = 0; mode < 6; ++mode )
         {
             material->setEditorUInt( "roughnessSource", mode );
-            for( int repeat = 0; repeat < 2; ++repeat )
+            ClawMaterialDrawRecords records;
+            records.capture( &mesh ); renderer.prepareMaterialRecords( records );
+            for( int repeat = 0; repeat < 4; ++repeat )
             {
                 metallic->requests = roughness->requests = packed->requests = 0;
                 renderer.clear( ColourF::Black );
-                renderer.renderMesh( &mesh, Matrix4F::identity() );
+                if( repeat < 2 ) renderer.renderMesh( &mesh, Matrix4F::identity() );
+                else ok &= renderer.renderMeshRecords( &mesh, Matrix4F::identity(), records, *records.find( &mesh ) );
                 ok &= check( metallic->requests == ( roughnessSlots[mode] == 2u ? 2u : 1u ) &&
                              roughness->requests == ( roughnessSlots[mode] == 3u ? 1u : 0u ) &&
                              packed->requests == ( roughnessSlots[mode] == 25u ? 1u : 0u ),
-                             "new and cached draws must resolve the texture owner for each authored roughness mode" );
+                             "direct and captured draws must resolve current native views for every roughness mode" );
             }
+            const auto staleBinding = *records.find( &mesh );
+            records.clear();
+            const auto beforeRejected = claw_foliage_contracts::statistics( native );
+            ok &= check( !renderer.renderMeshRecords( &mesh, Matrix4F::identity(), records, staleBinding ) &&
+                         claw_foliage_contracts::statistics( native ).draws == beforeRejected.draws,
+                         "stale material publications must reject before issuing GPU work" );
         }
         MaterialShader shader( "ColorOnly" );
         shader.addParameter( MaterialShaderParameterType::Colour, "Color" )
@@ -292,6 +304,55 @@ namespace
                          pixels[offset + ( red ? 1u : 0u )] < 10,
                          "retained typed parameter edits must reach GPU pixels without manual apply" );
         }
+        // Exercise the actual scene capture/submission path, including a main-only
+        // mesh and retained jobs reused after a material edit.
+        parameters.Set( color, ColourF::Red );
+        auto scene = make_ptr<ClawScene>();
+        scene->setEnableShadows( false );
+        TestMesh second;
+        second.setMaterial( material ); second.setCastShadows( false );
+        for( auto current : { &mesh, &second } )
+        {
+            wp_graphics_mesh_compute_aabb( current->getNativeMesh() );
+            current->bindNativeRenderObject( wp_graphics_scene_create_object( scene->getNativeScene() ) );
+            current->setVisibilityFlags( ~u32( 0 ) );
+        }
+        ok &= check( scene->prepareRenderJobs( nullptr, true, &renderer ), "scene material publication must prepare" );
+        ClawScene::MaterialPreparationStatistics materialStats;
+        ClawScene::PreparationTiming timing;
+        ok &= check( scene->getPreparedMaterialStatistics( materialStats ) && materialStats.records == 1 &&
+                     materialStats.bindings == 2 && materialStats.meshes == 2 && materialStats.preparations <= 1 &&
+                     scene->getPreparedTiming( timing ) && timing.material_prepare_ns > 0 &&
+                     timing.total_ns >= timing.main_prepare_ns + timing.shadow_derive_ns + timing.material_prepare_ns,
+                     "scene captures one shared record for the union of main/shadow sections and profiles its work" );
+        const auto queries = mesh.materialQueries + second.materialQueries;
+        std::weak_ptr<const MaterialRenderState> retired = material->getRenderState();
+        parameters.Set( color, ColourF::Green );
+        // The legacy native descriptor adapter independently retains its last
+        // synchronized snapshot. Advance it so this check isolates scene ownership.
+        material->getNativeMaterial();
+        for( int view = 0; view < 2; ++view )
+        {
+            renderer.clear( ColourF::Black );
+            scene->render( static_cast<IRenderer *>( &renderer ) );
+            const auto pixels = claw_foliage_contracts::pixels( native );
+            const auto offset = ( 32u * 64u + 32u ) * 4u;
+            ok &= check( pixels[offset] > 200 && pixels[offset + 1] < 10 &&
+                         mesh.materialQueries + second.materialQueries == queries && !retired.expired(),
+                         "scene draws borrow frozen red records without reacquiring mesh materials" );
+        }
+        ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) && retired.expired(),
+                     "replacing scene jobs releases retired material versions" );
+        renderer.clear( ColourF::Black ); scene->render( static_cast<IRenderer *>( &renderer ) );
+        const auto currentPixels = claw_foliage_contracts::pixels( native );
+        const auto offset = ( 32u * 64u + 32u ) * 4u;
+        ok &= check( currentPixels[offset + 1] > 200 && currentPixels[offset] < 10,
+                     "the next scene publication displays the edited green material" );
+        scene->discardRenderJobs();
+        ok &= check( !scene->getPreparedMaterialStatistics( materialStats ) && materialStats.records == 0,
+                     "retired scene jobs report no retained material publication" );
+        mesh.bindNativeRenderObject( nullptr ); second.bindNativeRenderObject( nullptr );
+        second.setMaterial( nullptr ); scene->unload( nullptr );
         mesh.setMaterial( nullptr );
         material->unload( nullptr );
         renderer.setRenderTarget( nullptr );

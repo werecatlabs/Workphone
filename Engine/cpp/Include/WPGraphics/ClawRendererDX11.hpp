@@ -167,6 +167,8 @@ namespace workphone
             bool renderMeshRecords( ClawMesh *, const Matrix4F &, const ClawMaterialDrawRecords &,
                                     const ClawMaterialDrawRecords::Binding &,
                                     const wp_mat4f *view = nullptr, const wp_mat4f *projection = nullptr );
+            /** Reuse the renderer's bounded CPU preparation cache before publication. */
+            void prepareMaterialRecords( ClawMaterialDrawRecords & );
             /** Draw fixed-LOD instances through the same material/submesh path.
              * Returns submitted instance-sections; zero means no output. */
             u64 renderMeshInstances( ClawMesh *mesh, const wp_instance_pntc_dx11 *instances, u32 count );

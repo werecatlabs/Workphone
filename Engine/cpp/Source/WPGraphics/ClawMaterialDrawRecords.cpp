@@ -48,16 +48,30 @@ namespace workphone::render
         Record record;
         record.material = owner.material.get();
         record.state = owner.state.get();
-        if( record.state )
-        {
-            record.prepared = ClawMaterialRenderCache::prepare( *record.state );
-            ++m_preparations;
-        }
         const auto index = static_cast<u32>( m_records.size() );
         m_owners.push_back( std::move( owner ) );
         m_records.push_back( record );
         m_materials.emplace( record.material, index );
         return index;
+    }
+
+    void ClawMaterialDrawRecords::seal( ClawMaterialRenderCache *cache )
+    {
+        if( m_sealed ) return;
+        const auto before = cache ? cache->getPreparationCount() : 0;
+        for( size_t index = 0; index < m_records.size(); ++index )
+            if( auto &owner = m_owners[index]; owner.state )
+            {
+                m_records[index].prepared = cache ? cache->get( owner.state ) :
+                    ClawMaterialRenderCache::prepare( *owner.state );
+                if( !cache ) ++m_preparations;
+            }
+        if( cache ) m_preparations = cache->getPreparationCount() - before;
+        // Identity deduplication is only needed by the builder. Draws use the
+        // compact section indices and the mesh lookup, not this material map.
+        m_materials.clear();
+        m_materials.rehash( 0 );
+        m_sealed = true;
     }
 
     void ClawMaterialDrawRecords::capture( ClawMesh *mesh )
@@ -93,6 +107,12 @@ namespace workphone::render
         if( !m_sealed ) return nullptr;
         const auto found = m_meshes.find( mesh );
         return found == m_meshes.end() ? nullptr : &found->second;
+    }
+
+    u64 ClawMaterialDrawRecords::getDenseCapacityBytes() const
+    {
+        return m_records.capacity() * sizeof( Record ) + m_owners.capacity() * sizeof( Owner ) +
+            m_bindings.capacity() * sizeof( u32 );
     }
 
     bool ClawMaterialDrawRecords::valid( const Binding &binding, const ClawMesh *mesh, u32 sections ) const

@@ -899,7 +899,7 @@ namespace workphone
                             {
                                 pass.preparedScenes.push_back( clawScene );
                                 if( !clawScene->prepareRenderJobs( camera, owner->m_statisticsSnapshotRequested.load(),
-                                        dynamic_cast<ClawRendererDX11 *>( renderer.get() ) != nullptr ) )
+                                        dynamic_cast<ClawRendererDX11 *>( renderer.get() ) ) )
                                 {
                                     throw std::runtime_error(
                                         "Native transform/cull preparation failed." );

@@ -2,6 +2,7 @@
 #include <WPGraphics/ClawHammerSystem.hpp>
 #include <WPGraphics/ClawMaterial.hpp>
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
+#include <WPGraphics/ClawMaterialDrawRecords.hpp>
 #include <WPGraphics/ClawMaterialManager.hpp>
 #include <WPGraphics/ClawMaterialTechnique.hpp>
 #include <WPGraphics/ClawMaterialPass.hpp>
@@ -464,6 +465,197 @@ namespace
 
 namespace
 {
+    class CapturedMaterialMesh : public render::ClawMesh
+    {
+    public:
+        mutable u64 materialQueries = 0;
+        CapturedMaterialMesh()
+        {
+            m_mesh = wp_graphics_mesh_create();
+            require( m_mesh && wp_graphics_mesh_add_submesh( m_mesh, 0, 3, 0 ) == 0 &&
+                     wp_graphics_mesh_add_submesh( m_mesh, 3, 3, 1 ) == 1, "capture mesh sections" );
+        }
+        SmartPtr<render::IMaterial> getMaterial( s32 index = -1 ) const override
+        {
+            ++materialQueries;
+            return ClawMesh::getMaterial( index );
+        }
+    };
+
+    void runCapturedMaterialRecords( Fixture &fixture )
+    {
+        using namespace render;
+        auto material = make_ptr<ClawMaterial>();
+        material->load( nullptr ); material->setDiffuse( ColourF::Red );
+        CapturedMaterialMesh first, second;
+        for( auto mesh : { &first, &second } )
+        { mesh->setMaterial( material, 0 ); mesh->setMaterial( material, 1 ); }
+        ClawMaterialRenderCache cache;
+        ClawMaterialDrawRecords captured;
+        captured.capture( &first ); captured.capture( &second ); captured.capture( &first );
+        require( !captured.find( &first ), "unsealed records cannot be consumed" );
+        captured.seal( &cache );
+        const auto firstBinding = *captured.find( &first ), secondBinding = *captured.find( &second );
+        require( captured.getRecordCount() == 1 && captured.getBindingCount() == 4 &&
+                 captured.getMeshCount() == 2 && captured.getPreparationCount() == 1 &&
+                 first.materialQueries == 2 && second.materialQueries == 2,
+                 "shared materials capture once across repeated meshes and sections" );
+        auto snapshot = material->getRenderState();
+        const auto owners = snapshot.use_count();
+        for( u32 repeat = 0; repeat < 20000; ++repeat )
+        {
+            const auto record = captured.get( repeat % 2 ? firstBinding : secondBinding, repeat % 2 );
+            require( record && record->state == snapshot.get() && record->prepared.constants.base_color.x == 1,
+                     "dense records borrow the frozen owner and prepared constants" );
+        }
+        require( snapshot.use_count() == owners && first.materialQueries == 2 && second.materialQueries == 2,
+                 "warm borrowed records acquire no snapshot references or mesh materials" );
+        require( !captured.get( firstBinding, 2 ) && !captured.valid( firstBinding, &second, 2 ) &&
+                 !captured.valid( firstBinding, &first, 1 ), "wrong mesh/section ranges reject" );
+        ClawMaterialDrawRecords next;
+        next.capture( &first ); next.seal( &cache );
+        require( next.getPreparationCount() == 0 && !next.get( firstBinding, 0 ),
+                 "unchanged publications reuse preparation and reject foreign bindings" );
+        next.clear();
+        material->setDiffuse( ColourF::Green );
+        next.capture( &first ); next.seal( &cache );
+        const auto nextBinding = *next.find( &first );
+        require( next.getPreparationCount() == 1 &&
+                 next.get( nextBinding, 0 )->state->diffuseColour == ColourF::Green &&
+                 captured.get( firstBinding, 0 )->state->diffuseColour == ColourF::Red,
+                 "replacement publication retains the prior in-flight values" );
+        bool rejected = false;
+        try { next.capture( &second ); } catch( const std::logic_error & ) { rejected = true; }
+        require( rejected, "sealed publications reject mutation" );
+        std::weak_ptr<const MaterialRenderState> retired = snapshot;
+        snapshot.reset();
+        material->unload( nullptr );
+        require( !retired.expired() && captured.get( firstBinding, 0 )->state->diffuseColour == ColourF::Red,
+                 "captured owners survive material graph unload" );
+        captured.clear();
+        require( retired.expired() && !captured.get( firstBinding, 0 ),
+                 "publication retirement releases snapshots and rejects stale bindings" );
+        next.clear();
+        require( !next.get( nextBinding, 0 ), "slot reuse invalidates the previous publication" );
+        // More distinct materials than the preparation cache can retain. Draws
+        // from the sealed table must not thrash that cache between passes.
+        std::vector<SmartPtr<ClawMaterial>> manyMaterials;
+        std::vector<std::unique_ptr<CapturedMaterialMesh>> manyMeshes;
+        cache.clear();
+        for( u32 index = 0; index < 384; ++index )
+        {
+            auto value = make_ptr<ClawMaterial>(); value->load( nullptr );
+            value->setRoughness( f32( index ) / 384.0f );
+            auto mesh = std::make_unique<CapturedMaterialMesh>();
+            mesh->setMaterial( value, 0 ); mesh->setMaterial( value, 1 );
+            captured.capture( mesh.get() );
+            manyMaterials.push_back( value ); manyMeshes.push_back( std::move( mesh ) );
+        }
+        captured.seal( &cache );
+        require( captured.getRecordCount() == 384 && captured.getBindingCount() == 768 &&
+                 captured.getPreparationCount() == 384, "dense records exceed cache capacity without eviction during draws" );
+        for( u32 pass = 0; pass < 3; ++pass )
+            for( u32 index = 0; index < manyMeshes.size(); ++index )
+            {
+                const auto binding = captured.find( manyMeshes[index].get() );
+                const auto record = captured.get( *binding, pass % 2 );
+                require( record && record->prepared.constants.surface.y == f32( index ) / 384.0f &&
+                         manyMeshes[index]->materialQueries == 2,
+                         "multiple passes consume every retained dense record without live material resolution" );
+            }
+        require( cache.getPreparationCount() == 384, "record consumption never re-enters the bounded cache" );
+        captured.clear(); manyMeshes.clear();
+        for( auto &value : manyMaterials ) value->unload( nullptr );
+        first.setMaterial( nullptr ); second.setMaterial( nullptr );
+        fixture.graphics->pending.clear();
+    }
+
+    void benchmarkCapturedMaterialRecords( Fixture &fixture )
+    {
+        using namespace render;
+        constexpr int meshCount = 1000, frames = 30, samples = 7;
+        for( int materialCount : { 1, 100, 1000 } )
+        {
+            std::vector<SmartPtr<ClawMaterial>> materials;
+            std::vector<std::unique_ptr<CapturedMaterialMesh>> meshes;
+            for( int i = 0; i < materialCount; ++i )
+            {
+                auto material = make_ptr<ClawMaterial>(); material->load( nullptr );
+                material->setDiffuse( ColourF( f32( i % 97 ) / 97.0f, 0.3f, 0.7f, 1 ) );
+                materials.push_back( material );
+            }
+            for( int i = 0; i < meshCount; ++i )
+            {
+                auto mesh = std::make_unique<CapturedMaterialMesh>();
+                mesh->setMaterial( materials[i % materialCount], 0 );
+                mesh->setMaterial( materials[i % materialCount], 1 );
+                meshes.push_back( std::move( mesh ) );
+            }
+            struct Measurement { double ms; u64 checksum, preparations, denseBytes; };
+            const auto measure = [&]( bool captured ) {
+                ClawMaterialRenderCache cache;
+                for( auto &material : materials ) cache.get( material->getRenderState() );
+                const auto preparedBefore = cache.getPreparationCount();
+                u64 checksum = 0, denseBytes = 0;
+                const auto start = std::chrono::steady_clock::now();
+                for( int frame = 0; frame < frames; ++frame )
+                {
+                    ClawMaterialDrawRecords records;
+                    if( captured )
+                    {
+                        for( int pass = 0; pass < 2; ++pass )
+                            for( auto &mesh : meshes ) records.capture( mesh.get() );
+                        records.seal( &cache );
+                        denseBytes = records.getDenseCapacityBytes();
+                    }
+                    for( int pass = 0; pass < 2; ++pass )
+                        for( auto &mesh : meshes )
+                        {
+                            const auto binding = captured ? records.find( mesh.get() ) : nullptr;
+                            for( u32 section = 0; section < 2; ++section )
+                            {
+                                SmartPtr<IMaterial> material;
+                                MaterialRenderState::Ptr state;
+                                const ClawPreparedMaterialDX11 *prepared;
+                                if( captured ) prepared = &records.get( *binding, section )->prepared;
+                                else
+                                {
+                                    material = mesh->getMaterial( section );
+                                    state = static_cast<Material *>( material.get() )->getRenderState();
+                                    prepared = &cache.get( state );
+                                }
+                                auto draw = prepared->compose();
+                                draw.camera_position = { f32( pass ), 0, 0, 0 };
+                                checksum += material_cache_benchmark::consume( draw, prepared->textureSlots, prepared->filter );
+                            }
+                        }
+                }
+                return Measurement{ std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - start ).count(), checksum,
+                    cache.getPreparationCount() - preparedBefore, denseBytes };
+            };
+            std::array<double, samples> oldTimes{}, newTimes{};
+            Measurement before{}, after{};
+            for( int sample = 0; sample < samples; ++sample )
+            {
+                if( sample % 2 ) { after = measure( true ); before = measure( false ); }
+                else { before = measure( false ); after = measure( true ); }
+                require( before.checksum == after.checksum, "scene records benchmark output parity" );
+                oldTimes[sample] = before.ms; newTimes[sample] = after.ms;
+            }
+            std::sort( oldTimes.begin(), oldTimes.end() ); std::sort( newTimes.begin(), newTimes.end() );
+            std::cout << "workload=scene_records materials=" << materialCount << " meshes=" << meshCount
+                << " frames=" << frames << " sections=2 passes=2 samples=" << samples
+                << " direct_median_ms=" << oldTimes[samples / 2] << " captured_median_ms=" << newTimes[samples / 2]
+                << " direct_preparations=" << before.preparations << " captured_preparations=" << after.preparations
+                << " captured_dense_capacity_bytes=" << after.denseBytes
+                << " checksum=" << after.checksum << '\n';
+            meshes.clear();
+            for( auto &material : materials ) material->unload( nullptr );
+            fixture.graphics->pending.clear();
+        }
+    }
+
     render::MaterialShader observedSchema()
     {
         render::MaterialShader schema( "ObservedPBR" );
@@ -815,11 +1007,17 @@ int main( int argc, char **argv )
         material_cache_benchmark::contracts();
         runMaterialPreparation();
         Fixture fixture;
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-records" )
+        {
+            benchmarkCapturedMaterialRecords( fixture );
+            return 0;
+        }
         if( argc == 2 && std::string( argv[1] ) == "--benchmark-publication" )
         {
             benchmarkObservedParameters();
             return 0;
         }
+        runCapturedMaterialRecords( fixture );
         runObservedParameters( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );

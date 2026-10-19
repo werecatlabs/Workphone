@@ -868,7 +868,7 @@ namespace workphone
             bool profiled = false;
             std::unique_ptr<ClawMaterialDrawRecords> materials;
 
-            void captureMaterials()
+            void captureMaterials( ClawRendererDX11 &renderer )
             {
                 if( materials ) return;
                 auto publication = std::make_unique<ClawMaterialDrawRecords>();
@@ -879,7 +879,7 @@ namespace workphone
                         if( auto object = wp_graphics_cull_result_get_object( view, index ) )
                             publication->capture( static_cast<ClawMesh *>(
                                 wp_graphics_object_get_submit_data( object ) ) );
-                publication->seal();
+                renderer.prepareMaterialRecords( *publication );
                 materials = std::move( publication );
             }
 
@@ -903,7 +903,7 @@ namespace workphone
         }
 
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile,
-                                           bool captureMaterials )
+                                           ClawRendererDX11 *materialRenderer )
         {
             using Clock = std::chrono::steady_clock;
             const auto start = profile ? Clock::now() : Clock::time_point{};
@@ -928,7 +928,7 @@ namespace workphone
             {
                 return false;
             }
-            if( captureMaterials ) jobs->captureMaterials();
+            if( materialRenderer ) jobs->captureMaterials( *materialRenderer );
             const auto materialEnd = profile ? Clock::now() : Clock::time_point{};
             if( profile )
             {
@@ -940,7 +940,7 @@ namespace workphone
                 jobs->timing.shadow_derive_ns = static_cast<u64>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>( shadowEnd - mainEnd )
                         .count() );
-                jobs->timing.material_prepare_ns = captureMaterials ? static_cast<u64>(
+                jobs->timing.material_prepare_ns = materialRenderer ? static_cast<u64>(
                     std::chrono::duration_cast<std::chrono::nanoseconds>( materialEnd - shadowEnd ).count() ) : 0;
                 jobs->profiled = true;
             }
@@ -1028,6 +1028,7 @@ namespace workphone
             out.bindings = records.getBindingCount();
             out.meshes = records.getMeshCount();
             out.preparations = records.getPreparationCount();
+            out.dense_capacity_bytes = records.getDenseCapacityBytes();
             return true;
         }
 
@@ -1057,7 +1058,7 @@ namespace workphone
                                                      camera ? camera->getNativeCamera() : nullptr );
 
                 const bool temporaryJobs = !m_nativeRenderJobs;
-                if( temporaryJobs && !prepareRenderJobs( rawRenderer->getCamera(), false, dx11Renderer != nullptr ) )
+                if( temporaryJobs && !prepareRenderJobs( rawRenderer->getCamera(), false, dx11Renderer ) )
                 {
                     throw std::runtime_error( "Native scene job preparation failed." );
                 }
@@ -1089,7 +1090,7 @@ namespace workphone
                 {
                     // Normally prepared with culling. A caller that explicitly
                     // disabled capture can still switch to DX11 before drawing.
-                    jobs->captureMaterials();
+                    jobs->captureMaterials( *dx11Renderer );
                     const auto foliage = getFoliageBatches();
                     const auto foliageMask =
                         m_scene->visibility_mask &
@@ -1436,6 +1437,7 @@ namespace workphone
                     {
                         ClawRendererDX11 *renderer;
                         const ClawMaterialDrawRecords *materials;
+                        bool failed = false;
                         wp_mat4f view, projection;
                     } meshSubmission{};
 
@@ -1460,11 +1462,11 @@ namespace workphone
                             const auto binding = submission.materials->find( mesh );
                             if( !binding || !renderer->renderMeshRecords( mesh, Matrix4F( world->m[0] ),
                                     *submission.materials, *binding, &submission.view, &submission.projection ) )
-                                return 0;
+                                submission.failed = true;
                             return 1;
                         },
                         &meshSubmission );
-                    if( submission != WP_GRAPHICS_CULL_OK )
+                    if( submission != WP_GRAPHICS_CULL_OK || meshSubmission.failed )
                     {
                         throw std::runtime_error( "Stale colour draw snapshot." );
                     }

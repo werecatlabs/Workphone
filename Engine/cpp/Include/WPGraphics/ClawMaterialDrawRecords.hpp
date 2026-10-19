@@ -1,6 +1,7 @@
 #ifndef WP_CLAW_MATERIAL_DRAW_RECORDS_HPP
 #define WP_CLAW_MATERIAL_DRAW_RECORDS_HPP
 
+#include <WPGraphics/WPClawHammerPrerequisites.hpp>
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <unordered_map>
 #include <vector>
@@ -33,7 +34,7 @@ namespace workphone::render
         ClawMaterialDrawRecords( const ClawMaterialDrawRecords & ) = delete;
         ClawMaterialDrawRecords &operator=( const ClawMaterialDrawRecords & ) = delete;
         void capture( ClawMesh *mesh );
-        void seal() { m_sealed = true; }
+        void seal( ClawMaterialRenderCache *cache = nullptr );
         // Retire owners and invalidate old bindings, retaining reusable capacity.
         void clear();
         const Binding *find( const ClawMesh *mesh ) const;
@@ -44,6 +45,9 @@ namespace workphone::render
         size_t getBindingCount() const { return m_bindings.size(); }
         size_t getMeshCount() const { return m_meshes.size(); }
         u64 getPreparationCount() const { return m_preparations; }
+        /** Actual vector capacity bytes for records/owners/section indices.
+         * Excludes lookup maps, snapshots/resources and allocator bookkeeping. */
+        u64 getDenseCapacityBytes() const;
 
     private:
         struct Owner

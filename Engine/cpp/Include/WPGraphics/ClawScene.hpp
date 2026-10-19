@@ -23,6 +23,7 @@ namespace workphone
         class CameraVisibilitySet;
         class ClawFoliageBatch;
         class ClawFoliageWorld;
+        class ClawRendererDX11;
         struct ClawFoliageInteraction;
 
         /**
@@ -100,12 +101,13 @@ namespace workphone
             /** Render owner: prepare CPU jobs before binding an offscreen target. */
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera );
             bool prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile,
-                                    bool captureMaterials = true );
+                                    ClawRendererDX11 *materialRenderer = nullptr );
 
             /** Owner elapsed CPU time for an explicitly profiled successful
              * preparation. Main includes capture/transforms/culling/sorting and
              * worker waits; shadow includes validation/derivation/sorting.
-             * Total also includes retirement/setup. These are not GPU times. */
+             * Material includes snapshot capture and cached CPU preparation;
+             * total also includes retirement/setup. These are not GPU times. */
             struct PreparationTiming
             {
                 u64 total_ns = 0, main_prepare_ns = 0, shadow_derive_ns = 0;
@@ -132,7 +134,7 @@ namespace workphone
             bool getPreparedStorageStatistics( wp_graphics_cull_storage_stats * ) const;
             struct MaterialPreparationStatistics
             {
-                u64 records = 0, bindings = 0, meshes = 0, preparations = 0;
+                u64 records = 0, bindings = 0, meshes = 0, preparations = 0, dense_capacity_bytes = 0;
             };
             /** Copied scene material publication counts; false/zero after retirement. */
             bool getPreparedMaterialStatistics( MaterialPreparationStatistics & ) const;

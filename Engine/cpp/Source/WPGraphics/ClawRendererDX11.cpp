@@ -854,6 +854,13 @@ namespace workphone::render
         return renderMeshBatch( mesh, Matrix4F::identity(), instances, count );
     }
 
+    void ClawRendererDX11::prepareMaterialRecords( ClawMaterialDrawRecords &records )
+    {
+        if( records.getRecordCount() && !m_materialRenderCache )
+            m_materialRenderCache = std::make_unique<ClawMaterialRenderCache>();
+        records.seal( m_materialRenderCache.get() );
+    }
+
     bool ClawRendererDX11::renderMeshRecords( ClawMesh *mesh, const Matrix4F &transform,
         const ClawMaterialDrawRecords &records, const ClawMaterialDrawRecords::Binding &binding,
         const wp_mat4f *view, const wp_mat4f *projection )
@@ -918,6 +925,7 @@ namespace workphone::render
             }
 
             const auto record = records && binding ? records->get( *binding, submeshIndex ) : nullptr;
+            if( records && !record ) continue;
             SmartPtr<IMaterial> pMaterial;
             MaterialRenderState::Ptr ownedState;
             if( !record )

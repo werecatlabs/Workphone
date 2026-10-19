@@ -2,7 +2,7 @@
 
 Date: 19 October 2026. Status: source-reviewed proposal; implementation and performance measurements are pending.
 
-Implementation checkpoint: shared layouts, typed access, immutable pass snapshots, active DX11 consumption and compact native storage are now implemented. See [implementation status](WPMATERIAL_IMPLEMENTATION_STATUS.md) for validation evidence and remaining production gates; the findings and estimates below record the original planning baseline.
+Implementation checkpoint: shared layouts, typed access, immutable pass snapshots, active DX11 consumption, compact native storage and scene-job dense material records are now implemented. See [implementation status](WPMATERIAL_IMPLEMENTATION_STATUS.md) for validation evidence and remaining production gates; the findings and estimates below record the original planning baseline.
 
 ## Objective and scope
 
