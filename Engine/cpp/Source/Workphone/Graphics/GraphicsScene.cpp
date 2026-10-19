@@ -52,18 +52,26 @@ namespace workphone::render
         // may be retained independently of this scene until state-manager teardown.
         Array<SmartPtr<IStateContext>> contexts;
         if( auto context = getStateContext() )
+        {
             contexts.push_back( context );
+        }
         if( auto context = getSceneNodeContext() )
+        {
             contexts.push_back( context );
+        }
         for( auto &[id, weakContext] : m_graphicsObjectContexts )
         {
             if( auto context = weakContext.lock() )
+            {
                 contexts.push_back( context );
+            }
         }
 
         auto listener = getStateListener();
         if( listener )
+        {
             listener->unload( nullptr );
+        }
         m_graphicsObjectContexts.clear();
         m_sceneNodeContext = nullptr;
         setStateContext( nullptr );
@@ -74,7 +82,9 @@ namespace workphone::render
         for( auto &context : contexts )
         {
             if( listener )
+            {
                 context->removeStateListener( listener );
+            }
             for( auto &state : context->getStates() )
             {
                 if( state && state->getOwnerPtr() == this )
@@ -86,14 +96,20 @@ namespace workphone::render
 
             const auto owned = context->getOwnerPtr() == this;
             if( owned )
+            {
                 context->setOwner( nullptr );
+            }
             if( owned || ( !context->getOwnerPtr() && context->getStates().empty() &&
                            context->getStateListeners().empty() ) )
             {
                 if( manager )
+                {
                     manager->removeStateContext( context );
+                }
                 else
+                {
                     context->unload( nullptr );
+                }
             }
         }
     }
@@ -130,21 +146,27 @@ namespace workphone::render
             for( auto &camera : cameras )
             {
                 if( camera )
+                {
                     graphicsSystem->unloadObject( camera );
+                }
             }
 
             auto sceneNodes = m_sceneNodes.snapshot();
             for( auto &sceneNode : sceneNodes )
             {
                 if( sceneNode )
+                {
                     graphicsSystem->unloadObject( sceneNode );
+                }
             }
 
             auto terrains = m_terrains.snapshot();
             for( auto &terrain : terrains )
             {
                 if( terrain )
+                {
                     graphicsSystem->unloadObject( terrain );
+                }
             }
         }
 
@@ -508,7 +530,9 @@ namespace workphone::render
     bool GraphicsScene::removeGraphicsObject( SmartPtr<ISharedObject> graphicsObject )
     {
         if( !graphicsObject || m_isClearing )
+        {
             return false;
+        }
 
         if( graphicsObject->isDerived<IGraphicsCamera>() )
         {
@@ -716,7 +740,9 @@ namespace workphone::render
     bool GraphicsScene::removeSceneNode( SmartPtr<IGraphicsSceneNode> sceneNode )
     {
         if( !sceneNode || m_isClearing )
+        {
             return false;
+        }
 
         auto applicationManager = core::IApplicationManager::instancePtr();
         auto graphicsSystem = applicationManager->getGraphicsSystemPtr();
@@ -969,48 +995,59 @@ namespace workphone::render
             return false;
         }
 
-        ScopedLock lock( this );
-
         // State owners are intrusive weak pointers.  A queued state update can outlive its
         // owner, so locking the owner here would first have to dereference potentially
         // reclaimed memory.  Match the stored address against objects kept alive by this
         // scene instead; only a live matching object may receive the update.
-        auto owner = state->getOwnerPtr();
+        auto owner = state->getOwner();
         if( !owner )
         {
             return false;
         }
 
-        for( auto &camera : m_cameras )
+        if( owner->isDerived<IGraphicsCamera>() )
         {
-            if( camera && camera->handleStateChanged( state ) )
+            for( auto &camera : m_cameras )
             {
-                return true;
+                if( camera && camera->handleStateChanged( state ) )
+                {
+                    return true;
+                }
             }
         }
-
-        for( auto &graphicsObject : m_graphicsObjects )
+        else if( owner->isDerived<IGraphicsSceneNode>() )
         {
-            if( graphicsObject && graphicsObject->handleStateChanged( state ) )
+            for( auto &sceneNode : m_sceneNodes )
             {
-                return true;
+                if( sceneNode && sceneNode->handleStateChanged( state ) )
+                {
+                    return true;
+                }
             }
         }
-
-        for( auto &sceneNode : m_sceneNodes )
+        else if( owner->isDerived<ISky>() )
         {
-            if( sceneNode && sceneNode->handleStateChanged( state ) )
+            for( auto &sky : m_skies )
             {
-                return true;
+                if( sky && sky->handleStateChanged( state ) )
+                {
+                    return true;
+                }
             }
         }
-
-        for( auto &sky : m_skies )
+        else if( owner->isDerived<IGraphicsObject>() )
         {
-            if( sky && sky->handleStateChanged( state ) )
+            for( auto &graphicsObject : m_graphicsObjects )
             {
-                return true;
+                if( graphicsObject && graphicsObject->handleStateChanged( state ) )
+                {
+                    return true;
+                }
             }
+        }
+        else
+        {
+            WP_LOG_WARNING( "GraphicsScene::handleStateChanged: Unhandled state owner type." );
         }
 
         return false;

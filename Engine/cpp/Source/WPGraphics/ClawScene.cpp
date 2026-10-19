@@ -530,9 +530,13 @@ namespace workphone
                 auto graphicsObject = workphone::static_pointer_cast<IGraphicsObject>( object );
                 graphicsObject->setCreator( this );
                 if( auto nativeLight = dynamic_pointer_cast<ClawLight>( graphicsObject ) )
+                {
                     nativeLight->load( nullptr );
+                }
                 else
+                {
                     graphicsSystem->loadObject( graphicsObject, true );
+                }
 
                 if( auto light = dynamic_pointer_cast<IGraphicsLight>( graphicsObject ) )
                 {
@@ -575,7 +579,9 @@ namespace workphone
             if( !dynamic_pointer_cast<ClawLight>( light ) ||
                 light->getType() != LightTypes::LT_DIRECTIONAL ||
                 std::find( lights.begin(), lights.end(), light ) == lights.end() )
+            {
                 return false;
+            }
             m_primaryDirectionalLight = light;
             return true;
         }
@@ -591,10 +597,16 @@ namespace workphone
             };
             if( visibleDirectional( preferred ) &&
                 std::find( lights.begin(), lights.end(), preferred ) != lights.end() )
+            {
                 return preferred;
+            }
             for( const auto &light : lights )
+            {
                 if( visibleDirectional( light ) )
+                {
                     return light;
+                }
+            }
             return nullptr;
         }
 
@@ -608,7 +620,9 @@ namespace workphone
             {
                 std::lock_guard<std::mutex> lock( m_primaryLightMutex );
                 if( m_primaryDirectionalLight.lock() == light )
+                {
                     m_primaryDirectionalLight = nullptr;
+                }
                 m_lights.erase( std::remove( m_lights.begin(), m_lights.end(), light ), m_lights.end() );
             }
             return true;
@@ -863,7 +877,8 @@ namespace workphone
         static wp_u64 cullProfileClock( void * )
         {
             return static_cast<wp_u64>( std::chrono::duration_cast<std::chrono::nanoseconds>(
-                std::chrono::steady_clock::now().time_since_epoch() ).count() );
+                                            std::chrono::steady_clock::now().time_since_epoch() )
+                                            .count() );
         }
 
         bool ClawScene::prepareRenderJobs( SmartPtr<IGraphicsCamera> camera, bool profile )
@@ -880,9 +895,9 @@ namespace workphone
             auto jobs = std::make_shared<NativeRenderJobs>();
             jobs->camera = camera;
             const auto mainStart = profile ? Clock::now() : Clock::time_point{};
-            jobs->main = wp_graphics_scene_prepare_cull_profiled(
-                m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN,
-                profile ? cullProfileClock : nullptr, nullptr );
+            jobs->main =
+                wp_graphics_scene_prepare_cull_profiled( m_scene, nullptr, WP_GRAPHICS_CULL_PASS_MAIN,
+                                                         profile ? cullProfileClock : nullptr, nullptr );
             const auto mainEnd = profile ? Clock::now() : Clock::time_point{};
             jobs->shadow =
                 wp_graphics_cull_result_create_view( jobs->main, nullptr, WP_GRAPHICS_CULL_PASS_SHADOW );
@@ -921,7 +936,7 @@ namespace workphone
         bool ClawScene::getPreparedPhaseTiming( wp_graphics_cull_timing_stats *out ) const
         {
             return wp_graphics_cull_result_get_timing_stats(
-                m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr, out ) != 0;
+                       m_nativeRenderJobs ? m_nativeRenderJobs->main : nullptr, out ) != 0;
         }
 
         bool ClawScene::validateRenderJobs() const
@@ -939,9 +954,11 @@ namespace workphone
 
         u32 ClawScene::getPreparedTransformDispatchCount() const
         {
-            return m_nativeRenderJobs ?
-                wp_graphics_cull_result_get_transform_dispatch_count(m_nativeRenderJobs->main) +
-                wp_graphics_cull_result_get_transform_dispatch_count(m_nativeRenderJobs->shadow) : 0;
+            return m_nativeRenderJobs ? wp_graphics_cull_result_get_transform_dispatch_count(
+                                            m_nativeRenderJobs->main ) +
+                                            wp_graphics_cull_result_get_transform_dispatch_count(
+                                                m_nativeRenderJobs->shadow )
+                                      : 0;
         }
 
         bool ClawScene::getPreparedJobStatistics( wp_transform_job_stats *transforms,
@@ -1368,6 +1385,7 @@ namespace workphone
                             WP_LOG_ERROR( "ClawScene foliage unavailable: " + foliageFrameError );
                         }
                     }
+
                     // Use the material-aware C++ draw path for native mesh objects while
                     // retaining the native scene's visibility filtering and queue ordering.
                     struct MeshSubmission
@@ -1545,11 +1563,6 @@ namespace workphone
 
         bool ClawScene::handleStateChanged( SmartPtr<IState> &state )
         {
-            if( GraphicsScene::handleStateChanged( state ) )
-            {
-                return true;
-            }
-
             if( state->getOwnerPtr() == this )
             {
                 try
@@ -1578,6 +1591,15 @@ namespace workphone
                 catch( std::exception &e )
                 {
                     WP_LOG_EXCEPTION( e );
+                }
+            }
+            else
+            {
+                ScopedLock lock( this );
+
+                if( GraphicsScene::handleStateChanged( state ) )
+                {
+                    return true;
                 }
             }
 
