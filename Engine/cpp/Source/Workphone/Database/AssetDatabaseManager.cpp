@@ -842,9 +842,13 @@ namespace workphone
         }
         if( transaction.commit() && !inserted.empty() )
         {
-            for( const auto &entry : inserted )
+            for( auto &entry : inserted )
+            {
                 entry.first->getHandle()->setUUID( entry.second );
-            invalidateCatalog();
+            }
+            // Observe our committed revision now, so the next lookup does not
+            // publish the same import a second time as an external change.
+            refreshDatabaseRevision();
         }
     }
     void AssetDatabaseManager::updateResourceEntry( SmartPtr<ISharedObject> object )

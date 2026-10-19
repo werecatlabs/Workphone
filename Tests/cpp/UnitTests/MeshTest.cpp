@@ -692,6 +692,12 @@ BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )
     const auto folder = String( directory.generic_string() );
     app->getFileSystem()->addFolder( folder, true );
     guard.addCleanup( [app, folder]() mutable { app->getFileSystem()->removeFileArchive( folder ); } );
+    // The importer retains actors and meshes between calls. Release this large
+    // temporary graph before the guard restores the previous project and scene.
+    guard.addCleanup( [loader]() mutable {
+        loader->unload( nullptr );
+        loader->load( nullptr );
+    } );
     loader->setOverwrite( true );
     const auto start = std::chrono::steady_clock::now();
     auto actor = loader->loadActor( model.generic_string() );
@@ -735,13 +741,19 @@ BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )
     const auto prefabPath = ( directory / "benchmark.prefab" ).generic_string();
     const auto prefabStart = std::chrono::steady_clock::now();
     app->getPrefabManager()->savePrefab( prefabPath, actor );
+    const auto saved = std::chrono::steady_clock::now();
     BOOST_REQUIRE( std::filesystem::is_regular_file( prefabPath ) );
     auto prefab = app->getPrefabManager()->loadPrefab( prefabPath );
+    const auto parsed = std::chrono::steady_clock::now();
     BOOST_REQUIRE( prefab );
     auto instance = prefab->createActor();
     BOOST_REQUIRE( instance );
     BOOST_TEST_MESSAGE( "Prefab save/load seconds=" << std::chrono::duration<double>(
         std::chrono::steady_clock::now() - prefabStart ).count() );
+    BOOST_TEST_MESSAGE( "Prefab save=" << std::chrono::duration<double>( saved - prefabStart ).count()
+                        << " parse=" << std::chrono::duration<double>( parsed - saved ).count()
+                        << " instantiate=" << std::chrono::duration<double>(
+                            std::chrono::steady_clock::now() - parsed ).count() );
     size_t instanceMeshes = 0;
     pending = { instance };
     while( !pending.empty() )
