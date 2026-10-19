@@ -976,30 +976,33 @@ namespace workphone::scene
 
     void GameActor::updateTransform()
     {
-        if( auto transform = getTransformPtr() )
-        {
-            transform->update();
-        }
-
-        auto children = getChildren();
-        for( auto &child : children )
-        {
-            if( child )
-            {
-                child->updateTransform();
-            }
-        }
-
         auto state = getState();
         switch( state )
         {
         case State::Edit:
         case State::Play:
         {
-            auto components = getComponents();
-            for( auto &component : components )
+            if( auto transform = getTransformPtr() )
             {
-                if( component )
+                transform->update();
+            }
+
+            if( m_childrenHead )
+            {
+                ScopedLock lock( &m_childrenMutex, false );
+
+                for( auto child = m_childrenHead; child != nullptr; child = child->nextChild.load() )
+                {
+                    child->updateTransform();
+                }
+            }
+
+            if( m_componentsHead )
+            {
+                ScopedLock lock( &m_componentsMutex, false );
+
+                for( auto component = m_componentsHead; component != nullptr;
+                     component = component->m_next.load() )
                 {
                     component->updateTransform();
                 }
@@ -1010,8 +1013,6 @@ namespace workphone::scene
         {
         }
         }
-
-        updateBounds();
     }
 
     Array<SmartPtr<IComponent>> GameActor::getComponents() const
@@ -1720,7 +1721,7 @@ namespace workphone::scene
                     auto components = child->getComponents();
                     for( auto &component : components )
                     {
-                        if (!component->isLoaded())
+                        if( !component->isLoaded() )
                         {
                             component->load( nullptr );
                         }
@@ -2750,7 +2751,8 @@ namespace workphone::scene
                 const auto childBounds = child->getLocalAABB();
                 if( childBounds.isFinite() && childBounds.isValid() )
                 {
-                    mergeBounds( child->getLocalTransform().transformAABB( childBounds ) );
+                    auto childTransform = child->getLocalTransform();
+                    mergeBounds( childTransform.transformAABB( childBounds ) );
                 }
             }
         }

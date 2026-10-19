@@ -9,6 +9,7 @@ namespace workphone
 {
     namespace render
     {
+
         /**
          * @class ClawSceneNode
          * @brief Implementation of a scene node specifically for Claw graphics integration.
@@ -56,6 +57,8 @@ namespace workphone
             WP_CLASS_REGISTER_DECL;
 
         protected:
+            void applyNativeTransform( wp_scenenode *node, const Transform3<real_Num> &transform );
+
             /**
              * @brief Configures the state context for the scene node.
              */

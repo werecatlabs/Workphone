@@ -405,33 +405,13 @@ namespace workphone::scene
 
                                 if( !m_dirtyActorTransforms.empty() )
                                 {
-                                    Array<SmartPtr<IGameActor>> dirtyActorTransforms;
-                                    dirtyActorTransforms.reserve( 1024 );
-
                                     SmartPtr<ITransform> transform;
                                     while( m_dirtyActorTransforms.try_pop( transform ) )
                                     {
                                         if( auto actor = transform->getActor() )
                                         {
-                                            dirtyActorTransforms.push_back( actor );
+                                            actor->updateTransform();
                                         }
-                                    }
-
-                                    Array<SmartPtr<IGameActor>> uniqueActors;
-                                    uniqueActors.reserve( dirtyActorTransforms.size() );
-
-                                    for( auto &actor : dirtyActorTransforms )
-                                    {
-                                        if( std::find( uniqueActors.begin(), uniqueActors.end(),
-                                                       actor ) == uniqueActors.end() )
-                                        {
-                                            uniqueActors.push_back( actor );
-                                        }
-                                    }
-
-                                    for( auto &actor : uniqueActors )
-                                    {
-                                        actor->updateTransform();
                                     }
                                 }
 
@@ -455,18 +435,8 @@ namespace workphone::scene
 
                                 if( !m_dirtyTransforms.empty() )
                                 {
-                                    Array<SmartPtr<IGameActor>> actors;
-                                    actors.reserve( 1024 );
-
                                     SmartPtr<IGameActor> actor;
                                     while( m_dirtyTransforms.try_pop( actor ) )
-                                    {
-                                        actors.push_back( actor );
-                                    }
-
-                                    //std::cout << "Num actors: " << actors.size() << std::endl;
-
-                                    for( auto &actor : actors )
                                     {
                                         actor->updateTransform();
                                     }
@@ -477,7 +447,10 @@ namespace workphone::scene
                                     SmartPtr<IComponent> component;
                                     while( m_dirtyComponents.try_pop( component ) )
                                     {
-                                        //component->updateDirty();
+                                        auto actor = component->getActor();
+                                        auto previousFlags = actor->getPreviousFlags();
+                                        auto newFlags = actor->getFlags();
+                                        actor->updateDirty( previousFlags, newFlags );
                                     }
                                 }
 
