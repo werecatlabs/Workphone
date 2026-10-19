@@ -24,6 +24,7 @@ namespace workphone
         class ClawFoliageBatch;
         class ClawFoliageWorld;
         class ClawRendererDX11;
+        class ClawMaterialDrawRecords;
         struct ClawFoliageInteraction;
 
         /**
@@ -135,6 +136,9 @@ namespace workphone
             struct MaterialPreparationStatistics
             {
                 u64 records = 0, bindings = 0, meshes = 0, preparations = 0, dense_capacity_bytes = 0;
+                // Allocations for this publication; bytes describe its storage lifetime.
+                u64 storage_allocations = 0, retained_storage_bytes = 0, peak_storage_bytes = 0;
+                bool reused_storage = false;
             };
             /** Copied scene material publication counts; false/zero after retirement. */
             bool getPreparedMaterialStatistics( MaterialPreparationStatistics & ) const;
@@ -223,6 +227,8 @@ namespace workphone
             mutable std::mutex m_foliageMutex;
             struct NativeRenderJobs;
             std::shared_ptr<NativeRenderJobs> m_nativeRenderJobs;
+            // Empty retired storage, never in-flight resources or draw records.
+            std::unique_ptr<ClawMaterialDrawRecords> m_materialRecordWorkspace;
             struct FoliageWorldState;
             std::unique_ptr<FoliageWorldState> m_foliageWorlds;
         };

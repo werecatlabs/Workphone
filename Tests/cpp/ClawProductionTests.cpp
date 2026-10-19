@@ -81,6 +81,16 @@ namespace
         }
     };
 
+    class MaterialStorageScene : public ClawScene
+    {
+    public:
+        std::shared_ptr<void> retainJobs() const { return m_nativeRenderJobs; }
+        u64 retainedBytes() const
+        { return m_materialRecordWorkspace ? m_materialRecordWorkspace->getRetainedStorageBytes() : 0; }
+        u64 retainedAllocations() const
+        { return m_materialRecordWorkspace ? m_materialRecordWorkspace->getStorageAllocationCount() : 0; }
+    };
+
     class TestLightNode : public GraphicsSceneNode
     {
     public:
@@ -307,7 +317,7 @@ namespace
         // Exercise the actual scene capture/submission path, including a main-only
         // mesh and retained jobs reused after a material edit.
         parameters.Set( color, ColourF::Red );
-        auto scene = make_ptr<ClawScene>();
+        auto scene = make_ptr<MaterialStorageScene>();
         scene->setEnableShadows( false );
         TestMesh second;
         second.setMaterial( material ); second.setCastShadows( false );
@@ -341,18 +351,33 @@ namespace
                          mesh.materialQueries + second.materialQueries == queries && !retired.expired(),
                          "scene draws borrow frozen red records without reacquiring mesh materials" );
         }
-        ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) && retired.expired(),
-                     "replacing scene jobs releases retired material versions" );
+        auto inFlight = scene->retainJobs();
+        ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) && !retired.expired() &&
+                     scene->getPreparedMaterialStatistics( materialStats ) && !materialStats.reused_storage,
+                     "a retained consumer prevents storage reuse and preserves old material owners" );
+        inFlight.reset();
+        ok &= check( retired.expired(), "releasing the final old consumer retires its material version" );
         renderer.clear( ColourF::Black ); scene->render( static_cast<IRenderer *>( &renderer ) );
         const auto currentPixels = claw_foliage_contracts::pixels( native );
         const auto offset = ( 32u * 64u + 32u ) * 4u;
         ok &= check( currentPixels[offset + 1] > 200 && currentPixels[offset] < 10,
                      "the next scene publication displays the edited green material" );
+        ok &= check( scene->prepareRenderJobs( nullptr, false, &renderer ) &&
+                     scene->getPreparedMaterialStatistics( materialStats ) && materialStats.reused_storage &&
+                     materialStats.storage_allocations == 0 && materialStats.retained_storage_bytes > 0,
+                     "the next exclusive publication reuses storage without upstream allocations" );
         scene->discardRenderJobs();
-        ok &= check( !scene->getPreparedMaterialStatistics( materialStats ) && materialStats.records == 0,
+        ok &= check( !scene->getPreparedMaterialStatistics( materialStats ) && materialStats.records == 0 &&
+                     scene->retainedBytes() > 0,
                      "retired scene jobs report no retained material publication" );
+        const auto warmStorageAllocations = scene->retainedAllocations();
+        renderer.clear( ColourF::Black ); scene->render( static_cast<IRenderer *>( &renderer ) );
+        ok &= check( !scene->getPreparedMaterialStatistics( materialStats ) &&
+                     scene->retainedAllocations() == warmStorageAllocations,
+                     "temporary direct scene renders also recycle storage after their borrow ends" );
         mesh.bindNativeRenderObject( nullptr ); second.bindNativeRenderObject( nullptr );
         second.setMaterial( nullptr ); scene->unload( nullptr );
+        ok &= check( scene->retainedBytes() == 0, "scene unload releases retired storage capacity" );
         mesh.setMaterial( nullptr );
         material->unload( nullptr );
         renderer.setRenderTarget( nullptr );

@@ -25,6 +25,66 @@ namespace workphone::render
     }
 
     ClawMaterialDrawRecords::ClawMaterialDrawRecords() : m_publication( newPublication() ) {}
+    ClawMaterialDrawRecords::~ClawMaterialDrawRecords() = default;
+
+    size_t ClawMaterialDrawRecords::StorageResource::payloadOffset( size_t alignment )
+    {
+        return ( sizeof( Block ) + alignment - 1 ) & ~( alignment - 1 );
+    }
+
+    ClawMaterialDrawRecords::StorageResource::~StorageResource()
+    {
+        while( m_blocks )
+        {
+            const auto block = m_blocks;
+            m_blocks = block->allNext;
+            std::pmr::new_delete_resource()->deallocate( block, block->total, block->allocationAlignment );
+        }
+    }
+
+    void *ClawMaterialDrawRecords::StorageResource::do_allocate( size_t requested, size_t alignment )
+    {
+        // MSVC's pool returns all but one empty chunk upstream on clear. Keep
+        // those chunks here until scene retirement so subsequent frames can
+        // reuse them too. The list contains pool chunks/arrays, not each node.
+        for( auto link = &m_free; m_cache && *link; link = &( *link )->freeNext )
+            if( auto block = *link; block->requested == requested && block->alignment == alignment )
+            {
+                *link = block->freeNext;
+                return reinterpret_cast<char *>( block ) + payloadOffset( alignment );
+            }
+        const auto offset = payloadOffset( alignment );
+        if( requested > std::numeric_limits<size_t>::max() - offset ) throw std::bad_alloc();
+        const auto total = offset + requested;
+        const auto allocationAlignment = std::max( alignment, alignof( Block ) );
+        auto pointer = std::pmr::new_delete_resource()->allocate( total, allocationAlignment );
+        auto block = ::new( pointer ) Block{ m_blocks, nullptr, requested, alignment, total, allocationAlignment };
+        m_blocks = block;
+        ++m_counters.allocations;
+        m_counters.bytes += total;
+        m_counters.peak = std::max( m_counters.peak, m_counters.bytes );
+        return static_cast<char *>( pointer ) + offset;
+    }
+
+    void ClawMaterialDrawRecords::StorageResource::do_deallocate( void *pointer, size_t requested, size_t alignment )
+    {
+        (void)requested;
+        auto block = reinterpret_cast<Block *>( static_cast<char *>( pointer ) - payloadOffset( alignment ) );
+        if( m_cache )
+        {
+            block->freeNext = m_free;
+            m_free = block;
+        }
+        else
+        {
+            auto link = &m_blocks;
+            while( *link != block ) link = &( *link )->allNext;
+            *link = block->allNext;
+            const auto total = block->total, allocationAlignment = block->allocationAlignment;
+            std::pmr::new_delete_resource()->deallocate( block, total, allocationAlignment );
+            m_counters.bytes -= total;
+        }
+    }
 
     u32 ClawMaterialDrawRecords::captureMaterial( SmartPtr<IMaterial> material )
     {
@@ -67,10 +127,9 @@ namespace workphone::render
                 if( !cache ) ++m_preparations;
             }
         if( cache ) m_preparations = cache->getPreparationCount() - before;
-        // Identity deduplication is only needed by the builder. Draws use the
-        // compact section indices and the mesh lookup, not this material map.
+        // Release builder entries, retaining buckets and pooled nodes for the
+        // next publication. No material/resource owner lives in this map.
         m_materials.clear();
-        m_materials.rehash( 0 );
         m_sealed = true;
     }
 

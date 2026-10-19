@@ -27,6 +27,7 @@
 #include <vector>
 #include <thread>
 #include <atomic>
+#include <optional>
 #include "workphone_graphics_material.h"
 #include "MaterialRenderCacheBenchmark.hpp"
 
@@ -564,6 +565,46 @@ namespace
                          "multiple passes consume every retained dense record without live material resolution" );
             }
         require( cache.getPreparationCount() == 384, "record consumption never re-enters the bounded cache" );
+        // Warm/reuse storage without retaining the material owners. Exercise
+        // more entries than the preparation cache and changing mesh identities.
+        for( int frame = 0; frame < 3; ++frame )
+        {
+            captured.clear();
+            for( auto &mesh : manyMeshes ) captured.capture( mesh.get() );
+            captured.seal( &cache );
+        }
+        const auto warmAllocations = captured.getStorageAllocationCount();
+        const auto retainedBytes = captured.getRetainedStorageBytes();
+        auto retiredBinding = *captured.find( manyMeshes.front().get() );
+        for( int frame = 0; frame < 32; ++frame )
+        {
+            captured.clear();
+            std::vector<std::unique_ptr<CapturedMaterialMesh>> retiredMeshes;
+            if( frame % 4 == 0 )
+            {
+                for( auto &value : manyMaterials )
+                {
+                    auto mesh = std::make_unique<CapturedMaterialMesh>();
+                    mesh->setMaterial( value, 0 ); mesh->setMaterial( value, 1 );
+                    retiredMeshes.push_back( std::move( mesh ) );
+                }
+                manyMeshes.swap( retiredMeshes ); // Keep old addresses alive during the check.
+            }
+            require( !captured.get( retiredBinding, 0 ) && captured.getRecordCount() == 0,
+                     "storage reuse never revives retired bindings or records" );
+            for( auto &mesh : manyMeshes ) captured.capture( mesh.get() );
+            captured.seal( &cache );
+            require( retiredMeshes.empty() || !captured.find( retiredMeshes.front().get() ),
+                     "storage reuse removes old mesh identity mappings" );
+            if( captured.getStorageAllocationCount() != warmAllocations || captured.getRetainedStorageBytes() != retainedBytes )
+                std::cerr << "storage_reuse frame=" << frame << " allocations=" << captured.getStorageAllocationCount()
+                          << " expected=" << warmAllocations << " bytes=" << captured.getRetainedStorageBytes()
+                          << " expected_bytes=" << retainedBytes << '\n';
+            require( captured.getStorageAllocationCount() == warmAllocations &&
+                     captured.getRetainedStorageBytes() == retainedBytes,
+                     "warm publication storage makes no upstream allocations and has bounded retained bytes" );
+            retiredBinding = *captured.find( manyMeshes.front().get() );
+        }
         captured.clear(); manyMeshes.clear();
         for( auto &value : manyMaterials ) value->unload( nullptr );
         first.setMaterial( nullptr ); second.setMaterial( nullptr );
@@ -591,33 +632,46 @@ namespace
                 mesh->setMaterial( materials[i % materialCount], 1 );
                 meshes.push_back( std::move( mesh ) );
             }
-            struct Measurement { double ms; u64 checksum, preparations, denseBytes; };
-            const auto measure = [&]( bool captured ) {
+            struct Measurement { double ms; u64 checksum, preparations, denseBytes, allocations, retainedBytes; };
+            const auto measure = [&]( int mode ) {
+                const bool captured = mode != 0;
                 ClawMaterialRenderCache cache;
                 for( auto &material : materials ) cache.get( material->getRenderState() );
+                ClawMaterialDrawRecords workspace;
+                if( mode == 2 ) for( int warm = 0; warm < 3; ++warm )
+                {
+                    for( int pass = 0; pass < 2; ++pass )
+                        for( auto &mesh : meshes ) workspace.capture( mesh.get() );
+                    workspace.seal( &cache ); workspace.clear();
+                }
+                const auto storageBefore = workspace.getStorageAllocationCount();
                 const auto preparedBefore = cache.getPreparationCount();
-                u64 checksum = 0, denseBytes = 0;
+                u64 checksum = 0, denseBytes = 0, allocations = 0, retainedBytes = 0;
                 const auto start = std::chrono::steady_clock::now();
                 for( int frame = 0; frame < frames; ++frame )
                 {
-                    ClawMaterialDrawRecords records;
+                    std::optional<ClawMaterialDrawRecords> cold;
+                    auto records = mode == 2 ? &workspace : nullptr;
+                    if( mode == 1 ) { cold.emplace(); records = &*cold; }
                     if( captured )
                     {
                         for( int pass = 0; pass < 2; ++pass )
-                            for( auto &mesh : meshes ) records.capture( mesh.get() );
-                        records.seal( &cache );
-                        denseBytes = records.getDenseCapacityBytes();
+                            for( auto &mesh : meshes ) records->capture( mesh.get() );
+                        records->seal( &cache );
+                        denseBytes = records->getDenseCapacityBytes();
+                        retainedBytes = std::max( retainedBytes, records->getRetainedStorageBytes() );
+                        if( mode == 1 ) allocations += records->getStorageAllocationCount();
                     }
                     for( int pass = 0; pass < 2; ++pass )
                         for( auto &mesh : meshes )
                         {
-                            const auto binding = captured ? records.find( mesh.get() ) : nullptr;
+                            const auto binding = captured ? records->find( mesh.get() ) : nullptr;
                             for( u32 section = 0; section < 2; ++section )
                             {
                                 SmartPtr<IMaterial> material;
                                 MaterialRenderState::Ptr state;
                                 const ClawPreparedMaterialDX11 *prepared;
-                                if( captured ) prepared = &records.get( *binding, section )->prepared;
+                                if( captured ) prepared = &records->get( *binding, section )->prepared;
                                 else
                                 {
                                     material = mesh->getMaterial( section );
@@ -629,27 +683,33 @@ namespace
                                 checksum += material_cache_benchmark::consume( draw, prepared->textureSlots, prepared->filter );
                             }
                         }
+                    if( mode == 2 ) workspace.clear(); // Include owner retirement in the timer.
                 }
+                if( mode == 2 ) allocations = workspace.getStorageAllocationCount() - storageBefore;
                 return Measurement{ std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - start ).count(), checksum,
-                    cache.getPreparationCount() - preparedBefore, denseBytes };
+                    cache.getPreparationCount() - preparedBefore, denseBytes, allocations, retainedBytes };
             };
-            std::array<double, samples> oldTimes{}, newTimes{};
-            Measurement before{}, after{};
+            std::array<double, samples> oldTimes{}, newTimes{}, reusedTimes{};
+            std::array<Measurement, 3> result{};
             for( int sample = 0; sample < samples; ++sample )
             {
-                if( sample % 2 ) { after = measure( true ); before = measure( false ); }
-                else { before = measure( false ); after = measure( true ); }
-                require( before.checksum == after.checksum, "scene records benchmark output parity" );
-                oldTimes[sample] = before.ms; newTimes[sample] = after.ms;
+                for( int order = 0; order < 3; ++order )
+                { const auto mode = ( sample + order ) % 3; result[mode] = measure( mode ); }
+                require( result[0].checksum == result[1].checksum && result[0].checksum == result[2].checksum &&
+                         result[2].allocations == 0, "scene records output parity and zero warm storage allocation" );
+                oldTimes[sample] = result[0].ms; newTimes[sample] = result[1].ms; reusedTimes[sample] = result[2].ms;
             }
             std::sort( oldTimes.begin(), oldTimes.end() ); std::sort( newTimes.begin(), newTimes.end() );
+            std::sort( reusedTimes.begin(), reusedTimes.end() );
             std::cout << "workload=scene_records materials=" << materialCount << " meshes=" << meshCount
                 << " frames=" << frames << " sections=2 passes=2 samples=" << samples
                 << " direct_median_ms=" << oldTimes[samples / 2] << " captured_median_ms=" << newTimes[samples / 2]
-                << " direct_preparations=" << before.preparations << " captured_preparations=" << after.preparations
-                << " captured_dense_capacity_bytes=" << after.denseBytes
-                << " checksum=" << after.checksum << '\n';
+                << " reused_median_ms=" << reusedTimes[samples / 2]
+                << " direct_preparations=" << result[0].preparations << " captured_preparations=" << result[2].preparations
+                << " cold_storage_allocations=" << result[1].allocations << " reused_storage_allocations=" << result[2].allocations
+                << " retained_storage_bytes=" << result[2].retainedBytes << " captured_dense_capacity_bytes=" << result[2].denseBytes
+                << " checksum=" << result[2].checksum << '\n';
             meshes.clear();
             for( auto &material : materials ) material->unload( nullptr );
             fixture.graphics->pending.clear();

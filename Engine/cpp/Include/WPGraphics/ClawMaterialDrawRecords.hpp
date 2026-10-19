@@ -5,6 +5,7 @@
 #include <WPGraphics/ClawMaterialRenderCache.hpp>
 #include <unordered_map>
 #include <vector>
+#include <memory_resource>
 
 namespace workphone::render
 {
@@ -31,6 +32,7 @@ namespace workphone::render
         };
 
         ClawMaterialDrawRecords();
+        ~ClawMaterialDrawRecords();
         ClawMaterialDrawRecords( const ClawMaterialDrawRecords & ) = delete;
         ClawMaterialDrawRecords &operator=( const ClawMaterialDrawRecords & ) = delete;
         void capture( ClawMesh *mesh );
@@ -48,6 +50,11 @@ namespace workphone::render
         /** Actual vector capacity bytes for records/owners/section indices.
          * Excludes lookup maps, snapshots/resources and allocator bookkeeping. */
         u64 getDenseCapacityBytes() const;
+        /** Table storage only, including pool metadata and lookup maps. Counts
+         * actual upstream requests; excludes resource objects and allocator overhead. */
+        u64 getStorageAllocationCount() const { return m_storage.allocations; }
+        u64 getRetainedStorageBytes() const { return m_storage.bytes; }
+        u64 getPeakStorageBytes() const { return m_storage.peak; }
 
     private:
         struct Owner
@@ -56,11 +63,40 @@ namespace workphone::render
             MaterialRenderState::Ptr state;
         };
         u32 captureMaterial( SmartPtr<IMaterial> material );
-        std::vector<Record> m_records;
-        std::vector<Owner> m_owners;
-        std::vector<u32> m_bindings;
-        std::unordered_map<const IMaterial *, u32> m_materials;
-        std::unordered_map<const ClawMesh *, Binding> m_meshes;
+        struct StorageCounters { u64 allocations = 0, bytes = 0, peak = 0; };
+        class StorageResource final : public std::pmr::memory_resource
+        {
+        public:
+            StorageResource( StorageCounters &counters, bool cache ) : m_counters( counters ), m_cache( cache ) {}
+            ~StorageResource() override;
+        private:
+            struct Block
+            {
+                Block *allNext, *freeNext;
+                size_t requested, alignment, total, allocationAlignment;
+            };
+            Block *m_blocks = nullptr, *m_free = nullptr;
+            StorageCounters &m_counters;
+            bool m_cache;
+            static size_t payloadOffset( size_t alignment );
+            void *do_allocate( size_t bytes, size_t alignment ) override;
+            void do_deallocate( void *pointer, size_t bytes, size_t alignment ) override;
+            bool do_is_equal( const std::pmr::memory_resource &other ) const noexcept override
+            { return this == &other; }
+        };
+        // Declaration order keeps the resource alive until every container and
+        // pool allocation has been released. Only small blocks use the pool;
+        // large vector/bucket arrays retain their normal reusable capacities.
+        StorageCounters m_storage;
+        StorageResource m_poolStorage{ m_storage, true }, m_vectorStorage{ m_storage, false };
+        std::pmr::unsynchronized_pool_resource m_pool{ std::pmr::pool_options{ 32, 512 }, &m_poolStorage };
+        // Large arrays bypass chunk caching: geometric growth must not retain
+        // every former vector allocation alongside the current capacity.
+        std::pmr::vector<Record> m_records{ &m_vectorStorage };
+        std::pmr::vector<Owner> m_owners{ &m_vectorStorage };
+        std::pmr::vector<u32> m_bindings{ &m_vectorStorage };
+        std::pmr::unordered_map<const IMaterial *, u32> m_materials{ &m_pool };
+        std::pmr::unordered_map<const ClawMesh *, Binding> m_meshes{ &m_pool };
         u64 m_publication = 0, m_preparations = 0;
         bool m_sealed = false;
     };

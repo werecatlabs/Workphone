@@ -175,6 +175,7 @@ namespace workphone
         ClawScene::~ClawScene()
         {
             discardRenderJobs();
+            m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
@@ -248,6 +249,7 @@ namespace workphone
         void ClawScene::unload( SmartPtr<ISharedObject> data )
         {
             discardRenderJobs();
+            m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
             if( getLoadingState() == LoadingState::Unloaded )
@@ -268,6 +270,7 @@ namespace workphone
         wp_graphics_scene *ClawScene::releaseNativeScene()
         {
             discardRenderJobs();
+            m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
@@ -280,6 +283,7 @@ namespace workphone
         void ClawScene::clear()
         {
             discardRenderJobs();
+            m_materialRecordWorkspace.reset();
             clearFoliageBatches();
             clearFoliageWorlds();
             unbindNativeRenderObjects();
@@ -868,10 +872,16 @@ namespace workphone
             bool profiled = false;
             std::unique_ptr<ClawMaterialDrawRecords> materials;
 
-            void captureMaterials( ClawRendererDX11 &renderer )
+            bool reusedMaterialStorage = false;
+            u64 materialStorageAllocations = 0;
+
+            void captureMaterials( ClawRendererDX11 &renderer,
+                                   std::unique_ptr<ClawMaterialDrawRecords> &workspace )
             {
                 if( materials ) return;
-                auto publication = std::make_unique<ClawMaterialDrawRecords>();
+                reusedMaterialStorage = workspace != nullptr;
+                const auto previousAllocations = workspace ? workspace->getStorageAllocationCount() : 0;
+                auto publication = workspace ? std::move( workspace ) : std::make_unique<ClawMaterialDrawRecords>();
                 // The shadow view includes offscreen casters; the main view can
                 // also include objects that do not cast. Capture their union.
                 for( auto view : { main, shadow } )
@@ -880,6 +890,7 @@ namespace workphone
                             publication->capture( static_cast<ClawMesh *>(
                                 wp_graphics_object_get_submit_data( object ) ) );
                 renderer.prepareMaterialRecords( *publication );
+                materialStorageAllocations = publication->getStorageAllocationCount() - previousAllocations;
                 materials = std::move( publication );
             }
 
@@ -928,7 +939,7 @@ namespace workphone
             {
                 return false;
             }
-            if( materialRenderer ) jobs->captureMaterials( *materialRenderer );
+            if( materialRenderer ) jobs->captureMaterials( *materialRenderer, m_materialRecordWorkspace );
             const auto materialEnd = profile ? Clock::now() : Clock::time_point{};
             if( profile )
             {
@@ -1016,6 +1027,13 @@ namespace workphone
 
         void ClawScene::discardRenderJobs()
         {
+            // Reuse only after every consuming borrow has finished. Nested or
+            // retained jobs retire normally instead of recycling live storage.
+            if( m_nativeRenderJobs && m_nativeRenderJobs.use_count() == 1 && m_nativeRenderJobs->materials )
+            {
+                m_nativeRenderJobs->materials->clear();
+                m_materialRecordWorkspace = std::move( m_nativeRenderJobs->materials );
+            }
             m_nativeRenderJobs.reset();
         }
 
@@ -1029,6 +1047,10 @@ namespace workphone
             out.meshes = records.getMeshCount();
             out.preparations = records.getPreparationCount();
             out.dense_capacity_bytes = records.getDenseCapacityBytes();
+            out.storage_allocations = m_nativeRenderJobs->materialStorageAllocations;
+            out.retained_storage_bytes = records.getRetainedStorageBytes();
+            out.peak_storage_bytes = records.getPeakStorageBytes();
+            out.reused_storage = m_nativeRenderJobs->reusedMaterialStorage;
             return true;
         }
 
@@ -1069,15 +1091,18 @@ namespace workphone
                 {
                     ClawScene *scene;
                     bool temporary;
+                    std::shared_ptr<NativeRenderJobs> &borrowed;
 
                     ~JobCleanup()
                     {
                         if( temporary )
                         {
-                            scene->discardRenderJobs();
+                            const bool current = scene->m_nativeRenderJobs == borrowed;
+                            borrowed.reset();
+                            if( current ) scene->discardRenderJobs();
                         }
                     }
-                } cleanup{ this, temporaryJobs };
+                } cleanup{ this, temporaryJobs, jobs };
 
                 if( !validateRenderJobs() )
                 {
@@ -1090,7 +1115,7 @@ namespace workphone
                 {
                     // Normally prepared with culling. A caller that explicitly
                     // disabled capture can still switch to DX11 before drawing.
-                    jobs->captureMaterials( *dx11Renderer );
+                    jobs->captureMaterials( *dx11Renderer, m_materialRecordWorkspace );
                     const auto foliage = getFoliageBatches();
                     const auto foliageMask =
                         m_scene->visibility_mask &
