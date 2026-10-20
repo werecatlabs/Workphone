@@ -121,6 +121,7 @@ namespace workphone::scene
         {
             transformSystem.updateLocalFromWorld( m_handle, parentWorldTransformPtr );
         }
+
         transformSystem.setFlag( m_handle, localDirtyFlag, false );
     }
 
@@ -165,21 +166,12 @@ namespace workphone::scene
             {
                 updateFrameTime();
 
-                if( auto actor = getActorPtr() )
+                if( auto actor = getActor() )
                 {
                     auto applicationManager = core::IApplicationManager::instancePtr();
                     WP_ASSERT( applicationManager );
 
                     auto gameManager = applicationManager->getGameManagerPtr();
-
-                    auto transform = getSharedFromThis<ITransform>();
-                    gameManager->addDirtyTransform( transform );
-
-                    auto components = actor->getComponents();
-                    for( auto &component : components )
-                    {
-                        gameManager->addDirtyComponentTransform( component );
-                    }
 
                     if( cascade )
                     {
@@ -225,20 +217,6 @@ namespace workphone::scene
 
                 if( auto actor = getActor() )
                 {
-                    auto applicationManager = core::IApplicationManager::instancePtr();
-                    WP_ASSERT( applicationManager );
-
-                    auto sceneManager = applicationManager->getGameManager();
-
-                    auto transform = getSharedFromThis<ITransform>();
-                    sceneManager->addDirtyTransform( transform );
-
-                    auto components = actor->getComponents();
-                    for( auto &component : components )
-                    {
-                        sceneManager->addDirtyComponentTransform( component );
-                    }
-
                     if( cascade )
                     {
                         auto children = actor->getChildren();

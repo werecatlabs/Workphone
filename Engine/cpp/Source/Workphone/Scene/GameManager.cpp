@@ -405,8 +405,10 @@ namespace workphone::scene
 
                                 if( !m_dirtyActorTransforms.empty() )
                                 {
+                                    auto count = 0;
+
                                     SmartPtr<ITransform> transform;
-                                    while( m_dirtyActorTransforms.try_pop( transform ) )
+                                    while( m_dirtyActorTransforms.try_pop( transform ) && count++ < 2048 )
                                     {
                                         if( auto actor = transform->getActor() )
                                         {
@@ -780,13 +782,15 @@ namespace workphone::scene
 
     void GameManager::clear()
     {
-        if( m_numActors == 0 )
-        {
-            return;
-        }
+        m_queueProperties.clear();
+        m_dirtyActors.clear();
+        m_dirtyComponents.clear();
+        m_dirtyComponentTransforms.clear();
+        m_dirtyTransforms.clear();
+        m_dirtyActorTransforms.clear();
 
         auto actors = getActors();
-        for( auto actor : actors )
+        for( auto &actor : actors )
         {
             if( actor )
             {

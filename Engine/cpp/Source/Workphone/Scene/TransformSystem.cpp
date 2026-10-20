@@ -17,6 +17,21 @@ namespace workphone::scene
         }
     }  // namespace
 
+    bool TransformSystem::Handle::operator!=( const Handle &other ) const
+    {
+        return !( *this == other );
+    }
+
+    bool TransformSystem::Handle::operator==( const Handle &other ) const
+    {
+        return index == other.index && generation == other.generation;
+    }
+
+    bool TransformSystem::Handle::isValid() const
+    {
+        return index != invalidIndex;
+    }
+
     TransformSystem &TransformSystem::instance()
     {
         static TransformSystem system;
@@ -575,4 +590,9 @@ namespace workphone::scene
         m_frameDeltaTimes[index] = 0.0;
         m_referenceCounts[index] = 0;
     }
+
+    TransformSystem::TransformSystem() = default;
+
+    TransformSystem::~TransformSystem() = default;
+
 }  // namespace workphone::scene
