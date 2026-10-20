@@ -221,6 +221,27 @@ Each timed loop updates all 10,000 instances 20 times; each median uses seven sa
 
 Reproduction: build `WPMaterialParameterLayoutTests` in `RelWithDebInfo` and run it with `--benchmark`. The refreshed output including the publication binding is in `project_x64/material_observed_parameter_benchmark.txt`. Earlier baseline outputs remain in `material_parameter_benchmark_final.txt`, `material_native_test.log`, `material_unit_tests_final.log`, `material_unit_assertions.log`, `material_focused_tests_final.log` and `material_validation_tests.log`.
 
+## Optional DX11 split constant uploads (20 October 2026)
+
+`ClawRendererDX11::setSplitMaterialUploads(true)` opts an initialized renderer into separate surface (128 bytes, b1), view/lighting/fog (112 bytes, b6) and binding/transfer (32 bytes, b7) buffers. Transforms keep their existing separate buffer. The public 272-byte `wp_material_dx11` descriptor and legacy statistics structure retain their layouts. Both pixel-shader variants use one shared declaration. Names are absent from the upload path; fixed contiguous copies pack the blocks, and byte comparisons against the last successful upload suppress writes of unchanged blocks, including edits cancelled before drawing. Context invalidation rebinds existing buffers without invalidating their contents.
+
+Combined uploads remain the default. Enabling split uploads lazily creates three dynamic buffers and a pixel shader; partial creation failure releases temporary resources and retains the previous mode. Changes during RTT/HDR/shadow transactions reject; equal assignments succeed. Switching back retains split resources until renderer destruction. Each renderer reserves 272 bytes of CPU uploaded-value storage, plus counters/pointers/flags. Enabling adds 272 bytes of constant-buffer payload alongside the retained 272-byte combined buffer, three D3D resources and a shader; driver allocation overhead is not measured. This is a bounded renderer cache, not a GPU buffer per material.
+
+The additive size-tagged `wp_renderer_dx11_get_material_upload_statistics` reports successful maps and copied bytes for each block, plus map failures. The existing statistics reset clears these at the next frame boundary. The legacy `material_uploads` counter continues to count completed logical flushes, which may write zero, one or three blocks. These are CPU upload counts, not GPU bus/cache measurements.
+
+The production fixture rotates eight variants over seven samples, each alternating values for 512 native draws. Geometry is clipped out to isolate CPU upload/submission work. Combined uploads copy 139,264 bytes with 512 maps in every variant. Split results are:
+
+| Changed values | Copied bytes | Maps | Reduction in copied bytes |
+| --- | ---: | ---: | ---: |
+| Surface only | 65,536 | 512 | 52.9% |
+| View only | 57,344 | 512 | 58.8% |
+| Binding flags only | 16,384 | 512 | 88.2% |
+| All three blocks | 139,264 | 1,536 | 0% |
+
+The initial paired RelWithDebInfo WARP run measured combined medians of 4.697/4.753/4.773/4.659 ms and split medians of 5.050/4.777/4.835/5.829 ms for those four rows. There is no measured CPU speedup here, and fully changing materials incur additional Map overhead. Use the opt-in policy for workload evaluation; whole-scene hardware evidence is still required before changing the default. The pre-split baseline is retained in `project_x64/material_upload_baseline_evidence.log`; paired counters/timings are in `material_split_evidence.log`.
+
+Validation includes exact staging-buffer readback of all 17 distinct material vectors from slots b1/b6/b7, size-tagged statistics rejection/extension guards, invalid policy rejection, shadow transaction guards, unchanged/cancelled edits, and binding invalidation without re-upload. Existing rendered-feature pixel assertions run under both policies. Prepared material edits, transparency sorting, mesh shadows, terrain variants, foliage, animation and native RTT scene execution/rollback/resize contracts then run with split uploads enabled. Final builds and all five selected CTest suites passed in **Debug (31.76 s)** and **RelWithDebInfo (22.34 s)**: `material_parameter_layout`, `claw_dx11_targets`, `claw_production_render`, `material_load_sequence` and `cooked_material_resource`. Logs: `project_x64/material_split_debug_build.log`, `material_split_debug_final_build.log`, `material_split_debug_validation.log`, `material_split_final_build.log` and `material_split_final_validation.log`; the cooked RelWithDebInfo target build is in `material_split_cooked_build.log`. Device evidence identifies Microsoft Basic Render Driver/WARP, vendor 1414/device 008c, feature level b000. No interactive Editor soak or physical GPU run was performed for this slice. `git diff --check` passed.
+
 ## Remaining plan gates
 
 This is an integrated CPU storage/access and active DX11 consumption change, not completion of all production gates in the plan. Remaining work includes:
@@ -228,7 +249,7 @@ This is an integrated CPU storage/access and active DX11 consumption change, not
 1. Whole-material/scene allocation and cache profiling, changed-material stress workloads, multiple-view hardware timing and visual/Editor soak certification.
 2. Removing the transitional legacy/data-driven value mirror and extending the new scene-job dense records into the final persistent graphics/resource-generation table across frames/views. Native scene mesh draws now avoid per-draw material/snapshot/resource-owner acquisition; direct and specialized adapters remain to migrate.
 3. Scheduling one material publication per graphics update across independent legacy/high-level setters. Explicit material batches now coalesce mixed edits and legacy compound setters, in addition to owned parameter edit scopes and state write scopes. Independent calls outside a batch still publish separately.
-4. Backend shader-program binding maps and optional view/material/object constant-buffer separation, guided by upload measurements. Built-in DX11 mesh constants and semantic texture-slot maps now have bounded preparation caching; the combined per-draw submission remains.
+4. Backend shader-program binding maps and representative hardware evaluation of constant-buffer policy. Built-in DX11 constants and semantic texture-slot maps have bounded preparation caching; optional surface/view/binding uploads are implemented and instrumented, with combined uploads remaining the default because the WARP fixture does not show a CPU benefit.
 5. A versioned binary cooked material schema and full automatic live shader/program reload coordination. The current file/package formats and their load adapters remain in use.
 
 No claim of a complete frame-time improvement, native-view-cache removal, GPU speedup or full-plan certification follows from the parameter microbenchmark or a successful build.

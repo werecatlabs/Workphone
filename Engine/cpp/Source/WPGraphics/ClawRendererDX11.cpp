@@ -23,6 +23,11 @@
 
 namespace workphone::render
 {
+    bool ClawRendererDX11::setSplitMaterialUploads( bool enabled )
+    {
+        return m_renderer && wp_renderer_dx11_set_material_upload_mode(
+            wp_renderer_get_dx11( m_renderer ), enabled ? WP_DX11_MATERIAL_UPLOAD_SPLIT : WP_DX11_MATERIAL_UPLOAD_COMBINED );
+    }
     WP_CLASS_REGISTER_DERIVED( workphone::render, ClawRendererDX11, IRenderer3 );
 
     namespace

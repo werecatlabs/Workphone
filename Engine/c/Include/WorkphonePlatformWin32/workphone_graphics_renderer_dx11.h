@@ -83,6 +83,31 @@ typedef struct wp_material_dx11
     wp_vec4f fog_params;        /* mode (0 none, 1 exp, 2 exp2, 3 linear), density, start, end */
 } wp_material_dx11;
 
+/* Owner-thread upload policy for built-in PNTC/terrain/foliage shaders. Combined
+ * remains the default. Split lazily creates surface/view/binding buffers and a
+ * shader variant; failure preserves the previous policy. Changes reject during
+ * transactional RTT, HDR or shadow passes. Equal assignments are harmless. */
+enum { WP_DX11_MATERIAL_UPLOAD_COMBINED = 0, WP_DX11_MATERIAL_UPLOAD_SPLIT = 1 };
+wp_s32 wp_renderer_dx11_set_material_upload_mode( wp_renderer_dx11 *, wp_s32 mode );
+wp_s32 wp_renderer_dx11_get_material_upload_mode( const wp_renderer_dx11 * );
+
+/* Successful CPU writes into dynamic constant buffers, not GPU traffic/cache
+ * counters. Reset with the existing statistics reset at the next frame. The
+ * legacy material_uploads counter still counts completed logical flushes.
+ * Initialize struct_size. Too-small/null inputs reject without modifying output;
+ * larger callers receive this known prefix only, with struct_size set to it. */
+typedef struct wp_material_upload_statistics_dx11
+{
+    wp_u32 struct_size;
+    wp_u64 combined_uploads, combined_bytes;
+    wp_u64 surface_uploads, surface_bytes;
+    wp_u64 view_uploads, view_bytes;
+    wp_u64 binding_uploads, binding_bytes;
+    wp_u64 map_failures;
+} wp_material_upload_statistics_dx11;
+wp_s32 wp_renderer_dx11_get_material_upload_statistics(
+    const wp_renderer_dx11 *, wp_material_upload_statistics_dx11 * );
+
 /** Four-layer terrain constants. Texture slots are albedo/normal/ORM per layer,
  * followed by a linear RGBA control map. UV scales are cycles per local metre;
  * control_transform maps local XZ to texel-centred coordinates over the full grid.

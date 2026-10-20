@@ -320,9 +320,10 @@ public:
         ClawRendererDX11::setViewport(value);
     }
 };
-inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene = false) {
+inline bool integration(SmartPtr<IGraphicsWindow> window, bool withNativeScene = false, bool splitMaterials = false) {
     auto renderer = make_ptr<Renderer>(); renderer->load(window);
     require(renderer->isLoaded(), "Claw RTT integration renderer");
+    require(renderer->setSplitMaterialUploads(splitMaterials), "RTT material upload policy");
     auto target = make_ptr<ClawRenderTarget>(); target->setSize({32,32}); target->setActive(true);
     auto camera = make_ptr<ClawCamera>();
     auto viewport = target->addViewport(19, camera);

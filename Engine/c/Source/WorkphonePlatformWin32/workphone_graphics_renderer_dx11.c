@@ -111,14 +111,27 @@ static const wp_c8 s_ps_ptc_src[] = WP_HDR_OUTPUT_HLSL
     "    return t * i.color;\n"
     "}\n";
 
+/* One declaration for both shader variants. CPU surface packing deliberately
+ * keeps view constants and actual texture-transfer/readiness flags separate. */
+#define WP_MATERIAL_CONSTANTS_HLSL \
+    "#ifdef WP_MATERIAL_SPLIT_CONSTANTS\n" \
+    "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color; float4 specular_color;\n" \
+    " float4 surface; float4 uv_transform; float4 controls; float4 texture_sources; float4 projection; };\n" \
+    "cbuffer MaterialView : register(b6) { float4 light_color; float4 light_direction; float4 camera_position;\n" \
+    " float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n" \
+    "cbuffer MaterialBindings : register(b7) { float4 map_flags; float4 extra_map_flags; };\n" \
+    "#else\n" \
+    "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color; float4 specular_color;\n" \
+    " float4 light_color; float4 light_direction; float4 camera_position; float4 surface; float4 uv_transform;\n" \
+    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection;\n" \
+    " float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n" \
+    "#endif\n"
+
 /* ---- lit position + normal + texcoord + colour shaders --------------- */
 static const wp_c8 s_vs_pntc_src[] =
     "cbuffer Transform : register(b0) { row_major float4x4 mvp; row_major float4x4 world;\n"
     " row_major float4x4 normal_matrix; };\n"
-    "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
-    " float4 specular_color; float4 light_color; float4 light_direction;\n"
-    " float4 camera_position; float4 surface; float4 uv_transform;\n"
-    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n"
+    WP_MATERIAL_CONSTANTS_HLSL
     "struct VS_IN { float3 pos : POSITION; float3 normal : NORMAL;\n"
     " float2 uv : TEXCOORD0; uint color : COLOR; };\n"
     "struct VS_OUT { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
@@ -202,10 +215,7 @@ static const wp_c8 s_ps_pntc_src[] = WP_HDR_OUTPUT_HLSL
     " return lerp(lerp(terrainMacroHash(cell,seed),terrainMacroHash(cell+float2(1,0),seed),f.x),\n"
     " lerp(terrainMacroHash(cell+float2(0,1),seed),terrainMacroHash(cell+1.0,seed),f.x),f.y);\n"
     "}\n"
-    "cbuffer Material : register(b1) { float4 base_color; float4 emissive_color;\n"
-    " float4 specular_color; float4 light_color; float4 light_direction;\n"
-    " float4 camera_position; float4 surface; float4 uv_transform;\n"
-    " float4 controls; float4 map_flags; float4 extra_map_flags; float4 texture_sources; float4 projection; float4 ambient_color; float4 environment; float4 fog_color; float4 fog_params; };\n"
+    WP_MATERIAL_CONSTANTS_HLSL
     "struct PS_IN { float4 pos : SV_POSITION; float3 world_pos : TEXCOORD0;\n"
     " float3 normal : TEXCOORD1; float2 uv : TEXCOORD2; float4 color : COLOR;\n"
     " float3 object_pos : TEXCOORD3; float3 object_normal : TEXCOORD4; float4 clip_pos : TEXCOORD5; };\n"
@@ -450,6 +460,24 @@ static wp_renderer_dx11 *wp_dx11_renderers = NULL;
 static volatile LONG64 wp_dx11_rtt_generation = 0;
 static wp_s32 wp_rtt_dx11_view_allowed(wp_renderer_dx11 *, ID3D11ShaderResourceView *);
 
+typedef struct wp_material_surface_constants_dx11
+{
+    wp_vec4f base_color, emissive_color, specular_color;
+    wp_vec4f surface, uv_transform, controls, texture_sources, projection;
+} wp_material_surface_constants_dx11;
+typedef struct wp_material_view_constants_dx11
+{
+    wp_vec4f light_color, light_direction, camera_position;
+    wp_vec4f ambient_color, environment, fog_color, fog_params;
+} wp_material_view_constants_dx11;
+typedef struct wp_material_binding_constants_dx11
+{
+    wp_vec4f map_flags, extra_map_flags;
+} wp_material_binding_constants_dx11;
+typedef char wp_material_surface_size_check[sizeof(wp_material_surface_constants_dx11) == 128 ? 1 : -1];
+typedef char wp_material_view_size_check[sizeof(wp_material_view_constants_dx11) == 112 ? 1 : -1];
+typedef char wp_material_binding_size_check[sizeof(wp_material_binding_constants_dx11) == 32 ? 1 : -1];
+
 struct wp_renderer_dx11
 {
     wp_u64 rtt_generation;
@@ -459,6 +487,7 @@ struct wp_renderer_dx11
     wp_dx11_mesh_cache *meshes[WP_DX11_MESH_CACHE_BUCKETS];
     wp_renderer_dx11 *next_renderer;
     wp_render_statistics_dx11 statistics;
+    wp_material_upload_statistics_dx11 material_upload_statistics;
     double frame_intervals[WP_DX11_FRAME_SAMPLES];
     double interval_total, cpu_total, present_total, gpu_total;
     LARGE_INTEGER frame_start, last_present, clock_frequency;
@@ -543,6 +572,13 @@ struct wp_renderer_dx11
     wp_s32 terrain_dirty;
     ID3D11Buffer *cb_material;
     wp_material_dx11 material;
+    wp_s32 material_upload_mode;
+    wp_u32 material_split_valid;
+    ID3D11PixelShader *ps_pntc_split;
+    ID3D11Buffer *cb_material_surface, *cb_material_view, *cb_material_bindings;
+    wp_material_surface_constants_dx11 uploaded_surface;
+    wp_material_view_constants_dx11 uploaded_view;
+    wp_material_binding_constants_dx11 uploaded_bindings;
     ID3D11Texture2D *shadow_texture;
     ID3D11DepthStencilView *shadow_depth;
     ID3D11ShaderResourceView *shadow_view;
@@ -734,19 +770,23 @@ static void wp_renderer_dx11_update_mvp( wp_renderer_dx11 *r )
  * Internal helpers -- shader compilation
  * ====================================================================== */
 
-static HRESULT wp_renderer_dx11_compile_shader( const wp_c8 *source, const wp_c8 *entry,
-                                                const wp_c8 *target, ID3DBlob **blob )
+static HRESULT wp_renderer_dx11_compile_shader_options( const wp_c8 *source, const wp_c8 *entry,
+    const wp_c8 *target, const D3D_SHADER_MACRO *defines, ID3DBlob **blob )
 {
     ID3DBlob *errors = NULL;
     HRESULT hr;
 
-    hr = D3DCompile( source, strlen( source ), NULL, NULL, NULL, entry, target, 0, 0, blob, &errors );
+    hr = D3DCompile( source, strlen( source ), NULL, defines, NULL, entry, target, 0, 0, blob, &errors );
 
     if( errors )
         ID3D10Blob_Release( errors );
 
     return hr;
 }
+
+static HRESULT wp_renderer_dx11_compile_shader( const wp_c8 *source, const wp_c8 *entry,
+                                                const wp_c8 *target, ID3DBlob **blob )
+{ return wp_renderer_dx11_compile_shader_options( source, entry, target, NULL, blob ); }
 
 static wp_s32 wp_renderer_dx11_create_shaders( wp_renderer_dx11 *r )
 {
@@ -1477,6 +1517,45 @@ static wp_s32 wp_renderer_dx11_upload_constants( wp_renderer_dx11 *r, ID3D11Buff
 }
 
 static wp_f32 wp_renderer_dx11_view_samples_linear( ID3D11ShaderResourceView *view );
+static wp_s32 wp_renderer_dx11_upload_material_part( wp_renderer_dx11 *r, ID3D11Buffer *buffer,
+    const void *value, void *uploaded, size_t bytes, wp_u32 bit, wp_u64 *uploads, wp_u64 *total_bytes )
+{
+    if( ( r->material_split_valid & bit ) && !memcmp( value, uploaded, bytes ) ) return 1;
+    if( !wp_renderer_dx11_upload_constants( r, buffer, value, bytes ) )
+    { ++r->material_upload_statistics.map_failures; return 0; }
+    memcpy( uploaded, value, bytes );
+    r->material_split_valid |= bit;
+    ++*uploads; *total_bytes += bytes;
+    return 1;
+}
+
+static wp_s32 wp_renderer_dx11_upload_material( wp_renderer_dx11 *r )
+{
+    wp_material_surface_constants_dx11 surface;
+    wp_material_view_constants_dx11 view;
+    wp_material_binding_constants_dx11 bindings;
+    wp_material_upload_statistics_dx11 *stats = &r->material_upload_statistics;
+    if( r->material_upload_mode == WP_DX11_MATERIAL_UPLOAD_COMBINED )
+    {
+        if( !wp_renderer_dx11_upload_constants( r, r->cb_material, &r->material, sizeof( r->material ) ) )
+        { ++stats->map_failures; return 0; }
+        ++stats->combined_uploads; stats->combined_bytes += sizeof( r->material );
+        return 1;
+    }
+    memcpy( &surface.base_color, &r->material.base_color, sizeof(wp_vec4f) * 3 );
+    memcpy( &surface.surface, &r->material.surface, sizeof(wp_vec4f) * 3 );
+    memcpy( &surface.texture_sources, &r->material.texture_sources, sizeof(wp_vec4f) * 2 );
+    memcpy( &view.light_color, &r->material.light_color, sizeof(wp_vec4f) * 3 );
+    memcpy( &view.ambient_color, &r->material.ambient_color, sizeof(wp_vec4f) * 4 );
+    memcpy( &bindings.map_flags, &r->material.map_flags, sizeof(wp_vec4f) * 2 );
+    if( !wp_renderer_dx11_upload_material_part( r, r->cb_material_surface, &surface, &r->uploaded_surface,
+            sizeof(surface), 1, &stats->surface_uploads, &stats->surface_bytes ) ) return 0;
+    if( !wp_renderer_dx11_upload_material_part( r, r->cb_material_view, &view, &r->uploaded_view,
+            sizeof(view), 2, &stats->view_uploads, &stats->view_bytes ) ) return 0;
+    return wp_renderer_dx11_upload_material_part( r, r->cb_material_bindings, &bindings, &r->uploaded_bindings,
+            sizeof(bindings), 4, &stats->binding_uploads, &stats->binding_bytes );
+}
+
 static void wp_renderer_dx11_bind_output( wp_renderer_dx11 *r, wp_f32 texture_linear )
 {
     wp_vec4f controls;
@@ -2293,6 +2372,10 @@ void wp_renderer_dx11_destroy( wp_renderer_dx11 *r )
     if( r->terrain_control_sampler ) ID3D11SamplerState_Release( r->terrain_control_sampler );
     if( r->cb_material )
         ID3D11Buffer_Release( r->cb_material );
+    if( r->cb_material_surface ) ID3D11Buffer_Release( r->cb_material_surface );
+    if( r->cb_material_view ) ID3D11Buffer_Release( r->cb_material_view );
+    if( r->cb_material_bindings ) ID3D11Buffer_Release( r->cb_material_bindings );
+    if( r->ps_pntc_split ) ID3D11PixelShader_Release( r->ps_pntc_split );
     if( r->vb )
         ID3D11Buffer_Release( r->vb );
     if( r->ib )
@@ -2452,6 +2535,15 @@ void wp_renderer_dx11_reset_statistics( wp_renderer_dx11 *r )
     if( r ) InterlockedExchange( &r->reset_statistics, 1 );
 }
 
+wp_s32 wp_renderer_dx11_get_material_upload_statistics( const wp_renderer_dx11 *r,
+    wp_material_upload_statistics_dx11 *out )
+{
+    if( !r || !out || out->struct_size < sizeof( *out ) ) return 0;
+    *out = r->material_upload_statistics;
+    out->struct_size = sizeof( *out );
+    return 1;
+}
+
 static int compare_frame_interval( const void *a, const void *b )
 {
     double x = *(const double *)a, y = *(const double *)b;
@@ -2496,6 +2588,7 @@ static void begin_frame_statistics( wp_renderer_dx11 *r )
     if( InterlockedExchange( &r->reset_statistics, 0 ) )
     {
         memset( &r->statistics, 0, sizeof( r->statistics ) );
+        memset( &r->material_upload_statistics, 0, sizeof( r->material_upload_statistics ) );
         r->interval_total = r->cpu_total = r->present_total = r->gpu_total = 0;
         r->last_present.QuadPart = 0;
         ++r->statistics_epoch;
@@ -2856,6 +2949,52 @@ void wp_renderer_dx11_set_material( wp_renderer_dx11 *r,
     if( memcmp( &r->material, &resolved, sizeof( resolved ) ) == 0 ) return;
     r->material = resolved;
     r->material_dirty = 1;
+}
+
+wp_s32 wp_renderer_dx11_get_material_upload_mode( const wp_renderer_dx11 *r )
+{ return r ? r->material_upload_mode : -1; }
+
+wp_s32 wp_renderer_dx11_set_material_upload_mode( wp_renderer_dx11 *r, wp_s32 mode )
+{
+    static const D3D_SHADER_MACRO defines[] = { { "WP_MATERIAL_SPLIT_CONSTANTS", "1" }, { NULL, NULL } };
+    ID3D11Buffer *buffers[3] = { NULL, NULL, NULL };
+    ID3D11PixelShader *shader = NULL;
+    ID3DBlob *blob = NULL;
+    D3D11_BUFFER_DESC desc;
+    const UINT sizes[3] = { 128, 112, 32 };
+    wp_s32 i;
+    HRESULT hr;
+    if( !r || ( mode != WP_DX11_MATERIAL_UPLOAD_COMBINED && mode != WP_DX11_MATERIAL_UPLOAD_SPLIT ) ) return 0;
+    if( mode == r->material_upload_mode ) return 1;
+    if( r->rtt_active || r->hdr_active || r->shadow_pass ) return 0;
+    if( mode == WP_DX11_MATERIAL_UPLOAD_SPLIT && !r->ps_pntc_split )
+    {
+        hr = wp_renderer_dx11_compile_shader_options( s_ps_pntc_src, "ps_main", "ps_4_0", defines, &blob );
+        if( FAILED(hr) ) goto fail;
+        hr = ID3D11Device_CreatePixelShader( r->device, ID3D10Blob_GetBufferPointer(blob),
+            ID3D10Blob_GetBufferSize(blob), NULL, &shader );
+        if( FAILED(hr) ) goto fail;
+        memset( &desc, 0, sizeof(desc) );
+        desc.Usage = D3D11_USAGE_DYNAMIC; desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        for( i = 0; i < 3; ++i )
+        {
+            desc.ByteWidth = sizes[i];
+            if( FAILED( ID3D11Device_CreateBuffer( r->device, &desc, NULL, &buffers[i] ) ) ) goto fail;
+        }
+        r->ps_pntc_split = shader;
+        r->cb_material_surface = buffers[0]; r->cb_material_view = buffers[1]; r->cb_material_bindings = buffers[2];
+        ID3D10Blob_Release(blob);
+    }
+    r->material_upload_mode = mode;
+    r->material_dirty = 1;
+    wp_renderer_dx11_invalidate_state( r );
+    return 1;
+fail:
+    for( i = 0; i < 3; ++i ) if( buffers[i] ) ID3D11Buffer_Release(buffers[i]);
+    if( shader ) ID3D11PixelShader_Release(shader);
+    if( blob ) ID3D10Blob_Release(blob);
+    return 0;
 }
 
 void wp_renderer_dx11_set_environment( wp_renderer_dx11 *r, void *view, wp_f32 max_lod )
@@ -4155,7 +4294,7 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
     }
     if( r->material_dirty )
     {
-        if( !wp_renderer_dx11_upload_constants( r, r->cb_material, &r->material, sizeof( r->material ) ) )
+        if( !wp_renderer_dx11_upload_material( r ) )
             return 0;
         r->material_dirty = 0;
         ++r->statistics.material_uploads;
@@ -4178,6 +4317,9 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
     if( !r->pntc_bindings_valid )
     {
         ID3D11ShaderResourceView *shadow_view = r->shadow_pass ? NULL : r->shadow_view;
+        ID3D11Buffer *surface = r->material_upload_mode ? r->cb_material_surface : r->cb_material;
+        ID3D11Buffer *view = r->material_upload_mode ? r->cb_material_view : NULL;
+        ID3D11Buffer *bindings = r->material_upload_mode ? r->cb_material_bindings : NULL;
         ID3D11DeviceContext_PSSetConstantBuffers( r->context, 3, 1, &r->cb_terrain );
         ID3D11DeviceContext_PSSetShaderResources( r->context, 9, WP_TERRAIN_MATERIAL_VIEWS, r->terrain_views );
         ID3D11DeviceContext_PSSetSamplers( r->context, 3, 1, &r->terrain_control_sampler );
@@ -4187,12 +4329,15 @@ static wp_s32 wp_renderer_dx11_bind_geometry_pntc( wp_renderer_dx11 *r,
         ID3D11DeviceContext_PSSetSamplers( r->context, 2, 1, &r->shadow_sampler );
         ID3D11DeviceContext_IASetInputLayout( r->context, r->layout_pntc );
         ID3D11DeviceContext_VSSetShader( r->context, r->vs_pntc, NULL, 0 );
-        ID3D11DeviceContext_PSSetShader( r->context, r->ps_pntc, NULL, 0 );
-        ID3D11DeviceContext_VSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
-        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 1, 1, &r->cb_material );
+        ID3D11DeviceContext_PSSetShader( r->context,
+            r->material_upload_mode ? r->ps_pntc_split : r->ps_pntc, NULL, 0 );
+        ID3D11DeviceContext_VSSetConstantBuffers( r->context, 1, 1, &surface );
+        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 1, 1, &surface );
+        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 6, 1, &view );
+        ID3D11DeviceContext_PSSetConstantBuffers( r->context, 7, 1, &bindings );
         ID3D11DeviceContext_PSSetSamplers( r->context, 1, 1, &r->environment_sampler_state );
         ID3D11DeviceContext_IASetPrimitiveTopology( r->context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
-        r->statistics.state_bindings += 10;
+        r->statistics.state_bindings += 12;
     }
     if( !r->pntc_bindings_valid || r->bound_textures[0] != texture_view )
     {

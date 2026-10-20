@@ -73,6 +73,10 @@ namespace workphone
             /** Flush any pending GPU commands. */
             void flush() override;
 
+            /** Owner-thread opt-in surface/view/binding constant uploads. Call
+             * after load, outside transactional RTT/HDR/shadow passes. */
+            bool setSplitMaterialUploads( bool enabled );
+
             /**
              * @brief Clear the current render target with a solid colour.
              * @param colour Colour to clear the target with.

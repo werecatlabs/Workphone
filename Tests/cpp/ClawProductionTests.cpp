@@ -40,6 +40,10 @@
 #include <cstring>
 #include <cmath>
 #include <cstdlib>
+#include <array>
+#include <vector>
+#include <algorithm>
+#include <chrono>
 
 using namespace workphone;
 using namespace workphone::render;
@@ -456,6 +460,163 @@ namespace
         return ok;
     }
 
+    bool checkMaterialBuffer(wp_renderer_dx11 *native, unsigned slot, const std::vector<wp_vec4f> &expected)
+    {
+        auto context = static_cast<ID3D11DeviceContext *>(wp_renderer_dx11_get_context(native));
+        auto device = static_cast<ID3D11Device *>(wp_renderer_dx11_get_device(native));
+        ID3D11Buffer *buffer = nullptr, *staging = nullptr;
+        context->PSGetConstantBuffers(slot, 1, &buffer);
+        if(!check(buffer != nullptr, "split material buffer is bound")) return false;
+        D3D11_BUFFER_DESC desc{}; buffer->GetDesc(&desc);
+        bool ok = check(desc.ByteWidth == expected.size() * sizeof(wp_vec4f), "split material buffer has exact packed size");
+        desc.Usage = D3D11_USAGE_STAGING; desc.BindFlags = 0; desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        if(SUCCEEDED(device->CreateBuffer(&desc, nullptr, &staging))) {
+            context->CopyResource(staging, buffer);
+            D3D11_MAPPED_SUBRESOURCE mapped{};
+            const auto readable = SUCCEEDED(context->Map(staging, 0, D3D11_MAP_READ, 0, &mapped));
+            ok &= check(readable, "split material GPU constants can be read back");
+            if(readable) {
+                ok &= check(desc.ByteWidth == expected.size() * sizeof(wp_vec4f) &&
+                    std::memcmp(mapped.pData, expected.data(), expected.size() * sizeof(wp_vec4f)) == 0,
+                    "all material vectors retain their exact shader register packing");
+                context->Unmap(staging, 0);
+            }
+            staging->Release();
+        } else ok &= check(false, "split material staging buffer can be created");
+        buffer->Release();
+        return ok;
+    }
+
+    bool testMaterialUploadWork( ClawRendererDX11 &renderer )
+    {
+        claw_foliage_scene_contracts::Fixture fixture;
+        auto target = make_ptr<ClawRenderTarget>(); target->setSize( {64,64} );
+        renderer.setRenderTarget( target ); renderer.setCamera( nullptr ); renderer.disableShadows();
+        auto native = wp_renderer_get_dx11( renderer.getNativeRenderer() );
+        TestMesh mesh;
+        auto geometry = wp_renderer_dx11_prepare_mesh_geometry( native, mesh.getNativeMesh(), 0, 3 );
+        if( !check( geometry != nullptr, "material upload workload prepares native geometry" ) ) return false;
+        wp_mat4f identity{};
+        for( int axis = 0; axis < 4; ++axis ) identity.m[axis][axis] = 1;
+        auto world = identity; world.m[0][3] = 4; // Clip geometry to isolate CPU upload/submission work.
+        wp_renderer_dx11_set_world_matrix( native, &world );
+        wp_renderer_dx11_set_view_matrix( native, &identity );
+        wp_renderer_dx11_set_projection_matrix( native, &identity );
+        bool ok = true;
+        constexpr int samples = 7, draws = 512;
+        std::array<double,samples> timings[8];
+        wp_u64 uploads[8]{}, bytes[8]{}, maps[8]{};
+        ok &= check(wp_renderer_dx11_get_material_upload_mode(native) == WP_DX11_MATERIAL_UPLOAD_COMBINED, "combined material uploads remain the default");
+        ok &= check(!wp_renderer_dx11_set_material_upload_mode(native, -1), "invalid upload policy is rejected");
+        for( int sample = 0; sample < samples; ++sample ) for( int order = 0; order < 8; ++order )
+        {
+            const auto variant = ( sample + order ) % 8;
+            const auto policy = variant / 4, mode = variant % 4;
+            ok &= check(renderer.setSplitMaterialUploads(policy != 0), "material upload policy can switch between draws");
+            wp_material_dx11 material{};
+            material.base_color = {0.1f,0.2f,0.3f,1}; material.surface = {0,0.5f,1,1}; material.controls.z = -1;
+            const auto set = [&]( float value ) {
+                if( mode == 0 || mode == 3 ) material.base_color.x = value;
+                if( mode == 1 || mode == 3 ) material.light_color.w = value;
+                if( mode == 2 || mode == 3 ) material.map_flags.x = value > 0.5f ? 1.0f : 0.0f;
+                wp_renderer_dx11_set_material( native, &material );
+            };
+            set( 0.6f ); wp_renderer_dx11_draw_geometry_pntc( native, geometry, 0, 3, 0 );
+            wp_render_statistics_dx11 before{}, after{};
+            wp_material_upload_statistics_dx11 uploadBefore{}, uploadAfter{};
+            uploadBefore.struct_size = uploadAfter.struct_size = sizeof(uploadBefore);
+            ok &= check(wp_renderer_dx11_get_material_upload_statistics(native, &uploadBefore), "upload counters are available");
+            wp_renderer_dx11_get_statistics( native, &before );
+            const auto begin = std::chrono::steady_clock::now();
+            for( int draw = 0; draw < draws; ++draw )
+            {
+                set( draw % 2 ? 0.8f : 0.2f );
+                wp_renderer_dx11_draw_geometry_pntc( native, geometry, 0, 3, 0 );
+            }
+            const auto end = std::chrono::steady_clock::now();
+            timings[variant][sample] = std::chrono::duration<double,std::milli>( end - begin ).count();
+            wp_renderer_dx11_get_statistics( native, &after );
+            uploads[variant] = after.material_uploads - before.material_uploads;
+            ok &= check(wp_renderer_dx11_get_material_upload_statistics(native, &uploadAfter), "upload counters remain available");
+            const auto combined = uploadAfter.combined_uploads - uploadBefore.combined_uploads;
+            const auto surface = uploadAfter.surface_uploads - uploadBefore.surface_uploads;
+            const auto view = uploadAfter.view_uploads - uploadBefore.view_uploads;
+            const auto binding = uploadAfter.binding_uploads - uploadBefore.binding_uploads;
+            maps[variant] = combined + surface + view + binding;
+            bytes[variant] = uploadAfter.combined_bytes - uploadBefore.combined_bytes +
+                uploadAfter.surface_bytes - uploadBefore.surface_bytes + uploadAfter.view_bytes - uploadBefore.view_bytes +
+                uploadAfter.binding_bytes - uploadBefore.binding_bytes;
+            ok &= check(combined == (policy == 0 ? draws : 0) &&
+                surface == (policy && (mode == 0 || mode == 3) ? draws : 0) &&
+                view == (policy && (mode == 1 || mode == 3) ? draws : 0) &&
+                binding == (policy && (mode == 2 || mode == 3) ? draws : 0) &&
+                uploadAfter.map_failures == uploadBefore.map_failures,
+                "only changed constant blocks are mapped");
+            const auto expectedBytes = policy ? draws * (mode == 0 ? 128 : mode == 1 ? 112 : mode == 2 ? 32 : 272) : draws * 272;
+            ok &= check(bytes[variant] == expectedBytes, "material upload byte counts match block packing");
+            ok &= check( after.draws - before.draws == draws && uploads[variant] == draws,
+                         "material upload workload changes constants for each native draw" );
+        }
+        for( int variant = 0; variant < 8; ++variant )
+        {
+            std::sort( timings[variant].begin(), timings[variant].end() );
+            std::printf( "Material upload workload policy=%d mode=%d draws=%d samples=%d cpu_median_ms=%.6f maps=%llu bytes=%llu\n",
+                variant / 4, variant % 4, draws, samples, timings[variant][samples/2],
+                static_cast<unsigned long long>( maps[variant] ), static_cast<unsigned long long>( bytes[variant] ) );
+        }
+        ok &= check(renderer.setSplitMaterialUploads(true), "remaining rendering contracts use split constants");
+        wp_material_upload_statistics_dx11 invalid{};
+        invalid.struct_size = 1; invalid.surface_bytes = 1234;
+        ok &= check(!wp_renderer_dx11_get_material_upload_statistics(native, &invalid) &&
+            invalid.struct_size == 1 && invalid.surface_bytes == 1234 &&
+            !wp_renderer_dx11_get_material_upload_statistics(nullptr, &invalid) &&
+            !wp_renderer_dx11_get_material_upload_statistics(native, nullptr), "upload statistics reject invalid callers without writing");
+        struct ExtendedStats { wp_material_upload_statistics_dx11 known; wp_u64 tail; } extended{};
+        extended.known.struct_size = sizeof(extended); extended.tail = 5678;
+        ok &= check(wp_renderer_dx11_get_material_upload_statistics(native, &extended.known) &&
+            extended.known.struct_size == sizeof(extended.known) && extended.tail == 5678,
+            "upload statistics preserve future caller extensions");
+        wp_material_upload_statistics_dx11 stableBefore{}, stableAfter{};
+        stableBefore.struct_size = stableAfter.struct_size = sizeof(stableBefore);
+        wp_material_dx11 stable{}; stable.base_color = {.8f,.2f,.3f,1}; stable.surface = {0,.5f,1,1}; stable.controls.z = -1;
+        wp_renderer_dx11_set_material(native, &stable);
+        wp_renderer_dx11_draw_geometry_pntc(native, geometry, 0, 3, 0);
+        wp_renderer_dx11_get_material_upload_statistics(native, &stableBefore);
+        for(int repeat = 0; repeat < 32; ++repeat) {
+            auto transient = stable; transient.base_color.x = .1f;
+            wp_renderer_dx11_set_material(native, &transient);
+            wp_renderer_dx11_set_material(native, &stable);
+            wp_renderer_dx11_invalidate_state(native);
+            wp_renderer_dx11_draw_geometry_pntc(native, geometry, 0, 3, 0);
+        }
+        wp_renderer_dx11_get_material_upload_statistics(native, &stableAfter);
+        ok &= check(stableAfter.surface_uploads == stableBefore.surface_uploads &&
+            stableAfter.view_uploads == stableBefore.view_uploads && stableAfter.binding_uploads == stableBefore.binding_uploads,
+            "cancelled edits and binding invalidation reuse uploaded split constants");
+        // Every vector has distinct data so offset swaps cannot pass through similar defaults.
+        std::array<wp_vec4f,17> vectors{};
+        for(unsigned i = 0; i < vectors.size(); ++i) vectors[i] = {float(i*4+1),float(i*4+2),float(i*4+3),float(i*4+4)};
+        vectors[10].z = vectors[10].w = 0; vectors[14].x = vectors[14].y = 0;
+        wp_material_dx11 packed{}; static_assert(sizeof(packed) == sizeof(vectors));
+        std::memcpy(&packed, vectors.data(), sizeof(packed));
+        wp_renderer_dx11_set_environment(native, nullptr, 0);
+        wp_renderer_dx11_set_texture_native(native, nullptr);
+        wp_renderer_dx11_set_material_textures(native, nullptr);
+        wp_renderer_dx11_set_material(native, &packed);
+        wp_renderer_dx11_draw_geometry_pntc(native, geometry, 0, 3, 0);
+        ok &= checkMaterialBuffer(native, 1, {vectors[0],vectors[1],vectors[2],vectors[6],vectors[7],vectors[8],vectors[11],vectors[12]});
+        ok &= checkMaterialBuffer(native, 6, {vectors[3],vectors[4],vectors[5],vectors[13],vectors[14],vectors[15],vectors[16]});
+        ok &= checkMaterialBuffer(native, 7, {vectors[9],vectors[10]});
+        if(wp_renderer_dx11_begin_shadow_map(native, &identity, 64)) {
+            ok &= check(!renderer.setSplitMaterialUploads(false) && renderer.setSplitMaterialUploads(true),
+                "shadow passes reject upload policy changes but allow equal assignments");
+            wp_renderer_dx11_end_shadow_map(native);
+        } else ok &= check(false, "upload policy shadow guard fixture begins");
+        wp_renderer_dx11_set_world_matrix( native, &identity );
+        renderer.setRenderTarget( nullptr );
+        return ok;
+    }
+
     bool testParticleLifecycle()
     {
         CParticleSystem effect;
@@ -663,6 +824,8 @@ int main( int argc, char **argv )
                              wp_renderer_dx11_get_device( native ) ) ),
                          "DX11 device evidence must be available" );
             ok &= testRenderedFeatures(renderer);
+            ok &= testMaterialUploadWork(renderer);
+            ok &= testRenderedFeatures(renderer); // Run the same pixel contracts with split constants.
             ok &= testPreparedMaterialEdits(renderer);
             ok &= testSortedTransparency(renderer);
             ok &= testMeshShadows(renderer);
@@ -676,7 +839,7 @@ int main( int argc, char **argv )
             ok &= claw_animation_contracts::run(renderer);
             try {
                 claw_foliage_scene_contracts::Fixture services;
-                ok &= claw_rtt_contracts::integration(window, true);
+                ok &= claw_rtt_contracts::integration(window, true, true);
             } catch(const std::exception &e) { ok &= check(false,e.what()); }
         }
         renderer.unload(nullptr);
