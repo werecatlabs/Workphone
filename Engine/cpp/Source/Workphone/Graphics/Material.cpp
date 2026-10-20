@@ -2816,6 +2816,7 @@ namespace workphone::render
             }
         }
         m_shaderTextureRefs.push_back( { paramName, texturePath } );
+        m_shaderTextureBindingLayoutId = 0;
     }
 
     String Material::getShaderTexture( const String &paramName ) const
@@ -2836,22 +2837,35 @@ namespace workphone::render
         {
             return;
         }
-        // Best-effort: bind each named texture slot to a texture unit by ordinal. Backend
-        // overrides (step 3c) should map these to the correct Hlms Pbs/Unlit semantic slots.
-        u32 layerIdx = 0;
-        auto const &info = m_shaderParameters.GetParameterInfo();
-        for( auto const &p : info )
+        const auto &layout = m_shaderParameters.GetLayout();
+        if( m_shaderTextureBindingLayoutId != layout->GetId() )
         {
-            if( p.m_type != MaterialShaderParameterType::Texture )
+            Array<ShaderTextureBinding> bindings;
+            u32 layer = 0;
+            for( const auto &parameter : layout->GetParameterInfo() )
             {
-                continue;
+                if( parameter.m_type != MaterialShaderParameterType::Texture ) continue;
+                for( u32 reference = 0; reference < m_shaderTextureRefs.size(); ++reference )
+                    if( m_shaderTextureRefs[reference].paramName == parameter.m_name )
+                    {
+                        bindings.push_back( { layer, reference } );
+                        break;
+                    }
+                ++layer;
             }
-            auto path = getShaderTexture( p.m_name );
+            // Commit after allocation succeeds; failed rebuilds retry next time.
+            m_shaderTextureBindings = std::move( bindings );
+            m_shaderTextureBindingLayoutId = layout->GetId();
+        }
+        // Preserve the existing backend's ordinal mapping and resource lifecycle.
+        // Paths are borrowed, avoiding the former temporary String per slot.
+        for( const auto &binding : m_shaderTextureBindings )
+        {
+            const auto &path = m_shaderTextureRefs[binding.reference].texturePath;
             if( !path.empty() )
             {
-                setTexture( path, layerIdx );
+                setTexture( path, binding.layer );
             }
-            ++layerIdx;
         }
     }
 

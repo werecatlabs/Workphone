@@ -152,6 +152,13 @@ namespace
         return {};
     }
 
+    class ResourceDatabaseInstanceTestAccess : public ResourceDatabase
+    {
+    public:
+        void addTestInstance(SmartPtr<IResource> resource) { m_instances.push_back(resource); }
+        Array<SmartPtr<IResource>> testInstances() const { return m_instances.snapshot(); }
+    };
+
     struct ResourceDatabaseTestContext
     {
         ResourceDatabaseTestContext()
@@ -192,7 +199,7 @@ namespace
             assetDatabaseManager->setDatabasePath( databasePath );
             assetDatabaseManager->create();
 
-            resourceDatabase = workphone::make_ptr<ResourceDatabase>();
+            resourceDatabase = workphone::make_ptr<ResourceDatabaseInstanceTestAccess>();
             resourceDatabase->load( nullptr );
             resourceDatabase->setFilePath( databaseFileName );
             resourceDatabase->setDatabaseManager( assetDatabaseManager );
@@ -236,7 +243,7 @@ namespace
         SmartPtr<IFactoryManager> factoryManager;
         SmartPtr<IFileSystem> fileSystem;
         SmartPtr<IResourceDatabase> previousResourceDatabase;
-        SmartPtr<ResourceDatabase> resourceDatabase;
+        SmartPtr<ResourceDatabaseInstanceTestAccess> resourceDatabase;
         SmartPtr<AssetDatabaseManager> assetDatabaseManager;
         String previousCachePath;
         String databaseDirectory;
@@ -517,20 +524,18 @@ BOOST_AUTO_TEST_CASE( resource_database_removeUnusedResources_removesUnreference
             return;
         }
 
-        auto instances = workphone::make_shared<Array<SmartPtr<IResource>>>();
         auto retained = makeTestResource( "UnitTests/ResourceDatabase/Retained.resource" );
         auto unused = makeTestResource( "UnitTests/ResourceDatabase/Unused.resource" );
 
-        instances->push_back( retained );
-        instances->push_back( unused );
-        context.resourceDatabase->setInstancesPtr( instances );
+        context.resourceDatabase->addTestInstance( retained );
+        context.resourceDatabase->addTestInstance( unused );
 
         unused = nullptr;
         context.resourceDatabase->removeUnusedResources();
 
-        BOOST_REQUIRE( context.resourceDatabase->getInstancesPtr() );
-        BOOST_CHECK_EQUAL( context.resourceDatabase->getInstancesPtr()->size(), 1u );
-        BOOST_CHECK( context.resourceDatabase->getInstancesPtr()->front() == retained );
+        const auto instances = context.resourceDatabase->testInstances();
+        BOOST_REQUIRE_EQUAL( instances.size(), 1u );
+        BOOST_CHECK( instances.front() == retained );
     }
     catch( std::exception &e )
     {

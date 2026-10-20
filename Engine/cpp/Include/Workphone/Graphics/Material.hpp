@@ -1378,6 +1378,12 @@ namespace workphone
 
             /** Per-slot texture resource paths for the bound data-driven shader. */
             Array<ShaderTextureRef> m_shaderTextureRefs;
+
+            // Sparse schema-order adapter bindings. Names/paths stay in authoring
+            // storage; repeated applies visit only resolved numeric references.
+            struct ShaderTextureBinding { u32 layer; u32 reference; };
+            Array<ShaderTextureBinding> m_shaderTextureBindings;
+            u64 m_shaderTextureBindingLayoutId = 0;
         };
     }  // end namespace render
 }  // namespace workphone

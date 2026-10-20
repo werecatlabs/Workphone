@@ -997,6 +997,125 @@ namespace
         legacy->unload( nullptr ); batched->unload( nullptr );
     }
 
+    class TextureBindingProbe : public render::Material
+    {
+    public:
+        using Material::setTexture;
+        std::vector<std::pair<u32,String>> calls;
+        bool record = true;
+        u64 checksum = 0;
+        void setTexture(const String &path, u32 layer) override
+        {
+            checksum += path.size() + layer;
+            if(record) calls.emplace_back(layer, path);
+        }
+        u64 bindingLayout() const { return m_shaderTextureBindingLayoutId; }
+        size_t bindingBytes() const { return m_shaderTextureBindings.capacity() * sizeof(ShaderTextureBinding); }
+        size_t bindingControlBytes() const { return sizeof(m_shaderTextureBindings) + sizeof(m_shaderTextureBindingLayoutId); }
+        const void *bindingStorage() const { return m_shaderTextureBindings.data(); }
+        void legacyApply()
+        {
+            u32 layer = 0;
+            for(const auto &parameter : getShaderParameters().GetParameterInfo()) {
+                if(parameter.m_type != render::MaterialShaderParameterType::Texture) continue;
+                auto path = getShaderTexture(parameter.m_name);
+                if(!path.empty()) setTexture(path, layer);
+                ++layer;
+            }
+        }
+    };
+
+    void runTextureBindings()
+    {
+        using namespace render;
+        auto material = make_ptr<TextureBindingProbe>();
+        Array<MaterialShaderParameterInfo> schema = {
+            {MaterialShaderParameterType::Texture,"Missing"}, {MaterialShaderParameterType::Scalar,"Scalar"},
+            {MaterialShaderParameterType::Texture,"Second"}, {MaterialShaderParameterType::Buffer,"Buffer"},
+            {MaterialShaderParameterType::Texture,"Empty"}, {MaterialShaderParameterType::Texture,"Last"}};
+        material->setShaderParameters(schema, "TextureBindingContract");
+        // Reverse authoring order, unknown names, wrong types and empty paths must
+        // preserve the old adapter's schema order and gaps between texture slots.
+        material->setShaderTexture("Last", "last.png");
+        material->setShaderTexture("Future", "future.png");
+        material->setShaderTexture("Empty", "");
+        material->setShaderTexture("Scalar", "ignored.png");
+        material->setShaderTexture("Second", "second.png");
+        const auto compare = [&] {
+            material->calls.clear(); material->legacyApply();
+            const auto expected = material->calls;
+            material->calls.clear(); material->applyDataDrivenTextures();
+            require(material->calls == expected, "cached texture bindings preserve named adapter calls and schema order");
+        };
+        compare();
+        require(material->calls == std::vector<std::pair<u32,String>>{{1,"second.png"},{3,"last.png"}},
+            "nontextures, missing references and empty paths preserve ordinal gaps");
+        const auto identity = material->bindingLayout(), bytes = material->bindingBytes();
+        for(int repeat = 0; repeat < 32; ++repeat) compare();
+        require(material->bindingLayout() == identity && material->bindingBytes() == bytes,
+            "unchanged texture applies reuse compact binding storage");
+        const auto storage = material->bindingStorage();
+        material->setShaderTexture("Second", "replacement.png"); compare();
+        require(material->bindingStorage() == storage, "path-only edits reuse bindings and read the current authored path");
+        material->setShaderTexture("Empty", "new.png"); compare();
+        material->setShaderTexture("Last", ""); compare();
+        material->setShaderTexture("Missing", "first.png"); compare();
+        require(material->bindingLayout() == identity && material->getShaderTexture("Future") == "future.png",
+            "new references rebuild bindings without dropping unknown authoring data");
+        schema = {{MaterialShaderParameterType::Texture,"Future"}, {MaterialShaderParameterType::Scalar,"Second"},
+            {MaterialShaderParameterType::Texture,"Missing"}};
+        material->setShaderParameters(schema, "ReorderedTextureBindingContract"); compare();
+        require(material->calls == std::vector<std::pair<u32,String>>{{0,"future.png"},{1,"first.png"}} &&
+            material->bindingLayout() != identity, "schema reorder, type changes and removal replace ordinal bindings");
+        const auto replacement = material->bindingLayout();
+        auto invalid = schema; invalid.push_back(invalid.front());
+        material->setShaderParameters(invalid, "RejectedBindingLayout"); compare();
+        require(material->bindingLayout() == replacement, "invalid schemas retain valid binding maps");
+        schema = {{MaterialShaderParameterType::Scalar,"Other"}, {MaterialShaderParameterType::Texture,"Second"}};
+        material->getShaderParameters().Reset(schema); compare();
+        require(material->calls == std::vector<std::pair<u32,String>>{{0,"replacement.png"}},
+            "retained mutable parameter resets invalidate bindings through layout identity");
+        schema = {{MaterialShaderParameterType::Scalar,"NoTextures"}};
+        material->getShaderParameters().Reset(schema); compare();
+        require(material->bindingBytes() == 0, "texture-free layouts release obsolete binding storage");
+        material->getShaderParameters().Reset(MaterialShaderParameterLayout::Ptr{});
+        material->calls.clear(); material->applyDataDrivenTextures();
+        require(material->calls.empty(), "invalid parameter instances do not use stale bindings");
+        std::cout << "Texture binding contracts: schema-order slots, warm reuse, reference edits, unknown names and layout replacement passed.\n";
+    }
+
+    void benchmarkTextureBindings()
+    {
+        using namespace render;
+        auto material = make_ptr<TextureBindingProbe>(); material->record = false;
+        Array<MaterialShaderParameterInfo> schema;
+        for(int i = 0; i < 64; ++i)
+            schema.emplace_back(i % 2 ? MaterialShaderParameterType::Texture : MaterialShaderParameterType::Scalar,
+                "BindingParameter" + std::to_string(i));
+        material->setShaderParameters(schema, "TextureBindingBenchmark");
+        for(int i = 63; i >= 1; i -= 2)
+            material->setShaderTexture("BindingParameter" + std::to_string(i), String(160, 'x') + std::to_string(i));
+        material->applyDataDrivenTextures();
+        constexpr int samples = 7, applies = 10000;
+        std::array<double,samples> timings[2]; u64 sums[2]{};
+        for(int sample = 0; sample < samples; ++sample) for(int order = 0; order < 2; ++order) {
+            const auto mode = (sample + order) % 2;
+            material->checksum = 0;
+            const auto start = std::chrono::steady_clock::now();
+            for(int i = 0; i < applies; ++i) {
+                if(mode) material->applyDataDrivenTextures(); else material->legacyApply();
+            }
+            timings[mode][sample] = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now() - start).count();
+            sums[mode] = material->checksum;
+        }
+        require(sums[0] == sums[1], "texture binding benchmark preserves submitted slot/path checksums");
+        for(auto &times : timings) std::sort(times.begin(), times.end());
+        std::cout << "Texture bindings applies=" << applies << " parameters=64 textures=32 samples=" << samples
+            << " named_median_ms=" << timings[0][samples/2] << " cached_median_ms=" << timings[1][samples/2]
+            << " binding_control_bytes=" << material->bindingControlBytes()
+            << " binding_capacity_bytes=" << material->bindingBytes() << " checksum=" << sums[1] << '\n';
+    }
+
     class NamedSettingProbeMaterial : public render::ClawMaterial
     {
     public:
@@ -1551,10 +1670,16 @@ int main( int argc, char **argv )
             benchmarkNumericControls( fixture );
             return 0;
         }
+        if( argc == 2 && std::string( argv[1] ) == "--benchmark-texture-bindings" )
+        {
+            benchmarkTextureBindings();
+            return 0;
+        }
         runCapturedMaterialRecords( fixture );
         runCapturedDrawSorting( fixture );
         runObservedParameters( fixture );
         runNumericControls( fixture );
+        runTextureBindings();
         runLegacyBatchScopes( fixture );
         runRenderSnapshots( fixture );
         runSpecularRestoration( fixture );
