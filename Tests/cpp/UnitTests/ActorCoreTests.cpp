@@ -2326,3 +2326,46 @@ BOOST_AUTO_TEST_CASE( actor_streaming )
         throw;
     }
 }
+
+BOOST_AUTO_TEST_CASE( actor_detached_unload_does_not_require_game_manager )
+{
+    TestGuard guard;
+    auto application = core::IApplicationManager::instance();
+    auto manager = application->getGameManager();
+    BOOST_REQUIRE(manager);
+    auto actor = manager->createActor();
+    BOOST_REQUIRE(actor);
+    actor->load(nullptr);
+    manager->destroyActor(actor);
+    BOOST_REQUIRE(actor->getLoadingState() == LoadingState::Unloaded);
+    BOOST_REQUIRE(!actor->getTransform());
+    struct RestoreManager {
+        SmartPtr<core::IApplicationManager> app;
+        SmartPtr<IGameManager> manager;
+        ~RestoreManager() { app->setGameManager(manager); }
+    } restore{application, manager};
+    application->setGameManager(nullptr);
+    actor->unload(nullptr);
+    BOOST_CHECK(actor->getLoadingState() == LoadingState::Unloaded);
+    actor = nullptr; // Factory finalization must also tolerate the repeated unload.
+}
+
+BOOST_AUTO_TEST_CASE( camera_detached_unload_does_not_require_game_manager )
+{
+    TestGuard guard;
+    auto application = core::IApplicationManager::instance();
+    auto manager = application->getGameManager();
+    BOOST_REQUIRE(manager);
+    auto camera = make_ptr<Camera>();
+    camera->unload(nullptr);
+    BOOST_REQUIRE(camera->getLoadingState() == LoadingState::Unloaded);
+    struct RestoreManager {
+        SmartPtr<core::IApplicationManager> app;
+        SmartPtr<IGameManager> manager;
+        ~RestoreManager() { app->setGameManager(manager); }
+    } restore{application, manager};
+    application->setGameManager(nullptr);
+    camera->unload(nullptr);
+    BOOST_CHECK(camera->getLoadingState() == LoadingState::Unloaded);
+    camera = nullptr;
+}

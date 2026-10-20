@@ -9,6 +9,9 @@
 #include <boost/test/unit_test.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <atomic>
+#include <functional>
+#include <thread>
 
 namespace workphone
 {
@@ -16,6 +19,18 @@ namespace workphone
     {
     public:
         WP_CLASS_REGISTER_DECL;
+        std::function<void()> unloadObserver;
+        void unload(SmartPtr<ISharedObject> data) override
+        {
+            if(getLoadingState() == LoadingState::Loaded)
+            {
+                setLoadingState(LoadingState::Unloading);
+                auto observer = std::move(unloadObserver);
+                if(observer) observer();
+                setLoadingState(LoadingState::Unloaded);
+            }
+            Resource<IResource>::unload(data);
+        }
     };
 
     WP_CLASS_REGISTER_DERIVED( workphone, ResourceDatabaseTestResource, Resource<IResource> );
@@ -157,6 +172,23 @@ namespace
     public:
         void addTestInstance(SmartPtr<IResource> resource) { m_instances.push_back(resource); }
         Array<SmartPtr<IResource>> testInstances() const { return m_instances.snapshot(); }
+        void addTestObject(const workphone::UUID &id, SmartPtr<ISharedObject> object) { m_objects[id] = object; }
+        size_t testObjectCount() const { return m_objects.size(); }
+        bool cleanupLocksAvailable()
+        {
+            bool available = false;
+            std::thread worker([&] {
+                if(!m_mutex.try_lock()) return;
+                m_mutex.unlock();
+                if(!m_objects.try_lock()) return;
+                m_objects.unlock();
+                if(!m_instances.try_lock()) return;
+                m_instances.unlock();
+                available = true;
+            });
+            worker.join();
+            return available;
+        }
     };
 
     struct ResourceDatabaseTestContext
@@ -542,6 +574,70 @@ BOOST_AUTO_TEST_CASE( resource_database_removeUnusedResources_removesUnreference
         WP_LOG_EXCEPTION( e );
         BOOST_FAIL( e.what() );
     }
+}
+
+BOOST_AUTO_TEST_CASE( resource_database_cleanup_handles_aliases_and_external_owners )
+{
+    ResourceDatabaseTestContext context;
+    BOOST_REQUIRE(context.isAvailable);
+    auto database = context.resourceDatabase;
+    auto retained = makeTestResource("Cleanup/Retained.resource");
+    auto unused = makeTestResource("Cleanup/Aliased.resource");
+    retained->setLoadingState(LoadingState::Loaded);
+    unused->setLoadingState(LoadingState::Loaded);
+    unsigned unloads = 0, retainedUnloads = 0;
+    bool locksAvailable = false;
+    unused->unloadObserver = [&] { ++unloads; locksAvailable = database->cleanupLocksAvailable(); };
+    retained->unloadObserver = [&] { ++retainedUnloads; };
+    for(const auto &resource : {retained, unused}) {
+        database->addTestInstance(resource); database->addTestInstance(resource);
+        database->addTestObject(workphone::UUID::generate(), resource);
+        database->addTestObject(workphone::UUID::generate(), resource);
+    }
+    WeakPtr<ResourceDatabaseTestResource> weak = unused;
+    unused = nullptr;
+    database->unloadUnusedResources();
+    BOOST_CHECK_EQUAL(unloads, 1u);
+    BOOST_CHECK_EQUAL(retainedUnloads, 0u);
+    BOOST_CHECK(locksAvailable);
+    BOOST_CHECK_EQUAL(database->testInstances().size(), 4u);
+    BOOST_CHECK_EQUAL(database->testObjectCount(), 4u);
+    BOOST_REQUIRE(weak.lock());
+    BOOST_CHECK(weak.lock()->getLoadingState() == LoadingState::Unloaded);
+    database->removeUnusedResources();
+    BOOST_CHECK(!weak.lock());
+    BOOST_CHECK_EQUAL(database->testInstances().size(), 2u);
+    BOOST_CHECK_EQUAL(database->testObjectCount(), 2u);
+    BOOST_CHECK_EQUAL(unloads, 1u);
+    BOOST_CHECK_EQUAL(retainedUnloads, 0u);
+    retained->unloadObserver = {};
+}
+
+BOOST_AUTO_TEST_CASE( resource_database_cleanup_rechecks_owners_after_detachment )
+{
+    ResourceDatabaseTestContext context;
+    BOOST_REQUIRE(context.isAvailable);
+    auto database = context.resourceDatabase;
+    auto first = makeTestResource("Cleanup/First.resource");
+    auto second = makeTestResource("Cleanup/Rescued.resource");
+    first->setLoadingState(LoadingState::Loaded); second->setLoadingState(LoadingState::Loaded);
+    WeakPtr<ResourceDatabaseTestResource> weakFirst = first, weakSecond = second;
+    SmartPtr<ResourceDatabaseTestResource> rescued;
+    bool locksAvailable = false;
+    first->unloadObserver = [&] {
+        locksAvailable = database->cleanupLocksAvailable();
+        rescued = weakSecond.lock();
+        database->removeUnusedResources(); // Reentrant callback sees detached containers.
+    };
+    database->addTestInstance(first); database->addTestInstance(second);
+    first = nullptr; second = nullptr;
+    database->removeUnusedResources();
+    BOOST_CHECK(locksAvailable);
+    BOOST_CHECK(database->testInstances().empty());
+    BOOST_CHECK(!weakFirst.lock());
+    BOOST_REQUIRE(rescued);
+    BOOST_CHECK(rescued->getLoadingState() == LoadingState::Loaded);
+    rescued->unload(nullptr);
 }
 
 BOOST_AUTO_TEST_CASE( resource_database_importFileJob_storesPathAndOverwriteFlag )

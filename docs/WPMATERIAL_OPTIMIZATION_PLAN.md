@@ -4,6 +4,8 @@ Date: 19 October 2026. Status: source-reviewed proposal; implementation and perf
 
 Implementation checkpoint: shared layouts, typed access, immutable pass snapshots, active DX11 consumption, compact native storage, scene-job dense material records, selectable sorting strategies, cached numeric bindings in the named-texture adapter and optional measured DX11 surface/view/binding uploads are now implemented. Combined GPU uploads remain the default; the split policy reduces copied bytes for partial changes but showed no CPU speedup in the WARP submission fixture. See [implementation status](WPMATERIAL_IMPLEMENTATION_STATUS.md) for validation evidence and remaining production gates; the findings and estimates below record the original planning baseline.
 
+Latest lifecycle validation: resource-cache cleanup and repeated actor/camera teardown are repaired. The rebuilt Debug Editor aggregate passes 66/66 cases; selected material suites pass in Debug and RelWithDebInfo. See the implementation status for exact evidence and the remaining hardware, storage, publication and cooked-schema gates.
+
 ## Objective and scope
 
 Make material access predictable, compact and cache friendly: resolve names at authoring/load/bind time, retain typed values in contiguous storage, and submit pre-resolved material records during rendering. Extend the existing material/shader/state systems rather than creating a competing material implementation.
