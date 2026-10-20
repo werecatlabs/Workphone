@@ -28,20 +28,11 @@ namespace workphone::scene
             u32 index = invalidIndex;
             u32 generation = 0;
 
-            bool isValid() const
-            {
-                return index != invalidIndex;
-            }
+            bool isValid() const;
 
-            bool operator==( const Handle &other ) const
-            {
-                return index == other.index && generation == other.generation;
-            }
+            bool operator==( const Handle &other ) const;
 
-            bool operator!=( const Handle &other ) const
-            {
-                return !( *this == other );
-            }
+            bool operator!=( const Handle &other ) const;
         };
 
         /**
@@ -89,24 +80,11 @@ namespace workphone::scene
 
         /** Locks the storage once so systems can process whole channels in a batch. */
         template <class Visitor>
-        void readData( Visitor visitor ) const
-        {
-            ScopedLock lock( &m_mutex, false );
-            visitor( ConstDataView{ m_localPositions.data(), m_localOrientations.data(),
-                                    m_localScales.data(), m_worldPositions.data(),
-                                    m_worldOrientations.data(), m_worldScales.data(), m_active.data(),
-                                    m_generations.data(), m_active.size() } );
-        }
+        void readData( Visitor visitor ) const;
 
         /** Mutable batch access for transform systems; handle metadata remains read-only. */
         template <class Visitor>
-        void writeData( Visitor visitor )
-        {
-            ScopedLock lock( &m_mutex, true );
-            visitor( DataView{ m_localPositions.data(), m_localOrientations.data(), m_localScales.data(),
-                               m_worldPositions.data(), m_worldOrientations.data(), m_worldScales.data(),
-                               m_active.data(), m_generations.data(), m_active.size() } );
-        }
+        void writeData( Visitor visitor );
 
         Transform3<real_Num> getLocalTransform( Handle handle ) const;
         void setLocalTransform( Handle handle, const Transform3<real_Num> &transform );
@@ -168,8 +146,8 @@ namespace workphone::scene
         void removeReference( Handle handle );
 
     private:
-        TransformSystem() = default;
-        ~TransformSystem() = default;
+        TransformSystem();
+        ~TransformSystem();
 
         bool containsUnlocked( Handle handle ) const;
         void appendSlot();
@@ -198,6 +176,26 @@ namespace workphone::scene
         Array<u32> m_freeIndices;
         size_t m_activeCount = 0;
     };
+
+    template <class Visitor>
+    void TransformSystem::readData( Visitor visitor ) const
+    {
+        ScopedLock lock( &m_mutex, false );
+        visitor( ConstDataView{ m_localPositions.data(), m_localOrientations.data(),
+                                m_localScales.data(), m_worldPositions.data(),
+                                m_worldOrientations.data(), m_worldScales.data(), m_active.data(),
+                                m_generations.data(), m_active.size() } );
+    }
+
+    template <class Visitor>
+    void TransformSystem::writeData( Visitor visitor )
+    {
+        ScopedLock lock( &m_mutex, true );
+        visitor( DataView{ m_localPositions.data(), m_localOrientations.data(), m_localScales.data(),
+                           m_worldPositions.data(), m_worldOrientations.data(), m_worldScales.data(),
+                           m_active.data(), m_generations.data(), m_active.size() } );
+    }
+
 }  // namespace workphone::scene
 
 #endif  // TransformSystem_h__
