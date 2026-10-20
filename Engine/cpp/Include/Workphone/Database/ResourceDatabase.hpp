@@ -292,6 +292,10 @@ namespace workphone
         /** @copydoc IResourceDatabase::destroyDatabase */
         void destroyDatabase() override;
 
+        Array<SmartPtr<IResource>> getInstances() const;
+
+        void setInstances( const Array<SmartPtr<IResource>> &instances );
+
         WP_CLASS_REGISTER_DECL;
 
     protected:

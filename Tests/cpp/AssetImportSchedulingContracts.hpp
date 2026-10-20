@@ -236,7 +236,7 @@ namespace
         probe->calls = calls;
         probe->unlocked = unlocked;
         instances->push_back( probe );
-        resources->setInstancesPtr( instances );
+        resources->setInstances( *instances );
         probe = nullptr;
         resources->unloadUnusedResources();
         require( *calls == 1 && *unlocked && instances->size() == 1,
@@ -244,7 +244,7 @@ namespace
         resources->removeUnusedResources();
         require( *calls == 2 && *unlocked && instances->empty(),
                  "Eviction must detach under lock and run callbacks after releasing it" );
-        resources->setInstancesPtr( nullptr );
+        resources->setInstances( {} );
         Thread::setCurrentThreadId( originalThread );
         resources->unload( nullptr );
         catalog->unload( nullptr );
