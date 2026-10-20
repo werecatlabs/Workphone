@@ -3339,7 +3339,7 @@ namespace workphone
             offset += bitangentElem->getSize();
         }
 
-        for( u32 i = 0; i < uvs.size(); ++i )
+        for( u32 i = 0; i < uvPointers.size(); ++i )
         {
             auto uvElem =
                 declaration->addElement( source, offset, VertexElementSemantic::VES_TEXTURE_COORDINATES,
