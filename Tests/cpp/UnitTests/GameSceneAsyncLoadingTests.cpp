@@ -4,6 +4,7 @@
 #include <Workphone/Scene/GameActorUtil.hpp>
 #include <Workphone/Scene/Components/Camera/CameraFollow.hpp>
 #include <Workphone/Scene/Components/Camera/CameraTarget.hpp>
+#include <Workphone/System/TaskLock.hpp>
 #include <boost/test/unit_test.hpp>
 #include <chrono>
 #include <thread>
@@ -97,6 +98,37 @@ namespace
 }  // namespace
 
 BOOST_AUTO_TEST_SUITE( GameSceneAsyncLoadingTests )
+
+BOOST_AUTO_TEST_CASE( graph_load_preserves_render_pause_after_success_and_rollback )
+{
+    TestGuard guard;
+    BOOST_REQUIRE( guard.isAvailable );
+    resetScene( guard );
+    auto renderTask = guard.taskManager->getTask( TaskId::Render );
+    BOOST_REQUIRE( renderTask );
+    BOOST_REQUIRE( renderTask->isLoaded() );
+    const auto wasStopped = renderTask->isStopped();
+    const auto actorCount = guard.sceneManager->getNumActors();
+
+    auto actors = GameActorUtil::loadSceneActors( { actorData( "Loaded" ) }, guard.scene );
+    BOOST_REQUIRE_EQUAL( actors.size(), 1u );
+    BOOST_CHECK_EQUAL( renderTask->isStopped(), wasStopped );
+    guard.sceneManager->destroyActor( actors.front() );
+
+    auto invalid = actorData( "Rollback" );
+    auto component = make_ptr<Properties>();
+    component->setName( GameActorUtil::componentStr );
+    component->setProperty( GameActorUtil::componentTypeStr, "MissingGraphLoadTestComponent" );
+    invalid->addChild( component );
+    {
+        TaskLock outerPause( renderTask );
+        BOOST_CHECK_THROW( GameActorUtil::loadSceneActors( { invalid }, guard.scene ),
+                           std::runtime_error );
+        BOOST_CHECK( renderTask->isStopped() );
+        BOOST_CHECK_EQUAL( guard.sceneManager->getNumActors(), actorCount );
+    }
+    BOOST_CHECK_EQUAL( renderTask->isStopped(), wasStopped );
+}
 
 BOOST_AUTO_TEST_CASE( gamescene_async_file_load_completes_through_job_queue )
 {

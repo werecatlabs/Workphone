@@ -18,6 +18,7 @@
 #include <Workphone/Mesh/IndexBuffer.hpp>
 #include <Workphone/Mesh/VertexDeclaration.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
+#include <Workphone/System/Resource.hpp>
 #if defined( _MSC_VER ) && defined( _DEBUG )
 #include <crtdbg.h>
 #endif
@@ -60,6 +61,32 @@ BOOST_AUTO_TEST_CASE( mesh_cpu_buffer_replacement_and_destruction_release_storag
 
 namespace
 {
+    class GraphicsLoadQueueProbe : public render::GraphicsSystem
+    {
+    public:
+        using render::GraphicsSystem::updateLoadQueue;
+
+        void load( SmartPtr<ISharedObject> ) override
+        {
+            ++loadRequests;
+            setLoadingState( LoadingState::Loaded );
+        }
+
+        u32 loadRequests = 0;
+    };
+
+    class QueuedMeshLoadProbe : public Resource<IResource>
+    {
+    public:
+        void load( SmartPtr<ISharedObject> ) override
+        {
+            ++loadRequests;
+            setLoadingState( LoadingState::Loaded );
+        }
+
+        u32 loadRequests = 0;
+    };
+
     class CatalogMeshLoadProbe : public render::GraphicsSystem
     {
     public:
@@ -656,6 +683,33 @@ BOOST_AUTO_TEST_CASE( mesh_load_same_asset_returns_cached_resource )
 }
 
 // Opt-in real-asset benchmark. All generated resources stay in a temporary project.
+BOOST_AUTO_TEST_CASE( mesh_queued_resource_loads_reuse_completed_resources )
+{
+    auto graphics = make_ptr<GraphicsLoadQueueProbe>();
+    auto resource = make_ptr<QueuedMeshLoadProbe>();
+    graphics->loadObject( resource, true );
+    graphics->loadObject( resource, true );
+    graphics->updateLoadQueue();
+    BOOST_CHECK_EQUAL( resource->loadRequests, 1u );
+
+    graphics->loadObject( resource, true );
+    graphics->updateLoadQueue();
+    BOOST_CHECK_EQUAL( resource->loadRequests, 1u );
+
+    resource->setLoadingState( LoadingState::Unloaded );
+    graphics->loadObject( resource, true );
+    graphics->updateLoadQueue();
+    BOOST_CHECK_EQUAL( resource->loadRequests, 2u );
+
+    // A graphics object can be loaded before its mesh path is supplied. Its
+    // later load must still run, even when its initial state is already Loaded.
+    auto graphicsObject = make_ptr<GraphicsLoadQueueProbe>();
+    graphicsObject->setLoadingState( LoadingState::Loaded );
+    graphics->loadObject( graphicsObject, true );
+    graphics->updateLoadQueue();
+    BOOST_CHECK_EQUAL( graphicsObject->loadRequests, 1u );
+}
+
 BOOST_AUTO_TEST_CASE( mesh_large_scene_import_benchmark )
 {
     const auto source = std::getenv( "WP_MESH_BENCHMARK_ASSET" );

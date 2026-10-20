@@ -3,6 +3,7 @@
 #include <Workphone/Scene/GameScene.hpp>
 #include <Workphone/ApplicationUtil.hpp>
 #include <Workphone/WorkphoneHeaders.hpp>
+#include <Workphone/System/TaskLock.hpp>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -604,6 +605,18 @@ namespace workphone::scene
             if( roots > WP_MAX_ACTORS || data.size() > WP_MAX_ACTORS - roots )
             {
                 throw std::length_error( "Scene root capacity exhausted before scene commit" );
+            }
+        }
+
+        // Keep one render pause for the entire graph. Resource loads take nested
+        // task locks, which would otherwise restart and stop rendering per mesh.
+        std::unique_ptr<TaskLock> renderTaskLock;
+        if( auto tasks = core::IApplicationManager::instancePtr()->getTaskManager() )
+        {
+            if( auto renderTask = tasks->getTask( TaskId::Render );
+                renderTask && renderTask->isLoaded() )
+            {
+                renderTaskLock = std::make_unique<TaskLock>( renderTask );
             }
         }
 

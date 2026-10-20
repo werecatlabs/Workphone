@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Interface/System/IResource.hpp>
 #include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
@@ -245,6 +246,13 @@ namespace workphone::render
             SmartPtr<ISharedObject> obj;
             while( m_loadQueue.try_pop( obj ) )
             {
+                // Several components can queue the same resource before its first
+                // load completes. Keep later requests from rebuilding it again.
+                // Graphics objects may need a later load to finish initialization.
+                if( obj->isDerived<IResource>() && obj->isLoaded() )
+                {
+                    continue;
+                }
                 obj->load( nullptr );
             }
         }
