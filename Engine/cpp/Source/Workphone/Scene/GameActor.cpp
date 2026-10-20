@@ -1391,6 +1391,14 @@ namespace workphone::scene
         {
             ScopedLoadstateWait loadstateWait( this );
 
+            // Factory/Lua owners may release an actor again after scene teardown.
+            // A fully detached actor has no work left that requires its managers.
+            if( getLoadingState() == LoadingState::Unloaded && !getTransform() &&
+                !getScene() && !getParent() && getChildren().empty() && getComponents().empty() )
+            {
+                return;
+            }
+
             setLoadingState( LoadingState::Unloading );
 
             auto applicationManager = core::IApplicationManager::instancePtr();

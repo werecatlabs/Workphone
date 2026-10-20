@@ -115,6 +115,15 @@ namespace workphone::scene
     {
         try
         {
+            // Resource catalogs can retain an already-detached component beyond
+            // scene-manager teardown. Releasing it again needs no manager access.
+            if( getLoadingState() == LoadingState::Unloaded && !getActor() &&
+                !m_camera && !m_node && !m_viewport && !m_targetTexture && !m_outputRenderTexture &&
+                m_compositeRenderTextures.empty() && m_compositeBlendModes.empty() &&
+                m_compositeOpacities.empty() && m_compositeEnabled.empty() )
+            {
+                return;
+            }
             setLoadingState( LoadingState::Unloading );
 
             auto applicationManager = core::IApplicationManager::instance();

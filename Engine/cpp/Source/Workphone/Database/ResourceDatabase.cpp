@@ -52,6 +52,7 @@
 #include <set>
 #include <functional>
 #include <filesystem>
+#include <unordered_map>
 
 namespace workphone
 {
@@ -213,6 +214,57 @@ namespace workphone
             {
                 importQueue->drain();
             }
+        }
+
+        struct ResourceCleanupCandidate
+        {
+            SmartPtr<ISharedObject> object;
+            s32 ownedReferences;
+            bool unused = false;
+        };
+
+        // Count all database aliases before inspecting ownership. One temporary
+        // strong reference per object keeps destruction outside the container locks.
+        Array<ResourceCleanupCandidate> collectUnusedResources(
+            ConcurrentMap<UUID, SmartPtr<ISharedObject>> &objects,
+            ConcurrentArray<SmartPtr<IResource>> &instances, bool remove )
+        {
+            Array<ResourceCleanupCandidate> candidates;
+            std::unordered_map<ISharedObject *, size_t> indices;
+            {
+                auto registry = objects.writeLocked();
+                ScopedLock instanceLock( &instances, true );
+                const auto add = [&]( const auto &object ) {
+                    if( !object ) return;
+                    const auto inserted = indices.emplace( object.get(), candidates.size() );
+                    if( inserted.second ) candidates.push_back( { object, 1, false } );
+                    else ++candidates[inserted.first->second].ownedReferences;
+                };
+                for( const auto &[id, object] : registry ) add( object );
+                for( const auto &object : instances ) add( object );
+                for( auto &candidate : candidates )
+                    candidate.unused = candidate.object->getReferences() == candidate.ownedReferences + 1;
+                if( remove )
+                {
+                    const auto unused = [&]( const auto &object ) {
+                        return !object || candidates[indices.at( object.get() )].unused;
+                    };
+                    for( auto it = registry.begin(); it != registry.end(); )
+                    {
+                        if( unused( it->second ) ) it = registry.erase( it );
+                        else ++it;
+                    }
+                    size_t kept = 0;
+                    for( size_t i = 0; i < instances.size(); ++i )
+                        if( !unused( instances[i] ) )
+                        {
+                            if( kept != i ) instances[kept] = std::move( instances[i] );
+                            ++kept;
+                        }
+                    instances.resize( kept );
+                }
+            }
+            return candidates;
         }
 
         class ResourceCleanupJob : public Job
@@ -1921,61 +1973,29 @@ namespace workphone
         {
             return;
         }
-        Array<SmartPtr<ISharedObject>> candidates;
+        Array<ResourceCleanupCandidate> candidates;
         {
             RecursiveMutex::ScopedLock lock( m_mutex );
-            for( const auto &[id, object] : m_objects )
-            {
-                if( object && object->getReferences() == 1 )
-                {
-                    candidates.push_back( object );
-                }
-            }
-
-            for( const auto &resource : m_instances )
-            {
-                if( resource && resource->getReferences() == 1 )
-                {
-                    candidates.push_back( resource );
-                }
-            }
+            candidates = collectUnusedResources( m_objects, m_instances, false );
         }
-        for( auto &object : candidates )
-        {
-            if( object->getReferences() == 2 )
-            {
-                object->unload( nullptr );
-            }
-        }
+        for( auto &candidate : candidates )
+            if( candidate.unused && candidate.object->getReferences() == candidate.ownedReferences + 1 )
+                candidate.object->unload( nullptr );
     }
 
     void ResourceDatabase::removeUnusedResources()
     {
-        if( deferResourceCleanup( this, true ) )
+        if( deferResourceCleanup( this, true ) ) return;
+        Array<ResourceCleanupCandidate> candidates;
         {
-            return;
+            RecursiveMutex::ScopedLock lock( m_mutex );
+            candidates = collectUnusedResources( m_objects, m_instances, true );
         }
-
-        Array<SmartPtr<ISharedObject>> detached;
-        for( auto &[id, object] : m_objects )
-        {
-            detached.push_back( object );
-        }
-
-        for( auto &object : m_instances )
-        {
-            detached.push_back( object );
-        }
-
-        // Recheck ownership after detachment: a concurrent acquired reference
-        // keeps its live resource rather than having it unloaded underneath it.
-        for( auto &object : detached )
-        {
-            if( object->getReferences() == 1 )
-            {
-                object->unload( nullptr );
-            }
-        }
+        // External owners acquired during detachment keep a live object. Backend
+        // unload callbacks can safely re-enter the database after locks release.
+        for( auto &candidate : candidates )
+            if( candidate.unused && candidate.object->getReferences() == 1 )
+                candidate.object->unload( nullptr );
     }
 
     auto ResourceDatabase::createOrRetrieveResource( SmartPtr<IDatabaseQuery> query, bool bLoadResource,
