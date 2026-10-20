@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Application.hpp>
 #include <Workphone/Interface/Net/INetworkManager.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsPipeline.hpp>
@@ -444,6 +445,7 @@ namespace workphone::core
 
     void Application::update()
     {
+        MaterialPublicationScope materialUpdates;
         auto applicationManager = IApplicationManager::instance();
         WP_ASSERT( applicationManager );
 
@@ -592,6 +594,7 @@ namespace workphone::core
                 auto graphicsSystem = applicationManager->getGraphicsSystem();
                 WP_ASSERT( graphicsSystem );
 
+                materialUpdates.commit();
                 graphicsSystem->update();
 
                 if( applicationManager->getQuit() )

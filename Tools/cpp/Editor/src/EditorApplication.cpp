@@ -1,4 +1,5 @@
 #include <EditorPCH.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/System/WorldStreamingScheduler.hpp>
 #include <EditorApplication.hpp>
 #include <commands/AddActorCmd.hpp>
@@ -750,6 +751,7 @@ namespace workphone::editor
 
     void EditorApplication::update()
     {
+        MaterialPublicationScope materialUpdates;
         if( isLoaded() )
         {
             auto applicationManager = core::IApplicationManager::instancePtr();
@@ -916,6 +918,7 @@ namespace workphone::editor
 
                                 if( graphicsSystem )
                                 {
+                                    materialUpdates.commit();
                                     graphicsSystem->update();
                                 }
                             }

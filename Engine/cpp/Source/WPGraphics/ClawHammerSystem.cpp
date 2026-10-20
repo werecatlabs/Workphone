@@ -1,4 +1,5 @@
 #include "WPGraphics/WPClawHammerPCH.hpp"
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <stdexcept>
 #include "workphone_graphics_cull_job.h"
 #include "workphone_graphics_transform_job.h"
@@ -679,6 +680,7 @@ namespace workphone
             try
             {
                 ScopedLock lock( this );
+                MaterialPublicationScope materialUpdates;
                 RenderPhaseProfile preparation( m_preparationProfile, "Graphics preparation" );
                 if( m_statisticsResetRequested.exchange( false ) )
                 {
@@ -733,6 +735,7 @@ namespace workphone
                     deltaTime = static_cast<wp_f32>( timer->getDeltaTime() );
                 }
 
+                materialUpdates.commit(); // Publish before immutable scene-job capture.
                 prepareFramePasses( deltaTime );
                 if( !wp_graphics_system_set_delta_time( m_sys, deltaTime ) )
                 {

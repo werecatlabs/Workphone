@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/Material.hpp>
 #include <Workphone/Database/AssetDocumentSave.hpp>
 #include <Workphone/Graphics/SharedGraphicsObject.hpp>
@@ -2609,7 +2610,7 @@ namespace workphone::render
             return;
         }
 
-        const auto state = getRenderState();
+        const auto state = MaterialPublicationScope::isActive() ? MaterialRenderState::Ptr{} : getRenderState();
         MaterialParameterSyncScope synchronization( m_synchronizingShaderParameters );
 
         // Explicitly import legacy values for declared slots without feeding the
@@ -2704,7 +2705,7 @@ namespace workphone::render
         auto currentRough = state ? state->roughness : getRoughness();
         auto currentClip = state ? state->alphaClip : getAlphaClip();
         auto currentOpacity = state ? state->opacity : getOpacity();
-        if( m_batchActive )
+        if( m_batchActive || MaterialPublicationScope::isActive() )
         {
             // The published snapshot intentionally predates this batch. Read
             // pending owner-side fallbacks once through cached primary selection,

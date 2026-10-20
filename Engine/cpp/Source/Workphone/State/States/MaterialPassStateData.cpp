@@ -3,6 +3,11 @@
 #include <Workphone/Core/BitUtil.hpp>
 #include <Workphone/Core/Properties.hpp>
 #include <Workphone/Memory/PointerUtil.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
+#include <algorithm>
+#include <array>
+#include <cstdio>
+#include <vector>
 #include <cstring>
 #include <Workphone/Interface/System/IStateContext.hpp>
 
@@ -12,6 +17,15 @@ namespace workphone
 
     namespace
     {
+        struct PublicationQueue
+        {
+            u32 depth = 0;
+            bool flushing = false;
+            std::array<MaterialPassStateData *, 256> recent{};
+            std::vector<SmartPtr<MaterialPassStateData>> pending;
+        };
+        thread_local PublicationQueue publicationQueue;
+
         template <class T> bool sameMaterialValue( const T &a, const T &b ) { return a == b; }
         bool sameMaterialValue( f32 a, f32 b ) { return std::memcmp( &a, &b, sizeof( a ) ) == 0; }
         bool sameMaterialValue( const ColourF &a, const ColourF &b )
@@ -179,6 +193,80 @@ namespace workphone
         m_authoring->geometryShaderName = name.c_str();
     }
 
+    MaterialPublicationScope::MaterialPublicationScope()
+    { ++publicationQueue.depth; }
+
+    MaterialPublicationScope::~MaterialPublicationScope() noexcept
+    {
+        try { commit(); }
+        catch(...) { std::fputs("Material snapshot publication failed at update exit.\n", stderr); }
+    }
+
+    bool MaterialPublicationScope::isActive() noexcept
+    { return publicationQueue.depth != 0 && !publicationQueue.flushing; }
+
+    size_t MaterialPublicationScope::pendingEntryCount() noexcept
+    { return publicationQueue.pending.size(); }
+
+    size_t MaterialPublicationScope::retainedStorageBytes() noexcept
+    {
+        return sizeof(PublicationQueue) + publicationQueue.pending.capacity() * sizeof(SmartPtr<MaterialPassStateData>);
+    }
+
+    bool MaterialPublicationScope::defer(MaterialPassStateData &state) noexcept
+    {
+        // Detached/stack instances and constructor publication stay immediate.
+        if(!isActive() || state.getReferences() == 0) return false;
+        const auto address = reinterpret_cast<size_t>(&state);
+        const auto slot = ((address >> 4) ^ (address >> 12)) & 255;
+        if(publicationQueue.recent[slot] == &state) return true;
+        try
+        {
+            publicationQueue.pending.push_back(state.getSharedFromThis<MaterialPassStateData>());
+            publicationQueue.recent[slot] = &state;
+            return true;
+        }
+        catch(...) { return false; } // Preserve the existing immediate path on queue allocation failure.
+    }
+
+    void MaterialPublicationScope::commit()
+    {
+        if(!m_active) return;
+        m_active = false;
+        if(--publicationQueue.depth || publicationQueue.flushing || publicationQueue.pending.empty()) return;
+        auto pending = std::move(publicationQueue.pending);
+        publicationQueue.recent.fill(nullptr);
+        publicationQueue.flushing = true;
+        struct ReleaseQueue
+        {
+            std::vector<SmartPtr<MaterialPassStateData>> &pending;
+            ~ReleaseQueue()
+            {
+                publicationQueue.flushing = false;
+                pending.clear(); // Release temporary owners outside state locks, including on exceptions.
+                // Reuse ordinary updates; discard unusually large burst capacity.
+                if(pending.capacity() <= 4096) publicationQueue.pending.swap(pending);
+            }
+        } release{pending};
+        std::sort(pending.begin(), pending.end(), [](const auto &a, const auto &b) {
+            return std::less<MaterialPassStateData *>{}(a.get(), b.get());
+        });
+        pending.erase(std::unique(pending.begin(), pending.end(), [](const auto &a, const auto &b) {
+            return a.get() == b.get();
+        }), pending.end());
+        for(const auto &state : pending)
+        {
+            // Bypass the write-depth override: publication itself must not enqueue
+            // another write, and a failed snapshot allocation must still unlock.
+            struct StateLock {
+                StateData &state;
+                explicit StateLock(StateData &value) : state(value) { state.StateData::lock(); }
+                ~StateLock() { state.StateData::unlock(); }
+            } lock{*state};
+            state->publishRenderState();
+        }
+    }
+
     void MaterialPassStateData::lock()
     { StateData::lock(); ++m_writeDepth; }
 
@@ -194,6 +282,7 @@ namespace workphone
 
     void MaterialPassStateData::publishRenderState()
     {
+        if( MaterialPublicationScope::defer( *this ) ) return;
         auto previous = std::atomic_load( &m_renderState );
         bool changed = !previous;
         changed = changed || !sameMaterialValue( specularColour, previous->specularColour );

@@ -1,4 +1,5 @@
 #include <Workphone/WorkphonePCH.hpp>
+#include <Workphone/Graphics/MaterialPublicationScope.hpp>
 #include <Workphone/Graphics/GraphicsSystem.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsScene.hpp>
 #include <Workphone/Interface/Graphics/IGraphicsCamera.hpp>
@@ -132,6 +133,7 @@ namespace workphone::render
     }
     void GraphicsSystem::update()
     {
+        MaterialPublicationScope materialUpdates;
         updateLoadQueue();
         updateUnloadQueue();
 
